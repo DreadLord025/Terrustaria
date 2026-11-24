@@ -836,6 +836,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GoldWaterStrider
         | NpcKind::ExplosiveBunny => &[31],
         // W4-d42 - the NPCID 615-619 immunity rows (`NPCID.cs:9395+`).
+        // W4-d11 DOC-SWEEP — the BloodSquid's `DebuffImmunitySets` row:
+        // SpecificallyImmuneTo {31} (Confused, `NPCID.cs:9648-9654`). The d42
+        // grouped row below already carries it; d11's arm de-dupes onto it.
         NpcKind::Turtle
         | NpcKind::TurtleJungle
         | NpcKind::BloodNautilus

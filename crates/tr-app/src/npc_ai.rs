@@ -869,7 +869,7 @@ pub struct HoverTarget {
 
 /// The 8-px grid floor of the aim (`NPC.cs:50421-50424`):
 /// `(int)(value / 8f) * 8`.
-fn snap8(value: f32) -> f32 {
+pub(crate) fn snap8(value: f32) -> f32 {
     ((value / 8.0) as i32 * 8) as f32
 }
 

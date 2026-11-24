@@ -106,6 +106,9 @@
 //!   landed with W4-d125's remainder 3 — the 872's 120-entry
 //!   `TrailCacheLength` ring (`ProjectileID.cs:522`) rides the pool's
 //!   `trail_extra` extension (the fixed 10-entry base + 110);
+//!   needs the 120-entry `TrailCacheLength` ring, `ProjectileID.cs:522`;
+//!   W4-d16's `trail_len`/`TRAIL_RING_CAP` seam now carries the depth —
+//!   the cap must rise to 120 when this kind rows, `trail_cache_length`);
 //! * the render-side slices stay with the draw work: 872/873's trail rings
 //!   (`TrailingMode` 2, cache 120/60, `ProjectileID.cs:521-522`), the
 //!   `GetAlpha`/`AI_173_GetColor` tints (`:45442-45449`, `:78999-79002`),

@@ -234,12 +234,21 @@ fn clone_tiles(world: &World) -> World {
     snapshot
 }
 
+/// `WorldGen.StartMeteorShower` (`WorldGen.cs:6239-6244`): the falling-star
+/// shower's count — `genRand.Next(650, 751) * 4`. Inside `HandleMeteorFall` the
+/// C# draws `genRand`; the port rides the caller's `UpdateTime` stream (the
+/// same deviation as `resolve`). The chat broadcast (`Lang.gen[92]`) folds.
+pub fn start_meteor_shower(world: &mut World, rng: &mut UnifiedRandom) {
+    world.meteor_shower_count = rng.next_range(650, 751) * 4;
+}
+
 /// `Main.HandleMeteorFall` (`:65469-65502`): the dusk resolution —
 /// `time > 16200 && spawnMeteor` clears the flag and lands the ore. The
 /// stream is the caller's `UpdateTime` (`HandleMeteorFall` runs inside
-/// `Main.UpdateTime`, `Main.cs:65141`); the C#'s failed-pick
-/// `Next(3)` meteor-shower arm is not ported (no shower system), so no
-/// draw stands in for it.
+/// `Main.UpdateTime`, `Main.cs:65141`). W4-f45: the failed-pick arm now rolls
+/// `Next(3) == 0` -> `StartMeteorShower` (`:65497-65500`); the skyblock
+/// `lowTiles` guaranteed-shower arm (`:65493-65496`) stays unported (the port
+/// has no skyblock low-tile state).
 pub fn resolve(world: &mut World, time: f64, rng: &mut UnifiedRandom) -> bool {
     if time <= 16200.0 || !world.spawn_meteor {
         return false;
@@ -248,7 +257,13 @@ pub fn resolve(world: &mut World, time: f64, rng: &mut UnifiedRandom) -> bool {
     // The vanilla also broadcasts "A meteorite has landed!"
     // (`Lang.gen[59]`) — the chat-announce pass folds it.
     if let Some((x, y)) = drop_meteor(world, 0, rng) {
-        return meteor(world, x, y, rng);
+        if meteor(world, x, y, rng) {
+            return true;
+        }
+    }
+    // `:65497`: `!dropMeteor() && Main.rand.Next(3) == 0` -> the shower.
+    if rng.next_max(3) == 0 {
+        start_meteor_shower(world, rng);
     }
     true
 }
@@ -345,5 +360,44 @@ mod tests {
         let _ = night_roll(&mut rng, true);
         twin.next_max(50);
         assert_eq!(rng, twin, "one Next(50) draw per rolling call");
+    }
+
+    /// W4-f45 — `StartMeteorShower` (`WorldGen.cs:6239-6244`): the count is
+    /// `Next(650, 751) * 4` (one draw, the ×4 scale), and the failed-pick
+    /// `resolve` arm rolls `Next(3) == 0` into it (`Main.cs:65497-65500`).
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_meteor_shower_count_rolls_and_the_failed_pick_arms_it() {
+        let mut w = World::new("t".into(), 400, 400);
+        let mut rng = UnifiedRandom::new(42);
+        let mut twin = UnifiedRandom::new(42);
+        start_meteor_shower(&mut w, &mut rng);
+        let draw = twin.next_range(650, 751);
+        assert_eq!(w.meteor_shower_count, draw * 4, "Next(650,751)*4");
+        assert_eq!(rng, twin, "exactly one draw");
+        assert!(w.meteor_shower_count >= 2600 && w.meteor_shower_count <= 3000);
+        // The failed-pick resolve: an all-air world has no landing site, so
+        // drop_meteor returns None and the Next(3) arm rolls. A small world
+        // keeps the pick's attempt cap low; find a seed that arms the shower
+        // and one that misses it.
+        let mut armed = false;
+        let mut missed = false;
+        for seed in 0..30i32 {
+            let mut air = World::new("t".into(), 60, 60);
+            air.world_surface = 20.0;
+            air.spawn_meteor = true;
+            let mut r = UnifiedRandom::new(seed);
+            resolve(&mut air, 16201.0, &mut r);
+            if air.meteor_shower_count > 0 {
+                armed = true;
+            } else {
+                missed = true;
+            }
+            if armed && missed {
+                break;
+            }
+        }
+        assert!(armed, "some seed arms the shower (Next(3)==0)");
+        assert!(missed, "some seed misses it (the count stays 0)");
     }
 }

@@ -2324,6 +2324,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     // row above — the sheet id is deduped).
     540, // the Party Bunny
     676, // the Shimmer Slime (doc-sweep lane 36)
+    619, // the Blood Squid (W4-d11 DOC-SWEEP)
 ];
 
 /// W4-d37 — the NPCID 211-280 band's own sheets (the vanilla's
@@ -3705,6 +3706,12 @@ pub(crate) fn draw_player_preview(
 /// top-left is `pos + ([-16, -14]) * scale` and its size is `[40, 56] * scale`.
 /// `scale` is `Main.UIScale` (the applied value, `Settings::applied_ui_scale`).
 /// `border` is `Main.GetPlayerHeadBordersColor` (White in singleplayer).
+/// `alpha` is `DrawPlayerHead`'s opacity argument — the minimap passes
+/// `(float)(int)b / 255f` (`Main.cs:55729`, the live `mapMinimapAlpha` byte),
+/// the fullscreen/overlay heads pass their arm's `b` (1.0 fullscreen,
+/// `:55291`). The target blit's `White * alpha` multiplies EVERY part incl.
+/// the outline rings (recorded approximation: the hand-drawn stand-in fades
+/// each quad's alpha instead of compositing then fading — D20 territory).
 pub(crate) fn draw_player_map_icon(
     r: &mut SpriteRenderer,
     assets: &PlayerAssets,
@@ -3712,6 +3719,7 @@ pub(crate) fn draw_player_map_icon(
     pos: [f32; 2],
     scale: f32,
     border: [f32; 4],
+    alpha: f32,
 ) -> u32 {
     // `PlayerDrawHeadSet.cs:129-133` (`BoringSetup`): the raw skin/eye/hair colours,
     // alpha 1. The icon is unlit — `MapHeadRenderer.cs:50` blits the target with
@@ -3742,7 +3750,9 @@ pub(crate) fn draw_player_map_icon(
         for &(tex, color) in parts.iter() {
             if let Some(tex) = tex {
                 let uv = flip_uv(player_frame_uv(tex, frame), flip);
-                r.push_ui_sprite(at, size, uv, tint.unwrap_or(color));
+                let mut c = tint.unwrap_or(color);
+                c[3] *= alpha; // `DrawPlayerHead`'s opacity (`Main.cs:55729`)
+                r.push_ui_sprite(at, size, uv, c);
                 quads += 1;
             }
         }
@@ -6594,6 +6604,12 @@ pub(crate) fn draw_npcs(
             | NpcKind::Moth => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            // W4-d11 DOC-SWEEP — the BloodSquid draws its own sheet
+            // (`SMALL_KIND_SHEETS`' 619 row) at the 6-frame strip
+            // (`Main.npcFrameCount[619]` = 6) with the generic centred
+            // anchor — the small-kinds shape.
+            NpcKind::BloodSquid => {
+                pumpkin_moon_draw(assets.npc_sheet(619), npc_rows(619), n, w, h)
             }
         };
         let Some(tex) = tex else {

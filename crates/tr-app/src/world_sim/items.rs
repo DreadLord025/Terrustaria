@@ -1728,6 +1728,39 @@ fn spawn_player_drop(
     }
 }
 
+/// W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup drop
+/// (`Projectile.cs:13829` → `Item.RequestNewItem` → `Item.NewItem`,
+/// `Item.cs:49654-49771`): the proc's explicit velocity (`:49738-49741`'s
+/// `velocity.HasValue` arm) skips the scatter draws, `prefix: 0` draws
+/// nothing (`Item.Prefix`'s `:511-514` early return), and `ownership: None`
+/// arms NO grab delay in single-player (`WorldItem.ApplySpawnOwnership`'s
+/// switch falls through, `WorldItem.cs:293-313`) — the drop is immediately
+/// grabbable and the spawn is DRAW-FREE. `center` is the victim's centre
+/// (`targetNPC.Center`); the port's top-left box sits at `center - SIZE/2`
+/// (the `WorldItem.Center` setter convention; the C# 12×12 pickup box vs the
+/// port's uniform 14 px `SIZE` is the recorded item-box stand-in).
+pub(crate) fn spawn_nebula_pickup(
+    items: &mut Vec<ItemDrop>,
+    kind: u16,
+    center: Vec2,
+    velocity: Vec2,
+) {
+    let drop = ItemDrop::new(
+        kind,
+        1,
+        0,
+        center.x - crate::item::SIZE * 0.5,
+        center.y - crate::item::SIZE * 0.5,
+        velocity.x,
+        velocity.y,
+        0.0,
+    );
+    items.push(drop);
+    if items.len() > 300 {
+        items.remove(0);
+    }
+}
+
 /// `Item.NewItem`'s heart/star seasonal remap (`Item.cs:49668-49714`),
 /// S1-P-i52. The C# branch order: `tenthAnniversaryWorld` first (ONE
 /// `NextFromList` = `Next(len)` draw per remapped kind, `Utils.cs:1213-1216`),
@@ -4167,6 +4200,36 @@ mod drop_witness_tests {
         // The drop animation armed (`SetItemAnimation(10)`, `:5212`).
         assert!((app.swing - 10.0 / 60.0).abs() < 1e-6);
         assert!(app.player.as_ref().unwrap().just_dropped_an_item);
+    }
+
+    /// W4-d11 DOC-SWEEP — the Nebula pickup drop spawn
+    /// (`Projectile.cs:13829` → `Item.RequestNewItem` → `Item.NewItem`): the
+    /// proc's explicit velocity skips the scatter draws (`Item.cs:49738-49741`),
+    /// prefix 0 rolls nothing (`:511-514`), and ownership None arms NO grab
+    /// delay in SP (`WorldItem.cs:293-313`) — the drop is immediately grabbable
+    /// and the spawn is DRAW-FREE. The box top-left is the victim centre -
+    /// SIZE/2 (the `WorldItem.Center` setter convention). WRITTEN NOT RUN.
+    #[test]
+    fn w4_d11_the_nebula_pickup_spawns_draw_free_with_no_grab_delay() {
+        let mut items: Vec<ItemDrop> = Vec::new();
+        let center = Vec2::new(320.0, 384.0);
+        let velocity = Vec2::new(2.0, -4.0);
+        spawn_nebula_pickup(&mut items, 3453, center, velocity);
+        assert_eq!(items.len(), 1);
+        let d = &items[0];
+        assert_eq!(d.kind, 3453);
+        assert_eq!(d.count, 1);
+        assert_eq!(d.prefix, 0);
+        assert_eq!(d.pos.x, center.x - crate::item::SIZE * 0.5);
+        assert_eq!(d.pos.y, center.y - crate::item::SIZE * 0.5);
+        assert_eq!(d.vel, velocity, "the explicit velocity carries verbatim");
+        // No grab delay: immediately grabbable (ownership None, SP).
+        assert_eq!(d.grab_delay_time, 0, "no grab delay arms");
+        // The three pickup kinds all ride the same spawn.
+        for kind in [3454u16, 3455] {
+            spawn_nebula_pickup(&mut items, kind, center, velocity);
+            assert_eq!(items.last().unwrap().kind, kind);
+        }
     }
 
     /// The facing flips the throw: left-facing drops at `-4 + velocity.X`.

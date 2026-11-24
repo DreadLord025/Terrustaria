@@ -559,6 +559,13 @@ impl ApplicationHandler for App {
                         if self.selection.select(self.selected, target, false) {
                             self.audio.play_menu("Menu_Tick");
                         }
+                        // `Select`'s afk resets (`Player.cs:515-516`,
+                        // W4-d15 final + W4-d16 residual 8) — every local
+                        // selection, cue or not.
+                        if let Some(p) = self.player.as_mut() {
+                            p.afk_counter = 0;
+                            p.afk_counter_for_kiting = 0;
+                        }
                     }
                 }
             }
@@ -845,8 +852,9 @@ impl ApplicationHandler for App {
 
 impl App {
     /// The world-side key routes — `Main.UpdateInput`'s keyboard pass as the
-    /// port splits it: the Escape close chain, the map key (`Main.cMapFull`,
-    /// `M`), the hotbar digits, the debug panel and the smart-cursor toggle.
+    /// port splits it: the Escape close chain, the map keys (`Main.cMapFull`,
+    /// `M`; `Main.cMapStyle`, `Tab`), the hotbar digits, the debug panel and
+    /// the smart-cursor toggle.
     ///
     /// Extracted from `window_event`'s `KeyboardInput` arm (the chat/menu/front
     /// overlays eat the keys first and stay in the event handler, as in
@@ -1089,6 +1097,39 @@ impl App {
             }
             _ => {}
         }
+        // `Select`'s afk resets (`Player.cs:515-516`, W4-d15 final +
+        // W4-d16 residual 8) — every local selection, cue or not.
+        if let Some(p) = self.player.as_mut() {
+            p.afk_counter = 0;
+            p.afk_counter_for_kiting = 0;
+        }
+    }
+
+    /// `Player.TryOpeningFullscreenMap` (`Player.cs:29103-29119`): the open
+    /// arm behind `Main.mapEnabled` — close the inventory, `CloseSign(quiet)`
+    /// (the sign editor has no port state, `chest.rs`'s precedent),
+    /// `SetTalkNPC(-1)` + `npcChatCornerItem = 0` (no port counterpart),
+    /// `PlaySound(10)`, scale 2.5 + `resetMapFull` (both ride `set_open`),
+    /// `Main.MapPylonTile = (-1,-1)` (the overlay pick's pylon-click state —
+    /// cleared on its seam; the union's `set_open` re-arm feeds `recentre`,
+    /// which clears `pan_target` per `Main.cs:55418`), `buffString = ""`
+    /// (no port counterpart). The key path (`Player.cs:24976-24979`) and
+    /// the inventory icon row (`Main.cs:41095-41104`) both ride it.
+    pub(crate) fn try_open_fullscreen_map(&mut self) {
+        if !self.settings.map_enabled {
+            return; // `:29105`
+        }
+        self.inventory_open = false; // `:29107`
+        // `CloseSign(quiet: true)` (`:29108`) — no sign state in the port.
+        self.talk_npc = None; // `:29109` — `SetTalkNPC(-1)`
+        self.npc_chat_text.clear(); // the chat text the dialog leaves
+        // `SoundEngine.PlaySound(10)` (`:29111`).
+        self.audio.play("Menu_Open");
+        if let Some(m) = self.map.as_mut() {
+            // `set_open(true)` carries `:29112`/`:29114-29115` (scale 2.5,
+            // `mapFullscreen = true`, `resetMapFull = true`).
+            m.set_open(true);
+        }
     }
 
     pub(crate) fn world_key(&mut self, code: KeyCode) {
@@ -1122,6 +1163,8 @@ impl App {
                     // `Player.ToggleInv`'s first arm: Escape closes the
                     // fullscreen map and consumes the press — no inventory
                     // toggle this frame, like the source's `return`.
+                    // `SoundEngine.PlaySound(11)` (`Player.cs:4976`).
+                    self.audio.play("Menu_Close");
                     if let Some(m) = self.map.as_mut() {
                         m.set_open(false);
                     }
@@ -1191,10 +1234,13 @@ impl App {
             // `Player.ToggleCreativeMenu` (`Player.cs:5091-5105`).
             KeyCode::KeyC => self.toggle_creative_menu_key(),
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
-                // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
-                // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only
-                // toggles the map when `Main.mapEnabled`.
-                if self.settings.map_enabled {
+                // `Player.cs:24967-24986` (`cMapFull`, default `M`,
+                // `Main.cs:67192`): the close arm plays `PlaySound(11)`
+                // (`:24973`), the open arm rides `TryOpeningFullscreenMap`
+                // (`Player.cs:29103-29119`) behind `Main.mapEnabled`.
+                if self.map.as_ref().is_some_and(|m| m.open) {
+                    // `SoundEngine.PlaySound(11)` (`:24973`), the port's 11 cue.
+                    self.audio.play("Menu_Close");
                     if let Some(m) = self.map.as_mut() {
                         let open = !m.open;
                         if open {
@@ -1227,6 +1273,24 @@ impl App {
                 // keys but the style row still runs after it; the port's
                 // press-edge `world_key` stands in for `releaseMapStyle`.
                 if !self.map.as_ref().is_some_and(|m| m.open) {
+                        m.set_open(false);
+                    }
+                } else {
+                    self.try_open_fullscreen_map();
+                }
+            }
+            _ if self.is_map_bound(crate::input_map::MapAction::Style, code) => {
+                // `Player.cs:24949-24965`: `Main.cMapStyle` (`Main.cs:67195`,
+                // default `Tab`) cycles `Main.mapStyle` 0 → 1 → 2 → 0 on the
+                // press edge (`releaseMapStyle`), with `PlaySound(12)` — but
+                // only in the NOT-fullscreen arm of the map-key block (the
+                // `else` of `if (Main.mapFullscreen)`, `:24898`/`:24909`).
+                // The C# release latch re-arms while held; the port's
+                // `world_key` press-edge convention (winit repeats arrive as
+                // separate `Pressed` events, the doc comment above) matches
+                // the `Full` row's toggle semantics.
+                if self.map.as_ref().is_none_or(|m| !m.open) {
+                    // `SoundEngine.PlaySound(12)` (`:24953`) — the port's cue.
                     self.audio.play("Menu_Tick");
                     self.map_style += 1;
                     if self.map_style > 2 {
@@ -1379,6 +1443,73 @@ mod tests {
         assert!(app.map.as_ref().is_some_and(|m| m.open), "M opens the map");
         app.world_key(KeyCode::KeyM);
         assert!(!app.map.as_ref().is_some_and(|m| m.open), "M closes it");
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only):
+    /// `TryOpeningFullscreenMap` (`Player.cs:29103-29119`) — the open arm
+    /// closes the inventory (`:29107`), clears the talk-NPC latch (`:29109`,
+    /// `SetTalkNPC(-1)`) and opens at scale 2.5 with the recentre armed
+    /// (`:29112-29115`, both ride `set_open(true)`); `Main.mapEnabled` off
+    /// refuses the whole block (`:29105`).
+    #[test]
+    fn w4_e18_the_map_open_arm_closes_the_inventory_and_dialog() {
+        let mut app = map_app();
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(false);
+        }
+        app.inventory_open = true;
+        app.talk_npc = Some(0);
+        app.npc_chat_text = "hello".into();
+        app.world_key(KeyCode::KeyM);
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "M opens the map");
+        assert!(!app.inventory_open, "the open arm closes the inventory");
+        assert_eq!(app.talk_npc, None, "SetTalkNPC(-1)");
+        assert!(app.npc_chat_text.is_empty(), "the dialog text clears");
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.scale, crate::map::MAP_FULLSCREEN_SCALE_DEFAULT, "2.5");
+        // `mapEnabled` off: the key does nothing (`:29105`).
+        app.world_key(KeyCode::KeyM); // close first
+        app.settings.map_enabled = false;
+        app.world_key(KeyCode::KeyM);
+        assert!(!app.map.as_ref().unwrap().open, "mapEnabled gates the open");
+    }
+
+    /// W4-f46 closeout census (written, not run - code-only): `cMapStyle`
+    /// (`Main.cs:67195`, default `Tab`) cycles `Main.mapStyle` 0 → 1 → 2 → 0
+    /// on the press edge (`Player.cs:24949-24958`), from the default 1
+    /// (`Main.cs:66750`). The rebind row is the one the input reads.
+    #[test]
+    fn w4_f46_the_style_key_cycles_zero_one_two() {
+        let mut app = map_app();
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(false);
+        }
+        app.map_style = 1;
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 2);
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 0, "the >2 wrap (`Player.cs:24955-24958`)");
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 1);
+        // A rebind moves the row (`Main.cs:4619`'s single-key profile).
+        app.settings.map_binds[crate::input_map::MapAction::Style.index()] = "G".into();
+        app.apply_settings();
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 1, "Tab is free after the rebind");
+        app.world_key(KeyCode::KeyG);
+        assert_eq!(app.map_style, 2);
+    }
+
+    /// W4-f46 closeout census: the style key is in the NOT-fullscreen arm
+    /// only — the `else` of `if (Main.mapFullscreen)` (`Player.cs:24898`/
+    /// `:24909`); while the fullscreen map is up the press does nothing.
+    #[test]
+    fn w4_f46_the_style_key_is_dead_while_the_map_is_fullscreen() {
+        let mut app = map_app(); // the fixture opens the map
+        app.map_style = 1;
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 1, "the fullscreen arm skips the cycle");
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "the map stays open");
     }
 
     #[test]

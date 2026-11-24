@@ -150,6 +150,11 @@ fn spawn_pet_if_needed(p: &mut Player, pool: &mut ProjectilePool, j: usize, proj
     // them) spawn through the SetDefaults-carrying seam (box/life/flags);
     // the rowless pets keep the plain spawn until their rows land. The C#
     // centres the box on the spawn point (`:10876-10877`).
+    // 0, 0f, whoAmI)` — damage 0, knockback 0, no ai payload. W4-d13: the
+    // rowed kinds (the aiStyle-124 pets among them) now spawn through the
+    // SetDefaults-carrying seam (box/life/flags); the rowless pets keep the
+    // plain spawn until their pet-AI task lands (recorded in ANALYSIS).
+    // The C# centres the box on the spawn point (`:10876-10877`).
     if let Some(d) = crate::projectile::proj_data(proj) {
         pool.spawn_with_data_ai_owned(
             proj,

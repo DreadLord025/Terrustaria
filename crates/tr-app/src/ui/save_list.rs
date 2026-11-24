@@ -772,6 +772,7 @@ mod tests {
             powers: crate::player_file::CreativePowersSave::written_fresh(),
             current_loadout_index: 0,
             loadouts: Default::default(),
+            revision: 0,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
         std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
@@ -845,6 +846,7 @@ mod tests {
             powers: crate::player_file::CreativePowersSave::written_fresh(),
             current_loadout_index: 0,
             loadouts: Default::default(),
+            revision: 0,
         };
         crate::player_file::write_player_file(path, &file).unwrap();
     }
@@ -1120,6 +1122,7 @@ mod tests {
                 powers: crate::player_file::CreativePowersSave::written_fresh(),
                 current_loadout_index: 0,
                 loadouts: Default::default(),
+                revision: 0,
             },
         )
         .unwrap();

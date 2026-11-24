@@ -1251,7 +1251,10 @@ pub fn item_tooltip(id: u16) -> String {
 }
 
 /// `Lang.GetMapObjectName(id)` (`Lang.cs:77-84`): the map legend row of a
-/// color-lookup id.
+/// color-lookup id — the C# indexes `_mapLegendCache[id]` (sized
+/// `MapHelper.LookupCount()`, `Lang.cs:560`); an id outside the cache answers
+/// empty rather than the C# IndexOutOfRange (the W4-c21 bounds convention,
+/// as does the `_mapLegendCache == null` arm `:79-83`).
 pub fn map_object_name(lookup_id: usize) -> String {
     let Some(row) = map_legend_rows().get(lookup_id).and_then(|r| *r) else {
         return String::new();
@@ -1279,7 +1282,10 @@ enum MapLegendRow {
 
 /// The map legend cache — `Lang.BuildMapAtlas` (`Lang.cs:554-...`): the
 /// lookup-id indexed table the C# fills with the `MapObject.*` keys and the
-/// `itemNameCache[N]` rows, plus the tree-trunk loop (`:565-572`).
+/// `itemNameCache[N]` rows. Fill ORDER is the C#'s: the tree-trunk loop runs
+/// FIRST (`:565-572`), then the explicit rows (`:573+`) overwrite — tile 72
+/// is a tree trunk (`TileID.cs:487`) but its explicit row wins with
+/// `MapObject.GiantMushroom` (`Lang.cs:665`, W4-c21).
 fn map_legend_rows() -> &'static [Option<MapLegendRow>] {
     use std::sync::OnceLock;
     static ROWS: OnceLock<Vec<Option<MapLegendRow>>> = OnceLock::new();
@@ -1292,17 +1298,18 @@ fn map_legend_rows() -> &'static [Option<MapLegendRow>] {
                 rows[lookup] = Some(row);
             }
         };
+        // `:565-572`: every tree trunk reads "MapObject.Tree".
+        for tile in 0..table.tile_lookup.len() {
+            if tr_core::tileobject::is_a_tree_trunk(tile as u16) {
+                put(tile as u16, 0, MapLegendRow::Key("MapObject.Tree"));
+            }
+        }
+        // `:573+`: the explicit rows, overwriting the trunk defaults.
         for (tile, option, kind, value) in crate::lang_tables::MAP_LEGEND {
             if *kind == "key" {
                 put(*tile, *option, MapLegendRow::Key(value));
             } else {
                 put(*tile, *option, MapLegendRow::Item(value.parse().unwrap_or(0)));
-            }
-        }
-        // `:565-572`: every tree trunk reads "MapObject.Tree".
-        for tile in 0..table.tile_lookup.len() {
-            if tr_core::tileobject::is_a_tree_trunk(tile as u16) {
-                put(tile as u16, 0, MapLegendRow::Key("MapObject.Tree"));
             }
         }
         rows
@@ -1510,5 +1517,27 @@ mod tests {
         assert_eq!(inter(65), text("LegacyInterface.65"));
         // A missing key falls back to the key text, not a crash.
         assert_eq!(tip(9999), text("LegacyTooltip.9999"));
+    }
+    /// W4-c21 — `Lang.GetMapObjectName` (`Lang.cs:77-84`) indexes
+    /// `_mapLegendCache` sized `MapHelper.LookupCount()` (`:560`); an
+    /// out-of-cache lookup id answers empty (the port's bounds convention).
+    /// The fill order is the C#'s: tree trunks first (`:565-572`), explicit
+    /// rows after (`:573+`) — tile 72 IS a trunk (`TileID.cs:487`) but its
+    /// explicit row overwrites Tree with GiantMushroom (`Lang.cs:665`).
+    #[test]
+    fn w4_c21_map_object_name_bounds_and_fill_order() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // The explicit row wins over the trunk default at tile 72.
+        assert_eq!(map_object_name_for_tile(72, 0), "Giant Mushroom");
+        // A trunk without an explicit row keeps Tree (tile 5).
+        assert_eq!(map_object_name_for_tile(5, 0), "Tree");
+        // Beyond `LookupCount()`: empty, no panic.
+        let count = tr_core::map::color_table().lookup.len();
+        assert_eq!(map_object_name(count), "");
+        assert_eq!(map_object_name(usize::MAX), "");
+        // An in-cache lookup with no legend row answers empty too (the
+        // `LocalizedText.Empty` default fill, `Lang.cs:561-564`).
+        assert_eq!(map_object_name(0), "");
     }
 }

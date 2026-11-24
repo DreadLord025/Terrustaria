@@ -483,6 +483,61 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         .is_some_and(|t| t.active() && t.kind == 10 && (594..=646).contains(&t.frame_y) && t.frame_x < 54)
     {
         try_unlock_temple_door(app, tx, ty);
+    // The pylon arm (`TileInteractionsUse`'s `type == 597` branch,
+    // `Player.cs:32180-32212`): the right-click opens the fullscreen map
+    // centred on the pylon network and selects the clicked pylon for the
+    // network-line draw (`Main.MapPylonTile`). The anchor decodes the 3x4
+    // body (`x - frameX/18%3, y - frameY/18%4`); the view fits every
+    // revealed pylon (`pylon_view_fit`). The arm runs before the furniture
+    // dispatch — the pylon has no `interact_at` interaction of its own.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && t.kind == 597)
+    {
+        if app.settings.map_enabled {
+            let tile = app.world.tile(tx, ty).copied().unwrap_or_default();
+            let anchor = (
+                tx - (tile.frame_x as i32 / 18 % 3),
+                ty - (tile.frame_y as i32 / 18 % 4),
+            );
+            // `TryOpeningFullscreenMap` (`Player.cs:29103-29118`): the
+            // inventory/sign/talk clears + sound 10 + the 2.5 scale + the
+            // recentre ride the union helper (research/84 §10.3 step 2 —
+            // the f29 tip's inline TryOpening clears dedupe into
+            // `try_open_fullscreen_map`; `CloseSign(quiet)` has no port
+            // counterpart, the sign editor is unported). The pylon-view
+            // fit below then overrides the recentre.
+            app.try_open_fullscreen_map();
+            let team_seed = app
+                .world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
+            let pylons = tr_core::pylons::scan_pylons(&app.world);
+            let revealed: Vec<(i32, i32)> = pylons
+                .iter()
+                .filter(|p| {
+                    !team_seed
+                        || app
+                            .map
+                            .as_ref()
+                            .is_some_and(|m| m.tile_revealed(&app.world, p.x as i32, p.y as i32))
+                })
+                .map(|p| (p.x as i32, p.y as i32))
+                .collect();
+            let (sw, sh) = app.screen_size();
+            let screen = glam::Vec2::new(sw, sh);
+            if let Some(m) = app.map.as_mut() {
+                m.pylon_tile = anchor;
+                let (pos, scale) =
+                    crate::map::pylon_view_fit(anchor, &revealed, screen, m.scale);
+                m.pos = pos;
+                m.scale = scale;
+                // The fit overrides the helper's recentre arm: disarm it
+                // and keep the pan clear (`recentre` already cleared it).
+                m.reset_pos = false;
+            }
+        }
         return true;
     }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);

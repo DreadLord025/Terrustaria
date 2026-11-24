@@ -238,6 +238,7 @@ fn ichor_dart(p: &mut Projectile, rng: &mut dyn DropRng) {
                 0.0,
                 -1000.0,
                 0,
+                0.0,
             ));
         }
     }
@@ -270,6 +271,7 @@ fn cursed_dart(p: &mut Projectile, rng: &mut dyn DropRng) {
             0.0,
             0.0,
             0,
+            0.0,
         ));
     }
 }

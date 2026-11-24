@@ -157,6 +157,10 @@ pub(crate) enum GolfEffect {
         held_proj: Option<i32>,
         dummy_item_time: Option<i32>,
         cancel_use: bool,
+        /// W4-d20 — `player.itemAnimationMax = useAnimation`
+        /// (`AI_198_Flint` `Projectile.cs:52307`). `None` on the golf paths
+        /// (the helper never writes it).
+        item_animation_max: Option<i32>,
     },
 }
 
@@ -374,6 +378,12 @@ pub(crate) struct GolfClubPlayer {
     /// `player.HeldItem.type` — `GetClubPropertiesFromGolfHelper`
     /// (`GolfHelper.cs:326-329`).
     pub held_item_type: i32,
+    /// W4-d20 — `player.MountedCenter` (`AI_198_Flint`'s spawn anchor,
+    /// `Projectile.cs:52254`/`:52257`). The golf helper does not read it.
+    pub mounted_center: Vec2,
+    /// W4-d20 — `player.itemRotation` (the flint charge dust's rotation,
+    /// `Projectile.cs:52312`). The golf helper does not read it.
+    pub item_rotation: f32,
 }
 
 /// `AI_150_GolfClubHelper` (`Projectile.cs:52417-52548`) for one slot.
@@ -1331,6 +1341,8 @@ mod tests {
             channel: false,
             use_animation: 12,
             held_item_type: 4039,
+            mounted_center: Vec2::new(500.0, 521.0),
+            item_rotation: 0.0,
         };
         let mut rng = UnifiedRandom::new(7);
         let tick = ai_golf_club_helper(
@@ -1375,6 +1387,8 @@ mod tests {
             channel: true,
             use_animation: 12,
             held_item_type: 4039,
+            mounted_center: Vec2::new(500.0, 521.0),
+            item_rotation: 0.0,
         };
         let mut rng = UnifiedRandom::new(0);
         let tick = ai_golf_club_helper(
@@ -1419,6 +1433,8 @@ mod tests {
             channel: true,
             use_animation: 12,
             held_item_type: 4039,
+            mounted_center: Vec2::new(500.0, 521.0),
+            item_rotation: 0.0,
         };
         let mut rng = UnifiedRandom::new(0);
         // The helper's centre equals the mouse: no move, no facing flip;

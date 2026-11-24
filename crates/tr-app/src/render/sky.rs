@@ -3,8 +3,9 @@
 //! underground backdrop it tails into lives in [`super::bg`].
 use super::BgTex;
 use super::bg::{
-    FrontLayer, bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees, front_layers,
-    layer_y_offset, mushroom_tint, push_screen_rot,
+    FrontLayer, bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees,
+    forest_173_frame_id, forest_layers, front_layers, layer_y_offset, mushroom_tint,
+    push_screen_rot,
 };
 use crate::app::next_rand;
 use crate::assets;
@@ -12,15 +13,6 @@ use glam::Vec2;
 use tr_core::lighting::LightMap;
 use tr_core::{TILE_PX, World};
 use tr_render::{Atlas, SpriteRenderer};
-
-fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 4] {
-    [
-        a[0] + (b[0] - a[0]) * t,
-        a[1] + (b[1] - a[1]) * t,
-        a[2] + (b[2] - a[2]) * t,
-        1.0,
-    ]
-}
 
 /// The debug font is ASCII-only; transliterate Cyrillic names so they stay readable.
 pub(crate) fn display_name(name: &str) -> String {
@@ -44,73 +36,10 @@ pub(crate) fn display_name(name: &str) -> String {
     out
 }
 
-/// `Main.SetBackColor`: the colour the sky and surface background are tinted with
-/// (`Main.ColorOfTheSkies`), as a function of world time.
-///
-/// Day runs `0..54000` (0 = sunrise, 27000 = noon), night runs `0..32400`
-/// (16200 = midnight). Between 13500 and 37800 the colour is pure white, which is why
-/// vanilla daytime tiles are lit at 100 %.
-pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 3] {
-    let byte = |v: f64| (v.clamp(0.0, 255.0) / 255.0) as f32;
-    if day {
-        if time < 13500.0 {
-            let t = time / 13500.0;
-            [
-                byte(t * 230.0 + 25.0),
-                byte(t * 220.0 + 35.0),
-                byte(t * 220.0 + 35.0),
-            ]
-        } else if time > 45900.0 {
-            let t = (1.0 - (time / 54000.0 - 0.85) * 6.666_666_666_666_667).clamp(0.0, 1.0);
-            [
-                byte(t * 200.0 + 35.0),
-                byte(t * 85.0 + 35.0),
-                byte(t * 135.0 + 35.0),
-            ]
-        } else if time > 37800.0 {
-            let t = (1.0 - (time / 54000.0 - 0.7) * 6.666_666_666_666_667).clamp(0.0, 1.0);
-            [
-                byte(t * 20.0 + 235.0),
-                byte(t * 135.0 + 120.0),
-                byte(t * 85.0 + 170.0),
-            ]
-        } else {
-            [1.0, 1.0, 1.0]
-        }
-    } else {
-        // `Main.cs:63493-63540`: the two night ramps, then the moon-phase light
-        // floor — `Main.cs:63792-63813` grades `minimalLight` 11 (new moon) up
-        // to 19 (full moon), applied per channel at `:63818-63829`. The
-        // blood-moon floor of 25 (`:63830-63844`) lands with the blood-moon
-        // system (M4 events); its night ramp is not ported either.
-        let (r, g, b) = if time < 16200.0 {
-            let t = 1.0 - time / 16200.0;
-            (t * 30.0 + 5.0, t * 30.0 + 5.0, t * 30.0 + 5.0)
-        } else {
-            let t = (time / 32400.0 - 0.5) * 2.0;
-            (t * 20.0 + 5.0, t * 30.0 + 5.0, t * 30.0 + 5.0)
-        };
-        // `Enums/MoonPhase.cs`: Full=0, Empty=4, the right-half mirror behind.
-        const FLOORS: [f64; 8] = [19.0, 17.0, 15.0, 13.0, 11.0, 13.0, 15.0, 17.0];
-        let floor = (FLOORS[(moon_phase & 7) as usize] / 255.0) as f32;
-        [
-            byte(r).max(floor),
-            byte(g).max(floor),
-            byte(b).max(floor),
-        ]
-    }
-}
-
-/// `Main.ApplyColorOfTheSkiesToTiles`: surface sunlight is the sky colour pulled
-/// 70 % towards its own channel.
-pub(crate) fn tile_color(sky: [f32; 3]) -> [f32; 3] {
-    let sum = sky[0] + sky[1] + sky[2];
-    [
-        (sum + 7.0 * sky[0]) / 10.0,
-        (sum + 7.0 * sky[1]) / 10.0,
-        (sum + 7.0 * sky[2]) / 10.0,
-    ]
-}
+/// `Main.ApplyColorOfTheSkiesToTiles` / the sky ramps moved to
+/// [`tr_core::sky_color`] (W4-g70 DOC-SWEEP lane 8): the full `SetBackColor`
+/// chain now runs in XNA byte space there; this module keeps the draw-side
+/// horizon blend and the celestial/parallax passes.
 
 /// `SetBackColor`'s rain dim (`Main.cs:63546-63552`): while
 /// `cloudAlpha > 0 && !remixWorld`, every sky channel is multiplied by
@@ -177,37 +106,52 @@ pub(crate) fn horizon_phase(moon_phase: u8, day: bool, time: f64) -> usize {
 /// depth factor the horizon visibilities ride. `y` is the camera centre in
 /// world pixels (`Main.cs:61983`).
 pub(crate) fn atmosphere_factor(y: f32, world_surface: f64, max_tiles_x: i32) -> f32 {
+    // `Main.cs:63187-63188`: the numerator computes in f32, the division by
+    // `worldSurface / 5.0` in f64, the result casts back to f32 before the
+    // clamps (the `tr_core::sky::atmosphere_transparency` shape).
     let n = max_tiles_x as f32 / 4200.0;
-    let n = n * n;
-    let mut atmo = (y / 16.0 - (65.0 + 10.0 * n)) / (world_surface as f32 / 5.0);
+    let numer = y / 16.0 - (65.0 + 10.0 * n * n);
+    let atmo = (numer as f64 / (world_surface / 5.0)) as f32;
     atmo.clamp(0.0, 1.0)
 }
 
-/// `Utils.Remap`: the clamped from→to lerp the visibility chain uses.
-fn remap(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
-    let t = ((value - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
-    to_min + (to_max - to_min) * t
-}
-
 /// `NextHorizonRenderer.GetVisibilities` (`NextHorizonRenderer.cs:196-234`):
-/// the sunrise/sunset light-tint strengths. `mushroom_influence` is
-/// `Main.SmoothedMushroomLightInfluence` (0 until the mushroom biome lands)
-/// and `eclipse` is false until M4 events — both terms omitted here.
-pub(crate) fn horizon_visibilities(time: f64, day: bool, atmo: f32, cloud_alpha: f32) -> (f64, f64) {
-    let mut sunrise = 1.0f64;
-    let mut sunset = 1.0f64;
-    let num = 1.0 * atmo as f64;
-    let num2 = 1.0 - cloud_alpha as f64;
-    let num = num * num2 * num2;
+/// the sunrise/sunset light-tint strengths, verbatim in f32 (the C# floats).
+/// The mushroom factor (`:203`) and the eclipse kill (`:219-223`) are live
+/// inputs now (W4-g70 lane 8). The `gameMenu && drunkWorldGen` pair
+/// (`:230-233`) only fires while generating — the port's menus draw their own
+/// backdrop, so it stays out.
+pub(crate) fn horizon_visibilities(
+    time: f64,
+    day: bool,
+    atmo: f32,
+    cloud_alpha: f32,
+    mushroom: f32,
+    eclipse: bool,
+) -> (f32, f32) {
+    let mut sunrise = 1.0f32;
+    let mut sunset = 1.0f32;
+    // `:201-203`: `num = 1f * atmo; num2 = 1f - cloudAlpha;
+    // num = num * (num2 * num2) * (1f - mushroom)`.
+    let num2 = 1.0 - cloud_alpha;
+    let num = atmo * (num2 * num2) * (1.0 - mushroom);
     sunrise *= num;
     sunset *= num;
+    let remap32 = |v: f32, lo: f32, hi: f32, a: f32, z: f32| {
+        a + (z - a) * ((v - lo) / (hi - lo)).clamp(0.0, 1.0)
+    };
+    let t = time as f32;
     if day {
         // Dawn ramp in, morning ramp out; the sunset mirrors it around the
-        // afternoon (all windows in game ticks).
-        sunrise *= remap(time, 0.0, 2700.0, 0.0, 1.0) * remap(time, 3600.0, 10800.0, 1.0, 0.0);
-        let s = remap(time, 43200.0, 50400.0, 0.0, 1.0);
-        let e = remap(time, 50400.0, 54000.0, 1.0, 0.0);
+        // afternoon (all windows in game ticks, `:215-218`).
+        sunrise *= remap32(t, 0.0, 2700.0, 0.0, 1.0) * remap32(t, 3600.0, 10800.0, 1.0, 0.0);
+        let s = remap32(t, 43200.0, 50400.0, 0.0, 1.0);
+        let e = remap32(t, 50400.0, 54000.0, 1.0, 0.0);
         sunset *= s * e * e;
+        if eclipse {
+            sunset = 0.0;
+            sunrise = 0.0;
+        }
     } else {
         sunrise = 0.0;
         sunset = 0.0;
@@ -217,28 +161,35 @@ pub(crate) fn horizon_visibilities(time: f64, day: bool, atmo: f32, cloud_alpha:
 
 /// `NextHorizonRenderer.BlendColor` (`NextHorizonRenderer.cs:183-194`) +
 /// `Main.instance.HorizonRenderer.ModifyHorizonLight` (`Main.cs:63921`): the
-/// mid gradient entries blend into the sky/tile colour at the visibility
-/// strengths — the "HorizonClouds tint".
+/// mid gradient entries blend into the sky colour at the visibility strengths
+/// — the "HorizonClouds tint". Byte space: `Color.Lerp` truncates each channel
+/// (`(byte)(a + (b - a) * amount)`), and the max-lift target is per channel.
+/// The `ShouldDrawSurfaceBackground` gate (`NextHorizonRenderer.cs:156`) is
+/// the caller's `background_enabled && !remix` (the map-fullscreen case has
+/// no sky pass in the port).
 pub(crate) fn modify_horizon_light(
-    color: &mut [f32; 3],
+    color: &mut [u8; 3],
     moon_phase: u8,
     day: bool,
     time: f64,
     atmo: f32,
     cloud_alpha: f32,
+    mushroom: f32,
+    eclipse: bool,
 ) {
-    let (sunset, sunrise) = horizon_visibilities(time, day, atmo, cloud_alpha);
+    let (sunset, sunrise) = horizon_visibilities(time, day, atmo, cloud_alpha, mushroom, eclipse);
     let idx = horizon_phase(moon_phase, day, time) % 4;
-    for (channel, gradient) in color.iter_mut().zip(sun_gradients::SUNSETS[idx]) {
-        let grad = gradient / 255.0;
-        let target = (*channel).max(grad);
-        *channel += (target - *channel) * sunset as f32;
-    }
-    for (channel, gradient) in color.iter_mut().zip(sun_gradients::SUNRISES[idx]) {
-        let grad = gradient / 255.0;
-        let target = (*channel).max(grad);
-        *channel += (target - *channel) * sunrise as f32;
-    }
+    let blend = |c: &mut [u8; 3], grad: [f32; 3], amount: f32| {
+        if amount <= 0.0 {
+            return;
+        }
+        for (ch, g) in c.iter_mut().zip(grad) {
+            let target = (*ch as f32).max(g);
+            *ch = (*ch as f32 + (target - *ch as f32) * amount) as u8;
+        }
+    };
+    blend(color, sun_gradients::SUNSETS[idx], sunset);
+    blend(color, sun_gradients::SUNRISES[idx], sunrise);
 }
 
 /// `[lo, hi)` draw from the splitmix stream — the shape of `Random.Next(lo, hi)`.
@@ -255,23 +206,35 @@ fn next_range(state: &mut u64, lo: i32, hi: i32) -> i32 {
 /// which is also what the headless flow tests construct.
 #[derive(Default)]
 pub(crate) struct SkyAssets {
-    /// Forest far/near mountain layers (`Background_7`/`Background_8`).
-    pub(crate) far: Option<BgTex>,
-    pub(crate) near: Option<BgTex>,
-    /// Forest foreground tree line (`Background_50..52`).
-    pub(crate) forest: [Option<BgTex>; 3],
-    /// Snow biome: mountains `Background_35/36`, pine line `Background_37..39`.
+    /// Snow biome: mountains `Main.snowMntBG` (default `Background_35/36`),
+    /// pine line `Main.snowBG` (default `Background_37..39`), all resolved
+    /// from the world's `setBG(3)` style (W4-g71). The old fixed forest
+    /// `far`/`near`/`forest` fields retired onto the four-set
+    /// `forest_mnt`/`forest_sets` tables below (W4-g70).
     pub(crate) snow_far: Option<BgTex>,
     pub(crate) snow_near: Option<BgTex>,
     pub(crate) snow_trees: [Option<BgTex>; 3],
-    /// Ocean horizon with islands (`Background_28`, style 0).
+    /// Ocean horizon (`Main.oceanBG`, default `Background_28`), resolved from
+    /// the world's `setBG(7)` style.
     pub(crate) ocean: Option<BgTex>,
-    /// Desert dunes (`Background_21` far, `Background_20` near) plus the mountain
-    /// layers behind them (`Background_23` far, `Background_22` near).
+    /// Desert dunes: the Pure variant's far/middle rows (`Background_21/20`
+    /// at style 0) plus the mountain layers behind them (`Background_23`
+    /// far, `Background_22` near). The three evil/hallow variants live in
+    /// `desert_variants`.
     pub(crate) desert_far: Option<BgTex>,
     pub(crate) desert_near: Option<BgTex>,
+    /// The Pure variant's third row (`Background_250`, desert style 4 only).
+    pub(crate) desert_third: Option<BgTex>,
     pub(crate) desert_far_mnt: Option<BgTex>,
     pub(crate) desert_near_mnt: Option<BgTex>,
+    /// `Main.desertBackgroundSet.{Corrupt,Crimson,Hallow}` — the three rows
+    /// `DrawSurfaceBG_GoodEvilDesert` swaps in for front styles 5/14/13
+    /// (`Main.cs:60868-60884`). Index order matches `World::desert_bg_set`
+    /// minus Pure: [Corrupt, Crimson, Hallow].
+    pub(crate) desert_variants: [[Option<BgTex>; 3]; 3],
+    /// The GoodEvilDesert fallback dunes (`Background_26/27`,
+    /// `Main.cs:60885-60925`) — drawn when the style's variant set is empty.
+    pub(crate) desert_fallback: [Option<BgTex>; 2],
     /// Storm cloud banks (`Background_112/113`), faded in by `cloudBGAlpha`.
     pub(crate) storm_far: Option<BgTex>,
     pub(crate) storm_near: Option<BgTex>,
@@ -288,6 +251,21 @@ pub(crate) struct SkyAssets {
     pub(crate) crimson_layers: [Option<BgTex>; 3],
     /// `DrawSurfaceBG_Mushroom` (style 0: `Background_46/47/48`).
     pub(crate) mushroom_layers: [Option<BgTex>; 3],
+    /// W4-g70: the four forest sets' tree lines (`Main.treeBGSet1..4`,
+    /// resolved from `World.forest_bg_styles` through `SetForestBGSet`).
+    /// Set 1 style 0 is the classic `Background_9/10/11` row.
+    pub(crate) forest_sets: [[Option<BgTex>; 3]; 4],
+    /// The four forest sets' hill pairs (`Main.treeMntBGSet1..4` at `setBG`
+    /// time; the live animated ids ride `App.forest_hills` and resolve
+    /// through `forest_mnt_anim` at draw).
+    pub(crate) forest_mnt: [[Option<BgTex>; 2]; 4],
+    /// The animated hill families' sheets, indexed by id: 94/114/115/116
+    /// (near) + 93/168/169/170 (far) and 180..183 (near). `None` when the
+    /// world's styles never reach them (the atlas packs them only then).
+    pub(crate) forest_mnt_anim: std::collections::HashMap<i32, BgTex>,
+    /// The 173 tree line's four draw-time frames (`Background_251..254`,
+    /// `Main.cs:61373`), packed only when a set's row 0 is 173.
+    pub(crate) forest_173_frames: [Option<BgTex>; 4],
     /// `Background_1`: the one-row surface transition into the underground backdrop.
     pub(crate) underground_transition: Option<BgTex>,
     /// `Background_2`: the tiled dirt backdrop (`_drawBackground_backTexture[1]`).
@@ -310,34 +288,35 @@ pub(crate) struct SkyAssets {
     /// `DrawBackground_DrawUnderworldBlackBox`.
     pub(crate) black_tile: Option<BgTex>,
     pub(crate) sun: Option<BgTex>,
+    /// `Images/Sun3`: the eclipse sun (`Main.cs:62930`).
+    pub(crate) sun_eclipse: Option<BgTex>,
+    /// `Images/Sun2`: the Sunglasses-head sun (`Main.cs:62935`, head == 12).
+    pub(crate) sun_sunglasses: Option<BgTex>,
+    /// `Images/Extra_280`: the sunglasses overlay drawn at alpha 100 over the
+    /// Sun2 body (`Main.cs:62950-62952`).
+    pub(crate) sunglasses_overlay: Option<BgTex>,
     /// `Images/Moon_0..8` (50x400: eight 50 px phase rows); `Main.moonType` picks
     /// the sheet, `Main.moonPhase` the row.
     pub(crate) moon: [Option<BgTex>; 9],
+    /// `Images/Moon_Smiley`: the drunk seed's whole-frame moon
+    /// (`Main.cs:62964-62967`, rotation `num9/2 + π`).
+    pub(crate) moon_smiley: Option<BgTex>,
+    /// `Images/Moon_Pumpkin` / `Moon_Snow`: the event moons' phase-row sheets
+    /// (`Main.cs:62968-62975`), same 8-row layout as `Moon_0..8`.
+    pub(crate) moon_pumpkin: Option<BgTex>,
+    pub(crate) moon_snow: Option<BgTex>,
+    /// `Images/Misc/Sunflare/flare1/flare2`: `NextHorizonRenderer.DrawSun`'s
+    /// five flare quads (`NextHorizonRenderer.cs:168-181`).
+    pub(crate) sunflare1: Option<BgTex>,
+    pub(crate) sunflare2: Option<BgTex>,
     pub(crate) stars: Vec<Option<BgTex>>,
     /// W4-f39: `Images/Misc/Sky_Slime_1..4` — the SlimeSky's falling-slime
     /// sheets (`SlimeSky.cs:79-83`), each a 4-row animation strip.
     pub(crate) slime_sky: [Option<BgTex>; 4],
 }
 
-/// One star from `Star.SpawnStars` (`Star.cs:86-158`). Positions live in the
-/// original's 1920x1200 design space and are mapped onto the screen by `DrawStar`
-/// (`Main.cs:63112-63137`); `twinkle` and `rotation` oscillate from their spawn
-/// values at the per-star speeds.
-#[derive(Clone, Copy)]
-pub(crate) struct StarSprite {
-    x: f32,
-    y: f32,
-    scale: f32,
-    tex: usize,
-    /// `Star.twinkle` at spawn — the phase of the 0.6..1 oscillation.
-    phase: f32,
-    /// `Star.twinkleSpeed` (per tick, signed).
-    twinkle_speed: f32,
-    /// `Star.rotation` at spawn (radians).
-    rotation: f32,
-    /// `Star.rotationSpeed` (per tick, signed).
-    rotation_speed: f32,
-}
+/// The live star pool's element is [`crate::star_field::Star`] (W4-g70
+/// lane 8); the draw below reads its per-tick twinkle/rotation directly.
 
 pub(crate) fn sky_tex(
     atlas: &Atlas,
@@ -362,8 +341,8 @@ pub(crate) fn sky_tex(
 }
 
 pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
-    // The five surface variants draw whatever `WorldGen.setBG` rolled for this
-    // world (`Main.corruptBG` etc.); `-1` means the C# layer is skipped.
+    // The eight surface variants draw whatever `WorldGen.setBG` rolled for
+    // this world (`Main.corruptBG` etc.); `-1` means the C# layer is skipped.
     let layers = |ids: [i32; 3]| {
         ids.map(|i| {
             if i >= 0 {
@@ -373,18 +352,32 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
             }
         })
     };
+    let one = |id: i32| {
+        if id >= 0 {
+            sky_tex(atlas, &format!("Background_{id}"), None)
+        } else {
+            None
+        }
+    };
+    let snow_mnts = world.snow_mountains();
+    let desert = world.desert_bg_set();
     SkyAssets {
-        far: sky_tex(atlas, "Background_7", None),
-        near: sky_tex(atlas, "Background_8", None),
-        forest: [50, 51, 52].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
-        snow_far: sky_tex(atlas, "Background_35", None),
-        snow_near: sky_tex(atlas, "Background_36", None),
-        snow_trees: [37, 38, 39].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
-        ocean: sky_tex(atlas, "Background_28", None),
-        desert_far: sky_tex(atlas, "Background_21", None),
-        desert_near: sky_tex(atlas, "Background_20", None),
+        // W4-g71: the snow/ocean/desert sheets resolve from the world's
+        // live `setBG(3/6/7)` styles (the fixed 35/36/37..39/28/21/20
+        // stand-ins retired); the forest sets ride the g70 four-set tables
+        // below (the old fixed far/near/forest fields dropped).
+        snow_far: one(snow_mnts[0]),
+        snow_near: one(snow_mnts[1]),
+        snow_trees: layers(world.snow_bg()),
+        ocean: one(world.ocean_bg()),
+        desert_far: one(desert[0][0]),
+        desert_near: one(desert[0][1]),
+        desert_third: one(desert[0][2]),
         desert_far_mnt: sky_tex(atlas, "Background_23", None),
         desert_near_mnt: sky_tex(atlas, "Background_22", None),
+        // [Corrupt, Crimson, Hallow] — `World::desert_bg_set`'s rows 1..3.
+        desert_variants: [layers(desert[1]), layers(desert[2]), layers(desert[3])],
+        desert_fallback: [26, 27].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         storm_far: sky_tex(atlas, "Background_112", None),
         storm_near: sky_tex(atlas, "Background_113", None),
         corrupt_layers: layers(world.corrupt_bg()),
@@ -392,6 +385,19 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
         hallow_layers: layers(world.hallow_bg()),
         crimson_layers: layers(world.crimson_bg()),
         mushroom_layers: layers(world.mushroom_bg()),
+        forest_sets: std::array::from_fn(|n| layers(world.forest_bg(n).1)),
+        forest_mnt: std::array::from_fn(|n| {
+            world
+                .forest_bg(n)
+                .0
+                .map(|i| sky_tex(atlas, &format!("Background_{i}"), None))
+        }),
+        forest_mnt_anim: [93, 94, 114, 115, 116, 168, 169, 170, 180, 181, 182, 183]
+            .into_iter()
+            .filter_map(|i| sky_tex(atlas, &format!("Background_{i}"), None).map(|t| (i, t)))
+            .collect(),
+        forest_173_frames: [251, 252, 253, 254]
+            .map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         underground_transition: sky_tex(atlas, "Background_1", None),
         underground: sky_tex(atlas, "Background_2", None),
         rock: sky_tex(atlas, "Background_3", None),
@@ -401,7 +407,15 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
         hell_bottom: [185, 186, 187].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         black_tile: sky_tex(atlas, "Black_Tile", None),
         sun: sky_tex(atlas, "Sun", None),
+        sun_eclipse: sky_tex(atlas, "Sun3", None),
+        sun_sunglasses: sky_tex(atlas, "Sun2", None),
+        sunglasses_overlay: sky_tex(atlas, "Extra_280", None),
         moon: std::array::from_fn(|i| sky_tex(atlas, &format!("Moon_{i}"), None)),
+        moon_smiley: sky_tex(atlas, "Moon_Smiley", None),
+        moon_pumpkin: sky_tex(atlas, "Moon_Pumpkin", None),
+        moon_snow: sky_tex(atlas, "Moon_Snow", None),
+        sunflare1: sky_tex(atlas, "Misc/Sunflare/flare1", None),
+        sunflare2: sky_tex(atlas, "Misc/Sunflare/flare2", None),
         stars: (0..4)
             .map(|i| sky_tex(atlas, &format!("Star_{i}"), None))
             .collect(),
@@ -409,46 +423,24 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
     }
 }
 
-pub(crate) fn make_stars(world: &World) -> Vec<StarSprite> {
-    // `Star.SpawnStars` seeds a `FastRandom.CreateWithRandomSeed()` — a fresh
-    // OS-seeded stream per launch (`Star.cs:88`); the port pins it to the world
-    // seed so screenshots stay deterministic.
-    let mut state = world.seed ^ 0xA076_1D64_78BD_642F;
-    let count = next_range(&mut state, 200, 400);
-    (0..count)
-        .map(|_| {
-            // The spawn recipe in its RNG order (`Star.cs:129-152`).
-            let x = next_range(&mut state, 0, 1921) as f32;
-            let y = next_range(&mut state, 0, 1201) as f32;
-            let rotation = next_range(&mut state, 0, 628) as f32 * 0.01;
-            let mut scale = next_range(&mut state, 70, 130) as f32 * 0.006;
-            let tex = next_range(&mut state, 0, 4) as usize;
-            let phase = next_range(&mut state, 60, 101) as f32 * 0.01;
-            let mut twinkle_speed = next_range(&mut state, 30, 110) as f32 * 0.0001;
-            if next_range(&mut state, 0, 2) == 0 {
-                twinkle_speed = -twinkle_speed;
-            }
-            let mut rotation_speed = next_range(&mut state, 5, 50) as f32 * 0.0001;
-            if next_range(&mut state, 0, 2) == 0 {
-                rotation_speed = -rotation_speed;
-            }
-            if next_range(&mut state, 0, 40) == 0 {
-                scale *= 2.0;
-                twinkle_speed *= 0.5;
-                rotation_speed *= 0.5;
-            }
-            StarSprite {
-                x,
-                y,
-                scale,
-                tex,
-                phase,
-                twinkle_speed,
-                rotation,
-                rotation_speed,
-            }
-        })
-        .collect()
+/// The static star field (`make_stars`/`StarSprite`) is retired (W4-g70
+/// lane 8): the live pool lives in [`crate::star_field`] — `Star.Update`
+/// steps the twinkle/rotation per tick, so the draw reads the live values
+/// instead of re-deriving them from `anim_time`.
+
+/// `NextHorizonRenderer.GetCelestialEffectPower`
+/// (`NextHorizonRenderer.cs:311-321`): the flare strength ramps in over the
+/// first 3600 ticks and out over the last 1800 of each half-day.
+pub(crate) fn celestial_effect_power(time: f64, day: bool) -> f32 {
+    let remap = |v: f32, lo: f32, hi: f32, a: f32, z: f32| {
+        a + (z - a) * ((v - lo) / (hi - lo)).clamp(0.0, 1.0)
+    };
+    let t = time as f32;
+    if day {
+        remap(t, 0.0, 3600.0, 0.0, 1.0) * remap(t, 52200.0, 54000.0, 1.0, 0.0)
+    } else {
+        remap(t, 0.0, 3600.0, 0.0, 1.0) * remap(t, 30600.0, 32400.0, 1.0, 0.0)
+    }
 }
 
 /// `DrawClouds_Distant`'s cY (`Main.cs:59682-59703`): the UNSCALED cloud Y
@@ -664,6 +656,53 @@ fn draw_cloud_pass(
     }
 }
 
+/// W4-g70: the far-alpha slot of forest set `n` — `UpdateBGVisibility_BackLayer`
+/// maps styles 10/11/12 to their own slots (`Main.cs:64145-64209`), set 1 to 0.
+fn forest_far_slot(n: usize) -> usize {
+    match n {
+        0 => 0,
+        1 => 10,
+        2 => 11,
+        _ => 12,
+    }
+}
+
+/// W4-g70: resolve one live hill id (`forest_hills[n][row]`) to its sheet:
+/// the `setBG`-time pair first, then the animated families' packed sheets.
+/// `-1` (a style's skipped layer) draws nothing.
+fn forest_hill_tex(
+    sky: &SkyAssets,
+    n: usize,
+    row: usize,
+    hills: &[[i32; 2]; 4],
+) -> Option<BgTex> {
+    let id = hills[n][row];
+    if id < 0 {
+        return None;
+    }
+    sky.forest_mnt[n][row].or_else(|| sky.forest_mnt_anim.get(&id).copied())
+}
+
+/// `DrawSurfaceBG_DrawChangeOverlay` (`Main.cs:61098-61107`): a full-screen
+/// `MagicPixel` quad at `Color.Black * flashPower` — the style-change flash.
+/// `Color.Transparent` (power 0) skips the draw entirely.
+fn draw_change_overlay(r: &mut SpriteRenderer, camera: Vec2, zoom: f32, screen: Vec2, power: f32) {
+    if power <= 0.0 {
+        return;
+    }
+    let white = r.white_uv();
+    super::bg::push_screen(
+        r,
+        camera,
+        zoom,
+        screen,
+        [0.0, 0.0],
+        [screen.x, screen.y],
+        white,
+        [0.0, 0.0, 0.0, power],
+    );
+}
+
 pub(crate) fn draw_sky(
     r: &mut SpriteRenderer,
     camera: Vec2,
@@ -672,7 +711,9 @@ pub(crate) fn draw_sky(
     world: &World,
     cloud_field: &crate::cloud::CloudField,
     sky: &SkyAssets,
-    stars: &[StarSprite],
+    // W4-g70 lane 8: the LIVE star pool (`Star.cs`) — the per-tick twinkle/
+    // rotation/fadeIn/falling state the draw reads.
+    stars: &[crate::star_field::Star],
     surface_px: f32,
     is_day: bool,
     clock_time: f64,
@@ -733,6 +774,38 @@ pub(crate) fn draw_sky(
     // retire sweep; g70's tip adds the SAME param for the celestial dims —
     // ONE param at the merge (same name, same semantics).
     cloud_alpha: f32,
+    // W4-g70: `Main.treeMntBGSet1..4` as `DoUpdate_AnimateBackgrounds` left
+    // them this update — the live hill ids of the four forest sets.
+    forest_hills: &[[i32; 2]; 4],
+    // W4-g70: `WorldGen.BackgroundsCache.GetFlashPower` for the four forest
+    // change overlays (areas 0..3, `DrawSurfaceBG_DrawChangeOverlay(0..3)`).
+    forest_flash: [f32; 4],
+    // W4-g70 lane 8: `SetBackColor`'s `out sunColor`/`out moonColor`
+    // (`Main.cs:61971`), threaded to `DrawSunAndMoon` (`:62092`). The moon is
+    // white outside a blood moon (`:63917-63920`).
+    sun_color: [u8; 3],
+    moon_color: [u8; 3],
+    // `Main.cloudAlpha` (the raw event alpha, NOT `cloudBGAlpha`) — the
+    // celestial dim terms (`Main.cs:62915`/`:62957`) and the star gate.
+    cloud_alpha: f32,
+    // `Main.eclipse` (`Main.cs:1209`) — the Sun3 swap + the horizon kill.
+    eclipse: bool,
+    // `Main.SmoothedMushroomLightInfluence` (`Main.cs:1283`) — the sun's
+    // num12 term and the horizon visibilities.
+    mushroom_influence: f32,
+    // `Main.player[Main.myPlayer].head` (`Player.cs`): the effective head
+    // armour texture id — 12 (Sunglasses) swaps Sun2 in (`Main.cs:62933`).
+    player_head_slot: i16,
+    // `Main.GraveyardVisualIntensity` — the star-field opacity
+    // (`Main.cs:63037-63045`) and the sky's graveyard dim.
+    graveyard: f32,
+    // `Main.SceneMetrics` + the underground style latch (W4-g72): threaded
+    // to `draw_background`'s live style pick (`Main.cs:52823-52841`).
+    metrics: &tr_core::scene::SceneMetrics,
+    ug_back: &mut super::bg_styles::UgBackState,
+    // `Main.shimmerAlpha` — the star dim/recolour (`Main.cs:63047-63050`,
+    // `:63087-63110`).
+    shimmer_alpha: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -860,24 +933,130 @@ pub(crate) fn draw_sky(
             let mut py = s.y / 1200.0 * screen.y + star_bg_top;
             if px < 0.0 {
                 px += screen.x;
+    // `DrawStarsInBackground` (`Main.cs:63030-63058`) + `DrawStar`
+    // (`:63060-63173`), W4-g70 lane 8: the LIVE pool (`crate::star_field`)
+    // with the graveyard opacity, the shimmer dim, the fadeIn fade and the
+    // falling-star trail. Visibility is driven by the sky colour alone —
+    // `255 * (1 - cloudAlpha * atmo) - skyR - 25 <= 0` hides the field —
+    // so it fades out across dawn instead of switching off at a fixed hour.
+    // The remix world always draws (`:63051`'s first arm).
+    let remix_stars = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    let mut star_opacity = 1.0f32;
+    if graveyard > 0.0 {
+        let n2 = 1.0 - graveyard * 1.4;
+        if n2 <= 0.0 {
+            star_opacity = 0.0;
+        } else {
+            star_opacity *= n2;
+        }
+    }
+    // `:63046-63050`: the shimmer dims the sky colour the brightness reads
+    // — XNA's byte multiply (`(byte)(c * 255 * (1 - shimmerAlpha))`).
+    let star_sky = if shimmer_alpha > 0.0 {
+        sky_color.map(|c| ((c * 255.0) * (1.0 - shimmer_alpha)) as u8)
+    } else {
+        sky_color.map(|c| (c * 255.0) as u8)
+    };
+    let sky_r = star_sky[0] as i32;
+    // `Main.cs:62086`: the natural star pass skips at shimmerAlpha == 1
+    // (the artificial pass at `:62203` draws them instead — no port caller).
+    let stars_visible = shimmer_alpha != 1.0
+        && star_opacity > 0.0
+        && (remix_stars || 255.0 * (1.0 - cloud_alpha * atmo) - sky_r as f32 - 25.0 > 0.0);
+    if stars_visible {
+        // `:63113-63117`: the tiny-surface worlds pin bgTopY to 0.
+        let star_top = if world.world_surface <= 30.0 { 0.0 } else { bg_top_y };
+        for (i, s) in stars.iter().enumerate() {
+            if s.hidden {
+                continue;
             }
-            if px > screen.x {
-                px -= screen.x;
+            let Some(st) = sky.stars.get(s.tex).and_then(|t| *t) else {
+                continue;
+            };
+            // `DrawStar`'s greyscale brightness (`Main.cs:63068-63080`):
+            // `(255 - skyChannel - 100) * twinkle * (1 - fadeIn)` per
+            // channel, averaged, ×1.4, capped at 255.
+            let num2 = 1.0 - s.fade_in;
+            let ch = |c: u8| ((255 - c as i32 - 100) as f32 * s.twinkle * num2) as i32;
+            let n3 = ch(star_sky[0]);
+            let n4 = ch(star_sky[1]);
+            let n3 = (n3 + ch(star_sky[2]) + n4) / 3;
+            if n3 <= 0 {
+                continue;
             }
-            if py < 0.0 {
-                py += screen.y;
+            let v = ((n3 as f64 * 1.4) as i32).min(255) as u8;
+            // `:63086`: `color *= starOpacity` — XNA's byte multiply.
+            let vb = ((v as f32 * star_opacity) as i32) as u8;
+            let mut color = [vb, vb, vb, vb];
+            // `:63087-63110`: the shimmer recolour — one channel per index
+            // class scales by twinkle² (the `1 - num*0` factor is a no-op),
+            // lerped by the shimmer alpha; the natural pass then scales by
+            // `1 - shimmerAlpha` (the artificial pass at `:62203` is the
+            // shimmer overlay's own — no port caller yet).
+            if shimmer_alpha > 0.0 {
+                let mut value = color;
+                let t2 = s.twinkle * s.twinkle;
+                match i % 3 {
+                    0 => value[1] = (color[1] as f32 * t2) as u8,
+                    1 => value[2] = (color[2] as f32 * t2) as u8,
+                    _ => value[0] = (color[0] as f32 * t2) as u8,
+                }
+                color = std::array::from_fn(|c| {
+                    (color[c] as f32 + (value[c] as f32 - color[c] as f32) * shimmer_alpha) as u8
+                });
+                let dim = 1.0 - shimmer_alpha;
+                color = color.map(|c| (c as f32 * dim) as u8);
             }
-            if py > screen.y {
-                py -= screen.y;
+            // `Main.cs:63112-63137`: the design-space position mapped onto
+            // the screen and shifted by `sceneArea.bgTopY`; the wrap applies
+            // only to NON-falling stars (`:63119`).
+            let mut px = s.x / 1920.0 * screen.x;
+            let mut py = s.y / 1200.0 * screen.y + star_top;
+            if !s.falling {
+                if px < 0.0 {
+                    px += screen.x;
+                }
+                if px > screen.x {
+                    px -= screen.x;
+                }
+                if py < 0.0 {
+                    py += screen.y;
+                }
+                if py > screen.y {
+                    py -= screen.y;
+                }
             }
-            // `Main.cs:63172`: `tex.Size() * scale * twinkle`, rotated about the
-            // centre; `Star.Update` advances `rotation` by `rotationSpeed` per
-            // tick (`Star.cs:226`). The decompile builds the colour from
-            // `default` and assigns only R/G/B (`Main.cs:63083-63086`) — a zero
-            // alpha would make every star invisible, so the port draws them
-            // fully opaque at the computed brightness (see ANALYSIS.md).
-            let k = s.scale * twinkle;
-            let rot = s.rotation + anim_time * 60.0 * s.rotation_speed;
+            let colorf = color.map(|c| c as f32 / 255.0);
+            // `:63140-63157`: the falling trail — up to 29 ghosts behind
+            // the head at `fallSpeed * j * 0.4`, scale and colour fading
+            // by `1 - j/30`.
+            if s.falling {
+                let n = s.fall_time.min(30);
+                for j in 1..n {
+                    let jf = j as f32;
+                    let fade = 1.0 - jf / 30.0;
+                    let k = s.scale * fade;
+                    let ghost = color.map(|c| (c as f32 * fade) as u8);
+                    push_screen_rot(
+                        r,
+                        camera,
+                        zoom,
+                        screen,
+                        [px - s.fall_speed_x * jf * 0.4, py - s.fall_speed_y * jf * 0.4],
+                        [st.w * k * s.twinkle, st.h * k * s.twinkle],
+                        st.uv,
+                        ghost.map(|c| c as f32 / 255.0),
+                        s.rotation,
+                    );
+                }
+            }
+            // `Main.cs:63172`: `tex.Size() * scale * twinkle`, rotated about
+            // the centre. The decompile builds the colour from `default`
+            // and assigns only R/G/B (`:63083-63086`) — a zero alpha would
+            // make every star invisible under the port's blend, so the
+            // port draws them at the computed brightness with the byte
+            // alpha the `color *=` chain produces (see ANALYSIS.md).
+            let k = s.scale * s.twinkle;
             push_screen_rot(
                 r,
                 camera,
@@ -888,94 +1067,214 @@ pub(crate) fn draw_sky(
                 st.uv,
                 [rgb[0] as f32 / 255.0, rgb[1] as f32 / 255.0, rgb[2] as f32 / 255.0, 1.0],
                 rot,
+                colorf,
+                s.rotation,
             );
         }
     }
 
-    // `DrawSunAndMoon`: the sun and the moon ride the same arc, anchored to
-    // `Main.bgTopY` (`Main.cs:62040`) and drawn only while the camera is near the
-    // surface (`Main.cs:62090`). The original computes both bodies every frame but
-    // draws only the one matching `Main.dayTime`.
+    // `DrawSunAndMoon` (`Main.cs:62848-63028`): the sun and the moon ride the
+    // same arc, anchored to `Main.bgTopY` (`Main.cs:62040`) and drawn only
+    // while the camera is near the surface (`Main.cs:62090`). The original
+    // computes both bodies every frame but draws only the one matching
+    // `Main.dayTime`. W4-g70 lane 8: the event bodies (eclipse Sun3, the
+    // Sunglasses Sun2 + Extra_280 overlay, the Smiley/Pumpkin/Snow moons),
+    // the byte-exact colour chain and the `DrawSun` flare quads.
     if view_top / TILE_PX < world.world_surface as f32 + 2.0 {
         let bg_top_y = tr_core::sky::sky_bg_top_y(view_top, world.world_surface);
-        // `num12`/`num13`: cloud cover fades the second pass; `Main.atmo` is 1 and
-        // the mushroom influence is not modelled.
-        let cloud_dim = (1.0 - storm * 1.5).max(0.0);
-        if is_day {
-            if let Some(sun) = sky.sun {
+        let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+        let drunk = world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK);
+        if is_day && !remix {
+            // `:62910-62913`: the remix world draws no sun in-game.
+            if let Some(sun_tex) = sky.sun {
                 let mut body = tr_core::sky::celestial_body(
                     clock_time,
                     tr_core::sky::DAY_LENGTH,
                     bg_top_y,
-                    sun.w,
+                    sun_tex.w,
                     screen.x,
                 );
                 // `num5 *= 1.1f` in the day branch (`Main.cs:62914`).
                 body.scale *= 1.1;
-                let size = [sun.w * body.scale, sun.h * body.scale];
-                // First pass: the raw sun (white — `color = Color.White` unless an
-                // eclipse is active, which is not modelled).
+                // `num12 = 1f - tempMushroomInfluence - cloudAlpha * 1.5f *
+                // atmo`, floored at 0 (`:62915-62919`).
+                let num12 = (1.0 - mushroom_influence - cloud_alpha * 1.5 * atmo).max(0.0);
+                let byte = |v: f32| (v as i32) as u8;
+                // `:62920-62921`: the two colour passes. `color`'s R is the
+                // flat 255*num12; `color2` rides sunColor with alpha = B.
+                let mut color = [
+                    byte(255.0 * num12),
+                    byte(sun_color[1] as f32 * num12),
+                    byte(sun_color[2] as f32 * num12),
+                    byte(255.0 * num12),
+                ];
+                let mut color2 = [
+                    byte(sun_color[0] as f32 * num12),
+                    byte(sun_color[1] as f32 * num12),
+                    byte(sun_color[2] as f32 * num12),
+                    byte(sun_color[2] as f32 * num12),
+                ];
+                // `:62922-62938`: the plain sun is white; the eclipse swaps
+                // Sun3 in, the Sunglasses head (head == 12) swaps Sun2 +
+                // the Extra_280 overlay. `flag` (either swap) drops the
+                // second pass's alpha to (B-60)*num12 (`:62939-62942`).
+                let mut tex = sun_tex;
+                let mut flag = false;
+                let mut sunglasses = false;
+                if eclipse {
+                    if let Some(t) = sky.sun_eclipse {
+                        tex = t;
+                    }
+                    flag = true;
+                } else {
+                    color = [255, 255, 255, 255];
+                    if player_head_slot == 12 {
+                        if let Some(t) = sky.sun_sunglasses {
+                            tex = t;
+                        }
+                        sunglasses = true;
+                        flag = true;
+                    }
+                }
+                if flag {
+                    color2[3] = byte((sun_color[2] as f32 - 60.0) * num12);
+                }
+                let size = [tex.w * body.scale, tex.h * body.scale];
+                let to_f = |c: [u8; 4]| c.map(|v| v as f32 / 255.0);
                 push_screen_rot(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    [body.x, body.y],
-                    size,
-                    sun.uv,
-                    [1.0, 1.0, 1.0, 1.0],
-                    body.rotation,
+                    r, camera, zoom, screen,
+                    [body.x, body.y], size, tex.uv, to_f(color), body.rotation,
                 );
-                // Second pass: `sunColor` at alpha `sunColor.B` (`Main.cs:62941`).
-                let c = tr_core::sky::sun_color(clock_time);
                 push_screen_rot(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    [body.x, body.y],
-                    size,
-                    sun.uv,
-                    [
-                        c[0] as f32 / 255.0 * cloud_dim,
-                        c[1] as f32 / 255.0 * cloud_dim,
-                        c[2] as f32 / 255.0 * cloud_dim,
-                        c[2] as f32 / 255.0 * cloud_dim,
-                    ],
-                    body.rotation,
+                    r, camera, zoom, screen,
+                    [body.x, body.y], size, tex.uv, to_f(color2), body.rotation,
                 );
+                // `HorizonRenderer.DrawSun` (`Main.cs:62947`,
+                // `NextHorizonRenderer.cs:168-181`): five flare quads at the
+                // sun position — flare1 ×3/×2 at the sunset strength, flare2
+                // ×2/×1.5/×1 at the sunrise strength, all scaled by the
+                // celestial power. The colour is (255,255,255,0) × strength:
+                // under the premultiplied One/OneMinusSrcAlpha blend the
+                // alpha-0 tint leaves the destination alpha untouched while
+                // the tinted texture rgb ADDS — an additive glow, exactly
+                // what the port's shader does with the same factors
+                // (sprite.wgsl's documented convention).
+                let (mut sunset, mut sunrise) = horizon_visibilities(
+                    clock_time, true, atmo, cloud_alpha, mushroom_influence, eclipse,
+                );
+                let celestial = celestial_effect_power(clock_time, true);
+                sunset *= celestial;
+                sunrise *= celestial;
+                if let Some(f1) = sky.sunflare1 {
+                    for (scale, strength) in [(3.0f32, sunset * 0.75), (2.0, sunset * 0.35)] {
+                        push_screen_rot(
+                            r, camera, zoom, screen,
+                            [body.x, body.y],
+                            [f1.w * scale, f1.h * scale],
+                            f1.uv,
+                            [strength, strength, strength, 0.0],
+                            0.0,
+                        );
+                    }
+                }
+                if let Some(f2) = sky.sunflare2 {
+                    for (scale, strength) in
+                        [(2.0f32, sunrise * 0.7 * 0.5), (1.5, sunrise * 0.3 * 0.5), (1.0, sunrise * 0.2 * 0.5)]
+                    {
+                        push_screen_rot(
+                            r, camera, zoom, screen,
+                            [body.x, body.y],
+                            [f2.w * scale, f2.h * scale],
+                            f2.uv,
+                            [strength, strength, strength, 0.0],
+                            0.0,
+                        );
+                    }
+                }
+                // `:62948-62953`: the sunglasses overlay at alpha 100.
+                if sunglasses {
+                    if let Some(ov) = sky.sunglasses_overlay {
+                        push_screen_rot(
+                            r, camera, zoom, screen,
+                            [body.x, body.y], size, ov.uv,
+                            [
+                                color[0] as f32 / 255.0,
+                                color[1] as f32 / 255.0,
+                                color[2] as f32 / 255.0,
+                                100.0 / 255.0,
+                            ],
+                            body.rotation,
+                        );
+                    }
+                }
             }
-        } else if let Some(moon) = sky.moon[world.moon_type.min(8) as usize] {
+        }
+        if !is_day {
+            // `num13 = 1f - cloudAlpha * 1.5f * atmo` (`:62957-62961`);
+            // `moonColor *= num13` is XNA's byte multiply (`:62962`). The
+            // moon colour is white outside a blood moon (`SetBackColor`'s
+            // `:63917-63920` reset, threaded in as `moon_color`).
+            let num13 = (1.0 - cloud_alpha * 1.5 * atmo).max(0.0);
+            let mc = moon_color.map(|c| ((c as f32 * num13) as i32) as u8);
+            // `moonColor *= num13` scales the ALPHA too (XNA's Color*float
+            // multiplies all four channels; the input alpha is 255).
+            let mc4 = [
+                mc[0] as f32 / 255.0,
+                mc[1] as f32 / 255.0,
+                mc[2] as f32 / 255.0,
+                ((255.0 * num13) as i32) as f32 / 255.0,
+            ];
+            // The body geometry always uses `Moon[moonType]`'s width
+            // (`num6`, `:62862`) — the event sheets share the 50 px row.
+            let moon_w = sky.moon[world.moon_type.min(8) as usize].map_or(50.0, |m| m.w);
             let body = tr_core::sky::celestial_body(
                 clock_time,
                 tr_core::sky::NIGHT_LENGTH,
                 bg_top_y,
-                moon.w,
+                moon_w,
                 screen.x,
             );
-            // `new Rectangle(0, width * moonPhase, width, width)`: one phase row.
-            let phase = world.moon_phase.min(7) as f32;
-            let dv = (moon.uv[3] - moon.uv[1]) / 8.0;
-            let v0 = moon.uv[1] + dv * phase;
-            let uv = [moon.uv[0], v0, moon.uv[2], v0 + dv];
-            let c = tr_core::sky::moon_color(clock_time);
-            let size = [moon.w * body.scale, moon.w * body.scale];
-            push_screen_rot(
-                r,
-                camera,
-                zoom,
-                screen,
-                [body.x, body.y],
-                size,
-                uv,
-                [
-                    c[0] as f32 / 255.0 * cloud_dim,
-                    c[1] as f32 / 255.0 * cloud_dim,
-                    c[2] as f32 / 255.0 * cloud_dim,
-                    cloud_dim,
-                ],
-                body.rotation,
-            );
+            // `new Rectangle(0, width * moonPhase, width, width)`: one phase
+            // row (`:62970-62978`). The Smiley is a single whole frame at
+            // rotation `num9/2 + π` (`:62964-62967`).
+            let phase_row = |m: BgTex| {
+                let phase = world.moon_phase.min(7) as f32;
+                let dv = (m.uv[3] - m.uv[1]) / 8.0;
+                let v0 = m.uv[1] + dv * phase;
+                [m.uv[0], v0, m.uv[2], v0 + dv]
+            };
+            let size = [moon_w * body.scale, moon_w * body.scale];
+            if drunk {
+                if let Some(m) = sky.moon_smiley {
+                    push_screen_rot(
+                        r, camera, zoom, screen,
+                        [body.x, body.y],
+                        [m.w * body.scale, m.h * body.scale],
+                        m.uv,
+                        mc4,
+                        body.rotation / 2.0 + std::f32::consts::PI,
+                    );
+                }
+            } else if world.pumpkin_moon {
+                if let Some(m) = sky.moon_pumpkin {
+                    push_screen_rot(
+                        r, camera, zoom, screen,
+                        [body.x, body.y], size, phase_row(m), mc4, body.rotation,
+                    );
+                }
+            } else if world.snow_moon {
+                if let Some(m) = sky.moon_snow {
+                    push_screen_rot(
+                        r, camera, zoom, screen,
+                        [body.x, body.y], size, phase_row(m), mc4, body.rotation,
+                    );
+                }
+            } else if let Some(m) = sky.moon[world.moon_type.min(8) as usize] {
+                push_screen_rot(
+                    r, camera, zoom, screen,
+                    [body.x, body.y], size, phase_row(m), mc4, body.rotation,
+                );
+            }
         }
     }
 
@@ -996,6 +1295,7 @@ pub(crate) fn draw_sky(
     let far_desert = bg_alpha_far[1];
     let far_snow = bg_alpha_far[4];
     let far_ocean = bg_alpha_far[3];
+    // `Main.cs:59327`: `num3 = (0 - (screenPosition.Y - 300)) / (worldSurface * 16)`.
     let magic = (300.0 - view_top) / world_surface_px;
     let sc_adj = bg_scale_adjust(world, view_top, screen.y);
     // `Main.DrawSurfaceBG`: `pushBGTopHack = 30` for the mountain passes, then
@@ -1021,7 +1321,7 @@ pub(crate) fn draw_sky(
     //   6.667 = 1/0.15 (Step1, `Main.cs:59812`) — before the far mountains
     //   5.0   (`Main.cs:59878`) — between the far and near mountain rows
     //   1/parallax[i] per front-tree row (`Main.cs:61304+`, biome fns)
-    //   1.0   (`Main.cs:60186`) — after the last front row
+    //   1.0   (`Main.cs:60186`) — after the Mushroom chain (the last front row)
     //   flush (`Main.cs:59626` `DrawRemainingDepth`) — before the underground
     //   backdrop
     let mut amb_last = f32::INFINITY;
@@ -1142,8 +1442,9 @@ pub(crate) fn draw_sky(
     //
     // `DrawSurfaceBG_BackMountainsStep1`: far mountains, parallax 0.15, scale 2.0,
     // each biome at its `bgAlphaFarBackLayer` value. Vanilla order is 0, 1 (desert),
-    // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4`; our
-    // generator never uses that style.
+    // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4` (the
+    // oasis style, `Main.cs:59850`/`:59906`); the snow mountains come from the
+    // world's `setBG(3)` style and carry their `GetLayerYOffset`.
     // Step1's first act is `DrawToDepth(1f/0.15)` (`Main.cs:59812`): the
     // closest entities (EOC slices above depth 6.667) draw behind the
     // mountains.
@@ -1176,24 +1477,37 @@ pub(crate) fn draw_sky(
         );
     }
     if show_bg {
-        if far_forest > 0.0 {
-            if let Some(far) = sky.far {
-                draw_bg_layer(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    &far,
-                    2.0,
-                    0.15,
-                    magic * 1300.0 + 1090.0 + sc_adj + 30.0,
-                    false,
-                    tint,
-                    far_forest,
-                );
+        // W4-g70: the four forest far hills (`Main.cs:59827-59846`), in the
+        // C#'s order 0, 10, 11, 12 — each at its own `bgAlphaFarBackLayer`
+        // slot, id from the live animated set, `GetLayerYOffset` nudged.
+        // Step1's own `screenPosition.Y < worldSurface*16 + 16` gate
+        // (`:59823`) is tighter than the enclosing +10-tile block.
+        let hills_visible = view_top < world_surface_px + TILE_PX;
+        for n in 0..4 {
+            let alpha = bg_alpha_far[forest_far_slot(n)];
+            if hills_visible && alpha > 0.0 {
+                if let Some(far) = forest_hill_tex(sky, n, 0, forest_hills) {
+                    draw_bg_layer(
+                        r,
+                        camera,
+                        zoom,
+                        screen,
+                        &far,
+                        2.0,
+                        0.15,
+                        magic * 1300.0 + 1090.0 + sc_adj + 30.0
+                            + layer_y_offset(forest_hills[n][0]),
+                        false,
+                        tint,
+                        alpha,
+                    );
+                }
             }
         }
-        if far_desert > 0.0 {
+        // `DrawSurfaceBG_BackMountainsStep1` desert row (`Main.cs:59847-59854`):
+        // `Background_23` is skipped when `WorldGen.desertBG == 4` (the oasis
+        // style brings its own far rows).
+        if far_desert > 0.0 && world.desert_bg_style != 4 {
             if let Some(far) = sky.desert_far_mnt {
                 draw_bg_layer(
                     r,
@@ -1220,13 +1534,17 @@ pub(crate) fn draw_sky(
                     &far,
                     2.0,
                     0.15,
-                    magic * 1300.0 + 1090.0 + sc_adj + 30.0,
+                    magic * 1300.0 + 1090.0 + sc_adj + 30.0
+                        + layer_y_offset(world.snow_mountains()[0]),
                     false,
                     tint,
                     far_snow,
                 );
             }
         }
+        // Step1's corrupt-desert (24), crimson (24 unless crimsonBG == 5) and
+        // hallow-3 (246) rows (`Main.cs:59855-59877`) ride the g70 lane's
+        // far-layer slots 2/5/6; the port's cross-fade never targets them yet.
     }
 
     // `DrawClouds_Closer` (`Main.cs:59663-59680`): `cY = y * (screenHeight / 600)
@@ -1278,11 +1596,15 @@ pub(crate) fn draw_sky(
     }
 
     // `DrawSurfaceBG_BackMountainsStep2`: near mountains, parallax 0.20, scale 2.3,
-    // in vanilla order: forest (0), desert (1), ocean (`Main.oceanBG`,
-    // `Background_28`, 3), snow (4).
+    // in vanilla order: forest set 1 (0), desert (1), ocean (`Main.oceanBG`
+    // from `setBG(7)`, 3), snow (4, `Main.snowMntBG[1]`), then forest sets
+    // 2-4 (10/11/12) — the C# walks 0..6 first and the three extra forest
+    // slots last (`Main.cs:59895-59962`).
     if show_bg {
-        if far_forest > 0.0 {
-            if let Some(near) = sky.near {
+        // Step2's own `+16 px` gate (`Main.cs:59891`), like Step1's.
+        let hills_visible = view_top < world_surface_px + TILE_PX;
+        if hills_visible && far_forest > 0.0 {
+            if let Some(near) = forest_hill_tex(sky, 0, 1, forest_hills) {
                 draw_bg_layer(
                     r,
                     camera,
@@ -1291,14 +1613,17 @@ pub(crate) fn draw_sky(
                     &near,
                     2.3,
                     0.20,
-                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0
+                        + layer_y_offset(forest_hills[0][1]),
                     false,
                     tint,
                     far_forest,
                 );
             }
         }
-        if far_desert > 0.0 {
+        // Step2's desert row skips `Background_22` for desertBG == 4
+        // (`Main.cs:59903-59910`), like Step1's 23.
+        if far_desert > 0.0 && world.desert_bg_style != 4 {
             if let Some(near) = sky.desert_near_mnt {
                 draw_bg_layer(
                     r,
@@ -1317,6 +1642,10 @@ pub(crate) fn draw_sky(
         }
         if far_ocean > 0.0 {
             if let Some(sea) = sky.ocean {
+                // `DrawSurfaceBG_DrawBackMountainsLayer(Main.oceanBG)`
+                // (`Main.cs:59916-59920`): the ocean sheet's `GetLayerYOffset`
+                // (283: -800, 332/340: -25) shifts its top like every other
+                // Step2 row.
                 draw_bg_layer(
                     r,
                     camera,
@@ -1325,7 +1654,8 @@ pub(crate) fn draw_sky(
                     &sea,
                     2.3,
                     0.20,
-                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0
+                        + layer_y_offset(world.ocean_bg()),
                     false,
                     tint,
                     far_ocean,
@@ -1342,11 +1672,35 @@ pub(crate) fn draw_sky(
                     &near,
                     2.3,
                     0.20,
-                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0
+                        + layer_y_offset(world.snow_mountains()[1]),
                     false,
                     tint,
                     far_snow,
                 );
+            }
+        }
+        // W4-g70: forest sets 2-4's near hills (`Main.cs:59939-59962`), each
+        // gated on its own far alpha and `treeMntBGSetN[1] > -1`.
+        for n in 1..4 {
+            let alpha = bg_alpha_far[forest_far_slot(n)];
+            if hills_visible && alpha > 0.0 && forest_hills[n][1] > -1 {
+                if let Some(near) = forest_hill_tex(sky, n, 1, forest_hills) {
+                    draw_bg_layer(
+                        r,
+                        camera,
+                        zoom,
+                        screen,
+                        &near,
+                        2.3,
+                        0.20,
+                        magic * 1400.0 + 1260.0 + sc_adj + 30.0
+                            + layer_y_offset(forest_hills[n][1]),
+                        false,
+                        tint,
+                        alpha,
+                    );
+                }
             }
         }
     }
@@ -1381,6 +1735,18 @@ pub(crate) fn draw_sky(
     // Each active biome's row chain emits its own `DrawToDepth(1f/parallax)`
     // boundaries (`Main.cs:61304+`); the pass threads the tracker so a second
     // cross-fading biome's boundaries no-op like the original's.
+    //
+    // W4-g72 closeout SURFACE-OWNERSHIP cross-note (g71 owns the surface
+    // draw-tables): the five v16-owned variants below (corrupt/jungle/hallow/
+    // crimson/mushroom) read `world.*_bg()` → `surface_bg_texture_ids`
+    // (`WorldGen.setBG` slots 1/2/4/5/8) — the g71-shape style→ids expansion,
+    // already live. The forest/desert/snow/ocean chains are STYLE-0 PINNED
+    // here (`[50,51,52]` / `[21,20,-1]` / `[37,38,39]` / `Background_28`):
+    // their style tables (`SetForestBGSet` slots 0/10/11/12, `setBG` 3/6/7)
+    // are g70/g71's to port — g71's draw-side reads `world.forest_bg(n)` /
+    // `desert_bg_set()[0]` / `snow_bg()` / `ocean_bg()` (its sky.rs), so this
+    // lane does NOT re-port them; the pins lift to those reads at the merge.
+    // See docs/research/64c + ANALYSIS "The surface-bg draw ownership".
     let mut amb_pass = show_bg.then_some(crate::render::bg::AmbiencePass {
         entities: ambience,
         lookups,
@@ -1399,28 +1765,14 @@ pub(crate) fn draw_sky(
         const HACK: f32 = -150.0;
         // Dispatch order is the C# `l` loop's (`Main.cs:59529-59597`).
 
-        // `DrawSurfaceBG_Forest` (`Main.cs:61273-61370`, tree set 1 =
-        // `Background_50..52`): bgScale 1.25/1.31/1.34 (C# 61275) x2 (C# 59329);
-        // bgParallax 0.40/0.43/0.49; tops 1500/1750/2000 (`Main.cs:61277`).
-        // Layer 1 is mirrored horizontally.
-        let forest = front_layers(
-            [50, 51, 52],
-            [
-                (1.25, 0.40, 1800.0, 1500.0),
-                (1.31, 0.43, 1950.0, 1750.0),
-                (1.34, 0.49, 2100.0, 2000.0),
-            ],
-            sky.forest,
-            HACK,
-        );
-        let forest = [
-            forest[0],
-            FrontLayer {
-                flip: true,
-                ..forest[1]
-            },
-            forest[2],
-        ];
+        // `DrawSurfaceBG_Forest` (`Main.cs:61273-61519`) for tree set 1
+        // (`Main.treeBGSet1`, `World.forest_bg_styles[0]`): the row bases,
+        // per-id overrides, top rewrites/nudges and the 51/54 mirror ride
+        // `forest_layers`; the 173 row swaps its drawn sheet to the
+        // `251 + counter/10 % 4` frame (`:61373`).
+        let forest_ids = world.forest_bg(0).1;
+        let frame_173 = sky.forest_173_frames[(forest_173_frame_id(counter) - 251) as usize];
+        let forest = forest_layers(forest_ids, sky.forest_sets[0], HACK, frame_173);
         draw_front_trees(
             r,
             camera,
@@ -1435,6 +1787,8 @@ pub(crate) fn draw_sky(
             amb_pass.as_mut(),
             false,
         );
+        // `DrawSurfaceBG_DrawChangeOverlay(0)` (`Main.cs:59537`).
+        draw_change_overlay(r, camera, zoom, screen, forest_flash[0]);
 
         // `DrawSurfaceBG_Corrupt` (`Main.cs:61109-61218`). Row 1 is mirrored; the
         // `ids[0] == 56` nudge (`:61128`, `:61199`) applies to every row and reads
@@ -1471,16 +1825,20 @@ pub(crate) fn draw_sky(
             false,
         );
 
-        // `DrawSurfaceBG_Desert` (`Main.cs:61019-61096`): two dune layers (21/20),
-        // parallax 0.37/0.49, scale 1.25/1.34, tops 1750/2150.
+        // `DrawSurfaceBG_Desert` (`Main.cs:61019-61096`) on
+        // `Main.desertBackgroundSet.Pure.Backgrounds`: rows gated on `id > 0`,
+        // parallax 0.37/0.49, scale 1.25/1.34, tops 1750/2150 — the oasis
+        // style 4 adds a third row (250) and `SetBackgroundOffsets` replaces
+        // all three rows' magic numbers (`:60444-60461`).
+        let desert_ids = world.desert_bg_set()[0];
         let desert = front_layers(
-            [21, 20, -1],
+            desert_ids,
             [
                 (1.25, 0.37, 1800.0, 1750.0),
                 (1.34, 0.49, 2100.0, 2150.0),
                 (1.34, 0.49, 2100.0, 2150.0),
             ],
-            [sky.desert_far, sky.desert_near, None],
+            [sky.desert_far, sky.desert_near, sky.desert_third],
             HACK,
         );
         draw_front_trees(
@@ -1540,6 +1898,64 @@ pub(crate) fn draw_sky(
             false,
         );
 
+        // `DrawSurfaceBG_GoodEvilDesert` (`Main.cs:60868-60926`, dispatch
+        // `:59573-59577`): front styles 5/14/13 draw the Corrupt/Crimson/
+        // Hallow desert variant when its set `HasAny`, else the 26/27
+        // fallback dunes. The variant arm reuses `DrawSurfaceBG_Desert`
+        // verbatim; the fallback is the same two-row shape with the classic
+        // magic numbers (no `SetBackgroundOffsets` call — 26/27 are not in
+        // the table).
+        let desert_set = world.desert_bg_set();
+        // The C# walks `l` ascending (`Main.cs:59529`), so 5 fires before 13
+        // before 14; only one alpha is non-zero at a time in practice, but the
+        // order is kept verbatim.
+        for (style, variant) in [(5usize, 1usize), (13, 3), (14, 2)] {
+            let alpha = bg_alpha_front[style];
+            if alpha <= 0.0 {
+                continue;
+            }
+            let rows = desert_set[variant];
+            let (ids, texs) = if tr_core::world::desert_variant_has_any(rows) {
+                (
+                    rows,
+                    [
+                        sky.desert_variants[variant - 1][0],
+                        sky.desert_variants[variant - 1][1],
+                        sky.desert_variants[variant - 1][2],
+                    ],
+                )
+            } else {
+                (
+                    [26, 27, -1],
+                    [sky.desert_fallback[0], sky.desert_fallback[1], None],
+                )
+            };
+            let d = front_layers(
+                ids,
+                [
+                    (1.25, 0.37, 1800.0, 1750.0),
+                    (1.34, 0.49, 2100.0, 2150.0),
+                    (1.34, 0.49, 2100.0, 2150.0),
+                ],
+                texs,
+                HACK,
+            );
+            draw_front_trees(
+                r,
+                camera,
+                zoom,
+                screen,
+                &d,
+                alpha,
+                magic,
+                sc_adj,
+                tint,
+                counter,
+                amb_pass.as_mut(),
+                false,
+            );
+        }
+
         // `DrawSurfaceBG_Hallow` (`Main.cs:60777-60866`): the rows are gated on
         // `id > 0` (`:60779`, `:60807`, `:60836`) — no style table yields 0, so
         // the `Option` guard is equivalent; the first row's `SkyManager`
@@ -1579,11 +1995,16 @@ pub(crate) fn draw_sky(
             false,
         );
 
-        // `DrawSurfaceBG_Snow` (`Main.cs:60302-60383`, `Main.snowBG` style 1 =
-        // `Background_37..39`): same parallax/scale/top as the forest, but no
-        // layer is mirrored.
+        // `DrawSurfaceBG_Snow` (`Main.cs:60302-60383`) on `Main.snowBG`: rows
+        // gated on `id >= 0` (styles 2/3/4 are all -1 — the mountains carry
+        // the biome alone), same parallax/scale/top as the forest, no layer
+        // mirrored, `GetLayerYOffset` on every row (263: -700). The C# body
+        // has NO trailing `DrawToDepth(1f)` (that close is Mushroom's,
+        // `:60186`); the stratum waits for the `DrawRemainingDepth` flush
+        // (`Main.cs:59626`).
+        let snow_ids = world.snow_bg();
         let snow = front_layers(
-            [37, 38, 39],
+            snow_ids,
             [
                 (1.25, 0.40, 1800.0, 1500.0),
                 (1.31, 0.43, 1950.0, 1750.0),
@@ -1592,6 +2013,10 @@ pub(crate) fn draw_sky(
             sky.snow_trees,
             HACK,
         );
+        let snow: [FrontLayer; 3] = std::array::from_fn(|i| FrontLayer {
+            top: snow[i].top + layer_y_offset(snow_ids[i]),
+            ..snow[i]
+        });
         draw_front_trees(
             r,
             camera,
@@ -1604,7 +2029,7 @@ pub(crate) fn draw_sky(
             tint,
             counter,
             amb_pass.as_mut(),
-            true,
+            false,
         );
 
         // `DrawSurfaceBG_Crimson` (`Main.cs:60189-60300`): rows gated on
@@ -1700,6 +2125,30 @@ pub(crate) fn draw_sky(
             amb_pass.as_mut(),
             true,
         );
+
+        // W4-g70: `DrawSurfaceBG_Forest` for tree sets 2-4 — the `l` loop's
+        // 10/11/12 arms (`Main.cs:59539-59553`), which run AFTER mushroom
+        // (`l == 9`) in the 0..15 walk, each followed by its
+        // `DrawChangeOverlay(1..3)`. Same chain as set 1.
+        for n in 1..4 {
+            let ids = world.forest_bg(n).1;
+            let rows = forest_layers(ids, sky.forest_sets[n], HACK, frame_173);
+            draw_front_trees(
+                r,
+                camera,
+                zoom,
+                screen,
+                &rows,
+                bg_alpha_front[forest_far_slot(n)],
+                magic,
+                sc_adj,
+                tint,
+                counter,
+                amb_pass.as_mut(),
+                false,
+            );
+            draw_change_overlay(r, camera, zoom, screen, forest_flash[n]);
+        }
     }
 
     // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
@@ -1745,8 +2194,231 @@ pub(crate) fn draw_sky(
             cave_parallax,
             anim_time,
             hell_black_box_bottom,
+            // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`): the port
+            // has no Echo Monolith / see-invisible accessory, so the wall-parallax
+            // gate rides the `TR_SHOW_INVISIBLE` A/B pin (false in normal play).
+            crate::env::show_invisible(),
+            metrics,
+            ug_back,
             shimmer_alpha,
         );
+    }
+}
+
+#[cfg(test)]
+mod w4_g71_surface_variant_tests {
+    use super::*;
+    use crate::render::bg::{bg_offsets, front_layers, layer_y_offset};
+
+    fn sheet() -> BgTex {
+        BgTex {
+            uv: [0.0, 0.0, 0.5, 0.5],
+            w: 100.0,
+            h: 200.0,
+        }
+    }
+
+    #[test]
+    fn snow_style_rows_resolve_the_worlds_set_bg_ids() {
+        // `DrawSurfaceBG_Snow` (`Main.cs:60302-60383`) reads `Main.snowBG`;
+        // the port resolves the same triple through `World::snow_bg`. Style
+        // 7's rows are [267, 266, 268] — NOT the classic [37, 38, 39] order.
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(3, 7);
+        let ids = w.snow_bg();
+        assert_eq!(ids, [267, 266, 268]);
+        let rows = front_layers(
+            ids,
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        // Style 7's `SetBackgroundOffsets` replaces every row's magic numbers
+        // (`Main.cs:60426-60443`) and the scales/parallaxes.
+        assert_eq!((rows[0].scale, rows[0].parallax), (1.25 * 2.0, 0.23));
+        assert_eq!((rows[0].k, rows[0].top), (1700.0, 1300.0 - 150.0));
+        assert_eq!((rows[1].k, rows[1].top), (1950.0, 1600.0 - 150.0));
+        assert_eq!((rows[2].scale, rows[2].parallax), (1.34 * 2.0, 0.41));
+        assert_eq!((rows[2].k, rows[2].top), (2100.0, 1850.0 - 150.0));
+        // Style 6's row 0 (263) carries the -700 GetLayerYOffset on top of
+        // the replaced bgTopY (`Main.cs:60319`).
+        w.set_surface_bg_style(3, 6);
+        let ids6 = w.snow_bg();
+        let rows6 = front_layers(
+            ids6,
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        let top0 = rows6[0].top + layer_y_offset(ids6[0]);
+        assert_eq!(top0, 1450.0 - 150.0 - 700.0);
+        // Styles 2/3/4: all rows -1, nothing draws (the mountains carry it).
+        for style in [2, 3, 4] {
+            w.set_surface_bg_style(3, style);
+            assert_eq!(w.snow_bg(), [-1, -1, -1], "snow style {style}");
+            assert_eq!(w.snow_mountains()[0], 98);
+        }
+        // Style 8: two rows, third -1; the mountains stay 35/36.
+        w.set_surface_bg_style(3, 8);
+        assert_eq!(w.snow_bg(), [299, 298, -1]);
+        assert_eq!(w.snow_mountains(), [35, 36]);
+    }
+
+    #[test]
+    fn desert_pure_rows_follow_the_style_including_the_oasis_third_row() {
+        // `DrawSurfaceBG_Desert` (`Main.cs:61019-61096`) on Pure.Backgrounds.
+        let mut w = World::new("t".into(), 40, 40);
+        // Style 0: [21, 20, -1], no offsets — the caller's rows win.
+        let ids = w.desert_bg_set()[0];
+        assert_eq!(ids, [21, 20, -1]);
+        let rows = front_layers(
+            ids,
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [Some(sheet()), Some(sheet()), None],
+            -150.0,
+        );
+        assert_eq!((rows[0].scale, rows[0].parallax), (2.5, 0.37));
+        assert_eq!((rows[0].k, rows[0].top), (1800.0, 1600.0));
+        assert!(rows[2].tex.is_none());
+        // Style 4 (oasis): [248, 249, 250], all three rows replaced
+        // (`Main.cs:60444-60461`); the third row draws at scale 1.7*2.
+        w.set_surface_bg_style(6, 4);
+        let ids4 = w.desert_bg_set()[0];
+        assert_eq!(ids4, [248, 249, 250]);
+        let rows4 = front_layers(
+            ids4,
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        assert_eq!((rows4[0].k, rows4[0].top), (1800.0, 1100.0 - 150.0));
+        assert_eq!((rows4[1].k, rows4[1].top), (1950.0, 1200.0 - 150.0));
+        assert_eq!((rows4[2].scale, rows4[2].parallax), (1.70 * 2.0, 0.49));
+        assert_eq!((rows4[2].k, rows4[2].top), (2000.0, 1000.0 - 150.0));
+        // Style 2: 207's parallax-only override (0.32), tops kept.
+        w.set_surface_bg_style(6, 2);
+        let ids2 = w.desert_bg_set()[0];
+        assert_eq!(ids2, [207, 208, -1]);
+        assert_eq!(bg_offsets(207), Some((None, Some(0.32), 0, 0)));
+        // Style 52: the four variants' middle rows differ, far rows shared.
+        w.set_surface_bg_style(6, 52);
+        let set = w.desert_bg_set();
+        assert_eq!(set[0], [306, 304, -1]);
+        assert_eq!(set[1], [310, 308, -1]); // Corrupt
+        assert_eq!(set[2], [318, 316, -1]); // Crimson
+        assert_eq!(set[3], [314, 312, -1]); // Hallow
+        // The 51-family middle rows share the (2400, 1900, 0.35) arm.
+        let m = front_layers(
+            set[1],
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        assert_eq!((m[0].k, m[0].top, m[0].parallax), (1800.0, 1550.0, 0.26));
+        assert_eq!((m[1].k, m[1].top, m[1].parallax), (2400.0, 1750.0, 0.35));
+    }
+
+    #[test]
+    fn good_evil_desert_picks_the_variant_or_the_26_27_fallback() {
+        // `DrawSurfaceBG_GoodEvilDesert` (`Main.cs:60868-60884`): style 5 ->
+        // Corrupt, 14 -> Crimson, 13 -> Hallow, each gated on HasAny; the
+        // fallback is 26/27 with the classic magic numbers.
+        let mut w = World::new("t".into(), 40, 40);
+        // Style 0: only Pure has rows — every variant falls back.
+        let set = w.desert_bg_set();
+        for v in 1..4 {
+            assert!(!tr_core::world::desert_variant_has_any(set[v]));
+        }
+        // Style 51: all four sets populated.
+        w.set_surface_bg_style(6, 51);
+        let set = w.desert_bg_set();
+        assert_eq!(set[1], [310, 307, -1]);
+        assert_eq!(set[2], [318, 315, -1]);
+        assert_eq!(set[3], [314, 311, -1]);
+        for v in 1..4 {
+            assert!(tr_core::world::desert_variant_has_any(set[v]));
+        }
+        // The fallback rows keep the caller's scale/parallax/tops (26/27 are
+        // not in SetBackgroundOffsets).
+        let f = front_layers(
+            [26, 27, -1],
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        assert_eq!((f[0].scale, f[0].parallax), (2.5, 0.37));
+        assert_eq!((f[0].k, f[0].top), (1800.0, 1600.0));
+        assert_eq!((f[1].k, f[1].top), (2100.0, 2000.0));
+    }
+
+    #[test]
+    fn ocean_style_resolves_the_single_far_layer_id() {
+        // `DrawSurfaceBG_BackMountainsStep2` draws `Main.oceanBG` at far slot
+        // 3 (`Main.cs:59916-59920`); the id comes from `setBG(7)`.
+        let mut w = World::new("t".into(), 40, 40);
+        assert_eq!(w.ocean_bg(), 28);
+        w.set_surface_bg_style(7, 5);
+        assert_eq!(w.ocean_bg(), 283);
+        // The shimmer ocean sits 800 px higher (`GetLayerYOffset` 283).
+        assert_eq!(layer_y_offset(w.ocean_bg()), -800.0);
+        w.set_surface_bg_style(7, 6);
+        assert_eq!(w.ocean_bg(), 332);
+        assert_eq!(layer_y_offset(332), -25.0);
+        w.set_surface_bg_style(7, 7);
+        assert_eq!(w.ocean_bg(), 340);
+        assert_eq!(layer_y_offset(340), -25.0);
+    }
+
+    #[test]
+    fn jungle_style_six_rows_are_already_ported_verbatim() {
+        // The jungle variant lane (g70's neighbour) is landed: style 6 =
+        // [302, 301, 300] with the 2.25/2.36/2.41 scales and the reversed
+        // row order; this witness pins the seam the g71 tables must not
+        // disturb (`WorldGen.cs:7310-7314`, `Main.cs:60631-60648`).
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(2, 6);
+        let ids = w.jungle_bg();
+        assert_eq!(ids, [302, 301, 300]);
+        let rows = front_layers(
+            ids,
+            [
+                (1.25, 0.40, 1800.0, 1660.0),
+                (1.31, 0.43, 1950.0, 1840.0),
+                (1.34, 0.49, 2100.0, 2060.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        assert_eq!(rows[0].scale, 2.25 * 2.0);
+        assert_eq!((rows[0].k, rows[0].top), (1400.0, 950.0 - 150.0));
+        assert_eq!(rows[1].scale, 2.36 * 2.0);
+        assert_eq!((rows[2].k, rows[2].top), (3000.0, 2050.0 - 150.0));
+        // Row 0 (302) is a 2x2 animated sheet at 15 ticks.
+        assert_eq!(rows[0].frame_step, 15);
     }
 }
 
@@ -1770,20 +2442,38 @@ mod cloud_star_tests {
 
     #[test]
     fn night_light_floor_follows_the_moon_phase() {
-        // `Main.cs:63792-63829`: midnight (t = 16200) with the ramp floor of 5
-        // lifted to the phase minimum — 19 at the full moon, 11 at the new one.
-        let full = color_of_the_skies(16200.0, false, 0);
-        let empty = color_of_the_skies(16200.0, false, 4);
-        let full_byte = full[0] * 255.0;
-        let empty_byte = empty[0] * 255.0;
-        assert!((full_byte - 19.0).abs() < 1e-4, "full moon {full:?}");
-        assert!((empty_byte - 11.0).abs() < 1e-4, "new moon {empty:?}");
+        // `Main.cs:63792-63829` via the byte-space chain (`tr_core::sky_color`):
+        // midnight (t = 16200) with the ramp floor of 5 lifted to the phase
+        // minimum — 19 at the full moon, 11 at the new one.
+        let mut i = tr_core::sky_color::BackColorInputs {
+            time: 16200.0,
+            day: false,
+            moon_phase: 0,
+            blood_moon: false,
+            eclipse: false,
+            eclipse_light: 0.0,
+            cloud_alpha: 0.0,
+            atmo: 1.0,
+            graveyard: 0.0,
+            corruption: 0.0,
+            crimson: 0.0,
+            jungle: 0.0,
+            mushroom: 0.0,
+            lightning: 0.0,
+            remix: false,
+            dont_starve: false,
+            not_retro: true,
+        };
+        assert_eq!(tr_core::sky_color::set_back_color(&i).bg, [19, 19, 19]);
+        i.moon_phase = 4;
+        assert_eq!(tr_core::sky_color::set_back_color(&i).bg, [11, 11, 11]);
         // The right-half mirror: phase 5 quarter floors at 13.
-        let quarter = color_of_the_skies(16200.0, false, 5)[0] * 255.0;
-        assert!((quarter - 13.0).abs() < 1e-4, "quarter {quarter}");
+        i.moon_phase = 5;
+        assert_eq!(tr_core::sky_color::set_back_color(&i).bg, [13, 13, 13]);
         // Daylight ignores the floor.
-        let day = color_of_the_skies(13500.0, true, 4);
-        assert!(day[0] > 0.09, "dawn stays dawn: {day:?}");
+        i.day = true;
+        i.time = 13500.0;
+        assert!(tr_core::sky_color::set_back_color(&i).bg[0] > 23);
     }
 
     #[test]
@@ -1798,42 +2488,48 @@ mod cloud_star_tests {
 
     #[test]
     fn horizon_visibilities_follow_the_day_windows() {
-        // Night: both closed (`NextHorizonRenderer.cs:231-233`).
-        let (sunset, sunrise) = horizon_visibilities(10000.0, false, 1.0, 0.0);
+        // Night: both closed (`NextHorizonRenderer.cs:225-229`).
+        let (sunset, sunrise) = horizon_visibilities(10000.0, false, 1.0, 0.0, 0.0, false);
         assert_eq!((sunset, sunrise), (0.0, 0.0));
         // Noon: the dawn window (0..10800) has closed, the dusk one (43200+)
         // has not opened.
-        let (sunset, sunrise) = horizon_visibilities(27000.0, true, 1.0, 0.0);
+        let (sunset, sunrise) = horizon_visibilities(27000.0, true, 1.0, 0.0, 0.0, false);
         assert_eq!((sunset, sunrise), (0.0, 0.0));
         // Dawn peak (t=1350): the sunrise at half strength, the sunset closed.
-        let (sunset, sunrise) = horizon_visibilities(1350.0, true, 1.0, 0.0);
+        let (sunset, sunrise) = horizon_visibilities(1350.0, true, 1.0, 0.0, 0.0, false);
         assert!(sunset < 1e-6, "sunset={sunset}");
         assert!((sunrise - 0.5).abs() < 1e-6, "sunrise={sunrise}");
         // Dusk peak (t=50400): the sunset at full strength.
-        let (sunset, sunrise) = horizon_visibilities(50400.0, true, 1.0, 0.0);
+        let (sunset, sunrise) = horizon_visibilities(50400.0, true, 1.0, 0.0, 0.0, false);
         assert!((sunset - 1.0).abs() < 1e-6, "sunset={sunset}");
         assert!(sunrise < 1e-6, "sunrise={sunrise}");
         // Cloud cover squares into the factor.
-        let (sunset_clear, _) = horizon_visibilities(50400.0, true, 1.0, 0.0);
-        let (sunset_cloudy, _) = horizon_visibilities(50400.0, true, 1.0, 0.5);
+        let (sunset_clear, _) = horizon_visibilities(50400.0, true, 1.0, 0.0, 0.0, false);
+        let (sunset_cloudy, _) = horizon_visibilities(50400.0, true, 1.0, 0.5, 0.0, false);
         assert!((sunset_cloudy - sunset_clear * 0.25).abs() < 1e-6);
+        // The mushroom factor (`:203`) scales linearly; the eclipse
+        // (`:219-223`) kills both.
+        let (sunset_shroom, _) = horizon_visibilities(50400.0, true, 1.0, 0.0, 0.5, false);
+        assert!((sunset_shroom - sunset_clear * 0.5).abs() < 1e-6);
+        assert_eq!(
+            horizon_visibilities(50400.0, true, 1.0, 0.0, 0.0, true),
+            (0.0, 0.0)
+        );
     }
 
     #[test]
     fn modify_horizon_light_lifts_dark_dawn_toward_the_gradient() {
-        // A dawn-dark sky (25,35,35)/255 with the sunrise at half strength
-        // lifts toward Sunrise_Blue[7] (68,144,149)/255 — the max-channel
-        // blend (`NextHorizonRenderer.cs:183-194`).
-        let mut c = [25.0 / 255.0, 35.0 / 255.0, 35.0 / 255.0];
-        modify_horizon_light(&mut c, 1, true, 1350.0, 1.0, 0.0);
-        let grad = [68.0 / 255.0, 144.0 / 255.0, 149.0 / 255.0];
-        for (got, want) in c.iter().zip(grad) {
-            assert!(*got > 0.09 && *got <= want + 1e-6, "got {got}, want ≤ {want}");
-        }
+        // A dawn-dark sky (25,35,35) with the sunrise at half strength lifts
+        // toward Sunrise_Blue[7] (68,144,149) — the max-channel byte blend
+        // (`NextHorizonRenderer.cs:183-194`): R = 25 + (68-25)*0.5 = 46.5 → 46,
+        // G = 35 + 54.5 = 89.5 → 89, B = 35 + 57 = 92.
+        let mut c = [25u8, 35, 35];
+        modify_horizon_light(&mut c, 1, true, 1350.0, 1.0, 0.0, 0.0, false);
+        assert_eq!(c, [46, 89, 92]);
         // The white noon colour cannot rise (the max blend + zero visibility).
-        let mut noon = [1.0, 1.0, 1.0];
-        modify_horizon_light(&mut noon, 1, true, 27000.0, 1.0, 0.0);
-        assert_eq!(noon, [1.0, 1.0, 1.0]);
+        let mut noon = [255u8, 255, 255];
+        modify_horizon_light(&mut noon, 1, true, 27000.0, 1.0, 0.0, 0.0, false);
+        assert_eq!(noon, [255, 255, 255]);
     }
 
     #[test]
@@ -1844,16 +2540,43 @@ mod cloud_star_tests {
     }
 
     #[test]
+    fn celestial_power_ramps_at_the_half_day_edges() {
+        // `NextHorizonRenderer.cs:311-321`: in over 0..3600, out over the
+        // last 1800 ticks. Noon/midnight sit at full strength.
+        assert_eq!(celestial_effect_power(27000.0, true), 1.0);
+        assert_eq!(celestial_effect_power(16200.0, false), 1.0);
+        assert_eq!(celestial_effect_power(0.0, true), 0.0);
+        assert!((celestial_effect_power(1800.0, true) - 0.5).abs() < 1e-6);
+        // The day's out-ramp: 53100 is the midpoint of 52200..54000.
+        assert!((celestial_effect_power(53100.0, true) - 0.5).abs() < 1e-6);
+        assert_eq!(celestial_effect_power(54000.0, true), 0.0);
+        // The night mirrors it on 30600..32400.
+        assert!((celestial_effect_power(31500.0, false) - 0.5).abs() < 1e-6);
+        assert_eq!(celestial_effect_power(32400.0, false), 0.0);
+    }
+
+    #[test]
+    fn event_moon_sheets_share_the_phase_row_layout() {
+        // `Main.cs:62970-62978`: the event moons draw
+        // `Rectangle(0, width * moonPhase, width, width)` — the same 8-row
+        // slice as Moon_0..8. A synthetic 50x400 sheet exercises the row
+        // math the draw block uses (phase 3 → v spans rows 3..4 of 8).
+        let m = BgTex { uv: [0.0, 0.0, 0.1, 0.8], w: 50.0, h: 400.0 };
+        let dv = (m.uv[3] - m.uv[1]) / 8.0;
+        let v0 = m.uv[1] + dv * 3.0;
+        assert!((dv - 0.1).abs() < 1e-6);
+        assert!((v0 - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
     fn stars_follow_the_spawn_recipe() {
         // `Star.SpawnStars` (`Star.cs:89`): 200..400 stars, reproducible per
-        // seed.
-        let mut w = World::new("t".into(), 4200, 1200);
-        w.seed = 0xDEAD_BEEF;
-        let a = make_stars(&w);
-        let b = make_stars(&w);
-        assert_eq!(a.len(), b.len());
-        assert!((200..400).contains(&a.len()));
-        for (sa, sb) in a.iter().zip(b.iter()) {
+        // seed — the live pool (`crate::star_field`, W4-g70 lane 8).
+        let a = crate::star_field::StarField::new(0xDEAD_BEEF);
+        let b = crate::star_field::StarField::new(0xDEAD_BEEF);
+        assert_eq!(a.stars.len(), b.stars.len());
+        assert!((200..400).contains(&a.stars.len()));
+        for (sa, sb) in a.stars.iter().zip(b.stars.iter()) {
             assert_eq!(sa.x, sb.x);
             assert_eq!(sa.tex, sb.tex);
             assert!(sa.scale > 0.0);
@@ -2068,18 +2791,44 @@ mod cloud_star_tests {
         // 13500 to 37800 (noon is `Color.White`), the 37800..45900 sunset ramp
         // pulls it to (235,120,170) and past 45900 to the (35,35,35) dusk
         // floor. The 0..13500 sunrise ramp runs 25..255 on the red channel.
-        let noon = color_of_the_skies(27000.0, true, 0);
-        assert_eq!(noon, [1.0, 1.0, 1.0], "noon is pure white");
-        let morning = color_of_the_skies(6750.0, true, 0);
-        let byte = |v: f32| v * 255.0;
-        assert!((byte(morning[0]) - 140.0).abs() < 1e-3, "sunrise red");
-        assert!((byte(morning[1]) - 145.0).abs() < 1e-3, "sunrise green");
-        let sunset = color_of_the_skies(45900.0, true, 0);
-        assert!((byte(sunset[0]) - 235.0).abs() < 1e-3, "sunset red");
-        assert!((byte(sunset[1]) - 120.0).abs() < 1e-3, "sunset green");
-        assert!((byte(sunset[2]) - 170.0).abs() < 1e-3, "sunset blue");
-        let dusk = color_of_the_skies(53999.0, true, 0);
-        assert!((byte(dusk[0]) - 35.0).abs() < 0.1, "the dusk floor: {dusk:?}");
+        // W4-g70 merger re-pin: the f32 `color_of_the_skies` approximation
+        // retired onto `tr_core::sky_color::set_back_color`'s byte space —
+        // the same expectations read off `BackColors.bg` (the byte cast
+        // truncates, so the ramp values are exact integers).
+        let at = |time: f64| {
+            let mut i = tr_core::sky_color::BackColorInputs {
+                time,
+                day: true,
+                moon_phase: 0,
+                blood_moon: false,
+                eclipse: false,
+                eclipse_light: 0.0,
+                cloud_alpha: 0.0,
+                atmo: 1.0,
+                graveyard: 0.0,
+                corruption: 0.0,
+                crimson: 0.0,
+                jungle: 0.0,
+                mushroom: 0.0,
+                lightning: 0.0,
+                remix: false,
+                dont_starve: false,
+                not_retro: true,
+            };
+            i.time = time;
+            tr_core::sky_color::set_back_color(&i).bg
+        };
+        let noon = at(27000.0);
+        assert_eq!(noon, [255, 255, 255], "noon is pure white");
+        let morning = at(6750.0);
+        assert_eq!(morning[0], 140, "sunrise red");
+        assert_eq!(morning[1], 145, "sunrise green");
+        let sunset = at(45900.0);
+        assert_eq!(sunset[0], 235, "sunset red");
+        assert_eq!(sunset[1], 120, "sunset green");
+        assert_eq!(sunset[2], 170, "sunset blue");
+        let dusk = at(53999.0);
+        assert!(dusk[0] <= 36, "the dusk floor: {dusk:?}");
         assert!(dusk[0] < sunset[0] && sunset[0] < noon[0], "the day darkens");
     }
 }

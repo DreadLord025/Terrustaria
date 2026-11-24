@@ -118,6 +118,16 @@ pub fn draw(r: &mut SpriteRenderer, lookups: &assets::Lookups, state: &CursorSta
 /// `gamepadHintText` Lang.misc[75] "Sell" string rides the gamepad-only
 /// `BuildCommand` chain, `ItemSlot.cs:4446`, unported).
 pub fn draw_override(
+/// `Main.DrawThickCursor`'s non-gamepad half (`Main.cs:48064-48134`): while
+/// `Main.ThickMouse` (`MouseBorderColor != Color.Transparent`, `Main.cs:2599`)
+/// four `Cursors[11]` ring sprites sit at the cursor plus the offsets
+/// `(0,1), (1,0), (0,-1), (-1,0)` each `+ Vector2.One * 2` (`:48094-48107`),
+/// origin `(2, 2)` (`:48108`), scale `cursorScale * 1.1` (`:48110`), tinted
+/// `MouseBorderColor`. Returns the bonus `(2, 2)` the caller adds to the
+/// cursor sprite (`:48131`); a transparent border colour returns zero and
+/// draws nothing (`:48133`). The gamepad branches (`ShowGamepadCursor`,
+/// `UILinkPointNavigator`) have no port counterpart — keyboard/mouse only.
+pub fn draw_thick(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     state: &CursorState,
@@ -142,6 +152,94 @@ pub fn draw_override(
         [1.0, 1.0, 1.0, 1.0],
     );
     true
+    border_color: [u8; 4],
+) -> Vec2 {
+    let bonus = thick_cursor_bonus(border_color);
+    if bonus == Vec2::ZERO {
+        return bonus;
+    }
+    let Some(rect) = lookups.cursor_thick else {
+        // The ring sheet is missing but the bonus still applies — the C#
+        // returns `(2, 2)` regardless of the asset's load state.
+        return bonus;
+    };
+    let Some(uv) = lookups.hud_uv(Some(&rect)) else {
+        return bonus;
+    };
+    let size = [rect.width as f32, rect.height as f32];
+    let scale = state.scale() * 1.1;
+    let tint = [
+        border_color[0] as f32 / 255.0,
+        border_color[1] as f32 / 255.0,
+        border_color[2] as f32 / 255.0,
+        border_color[3] as f32 / 255.0,
+    ];
+    // The origin `(2, 2)` shifts the top-left by `-2 * scale` per axis.
+    let origin = [2.0 * scale, 2.0 * scale];
+    for off in [[0.0, 1.0], [1.0, 0.0], [0.0, -1.0], [-1.0, 0.0]] {
+        // `vector += Vector2.One * 2f` (`:48107`).
+        let pos = [
+            mouse.x + off[0] + 2.0 - origin[0],
+            mouse.y + off[1] + 2.0 - origin[1],
+        ];
+        r.push_ui_sprite(pos, [size[0] * scale, size[1] * scale], uv, tint);
+    }
+    bonus
+}
+
+/// `Main.DrawThickCursor`'s return value (`Main.cs:48066,48131,48133`): the
+/// `Main.ThickMouse` gate (`MouseBorderColor != Color.Transparent`,
+/// `Main.cs:2599` — XNA `Color !=` compares the packed RGBA, so any non-zero
+/// byte keeps it on) picks the `(2, 2)` bonus or zero.
+pub fn thick_cursor_bonus(border_color: [u8; 4]) -> Vec2 {
+    if border_color == [0, 0, 0, 0] {
+        Vec2::ZERO
+    } else {
+        Vec2::new(2.0, 2.0)
+    }
+}
+
+/// `Main.DrawCursor`'s non-gamepad branch with the thick-cursor bonus
+/// (`Main.cs:48046-48048` + the `DrawThickCursor` call at `:56039`): the same
+/// shadow + sprite as [`draw`], both shifted by the bonus the border pass
+/// returned. The fullscreen map draws through this (`Main.cs:56037-56040`).
+pub fn draw_with_bonus(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    state: &CursorState,
+    mouse: Vec2,
+    bonus: Vec2,
+) {
+    let rect = match lookups.cursor[0] {
+        Some(rect) => rect,
+        None => return,
+    };
+    let uv = match lookups.hud_uv(Some(&rect)) {
+        Some(uv) => uv,
+        None => return,
+    };
+    let size = [rect.width as f32, rect.height as f32];
+    let scale = state.scale();
+    let color = state.color();
+    // `Main.cs:48047`: `mouse + bonus + Vector2.One`.
+    r.push_ui_sprite(
+        [mouse.x + bonus.x + 1.0, mouse.y + bonus.y + 1.0],
+        [size[0] * scale * 1.1, size[1] * scale * 1.1],
+        uv,
+        [
+            color[0] * 0.2,
+            color[1] * 0.2,
+            color[2] * 0.2,
+            color[3] * 0.5,
+        ],
+    );
+    // `Main.cs:48048`: `mouse + bonus`.
+    r.push_ui_sprite(
+        [mouse.x + bonus.x, mouse.y + bonus.y],
+        [size[0] * scale, size[1] * scale],
+        uv,
+        color,
+    );
 }
 
 #[cfg(test)]
@@ -251,5 +349,20 @@ mod tests {
         // cursor — the `draw_override` false arm).
         lk.cursor_overrides[5] = None;
         assert!(lk.cursor_override(10).is_none(), "the sell sheet absent");
+    /// W4-e18 residual census (written, not run - code-only): the thick
+    /// cursor's gate and bonus (`Main.cs:2599`, `:48066-48133`). A fully
+    /// transparent `MouseBorderColor` draws nothing and returns zero; any
+    /// other colour returns the `(2, 2)` bonus — the C# returns it regardless
+    /// of the ring asset's load state. The vanilla default border is
+    /// `Color(64, 64, 64, 64)` (`Main.cs:66514`), so the border is ON.
+    #[test]
+    fn w4_e18_thick_cursor_gate_and_bonus() {
+        // Transparent: no bonus, no sprites.
+        assert_eq!(thick_cursor_bonus([0, 0, 0, 0]), Vec2::ZERO);
+        // The vanilla default border (`Main.cs:66514`).
+        assert_eq!(thick_cursor_bonus([64, 64, 64, 64]), Vec2::new(2.0, 2.0));
+        // A single non-zero byte keeps ThickMouse true (XNA packed compare).
+        assert_eq!(thick_cursor_bonus([0, 0, 0, 1]), Vec2::new(2.0, 2.0));
+        assert_eq!(thick_cursor_bonus([1, 0, 0, 0]), Vec2::new(2.0, 2.0));
     }
 }

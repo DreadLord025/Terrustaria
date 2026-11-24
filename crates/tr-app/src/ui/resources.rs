@@ -463,20 +463,42 @@ pub fn buff_slot_pos(num3: usize) -> [f32; 2] {
 /// wins and the running remainder ceilings into it (`time > 1 day` →
 /// `days + 1`). The `Misc.Short*` keys ride the localized json.
 pub(crate) fn localized_duration(seconds: i32) -> String {
+    localized_duration_full(seconds, true)
+}
+
+/// `Lang.LocalizedDuration` (`Lang.cs:1158-1207`) with
+/// `showAllAvailableUnits: false` and the culture-driven abbreviation
+/// (`:1161`: `abbreviated |= !English.IsActive`) — the map's death-marker
+/// hover calls it `(abbreviated: false, showAllAvailableUnits: false)`
+/// (`Main.cs:55986`), so English reads "2 days" and every other culture
+/// the `Misc.Short*` keys. The ceil-into-the-biggest-unit rule is shared
+/// with [`localized_duration`].
+pub(crate) fn localized_duration_full(seconds: i32, abbreviated: bool) -> String {
+    let abbreviated =
+        abbreviated || crate::lang::active_culture() != tr_core::localization::GameCulture::English;
+    let unit = |n: i64, short: &str, one: &str, many: &str| {
+        if abbreviated {
+            format!("{n} {}", crate::lang::text(short))
+        } else if n == 1 {
+            format!("{n} {one}")
+        } else {
+            format!("{n} {many}")
+        }
+    };
     let t = seconds as i64;
     if t / 86400 > 0 {
         let n = if t > 86400 { t / 86400 + 1 } else { t / 86400 };
-        return format!("{n} {}", crate::lang::text("Misc.ShortDays"));
+        return unit(n, "Misc.ShortDays", "day", "days");
     }
     if t / 3600 > 0 {
         let n = if t > 3600 { t / 3600 + 1 } else { t / 3600 };
-        return format!("{n} {}", crate::lang::text("Misc.ShortHours"));
+        return unit(n, "Misc.ShortHours", "hour", "hours");
     }
     if t / 60 > 0 {
         let n = if t > 60 { t / 60 + 1 } else { t / 60 };
-        return format!("{n} {}", crate::lang::text("Misc.ShortMinutes"));
+        return unit(n, "Misc.ShortMinutes", "minute", "minutes");
     }
-    format!("{t} {}", crate::lang::text("Misc.ShortSeconds"))
+    unit(t, "Misc.ShortSeconds", "second", "seconds")
 }
 
 /// `Main.TryGetBuffTime` (`Main.cs:43290-43305`): the duration-text gate —
@@ -777,6 +799,29 @@ mod s1_e_6_tests {
         assert!(localized_duration(3600).starts_with("1 "), "h: {}", localized_duration(3600));
         assert!(localized_duration(5400).starts_with("2 "), "h+1: {}", localized_duration(5400));
         assert!(localized_duration(86_400 * 2 + 1).starts_with("3 "), "d+1: {}", localized_duration(86_400 * 2 + 1));
+    }
+
+    /// W4-f29 — `Lang.cs:1158-1205` LocalizedDuration's largest-unit +
+    /// round-up, adapted onto `localized_duration_full` (the death hover's
+    /// `(abbreviated: false, showAllAvailableUnits: false)` call,
+    /// `Main.cs:55986`); the process-global LanguageManager takes the
+    /// `test_lock` (the 9f80c5375 convention).
+    #[test]
+    fn w4_f29_localized_duration_largest_unit() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // Under a minute: seconds.
+        assert_eq!(localized_duration_full(45, false), "45 seconds");
+        assert_eq!(localized_duration_full(1, false), "1 second");
+        // Over a minute but under an hour: minutes, rounded up past 1 min.
+        assert_eq!(localized_duration_full(61, false), "2 minutes");
+        assert_eq!(localized_duration_full(60, false), "1 minute");
+        // Over an hour: hours rounded up.
+        assert_eq!(localized_duration_full(3601, false), "2 hours");
+        // Over a day: days rounded up.
+        assert_eq!(localized_duration_full(86_401, false), "2 days");
+        // Abbreviated uses the Misc.Short* keys.
+        assert_eq!(localized_duration_full(45, true), "45 s");
     }
 
     #[test]

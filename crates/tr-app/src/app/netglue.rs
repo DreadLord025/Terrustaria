@@ -683,6 +683,11 @@ impl App {
                 // W4-g83: the replay's kill cascade rides the bare stream
                 // (the message handler runs outside every SwapRandom).
                 let broken_wall = apply_edit(&mut self.world, x, y, kind, tile, self.rngs.global());
+                // `MessageBuffer.cs:1153` runs on the host too (a listen
+                // server is `netMode == 2` but not `dedServ`) — queue before
+                // the dispatch, exactly like the client arm.
+                self.queue_map_tile(x, y);
+                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
                 // S1-E-21i — the `KillWall` replay's sound arm
                 // (`MessageBuffer.cs:1177`): the host is `netMode == 2`, so
                 // the positioned gate refuses before any draw
@@ -5560,6 +5565,16 @@ impl App {
                     Self::apply_tile_block(&mut self.world, &block);
                     self.world.revision = self.world.revision.wrapping_add(1);
                     self.world_key = None;
+                    // `NetMessage.cs:2456`: `DecompressTileBlock`'s tail
+                    // queues the whole rect — the out-of-window catch-up
+                    // refreshes on the next drain instead of waiting for
+                    // the reveal window to revisit it (audit D14).
+                    self.queue_map_area(
+                        block.x,
+                        block.y,
+                        block.w as i32,
+                        block.h as i32,
+                    );
                 } else {
                     self.net_pending_sections.push(*block);
                 }
@@ -5569,9 +5584,17 @@ impl App {
             }
             // `case 20` — a rectangle of tile changes; applied straight into
             // the tiles (the C#'s reader writes the fields, no
-            // KillTile/PlaceTile, `NetMessage.cs:2240-2458`).
+            // KillTile/PlaceTile, `NetMessage.cs:2240-2458`), then
+            // `WorldGen.RangeFrame` over the rect (`MessageBuffer.cs:1438`)
+            // — its map half queues the refresh (audit D14).
             S2c::SectionRange(range) => {
                 self.apply_section_range(&range);
+                self.queue_map_range_frame(
+                    range.x as i32,
+                    range.y as i32,
+                    range.x as i32 + range.w as i32,
+                    range.y as i32 + range.h as i32,
+                );
             }
             // `case 49` — `InitialSpawn` (`MessageBuffer.cs:2447-2453`): the
             // server says "spawn in now"; the client installs the streamed
@@ -5743,6 +5766,11 @@ impl App {
                 // W4-g83: the replay's kill cascade rides the bare stream
                 // (the message handler runs outside every SwapRandom).
                 let broken_wall = apply_edit(&mut self.world, x, y, kind, tile, self.rngs.global());
+                // `MessageBuffer.cs:1153`: the tile-change arm queues its
+                // tile BEFORE the KillTile/PlaceTile dispatch — the map
+                // refreshes on the next drain, reveal window or not.
+                self.queue_map_tile(x, y);
+                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
                 // S1-E-21i — the client's `KillWall` replay plays too
                 // (`MessageBuffer.cs:1177`); the message handler runs
                 // outside every `SwapRandom` (`Main.cs:16895`'s NpcStrike
@@ -7987,6 +8015,32 @@ impl App {
         world.day_time = info.day_time;
         world.moon_phase = info.moon_phase;
         world.moon_type = info.moon_type;
+        // W4-g71/g72 net seam: the host's rolled bg styles land here
+        // (`MessageBuffer.cs:493-505` — the 13 header bytes apply through
+        // `setBG` in the wire order 0,10,11,12,1..9).
+        const BG_SLOTS: [i32; 13] = [0, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        for (slot, style) in BG_SLOTS.iter().zip(info.backgrounds) {
+            world.set_surface_bg_style(*slot, style as i32);
+        }
+        world.ice_back_style = info.ice_back_style;
+        world.jungle_back_style = info.jungle_back_style;
+        world.hell_back_style = info.hell_back_style;
+        world.tree_x = info.tree_x;
+        world.tree_style = [
+            info.tree_style[0] as i32,
+            info.tree_style[1] as i32,
+            info.tree_style[2] as i32,
+            info.tree_style[3] as i32,
+        ];
+        // g72's cave roll (`NetMessage.cs:271-278`; `cave_back_x[3]` stays 0 —
+        // never sent).
+        world.cave_back_x = [info.cave_back_x[0], info.cave_back_x[1], info.cave_back_x[2], 0];
+        world.cave_back_style = [
+            info.cave_back_style[0] as i32,
+            info.cave_back_style[1] as i32,
+            info.cave_back_style[2] as i32,
+            info.cave_back_style[3] as i32,
+        ];
         world.blood_moon = info.blood_moon;
         world.sundial_cooldown = info.sundial_cooldown;
         world.moondial_cooldown = info.moondial_cooldown;
@@ -8019,6 +8073,10 @@ impl App {
         self.liquids
             .set_reduced_max_liquids(self.settings.reduced_max_liquids);
         self.map = Some(map::WorldMap::new(&self.world));
+        // `WorldGen.cs:7150`: the fresh world's section grid replaces the
+        // previous one — the reveal sweep restarts from the new centre.
+        self.section_manager =
+            crate::map_sections::MapSections::new(self.world.width, self.world.height);
         self.npcs.clear();
         self.items.clear();
         // `NPC.ClearAll` (`NPC.cs:8369`) — the pending-damage queue clears
@@ -8150,6 +8208,10 @@ impl App {
             // `Main.GameMode` — the port has no mode byte yet; classic is 0.
             game_mode: 0,
             unique_id: w.unique_id,
+            // `Main.GameMode` (W4-f45): the world's difficulty byte
+            // (`NetMessage.cs:243`'s `(byte)Main.GameMode`).
+            game_mode: w.game_mode as u8,
+            unique_id: [0; 16],
             // `Main.ActiveWorldFileData.WorldGeneratorVersion` — the port's
             // generator version lives in the world seed's place; the save
             // format's version is the closest port-side marker (M6-NET-2
@@ -8171,6 +8233,48 @@ impl App {
             tree_style: [0; 4],
             cave_back_x: [0; 3],
             cave_back_style: [0; 4],
+            // W4-g71/g72 net seam: the rolled bg styles ride the `7 WorldInfo`
+            // header (`NetMessage.cs:245-260`). The 13 bytes are treeBG1..4,
+            // corrupt/jungle/snow/hallow/crimson/desert/ocean, mushroom,
+            // underworld; ice/jungle/hell back styles follow as singles.
+            backgrounds: [
+                w.forest_bg_styles[0],
+                w.forest_bg_styles[1],
+                w.forest_bg_styles[2],
+                w.forest_bg_styles[3],
+                w.corrupt_bg_style,
+                w.jungle_bg_style,
+                w.snow_bg_style,
+                w.hallow_bg_style,
+                w.crimson_bg_style,
+                w.desert_bg_style,
+                w.ocean_bg_style,
+                w.mushroom_bg_style,
+                w.underworld_bg_style,
+            ],
+            ice_back_style: w.ice_back_style,
+            jungle_back_style: w.jungle_back_style,
+            hell_back_style: w.hell_back_style,
+            // W4-f45: the wind target + numClouds are World-owned now
+            // (`WorldFile.cs:1328`, `NetMessage.cs:276`'s `(byte)Main.numClouds`).
+            wind_speed_target: w.wind_speed_target,
+            num_clouds: w.num_clouds as u8,
+            tree_x: [w.tree_x[0], w.tree_x[1], w.tree_x[2]],
+            tree_style: [
+                w.tree_style[0] as u8,
+                w.tree_style[1] as u8,
+                w.tree_style[2] as u8,
+                w.tree_style[3] as u8,
+            ],
+            // g72's cave roll (`NetMessage.cs:271-278`): the three boundaries
+            // as i32 (`cave_back_x[3]` is never sent) + the four style bytes.
+            cave_back_x: [w.cave_back_x[0], w.cave_back_x[1], w.cave_back_x[2]],
+            cave_back_style: [
+                w.cave_back_style[0] as u8,
+                w.cave_back_style[1] as u8,
+                w.cave_back_style[2] as u8,
+                w.cave_back_style[3] as u8,
+            ],
             tree_tops: [0; net::TREE_TOPS_BYTES],
             // `NetMessage.cs:281-284`: `!raining` forces the wire 0.
             max_raining: if self.rain.is_raining() {
@@ -8196,6 +8300,14 @@ impl App {
             extra_spawn_points: Vec::new(),
             dungeon_x: 0,
             dungeon_y: 0,
+            sandstorm_severity: 0.0,
+            // W4-f45: the extra respawn anchors are World-owned
+            // (`ExtraSpawnPointManager.Write`, the c46 lane).
+            extra_spawn_points: w.extra_spawn_points.clone(),
+            // W4-f45: the dungeon anchor is World-owned now (`WorldFile.cs:
+            // 1279-1280`); the wire carries it as the C#'s i16 pair.
+            dungeon_x: w.dungeon_x as i16,
+            dungeon_y: w.dungeon_y as i16,
         }
     }
 
@@ -10871,6 +10983,12 @@ fn npc_seed(
         => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // W4-d42 - the roster's flyers seed in the open air (the net
         // state overwrites the position below).
+        // W4-d11 DOC-SWEEP — the BloodSquid (619, noGravity aiStyle 5): the
+        // hover ctor's open-air seed (the Drippler precedent); the 813 tear's
+        // spawn intent resolves through `Npc::new` in the world-sim drain,
+        // this arm serves the net join. The d42 grouped arm below already
+        // supplies the identical `spawn_hover` seed, so d11's arm de-dupes
+        // onto it (no second, unreachable BloodSquid arm).
         crate::npc::NpcKind::BloodNautilus
         | crate::npc::NpcKind::BloodSquid
         => {
@@ -20241,5 +20359,74 @@ mod w4_g52_relay_tests {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
         }
         assert!(!client_app.net_npcs.contains_key(&199));
+    }
+}
+
+#[cfg(test)]
+mod w4_g71_bg_net_tests {
+    //! W4-g71/g72 net seam: the rolled surface + cave bg styles ride the
+    //! `7 WorldInfo` header (`NetMessage.cs:245-278`), the client's install
+    //! restores them through `setBG` (`MessageBuffer.cs:493-505`) and the
+    //! cave arrays (`cave_back_x[3]` stays 0 — never sent). WRITTEN NOT RUN
+    //! (code-only lane).
+
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::ui::save_list::{PlayerEntry, WorldEntry};
+
+    #[test]
+    // The g72 `the_world_info_header_carries_the_cave_roll` witness folds
+    // into this superset (the keep-one — the cave-roll asserts ride below).
+    fn the_world_info_header_carries_the_bg_rolls() {
+        let mut host = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        host.world.forest_bg_styles = [2, 3, 4, 5];
+        host.world.corrupt_bg_style = 51;
+        host.world.jungle_bg_style = 6;
+        host.world.snow_bg_style = 7;
+        host.world.hallow_bg_style = 4;
+        host.world.crimson_bg_style = 2;
+        host.world.desert_bg_style = 52;
+        host.world.ocean_bg_style = 1;
+        host.world.mushroom_bg_style = 3;
+        host.world.underworld_bg_style = 2;
+        host.world.tree_x = [11, 22, 33];
+        host.world.tree_style = [1, 2, 3, 4];
+        host.world.cave_back_x = [120, 240, 290, 9]; // [3] must NOT be sent
+        host.world.cave_back_style = [3, 1, 7, 5];
+        host.world.ice_back_style = 2;
+        host.world.jungle_back_style = 1;
+        host.world.hell_back_style = 2;
+        let info = host.world_info();
+        assert_eq!(info.backgrounds, [2, 3, 4, 5, 51, 6, 7, 4, 2, 52, 1, 3, 2]);
+        assert_eq!(info.tree_x, [11, 22, 33]);
+        assert_eq!(info.tree_style, [1, 2, 3, 4]);
+        assert_eq!(info.cave_back_x, [120, 240, 290]);
+        assert_eq!(info.cave_back_style, [3, 1, 7, 5]);
+        assert_eq!(
+            (info.ice_back_style, info.jungle_back_style, info.hell_back_style),
+            (2, 1, 2)
+        );
+        // The install path restores every roll onto the fresh client world.
+        let mut client = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        client.net_info = Some(info);
+        assert!(client.client_install_world(Vec::new()));
+        assert_eq!(client.world.forest_bg_styles, [2, 3, 4, 5]);
+        assert_eq!(client.world.corrupt_bg_style, 51);
+        assert_eq!(client.world.snow_bg_style, 7);
+        assert_eq!(client.world.desert_bg_style, 52);
+        assert_eq!(client.world.ocean_bg_style, 1);
+        assert_eq!(client.world.underworld_bg_style, 2);
+        assert_eq!(client.world.tree_x, [11, 22, 33]);
+        assert_eq!(client.world.tree_style, [1, 2, 3, 4]);
+        assert_eq!(client.world.cave_back_x, [120, 240, 290, 0]);
+        assert_eq!(client.world.cave_back_style, [3, 1, 7, 5]);
+        assert_eq!(
+            (
+                client.world.ice_back_style,
+                client.world.jungle_back_style,
+                client.world.hell_back_style
+            ),
+            (2, 1, 2)
+        );
     }
 }

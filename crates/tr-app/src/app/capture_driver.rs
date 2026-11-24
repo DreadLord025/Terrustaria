@@ -187,14 +187,14 @@ impl App {
             .player
             .as_ref()
             .map_or(self.camera.x, |p| p.x + crate::player::WIDTH * 0.5);
-        // `Main.treeX` is unported (the `.wld` reader skips it); [0;3]
-        // reproduces the no-treeX fall-through (CaptureBiome.cs:206-222).
+        // `Main.treeX` is World-owned since W4-g70 (the `.wld` reader loads
+        // it); generated worlds keep the `WorldGen.Reset` maxTilesX values.
         let biome = crate::capture::CaptureBiome::get_capture_biome(
             settings.biome_choice_index,
             bg_style,
             water_style,
             player_center_x,
-            [0; 3],
+            self.world.tree_x,
         );
         let capture_settings = CaptureSettings {
             area,

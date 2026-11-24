@@ -170,22 +170,31 @@ pub fn load_world_sheets(
     }
 
     // The surface-background layer sheets of *this* world's own style variants
-    // (`Main.corruptBG`/`jungleBG`/`hallowBG`/`crimsonBG`/`mushroomBG`, filled by
-    // `WorldGen.setBG`). They belong in the world half: which `Background_<id>`
-    // files exist depends on the world's rolled styles, and the whole 95-sheet
-    // variant set is ~300 MB — every world packs only its own five styles.
-    // `-1` is a layer the C# never draws, so no sheet is packed for it.
-    let mut bg_ids: Vec<i32> = [
-        world.corrupt_bg(),
-        world.jungle_bg(),
-        world.hallow_bg(),
-        world.crimson_bg(),
-        world.mushroom_bg(),
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|&id| id >= 0)
-    .collect();
+    // (`Main.corruptBG`/`jungleBG`/`snowBG`/`hallowBG`/`crimsonBG`/`desertBG`/
+    // `oceanBG`/`mushroomBG`, filled by `WorldGen.setBG`). They belong in the
+    // world half: which `Background_<id>` files exist depends on the world's
+    // rolled styles, and the whole variant set is ~300 MB — every world packs
+    // only its own eight styles. `-1` is a layer the C# never draws, so no
+    // sheet is packed for it.
+    let mut bg_ids = world_bg_sheet_ids(world);
+    // W4-g70: the four forest sets' own sheets (`SetForestBGSet` ids — tree
+    // lines AND hills). The animated hill families (94/114-116, 180-183) and
+    // the far-row swaps (168-170) are packed whole so the update-side
+    // animation can swap ids without a re-pack; the 173 tree line's four
+    // draw-time frames (251..254, `Main.cs:61371-61376`) ride along too.
+    for n in 0..4 {
+        let (mnt, tree) = world.forest_bg(n);
+        bg_ids.extend(mnt.into_iter().chain(tree).filter(|&id| id >= 0));
+        if mnt[1] == 94 {
+            bg_ids.extend([114, 115, 116, 168, 169, 170]);
+        }
+        if (180..=183).contains(&mnt[1]) {
+            bg_ids.extend([181, 182, 183]);
+        }
+        if tree[0] == 173 {
+            bg_ids.extend([251, 252, 253, 254]);
+        }
+    }
     bg_ids.sort_unstable();
     bg_ids.dedup();
     let bg_images: Vec<(i32, Result<AtlasImage>)> = bg_ids
@@ -220,6 +229,152 @@ pub fn load_world_sheets(
     }
 
     Ok(images)
+}
+
+/// The sorted, deduped `Background_<id>` sheet ids the world's own surface
+/// styles ask for (`load_world_sheets`'s bg half). The eight biome variants +
+/// the desert variant rows + the snow mountains + the ocean id; `-1` layers
+/// (the C# never draws them) are dropped. Extracted so the atlas budget guard
+/// ([`fit_bg_styles_to_atlas`]) can recompute the set after a style revert.
+pub(crate) fn world_bg_sheet_ids(world: &World) -> Vec<i32> {
+    let desert = world.desert_bg_set();
+    let mut ids: Vec<i32> = [
+        world.corrupt_bg(),
+        world.jungle_bg(),
+        world.snow_bg(),
+        world.hallow_bg(),
+        world.crimson_bg(),
+        desert[0],
+        desert[1],
+        desert[2],
+        desert[3],
+        world.mushroom_bg(),
+    ]
+    .into_iter()
+    .flatten()
+    .chain(world.snow_mountains())
+    .chain([world.ocean_bg()])
+    .filter(|&id| id >= 0)
+    .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+/// The eight biome style bytes the atlas budget guard reverts (the `setBG`
+/// 1..8 slots, in slot order). A lightweight snapshot — the guard trials
+/// reverts on this copy, never the whole `World` (the tile grid is megabytes).
+#[derive(Clone, Copy)]
+pub(crate) struct BgStyleBytes {
+    pub corrupt: u8,
+    pub jungle: u8,
+    pub snow: u8,
+    pub hallow: u8,
+    pub crimson: u8,
+    pub desert: u8,
+    pub ocean: u8,
+    pub mushroom: u8,
+}
+
+impl BgStyleBytes {
+    /// Snapshot the world's eight biome style bytes.
+    pub(crate) fn from_world(world: &World) -> Self {
+        Self {
+            corrupt: world.corrupt_bg_style,
+            jungle: world.jungle_bg_style,
+            snow: world.snow_bg_style,
+            hallow: world.hallow_bg_style,
+            crimson: world.crimson_bg_style,
+            desert: world.desert_bg_style,
+            ocean: world.ocean_bg_style,
+            mushroom: world.mushroom_bg_style,
+        }
+    }
+
+    /// The sorted, deduped bg sheet ids for these style bytes (the same set
+    /// `world_bg_sheet_ids` computes from a `World`).
+    fn sheet_ids(&self) -> Vec<i32> {
+        let desert = crate::world::desert_bg_set(self.desert as i32);
+        let mut ids: Vec<i32> = [
+            crate::world::surface_bg_texture_ids(1, self.corrupt as i32).unwrap(),
+            crate::world::surface_bg_texture_ids(2, self.jungle as i32).unwrap(),
+            crate::world::surface_bg_texture_ids(3, self.snow as i32).unwrap(),
+            crate::world::surface_bg_texture_ids(4, self.hallow as i32).unwrap(),
+            crate::world::surface_bg_texture_ids(5, self.crimson as i32).unwrap(),
+            desert[0],
+            desert[1],
+            desert[2],
+            desert[3],
+            crate::world::surface_bg_texture_ids(8, self.mushroom as i32).unwrap(),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(crate::world::snow_mountain_texture_ids(self.snow as i32))
+        .chain([crate::world::ocean_bg_texture_id(self.ocean as i32)])
+        .filter(|&id| id >= 0)
+        .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// Revert one `setBG` slot (1..8) to slot-0.
+    fn revert(&mut self, slot: i32) {
+        match slot {
+            1 => self.corrupt = 0,
+            2 => self.jungle = 0,
+            3 => self.snow = 0,
+            4 => self.hallow = 0,
+            5 => self.crimson = 0,
+            6 => self.desert = 0,
+            7 => self.ocean = 0,
+            8 => self.mushroom = 0,
+            _ => {}
+        }
+    }
+}
+
+/// The eight biome style slots the atlas budget guard can revert to slot-0,
+/// in a FIXED order (the C# `setBG` slot order 1..8). The forest tree sets
+/// (0/10/11/12) and the underworld (9) are NOT reverted here — g70/g72 own
+/// their draw sides and their sheets are not in the surface-bg world half.
+const BG_BUDGET_SLOTS: [i32; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+
+/// The atlas budget guard (W4-g71 wiring): a rolled non-default surface style
+/// can push the world-half `Background_<id>` sheets past the 8192 px strict-GPU
+/// bound (the style-0 baseline packs ~7847 px; non-default styles add 336–1503
+/// px, measured — research/92 §2). Rather than overflow, revert the offending
+/// biome styles to slot-0 (the classic look) until the set fits.
+///
+/// Deterministic + greedy: try the full rolled set first; if it overflows,
+/// revert the slots one at a time in `BG_BUDGET_SLOTS` order, recomputing the
+/// sheet set after each, until the packed height fits. Returns the list of
+/// reverted `setBG` slots (empty when the rolled set already fits). The caller
+/// applies the reverts to the `World` and rebuilds the atlas — the same
+/// revert-then-repack the C# avoids by drawing surface bgs outside the tile
+/// atlas (the S1-G-13 background-target family, the long-term fix).
+///
+/// `pack_height` is the skyline packer's height for a candidate bg-id set
+/// (the caller closes over the static half + the real packer). Pure over its
+/// inputs — no RNG, no global state.
+pub(crate) fn fit_bg_styles_to_atlas(
+    styles: BgStyleBytes,
+    pack_height: impl Fn(&[i32]) -> u32,
+    max_height: u32,
+) -> Vec<i32> {
+    let mut reverted = Vec::new();
+    let mut trial = styles;
+    if pack_height(&trial.sheet_ids()) <= max_height {
+        return reverted;
+    }
+    for slot in BG_BUDGET_SLOTS {
+        trial.revert(slot);
+        reverted.push(slot);
+        if pack_height(&trial.sheet_ids()) <= max_height {
+            break;
+        }
+    }
+    reverted
 }
 
 /// `Images/Misc/MoonExplosion/*` sheet names, in the order
@@ -273,12 +428,31 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Background_28",
         "Background_21",
         "Background_20",
-        // Desert mountain layers behind the dunes (`DrawSurfaceBG_BackMountainsStep1/2`).
+        // Desert mountain layers behind the dunes (`DrawSurfaceBG_BackMountainsStep1/2`)
+        // and the GoodEvilDesert fallback dunes (`Main.cs:60885-60925`).
         "Background_23",
         "Background_22",
+        "Background_26",
+        "Background_27",
         "Background_112",
         "Background_113",
         "Sun",
+        // `DrawSunAndMoon`'s event suns (`Main.cs:62930-62937`): Sun3 the
+        // eclipse sun, Sun2 the Sunglasses head (head == 12) sun; Extra_280
+        // the sunglasses overlay (`:62950`). W4-g70 lane 8.
+        "Sun2",
+        "Sun3",
+        "Extra_280",
+        // The event moons (`Main.cs:62964-62975`): the drunk seed's Smiley,
+        // the Pumpkin Moon and the Frost Moon sheets (50x400 phase rows like
+        // Moon_0..8; Smiley is one frame).
+        "Moon_Smiley",
+        "Moon_Pumpkin",
+        "Moon_Snow",
+        // `NextHorizonRenderer.DrawSun`'s flare sheets (`:176-180`,
+        // `Images/Misc/Sunflare/flare1/flare2`).
+        "Misc/Sunflare/flare1",
+        "Misc/Sunflare/flare2",
         "Moon_0",
         "Moon_1",
         "Moon_2",
@@ -514,6 +688,28 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_49",
         "Extra_98",
         "FlameRing",
+        // W4-d13: the 650 Suspicious Looking Tentacle's spelunker-pointer
+        // sprite (`TextureAssets.Extra[66]`, `Main.cs:34025`) — the draw
+        // arm behind the pet's generic sprite (`:34026`).
+        "Extra_66",
+        // W4-d16 — the kite tail sheets (`Main.DrawKite`, `Main.cs:37137`/
+        // `:37164-37329`): the stock `Extra[103]` plus the per-kind arms
+        // (104 wyvern, 132/133/135-140/144-148).
+        "Extra_103",
+        "Extra_104",
+        "Extra_132",
+        "Extra_133",
+        "Extra_135",
+        "Extra_136",
+        "Extra_137",
+        "Extra_138",
+        "Extra_139",
+        "Extra_140",
+        "Extra_144",
+        "Extra_145",
+        "Extra_146",
+        "Extra_147",
+        "Extra_148",
         // S1-G-1 wave D: the pylon crystal (`TextureAssets.Extra[181]`,
         // `TileDrawing.cs:8656`), the master-trophy relic (`Extra[198]`,
         // `:8612`) and the void lens's selection mask (`Extra[93]`,
@@ -871,6 +1067,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // sheets it fills them with — one per town NPC the port ships
         // (`NPC.TypeToDefaultHeadIndex`, `NPC.cs:7510-7553`).
         "Inventory_Back11",
+        // `TextureAssets.NpcHead[0..NPCHeadID.Count]` (`AssetInitializer.cs:406-409`):
+        // the full town-head range. The housing page and the map's town-head
+        // overlay (`Main.DrawNPCHeadFriendly`, `Main.cs:56553`) both index it by
+        // the vanilla head id; the shimmer variants (54-80) and the pet heads
+        // (27-53) ride the same array, so pack the whole set.
+        "NPC_Head_0",
         "NPC_Head_1",
         "NPC_Head_2",
         "NPC_Head_3",
@@ -882,16 +1084,119 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_9",
         "NPC_Head_10",
         "NPC_Head_11",
+        "NPC_Head_12",
+        "NPC_Head_13",
         "NPC_Head_14",
         "NPC_Head_15",
+        "NPC_Head_16",
         "NPC_Head_17",
+        "NPC_Head_18",
+        "NPC_Head_19",
         "NPC_Head_20",
         "NPC_Head_21",
         "NPC_Head_22",
         "NPC_Head_23",
         "NPC_Head_24",
         "NPC_Head_25",
+        "NPC_Head_26",
+        "NPC_Head_27",
+        "NPC_Head_28",
+        "NPC_Head_29",
+        "NPC_Head_30",
+        "NPC_Head_31",
+        "NPC_Head_32",
+        "NPC_Head_33",
+        "NPC_Head_34",
+        "NPC_Head_35",
+        "NPC_Head_36",
+        "NPC_Head_37",
+        "NPC_Head_38",
+        "NPC_Head_39",
+        "NPC_Head_40",
+        "NPC_Head_41",
+        "NPC_Head_42",
+        "NPC_Head_43",
+        "NPC_Head_44",
         "NPC_Head_45",
+        "NPC_Head_46",
+        "NPC_Head_47",
+        "NPC_Head_48",
+        "NPC_Head_49",
+        "NPC_Head_50",
+        "NPC_Head_51",
+        "NPC_Head_52",
+        "NPC_Head_53",
+        "NPC_Head_54",
+        "NPC_Head_55",
+        "NPC_Head_56",
+        "NPC_Head_57",
+        "NPC_Head_58",
+        "NPC_Head_59",
+        "NPC_Head_60",
+        "NPC_Head_61",
+        "NPC_Head_62",
+        "NPC_Head_63",
+        "NPC_Head_64",
+        "NPC_Head_65",
+        "NPC_Head_66",
+        "NPC_Head_67",
+        "NPC_Head_68",
+        "NPC_Head_69",
+        "NPC_Head_70",
+        "NPC_Head_71",
+        "NPC_Head_72",
+        "NPC_Head_73",
+        "NPC_Head_74",
+        "NPC_Head_75",
+        "NPC_Head_76",
+        "NPC_Head_77",
+        "NPC_Head_78",
+        "NPC_Head_79",
+        "NPC_Head_80",
+        // `TextureAssets.NpcHeadBoss[0..40]` (`AssetInitializer.cs:410-413`):
+        // the boss-head overlay sheets (`Main.DrawNPCHeadBoss`,
+        // `Main.cs:56562`), indexed by `GetBossHeadTextureIndex`
+        // (`NPCID.Sets.BossHeadTextures`, `NPCID.cs:10479`).
+        "NPC_Head_Boss_0",
+        "NPC_Head_Boss_1",
+        "NPC_Head_Boss_2",
+        "NPC_Head_Boss_3",
+        "NPC_Head_Boss_4",
+        "NPC_Head_Boss_5",
+        "NPC_Head_Boss_6",
+        "NPC_Head_Boss_7",
+        "NPC_Head_Boss_8",
+        "NPC_Head_Boss_9",
+        "NPC_Head_Boss_10",
+        "NPC_Head_Boss_11",
+        "NPC_Head_Boss_12",
+        "NPC_Head_Boss_13",
+        "NPC_Head_Boss_14",
+        "NPC_Head_Boss_15",
+        "NPC_Head_Boss_16",
+        "NPC_Head_Boss_17",
+        "NPC_Head_Boss_18",
+        "NPC_Head_Boss_19",
+        "NPC_Head_Boss_20",
+        "NPC_Head_Boss_21",
+        "NPC_Head_Boss_22",
+        "NPC_Head_Boss_23",
+        "NPC_Head_Boss_24",
+        "NPC_Head_Boss_25",
+        "NPC_Head_Boss_26",
+        "NPC_Head_Boss_27",
+        "NPC_Head_Boss_28",
+        "NPC_Head_Boss_29",
+        "NPC_Head_Boss_30",
+        "NPC_Head_Boss_31",
+        "NPC_Head_Boss_32",
+        "NPC_Head_Boss_33",
+        "NPC_Head_Boss_34",
+        "NPC_Head_Boss_35",
+        "NPC_Head_Boss_36",
+        "NPC_Head_Boss_37",
+        "NPC_Head_Boss_38",
+        "NPC_Head_Boss_39",
         "Heart",
         "Bubble",
         // `TextureAssets.Flame` (`AssetInitializer.cs:496`): the lava-budget
@@ -902,8 +1207,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // (`Main.DrawHealthBar`, `Main.cs:21909-21990`).
         "HealthBar1",
         "HealthBar2",
-        "NPC_Head_Boss_7",
         "UI/UI_BossBar",
+        // `TextureAssets.BlackTile` also fills the underworld box (the
+        // first occurrence above wins the dedup); the pylon network lines
+        // stretch it (`TeleportPylonsMapLayer.DrawLine`,
+        // `TeleportPylonsMapLayer.cs:18-28`).
+        // `Images/UI/UI_quickicon1`: the town-NPC map head's "new dialogue"
+        // notification bubble (`Utils.DrawNotificationIcon`, `Utils.cs:444`).
+        "UI/UI_quickicon1",
         // The map overlay layers (`Main.cs:66551`'s `Main.MapIcons`): the
         // spawn/bed markers, the ping animation and the layer Extras
         // (`TextureAssets.Extra[n] = Images/Extra_n`, AssetInitializer.cs:365).
@@ -936,6 +1247,29 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Cursor_8",
         "UI/Cursor_9",
         "UI/Cursor_10",
+        // The Main.DrawMap icon passes (W4-e17): the death marker
+        // (`TextureAssets.MapDeath`, `AssetInitializer.cs:338`) and the
+        // Potion-of-Return portals + golf marker (`DrawMiscMapIcons`,
+        // `Main.cs:56466-56539`). The boss-head set rides the
+        // `NPC_Head_Boss_0..39` block above (a8b02614).
+        "MapDeath",
+        "Extra_173",
+        "Extra_175",
+        "Extra_176",
+        // W4-f29 fix F4 (research/140 §3): the revenge map markers draw the
+        // 1x8 `Coin_<n>` ANIMATION strips (`TextureAssets.Coin[0..4]`,
+        // `AssetInitializer.cs:369`), NOT the `Item_71..74` inventory icons
+        // (`CoinLossRevengeSystem.cs:262`, `CoinSlot.cs:242`).
+        "Coin_0",
+        "Coin_1",
+        "Coin_2",
+        "Coin_3",
+        "UI/Cursor_0",
+        "UI/Cursor_1",
+        // `TextureAssets.Cursors[11]` — the thick-cursor border ring
+        // (`Main.DrawThickCursor`, `Main.cs:48087,48129`;
+        // `AssetInitializer.cs:498-500`).
+        "UI/Cursor_11",
         "Mana",
         "Inventory_Back13",
         // P2 inventory panels: coins/ammo/misc/trash backgrounds, page tabs and
@@ -2149,6 +2483,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_203",
         "NPC_204",
         "NPC_206",
+        // W4-d11 DOC-SWEEP — the BloodSquid's own sheet
+        // (`render/entities.rs`'s SMALL_KIND_SHEETS 619 row).
+        "NPC_619",
 ];
 
 
@@ -2801,6 +3138,8 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
 // = 329.
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 329] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
+/// 328 inherited slots + W4-d11's BloodSquid 619 (appended last).
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 329] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2936,6 +3275,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
         637, 638, 656, 670, 678, 679, 680, 681, 682, 683,
         // W4-g10 lane 3 batch 2 — the copper slime.
         684,
+        // W4-d11 DOC-SWEEP — the BloodSquid, appended last for the same
+        // reason.
+        619,
     ];
 
 
@@ -3436,13 +3778,20 @@ pub struct Lookups {
     /// gores 910/911 (packed via `STATIC_SHEET_NAMES`) and every other
     /// leaf style (914 &c.) — W4-g68 draws all leaf gores through this map.
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
-    /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
+    /// `Item_71..74`: copper/silver/gold/platinum coin sprites — the
+    /// INVENTORY icons; the revenge map markers draw [`Self::coin_anim`].
     pub coins: [Option<tr_render::SheetRect>; 4],
     /// `Coin_0..3` (`TextureAssets.Coin`, `AssetInitializer.cs:367-370`):
     /// the coin SPIN strips — 8 vertical frames each, the
     /// `CoinSlot.DrawItemCoin` source (`CoinSlot.cs:242-243`). The shop
     /// savings pile draws these (`ItemSlot.DrawSavings`, W4-g58 D5).
     pub coin_strips: [Option<tr_render::SheetRect>; 4],
+    /// `TextureAssets.Coin[0..4]` (`AssetInitializer.cs:369`): the 1x8 coin
+    /// ANIMATION strips the revenge map markers draw
+    /// (`CoinLossRevengeSystem.cs:262-264`, `CoinSlot.cs:242`) — distinct
+    /// from the `Item_71..74` inventory icons in [`Self::coins`].
+    /// W4-f29 fix F4 (research/140 §3).
+    pub coin_anim: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
     /// `Inventory_Back14`: the yellow frame of the selected hotbar slot.
@@ -3459,6 +3808,27 @@ pub struct Lookups {
     /// (`NPCHeadID`): the town heads the housing page draws. Absent entries are
     /// heads the port ships no NPC for.
     pub npc_heads: Vec<Option<tr_render::SheetRect>>,
+    /// `TextureAssets.MapDeath` (`AssetInitializer.cs:338`): the player
+    /// death marker (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`)
+    /// and the revenge marker's fallback sheet (`CoinLossRevengeSystem.cs:261`).
+    pub map_death: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[173/175/176]` — `DrawMiscMapIcons`'
+    /// Potion-of-Return exit/home portals + the golf marker
+    /// (`Main.cs:56473-56539`).
+    pub extra_173: Option<tr_render::SheetRect>,
+    pub extra_175: Option<tr_render::SheetRect>,
+    pub extra_176: Option<tr_render::SheetRect>,
+    /// `TextureAssets.NpcHeadBoss[0..40]` (`AssetInitializer.cs:410-413`):
+    /// the boss-head overlay sheets, indexed by `GetBossHeadTextureIndex`
+    /// (`NPCID.Sets.BossHeadTextures`, `NPCID.cs:10479`). Absent entries are
+    /// heads whose sheet file the atlas never packed.
+    pub npc_boss_heads: Vec<Option<tr_render::SheetRect>>,
+    /// `TextureAssets.BlackTile` (`Images/Black_Tile`): the white tintable
+    /// square the pylon network lines stretch (`TeleportPylonsMapLayer.cs:18`).
+    pub black_tile: Option<tr_render::SheetRect>,
+    /// `Images/UI/UI_quickicon1`: the town-NPC map head's notification bubble
+    /// (`Utils.DrawNotificationIcon`, `Utils.cs:444`).
+    pub ui_quickicon1: Option<tr_render::SheetRect>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
     /// The map overlay icons (`Main.MapIcons`' layers, `Main.cs:66551`).
@@ -3508,6 +3878,13 @@ pub struct Lookups {
     /// `TextureAssets.Extra[72]`: the town-NPC party-hat strip
     /// (`Main.DrawNPCExtras`, `Main.cs:26922`), 20 frames across.
     pub extra_72: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[66]`: the 650 tentacle pet's spelunker-pointer
+    /// sprite (`Main.cs:34025`) — W4-d13's draw arm consumes it.
+    pub extra_66: Option<tr_render::SheetRect>,
+    /// W4-d16 — the kite tail sheets (`TextureAssets.Extra[id]`,
+    /// `Main.DrawKite` `Main.cs:37137`/`:37164-37329`), keyed by the Extra
+    /// id (103/104/132/133/135-140/144-148).
+    pub kite_tails: HashMap<u16, tr_render::SheetRect>,
     /// `TextureAssets.FlameRing`: the inferno halo (`Main.cs:64321`), 400×1200
     /// (3 rings of 400×400) — the draw is gated on `Player.inferno`.
     pub flame_ring: Option<tr_render::SheetRect>,
@@ -3562,6 +3939,9 @@ pub struct Lookups {
     /// `AssetInitializer.cs:303`): the cursor-area channel badges + the
     /// builder-toggle column. S1-W4-g81 residuals.
     pub builder_acc: Option<tr_render::SheetRect>,
+    /// `Images/UI/Cursor_11` (`TextureAssets.Cursors[11]`): the thick-cursor
+    /// border ring (`Main.DrawThickCursor`, `Main.cs:48087,48129`).
+    pub cursor_thick: Option<tr_render::SheetRect>,
     /// `Images/Mana`: the mana stars (`ClassicPlayerResourcesDisplaySet.DrawMana`).
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
@@ -4063,6 +4443,8 @@ impl Lookups {
                 .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             coin_strips: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
+            // W4-f29 fix F4: the revenge markers' 1x8 animation strips.
+            coin_anim: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
@@ -4071,6 +4453,15 @@ impl Lookups {
             npc_heads: (0..crate::ui::housing::HEAD_COUNT)
                 .map(|h| atlas.sheet(&format!("NPC_Head_{h}")).copied())
                 .collect(),
+            map_death: atlas.sheet("MapDeath").copied(),
+            extra_173: atlas.sheet("Extra_173").copied(),
+            extra_175: atlas.sheet("Extra_175").copied(),
+            extra_176: atlas.sheet("Extra_176").copied(),
+            npc_boss_heads: (0..40)
+                .map(|h| atlas.sheet(&format!("NPC_Head_Boss_{h}")).copied())
+                .collect(),
+            black_tile: atlas.sheet("Black_Tile").copied(),
+            ui_quickicon1: atlas.sheet("UI/UI_quickicon1").copied(),
             ui_font,
             item_font,
             death_font,
@@ -4124,6 +4515,11 @@ impl Lookups {
             extra_134: atlas.sheet("Extra_134").copied(),
             extra_balloons: [69, 70, 71].map(|i| atlas.sheet(&format!("Extra_{i}")).copied()),
             extra_72: atlas.sheet("Extra_72").copied(),
+            extra_66: atlas.sheet("Extra_66").copied(),
+            kite_tails: [103u16, 104, 132, 133, 135, 136, 137, 138, 139, 140, 144, 145, 146, 147, 148]
+                .iter()
+                .filter_map(|&id| atlas.sheet(&format!("Extra_{id}")).map(|r| (id, *r)))
+                .collect(),
             flame_ring: atlas.sheet("FlameRing").copied(),
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
@@ -4138,6 +4534,7 @@ impl Lookups {
                 .map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
             wire_ui: std::array::from_fn(|i| atlas.sheet(&format!("UI/Wires_{i}")).copied()),
             builder_acc: atlas.sheet("UI/BuilderIcons").copied(),
+            cursor_thick: atlas.sheet("UI/Cursor_11").copied(),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
             one_drop_logo: atlas.sheet("OneDropLogo").copied(),
@@ -4888,6 +5285,8 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_540").copied(),
                 // Doc-sweep lane 36 — the ShimmerSlime's strip.
                 atlas.sheet("NPC_676").copied(),
+                // W4-d11 DOC-SWEEP — the BloodSquid's 6-frame NPC_619 strip.
+                atlas.sheet("NPC_619").copied(),
             ],
 
 
@@ -5600,6 +5999,87 @@ mod tests {
         }
     }
 
+    // ---- W4-g71 wiring: the atlas budget guard ----
+
+    #[test]
+    fn w4_g71_bg_budget_guard_no_revert_when_the_set_fits() {
+        // A style-0 world (the classic baseline) fits — the guard returns no
+        // reverts. The pack_height closure is a stand-in that always fits.
+        let w = tr_core::world::World::new("t".into(), 64, 64);
+        let styles = BgStyleBytes::from_world(&w);
+        let reverted = fit_bg_styles_to_atlas(styles, |_| 7847, 8192);
+        assert!(reverted.is_empty(), "the baseline fits, no revert");
+    }
+
+    #[test]
+    fn w4_g71_bg_budget_guard_reverts_in_slot_order_until_fit() {
+        // A world with every biome style non-default. The stand-in packer is a
+        // step model: it reports overflow (8400) for the first three trials
+        // (the rolled set + the first two reverts) then fits (7900) — so the
+        // guard must revert exactly slots 1, 2, 3 in order and stop. This pins
+        // the greedy prefix behaviour without depending on real sheet dims.
+        let mut w = tr_core::world::World::new("t".into(), 64, 64);
+        w.corrupt_bg_style = 4;
+        w.jungle_bg_style = 6;
+        w.snow_bg_style = 7;
+        w.hallow_bg_style = 5;
+        w.crimson_bg_style = 6;
+        w.desert_bg_style = 51;
+        w.ocean_bg_style = 5;
+        w.mushroom_bg_style = 4;
+        let styles = BgStyleBytes::from_world(&w);
+        let calls = std::cell::Cell::new(0u32);
+        let reverted = fit_bg_styles_to_atlas(
+            styles,
+            |_| {
+                let n = calls.get();
+                calls.set(n + 1);
+                if n < 3 { 8400 } else { 7900 }
+            },
+            8192,
+        );
+        assert_eq!(reverted, vec![1, 2, 3], "greedy prefix, stops at first fit");
+        assert_eq!(calls.get(), 4, "initial trial + three revert trials");
+    }
+
+    #[test]
+    fn w4_g71_bg_budget_guard_reverts_all_eight_when_nothing_fits() {
+        // If even the all-slot-0 set overflows the model, the guard reverts all
+        // eight slots (the caller then warns; the C# long-term fix is S1-G-13).
+        let mut w = tr_core::world::World::new("t".into(), 64, 64);
+        w.corrupt_bg_style = 4;
+        let styles = BgStyleBytes::from_world(&w);
+        let reverted = fit_bg_styles_to_atlas(styles, |_| 9000, 8192);
+        assert_eq!(reverted, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn w4_g71_bg_budget_guard_sheet_ids_match_the_world() {
+        // BgStyleBytes::sheet_ids reproduces world_bg_sheet_ids for the same
+        // styles (the guard trials the same set the loader packs).
+        let mut w = tr_core::world::World::new("t".into(), 64, 64);
+        w.snow_bg_style = 7;
+        w.desert_bg_style = 4;
+        w.ocean_bg_style = 5;
+        let from_world = world_bg_sheet_ids(&w);
+        let from_bytes = BgStyleBytes::from_world(&w).sheet_ids();
+        assert_eq!(from_world, from_bytes);
+    }
+
+    #[test]
+    fn w4_g71_packed_height_matches_build_ref() {
+        // The cheap height probe equals the full build's height (same dedup,
+        // sort, skyline) — the guard's measurements are faithful.
+        let imgs = vec![
+            raw_image("a", 100, 200),
+            raw_image("b", 300, 150),
+            raw_image("c", 50, 400),
+            raw_image("a", 100, 200), // duplicate name — deduped
+        ];
+        let atlas = tr_render::Atlas::build(imgs.clone(), 8192);
+        assert_eq!(tr_render::Atlas::packed_height(&imgs, 8192), atlas.height);
+    }
+
     /// The real content atlas + Lookups, built once per process. Decodes every
     /// `Item_*.xnb` the junction carries (~6500 sheets), exactly like startup.
     fn content_lookups() -> &'static (tr_render::Atlas, Lookups) {
@@ -5759,13 +6239,13 @@ mod tests {
         let content = crate::app::find_content_dir().unwrap();
         set_content_dir(content.clone());
         let images_dir = content.join("Images");
-        let world = tr_core::world::World::new("bench".into(), 64, 64);
+        let mut world = tr_core::world::World::new("bench".into(), 64, 64);
 
         let mut cache = None;
         let mut fonts = None;
         let t0 = std::time::Instant::now();
         let first =
-            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+            crate::app::build_atlas_reusing_static(&mut world, &images_dir, &mut cache, &mut fonts);
         let first_ms = t0.elapsed().as_millis();
         assert!(first.is_ok(), "boot build");
         assert!(cache.is_some(), "the boot build caches the static half");
@@ -5773,7 +6253,7 @@ mod tests {
 
         let t1 = std::time::Instant::now();
         let second =
-            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+            crate::app::build_atlas_reusing_static(&mut world, &images_dir, &mut cache, &mut fonts);
         let second_ms = t1.elapsed().as_millis();
         assert!(second.is_ok(), "swap build");
         assert!(cache.is_some(), "the swap keeps the cache for the next one");
@@ -5945,6 +6425,45 @@ mod tests {
             .expect("UI/Workshop/IssueButton_Outline must reach the atlas");
         assert!(button.width > 0 && button.height > 0, "a real button sheet");
         assert!(outline.width > 0 && outline.height > 0, "a real outline sheet");
+    /// W4-e17 — the map head-overlay sheets pack: the full town-head range
+    /// (the shimmer variants 54-80 the profiles resolve to), the 40 boss
+    /// heads, the pylon line's BlackTile and the notification quickicon.
+    #[test]
+    fn w4_e17_the_map_head_overlay_sheets_pack() {
+        let (_, lookups) = content_lookups();
+        assert_eq!(lookups.npc_boss_heads.len(), 40);
+        // The boss heads the port's kinds resolve to must all be packed.
+        for head in [0usize, 5, 7, 8, 11, 19, 22, 23, 24, 25, 39] {
+            assert!(
+                lookups.npc_boss_heads[head].is_some(),
+                "NPC_Head_Boss_{head} must reach the atlas"
+            );
+        }
+        // The shimmered Guide (72) and Princess (54) heads.
+        assert!(lookups.npc_heads[72].is_some(), "the shimmered Guide head");
+        assert!(lookups.npc_heads[54].is_some(), "the shimmered Princess head");
+        assert!(lookups.black_tile.is_some(), "Black_Tile for the pylon lines");
+        assert!(lookups.ui_quickicon1.is_some(), "the notification quickicon");
+        // W4-f29 fix F4 (research/140 §5): the revenge markers' Coin_0..3
+        // animation strips pack, each an 8-row strip (`value.Frame(1, 8)`,
+        // `CoinLossRevengeSystem.cs:263`).
+        for (i, sheet) in lookups.coin_anim.iter().enumerate() {
+            let sheet = sheet.unwrap_or_else(|| panic!("Coin_{i}"));
+            assert_eq!(sheet.height % 8, 0, "Coin_{i} is an 8-row strip");
+        }
+        // The death marker + the misc portals/golf ring (f29's pack rows).
+        assert!(lookups.map_death.is_some(), "MapDeath");
+        assert!(lookups.extra_173.is_some(), "the exit portal");
+        assert!(lookups.extra_175.is_some(), "the home portal");
+        assert!(lookups.extra_176.is_some(), "the golf ring");
+        // The town heads the map draws beyond the housing page's set
+        // (f29's pack rows; e17's full 0..80 range is the superset).
+        for head in [12usize, 13, 16, 18, 19, 26] {
+            assert!(
+                lookups.npc_heads[head].is_some(),
+                "NPC_Head_{head} (the map town heads)"
+            );
+        }
     }
 
     #[test]

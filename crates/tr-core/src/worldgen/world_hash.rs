@@ -380,6 +380,14 @@ mod tests {
     // into its own slot (the 3×4 clear + the Place3x3-231 writes,
     // `WorldGen.cs:20868-20900`) — the hive-pass larva tiles now land later
     // (after the muds-walls scan), so both pins move again by design.
+    // W4-g71 FINAL keep-one (code-only): the cave-bg block now draws on the
+    // shared `streams.rng` ahead of the moon `Next(9)` (g72's landed seat,
+    // `cave_bg.rs`, the C# `:11339`→`:11341` order). The 512-wide world takes
+    // arm C (512 ≠ 4200/6400): 3 band draws + 4 style draws + rejection draws
+    // + the ice/hell/jungle tail; the moon/hell VALUES shift by design. The
+    // TILE hash is UNCHANGED: the tail is the LAST `streams.rng` consumer
+    // (the seed-finish steps draw on their own `pass_rng` streams) and the
+    // block writes no tiles — the tree + surface rolls ride isolated slots.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -524,6 +532,15 @@ mod tests {
     // the `a == b` determinism halves stay green. The 178/184
     // frame-important boot bits (`Main.cs:7413-7414`) keep the stored gem
     // frames through the load-time framer.
+    // W4-g72 lane 3 (2026-11-21, code-only): the cave block lands in the
+    // world tail ahead of the moon roll (see SEED42_512 above). The DEFAULT
+    // world (4200 wide) takes ARM A: 1 band draw + 2 style draws + the
+    // style[1] rejection loop + the ice/hell/jungle tail — the shared-rng
+    // tail advances by 6+ draws before the moon `Next(9)`. No tile-writing
+    // step draws after the tail (the seed-finish steps ride `pass_rng`), so
+    // the tile hash is expected UNCHANGED here too; if the gate measures a
+    // shift, re-pin (stale-by-design, after the S1-P-i33 mask fix re-pin).
+    // `a == b` stays green (both runs draw identically).
     const DEFAULT_WORLD: u32 = 3647283075;
     // W4-d107 (2026-11-20, code-only): the special-seed branches land in
     // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +

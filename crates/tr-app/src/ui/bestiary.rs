@@ -3301,6 +3301,16 @@ fn portrait_data(
         // The Shimmerfly (W4-c9's arm, adopted by W4-g62): the portrait
         // rests the kind's `SetDefaults` box (`NPC.cs:17581-17582`), the
         // wave-A shape.
+        // W4-d11 DOC-SWEEP — the BloodSquid's portrait rests the 44x44
+        // `SetDefaults` box (`NPC.cs:16937-16938`) over the 6-frame strip;
+        // folded onto d42's literal row (identical 44.0 while the sheet is
+        // deferred, exact frame height once it is present).
+        (NpcKind::BloodSquid, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
         // W4-d42 - the roster's portraits rest the kinds' SetDefaults
         // boxes on their own sheets (the WyvernHead literal-size
         // precedent - the sheets are deferred, the index folds to 0).

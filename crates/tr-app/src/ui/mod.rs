@@ -2291,7 +2291,9 @@ fn chat_row_anchor(screen_y: f32, row: usize) -> Vec2 {
 /// (`ChatMessageContainer.cs:23`). Rows anchor at
 /// `(88, screenHeight - 30 - 28 - i*22)` (`RemadeChatMonitor.cs:83`),
 /// the input strip at `(88, screenHeight - 30)` (`Main.cs:40987`).
-fn draw_chat(
+/// Also called from the fullscreen map's draw tail (`Main.cs:62160`'s
+/// `DrawPlayerChat`, W4-e18 final sweep) — the same pass, the map batch.
+pub fn draw_chat(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     screen: Vec2,

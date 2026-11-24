@@ -82,6 +82,9 @@ mod projectile_ai_torch_god;
 mod torch_god_favor_use;
 mod wiring_stub;
 mod yoyo_string;
+// W4-d16 — the kite string + tail geometry (`Main.DrawKite`,
+// `Main.cs:37134-37569`): the pure-math half of the aiStyle-160 draw.
+mod kite_string;
 mod item;
 mod item_dust;
 mod itemdata;
@@ -95,6 +98,9 @@ mod loot_db;
 mod loot_db_gen;
 mod map;
 mod map_layers;
+mod map_npc_icons;
+mod map_player_icons;
+mod map_sections;
 mod melee_swing;
 mod menu;
 mod minecart;
@@ -145,6 +151,7 @@ mod npc_ai_dungeon_shooter;
 // danger states deferred (see the module doc).
 mod npc_ai_critter;
 mod npc_ai_ghost;
+mod npc_ai_blood_squid;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
 mod npc_ai_unicorn;
@@ -460,6 +467,30 @@ mod projectile_ai001_e;
 // census research/26f F7. Code-only mode — witness tests written not run.
 mod projectile_harpy_charm;
 mod projectile_ai067_b;
+// W4-d13 — the aiStyle-124 pet family (650/882/888/895/896/898/957): the
+// keep-alive pins, the home-spot ladder, the flight/idle frame machines,
+// the 957 ground bounce and the 650 ore scan + steering tail
+// (`Projectile.cs:34970-35696`). Code-only — witnesses written not run.
+mod projectile_ai_pets124;
+// W4-d13 — the aiStyle-125 Wire Kite (651): the channel mouse-follow, the
+// three kill gates and the owner tail (`Projectile.cs:35697-35833`).
+// Code-only — witnesses written not run.
+mod projectile_ai_wire_kite;
+// W4-d13 — the aiStyle-126 column family (654 geyser / 670 ogre stomp): the
+// anchor scan, the column-height growth, the stomp's tick-12 child split and
+// the dust RNG census (`Projectile.cs:35834-35997`). Code-only — witnesses
+// written not run.
+mod projectile_ai_geyser;
+// W4-d13 — the aiStyle-127 sandnado column (656 friendly / 657 hostile): the
+// life cap, the 656 fade + owner sight test, the vertical-expand box and the
+// tail dust census (`Projectile.cs:35998-36085`). Code-only — witnesses
+// written not run.
+mod projectile_ai_sandnado;
+// W4-d13 — the aiStyle-128 sandnado mark (658): the spin/fade/scale machine,
+// the tick-60 hostile-sandnado spawn and the dust census + Kill burst
+// (`Projectile.cs:36086-36197`, `:72374-72393`). Code-only — witnesses
+// written not run.
+mod projectile_ai_sandnado_mark;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
@@ -475,6 +506,32 @@ mod projectile_ai_style49;
 // dispatch arms are the wiring round (the d5 / npc_ai_style25 precedent).
 mod projectile_ai_style63;
 mod projectile_ai_style69;
+// W4-d11 — the aiStyle 101-110 census slice (the tower orbs, the spore
+// sac/gas, the nebula sphere / djinn curse, the ritual markers' 813 arm,
+// the mechanic wrench and the nurse syringe). Code-only round — the
+// witness tests are WRITTEN NOT RUN.
+mod projectile_ai_101_110;
+// W4-d12: the aiStyle-117 explosion family (612/624/953/1044 + the 608
+// Solar Counter's Kill-path burst). The shared arm's scale/age/frame
+// machine + the tick-1 resized-box Damage + the three dust censuses; the
+// dispatch claim + the 608 death-hook drain are wired in projectile.rs.
+// Code-only mode — witness tests written not run.
+mod projectile_ai_explosions;
+mod projectile_ai_dd2;
+// W4-d19 — the aiStyles 182-186/190 census slice: the Zenith illusions
+// (182), the Zoologist strikes (183), the Torch God's fireball (184), the
+// Soul Drain's mana latch (185), the Resonance Scepter's blast (186) and
+// the seven big-sword slashes (190). The rows land in projectile/data.rs;
+// the dispatch arms are wired in projectile.rs::update. Code-only mode —
+// witness tests written not run.
+mod projectile_ai_sword_styles;
+// W4-d19 follow-up — the aiStyle-92 cloud family (the 511-513 toxic
+// clouds, the 1007 gas trap, the 1128 Chlorophyte Claymore spore child)
+// + the 1126 spore machine's 1128/1129 child drain. The rows land in
+// projectile/data.rs; the dispatch arm + the drain are wired in
+// projectile.rs::update. The 1129 row/arm are W4-d21's claim (the
+// documented cross-branch contract). Code-only — witnesses written not run.
+mod projectile_ai_clouds;
 // W4-d21 — the projectile aiStyles 201-210 missing machines (201/202/203/
 // 204/205/208/209; 206 landed a9 8c4fded8 verify-only, 207 empty/no kinds,
 // 210 already ai_yoyo_shot). The rows land in projectile/data.rs; the
@@ -619,7 +676,13 @@ mod projectile_ai_spear;
 // DustPool on the UpdateProjectiles stream (research/66; g64 owns 401+, g65
 // the Kill death dust).
 mod projectile_trail_dust;
+// W4-d16 — the kite family (aiStyle 160, `AI_160_Kites` + `KiteLogic`):
+// the 24 DefaultToKite kinds' wind hover + anchor reel + frame machine.
+mod projectile_ai_kites;
 mod rain;
+// W4-g70 lane 8: the live star field (Star.cs) — spawn/update/NightSetup/
+// StarFall, replacing the static BG-11/16 stand-in.
+mod star_field;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
@@ -746,7 +809,7 @@ fn main() -> Result<()> {
     // The world plus its side sections — the `.wld`'s section payloads
     // (M6-SAVE-1) or the native `.trwld`'s v7-v10 records (M6-SAVE-1b/c/d) —
     // the loaded stores the `App` merges ahead of the load-time loot roll.
-    let (world, sections) = app::load_world(&world_path)?;
+    let (mut world, sections) = app::load_world(&world_path)?;
 
     let content_dir = app::find_content_dir().context(
         "assets/Content not found: copy the retail Content directory next to the executable",
@@ -779,7 +842,7 @@ fn main() -> Result<()> {
     let mut boot_static: Option<Vec<tr_render::atlas::AtlasImage>> = None;
     let mut boot_fonts: Option<assets::FontTables> = None;
     let (atlas, font_atlas, lookups, atlas_stats) =
-        app::build_atlas_reusing_static(&world, &assets_dir, &mut boot_static, &mut boot_fonts)?;
+        app::build_atlas_reusing_static(&mut world, &assets_dir, &mut boot_static, &mut boot_fonts)?;
 
     app::log_atlas_diagnostics(&atlas, &lookups);
 

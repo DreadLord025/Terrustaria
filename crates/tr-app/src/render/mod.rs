@@ -6,6 +6,15 @@
 //! light map and the per-frame caches.
 
 pub(crate) mod bg;
+// W4-g72 lane 3: the background-target CAPTURE/CONSUME seams for the cavern +
+// underworld styles (the style-specific half d69's S1-G-13 family does not
+// own), UNWIRED - the frame-path composition is d69's in-flight consumers lane
+// and the sheet sources still overflow the 8192 atlas (module docs).
+pub(crate) mod bg_target;
+// W4-g72 lane 3: the cavern background STYLE machine (pick + sheet tables +
+// cross-fade), UNWIRED — the sheet variety overflows the 8192 atlas bound and
+// the style rolls would shift the worldgen tail stream (module docs).
+pub(crate) mod bg_styles;
 pub(crate) mod debug;
 pub(crate) mod entities;
 pub(crate) mod empress_draw;
@@ -71,6 +80,10 @@ pub(crate) mod tile_draw_pass;
 // (g29-g32 own passes 2-5); wiring is the family's merge step.
 pub(crate) mod tile_pass;
 pub(crate) mod tiles;
+// W4-g72 lane 3: the hell parallax stack geometry (DrawUnderworldBackground /
+// DrawUnderworldBackgroundLayer), UNWIRED — the Underworld sheets overflow the
+// 8192 atlas bound (module docs).
+pub(crate) mod underworld_bg;
 pub(crate) mod vines;
 pub(crate) mod wire_kite;
 pub(crate) mod wires;
@@ -78,7 +91,7 @@ pub(crate) mod wires;
 /// A decoded sprite rect on the atlas: pixel size plus the normalised UV quad.
 /// Shared by every render module (the `Background_*`/`Player_*`/`NPC_*` sheet
 /// handles of the original's draw paths).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct BgTex {
     pub(crate) uv: [f32; 4],
     pub(crate) w: f32,

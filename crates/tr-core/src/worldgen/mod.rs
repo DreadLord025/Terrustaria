@@ -17,11 +17,14 @@
 
 mod biome_detail;
 mod biomes;
+pub mod bg_rolls;
+pub mod cave_bg;
 pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;
 pub mod dungeon_styles;
 mod caves;
+pub mod cave_bg;
 mod config;
 mod desert;
 mod desert_dunes;
@@ -66,6 +69,11 @@ pub struct GenOptions {
     /// `WorldGen.crimson`: the evil biome's flavour (the corruption when
     /// false).
     pub crimson: bool,
+    /// `Main.GameMode` (`UIWorldCreation.cs:129`'s `_optionDifficulty`): the
+    /// created world's difficulty — 0 Classic / 1 Expert / 2 Master /
+    /// 3 Journey. Stamped onto `World.game_mode` (the `.wld` flags block's
+    /// first field, `WorldFile.cs:1240`).
+    pub game_mode: i32,
     /// The classic secret-seed flags — [`crate::seeds::SeedFlags`]. The
     /// `WorldGen.Reset()` set (`WorldGen.cs:11115-11123`) that every
     /// seed-conditional worldgen branch reads; `Default` = a classic
@@ -85,6 +93,7 @@ impl Default for GenOptions {
             width: 4200,
             height: 1200,
             crimson: false,
+            game_mode: 0,
             seed: 1,
             flags: crate::seeds::SeedFlags::default(),
             micro_flags: crate::seeds::MicroSeedFlags::default(),
@@ -155,6 +164,11 @@ pub fn generate_with_progress<'a>(
     // `WorldGen.crimson` — the world evil type the passes generate with
     // (W4-g69: the cloud RollRareCloud gate reads it at runtime).
     world.crimson = opts.crimson;
+    // W4-f45: `WorldGen.crimson` — the evil flavour the `.wld` flags block
+    // carries (`WorldFile.cs:1281`); the generation choice is its source.
+    world.crimson = opts.crimson;
+    // W4-f45: `Main.GameMode` — the creation difficulty (`WorldFile.cs:1240`).
+    world.game_mode = opts.game_mode;
     // The same boot the no-hook path runs (`generate_with_chest_stock`).
     pipeline::boot_statics(&mut world);
     let noise = Noise { seed: opts.seed };
@@ -190,6 +204,10 @@ pub fn generate_with_chest_stock<'a>(
     // `WorldGen.crimson` — the world evil type (W4-g69, the cloud lane's
     // RollRareCloud gate reads it; the shop/lang folds keep their rows).
     world.crimson = opts.crimson;
+    // W4-f45: `WorldGen.crimson` (`WorldFile.cs:1281`) — the generation choice.
+    world.crimson = opts.crimson;
+    // W4-f45: `Main.GameMode` (`WorldFile.cs:1240`) — the creation difficulty.
+    world.game_mode = opts.game_mode;
     // The `Reset`-equivalent setup (vanilla runs `Reset` — the GenVars init
     // and the layout rolls — before `AddPasses`; it is not a pass):
     // the frame-important boot statics, the value noise and the three

@@ -786,6 +786,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_186", 2),
     ("Item_187", 2),
     ("Item_188", 2),
+    // W4-d16 — the kite reel cue (`SoundID.Item192`, `Projectile.cs:48508`;
+    // `Sounds/Item_192.xnb`). The case-2 192 arm draws nothing and reads
+    // `Projectile.kiteSoundPitch` (the port's pitchOffset seam, sound.rs).
+    ("Item_192", 2),
     ("Item_196", 2),
     ("Item_210", 2),
     // W4-f2 closeout (e9b tail union, research/94 §10) — the NPC AI sites'

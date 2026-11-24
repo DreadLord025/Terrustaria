@@ -44,6 +44,17 @@
 //! [`read_legacy_port_subset`] and the increment-1/2 truncation retries in
 //! [`read_player_bytes`] keep them loadable as documented port-only shims
 //! (see `docs/ANALYSIS.md`).
+//!
+//! **W4-c43: the SavePlayer envelope.** `InternalSavePlayerFile`
+//! (`Player.cs:54725-54742`) completes: an existing `.plr` is copied to
+//! `<path>.bak` before the write (`:54730-54733`), and the metadata revision
+//! rides [`PlayerFileWrite::revision`] (`:54739` writes the loaded
+//! `playerFile.Metadata` verbatim — `Write`, not `IncrementAndWrite`). The
+//! reader keeps `lastTimePlayerWasSaved` ([`PlayerFile::last_saved_binary`],
+//! the >= 202 gate `Deserialize:55687-55691`) and runs the
+//! `LoadPlayer:55096-55098` fallback — a zero stamp reads the file's mtime
+//! (`tr_core::clock::file_mtime_binary`; the port has no cloud saves, so the
+//! `!cloudSave` arm is the only one).
 
 use std::path::{Path, PathBuf};
 
@@ -187,6 +198,12 @@ impl CreativePowersSave {
     pub fn written_fresh() -> Self {
         CreativePowersSave { godmode: false, far_placement: false, spawn_rate: 0.0 }
     }
+    /// `Player.lastTimePlayerWasSaved` (`Player.cs:55687-55691`'s read at
+    /// release >= 202, the `LoadPlayer:55096-55098` mtime fallback when the
+    /// stored value is 0). `PlayerFileData.LastPlayed` is
+    /// `DateTime.FromBinary` of it (`PlayerFileData.cs:38`). 0 only when the
+    /// file predates the field AND its mtime cannot be read.
+    pub last_saved_binary: i64,
 }
 
 #[derive(Debug)]
@@ -268,10 +285,20 @@ pub fn cbc_encrypt(data: &[u8]) -> Vec<u8> {
 pub fn read_player_file(path: &Path) -> Result<PlayerFile, PlayerFileError> {
     let raw = std::fs::read(path)?;
     let plain = cbc_decrypt(&raw);
-    read_player_bytes(&plain)
+    // The `LoadPlayer:55098` fallback's clock source, captured before the
+    // walk (the read itself never touches the file again).
+    let mtime = tr_core::clock::file_mtime_binary(path);
+    read_player_bytes_at(&plain, mtime)
 }
 
 fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
+    read_player_bytes_at(plain, None)
+}
+
+fn read_player_bytes_at(
+    plain: &[u8],
+    path_mtime: Option<i64>,
+) -> Result<PlayerFile, PlayerFileError> {
     let mut r = Reader::new(plain);
     let version = r.i32().ok_or(PlayerFileError::Truncated("version"))?;
     if version < 135 {
@@ -300,7 +327,7 @@ fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
     let favorite_bits = r.u64().ok_or(PlayerFileError::Truncated("fav"))?;
     let is_favorite = favorite_bits == 1;
     match read_player_fields(&mut r, version, revision, is_favorite, 3) {
-        Ok(f) => Ok(f),
+        Ok(f) => Ok(with_mtime_fallback(f, path_mtime)),
         // The port's own pre-S1-J-5 subset files are stamped 279 but are
         // truncated after the inventory and miss `hideMisc`; the C# gates
         // cannot read them. Retry with the port-only shim so old saves load.
@@ -309,6 +336,7 @@ fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
             r2.skip(4 + 20)
                 .ok_or(PlayerFileError::Truncated("legacy"))?;
             read_legacy_port_subset(&mut r2, revision, is_favorite)
+                .map(|f| with_mtime_fallback(f, path_mtime))
         }
         // The port's own S1-J-5 increment-1/2 files are stamped 326 but end
         // early: inc1 at `voidVaultInfo` (`Serialize:54863`), inc2 at
@@ -320,17 +348,31 @@ fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
             let mut r2 = Reader::new(plain);
             r2.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc1"))?;
             match read_player_fields(&mut r2, version, revision, is_favorite, 1) {
-                Ok(f) => Ok(f),
+                Ok(f) => Ok(with_mtime_fallback(f, path_mtime)),
                 Err(PlayerFileError::Truncated(_)) => {
                     let mut r3 = Reader::new(plain);
                     r3.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc2"))?;
                     read_player_fields(&mut r3, version, revision, is_favorite, 2)
+                        .map(|f| with_mtime_fallback(f, path_mtime))
                 }
                 Err(e) => Err(e),
             }
         }
         Err(e) => Err(e),
     }
+}
+
+/// `LoadPlayer:55096-55098`: a zero `lastTimePlayerWasSaved` (a pre-202 file,
+/// or a port subset that never reached the field) falls back to
+/// `File.GetLastWriteTimeUtc(playerPath).ToBinary()` — the local-file arm
+/// (`!cloudSave`; the port has no cloud saves).
+fn with_mtime_fallback(mut file: PlayerFile, path_mtime: Option<i64>) -> PlayerFile {
+    if file.last_saved_binary == 0 {
+        if let Some(stamp) = path_mtime {
+            file.last_saved_binary = stamp;
+        }
+    }
+    file
 }
 
 /// One `Item.DeserializeFrom(reader, readFavorite: false)` record
@@ -522,6 +564,7 @@ fn read_player_fields(
             powers,
             current_loadout_index,
             loadouts,
+            0, // the inc1 files end before the timestamp field
         ));
     }
     // --- S1-J-5 increment 2: buffs through hideInfo (`:55578-55623`) ------
@@ -586,6 +629,7 @@ fn read_player_fields(
             powers,
             current_loadout_index,
             loadouts,
+            0, // the inc2 files end before the timestamp field
         ));
     }
     // --- S1-J-5 increment 3: the Deserialize tail (`:55624-55762`) --------
@@ -624,8 +668,11 @@ fn read_player_fields(
             r.i32().ok_or(PlayerFileError::Truncated("respawn"))?;
         }
     }
+    // `:55687-55691`: lastTimePlayerWasSaved resets to 0, then the >= 202
+    // gate reads the stored stamp.
+    let mut last_saved_binary = 0i64;
     if version >= 202 {
-        r.u64().ok_or(PlayerFileError::Truncated("lastSaved"))?; // `:55688-55691`
+        last_saved_binary = r.u64().ok_or(PlayerFileError::Truncated("lastSaved"))? as i64;
     }
     if version >= 206 {
         r.i32().ok_or(PlayerFileError::Truncated("golfer"))?; // `:55692-55695`
@@ -789,6 +836,7 @@ fn read_player_fields(
         powers,
         current_loadout_index,
         loadouts,
+        last_saved_binary,
     ))
 }
 
@@ -815,6 +863,7 @@ fn finish_player_file(
     voice: Option<(i32, f32)>,
     unlocked_biome_torches: bool,
     using_biome_torches: bool,
+    last_saved_binary: i64,
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
     // `:55831` — `Utils.Clamp(voiceVariant, 1, 4)`; the shallow depths carry
@@ -864,6 +913,7 @@ fn finish_player_file(
         powers,
         current_loadout_index,
         loadouts,
+        last_saved_binary,
     }
 }
 
@@ -978,6 +1028,7 @@ fn read_legacy_port_subset(
         // The 279 subset predates loadouts (release 262) — three fresh sets.
         current_loadout_index: 0,
         loadouts: Default::default(),
+        last_saved_binary: 0, // the subset never reached the timestamp field
     })
 }
 
@@ -1072,6 +1123,13 @@ impl Default for PlayerFileWrite {
             loadouts: Default::default(),
         }
     }
+    /// `PlayerFileData.Metadata.Revision` (`InternalSavePlayerFile:54739`
+    /// writes the loaded metadata verbatim — `Write`, not
+    /// `IncrementAndWrite`). A fresh character's `FromCurrentSettings`
+    /// revision is 0 (`PlayerFileData.cs:53`); a re-save carries the loaded
+    /// file's counter so it never resets. The `.trfav` sidecar keeps the
+    /// favourite bit outside this struct (see `favorite_marker_path`).
+    pub revision: u32,
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54742`): release 326, the
@@ -1095,7 +1153,9 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(RELEASE); // `InternalSavePlayerFile:54738` writes the literal 326.
                     // `FileMetadata.Write` (`FileMetadata.cs:22-27`).
     w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
-    w.u32(0); // the revision (`FromCurrentSettings:40` = 0; `Write`, not Increment)
+    w.u32(file.revision); // `InternalSavePlayerFile:54739` — `Metadata.Write`
+                          // carries the loaded counter (`FromCurrentSettings:40` = 0 for a fresh
+                          // character; a re-save caller threads the read revision back).
               // `FileMetadata.Write`'s favourites flags (`FileMetadata.cs:26`): the bit
               // is dead in the vanilla too — `IsFavorite` is only ever set `false`
               // (`FileMetadata.cs:41`) and the live state sits in `favorites.json`
@@ -1356,6 +1416,17 @@ pub fn write_player_file(path: &Path, file: &PlayerFileWrite) -> Result<(), Play
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    // `InternalSavePlayerFile:54730-54733`: an existing file is copied to
+    // `<path>.bak` BEFORE the new bytes land (`FileUtilities.Copy(path,
+    // path + ".bak")`). A failed copy is not fatal in the port — the C#
+    // throws into `FancyErrorPrinter`, but the vanilla save still matters
+    // more than its backup; the primary write below is the contract.
+    if path.exists() {
+        let bak = std::path::PathBuf::from(format!("{}.bak", path.display()));
+        if let Err(e) = std::fs::copy(path, &bak) {
+            log::warn!("player .bak copy failed: {e}");
+        }
+    }
     std::fs::write(path, write_player_bytes(file))?;
     Ok(())
 }
@@ -1508,6 +1579,7 @@ mod tests {
             powers: crate::player_file::CreativePowersSave::written_fresh(),
             current_loadout_index: 0,
             loadouts: Default::default(),
+            revision: 0,
         }
     }
 
@@ -1996,6 +2068,9 @@ mod tests {
             // the golden fixture's 310-zero-byte loadout block.
             current_loadout_index: 0,
             loadouts: Default::default(),
+            // The harness's fresh `FromCurrentSettings` metadata
+            // (`PlayerFileData.cs:53`): revision 0.
+            revision: 0,
         };
         let plain = serialize_plaintext(&file);
         let fixture_raw = include_bytes!("../../../assets/test/golden.plr");
@@ -2301,5 +2376,148 @@ mod tests {
         let block_start = plain.len() - 13 - 930;
         assert_eq!(&plain[block_start - 4..block_start], &[0, 0, 0, 0]);
         assert_eq!(&plain[block_start..block_start + 930], &[0u8; 930][..]);
+    // --- W4-c43: the SavePlayer envelope + the timestamp round-trip ---------
+
+    /// `InternalSavePlayerFile:54730-54733`: an existing `.plr` is copied to
+    /// `<path>.bak` before the new bytes land; a first save writes no `.bak`.
+    #[test]
+    fn w4_c43_a_re_save_copies_the_previous_plr_into_the_bak() {
+        let dir = crate::test_world_helpers::test_scratch("w4-c43-plr-bak");
+        let path = dir.join("Belsin.plr");
+        let bak = dir.join("Belsin.plr.bak");
+        write_player_file(&path, &sample()).unwrap();
+        assert!(!bak.exists(), "a first save has no .bak");
+        let first = std::fs::read(&path).unwrap();
+        // The re-save changes the inventory so the two files differ.
+        let mut second = sample();
+        second.inventory[5] = (757, 1, 81); // Terra Blade, Legendary
+        second.revision = 7;
+        write_player_file(&path, &second).unwrap();
+        assert_eq!(std::fs::read(&bak).unwrap(), first, ".bak = the previous file");
+        let now = read_player_file(&path).unwrap();
+        assert_eq!(now.inventory[5], (757, 1, 81));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `InternalSavePlayerFile:54739` writes `playerFile.Metadata` verbatim —
+    /// the loaded revision rides a re-save (`FileMetadata.Write`, not
+    /// `IncrementAndWrite`); a fresh character's is 0.
+    #[test]
+    fn w4_c43_the_metadata_revision_rides_the_write() {
+        let mut file = sample();
+        file.revision = 41;
+        let plain = serialize_plaintext(&file);
+        assert_eq!(u32::from_le_bytes(plain[12..16].try_into().unwrap()), 41);
+        let read = read_player_bytes(&plain).unwrap();
+        assert_eq!(read.revision, 41, "the reader keeps the counter");
+        // The default stays 0 — the golden fixture's fresh metadata.
+        let plain0 = serialize_plaintext(&sample());
+        assert_eq!(u32::from_le_bytes(plain0[12..16].try_into().unwrap()), 0);
+    }
+
+    /// `Serialize:54909`'s stamp round-trips through `Deserialize:55688-55691`
+    /// (`PlayerFileData.LastPlayed`, `PlayerFileData.cs:38`), and the C#
+    /// fixture's pinned clock reads back exactly.
+    #[test]
+    fn w4_c43_the_save_timestamp_round_trips() {
+        let mut file = sample();
+        file.last_saved_binary = 0x48DF_4506_E391_C000; // the FixtureClock stamp
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.last_saved_binary, file.last_saved_binary);
+        // The real C#-written fixture carries the same stamp.
+        let fixture = read_player_bytes(&cbc_decrypt(include_bytes!(
+            "../../../assets/test/golden.plr"
+        )))
+        .unwrap();
+        assert_eq!(fixture.last_saved_binary, 0x48DF_4506_E391_C000u64 as i64);
+    }
+
+    /// `LoadPlayer:55096-55098`: a zero stored stamp falls back to the file's
+    /// mtime (`File.GetLastWriteTimeUtc(path).ToBinary()`); a non-zero stamp
+    /// is never replaced.
+    #[test]
+    fn w4_c43_a_zero_stamp_falls_back_to_the_file_mtime() {
+        let dir = crate::test_world_helpers::test_scratch("w4-c43-plr-mtime");
+        let path = dir.join("Old.plr");
+        // The sample's stamp is 0 — the port's historical "unknown" value.
+        write_player_file(&path, &sample()).unwrap();
+        let read = read_player_file(&path).unwrap();
+        let mtime = tr_core::clock::file_mtime_binary(&path).unwrap();
+        assert_eq!(read.last_saved_binary, mtime, "the mtime fallback fires");
+        assert_ne!(mtime & (0x4000_0000_0000_0000u64 as i64), 0, "Utc kind");
+        // A stored stamp wins over the mtime.
+        let mut stamped = sample();
+        stamped.last_saved_binary = 0x48DF_4506_E391_C000;
+        write_player_file(&path, &stamped).unwrap();
+        let read = read_player_file(&path).unwrap();
+        assert_eq!(read.last_saved_binary, 0x48DF_4506_E391_C000u64 as i64);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The version gates around the timestamp: a release-201 file (below the
+    /// >= 202 gate) carries no stamp — the walk must stay aligned and the
+    /// field reads 0. Built by stripping every post-201 gate from the port's
+    /// own 326 stream (the same surgery the 321 favourites test runs): team
+    /// (283), bread (256), the 324 bool, the six unlocks (260), the death
+    /// pair (254), the 30 armour/dye favourites (322), the 40 bank4
+    /// favourites (255), 22 buff pairs (252), the 12th builderAccStatus
+    /// (230), the stamp (202) and the whole post-stamp tail (206+).
+    #[test]
+    fn w4_c43_the_timestamp_is_version_gated() {
+        let plain = serialize_plaintext(&sample());
+        let mut r = Reader::new(&plain);
+        r.skip(24).unwrap(); // version + FileMetadata
+        let name = r.cs_string().unwrap();
+        let mut w = Writer::new();
+        w.i32(201);
+        w.bytes(&plain[4..24]);
+        w.cs_string(&name);
+        // difficulty..hairDye: 1 + 8 + 4 + 1 = 14 bytes; the 283 team byte drops.
+        w.bytes(r.take(14).unwrap());
+        r.u8().unwrap(); // team (>= 283)
+        // hide BitsBytes (2) + hideMisc (1) + skinVariant (1) + stats (16).
+        w.bytes(r.take(2 + 1 + 1 + 16).unwrap());
+        // extra, bt1, bt2; then bread (256), the 324 bool, six unlocks (260).
+        w.bytes(r.take(3).unwrap());
+        r.u8().unwrap(); // bread
+        r.u8().unwrap(); // the 324 dead slot
+        for _ in 0..6 {
+            r.u8().unwrap(); // the six used* unlocks
+        }
+        w.bytes(r.take(1).unwrap()); // dd2
+        // tax (128); the PVE/PVP death pair is >= 254 — absent at 201.
+        w.bytes(r.take(4).unwrap());
+        r.take(8).unwrap();
+        w.bytes(r.take(21).unwrap()); // colours
+        for _ in 0..30 {
+            // armour/dye pairs: keep (id, prefix), drop the 322 favourite.
+            w.bytes(r.take(5).unwrap());
+            r.u8().unwrap();
+        }
+        // inventory (580) + misc (50) + banks 1-3 (1080) are gate-stable.
+        w.bytes(r.take(580 + 50 + 1080).unwrap());
+        for _ in 0..40 {
+            // bank4: keep the triple, drop the 255 favourite.
+            w.bytes(r.take(9).unwrap());
+            r.u8().unwrap();
+        }
+        w.bytes(r.take(1).unwrap()); // voidVaultInfo (>= 199)
+        // buffs: 22 pairs at 201 (< 252), the other 22 drop.
+        w.bytes(r.take(22 * 8).unwrap());
+        r.take(22 * 8).unwrap();
+        // spawn sentinel + hbLocked + hideInfo[13].
+        w.bytes(r.take(4 + 1 + 13).unwrap());
+        w.bytes(r.take(4 + 16).unwrap()); // angler (98) + dpad (162)
+        // builderAccStatus: 11 at 201 (>= 197, < 230).
+        w.bytes(r.take(11 * 4).unwrap());
+        r.take(4).unwrap();
+        w.bytes(r.take(4 + 1).unwrap()); // bartender (181) + dead (200)
+        // The stamp (202) and the whole 206+ tail are absent at 201.
+        let lo = w.into_inner();
+        let read = read_player_bytes(&lo).expect("the 201 file reads");
+        assert_eq!(read.name, "Belsin");
+        assert_eq!(read.last_saved_binary, 0, "no stamp below 202");
+        assert_eq!(read.inventory, sample().inventory);
+        assert_eq!(read.inv_favorites, sample().inv_favorites);
     }
 }

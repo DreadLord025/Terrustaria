@@ -360,6 +360,13 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // (`Player.cs:3200-3207`).
         current_loadout_index: 0,
         loadouts: Default::default(),
+        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — `Serialize`
+        // stamps the save-time clock on every write, `CreateAndSave`
+        // included (`PlayerFileData.cs:58` → `SavePlayer`). W4-c43.
+        last_saved_binary: tr_core::clock::utc_now_binary(),
+        // `CreateAndSave`'s fresh `FromCurrentSettings` metadata
+        // (`PlayerFileData.cs:53`): revision 0.
+        revision: 0,
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

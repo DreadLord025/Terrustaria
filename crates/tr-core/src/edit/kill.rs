@@ -403,7 +403,25 @@ fn kill_tile_cascading(
     } else {
         tree_drop_record(world, x, y)
     };
+    // W4-d16 residual 9 — the leashed-anchor tile-entity teardown
+    // (`WorldGen.cs:63691-63694` `DropItemForTileBreak` + `:63873-63880`
+    // `TEKiteAnchor.Kill`/`TECritterAnchor.Kill`): a broken 723/724 anchor
+    // drops its stored item (`TELeashedEntityAnchorWithItem.cs:20-30` —
+    // `Item.NewItem` at the cell, `itemType > 0` only) and removes the
+    // entity. The C# splits the drop (`:63691`, pre-clear, `!fail` ONLY —
+    // the `noItem` gate at `:63860` covers `KillTile_DropItems`, not this
+    // arm) from the entity kill (`:63873`, post-`KillTile_DropItems`);
+    // nothing between reads the entity, so the port folds both into one
+    // `remove_at` ahead of the cell clear. The drop rides `object_drops`
+    // (the app's `break_drop_events` spawns `drop.item`); the port's
+    // `kill_tile` is the real-break path (`fail = false`), so the drop
+    // always fires. The leashed kite/critter despawn (`OnRemoved` →
+    // `DespawnLeashedEntity`) is M7-TE-2 — the entity removal stands, the
+    // visual despawn unported. Runs only past `remove_tile`'s gates (the
+    // C# inactive/unbreakable refusals `:63519-63532` return before
+    // `:63691`).
     let kind = remove_tile(world, x, y)?;
+    let anchor_drop = anchor_teardown(world, x, y, kind);
     let mut kill = TileKill {
         kind,
         ..Default::default()
@@ -412,11 +430,55 @@ fn kill_tile_cascading(
         kill.tree_events.push(event);
     }
     square_tile_frame(world, x, y, no_item, destroy_object, &mut kill, rng);
+    if let Some(drop) = anchor_drop {
+        kill.object_drops.push(drop);
+    }
+    square_tile_frame(world, x, y, no_item, destroy_object, &mut kill);
     // The reframing half of the C# `TileFrame` calls: neighbours re-derive
     // their frames; `frame_important` kinds keep theirs and unsupported
     // torches fall (`reframe_area` = the non-object arm of `TileFrame`).
     after_edit(world, x, y);
     Some(kill)
+}
+
+/// W4-d16 residual 9 — the leashed-anchor teardown (the `KillTile` arms
+/// `WorldGen.cs:63691-63694` + `:63873-63880`): a broken kite/critter
+/// anchor (723/724) removes its tile entity (`TEKiteAnchor.Kill` →
+/// `TileEntity.Kill(x, y, type)`, `DataStructures/TileEntity.cs:110-116`
+/// — the position lookup + the type match) and drops the stored item
+/// (`TELeashedEntityAnchorWithItem.DropItemForTileBreak`,
+/// `TELeashedEntityAnchorWithItem.cs:20-30`: `itemType > 0` →
+/// `Item.NewItem(…, X*16, Y*16, 16, 16, itemType)` then `itemType = 0`).
+/// The 1x1 anchor's entity sits at the cell itself (no frame decode —
+/// the C# `TryGetAt(i, j)` reads the raw cell, unlike the item frame's
+/// `frameX % 36 / 18` origin walk `:63655`).
+fn anchor_teardown(world: &mut World, x: i32, y: i32, kind: u16) -> Option<ObjectDrop> {
+    // The C# arms gate on the PRE-clear `tile.type` (`:63691`/`:63873`/
+    // `:63877`) — the removed kind carries it.
+    if kind != 723 && kind != 724 {
+        return None;
+    }
+    // `TileEntity.Kill`'s type match (`TileEntity.cs:112`): a 723 cell
+    // kills only the KiteAnchor entity, a 724 only the CritterAnchor —
+    // a mismatch leaves the entity untouched.
+    let te_kind = world.tile_entities.get_at(x as i16, y as i16)?.kind;
+    if te_kind.tile() != kind {
+        return None;
+    }
+    let (te_kind, data) = world.tile_entities.remove_at(x as i16, y as i16)?;
+    match (te_kind, data) {
+        (
+            crate::tile_entities::TeKind::KiteAnchor
+            | crate::tile_entities::TeKind::CritterAnchor,
+            crate::tile_entities::TeData::Anchor(item_type),
+        ) if item_type > 0 => Some(ObjectDrop {
+            tile_kind: te_kind.tile(),
+            x,
+            y,
+            item: Some(item_type),
+        }),
+        _ => None,
+    }
 }
 
 /// The tree drop record of the cell about to die — `KillTile_GetItemDrops`'s

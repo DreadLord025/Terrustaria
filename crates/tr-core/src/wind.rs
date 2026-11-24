@@ -379,12 +379,20 @@ impl Wind {
     /// the old `return false` refused every probe that touched the world
     /// edge — the sunflower's 2x5 window at the map border, the player's
     /// `wind_here` at the edge).
+    /// wind-blocking wall. W4-d16 residual 7: the C# `InWorld` guard
+    /// (`:86868`) SKIPS out-of-world cells — only an in-world null tile
+    /// refuses (`:86871-86874`, never occurs with the `Main.tile`
+    /// allocation); the port's `World::tile` answers `None` out of bounds,
+    /// so `None` continues (the old refuse-on-`None` folded every
+    /// edge-of-map region calm; the kite pool's own copy carries the same
+    /// fix, `projectile_ai_kites.rs`).
     pub fn in_a_place_with_wind(&self, world: &World, x: i32, y: i32, w: i32, h: i32) -> bool {
         if !self.blows_at_height(y) {
             return false;
         }
         for i in 0..w {
             for j in 0..h {
+                // `:86868` — out-of-world cells are SKIPPED, not a refusal.
                 let Some(tile) = world.tile(x + i, y + j) else {
                     // `InWorld` false (`:86868`): the cell is outside the
                     // world — the C# skips it, the scan continues.
@@ -1126,6 +1134,37 @@ mod tests {
 
         wind.sway_enabled = false;
         assert_eq!(wind.cycle(0, 101, 0.0), 0.0);
+    }
+
+    /// W4-d16 residual 7 — `InAPlaceWithWind`'s out-of-world arm
+    /// (`WorldGen.cs:86868`): the `InWorld` guard SKIPS outside cells, so
+    /// an edge-of-map region straddling the border still reads windy when
+    /// its in-world cells are clear (the old refuse-on-`None` folded it
+    /// calm). The liquid/wall refusals stand for in-world cells only.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d16_in_a_place_with_wind_skips_out_of_world_cells() {
+        let mut wind = Wind::new(7);
+        wind.world_surface = 100.0;
+        let mut w = World::new("t".into(), 64, 64);
+        // A region starting LEFT of the map (x = -1): the outside column
+        // is skipped, the in-world column (0, 10) is clear air → windy.
+        assert!(wind.in_a_place_with_wind(&w, -1, 10, 2, 1), "the skip arm");
+        // Below the surface line the height gate refuses first.
+        assert!(!wind.in_a_place_with_wind(&w, -1, 100, 2, 1), "the height gate");
+        // An in-world liquid cell still refuses (`:86875`).
+        let i = w.index(0, 10);
+        w.tiles[i].liquid = 1;
+        assert!(!wind.in_a_place_with_wind(&w, -1, 10, 2, 1), "the liquid refusal");
+        w.tiles[i].liquid = 0;
+        // A wind-blocking wall refuses; an AllowsWind wall does not.
+        w.tiles[i].wall = 1;
+        assert!(!wind.in_a_place_with_wind(&w, -1, 10, 2, 1), "the wall refusal");
+        w.tiles[i].wall = 150;
+        assert!(wind.in_a_place_with_wind(&w, -1, 10, 2, 1), "AllowsWind 150");
+        // A FULLY out-of-world region above the surface: every cell skips
+        // → true (the C# loops spend nothing and return true).
+        assert!(wind.in_a_place_with_wind(&w, -4, 10, 2, 2), "all cells outside");
     }
 
     #[test]

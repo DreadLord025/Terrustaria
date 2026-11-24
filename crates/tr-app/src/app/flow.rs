@@ -3476,6 +3476,7 @@ pub(crate) mod front_flow_tests {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
         let cloud_field = crate::cloud::CloudField::new(world.seed);
+        let section_manager = crate::map_sections::MapSections::new(world.width, world.height);
         App {
             // The `Main.cs:67229-67236` load reset (strength 0, x/y -1).
             ambient_waterfall: (0.0, -1.0, -1.0),
@@ -3518,6 +3519,7 @@ pub(crate) mod front_flow_tests {
             town_spawn_requests: Vec::new(),
             reuse_delay: 0.0,
             pending_item_reuse: false,
+            alt_function_use: 0,
             window: None,
             gpu: None,
             renderer: None,
@@ -3542,7 +3544,10 @@ pub(crate) mod front_flow_tests {
             bg_instant: 0,
             bg_alpha_front: [0.0; 16],
             bg_alpha_far: [0.0; 16],
-            stars: Vec::new(),
+            forest_hills: [[7, 8]; 4],
+            forest_bg_anim: Default::default(),
+            bg_flash: Default::default(),
+            stars: crate::star_field::StarField::new(0),
             player_assets: PlayerAssets::default(),
             player: None,
             follow_player: false,
@@ -3616,6 +3621,7 @@ pub(crate) mod front_flow_tests {
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
+            pending_mass_wire_ops: Vec::new(),
             hotbar_scales: [0.75; HOTBAR],
             inventory_open: false,
             crafting_open: false,
@@ -3695,6 +3701,8 @@ pub(crate) mod front_flow_tests {
             join_target: None,
             map: None,
             map_queue: crate::map::MapUpdateQueue::default(),
+            section_manager,
+            debug_unlock_map: 0,
             map_grab: None,
             minimap_hover: None,
             map_style: 1,
@@ -3712,6 +3720,7 @@ pub(crate) mod front_flow_tests {
             mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
+            map_left_press: false,
             ui_right_release: false,
             control_throw: false,
             drop_right_edge: false,
@@ -3830,6 +3839,8 @@ pub(crate) mod front_flow_tests {
             legacy_light: None,
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
+            eclipse_light: 0.0,
+            mushroom_light_influence: 0.0,
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
             martian_light: 1.0,
@@ -3991,6 +4002,7 @@ pub(crate) mod front_flow_tests {
                 powers: crate::player_file::CreativePowersSave::written_fresh(),
                 current_loadout_index: 0,
                 loadouts: Default::default(),
+                revision: 0,
             },
         )
         .unwrap();

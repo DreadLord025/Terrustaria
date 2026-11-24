@@ -421,7 +421,9 @@ pub fn item_use_case2(
         tweak *= 0.75;
     }
     // `:610-634` — the pitch switch (one `Main.rand` draw per play, except
-    // 192's `Projectile.kiteSoundPitch` read — no item-use style is 192).
+    // 192's `Projectile.kiteSoundPitch` read — the kite's reel cue, W4-d16:
+    // the arm draws NOTHING and the pitch rides the caller's pitchOffset,
+    // the static's port seam).
     let mut pitch = match num {
         53 => rng(-20, -11) as f32 * 0.02,
         55 => -(rng(-20, -11) as f32) * 0.02,
@@ -431,6 +433,10 @@ pub fn item_use_case2(
             tweak *= 0.6; // `:626` — Volume *= 0.6 rides the pitch arm
             rng(-50, 51) as f32 * 0.002
         }
+        // `:628-630` — the kite reel cue: `Pitch = Projectile.kiteSoundPitch`,
+        // NO draw. The port hands the pitch through the wants_sound
+        // pitchOffset (the final `pitch + pitchOffset` is the kite pitch).
+        192 => 0.0,
         _ => rng(-6, 7) as f32 * 0.01,
     };
     // `:635-639` — the music-box styles play at the music pitch; `:640-643`

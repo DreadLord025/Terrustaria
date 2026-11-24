@@ -398,6 +398,85 @@ fn update_golf_state(
     golf_state.update(held as i32, held_shoot, local_id, live_ball.as_ref());
 }
 
+/// `Player.UpdatePet` + `Player.UpdatePetLight` (`Player.cs:17298-17340`,
+/// called `:25573-25574` right after `UpdateBuffs` `:25566`, inside the
+/// `whoAmI == Main.myPlayer` gate): the vanity/light-pet buff PERSISTENCE
+/// mechanism. Every tick, if the misc-equip pet/light slot holds an item
+/// whose `buffType` is a vanity or light pet, the slot is not hidden and
+/// the buff is absent (`FindBuffIndex == -1`), re-grant `AddBuff(num, 3600)`
+/// and play the item's UseSound. This is what keeps a pet buff alive after
+/// the use-path's `buffTime = 0` grant expires — without it every pet item
+/// (the Jumino 5276 included) loses its buff the same tick it is used.
+///
+/// The light half's fairy trio (`:17322-17336`): buff 27 (Fairy) also
+/// matches its 102/101 legacy aliases; when none is present the re-grant
+/// picks one of {27, 102, 101} via `Utils.SelectRandom(Main.rand, …)`
+/// (`Utils.cs:2459-2462` — one `Next(3)` draw on the `UpdatePlayers`
+/// stream, the `Player.Update` swap `Main.cs:17754`).
+///
+/// The Carrot (603) gate (`:17303`/`:17318`): `type != 603 ||
+/// Main.runningCollectorsEdition` — the port has no collector's-edition
+/// flag (it folds false, the retail-registry/DLC check `Main.cs:4231-4238`
+/// is unported), so the Carrot never re-grants; recorded as a fold.
+///
+/// The sound plays at `base.position` (the TOP-LEFT, `:17306`/`:17338` —
+/// NOT the use-start's `base.Center`), through the same `play_use_sound`
+/// façade (the case-2 draws ride `UpdatePlayers`, the `GetRandomPitch`
+/// NextFloat rides the audio-only static).
+fn update_pet_persistence(
+    p: &mut Player,
+    misc: &[ItemSlot; MISC],
+    audio: &mut crate::audio::Audio,
+    rng: &mut tr_core::UnifiedRandom,
+) {
+    for slot_idx in 0..2 {
+        let slot = &misc[slot_idx];
+        if slot.count < 1 {
+            continue; // `stack >= 1`
+        }
+        let Some(def) = crate::registry::get(slot.kind) else {
+            continue;
+        };
+        let num = def.buff_type;
+        if num < 1 {
+            continue; // `buffType >= 1`
+        }
+        if !(crate::buffs::is_vanity_pet(num) || crate::buffs::is_light_pet(num)) {
+            continue; // `Main.vanityPet[num] || Main.lightPet[num]`
+        }
+        if p.hide_misc[slot_idx] {
+            continue; // `!hideMisc[i]`
+        }
+        if slot.kind == 603 {
+            continue; // the Carrot: runningCollectorsEdition folds false
+        }
+        // `FindBuffIndex(num)` — the light half's fairy aliases first.
+        let mut found = p.buffs.find_buff_index(num).is_some();
+        let mut grant = num;
+        if slot_idx == 1 && num == 27 {
+            if !found {
+                found = p.buffs.find_buff_index(102).is_some();
+            }
+            if !found {
+                found = p.buffs.find_buff_index(101).is_some();
+            }
+            if !found {
+                // `Utils.SelectRandom<int>(Main.rand, 27, 102, 101)` —
+                // one Next(3) draw, the choice order verbatim.
+                grant = [27, 102, 101][rng.next_range(0, 3) as usize];
+            }
+        }
+        if found {
+            continue;
+        }
+        p.buffs.add_buff(grant, 3600);
+        // `SoundEngine.PlaySound(miscEquips[i].UseSound, base.position)`.
+        if let Some(style) = def.use_sound {
+            audio.play_use_sound(style, p.x, p.y, def.use_sound_pitch, rng);
+        }
+    }
+}
+
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
     let (hold_right, hold_jump) = crate::env::hold_input();
@@ -540,14 +619,33 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
         // `PickItemSelectionOverride` (`Player.cs:17410-17432`): the
         // mouse-item arm (`:17412-17416`, slot 58) has no port (the live
-        // slot indexes the 50-grid); the smart-select arm is the override.
+        // slot indexes the 50-grid); the smart-select arm is the override,
+        // then the afk auto-kite arm (`:17421-17428`, W4-d16 residual 8 —
+        // the 3600-tick gate + the holdStyle-0 use-button force).
         // `controlTorch` = the LeftShift auto-select key (`Main.cTorch`).
         let control_torch = app
             .keys
             .iter()
             .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Torch, *k));
+        // `Player.controlTorch` lands on the player for the afk gate
+        // (`Player.cs:25497` — W4-d15 final phase); the C# sets it in
+        // `TriggersSet.CopyInto` ahead of `Player.Update`.
+        if let Some(p) = app.player.as_mut() {
+            p.control_torch = control_torch;
+        }
+        // W4-d16 residual 8 — `UpdateEquips`' `RefreshAutoKitingFromItemTypeAndSlot`
+        // scan (`Player.cs:12898`/`:12905`): the C# `ResetEffects` clears
+        // `selectedKite = -1` (`:18432`, `:25491`) AFTER the `:25218`
+        // selection update reads it, so the override sees LAST tick's
+        // `UpdateEquips` pin (`:25633`). The port's `update_with_grapple`
+        // ResetEffects clear runs later in this pass; re-pinning here
+        // (pre-override, against this tick's inventory) gives the gate a
+        // live slot — the one-tick-early deviation is observation-identical
+        // for a stable inventory (the pin only changes when the kite moves
+        // slots, and the C# would catch up the next tick).
+        super::editing::kites::refresh_selected_kite(app);
         let override_slot = if can_change {
-            app.player.as_ref().and_then(|p| {
+            let smart = app.player.as_ref().and_then(|p| {
                 let (sw, sh) = app.screen_size();
                 let mouse = (
                     app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
@@ -564,7 +662,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     wet: p.wet,
                 };
                 crate::hotbar::smart_select_lookup(&ctx, control_torch, app.selected)
-            })
+            });
+            // `:17417-17420` — SmartSelectLookup wins; the afk arm is the
+            // else (`:17421`).
+            smart.or_else(|| super::editing::kites::afk_auto_kite_override(app))
         } else {
             None
         };
@@ -598,6 +699,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.mine_down = false;
                 }
             }
+        }
+        // W4-d16 residual 8 — `Player.Update`'s afk-counter tail
+        // (`Player.cs:25497-25514`): AFTER the `:25218` selection update
+        // (the override gate read the pre-increment counter) and BEFORE
+        // the movement block — the standing-still read is the PREVIOUS
+        // tick's velocity, exactly the C# order. The counters are not
+        // ResetEffects fields, so the later `update_with_grapple` clear
+        // block does not touch them.
+        {
+            let item_animation = (app.swing * 60.0).round() as i32;
+            super::editing::kites::afk_counter_tick(app, item_animation, control_torch);
         }
     }
 
@@ -1642,6 +1754,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if !burning_or_poisoned && p.hp > 0 {
                 p.trap_debuff_source = false;
             }
+            // W4-d20 T4b — `Player.UpdatePet`/`UpdatePetLight`
+            // (`Player.cs:25573-25574`): right after `UpdateBuffs`
+            // (`:25566`, the buff arms above) and before `UpdateEquips`
+            // (`:25633`, the grants below) — the vanity/light-pet buff
+            // re-grant (3600) + UseSound, the persistence mechanism for
+            // every pet item. The fairy trio's SelectRandom draw rides
+            // the same `UpdatePlayers` stream.
+            update_pet_persistence(
+                p,
+                &app.equip.misc_equips,
+                &mut app.audio,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port
@@ -3174,6 +3299,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     crate::signs::sign_tick(app); // the sign range close (`Player.cs:27504-27518`) + the editSign gate (`Main.cs:17389-17394`), W4-f22
     if map_open {
         app.update_map_input();
+    } else {
+        // `Player.cs:24909-24928`: the same input block's not-fullscreen arm
+        // — the `mapStyle == 1` minimap zoom keys (W4-f46 closeout census).
+        app.update_minimap_zoom_keys();
     }
 }
 
@@ -5870,5 +5999,106 @@ mod tests {
         let pl = app.player.as_ref().unwrap();
         assert!(!pl.luck_state.lantern_night);
         assert!(pl.luck_state.luck.abs() < 1e-4, "the term drops: {}", pl.luck_state.luck);
+    // ---- W4-d20 T4b: UpdatePet/UpdatePetLight persistence — WRITTEN NOT RUN ----
+    //
+    // The witnesses call `update_pet_persistence` DIRECTLY (not through the
+    // full tick): the accessory buff arm (`spawn_pet_if_needed`) pins a LIVE
+    // pet buff to 18000 every tick, which would mask the re-grant's 3600 and
+    // the absent-buff gate. The direct call isolates the `UpdatePet` logic.
+
+    /// A pet-persistence rig: a standing player, a silent audio bank and a
+    /// seed-0 `UpdatePlayers` stream.
+    fn pet_rig() -> (Player, crate::audio::Audio, UnifiedRandom) {
+        let w = World::new("pet".into(), 64, 48);
+        let p = Player::spawn(&w);
+        (p, crate::audio::Audio::new(None), UnifiedRandom::new(0))
+    }
+
+    /// The Jumino pet item 5276 (`DefaultToVanitypet(994, 345)`,
+    /// `Item.cs:41867-41872`): equipped in misc[0] with NO buff present,
+    /// `UpdatePet` (`Player.cs:17298-17309`) re-grants `AddBuff(345, 3600)`
+    /// and plays the UseSound. The use-path's `buffTime = 0` grant expires
+    /// the same tick — this is the mechanism that keeps the pet alive.
+    #[test]
+    fn w4_d20_t4b_the_equipped_jumino_regrants_its_buff() {
+        let mut misc = [EMPTY_SLOT; MISC];
+        misc[0] = slot(5276);
+        let (mut p, mut audio, mut rng) = pet_rig();
+        assert_eq!(p.buffs.find_buff_index(345), None, "no buff yet");
+        update_pet_persistence(&mut p, &misc, &mut audio, &mut rng);
+        let idx = p.buffs.find_buff_index(345).expect("the pet buff re-granted");
+        assert_eq!(p.buffs.buff_time[idx], 3600, "AddBuff(num, 3600)");
+    }
+
+    /// The re-grant is gated on the buff being ABSENT: with buff 345
+    /// already live, `UpdatePet` does nothing (no duplicate, no reset).
+    #[test]
+    fn w4_d20_t4b_the_live_pet_buff_is_not_regranted() {
+        let mut misc = [EMPTY_SLOT; MISC];
+        misc[0] = slot(5276);
+        let (mut p, mut audio, mut rng) = pet_rig();
+        p.buffs.add_buff(345, 100);
+        update_pet_persistence(&mut p, &misc, &mut audio, &mut rng);
+        let idx = p.buffs.find_buff_index(345).unwrap();
+        assert_eq!(p.buffs.buff_time[idx], 100, "the live buff is untouched");
+    }
+
+    /// `hideMisc[0]` blocks the re-grant (`!this.hideMisc[0]`, `:17303`):
+    /// a hidden pet stays hidden until un-hidden.
+    #[test]
+    fn w4_d20_t4b_the_hidden_pet_does_not_regrant() {
+        let mut misc = [EMPTY_SLOT; MISC];
+        misc[0] = slot(5276);
+        let (mut p, mut audio, mut rng) = pet_rig();
+        p.hide_misc[0] = true;
+        update_pet_persistence(&mut p, &misc, &mut audio, &mut rng);
+        assert_eq!(p.buffs.find_buff_index(345), None, "the hidden pet refuses");
+    }
+
+    /// The Carrot (603) gate (`type != 603 || runningCollectorsEdition`,
+    /// `:17303`): the collector's-edition flag folds false in the port, so
+    /// the Carrot never re-grants even though buff 40 is a vanity pet.
+    #[test]
+    fn w4_d20_t4b_the_carrot_never_regrants() {
+        let mut misc = [EMPTY_SLOT; MISC];
+        misc[0] = slot(603);
+        let (mut p, mut audio, mut rng) = pet_rig();
+        let carrot_buff = crate::registry::get(603).unwrap().buff_type;
+        update_pet_persistence(&mut p, &misc, &mut audio, &mut rng);
+        assert_eq!(
+            p.buffs.find_buff_index(carrot_buff),
+            None,
+            "the Carrot is collector's-edition-only"
+        );
+    }
+
+    /// The light-pet fairy trio (`UpdatePetLight`, `:17322-17336`): the
+    /// Fairy Bell (425, buff 27) with no 27/102/101 present picks one via
+    /// `SelectRandom(Main.rand, 27, 102, 101)` — one `Next(3)` draw — and
+    /// grants it 3600. A live 102 alias blocks the re-grant (no draw).
+    #[test]
+    fn w4_d20_t4b_the_fairy_trio_picks_and_grants() {
+        let mut misc = [EMPTY_SLOT; MISC];
+        misc[1] = slot(425);
+        let (mut p, mut audio, mut rng) = pet_rig();
+        let before = rng.clone();
+        update_pet_persistence(&mut p, &misc, &mut audio, &mut rng);
+        let granted = [27, 102, 101]
+            .iter()
+            .find(|&&b| p.buffs.find_buff_index(b).is_some())
+            .copied();
+        assert!(granted.is_some(), "one of the fairy trio was granted");
+        let idx = p.buffs.find_buff_index(granted.unwrap()).unwrap();
+        assert_eq!(p.buffs.buff_time[idx], 3600);
+        assert_ne!(rng, before, "the fairy pick drew Next(3)");
+        // A live 102 alias blocks the re-grant and spends no draw.
+        let (mut p2, mut audio2, mut rng2) = pet_rig();
+        p2.buffs.add_buff(102, 100);
+        let before2 = rng2.clone();
+        update_pet_persistence(&mut p2, &misc, &mut audio2, &mut rng2);
+        assert!(p2.buffs.find_buff_index(102).is_some(), "the alias stands");
+        assert_eq!(p2.buffs.find_buff_index(27), None, "no 27 re-grant");
+        assert_eq!(p2.buffs.find_buff_index(101), None, "no 101 re-grant");
+        assert_eq!(rng2, before2, "the alias path spends no draw");
     }
 }
