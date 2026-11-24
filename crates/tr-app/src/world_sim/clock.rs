@@ -44,10 +44,12 @@ pub(crate) fn advance_time(
             // `UpdateTime_StartNight`'s blood-moon roll (`Main.cs:65333-65352`):
             // one `Main.rand` draw at the boundary (`Next(maxValue)` in the C#;
             // the port's uniform-threshold form), through the named `UpdateTime`
-            // stream the stage runs under.
+            // stream the stage runs under. W4-g70 lane 8: the tenth-anniversary
+            // flag (`:65334-65337`) is live now — 1-in-6 on the seed.
             let roll = rng.next_double();
+            let anniversary = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
             blood_moon_started =
-                world.roll_blood_moon(roll, false, any_player_life_over_120, false);
+                world.roll_blood_moon(roll, anniversary, any_player_life_over_120, false);
             // `Main.cs:65353-65354`: `Main.time = 0.0; Main.dayTime = false;` —
             // the overshoot past the boundary is discarded, not wrapped.
             t = 0.0;
@@ -142,6 +144,15 @@ pub(crate) fn advance_time_with_events(
     if was_day && !app.world.day_time {
         // StartNight: the eclipse row cleared above, then the world clear.
         app.world.eclipse = false;
+        // `Star.NightSetup()` (`Main.cs:65223`, W4-g70 lane 8): the night's
+        // starfall boost rolls on the same UpdateTime stream, ahead of the
+        // event pair below (the C# order: NightSetup :65223 < setFireFlyChance
+        // :65224 < BirthdayParty.CheckNight :65225 < LanternNight :65226).
+        let anniversary = app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        app.stars.night_setup(rng, anniversary);
         // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
         // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
         // S1-F-14.

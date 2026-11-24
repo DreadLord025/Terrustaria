@@ -68,9 +68,7 @@ use crate::rain::Rain;
 use crate::registry;
 use crate::render::debug::{DebugCache, StatsAcc};
 use crate::render::entities::{NpcAssets, PlayerAssets, make_npc_assets, make_player_assets};
-use crate::render::sky::{
-    CloudSprite, SkyAssets, StarSprite, make_clouds, make_sky_assets, make_stars,
-};
+use crate::render::sky::{CloudSprite, SkyAssets, make_clouds, make_sky_assets};
 use crate::render::tiles::{DrawScratch, TileDrawStats};
 use crate::settings;
 use crate::ui;
@@ -151,7 +149,19 @@ pub(crate) struct App {
     pub(crate) bg_alpha_front: [f32; 16],
     /// `Main.bgAlphaFarBackLayer` (16 slots): per far-back (mountain) layer alpha.
     pub(crate) bg_alpha_far: [f32; 16],
-    pub(crate) stars: Vec<StarSprite>,
+    /// `Main.treeMntBGSet1..4` as the animation leaves them: the live hill
+    /// ids of the four forest sets (`setBG` seeds them,
+    /// `DoUpdate_AnimateBackgrounds` steps the animated families in place).
+    pub(crate) forest_hills: [[i32; 2]; 4],
+    /// `Main.bgFrame`/`bgFrameCounter` for the four forest slots
+    /// (`DoUpdate_AnimateBackgrounds_UpdateForest`, `Main.cs:19658`).
+    pub(crate) forest_bg_anim: world_sim::bg_animation::ForestBgAnimation,
+    /// `WorldGen.BackgroundsCache` (`BackgroundChangeFlashInfo.cs`): the
+    /// style-change flash the `DrawChangeOverlay` passes read.
+    pub(crate) bg_flash: world_sim::bg_animation::BackgroundChangeFlash,
+    /// The live star field (`Star.cs`, W4-g70 lane 8): spawn/update/
+    /// NightSetup/StarFall — the draw reads `stars.stars`.
+    pub(crate) stars: crate::star_field::StarField,
     pub(crate) player_assets: PlayerAssets,
     pub(crate) player: Option<Player>,
     pub(crate) follow_player: bool,
@@ -570,6 +580,16 @@ pub(crate) struct App {
     /// `Terraria.Map.MapUpdateQueue` (`MapUpdateQueue.cs`): the edit-side map
     /// refresh queues, drained per frame (`Main.cs:61862`).
     pub(crate) map_queue: map::MapUpdateQueue,
+    /// `Main.sectionManager` (`Main.cs:399`, `WorldSections.cs:6-358`): the
+    /// section grid the `Main.cs:61871-61879` reveal sweep walks under its
+    /// 5 ms budget. Constructed at `WorldGen.cs:7150`'s truncating dims;
+    /// the port's resident world arms every section loaded + framed.
+    pub(crate) section_manager: crate::map_sections::MapSections,
+    /// `DebugOptions.unlockMap` (`Testing/DebugOptions.cs:34`): 0 off,
+    /// 1 the flat-255 section reveal, 2 the pretty falloff. The sweep's
+    /// `:61873-61876` arm reads it; `:61880-61883` zeroes it once the
+    /// sweep is exhausted and no refresh is pending.
+    pub(crate) debug_unlock_map: i32,
     /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
     /// fullscreen-map drag (`Main.cs:55346-55354`).
     pub(crate) map_grab: Option<[f32; 2]>,
@@ -579,9 +599,12 @@ pub(crate) struct App {
     /// `Main.LocalPlayer.mouseInterface = true` (the mine/place suppression).
     pub(crate) minimap_hover: Option<ui::minimap::MinimapButton>,
     /// `Main.mapStyle` (`Main.cs:66750`, default 1): 0 = off, 1 = the minimap
-    /// frame, 2 = the overlay (out of P4 scope — nothing draws, the whole-UI P4
-    /// plan's Uncertainty 7). The map-style buttons land in Task 3, so a debug
-    /// env var selects it for screenshots.
+    /// frame, 2 = the screen overlay — its tile pass + layer walk landed the
+    /// D18 re-fold (research/84 §10.5) and the `:55626-55694` icon block the
+    /// f29-tip landing (research/140 §11.1). Cycled by the inventory icon row
+    /// (`Main.cs:41106-41120`, `handle_inventory_clicks`) and the `cMapStyle`
+    /// key (Tab, `Player.cs:24949-24965`, `world_key`); a debug env var selects
+    /// it for screenshots.
     pub(crate) map_style: i32,
     /// `Main.teamCooldown` (`Main.cs:965`): ticks left before the PVP toggle
     /// and the team cells accept another change (`teamCooldownLen = 300`,
@@ -618,6 +641,12 @@ pub(crate) struct App {
     pub(crate) mouse_npc_type: i32,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
+    /// The frame's left-press edge snapshotted BEFORE the click cluster
+    /// consumes `ui_left_press` (`handle_inventory_clicks` clears it every
+    /// frame). The fullscreen map's pylon marker click reads it in the draw
+    /// (`TeleportPylonsMapLayer.cs:83`/`:90` — `Main.mouseLeft &&
+    /// Main.mouseLeftRelease`), which runs after the cluster.
+    pub(crate) map_left_press: bool,
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
     /// button's release edge, consumed per frame).
     pub(crate) ui_right_release: bool,
@@ -833,6 +862,14 @@ pub(crate) struct App {
     /// crystal-wall flicker (`DoUpdate_AnimateCursorColors` in Main.cs).
     pub(crate) mouse_text_color: u8,
     pub(crate) mouse_text_color_dir: i8,
+    /// `Main.eclipseLight` (`Main.cs:1211`): the eclipse darkening rides the
+    /// day clock and decays 0.01 per `SetBackColor` call (`:63845-63860`);
+    /// the draw pass steps it (W4-g70 lane 8).
+    pub(crate) eclipse_light: f32,
+    /// `Main.SmoothedMushroomLightInfluence` (`Main.cs:1283`): the ±0.01/
+    /// −0.02 walk toward `MushroomTileCount / 160` (`:61945-61970`), stepped
+    /// once per draw before `SetBackColor`.
+    pub(crate) mushroom_light_influence: f32,
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
@@ -1078,6 +1115,11 @@ pub(crate) struct App {
     /// written after the box draws, so the box always consumes the previous frame's
     /// value (0 on the first frame — a negative height draws nothing, like XNA).
     pub(crate) hell_black_box_bottom: f32,
+    /// `Main.undergroundBackground`/`oldUndergroundBackground`/`ugBackTransition`
+    /// (`Main.cs:52823-52841`): the cavern style latch + cross-fade, stepped once
+    /// per `DrawBackground` (W4-g72 final — the pick reads the rolled cave arrays
+    /// + `scene_metrics`; the fade overlay draws stay atlas-blocked).
+    pub(crate) ug_back: crate::render::bg_styles::UgBackState,
 }
 
 /// G6: everything the world instance range (sky strips, tiles, walls, dark rects)
@@ -1384,7 +1426,8 @@ impl App {
 
     /// `Player.cs:24774-24793` + `24898-24908`: the fullscreen-map controls. The pan
     /// step is `16 / scale` tiles **once per frame, with no `dt` factor** (the
-    /// original runs it in the per-frame input pass).
+    /// original runs it in the per-frame input pass); each movement arm also
+    /// cancels the pylon pan target (`PanTargetMapFullscreen = false`).
     pub(crate) fn update_map_input(&mut self) {
         let (sw, _) = self.screen_size();
         let Some(m) = self.map.as_mut() else { return };
@@ -1400,16 +1443,24 @@ impl App {
                 .any(|k| crate::input_map::is_bound(&binds, action, *k))
                 || k(arrow)
         };
+        // `Player.cs:24774-24793`: each held movement row pans the map AND
+        // cancels an armed pylon pan target (`PanTargetMapFullscreen =
+        // false` in every arm, `:24776`/`:24781`/`:24786`/`:24791` — the
+        // shared gap both overlay siblings missed, W4-f46 close).
         if held(crate::input_map::Action::Up, KeyCode::ArrowUp) {
+            m.pan_target = None; // `:24776`
             m.pos[1] -= step;
         }
         if held(crate::input_map::Action::Down, KeyCode::ArrowDown) {
+            m.pan_target = None; // `:24781`
             m.pos[1] += step;
         }
         if held(crate::input_map::Action::Left, KeyCode::ArrowLeft) {
+            m.pan_target = None; // `:24786`
             m.pos[0] -= step;
         }
         if held(crate::input_map::Action::Right, KeyCode::ArrowRight) {
+            m.pan_target = None; // `:24791`
             m.pos[0] += step;
         }
         // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
@@ -1428,19 +1479,104 @@ impl App {
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
         // per-frame cursor delta (`Main.grabMapX`/`grabMapY`).
+        // `Main.cs:55342`: `Main.mouseLeft && !CaptureManager.Instance.UsingMap`
+        // — while the capture interface owns the map the whole drag block is
+        // skipped (`CaptureManager.cs:44-54`: false while inactive); the grab
+        // anchor is NOT touched, exactly like the C# leaving grabMapX/Y stale.
         let cursor = self.mouse_pos;
         if self.mine_down {
-            if let Some(anchor) = self.map_grab {
-                let d = map::map_drag_delta([cursor.x - anchor[0], cursor.y - anchor[1]], m.scale);
-                m.pos[0] += d[0];
-                m.pos[1] += d[1];
+            if !self.capture.using_map() {
+                if let Some(anchor) = self.map_grab {
+                    let d =
+                        map::map_drag_delta([cursor.x - anchor[0], cursor.y - anchor[1]], m.scale);
+                    m.pos[0] += d[0];
+                    m.pos[1] += d[1];
+                }
+                self.map_grab = Some([cursor.x, cursor.y]);
             }
-            self.map_grab = Some([cursor.x, cursor.y]);
         } else {
             self.map_grab = None;
         }
         m.scale = map::map_scale_clamp(sw, self.world.width, m.scale);
         m.pos = map::map_clamp_pos(m.pos, &self.world);
+    }
+
+    /// `Player.cs:24909-24947`: the not-fullscreen arm of the map-key input
+    /// block — while `Main.mapStyle == 1`, held `MapZoomIn`/`MapZoomOut`
+    /// (`Main.cMapZoomIn`/`cMapZoomOut`, defaults `Add`/`Subtract`,
+    /// `Main.cs:67190-67191`) scale `Main.mapMinimapScale` by 1.025/0.975 per
+    /// update (`ui::minimap::apply_key_zoom`) and `MapAlphaUp`/`MapAlphaDown`
+    /// (`PageUp`/`PageDown`, `:67192-67193`) step `Main.mapMinimapAlpha`
+    /// ±0.015 (`:24921-24928`); while `Main.mapStyle == 2` the same rows step
+    /// `Main.mapOverlayScale` ×1.05/×0.95 + `Main.mapOverlayAlpha` ±0.015
+    /// (`:24930-24947`). No `mapEnabled` gate — the C# arms check only the
+    /// style (`:24911`/`:24930`); the draw side is what goes dark. The clamps
+    /// are the draw-side ones (`Main.cs:55515-55530`/`:55550-55566`), applied
+    /// per update like `apply_key_zoom` does for the chrome buttons. The
+    /// style-2 overlay DRAW stays D18; the state rides for the keys
+    /// (W4-g53 `a9774d2a` superset folded — research/84 §10 dup ruling).
+    /// The Tab style-cycle row (`:24949-24965`) is `world_key`'s
+    /// `MapAction::Style` arm (the port's press edge); the fullscreen half
+    /// is `update_map_input` above.
+    pub(crate) fn update_minimap_zoom_keys(&mut self) {
+        // `Player.cs:24768`: the whole input block sits behind the
+        // chat/sign/chest editors (`!drawingPlayerChat && !editSign &&
+        // !editChest && !blockInput`); the port's chat overlay is the live
+        // one (the e18 `249a0c1b` arm's gate, folded with the dup pass).
+        if self.chat.open || self.menu.is_some() || self.front.is_some() {
+            return;
+        }
+        if self.map_style != 1 && self.map_style != 2 {
+            return;
+        }
+        if self.map.as_ref().is_some_and(|m| m.open) {
+            return; // the fullscreen arm is `update_map_input`
+        }
+        let (sw, sh) = self.screen_size();
+        let map_binds = self.map_binds.clone();
+        let held = |action: crate::input_map::MapAction| {
+            self.keys.iter().any(|k| {
+                map_binds[action.index()].as_str() == crate::input_map::key_name(*k)
+            })
+        };
+        let zoom_in = held(crate::input_map::MapAction::ZoomIn);
+        let zoom_out = held(crate::input_map::MapAction::ZoomOut);
+        let alpha_up = held(crate::input_map::MapAction::AlphaUp);
+        let alpha_down = held(crate::input_map::MapAction::AlphaDown);
+        if self.map_style == 1 {
+            if let Some(m) = self.map.as_mut() {
+                ui::minimap::apply_key_zoom(zoom_in, zoom_out, &mut m.minimap_scale);
+                // `:24921-24928` then the `:55523-55530` clamp.
+                if alpha_up {
+                    m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, true);
+                }
+                if alpha_down {
+                    m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, false);
+                }
+                m.minimap_alpha = map::map_alpha_clamp(m.minimap_alpha);
+            }
+        } else if let Some(m) = self.map.as_mut() {
+            // `:24930-24947`: the overlay's rows — ×1.05/×0.95 (the same
+            // pair as the fullscreen zoom) + ±0.015.
+            if zoom_in {
+                m.overlay_scale = map::map_key_scale(m.overlay_scale, true);
+            }
+            if zoom_out {
+                m.overlay_scale = map::map_key_scale(m.overlay_scale, false);
+            }
+            if alpha_up {
+                m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, true);
+            }
+            if alpha_down {
+                m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, false);
+            }
+            // `Main.cs:55550-55566`: RenderZoom = ForcedMinimumZoom *
+            // Clamp(GameZoomTarget, 1, 2) (`:61999`, the port's `zoom`).
+            let render_zoom = Self::forced_minimum_zoom((sw, sh)) * self.zoom;
+            m.overlay_scale =
+                map::overlay_scale_clamp(sw, self.world.width, render_zoom, m.overlay_scale);
+            m.overlay_alpha = map::map_alpha_clamp(m.overlay_alpha);
+        }
     }
 
     /// `Main.UpdateViewZoomKeys` (`Main.cs:16801-16815`): ViewZoomIn/Out adjust
@@ -1556,11 +1692,10 @@ impl App {
     /// `Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`): the surface
     /// background style wanted by the biome around the scene centre.
     ///
-    /// Two deviations, both because the style they would select is not ported:
-    /// the forest sub-styles 10/11/12 need `Main.treeX[]` and the three extra
-    /// tree sets (only tree set 1 / `Background_50..52` is packed), and the
-    /// desert-variant styles 5/13/14 need `Main.desertBackgroundSet`. The forest
-    /// branch therefore stays 0 and the desert branch stays 2.
+    /// Both former deviations are closed on the merged state: the forest
+    /// branch resolves 10/11/12 through `Main.treeX` + the four packed sets
+    /// (W4-g70), and the desert-variant styles 5/13/14 are live since the
+    /// W4-g71 desert-set port.
     pub(crate) fn preferred_bg_style(&self) -> i32 {
         // `Main.SceneMetrics.Zone*`, read in the C#'s order.
         let m = &self.scene_metrics;
@@ -1583,9 +1718,16 @@ impl App {
         } else if m.enough_tiles_for_glowing_mushroom() {
             9
         } else if m.zone_desert {
-            // `(corrupt && evil > blood && evil > holy) ? 5 : ((crimson &&
-            // blood > holy) ? 14 : (!hallow ? 2 : 13))` — 5/13/14 unported.
-            2
+            // `Main.cs:64225` — the branch order lives in `biome.rs` so the
+            // witness can drive it without an App.
+            crate::biome::desert_preferred_style(
+                m.zone_corrupt,
+                m.zone_crimson,
+                m.zone_hallow,
+                m.evil_tile_count,
+                m.blood_tile_count,
+                m.holy_tile_count,
+            )
         } else if m.zone_hallow {
             6
         } else if m.zone_corrupt {
@@ -1601,7 +1743,23 @@ impl App {
         } else if m.zone_snow {
             7
         } else {
-            0
+            // `Main.cs:64249-64253`: the screen-centre column picks the
+            // forest set — `num2 = (screenPosition.X + screenWidth / 2) / 16`.
+            // The port's `camera` is the view centre, so `camera.x / 16` is
+            // that column (`screenPosition.X + screenWidth / 2 == camera.x`).
+            let num2 = (self.camera.x / TILE_PX) as i32;
+            let [x0, x1, x2] = self.world.tree_x;
+            if num2 >= x0 {
+                if num2 < x1 {
+                    10
+                } else if num2 >= x2 {
+                    12
+                } else {
+                    11
+                }
+            } else {
+                0
+            }
         }
     }
 
@@ -1627,8 +1785,22 @@ impl App {
             self.bg_style,
             self.world.jungle_bg_style as i32,
             self.world.hallow_bg_style as i32,
+            &self.world.desert_bg_set(),
             speed,
         );
+    }
+
+    /// `Main.DoUpdate_AnimateBackgrounds` (`Main.cs:19652-19655`, called at
+    /// `:17052`): step the four forest sets' animated hill families once per
+    /// world update, in slot order.
+    pub(crate) fn update_animate_backgrounds(&mut self) {
+        self.forest_bg_anim.update(&mut self.forest_hills);
+    }
+
+    /// `WorldGen.BackgroundsCache.UpdateFlashValues` (`Main.cs:17218`): the
+    /// 0.05-per-update decay of the style-change flashes.
+    pub(crate) fn update_bg_flash_values(&mut self) {
+        self.bg_flash.update_flash_values();
     }
 
     /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
@@ -2188,6 +2360,55 @@ impl App {
         }
     }
 
+    /// The single-tile map enqueue — `MapUpdateQueue.Add(x, y)` at
+    /// `MessageBuffer.cs:1153`'s head of the net-`5` tile-change arm (BEFORE
+    /// the KillTile/PlaceTile dispatch). The `Main.dedServ` gate
+    /// (`MapUpdateQueue.cs:23/43`) is structural: a dedicated server has no
+    /// map — the port's listen-server host DOES keep one (`netMode == 2` but
+    /// not `dedServ`), so its arm queues too; the
+    /// `generatingWorld`/`!mapEnabled` gates ride the callers as elsewhere.
+    pub(crate) fn queue_map_tile(&mut self, x: i32, y: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_tile(m, x, y);
+    }
+
+    /// `MapUpdateQueue.Add(Rectangle)` behind the map-enabled gate — the
+    /// `NetMessage.cs:2456` tail of `DecompressTileBlock` (the net-`10`
+    /// section snapshot queues its whole rect).
+    pub(crate) fn queue_map_area(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_area(m, x, y, w, h);
+    }
+
+    /// `WorldGen.RangeFrame`'s map half — the net-`20` tail
+    /// (`MessageBuffer.cs:1438`): the (vanilla-inverted) area add plus the
+    /// border-gated per-tile walk (`WorldGen.cs:80402-80411`).
+    pub(crate) fn queue_map_range_frame(
+        &mut self,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+    ) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_range_frame(m, start_x, start_y, end_x, end_y);
+    }
+
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
         world_sim::editing::update_editing(self, dt, screen);
     }
@@ -2310,10 +2531,15 @@ impl App {
         self.tile_anim.reset();
         self.tile_anim_step = FixedStepper::new(1.0 / 60.0, 8);
         // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
-        // the legacy engine owns the counter in the port (S1-E-19 wave B,
-        // `LegacyLighting.cs:345-348`).
+        // the legacy engine owns its counter in the port (S1-E-19 wave B,
+        // `LegacyLighting.cs:345-348`); the Color path's export cadence
+        // (`WorldMap::update`) gates on the map's own copy
+        // (`LightingEngine.cs:82-89`, W4-e18 final sweep).
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
+        }
+        if let Some(m) = self.map.as_mut() {
+            m.reset_map_delay();
         }
     }
 
@@ -2680,12 +2906,12 @@ impl App {
     /// A failed load leaves the current world untouched and returns the error,
     /// so the menu stays alive with its own world rather than a black screen.
     pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
-        let (world, sections) = load_world(path)?;
+        let (mut world, sections) = load_world(path)?;
         let content = assets::content_dir().context("no retail Content directory")?;
         let mut static_cache = self.static_sheets.take();
         let mut fonts_cache = self.fonts_cache.take();
         let built = build_atlas_reusing_static(
-            &world,
+            &mut world,
             &content.join("Images"),
             &mut static_cache,
             &mut fonts_cache,
@@ -2819,9 +3045,12 @@ impl App {
         atlas_stats: (u32, u32, usize, usize),
     ) -> App {
         let mut world = world;
+        // W4-g70: snapshot the forest styles before `world` moves into the
+        // struct literal — the live hill ids seed from them.
+        let forest_styles = world.forest_bg_styles;
         let clouds = make_clouds(&world, &lookups);
         let sky = make_sky_assets(&atlas, &world);
-        let stars = make_stars(&world);
+        let stars = crate::star_field::StarField::new(world.seed);
         let player_assets = make_player_assets(&atlas);
         let npc_assets = make_npc_assets(&atlas);
         let player_enabled = !crate::env::no_player();
@@ -3396,6 +3625,11 @@ impl App {
         }
         let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
         let world_seed = world.seed;
+        // W4-f45: the event/wind restore below applies only to a `.wld` load
+        // (the flags block is that format's home); a `.trwld`'s World carries
+        // the `World::new` zeros for these fields, so its schedulers keep
+        // their own defaults.
+        let from_wld = sections.from_wld;
         let mut wind = tr_core::wind::Wind::new(world_seed as u32);
         wind.world_surface = world.world_surface;
         wind.sway_enabled = !crate::env::no_wind();
@@ -3465,6 +3699,10 @@ impl App {
         if crate::env::map_open() {
             world_map.set_open(true);
         }
+        // `WorldGen.cs:7150`: `new WorldSections(maxTilesX / 200,
+        // maxTilesY / 150)` — the truncating grid, resident-armed. The
+        // dims are captured before the struct literal moves `world`.
+        let section_manager = crate::map_sections::MapSections::new(world.width, world.height);
         // `TR_AMBIENCE=<SkyEntityType>[,seed]`: queue one forced spawn (the
         // `AmbienceServer.ForceEntitySpawn` path, `AmbienceServer.cs:139-142`)
         // with a pinned seed, so the creature skies stay screenshotable
@@ -3483,13 +3721,25 @@ impl App {
         let seeded_chests = crate::chest_gen::store_from_records(&world, &sections.native.chests);
         // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
         // v8 section's recorded counts restore the tally; the vanilla rides
-        // them inside the world-flags block.
-        let seeded_banners: Vec<(i32, i32)> = sections
-            .native
-            .banners
-            .iter()
-            .map(|b| (b.banner, b.kills))
-            .collect();
+        // them inside the world-flags block. W4-f45: a `.wld` load reads the
+        // dense kill array out of the flags block (`World.banner_kill_counts`)
+        // and re-sparsifies it (the non-zero entries, ascending banner id).
+        let seeded_banners: Vec<(i32, i32)> = if sections.from_wld {
+            world
+                .banner_kill_counts
+                .iter()
+                .enumerate()
+                .filter(|(_, &kills)| kills != 0)
+                .map(|(banner, &kills)| (banner as i32, kills))
+                .collect()
+        } else {
+            sections
+                .native
+                .banners
+                .iter()
+                .map(|b| (b.banner, b.kills))
+                .collect()
+        };
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
@@ -3587,6 +3837,9 @@ impl App {
                 a[0] = 1.0;
                 a
             },
+            forest_hills: world_sim::bg_animation::hills_from_styles(&forest_styles),
+            forest_bg_anim: world_sim::bg_animation::ForestBgAnimation::default(),
+            bg_flash: world_sim::bg_animation::BackgroundChangeFlash::default(),
             stars,
             player_assets,
             player,
@@ -3868,6 +4121,8 @@ impl App {
             join_target,
             map: Some(world_map),
             map_queue: map::MapUpdateQueue::default(),
+            section_manager,
+            debug_unlock_map: 0,
             map_grab: None,
             minimap_hover: None,
             // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
@@ -3886,6 +4141,7 @@ impl App {
             mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
+            map_left_press: false,
             ui_right_release: false,
             control_throw: false,
             drop_right_edge: false,
@@ -3978,6 +4234,10 @@ impl App {
             // `Main.mouseTextColor` starts at 225 and drifts toward 255.
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
+            // `Main.eclipseLight`/`SmoothedMushroomLightInfluence` start 0
+            // (the statics' defaults, `Main.cs:1211`/`:1283`).
+            eclipse_light: 0.0,
+            mushroom_light_influence: 0.0,
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
@@ -4078,10 +4338,41 @@ impl App {
             summon_shot: crate::env::summon_shot(),
             world_key: None,
             hell_black_box_bottom: 0.0,
+            ug_back: crate::render::bg_styles::UgBackState {
+                style: 0,
+                old_style: 0,
+                transition: 0.0,
+            },
         };
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
         app.wiring.seed_rand(world_seed | 1);
+        // `WorldGen.cs:7944`: the load-time `BackgroundsCache.UpdateCache`
+        // snapshot — a non-zero loaded style latches its change flash.
+        app.bg_flash.update_cache(&app.world);
+        // W4-g72: the boot cave-background roll — `WorldGen.RandomizeCaveBackgrounds()`
+        // (`Main.cs:6603`, `Initialize_AlmostEverything`, fired once per
+        // process from the splash tail `:52572` / dedServ `:6499`). Census
+        // correction (research/64 §2): the roll fires BEFORE any world load,
+        // when `Main.maxTilesX` is still its static 0 (`Main.cs:1011` — the
+        // first writes are `autoCreate` `:4886-4896` / `LoadWorldHeader`
+        // `WorldFile.cs:1976`, both later), so it ALWAYS takes the else arm
+        // with width 0 (three `Next(0,0)` band draws — Knuth still samples —
+        // + four distinct styles + the ice/hell/jungle tail). The subsequent
+        // load's flags read (`WorldFile.cs:2058-2067`) then OVERWRITES the
+        // rolled statics: in the port the load has ALREADY run (`load_world`
+        // before `App::new`), so the boot roll's values are dead stores —
+        // every world carries its persisted (or generation-rolled) arrays.
+        // The roll still executes on a DEDICATED `UnifiedRandom(world_seed)`
+        // stream (the bare-`Main.rand` stand-in's seeding convention), NOT
+        // `rngs.global()` — advancing the shared stand-in would shift every
+        // menu-path witness pinned against a fresh global, and the C# boot
+        // roll draws the clock-seeded process stream the port cannot
+        // reproduce anyway (the recorded NamedRngs deviation).
+        let _boot_cave_roll = {
+            let mut rng = tr_core::UnifiedRandom::new(world_seed as i32);
+            tr_core::worldgen::cave_bg::randomize_cave_backgrounds(&mut rng, 0, [0; 4])
+        };
         // `SetOngoingToTemps:169-172`: the sandstorm snapshot the load read out
         // of the flags block (`_tempSandstorm*`, `LoadWorldFlags:2277-2283`)
         // restores the event's live state, exactly as the rain triple above
@@ -4090,6 +4381,35 @@ impl App {
         app.sandstorm.time_left = app.world.sandstorm_time_left;
         app.sandstorm.severity = app.world.sandstorm_severity;
         app.sandstorm.intended_severity = app.world.sandstorm_intended_severity;
+        // W4-f45 — `SetOngoingToTemps:163-176`: the cultist delay, the party
+        // quad + celebrant list and the lantern quad restore the schedulers'
+        // live state from the flags block (the save snapshots them in
+        // `saveglue.rs::save_world`). The celebrant slots come back as the
+        // file's `Main.npc` indices (the compacted-vec deviation recorded in
+        // `world_events.rs`). Only a `.wld` load carries these — a `.trwld`'s
+        // World keeps the `World::new` zeros, so its schedulers keep their
+        // own defaults.
+        if from_wld {
+            app.world_events.cultist_delay = app.world.cultist_delay;
+            app.world_events.manual_party = app.world.party_manual;
+            app.world_events.genuine_party = app.world.party_genuine;
+            app.world_events.party_days_on_cooldown = app.world.party_cooldown;
+            app.world_events.celebrating_npcs = app
+                .world
+                .party_celebrants
+                .iter()
+                .map(|&i| i.max(0) as usize)
+                .collect();
+            app.world_events.lantern_nights_on_cooldown = app.world.lantern_night_cooldown;
+            app.world_events.genuine_lanterns = app.world.lantern_night_genuine;
+            app.world_events.manual_lanterns = app.world.lantern_night_manual;
+            app.world_events.next_night_is_lantern_night =
+                app.world.lantern_night_next_night_is_genuine;
+            // `LoadWorldFlags:2146-2147`: the wind target restores BOTH the
+            // target and the current (`Main.windSpeedCurrent = windSpeedTarget`).
+            app.wind.speed_target = app.world.wind_speed_target;
+            app.wind.speed_current = app.world.wind_speed_target;
+        }
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
@@ -4186,6 +4506,34 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
             },
         )
     };
+    // The identity fallbacks the C# runs at load (W4-c43):
+    // * `LoadHeader:1962-1969`: a pre-181 `.wld` (no GUID field) gets
+    //   `UniqueId = Guid.NewGuid()` — the port's clock-seeded stand-in
+    //   (`wld::stamp_created_identity`'s GUID arm). A v >= 181 `.wld` keeps
+    //   its stored GUID even when it is Guid.Empty; a pre-v18 `.trwld` has
+    //   no GUID field at all, so its zero reads as absent.
+    // * `WorldFileData.GetFileData:315-318`: a file with no LastPlayed
+    //   field falls back to `File.GetLastWriteTimeUtc(file)`. The port's
+    //   zero stamp (a pre-v18 `.trwld`, a pre-284 `.wld`, or a never-saved
+    //   world) takes the same mtime fallback.
+    let guid_absent = if sections.from_wld {
+        sections.version < 181
+    } else {
+        world.unique_id == [0u8; 16]
+    };
+    if guid_absent {
+        let mut rng = tr_core::wld::identity_rng();
+        let mut guid = [0u8; 16];
+        rng.next_bytes(&mut guid);
+        guid[7] = (guid[7] & 0x0F) | 0x40;
+        guid[8] = (guid[8] & 0x3F) | 0x80;
+        world.unique_id = guid;
+    }
+    if world.last_played == 0 {
+        if let Some(stamp) = tr_core::clock::file_mtime_binary(world_path) {
+            world.last_played = stamp;
+        }
+    }
     log::info!(
         "loaded '{}' {}x{} ({} tiles, {:.1} MB) in {:.0} ms",
         world.name,
@@ -4605,7 +4953,7 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
 /// sheets. A cached font build returns `None` for the page texture: the caller
 /// keeps the `FontAtlas` it already uploaded.
 pub(crate) fn build_atlas_reusing_static(
-    world: &World,
+    world: &mut World,
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
@@ -4619,7 +4967,7 @@ pub(crate) fn build_atlas_reusing_static(
 }
 
 fn build_atlas_inner(
-    world: &World,
+    world: &mut World,
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
@@ -4695,7 +5043,7 @@ fn build_atlas_inner(
     // `build_ref` borrows the sheets, so the static half survives the packing:
     // the tail is split back off the packed list and refills the cache (the boot
     // path's too, so the first Play skips the re-decode as well).
-    let atlas = Atlas::build_ref(&images, 8192);
+    let mut atlas = Atlas::build_ref(&images, 8192);
     let tail: Vec<_> = images.drain(world_len..world_len + static_len).collect();
     *static_cache = Some(tail);
     log::info!(
@@ -4706,8 +5054,60 @@ fn build_atlas_inner(
         atlas.sheets.len(),
         t2.elapsed().as_secs_f32() * 1000.0
     );
+    // W4-g71 atlas budget guard: a rolled non-default surface style can overflow
+    // the 8192 px strict-GPU bound. Revert the offending biome styles to slot-0
+    // (deterministic, `assets::fit_bg_styles_to_atlas`) and rebuild. The static
+    // half + font are world-independent, so the candidate height is measured
+    // over `bg trial ++ static ++ font` through the cheap `packed_height` (no
+    // pixel copies). The C# avoids this by drawing surface bgs outside the tile
+    // atlas (S1-G-13); until that lands, the revert keeps the atlas in bounds.
     if atlas.height > 8192 {
-        log::warn!("atlas exceeds 8192 px in height; some sheets may be cut off on strict GPUs");
+        let static_sheets = static_cache.as_deref().unwrap_or(&[]);
+        let font_img = tr_render::atlas::font_sheet();
+        // Decode each candidate bg sheet once across the trials (the guard
+        // recomputes the set per revert; re-decoding the XNB each time would
+        // multiply the boot cost). Missing sheets decode to `None` and drop.
+        let mut bg_decode_cache: std::collections::HashMap<i32, Option<tr_render::atlas::AtlasImage>> =
+            std::collections::HashMap::new();
+        let reverted = assets::fit_bg_styles_to_atlas(
+            assets::BgStyleBytes::from_world(world),
+            |bg_ids| {
+                let mut trial: Vec<tr_render::atlas::AtlasImage> = Vec::new();
+                for &id in bg_ids {
+                    let entry = bg_decode_cache.entry(id).or_insert_with(|| {
+                        assets::load_png(
+                            assets_dir,
+                            &format!("Background_{id}"),
+                            tr_render::SheetLayout::Raw,
+                        )
+                        .ok()
+                    });
+                    if let Some(img) = entry {
+                        trial.push(img.clone());
+                    }
+                }
+                trial.extend(static_sheets.iter().cloned());
+                trial.push(font_img.0.clone());
+                Atlas::packed_height(&trial, 8192)
+            },
+            8192,
+        );
+        if !reverted.is_empty() {
+            for slot in &reverted {
+                world.set_surface_bg_style(*slot, 0);
+            }
+            log::warn!(
+                "atlas overflow: reverted background style slots {reverted:?} to slot-0 to fit 8192 px"
+            );
+            // Rebuild the world half with the reverted styles; the static half
+            // and font are unchanged, so re-pack the same decoded tail.
+            let mut rebuilt = assets::load_world_sheets(assets_dir, world, &tile_ids, &wall_ids)?;
+            rebuilt.extend(static_cache.as_deref().unwrap_or(&[]).iter().cloned());
+            rebuilt.push(font_img.0);
+            atlas = Atlas::build_ref(&rebuilt, 8192);
+        } else {
+            log::warn!("atlas exceeds 8192 px in height; some sheets may be cut off on strict GPUs");
+        }
     }
 
     let lookups = assets::Lookups::build(
@@ -5114,11 +5514,11 @@ pub(crate) mod tr_hooks {
 
         // The boot App over the first world, with the boot caches filled exactly
         // like `main` does.
-        let (world, sections) = load_world(&paths[0]).unwrap();
+        let (mut world, sections) = load_world(&paths[0]).unwrap();
         let mut boot_static = None;
         let mut boot_fonts = None;
         let (atlas, font_atlas, lookups, stats) =
-            build_atlas_reusing_static(&world, &assets_dir, &mut boot_static, &mut boot_fonts)
+            build_atlas_reusing_static(&mut world, &assets_dir, &mut boot_static, &mut boot_fonts)
                 .expect("boot atlas");
         let mut app = App::new(
             settings::Settings::default(),
@@ -5865,5 +6265,286 @@ mod s1_p_i44_tests {
         app.update_shop_close();
         assert!(app.shop_npc.is_none());
         assert!(app.shop_stock.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_map_drag_capture_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-e18 residual census (written, not run - code-only): the drag's
+    /// `!CaptureManager.Instance.UsingMap` gate (`Main.cs:55342`). With the
+    /// capture interface active and its EdgeSelection mode (mode 0 always
+    /// answers true, `CaptureInterface.cs:100-103`) the whole drag block
+    /// skips - the position does not move AND the grab anchor stays stale
+    /// (the C# touches neither grabMapX/Y inside the skipped block).
+    #[test]
+    fn w4_e18_the_capture_using_map_gate_skips_the_whole_drag_block() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // A real-sized world: map_clamp_pos's 10..width-10 range inverts on
+        // the 8x8 fixture (f32::clamp panics on min > max).
+        app.world = tr_core::World::new("drag".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.map.as_mut().unwrap().open = true;
+        // Park inside the clamp so the tail clamp cannot masquerade as a pan.
+        app.map.as_mut().unwrap().pos = [50.0, 50.0];
+        app.mine_down = true;
+        app.map_grab = Some([100.0, 100.0]);
+        app.mouse_pos = Vec2::new(140.0, 120.0);
+        // Capture active, mode 0 (EdgeSelection) -> UsingMap true.
+        app.capture.interface.active = true;
+        app.capture.interface.selected_mode = 0;
+        let pos_before = app.map.as_ref().unwrap().pos;
+        app.update_map_input();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.pos, pos_before, "the UsingMap gate skipped the pan");
+        assert_eq!(app.map_grab, Some([100.0, 100.0]), "the anchor stays stale");
+        // Deactivating the interface flips UsingMap false
+        // (`CaptureManager.cs:44-54`) and the drag runs.
+        app.capture.interface.active = false;
+        app.update_map_input();
+        assert_eq!(app.map_grab, Some([140.0, 120.0]), "the anchor re-grabs");
+    }
+
+    /// W4-f46 shared-gap close (written, not run - code-only): each held
+    /// movement row cancels an armed pylon pan target
+    /// (`Player.cs:24776`/`:24781`/`:24786`/`:24791` — every arm sets
+    /// `PanTargetMapFullscreen = false` before its pan step); the gap both
+    /// overlay siblings (f29/e17) missed. Without a movement key held the
+    /// armed target survives the input pass (the lerp step is the overlay
+    /// pick's seam, not this fn's).
+    #[test]
+    fn w4_f46_movement_keys_cancel_the_fullscreen_pan_target() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Width 320 keeps map_scale_clamp's floor (1280/320*0.599 ≈ 2.396)
+        // under the 2.5 default, so the scale — and the step — stay fixed.
+        app.world = tr_core::World::new("pancancel".into(), 320, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        let m = app.map.as_mut().unwrap();
+        m.open = true;
+        m.pos = [50.0, 50.0];
+        m.pan_target = Some([80.0, 80.0]);
+        let step = 16.0 / m.scale;
+        // No movement held: the target survives.
+        app.update_map_input();
+        assert_eq!(app.map.as_ref().unwrap().pan_target, Some([80.0, 80.0]));
+        // Each of the four rows cancels it (`cUp/cDown/cLeft/cRight`,
+        // `Main.cs:67163-67166`, defaults W/S/A/D) and pans once.
+        for (code, axis, delta) in [
+            (KeyCode::KeyW, 1usize, -step),
+            (KeyCode::KeyS, 1, step),
+            (KeyCode::KeyA, 0, -step),
+            (KeyCode::KeyD, 0, step),
+        ] {
+            let m = app.map.as_mut().unwrap();
+            m.pan_target = Some([80.0, 80.0]);
+            let before = m.pos[axis];
+            app.keys.insert(code);
+            app.update_map_input();
+            app.keys.remove(&code);
+            let m = app.map.as_ref().unwrap();
+            assert_eq!(m.pan_target, None, "{code:?} clears the pan target");
+            assert_eq!(m.pos[axis], before + delta, "{code:?} pans once");
+        }
+    }
+}
+
+#[cfg(test)]
+mod w4_f46_minimap_zoom_key_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-f46 closeout census (written, not run - code-only): the held
+    /// `MapZoomIn` row (`Player.cs:24913-24916`) scales `Main.mapMinimapScale`
+    /// by 1.025 once per update while `mapStyle == 1` and the map is NOT
+    /// fullscreen; the row is the rebindable `cMapZoomIn` (default `Add`,
+    /// `Main.cs:67190`), not a fixed key.
+    #[test]
+    fn w4_f46_held_zoom_in_scales_the_minimap_by_the_button_constant() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("zoom".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 1;
+        app.keys.insert(KeyCode::NumpadAdd); // `key_name` -> "Add"
+        app.update_minimap_zoom_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.minimap_scale, 1.05 * ui::minimap::ZOOM_IN_MULTIPLIER);
+        // Rebinding moves the row (`Main.cs:4618`'s single-key profile).
+        app.map_binds[crate::input_map::MapAction::ZoomIn.index()] = "PageUp".into();
+        app.update_minimap_zoom_keys();
+        let after = app.map.as_ref().unwrap().minimap_scale;
+        assert_eq!(after, 1.05 * ui::minimap::ZOOM_IN_MULTIPLIER, "Add is free now");
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        app.update_minimap_zoom_keys();
+        assert_eq!(
+            app.map.as_ref().unwrap().minimap_scale,
+            after * ui::minimap::ZOOM_IN_MULTIPLIER
+        );
+    }
+
+    /// W4-f46 closeout census: the style/fullscreen gates — the C# block is
+    /// the `else` of `if (Main.mapFullscreen)` (`Player.cs:24898`/`:24909`)
+    /// and its `Main.mapStyle == 1` arm (`:24911`, no `mapEnabled` check —
+    /// the scale moves even with the map system dark; the draw is what goes
+    /// off). Style 0/2 and the open fullscreen map leave the minimap scale
+    /// alone (the fullscreen zoom keys ride `update_map_input` on
+    /// `mapFullscreenScale` instead).
+    #[test]
+    fn w4_f46_zoom_keys_gate_on_style_one_and_not_fullscreen() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("zoomgate".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.keys.insert(KeyCode::NumpadAdd);
+        let before = app.map.as_ref().unwrap().minimap_scale;
+        app.map_style = 0;
+        app.update_minimap_zoom_keys();
+        app.map_style = 2;
+        app.update_minimap_zoom_keys();
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+        app.map_style = 1;
+        app.map.as_mut().unwrap().open = true;
+        app.update_minimap_zoom_keys();
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+        // mapEnabled off does NOT gate the C# arm (`:24911` checks only the
+        // style) — the scale still moves.
+        app.map.as_mut().unwrap().open = false;
+        app.settings.map_enabled = false;
+        app.update_minimap_zoom_keys();
+        assert_eq!(
+            app.map.as_ref().unwrap().minimap_scale,
+            before * ui::minimap::ZOOM_IN_MULTIPLIER
+        );
+    }
+
+    /// W4-f46 dup fold (written, not run - code-only): the style-1 alpha
+    /// rows (`Player.cs:24921-24928`) step `Main.mapMinimapAlpha` ±0.015 per
+    /// update while held (`cMapAlphaUp`/`cMapAlphaDown`, defaults
+    /// `PageUp`/`PageDown`, `Main.cs:67192-67193`), clamped 0.01..1
+    /// (`Main.cs:55523-55530`). The g53 `a9774d2a` / e18 `249a0c1b` arms
+    /// folded onto the union's `update_minimap_zoom_keys`; D17 closed.
+    #[test]
+    fn w4_f46_alpha_keys_step_the_minimap_alpha_with_the_clamp() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("alpha".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 1;
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 1.0, "`Main.cs:66753`");
+        // AlphaDown held: −0.015 per update.
+        app.keys.insert(KeyCode::PageDown);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().minimap_alpha - (1.0 - 0.015)).abs() < 1e-6);
+        // Held to the floor: 0.01 (`Main.cs:55523-55526`).
+        for _ in 0..200 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 0.01);
+        // AlphaUp: back up, capped at 1 (`:55527-55530`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        for _ in 0..200 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 1.0);
+        // The zoom rows are untouched by the alpha keys (no cross-step).
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, 1.05);
+    }
+
+    /// W4-f46 dup fold: the style-2 arm (`Player.cs:24930-24947`) — held
+    /// zoom rows scale `Main.mapOverlayScale` ×1.05/×0.95 (the FULLSCREEN
+    /// pair, not the minimap's 1.025/0.975) and the alpha rows step
+    /// `Main.mapOverlayAlpha` ±0.015 from the 0.35 seed (`Main.cs:66755`),
+    /// clamped `screen_w/world_w .. 16*RenderZoom` / 0.01..1
+    /// (`Main.cs:55550-55566`). The overlay draw stays D18; the state rides.
+    #[test]
+    fn w4_f46_style_two_keys_step_the_overlay_scale_and_alpha() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("ovl".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 2;
+        assert_eq!(app.map.as_ref().unwrap().overlay_scale, 2.5, "`Main.cs:66754`");
+        assert_eq!(app.map.as_ref().unwrap().overlay_alpha, 0.35, "`:66755`");
+        // Park above the 1280/260 floor (~4.92) so the ×1.05/×0.95 steps
+        // are observable (the draw-side floor clamp would eat the 2.5 seed
+        // on this small fixture — `Main.cs:55551-55554`).
+        app.map.as_mut().unwrap().overlay_scale = 8.0;
+        app.keys.insert(KeyCode::NumpadAdd);
+        app.update_minimap_zoom_keys();
+        let m = app.map.as_ref().unwrap();
+        assert!((m.overlay_scale - 8.0 * 1.05).abs() < 1e-6, "×1.05");
+        assert_eq!(m.minimap_scale, 1.05, "the minimap axis stays put");
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadSubtract);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().overlay_scale - 8.0 * 1.05 * 0.95).abs() < 1e-6);
+        // Alpha up from 0.35 (`:24940-24943`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().overlay_alpha - (0.35 + 0.015)).abs() < 1e-6);
+        // The scale ceiling: 16 * RenderZoom = 16 * ForcedMinimumZoom *
+        // zoom (`Main.cs:55555-55557` + `:61999`), left-to-right like the
+        // clamp fn's `16.0 * render_zoom`.
+        let (sw, sh) = app.screen_size();
+        let cap = 16.0 * App::forced_minimum_zoom((sw, sh)) * app.zoom;
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadAdd);
+        for _ in 0..300 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().overlay_scale, cap);
+        // Alpha down to the 0.01 floor (`:55559-55562`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageDown);
+        for _ in 0..300 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().overlay_alpha, 0.01);
+    }
+}
+
+/// W4-g70: `GetPreferredBGStyleForPlayer`'s forest arm (`Main.cs:64247-64254`)
+/// resolves the screen-centre column against `Main.treeX`. Written, not run.
+#[cfg(test)]
+mod w4_g70_forest_style_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    #[test]
+    fn the_tree_x_dividers_pick_the_forest_set() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.tree_x = [100, 200, 300];
+        // The port's camera is the view centre: `camera.x / 16` is the C#'s
+        // `(screenPosition.X + screenWidth / 2) / 16` column.
+        for (col, want) in [(99, 0), (100, 10), (199, 10), (200, 11), (299, 11), (300, 12), (900, 12)] {
+            app.camera = Vec2::new(col as f32 * TILE_PX, 0.0);
+            assert_eq!(app.preferred_bg_style(), want, "column {col}");
+        }
+    }
+
+    #[test]
+    fn the_reset_dividers_keep_every_column_on_set_zero() {
+        // `WorldGen.Reset` (`WorldGen.cs:7125-7127`): all three at maxTilesX.
+        let mut app = flow_app(None, vec![], vec![]);
+        let width = app.world.width;
+        assert_eq!(app.world.tree_x, [width, width, width]);
+        app.camera = Vec2::new((width - 1) as f32 * TILE_PX, 0.0);
+        assert_eq!(app.preferred_bg_style(), 0);
+    }
+
+    #[test]
+    fn a_biome_zone_wins_over_the_forest_dividers() {
+        // The zone ladder runs first (`Main.cs:64215-64246`): a snow column
+        // past treeX[2] still resolves 7, not 12.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.tree_x = [100, 200, 300];
+        app.camera = Vec2::new(900.0 * TILE_PX, 0.0);
+        app.scene_metrics.zone_snow = true;
+        assert_eq!(app.preferred_bg_style(), 7);
     }
 }

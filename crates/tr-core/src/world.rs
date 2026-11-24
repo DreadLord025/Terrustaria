@@ -106,11 +106,56 @@ pub struct World {
     /// fast-forward request, consumed by the next dusk transition. Runtime-only.
     pub fast_forward_to_dusk: bool,
     /// `Main.hellBackStyle` (0..2): picks the animated magma sheet `Background_125..127`
-    /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`). Vanilla
-    /// rolls it in `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`); it is not
-    /// part of the `.wld` format and is re-rolled per session at load (`Main.cs:6603`),
-    /// so the port fixes it at generation like `moon_type`. Loaded worlds keep 0.
+    /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`).
+    /// Rolled by `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`) at
+    /// generation (`:11339`, the `Next(3)` folded into the wired cave block)
+    /// and once at process boot (`Main.cs:6603`, `Initialize_AlmostEverything`
+    /// — BEFORE any world load, so the load's `WorldFile.cs:2067` read
+    /// overwrites the boot roll, not vice versa; research/64 §2 corrected).
+    /// The `.wld` DOES persist it (`WorldFile.cs:1269` write / `:2067` read —
+    /// the old "not part of the format" note here was wrong); loaded worlds
+    /// keep the stored value.
     pub hell_back_style: u8,
+    /// `Main.caveBackX[0..4]` (`Main.cs:595`, `new int[4]` `Main.cs:66696`): the
+    /// tile-x dividers between the four cave background bands, rolled by
+    /// `RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`) and consumed by g72's
+    /// cave-style machine (`render/bg_styles.rs::BgStylePickInput`). Only
+    /// `[0..3]` are rolled/persisted (`WorldFile.cs:1260-1262`) or sent
+    /// (`NetMessage.cs:258-278`); `[3]` keeps its C# initial 0 forever. The
+    /// FINAL keep-one (research/92 §2.1-FINAL) adopts g72's `[i32; 4]` shape.
+    pub cave_back_x: [i32; 4],
+    /// `Main.caveBackStyle[0..4]` (`Main.cs:597`): the four pairwise-distinct cave
+    /// band styles (`Next(8)` + rejection loops, `WorldGen.cs:8200-8244`). Persisted
+    /// (`WorldFile.cs:1263-1266`).
+    pub cave_back_style: [i32; 4],
+    /// `Main.iceBackStyle` (`Main.cs:599`, `Next(4)` `WorldGen.cs:8246`) and
+    /// `Main.jungleBackStyle` (`Main.cs:603`, `Next(2)` `:8248`): the ice/jungle
+    /// cavern back styles. Persisted (`WorldFile.cs:1267-1268`).
+    pub ice_back_style: u8,
+    pub jungle_back_style: u8,
+    /// `Main.treeX[0..3]` (`Main.cs:591`): the tile-x dividers between the four
+    /// forest sets, rolled by `RandomizeTreeStyle` (`WorldGen.cs:8117-8190`) and
+    /// consumed by `GetPreferredBGStyleForPlayer` (`Main.cs:64247-64254`) and the
+    /// tree-top area pick (`TreeTopsInfo.cs:141`). The vanilla reset pins all three
+    /// to `maxTilesX` (`WorldGen.cs:7125-7127`); the port keeps the reset values in
+    /// `World::new` and rolls them in the wired tail. Persisted (`WorldFile.cs:1253-1255`).
+    pub tree_x: [i32; 3],
+    /// `Main.treeStyle[0..4]` (`Main.cs:593`): the four tree-top variations
+    /// (`Next(6)` + rejection + the 0→4 promotion, `WorldGen.cs:8122-8189`), copied
+    /// into `TreeTops._variations[0..4]` (`TreeTopsInfo.cs:224-227`). Persisted
+    /// (`WorldFile.cs:1256-1259`). Distinct from `forest_bg_styles` (the treeBG1..4
+    /// setBG styles) — the C# keeps them as two separate arrays.
+    pub tree_style: [i32; 4],
+    /// `WorldGen.treeBG1..4` (`setBG` slots 0/10/11/12): the four pairwise-distinct
+    /// forest tree-set styles rolled by `RandomizeBackgrounds`
+    /// (`WorldGen.cs:7949-7968`). `SetForestBGSet` (`WorldGen.cs:7639-7768`) expands
+    /// each into its tree-line/hill ids — g70 owns that draw-side table; this lane
+    /// owns the roll + the style bytes. Persisted (`WorldFile.cs:1318`, `:1376-1379`).
+    pub forest_bg_styles: [u8; 4],
+    /// `WorldGen.underworldBG` (`setBG` slot 9, `Next(3)` `WorldGen.cs:8011`): the
+    /// underworld stack style — g72 owns the draw side (`render/underworld_bg.rs`);
+    /// this lane owns the roll + the byte. Persisted (`WorldFile.cs:1374`).
+    pub underworld_bg_style: u8,
     // Per-biome surface background *style* variants (`WorldGen.corruptBG`,
     // `jungleBG`, `hallowBG`, `crimsonBG`, `mushroomBG`). The `.wld` stores the
     // style byte (`IO/WorldFile.cs:1318-1325`, `:1375`) and `WorldGen.setBG`
@@ -121,6 +166,14 @@ pub struct World {
     pub hallow_bg_style: u8,
     pub crimson_bg_style: u8,
     pub mushroom_bg_style: u8,
+    /// `WorldGen.snowBG` (`setBG` slot 3), `desertBG` (slot 6) and `oceanBG`
+    /// (slot 7) — the three style bytes the W4-g71 lane adopts. The snow slot
+    /// also drives `Main.snowMntBG`, the desert slot the four
+    /// `Main.desertBackgroundSet` variants and the ocean slot `Main.oceanBG`
+    /// (a single texture id, not a triple).
+    pub snow_bg_style: u8,
+    pub desert_bg_style: u8,
+    pub ocean_bg_style: u8,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -130,6 +183,13 @@ pub struct World {
     pub chunk_has: Vec<bool>,
     /// Generation seed (`0` for worlds loaded from the original `.wld` format).
     pub seed: u64,
+    /// `Main.GameMode` (`WorldFile.cs:1240` write / `:1985` read): the world's
+    /// difficulty — 0 Classic / 1 Expert / 2 Master / 3 Journey
+    /// (`GameModeID.cs:15-22`, `Main.IsJourneyMode` `:2634`). The expert/master
+    /// scaling lane (W4-e25) reads it; the creation draft's `_optionDifficulty`
+    /// (`UIWorldCreation.cs:129`) is its source. The `.wld` stores an i32 from
+    /// v209; below that a bool (expert) plus the v208 master byte (`:2029-2040`).
+    pub game_mode: i32,
     /// The classic secret-seed flags (`Main.drunkWorld` & friends — the
     /// `WorldGen.Reset()` set, `WorldGen.cs:11115-11123`): the world's
     /// special-world identity. Runtime readers (loot/fish/variant/wind
@@ -235,6 +295,30 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    // --- W4-f45: the downed-flag census (`.wld` `SaveWorldFlags`) -----------
+    /// `NPC.downedClown` (`NPC.cs:6361`): the first Clown kill
+    /// (`DoDeathEvents` case 109, `:79376-79384`). The Clown kind is
+    /// unported, so the latch has no live setter yet — the file round-trips.
+    pub downed_clown: bool,
+    /// `NPC.downedEmpressOfLight` (`NPC.cs:6393`): the event flag 23
+    /// (`DoDeathEvents` case 636, `:79351-79352`). The HallowBoss kind is
+    /// unported (R7), so the latch has no live setter yet.
+    pub downed_empress_of_light: bool,
+    /// `NPC.downedHalloweenKing` (`NPC.cs:6373`): a Pumpking killed while
+    /// the Pumpkin Moon is up (case 327, `:79210-79215`, event flag 5).
+    pub downed_halloween_king: bool,
+    /// `NPC.downedHalloweenTree` (`NPC.cs:6371`): a Mourning Wood killed
+    /// while the Pumpkin Moon is up (case 325, `:79216-79221`, flag 4).
+    pub downed_halloween_tree: bool,
+    /// `NPC.downedChristmasIceQueen` (`NPC.cs:6375`): an Ice Queen killed
+    /// while the Frost Moon is up (case 345, `:79228-79233`, flag 20).
+    pub downed_christmas_ice_queen: bool,
+    /// `NPC.downedChristmasSantank` (`NPC.cs:6379`): a Santa-NK1 killed
+    /// while the Frost Moon is up (case 346, `:79234-79239`, flag 22).
+    pub downed_christmas_santank: bool,
+    /// `NPC.downedChristmasTree` (`NPC.cs:6377`): an Everscream killed
+    /// while the Frost Moon is up (case 344, `:79222-79227`, flag 21).
+    pub downed_christmas_tree: bool,
     /// The Skeletron Prime head's centre + the present flag (the limbs'
     /// tether reads — the WoF write-through shape).
     pub prime_present: bool,
@@ -291,6 +375,20 @@ pub struct World {
     /// (`Main.cs:65230`) and the orb-boss deaths (`NPC.cs:79450`) raise it;
     /// the 16200-tick resolution lands the ore (`HandleMeteorFall`).
     pub spawn_meteor: bool,
+    /// `WorldGen.meteorShowerCount` (`WorldFile.cs:1422` write / `:2490` read,
+    /// v291+, via `_tempMeteorShowerCount`): the falling-star shower's remaining
+    /// spawns. `StartMeteorShower` (`WorldGen.cs:6239-6244`) rolls
+    /// `Next(650,751)*4`; `SpawnFallingObjects` (`:71744-71761`) decrements it
+    /// per star (the dial fast-forward zeroes it). The star projectiles are
+    /// unported, so the count round-trips + the start arm rolls it (W4-f45).
+    pub meteor_shower_count: i32,
+    /// `Main.coinRain` (`WorldFile.cs:1423` write / `:2491` read, v291+, via
+    /// `_tempCoinRain`): the coin-rain event's remaining value. `StartRain`
+    /// (`Main.cs:64672-64673`) rolls `Next(75,151)*100*100 * maxTilesX/4200f`
+    /// on a luck hit; `StopRain` (`:64651`) zeroes it; `SpawnFallingObjects`
+    /// (`WorldGen.cs:71781-71821`) drains it per coin. The coin projectiles are
+    /// unported, so the value round-trips + the rain arms set it (W4-f45).
+    pub coin_rain: i32,
     /// The body's `life / lifeMax` (`Main.npc[NPC.golemBoss].life` reads
     /// of the fists' chase/dash tiers, `:19274`/`:19370`, and the free
     /// head's power tiers, `:31524-31548`) — the WoF write-through shape.
@@ -305,20 +403,51 @@ pub struct World {
     /// 682 raises it; `Projectile.cs:20819`'s enemy roll gates on it) — the
     /// same Main-global standing-in (S1-P-i35).
     pub unlocked_slime_red_spawn: bool,
+    /// `NPC.unlockedSlimeGreenSpawn` (`WorldGen.cs:5606` — the Town Slime Green
+    /// 678's arrival; the doom party clears it, `Main.cs:17940`). The town-slime
+    /// kinds are unported, so the latch round-trips (W4-f45).
+    pub unlocked_slime_green_spawn: bool,
+    /// `NPC.unlockedSlimeOldSpawn` (`NPC.cs:19147` — `TransformElderSlime`, the
+    /// bound 685's rescue). Unported kind; the latch round-trips (W4-f45).
+    pub unlocked_slime_old_spawn: bool,
+    /// `NPC.unlockedSlimePurpleSpawn` (`NPC.cs:81774` — the bound 686's death
+    /// transforms it to the Town Slime Purple 680). Unported; round-trips.
+    pub unlocked_slime_purple_spawn: bool,
+    /// `NPC.unlockedSlimeYellowSpawn` (`Projectile.cs:14750` — the shimmer
+    /// projectile transforms the bound 687 to the Town Slime Yellow 683).
+    /// Unported; the latch round-trips (W4-f45).
+    pub unlocked_slime_yellow_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`NPC.cs:19171` — `TransformCopperSlime`,
+    /// the convertible town NPC's shimmer). Unported; round-trips (W4-f45).
+    pub unlocked_slime_copper_spawn: bool,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
     /// (S1-P-i35).
     pub combat_book_was_used: bool,
+    /// `NPC.combatBookVolumeTwoWasUsed` (`WorldFile.cs:1407` write / `:2418`
+    /// read, v259+; the use arm `Player.cs:45337-45349`, item 5336). The g89b
+    /// boosters lane co-claims the consumer (`npc_ai_town.rs`'s `combat_book_two`
+    /// env); the file round-trips the latch (W4-f45).
+    pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`WorldFile.cs:1408` write / `:2426` read,
+    /// v260+; the use arm `Player.cs:45368-45383`, item 5343). The g89b lane
+    /// co-claims the consumer; the file round-trips the latch (W4-f45).
+    pub peddlers_satchel_was_used: bool,
     /// `NPC.boughtCat` (`WorldFile.cs:1392` / `:2358`) — the 4829 Cat License's
     /// town-pet unlock (`ItemCheck_UsePetLicenses` `Player.cs:45354-45357`,
-    /// `NPC.UnlockOrExchangePet` `NPC.cs:80894-80918`). W4-g87.
+    /// `NPC.UnlockOrExchangePet` `NPC.cs:80894-80918`; the use arm
+    /// `Player.cs:45356`, item 4829 -> the Cat 637). W4-g87 + the f43 town-
+    /// spawn lane's `TailFlags.bought_cat` consumer; the file round-trips.
     pub bought_cat: bool,
     /// `NPC.boughtDog` (`WorldFile.cs:1393` / `:2359`) — the 4830 Dog License's
-    /// town-pet unlock (`Player.cs:45358-45361`). W4-g87.
+    /// town-pet unlock (`Player.cs:45358-45361`; item 4830 -> the Dog 638).
+    /// W4-g87 + the f43 lane's consumer; round-trips (W4-f45).
     pub bought_dog: bool,
     /// `NPC.boughtBunny` (`WorldFile.cs:1394` / `:2360`) — the 4910 Bunny
-    /// License's town-pet unlock (`Player.cs:45362-45365`). W4-g87.
+    /// License's town-pet unlock (`Player.cs:45362-45365`; item 4910 -> the
+    /// Bunny 656; the doom party clears it, `Main.cs:17941`). W4-g87 + the
+    /// f43 lane's consumer; round-trips (W4-f45).
     pub bought_bunny: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
@@ -376,6 +505,13 @@ pub struct World {
     pub total_invasion_points: f32,
     /// `Main.hardMode` (`AmbienceServer.cs:61`). Runtime-only, not saved.
     pub hard_mode: bool,
+    /// `Main.afterPartyOfDoom` (`WorldFile.cs:1305` write / `:2109` read,
+    /// v257+): the getfixedboi anniversary world's doom party — the C# arms it
+    /// at generation (`WorldGen.cs:11128-11137`: tenth anniversary + get-good,
+    /// not skyblock) and `UpdateWorld_NPCs` (`Main.cs:17926-17943`) kills every
+    /// town NPC (minus the five exclusions) once the party ends, clearing the
+    /// mech/party-girl/princess/rainbow/green unlocks + the bunny license.
+    pub after_party_of_doom: bool,
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
@@ -603,12 +739,111 @@ pub struct World {
     /// `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1227`, footer `:1756`).
     pub world_id: i32,
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
-    /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
+    /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). The save funnel
+    /// stamps `UtcNow` on every save (`SaveWorldFlags:1251`); 0 = unset/min
+    /// for a world that never went through a save.
     pub last_played: i64,
     /// `Main.ActiveWorldFileData.CreationTime` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1250` write, `:2044` read; S1-J-3b). 0 = unset/min —
     /// the port stamps no wall clock; a loaded file's value round-trips.
     pub creation_time: i64,
+
+    // --- W4-f45: the event snapshots + flavour (`.wld` flags block) ---------
+    /// `WorldFile._tempCultistDelay` = `CultistRitual.delay`
+    /// (`WorldFile.cs:1340` write / `:2197` read, `SetTempToOngoing:1047` /
+    /// `SetOngoingToTemps:163`). The live owner is `App.world_events`
+    /// (`world_events.rs`); the save snapshots it here, the load restores it.
+    pub cultist_delay: i32,
+    /// `WorldFile._tempPartyManual` = `BirthdayParty.ManualParty` (`:1361`).
+    pub party_manual: bool,
+    /// `WorldFile._tempPartyGenuine` = `BirthdayParty.GenuineParty` (`:1362`).
+    pub party_genuine: bool,
+    /// `WorldFile._tempPartyCooldown` = `BirthdayParty.PartyDaysOnCooldown`
+    /// (`:1363`).
+    pub party_cooldown: i32,
+    /// `WorldFile.TempPartyCelebratingNPCs` = `BirthdayParty.CelebratingNPCs`
+    /// (`:1364-1368`): the celebrating NPC slots. The port's live list indexes
+    /// the compacted `Vec<Npc>` (the recorded `world_events.rs` deviation);
+    /// the file carries the C#'s stable `Main.npc` slots.
+    pub party_celebrants: Vec<i32>,
+    /// `WorldFile._tempLanternNightCooldown` = `LanternNight.
+    /// LanternNightsOnCooldown` (`:1381`).
+    pub lantern_night_cooldown: i32,
+    /// `WorldFile._tempLanternNightGenuine` = `LanternNight.GenuineLanterns`
+    /// (`:1382`).
+    pub lantern_night_genuine: bool,
+    /// `WorldFile._tempLanternNightManual` = `LanternNight.ManualLanterns`
+    /// (`:1383`).
+    pub lantern_night_manual: bool,
+    /// `WorldFile._tempLanternNightNextNightIsGenuine` = `LanternNight.
+    /// NextNightIsLanternNight` (`:1384`).
+    pub lantern_night_next_night_is_genuine: bool,
+    /// `Main.windSpeedTarget` (`WorldFile.cs:1328` write / `:2146` read):
+    /// the live owner is `App.wind.speed_target` (`wind.rs`); the save
+    /// snapshots it here, the load restores both target and current
+    /// (`:2147` `windSpeedCurrent = windSpeedTarget`).
+    pub wind_speed_target: f32,
+    /// `Main.cloudBGActive` (`WorldFile.cs:1326` write / `:2142` read): the
+    /// overcast state machine's timer — negative counts down to the next
+    /// overcast, >= 1 is the active bank. The C# writes the live value but the
+    /// load re-rolls it (`:2144` `-genRand.Next(8640, 86400)`), so the stored
+    /// value is informational; the g69 CloudField lane owns the live machine.
+    pub cloud_bg_active: i32,
+    /// `Main.numClouds` (`WorldFile.cs:1327` write / `:2145` read): the cloud
+    /// count (the C# casts to a short on write). The g69 CloudField lane's
+    /// `update_num_clouds` walk owns the live value; the file round-trips it.
+    pub num_clouds: i32,
+    /// `NPC.savedBartender` (`NPC.cs:6283`, set at `:52960`'s
+    /// `AI_007_TownEntities_UpdateSavedStates`): the bound bartender's
+    /// rescue flag. The rescue path is unported, so the file round-trips.
+    pub saved_bartender: bool,
+    /// `WorldGen.crimson` (`WorldFile.cs:1281` write / `:2080` read): the
+    /// evil biome's flavour — the generation options' `crimson` choice
+    /// (`worldgen::GenOptions.crimson`), stamped at generation.
+    pub crimson: bool,
+    /// `Main.dungeonX`/`Main.dungeonY` (`WorldFile.cs:1279-1280` write /
+    /// `:2078-2079` read): the dungeon's entrance anchor — the generator
+    /// stamps the entrance column/row (`worldgen/dungeon.rs`).
+    pub dungeon_x: i32,
+    pub dungeon_y: i32,
+
+    // --- W4-f45 Ph4: the banner tally, the angler list, the spawn unlocks ---
+    /// `BannerSystem.killCount[]` (`BannerSystem.cs:172-186`'s `Save`): the
+    /// per-banner kill counts as the C#'s dense 293-entry array. The live
+    /// owner is `App.banners` (the sparse map); the save densifies it here,
+    /// the load reads it back and the App re-sparsifies (`app/mod.rs`).
+    pub banner_kill_counts: Vec<i32>,
+    /// `Main.anglerWhoFinishedToday` (`WorldFile.cs:1329-1333` write /
+    /// `:2152-2156` read): the player names who handed in today's quest. The
+    /// port's single player collapses the list's meaning to the bool
+    /// `angler_quest_turned_in`, but the file carries the real name list.
+    pub angler_who_finished_today: Vec<String>,
+    /// `NPC.unlockedSlimeBlueSpawn` (`NPC.cs:79411-79414`): the King Slime's
+    /// death unlocks the Nerdy Slime (the `ViolentlySpawnNerdySlime` call).
+    pub unlocked_slime_blue_spawn: bool,
+    /// `NPC.unlockedMerchantSpawn` (`WorldGen.cs:5585`): the Merchant's
+    /// arrival unlock — overrides his 5000-copper gate (`NPC.cs:7177`).
+    pub unlocked_merchant_spawn: bool,
+    /// `NPC.unlockedDemolitionistSpawn` (`WorldGen.cs:5597`, override
+    /// `NPC.cs:7069`).
+    pub unlocked_demolitionist_spawn: bool,
+    /// `NPC.unlockedDyeTraderSpawn` (`WorldGen.cs:5588`, override
+    /// `NPC.cs:7119`).
+    pub unlocked_dye_trader_spawn: bool,
+    /// `NPC.unlockedTruffleSpawn` (`WorldGen.cs:5581`): the Truffle's arrival
+    /// unlock — the housing gate reads it (`housing.rs:456`).
+    pub unlocked_truffle_spawn: bool,
+    /// `NPC.unlockedArmsDealerSpawn` (`WorldGen.cs:5594`, override
+    /// `NPC.cs:7094`).
+    pub unlocked_arms_dealer_spawn: bool,
+    /// `NPC.unlockedNurseSpawn` (`WorldGen.cs:5591`, override `NPC.cs:7160`).
+    pub unlocked_nurse_spawn: bool,
+    /// `ExtraSpawnPointManager.extraSpawnPoints` (`WorldFile.cs:1425` write /
+    /// `:2501` read, v297+; `ExtraSpawnPointManager.cs:436-456`): the team-based
+    /// extra respawn anchors as (X, Y) tile pairs — a count byte then that many
+    /// i16 pairs. The c46 respawn lane's consumer reads them; the file
+    /// round-trips the list (W4-f45).
+    pub extra_spawn_points: Vec<(i16, i16)>,
 }
 
 impl World {
@@ -663,9 +898,20 @@ impl World {
             downed_golem: false,
             downed_fishron: false,
             downed_deerclops: false,
+            // W4-f45: the downed-flag census (the C# statics start false,
+            // `NPC.cs:95228-95244`'s WorldClear family).
+            downed_clown: false,
+            downed_empress_of_light: false,
+            downed_halloween_king: false,
+            downed_halloween_tree: false,
+            downed_christmas_ice_queen: false,
+            downed_christmas_santank: false,
+            downed_christmas_tree: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
+            meteor_shower_count: 0,
+            coin_rain: 0,
             golem_x: 0.0,
             skeletron_x: 0.0,
             prime_present: false,
@@ -691,7 +937,14 @@ impl World {
             golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
+            unlocked_slime_green_spawn: false,
+            unlocked_slime_old_spawn: false,
+            unlocked_slime_purple_spawn: false,
+            unlocked_slime_yellow_spawn: false,
+            unlocked_slime_copper_spawn: false,
             combat_book_was_used: false,
+            combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
             bought_cat: false,
             bought_dog: false,
             bought_bunny: false,
@@ -705,16 +958,33 @@ impl World {
             fast_forward_to_dawn: false,
             fast_forward_to_dusk: false,
             hell_back_style: 0,
+            cave_back_x: [0; 4],
+            cave_back_style: [0; 4],
+            ice_back_style: 0,
+            jungle_back_style: 0,
+            // `WorldGen.Reset` pins the treeX dividers to maxTilesX
+            // (`WorldGen.cs:7125-7127`) — one forest set everywhere until the
+            // wired tail rolls them. treeStyle starts at 0 (`:7128-7131`).
+            tree_x: [width, width, width],
+            tree_style: [0; 4],
+            forest_bg_styles: [0; 4],
+            underworld_bg_style: 0,
             corrupt_bg_style: 0,
             jungle_bg_style: 0,
             hallow_bg_style: 0,
             crimson_bg_style: 0,
             mushroom_bg_style: 0,
+            snow_bg_style: 0,
+            desert_bg_style: 0,
+            ocean_bg_style: 0,
             column_surface: Vec::new(),
             chunks_x: 0,
             chunks_y: 0,
             chunk_has: Vec::new(),
             seed: 0,
+            // `Main.GameMode`'s classic default (`WorldFile.cs:2035`'s pre-112
+            // arm, `GameModeID.Normal`).
+            game_mode: 0,
             seeds: crate::seeds::SeedFlags::default(),
             micro_seeds: crate::seeds::MicroSeedFlags::default(),
             revision: 0,
@@ -735,6 +1005,7 @@ impl World {
             wave_kills: 0.0,
             total_invasion_points: 0.0,
             hard_mode: false,
+            after_party_of_doom: false,
 
             altars_smashed: 0,
             shadow_orb_smashed: false,
@@ -816,6 +1087,38 @@ impl World {
             world_id: 0,
             last_played: 0,
             creation_time: 0,
+            // W4-f45: the event snapshots start at their `World::new` zeros
+            // (the C# temps' file-absent defaults, `WorldFile.cs:1030-1037`);
+            // the cultist delay's pre-108 load fallback is 86400 (`:2193`).
+            cultist_delay: 0,
+            party_manual: false,
+            party_genuine: false,
+            party_cooldown: 0,
+            party_celebrants: Vec::new(),
+            lantern_night_cooldown: 0,
+            lantern_night_genuine: false,
+            lantern_night_manual: false,
+            lantern_night_next_night_is_genuine: false,
+            wind_speed_target: 0.0,
+            cloud_bg_active: 0,
+            num_clouds: 0,
+            saved_bartender: false,
+            crimson: false,
+            dungeon_x: 0,
+            dungeon_y: 0,
+            // W4-f45 Ph4: the dense banner array starts at the C# length, all
+            // zero (`BannerSystem.cs:1454`'s cctor); the angler list empty;
+            // the spawn unlocks false.
+            banner_kill_counts: vec![0; 293],
+            angler_who_finished_today: Vec::new(),
+            unlocked_slime_blue_spawn: false,
+            unlocked_merchant_spawn: false,
+            unlocked_demolitionist_spawn: false,
+            unlocked_dye_trader_spawn: false,
+            unlocked_truffle_spawn: false,
+            unlocked_arms_dealer_spawn: false,
+            unlocked_nurse_spawn: false,
+            extra_spawn_points: Vec::new(),
         }
     }
 
@@ -1379,13 +1682,14 @@ impl World {
     }
 }
 
-/// `WorldGen.setBG` cases 1/2/4/5/8 (`WorldGen.cs:7235-7274`, `7276-7316`,
-/// `7424-7459`, `7460-7500`, `7578-7608`): the three `Background_<id>` texture
-/// ids for a surface style, `-1` meaning "this layer is not drawn".
+/// `WorldGen.setBG` cases 1/2/3/4/5/8 (`WorldGen.cs:7235-7274`, `7276-7316`,
+/// `7317-7423`, `7424-7459`, `7460-7500`, `7578-7608`): the three
+/// `Background_<id>` texture ids for a surface style, `-1` meaning "this
+/// layer is not drawn".
 ///
-/// `bg` is the `setBG` slot: 1 corrupt, 2 jungle, 4 hallow, 5 crimson,
-/// 8 mushroom. The other slots (forest tree sets, snow, desert, ocean,
-/// underworld) have their own tables and are not covered here.
+/// `bg` is the `setBG` slot: 1 corrupt, 2 jungle, 3 snow, 4 hallow, 5 crimson,
+/// 8 mushroom. The other slots (forest tree sets, desert, ocean, underworld)
+/// have their own tables and are not covered here.
 pub fn surface_bg_texture_ids(bg: i32, style: i32) -> Option<[i32; 3]> {
     Some(match bg {
         1 => match style {
@@ -1405,6 +1709,20 @@ pub fn surface_bg_texture_ids(bg: i32, style: i32) -> Option<[i32; 3]> {
             5 => [271, 272, 273],
             6 => [302, 301, 300],
             _ => [15, 16, 17],
+        },
+        // `WorldGen.cs:7317-7423` — case 3. The `default:` arm resets the
+        // mountains to 35/36 first (`:7319-7320`); every listed style below
+        // overrides them. Styles 8 (`:7417-7421`) leaves the mountains alone.
+        3 => match style {
+            1 => [97, 96, 95],
+            2 | 3 | 4 => [-1, -1, -1],
+            21 | 31 | 41 => [95, 96, 97],
+            22 | 32 | 42 => [37, 38, 39],
+            5 => [258, 259, 260],
+            6 => [263, 264, 265],
+            7 => [267, 266, 268],
+            8 => [299, 298, -1],
+            _ => [37, 38, 39],
         },
         4 => match style {
             1 => [102, 103, 104],
@@ -1434,18 +1752,184 @@ pub fn surface_bg_texture_ids(bg: i32, style: i32) -> Option<[i32; 3]> {
     })
 }
 
+/// `WorldGen.setBG` case 3's mountain pair (`WorldGen.cs:7319-7320` reset to
+/// 35/36 before the style switch, then the per-style overrides):
+/// `Main.snowMntBG[0]` (far, Step1) and `[1]` (near, Step2).
+pub fn snow_mountain_texture_ids(style: i32) -> [i32; 2] {
+    match style {
+        2 | 21 | 22 => [98, 99],
+        3 | 31 | 32 => [98, 100],
+        4 | 41 | 42 => [98, 101],
+        5 | 6 => [-1, -1],
+        7 => [269, 270],
+        _ => [35, 36],
+    }
+}
+
+/// `WorldGen.setBG` case 6 (`WorldGen.cs:7501-7546`): the four
+/// `Main.desertBackgroundSet` variants, in the C# field order
+/// (`DataStructures/BackgroundVariantSet.cs:5-11`) — Pure, Corrupt, Crimson,
+/// Hallow. Each row is a `BackgroundVariant` triple (far, middle, near);
+/// `-1` layers are skipped by `DrawSurfaceBG_Desert`.
+pub fn desert_bg_set(style: i32) -> [[i32; 3]; 4] {
+    let cleared = [-1, -1, -1];
+    match style {
+        1 => [[108, 109, -1], cleared, cleared, cleared],
+        2 => [[207, 208, -1], cleared, cleared, cleared],
+        3 => [[217, 218, -1], cleared, cleared, cleared],
+        4 => [[248, 249, 250], cleared, cleared, cleared],
+        51 => [
+            [306, 303, -1],
+            [310, 307, -1],
+            [318, 315, -1],
+            [314, 311, -1],
+        ],
+        52 => [
+            [306, 304, -1],
+            [310, 308, -1],
+            [318, 316, -1],
+            [314, 312, -1],
+        ],
+        53 => [
+            [306, 305, -1],
+            [310, 309, -1],
+            [318, 317, -1],
+            [314, 313, -1],
+        ],
+        _ => [[21, 20, -1], cleared, cleared, cleared],
+    }
+}
+
+/// `BackgroundVariant.HasAny` (`DataStructures/BackgroundVariant.cs:9-19`):
+/// any of the three layers set.
+pub fn desert_variant_has_any(v: [i32; 3]) -> bool {
+    v[0] != -1 || v[1] != -1 || v[2] != -1
+}
+
+/// `WorldGen.setBG` case 7 (`WorldGen.cs:7548-7576`): `Main.oceanBG`, a single
+/// far-layer texture id drawn by `DrawSurfaceBG_BackMountainsStep2`.
+pub fn ocean_bg_texture_id(style: i32) -> i32 {
+    match style {
+        1 => 110,
+        2 => 111,
+        3 => 209,
+        4 => 210,
+        5 => 283,
+        6 => 332,
+        7 => 340,
+        _ => 28,
+    }
+}
+
 impl World {
-    /// `WorldGen.setBG(bg, style)` for the five surface variants the port owns
-    /// (`WorldGen.cs:7235-7274`, `7276-7316`, `7424-7459`, `7460-7500`,
-    /// `7578-7608`). Unknown slots are ignored — their tables are unported.
+    /// `WorldGen.SetForestBGSet(style, mountainSet, treeSet)`
+    /// (`WorldGen.cs:7639-7768`): the two hill ids (`Main.treeMntBGSetN`)
+    /// and three tree-line ids (`Main.treeBGSetN`) of one forest style.
+    /// Both sets start at `[7, 8]`; the switch replaces them per style.
+    /// `-1` is a layer the C# never draws.
+    pub fn forest_bg_set(style: i32) -> ([i32; 2], [i32; 3]) {
+        let mut mnt = [7, 8];
+        let tree = match style {
+            1 => [50, 51, 52],
+            2 => [53, 54, 55],
+            3 => {
+                mnt[1] = 90;
+                [91, -1, 92]
+            }
+            31 => {
+                mnt[1] = 90;
+                [91, -1, 11]
+            }
+            4 => {
+                mnt = [93, 94];
+                [-1, -1, -1]
+            }
+            5 => {
+                mnt = [93, 94];
+                [-1, -1, 55]
+            }
+            51 => {
+                mnt = [93, 94];
+                [-1, -1, 11]
+            }
+            6 => {
+                mnt = [171, 172];
+                [173, -1, -1]
+            }
+            7 => {
+                mnt = [176, 177];
+                [178, -1, -1]
+            }
+            71 => {
+                mnt = [176, 177];
+                [178, -1, 11]
+            }
+            72 => {
+                mnt = [176, 177];
+                [178, -1, 52]
+            }
+            73 => {
+                mnt = [176, 177];
+                [178, -1, 55]
+            }
+            8 => {
+                mnt = [179, 180];
+                [184, -1, -1]
+            }
+            9 => {
+                mnt = [277, 278];
+                [279, -1, -1]
+            }
+            10 => {
+                mnt = [280, 281];
+                [282, -1, -1]
+            }
+            11 => {
+                mnt[1] = 331;
+                [330, 329, 328]
+            }
+            12 => {
+                mnt[1] = 336;
+                [335, 334, 333]
+            }
+            13 => {
+                mnt[1] = -1;
+                [343, 342, 341]
+            }
+            _ => [9, 10, 11],
+        };
+        (mnt, tree)
+    }
+
+    /// The forest set of `setBG` slot `n` (0/1/2/3 ↔ `treeBG1..4`, i.e.
+    /// `setBG(0/10/11/12)`): `(hill ids, tree ids)` for this world's style.
+    pub fn forest_bg(&self, n: usize) -> ([i32; 2], [i32; 3]) {
+        Self::forest_bg_set(self.forest_bg_styles[n] as i32)
+    }
+
+    /// `WorldGen.setBG(bg, style)` for the style slots the port owns
+    /// (`WorldGen.cs:7235-7274`, `7276-7316`, `7317-7423`, `7424-7459`,
+    /// `7460-7500`, `7501-7546`, `7548-7576`, `7578-7608`, `7609-7635`, and the
+    /// forest `SetForestBGSet` slots 0/10/11/12 `:7639-7768`). The forest slots
+    /// store the style byte — the `SetForestBGSet` draw-side table above
+    /// ([`World::forest_bg_set`], W4-g70) expands them.
+    /// Unknown slots are ignored — their tables are unported.
     pub fn set_surface_bg_style(&mut self, bg: i32, style: i32) {
         let style = style as u8;
         match bg {
+            0 => self.forest_bg_styles[0] = style,
             1 => self.corrupt_bg_style = style,
             2 => self.jungle_bg_style = style,
+            3 => self.snow_bg_style = style,
             4 => self.hallow_bg_style = style,
             5 => self.crimson_bg_style = style,
+            6 => self.desert_bg_style = style,
+            7 => self.ocean_bg_style = style,
             8 => self.mushroom_bg_style = style,
+            9 => self.underworld_bg_style = style,
+            10 => self.forest_bg_styles[1] = style,
+            11 => self.forest_bg_styles[2] = style,
+            12 => self.forest_bg_styles[3] = style,
             _ => {}
         }
     }
@@ -1467,10 +1951,30 @@ impl World {
     pub fn mushroom_bg(&self) -> [i32; 3] {
         surface_bg_texture_ids(8, self.mushroom_bg_style as i32).unwrap()
     }
+    /// The three pine-line textures of the snow surface style
+    /// (`WorldGen.setBG` case 3).
+    pub fn snow_bg(&self) -> [i32; 3] {
+        surface_bg_texture_ids(3, self.snow_bg_style as i32).unwrap()
+    }
+    /// The snow far/near mountain pair (`Main.snowMntBG`).
+    pub fn snow_mountains(&self) -> [i32; 2] {
+        snow_mountain_texture_ids(self.snow_bg_style as i32)
+    }
+    /// The four desert variants (`Main.desertBackgroundSet`): Pure, Corrupt,
+    /// Crimson, Hallow.
+    pub fn desert_bg_set(&self) -> [[i32; 3]; 4] {
+        desert_bg_set(self.desert_bg_style as i32)
+    }
+    /// `Main.oceanBG` for this world's ocean style.
+    pub fn ocean_bg(&self) -> i32 {
+        ocean_bg_texture_id(self.ocean_bg_style as i32)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn surface_bg_style_tables_match_set_bg() {
         // Spot rows from `WorldGen.setBG`, including the `default:` rows and
@@ -1483,16 +1987,161 @@ mod tests {
         assert_eq!(surface_bg_texture_ids(5, 2), Some([174, -1, 175]));
         assert_eq!(surface_bg_texture_ids(5, 6), Some([339, 338, 337]));
         assert_eq!(surface_bg_texture_ids(8, 4), Some([321, 320, 319]));
-        // Slots with their own tables (snow/desert/ocean/forest/underworld).
-        assert_eq!(surface_bg_texture_ids(3, 0), None);
+        // Slots with their own tables (desert/ocean/forest/underworld).
+        assert_eq!(surface_bg_texture_ids(6, 0), None);
+        assert_eq!(surface_bg_texture_ids(7, 0), None);
         assert_eq!(surface_bg_texture_ids(9, 0), None);
 
         let mut w = World::new("t".into(), 40, 40);
         w.set_surface_bg_style(5, 6);
         assert_eq!(w.crimson_bg(), [339, 338, 337]);
         assert_eq!(w.crimson_bg_style, 6);
-        w.set_surface_bg_style(3, 1); // unowned slot: unchanged
+        // W4-g71 wiring: slot 0 (treeBG1) is owned now — the forest roll writes
+        // it. The crimson style is untouched by a forest-slot write.
+        w.set_surface_bg_style(0, 1);
+        assert_eq!(w.forest_bg_styles[0], 1);
         assert_eq!(w.crimson_bg_style, 6);
+        // The other forest slots + the underworld slot route to their bytes.
+        w.set_surface_bg_style(10, 11);
+        w.set_surface_bg_style(11, 12);
+        w.set_surface_bg_style(12, 13);
+        w.set_surface_bg_style(9, 2);
+        assert_eq!(w.forest_bg_styles, [1, 11, 12, 13]);
+        assert_eq!(w.underworld_bg_style, 2);
+        // An unknown slot is still ignored.
+        w.set_surface_bg_style(99, 7);
+        assert_eq!(w.forest_bg_styles, [1, 11, 12, 13]);
+    }
+
+    #[test]
+    fn w4_g71_snow_style_table_matches_set_bg_case_3() {
+        // `WorldGen.cs:7317-7423`: every arm, incl the -1 triplets and the
+        // default mountain reset (35/36).
+        let cases: [(i32, [i32; 3], [i32; 2]); 16] = [
+            (0, [37, 38, 39], [35, 36]),
+            (1, [97, 96, 95], [35, 36]),
+            (2, [-1, -1, -1], [98, 99]),
+            (21, [95, 96, 97], [98, 99]),
+            (22, [37, 38, 39], [98, 99]),
+            (3, [-1, -1, -1], [98, 100]),
+            (31, [95, 96, 97], [98, 100]),
+            (32, [37, 38, 39], [98, 100]),
+            (4, [-1, -1, -1], [98, 101]),
+            (41, [95, 96, 97], [98, 101]),
+            (42, [37, 38, 39], [98, 101]),
+            (5, [258, 259, 260], [-1, -1]),
+            (6, [263, 264, 265], [-1, -1]),
+            (7, [267, 266, 268], [269, 270]),
+            (8, [299, 298, -1], [35, 36]),
+            (99, [37, 38, 39], [35, 36]),
+        ];
+        for (style, trees, mnts) in cases {
+            assert_eq!(surface_bg_texture_ids(3, style), Some(trees), "snow {style}");
+            assert_eq!(snow_mountain_texture_ids(style), mnts, "snow mnt {style}");
+        }
+    }
+
+    #[test]
+    fn w4_g71_desert_set_matches_set_bg_case_6() {
+        // `WorldGen.cs:7501-7546` — Pure/Corrupt/Crimson/Hallow order per
+        // `BackgroundVariantSet.cs:5-11`; `Clear()` empties the other three.
+        let none = [-1, -1, -1];
+        assert_eq!(desert_bg_set(0), [[21, 20, -1], none, none, none]);
+        assert_eq!(desert_bg_set(1), [[108, 109, -1], none, none, none]);
+        assert_eq!(desert_bg_set(2), [[207, 208, -1], none, none, none]);
+        assert_eq!(desert_bg_set(3), [[217, 218, -1], none, none, none]);
+        assert_eq!(desert_bg_set(4), [[248, 249, 250], none, none, none]);
+        assert_eq!(
+            desert_bg_set(51),
+            [[306, 303, -1], [310, 307, -1], [318, 315, -1], [314, 311, -1]]
+        );
+        assert_eq!(
+            desert_bg_set(52),
+            [[306, 304, -1], [310, 308, -1], [318, 316, -1], [314, 312, -1]]
+        );
+        assert_eq!(
+            desert_bg_set(53),
+            [[306, 305, -1], [310, 309, -1], [318, 317, -1], [314, 313, -1]]
+        );
+        assert_eq!(desert_bg_set(77), desert_bg_set(0)); // `default:` arm
+        // `HasAny` (`BackgroundVariant.cs:9-19`): any layer set counts.
+        assert!(desert_variant_has_any([21, 20, -1]));
+        assert!(desert_variant_has_any([-1, -1, 250]));
+        assert!(!desert_variant_has_any(none));
+    }
+
+    #[test]
+    fn w4_g71_ocean_style_table_matches_set_bg_case_7() {
+        // `WorldGen.cs:7548-7576`.
+        for (style, id) in [
+            (0, 28),
+            (1, 110),
+            (2, 111),
+            (3, 209),
+            (4, 210),
+            (5, 283),
+            (6, 332),
+            (7, 340),
+            (42, 28),
+        ] {
+            assert_eq!(ocean_bg_texture_id(style), id, "ocean {style}");
+        }
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(3, 7);
+        w.set_surface_bg_style(6, 52);
+        w.set_surface_bg_style(7, 5);
+        assert_eq!(w.snow_bg(), [267, 266, 268]);
+        assert_eq!(w.snow_mountains(), [269, 270]);
+        assert_eq!(w.desert_bg_set()[0], [306, 304, -1]);
+        assert_eq!(w.ocean_bg(), 283);
+    }
+
+    #[test]
+    fn forest_bg_sets_match_set_forest_bg_set() {
+        // `WorldGen.SetForestBGSet` (`WorldGen.cs:7639-7768`), every arm.
+        // The `[7, 8]` reset survives wherever the switch leaves it alone.
+        let f = World::forest_bg_set;
+        assert_eq!(f(0), ([7, 8], [9, 10, 11]));
+        assert_eq!(f(1), ([7, 8], [50, 51, 52]));
+        assert_eq!(f(2), ([7, 8], [53, 54, 55]));
+        assert_eq!(f(3), ([7, 90], [91, -1, 92]));
+        assert_eq!(f(31), ([7, 90], [91, -1, 11]));
+        assert_eq!(f(4), ([93, 94], [-1, -1, -1]));
+        assert_eq!(f(5), ([93, 94], [-1, -1, 55]));
+        assert_eq!(f(51), ([93, 94], [-1, -1, 11]));
+        assert_eq!(f(6), ([171, 172], [173, -1, -1]));
+        assert_eq!(f(7), ([176, 177], [178, -1, -1]));
+        assert_eq!(f(71), ([176, 177], [178, -1, 11]));
+        assert_eq!(f(72), ([176, 177], [178, -1, 52]));
+        assert_eq!(f(73), ([176, 177], [178, -1, 55]));
+        assert_eq!(f(8), ([179, 180], [184, -1, -1]));
+        assert_eq!(f(9), ([277, 278], [279, -1, -1]));
+        assert_eq!(f(10), ([280, 281], [282, -1, -1]));
+        assert_eq!(f(11), ([7, 331], [330, 329, 328]));
+        assert_eq!(f(12), ([7, 336], [335, 334, 333]));
+        assert_eq!(f(13), ([7, -1], [343, 342, 341]));
+        // `default:` — unknown styles keep the reset hills and the 9/10/11 row.
+        assert_eq!(f(99), ([7, 8], [9, 10, 11]));
+
+        // `setBG(0/10/11/12)` slots write the four styles (`WorldGen.cs:7219-7234`).
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(0, 1);
+        w.set_surface_bg_style(10, 11);
+        w.set_surface_bg_style(11, 12);
+        w.set_surface_bg_style(12, 13);
+        assert_eq!(w.forest_bg(0), ([7, 8], [50, 51, 52]));
+        assert_eq!(w.forest_bg(1), ([7, 331], [330, 329, 328]));
+        assert_eq!(w.forest_bg(2), ([7, 336], [335, 334, 333]));
+        assert_eq!(w.forest_bg(3), ([7, -1], [343, 342, 341]));
+    }
+
+    #[test]
+    fn tree_x_defaults_to_the_reset_max_tiles() {
+        // `WorldGen.Reset` pins all three dividers to `maxTilesX`
+        // (`WorldGen.cs:7125-7127`): every column resolves to forest set 0.
+        let w = World::new("t".into(), 8400, 2400);
+        assert_eq!(w.tree_x, [8400, 8400, 8400]);
+        assert_eq!(w.forest_bg_styles, [0; 4]);
     }
 
     #[test]

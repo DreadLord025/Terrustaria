@@ -1301,16 +1301,19 @@ Every layer is gated and tinted by its
 (`ColorOfSurfaceBackgroundsBase * alpha`), so two biomes blend while `Main.bgStyle`
 cross-fades; a zero alpha skips the layer.
 
-The far pass (`DrawSurfaceBG_BackMountainsStep1`) draws forest `Background_7`, desert
-`23` (only when `desertBG != 4`) and snow `35` at parallax 0.15, scale 1В·2 and top
-`magicВ·1300 + 1090 + scAdj + 30`. The near pass (`...Step2`) draws forest `8`, desert
-`22`, ocean `28` (`Main.oceanBG`, default style 0) and snow `36` at parallax 0.20,
-scale 1.15В·2 and top `magicВ·1400 + 1260 + scAdj + 30`, in the original's index order
-(0, 1, 3, 4). The front pass draws the biome's three layers: forest `50..52` and snow
-`37..39` at 1.25В·2/1.31В·2/1.34В·2, 0.40/0.43/0.49 and `magicВ·1800/1950/2100 +
-1300/1550/1800` (forest; `-50` per texture and the middle layer mirrored horizontally)
-resp. `+1350/1600/1850` (snow; no flip); desert `21`/`20` at 2.5/2.68, 0.37/0.49 and
-`+1600/+2000`, with no tree line. Everything is laid out in `Main.screenPosition` space
+The far pass (`DrawSurfaceBG_BackMountainsStep1`) draws the four forest sets' far hills
+(`Main.treeMntBGSet1..4[0]`, style 0 = `Background_7`/`93`/`171`/… per `SetForestBGSet`),
+desert `23` (only when `desertBG != 4`) and snow `35` at parallax 0.15, scale 1·2 and top
+`magic·1300 + 1090 + scAdj + 30` plus `GetLayerYOffset`. The near pass (`...Step2`) draws
+the sets' near hills (style 0 set 1 = `8`), desert `22`, ocean `28` (`Main.oceanBG`,
+default style 0) and snow `36` at parallax 0.20, scale 1.15·2 and top
+`magic·1400 + 1260 + scAdj + 30`, in the original's index order (0, 1, 3, 4, then the
+forest sets 10/11/12). The front pass draws the biome's three layers: the forest sets'
+tree lines (style 0 set 1 = `9..11`, style 1 = `50..52`) and snow `37..39` — see the
+W4-g70 note below for the forest chain's exact per-id math — resp. snow at
+1.25·2/1.31·2/1.34·2, 0.40/0.43/0.49 and `+1350/1600/1850` (no flip); desert `21`/`20`
+at 2.5/2.68, 0.37/0.49 and `+1600/+2000`, with no tree line. Everything is laid out in
+`Main.screenPosition` space
 (camera в€’ screenSize/2, **not** divided by the game zoom, so changing `GameZoomTarget`
 moves only the world) and the X phase is
 `-IEEERemainder(screenLeftВ·parallax, scaledWidth) в€’ scaledWidth/2` against the screen's
@@ -1323,6 +1326,121 @@ biome (`corrupt_bg_style`, вЂ¦), and `surface_bg_texture_ids` resolves it to 
 `-1` means the row is not drawn. The ids are derived on demand, so a style change needs
 no atlas rebuild вЂ” but the world-dependent sheets are packed at load
 (`assets::load_world_sheets`), hence a world's session must see one style set.
+
+**W4-g71 (2026-11-20, code-only)** adopted the three remaining surface `setBG` slots:
+snow (3, `WorldGen.cs:7317-7423` — the 16-arm style table incl the `-1` triplets of
+styles 2/3/4 and the `snowMntBG` mountain pair), desert (6, `:7501-7546` — the four
+`BackgroundVariantSet` rows Pure/Corrupt/Crimson/Hallow, `HasAny` per
+`BackgroundVariant.cs:9-19`) and ocean (7, `:7548-7576` — a single far-layer id).
+`World` gained `snow_bg_style`/`desert_bg_style`/`ocean_bg_style` (persisted in the
+`.wld` setBG bytes at tail 91/94/95 and the `.trwld` v18 tail; pre-v18 files load the
+slot-0 defaults). The draw side: `bg_offsets` carries the snow 258-268/298/299 and
+desert 248-250/207/303-318 arms of `SetBackgroundOffsets`, `layer_y_offset` is now the
+**complete** `GetLayerYOffset` switch (`Main.cs:59740-59797`), Step1/2 skip the desert
+mountains 23/22 for `desertBG == 4` and apply the snow/ocean mountain Y offsets,
+`DrawSurfaceBG_Desert` runs on `Pure.Backgrounds` (the oasis style 4 adds the third row
+250), and `DrawSurfaceBG_GoodEvilDesert` (`:60868-60926`) dispatches front styles
+5/13/14 to the variant sets or the 26/27 fallback dunes. The cross-fade arm
+(`UpdateBGVisibility_FrontLayer_IsDesertVariantSwap`, `:64120-64143`) holds the outgoing
+variant's alpha until the incoming one reaches 1 (`:64109`) when both sets `HasAny`;
+the far-side twin (`:64268`) is kept verbatim and is inert by construction (the far
+target of every desert variant is slot 2, which is never an outgoing variant slot).
+`GetPreferredBGStyleForPlayer`'s desert branch (`:64225`) now selects 5/14/2/13 through
+the pure `desert_preferred_style` helper. `UpdateOceanWaterLineForAmbience`'s geometry
+(`:59965-59984`) is ported as `ocean_water_line_offset`; the ambience ocean-line
+**opacity** term stays the documented Q4 constant-1 deviation. 15 witnesses written
+not run (no compiler invoked, code-only mode).
+
+**W4-g71 WIRING phase (2026-11-21, code-only)** wired the background style rolls into
+`step_world_tail` (`WorldGen.cs:11338-11340`): `RandomizeTreeStyle` /
+`RandomizeCaveBackgrounds` / `RandomizeBackgrounds`, writing
+`World.tree_x`/`tree_style`/`cave_back_x`/`cave_back_style`/`ice_back_style`/
+`jungle_back_style`/`forest_bg_styles`/`underworld_bg_style` + the eight surface
+styles through `set_surface_bg_style`. The `hell_back_style` `Next(3)` (`:8247`) folds
+into the cave block (the former standalone tail draw is gone). The boot re-roll
+(`Main.cs:6594-6603`) is ported as `bg_rolls::boot_reroll_backgrounds` — the menu seam
+(the C# runs it once per process before any load; `LoadWorldFlags` then overwrites
+with the file values, so a loaded world keeps its saved styles).
+
+**W4-g71 FINAL keep-one (2026-11-21, code-only, `fc76a48b`) — SUPERSEDES the wiring
+phase's "g72c STALE" verdict.** That verdict read g72's pre-wiring tip `1f5c2b1e`;
+at the CURRENT tip `4a75715e`, `2184ba07` DID land the cave-roll wiring
+(`worldgen/cave_bg.rs` on `streams.rng` ahead of the moon) plus the persistence trio
+and the live draw consumer. Both branches having wired a cave roll, a naive merge
+would draw the block TWICE. Adjudication (research/218 §2.1-FINAL): **keep g72's
+`cave_bg.rs` VERBATIM** (faithful previous-style carry through the un-rolled arm
+slots, the C# `new int[4]` shape, u8 ice/hell/jungle, and every landed consumer is
+typed against its outcome); **drop the `bg_rolls` cave duplicate** (draw-order-
+equivalent but zeroed the un-rolled slots and returned `[i32;3]`). The g71 `RollRng`
+seam + tree/surface rolls + boot fn are kept (g72 has no copy); the boot fn's cave
+leg calls the canonical driver. `step_world_tail` composes the C# order:
+:11338 tree (`pass_rng`) → :11339 cave (`streams.rng`, g72's seat) → :11340 surface
+(`pass_rng`) → :11341 moon (`streams.rng`, shifts behind the cave block —
+stale-by-design VALUE). `World.cave_back_x` is `[i32;4]` (`[3]` never
+rolled/persisted/sent); the `.wld` flags loops slice `[..3]`. **The tile-hash pins do
+NOT move**: the tail is the last `streams.rng` consumer, the tree/surface rolls ride
+isolated `pass_rng` slots, the cave block writes only style fields —
+`SEED42_512`/`DEFAULT_WORLD` stay byte-identical; the moon/hell values move
+(stale-by-design, the `a == b` determinism witnesses stay green). The v18 `.trwld`
+union is FINALIZED as research/218 §1-FULL: 13 claimant branches, 107-byte fixed head
++ d109 dense LAST (supersedes the 21/53/65-byte drafts).
+
+**W4-g71 BG SEAL (2026-11-21, code-only, `d2fcf9f2` net fix) — 92 SEALED.** The seal
+receipted the three external 107 re-derivations at their latest tips (g88 103
+L3-DEFINITIVE `fc5cf11ae` — its own 100-byte step-10 superseded, an independent
+C#-row re-derivation confirming the 13-branch census/dedups/keep-one; f44 132 RETIRE
+§3-L3 `d35876af9` — same field set, different order; g72 64a/64b SEALED `b069439eb` —
+its 53-byte prefix now-in-107 verbatim, retire defers layout authority here "per the
+Lead") and adjudicated the ORDER: research/218 §1-FULL's 64a-stable [0..53] prefix WINS
+— **that verdict was OVERRULED by the PERSIST-ARBITER (g88 research/103 §L3-ARBITER
+FINAL, `d09d7e10a`): the C# ACTUAL write order is DEFINITIVE, D5 strict-C#-row middle
+CONFIRMED (the books-before-moon middle inverted `WorldFile.cs:1407-1408` vs
+`:1347-1351`). §1-FULL.2 is CORRECTED to 103 A3: crimson [50] → moon [51..56] →
+underworld [56] → pets [57..60] → empress [60] → books [61..63], identity [63..107];
+the registry/census/dedups + §1-FULL.4 site table STAND (order-agnostic); the seal's
+own "free alternative" move is activated, and 103 A4's 92-row is mutually receipted.
+The `d2fcf9f2` net fix + setBG hunks are UNAFFECTED (wire/draw order, not byte
+layout).** g88's D5 flagged three registry tip-column hash slips (e19/d125/c43) —
+fixed. §1-FULL stays the `.trwld` union-layout DOC (INDEX pointer) seating 103 A3,
+THE byte-order authority; f44's 132 keeps the L1/L2 + merger-bible scope. The f45 flags-block audit (§1-SEAL.2): f45's file is
+the `.wld` base, g71's live setBG 0/3/6/7/9/10-12 hunks supersede its zero stand-ins,
+the five shared live styles + g69's crimson dedup onto f45's write — wire widths
+byte-identical, ownership-only compose. **The net hop was the last LOGIC gap in the
+roll→persist→net→draw chain and this seal closed it:** `WorldInfo.backgrounds` was
+`[u8;11]` (C# writes 13, `NetMessage.cs:245-257` — every post-style header field was
+shifted 2 bytes against a vanilla peer) and unwired (host zeros, client no-op). Fixed
+to `[u8;13]`, `world_info` emits the live rolls + treeX/treeStyle + g72's cave roll,
+`client_install_world` applies via `setBG` wire order 0,10,11,12,1..9
+(`MessageBuffer.cs:493-505`). Remaining gaps are merge-scoped sheet supply (d35) +
+g72's two draw modules + the forest style-0 pin — not logic (research/218 §5).
+**BG-SEAL RECEIPT phase (doc-only, over `8224c94f1`):** the four compose receipts
+closed in research/218 §1-SEAL.3/.4/.5 — the f45-flags compose re-verified hunk-exact
+at both heads (f45 has not published a read; the standing input is seated), the
+WorldInfo `[u8;13]` census keep-one (ten net-lane tips + main + f45 + g72 carry
+the inherited `f6b736a4c` `[u8;11]` block untouched; ONE other editor found — g52
+`856edb86c`'s five-style partial fill on the old width, a strict subset of g71's
+thirteen: g71's width+full emit+BG_SLOTS apply WIN, g52 keeps only its WorldInfo
+re-push cadence scope calling the merged `world_info`; f45's live
+game_mode/cloud/extra-spawn emits compose field-disjoint), and the cross-receipt
+at the dependents' current
+tips: 64b `aa1645481` (D5-RE-PIN + the g71f mutual receipt CLOSED by the re-pin),
+138 `9a4acd729` + 135 `43fee29a4` already on D3/A3, only f44's 132 `d35876af9`
+still owes its one-move underworld re-pin — FOUR of five L3 dependents publish the
+identical strict-C#-row middle; the persist-order dispute is RESOLVED on the
+published record. Registry tips refreshed (e19 `c7a38bea`, d125 `7a048230`, g90
+`43fee29a` — every claimant `save.rs` byte-unchanged, diff-verified).
+
+**Deliberate deviation — the atlas budget guard.** A rolled non-default surface style
+can overflow the 8192 px atlas (style-0 baseline 7847 px; non-default styles add
+336–1503 px, measured). The C# draws surface bgs through `Main.spriteBatch` under the
+sky matrix, OUTSIDE the tile atlas (the S1-G-13 background-target family). Until that
+lands, `build_atlas_inner` runs `assets::fit_bg_styles_to_atlas`: on overflow it
+reverts the offending biome styles to slot-0 (the classic look) in fixed `setBG` order
+1..8 until the set fits (measured via the cheap `Atlas::packed_height`), then rebuilds.
+Deterministic, greedy, no RNG; the forest tree sets + underworld are not reverted
+(g70/g72 own their draw sides). This trades the rolled look for an in-bounds atlas on
+overflowing worlds — recorded here as the interim fix pending S1-G-13. See
+`docs/research/218-doc-sweep-bg.md` §2.
 
 Every row goes through `FrontLayer` + `front_layers`, which is a literal port of each
 `DrawSurfaceBG_*` row: the caller's `(scale, parallax, magicВ·k + top)` magic numbers,
@@ -1338,8 +1456,11 @@ The per-row quirks are applied *after* the offsets, exactly like the source: cor
 `DrawSurfaceBG_GetLayerYOffset` on every row (`:59740`, `:60944-61008`); crimson nudges
 row 0 by `+50` for `105` and `-350` for `174`, and row 2's `175` by `-1000` in X, `-400` in
 Y plus one extra tile (`:60206-60291`); hallow's first `SkyManager` boundary is
-`1.2f / parallax` after the offset override (`:60788`); snow and mushroom close with
-`DrawToDepth(1f)` (`:60386`, `:60186`). Row 1 of corrupt/jungle/forest is mirrored
+`1.2f / parallax` after the offset override (`:60788`); mushroom closes with
+`DrawToDepth(1f)` (`:60186`). (The snow close the earlier port carried was a
+deviation — `DrawSurfaceBG_Snow` has **no** trailing `DrawToDepth`, its stratum
+waits for the `DrawRemainingDepth` flush like the other biomes; fixed by
+W4-g71.) Row 1 of corrupt/jungle/forest is mirrored
 (`SpriteEffects.FlipHorizontally`), mushroom's three rows each replace the tint with the
 glow colour (`:60001/60065/60127`), clamped at or above the base colour's byte.
 
@@ -1357,9 +1478,10 @@ original for the same seed). The resulting glow oscillates over the same 28..41 
 a comparable rate; the two rolls are not bit-identical to the original's.
 
 `Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`) is ported in full, including
-the beach/corrupt-blood-count branches and the glowshroom test; only its final
-`Main.treeX[]` forest sub-style selection (10/11/12) collapses to 0, and the desert
-evil variants (5/13/14) to 2 вЂ” both because those style tables are unported.
+the beach/corrupt-blood-count branches and the glowshroom test; the final
+`Main.treeX[]` forest sub-style selection (10/11/12) is ported since W4-g70, and only
+the desert evil variants (5/13/14) still collapse to 2 — their style table
+(`Main.desertBackgroundSet`) is unported.
 `DrawBG_HandleBackgroundTransition`
 waits 30 frames before adopting a new style (60 when entering a forest style), then sets
 `bgDelay = -60` as a 60-frame cooldown (0 for a forest target);
@@ -1375,14 +1497,90 @@ original's zoom-1 matrix, so the layers hold their screen size at any game zoom.
 are world objects at a fixed altitude above `worldSurface` and drift with the wind; the
 storm `cloudBG` banks (`Background_112/113`) fade in with `cloudAlpha`.
 
-Not ported: the extra forest sets 10..12 and the desert evil variants 5/13/14 (their
-style tables need `Main.treeX[]` / `Main.desertBackgroundSet`, and only the tree set 1 and
-the pure desert set are packed), the forest styles' per-texture quirks
-(`91`/`173`/`178`/`184`/`282`/`328`/`333`/`329`/`334`, `Main.cs:61278-61301`,
-`:61400-61490`), snow's 20-style table (`Main.snowBG`, style 1 assumed),
-`DrawSurfaceBG_GoodEvilDesert`, `DrawSurfaceBG_DrawChangeOverlay` (the black flash on
-first entering a background), the far-cloud depth layers (`DrawClouds_Distant/Closer`),
-the ocean water-line ambience and the `Background_49` fog.
+Not ported: the desert evil variants 5/13/14 (their style tables need
+`Main.desertBackgroundSet`; only the pure desert set is packed), snow's 20-style table
+(`Main.snowBG`, style 1 assumed), `DrawSurfaceBG_GoodEvilDesert`, the far-cloud depth
+layers (`DrawClouds_Distant/Closer`), the ocean water-line ambience and the
+`Background_49` fog.
+
+**The four forest sets (W4-g70).** `World.forest_bg_styles[4]` + `World.tree_x[3]` carry
+`WorldGen.treeBG1..4` / `Main.treeX` (the `.wld` flags block owns them now; generated
+worlds keep the `WorldGen.Reset` defaults — style 0 everywhere, dividers at `maxTilesX`,
+so the classic `Background_9/10/11` tree line and `7/8` hills draw until a loaded world
+says otherwise). `World::forest_bg_set` ports `SetForestBGSet` (`WorldGen.cs:7639-7768`)
+verbatim — all 19 style arms plus the default. `render/bg.rs::forest_layers` ports
+`DrawSurfaceBG_Forest` (`Main.cs:61273-61519`) with the C#'s exact write order, which
+differs from the other biomes' shared `front_layers` path in three ways: row 0 calls
+`SetBackgroundOffsets` **twice** (`:61302` then `:61307`), the second call landing after
+the ×2 with no re-multiply, so a tabled id's scale ends un-multiplied (282 draws at 2.6,
+not 5.2); rows 1/2 multiply first and call the offsets once after, and their
+unconditional `bgTopY` rewrites (`:61399`, `:61473`) make the table's top pair dead code
+for them; and the `ids[0] == 91` row-2 scale/parallax drop lands **after** the row's
+`DrawToDepth` (`:61456-61462`), so the depth boundary keeps the pre-drop 0.49 while the X
+phase uses 0.42. The `173` tree line swaps its drawn sheet to
+`251 + GetBackgroundCounter()/10 % 4` (`:61373`) while every offset read keeps id 173.
+The front dispatch walks the C# `l` loop's order — set 1 at `l == 0`, sets 2-4 at
+`l == 10/11/12` **after** mushroom — each followed by `DrawSurfaceBG_DrawChangeOverlay`
+(`:61098-61107`), the full-screen `Color.Black * flashPower` quad fed by
+`world_sim/bg_animation.rs::BackgroundChangeFlash` (`BackgroundChangeFlashInfo.cs`:
+latch 1 on a style change at load, 0.05 decay per update at `Main.cs:17218`). The hill
+passes draw all four sets' live ids (`App.forest_hills`, stepped by
+`DoUpdate_AnimateBackgrounds_UpdateForest` `Main.cs:19658-19735` — the 94/114-116 family
+rewrites both hill slots, the 180-183 family only the near one, 6-tick counters, 4-frame
+wrap) with the full `GetLayerYOffset` table (`:59740-59797`) and the passes' own
+`screenPosition.Y < worldSurface*16 + 16` gates. The world-half atlas packs each set's
+ids plus the animated families and the 173 frames, so a style change needs no re-pack
+within a session. TRWLD grew a v18 tail (3 i32 dividers + 4 style bytes); pre-v18 files
+load the reset defaults.
+
+**The sky chain (W4-g70 lane 8).** The doc-sweep's background/sky lane ported the
+celestial half of `DrawSurfaceBG` in three phases (`6b3049e19`/`752655914`/`9d8478278`,
+research `79-doc-sweep-sky.md`). `tr-core/sky_color.rs` carries the whole
+`SetBackColor` modifier chain (`Main.cs:63452-63924`) in XNA byte space — the
+blood-moon double-write (`:63513-63515`), the crimson G-read (`:63627`), the
+mushroom moon cross-reads (`:63773-63774`), the unconditional moon-phase floor,
+the eclipse light step (`:63845-63898`), the DontStarve hooks — and the
+`ApplyColorOfTheSkiesToTiles` integer 7/10 BEFORE the atmo colour dim
+(`:61982-61983` order). `render/sky.rs` carries `DrawSunAndMoon`'s event bodies
+(eclipse Sun3, the Sunglasses head==12 Sun2/Extra_280, the Smiley/Pumpkin/Snow
+moons), the byte-exact num12/num13 chain with the real `cloudAlpha` (the base used
+`cloudBGAlpha`), and `NextHorizonRenderer.DrawSun`'s five flare quads.
+`tr-app/star_field.rs` carries the whole `Star.cs` — the live 200..400-slot pool
+replacing the static `make_stars`/`StarSprite` stand-in — and the starfall chain
+lands end to end (`WorldGen.cs:71828-71856` roll → aiStyle-148 spawner 720 →
+natural star 12 → `Star.StarFall`). Deliberate deviations:
+
+- **Star spawn RNG pin.** The C# `SpawnStars` seeds a fresh OS-random `FastRandom`
+  per call (`Star.cs:88`); the port pins each call's stream to
+  `world.seed ^ counter × 0xA076_1D64_78BD_642F` so screenshots stay deterministic
+  (the make_stars deviation, kept).
+- **Smiley moon gate.** The C# reads `WorldGen.drunkWorldGen`, which is
+  gen-time-only (set `WorldGen.cs:11115`, cleared in the finally `:11097`) — in-game
+  it is always false, so the Smiley moon never draws in vanilla after generation.
+  The port reads the in-game DRUNK seed flag instead, so a drunk-seed world actually
+  shows the Smiley moon. The port's seed flags are the persistent in-game
+  representation of the gen-time flags.
+- **AFK gate always open.** The starfall target scan's `afkCounter < 10800` gate
+  (`Player.cs:57103`) has no port AFK counter, so the gate is always open.
+- **Flare blend.** The DrawSun flares draw at colour `(255,255,255,0) × strength` —
+  alpha 0. Under the port's premultiplied blend an alpha-0 tint leaves the
+  destination alpha untouched while the tinted rgb ADDS, matching vanilla's
+  additive glow.
+- **Star draw alpha.** The decompile builds the star colour from `default` and
+  assigns only R/G/B (`Main.cs:63083-63086`) — a zero alpha would make every star
+  invisible under the port's blend, so the port draws them at the computed
+  brightness with the byte alpha the `color *=` chain produces.
+- **Sound/dust/gore bodies skipped.** The starfall chain's dust/gore BODIES are the
+  pool-wide skip (the draws stay on the stream); the `SoundID.Item10` cue is the
+  sound skip. The gore types 16/17 carry no SpecialAI (`GoreID.cs:20`).
+- **The menu gravity block.** `Star.UpdateStars`' secret-seed menu gravity block
+  (`Star.cs:261-316`) needs `gameMenu && generatingWorld` — unreachable in the
+  port's frame loop, documented out. The `dayCheck` never-true quirk (the decompile
+  only writes `false`, `:245`/`:321`) is kept verbatim: every day tick past 27000
+  respawns the hidden slots.
+
+Remainders (research 79 §5): the artificial shimmer star pass (`Main.cs:62203`),
+the starGame minigame, the AFK counter, the menu flat-35 night, the AuroraSky tint.
 
 Also not ported: the per-biome **animated screen effects**. In particular the day-time
 desert **heat shimmer** вЂ” `SceneState.ApplyVisuals` enables the `HeatDistortion` filter
@@ -1433,15 +1631,184 @@ hell floor line (`hellBlackBoxBottom` is produced by the previous frame's magma 
 
 Deviations kept for the rock/magma passes: the 9-slice/4-slice light smoothing
 (`Lighting.GetColor9Slice/4Slice`) is collapsed to the flat per-cell colour, like the dirt
-pass; `undergroundBackground` is pinned to the classic set (`Main.cs:53817-53824`) because
-`PickUndergroundBackgroundStyle` needs `Main.caveBackX`/`caveBackStyle` and the
-`SceneMetrics` zone counts, so the per-biome cave sets (`Main.cs:53825-53987`) and the
-`ugBackTransition` cross-fade are dead code; XNA clamps out-of-range source rectangles to
+pass; `undergroundBackground` is pinned to the classic set (`Main.cs:53817-53824`) in the
+LIVE pass — the style machine itself is now ported UNWIRED (W4-g72 lane 3,
+`render/bg_styles.rs`: `DrawBackground_PickUndergroundBackgroundStyle` `Main.cs:54033-54095`,
+the full 22-case `UpdateBackgroundStyles` sheet table `:53812-54008` and the
+`ugBackTransition` latch/decay step `:52823-52841`, 9 witnesses written not run). Wiring
+is blocked on two owned-state gaps: the per-biome sheets overflow the single 8192 px atlas
+(the full static+gore set already packs to 7530 px, measured with the `tools/atlas_sim.js`
+skyline twin — even one extra biome set overflows), and the style rolls
+(`WorldGen.RandomizeCaveBackgrounds`, `WorldGen.cs:8192-8249`) would insert draws into the
+worldgen tail and move the frozen `world_hash` pins. The wall-parallax gate IS live and
+now carries the full `WallLightAt(i, j, showInvisibleWalls)` (`Main.cs:55169-55181`): an
+Echo-coated non-light wall keeps lighting the backdrop while invisible walls are hidden
+(the coating is set by `WorldGen.cs:966/970/976` and the `.wld` load `WorldFile.cs:2672` —
+the old "never set, table alone decides" shortcut was wrong); the show flag rides the
+`TR_SHOW_INVISIBLE` pin until the Echo Monolith / see-invisible accessory lands. XNA clamps out-of-range source rectangles to
 the sheet edge (`SamplerState.PointClamp`, `Main.cs:2774`) and the port clamps the cell's
 source offset instead вЂ” the quad-UV pipeline cannot smear per pixel, which only affects
 the last 16 px column of each 128 px rock block. The draw pad `Main.offScreenRange` (the
 padded render target of `WorldSceneLayerTarget`) cancels out of the draw positions in the
 port's unpadded viewport and survives only as the dirt sheet's visibility padding.
+
+The hell parallax stack (`Main.DrawUnderworldBackground`/`DrawUnderworldBackgroundLayer`,
+`Main.cs:52665-52796` — the five-layer `TextureAssets.Underworld` stack `DrawBG` runs after
+`DrawSurfaceBG`, `:64050-64053`) is ported UNWIRED as pure geometry (W4-g72 lane 3,
+`render/underworld_bg.rs`): the `(maxTilesY - 220) * 16` gate, the `(zoom - 1) * 0.5 * 200`
+push-up, the 14-texture switch (texture 1's TRANSPOSED quadrant cycle, the `num4 = 0`
+no-op lifts, the 250/100/20×num2 scaled lifts), the truncated-numerator first index, the
+width-minus-one pitch, the `vec.Floor()` after the index, the strict off-screen walk, the
+`-2 .. +4+ceil` loop span and the layer-0 (11,3,7) black fill row, plus `WorldGen.setBG(9)`'s
+three style sets (`WorldGen.cs:7609-7635`); 9 witnesses with exact-f32-derived expectations
+written not run. Wiring needs the sheets OUTSIDE the tile atlas (the C# draws them through
+`Main.spriteBatch` under the sky matrix): one style set alone measures 8424 px against the
+8192 strict-GPU bound, so a second texture array / target must land first; the `underworldBG`
+style byte is also still skip-read from the `.wld` (`wld/sections/flags.rs:566`).
+
+**d35 atlas-repack cross-note (W4-g72 final).** The 8424/7530 numbers above predate the
+merged W4 wave. d35's atlas-extension (`origin/task/W4-d35-npc-kinds-71-140`, tip
+`6a2a155a`, research/113 §7.4/§9.1 — read, not touched) re-measured on the merged base
+(9904 sheets, skyline worst 9478): style 0 → 10407 (+929), style 1 → 11195 (+1717),
+style 2 → 10402 (+924); EVERY single style overflows page 0 but fits ONE extra page
+(≤3312 px mixed, ≤1904 px own-bg-page) — the block is a single-page artifact. All 14
+`Underworld 0..13` sheets are in d35's bg-inventory (`tools/_d35_bg_inventory.json`,
+0 missing, three style-row scenarios measured + determinism-verified). The recommended
+wiring shape is d35 §9.1's render-to-texture escape, which cites OUR `bg_target.rs`
+screenTarget census: bind `UnderworldLayerPlan` to plain textures in the d69
+`RenderTargetFamily` (≤49 MB for style 1 + one composite pass), NOT atlas pages; the
+§8.4 per-world bg pages are the fallback. The escape is underworld-specific — the
+cavern/surface sheets keep the atlas path (they are tiny: ≤0.101 Mpx per cavern style,
+d35 §7.1) via the per-world bg pages appended after the union.
+
+**Routing correction (W4-g72 lane 3 phase 5, `render/bg_target.rs`).** The earlier "the
+S1-G-13 background-target family" wording above conflated two destinations. The C# census
+(`bg_target.rs` module docs) shows the underworld stack does NOT render into
+`backgroundTarget`: `DrawBG` (`Main.cs:63973-64063`) runs `DrawSurfaceBG` +
+`DrawUnderworldBackground(GameZoomTarget)` (`:64049-64053`) while `DoDraw` has bound
+`screenTarget` via `Filters.Scene.BeginCapture` when `flag3` (`:62098-62100`, the same gate
+as d69's `sky_target_active`); `FilterManager.EndCapture` then composites `skyTarget` FIRST
+and `screenTarget` SECOND into `screenTargetSwap`, both `Color.White` under
+`GameViewMatrix.Effects` (`FilterManager.cs:146-152`). `skyTarget` holds only the gradient /
+stars / sun / moon (`:62025-62095`). The CAVERN tree (`DrawBackground`, `:52798-52853`) is the
+one that captures into `backgroundTarget` (`RenderToTargets` phase 2, `:57290` →
+`RenderBackground` `:55200-55218`), composited with the cave-parallax X shift (`:62213`). In
+both cases the "target texture" is the DESTINATION — the sheets are still `TextureAssets`
+drawn through `Main.spriteBatch`, never the tile atlas. `bg_target.rs` ports the style-specific
+seams d69's generic family (`9ba463ae`, `tr_render::targets`) does not own: the
+`WorldSceneLayerTarget.UpdateContent` camera override → `draw_background` adapter
+(`WorldSceneLayerTarget.cs:49-57` + the `:52818` `drawOffset`), the `DoDraw` background consume
+dispatch (`:62207-62215`, destination math left to d69's `layer_composite_position`), the
+underworld `screenTarget` routing, the `ugBackTransition` byte-truncate cross-fade tint
+(`:53077-53081` et al.), the `DrawCapture` `!CameraSpaceEffects` camera override
+(`:56844-56858`, `Utils.Clamp` max-first + `Rectangle.Intersect`) and the
+`underworld_layer_plan` → sprite adapter (`:52786-52795`, `None`-safe without the atlas-blocked
+sheets). UNWIRED: the frame-path composition is d69's in-flight consumers lane and the sheet
+sources still overflow the atlas; 10 witnesses WRITTEN NOT RUN. No atlas sheet added.
+
+**The cave-style rolls are unowned (W4-g72 lane 3 phase 6, `docs/research/64`).**
+`WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`) draws `caveBackX[0..3]` +
+`caveBackStyle[0..4]` (with three distinctness rejection loops) + `iceBackStyle`/`hellBackStyle`/
+`jungleBackStyle` on the shared `genRand` stream, in the worldgen tail BETWEEN
+`RandomizeTreeStyle` (`:11338`) and `RandomizeBackgrounds` (`:11340`) and BEFORE
+`RandomizeMoonState`'s `Next(9)` (`:11341`); it is ALSO rolled at boot (`Main.cs:6603`).
+The port's `step_world_tail` (`pipeline.rs:2685-2731`) drew only `moon_type` + `hell_back_style`.
+Research note 64 documents the exact draw list, order, width-arm bounds and the
+moon-before-cave ordering constraint.
+
+**The cave-style rolls OWNED (W4-g72 lane 3 phases 7-8, `worldgen/cave_bg.rs`).**
+The Lead's port-gap assignment superseded the phase-6 "do not wire" verdict.
+The port now draws the whole block in `step_world_tail` AHEAD of the moon
+`Next(9)` (the C# `:11339`-before-`:11341` order) on the shared xorshift
+stream, through ONE generic driver (`randomize_cave_backgrounds<R: CaveRoll>`)
+that also serves the Knuth boot stream — the three width arms' f64-truncated
+bands (4200: `Next(1050,3150)`; 6400: `Next(857,3417)`/`Next(2988,5548)`; else
+the 0.25/0.5/0.75 ±0.15 bands), the base styles in index order, the three
+distinctness rejection loops in C# order, and the ice-`Next(4)`/hell-`Next(3)`/
+jungle-`Next(2)` tail. The old standalone hell draw is folded into the tail
+(no double draw). `World` gains `cave_back_x: [i32;4]` / `cave_back_style:
+[i32;4]` / `ice_back_style` / `jungle_back_style` (the `[3]` entries keep
+their `new int[4]` zeros — `Main.cs:66696-66697`, never rolled/sent).
+Persistence: the `.wld` flags block writes/reads the arrays
+(`WorldFile.cs:1260-1268`/`:2058-2066`, replacing the zero-writes/skip-reads);
+the `.trwld` v18 tail appends 31 bytes (3 i32 + 4 i32 + 3 u8 — `hellBackStyle`
+joins because the `.trwld` NEVER persisted it before, contrary to the old
+save.rs note); the `7 WorldInfo` header carries the roll host→client
+(`NetMessage.cs:258-278`). **Boot-roll census correction:** `Main.cs:6603`
+fires in `Initialize_AlmostEverything` ONCE per process (splash `:52572` /
+dedServ `:6499`) BEFORE any world load, with `Main.maxTilesX` still its
+static 0 (`Main.cs:1011`) — so it always takes the width-0 else arm, and the
+load's flags read OVERWRITES it (research/64 §2's "re-rolled on every load,
+overwrites the persisted arrays" was backwards). The port executes the boot
+roll in `App::new` on a dedicated `UnifiedRandom(world_seed)` as a dead store
+(the draw-order contract; `rngs.global()` untouched so the menu-path
+witnesses stay pinned). The `world_hash` pins carry stale-by-design notes:
+the tail is the last `streams.rng` consumer and writes no tiles, so the tile
+hash is expected UNCHANGED; the gate re-pins if measured otherwise, `a == b`
+stays green. The gen-side `RandomizeBackgrounds` (`:11340`, the forest
+surface rolls) remains unported — g71 owns the surface setBG slots' PERSISTENCE
+and draw tables, not that roll; inserting it later shifts the moon draw again
+(the same re-pin pattern). Witnesses WRITTEN NOT RUN (code-only).
+
+**The cave-style DRAW chain LIVE (W4-g72 final, `render/bg.rs` + `bg_styles.rs`).**
+The roll→persist→draw chain is closed on the logic side: `draw_background`
+builds `BgStylePickInput` from `World.cave_back_x`/`cave_back_style` (the
+rolled/persisted arrays — `.wld` flags, `.trwld` v18 tail and the `7 WorldInfo`
+header all land in the same fields) + the frame's `SceneMetrics`
+(`bg_style_pick_input`; the Skyblock snow-threshold 300 variant stays the
+documented normal-1500 deviation), runs the `ug_back_step` latch/decay on the
+new `App.ug_back` state (carried across frames like `hellBlackBoxBottom`,
+`Main.cs:52823-52841`), and feeds the picked style into the full 22-case
+`background_style_sheets` table (ice/jungle variants + worldID evil rows +
+hell tail). The `shimmerAlpha == 1` early return (`:52800-52805`) is ported;
+the port's shimmer ramp is unwired so the frame feeds 0.0. The dirt pass now
+draws `back[1]` (the picked style's sheet) instead of the pinned
+`Background_2`; the geometry dims keep reading `Background_2` like the C#'s
+`backgroundHeight[2]`. DEVIATION (graceful degradation): the per-biome sheets
+are still atlas-blocked (d35 research/113 §8.4 per-world bg pages), so
+`back_texture` resolves only the classic-set ids — a non-classic pick skips
+the affected passes (never draws the WRONG biome's sheet). The G6 key needs
+no new input: the backdrop rides the always-rebuilt back range, and the
+style inputs are per-world constants or the per-frame metrics scan.
+3 witnesses WRITTEN NOT RUN (the rolled-array pick + table ids, the
+latch/decay steps, the classic-set regression).
+
+### The cross-fade overlay draws LIVE (W4-g72 closeout)
+
+The `_drawBackground_oldBackTexture` overlays are now WIRED into the same
+live chain (`bg.rs::UgOld` resolves the old-style table once per frame —
+`Main.DrawBackground_UpdateBackgroundStyles`' second switch run,
+`Main.cs:53804-53810` — and every pass draws its overlay while
+`ugBackTransition > 0`). The C# census of the seven overlay families:
+
+| Slot / pass | C# overlay seat | Shape |
+| --- | --- | --- |
+| 0 surface row | `:53768-53797` | SECOND whole loop, re-phased against the OLD sheet's width (`old.Width()-32`), light re-read at the old loop's samples |
+| 1 dirt sheet | `:53651-53694` | SECOND whole corner-lit loop (`GetCornerColors(.., ugBackTransition)` scales the corner sum, `Lighting.cs:299`; alpha `(byte)(255*t)`); the per-cell twins (`:53560/:53608/:53625`) live ONLY in the collapsed slice arms — the plain arm (`:53636-53645`) draws none |
+| 2 rock band | `:53723-53730` | per-cell twin, single row (no `j` pitch) |
+| 3 rock field | `:53249/:53289/:53306/:53327` | per-cell twin in ALL four arms incl. the plain one; row pitch `backgroundHeight[oldBackTexture[3]] * j` |
+| 4 magma band | `:53369-53376` | per-cell twin, single row |
+| 5 magma FIELD | — | **NO overlay in any arm** (`backTexture[5]` at `:53002/:53033/:53041/:53049` never pairs with `oldBackTexture[5]`) — the animated hell field itself never fades |
+| 6 hell floor | `:53075-53082` | per-cell twin, single row |
+
+The per-cell twins route through `push_cave_cell`'s fade arm: the tint is
+the base cell's already-lit colour folded through the landed
+`bg_target::ug_crossfade_tint` (every channel incl. alpha byte-truncated by
+the transition), the row pitch is the OLD sheet's height
+(`backgroundHeight[oldBackTexture[slot]] * j` — the port's `UgOld::pitch`,
+falling back to the NEW pass's pitch when the old sheet is unresolved),
+and the source rect/jitter/sample point stay the NEW pass's. The dirt
+corner-lit overlay does NOT route through `ug_crossfade_tint` — its
+truncation seat is inside `GetCornerColors`' scaled corner sum
+(`Lighting.cs:299`'s `GlobalBrightness * scale * 63.75`), so the port folds
+`bg_brightness * transition` into the bilinear corner sample itself (the
+same per-vertex→quad-centre approximation `push_wall_lit` documents) and
+sets the alpha to `(byte)(255*transition)/255`. Its light gate is `InWorld`
+(no 1-margin) + any-channel-nonzero (`:53672-53679`), NOT the base pass's
+wall-light gate. DEVIATION (unchanged graceful degradation): a non-classic
+old slot resolves `None` and its overlay skips — classic↔classic fades draw
+today, the rest close when d35's per-world bg pages land. 1 witness
+WRITTEN NOT RUN (the old-table resolution + pitch fallback + degradation).
 
 The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
 `worldSurface = (int)(max(surfaceY) + 25.0)` вЂ” the *deepest* column, not the mean вЂ” with
@@ -1519,6 +1886,72 @@ plus the driver-level hell pulse). GenTileData regen ran: `--check` exit 0, diff
 limited to the TILE_LIGHTED word (`0x700040004000c000` → `0x700040004000dfc0`).
 The f32 constant census re-ran clean after the fixes (0 diffs across the five
 lamp tables). Anchors: 5 rows added.
+
+### The surface-bg draw ownership (W4-g72 closeout)
+
+The live cave-chain's SURFACE arm (`render/sky.rs`'s `draw_sky` front-loop)
+was verified against the g71-shape style tables (research/64c): the five
+v16-owned variants (corrupt/jungle/hallow/crimson/mushroom) READ the
+`WorldGen.setBG` style→ids expansion through `world.*_bg()` →
+`tr_core::world::surface_bg_texture_ids` (slots 1/2/4/5/8) — NOT style-0
+pins, a non-default style byte expands to its variant rows. g71's own
+draw-side reads the SAME shape through the SAME function (its world.rs
+extends it with slot 3), so the five are already g71-compatible. The
+forest/desert/snow/ocean chains are STYLE-0 PINNED here (`[50,51,52]` /
+`[21,20,-1]` / `[37,38,39]` / `Background_28`): their style tables
+(`SetForestBGSet` slots 0/10/11/12 = g70; `setBG` 3/6/7 = g71) are those
+lanes' to port — this lane does NOT re-port them (the Lead's "SURFACE styles
+g71-owns draw-tables"); the pins lift to g70's `world.forest_bg(n)` / g71's
+`world.snow_bg()`/`desert_bg_set()[0]`/`ocean_bg()` at the merge. The
+underground-desert cavern style stays OURS (no separate desert arm in
+`PickUndergroundBackgroundStyle`, g71 research/92 §4). 1 witness WRITTEN NOT
+RUN (the five variants' style-0 + non-default rows + the g70/g71-owned-slot
+`None` verdicts).
+
+### The BG-FAMILY bible (W4-g72 retire — the one-paragraph family map)
+
+The background family is split across four lanes with ONE canonical owner
+per piece, adjudicated and receipted at the retire (research/64 §7, 64b,
+64c, 64d): **g72 (this branch) owns the CAVE canonical** —
+`worldgen/cave_bg.rs` is THE `RandomizeCaveBackgrounds` driver (g71's
+`fc76a48b3` adopted it verbatim and dropped its `bg_rolls` cave duplicate;
+the previous-value carry, `[i32;4]` shape and u8 tail decided it), plus the
+cavern/hell STYLE machine (`bg_styles.rs` pick + 22-case table + `ug_back`
+latch), the LIVE cross-fade overlays (`UgOld` + `ug_crossfade_tint`), the
+underworld DRAW stack (`underworld_bg.rs`, atlas-blocked pending d35's
+second page) and the `.wld`/`.trwld` 31-byte/net persistence trio; **g71
+owns the SURFACE rolls + tables** — `bg_rolls.rs`'s tree/surface/boot rolls
+(the composed `:11338→:11339→:11340→:11341` tail keeps our cave seat on the
+shared stream), the `setBG` style→ids expansion (`surface_bg_texture_ids`,
+which our five v16-owned surface variants already read LIVE), the
+snow/desert/ocean style bytes AND the FIRED underworld style byte (rolled +
+`.wld`-persisted; `.trwld` seat [56] of the 107-byte union, layout authority
+g88 research/103 §L3-DEFINITIVE D3/D5 @ `fc5cf11ae` — D5-RE-PIN, the
+retire-era 92 §1-FULL.2 order pin retired, books [61..63] flags-LAST);
+**g70 owns the FOREST set** — `tree_x` +
+`forest_bg_styles` (16 bytes, union offsets [0..16]) and the
+`SetForestBGSet` tables our style-0-pinned forest chain lifts to at the
+merge; **g69 owns the CRIMSON byte + consumers** — the 1-byte `crimson`
+flag (union [50], e19's duplicate drops) with its 5 wired feeds + 12
+deferred consumers censused in its research/117. The v18 `.trwld` union is
+**107-byte fixed head + d109 W×H dense LAST** (every lane's truncation
+constant moves to 107); the one OPEN cross-lane seam is d69's 10→14-arg
+`draw_background` append (research/64d §5: NOT consumed at the retire
+probe, owed on the d69 lane or at the merge).
+
+#### land-MD supersede of the BG-family v18 head (Lead arbitration v615 / f43b)
+
+The retire-era paragraphs above describe the **107-byte** v18 fixed head that
+batch-M seated (g88 103 L3-ARBITER A3, g71c's 92). The `integration/land-MD`
+merge supersedes that layout per the Lead's v615 arbitration: the head is now
+**115 bytes**. The 6-byte flag tail (crimson [50] + the moon-boss quintet
+[51..56]) lands unchanged; the HEAD gains f43b's `blue` unlock byte at [61]
+and the 7 town-slime colour unlock bytes at [64..71]; the g90 books pair moves
+[61..63] → [62..64]; and the 44-byte c43/f45 identity block moves [63..107] →
+[71..115]. Every `save.rs` truncation constant moved 107 → 115 (writer,
+reader, `EMPTY_V16_TAIL`, and the back-compat fixtures), and `wld`/persist
+ledger rows that claimed the 107-byte head were repointed. All other g70/g71/
+g72/f45 claims stand verbatim.
 
 ## Sky and daylight
 
@@ -2867,9 +3300,12 @@ behaviour notes:
   (`audio.rs:22-31`), consistent with the silent menus. `Main.DoStatefulTickSound`
   (`:41126`) is not ported either.
 * `mapStyle == 2` (the overlay style) draws nothing in the minimap branch вЂ”
-  the whole-UI P4 plan's Uncertainty 7: only the style-1 branch
-  (`Main.cs:55503-55547`) is ported, and the style-2 overlay render has no
-  Rust counterpart yet.
+  but its OWN style-2 arm is landed: the D18 draw arm (compose step 0 re-fold
+  of e18 `099beeba5`, research/84 §10.4) draws the overlay tile pass +
+  `num37` layer walk + hover tail in `frame/draw.rs`'s style-2 branch
+  (`Main.cs:55548-55578`/`:55609`/`:55615-55625`); the old "Uncertainty 7 /
+  no Rust counterpart" wording is superseded. The `:55626-55694` icon block
+  rides the f29-tip landing.
 * The minimap **content** icons are not ported: NPC map icons, player heads,
   revenge/death markers (`TextureAssets.MapDeath`) and map pings
   (`TextureAssets.MapPing`) вЂ” the render entry points of research В§F
@@ -19021,6 +19457,269 @@ byte-compares offsets 2402-3827 (timestamp spliced); `the_write_envelope_is_pkcs
 pins the pad rule incl. the aligned full-block case. No new dependency вЂ”
 the existing `aes` crate's raw block API carries the PKCS7 by hand (13 lines).
 
+## The save files' wall clock + the SavePlayer envelope (W4-c43)
+
+`tr_core::clock` is the one seam for the .NET `DateTime` stamps both file
+formats carry: ticks are 100 ns units since 0001-01-01 (the Unix epoch sits
+at tick 621355968000000000), and `ToBinary` packs a 2-bit kind into bits
+62-63 (`Utc` = bit 62). Deliberate deviations:
+
+- **Every stamp the port writes is Utc-kind.** `CreationTime`'s C# source
+  is `DateTime.Now` (`WorldFile.CreateMetadata:600`, kind Local); the port
+  owns no time-zone database, so it stamps `UtcNow` instead. Reads mask
+  the kind bits off (`from_binary_ticks`); a foreign Local-kind stamp is
+  read as its stored ticks without the offset round-trip.
+- **`Guid.NewGuid` is a clock-seeded `UnifiedRandom` draw** shaped to v4
+  (version nibble 4, RFC-4122 variant bits) — .NET's GUID is cryptographic,
+  which a deterministic port cannot reproduce; the shape and
+  uniqueness-per-creation contract are what the format needs.
+- **The WorldId roll stays out of the worldgen streams.** The C# rolls
+  `WorldId = genRand.Next(int.MaxValue)` mid-`GenerateWorld`
+  (`WorldGen.cs:11337`); inserting that draw into the port's frozen
+  contract streams would move every world hash, so the creation tails roll
+  it from a fresh `identity_rng()` (same value range) after generation.
+
+The world identity lands as: the creation tails (`create_world_in`,
+`WorldGenJob`'s Completed arm) run `wld::stamp_created_identity`
+(`CreateMetadata:600-604`) + the WorldId roll; the save funnel stamps
+`world.last_played = utc_now_binary()` on every save (`SaveWorldFlags:1251`
+writes `UtcNow`, never the loaded value); `load_world` runs the load-side
+fallbacks (`LoadHeader:1962-1969`: a pre-181 `.wld` gets a fresh GUID, a
+v >= 181 one keeps its stored GUID even when Guid.Empty — only a pre-v18
+`.trwld`'s zero reads as absent; `GetFileData:315-318`'s mtime LastPlayed
+for a zero stamp). The native
+`.trwld` grows a **v18 identity tail** (generator version u64, GUID 16 B,
+world id i32, CreationTime/LastPlayed i64 each — `WorldFile.cs:1225-1227,
+1250-1251`); pre-v18 files load the zeros the old saves carried. The
+determinism contract narrows accordingly: a double-save pair is byte-equal
+**modulo the LastPlayed long** (the C# is wall-clock-bearing there too) —
+`test_DW_7_2`/`test_DW_7_3`/the `.bak` rotation test pin the normalized
+pairs; the worldgen tile hashes are untouched (the identity fields are not
+in `world_hash`'s fold).
+
+**The `.plr` envelope (Ph2).** The S1-J-5c "App stamps 0" policy is
+retired: `save_created_character` now stamps `utc_now_binary()` (the
+`Serialize:54909` `DateTime.UtcNow.ToBinary()` — `CreateAndSave` runs
+`SavePlayer` like any save, `PlayerFileData.cs:58`). The envelope completes
+`InternalSavePlayerFile`: an existing `.plr` is copied to `<path>.bak`
+before the write (`:54730-54733`), and the metadata revision rides
+`PlayerFileWrite::revision` (`:54739` writes the loaded `playerFile.
+Metadata` verbatim — `Write`, NOT `IncrementAndWrite`; a fresh character's
+`FromCurrentSettings` revision is 0, a re-save threads the read counter
+back). The reader now keeps `lastTimePlayerWasSaved`
+(`Deserialize:55687-55691`, the >= 202 gate) on
+`PlayerFile::last_saved_binary` and runs the `LoadPlayer:55096-55098`
+fallback — a zero stamp reads `File.GetLastWriteTimeUtc(path).ToBinary()`
+(`tr_core::clock::file_mtime_binary`; the port has no cloud saves, so the
+`!cloudSave` arm is the only one). Witnesses (written not run, code-only):
+`w4_c43_a_re_save_copies_the_previous_plr_into_the_bak`,
+`w4_c43_the_metadata_revision_rides_the_write`,
+`w4_c43_the_save_timestamp_round_trips` (incl. the C# fixture's pinned
+stamp), `w4_c43_a_zero_stamp_falls_back_to_the_file_mtime`,
+`w4_c43_the_timestamp_is_version_gated` (a 201-restamped stream with every
+post-201 gate stripped reads aligned, stamp 0). The golden byte-parity
+tests are untouched — the fixture's revision is 0 and its clock is the
+caller-supplied pin.
+
+## The `.wld` header/flags SECOND half (W4-f45)
+
+`task/W4-f45-wld-header-2` (code-only, 2026-11-21, base = W4-c43's tip
+`07697080`) claims the remaining header/flags fields that have live port
+state or a faithful gen/death source, in four phases. Every claim is a
+`World` field the `.wld` flags writer/reader (`wld/sections/flags.rs`)
+round-trips; the App-owned schedulers snapshot into the World at save
+(`saveglue.rs::save_world`, the `SetTempToOngoing` shape) and restore at
+load (`app/mod.rs`, `from_wld`-gated so a `.trwld`'s zeros never clobber the
+live defaults).
+
+- **Ph1 — the downed-flag census.** `downedClown`/`downedEmpressOfLight`
+  (`WorldFile.cs:1297`/`:1395`) round-trip (their kinds — Clown 109,
+  HallowBoss 636 — are unported, so no live setter yet). The five seasonal
+  bosses (`downedHalloweenKing/Tree`, `downedChristmasIceQueen/Santank/Tree`,
+  `:1347-1351`) gain their moon-gated death arms (`NPC.cs:79210-79239`):
+  the kill counts only while `pumpkin_moon`/`snow_moon` is up,
+  `SetEventFlagCleared`'s false→true transition guard fires the progression
+  notify, and `OnGameEventClearedForTheFirstTime` (`:78769-78793`) arms the
+  next lantern night for events 5/20 (the default arm) but NOT 4/21/22 (the
+  explicit no-op arm).
+- **Ph2 — the eight secret-seed bytes.** `forceHalloweenForever`/
+  `forceXMasForever`/`vampireSeed`/`infectedSeed`/`teamBasedSpawnsSeed`/
+  `dualDungeonsSeed`/`moreLightningSeed`/`noLightningSeed` (`:1418-1428`)
+  are the `InitializeSecretSeeds` mirrors of `World.micro_seeds`
+  (`WorldGen.cs:553-587`) — the same bits the `.trwld` v12 tail carries.
+  The `.wld` now derives them on load (the old "the `.wld` parse does not
+  derive `micro_seeds`" deviation is retired).
+- **Ph3 — the event snapshots + flavour.** `cultistDelay` (`:1340`), the
+  party quad + celebrant list (`:1361-1368`), the lantern quad
+  (`:1381-1384`), `windSpeedTarget` (`:1328`), `savedBartender` (`:1373`),
+  `dungeonX/Y` (`:1279-1280`) and `WorldGen.crimson` (`:1281`). The
+  schedulers' live state (`App.world_events`) and `App.wind.speed_target`
+  snapshot at save; the load restores them (the wind restores BOTH target
+  and current, `:2147`). The generator stamps the dungeon anchor
+  (`pipeline.rs::step_dungeon`, the drunk arm's `worldSurface + 70` row) and
+  the crimson flavour (`GenOptions.crimson`). **The flattened v107/108/109/
+  128 read gates are restored** (`LoadWorldFlags:2180-2208`): below 107
+  `invasionSizeStart` is re-derived by `FakeLoadInvasionStart`
+  (`Main.cs:64488-64514`), below 108 the cultist delay defaults to 86400,
+  below 109 the block ends, below 128 the dawn byte is absent. The angler
+  quest gate now reads `world.crimson` (the old "no evil-kind field"
+  deviation retired).
+- **Ph4 — the banner tally, the angler list, the spawn unlocks.**
+  `BannerSystem.killCount[]` (`:1341`) densifies from `App.banners` into
+  `World.banner_kill_counts` (the banner ids ARE the C# array indices —
+  `bestiary::npc_to_banner` mirrors `NPCtoBanner`); the claimable array
+  stays unowned (the port spawns the banner item at the death spot).
+  `anglerWhoFinishedToday` (`:1329-1333`) carries the real name list (the
+  turn-in pushes the player's name, the day reset clears it). The seven
+  spawn unlocks — `unlockedSlimeBlueSpawn` (King Slime death,
+  `NPC.cs:79411`) + the six arrival unlocks (`WorldGen.cs:5577-5608`) —
+  gain their setters and the `SpawnAllowed_*` overrides
+  (`NPC.cs:7069/7094/7119/7160/7177`).
+
+**Deliberate deviations.** The party celebrant list carries the C#'s stable
+`Main.npc` slots, but the port's live list indexes the compacted `Vec<Npc>`
+(the recorded `world_events.rs` deviation) — the slots are written as-is; a
+compacted-list remap is the follow-up. The Truffle's housing-gate consumer
+(`housing.rs:456`) keeps its parameter (the Truffle kind is unported, so the
+flag round-trips without a live reader). The Clown/Empress/bartender latches
+round-trip without live setters (their kinds/rescue paths are unported).
+
+**Still unowned (no port state, written at the C# default):** claimableBanners,
+the treeTop variation table, the world-gen manifest JSON (all three the W4-c44
+golden-fixture lane owns), and forceHalloweenForToday/forceXMasForToday (the
+W4-f39 season lane). The set below was claimed in the second pass (Ph5-Ph13).
+
+### Second pass (Ph5-Ph13): the remaining unowned census
+
+`task/W4-f45-wld-header-2` continues on the same branch (base `42b7363b`) and
+claims the rest of the header/flags fields that have a live port consumer in an
+in-flight lane or a faithful gen/death/use source. Every claim is a `World`
+field the `.wld` flags writer/reader round-trips; the byte offsets are
+hand-derived against the `flags_tail` running widths and pinned by the
+`expected_flags_block` independent table + the owned-world sweep.
+
+- **Ph5 — GameMode** (`WorldFile.cs:1240` write / `:1985` read): the world's
+  difficulty i32 (0 Classic / 1 Expert / 2 Master / 3 Journey), the W4-e25
+  expert/master scaling lane's consumer. The pre-209 read gates are ported: the
+  expert bool from 112 (`:2031`), the v208 master byte (`:2037-2040`), classic
+  below 112 (`:2035`). `GenOptions.game_mode` stamps the creation draft's
+  `_optionDifficulty` (`UIWorldCreation.cs:129`) through both create paths; the
+  `WorldInfo` wire carries the byte.
+- **Ph6 — the tree/cave back-style tables** (`:1253-1268` / `:2051-2066`):
+  `treeX[3]`/`treeStyle[4]`/`caveBackX[3]`/`caveBackStyle[4]` +
+  `iceBackStyle`/`jungleBackStyle`, the W4-g72 bg-layers lane's consumers. The
+  gen roll ports `RandomizeTreeStyle` (`WorldGen.cs:8117-8190`) +
+  `RandomizeCaveBackgrounds` (`:8192-8249`) — the per-size zone branches (small
+  2 / medium 3 / large 4), the distinct `Next(6)`/`Next(8)` style rolls with the
+  collision re-roll loops, the tree 0->4 reroll, the unused-boundary
+  `maxTilesX` fill. **Deviation:** the C# draws the tables BEFORE the moon/hell
+  rolls (`:11338-11341`); the port keeps its frozen moon->hell order (the
+  `worldgen_rolls_hell_back_style` pin) and draws the tables between them — the
+  port's xorshift stream is not byte-comparable with the C#'s Knuth one anyway
+  (research/35 #5), so this is the accepted stream deviation.
+- **Ph7 — cloudBGActive/numClouds** (`:1326-1327` / `:2142-2145`): the W4-g69
+  CloudField lane's mirrors. **Deviation:** the C# load reads `cloudBGActive`
+  then RE-ROLLS it (`:2144` `-genRand.Next(8640, 86400)`); the port reads the
+  stored value into the World mirror for the round-trip but the App's live
+  machine (the g69 lane) owns the re-roll. `numClouds` restores as-is (the short
+  cast).
+- **Ph8 — afterPartyOfDoom** (`:1305` / `:2109`, v257): the getfixedboi
+  anniversary doom party. The gen Reset arm (`WorldGen.cs:11128-11137`) stamps
+  it (tenth anniversary + get-good, not skyblock) plus the genuine party / 5-day
+  cooldown; the `UpdateWorld_NPCs` consumer (`Main.cs:17926-17943`) kills every
+  town NPC (minus the five exclusions — only TravellingMerchant 368 / Dryad 20
+  have ported kinds) once the party ends, clearing the mech/party-girl/princess/
+  rainbow/green unlocks + the bunny license. The strike is the port's hp=0
+  instant-kill deviation.
+- **Ph9 — meteorShowerCount/coinRain** (`:1422-1423` / `:2490-2491`, v291): the
+  starfall events. `StartMeteorShower` (`WorldGen.cs:6239-6244`) rolls
+  `Next(650,751)*4`; the `HandleMeteorFall` failed-pick arm now draws
+  `Next(3)==0` into it (`Main.cs:65497-65500` — the `resolve` previously skipped
+  the draw). `StartRain` stores `coinRain` (`Main.cs:64672-64673`), `StopRain`
+  clears it (`:64651`); `rain.rs`'s `start_rain`/`stop_rain`/`update_time` take
+  `&mut World`. The star/coin projectiles are unported, so the values round-trip
+  without spawns.
+- **Ph10 — extraSpawnPoints** (`:1425` / `:2501`, v297): the team-based extra
+  respawn anchors, the W4-c46 respawn lane's consumer.
+  `ExtraSpawnPointManager.cs:436-456`'s count byte + (i16 X, i16 Y) pairs; the
+  variable-length `expected_flags_block` splice carries them.
+- **Ph11 — boughtCat/Dog/Bunny** (`:1392-1394` / `:2358-2360`, v217): the pet
+  licenses, the W4-f43 town-spawn lane's `TailFlags` consumers. The license
+  use-setters (`Player.cs:45352-45366`) ride the item-use lane (the combat-book
+  v1 precedent — the latches round-trip).
+- **Ph12 — combatBookVolumeTwoWasUsed/peddlersSatchelWasUsed** (`:1407-1408` /
+  `:2418`/`:2426`, v259/260): the boosters, the W4-g89b lane co-claims the
+  consumers (`npc_ai_town.rs`'s `combat_book_two` env); the use-setters
+  (`Player.cs:45337-45383`) ride the item-use lane.
+- **Ph13 — the five remaining slime-colour unlocks** (green/old/purple/yellow/
+  copper, `:1409-1415` / `:2434-2440`, v261): the town-slime kinds are unported,
+  so the latches round-trip (the green arrival setter rides the f43 town-slime
+  lane; the doom party clears green, `Main.cs:17940`).
+
+**Determinism.** The new fields are not in `world_hash`'s fold (the tile
+hashes are untouched); the gen stamps (dungeon anchor, crimson, the tree/cave
+tables, the doom party) are deterministic functions of the options/seed. The
+`.wld` flags block grows by the variable celebrant/angler/extra-spawn lists —
+the `expected_flags_block` table computes the shifts, and the owned-world sweep
+pins the whole block.
+
+Witnesses (written NOT run, code-only): the Ph1 seasonal-death census
+(`world_sim/npcs.rs`), the Ph1-Ph13 offset+gate witnesses
+(`wld/mod.rs::w4_f45_*`), the tree/cave roll witness
+(`worldgen/pipeline.rs::w4_f45_the_tree_cave_rolls_follow_the_per_size_branches`),
+the meteor-shower witness (`worldgen/meteor.rs`), the coin-rain store witness
+(`rain.rs::test_DW_2_4`), and the extended `owned_world`/`assert_owned_fields`
+round-trip sweep. The compile window runs them.
+
+### Final phase: the full walk audit + the VERSION-gate census
+
+`task/W4-f45-wld-header-2` final phase (`2e13cfafc` + `ad153feb3`, code-only)
+publishes **research/279-wld-final-audit.md** (renumbered 137→279 per the
+research/150 registry §6.3 — 137 belongs to g84) — the complete
+`SaveWorldFlags:1238-1430` / `LoadWorldFlags:1981-2517` ownership table
+(every field, write/read line, gate, owner), the g90 booster-pair keep-one
+(the `.wld` halves byte-identical; the `.trwld` v18 tails ride the g71 §1-FULL
+107-byte union), the g71 cross-read boundary (the disjoint setBG seats, the
+byte-identical dedups, the g70 treeStyle conflation flagged, the Ph6 gen-roll
+copies defer to the g71/g72 canonical), and the gate census. **Four gate
+fixes landed:**
+
+- **The >326 later-version reject** (`WorldFile.cs:712`/`:197`): the port
+  walked a v327+ file as v326; `SectionTable::open` now bails it.
+- **The <88 lower boundary** (the off-by-one): the C# dispatch is `> 87 ->
+  Version2`, so v87 routes to the unported old loader; the `< 87` bail let it
+  into the Version2 walk. Now `< 88` bails the whole 1..87 range.
+- **The `flags_tail` legacy-u32 window** (299..312, `LoadWorldFlags:2512-2515`):
+  the test table lacked the 4 bytes, mis-aligning a v304 synthetic at the
+  manifest; the table carries the window, the Ph2 v304 witness re-pinned
+  `len-1` → `len-6`.
+- **`FixEndlessRainWorlds`** (`WorldFile.cs:3284-3298` via `:2130`): the v≤317
+  year-long-rain (≥5184000 ticks) clear unless the seed text carries
+  rainsForAYear. The header seed text is now retained for the
+  `GetSecretSeedCodes` '|' split; the check rides the golden-verified
+  `seeds::check_input_for_secret_seed`. The plaintext "bring a towel" was
+  verified against the registered code through an independent Python mirror
+  of the game's non-NUL BCrypt walk (controls pumpkinseason/arachnophobia +
+  the target all match). The post-walk placement is byte-equivalent (nothing
+  after `:2130` touches the rain triple).
+
+**Recorded observations (research/279 §5, not byte-walk defects):** the
+pre-267 zenith inference's `EVERYTHING_DEPS` widening (pre-existing, the C#
+sets zenithWorld only); `downedMechBossAny` derived vs stored (equivalent for
+C# files); the moonType/moonPhase read guards (no-ops for valid files); the
+pre-196 treeBG2-4 else-arm copy (g70 lane); TreeTops' min(count,13) vs the
+full-count skip (equivalent for C# files); `UpdateTimeRate`'s creative-fold
+ordering (the clock seam, a no-byte side-effect); the manifest empty-string
+write (the C# writes the null-field JSON even when empty — c44 fixture owns
+the payload).
+
+**The remaining-unowned census answer (research/279 §1.5):** five families —
+claimableBanners (no claim queue; the item spawns at the death spot), the
+TreeTops variation table (a derived mirror; the sources are owned), the
+world-gen manifest (no gen metadata), forceSeasonsForToday (f39), and the
+eight setBG seats (g70 forest four / g71 surface three + underworld). Every
+other flags field is owned. Witnesses written NOT run (code-only).
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
@@ -19117,6 +19816,269 @@ was the *caller* and the *throttle*:
   ignored. `mapDelay` and the `renderCount == 3` phase gate ride the same
   legacy-engine state the port has no equivalent of (it exports inline), so
   only the `mapTime` half is modelled.
+
+### The map section grid + reveal queue (W4-e18 first half, 2026-11-21, code-only)
+
+The second-half reveal window (above) landed without its driver: the C#'s
+`Main.cs:61863-61899` block walks `Main.sectionManager` — a `WorldSections`
+grid — under a 5 ms wall-clock budget, and nothing in the port constructed
+or walked it. This pass lands the whole first half:
+
+- **`map_sections.rs::MapSections`** ports `WorldSections.cs:6-358` verbatim:
+  the `maxTilesX / 200` × `maxTilesY / 150` grid (`WorldGen.cs:7150`, integer
+  division truncating — NOT the wire's round-up `net::sections_x/y`), the
+  four `BitsByte` flags (loaded/framed/mapDrawn/needsRefresh) in one byte per
+  section, `IterationState`'s off-grid `(-3200, -2400)` reset, and
+  `GetNextMapDraw`'s player-centred spiral with cross-call resume (`prevMap`),
+  the quadrant pick off the section midpoint, the leg-4 ring kick-off, the
+  full-lap fallback and the "Infinite loop" panic. `ClearMapDraw` refills the
+  budget and resets the spiral; `SetAllFramedSectionsAsNeedingRefresh` keeps
+  the C#'s no-dedupe double-count.
+- **The resident-world collapse**: the port keeps the whole world resident,
+  so the constructor arms every section loaded + framed — the state the C#
+  reaches via `SetAllSectionsLoaded` (`WorldGen.cs:6744`/`:6821`) plus the
+  framing walk's per-section `SetSectionFramed` (`WorldGen.cs:80363`).
+  `frameSectionsLeft` therefore sits at 0 (`SetSectionLoaded` counts each
+  first load, `SetSectionFramed` drains it back). The `TileLoaded` gate
+  (`WorldMap.cs:81`) now resolves through the real grid instead of the
+  always-true stand-in; single-player behaviour is unchanged because every
+  section is loaded.
+- **`frame/world.rs::map_reveal_sweep` / `map_reveal_driver`** port
+  `Main.cs:61863-61899`: the sweep runs while the stopwatch is under 5 ms and
+  `GetNextMapDraw` answers; the `DebugOptions.unlockMap != 0 && SectionLoaded`
+  arm reveals the section (`:61873-61876`), `DrawToMap_Section` re-uploads it
+  (the port pushes the clamped section rect dirty — the texture sync rides
+  `prepare`), and an exhausted sweep with no pending refresh zeroes the debug
+  option (`:61880-61883`). The sweep gates only on `!gameMenu &&
+  !generatingWorld` (`:61865`), so it runs OUTSIDE the port's pause gate; the
+  `updateMap` consume arm checks `!gamePaused` itself (`:61886`). The
+  `refreshMap` → `ClearMapDraw` consume rides INSIDE that arm, before the
+  draw (`:61888-61892`); the `else if ChangesQueued` fallback draws
+  `Rectangle.Empty` (`:61896-61898`).
+- **`WorldMap` gains the `Main` statics**: `update_map` (`Main.cs:799`,
+  armed by `ExportToMiniMap`'s `Main.updateMap = area`, `LightingEngine.cs:269`,
+  and by the legacy seam's `:432` rect), `refresh_map` (`:789`), `load_map`
+  (`:795`, the `.map` load's staged-upload gate, `WorldMap.cs:212`, cleared by
+  the bulk upload's `DrawToMap` tail, `MapRenderer.cs:198`), and the
+  `change_queues` (the 5×2 `MapRenderer.changeQueues`, `:33`/`:70-77`).
+  `queue_change` ports `MapRenderer.QueueChange` (`:288-304`): the
+  2048-per-target `ChangeRefreshThreshold` arms `refreshMap` instead of
+  adding the entry, and while armed every call is a no-op. The port uploads
+  through the single world-sized texture's dirty list, so the queues keep
+  only the threshold + clear semantics — equivalent output, different cost.
+- **The `/map` debug row now arms the queue**: `debug_unlock_map = 2` +
+  `refresh_map = true` (`ToolkitDebugCommands.cs:486-487`), and the sweep
+  reveals over the following frames instead of the old direct `unlock_map`
+  walk. The second click is the toggle-off arm (`:491`). `unlock_map` itself
+  stays (the canary row + a whole-world reveal primitive).
+
+Deliberate deviations: the 5 ms budget is the C#'s own wall-clock stopwatch
+(`TimeLogger.StartTimestamp`), so the sections-per-frame count is
+machine-dependent exactly like vanilla — no fixed-count stand-in. The
+`DrawToMap_Section` render-target blit is the dirty-rect push (one texture,
+not the 5×2 grid); the pixels are identical. ~~The `loadMapLock`/`loadMapLastX`
+staged-upload counters are unmodelled~~ **closed (W4-e18 residual census,
+2026-11-21)**: the four `Main` statics (`clearMap`/`mapReady`/`loadMapLock`/
+`loadMapLastX`, `Main.cs:789-805`) now live on `WorldMap`; the `DrawToMap` tail
+(`MapRenderer.cs:196-199`) sets `map_ready` + lifts the load pair, the load arms
+all three (`WorldMap.cs:211-213`), the `clearMap` consume (`:161-173`) rides
+`prepare` as a full re-upload, and `Main.DrawMap`'s `!mapReady` gate
+(`Main.cs:55283`) gates both draw branches. `loadMapLastX` stays 0 (the bulk
+write has no intermediate progress; the MP consumers `WorldGen.cs:6823-6825` /
+`Netplay.cs:506-508` are unported). The same pass landed `WorldMap.Clear`
+(`WorldMap.cs:249-258`), the `/clearmap` debug row
+(`ToolkitDebugCommands.cs:497-503`), the `/map` row's missing `clearMap = true`
+head (`:483`) and the drag's `!CaptureManager.Instance.UsingMap` gate
+(`Main.cs:55342`, the whole block skips — anchor untouched). Still unmodelled:
+the `IsChanged`/`ConsumeUpdate` + run-merge walk and the `maxMapUpdates` budget
+(`MapRenderer.cs:203-286`) — the dirty list carries exactly the changed tiles,
+identical pixels (see `docs/research/14-map-minimap.md` "W4-e18 residual
+census").
+Witnesses: 8 `map_sections::tests::w4_e18_*` (grid dims, first-draw centre,
+spiral coverage/exhaustion, restart-on-move, ClearMapDraw, refresh
+double-count, truncating TileLoaded, quadrant pick), 3 `map::tests::w4_e18_*`
+(update_map arming, QueueChange threshold, load gate), 6
+`frame/world.rs::w4_e18_reveal_driver_tests::*` (sweep reveal + option reset
+on the empty pass, pending-refresh hold, refresh consume, paused skip, load
+gate, mapEnabled drain gate) — all written not run (code-only mode).
+
+**W4-f46 union note (2026-11-21, code-only, research/84 EXECUTED).** The
+e18/f46 dup-reconcile union landed on `task/W4-f46-minimap-reveal-2`: e18's
+skeleton stays (grid, statics, queues, driver state machine, 16-row debug
+tab) and six f46 salvages replace the deviations above —
+
+1. **Placement**: the driver call moved from `update_world_frame` to the
+   draw half (`frame/draw.rs`, ahead of `WorldMap::prepare` — the C# block
+   sits in `DoDraw`, `Main.cs:61863-61899`). The entry is
+   `frame/world.rs::map_reveal_draw` (a field-borrow fn — the draw region's
+   destructure holds `map`/`world`/`settings`); the update-half call is gone.
+2. **Paused else-arm**: the old `if paused { return }` skipped the C#'s
+   `else if (ChangesQueued)` fall-through (`:61896-61898`) — a paused frame
+   with queued changes never drained them. The consume now branches on
+   `updateMap.HasValue && !gamePaused` as one condition, so the else-arm
+   runs while paused (e18's real `changes_queued()` predicate kept).
+3. **`DrawToMap_Section` pixel paint**: the sweep's dirty-rect push is
+   replaced by the real port — `map.rs::section_pixels` (the world-clipped
+   row-major `GetMapTileXnaColor` cache, `MapRenderer.cs:328-335`) +
+   `draw_to_map_section` (one region blit), with `checkMap`'s on-demand
+   `ensure_map_texture` ahead of the walk (`:322` — the texture exists even
+   when `mapEnabled` is off). The deviation paragraph above ("the
+   `DrawToMap_Section` render-target blit is the dirty-rect push") is closed.
+   The sweep splits into a GPU-free state core (`map_reveal_sweep_core`,
+   `budget_ms` test parameter) + the paint wrapper.
+4. **`/map` verbatim flag path**: `WorldMap::unlock_map` is now the command
+   itself (`ToolkitDebugCommands.cs:480-494` — `clearMap` head, 1/2 + refresh
+   arming, toggle-off); the dead ceil-loop bulk sweep is deleted and the
+   debug row routes through the fn. The option stays `App.debug_unlock_map`
+   (the C# `DebugOptions.unlockMap` static's home), passed by `&mut i32`.
+5. **XNA empty intersect**: the export arms `Some([0,0,0,0])`
+   (`Rectangle.Empty`) on an empty overlap, not the inverted rect
+   (`LightingEngine.cs:269`).
+6. **Ctor `clear_map = true`**: `WorldMap::new` is the world-load
+   construction, so it arms the flag like `WorldGen.clearWorld`
+   (`WorldGen.cs:6982`) — a fresh world with no `.map` file now carries the
+   verbatim flag state (pixel-equivalent before, flag-faithful now).
+
+Also: `MapSections::sections_left()` accessor (f46's witness seam), the
+f46 duplicate module (`tr-core/map/sections.rs::MapDrawQueue`) dropped, the
+paused witness extended to assert the else-arm drains while paused, and 4
+f46 witnesses adapted (`/map` toggle, section pixels, empty intersect, ctor
+flag). All written not run (code-only mode); the merger keeps this union
+and drops the separate e18/f46 versions (research/84 §8).
+
+### The first-half DrawMap overlay census (W4-e18, 2026-11-21, code-only)
+
+The seeded six candidates resolved against `Main.cs:55283-56650`: background/edges
+and the fullscreen/minimap frames were already landed; grid lines, the map legend,
+a player-arrow rotation and a zoom-level indicator do not exist in the source
+(phantoms — the player marker is a head icon, never rotated). Two genuinely missing,
+unclaimed pieces landed: the fullscreen close button (`Main.cs:56014-56036`,
+`ui/chrome.rs` + `clicks.rs::handle_fullmap_close`) and the fullscreen vanilla
+cursor with its thick border (`Main.cs:56037-56040` + `DrawThickCursor`
+`:48064-48134`, `ui/cursor.rs`, `Cursor_11` packed). Deliberate deviations: the
+`showFrameRate` `-15` button shift never fires (F10 unported); the gamepad cursor
+branches and `UIWorldGenDebug.IsActive` have no port counterpart; the
+`inventoryScale = 3` swap around `MouseText` is a no-op (`MouseTextInner` draws at
+`Vector2.One`, `:20319`); `OnPostFullscreenMapDraw` has zero subscribers in vanilla
+(mod hook). Full table + evidence: `docs/research/14-map-minimap.md` "W4-e18
+first-half census". Witnesses: 2 chrome + 3 clicks + 1 cursor, written not run.
+
+### The fullscreen open/close arms + the Load catch + mapDelay + the draw head/tail (W4-e18 final sweep, re-folded onto the union by W4-f46 final-retire, 2026-11-21, code-only)
+
+Five more residuals landed the e18d sweep and are re-folded onto this union
+(research/84 §10.2; the sixth, the minimap key rows, rode the dup fold
+`a352b16e` under the union's `update_minimap_zoom_keys` names):
+
+1. **`TryOpeningFullscreenMap`** (`Player.cs:29103-29119`): the M-key open arm
+   (`app/loop.rs::try_open_fullscreen_map`) closes the inventory (`:29107`),
+   clears the talk-NPC latch + chat text (`:29109`, `SetTalkNPC(-1)`),
+   `PlaySound(10)` (`:29111`); scale 2.5 + `resetMapFull` ride `set_open(true)`
+   (`:29112-29115`). The close arms gain `PlaySound(11)` (`:24973` M-key,
+   `:4976` Escape). The inventory map-icon row (`Main.cs:41095-41120`) rides
+   the shared helper; the style icons play `PlaySound(12)` (`:41109/41114/41119`
+   — the stale "no UI cue loaded" comment retired, the cues ARE loaded).
+   `CloseSign(quiet)`/`npcChatCornerItem`/`buffString` have no port state;
+   `MapPylonTile = (-1,-1)` (`:29113`) rides the overlay pick's pylon-click
+   seam — the union's `set_open` → `recentre` already clears `pan_target`
+   (`Main.cs:55418` via the reset arm). Witnesses: 1 loop + 1 clicks.
+2. **`WorldMap.Load`'s catch arm** (`WorldMap.cs:217-230`): a corrupt-but-present
+   `.map` copies to `<path>.bad` (`:227`, overwrite) and clears the tiles
+   (`:229`, `this.Clear()`); the absent file takes `TryGetMapPath`'s early
+   return (`:184-188`) with neither side effect. `map.rs::load` splits the
+   `load_map_file` `Ok(false)` fold on `path.exists()`. The `Lighting.Clear()`
+   head (`:178`) rides the fresh-engine world load. Witness: 1 map.
+3. **The modern engine's `mapDelay` skip** (`LightingEngine.cs:82-89`):
+   `WorldMap::map_delay` (ctor 2, `Main.cs:66504`; world-load re-arm
+   `WorldGen.cs:6947` via `reset_map_delay` + `enter_loaded_world`) gates
+   `update`'s head — while > 0 the `MinimapUpdate` state decrements it INSTEAD
+   of exporting, before the `mapTime` countdown. The legacy engine keeps its
+   own copy (S1-E-19 wave B, `LegacyLighting.map_delay`). D22's `mapDelay` half
+   closed. Witness: 1 map; 6 existing witnesses re-pinned with `map_delay = 0`
+   (e18's 5 + the union-only empty-intersect witness).
+4. **The fullscreen draw head's dialog/inventory close** (`Main.cs:62150-62153`):
+   `talkNPC >= 0 || sign >= 0 || (playerInventory && !CaptureManager.Active)` →
+   `ToggleInv`'s talk/inventory arms (`Player.cs:5005-5016`/`:5033-5056`), every
+   drawn frame BEFORE `DrawMap` (`:62155`). With the map already open the call
+   falls through the map-close first arm (`:4972-4978`, reached only when the
+   map is SHUT) to the talk/inventory writes, leaving the map open.
+   `frame/draw.rs::close_dialog_behind_fullmap`, wired at `draw_region`'s head
+   ahead of the pylon scan (the `2e1f97c8` fix position). The capture-active
+   arm keeps the inventory; the sign editor has no port state. Witness: 1 draw.
+5. **The fullscreen draw tail's chat pass** (`Main.cs:62160`): `DrawPlayerChat`
+   runs after `DrawMap` — the chat log + input strip draw over the map (the HUD
+   is suppressed, the chat is not). `ui::draw_chat` made pub + called at the
+   fullscreen branch tail (after the union's head icon). `DrawFPS` (`:62159`)
+   rides `showFrameRate` (F10, unported); `DrawPendingMouseText` (`:62161`) is
+   the map's own `MouseText` (`:56046-56049`). No new witness (the pass is the
+   existing `draw_chat`).
+
+The remaining-census close (research/14 "W4-e18 final sweep"): the minimap zoom
+keys were the seed's one real gap (landed by the union closeout + dup fold); the
+map ping is verified f29/S1-L-4 (`handle_fullmap_ping` + the `PingMapLayer` pool
++ the net relay); the fullscreen pan inertia/friction is a PHANTOM (`grabMapX`/
+`grabMapY` are the only drag statics, `Main.cs:817-819` — the drag is the
+instantaneous per-frame cursor delta, `:55342-55359`; the only eased pan is
+`PanTargetMapFullscreen`'s `Vector2.Lerp(pos, end, 0.15)`, `:55361-55384`, the
+overlay pick's pylon-click recentre — the union carries the state + cancels);
+the map icon LEGEND is a PHANTOM (confirmed — `Lang.BuildMapAtlas` is the
+hover-NAME lookup, not a drawn legend). One more unclaimed arm recorded as a
+seed: the Unity-potion teleport block (`Main.cs:55960-55975`, `:55998-56010`) —
+MP-client-only (`netMode == 1`), the netcode ladder's territory, the overlay
+pick's head-loop seam.
+
+**MAP-FAMILY SEAL note (W4-f46 seal phase, same day — research/84 §10.4):**
+the e18 seal (`5509cb87a`, its research/84 §10.10) ported D18's style-2
+overlay DRAW as `099beeba5` (`draw_overlay`/`map_overlay_quad`/
+`clamp_overlay_axes` + the `num37` layer walk + the `:56046` hover tail,
+`Main.cs:55548-55625`; style-0 retro censused a PHANTOM — callers gate
+1/2 at `:45778`/`:62231`); it RE-FOLDED onto this union per the SEALED
+16-hunk recipe as compose step 0 — **EXECUTED (receipt below + research/84
+§10.5)** (the f29 seal
+`ff819421d`, research/140 §11, adopts the same table and publishes the
+joint compose steps 0-4: f46-union-FIRST → f29-TIP-SECOND, e17 drops).
+The union's stale "draws nothing" (minimap deviation above +
+`frame/draw.rs`) and "D18 out of scope" (`map.rs` field docs) wording went
+with that re-fold; the `:55626-55694` icon block stays with the f29-tip
+landing. The witness union is exact at seal: 34 (f29) + 56 (f46) + 2
+(D18) = 92, zero shared names; the composed atlas measures 8131 px /
+9606 sheets (margin 61, 140 §11.3). D22's content-lost refresh stays the
+recorded deviation (no GPU-reset path; `ensure_map_texture` +
+`needs_full_upload` is the creation-time equivalent).
+
+### The style-2 overlay draw arm — compose step 0 EXECUTED on the union (W4-f46, 2026-11-21, code-only)
+
+The e18 `099beeba5` D18 draw arm is RE-FOLDED onto this union per e18
+§10.10's SEALED 16-hunk recipe (research/84 §10.4(c)/§10.5; research/14's
+"W4-f46 compose step 0" section carries the hunk-by-hunk receipt). The
+union now carries `map_overlay_quad` + `WorldMap::draw_overlay` +
+`WorldMap::clamp_overlay_axes` + the style-2 draw branch in
+`frame/draw.rs` (gate + `num37` layer walk + the `:56046` hover tail) +
+the pylon-scan gate widening + the clamp call beside `prepare` + the 2
+map witnesses + the `draw_overlay` anchor row. Deliberate choices,
+recorded (the e18-arm notes carried through the re-fold):
+
+- **The 3 helpers stay ONE copy** — `map_key_alpha`/`map_alpha_clamp`/
+  `overlay_scale_clamp` were already on the union byte-identical
+  (`a352b16e`); the recipe's SKIP list honoured, no second copy.
+- **Clamps stay draw-side** (`clamp_overlay_axes` beside `prepare`, fed
+  the frame's `world_zoom` — the `RenderZoom = forced_minimum_zoom * zoom`
+  product, `Main.cs:61999`). The union's `update_minimap_zoom_keys`
+  clamps input-side too (`a352b16e`), so the folded draw-side clamp is a
+  benign double projection — KEPT for draw-side fidelity (the recipe's
+  own ruling; the style-2 key rows + their witness + the `minimap_app`
+  fixture DROPPED as covered by the union equivalents).
+- **The overlay draws under the HUD**: the C# call site is the in-world
+  pass (`:62231`), not interface 16; the port's map batches sit under the
+  UI batch, which reproduces that order. The menu/front/no_hud guards
+  mirror the minimap branch.
+- **The `:55626-55694` icon block is NOT ported here** — it rides the
+  f29-tip landing (compose step 2); the shared `MapIcons.Draw` walk
+  (`:55625`) IS ported (the union's S1-L-4 `map_layers_draw`, a third
+  call site — the f29 merge adds its 4 `MapIconInputs` fields at all
+  three sites, 140 §11.1).
+
+2 witnesses written not run (the recipe's third e18 witness dropped);
+1 anchor row (`map.rs::draw_overlay`). Net union `w4_e18` census: 36 → 38.
 
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
@@ -19279,6 +20241,250 @@ or minimap is actually drawing, so the TE walk stays off the hot path.
 `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are their own passes;
 the hover text feeds the map's text line through `ui::text::hud_text` (the C#
 `ref text`).
+
+## The map player pins / death markers / misc + revenge icons (W4-e17, code-only 2026-11-21)
+
+`crates/tr-app/src/map_player_icons.rs` ports the `Main.DrawMap` passes the
+icon layers and the NPC heads sit between, both branches wired in
+`app/frame/draw.rs`:
+
+- **The player pins** — the 255-player head loops (fullscreen
+  `Main.cs:55931-55976`, minimap `:55712-55766`) over
+  `DrawPlayerMapIcon_CanBeSeen` (`:56076-56097`) and
+  `GetPlayerHeadBordersColor` (`:56610-56629`, the `teamColor` table
+  `:6657-6662`). The local head rides the existing
+  `render/entities.rs::draw_player_map_icon` composite; the remote peers
+  draw the same composite through their `PlayerNet` snapshots (the
+  `render/tiles.rs:1218` convention — position + netOffset, facing,
+  frames; `gfxOffY` 0). The head hover writes the player name
+  (`:55959`/`:55738`); the minimap's two insets differ (heads
+  `(6,6)..(w-16,h-14)` `:55726`, deaths `(8,8)..(w-18,h-16)` `:55752`).
+- **The death markers** — `DrawPlayerDeathMarker` (`:56446-56464`): the
+  `MapDeath` sheet centred at `headScale`, the hover box the head box
+  `(4, 2) - 14*headScale` with NO further shift — the `-4/-4` pair exists
+  only in the minimap inline copy (`:55757-55758`; W4-f29 fix F5 corrected
+  the first pass, which applied the minimap's net `(0,-2)` box to both
+  branches). `Player.KillMe`'s stamp (`Player.cs:38846-38848`:
+  `lastDeathPostion = Center`, `lastDeathTime = DateTime.Now`,
+  `showLastDeath = true`) lands on `Player::start_death`; the hover reads
+  `Game.PlayerDeathTime` ("{0} died {1} ago") through
+  `Lang.LocalizedDuration(abbreviated: false, showAllAvailableUnits:
+  false)` — `ui/resources.rs::localized_duration_full` adds the
+  culture-driven abbreviation (`Lang.cs:1161`) and the English long unit
+  names to the existing abbreviated form.
+- **The misc icons** — `DrawMiscMapIcons` (`:56466-56539`): the
+  Potion-of-Return home/exit portals (`Extra_175`/`Extra_173`, the
+  `(pos + (0, -height/2))/16` transform through `Utils.Floor` — which is
+  `(int)` TRUNCATION toward zero, `Utils.cs:1702-1707`, NOT `Math.Floor`;
+  W4-f29 fix F3 corrected the first pass's `.floor()` — `Rectangle.Contains`
+  clip, `Utils.CenteredRectangle` hover) and the last-hit golf ball
+  (`Extra_176` + the ball's own `Projectile[type]` frame 0; the hover rect
+  is the MARKER's, captured before the ball draw `:56528`).
+  `GolfState::last_hit_ball_for_draw` exposes `GetLastHitBall`'s four
+  guards (`GolfState.cs:102-109`) for the draw side; the caller resolves
+  the live pool slot by `who_am_i` (the `update_golf_state` convention).
+- **The revenge markers** — `RevengeMarker.DrawMapIcon`
+  (`CoinLossRevengeSystem.cs:252-266`): the coin tier picks the sheet
+  (`<100` copper, `<10000` silver, `>=1000000` platinum, else gold — the
+  `MapDeath` assignment at `:261` is dead) from `TextureAssets.Coin[0..3]`,
+  the 1x8 ANIMATION strips (`AssetInitializer.cs:369`), NOT the
+  `Item_71..74` inventory icons (W4-f29 fix F4 corrected the first pass's
+  `lookups.coins` reuse; `Lookups.coin_anim` carries the strips); frame
+  `(1,8)` row 0, centred;
+  `DrawMapIcons` (`:482-496`) keeps the LAST hovered marker;
+  `UseMouseOver` (`:268-273`) draws `ItemSlot.DrawMoney` horizontal
+  (`ItemSlot.cs:3652-3684`): four coin icons at `mouse/drawScale + (-24,
+  0) + (24*i + 45, 50)` with the 999-capped counts under them (the
+  `ItemStack` font, origin `(0, lineSpacing)`, scale 0.75, four-way black
+  border). `Utils.CoinsSplit` (`Utils.cs:1048-1060`) is ported verbatim.
+
+The `ref text` precedence chains are rebuilt per the C# write order:
+fullscreen tile name (`:55784-55913`) → revenge/misc (`:55922-55923`) →
+NPC heads (`:55926`) → player names (`:55959`) → icon layers (`:55996`) →
+the death duration (`:55984-55986`, `num19` wins over the revenge
+`UseMouseOver`); minimap layers (`:55703`) → revenge/misc
+(`:55705-55706`) → NPC heads (`:55709`) → peer names (`:55738`) → the
+death duration (`:55772-55774`).
+
+Documented drops: the wormhole-potion teleport hover
+(`:55960-55975`/`:55998-56005`) is MP-only and unported (`HasUnityPotion`,
+`UnityTeleport`); the remote peers carry no team/hostile/lastDeath sync
+(`PlayerNet`), so they read as team 0 / not hostile and draw no death
+markers; the `mapStyle == 2` overlay's own pin/death loops
+(`:55653-55692`) ride the overlay branch (unwired, the P4 plan's
+Uncertainty 7). The minimap passes fold the `MapScale` batch transform
+into the positions/sizes and compare the screen mouse against the scaled
+rects (the `minimap_origin_raw` convention, the same as the NPC head
+pass). 9 `w4_e17_*` witnesses WRITTEN NOT RUN (code-only mode).
+
+## The map NPC heads + pylon network lines / click state (W4-e17 first half, code-only 2026-11-21)
+
+The f29 census's first half (items 1-4), ported ahead of the player-pin /
+death / misc / revenge passes above (items 5-8, the parallel lane).
+
+**The NPC head overlays** — `crates/tr-app/src/map_npc_icons.rs` ports
+`Main.DrawNPCMapIcons`/`2`/`3` (`Main.cs:56099-56292`): the fullscreen pass
+(`:56222-56292`, wired at `:55926` before the player heads), the minimap
+pass (`:56144-56220`, wired at `:55709` between the icon layers and the
+frame foreground, the strict-edged `(miniMapX+12, miniMapY+10, W-16, H-14)`
+clip) and the `mapStyle == 2` overlay pass (`:56099-56142`, ported but
+UNWIRED — the P4 plan's Uncertainty 7). The boss half resolves
+`GetBossHeadTextureIndex` (`NPC.cs:7557-7606`) over
+`NPCID.Sets.BossHeadTextures` (`NPCID.cs:10479`, keyed by the C# type, NOT
+the folded bestiary net id — the Golem parts fold onto 245 but only the
+246/249 heads draw) plus the seven type overrides (the Eye's phase-2 swap,
+the Brain's illusion hide, Plantera's INTEGER `lifeMax/2`, the twins'
+laser/spit phases, the Cultist's clone swap); `GetBossHeadRotation`
+(`:7608-7632`) and `GetBossHeadSpriteEffects` (`:7634-7642`, the Dutchman's
+`spriteDirection == 1` flip) gate the tilt/flip. The Destroyer head's
+segment-average (`:56125-56137`) walks the chain by `worm_id`/`seg_index`
+(the port's stable identity — the pool compacts, the C#'s `Main.npc[ai[0]]`
+slot links do not survive), head + up to 14 active links, divided by the
+count. The town half resolves `TownNPCProfiles.GetHeadIndexSafe`
+(`TownNPCProfiles.cs:200-207`): the stacked shimmer profiles pick the
+variant by `townNpcVariationIndex` (`Profiles.cs:44-52`), the pet
+`VariantNPCProfile`s index their head-id arrays (`:238-241`), the town
+slimes are fixed-head `LegacyNPCProfile`s, and the rest fall to
+`NPC.TypeToDefaultHeadIndex`. The outlined head
+(`OutlinedTextureRenderer.DrawWithOutlines` → the baked
+`AnOutlinedDrawRenderTargetContent` rings, `:38-62`) is reproduced as
+direct quads like `draw_player_map_icon`: 8 black copies at Manhattan
+radius 4, 4 border copies at radius 2, then the body — all riding the
+single `Color(alpha,alpha,alpha,alpha)` blit tint. The hover text is
+`FullName` (town, `Game.NPCTitle` "{0} the {1}") / `GivenOrTypeName`
+(boss); the hover rect's half-width is the C#'s INTEGER `(float)(Width()/2)`.
+The town `nextDialogue.ShowIndicator` notification bubble
+(`Utils.DrawNotificationIcon`, `Utils.cs:442-461`) is ported but gated off
+(the dialogue system is unported). The minimap pass folds the `MapScale`
+batch transform into the positions/sizes (`head_scale = num46 * MapScale`,
+the `minimap_origin_raw` convention).
+
+**The pylon network lines + hover/click state** — `map_layers.rs` ports
+`TeleportPylonsMapLayer.Draw` (`TeleportPylonsMapLayer.cs:30-110`): the
+fullscreen network lines (`:45-64`) from `Main.MapPylonTile`'s unclamped
+centre to every OTHER revealed pylon's, one black 6px + one white 2px
+`DrawLine` (`:18-28`: `Min(5,(int)Distance)` BlackTile segments lerped along
+the line, origin `(0, width/2)`, scale `(len/n/16, width/16)`); the markers
+draw through `DrawScaled` (the minimap, `MapOverlayDrawContext.cs:218-242`,
+the 2x hover scale) / `DrawClamped` (the fullscreen, `:118-216`, the
+border-10 rect pull-back along the ray from the screen centre + the
+`Extra_299` frame (2,1) offscreen arrow + the 0.5x offscreen / 2x hovered
+scales). The marker frame is the faithful `SpriteFrame(11,1,col,0)` cell —
+28 px wide (330/11 − PaddingX 2), NOT the 30 the earlier port drew. A hover
+claims `Main.cancelWormHole` (`:81`) and the item-name text; a press latches
+`PylonClick::Teleport` (onscreen) / `PanTo` (offscreen). `map.rs` carries the
+`MapPylonTile`/`PanTargetMapFullscreen`/`cancelWormHole` state, the 0.15 pan
+lerp (`Main.cs:55361-55385`, the `1/dist` overshoot guard + the <1-tile
+snap, a held press cancels) and `pylon_view_fit` (`Player.cs:32188-32212`:
+the anchor + every revealed pylon `Including`'d, `Inflate(20,20)`, the
+INTEGER rect centre, the scale clamped to fit `screen-40`); `set_open(true)`
+clears the selection (`TryOpeningFullscreenMap`, `:29113`). The 597 tile
+right-click (`world_sim/editing/doors.rs`, `Player.cs:32180-32212`) decodes
+the 3x4 body anchor (`x - frameX/18%3, y - frameY/18%4`), opens the map and
+fits the network. The marker click drains in `app/clicks.rs`:
+`handle_pylon_map_click` runs the `HandleTeleportRequest` gate ladder
+(`tr_core::pylons::handle_teleport_request`, the destination metrics scanned
+at the pylon) → `Player.Teleport(newPos, 9, pylonType)` + `velocity = 0`
+(`:189-194`) or the refusal chat line; the offscreen click arms the pan.
+The press edge is snapshotted (`App::map_left_press`) in `frame_shared_setup`
+BEFORE the click cluster consumes `ui_left_press` (the draw reads it after).
+
+Documented drops: the `mapStyle == 2` overlay head pass is unwired (the P4
+plan's Uncertainty 7); the town notification indicator is gated off (the
+dialogue system is unported); the wormhole-potion teleport hover that
+`cancelWormHole` guards is MP-only and unported (`HasUnityPotion`), so the
+flag is carried but has no same-frame consumer yet. 13 `w4_e17_*` witnesses
+WRITTEN NOT RUN (code-only mode). The atlas pack stays under the 8192-px
+bound: the head sheets add +16 px (8115 → 8131, measured through
+`tools/atlas_sim.js`'s skyline packer over the real content dims).
+
+## The map-overlay 2-way reconcile execution (W4-f29 exec, code-only 2026-11-21)
+
+`docs/research/140-map-overlay-reconcile.md` adjudicated the two parallel
+ports; this branch executed it: the e17 tip `8500c3e5d` is the surviving
+skeleton (taken wholesale per §4/§6), f29's duplicate modules
+(`map_overlay.rs`/`map_pylons.rs`, `apply_pylon_click`, the `height_boost`
+accessor, `clear_reset_pos`, `lang::localized_duration`, the f64 death
+epoch) retired, and the six f29 fixes landed as cited patches F1-F6 (§3):
+
+- **F1** — `MapOverlayContext::unclamped_center` truncates the top-left AND
+  the size to int before the integer-halves Centre
+  (`MapOverlayDrawContext.cs:64`); the pure `unclamped_center_int` carries
+  the witness (the float centre drifted up to 1 px per endpoint).
+- **F2** — all three context hover rects (`draw`/`draw_scaled`/
+  `draw_clamped`) are XNA `Rectangle.Contains(MouseScreen.ToPoint())`:
+  half-open integer `[x, x+w)` with the mouse truncated first
+  (`MapOverlayDrawContext.cs:58`/`:185`/`:234`); the shared
+  `rect_contains_int` helper. The e17 float-inclusive compares claimed the
+  far edge row/column the C# excludes.
+- **F3** — the misc portal/golf positions ride `utils_floor` = `(int)`
+  truncation toward zero (`Utils.cs:1702-1707`), not `Math.Floor`
+  (negatives differ). Now a FIX, not a deviation.
+- **F4** — the revenge markers draw `Lookups.coin_anim` (`Coin_0..3`, the
+  1x8 animation strips, `AssetInitializer.cs:369`), not `coins`
+  (`Item_71..74`); `CoinLossRevengeSystem.cs:262` + `CoinSlot.cs:242`.
+  Atlas re-measured with the strips: 8131 px, under the 8192 bound
+  (`tools/atlas_e17_check.js`).
+- **F5** — the fullscreen death hover box has NO −4 shift
+  (`Main.cs:56455-56462` read in full); the −4/−4 pair exists only in the
+  minimap inline copy (`:55757-55758`) and the mapStyle-2 copy
+  (`:55683-55684`). `draw_death_marker` takes a `minimap` bool; the wrong
+  e17 witness re-derived, the minimap y-offset pinned at 108.55
+  (`-(2 - scale/5*2)` = −1.2 at scale 2, NOT the head's `−2*scale/5`).
+- **F6** — the pan step is the pure `map.rs::pan_target_step`
+  (`Main.cs:55361-55385`); `WorldMap::prepare` delegates, the reset arm
+  still clears the pan (`:55418`).
+
+Folded deviations/notes (f29's, still applying):
+
+- **The pylon TE placement hook is a deferred seam.** The network scan reads
+  the loaded `.wld` pylons (`scan_pylons` over the TE book); the
+  `TETeleportationPylon.PlacementPreviewHook_AfterPlacement` post-place hook
+  that would register a freshly-placed pylon is the documented wave-A
+  callback seam (`tileobject.rs:304-307`), not yet installed. The
+  line/click machinery ports against the existing scan.
+- **The revenge `UseMouseOver` coin row** reproduces `ItemSlot.DrawMoney`'s
+  horizontal layout (`ItemSlot.cs:3663-3683`); the `CoinSlot.DrawItemCoin`
+  sizeLimit 1024 never binds on the 16-px coin frames. The row draws in the
+  UIScale batch (`Main.cs:55991`/`:55771` re-begin with `uIScaleMatrix`).
+- **`Lang.LocalizedDuration`'s `showAllAvailableUnits` multi-unit path is
+  UNPORTED** — no caller in the ported surface passes true (both live call
+  sites read `(false, false)`); f29's `lang::localized_duration(f64,
+  abbreviated, show_all)` retired rather than kept as dead code
+  (research/140 §4). `ui/resources.rs::localized_duration_full` covers the
+  live arms.
+- **Shared minor deviation (both lanes):** the C# truncates `Main.mouseX/Y`
+  to int in minimap transform space (`Main.cs:55512-55513`); neither lane's
+  head/death hover compare reproduces the `(int)` step (the port folds the
+  `MapScale` into the rects and compares the screen float mouse).
+  Sub-pixel only; the `MapOverlayDrawContext` rects DID gain the truncation
+  with F2. Recorded, not fixed (the head-loop hover rework rides a later
+  pass).
+
+Witness union (research/140 §5): e17's 25 stay (the death-hover one
+re-derived per F5); f29 folds 9 adapted — F1 endpoint, F3 floored, F5 death
+transform + minimap y-pin, F6 pan step, head-pos two-modes (onto
+`fullscreen_pin_pos`/`minimap_pin_pos`), golf guards (onto tr-core
+`last_hit_ball_for_draw`), clamped on-screen + left-overflow (beside the
+e17 pull-back witness), duration largest-unit (onto
+`localized_duration_full`, with the process-global `lang::test_lock`); the
+asset witness merges into e17's pack test (coin rows + town-head asserts).
+~14 f29 witnesses drop as duplicates (research/140 §5). All witnesses
+WRITTEN NOT RUN (code-only mode).
+
+**Seal (research/140 §11, 2026-11-21):** the map-overlay family is
+SEALED — compose order f46-union-FIRST → f29-TIP-SECOND with the e18
+D18 style-2 draw re-folded onto the f46 union ahead of both (e18
+`099beeba5`, 16-hunk recipe agreed hunk-by-hunk, 140 §11.1); e17 drops
+without a landing, e18 retires after the f46 merge. The witness union
+is 34 (f29) + 56 (f46) + 2 (D18 fold) = 92, zero shared names; the
+merge-tree dry-run pins 6 conflict files / 9 hunks (tree `feddf3178`).
+Atlas: all 109 overlay sheet names are inside d35's 562-sheet union
+(research/113); the composed pack measures 8131 px / 9606 sheets with
+f46's `Cursor_11` (margin 61 under 8192 — `tools/atlas_e17_check.js`
+now measures the composition permanently); d42's 8382-px overflow is
+the NPC-kind lazy-load demand, disjoint from these eager named rows.
+Nothing owed on this branch; the catalog run + compose are merger-side.
 
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14; S1-E-3, 2026-11-17)
 

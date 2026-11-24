@@ -642,9 +642,20 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
     }
     if handed {
         // `:40251-40258`: the day flags — the world's `anglerQuestFinished`
-        // and this player's slot in `anglerWhoFinishedToday`.
+        // and this player's slot in `anglerWhoFinishedToday`. W4-f45: the
+        // name list rides the World (the `.wld` flags block carries it); the
+        // single player's name joins it (`Main.cs:40258`).
         app.world.angler_quest_finished = true;
         app.world.angler_quest_turned_in = true;
+        if !app
+            .world
+            .angler_who_finished_today
+            .contains(&app.player_name)
+        {
+            app.world
+                .angler_who_finished_today
+                .push(app.player_name.clone());
+        }
         // `AchievementsHelper.HandleAnglerService` (`:40260`,
         // `AchievementsHelper.cs:411-418`): SERVANT_IN_TRAINING (the `Finish`
         // flag) and the four `Finish` counters. The rows share the condition
@@ -713,15 +724,16 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
     }
     app.world.angler_swap_pending = false;
     // `:3760-3761`: the day reset (`anglerWhoFinishedToday.Clear()` collapses
-    // to the single-player flag).
+    // to the single-player flag; W4-f45 clears the name list too).
     app.world.angler_quest_finished = false;
     app.world.angler_quest_turned_in = false;
+    app.world.angler_who_finished_today.clear();
     let gates = crate::angler::QuestGates {
         hard_mode: app.world.hard_mode,
-        // `WorldGen.crimson` — the port has no evil-kind field, so the
-        // corruption default stands (the crimson quest rows 2457/2463/
-        // 2477/2485 then re-roll exactly like a corruption world).
-        crimson: false,
+        // `WorldGen.crimson` — W4-f45 claims the world's evil flavour
+        // (`WorldFile.cs:1281`), so the crimson quest rows (2457/2463/
+        // 2477/2485) now read the file's own flag.
+        crimson: app.world.crimson,
         downed_boss1: app.world.downed_eoc,
         downed_boss2: app.world.downed_eow,
         downed_boss3: app.world.downed_skeletron,
@@ -4046,6 +4058,30 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // hook). The kill tracker's entries are untouched — the critter
     // bestiary unlocks ride the SIGHT providers (the W4-c8 census).
     crate::bestiary::scan_world_for_critter_sights(app);
+    // W4-f45 — `Main.UpdateWorld_NPCs`'s doom-party arm (`Main.cs:17926-17943`):
+    // once the getfixedboi anniversary party ends (`afterPartyOfDoom &&
+    // !PartyIsUp`), every town NPC dies (the 9999 strike — the port's hp=0
+    // instant-kill deviation) except the five exclusions (Old Man 37, Skeleton
+    // Merchant 453, Travelling Merchant 368, Town Slime Purple 680, Dryad 20 —
+    // only the last two have ported kinds), and the mech/party-girl/princess/
+    // rainbow/green unlocks + the bunny license clear. Draw-free.
+    if app.world.after_party_of_doom && !crate::world_events::party_is_up(&app.world_events) {
+        for n in app.npcs.iter_mut() {
+            if n.hp > 0
+                && n.kind.is_town_npc_like()
+                && !matches!(n.kind, NpcKind::TravellingMerchant | NpcKind::Dryad)
+            {
+                n.hp = 0; // `StrikeNPCNoInteraction(9999, 10f, -direction)`
+            }
+        }
+        app.world.saved_mech = false;
+        app.world.unlocked_party_girl = false;
+        app.world.unlocked_princess = false;
+        app.world.unlocked_slime_rainbow_spawn = false;
+        app.world.unlocked_slime_green_spawn = false;
+        app.world.bought_bunny = false;
+        app.world.after_party_of_doom = false;
+    }
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
     crate::world_sim::lunar::update_moon_lord_countdown(app);
@@ -5628,6 +5664,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // REAL_ESTATE_AGENT (17, `:5671`) on the full
                         // `CheckAchievement_RealEstateAndTownSlimes` roster.
                         let _ = app.notify_progression_net(8);
+                        // W4-f45 — `WorldGen.cs:5577-5608`: the arrival's
+                        // per-type unlock switch. The six ported kinds latch
+                        // their `unlocked*Spawn` flag (the `SpawnAllowed_*`
+                        // overrides read them back); the Truffle (160) and
+                        // the town slimes wait on their unported kinds.
+                        match kind {
+                            NpcKind::Merchant => app.world.unlocked_merchant_spawn = true, // case 17
+                            NpcKind::Nurse => app.world.unlocked_nurse_spawn = true, // case 18
+                            NpcKind::ArmsDealer => app.world.unlocked_arms_dealer_spawn = true, // case 19
+                            NpcKind::Demolitionist => app.world.unlocked_demolitionist_spawn = true, // case 38
+                            NpcKind::DyeTrader => app.world.unlocked_dye_trader_spawn = true, // case 207
+                            NpcKind::PartyGirl => app.world.unlocked_party_girl = true, // case 208
+                            NpcKind::Princess => app.world.unlocked_princess = true, // case 663
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -5792,6 +5843,56 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
+            }
+            // W4-f45 — the five seasonal-boss arms (`NPC.cs:79210-79239`):
+            // the kill only counts while its moon event is up (the C#'s
+            // `Main.pumpkinMoon`/`Main.snowMoon` gates). `SetEventFlagCleared`
+            // (`:78759-78767`) fires the progression event ONLY on the
+            // false→true transition — the notify rides that guard.
+            // `OnGameEventClearedForTheFirstTime` (`:78769-78793`): events
+            // 5/20 hit the DEFAULT arm (`NextNightIsLanternNight = true`);
+            // 4/21/22 hit the explicit no-op arm (`:78789-78792`).
+            NpcKind::Pumpking => {
+                if app.world.pumpkin_moon {
+                    if !app.world.downed_halloween_king {
+                        app.world.downed_halloween_king = true; // case 327, flag 5
+                        app.world_events.next_night_is_lantern_night = true;
+                        let _ = app.notify_progression_net(5);
+                    }
+                }
+            }
+            NpcKind::MourningWood => {
+                if app.world.pumpkin_moon {
+                    if !app.world.downed_halloween_tree {
+                        app.world.downed_halloween_tree = true; // case 325, flag 4
+                        let _ = app.notify_progression_net(4);
+                    }
+                }
+            }
+            NpcKind::Everscream => {
+                if app.world.snow_moon {
+                    if !app.world.downed_christmas_tree {
+                        app.world.downed_christmas_tree = true; // case 344, flag 21
+                        let _ = app.notify_progression_net(21);
+                    }
+                }
+            }
+            NpcKind::IceQueen => {
+                if app.world.snow_moon {
+                    if !app.world.downed_christmas_ice_queen {
+                        app.world.downed_christmas_ice_queen = true; // case 345, flag 20
+                        app.world_events.next_night_is_lantern_night = true;
+                        let _ = app.notify_progression_net(20);
+                    }
+                }
+            }
+            NpcKind::SantaNK1 => {
+                if app.world.snow_moon {
+                    if !app.world.downed_christmas_santank {
+                        app.world.downed_christmas_santank = true; // case 346, flag 22
+                        let _ = app.notify_progression_net(22);
+                    }
+                }
             }
             NpcKind::SolarTower => {
                 app.world.downed_tower_solar = true;
@@ -5992,6 +6093,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         app.rngs.stream(crate::app::RngKey::UpdateNpcs),
                     );
                     let _ = app.notify_progression_net(16);
+                }
+                // W4-f45 — `NPC.cs:79411-79414` (case 50): the first King
+                // Slime kill unlocks the Nerdy Slime (`unlockedSlimeBlueSpawn`
+                // + `ViolentlySpawnNerdySlime`). The port has no Nerdy Slime
+                // kind yet, so the unlock latch rides the file; the spawn
+                // itself waits on the town-slime roster.
+                if !app.world.unlocked_slime_blue_spawn {
+                    app.world.unlocked_slime_blue_spawn = true;
                 }
             }
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
@@ -19233,6 +19342,71 @@ mod fishron_wiring_tests {
         update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_fishron);
         assert!(app.npcs.iter().all(|n| n.kind != NpcKind::DukeFishron));
+    }
+
+    /// W4-f45 — the seasonal-boss death census (`NPC.cs:79210-79239`): each
+    /// kill raises its downed flag ONLY while its moon event is up, and
+    /// `OnGameEventClearedForTheFirstTime` (`:78769-78793`) arms the next
+    /// lantern night for events 5/20 (the default arm) but NOT for 4/21/22
+    /// (the explicit no-op arm). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_seasonal_boss_deaths_gate_on_their_moon_events() {
+        let dead_boss = |kind: NpcKind| {
+            let mut n = Npc::new(kind, 90.0 * 16.0, 90.0 * 16.0, 1, 0.0);
+            n.hp = 0;
+            n
+        };
+        let app_with = |pumpkin: bool, snow: bool, kind: NpcKind| {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            app.world = air();
+            app.world.pumpkin_moon = pumpkin;
+            app.world.snow_moon = snow;
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 100.0 * 16.0;
+            player.y = 100.0 * 16.0;
+            app.player = Some(player);
+            app.npcs.push(dead_boss(kind));
+            app
+        };
+        // The Pumpkin Moon up: both Halloween bosses latch; the King's
+        // event 5 arms the lantern night (the default arm), the Wood's
+        // event 4 does not (the no-op arm — checked on a fresh app).
+        let mut app = app_with(true, false, NpcKind::Pumpking);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_halloween_king, "case 327 while pumpkinMoon");
+        assert!(app.world_events.next_night_is_lantern_night, "event 5's default arm");
+        let mut app = app_with(true, false, NpcKind::MourningWood);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_halloween_tree, "case 325 while pumpkinMoon");
+        assert!(
+            !app.world_events.next_night_is_lantern_night,
+            "event 4 is the explicit no-op arm (`:78789-78792`)"
+        );
+        // The Frost Moon up: the three Christmas bosses latch; only the
+        // Ice Queen's event 20 arms the lantern night.
+        let mut app = app_with(false, true, NpcKind::IceQueen);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_christmas_ice_queen, "case 345 while snowMoon");
+        assert!(app.world_events.next_night_is_lantern_night, "event 20's default arm");
+        let mut app = app_with(false, true, NpcKind::SantaNK1);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_christmas_santank, "case 346 while snowMoon");
+        assert!(!app.world_events.next_night_is_lantern_night, "event 22 no-op");
+        let mut app = app_with(false, true, NpcKind::Everscream);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_christmas_tree, "case 344 while snowMoon");
+        assert!(!app.world_events.next_night_is_lantern_night, "event 21 no-op");
+        // No moon event up: every gate stays closed (the C#'s `if` guards).
+        let mut app = app_with(false, false, NpcKind::Pumpking);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.downed_halloween_king, "no pumpkinMoon, no latch");
+        let mut app = app_with(false, false, NpcKind::IceQueen);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.downed_christmas_ice_queen, "no snowMoon, no latch");
+        // The wrong moon does not open the gate either.
+        let mut app = app_with(false, true, NpcKind::Pumpking);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.downed_halloween_king, "snowMoon is not pumpkinMoon");
     }
 
     /// The shark spawn seam: the aiStyle-64 cloud's request becomes a

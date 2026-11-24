@@ -17,6 +17,7 @@ use crate::net;
 use crate::registry;
 use crate::ui;
 use glam::Vec2;
+use tr_core::TILE_PX;
 
 /// `AlternateClickAction.TransferFromChest`'s cursor id (`ItemSlot.cs:216`) —
 /// the shift-click arrow on a hovered chest slot.
@@ -860,6 +861,179 @@ impl App {
         self.last_ping_pos = self.mouse_pos;
     }
 
+    /// `Main.DrawMap`'s fullscreen close button (`Main.cs:56024-56033`): the
+    /// hover box at `(10, screenHeight - 40)` (32x30, inclusive edges) sets
+    /// `player.mouseInterface = true` — the port suppresses world use behind
+    /// the whole open map already (`world_sim/editing.rs`, `Player.cs:24798`),
+    /// so the flag has no extra effect — and a press plays `SoundEngine.
+    /// PlaySound(10)` and closes the map. `UIWorldGenDebug.IsActive`
+    /// (`:56014`) has no port counterpart. Runs in the pre-gate click cluster
+    /// after `handle_fullmap_ping`, like the C#'s order inside `DrawMap`
+    /// (the ping detector at `:55486` runs before the button at `:56024`).
+    pub(crate) fn handle_fullmap_close(&mut self) {
+        if !self.ui_left_press || self.menu.is_some() || self.front.is_some() {
+            return;
+        }
+        if !self.settings.map_enabled
+            || !self.map.as_ref().is_some_and(|m| m.open)
+        {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let [x, y] = ui::chrome::fullmap_close_button_pos(Vec2::new(sw, sh));
+        // `Main.cs:56024`: inclusive on all four edges.
+        if self.mouse_pos.x >= x
+            && self.mouse_pos.x <= x + ui::chrome::MAP_ICON_HIT[0]
+            && self.mouse_pos.y >= y
+            && self.mouse_pos.y <= y + ui::chrome::MAP_ICON_HIT[1]
+        {
+            // `SoundEngine.PlaySound(10)` (`:56031`).
+            self.audio.play("Menu_Open");
+            if let Some(m) = self.map.as_mut() {
+                m.set_open(false);
+            }
+        }
+    }
+
+    /// The fullscreen pylon marker click (`TeleportPylonsMapLayer.cs:90-109`):
+    /// an onscreen marker closes the map and runs the teleport gate ladder
+    /// (`TeleportPylonsSystem.HandleTeleportRequest`, `:100-205`) + sound 11;
+    /// an offscreen one pans the map to it (`Main.PanTargetMapFullscreen`).
+    /// Both consume the press (`Main.mouseLeftRelease = false`, `:95`/`:103`).
+    pub(crate) fn handle_pylon_map_click(&mut self, click: crate::map_layers::PylonClick) {
+        use crate::map_layers::PylonClick;
+        let info = match click {
+            PylonClick::Teleport(i) | PylonClick::PanTo(i) => i,
+        };
+        // `:95`/`:103`: the click is consumed either way.
+        self.ui_left_press = false;
+        match click {
+            PylonClick::PanTo(_) => {
+                // `:103-107`: pan to the offscreen pylon's tile — the union's
+                // Option representation (`Some(end)` = flag armed +
+                // destination, research/84 §10.3 step 2).
+                if let Some(m) = self.map.as_mut() {
+                    m.pan_target = Some([info.x as f32, info.y as f32]);
+                }
+            }
+            PylonClick::Teleport(_) => {
+                // `:95-99`: close the map, request the teleport, sound 11.
+                if let Some(m) = self.map.as_mut() {
+                    m.set_open(false);
+                }
+                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
+                self.request_pylon_teleport(info);
+            }
+        }
+    }
+
+    /// `TeleportPylonsSystem.HandleTeleportRequest` (`:100-205`) — the gate
+    /// ladder over `tr_core::pylons::handle_teleport_request`, then the
+    /// teleport (`Player.Teleport(newPos, 9, pylonType)` + `velocity = 0`,
+    /// `:189-194`) or the refusal chat line (`:203`). The destination metrics
+    /// scan is `SceneMetrics.Scan(BiomeScanCenterPositionInWorld = pylon)`
+    /// (`:134-137`/`:165-168`); the port's `scan_scene_at` is that scan.
+    fn request_pylon_teleport(&mut self, info: tr_core::pylons::PylonInfo) {
+        let Some(player) = self.player.as_ref() else {
+            return;
+        };
+        let (cx, cy) = player.center();
+        let player_tile = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+        let near = tr_core::pylons::is_player_near_a_pylon(&self.world, player_tile);
+        // `DoesPositionHaveEnoughNPCs`'s homes (`:221-238`): the
+        // `isLikeATownNPC && !homeless` NPCs' (homeTile, Center/16) pairs.
+        let homes: Vec<((i32, i32), (f32, f32))> = self
+            .npcs
+            .iter()
+            .filter(|n| n.hp > 0 && n.kind.is_town_npc_like() && n.home.is_some())
+            .map(|n| {
+                let (hx, hy) = n.home.unwrap();
+                let (ncx, ncy) = n.center();
+                ((hx, hy), (ncx / TILE_PX, ncy / TILE_PX))
+            })
+            .collect();
+        let pylons = tr_core::pylons::scan_pylons(&self.world);
+        let raining = self.rain.is_raining();
+        let sandstorm = self.sandstorm.happening;
+        let dest_center = [
+            info.x as f32 * TILE_PX + 8.0,
+            info.y as f32 * TILE_PX + 8.0,
+        ];
+        let metrics = crate::world_sim::scene_scan::scan_scene_at(
+            &self.world,
+            dest_center,
+            raining,
+            sandstorm,
+            false,
+        );
+        let outcome = tr_core::pylons::handle_teleport_request(
+            &self.world,
+            &pylons,
+            info,
+            near,
+            player_tile,
+            &homes,
+            self.world.downed_plant_boss,
+            &metrics,
+            |(x, y)| {
+                crate::world_sim::scene_scan::scan_scene_at(
+                    &self.world,
+                    [x as f32 * TILE_PX + 8.0, y as f32 * TILE_PX + 8.0],
+                    raining,
+                    sandstorm,
+                    false,
+                )
+            },
+        );
+        use tr_core::pylons::TeleportOutcome;
+        if outcome == TeleportOutcome::Teleported {
+            // `:189-194`: `newPos = PositionInTiles.ToWorldCoordinates() -
+            // (0, HeightOffsetBoost)`; `Teleport(newPos, 9, typeOfPylon)`;
+            // `velocity = Vector2.Zero`.
+            let boost = player
+                .mount
+                .data()
+                .filter(|_| player.mount.is_active())
+                .map(|d| d.height_boost)
+                .unwrap_or(0);
+            let new_x = info.x as f32 * TILE_PX + 8.0;
+            let new_y = info.y as f32 * TILE_PX + 8.0 - boost as f32;
+            if let Some(p) = self.player.as_mut() {
+                p.teleport_style(new_x, new_y, 9);
+                p.vx = 0.0;
+                p.vy = 0.0;
+            }
+        } else {
+            // `:203`: the refusal chat line (`ChatColors.ServerMessage`).
+            let key = match outcome {
+                TeleportOutcome::NotNear => {
+                    "Net.CannotTeleportToPylonBecausePlayerIsNotNearAPylon"
+                }
+                TeleportOutcome::NotEnoughNPCs => {
+                    "Net.CannotTeleportToPylonBecauseNotEnoughNPCs"
+                }
+                TeleportOutcome::Temple => {
+                    "Net.CannotTeleportToPylonBecauseAccessingLihzahrdTempleEarly"
+                }
+                TeleportOutcome::Biome => {
+                    "Net.CannotTeleportToPylonBecauseNotMeetingBiomeRequirements"
+                }
+                TeleportOutcome::NoUsablePylon(1) => {
+                    "Net.CannotTeleportToPylonBecauseNotEnoughNPCsAtCurrentPylon"
+                }
+                TeleportOutcome::NoUsablePylon(2) => {
+                    "Net.CannotTeleportToPylonBecauseNotMeetingBiomeRequirements"
+                }
+                TeleportOutcome::NoUsablePylon(_) => {
+                    "Net.CannotTeleportToPylonBecausePlayerIsNotNearAPylon"
+                }
+                TeleportOutcome::Teleported => unreachable!(),
+            };
+            self.chat
+                .new_text(crate::lang::text(key), crate::chat::COLOR_SERVER_MESSAGE);
+        }
+    }
+
     /// `ItemSlot.Handle` (context 0) subset: left click takes, places or swaps a whole
     /// stack, right click takes half or places one; on the closed hotbar a left click
     /// selects the slot like the original.
@@ -1546,8 +1720,8 @@ impl App {
         // inventory is open (their home is `DrawInventory`, `:41055`) and the
         // map system is enabled (`:41056`'s `Main.mapEnabled` wraps the row).
         // A hit consumes the press and returns before the slot handling.
-        // `PlaySound(10)/(12)` (`:41100,41109-41119`) is not ported — no UI cue
-        // is loaded (`audio.rs:22-31`).
+        // `PlaySound(10)/(12)` (`:41100,41109-41119`) — the cues ARE loaded
+        // (`audio.rs`'s Menu_Open/Menu_Tick, `SoundID.cs` 10/12).
         if left && self.inventory_open && self.settings.map_enabled {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
@@ -1560,20 +1734,18 @@ impl App {
                     && self.mouse_pos.y <= y + ui::chrome::MAP_ICON_HIT[1]
                 {
                     if k == 0 {
-                        // `Main.cs:41095-41104`: close the inventory, open the
-                        // fullscreen map. `set_open(true)` already resets the
-                        // scale to `2.5` and arms the recentre (`Main.cs:41101,
-                        // 41104`, `crates/tr-app/src/map.rs:451-457`);
-                        // `SetTalkNPC(-1)` / `npcChatCornerItem = 0` have no
-                        // port counterpart.
-                        self.inventory_open = false;
-                        if let Some(m) = self.map.as_mut() {
-                            m.set_open(true);
-                        }
+                        // `Main.cs:41095-41104`: the same open block as
+                        // `TryOpeningFullscreenMap` (`Player.cs:29103-29119`)
+                        // minus `buffString`/`releaseInventory` — close the
+                        // inventory (`:41097`, the helper's `:29107` write),
+                        // `SetTalkNPC(-1)`, `PlaySound(10)`, scale 2.5 +
+                        // recentre (both ride `set_open(true)`).
+                        self.try_open_fullscreen_map();
                     } else {
                         // `Main.cs:41106-41120`: `k == 1/2/3` ->
-                        // `Main.mapStyle = 0/1/2`.
+                        // `Main.mapStyle = 0/1/2` + `PlaySound(12)`.
                         self.map_style = k as i32 - 1;
+                        self.audio.play("Menu_Tick"); // `:41109/41114/41119`
                     }
                     return;
                 }
@@ -6018,5 +6190,110 @@ mod s1_p_i44_shop_click_tests {
         assert_eq!(app.shop_stock[0].stack, 2);
         // The buy price of a buyOnce torch row: 50/5 = 10 per unit.
         assert_eq!(app.coins, 1_000_000 - 100);
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_fullmap_close_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::map::WorldMap;
+
+    /// A headless App with a real-sized world and the fullscreen map open.
+    fn close_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("close".into(), 260, 200);
+        app.map = Some(WorldMap::new(&app.world));
+        app.map.as_mut().unwrap().set_open(true);
+        app
+    }
+
+    /// W4-e18 residual census (written, not run - code-only): the close
+    /// button's press (`Main.cs:56024-56033`) closes the fullscreen map.
+    /// The box is `(10, screenHeight - 40)` 32x30 inclusive; the headless
+    /// `flow_app` has no gpu, so `screen_size` falls back to 1280x720
+    /// (`world_sim/camera.rs`) — the centre is `(26, 695)`. (The e18
+    /// original pinned a 1600x900 frame — re-derived for the union's
+    /// actual headless default, like the icon-row witness below.)
+    #[test]
+    fn w4_e18_the_close_button_press_closes_the_map() {
+        let mut app = close_app();
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(26.0, 695.0);
+        app.handle_fullmap_close();
+        assert!(!app.map.as_ref().unwrap().open, "the press closed the map");
+    }
+
+    /// W4-e18 (written, not run - code-only): a press one pixel outside the
+    /// box does not close the map (`Main.cs:56024`'s inclusive edges).
+    #[test]
+    fn w4_e18_a_press_outside_the_box_leaves_the_map_open() {
+        let mut app = close_app();
+        app.ui_left_press = true;
+        // x = 42.01 is past the 10 + 32 right edge.
+        app.mouse_pos = Vec2::new(42.01, 695.0);
+        app.handle_fullmap_close();
+        assert!(app.map.as_ref().unwrap().open, "outside the box: no close");
+        // And the corner itself IS inside (inclusive).
+        app.mouse_pos = Vec2::new(42.0, 710.0);
+        app.handle_fullmap_close();
+        assert!(!app.map.as_ref().unwrap().open, "the corner closes the map");
+    }
+
+    /// W4-e18 (written, not run - code-only): with the map shut the handler
+    /// is a no-op even on the box (the C# block lives inside the
+    /// `Main.mapFullscreen` branch, `Main.cs:55782`).
+    #[test]
+    fn w4_e18_the_handler_is_a_no_op_with_the_map_shut() {
+        let mut app = close_app();
+        app.map.as_mut().unwrap().set_open(false);
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(26.0, 695.0);
+        app.handle_fullmap_close();
+        assert!(!app.map.as_ref().unwrap().open);
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_map_icon_row_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::map::WorldMap;
+
+    /// W4-e18 final sweep (written, not run - code-only): the inventory's
+    /// map-icon row (`Main.cs:41087-41120`) — icon 0 opens the fullscreen map
+    /// through the shared `TryOpeningFullscreenMap` block (close inventory,
+    /// `SetTalkNPC(-1)`, scale 2.5), icons 1/2/3 set `mapStyle` 0/1/2. The
+    /// headless `flow_app` has no gpu, so `screen_size` falls back to the
+    /// 1280x720 default (`world_sim/camera.rs`) — icon k sits at
+    /// `(840 + k*32, 40)` (the `>= 940` horizontal branch); the hit box is
+    /// the inclusive 32x30 (`:41087`). (The e18 original pinned the 1600x900
+    /// frame — re-derived for the union's actual headless default.)
+    #[test]
+    fn w4_e18_the_map_icon_row_opens_the_map_and_sets_the_style() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("icons".into(), 260, 200);
+        app.map = Some(WorldMap::new(&app.world));
+        app.inventory_open = true;
+        app.talk_npc = Some(0);
+        // Icon 2 (the minimap style, k == 2 -> mapStyle 1).
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(840.0 + 2.0 * 32.0 + 4.0, 44.0);
+        app.handle_inventory_clicks();
+        assert_eq!(app.map_style, 1, "k == 2 sets mapStyle 1");
+        assert!(app.inventory_open, "a style icon keeps the inventory open");
+        // Icon 0 opens the fullscreen map + closes the inventory + clears
+        // the dialog (`Main.cs:41095-41104` = `Player.cs:29103-29119`).
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(844.0, 44.0);
+        app.handle_inventory_clicks();
+        assert!(app.map.as_ref().unwrap().open, "icon 0 opens the map");
+        assert!(!app.inventory_open, "and closes the inventory");
+        assert_eq!(app.talk_npc, None, "SetTalkNPC(-1)");
+        assert_eq!(
+            app.map.as_ref().unwrap().scale,
+            crate::map::MAP_FULLSCREEN_SCALE_DEFAULT,
+            "scale 2.5 (`:41101`)"
+        );
     }
 }

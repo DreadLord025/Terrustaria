@@ -57,8 +57,8 @@
 //!   post-loadout line (the g88 research/103 §6 rule-5 contract) — the
 //!   line DEFAULT-DROPs at merge (research/263 §6.2: a6 138 §10.4 + f44
 //!   132 §2f; the flags ride f44's L1 hydration); the pet `bought_*` flags
-//!   are WORLD globals (`.wld`/`.trwld` — the SEALED 107-byte v18 union
-//!   seats them [57..60], research/263 §6.4 — never the sidecar).
+//!   are WORLD globals (`.wld`/`.trwld` — the v18 union, land-MD 115-byte
+//!   head, seats them [57..60], research/263 §6.4 — never the sidecar).
 //! * MERGE DIRECTION (research/263 §6.5): the three use arms dedup onto
 //!   a6's `powerups.rs` machine (138 §12.3 SEALED); this module's witness
 //!   assertions ride the surviving arms, the slot-8 UI port is g87's keep.

@@ -1,4 +1,4 @@
-//! Parser + writer for Terraria `.wld` files (format version 87+, sections-based
+//! Parser + writer for Terraria `.wld` files (format version 88+, sections-based
 //! v2).
 //!
 //! Mirrors `Terraria.IO.WorldFile.LoadWorld_Version2` / `LoadWorldTiles` from the
@@ -31,6 +31,51 @@ const POINTER_TABLE_OFFSET: usize = 26;
 const FILE_TYPE_WORLD: u8 = 2;
 /// `FileMetadata.MAGIC_NUMBER` (`IO/FileMetadata.cs:8`).
 const FILE_METADATA_MAGIC: u64 = 27981915666277746;
+
+/// `WorldFile.CreateMetadata`'s `WorldGeneratorVersion` literal
+/// (`IO/WorldFile.cs:603`). A world the port *generates* stamps it; a loaded
+/// file keeps its own (`LoadHeader:1960`).
+pub const WORLD_GENERATOR_VERSION: u64 = 140_015_933_8497;
+
+/// The created world's identity stamp — `WorldFile.CreateMetadata`
+/// (`WorldFile.cs:600-604`): `CreationTime = DateTime.Now` (the port stamps
+/// Utc — ANALYSIS "The save files' wall clock"), `WorldGeneratorVersion =
+/// 1400159338497uL` (`:603`), `UniqueId = Guid.NewGuid()` (`:604`).
+///
+/// `WorldId` is NOT stamped here: the C# rolls it mid-generation from
+/// `genRand.Next(int.MaxValue)` (`WorldGen.cs:11337`) — inserting that draw
+/// into the port's frozen worldgen streams would move every world hash, so
+/// the caller rolls it from a fresh clock-seeded `UnifiedRandom` instead
+/// (the documented stand-in, same value range; ANALYSIS).
+///
+/// The GUID is the port's stand-in for `Guid.NewGuid`: a v4-shaped GUID
+/// (version nibble 4, RFC-4122 variant bits) drawn from one clock-seeded
+/// `UnifiedRandom` — `Guid.NewGuid` is cryptographic in .NET, which a
+/// deterministic port cannot reproduce; the shape and uniqueness-per-save
+/// contract are what the file format needs.
+pub fn stamp_created_identity(world: &mut World, rng: &mut crate::unified_random::UnifiedRandom) {
+    world.creation_time = crate::clock::utc_now_binary(); // `:600` (Utc stand-in)
+    world.generator_version = WORLD_GENERATOR_VERSION; // `:603`
+    let mut guid = [0u8; 16];
+    rng.next_bytes(&mut guid); // `:604` (the Guid.NewGuid stand-in)
+    guid[7] = (guid[7] & 0x0F) | 0x40; // version 4
+    guid[8] = (guid[8] & 0x3F) | 0x80; // RFC-4122 variant
+    world.unique_id = guid;
+}
+
+/// A fresh clock-seeded `UnifiedRandom` — the `new UnifiedRandom()`
+/// parameterless ctor's stand-in (`UnifiedRandom.cs:18-21` seeds from
+/// `Environment.TickCount`; the port seeds from the Unix clock's low 31
+/// bits). Used only for identity rolls, never inside the frozen worldgen
+/// contract streams.
+pub fn identity_rng() -> crate::unified_random::UnifiedRandom {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let seed = (now.as_nanos() & 0x7FFF_FFFF) as i32;
+    crate::unified_random::UnifiedRandom::new(seed)
+}
+
 
 pub fn load(path: &Path) -> Result<World> {
     let data = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
@@ -108,8 +153,20 @@ impl<'a> SectionTable<'a> {
 
         // --- file format header ---------------------------------------------
         let version = r.i32()?;
-        if version < 87 {
-            bail!("unsupported world format {version} (expected >= 87)");
+        // W4-f45 final census: the C# dispatch is `num2 > 87 -> Version2`
+        // (`WorldFile.cs:712`), so Version2 starts at 88; version 1..87 route
+        // to `LoadWorld_Version1_Old_BeforeRelease88` (`:3423`), which the port
+        // does not carry — bail the whole old-loader range. The old `< 87`
+        // boundary let a v87 file into the Version2 walk (off-by-one).
+        if version < 88 {
+            bail!("unsupported world format {version} (expected >= 88)");
+        }
+        // W4-f45 final census: the C# rejects a later-version file outright
+        // (`WorldFile.cs:712` `num2 > 326 -> StatusID.LaterVersion`, the same
+        // guard `GetAllMetadata:197` runs); the port used to walk a v327+ file
+        // as if it were v326 and mis-parse its unknown tail.
+        if version > FORMAT_VERSION {
+            bail!("world format {version} is from a later version (max {FORMAT_VERSION})");
         }
         let mut metadata = FileMetadata::default();
         if version >= 135 {
@@ -212,19 +269,22 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
     r.seek(table.pointers[0])?;
     let name = r.string()?;
     let mut seed = 0u64;
+    let mut seed_text = String::new();
     let mut generator_version = 0u64;
     let mut unique_id = [0u8; 16];
     if version >= 179 {
         // `Main.ActiveWorldFileData.SeedText` — the port's seed is the u64 its
         // decimal text parses to (0 when foreign, matching `World::seed`'s
         // ".wld-loaded worlds" note); `header::write_world_head` emits the same
-        // text form, so the seed round-trips.
-        seed = if version == 179 {
+        // text form, so the seed round-trips. The raw text is kept for
+        // `FixEndlessRainWorlds`'s `GetSecretSeedCodes` walk (W4-f45 final).
+        seed_text = if version == 179 {
             // v179 stored the seed as an i32 (`LoadHeader:1956`).
-            r.i32()?.to_string().parse().unwrap_or(0)
+            r.i32()?.to_string()
         } else {
-            r.string()?.parse().unwrap_or(0)
+            r.string()?
         };
+        seed = seed_text.parse().unwrap_or(0);
         generator_version = r.u64()?;
     }
     if version >= 181 {
@@ -249,6 +309,15 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
     world.unique_id = unique_id;
     world.world_id = world_id;
     load_header_flags(&mut r, &mut world, version)?;
+    // `WorldFile.FixEndlessRainWorlds` (`WorldFile.cs:3284-3298`, called from
+    // `LoadWorldFlags:2130` right after the rain triple): a v<=317 file whose
+    // saved rain time ran a year or more (5184000 ticks) and whose seed text
+    // does NOT carry the rainsForAYear secret gets its rain snapshot cleared —
+    // the endless-rain bug worlds saved before the fix. The C# runs it on the
+    // `_temp*` fields before anything else reads them; the port's flags walk
+    // lands the triple in `World`, and nothing between `:2130` and the end of
+    // the walk touches it, so the post-walk position is byte-equivalent.
+    fix_endless_rain_worlds(&mut world, version, &seed_text);
     // `LoadWorld_Version2:1772-1775`: the header must end exactly at pointer 1.
     expect_section_end(&r, &table.pointers, 1)?;
 
@@ -488,6 +557,28 @@ pub fn load_sections(table: &SectionTable<'_>) -> Result<SectionData> {
 /// (the phase's stub lane); the parser keeps only this seam.
 fn load_header_flags(r: &mut Reader, world: &mut World, version: i32) -> Result<()> {
     sections::flags::read(r, world, version)
+}
+
+/// `WorldFile.FixEndlessRainWorlds` (`WorldFile.cs:3284-3298`): the endless-
+/// rain bug fix-up the load runs on the rain snapshot (`LoadWorldFlags:2130`).
+/// A v>317 file, or one whose saved rain time is under a year (5184000 ticks =
+/// 24h * 3600 * 60), keeps its rain; a v<=317 year-long-rain file keeps it only
+/// when its seed text carries the rainsForAYear secret (`GetSecretSeedCodes`
+/// splits on '|', `WorldFileData.cs:199-206`; each code goes through
+/// `SecretSeed.Check`'s normalise+hash match, `WorldGen.cs:468-480` — the
+/// port's `check_input_for_secret_seed`). Otherwise the triple clears.
+fn fix_endless_rain_worlds(world: &mut World, version: i32, seed_text: &str) {
+    if version > 317 || world.rain_time < 5_184_000 {
+        return;
+    }
+    for code in seed_text.split('|') {
+        if crate::seeds::check_input_for_secret_seed(code) == Some("rainsForAYear") {
+            return;
+        }
+    }
+    world.raining = false;
+    world.rain_time = 0;
+    world.max_raining = 0.0;
 }
 
 fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i32) -> Result<()> {
@@ -859,14 +950,29 @@ mod tests {
         if version >= 201 {
             z(&mut b, 1); // savedGolfer
         }
-        z(&mut b, 4); // invasionSizeStart
-        z(&mut b, 4); // _tempCultistDelay
-                      // BannerSystem.Load: the kill counts (the second array only from 289).
+        // W4-f45: the C# read gates the S1-J-3b walk flattened — below 107
+        // `invasionSizeStart` is absent (`FakeLoadInvasionStart` re-derives
+        // it), below 108 the cultist delay is absent (defaults to 86400),
+        // below 109 the block ends, below 128 the dawn byte is absent
+        // (`LoadWorldFlags:2180-2208`).
+        if version >= 107 {
+            z(&mut b, 4); // invasionSizeStart
+        }
+        if version >= 108 {
+            z(&mut b, 4); // _tempCultistDelay
+        }
+        if version < 109 {
+            return b;
+        }
+        // BannerSystem.Load: the kill counts (the second array only from 289).
         b.extend_from_slice(&293i16.to_le_bytes()); // killCount.Length
         z(&mut b, 293 * 4);
         if version >= 289 {
             b.extend_from_slice(&293i16.to_le_bytes()); // claimableBanners.Length
             z(&mut b, 293 * 2);
+        }
+        if version < 128 {
+            return b;
         }
         z(&mut b, 1); // fastForwardTimeToDawn
         if version < 131 {
@@ -958,6 +1064,14 @@ mod tests {
         }
         if version >= 323 {
             z(&mut b, 2); // moreLightningSeed, noLightningSeed
+        }
+        // W4-f45 final census: the legacy u32 only 299..312 read
+        // (`LoadWorldFlags:2512-2515`, the reader's `(299..313)` skip). The
+        // table must carry it or a v299..312 synthetic file mis-aligns at the
+        // manifest string (the reader would eat the manifest + 3 section bytes
+        // as the u32).
+        if (299..313).contains(&version) {
+            z(&mut b, 4); // the legacy u32 (`:2514`)
         }
         if version >= 299 {
             z(&mut b, 1); // WorldGen.Manifest — the empty .NET string
@@ -1175,7 +1289,12 @@ mod tests {
 
     #[test]
     fn rejects_old_versions_and_broken_reads() {
-        // Version below 87 is still a hard bail.
+        // Version below 88 is a hard bail (the C# Version2 dispatch is `> 87`,
+        // `WorldFile.cs:712`; the old-loader range 1..87 is unported). v87 is
+        // the boundary case the old `< 87` guard let through (W4-f45 final).
+        let mut data = fixture();
+        data[0..4].copy_from_slice(&87i32.to_le_bytes());
+        assert!(parse(&data).is_err(), "v87 routes to the unported old loader");
         let mut data = fixture();
         data[0..4].copy_from_slice(&86i32.to_le_bytes());
         assert!(parse(&data).is_err());
@@ -1599,6 +1718,12 @@ mod tests {
     fn owned_world() -> World {
         let mut world = World::new("OwnedFields".into(), 300, 200);
         world.seed = 0xDEAD_BEEF;
+        // W4-f45: the game mode (Master) round-trips through the i32 head.
+        world.game_mode = 2;
+        // W4-f45: the tree zone tables, each non-zero (the cave arrays ride
+        // the g72 block below — the merged `[i32; 4]` shape).
+        world.tree_x = [100, 200, 300];
+        world.tree_style = [1, 2, 3, 4];
         world.spawn_x = 71;
         world.spawn_y = 62;
         world.world_surface = 123.5;
@@ -1607,6 +1732,12 @@ mod tests {
         world.day_time = false;
         world.moon_type = 5;
         world.moon_phase = 3;
+        // W4-g72: the cave-background roll rides the round-trip at distinct
+        // non-default values (arm-C-shaped: three bands, four styles).
+        world.cave_back_x = [120, 240, 290, 0];
+        world.cave_back_style = [3, 1, 7, 5];
+        world.ice_back_style = 2;
+        world.jungle_back_style = 1;
         world.hell_back_style = 2;
         world.blood_moon = true;
         world.eclipse = true;
@@ -1628,11 +1759,23 @@ mod tests {
         world.downed_deerclops = true;
         // S1-D-3 W-9: the fishron flag round-trips too.
         world.downed_fishron = true;
+        // W4-f45: the downed-flag census — each at a distinct non-default.
+        world.downed_clown = true;
+        world.downed_empress_of_light = true;
+        world.downed_halloween_king = true;
+        world.downed_halloween_tree = true;
+        world.downed_christmas_ice_queen = true;
+        world.downed_christmas_santank = true;
+        world.downed_christmas_tree = true;
         world.shadow_orb_smashed = true;
         world.spawn_meteor = true;
+        // W4-f45: the starfall pair (the meteor shower + coin rain).
+        world.meteor_shower_count = 2800;
+        world.coin_rain = 1_200_000;
         world.shadow_orb_count = 7;
         world.altars_smashed = 3;
         world.hard_mode = true;
+        world.after_party_of_doom = true;
         world.invasion_delay = 5;
         world.invasion_size = 60;
         world.invasion_type = 1;
@@ -1689,6 +1832,78 @@ mod tests {
         world.bought_cat = true;
         world.bought_dog = true;
         world.bought_bunny = true;
+        // W4-g71: the three new setBG style bytes at non-default values.
+        world.snow_bg_style = 7;
+        world.desert_bg_style = 51;
+        world.ocean_bg_style = 6;
+        // W4-g71 wiring: the tree/cave arrays + back styles + the forest/
+        // underworld setBG bytes at non-default values (the wired tail rolls
+        // them; the round-trip must carry them).
+        world.tree_x = [17, 33, 49];
+        world.tree_style = [2, 3, 0, 5];
+        world.cave_back_x = [11, 22, 33, 0];
+        world.cave_back_style = [1, 4, 3, 0];
+        world.ice_back_style = 3;
+        world.jungle_back_style = 1;
+        world.forest_bg_styles = [1, 11, 12, 13];
+        world.underworld_bg_style = 2;
+        // W4-f45: the eight secret-seed bytes round-trip through micro_seeds.
+        world.micro_seeds = crate::seeds::MicroSeedFlags::from_sum(
+            crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN
+                | crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS
+                | crate::seeds::MicroSeedFlags::VAMPIRISM
+                | crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED
+                | crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS
+                | crate::seeds::MicroSeedFlags::DUAL_DUNGEONS
+                | crate::seeds::MicroSeedFlags::MORE_LIGHTNING
+                | crate::seeds::MicroSeedFlags::NO_LIGHTNING,
+        );
+        // W4-f45 Ph3: the event snapshots + flavour, each non-default.
+        world.cultist_delay = 4321;
+        world.party_manual = true;
+        world.party_genuine = true;
+        world.party_cooldown = 7;
+        world.party_celebrants = vec![3, 17];
+        world.lantern_night_cooldown = 5;
+        world.lantern_night_genuine = true;
+        world.lantern_night_manual = true;
+        world.lantern_night_next_night_is_genuine = true;
+        world.wind_speed_target = 0.4;
+        // W4-f45: the cloud pair (the g69 CloudField lane's mirrors).
+        world.cloud_bg_active = -12345;
+        world.num_clouds = 150;
+        world.saved_bartender = true;
+        world.crimson = true;
+        world.dungeon_x = 123;
+        world.dungeon_y = 456;
+        // W4-f45 Ph4: the banner tally (two non-zero entries at their dense
+        // indices), the seven spawn unlocks. The angler name list stays empty
+        // here (its variable-length round-trip has its own witness below).
+        world.banner_kill_counts[1] = 50;
+        world.banner_kill_counts[69] = 7;
+        world.unlocked_slime_blue_spawn = true;
+        world.unlocked_merchant_spawn = true;
+        world.unlocked_demolitionist_spawn = true;
+        world.unlocked_dye_trader_spawn = true;
+        world.unlocked_truffle_spawn = true;
+        world.unlocked_arms_dealer_spawn = true;
+        world.unlocked_nurse_spawn = true;
+        // W4-f45: the extra respawn anchors (the c46 lane's list).
+        world.extra_spawn_points = vec![(10, 20), (30, 40)];
+        // W4-f45: the pet-license trio (the f43 lane's consumers).
+        world.bought_cat = true;
+        world.bought_dog = true;
+        world.bought_bunny = true;
+        // W4-f45: the booster pair (the g89b lane's co-claim).
+        world.combat_book_volume_two_was_used = true;
+        world.peddlers_satchel_was_used = true;
+        // W4-f45: the five remaining slime-colour unlocks (the town-slime kinds
+        // are unported; the latches round-trip).
+        world.unlocked_slime_green_spawn = true;
+        world.unlocked_slime_old_spawn = true;
+        world.unlocked_slime_purple_spawn = true;
+        world.unlocked_slime_yellow_spawn = true;
+        world.unlocked_slime_copper_spawn = true;
         world
     }
 
@@ -1697,6 +1912,7 @@ mod tests {
     fn assert_owned_fields(want: &World, got: &World, context: &str) {
         assert_eq!(got.name, want.name, "{context}: name");
         assert_eq!(got.seed, want.seed, "{context}: seed");
+        assert_eq!(got.game_mode, want.game_mode, "{context}: GameMode");
         assert_eq!(
             (got.width, got.height),
             (want.width, want.height),
@@ -1721,6 +1937,28 @@ mod tests {
         assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
+        );
+        // W4-g71 wiring: the tree/cave arrays + back styles + forest/underworld
+        // setBG bytes round-trip.
+        assert_eq!(got.tree_x, want.tree_x, "{context}: treeX");
+        assert_eq!(got.tree_style, want.tree_style, "{context}: treeStyle");
+        assert_eq!(got.cave_back_x, want.cave_back_x, "{context}: caveBackX");
+        assert_eq!(
+            got.cave_back_style, want.cave_back_style,
+            "{context}: caveBackStyle"
+        );
+        assert_eq!(got.ice_back_style, want.ice_back_style, "{context}: iceBackStyle");
+        assert_eq!(
+            got.jungle_back_style, want.jungle_back_style,
+            "{context}: jungleBackStyle"
+        );
+        assert_eq!(
+            got.forest_bg_styles, want.forest_bg_styles,
+            "{context}: forest_bg_styles"
+        );
+        assert_eq!(
+            got.underworld_bg_style, want.underworld_bg_style,
+            "{context}: underworld_bg_style"
         );
         assert_eq!(got.downed_eoc, want.downed_eoc, "{context}: downedBoss1");
         assert_eq!(got.downed_eow, want.downed_eow, "{context}: downedBoss2");
@@ -1778,17 +2016,52 @@ mod tests {
             got.downed_deerclops, want.downed_deerclops,
             "{context}: deerclops"
         );
+        // W4-f45: the downed-flag census.
+        assert_eq!(got.downed_clown, want.downed_clown, "{context}: downedClown");
+        assert_eq!(
+            got.downed_empress_of_light, want.downed_empress_of_light,
+            "{context}: downedEmpressOfLight"
+        );
+        assert_eq!(
+            got.downed_halloween_king, want.downed_halloween_king,
+            "{context}: downedHalloweenKing"
+        );
+        assert_eq!(
+            got.downed_halloween_tree, want.downed_halloween_tree,
+            "{context}: downedHalloweenTree"
+        );
+        assert_eq!(
+            got.downed_christmas_ice_queen, want.downed_christmas_ice_queen,
+            "{context}: downedChristmasIceQueen"
+        );
+        assert_eq!(
+            got.downed_christmas_santank, want.downed_christmas_santank,
+            "{context}: downedChristmasSantank"
+        );
+        assert_eq!(
+            got.downed_christmas_tree, want.downed_christmas_tree,
+            "{context}: downedChristmasTree"
+        );
         assert_eq!(
             got.shadow_orb_smashed, want.shadow_orb_smashed,
             "{context}: orbs"
         );
         assert_eq!(got.spawn_meteor, want.spawn_meteor, "{context}: meteor");
         assert_eq!(
+            got.meteor_shower_count, want.meteor_shower_count,
+            "{context}: meteorShowerCount"
+        );
+        assert_eq!(got.coin_rain, want.coin_rain, "{context}: coinRain");
+        assert_eq!(
             got.shadow_orb_count, want.shadow_orb_count,
             "{context}: orb count"
         );
         assert_eq!(got.altars_smashed, want.altars_smashed, "{context}: altars");
         assert_eq!(got.hard_mode, want.hard_mode, "{context}: hard mode");
+        assert_eq!(
+            got.after_party_of_doom, want.after_party_of_doom,
+            "{context}: afterPartyOfDoom"
+        );
         assert_eq!(
             got.invasion_delay, want.invasion_delay,
             "{context}: invasion delay"
@@ -1919,6 +2192,134 @@ mod tests {
         assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
         assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
         assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
+        // W4-g71: the three new setBG style bytes (slots 3/6/7).
+        assert_eq!(got.snow_bg_style, want.snow_bg_style, "{context}: snowBG");
+        assert_eq!(
+            got.desert_bg_style, want.desert_bg_style,
+            "{context}: desertBG"
+        );
+        assert_eq!(got.ocean_bg_style, want.ocean_bg_style, "{context}: oceanBG");
+        // W4-f45: the eight secret-seed bytes (the micro_seeds mirrors).
+        assert_eq!(
+            got.micro_seeds.sum(), want.micro_seeds.sum(),
+            "{context}: the secret-seed bytes"
+        );
+        // W4-f45 Ph3: the event snapshots + flavour.
+        assert_eq!(got.cultist_delay, want.cultist_delay, "{context}: cultistDelay");
+        assert_eq!(got.party_manual, want.party_manual, "{context}: partyManual");
+        assert_eq!(got.party_genuine, want.party_genuine, "{context}: partyGenuine");
+        assert_eq!(got.party_cooldown, want.party_cooldown, "{context}: partyCooldown");
+        assert_eq!(
+            got.party_celebrants, want.party_celebrants,
+            "{context}: partyCelebrants"
+        );
+        assert_eq!(
+            got.lantern_night_cooldown, want.lantern_night_cooldown,
+            "{context}: lanternCooldown"
+        );
+        assert_eq!(
+            got.lantern_night_genuine, want.lantern_night_genuine,
+            "{context}: lanternGenuine"
+        );
+        assert_eq!(
+            got.lantern_night_manual, want.lantern_night_manual,
+            "{context}: lanternManual"
+        );
+        assert_eq!(
+            got.lantern_night_next_night_is_genuine, want.lantern_night_next_night_is_genuine,
+            "{context}: lanternNextGenuine"
+        );
+        assert_eq!(
+            got.wind_speed_target, want.wind_speed_target,
+            "{context}: windSpeedTarget"
+        );
+        assert_eq!(
+            got.cloud_bg_active, want.cloud_bg_active,
+            "{context}: cloudBGActive"
+        );
+        assert_eq!(got.num_clouds, want.num_clouds, "{context}: numClouds");
+        assert_eq!(
+            got.saved_bartender, want.saved_bartender,
+            "{context}: savedBartender"
+        );
+        assert_eq!(got.crimson, want.crimson, "{context}: crimson");
+        assert_eq!(
+            (got.dungeon_x, got.dungeon_y),
+            (want.dungeon_x, want.dungeon_y),
+            "{context}: dungeon anchor"
+        );
+        // W4-f45 Ph4: the banner tally + the seven spawn unlocks.
+        assert_eq!(
+            got.banner_kill_counts, want.banner_kill_counts,
+            "{context}: bannerKillCounts"
+        );
+        assert_eq!(
+            got.angler_who_finished_today, want.angler_who_finished_today,
+            "{context}: anglerWhoFinishedToday"
+        );
+        assert_eq!(
+            got.unlocked_slime_blue_spawn, want.unlocked_slime_blue_spawn,
+            "{context}: unlockedSlimeBlueSpawn"
+        );
+        assert_eq!(
+            got.unlocked_merchant_spawn, want.unlocked_merchant_spawn,
+            "{context}: unlockedMerchantSpawn"
+        );
+        assert_eq!(
+            got.unlocked_demolitionist_spawn, want.unlocked_demolitionist_spawn,
+            "{context}: unlockedDemolitionistSpawn"
+        );
+        assert_eq!(
+            got.unlocked_dye_trader_spawn, want.unlocked_dye_trader_spawn,
+            "{context}: unlockedDyeTraderSpawn"
+        );
+        assert_eq!(
+            got.unlocked_truffle_spawn, want.unlocked_truffle_spawn,
+            "{context}: unlockedTruffleSpawn"
+        );
+        assert_eq!(
+            got.unlocked_arms_dealer_spawn, want.unlocked_arms_dealer_spawn,
+            "{context}: unlockedArmsDealerSpawn"
+        );
+        assert_eq!(
+            got.unlocked_nurse_spawn, want.unlocked_nurse_spawn,
+            "{context}: unlockedNurseSpawn"
+        );
+        assert_eq!(
+            got.extra_spawn_points, want.extra_spawn_points,
+            "{context}: extraSpawnPoints"
+        );
+        assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
+        assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
+        assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
+        assert_eq!(
+            got.combat_book_volume_two_was_used, want.combat_book_volume_two_was_used,
+            "{context}: combatBookVolumeTwoWasUsed"
+        );
+        assert_eq!(
+            got.peddlers_satchel_was_used, want.peddlers_satchel_was_used,
+            "{context}: peddlersSatchelWasUsed"
+        );
+        assert_eq!(
+            got.unlocked_slime_green_spawn, want.unlocked_slime_green_spawn,
+            "{context}: unlockedSlimeGreenSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_old_spawn, want.unlocked_slime_old_spawn,
+            "{context}: unlockedSlimeOldSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_purple_spawn, want.unlocked_slime_purple_spawn,
+            "{context}: unlockedSlimePurpleSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_yellow_spawn, want.unlocked_slime_yellow_spawn,
+            "{context}: unlockedSlimeYellowSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_copper_spawn, want.unlocked_slime_copper_spawn,
+            "{context}: unlockedSlimeCopperSpawn"
+        );
     }
 
     #[test]
@@ -1935,7 +2336,7 @@ mod tests {
     fn expected_flags_block(world: &World) -> Vec<u8> {
         let mut b = Vec::new();
         let z = |b: &mut Vec<u8>, n: usize| b.resize(b.len() + n, 0);
-        b.extend_from_slice(&0i32.to_le_bytes()); // GameMode — unowned
+        b.extend_from_slice(&(world.game_mode).to_le_bytes()); // GameMode (W4-f45)
         z(&mut b, 9); // the nine world-flavour bools — unowned
         b.extend_from_slice(&(world.creation_time as u64).to_le_bytes());
         b.extend_from_slice(&(world.last_played as u64).to_le_bytes());
@@ -1946,6 +2347,17 @@ mod tests {
         let mut tail = flags_tail(VER);
         tail[0] = u8::from(world.blood_moon);
         tail[1] = u8::from(world.eclipse);
+        // W4-f45: the dungeon anchor + crimson flavour at tail 2..11
+        // (`WorldFile.cs:1279-1281`, after bloodMoon/eclipse).
+        tail[2..6].copy_from_slice(&world.dungeon_x.to_le_bytes());
+        tail[6..10].copy_from_slice(&world.dungeon_y.to_le_bytes());
+        tail[10] = u8::from(world.crimson);
+        // W4-f45: the party celebrant list is variable-length — the fixture
+        // table carries an empty one (a 4-byte count at 1913), the world's
+        // list inserts `4 * n` extra bytes there. Every field past the party
+        // block shifts by that delta; the fields before it keep their pins.
+        let nceleb = world.party_celebrants.len();
+        let d = 4 * nceleb;
         // The hardmode trio at tail offset 76 (2+8+1+11+7+8+1+20+8+1+9 bytes
         // of flags before it) — `SaveWorldFlags:1315-1317`.
         let mut at = 76;
@@ -1953,22 +2365,6 @@ mod tests {
             world.ore_tiers.cobalt,
             world.ore_tiers.mythril,
             world.ore_tiers.adamantite,
-        ] {
-            tail[at..at + 4].copy_from_slice(&v.to_le_bytes());
-            at += 4;
-        }
-        // The pre-hardmode quartet at tail offset 2005 (8 setBG + 10 cloud +
-        // 4 angler count + 1+4+1+1+1 saved NPCs + 4+4 invasion/cultist +
-        // 2+1172+2+586 banner arrays + 1 dawn + 9+9 event/tower + 10 party +
-        // 13 sandstorm + 4 DD2 + 1+1+3 BG + 1 book + 7 lantern + 4+52 tree
-        // tops + 2 seasons past the trio's end at 88) —
-        // `SaveWorldFlags:1388-1391`.
-        let mut at = 2005;
-        for v in [
-            world.ore_tiers.copper,
-            world.ore_tiers.iron,
-            world.ore_tiers.silver,
-            world.ore_tiers.gold,
         ] {
             tail[at..at + 4].copy_from_slice(&v.to_le_bytes());
             at += 4;
@@ -2004,6 +2400,7 @@ mod tests {
         }
         tail[22] = u8::from(world.saved_goblin); // savedGoblin (`:1293`)
         tail[25] = u8::from(world.downed_goblins); // downedGoblins (`:1296`)
+        tail[26] = u8::from(world.downed_clown); // downedClown (`:1297`, W4-f45)
         tail[27] = u8::from(world.downed_frost); // downedFrost (`:1297`)
         tail[28] = u8::from(world.downed_pirates); // downedPirates (`:1298`)
         // The orbs/meteor/counts/hardmode block at 29..36 (`:1299-1305`).
@@ -2012,6 +2409,8 @@ mod tests {
         tail[31] = world.shadow_orb_count as u8; // C# truncates to a byte
         tail[32..36].copy_from_slice(&world.altars_smashed.to_le_bytes());
         tail[36] = u8::from(world.hard_mode);
+        // W4-f45: afterPartyOfDoom at tail 37 (`WorldFile.cs:1305`, v257+).
+        tail[37] = u8::from(world.after_party_of_doom);
         // The invasion block at 38..57 + slime rain + sundial (`:1306-1312`).
         tail[38..42].copy_from_slice(&world.invasion_delay.to_le_bytes());
         tail[42..46].copy_from_slice(&world.invasion_size.to_le_bytes());
@@ -2024,11 +2423,21 @@ mod tests {
         tail[68..72].copy_from_slice(&world.rain_time.to_le_bytes());
         tail[72..76].copy_from_slice(&world.max_raining.to_le_bytes());
         // The owned background styles inside setBG 0..7 at 88..95
-        // (`:1318-1325`): corrupt@89, jungle@90, hallow@92, crimson@93.
+        // (`:1318-1325`): W4-g71 wiring — treeBG1@88, corrupt@89, jungle@90,
+        // snow@91, hallow@92, crimson@93, desert@94, ocean@95.
+        tail[88] = world.forest_bg_styles[0];
         tail[89] = world.corrupt_bg_style;
         tail[90] = world.jungle_bg_style;
+        tail[91] = world.snow_bg_style;
         tail[92] = world.hallow_bg_style;
         tail[93] = world.crimson_bg_style;
+        tail[94] = world.desert_bg_style;
+        tail[95] = world.ocean_bg_style;
+        // W4-f45: the cloud pair at 96..102 (cloudBGActive@96 i32, numClouds@100
+        // i16) and the wind target at 102..106.
+        tail[96..100].copy_from_slice(&world.cloud_bg_active.to_le_bytes());
+        tail[100..102].copy_from_slice(&(world.num_clouds as i16).to_le_bytes());
+        tail[102..106].copy_from_slice(&world.wind_speed_target.to_le_bytes());
         // savedAngler..savedGolfer follow the 4-byte angler-list count at
         // 106..110 (88 trio-end + 8 setBG + 10 clouds/wind = 106).
         tail[110] = u8::from(world.saved_angler); // savedAngler (`:1334`)
@@ -2037,6 +2446,15 @@ mod tests {
         tail[116] = u8::from(world.saved_tax_collector); // savedTaxCollector (`:1337`)
         tail[117] = u8::from(world.saved_golfer); // savedGolfer (`:1338`)
         tail[118..122].copy_from_slice(&world.invasion_size_start.to_le_bytes()); // (`:1339`)
+        // W4-f45: the cultist delay at 122..126 (`:1340`).
+        tail[122..126].copy_from_slice(&world.cultist_delay.to_le_bytes());
+        // W4-f45 Ph4: the banner kill array — the i16 count at 126..128, then
+        // 293 i32s at 128..1300 (`BannerSystem.Save`, `:1341`). The dense
+        // entries carry the world's tally; the claimable array stays zero.
+        for (i, &kills) in world.banner_kill_counts.iter().enumerate().take(293) {
+            let at = 128 + 4 * i;
+            tail[at..at + 4].copy_from_slice(&kills.to_le_bytes());
+        }
         // The event bosses past the banner arrays (which end at 1888):
         // dawn@1888, fishron@1889, martians@1890, cultist@1891, moonlord@1892.
         tail[1891] = u8::from(world.downed_ancient_cultist); // downedAncientCultist (`:1345`)
@@ -2045,6 +2463,12 @@ mod tests {
         // S1-D-3 W-9: downedFishron is World-owned now (`:1343`).
         tail[1889] = u8::from(world.downed_fishron); // downedFishron
         tail[1890] = u8::from(world.downed_martians); // downedMartians (`:1344`)
+        // W4-f45: the five seasonal bosses at 1893..1897 (`:1347-1351`).
+        tail[1893] = u8::from(world.downed_halloween_king);
+        tail[1894] = u8::from(world.downed_halloween_tree);
+        tail[1895] = u8::from(world.downed_christmas_ice_queen);
+        tail[1896] = u8::from(world.downed_christmas_santank);
+        tail[1897] = u8::from(world.downed_christmas_tree);
         // The four tower downeds + four actives + the apocalypse phase, after
         // the five seasonal bosses (1893..1897): 1898..1906.
         tail[1898] = u8::from(world.downed_tower_solar); // (`:1352`)
@@ -2056,41 +2480,141 @@ mod tests {
         tail[1904] = u8::from(world.tower_active_nebula); // (`:1358`)
         tail[1905] = u8::from(world.tower_active_stardust); // (`:1359`)
         tail[1906] = u8::from(world.lunar_apocalypse_is_up); // (`:1360`)
+        // W4-f45: the party snapshot at 1907..1917 (manual/genuine/cooldown +
+        // the celebrant count), then the counted slot list.
+        tail[1907] = u8::from(world.party_manual); // (`:1361`)
+        tail[1908] = u8::from(world.party_genuine); // (`:1362`)
+        tail[1909..1913].copy_from_slice(&world.party_cooldown.to_le_bytes()); // (`:1363`)
+        tail[1913..1917].copy_from_slice(&(nceleb as i32).to_le_bytes()); // (`:1364`)
+        // Insert the celebrant slots after the count (the fixture's empty list
+        // contributes none); every later field shifts by `d`.
+        let mut celeb_bytes = Vec::with_capacity(d);
+        for &slot in &world.party_celebrants {
+            celeb_bytes.extend_from_slice(&slot.to_le_bytes());
+        }
+        tail.splice(1917..1917, celeb_bytes);
+        // W4-f45: savedBartender is the DD2 block's first byte (`:1373`), at
+        // 1930 + d (sandstorm 1917..1930).
+        tail[1930 + d] = u8::from(world.saved_bartender);
+        // combatBookWasUsed (`WorldFile.cs:1379`) at 1939 + d (gate V3, i35).
+        tail[1939 + d] = u8::from(world.combat_book_was_used);
+        // W4-f45: the lantern night snapshot at 1940..1947 + d (`:1381-1384`).
+        tail[1940 + d..1944 + d].copy_from_slice(&world.lantern_night_cooldown.to_le_bytes());
+        tail[1944 + d] = u8::from(world.lantern_night_genuine);
+        tail[1945 + d] = u8::from(world.lantern_night_manual);
+        tail[1946 + d] = u8::from(world.lantern_night_next_night_is_genuine);
+        // The pre-hardmode quartet at 2005 + d (`SaveWorldFlags:1388-1391`).
+        let mut at = 2005 + d;
+        for v in [
+            world.ore_tiers.copper,
+            world.ore_tiers.iron,
+            world.ore_tiers.silver,
+            world.ore_tiers.gold,
+        ] {
+            tail[at..at + 4].copy_from_slice(&v.to_le_bytes());
+            at += 4;
+        }
+        // W4-f45: the pet-license trio at 2021..2023 (`:1392-1394`, v217+).
+        tail[2021 + d] = u8::from(world.bought_cat);
+        tail[2022 + d] = u8::from(world.bought_dog);
+        tail[2023 + d] = u8::from(world.bought_bunny);
         // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
-        tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
         // W4-g87: the three town-pet license flags (`WorldFile.cs:1392-1394`)
         // sit right after the pre-hardmode quartet (2005..2020, 16 bytes):
         // cat@2021, dog@2022, bunny@2023 (the empress byte follows at 2024).
-        tail[2021] = u8::from(world.bought_cat); // boughtCat (`:1392`)
-        tail[2022] = u8::from(world.bought_dog); // boughtDog (`:1393`)
-        tail[2023] = u8::from(world.bought_bunny); // boughtBunny (`:1394`)
+        // The batch-M owner above writes them with the `d` version delta;
+        // this is the g87 marker, not a second (non-offset) write.
+        tail[2024 + d] = u8::from(world.downed_empress_of_light); // (`:1395`, W4-f45)
+        tail[2025 + d] = u8::from(world.downed_queen_slime); // (`:1396`)
         // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
-        tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
-        tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
-        tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
+        // W4-f45 Ph4: the six arrival unlocks + slime-blue join the owned set.
+        tail[2027 + d] = u8::from(world.unlocked_slime_blue_spawn); // (`:1398`)
+        tail[2028 + d] = u8::from(world.unlocked_merchant_spawn); // (`:1399`)
+        tail[2029 + d] = u8::from(world.unlocked_demolitionist_spawn); // (`:1400`)
+        tail[2030 + d] = u8::from(world.unlocked_party_girl); // (`:1401`)
+        tail[2031 + d] = u8::from(world.unlocked_dye_trader_spawn); // (`:1402`)
+        tail[2032 + d] = u8::from(world.unlocked_truffle_spawn); // (`:1403`)
+        tail[2033 + d] = u8::from(world.unlocked_arms_dealer_spawn); // (`:1404`)
+        tail[2034 + d] = u8::from(world.unlocked_nurse_spawn); // (`:1405`)
+        tail[2035 + d] = u8::from(world.unlocked_princess); // (`:1406`)
+        // W4-f45: the booster pair at 2036/2037 (`:1407-1408`, v259/260).
+        tail[2036 + d] = u8::from(world.combat_book_volume_two_was_used);
+        tail[2037 + d] = u8::from(world.peddlers_satchel_was_used);
+        tail[2026 + d] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
         // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
-        tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
-        tail[2042] = u8::from(world.unlocked_slime_red_spawn);
-        // combatBookWasUsed (`WorldFile.cs:1379`): trio-end 88 + 8 setBG +
-        // 10 clouds/wind + 4 angler count + 8 saved-NPC/quest + 8 invasion/
-        // cultist + 2+1172+2+586 banners + 1 dawn + 9+9 event/tower + 10
-        // party + 13 sandstorm + 4 DD2 + 5 BG (mushroom/underworld/tree2-4)
-        // = tail offset 1939 (gate V3, i35).
-        tail[1939] = u8::from(world.combat_book_was_used);
-        tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
-        tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
+        // W4-g71 wiring: the five remaining BG styles (mushroom/underworld/
+        // tree2-4) at tail 1934..1938 + d, just before combatBookWasUsed@1939+d
+        // (the book byte itself is patched above with the f45 + d offsets).
+        tail[1934 + d] = world.mushroom_bg_style; // setBG(8) (`:1375`)
+        tail[1935 + d] = world.underworld_bg_style; // setBG(9) (`:1374`)
+        tail[1936 + d] = world.forest_bg_styles[1]; // treeBG2 (`:1376`)
+        tail[1937 + d] = world.forest_bg_styles[2]; // treeBG3 (`:1377`)
+        tail[1938 + d] = world.forest_bg_styles[3]; // treeBG4 (`:1378`)
+        // W4-f45: the five remaining slime-colour unlocks join the owned set.
+        tail[2038 + d] = u8::from(world.unlocked_slime_green_spawn);
+        tail[2039 + d] = u8::from(world.unlocked_slime_old_spawn);
+        tail[2040 + d] = u8::from(world.unlocked_slime_purple_spawn);
+        tail[2041 + d] = u8::from(world.unlocked_slime_rainbow_spawn);
+        tail[2042 + d] = u8::from(world.unlocked_slime_red_spawn);
+        tail[2043 + d] = u8::from(world.unlocked_slime_yellow_spawn);
+        tail[2044 + d] = u8::from(world.unlocked_slime_copper_spawn);
+        tail[2045 + d] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
+        tail[2046 + d] = world.moondial_cooldown; // moondialCooldown (`:1417`)
+        // W4-f45: the eight secret-seed bytes — the `InitializeSecretSeeds`
+        // mirrors of `World.micro_seeds` (`WorldGen.cs:553-587`).
+        let ms = world.micro_seeds;
+        tail[2047 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)); // forceHalloweenForever (`:1418`)
+        tail[2048 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)); // forceXMasForever (`:1419`)
+        tail[2049 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::VAMPIRISM)); // vampireSeed (`:1420`)
+        tail[2050 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)); // infectedSeed (`:1421`)
+        // W4-f45: the starfall pair at 2051..2059 (`:1422-1423`).
+        tail[2051 + d..2055 + d].copy_from_slice(&world.meteor_shower_count.to_le_bytes());
+        tail[2055 + d..2059 + d].copy_from_slice(&world.coin_rain.to_le_bytes());
+        tail[2059 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)); // teamBasedSpawnsSeed (`:1424`)
+        tail[2061 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)); // dualDungeonsSeed (`:1426`)
+        tail[2062 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::MORE_LIGHTNING)); // moreLightningSeed (`:1427`)
+        tail[2063 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::NO_LIGHTNING)); // noLightningSeed (`:1428`)
+        // W4-f45: the extra-spawn-point list is variable-length — the fixture
+        // table carries an empty one (the count byte at 2060), the world's list
+        // inserts `4 * n` pair bytes after it. The three seed bytes before it
+        // (2061..2063) are patched above; the manifest string follows the list.
+        let nspawn = world.extra_spawn_points.len();
+        tail[2060 + d] = nspawn as u8; // extraSpawnPoints.Length (`:1425`)
+        let mut spawn_bytes = Vec::with_capacity(4 * nspawn);
+        for &(x, y) in &world.extra_spawn_points {
+            spawn_bytes.extend_from_slice(&x.to_le_bytes());
+            spawn_bytes.extend_from_slice(&y.to_le_bytes());
+        }
+        tail.splice(2061 + d..2061 + d, spawn_bytes);
         b.extend(tail);
         b
     }
 
-    /// The owned middle of the flags table: the back styles (hell only), the
-    /// spawn/layers/time block — written between the 17 zero i32s of
-    /// `treeX`..`jungleBackStyle` and the `_tempBloodMoon` tail.
+    /// The owned middle of the flags table: the tree/cave arrays + the
+    /// ice/jungle/hell back styles (W4-g71/g72 wiring: all owned; the merged
+    /// `cave_back_x` is `[i32; 4]` with only `[..3]` persisted, ice/jungle are
+    /// u8 fields written as i32), then the spawn/layers/time block — written
+    /// between the moon-type byte and the `_tempBloodMoon` tail. (The dungeon
+    /// anchor + crimson flavour come AFTER bloodMoon/eclipse, so they live in
+    /// the tail, patched by `expected_flags_block`.)
     fn flags_tail_prefix(world: &World) -> Vec<u8> {
         let mut b = Vec::new();
-        b.resize(3 * 4 + 4 * 4 + 3 * 4 + 4 * 4 + 2 * 4, 0); // tree/cave arrays + ice/jungle
+        for x in world.tree_x {
+            b.extend_from_slice(&x.to_le_bytes()); // treeX
+        }
+        for s in world.tree_style {
+            b.extend_from_slice(&s.to_le_bytes()); // treeStyle
+        }
+        for x in world.cave_back_x[..3] {
+            b.extend_from_slice(&x.to_le_bytes()); // caveBackX ([3] never persisted)
+        }
+        for s in world.cave_back_style {
+            b.extend_from_slice(&s.to_le_bytes()); // caveBackStyle
+        }
+        b.extend_from_slice(&(world.ice_back_style as i32).to_le_bytes());
+        b.extend_from_slice(&(world.jungle_back_style as i32).to_le_bytes());
         b.extend_from_slice(&(world.hell_back_style as i32).to_le_bytes());
         b.extend_from_slice(&world.spawn_x.to_le_bytes());
         b.extend_from_slice(&world.spawn_y.to_le_bytes());
@@ -2862,6 +3386,11 @@ mod tests {
         world.hallow_bg_style = 4;
         world.crimson_bg_style = 5;
         world.mushroom_bg_style = 6;
+        world.tree_x = [2, 4, 6];
+        world.forest_bg_styles = [1, 3, 11, 13];
+        world.snow_bg_style = 21;
+        world.desert_bg_style = 52;
+        world.ocean_bg_style = 5;
         world.hard_mode = true;
         world.downed_eoc = true;
         world.downed_plant_boss = true;
@@ -2896,6 +3425,12 @@ mod tests {
         assert_eq!(back.hallow_bg_style, world.hallow_bg_style);
         assert_eq!(back.crimson_bg_style, world.crimson_bg_style);
         assert_eq!(back.mushroom_bg_style, world.mushroom_bg_style);
+        // W4-g70: the forest-set dividers and the four tree styles.
+        assert_eq!(back.tree_x, world.tree_x);
+        assert_eq!(back.forest_bg_styles, world.forest_bg_styles);
+        assert_eq!(back.snow_bg_style, world.snow_bg_style);
+        assert_eq!(back.desert_bg_style, world.desert_bg_style);
+        assert_eq!(back.ocean_bg_style, world.ocean_bg_style);
         assert!(back.hard_mode);
         assert!(back.downed_eoc && back.downed_plant_boss);
         assert!(back.spawn_meteor);
@@ -3485,6 +4020,19 @@ mod tests {
         ptr1 - flags_tail(version).len()
     }
 
+    /// The flags block's START inside a synthetic file: the tail offset minus
+    /// the owned prefix (the tree/cave/back-style + spawn/layers/time block)
+    /// minus the world head (name/seed/genVer/GUID/worldId/bounds). The head's
+    /// width is version-gated exactly like `header_section`.
+    fn flags_start_in_synthetic(data: &[u8], version: i32) -> usize {
+        let world = World::new("x".into(), 8, 6);
+        let head = cs_string("TileFixture").len()
+            + if version >= 179 { cs_string("12345").len() + 8 } else { 0 }
+            + if version >= 181 { 16 } else { 0 }
+            + 4 + 6 * 4; // world id + the six bounds/dims
+        tail_offset_in_synthetic(data, version) - flags_tail_prefix(&world).len() - head
+    }
+
     #[test]
     fn s1_j_3b_the_newly_owned_flags_land_at_their_csharp_byte_offsets() {
         // The byte-layout contract for the S1-J-3b close set: patch each
@@ -3669,13 +4217,876 @@ mod tests {
         assert!(!w.unlocked_slime_rainbow_spawn, "the rainbow byte before it stays 0");
         // v326 (the writer's version): both round-trip at their pinned tail
         // offsets — the DW-2.2 owned-fields sweep covers the values; here the
-        // raw bytes prove the offsets (book@1939, red@2042).
+        // raw bytes prove the offsets (book@1939, red@2042). The owned world
+        // carries a 2-slot celebrant list, so every field past the party
+        // block shifts by `d = 8`; anchor from the block START.
         let world = owned_world();
         let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
         let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
-        let tail_at = ptr1 - flags_tail(VER).len();
-        assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
-        assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
+        let block = expected_flags_block(&world);
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        assert_eq!(buf[tail_at + 1939 + d], 1, "combatBookWasUsed at tail 1939+d");
+        assert_eq!(buf[tail_at + 2042 + d], 1, "unlockedSlimeRedSpawn at tail 2042+d");
+    }
+
+    /// W4-f45 — the downed-flag census lands at its C# byte offsets and
+    /// follows the C# read gates. downedClown is ungated (`:2099`), the five
+    /// seasonal bosses read from 131 (`:2217-2221`), downedEmpressOfLight
+    /// from 223 (`:2370`). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_downed_census_lands_at_the_csharp_offsets_and_gates() {
+        // v326: patch each census byte into the independent `flags_tail`
+        // table and read it back through the real reader.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 26] = 1; // downedClown (`:1297`)
+        for off in 1893..=1897 {
+            data[tail_at + off] = 1; // the five seasonal bosses (`:1347-1351`)
+        }
+        data[tail_at + 2024] = 1; // downedEmpressOfLight (`:1395`)
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.downed_clown, "downedClown at tail 26");
+        assert!(w.downed_halloween_king, "downedHalloweenKing at tail 1893");
+        assert!(w.downed_halloween_tree, "downedHalloweenTree at tail 1894");
+        assert!(w.downed_christmas_ice_queen, "downedChristmasIceQueen at tail 1895");
+        assert!(w.downed_christmas_santank, "downedChristmasSantank at tail 1896");
+        assert!(w.downed_christmas_tree, "downedChristmasTree at tail 1897");
+        assert!(w.downed_empress_of_light, "downedEmpressOfLight at tail 2024");
+        assert!(!w.downed_queen_slime, "the queen slime byte after it stays 0");
+        // The writer's own block carries the same values at the same offsets.
+        // The owned world's 2-slot celebrant list shifts every field past the
+        // party block by `d = 8`; anchor from the block START.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let block = expected_flags_block(&world);
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        assert_eq!(buf[tail_at + 26], 1, "downedClown at tail 26");
+        for off in 1893..=1897 {
+            assert_eq!(buf[tail_at + off], 1, "seasonal boss at tail {off}");
+        }
+        assert_eq!(buf[tail_at + 2024 + d], 1, "downedEmpressOfLight at tail 2024+d");
+        // v130: the seasonal block does not exist yet (the fishron..moonlord
+        // quartet ends the v130 tail after the dawn byte) — all five stay
+        // false. downedClown is ungated and reads on every version.
+        let mut data = synthetic_file(130, &[2, 144], 160, 7);
+        let tail_at = tail_offset_in_synthetic(&data, 130);
+        data[tail_at + 26] = 1; // downedClown — ungated
+        let w = parse(&data).expect("v130 loads");
+        assert!(w.downed_clown, "downedClown reads on every version");
+        assert!(!w.downed_halloween_king, "below 131: the seasonal five stay false");
+        assert!(!w.downed_christmas_tree);
+        // v222: the empress byte does not exist yet (the 223 pair is absent).
+        let w = parse(&synthetic_file(222, &[2, 144], 160, 11)).expect("v222 loads");
+        assert!(!w.downed_empress_of_light, "below 223: the empress stays false");
+        assert!(!w.downed_queen_slime);
+        // v223: the pair lands — the empress is the FIRST byte of the pair.
+        let mut data = synthetic_file(223, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 223);
+        // The v223 tail ends at the empress/queenSlime pair (deerclops needs
+        // 240): the empress is 2 from the end.
+        let empress_at = flags_tail(223).len() - 2;
+        data[tail_at + empress_at] = 1;
+        let w = parse(&data).expect("v223 loads");
+        assert!(w.downed_empress_of_light, "downedEmpressOfLight reads from 223");
+        assert!(!w.downed_queen_slime, "the queen slime byte after it stays 0");
+    }
+
+    /// W4-f45 — the eight secret-seed bytes are the `InitializeSecretSeeds`
+    /// mirrors of `World.micro_seeds` (`WorldGen.cs:553-587`): each byte
+    /// lands its bit at its C# tail offset and follows its read gate
+    /// (`LoadWorldFlags:2462-2510`). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_secret_seed_bytes_mirror_the_micro_seed_bits() {
+        use crate::seeds::MicroSeedFlags as MS;
+        // v326: patch each of the eight bytes and read the bits back.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        for off in [2047, 2048, 2049, 2050, 2059, 2061, 2062, 2063] {
+            data[tail_at + off] = 1;
+        }
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.micro_seeds.contains(MS::ENDLESS_HALLOWEEN), "forceHalloweenForever@2047");
+        assert!(w.micro_seeds.contains(MS::ENDLESS_CHRISTMAS), "forceXMasForever@2048");
+        assert!(w.micro_seeds.contains(MS::VAMPIRISM), "vampireSeed@2049");
+        assert!(w.micro_seeds.contains(MS::WORLD_IS_INFECTED), "infectedSeed@2050");
+        assert!(w.micro_seeds.contains(MS::TEAM_BASED_SPAWNS), "teamBasedSpawnsSeed@2059");
+        assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "dualDungeonsSeed@2061");
+        assert!(w.micro_seeds.contains(MS::MORE_LIGHTNING), "moreLightningSeed@2062");
+        assert!(w.micro_seeds.contains(MS::NO_LIGHTNING), "noLightningSeed@2063");
+        // The writer's own block carries the same eight bytes. The owned
+        // world's 2-slot celebrant list shifts them by `d = 8`; anchor from
+        // the block START.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let block = expected_flags_block(&world);
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        for off in [2047, 2048, 2049, 2050, 2059, 2061, 2062, 2063] {
+            assert_eq!(buf[tail_at + off + d], 1, "seed byte at tail {off}+d");
+        }
+        // v286: none of the eight exists yet — the moondial pair ends the tail.
+        let w = parse(&synthetic_file(286, &[2, 144], 160, 11)).expect("v286 loads");
+        assert_eq!(w.micro_seeds.sum(), 0, "below 287: no seed bytes");
+        // v287: only the two forced-season bytes exist (the tail's last two).
+        let mut data = synthetic_file(287, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 287);
+        let n = flags_tail(287).len();
+        data[tail_at + n - 2] = 1; // forceHalloweenForever
+        data[tail_at + n - 1] = 1; // forceXMasForever
+        let w = parse(&data).expect("v287 loads");
+        assert!(w.micro_seeds.contains(MS::ENDLESS_HALLOWEEN), "reads from 287");
+        assert!(w.micro_seeds.contains(MS::ENDLESS_CHRISTMAS));
+        assert!(!w.micro_seeds.contains(MS::VAMPIRISM), "below 288");
+        // v288: the vampire byte lands (the tail's last byte).
+        let mut data = synthetic_file(288, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 288);
+        data[tail_at + flags_tail(288).len() - 1] = 1;
+        let w = parse(&data).expect("v288 loads");
+        assert!(w.micro_seeds.contains(MS::VAMPIRISM), "reads from 288");
+        assert!(!w.micro_seeds.contains(MS::WORLD_IS_INFECTED), "below 296");
+        // v296: the infected byte lands; the meteor/coin pair (gate 291)
+        // follows it in the tail, so infected sits 9 from the end.
+        let mut data = synthetic_file(296, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 296);
+        data[tail_at + flags_tail(296).len() - 9] = 1;
+        let w = parse(&data).expect("v296 loads");
+        assert!(w.micro_seeds.contains(MS::WORLD_IS_INFECTED), "reads from 296");
+        assert!(!w.micro_seeds.contains(MS::TEAM_BASED_SPAWNS), "below 297");
+        // v297: teamBased + the extra-spawn count byte (the tail's last two).
+        let mut data = synthetic_file(297, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 297);
+        let n = flags_tail(297).len();
+        data[tail_at + n - 2] = 1; // teamBasedSpawnsSeed
+        let w = parse(&data).expect("v297 loads");
+        assert!(w.micro_seeds.contains(MS::TEAM_BASED_SPAWNS), "reads from 297");
+        assert!(!w.micro_seeds.contains(MS::DUAL_DUNGEONS), "below 304");
+        // v304: the dual-dungeons byte is last before the legacy u32 + the
+        // manifest (both present from 299; the u32 only through 312).
+        let mut data = synthetic_file(304, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 304);
+        data[tail_at + flags_tail(304).len() - 6] = 1;
+        let w = parse(&data).expect("v304 loads");
+        assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "reads from 304");
+        assert!(!w.micro_seeds.contains(MS::MORE_LIGHTNING), "below 323");
+        // v323: the lightning pair is last (the manifest needs 299 — present;
+        // the pair sits before the manifest's single byte).
+        let mut data = synthetic_file(323, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 323);
+        let n = flags_tail(323).len();
+        data[tail_at + n - 3] = 1; // moreLightningSeed (2 before the manifest byte)
+        data[tail_at + n - 2] = 1; // noLightningSeed
+        let w = parse(&data).expect("v323 loads");
+        assert!(w.micro_seeds.contains(MS::MORE_LIGHTNING), "reads from 323");
+        assert!(w.micro_seeds.contains(MS::NO_LIGHTNING));
+    }
+
+    /// W4-f45 Ph3 — the event snapshots (cultist delay, party quad + celebrant
+    /// list, lantern quad), the wind target, savedBartender and the dungeon
+    /// anchor / crimson flavour land at their C# offsets; the restored
+    /// invasion/cultist/banner read gates (`LoadWorldFlags:2180-2208`) walk
+    /// the old-version blocks correctly. Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_event_snapshots_and_flavour_land_and_the_old_gates_walk() {
+        // v326: patch the event snapshots + flavour into the independent
+        // `flags_tail` table and read them back.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 122..tail_at + 126].copy_from_slice(&4321i32.to_le_bytes()); // cultistDelay
+        data[tail_at + 1907] = 1; // partyManual
+        data[tail_at + 1908] = 1; // partyGenuine
+        data[tail_at + 1909..tail_at + 1913].copy_from_slice(&7i32.to_le_bytes()); // partyCooldown
+        // The celebrant count stays 0 (the fixture's empty list) — the
+        // variable-length insert is exercised by the owned-world sweep.
+        data[tail_at + 1930] = 1; // savedBartender
+        data[tail_at + 1940..tail_at + 1944].copy_from_slice(&5i32.to_le_bytes()); // lanternCooldown
+        data[tail_at + 1944] = 1; // lanternGenuine
+        data[tail_at + 1945] = 1; // lanternManual
+        data[tail_at + 1946] = 1; // lanternNextGenuine
+        data[tail_at + 102..tail_at + 106].copy_from_slice(&0.4f32.to_le_bytes()); // windSpeedTarget
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.cultist_delay, 4321, "cultistDelay at tail 122");
+        assert!(w.party_manual, "partyManual at tail 1907");
+        assert!(w.party_genuine, "partyGenuine at tail 1908");
+        assert_eq!(w.party_cooldown, 7, "partyCooldown at tail 1909");
+        assert!(w.party_celebrants.is_empty(), "the empty celebrant list");
+        assert!(w.saved_bartender, "savedBartender at tail 1930");
+        assert_eq!(w.lantern_night_cooldown, 5, "lanternCooldown at tail 1940");
+        assert!(w.lantern_night_genuine, "lanternGenuine at tail 1944");
+        assert!(w.lantern_night_manual, "lanternManual at tail 1945");
+        assert!(w.lantern_night_next_night_is_genuine, "lanternNextGenuine at tail 1946");
+        assert_eq!(w.wind_speed_target, 0.4, "windSpeedTarget at tail 102");
+        // The dungeon anchor + crimson sit at tail 2..11 (after bloodMoon/
+        // eclipse) — patch them directly too.
+        data[tail_at + 2..tail_at + 6].copy_from_slice(&123i32.to_le_bytes()); // dungeonX
+        data[tail_at + 6..tail_at + 10].copy_from_slice(&456i32.to_le_bytes()); // dungeonY
+        data[tail_at + 10] = 1; // crimson
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.dungeon_x, 123, "dungeonX at tail 2");
+        assert_eq!(w.dungeon_y, 456, "dungeonY at tail 6");
+        assert!(w.crimson, "crimson at tail 10");
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the owned world parses");
+        assert_eq!(back.dungeon_x, 123, "dungeonX round-trips");
+        assert_eq!(back.dungeon_y, 456, "dungeonY round-trips");
+        assert!(back.crimson, "crimson round-trips");
+        assert_eq!(back.party_celebrants, vec![3, 17], "the celebrant slots round-trip");
+        // The whole owned block matches the independent table (the variable
+        // celebrant list included).
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let want = expected_flags_block(&world);
+        let flags_at = ptr1 - want.len();
+        assert_eq!(&buf[flags_at..ptr1], &want[..], "the owned block matches the table");
+
+        // --- the restored read gates -------------------------------------
+        // v106: invasionSizeStart is absent — `FakeLoadInvasionStart`
+        // re-derives it from the invasion pair. The synthetic header carries
+        // invasionType=0/size=0, so the derivation is skipped (size_start 0).
+        let w = parse(&synthetic_file(106, &[2, 144], 160, 6)).expect("v106 loads");
+        assert_eq!(w.invasion_size_start, 0, "no invasion: no derivation");
+        assert_eq!(w.cultist_delay, 86400, "below 108: the delayStart default");
+        // v107: invasionSizeStart reads; the cultist delay still defaults.
+        // The v107 tail ends at invasionSizeStart (the last 4 bytes — the
+        // cultist delay needs 108, the banner block 109).
+        let mut data = synthetic_file(107, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 107);
+        let n = flags_tail(107).len();
+        data[tail_at + n - 4..tail_at + n].copy_from_slice(&240i32.to_le_bytes());
+        let w = parse(&data).expect("v107 loads");
+        assert_eq!(w.invasion_size_start, 240, "invasionSizeStart reads from 107");
+        assert_eq!(w.cultist_delay, 86400, "below 108: still the default");
+        // v108: the cultist delay reads (the tail's last 4 bytes).
+        let mut data = synthetic_file(108, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 108);
+        let n = flags_tail(108).len();
+        data[tail_at + n - 4..tail_at + n].copy_from_slice(&999i32.to_le_bytes());
+        let w = parse(&data).expect("v108 loads");
+        assert_eq!(w.cultist_delay, 999, "cultistDelay reads from 108");
+        // v109: the banner arrays appear; the block still ends before dawn
+        // (128). The kill-count array's 293 i32s are all zero.
+        let w = parse(&synthetic_file(109, &[2, 144], 160, 6)).expect("v109 loads");
+        assert!(!w.fast_forward_to_dawn, "below 128: the dawn byte is absent");
+        // v128: the dawn byte lands (the tail's last byte).
+        let mut data = synthetic_file(128, &[2, 144], 160, 7);
+        let tail_at = tail_offset_in_synthetic(&data, 128);
+        data[tail_at + flags_tail(128).len() - 1] = 1;
+        let w = parse(&data).expect("v128 loads");
+        assert!(w.fast_forward_to_dawn, "fastForwardTimeToDawn reads from 128");
+    }
+
+    /// W4-f45 Ph3 — `Main.FakeLoadInvasionStart` (`Main.cs:64488-64514`): the
+    /// pre-107 `invasionSizeStart` re-derivation. The per-type (base, step)
+    /// ladder, then `base + ceil((size - base) / step) * step` when positive.
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_fake_load_invasion_start_rederives_the_start_size() {
+        // Drive the reader at v106 with a live invasion pair: the synthetic
+        // header's invasion block is patched to type 1 / size 200, so the
+        // derivation runs (80 + ceil((200-80)/40)*40 = 80 + 3*40 = 200).
+        // The pre-118 tail lacks the slimeKing + afterPartyOfDoom bytes, so
+        // the invasion block sits 2 before its v326 offsets: size@40, type@44.
+        let mut data = synthetic_file(106, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 106);
+        data[tail_at + 40..tail_at + 44].copy_from_slice(&200i32.to_le_bytes()); // invasionSize
+        data[tail_at + 44..tail_at + 48].copy_from_slice(&1i32.to_le_bytes()); // invasionType
+        let w = parse(&data).expect("v106 loads");
+        assert_eq!(w.invasion_size_start, 200, "goblins: 80 + ceil(120/40)*40");
+        // A size below the base keeps the base (the ceiling is negative).
+        let mut data = synthetic_file(106, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 106);
+        data[tail_at + 40..tail_at + 44].copy_from_slice(&50i32.to_le_bytes());
+        data[tail_at + 44..tail_at + 48].copy_from_slice(&1i32.to_le_bytes());
+        let w = parse(&data).expect("v106 loads");
+        assert_eq!(w.invasion_size_start, 80, "below the base: the base stands");
+        // Type 3 (pirates): 120 + ceil((300-120)/60)*60 = 120 + 3*60 = 300.
+        let mut data = synthetic_file(106, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 106);
+        data[tail_at + 40..tail_at + 44].copy_from_slice(&300i32.to_le_bytes());
+        data[tail_at + 44..tail_at + 48].copy_from_slice(&3i32.to_le_bytes());
+        let w = parse(&data).expect("v106 loads");
+        assert_eq!(w.invasion_size_start, 300, "pirates: 120 + ceil(180/60)*60");
+    }
+
+    /// W4-f45 Ph4 — the banner kill array, the angler name list and the seven
+    /// spawn unlocks land at their C# offsets and follow their read gates.
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_banner_tally_angler_list_and_unlocks_land() {
+        // v326: patch two banner entries + the seven unlock bytes into the
+        // independent `flags_tail` table and read them back.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        // killCount[1]@132, killCount[69]@404 (128 + 4*i).
+        data[tail_at + 132..tail_at + 136].copy_from_slice(&50i32.to_le_bytes());
+        data[tail_at + 404..tail_at + 408].copy_from_slice(&7i32.to_le_bytes());
+        // The unlocks: slimeBlue@2027, merchant@2028, demo@2029, dyeTrader@2031,
+        // truffle@2032, armsDealer@2033, nurse@2034 (partyGirl@2030/princess@2035
+        // stay 0 here).
+        for off in [2027, 2028, 2029, 2031, 2032, 2033, 2034] {
+            data[tail_at + off] = 1;
+        }
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.banner_kill_counts[1], 50, "killCount[1] at tail 132");
+        assert_eq!(w.banner_kill_counts[69], 7, "killCount[69] at tail 404");
+        assert_eq!(w.banner_kill_counts[2], 0, "the untouched entries stay 0");
+        assert!(w.unlocked_slime_blue_spawn, "unlockedSlimeBlueSpawn at tail 2027");
+        assert!(w.unlocked_merchant_spawn, "unlockedMerchantSpawn at tail 2028");
+        assert!(w.unlocked_demolitionist_spawn, "unlockedDemolitionistSpawn at tail 2029");
+        assert!(w.unlocked_dye_trader_spawn, "unlockedDyeTraderSpawn at tail 2031");
+        assert!(w.unlocked_truffle_spawn, "unlockedTruffleSpawn at tail 2032");
+        assert!(w.unlocked_arms_dealer_spawn, "unlockedArmsDealerSpawn at tail 2033");
+        assert!(w.unlocked_nurse_spawn, "unlockedNurseSpawn at tail 2034");
+        assert!(!w.unlocked_party_girl, "the party girl byte stays 0");
+        assert!(!w.unlocked_princess, "the princess byte stays 0");
+        // The writer's own block carries the same values (the owned world's
+        // 2-slot celebrant list shifts the unlocks by d=8; the banner array
+        // sits before the party block, so it does not shift).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let block = expected_flags_block(&world);
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 132..tail_at + 136].try_into().unwrap()),
+            50, "killCount[1] round-trips"
+        );
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 404..tail_at + 408].try_into().unwrap()),
+            7, "killCount[69] round-trips"
+        );
+        for off in [2027, 2028, 2029, 2031, 2032, 2033, 2034] {
+            assert_eq!(buf[tail_at + off + d], 1, "unlock at tail {off}+d");
+        }
+        // The whole owned block matches the independent table.
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+
+        // --- the angler name list (variable-length) ----------------------
+        // A world with one finished-today name round-trips the list.
+        let mut world = World::new("Angler".into(), 300, 200);
+        world.angler_who_finished_today = vec!["Belsin".to_string()];
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the angler world parses");
+        assert_eq!(back.angler_who_finished_today, vec!["Belsin".to_string()]);
+        // Two names round-trip in order.
+        world.angler_who_finished_today = vec!["A".to_string(), "Bee".to_string()];
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the two-name world parses");
+        assert_eq!(back.angler_who_finished_today, vec!["A".to_string(), "Bee".to_string()]);
+
+        // --- the read gates ----------------------------------------------
+        // v249: the slime-blue byte does not exist yet.
+        let w = parse(&synthetic_file(249, &[2, 144], 160, 11)).expect("v249 loads");
+        assert!(!w.unlocked_slime_blue_spawn, "below 250: slime-blue stays false");
+        // v250: slime-blue lands (the tail's last byte — the eight unlocks
+        // need 251).
+        let mut data = synthetic_file(250, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 250);
+        data[tail_at + flags_tail(250).len() - 1] = 1;
+        let w = parse(&data).expect("v250 loads");
+        assert!(w.unlocked_slime_blue_spawn, "unlockedSlimeBlueSpawn reads from 250");
+        assert!(!w.unlocked_merchant_spawn, "below 251: the arrival unlocks stay false");
+        // v251: the eight-unlock block lands. The v251 tail lacks the 257
+        // afterPartyOfDoom byte + the 289 claimable array (589 bytes before
+        // the unlocks): merchant@2028-589=1439, nurse@2034-589=1445.
+        let mut data = synthetic_file(251, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 251);
+        data[tail_at + 1439] = 1; // unlockedMerchantSpawn
+        data[tail_at + 1445] = 1; // unlockedNurseSpawn
+        let w = parse(&data).expect("v251 loads");
+        assert!(w.unlocked_merchant_spawn, "unlockedMerchantSpawn reads from 251");
+        assert!(w.unlocked_nurse_spawn, "unlockedNurseSpawn reads from 251");
+        assert!(!w.unlocked_demolitionist_spawn, "the demo byte between stays 0");
+    }
+
+    /// W4-f45 — `Main.GameMode` lands at the flags block's first field and
+    /// follows the C# read gates: the i32 from 209 (`:1985`), the expert bool
+    /// from 112 (`:2031`), the v208 master byte (`:2037-2040`), classic below
+    /// 112 (`:2035`). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_game_mode_lands_at_the_csharp_offsets_and_gates() {
+        let flags_start = flags_start_in_synthetic;
+        // v326: the i32 head carries Master (2).
+        let mut data = fixture();
+        let at = flags_start(&data, VER);
+        data[at..at + 4].copy_from_slice(&2i32.to_le_bytes());
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.game_mode, 2, "GameMode i32 at the flags head");
+        // v209: the i32 exists, Journey (3) reads.
+        let mut data = synthetic_file(209, &[2, 144], 160, 11);
+        let at = flags_start(&data, 209);
+        data[at..at + 4].copy_from_slice(&3i32.to_le_bytes());
+        let w = parse(&data).expect("v209 loads");
+        assert_eq!(w.game_mode, 3, "the i32 reads from 209");
+        // v208: the expert bool + the master byte. bool 1 + master 1 -> 2.
+        let mut data = synthetic_file(208, &[2, 144], 160, 11);
+        let at = flags_start(&data, 208);
+        data[at] = 1; // GameMode as bool (expert)
+        data[at + 1] = 1; // the v208 master byte
+        let w = parse(&data).expect("v208 loads");
+        assert_eq!(w.game_mode, 2, "the v208 master byte upgrades to 2");
+        // v208 with the master byte down stays expert (1).
+        let mut data = synthetic_file(208, &[2, 144], 160, 11);
+        let at = flags_start(&data, 208);
+        data[at] = 1;
+        let w = parse(&data).expect("v208 expert loads");
+        assert_eq!(w.game_mode, 1, "the expert bool reads from 112");
+        // v112: the expert bool alone.
+        let mut data = synthetic_file(112, &[2, 144], 160, 6);
+        let at = flags_start(&data, 112);
+        data[at] = 1;
+        let w = parse(&data).expect("v112 loads");
+        assert_eq!(w.game_mode, 1, "the expert bool reads from 112");
+        // v100 (< 112): no GameMode byte — classic.
+        let w = parse(&synthetic_file(100, &[2, 144], 160, 6)).expect("v100 loads");
+        assert_eq!(w.game_mode, 0, "below 112: classic");
+        // The writer's own block carries the owned world's Master at the head.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        assert_eq!(&block[0..4], &2i32.to_le_bytes(), "GameMode at the block head");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        assert_eq!(&buf[flags_at..flags_at + 4], &2i32.to_le_bytes());
+    }
+
+    /// W4-f45 — the tree/cave zone tables + ice/jungle styles land at their C#
+    /// offsets (`WorldFile.cs:1253-1268`, ungated — present in every version
+    /// that carries the flags block) and the gen roll fills them per size.
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_tree_cave_tables_land_and_the_gen_roll_fills_them() {
+        // v326: patch the 16 i32s (treeX[3]@0, treeStyle[4]@12, caveBackX[3]@28,
+        // caveBackStyle[4]@40, ice@56, jungle@60 — relative to the prefix that
+        // follows moonType) into the independent table and read them back.
+        let mut data = fixture();
+        let prefix_at = flags_start_in_synthetic(&data, VER) + 4 /* GameMode */
+            + 9 /* seed bools */ + 16 /* times */ + 1 /* moonType */;
+        let vals: [i32; 16] = [
+            100, 200, 300, // treeX
+            1, 2, 3, 4, // treeStyle
+            110, 210, 310, // caveBackX
+            5, 6, 7, 0, // caveBackStyle
+            3, 1, // ice, jungle
+        ];
+        for (i, v) in vals.iter().enumerate() {
+            data[prefix_at + 4 * i..prefix_at + 4 * i + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.tree_x, [100, 200, 300], "treeX");
+        assert_eq!(w.tree_style, [1, 2, 3, 4], "treeStyle");
+        assert_eq!(w.cave_back_x, [110, 210, 310], "caveBackX");
+        assert_eq!(w.cave_back_style, [5, 6, 7, 0], "caveBackStyle");
+        assert_eq!(w.ice_back_style, 3, "iceBackStyle");
+        assert_eq!(w.jungle_back_style, 1, "jungleBackStyle");
+        // The writer's own block carries the owned world's tables (the prefix
+        // is the independent `flags_tail_prefix`, checked by the sweep).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `cloudBGActive`/`numClouds` land at tail 96/100
+    /// (`WorldFile.cs:1326-1327`, ungated) and round-trip; the load reads the
+    /// stored cloudBGActive into the World mirror (the C# re-rolls the live
+    /// timer at `:2144`, the g69 lane's machine — the mirror keeps the file
+    /// value for the round-trip). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_cloud_pair_lands_at_the_csharp_offsets() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 96..tail_at + 100].copy_from_slice(&(-54321i32).to_le_bytes());
+        data[tail_at + 100..tail_at + 102].copy_from_slice(&180i16.to_le_bytes());
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.cloud_bg_active, -54321, "cloudBGActive at tail 96");
+        assert_eq!(w.num_clouds, 180, "numClouds at tail 100");
+        // The wind target after them stays 0 (the patch did not touch it).
+        assert_eq!(w.wind_speed_target, 0.0, "windSpeedTarget at tail 102 untouched");
+        // The writer's own block carries the owned world's pair.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 96..tail_at + 100].try_into().unwrap()),
+            -12345, "cloudBGActive round-trips"
+        );
+        assert_eq!(
+            i16::from_le_bytes(buf[tail_at + 100..tail_at + 102].try_into().unwrap()),
+            150, "numClouds round-trips"
+        );
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `afterPartyOfDoom` lands at tail 37 (`WorldFile.cs:1305`) and
+    /// follows the v257 read gate (`:2109`); the gen arm stamps it for the
+    /// getfixedboi anniversary world (`WorldGen.cs:11128-11137`). Written, NOT
+    /// run (code-only mode).
+    #[test]
+    fn w4_f45_the_after_party_of_doom_lands_and_gates() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 37] = 1; // afterPartyOfDoom
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.after_party_of_doom, "afterPartyOfDoom at tail 37");
+        // v256: the byte does not exist yet — stays false.
+        let w = parse(&synthetic_file(256, &[2, 144], 160, 11)).expect("v256 loads");
+        assert!(!w.after_party_of_doom, "below 257: afterPartyOfDoom stays false");
+        // v257: the byte lands (the tail's hardMode+1 position; the v257 tail
+        // lacks the 289 claimable array, 588 bytes, but afterPartyOfDoom sits
+        // before it at 37 — unchanged).
+        let mut data = synthetic_file(257, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 257);
+        data[tail_at + 37] = 1;
+        let w = parse(&data).expect("v257 loads");
+        assert!(w.after_party_of_doom, "afterPartyOfDoom reads from 257");
+        // The writer's own block carries the owned world's flag.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        assert_eq!(buf[tail_at + 37], 1, "afterPartyOfDoom round-trips");
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `meteorShowerCount`/`coinRain` land at tail 2051/2055
+    /// (`WorldFile.cs:1422-1423`) and follow the v291 read gate (`:2488-2497`).
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_starfall_pair_lands_and_gates() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 2051..tail_at + 2055].copy_from_slice(&2800i32.to_le_bytes());
+        data[tail_at + 2055..tail_at + 2059].copy_from_slice(&1_200_000i32.to_le_bytes());
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.meteor_shower_count, 2800, "meteorShowerCount at tail 2051");
+        assert_eq!(w.coin_rain, 1_200_000, "coinRain at tail 2055");
+        // v290: the pair does not exist yet — both stay 0.
+        let w = parse(&synthetic_file(290, &[2, 144], 160, 11)).expect("v290 loads");
+        assert_eq!(w.meteor_shower_count, 0, "below 291: meteorShowerCount stays 0");
+        assert_eq!(w.coin_rain, 0, "below 291: coinRain stays 0");
+        // The writer's own block carries the owned world's pair (the 2-slot
+        // celebrant list shifts them by d=8).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 2051 + d..tail_at + 2055 + d].try_into().unwrap()),
+            2800, "meteorShowerCount round-trips"
+        );
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 2055 + d..tail_at + 2059 + d].try_into().unwrap()),
+            1_200_000, "coinRain round-trips"
+        );
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `extraSpawnPoints` lands at tail 2060 (the count byte) + the
+    /// (i16, i16) pairs (`WorldFile.cs:1425`, `ExtraSpawnPointManager.cs:436-456`)
+    /// and follows the v297 read gate (`:2498-2507`). Variable-length, like the
+    /// angler list. Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_extra_spawn_points_land_and_gate() {
+        // A world with two anchors round-trips the list (the owned-world sweep
+        // pins the offsets; here the variable-length shape is the contract).
+        let mut world = World::new("Spawns".into(), 300, 200);
+        world.extra_spawn_points = vec![(10, 20), (30, 40)];
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the spawn world parses");
+        assert_eq!(back.extra_spawn_points, vec![(10, 20), (30, 40)]);
+        // The count byte + the pairs sit at the block's tail-2060 position; the
+        // independent table carries them (the sweep checks the whole block).
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the spawn block matches the table");
+        // An empty list round-trips too (the count byte 0, no pairs).
+        world.extra_spawn_points = Vec::new();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the empty-spawn world parses");
+        assert!(back.extra_spawn_points.is_empty());
+        // v296: the list does not exist yet — stays empty.
+        let w = parse(&synthetic_file(296, &[2, 144], 160, 11)).expect("v296 loads");
+        assert!(w.extra_spawn_points.is_empty(), "below 297: extraSpawnPoints empty");
+        // v297: the count byte + pairs land. The 304/323 seed bytes come AFTER
+        // the spawn list, so the count byte stays at tail 2060 (the 289
+        // claimable array is present from 297, before it).
+        let mut data = synthetic_file(297, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 297);
+        data[tail_at + 2060] = 1; // one anchor
+        data[tail_at + 2061..tail_at + 2063].copy_from_slice(&7i16.to_le_bytes());
+        data[tail_at + 2063..tail_at + 2065].copy_from_slice(&9i16.to_le_bytes());
+        let w = parse(&data).expect("v297 loads");
+        assert_eq!(w.extra_spawn_points, vec![(7, 9)], "extraSpawnPoints reads from 297");
+    }
+
+    /// W4-f45 — `boughtCat/Dog/Bunny` land at tail 2021/2022/2023
+    /// (`WorldFile.cs:1392-1394`) and follow the v217 read gate (`:2357-2367`).
+    /// The license use-setters (`Player.cs:45352-45366`) ride the item-use lane
+    /// (the f43 consumers read the latches). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_pet_licenses_land_and_gate() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 2021] = 1; // boughtCat
+        data[tail_at + 2023] = 1; // boughtBunny (dog stays 0)
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.bought_cat, "boughtCat at tail 2021");
+        assert!(!w.bought_dog, "the dog byte between stays 0");
+        assert!(w.bought_bunny, "boughtBunny at tail 2023");
+        // v216: the trio does not exist yet — all stay false.
+        let w = parse(&synthetic_file(216, &[2, 144], 160, 11)).expect("v216 loads");
+        assert!(!w.bought_cat && !w.bought_dog && !w.bought_bunny, "below 217: false");
+        // v217: the trio lands. The v217 tail lacks the 223 empress/queenSlime
+        // (2), 240 deerclops (1), 250 slimeBlue (1), 251 unlocks (8), 257
+        // afterPartyOfDoom (1), 259/260 books (2), 261 slimes (7), 264 moondial
+        // (2), 287+ seeds — all AFTER the pets, so the pet offsets stay 2021.
+        let mut data = synthetic_file(217, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 217);
+        data[tail_at + 2022] = 1; // boughtDog
+        let w = parse(&data).expect("v217 loads");
+        assert!(w.bought_dog, "boughtDog reads from 217");
+        assert!(!w.bought_cat, "the cat byte before it stays 0");
+        // The writer's own block carries the owned world's trio (d=8 shift).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        for off in [2021, 2022, 2023] {
+            assert_eq!(buf[tail_at + off + d], 1, "pet license at tail {off}+d");
+        }
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `combatBookVolumeTwoWasUsed`/`peddlersSatchelWasUsed` land at
+    /// tail 2036/2037 (`WorldFile.cs:1407-1408`) and follow the v259/v260 read
+    /// gates (`:2417-2431`). The g89b boosters lane co-claims the consumers
+    /// (`npc_ai_town.rs`'s `combat_book_two` env); the use-setters
+    /// (`Player.cs:45337-45383`) ride the item-use lane. Written, NOT run.
+    #[test]
+    fn w4_f45_the_booster_pair_lands_and_gates() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 2036] = 1; // combatBookVolumeTwoWasUsed
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.combat_book_volume_two_was_used, "combatBookTwo at tail 2036");
+        assert!(!w.peddlers_satchel_was_used, "the satchel byte after it stays 0");
+        // v258: neither byte exists yet.
+        let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
+        assert!(!w.combat_book_volume_two_was_used, "below 259: combatBookTwo false");
+        assert!(!w.peddlers_satchel_was_used, "below 260: satchel false");
+        // v259: the book lands, the satchel does not. The v259 tail lacks the
+        // 260 satchel (1), 261 slimes (7), 264 moondial (2), 287+ seeds — all
+        // AFTER the book, so the book offset stays 2036.
+        let mut data = synthetic_file(259, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 259);
+        data[tail_at + 2036] = 1;
+        let w = parse(&data).expect("v259 loads");
+        assert!(w.combat_book_volume_two_was_used, "combatBookTwo reads from 259");
+        assert!(!w.peddlers_satchel_was_used, "below 260: the satchel stays false");
+        // v260: the satchel lands at 2037.
+        let mut data = synthetic_file(260, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 260);
+        data[tail_at + 2037] = 1;
+        let w = parse(&data).expect("v260 loads");
+        assert!(w.peddlers_satchel_was_used, "peddlersSatchel reads from 260");
+        // The writer's own block carries the owned world's pair (d=8 shift).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        assert_eq!(buf[tail_at + 2036 + d], 1, "combatBookTwo round-trips");
+        assert_eq!(buf[tail_at + 2037 + d], 1, "peddlersSatchel round-trips");
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — the five remaining slime-colour unlocks land at tail
+    /// 2038/2039/2040/2043/2044 (`WorldFile.cs:1409-1415`) and follow the v261
+    /// read gate (`:2433-2451`). The town-slime kinds are unported, so the
+    /// latches round-trip (the green arrival setter rides the f43 town-slime
+    /// lane; the doom party clears green). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_remaining_slime_unlocks_land_and_gate() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 2038] = 1; // green
+        data[tail_at + 2040] = 1; // purple (old stays 0)
+        data[tail_at + 2044] = 1; // copper (yellow stays 0)
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.unlocked_slime_green_spawn, "green at tail 2038");
+        assert!(!w.unlocked_slime_old_spawn, "the old byte between stays 0");
+        assert!(w.unlocked_slime_purple_spawn, "purple at tail 2040");
+        assert!(!w.unlocked_slime_yellow_spawn, "the yellow byte stays 0");
+        assert!(w.unlocked_slime_copper_spawn, "copper at tail 2044");
+        // The rainbow/red pair between them stays 0 (the patch skipped them).
+        assert!(!w.unlocked_slime_rainbow_spawn && !w.unlocked_slime_red_spawn);
+        // v260: the slime run does not exist yet — all stay false.
+        let w = parse(&synthetic_file(260, &[2, 144], 160, 11)).expect("v260 loads");
+        assert!(!w.unlocked_slime_green_spawn, "below 261: green stays false");
+        assert!(!w.unlocked_slime_copper_spawn, "below 261: copper stays false");
+        // v261: the run lands. The v261 tail lacks the 264 moondial (2) + the
+        // 287+ seeds — all AFTER the slime run, so the offsets stay 2038..2044.
+        let mut data = synthetic_file(261, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 261);
+        data[tail_at + 2039] = 1; // old
+        data[tail_at + 2043] = 1; // yellow
+        let w = parse(&data).expect("v261 loads");
+        assert!(w.unlocked_slime_old_spawn, "old reads from 261");
+        assert!(w.unlocked_slime_yellow_spawn, "yellow reads from 261");
+        assert!(!w.unlocked_slime_green_spawn, "the green byte before stays 0");
+        // The writer's own block carries the owned world's five (d=8 shift).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        for off in [2038, 2039, 2040, 2043, 2044] {
+            assert_eq!(buf[tail_at + off + d], 1, "slime unlock at tail {off}+d");
+        }
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 FINAL — the later-version reject (`WorldFile.cs:712`
+    /// `num2 > 326 -> StatusID.LaterVersion`, the `GetAllMetadata:197` guard):
+    /// a v327 file is rejected outright, not walked as a v326 shape. Written,
+    /// NOT run (code-only mode).
+    #[test]
+    fn w4_f45_final_the_later_version_file_is_rejected() {
+        let mut data = fixture();
+        data[0..4].copy_from_slice(&327i32.to_le_bytes());
+        assert!(parse(&data).is_err(), "v327 is a later-version file");
+        // The current version still loads (the gate is strictly greater).
+        let data = fixture();
+        assert!(parse(&data).is_ok(), "v326 loads");
+    }
+
+    /// W4-f45 FINAL — the legacy u32 window (`LoadWorldFlags:2512-2515`): the
+    /// 299..312 files carry a u32 between the last seed byte and the manifest
+    /// string; 313+ dropped it. The `flags_tail` table now carries the window
+    /// (the Ph2 v304 witness's offset was re-pinned with it). Written, NOT run.
+    #[test]
+    fn w4_f45_final_the_legacy_u32_window_walks() {
+        use crate::seeds::MicroSeedFlags as MS;
+        // v299: the window opens — the dual-dungeons byte is absent (304),
+        // the u32 + manifest are the tail's last five bytes.
+        let data = synthetic_file(299, &[2, 144], 160, 11);
+        assert!(parse(&data).is_ok(), "v299 walks the u32 + manifest");
+        // v312: the window's last version — the dual byte sits 6 from the end
+        // (dual 1 + u32 4 + manifest 1).
+        let mut data = synthetic_file(312, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 312);
+        data[tail_at + flags_tail(312).len() - 6] = 1; // dualDungeonsSeed
+        let w = parse(&data).expect("v312 loads");
+        assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "the dual byte at len-6");
+        // v313: the u32 is gone — the dual byte sits 2 from the end.
+        let mut data = synthetic_file(313, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 313);
+        data[tail_at + flags_tail(313).len() - 2] = 1; // dualDungeonsSeed
+        let w = parse(&data).expect("v313 loads");
+        assert!(w.micro_seeds.contains(MS::DUAL_DUNGEONS), "the dual byte at len-2");
+        assert!(!w.micro_seeds.contains(MS::MORE_LIGHTNING), "below 323");
+    }
+
+    /// W4-f45 FINAL — `FixEndlessRainWorlds` (`WorldFile.cs:3284-3298`, called
+    /// at `LoadWorldFlags:2130`): a v<=317 file whose saved rain ran a year
+    /// (5184000 ticks) gets its rain triple cleared UNLESS the seed text
+    /// carries the rainsForAYear secret ("bring a towel" — the community
+    /// plaintext, verified against the registered code
+    /// `xYBNU5Soje9VhQHNQXETDKbwlc+7XZau`, `WorldGen.cs:3032`, through the
+    /// game's own BCrypt walk). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_final_fix_endless_rain_worlds_clears_the_year_long_bug_rain() {
+        // A v317 file with a year-long rain snapshot (tail 67/68..72/72..76).
+        let mut data = synthetic_file(317, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 317);
+        data[tail_at + 67] = 1; // _tempRaining
+        data[tail_at + 68..tail_at + 72].copy_from_slice(&5_184_000i32.to_le_bytes());
+        data[tail_at + 72..tail_at + 76].copy_from_slice(&0.5f32.to_le_bytes());
+        // The fixture's seed text "12345" carries no secret — the triple clears.
+        let w = parse(&data).expect("v317 loads");
+        assert!(!w.raining, "the bug rain is cleared");
+        assert_eq!(w.rain_time, 0);
+        assert_eq!(w.max_raining, 0.0);
+        // Under a year (5183999): the threshold keeps the rain.
+        let mut data = synthetic_file(317, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 317);
+        data[tail_at + 67] = 1;
+        data[tail_at + 68..tail_at + 72].copy_from_slice(&5_183_999i32.to_le_bytes());
+        data[tail_at + 72..tail_at + 76].copy_from_slice(&0.5f32.to_le_bytes());
+        let w = parse(&data).expect("v317 loads");
+        assert!(w.raining, "under a year: the rain stays");
+        assert_eq!(w.rain_time, 5_183_999);
+        // v318: the version gate keeps the year-long rain (the fix shipped).
+        let mut data = synthetic_file(318, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 318);
+        data[tail_at + 67] = 1;
+        data[tail_at + 68..tail_at + 72].copy_from_slice(&5_184_000i32.to_le_bytes());
+        data[tail_at + 72..tail_at + 76].copy_from_slice(&0.5f32.to_le_bytes());
+        let w = parse(&data).expect("v318 loads");
+        assert!(w.raining, "v318: the rain stays");
+        assert_eq!(w.rain_time, 5_184_000);
+        // The rainsForAYear seed keeps its year-long rain: splice the header's
+        // seed string ("12345", 6 bytes) to "bring a towel" (14 bytes) and
+        // shift pointers 1.. by the +8 delta (pointer 0 is the header start,
+        // ahead of the seed string; the importance bitmap is ahead of both).
+        let mut data = synthetic_file(317, &[2, 144], 160, 11);
+        let ptr_at = 4 + 20 + 2; // v317 >= 135: version + metadata + count
+        let ptr0 = i32::from_le_bytes(data[ptr_at..ptr_at + 4].try_into().unwrap()) as usize;
+        let seed_at = ptr0 + cs_string("TileFixture").len();
+        let mut spliced = Vec::new();
+        spliced.extend_from_slice(&data[..seed_at]);
+        spliced.extend(cs_string("bring a towel"));
+        spliced.extend_from_slice(&data[seed_at + cs_string("12345").len()..]);
+        for i in 1..11 {
+            let at = ptr_at + 4 * i;
+            let p = i32::from_le_bytes(spliced[at..at + 4].try_into().unwrap());
+            spliced[at..at + 4].copy_from_slice(&(p + 8).to_le_bytes());
+        }
+        let tail_at = tail_offset_in_synthetic(&spliced, 317);
+        spliced[tail_at + 67] = 1;
+        spliced[tail_at + 68..tail_at + 72].copy_from_slice(&5_184_000i32.to_le_bytes());
+        spliced[tail_at + 72..tail_at + 76].copy_from_slice(&0.5f32.to_le_bytes());
+        let w = parse(&spliced).expect("the rainsForAYear v317 loads");
+        assert!(w.raining, "the secret seed keeps its endless rain");
+        assert_eq!(w.rain_time, 5_184_000);
+        assert_eq!(w.max_raining, 0.5);
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

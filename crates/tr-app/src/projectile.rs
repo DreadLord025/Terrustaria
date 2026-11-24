@@ -7104,6 +7104,83 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// W4-g70 lane 8 — the natural starfall's star (12): the aiStyle-5
+    /// generic arms it rides (`Projectile.cs:23830-24065`). The day kill
+    /// at damage 1000 (`:23841-23844`), the generic `ai[1]` solid-probe
+    /// latch (`:23871-23879`), the alpha bounce (`:23928-23945`), the
+    /// spin (`:23952`), the 12/955 arm's light 0.9 + the 1/20 dust gate
+    /// (`:23970-23987` — the gore gate's screen-intersect probe has no
+    /// port screen rect here, so the gore draw is the documented skip;
+    /// the dust `Next(20)` stays on the stream). The `soundDelay` arm
+    /// (`:23881-23885`) is the pool-wide sound skip.
+    fn ai_natural_falling_star(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        view_rect: Option<(f32, f32, f32, f32)>,
+    ) {
+        // `:23841-23844` — the day kill (the remix world keeps it).
+        if !world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+            && world.day_time
+            && self.damage == 1000
+        {
+            self.active = false;
+            self.time_left = 0;
+        }
+        // `:23871-23879` — the generic latch: the first tick whose box is
+        // not in a solid tile arms `ai[1] = 1` and `tileCollide`.
+        if self.ai[1] == 0.0 && !solid_collision(world, self.pos, self.w, self.h) {
+            self.ai[1] = 1.0;
+            self.net_update = true;
+        }
+        if self.ai[1] != 0.0 {
+            self.tile_collide = true;
+        }
+        // `:23928-23945` — the generic alpha bounce.
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+        }
+        self.alpha += (25.0 * self.local_ai[0]) as i32;
+        if self.alpha > 200 {
+            self.alpha = 200;
+            self.local_ai[0] = -1.0;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+            self.local_ai[0] = 1.0;
+        }
+        // `:23950-23953` — the spin (the velocity-sign direction stand-in).
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        // `:23970-23987` — the 12/955 arm. The gore gate (`:23973-23981`):
+        // the screen-intersect probe AND `Next(6) == 0`, then the
+        // SelectRandom(16,17,17,17) pick (`Next(4)`, the anniversary flips
+        // it to 16,16,16,17) + NewGore's Y/X kicks. The gore body is the
+        // pool-wide skip; the draws stay on the stream. Light 0.9
+        // (`:23982`), then the 1/20 dust gate (the anniversary's extra
+        // 1/15 gate reads the seed flag, `:23983`).
+        let anniversary = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        let on_screen = view_rect.is_some_and(|(vx, vy, vw, vh)| {
+            self.pos.x + self.w > vx - 200.0
+                && self.pos.x < vx + vw + 200.0
+                && self.pos.y + self.h > vy - 200.0
+                && self.pos.y < vy + vh + 200.0
+        });
+        if on_screen && rng.next_range(0, 6) == 0 {
+            let _ = rng.next_range(0, 4); // SelectRandom(16,17,17,17)
+            let _ = rng.next_range(10, 31); // NewGore's Y kick
+            let _ = rng.next_range(-20, 21); // NewGore's X kick
+        }
+        self.light = 0.9;
+        if rng.next_range(0, 20) == 0 || (anniversary && rng.next_range(0, 15) == 0) {
+            // The dust body is the dust layer's skip; `NewDust`'s internal
+            // rolls go with the pool (the module-wide convention).
+        }
+        // Movement: the generic `HandleMovement` default — free fall until
+        // tileCollide arms, then kill-on-contact (`:19843-19855`).
+        self.kill_step(world);
+    }
+
     /// `AI()`'s aiStyle-21 music-note arm (`Projectile.cs:25585-25606`): the
     /// Magical Harp's 76/77/78. The rotation clamps `vx·0.1` to ±0.6; the
     /// speed decays by `ai[2]` per tick toward the `3·|ai[0]/2+0.5|` floor
@@ -14693,6 +14770,16 @@ pub struct ProjectilePool {
     /// spawn of the expected type wins (`ChannelCancelKey.TryTracking`
     /// `Player.cs:134-140`, S1-P-i23).
     pending_channel_tracks: Vec<(u16, u16)>,
+    /// W4-g70 lane 8 — `AI_148_StarSpawner`'s `Star.StarFall(position.X)`
+    /// request (`Projectile.cs:53107`): the world-sim pass drains it onto
+    /// the star field after the step (the pool cannot borrow it). `None`
+    /// = no latch fired this tick.
+    pending_starfall: Option<f32>,
+    /// W4-g70 lane 8 — the view rect (`Main.screenPosition` + size) the
+    /// natural star's death-burst screen gate reads
+    /// (`Projectile.cs:75704-75705`); the world-sim pass sets it per step
+    /// (the golf-context setter pattern). `None` = no view yet.
+    view_rect: Option<(f32, f32, f32, f32)>,
     /// S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
     /// `Main.player[owner]` reads, `Projectile.cs:45859-45868`). The world-sim
     /// pass sets it per fixed step through [`ProjectilePool::set_spear_owner`]
@@ -15114,6 +15201,8 @@ impl ProjectilePool {
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
+            pending_starfall: None,
+            view_rect: None,
             spear_owner: None,
             pending_spear_hold: None,
             bobber_inputs: None,
@@ -16422,6 +16511,20 @@ impl ProjectilePool {
         self.golf_ctx.take()
     }
 
+    /// W4-g70 lane 8 — the starfall spawner's `Star.StarFall` request
+    /// (`Projectile.cs:53107`), drained by the world-sim pass onto the
+    /// star field after the step.
+    pub fn take_starfall(&mut self) -> Option<f32> {
+        self.pending_starfall.take()
+    }
+
+    /// W4-g70 lane 8 — the view rect the natural star's death-burst screen
+    /// gate reads (`Projectile.cs:75704-75705`); the world-sim pass sets it
+    /// per step (`Main.screenPosition` + the screen size).
+    pub fn set_view_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
+        self.view_rect = Some((x, y, w, h));
+    }
+
     /// The golf arms' queued effects, drained by the world-sim pass after
     /// `update` (the `drain_mark_spawns` shape).
     pub fn drain_golf_effects(&mut self) -> Vec<crate::projectile_ai_golf::GolfEffect> {
@@ -17156,9 +17259,11 @@ impl ProjectilePool {
                         // i17 slice; the Starfury star 9 + the Star Cannon
                         // star 955 (S1-P-i22) ride the fuller i22 arm (the
                         // tileCollide latches + the alpha ramps + the spin).
-                        // The other aiStyle-5 kinds (12/503/723-726/1037/
-                        // 1049/1133) have no rows yet — the arm stays
-                        // kind-gated so they keep the no-op fall-through.
+                        // W4-g70 lane 8: the natural starfall's 12 rides its
+                        // own generic-arm slice. The other aiStyle-5 kinds
+                        // (503/723-726/1037/1049/1133) have no rows yet — the
+                        // arm stays kind-gated so they keep the no-op
+                        // fall-through.
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(
@@ -17167,6 +17272,15 @@ impl ProjectilePool {
                                 );
                             } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
                                 self.slots[i].ai_falling_star(world);
+                            } else if self.slots[i].kind == NATURAL_FALLING_STAR {
+                                // W4-g70 lane 8 — the natural starfall's
+                                // star (12, `Projectile.cs:924-938` +
+                                // the aiStyle-5 generic arms): the day
+                                // kill at damage 1000 (`:23841-23844`),
+                                // the generic ai[1] latch, the alpha
+                                // bounce, the spin, the light 0.9 and
+                                // the 1/20 dust gate's draw.
+                                self.slots[i].ai_natural_falling_star(world, rng, self.view_rect);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
@@ -17536,6 +17650,65 @@ impl ProjectilePool {
                                 &npcs[..],
                                 rng,
                             );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 148 — the starfall spawner (720,
+                        // `AI_148_StarSpawner` `Projectile.cs:53094-53128`,
+                        // W4-g70 lane 8): the day kill, the dayRate age,
+                        // the one-shot StarFall latch and the 180-tick
+                        // conversion into the natural falling star 12.
+                        // The StarFall request and the conversion spawn
+                        // ride pool fields the caller drains (the pool
+                        // cannot borrow the star field / the player).
+                        148 => {
+                            let above = player
+                                .as_deref()
+                                .is_some_and(|p| p.y < world.world_surface as f32 * 16.0);
+                            let convert = crate::projectile_ai_misc::ai_star_spawner(
+                                &mut self.slots[i],
+                                world.day_time,
+                                world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+                                world.day_rate(),
+                                above,
+                                local_owner,
+                                &mut self.pending_starfall,
+                            );
+                            if convert {
+                                // `:53114-53127`: the homing nudge toward
+                                // the locked player's centre, then the 12
+                                // spawn (damage 1000, kb 10) + the Kill.
+                                let target = player
+                                    .as_deref()
+                                    .map(|p| p.center().0)
+                                    .unwrap_or(self.slots[i].pos.x);
+                                crate::projectile_ai_misc::star_spawner_convert(
+                                    &mut self.slots[i],
+                                    target,
+                                );
+                                let (x, y, vx, vy) = {
+                                    let p = &self.slots[i];
+                                    (p.pos.x, p.pos.y, p.vel.x, p.vel.y)
+                                };
+                                // The corpse-flag lift (the special-arrow
+                                // precedent): GetNextSlot ran while the
+                                // spawner was still active.
+                                self.slots[i].active = true;
+                                let _ = self.spawn_with_data_ai_owned(
+                                    NATURAL_FALLING_STAR,
+                                    local_owner,
+                                    x,
+                                    y,
+                                    vx,
+                                    vy,
+                                    1000,
+                                    10.0,
+                                    0.0,
+                                    0.0,
+                                );
+                                self.slots[i].active = false;
+                                self.slots[i].time_left = 0;
+                            }
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
@@ -20361,6 +20534,9 @@ impl ProjectilePool {
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
                 self.spawn_rain_cloud(i);
+                // W4-g70 lane 8 — `Kill()`'s natural-star arm
+                // (`Projectile.cs:75681-75712`): the 12's death burst draws.
+                self.natural_star_kill(i, rng);
                 // (Resync keep-one: the i22 `spawn_electrosphere` call was
                 // dropped — main's i16 `dart_electro_firework_kill` below
                 // owns the 442 arm (:73528-73552), keeping both would
@@ -22307,6 +22483,57 @@ impl ProjectilePool {
         self.spawn_with_data_ai_owned(
             RAIN_CLOUD_RAINING, owner, cx - row.w * 0.5, cy - row.h * 0.5, 0.0, 0.0, damage, knock_back, 0.0, 0.0,
         );
+    }
+
+    /// W4-g70 lane 8 — `Kill()`'s natural-falling-star arm
+    /// (`Projectile.cs:75681-75712`, the `type == 12 || type == 955` slice):
+    /// the death burst's STATE-BEARING draws ride the pass stream — the
+    /// 8-star `NewDustPerfect` ring's `NextFloat` per star (`:75698`), the
+    /// 4-star gold ring's `NextFloat` (`:75702`), and the screen-gated
+    /// 7-gore burst's `NextVector2CircularEdge` pair + the SelectRandom
+    /// pick + the NewGore kicks (`:75707-75710`). The dust/gore BODIES are
+    /// the pool-wide skip; the 7 plain `NewDust` calls (`:75694`) roll
+    /// nothing at the call site. The `SoundID.Item10` cue is the sound
+    /// skip. The screen-intersect gate reads the pool's stored view rect
+    /// (`set_view_rect`, the golf-context setter pattern) — `None` (no
+    /// view yet) skips the gore burst, the C#'s off-screen case.
+    fn natural_star_kill(&mut self, slot: usize, rng: &mut dyn DropRng) {
+        let p = &self.slots[slot];
+        if p.kind != NATURAL_FALLING_STAR || p.blast_spawned {
+            return;
+        }
+        self.slots[slot].blast_spawned = true;
+        // `:75696-75699`: the 8-star cornflower ring — one NextFloat each.
+        for _ in 0..8 {
+            let _ = rng.next_float();
+        }
+        // `:75700-75703`: the 4-star gold ring — one NextFloat each.
+        for _ in 0..4 {
+            let _ = rng.next_float();
+        }
+        // `:75704-75711`: the screen-gated 7-gore burst. Per gore:
+        // NextVector2CircularEdge is ONE NextFloat (the unit-circle angle,
+        // `Utils.cs:1271-1274` — no radius draw), SelectRandom(16,17×7) is
+        // Next(8), then NewGore's Y kick Next(10,31) + X kick Next(-20,21)
+        // (`Gore.cs:1327-1328`); the 16/17 types carry no SpecialAI
+        // (`GoreID.cs:20`), so no further draws.
+        let hit = self.view_rect.is_some_and(|(vx, vy, vw, vh)| {
+            let p = &self.slots[slot];
+            // `Utils.CenteredRectangle(screenPosition + size/2, size + 400)`:
+            // the view rect inflated by 200 per edge.
+            p.pos.x + p.w > vx - 200.0
+                && p.pos.x < vx + vw + 200.0
+                && p.pos.y + p.h > vy - 200.0
+                && p.pos.y < vy + vh + 200.0
+        });
+        if hit {
+            for _ in 0..7 {
+                let _ = rng.next_float(); // NextVector2CircularEdge's angle
+                let _ = rng.next_range(0, 8); // SelectRandom(16,17×7)
+                let _ = rng.next_range(10, 31); // NewGore's Y kick
+                let _ = rng.next_range(-20, 21); // NewGore's X kick
+            }
+        }
     }
 
     /// `Kill()`'s bomb path: `PrepareBombToBlow` (`Projectile.cs:46770-

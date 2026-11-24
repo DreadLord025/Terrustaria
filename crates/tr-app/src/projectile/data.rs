@@ -201,6 +201,15 @@ pub const HOLY_ARROW: u16 = 91;
 /// `ProjectileID.FallingStar` (92) — the Holy Arrow's death spawn
 /// (`Projectile.cs:75212-75248`, aiStyle 5).
 pub const FALLING_STAR: u16 = 92;
+/// `ProjectileID.FallingStar` (12) — the natural night starfall's star
+/// (`Projectile.cs:924-938`, aiStyle 5; W4-g70 lane 8). Distinct from 92:
+/// 18x18, `trap = true`, `light = 1f`, the day-kill at damage 1000.
+pub const NATURAL_FALLING_STAR: u16 = 12;
+/// `ProjectileID.FallingStarSpawner` (720) — the invisible spawner the
+/// starfall roll spawns (`Projectile.cs:7617-7625`, aiStyle 148); its
+/// `AI_148_StarSpawner` (`:53094-53128`) calls `Star.StarFall` once and
+/// converts into the 12 after 180 ticks.
+pub const FALLING_STAR_SPAWNER: u16 = 720;
 /// `ProjectileID.CursedArrow` (`ProjectileID.cs:760`).
 pub const CURSED_ARROW: u16 = 103;
 /// `ProjectileID.BoneArrow` (`ProjectileID.cs:788`) — the Bone Bow's 117
@@ -1647,6 +1656,9 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         CRYSTAL_SHARD_MELEE => 0.5,            // `:10644`
         // S1-P-i18 — the special bullets' `SetDefaults` light amounts.
         METEOR_SHOT => 0.6,                    // `:1189`
+        // The natural falling star (12) sets `light = 1f` (`:936`); the
+        // aiStyle-5 arm drops it to 0.9 per tick (`:23982`). W4-g70 lane 8.
+        NATURAL_FALLING_STAR => 1.0,
         CRYSTAL_BULLET | CRYSTAL_SHARD => 0.5, // `:1722` / `:1736`
         CURSED_BULLET => 0.5,                  // `:1922`
         CHLOROPHYTE_BULLET => 0.5,             // `:2955`
@@ -3330,6 +3342,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             FALLING_STAR => (
                 24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
                 (false, -2, false, -1, 50, 0.8),
+            ),
+            // `Projectile.cs:924-938` — the natural falling star (12):
+            // 18x18, aiStyle 5, `penetrate = -1`, `alpha = 50`, `light = 1f`,
+            // `trap = true`; the stock `tileCollide = true` (`:775`) stands
+            // (the aiStyle-5 generic latch arms it below the spawn floor).
+            // `friendly = true` (the remix hostile flag has no port slot
+            // field split — the slot default is friendly). W4-g70 lane 8.
+            NATURAL_FALLING_STAR => (
+                18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
+                (false, -2, false, -1, 50, 1.0),
+            ),
+            // `Projectile.cs:7617-7625` — the starfall spawner (720): 16x16,
+            // aiStyle 148, `tileCollide = false`, `penetrate = -1`,
+            // `alpha = 255` (invisible). W4-g70 lane 8.
+            FALLING_STAR_SPAWNER => (
+                16.0, 16.0, 148, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:1904-1914` — the Cursed Arrow (103): stock
             // penetrate 1, `light = 1f`, `timeLeft = 1200`. The

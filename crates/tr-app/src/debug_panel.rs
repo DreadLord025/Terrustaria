@@ -118,7 +118,7 @@ pub(crate) fn row_count(panel: &Panel, tab: Tab) -> usize {
             .iter()
             .filter(|(_, name, _)| matches(&panel.filter, name))
             .count(),
-        Tab::World => 15,
+        Tab::World => 16,
         Tab::Recipes => crate::craft::RECIPES.len(),
     }
 }
@@ -336,7 +336,7 @@ fn row_bg(r: &mut SpriteRenderer, l: &Layout, panel: &Panel, vi: usize) {
     }
 }
 
-/// The World tab's 15 rows. The order is the click dispatch's (`world_click`).
+/// The World tab's 16 rows. The order is the click dispatch's (`world_click`).
 fn world_rows(
     world: &tr_core::World,
     stepper_paused: bool,
@@ -398,6 +398,7 @@ fn world_rows(
             if god_mode { R } else { G },
         ),
         ("Reveal Map (pretty)".to_string(), W),
+        ("Clear Map".to_string(), W),
         // S1-E-35 — the weather toggles. Both ride the vanilla entry
         // points (never a hand-written state write): the rain row is
         // `Main.StartRain` / `Main.StopRain`, the storm row is
@@ -812,16 +813,35 @@ fn world_click(app: &mut App, row: usize) {
         }
         12 => {
             // The `/map pretty` chat command (`ToolkitDebugCommands.cs:480-494`):
-            // `DebugOptions.unlockMap = 2` then `Main.refreshMap = true`, which
-            // Main consumes by walking `sectionManager`'s draw queue and calling
-            // `Main.Map.UnlockMapSection` on every loaded section (`:61873-61877`).
-            // The port has no section manager (the whole world is resident), so
-            // the walk covers every section directly.
+            // `Main.clearMap = true` (`:483`) then `DebugOptions.unlockMap = 2`
+            // + `Main.refreshMap = true` (`:486-487`), or `unlockMap = 0` on
+            // the toggle-off arm (`:491`). W4-f46 salvage (research/84 §4):
+            // the row routes through the verbatim flag-path `unlock_map`
+            // (the option is `App.debug_unlock_map`, the C# static's home).
+            // The reveal itself rides the section sweep
+            // (`Main.cs:61871-61879`): the `refreshMap` consume resets the
+            // sweep (`:61890-61891`), and the 5 ms-budget walk unlocks
+            // every loaded section over the following frames
+            // (`:61873-61876`), zeroing the option once exhausted
+            // (`:61880-61883`). The old direct bulk walk skipped the queue
+            // entirely.
             if let Some(m) = app.map.as_mut() {
-                m.unlock_map(&app.world, true);
+                m.unlock_map(&mut app.debug_unlock_map, true);
             }
         }
         13 => {
+            // The `/clearmap` chat command (`ToolkitDebugCommands.cs:497-503`):
+            // `Main.clearMap = true; Main.Map.Clear(); Main.refreshMap = true`.
+            // The tile wipe is immediate; the texture wipe rides `clear_map`
+            // (`MapRenderer.cs:161-173`, the port's full re-upload in
+            // `prepare`), and the refresh resets the section sweep.
+            if let Some(m) = app.map.as_mut() {
+                m.clear_map = true; // `:499`
+                m.clear(); // `:500` — WorldMap.Clear, WorldMap.cs:249-258
+                m.refresh_map = true; // `:501`
+            }
+        }
+        14 => {
             // S1-E-35 — `Main.StartRain` (`Main.cs:64659-64727`) /
             // `Main.StopRain` (`:64644-64658`): the vanilla entry points, so
             // the duration/strength ladders and their Rain-stream rolls run
@@ -830,14 +850,14 @@ fn world_click(app: &mut App, row: usize) {
             // `remixWorld` and `GetPlayerWithHighestLuck().luck` are the same
             // inputs `update_world_tick` passes (`weather.rs:178-187`).
             if app.rain.is_raining() {
-                app.rain.stop_rain();
+                app.rain.stop_rain(&mut app.world);
             } else {
                 let remix_world = app.wind.remix_world;
                 let player_luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
-                app.rain.start_rain(&app.world, remix_world, player_luck);
+                app.rain.start_rain(&mut app.world, remix_world, player_luck);
             }
         }
-        14 => {
+        15 => {
             // S1-E-35 — `Sandstorm.StartSandstorm` (`Sandstorm.cs:117-122`) /
             // `StopSandstorm` (`:124-129`): the duration is the C#
             // `Next(28800, 86401)` draw on the storm's own stream, never a
@@ -1066,7 +1086,7 @@ mod tests {
         app.rain = crate::rain::Rain::with_forced(1, None, false);
         app.world.world_surface = 51.0;
 
-        click_world(&mut app, 13);
+        click_world(&mut app, 14);
         assert!(app.rain.is_raining());
         // `Main.cs:64676-64722`: the `rainTime` ladder — `Next(28800, 86400)`
         // plus the six bonuses, times the strength factor (<= 1.5).
@@ -1076,36 +1096,38 @@ mod tests {
             app.rain.rain_time()
         );
         assert!(app.rain.max_raining() > 0.0);
-        click_world(&mut app, 13);
+        click_world(&mut app, 14);
         assert!(!app.rain.is_raining());
         assert_eq!(app.rain.rain_time(), 0);
         assert_eq!(app.rain.max_raining(), 0.0);
 
         // The storm uses `Next(28800, 86401)` and the C# intention ladder.
-        click_world(&mut app, 14);
+        click_world(&mut app, 15);
         assert!(app.sandstorm.happening);
         assert!((28800..=86400).contains(&app.sandstorm.time_left));
         // `Sandstorm.cs:83`: `0.4f + NextFloat()`.
         assert!((0.4..=1.4).contains(&app.sandstorm.intended_severity));
-        click_world(&mut app, 14);
+        click_world(&mut app, 15);
         assert!(!app.sandstorm.happening);
         assert_eq!(app.sandstorm.time_left, 0);
     }
 
     #[test]
-    fn s1_e_29_the_world_tab_keeps_its_fifteen_rows() {
+    fn s1_e_29_the_world_tab_keeps_its_sixteen_rows() {
         let app = flow_app();
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 15);
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 16);
         let rows = world_rows(&app.world, false, false, false, false);
-        assert_eq!(rows.len(), 15, "the draw and the dispatch agree");
+        assert_eq!(rows.len(), 16, "the draw and the dispatch agree");
         assert_eq!(rows[10].0, "Pause World: OFF");
         // S1-E-34 — the god-mode toggle rides row 11.
         assert_eq!(rows[11].0, "God Mode: OFF");
-        // S1-L-3 — the `/map pretty` reveal rides the tail row.
+        // S1-L-3 — the `/map pretty` reveal rides row 12.
         assert_eq!(rows[12].0, "Reveal Map (pretty)");
+        // W4-e18 — the `/clearmap` command rides row 13.
+        assert_eq!(rows[13].0, "Clear Map");
         // S1-E-35 — the weather toggles ride the last two rows.
-        assert_eq!(rows[13].0, "Rain: OFF");
-        assert_eq!(rows[14].0, "Sandstorm: OFF");
+        assert_eq!(rows[14].0, "Rain: OFF");
+        assert_eq!(rows[15].0, "Sandstorm: OFF");
     }
 
     /// S1-E-34 — the F3 god-mode row flips the debug flag.
@@ -1132,7 +1154,10 @@ mod tests {
     }
 
     /// S1-L-3 — the tail row runs the `/map pretty` reveal
-    /// (`ToolkitDebugCommands.cs:480-494`).
+    /// (`ToolkitDebugCommands.cs:480-494`): it arms `DebugOptions.unlockMap
+    /// = 2` + `Main.refreshMap`, and the section sweep (`Main.cs:61871-61879`)
+    /// does the revealing over the following frames. W4-e18: the row no
+    /// longer walks every section directly — the queue drives it.
     #[test]
     fn s1_l_3_the_reveal_row_unlocks_the_map() {
         let mut app = flow_app();
@@ -1140,12 +1165,45 @@ mod tests {
         // too small to have an interior at all.
         app.world = tr_core::World::new("reveal".into(), 260, 200);
         app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.section_manager = crate::map_sections::MapSections::new(260, 200);
         click_world(&mut app, 12);
+        // The command arms the option + the refresh, not the pixels.
+        assert_eq!(app.debug_unlock_map, 2, "`:486`, the pretty mode");
+        assert!(app.map.as_ref().unwrap().refresh_map, "`:487`");
+        // The sweep's consume resets the walk, then the budget walk unlocks
+        // the loaded sections (`:61873-61876`). One section fits the 260x200
+        // grid (1x1), so a single sweep pass reveals it all.
+        app.map_reveal_sweep_core(10_000.0);
         let m = app.map.as_ref().unwrap();
         assert!(
             m.tiles.iter().any(|t| t.light > 0),
             "the reveal walked every section"
         );
+        // The second click is the toggle-off arm (`:491`).
+        click_world(&mut app, 12);
+        assert_eq!(app.debug_unlock_map, 0);
+        // W4-e18: both arms also arm `Main.clearMap` (`:483`).
+        assert!(app.map.as_ref().unwrap().clear_map);
+    }
+
+    /// W4-e18 residual census (written, not run — code-only): the
+    /// `/clearmap` row (`ToolkitDebugCommands.cs:497-503`) — `clearMap =
+    /// true`, `Main.Map.Clear()` (every tile zeroed), `refreshMap = true`.
+    #[test]
+    fn w4_e18_the_clearmap_row_wipes_the_tiles_and_arms_the_refresh() {
+        let mut app = flow_app();
+        app.world = tr_core::World::new("wipe".into(), 260, 200);
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.section_manager = crate::map_sections::MapSections::new(260, 200);
+        // Reveal something first so the wipe is observable.
+        click_world(&mut app, 12);
+        app.map_reveal_sweep_core(10_000.0);
+        assert!(app.map.as_ref().unwrap().tiles.iter().any(|t| t.light > 0));
+        click_world(&mut app, 13);
+        let m = app.map.as_ref().unwrap();
+        assert!(m.clear_map, "`:499`");
+        assert!(m.tiles.iter().all(|t| t.light == 0 && t.ty == 0), "`:500`");
+        assert!(m.refresh_map, "`:501`");
     }
 
     /// S1-E-37: the goblin row is `Main.StartInvasion(1)`
