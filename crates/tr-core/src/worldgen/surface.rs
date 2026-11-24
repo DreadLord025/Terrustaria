@@ -2891,31 +2891,30 @@ pub(crate) fn pass_spreading_grass(
 /// active cell stops the scan; a grass (2) top with air above gets
 /// `PlaceTile(j, k - 1, 27)` — the sunflower arm.
 pub(crate) fn pass_sunflowers(world: &mut World, world_surface: f64, rng: &mut Rng) {
-    // `:19903-19904` — `double num = maxTilesX * 0.002; for (int i = 0;
-    // (double)i < num; i++)`: the loop runs CEIL(num) times (i < num with a
-    // fractional bound admits one more integer than truncation).
     let attempts = (world.width as f64 * 0.002).ceil() as i32;
     let last_row = world_surface as i32 - 1;
     for _ in 0..attempts {
-        // `:19910-19912` — the three draws, in order.
         let centre = rng.range(0, world.width);
         let mut left = centre - rng.range(0, 10) - 7;
         let mut right = centre + rng.range(0, 10) + 7;
-        // `:19913-19920` — the clamps.
         if left < 0 {
             left = 0;
+        }
         if right > world.width - 1 {
             right = world.width - 1;
-        // `:19923-19936` — the column scans (`k` from 1 to worldSurface - 1).
+        }
         for j in left..right {
             for k in 1..last_row {
                 let Some(t) = world.tile(j, k) else {
+                    continue;
                 };
-                // `:19927-19930` — the grass-top arm (the type test reads
-                // the cell even when inactive, the active gate rides it).
                 if t.kind == 2 && t.active() && !world.tile(j, k - 1).is_some_and(|a| a.active()) {
                     place_sunflower(world, j, k - 1, world_surface, rng);
+                }
                 if t.active() {
+                    break;
+                }
+            }
         }
     }
 }
@@ -4668,6 +4667,4 @@ mod tests {
         assert!(mushrooms > 0, "the mushrooms ({mushrooms})");
     }
 
-// balance-close (union shared delimiter)
-}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}])))
 }
