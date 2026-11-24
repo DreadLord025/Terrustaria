@@ -4872,12 +4872,6 @@ pub(crate) fn pass_piles(
             }
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
     /// W4-d104 pass 30: the forge lands on a hell-house wall column's
     /// floor, and two same-stream runs replay byte-equal (a == b).
     #[test]
@@ -5018,7 +5012,9 @@ mod tests {
             "a pile landed"
         );
 
-        }    /// A mud world with a hive-sized air pocket and a hive floor.
+    }
+
+    /// A mud world with a hive-sized air pocket and a hive floor.
     fn hive_world(width: i32, height: i32) -> World {
         let mut w = World::new("larva".into(), width, height);
         w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
@@ -5028,10 +5024,15 @@ mod tests {
                 let i = w.index(x, y);
                 w.tiles[i].kind = TILE_MUD;
                 w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
         w
+    }
+
     /// `pass_larva` (`WorldGen.cs:20868-20900`): the anchor's 3×4 box — the
     /// three upper rows cleared, the floor row hive 225, the 3×3 larva 231
     /// object with the k*18 / l*18 frames.
+    #[test]
     fn the_larva_pass_places_the_3x3_object() {
         let mut w = hive_world(200, 200);
         // Clear the 3×4 box above the floor at (100, 101).
@@ -5039,10 +5040,14 @@ mod tests {
             for k in 98..=101 {
                 let i = w.index(j, k);
                 w.tiles[i].flags &= !FLAG_ACTIVE;
+            }
+        }
         pass_larva(&mut w, &[(100, 100)]);
         // The floor row (y 101) is hive 225.
+        for j in 99..=101 {
             let t = w.tile(j, 101).unwrap();
             assert!(t.active() && t.kind == TILE_HIVE, "the floor at {j}");
+        }
         // The 3×3 larva object at (99..101, 98..100).
         for k in 0..3 {
             for l in 0..3 {
@@ -5050,19 +5055,29 @@ mod tests {
                 assert!(t.active() && t.kind == TILE_LARVA);
                 assert_eq!(t.frame_x, (k * 18) as i16);
                 assert_eq!(t.frame_y, (l * 18) as i16);
+            }
+        }
+    }
+
     /// The empty ledger places nothing.
+    #[test]
     fn the_larva_pass_with_no_anchors_is_a_noop() {
+        let mut w = hive_world(200, 200);
         let before = w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
         pass_larva(&mut w, &[]);
         let after = w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
         assert_eq!(before, after);
+    }
+
     /// The hive pass publishes the larva anchors into the ledger (the 1/2
     /// roll), clamped to the 5-border; the Larva pass then places them.
+    #[test]
     fn the_hive_pass_publishes_the_larva_ledger() {
         let spans = super::super::biomes::BiomeSpans {
             jungle_start: 60,
             jungle_end: 340,
             dungeon_x: 40,
+        };
         // Sweep seeds until the 1/2 larva rolls publish an anchor (the
         // living-trees test's convention for roll-gated content).
         let mut found = None;
@@ -5078,6 +5093,7 @@ mod tests {
             for &(x, y) in &larva {
                 assert!(x >= 5 && x <= w.width - 5);
                 assert!(y >= 5 && y <= w.height - 5);
+            }
             // The larva tiles are NOT placed by the hive pass anymore —
             // the Larva pass owns them.
             let larva_tiles =
@@ -5086,15 +5102,15 @@ mod tests {
             if !larva.is_empty() {
                 found = Some((w, larva));
                 break;
+            }
+        }
         let (mut w, larva) = found.expect("a seed in 1..20 published a larva anchor");
         // Running the Larva pass places the objects. Each anchor
         // contributes a whole 3×3 object or nothing (the Place3x3 gate is
         // all-or-nothing; overlapping boxes can overwrite cells).
         pass_larva(&mut w, &larva);
+        let after = w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
         assert!(after > 0, "the larva pass placed the objects");
         assert!(after <= larva.len() * 9);
     }
-
-// balance-close (union shared delimiter)
-}}}}}}}}}}}}}
 }
