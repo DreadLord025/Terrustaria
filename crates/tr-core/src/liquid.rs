@@ -1810,13 +1810,6 @@ impl LiquidSystem {
         self.gen_ignore_water = ignore;
     }
 
-    /// `Main.tileSolid[379] = true` (`Liquid.cs:114`/`:451`) — the gen
-    /// `QuickWater` arms the bubble before its sweep; the runtime pass
-    /// re-arms it per update.
-    pub fn set_bubble_solid(&mut self, v: bool) {
-        self.bubble_solid = v;
-    }
-
     /// `Liquid.numLiquid + LiquidBuffer.numLiquidBuffer` — the gen settle
     /// loop's per-round budget base (`WorldGen.cs:16164`/`:21271`).
     pub fn num_liquid_total(&self) -> usize {
@@ -1833,10 +1826,12 @@ impl LiquidSystem {
         if self.active.is_empty() && self.buffer.is_empty() {
             return;
         }
-        for e in &self.active {
-            self.set_checking(e.x, e.y, false);
+        let active_cells: Vec<(i32, i32)> = self.active.iter().map(|e| (e.x, e.y)).collect();
+        for (x, y) in &active_cells {
+            self.set_checking(*x, *y, false);
         }
-        for &(x, y) in &self.buffer {
+        let buffer_cells: Vec<(i32, i32)> = self.buffer.clone();
+        for &(x, y) in &buffer_cells {
             self.set_checking(x, y, false);
         }
         self.active.clear();
@@ -2345,27 +2340,6 @@ impl LiquidSystem {
             || td::TILE_SOLID_TOP.has(t.kind)
     }
 
-    /// `Liquid.tilesIgnoreWater` (`Liquid.cs:69-73`): the grate 546 and the
-    /// boulder family lose solidity while `ignore` is up. The runtime
-    /// `UpdateLiquid` wraps itself in it (`:986`/`:1157`); the gen callers
-    /// (`QuickWater`, `SettleWaterAt`, `WaterCheck`) drive it directly.
-    pub fn tiles_ignore_water(&mut self, ignore: bool) {
-        self.ignore_solids = ignore;
-    }
-
-    /// `Liquid.worldGenTilesIgnoreWater` (`Liquid.cs:75-81`): the doors
-    /// 10/192 and the living-wood/leaf pair 191/190 lose solidity for the
-    /// whole `Settle Liquids` pass.
-    pub fn world_gen_tiles_ignore_water(&mut self, ignore: bool) {
-        self.gen_ignore_water = ignore;
-    }
-
-    /// `Liquid.quickSettle` (`Liquid.cs:35`) — the worldgen settle-loop mode
-    /// (`WorldGen.cs:16160`/`:16206`). `UpdateLiquid` derives `quickFall`
-    /// from it (`Liquid.cs:1056-1068`).
-    pub fn set_quick_settle(&mut self, v: bool) {
-        self.quick_settle = v;
-    }
 
     /// The `Settle Liquids` pass arms the generation selectors for the whole
     /// settle: `WorldGen.isGeneratingOrLoadingWorld` (the merge-tile branch,
@@ -2376,134 +2350,6 @@ impl LiquidSystem {
         self.remix_world_gen = remix;
     }
 
-    /// `Liquid.numLiquid + LiquidBuffer.numLiquidBuffer` — the settle loop's
-    /// per-round budget base (`WorldGen.cs:16164`).
-    pub fn num_liquid_total(&self) -> usize {
-        self.active.len() + self.buffer.len()
-    }
-
-    /// The reaction check the `SettleWaterAt` tail's `AttemptToMove*` family
-    /// calls (`Liquid.cs:284-286`): kind 1 → `LavaCheck`, 2 → `HoneyCheck`,
-    /// 3 → `ShimmerCheck` (`Liquid.cs:1445-1468`).
-    pub fn liquid_reaction_check(&mut self, world: &mut World, x: i32, y: i32, kind: u8) {
-        match kind {
-            1 => self.lava_check(world, x, y),
-            2 => self.honey_check(world, x, y),
-            3 => self.shimmer_check(world, x, y),
-            _ => {}
-        }
-    }
-
-    /// `WorldGen.WaterCheck` (`WorldGen.cs:80415-80494`): the re-registration
-    /// sweep the `Settle Liquids` pass runs before the loop and between the
-    /// rounds. It clears every `checkingLiquid` bit, zeroes the liquid inside
-    /// solid tiles (the bubble 379 excepted), kills liquid-death tiles, fills
-    /// a >250 below-cell to 255 and re-queues every cell that can still move.
-    /// The `tilesIgnoreWater(true)` scope (`:80417`/`:80493`) wraps the whole
-    /// sweep, so the grate/boulders are non-solid while it reads.
-    pub fn water_check(&mut self, world: &mut World) {
-        self.ignore_solids = true;
-        // `Liquid.numLiquid = 0; LiquidBuffer.numLiquidBuffer = 0` (`:80418-80419`)
-        // — the whole active list and buffer are dropped; the sweep rebuilds
-        // them. The checking bits are cleared per-cell below (`:80425`).
-        self.active.clear();
-        self.buffer.clear();
-        for i in 1..self.width - 1 {
-            for num in (1..self.height - 1).rev() {
-                self.set_checking(i, num, false);
-                let idx = world.index(i, num);
-                let tile = world.tiles[idx];
-                // `:80426`: `tile.nactive() && Main.tileSolid[tile.type] &&
-                // !Main.tileSolidTop[tile.type]` — the RAW solidity test (no
-                // half-brick/slope terms, unlike `SolidTile`), under the
-                // `tilesIgnoreWater(true)` scope. The bubble 379 is solid
-                // here (`QuickWater` armed it) but the explicit `type != 379`
-                // exemption keeps its liquid.
-                let raw_solid = tile.active()
-                    && tile.flags & crate::tile::FLAG_INACTIVE == 0
-                    && !(self.ignore_solids
-                        && (tile.kind == 546 || BOULDER_SOLIDS.contains(&tile.kind)))
-                    && !(self.gen_ignore_water && matches!(tile.kind, 10 | 192 | 191 | 190))
-                    && (tile.kind as usize) < td::TILE_COUNT
-                    && td::TILE_SOLID.has(tile.kind)
-                    && !td::TILE_SOLID_TOP.has(tile.kind);
-                if tile.liquid > 0 && raw_solid {
-                    // `:80428-80431`: a solid cell holds no liquid — the
-                    // bubble 379 is the one exemption (`tile.type != 379`).
-                    if tile.kind != 379 {
-                        world.tiles[idx].liquid = 0;
-                    }
-                } else if tile.liquid > 0 {
-                    if tile.active() {
-                        // `:80435-80448`: the liquid-death kill. The lava arm
-                        // reads `CheckLavaDeath`, every other kind
-                        // `CheckWaterDeath` (the C# `else if`).
-                        let dies = if tile.liquid_kind() == LiquidKind::Lava {
-                            crate::tileobject::check_lava_death(&tile)
-                        } else {
-                            crate::tileobject::check_water_death(&tile)
-                        };
-                        if dies {
-                            crate::edit::kill_tile(world, i, num, true);
-                        }
-                    }
-                    // `:80449-80460`: the below-cell — open and not full.
-                    let tile2 = world.tile(i, num + 1).copied().unwrap_or_default();
-                    if !self.tile_is_solid(&tile2) && tile2.liquid < u8::MAX {
-                        if tile2.liquid > 250 {
-                            let j = world.index(i, num + 1);
-                            world.tiles[j].liquid = u8::MAX;
-                        } else {
-                            self.add_water(world, i, num);
-                        }
-                    }
-                    // `:80461-80470`: an open side neighbour at a different
-                    // level wakes the cell.
-                    let tile3 = world.tile(i - 1, num).copied().unwrap_or_default();
-                    let tile4 = world.tile(i + 1, num).copied().unwrap_or_default();
-                    if !self.tile_is_solid(&tile3) && tile3.liquid != tile.liquid {
-                        self.add_water(world, i, num);
-                    } else if !self.tile_is_solid(&tile4) && tile4.liquid != tile.liquid {
-                        self.add_water(world, i, num);
-                    }
-                    // `:80471-80489`: a lava cell wakes beside any non-lava
-                    // liquid (left, right, up, down — first match wins).
-                    if tile.liquid_kind() == LiquidKind::Lava {
-                        let up = world.tile(i, num - 1).copied().unwrap_or_default();
-                        if tile3.liquid > 0 && tile3.liquid_kind() != LiquidKind::Lava {
-                            self.add_water(world, i, num);
-                        } else if tile4.liquid > 0 && tile4.liquid_kind() != LiquidKind::Lava {
-                            self.add_water(world, i, num);
-                        } else if up.liquid > 0 && up.liquid_kind() != LiquidKind::Lava {
-                            self.add_water(world, i, num);
-                        } else if tile2.liquid > 0 && tile2.liquid_kind() != LiquidKind::Lava {
-                            self.add_water(world, i, num);
-                        }
-                    }
-                }
-            }
-        }
-        self.ignore_solids = false;
-    }
-
-    /// `WorldGen.ClearPendingLiquid` (`WorldGen.cs:80496-80513`): drop every
-    /// active entry and buffered cell, clearing their `checkingLiquid` bits.
-    /// The `Settle Liquids` pass tail (`:16205`) — the
-    /// `Invariant.Assert(numLiquid == 0)` (`WorldGenerator.cs:508`) holds
-    /// after it.
-    pub fn clear_pending_liquid(&mut self) {
-        if self.active.is_empty() && self.buffer.is_empty() {
-            return;
-        }
-        for e in &self.active {
-            self.set_checking(e.x, e.y, false);
-        }
-        for &(x, y) in &self.buffer {
-            self.set_checking(x, y, false);
-        }
-        self.active.clear();
-        self.buffer.clear();
-    }
 }
 
 #[cfg(test)]

@@ -2379,10 +2379,10 @@ fn place_boulder_trap(world: &mut World, b: &BoulderSpot) {
             }
             t.set_slope(0);
             t.flags &= !crate::tile::FLAG_HALF_BRICK;
-            world.wires.set(i, j, crate::wiring::WireColor::Red, true);
             if crate::tiledata::TILE_SOLID.has(t.kind) {
                 t.flags |= crate::tile::FLAG_ACTUATOR;
             }
+            world.wires.set(i, j, crate::wiring::WireColor::Red, true);
         }
     }
     // `:590-611`: the 6×6 seat box centred one above the body top

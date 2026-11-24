@@ -125,18 +125,6 @@ impl LocalizedText {
         format_net(&self.value_with(lookup), args)
     }
 
-    /// `LocalizedText.ConditionsMet` (`LocalizedText.cs:35-45`): the
-    /// `VariableText.ConditionsMet` gate over the global substitutions — a
-    /// plain string (no tokens) is always true. The loading tips' reroll loop
-    /// (`GameTipsProvider.cs:37-49`) and `Lang.CreateDialogFilter`'s default
-    /// (`Lang.cs:422-425`) read it.
-    pub fn conditions_met(&self, lookup: &dyn Fn(&str) -> Option<Substitution>) -> bool {
-        match &self.parsed {
-            Some(parsed) => parsed.conditions_met(lookup),
-            None => true,
-        }
-    }
-
     /// `LocalizedText.GetValueIfConditionsMet(out string formatted)`
     /// (`LocalizedText.cs:70-78`): `Some(formatted)` when every condition and
     /// variable resolves; `None` leaves the caller's text untouched (the

@@ -31,7 +31,7 @@ use crate::world::World;
 
 /// The dungeon colour triple (`SetupDungeonGenVarVariables` :71-110):
 /// the brick tiles 41/43/44, the walls 7/8/9, the cracked 481/482/483.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DungeonColor {
     Blue,
     Green,

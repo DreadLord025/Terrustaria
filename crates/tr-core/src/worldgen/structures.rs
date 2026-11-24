@@ -1260,7 +1260,7 @@ fn place_larva(world: &mut World, x: i32, y: i32) {
             }
         }
     }
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
 }
 
 /// `HellFort` (`WorldGen.cs:32683+`, the tile 75 / the wall 14 defaults):
@@ -4154,11 +4154,11 @@ fn place_tile_hellforge(world: &mut World, x: i32, y: i32) -> bool {
     }
     // `:60079-60083`: the 77 dispatch — `Place3x2` + `SquareTileFrame`.
     super::evil::place_3x2(world, x, y, TILE_HELLFORGE, 0);
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
     // `:60255-60262`: the tail re-frame + result (`TruncatesWalls[77]`
     // is false — no `SquareWallFrame`).
     if world.tile(x, y).is_some_and(|t| t.active()) {
-        crate::edit::square_tile_frame_gen(world, x, y);
+        crate::edit::square_tile_frame_gen_legacy(world, x, y);
         return true;
     }
     false

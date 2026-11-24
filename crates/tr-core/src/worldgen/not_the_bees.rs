@@ -56,7 +56,7 @@ use super::noise::Rng;
 use super::pipeline::{GenVars, Streams};
 use super::spider_gem_moss::spider_wall_remover;
 use super::GenOptions;
-use crate::edit::kill_tile;
+use crate::edit::{kill_tile, kill_tile_legacy};
 use crate::growth::{grow_tree, spread_grass, try_growing_tree_by_type};
 use crate::seeds::{active_secret_seed_count, MicroSeedFlags, SeedFlags};
 use crate::tile::{FLAG_ACTIVE, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA};
@@ -646,7 +646,7 @@ fn evil_radius(world: &mut World, m: i32, n: i32, radius: i32, crimson: bool) {
         for y in n - radius..=n + radius {
             if active_at(world, x, y) && kind_at(world, x, y) == TILE_JUNGLE_GRASS {
                 if kind_at(world, x, y + 1) == TILE_BEE_HIVE {
-                    kill_tile(world, x, y + 1, true);
+                    kill_tile_legacy(world, x, y + 1, true);
                 }
                 set_kind(world, x, y, jungle);
                 let above = kind_at(world, x, y - 1);
@@ -656,12 +656,12 @@ fn evil_radius(world: &mut World, m: i32, n: i32, radius: i32, crimson: bool) {
                 } else if !crimson && (above == TILE_PLANT_DETRITUS || above == TILE_IMMATURE_HERBS) {
                     // `:25487-25490` — the corrupt arm's else-if (the crimson
                     // arm nests it inside the active branch instead).
-                    kill_tile(world, x, y - 1, true);
+                    kill_tile_legacy(world, x, y - 1, true);
                 }
             } else if crimson {
                 let above = kind_at(world, x, y - 1);
                 if above == TILE_PLANT_DETRITUS || above == TILE_IMMATURE_HERBS {
-                    kill_tile(world, x, y - 1, true);
+                    kill_tile_legacy(world, x, y - 1, true);
                 }
             }
         }

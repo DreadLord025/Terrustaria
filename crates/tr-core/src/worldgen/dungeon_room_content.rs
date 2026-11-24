@@ -976,7 +976,7 @@ pub(crate) fn place_pot(world: &mut World, r: &mut Rng, x: i32, y: i32, kind: u1
 pub(crate) fn generate_dungeon_pot(world: &mut World, r: &mut Rng, x: i32, y: i32, remix: bool) {
     let style = r.range(10, 13);
     place_pot(world, r, x, y, 28, style, remix);
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
 }
 
 /// `DungeonUtils.GenerateDungeonBook(placeX, placeY)` (`:400-403`) — the
@@ -1468,7 +1468,7 @@ pub(crate) fn furniture_items_for_style(
     r: &mut Rng,
 ) -> (FurnitureItems, bool) {
     let style0 = style_id == 0;
-    let g = |d: i32, l: Option<&'static [i32]>| get_furniture_item(style_id, r, d, l);
+    let mut g = |d: i32, l: Option<&'static [i32]>| get_furniture_item(style_id, r, d, l);
     let items = FurnitureItems {
         table: g(defaults.table, lists.table),
         workbench: g(defaults.workbench, lists.workbench),

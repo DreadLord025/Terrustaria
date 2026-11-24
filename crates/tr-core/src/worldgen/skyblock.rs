@@ -1281,13 +1281,18 @@ pub(crate) fn generate_skyblock_world(
             };
             let mut num13 = (max_x as f32 * num10) as i32;
             let mut budget = 100;
-            while budget >= 0
-                && !skyblock_island(
-                    world, rng, flags, micro, num13, num6 + rng.range(-30, 30), 13, k,
+            loop {
+                if budget < 0 {
+                    break;
+                }
+                let yy = num6 + rng.range(-30, 30);
+                let placed = skyblock_island(
+                    world, rng, flags, micro, num13, yy, 13, k,
                     force_proximity, &mut gv.landmass_data,
-                )
-                && in_world(world, num13, num6, 100)
-            {
+                );
+                if placed || !in_world(world, num13, num6, 100) {
+                    break;
+                }
                 budget -= 1;
                 num13 += 5 * if num13 > max_x / 2 { 1 } else { -1 };
             }
@@ -1363,26 +1368,34 @@ pub(crate) fn generate_skyblock_world(
             if micro.contains(MicroSeedFlags::EXTRA_LIQUID) {
                 match l {
                     0 => {
+                        let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
+                        let range1 = rng.range(100, num22 - 50);
                         skyblock_island(world, rng, flags, micro,
-                            rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
-                            rng.range(100, num22 - 50), 9, -1, false, &mut gv.landmass_data);
+                            range0,
+                            range1, 9, -1, false, &mut gv.landmass_data);
                     }
                     1 => {
+                        let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
+                        let range1 = rng.range(num22 + 200, max_y - 70);
                         skyblock_island(world, rng, flags, micro,
-                            rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
-                            rng.range(num22 + 200, max_y - 70), 10, -1, false, &mut gv.landmass_data);
+                            range0,
+                            range1, 10, -1, false, &mut gv.landmass_data);
                     }
                     _ => {
                         if flags.contains(SeedFlags::NOT_THE_BEES) && l == 2 {
+                            let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
+                            let range1 = rng.range(100, underworld_layer - 100);
                             skyblock_island(world, rng, flags, micro,
-                                rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
-                                rng.range(100, underworld_layer - 100), 11, -1, false, &mut gv.landmass_data);
+                                range0,
+                                range1, 11, -1, false, &mut gv.landmass_data);
                         } else if flags.contains(SeedFlags::TENTH_ANNIVERSARY)
                             && flags.contains(SeedFlags::DRUNK) && l == 3
                         {
+                            let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
+                            let range1 = rng.range(num22 + 200, underworld_layer - 100);
                             skyblock_island(world, rng, flags, micro,
-                                rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
-                                rng.range(num22 + 200, underworld_layer - 100), 11, -1, false, &mut gv.landmass_data);
+                                range0,
+                                range1, 11, -1, false, &mut gv.landmass_data);
                         } else {
                             let mut kind_roll = rng.range(0, 4);
                             while (kind_roll == 2 && !flags.contains(SeedFlags::NOT_THE_BEES))
@@ -1396,8 +1409,9 @@ pub(crate) fn generate_skyblock_world(
                             if kind_roll <= 1 {
                                 kind_roll = if (y as f64) > (rock_layer + underworld_layer as f64) / 2.0 { 1 } else { 0 };
                             }
+                            let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
                             skyblock_island(world, rng, flags, micro,
-                                rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                                range0,
                                 y, 9 + kind_roll, -1, false, &mut gv.landmass_data);
                         }
                     }
@@ -1412,8 +1426,9 @@ pub(crate) fn generate_skyblock_world(
                 } else {
                     rng.range(100, max_y - 100)
                 };
+                let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
                 skyblock_island(world, rng, flags, micro,
-                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE), y, 4, -1, false, &mut gv.landmass_data);
+                    range0, y, 4, -1, false, &mut gv.landmass_data);
             }
             // surfaceIsDesert: the style-3 sand islands.
             if micro.contains(MicroSeedFlags::SURFACE_IS_DESERT) {
@@ -1422,8 +1437,9 @@ pub(crate) fn generate_skyblock_world(
                 } else {
                     rng.range(100, underworld_layer - 100)
                 };
+                let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
                 skyblock_island(world, rng, flags, micro,
-                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE), y, 3, -1, false, &mut gv.landmass_data);
+                    range0, y, 3, -1, false, &mut gv.landmass_data);
             }
             // worldIsFrozen: the style-2 snow islands.
             if micro.contains(MicroSeedFlags::WORLD_IS_FROZEN) {
@@ -1432,8 +1448,9 @@ pub(crate) fn generate_skyblock_world(
                 } else {
                     rng.range(100, underworld_layer - 100)
                 };
+                let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
                 skyblock_island(world, rng, flags, micro,
-                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE), y, 2, -1, false, &mut gv.landmass_data);
+                    range0, y, 2, -1, false, &mut gv.landmass_data);
             }
             // hallowOnTheSurface: the style-5 hallow islands.
             if micro.contains(MicroSeedFlags::HALLOW_ON_THE_SURFACE) {
@@ -1442,8 +1459,9 @@ pub(crate) fn generate_skyblock_world(
                 } else {
                     rng.range(100, underworld_layer - 100)
                 };
+                let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
                 skyblock_island(world, rng, flags, micro,
-                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE), y, 5, -1, false, &mut gv.landmass_data);
+                    range0, y, 5, -1, false, &mut gv.landmass_data);
             }
             // worldIsInfected: the style-6/7 evil islands (drunk rolls 6-8).
             if micro.contains(MicroSeedFlags::WORLD_IS_INFECTED) {
@@ -1456,9 +1474,11 @@ pub(crate) fn generate_skyblock_world(
                     } else {
                         6
                     };
+                    let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
+                    let range1 = rng.range(100, num22 - 50);
                     skyblock_island(world, rng, flags, micro,
-                        rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
-                        rng.range(100, num22 - 50), style, -1, false, &mut gv.landmass_data);
+                        range0,
+                        range1, style, -1, false, &mut gv.landmass_data);
                 } else {
                     let style = if drunk {
                         rng.range(6, 8)
@@ -1467,16 +1487,20 @@ pub(crate) fn generate_skyblock_world(
                     } else {
                         6
                     };
+                    let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
+                    let range1 = rng.range(100, underworld_layer - 100);
                     skyblock_island(world, rng, flags, micro,
-                        rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
-                        rng.range(100, underworld_layer - 100), style, -1, false, &mut gv.landmass_data);
+                        range0,
+                        range1, style, -1, false, &mut gv.landmass_data);
                 }
             }
             // surfaceIsMushrooms: the style-8 mushroom islands.
             if micro.contains(MicroSeedFlags::SURFACE_IS_MUSHROOMS) {
+                let range0 = rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE);
+                let range1 = rng.range(num22 + 200, underworld_layer - 100);
                 skyblock_island(world, rng, flags, micro,
-                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
-                    rng.range(num22 + 200, underworld_layer - 100), 8, -1, false, &mut gv.landmass_data);
+                    range0,
+                    range1, 8, -1, false, &mut gv.landmass_data);
             }
         }
     }

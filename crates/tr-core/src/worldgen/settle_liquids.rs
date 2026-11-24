@@ -100,7 +100,8 @@ pub(crate) fn settle_liquids(world: &mut World, gv: &GenVars, remix: bool) {
     // `Liquid.QuickWater(3)` (`:16157`).
     quick_water(world, gv, &mut sys, remix);
     // `WorldGen.WaterCheck()` (`:16158`).
-    sys.water_check(world);
+    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+    sys.water_check(world, &mut _gen_rng);
 
     // --- the settle loop (`:16159-16204`) ----------------------------------
     // 10 outer rounds; each round budgets `num3 * 5` `UpdateLiquid` calls
@@ -127,9 +128,11 @@ pub(crate) fn settle_liquids(world: &mut World, gv: &GenVars, remix: bool) {
             }
             // The progress fractions (`:16179-16203`) drive the loading bar
             // only — no tile effect, no draw.
-            sys.update(world);
+            let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+            sys.update(world, &mut _gen_rng);
         }
-        sys.water_check(world);
+        let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+        sys.water_check(world, &mut _gen_rng);
     }
 
     // --- the tail (`:16205-16208`) -----------------------------------------
@@ -220,7 +223,8 @@ fn settle_water_at(
     let flag2 = origin.liquid_kind() == LiquidKind::Shimmer;
     let mut num3 = origin.liquid as i32;
     let mut b = kind_code(origin.liquid_kind());
-    world.tiles[world.index(ox, oy)].liquid = 0;
+    let cell_idx = world.index(ox, oy);
+    world.tiles[cell_idx].liquid = 0;
     let mut flag3 = true;
     loop {
         // --- the drop (`:169-177`) ----------------------------------------
@@ -370,9 +374,11 @@ fn attempt_to_move(
         let t = at(world, nx, ny);
         if t.liquid > 0 && (kind_code(t.liquid_kind()) == kind) != origin_had_kind {
             if origin_had_kind {
-                sys.liquid_reaction_check(world, x, y, kind);
+                let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+                sys.liquid_reaction_check(world, &mut _gen_rng, x, y, kind);
             } else {
-                sys.liquid_reaction_check(world, nx, ny, kind);
+                let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+                sys.liquid_reaction_check(world, &mut _gen_rng, nx, ny, kind);
             }
             return;
         }

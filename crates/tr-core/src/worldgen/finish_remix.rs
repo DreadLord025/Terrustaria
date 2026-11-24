@@ -88,7 +88,7 @@
 use super::noise::Rng;
 use super::pipeline::{GenVars, Streams};
 use super::GenOptions;
-use crate::edit::kill_tile;
+use crate::edit::{kill_tile, kill_tile_legacy};
 use crate::growth::{grow_tree, try_growing_tree_by_type};
 use crate::seeds::{MicroSeedFlags, SeedFlags};
 use crate::spread::{convert_cell_flavor, ConversionFlavor};
@@ -354,7 +354,7 @@ pub(crate) fn finish_remix_world(world: &mut World, gv: &GenVars, streams: &mut 
             }
             // `:26576-26579` — the obsidian kill.
             if active_at(world, k, l) && kind_at(world, k, l) == TILE_OBSIDIAN {
-                kill_tile(world, k, l, true);
+                kill_tile_legacy(world, k, l, true);
             }
             // `:26580-26583` — the below-rock-layer dirt fill.
             if (l as f64) > world.rock_layer
@@ -476,7 +476,7 @@ fn remix_band_cell(world: &mut World, k: i32, l: i32, ftw: bool, ntb: bool, drun
         // `:26451-26473` — the FTW lava arm.
         if liquid > 0 {
             if td::TILE_LAVA_DEATH.has(kind) {
-                kill_tile(world, k, l, true);
+                kill_tile_legacy(world, k, l, true);
             }
             if let Some(t) = world.tile_mut(k, l) {
                 t.set_liquid_kind(LiquidKind::Lava);
@@ -486,7 +486,7 @@ fn remix_band_cell(world: &mut World, k: i32, l: i32, ftw: bool, ntb: bool, drun
             set_kind(world, k, l, TILE_LAVA_DRIP);
         }
         if matches!(kind, TILE_CRISPY_HONEY | TILE_HONEY_BLOCK | TILE_SHIMMER_BLOCK | TILE_OBSIDIAN) {
-            kill_tile(world, k, l, true);
+            kill_tile_legacy(world, k, l, true);
         }
         // The 82/83/84 TileFrame rides the framer (module note).
     } else if ntb {
@@ -500,13 +500,13 @@ fn remix_band_cell(world: &mut World, k: i32, l: i32, ftw: bool, ntb: bool, drun
             set_kind(world, k, l, TILE_HONEY_DRIP);
         }
         if matches!(kind, TILE_CRISPY_HONEY | TILE_HONEY_BLOCK | TILE_SHIMMER_BLOCK | TILE_OBSIDIAN) {
-            kill_tile(world, k, l, true);
+            kill_tile_legacy(world, k, l, true);
         }
     } else if drunk && tenth {
         // `:26493-26515` — the drunk+anniversary shimmer arm.
         if liquid > 0 {
             if td::TILE_LAVA_DEATH.has(kind) {
-                kill_tile(world, k, l, true);
+                kill_tile_legacy(world, k, l, true);
             }
             if let Some(t) = world.tile_mut(k, l) {
                 t.set_liquid_kind(LiquidKind::Shimmer);
@@ -516,7 +516,7 @@ fn remix_band_cell(world: &mut World, k: i32, l: i32, ftw: bool, ntb: bool, drun
             set_kind(world, k, l, TILE_SHIMMER_DRIP);
         }
         if matches!(kind, TILE_CRISPY_HONEY | TILE_HONEY_BLOCK | TILE_SHIMMER_BLOCK | TILE_OBSIDIAN) {
-            kill_tile(world, k, l, true);
+            kill_tile_legacy(world, k, l, true);
         }
     }
 }
@@ -701,7 +701,7 @@ fn hive_wall_strip(world: &mut World) {
 fn check_lily_pad(world: &mut World, x: i32, y: i32) {
     // The netMode == 1 client gate is single-player-off in the port.
     if world.tile(x, y).is_some_and(|t| t.liquid_kind() != LiquidKind::Water) {
-        kill_tile(world, x, y, true);
+        kill_tile_legacy(world, x, y, true);
         return;
     }
     let mut num = y;
@@ -724,7 +724,7 @@ fn check_lily_pad(world: &mut World, x: i32, y: i32) {
         _ => None,
     };
     let Some(frame_row) = frame_row else {
-        kill_tile(world, x, y, true);
+        kill_tile_legacy(world, x, y, true);
         return;
     };
     if let Some(t) = world.tile_mut(x, y) {
@@ -754,7 +754,7 @@ fn check_lily_pad(world: &mut World, x: i32, y: i32) {
     if floor.is_some_and(|t| {
         !td::SET_PLATFORMS.has(t.kind) && (!td::TILE_SOLID.has(t.kind) || td::TILE_SOLID_TOP.has(t.kind))
     }) {
-        kill_tile(world, x, y, true);
+        kill_tile_legacy(world, x, y, true);
     }
 }
 

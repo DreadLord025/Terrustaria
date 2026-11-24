@@ -2135,7 +2135,7 @@ fn place_long_moss(world: &mut World, x: i32, y: i32, rng: &mut Rng) {
             t.frame_x = 0;
             t.frame_y = frame_y as i16;
         }
-        crate::edit::square_tile_frame_gen(world, x, y);
+        crate::edit::square_tile_frame_gen_legacy(world, x, y);
     }
     let brick_side = neighbours.iter().any(|&(nx, ny)| {
         world
@@ -2151,7 +2151,7 @@ fn place_long_moss(world: &mut World, x: i32, y: i32, rng: &mut Rng) {
             t.frame_x = 0;
             t.frame_y = frame_y as i16;
         }
-        crate::edit::square_tile_frame_gen(world, x, y);
+        crate::edit::square_tile_frame_gen_legacy(world, x, y);
     }
 }
 

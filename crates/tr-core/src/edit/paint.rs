@@ -67,7 +67,7 @@ pub fn paint_coat_tile(world: &mut World, x: i32, y: i32, id: u8) -> bool {
             let i = world.index(x, y);
             world.tiles[i].flags &= !FLAG_FULLBRIGHT;
             world.set_invisible_block(x, y, false);
-            let _ = super::actuation_square_frame(world, x, y);
+            let _ = super::actuation_square_frame_legacy(world, x, y);
         }
         1 => {
             if t.fullbright_block() {
@@ -81,7 +81,7 @@ pub fn paint_coat_tile(world: &mut World, x: i32, y: i32, id: u8) -> bool {
                 return false;
             }
             world.set_invisible_block(x, y, true);
-            let _ = super::actuation_square_frame(world, x, y);
+            let _ = super::actuation_square_frame_legacy(world, x, y);
         }
         _ => return false,
     }

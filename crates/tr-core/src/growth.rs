@@ -304,7 +304,7 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) {
             world.frame_important[80] = true;
             // `WorldGen.SquareTileFrame(num, num2 - 1)` (`:56665`, num=i,
             // num2=j) — the 3×3 reframe around the new cactus cell.
-            crate::edit::square_tile_frame_gen(world, i, j - 1);
+            crate::edit::square_tile_frame_gen_legacy(world, i, j - 1);
         }
         return;
     }
@@ -1138,7 +1138,7 @@ pub fn update_world_overground_tile_ts(
         // The oasis-plant arm (:72289-72298): the 530 plant kills itself when the
         // boosted water check fails (`OasisPlantWaterCheck(i, j, boost: true)`).
         if !oasis_plant_water_check(world, x, y, true) {
-            let _ = crate::edit::kill_tile(world, x, y, false);
+            let _ = crate::edit::kill_tile_legacy(world, x, y, false);
         }
     }
     // The grass-growth pass (:72357 + :73282): the spread-overground grasses
@@ -1523,7 +1523,7 @@ fn place_oasis_plant_runtime(world: &mut World, x: i32, y: i32, kind: u16, rng: 
     for k in (x - 1)..=(x + 1) {
         for l in (y - 1)..=y {
             if world.tile(k, l).is_some_and(|t| t.active()) {
-                let _ = crate::edit::kill_tile(world, k, l, true);
+                let _ = crate::edit::kill_tile_legacy(world, k, l, true);
             }
         }
     }
@@ -1591,7 +1591,7 @@ fn grow_sea_oat_runtime(world: &mut World, x: i32, y: i32) -> bool {
 /// kills the oat when it fails. Returns whether the oat survives.
 fn check_sea_oat_runtime(world: &mut World, x: i32, y: i32) -> bool {
     if !sea_oat_water_check(world, x, y) {
-        let _ = crate::edit::kill_tile(world, x, y, false);
+        let _ = crate::edit::kill_tile_legacy(world, x, y, false);
         return false;
     }
     true
@@ -2793,6 +2793,10 @@ fn underground_nactive_arms(
             max_j,
             allowed_to_spread,
             rng,
+                    // g17 FX seam: threaded as a default context until the
+            // `update_world` loop collects real player LOS boxes.
+            &GrowthFxCtx::default(),
+            &mut Vec::new(),
         );
         if matches!(kind, 32 | 352) && rng.next_max(3) == 0 {
             if kind == 32 {

@@ -106,7 +106,7 @@ pub(super) fn place_jungle_plant(
         for k in (x2 - 1)..(x2 + 1) {
             for l in (num - 1)..(num + 1) {
                 if world.tile(k, l).is_some_and(|t| t.active()) {
-                    let _ = crate::edit::kill_tile(world, k, l, true);
+                    let _ = crate::edit::kill_tile_legacy(world, k, l, true);
                 }
             }
         }
@@ -154,7 +154,7 @@ pub(super) fn place_jungle_plant(
         for num4 in (x2 - 1)..(x2 + 2) {
             for num5 in (y2 - 1)..(y2 + 1) {
                 if world.tile(num4, num5).is_some_and(|t| t.active()) {
-                    let _ = crate::edit::kill_tile(world, num4, num5, true);
+                    let _ = crate::edit::kill_tile_legacy(world, num4, num5, true);
                 }
             }
         }

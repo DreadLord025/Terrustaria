@@ -676,6 +676,16 @@ impl Default for GenVars {
             // The C# resets shimmerPosition to Vector2D.Zero
             // (`WorldGen.cs:7039`) — the port's None.
             shimmer_position: None,
+            desert_hive_high: 0,
+            desert_hive_low: 0,
+            dungeon_y: 0,
+            protected_structures: Vec::new(),
+            final_cleanup_rng: None,
+            num_oasis: 0,
+            oasis_position: [(0, 0); 20],
+            oasis_width: [0; 20],
+            oasis_height: 0,
+            hell_chest_item: [0; 5],
         }
     }
 }
@@ -2071,7 +2081,13 @@ pub fn executed_steps(micro_flags: crate::seeds::MicroSeedFlags) -> Vec<Executed
                 .iter()
                 .find(|p| p.name == s.vanilla)
                 .map_or(1.0, |p| p.weight),
-            enabled: !pass_disabled_by_special_seeds(s.vanilla, micro_flags),
+            // `executed_steps` has no `SeedFlags` in scope (it drives the UI pass
+            // list only); the skyblock classic prune is not observable here.
+            enabled: !pass_disabled_by_special_seeds(
+                s.vanilla,
+                micro_flags,
+                crate::seeds::SeedFlags::none(),
+            ),
         })
         .collect()
 }
@@ -2180,7 +2196,8 @@ fn step_seed_finish(
         for x in 0..world.width {
             let t = world.tile(x, y).copied().unwrap_or_default();
             if t.liquid > 0 {
-                sys.liquid_check(world, x, y, cleanup::liquid_code(t.liquid_kind()), true);
+                let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+                sys.liquid_check(world, x, y, cleanup::liquid_code(t.liquid_kind()), true, &mut _gen_rng);
             }
         }
     }
@@ -5529,9 +5546,9 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
 fn total_weight(opts: &GenOptions) -> f64 {
     EXECUTED_PIPELINE
         .iter()
-        .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags, opts.flags))
+
         .filter(|s| {
-            !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags)
+            !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags, opts.flags)
                 && !pass_registration_gate_closed(s.vanilla, opts.micro_flags)
         })
         .map(|s| {

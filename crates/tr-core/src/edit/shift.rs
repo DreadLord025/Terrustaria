@@ -20,7 +20,7 @@ use crate::framing;
 use crate::tile::{Tile, FLAG_ACTIVE, FLAG_FULLBRIGHT, FLAG_HALF_BRICK, FLAG_INACTIVE};
 use crate::world::World;
 
-use super::{ensure_frame_important, kill_tile, touch, validate_tile_square, ObjectDrop};
+use super::{ensure_frame_important, kill_tile, kill_tile_legacy, touch, validate_tile_square, ObjectDrop};
 
 /// `WorldGen.GetTopLeftAndStyles` (`WorldGen.cs:51777-51790`): the object's
 /// top-left cell (mutating `x`/`y`) plus the `(styleX, styleY)` pair — the
@@ -92,7 +92,7 @@ pub fn shift_trapdoor(
     cell_blocked: &dyn Fn(i32, i32) -> bool,
     can_kill: &dyn Fn(&World, i32, i32) -> bool,
     drops: &mut Vec<ObjectDrop>,
-    wire_skips: Option<&mut Vec<(i32, i32)>>,
+    mut wire_skips: Option<&mut Vec<(i32, i32)>>,
     cues: &mut Vec<(bool, i32, i32)>,
 ) -> bool {
     // `Framing.GetTileSafely(x, y)` (:51449) — the ORIGINAL cell's kind
@@ -105,7 +105,8 @@ pub fn shift_trapdoor(
         let (style_x, style_y) = top_left_and_styles(world, &mut x, &mut y, 2, 2, 18, 18);
         if style_x == 0 {
             // :51453-51494 — the top-row variant opens DOWNWARD.
-            if !validate_tile_square(world, x, y, 2, 2, 386, drops) {
+            let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+            if !validate_tile_square(world, x, y, 2, 2, 386, drops, &mut _gen_rng) {
                 return false;
             }
             if let Some(skips) = wire_skips.as_mut() {
@@ -142,7 +143,8 @@ pub fn shift_trapdoor(
         }
         if style_x == 1 {
             // :51495-51532 — the bottom-row variant opens UPWARD.
-            if !validate_tile_square(world, x, y, 2, 2, 386, drops) {
+            let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+            if !validate_tile_square(world, x, y, 2, 2, 386, drops, &mut _gen_rng) {
                 return false;
             }
             if let Some(skips) = wire_skips.as_mut() {
@@ -190,7 +192,8 @@ pub fn shift_trapdoor(
         {
             return false;
         }
-        if !validate_tile_square(world, x, y, 2, 1, 387, drops) {
+        let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+        if !validate_tile_square(world, x, y, 2, 1, 387, drops, &mut _gen_rng) {
             return false; // :51543-51546
         }
         // `playerAbove.ToDirectionInt()` (`Utils.cs:2010-2017`): +1 / −1.
@@ -221,7 +224,7 @@ pub fn shift_trapdoor(
                         || crate::tileobject::is_drip_tile(t.kind))
             });
             if cut {
-                if let Some(kill) = kill_tile(world, x + num5, y + num3, false) {
+                if let Some(kill) = kill_tile_legacy(world, x + num5, y + num3, false) {
                     drops.extend(kill.object_drops);
                 }
             }
@@ -312,7 +315,8 @@ pub fn shift_tall_gate(
         row += 1;
     }
     let y = y - row;
-    if !validate_tile_square(world, x, y, width, height, expected, drops) {
+    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+    if !validate_tile_square(world, x, y, width, height, expected, drops, &mut _gen_rng) {
         return false; // :51744-51747
     }
     if let Some(skips) = wire_skips {

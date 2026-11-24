@@ -46,10 +46,11 @@ pub use replace::{
 };
 mod kill;
 pub use kill::{
-    actuation_square_frame, can_kill_tile, check_alch, check_lily_pad, kill_tile,
-    kill_tile_sound, pot_break_sound, solid_tile, square_tile_frame_default,
-    square_tile_frame_record, BulbSummonEvent, HerbEvent, KillSounds, ObjectDrop,
-    PileLootEvent, PotEvent, SoundCue, TileKill, TreeDropEvent,
+    actuation_square_frame, actuation_square_frame_legacy, can_kill_tile, check_alch,
+    check_lily_pad, kill_tile, kill_tile_legacy, kill_tile_sound, pot_break_sound, solid_tile,
+    square_tile_frame_default, square_tile_frame_default_legacy, square_tile_frame_record,
+    BulbSummonEvent, HerbEvent, KillSounds, ObjectDrop, PileLootEvent, PotEvent, SoundCue,
+    TileKill, TreeDropEvent,
 };
 mod shift;
 // W4-c42 batch 2 — the wired trapdoor/tall-gate shifts (`WorldGen.cs:51447-
@@ -58,6 +59,7 @@ pub use shift::{shift_tall_gate as shift_tall_gate_wired, shift_trapdoor as shif
 pub(crate) use kill::{
     remove_tile, solid_tile2, solid_tile_allow_bottom_slope, solid_tile_allow_left_slope,
     solid_tile_allow_right_slope, solid_tile_allow_top_slope, square_tile_frame_gen,
+    square_tile_frame_gen_legacy,
 };
 
 /// `WallID.UnbreakableBlockWall` / `WallID.Count - 1` region used by the dungeon
@@ -476,7 +478,7 @@ pub fn interact_at(
     rng: &mut UnifiedRandom,
 ) -> TileInteraction {
     // `TileInteractionsCheck` (`Player.cs:32031-32041`): active tiles only.
-    let Some(t) = world.tile(i, j) else {
+    let Some(t) = world.tile(i, j).copied() else {
         return TileInteraction::None;
     };
     if !t.active() {
@@ -761,15 +763,13 @@ pub fn interact_at(
                 // retry with the opposite direction. After a validate-kill
                 // the cell no longer has kind 10 (`KillTile` resets `type`,
                 // `WorldGen.cs:63915`), so the cleanup path skips the retry.
-                if open_door(world, i, j, direction, &mut drops, None) {
-                if open_door(world, i, j, direction, &mut drops, rng) {
+                if open_door(world, i, j, direction, &mut drops, None, rng) {
                     return TileInteraction::DoorOpened {
                         object_drops: drops,
                     };
                 }
                 if world.tile(i, j).is_some_and(|t| t.kind == 10)
-                    && open_door(world, i, j, -direction, &mut drops, None)
-                    && open_door(world, i, j, -direction, &mut drops, rng)
+                    && open_door(world, i, j, -direction, &mut drops, None, rng)
                 {
                     return TileInteraction::DoorOpened {
                         object_drops: drops,
@@ -778,8 +778,7 @@ pub fn interact_at(
                 TileInteraction::DoorBlocked {
                     object_drops: drops,
                 }
-            } else if close_door(world, i, j, false, cell_blocked, &mut drops, None) {
-            } else if close_door(world, i, j, false, cell_blocked, &mut drops, rng) {
+            } else if close_door(world, i, j, false, cell_blocked, &mut drops, None, rng) {
                 // The open-door branch (`Player.cs:32857-32864`).
                 TileInteraction::DoorClosed {
                     object_drops: drops,
@@ -791,7 +790,6 @@ pub fn interact_at(
             }
         }
     }
-}
 }
 
 /// `PlayerSittingHelper.GetSittingTargetInfo` (`PlayerSittingHelper.cs:144-321`)
@@ -1125,7 +1123,8 @@ pub fn shift_trapdoor(
         if styles.0 == 0 {
             // `:51455-51469` — the square must be intact; the two cells
             // BELOW the bottom row must be entity-free.
-            if !validate_tile_square(world, sx, sy, 2, 2, 386, &mut out.object_drops) {
+            let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+            if !validate_tile_square(world, sx, sy, 2, 2, 386, &mut out.object_drops, &mut _gen_rng) {
                 return (out, None);
             }
             if cell_blocked(sx, sy + 1) || cell_blocked(sx + 1, sy + 1) {
@@ -1165,7 +1164,8 @@ pub fn shift_trapdoor(
             // `:51495-51531` — the mirrored arm: the BOTTOM row clears, the
             // TOP row becomes the closed 2x1; the entity gate reads the TOP
             // row (`:51508`), the cue sits at (x*16+16, y*16) (`:51512`).
-            if !validate_tile_square(world, sx, sy, 2, 2, 386, &mut out.object_drops) {
+            let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+            if !validate_tile_square(world, sx, sy, 2, 2, 386, &mut out.object_drops, &mut _gen_rng) {
                 return (out, None);
             }
             if cell_blocked(sx, sy) || cell_blocked(sx + 1, sy) {
@@ -1211,7 +1211,8 @@ pub fn shift_trapdoor(
         {
             return (out, None);
         }
-        if !validate_tile_square(world, sx, sy, 2, 1, 387, &mut out.object_drops) {
+        let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+        if !validate_tile_square(world, sx, sy, 2, 1, 387, &mut out.object_drops, &mut _gen_rng) {
             return (out, None);
         }
         // `:51547-51555` — the closing side's row must hold no real blocker
@@ -1237,7 +1238,7 @@ pub fn shift_trapdoor(
                             || crate::tileobject::is_drip_tile(t.kind))
                 });
                 if cut {
-                    if let Some(kill) = kill_tile(world, sx + num5, sy + num3, false) {
+                    if let Some(kill) = kill_tile_legacy(world, sx + num5, sy + num3, false) {
                         out.object_drops.extend(kill.object_drops);
                     }
                 }
@@ -1332,7 +1333,8 @@ pub fn shift_tall_gate(
     let height = data.height;
     let width = data.width;
     // `:51744-51747` — the 1x5 square must be intact.
-    if !validate_tile_square(world, x, gy, width, height, source, &mut out.object_drops) {
+    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+    if !validate_tile_square(world, x, gy, width, height, source, &mut out.object_drops, &mut _gen_rng) {
         return (out, None);
     }
     // `:51755-51761` — every row entity-free unless forced.
@@ -1551,7 +1553,8 @@ pub fn shift_tall_gate_with_drops(
     let top = y - i;
     let (width, height) = (data.width, data.height);
     // :51744-51747 — the intact source square, or the cleanup kills refuse.
-    if !validate_tile_square(world, x, top, width, height, source, drops) {
+    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+    if !validate_tile_square(world, x, top, width, height, source, drops, &mut _gen_rng) {
         return false;
     }
     // :51748-51754 — `Wiring.SkipWire`: no wiring in the port.

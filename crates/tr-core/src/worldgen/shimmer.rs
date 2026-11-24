@@ -738,7 +738,7 @@ fn shimmerator(world: &mut World, x: i32, y: i32) {
         }
         let kind = world.tile(px, py).map_or(0, |t| t.kind);
         if kind == 5 || kind == 56 || (crate::tileobject::tile_cut(kind) && kind != 28) {
-            crate::edit::kill_tile(world, px, py, true);
+            crate::edit::kill_tile_legacy(world, px, py, true);
         }
     }
 }
@@ -829,7 +829,8 @@ pub fn shimmer_clean_up(
                     cell.wall = 0;
                 }
                 // `:34760` — Convert(j, i, 0, 3): the cleanse, size 3.
-                crate::spread::convert_cleanse(world, j, i, 3);
+                let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+                crate::spread::convert_cleanse(world, j, i, 3, &mut _gen_rng);
             }
         }
     }
@@ -922,7 +923,7 @@ pub fn shimmer_clean_up(
                 continue;
             };
             if t.liquid > 0 && tile_shimmer(&t) && t.kind == 5 {
-                crate::edit::kill_tile(world, m, n, true);
+                crate::edit::kill_tile_legacy(world, m, n, true);
             }
         }
     }

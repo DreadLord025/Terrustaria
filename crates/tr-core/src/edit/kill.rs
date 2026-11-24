@@ -372,6 +372,41 @@ pub fn square_tile_frame_default(
     square_tile_frame_record(world, x, y, rng).object_drops
 }
 
+/// The `genRand` stand-in for a legacy call path that enters the W4-g83
+/// threaded cascade without a live stream: a fresh `UnifiedRandom(world.seed)`
+/// — the worldgen convention `temple`/`finish_seeds`/`micro_finish` already
+/// use. Only the `CheckUnderwaterPlant` tip re-roll draws it, so a legacy
+/// caller stays deterministic without touching `world.frame_rng` (ANALYSIS:
+/// legacy-path stand-in).
+pub(crate) fn legacy_gen_rng(world: &World) -> UnifiedRandom {
+    UnifiedRandom::new(world.seed as i32)
+}
+
+/// [`kill_tile`] with the [`legacy_gen_rng`] stand-in — for call sites that
+/// predate the W4-g83 stream threading.
+pub fn kill_tile_legacy(world: &mut World, x: i32, y: i32, no_item: bool) -> Option<TileKill> {
+    let mut rng = legacy_gen_rng(world);
+    kill_tile(world, x, y, no_item, &mut rng)
+}
+
+/// [`square_tile_frame_gen`] with the [`legacy_gen_rng`] stand-in.
+pub(crate) fn square_tile_frame_gen_legacy(world: &mut World, x: i32, y: i32) {
+    let mut rng = legacy_gen_rng(world);
+    square_tile_frame_gen(world, x, y, &mut rng);
+}
+
+/// [`square_tile_frame_default`] with the [`legacy_gen_rng`] stand-in.
+pub fn square_tile_frame_default_legacy(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+    let mut rng = legacy_gen_rng(world);
+    square_tile_frame_default(world, x, y, &mut rng)
+}
+
+/// [`actuation_square_frame`] with the [`legacy_gen_rng`] stand-in.
+pub fn actuation_square_frame_legacy(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+    let mut rng = legacy_gen_rng(world);
+    actuation_square_frame(world, x, y, &mut rng)
+}
+
 /// The same `SquareTileFrame` walk, returning the WHOLE kill record - the
 /// `Liquid.DelWater` tail's reframe arms (`Liquid.cs:1544`/`:1553`/`:1592`)
 /// need the cascade's pots/herbs/piles too, not just the object drops
@@ -451,7 +486,7 @@ fn kill_tile_cascading(
     if let Some(drop) = anchor_drop {
         kill.object_drops.push(drop);
     }
-    square_tile_frame(world, x, y, no_item, destroy_object, &mut kill);
+
     // The reframing half of the C# `TileFrame` calls: neighbours re-derive
     // their frames; `frame_important` kinds keep theirs and unsupported
     // torches fall (`reframe_area` = the non-object arm of `TileFrame`).
@@ -623,7 +658,7 @@ fn square_tile_frame(
         if cx <= 5 || cy <= 5 || cx >= world.width - 5 || cy >= world.height - 5 {
             continue;
         }
-        let Some(cell) = world.tile(cx, cy) else {
+        let Some(cell) = world.tile(cx, cy).copied() else {
             continue;
         };
         // The vanilla's `TileFrameImportant` runs off `Main.tileFrameImportant`
@@ -710,7 +745,7 @@ fn square_tile_frame(
         // arms it carries no `destroyObject` guard (a switch arm, not a
         // `Check*` routine).
         if cell.kind == 184 {
-            check_long_moss(world, cx, cy, no_item, destroy_object, kill);
+            check_long_moss(world, cx, cy, no_item, destroy_object, kill, rng);
             continue;
         }
         // `TileFrame`'s non-solid arm (`WorldGen.cs:81361-81374`): the cactus
@@ -739,7 +774,7 @@ fn square_tile_frame(
         // (:45972-46092), `CheckOnTable1x1` (:43503-43546) and `CheckPile`'s
         // 1x1 body (:46875-46971) have none — they run and kill while another
         // object's kill loop is in flight.
-        let guarded = destroy_object_guarded(cell);
+        let guarded = destroy_object_guarded(&cell);
         // The ring-walk shape reads the kind after the mutable check/kill
         // calls below — copy it out before the `cell` borrow ends (NLL).
         let cell_kind = cell.kind;
@@ -764,6 +799,11 @@ fn square_tile_frame(
         }
         if let Some(pile) = plan.pile_event {
             kill.pile_events.push(pile);
+        }
+        // `CheckChand`'s Pigronata loot block is likewise a `Check*`-level
+        // `Item.NewItem` family (:52880-52963) — not `noItem`-gated.
+        if let Some(pig) = plan.pigronata_event {
+            kill.pigronata_events.push(pig);
         }
         // `CheckJunglePlant`'s 238 arm (:48007-48026) runs BEFORE the kill
         // loop and outside the `noItem` gate — the summon request passes
@@ -982,6 +1022,10 @@ struct CheckPlan {
     pot_event: Option<PotEvent>,
     herb_event: Option<HerbEvent>,
     pile_event: Option<PileLootEvent>,
+    /// `CheckChand`'s Pigronata loot block (`WorldGen.cs:52880-52963`) — a
+    /// `Check*`-level `Item.NewItem` family, at the trigger cell and NOT
+    /// `noItem`-gated (the pot/pile convention). W4-f41.
+    pigronata_event: Option<PigronataEvent>,
     /// `CheckJunglePlant`'s 238 arm (`WorldGen.cs:48007-48026`) — the
     /// Plantera summon request, recorded before the kill loop.
     bulb_summon: Option<BulbSummonEvent>,
@@ -1076,7 +1120,7 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // detritus + the 236/238/702 Life Fruit / bulb family ride
         // `CheckJunglePlant` (:47946-48108).
         233 | 236 | 238 | 702 => check_jungle_plant(world, x, y, kind),
-        34 => check_chandelier(world, x, y),
+        34 => check_chandelier(world, x, y, kind),
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
         219 | 642 => check_3x3_bottom(world, x, y, kind),
@@ -1473,6 +1517,7 @@ fn check_long_moss(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) {
     let Some(cell) = world.tile(x, y) else {
         return;
@@ -1494,9 +1539,9 @@ fn check_long_moss(
     let left = world.tile(x - 1, y).filter(|t| t.active()).map(|t| t.kind);
     let right = world.tile(x + 1, y).filter(|t| t.active()).map(|t| t.kind);
     // `:85175` — the frameY variant roll, drawn before the colour tests.
-    let mut rng = std::mem::take(&mut world.frame_rng);
-    let num18 = (rng.next_max(3) * 18) as i16;
-    world.frame_rng = rng;
+    let mut frame_rng = std::mem::take(&mut world.frame_rng);
+    let num18 = (frame_rng.next_max(3) * 18) as i16;
+    world.frame_rng = frame_rng;
     // `:85176-85207` — the else-if colour ladder in source order: below,
     // above, left, right. `(band_lo, band_hi)` is the arm's frameY window.
     let pick = below
@@ -1525,7 +1570,7 @@ fn check_long_moss(
         }
     } else {
         // `:85208-85211` — no moss colour neighbour: the loose moss dies.
-        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
     }
 }
 
@@ -1860,6 +1905,7 @@ fn check_bowl(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         bulb_summon: None,
         sound: None,
@@ -2279,7 +2325,6 @@ fn check_2x2(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         pigronata_event: None,
-        ring: None,
         bulb_summon: None,
         sound: None,
         cues: Vec::new(),
@@ -2460,7 +2505,10 @@ fn check_chandelier(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
         pot_event: None,
         herb_event: None,
         pile_event: None,
-        ring: None,
+        // :52880-52963 — the Pigronata's loot block, at the trigger cell.
+        pigronata_event: (kind == 454).then(|| PigronataEvent { x, y }),
+        // :52969-52975 — the (width+2) x 5 TileFrame tail.
+        ring: Some(((ox - 1, oy - 1), (ox + width, oy + 3))),
         bulb_summon: None,
         sound: None,
         cues: Vec::new(),
@@ -3196,7 +3244,11 @@ fn check_6x3(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: Some(region_ring(&region)),
+        bulb_summon: None,
+        sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -3436,6 +3488,8 @@ fn check_sunflower(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pigronata_event: None,
         ring: None,
         bulb_summon: None,
+        sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -3530,8 +3584,11 @@ fn check_jungle_plant(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Ch
             pot_event: None,
             herb_event: None,
             pile_event: None,
+            pigronata_event: None,
             ring: None,
             bulb_summon,
+            sound: None,
+            cues: Vec::new(),
         });
     }
     // :48054-48107 — the 233 3×2 detritus rows.
@@ -3580,6 +3637,7 @@ fn check_jungle_plant(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Ch
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        pigronata_event: None,
         ring: None,
         bulb_summon: None,
         sound: None,
@@ -4196,8 +4254,9 @@ pub fn check_lily_pad(world: &mut World, x: i32, y: i32, raw_solid: impl Fn(u16)
         }
     };
     // :59243-59250 — the gated frameY write.
-    if world.tiles[world.index(x, y)].frame_y != row {
-        world.tiles[world.index(x, y)].frame_y = row;
+    let pad_idx = world.index(x, y);
+    if world.tiles[pad_idx].frame_y != row {
+        world.tiles[pad_idx].frame_y = row;
         touch(world, x, y);
     }
     let above = world.tile(x, y - 1).copied();

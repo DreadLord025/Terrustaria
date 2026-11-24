@@ -1400,7 +1400,7 @@ fn place_altar(world: &mut World, x: i32, y: i32) -> bool {
     }
     // `PlaceTile`'s active tail (`WorldGen.cs:60255-60262`): the 226-style
     // wall truncation check is inert for the altar, then `SquareTileFrame`.
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
     true
 }
 
@@ -1534,7 +1534,7 @@ fn altar_spot(
 /// stored 237 frames stand (frame-important, `Main.cs:10234`) and the
 /// cosmetic re-frame rides the end-of-gen `frame_world` pass.
 fn square_frame_altar(world: &mut World, x: i32, y: i32) {
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
 }
 
 /// The spike loop (`WorldGen.cs:34069-34217`): `num2 * 1.1 * (1 +
@@ -1964,7 +1964,7 @@ fn place_trap_tile(world: &mut World, x: i32, y: i32, style: i32) {
     t.frame_y = (18 * style) as i16;
     // `PlaceTile`'s active tail (`:60255-60262`): 137 is not a wall-truncator,
     // then `SquareTileFrame` — the framer keeps the stored 137 frames.
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
 }
 
 /// The pressure-plate write — `PlaceTile(x, y, 135, forced: true, style)`
@@ -2019,7 +2019,7 @@ fn place_plate_tile(world: &mut World, x: i32, y: i32, style: i32, spike_solid: 
     t.frame_y = (18 * style) as i16;
     // `PlaceTile` case 135 (`:60129-60140`) + the active tail
     // (`:60255-60262`): `SquareTileFrame`.
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
 }
 
 /// `WorldGen.Place2x1` (`WorldGen.cs:47368-47406`) for the temple workbench
@@ -2105,7 +2105,7 @@ fn place_table(
     }
     // `PlaceTile` case 14 (`:59987`/`:60001-60002`) + the active tail
     // (`:60255-60262`): `SquareTileFrame`.
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
     true
 }
 
@@ -2132,7 +2132,7 @@ fn place_chair(world: &mut World, x: i32, y: i32, style: i32) -> bool {
         t.frame_x = 0;
         t.frame_y = (40 * style + row * 18) as i16;
     }
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
     true
 }
 
@@ -2239,7 +2239,7 @@ fn place_painting(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     }
     // `PlaceTile`'s active tail (`:60255-60262`): `SquareTileFrame` — the
     // framer keeps the stored 240 frames (frame-important, `Main.cs:10207`).
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
     true
 }
 
@@ -2500,7 +2500,7 @@ fn mayan_trap_horizontal(
     if !can_pressure_plate_at_p2(world, x2, num3, spike_solid) {
         return false;
     }
-    place_plate_tile(world, x2, num3, 6);
+    place_plate_tile(world, x2, num3, 6, spike_solid);
     // W4-g83: the trap-site kill's framing dispatch threads the worldgen
     // genRand stand-in (`world.frame_rng`), not the pass's xorshift stream.
     crate::edit::kill_tile(world, num11, num12, true, gen_rng);

@@ -475,7 +475,7 @@ pub fn try_pound_tile(
         lift: bool,
     }
     let mut st = Writes::default();
-    let slope = |world: &mut World, s: u8, st: &mut Writes| {
+    let slope = |world: &mut World, s: u8, st: &mut Writes, rng: &mut UnifiedRandom| {
         if slope_tile(world, x, y, s, false, chest_holds_items, rng) {
             st.wrote = true;
             if world.tile(x, y).is_some_and(|t| t.slope() == 0) {
@@ -483,7 +483,7 @@ pub fn try_pound_tile(
             }
         }
     };
-    let pound = |world: &mut World, st: &mut Writes| {
+    let pound = |world: &mut World, st: &mut Writes, rng: &mut UnifiedRandom| {
         if pound_tile(world, x, y, false, chest_holds_items, rng) {
             st.wrote = true;
             if world.tile(x, y).is_some_and(|t| !t.half_brick()) {
@@ -509,7 +509,7 @@ pub fn try_pound_tile(
         // `CanPoundTile` and writes `slope(0)` directly).
         if tile.half_brick() {
             // `:46010-46017`.
-            pound(world, &mut st);
+            pound(world, &mut st, rng);
         } else {
             // `:46020-46026` — the diagonal flip: a platform at the
             // upper-right / lower-left diagonal, or a solid right neighbour
@@ -528,10 +528,10 @@ pub fn try_pound_tile(
             let cur = world.tile(x, y).map(|t| t.slope()).unwrap_or(0);
             if cur == 0 {
                 // `:46027-46035`.
-                slope(world, num, &mut st);
+                slope(world, num, &mut st, rng);
             } else if cur == num {
                 // `:46036-46044`.
-                slope(world, second, &mut st);
+                slope(world, second, &mut st, rng);
             } else if can_pound_tile(world, x, y, false, chest_holds_items) {
                 // `:46045-46053` — `slope(0)` + `PoundTile` (the half brick
                 // the pound sets means no lift here). The direct `slope(0)`
@@ -540,7 +540,7 @@ pub fn try_pound_tile(
                 // (only `PoundTile` plays — the slope write is direct).
                 let i = world.index(x, y);
                 world.tiles[i].set_slope(0);
-                pound(world, &mut st);
+                pound(world, &mut st, rng);
             }
         }
         return outcome(&st);
@@ -620,34 +620,34 @@ pub fn try_pound_tile(
         if num11 == 1 {
             // `:46253-46275` — the down-first cycle 0 → a → b → a+2 → b+2 → 0.
             if cur == 0 {
-                slope(world, num12, &mut st);
+                slope(world, num12, &mut st, rng);
             } else if cur == num12 {
-                slope(world, num13, &mut st);
+                slope(world, num13, &mut st, rng);
             } else if cur == num13 {
-                slope(world, num12 + 2, &mut st);
+                slope(world, num12 + 2, &mut st, rng);
             } else if cur == num12 + 2 {
-                slope(world, num13 + 2, &mut st);
+                slope(world, num13 + 2, &mut st, rng);
             } else {
-                slope(world, 0, &mut st);
+                slope(world, 0, &mut st, rng);
             }
         } else {
             // `:46276-46295` — the up-first cycle 0 → a+2 → b+2 → a → b → 0.
             if cur == 0 {
-                slope(world, num12 + 2, &mut st);
+                slope(world, num12 + 2, &mut st, rng);
             } else if cur == num12 + 2 {
-                slope(world, num13 + 2, &mut st);
+                slope(world, num13 + 2, &mut st, rng);
             } else if cur == num13 + 2 {
-                slope(world, num12, &mut st);
+                slope(world, num12, &mut st, rng);
             } else if cur == num12 {
-                slope(world, num13, &mut st);
+                slope(world, num13, &mut st, rng);
             } else {
-                slope(world, 0, &mut st);
+                slope(world, 0, &mut st, rng);
             }
         }
         return outcome(&st);
     }
     // `:46302-46309` — the flat solid: the half-brick toggle.
-    pound(world, &mut st);
+    pound(world, &mut st, rng);
     outcome(&st)
 }
 

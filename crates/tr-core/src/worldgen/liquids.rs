@@ -200,7 +200,8 @@ pub(crate) fn pass_waterfalls(world: &mut World, rng: &mut Rng) {
                 }
                 if flag {
                     // `:16641` — `WorldGen.PoundTile(i, j)`.
-                    crate::edit::pound_tile(world, i, j, true, |_, _| false);
+                    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+                    crate::edit::pound_tile(world, i, j, true, |_, _| false, &mut _gen_rng);
                 }
             }
         }
@@ -222,7 +223,8 @@ pub(crate) fn pass_waterfalls(world: &mut World, rng: &mut Rng) {
                     && scan_half_brick(world, l - 1, m)
                     && scan_liquid(world, l - 2, m)
                 {
-                    crate::edit::pound_tile(world, l, m, true, |_, _| false);
+                    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+                    crate::edit::pound_tile(world, l, m, true, |_, _| false, &mut _gen_rng);
                 }
                 // `:16657-16660` — the right half-brick shore.
                 if !solid_waterfalls(world, l - 1, m)
@@ -230,7 +232,8 @@ pub(crate) fn pass_waterfalls(world: &mut World, rng: &mut Rng) {
                     && scan_half_brick(world, l + 1, m)
                     && scan_liquid(world, l + 2, m)
                 {
-                    crate::edit::pound_tile(world, l, m, true, |_, _| false);
+                    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+                    crate::edit::pound_tile(world, l, m, true, |_, _| false, &mut _gen_rng);
                 }
             }
         }
@@ -305,7 +308,8 @@ pub(crate) fn settle_liquids_again(
     // `Liquid.QuickWater(3)` (`:21264`) — the shared f25 sweep.
     super::settle_liquids::quick_water(world, gv, &mut sys, remix);
     // `WorldGen.WaterCheck()` (`:21265`).
-    sys.water_check(world);
+    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+    sys.water_check(world, &mut _gen_rng);
     // `:21266-21303` — the ten-round quick-settle loop (the f25 body).
     sys.set_quick_settle(true);
     let mut num = 0;
@@ -324,9 +328,11 @@ pub(crate) fn settle_liquids_again(
             if live > num3 {
                 num3 = live;
             }
-            sys.update(world);
+            let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+            sys.update(world, &mut _gen_rng);
         }
-        sys.water_check(world);
+        let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+        sys.water_check(world, &mut _gen_rng);
     }
     // `:21304-21307` — clear pending, restore the toggles.
     sys.clear_pending_liquid();

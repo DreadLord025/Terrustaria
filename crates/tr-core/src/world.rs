@@ -82,6 +82,14 @@ pub struct World {
     /// `onlyCheck` preview writeback (:826-837), which the port does not run,
     /// so production stays `None`.
     pub tile_object_random_cache: Option<crate::tileobject::RandomCache>,
+    /// `WorldGen.AllowedToSpreadInfections` (`WorldGen.cs:71502-71507`):
+    /// set by the `update_world` caller from the journey
+    /// `StopBiomeSpreadPower` and read by the growth dispatchers' infection
+    /// rows and wall arms. Runtime-only (not persisted).
+    pub allowed_to_spread_infections: bool,
+    /// `WorldGen.treeShakes`' per-day dedupe (`WorldGen.cs:63143`): the
+    /// shaken tree bases (bottom x, bottom y), capped at 500. Runtime-only.
+    pub tree_shakes: Vec<(i32, i32)>,
     /// Y of the first solid tile at the center of the map (approx. spawn altitude).
     pub spawn_y: i32,
     /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
@@ -1040,6 +1048,8 @@ impl World {
             frame_rng: crate::unified_random::UnifiedRandom::new(0),
             place_rng: crate::unified_random::UnifiedRandom::new(0),
             tile_object_random_cache: None,
+            allowed_to_spread_infections: true,
+            tree_shakes: Vec::new(),
             // `Main.AnnouncementBoxDisabled`'s stock is false (the launch
             // switch off) and `Main.AnnouncementBoxRange`'s stock is -1
             // (`Main.cs:66530`).
@@ -1085,8 +1095,6 @@ impl World {
             downed_mech_boss3: false,
             downed_mech_boss2: false,
             downed_plant_boss: false,
-            eoc_killed_today: false,
-            wof_killed_today: false,
             invasion_goblins: false,
             invasion_size: 0,
 
@@ -1111,12 +1119,6 @@ impl World {
             // W4-f45: the downed-flag census (the C# statics start false,
             // `NPC.cs:95228-95244`'s WorldClear family).
             downed_clown: false,
-            downed_empress_of_light: false,
-            downed_halloween_king: false,
-            downed_halloween_tree: false,
-            downed_christmas_ice_queen: false,
-            downed_christmas_santank: false,
-            downed_christmas_tree: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
@@ -1150,13 +1152,10 @@ impl World {
             unlocked_slime_red_spawn: false,
             unlocked_slime_copper_spawn: false,
             unlocked_slime_old_spawn: false,
-            unlocked_slime_copper_spawn: false,
             credits_roll_remaining_time: 0,
             unlocked_slime_green_spawn: false,
-            unlocked_slime_old_spawn: false,
             unlocked_slime_purple_spawn: false,
             unlocked_slime_yellow_spawn: false,
-            unlocked_slime_copper_spawn: false,
             combat_book_was_used: false,
             combat_book_volume_two_was_used: false,
             peddlers_satchel_was_used: false,
@@ -1164,13 +1163,6 @@ impl World {
             bought_dog: false,
             bought_bunny: false,
             unlocked_slime_blue_spawn: false,
-            unlocked_slime_green_spawn: false,
-            unlocked_slime_old_spawn: false,
-            unlocked_slime_purple_spawn: false,
-            unlocked_slime_yellow_spawn: false,
-            unlocked_slime_copper_spawn: false,
-            combat_book_volume_two_was_used: false,
-            peddlers_satchel_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
@@ -1337,22 +1329,16 @@ impl World {
             cloud_bg_active: 0,
             num_clouds: 0,
             saved_bartender: false,
-            crimson: false,
-            dungeon_x: 0,
-            dungeon_y: 0,
             // W4-f45 Ph4: the dense banner array starts at the C# length, all
             // zero (`BannerSystem.cs:1454`'s cctor); the angler list empty;
             // the spawn unlocks false.
             banner_kill_counts: vec![0; 293],
-            angler_who_finished_today: Vec::new(),
-            unlocked_slime_blue_spawn: false,
             unlocked_merchant_spawn: false,
             unlocked_demolitionist_spawn: false,
             unlocked_dye_trader_spawn: false,
             unlocked_truffle_spawn: false,
             unlocked_arms_dealer_spawn: false,
             unlocked_nurse_spawn: false,
-            extra_spawn_points: Vec::new(),
         }
     }
 

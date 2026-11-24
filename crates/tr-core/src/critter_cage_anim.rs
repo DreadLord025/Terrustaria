@@ -305,7 +305,7 @@ impl CritterCageAnimator {
                 h = h.wrapping_mul(0x0000_0100_0000_01b3);
             }
         };
-        let mut table = |t: &CageTable| {
+        let table = |t: &CageTable, feed: &mut dyn FnMut(i32)| {
             for &v in &t.frame {
                 feed(v);
             }
@@ -313,17 +313,17 @@ impl CritterCageAnimator {
                 feed(v);
             }
         };
-        table(&self.bunny);
-        table(&self.squirrel);
-        table(&self.squirrel_orange);
-        table(&self.mallard);
-        table(&self.duck);
-        table(&self.grebe);
-        table(&self.seagull);
-        table(&self.bird);
-        table(&self.blue_bird);
-        table(&self.red_bird);
-        table(&self.macaw);
+        table(&self.bunny, &mut feed);
+        table(&self.squirrel, &mut feed);
+        table(&self.squirrel_orange, &mut feed);
+        table(&self.mallard, &mut feed);
+        table(&self.duck, &mut feed);
+        table(&self.grebe, &mut feed);
+        table(&self.seagull, &mut feed);
+        table(&self.bird, &mut feed);
+        table(&self.blue_bird, &mut feed);
+        table(&self.red_bird, &mut feed);
+        table(&self.macaw, &mut feed);
         for row in 0..2 {
             for &v in &self.scorpion[row] {
                 feed(v);
@@ -332,16 +332,16 @@ impl CritterCageAnimator {
                 feed(v);
             }
         }
-        table(&self.penguin);
-        table(&self.turtle);
-        table(&self.seahorse);
-        table(&self.pufferfish);
-        table(&self.owl);
-        table(&self.snail);
-        table(&self.snail2);
-        table(&self.frog);
-        table(&self.mouse);
-        table(&self.worm);
+        table(&self.penguin, &mut feed);
+        table(&self.turtle, &mut feed);
+        table(&self.seahorse, &mut feed);
+        table(&self.pufferfish, &mut feed);
+        table(&self.owl, &mut feed);
+        table(&self.snail, &mut feed);
+        table(&self.snail2, &mut feed);
+        table(&self.frog, &mut feed);
+        table(&self.mouse, &mut feed);
+        table(&self.worm, &mut feed);
         for row in 0..3 {
             for &v in &self.slug[row] {
                 feed(v);
@@ -350,17 +350,17 @@ impl CritterCageAnimator {
                 feed(v);
             }
         }
-        table(&self.grasshopper);
-        table(&self.maggot);
-        table(&self.ladybug);
-        table(&self.rat);
-        table(&self.water_strider);
-        table(&self.fairy_jar);
-        table(&self.fish_bowl);
+        table(&self.grasshopper, &mut feed);
+        table(&self.maggot, &mut feed);
+        table(&self.ladybug, &mut feed);
+        table(&self.rat, &mut feed);
+        table(&self.water_strider, &mut feed);
+        table(&self.fairy_jar, &mut feed);
+        table(&self.fish_bowl, &mut feed);
         for &m in &self.fish_bowl_mode {
             feed(m as i32);
         }
-        table(&self.lava_fish_bowl);
+        table(&self.lava_fish_bowl, &mut feed);
         for row in 0..9 {
             for &v in &self.butterfly[row] {
                 feed(v);

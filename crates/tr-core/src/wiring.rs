@@ -2450,7 +2450,7 @@ impl Wiring {
             // slice, drops queued like the actuation cascade's.
             144 => {
                 self.hit_switch(world, i, j);
-                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                let drops = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
                 self.actuation_drops.extend(drops);
             }
             // The wire lamp: the lit/unlit tile pair swaps types (`:1017-
@@ -2458,7 +2458,7 @@ impl Wiring {
             // then the `SquareTileFrame` wake.
             421 | 422 if !actuator => {
                 world.swap_tile_kind(i, j, if kind == 421 { 422 } else { 421 });
-                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                let drops = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
                 self.actuation_drops.extend(drops);
             }
             // The logic lamp (419): `case 419` verbatim (`Wiring.cs:1053-1070`)
@@ -2705,7 +2705,7 @@ impl Wiring {
                 // tile's OWN kind 21/467/88), so the slice is complete here.
                 if above_ok && self.can_kill_tile(world, i, j) {
                     world.swap_tile_kind(i, j, 131);
-                    let drops = crate::edit::square_tile_frame_default(world, i, j);
+                    let drops = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
                     self.actuation_drops.extend(drops);
                 }
             }
@@ -2713,7 +2713,7 @@ impl Wiring {
             // the unconditional swap + wake.
             131 => {
                 world.swap_tile_kind(i, j, 130);
-                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                let drops = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
                 self.actuation_drops.extend(drops);
             }
             // The trapdoor pair (386 closed / 387 open, `Wiring.cs:1440-
@@ -2823,6 +2823,7 @@ impl Wiring {
                     &|_, _| false,
                     &mut drops,
                     if self.running { Some(&mut skips) } else { None },
+                    self.rand_mut(),
                 ) {
                     self.actuation_drops.extend(drops);
                     for cell in skips {
@@ -2857,6 +2858,7 @@ impl Wiring {
                     num67,
                     &mut drops,
                     if self.running { Some(&mut skips) } else { None },
+                    self.rand_mut(),
                 );
                 // The retry is unconditional (`:1476-1478`) — the first
                 // attempt's validate-kills may have cleared the cell. The
@@ -2872,6 +2874,7 @@ impl Wiring {
                     -num67,
                     &mut drops,
                     if self.running { Some(&mut skips) } else { None },
+                    self.rand_mut(),
                 ) {
                     Some(-num67)
                 } else {
@@ -3069,19 +3072,13 @@ impl Wiring {
             // drops queue like the actuation cascade's (`Wiring.cs:2543`/`:2548`).
             546 => {
                 world.swap_tile_kind(i, j, 557);
-                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                let drops = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
                 self.actuation_drops.extend(drops);
             }
             557 => {
                 world.swap_tile_kind(i, j, 546);
-                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                let drops = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
                 self.actuation_drops.extend(drops);
-                // W4-g83: the wake rides the wiring stream (contract §2).
-                let _ = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
-            }
-            557 => {
-                world.swap_tile_kind(i, j, 546);
-                let _ = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
             }
             // The weighted pressure-plate's big frame shift (506, `:2503-
             // 2531`): the 2×3 anchor from `frameY / 18 % 3`, the active+same-
@@ -3098,7 +3095,7 @@ impl Wiring {
                 // kills every matching cell (full cascade, drops collected).
                 let mut drops = Vec::new();
                 let valid = crate::edit::validate_tile_square(
-                    world, num76, num75, 2, 3, kind, &mut drops,
+                    world, num76, num75, 2, 3, kind, &mut drops, self.rand_mut(),
                 );
                 self.actuation_drops.extend(drops);
                 if !valid {
@@ -3140,21 +3137,21 @@ impl Wiring {
     /// `Wiring.ToggleHangingLantern` (`Wiring.cs:2817-2842`).
     fn toggle_hanging_lantern(&mut self, world: &mut World, i: i32, j: i32) {
         let mut skips = Vec::new();
-        toggle_hanging_lantern(world, i, j, None, Some(&mut skips));
+        toggle_hanging_lantern_alt(world, i, j, None, Some(&mut skips));
         self.skip.extend(skips);
     }
 
     /// `Wiring.Toggle2x2Light` (`Wiring.cs:2843-2878`).
     fn toggle_2x2_light(&mut self, world: &mut World, i: i32, j: i32) {
         let mut skips = Vec::new();
-        toggle_2x2_light(world, i, j, None, Some(&mut skips));
+        toggle_2x2_light_alt(world, i, j, None, Some(&mut skips));
         self.skip.extend(skips);
     }
 
     /// `Wiring.ToggleLampPost` (`Wiring.cs:2879-2902`).
     fn toggle_lamp_post(&mut self, world: &mut World, i: i32, j: i32) {
         let mut skips = Vec::new();
-        toggle_lamp_post(world, i, j, None, Some(&mut skips));
+        toggle_lamp_post_alt(world, i, j, None, Some(&mut skips));
         self.skip.extend(skips);
     }
 
@@ -3166,14 +3163,14 @@ impl Wiring {
     /// `Wiring.ToggleLamp` (`Wiring.cs:2935-2962`).
     fn toggle_lamp(&mut self, world: &mut World, i: i32, j: i32) {
         let mut skips = Vec::new();
-        toggle_lamp(world, i, j, None, Some(&mut skips));
+        toggle_lamp_alt(world, i, j, None, Some(&mut skips));
         self.skip.extend(skips);
     }
 
     /// `Wiring.ToggleChandelier` (`Wiring.cs:2963-2999`).
     fn toggle_chandelier(&mut self, world: &mut World, i: i32, j: i32) {
         let mut skips = Vec::new();
-        toggle_chandelier(world, i, j, None, Some(&mut skips));
+        toggle_chandelier_alt(world, i, j, None, Some(&mut skips));
         self.skip.extend(skips);
     }
 
@@ -3183,7 +3180,7 @@ impl Wiring {
     fn toggle_camp_fire(&mut self, world: &mut World, i: i32, j: i32) {
         let mut skips = Vec::new();
         let mut drops = Vec::new();
-        toggle_campfire(world, i, j, None, Some(&mut skips), &mut drops);
+        toggle_campfire_alt(world, i, j, None, Some(&mut skips), &mut drops);
         self.skip.extend(skips);
         self.actuation_drops.extend(drops);
     }
@@ -3191,7 +3188,7 @@ impl Wiring {
     /// `Wiring.ToggleFirePlace` (`Wiring.cs:3044-3072`).
     fn toggle_fire_place(&mut self, world: &mut World, i: i32, j: i32) {
         let mut skips = Vec::new();
-        toggle_fireplace(world, i, j, None, Some(&mut skips));
+        toggle_fireplace_alt(world, i, j, None, Some(&mut skips));
         self.skip.extend(skips);
     }
 
@@ -3674,8 +3671,8 @@ fn toggle_campfire(
     }
     let left = x - (t.frame_x as i32 % 54 / 18);
     let top = y - (t.frame_y as i32 % 36 / 18);
-    if !crate::edit::validate_tile_square(world, left, top, 3, 2, 215, drops) {
-        return;
+    let mut gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+    if !crate::edit::validate_tile_square(world, left, top, 3, 2, 215, drops, &mut gen_rng) {        return;
     }
     let Some(a) = world.tile(left, top) else { return };
     let off = a.frame_y >= 36;
@@ -3942,7 +3939,7 @@ pub fn mass_wire_operation_inner(
     let num2 = (pe.1 - ps.1).signum();
     let mut pt = (0i32, 0i32);
     let mut halted = false;
-    let step = |world: &mut World, pt: (i32, i32), halted: &mut bool| {
+    let mut step = |world: &mut World, pt: (i32, i32), halted: &mut bool| {
         let outcome = mass_wire_operation_step(
             world,
             pt.0,
@@ -4227,7 +4224,7 @@ pub fn mass_wire_operation_inner_alt(
     let num2 = (pe.1 - ps.1).signum();
     let mut pt = (0i32, 0i32);
     let mut halted = false;
-    let step = |world: &mut World, pt: (i32, i32), halted: &mut bool| {
+    let mut step = |world: &mut World, pt: (i32, i32), halted: &mut bool| {
         let outcome = mass_wire_operation_step(
             world,
             pt.0,
@@ -4423,8 +4420,8 @@ fn toggle_campfire_alt(
     }
     let left = x - (t.frame_x as i32 % 54 / 18);
     let top = y - (t.frame_y as i32 % 36 / 18);
-    if !crate::edit::validate_tile_square(world, left, top, 3, 2, kind, drops) {
-        return; // `:3012-3015`
+    let mut gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+    if !crate::edit::validate_tile_square(world, left, top, 3, 2, kind, drops, &mut gen_rng) {        return; // `:3012-3015`
     }
     let Some(a) = world.tile(left, top) else { return };
     let off = a.frame_y >= 36;
@@ -4615,18 +4612,18 @@ pub fn try_toggle_light_alt(
         return true;
     }
     if crate::tiledata::SET_CAMPFIRES.has(kind) {
-        toggle_campfire(world, x, y, forced, sink, drops);
+        toggle_campfire_alt(world, x, y, forced, sink, drops);
         return true;
     }
     // Each arm moves `sink` — the arms are exclusive (one family runs).
     match kind {
         33 | 49 | 174 | 372 | 646 => toggle_candle(world, x, y, forced),
-        405 => toggle_fireplace(world, x, y, forced, sink),
-        95 | 100 | 126 | 173 | 564 => toggle_2x2_light(world, x, y, forced, sink),
-        92 => toggle_lamp_post(world, x, y, forced, sink),
-        34 => toggle_chandelier(world, x, y, forced, sink),
-        93 => toggle_lamp(world, x, y, forced, sink),
-        42 => toggle_hanging_lantern(world, x, y, forced, sink),
+        405 => toggle_fireplace_alt(world, x, y, forced, sink),
+        95 | 100 | 126 | 173 | 564 => toggle_2x2_light_alt(world, x, y, forced, sink),
+        92 => toggle_lamp_post_alt(world, x, y, forced, sink),
+        34 => toggle_chandelier_alt(world, x, y, forced, sink),
+        93 => toggle_lamp_alt(world, x, y, forced, sink),
+        42 => toggle_hanging_lantern_alt(world, x, y, forced, sink),
         149 => toggle_holiday_light(world, x, y, forced),
         _ => return false,
     }

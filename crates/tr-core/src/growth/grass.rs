@@ -39,7 +39,7 @@ pub fn update_world_grass_growth(
     if i < 10 || j < 10 || i >= world.width as i32 - 10 || j >= world.height as i32 - 10 {
         return;
     }
-    let Some(t) = world.tile(i, j) else {
+    let Some(t) = world.tile(i, j).copied() else {
         return;
     };
     let kind = t.kind;

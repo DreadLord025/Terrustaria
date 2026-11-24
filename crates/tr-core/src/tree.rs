@@ -838,12 +838,12 @@ pub fn convert_tree_and_ground(
                 if is_tile_a_tree_branch(world, x - 1, y - i) == Some(1)
                     || is_tile_a_tree_root(world, x - 1, y - i) == Some(1)
                 {
-                    let _ = crate::edit::kill_tile(world, x - 1, y - i, false);
+                    let _ = crate::edit::kill_tile_legacy(world, x - 1, y - i, false);
                 }
                 if is_tile_a_tree_branch(world, x + 1, y - i) == Some(-1)
                     || is_tile_a_tree_root(world, x + 1, y - i) == Some(-1)
                 {
-                    let _ = crate::edit::kill_tile(world, x + 1, y - i, false);
+                    let _ = crate::edit::kill_tile_legacy(world, x + 1, y - i, false);
                 }
             }
         }

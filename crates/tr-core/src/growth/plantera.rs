@@ -98,22 +98,22 @@ fn attempt_bulb_at(world: &mut World, i: i32, j: i32, force_bulb: bool) -> bool 
                         t.flags |= FLAG_ACTIVE;
                     }
                 }
-                crate::edit::square_tile_frame_gen(world, cx, cy);
+                crate::edit::square_tile_frame_gen_legacy(world, cx, cy);
             }
         }
         place_jungle_plant(world, i, j, 238, 0, 0, false);
         if world.tile(i, j).is_some_and(|t| t.kind == 238) {
-            crate::edit::square_tile_frame_gen(world, i, j);
-            crate::edit::square_tile_frame_gen(world, i + 2, j);
-            crate::edit::square_tile_frame_gen(world, i - 1, j);
+            crate::edit::square_tile_frame_gen_legacy(world, i, j);
+            crate::edit::square_tile_frame_gen_legacy(world, i + 2, j);
+            crate::edit::square_tile_frame_gen_legacy(world, i - 1, j);
             return true;
         }
     } else {
         place_jungle_plant(world, i, j, 238, 0, 0, false);
         if world.tile(i, j).is_some_and(|t| t.kind == 238) {
-            crate::edit::square_tile_frame_gen(world, i, j);
-            crate::edit::square_tile_frame_gen(world, i + 2, j);
-            crate::edit::square_tile_frame_gen(world, i - 1, j);
+            crate::edit::square_tile_frame_gen_legacy(world, i, j);
+            crate::edit::square_tile_frame_gen_legacy(world, i + 2, j);
+            crate::edit::square_tile_frame_gen_legacy(world, i - 1, j);
             return true;
         }
     }

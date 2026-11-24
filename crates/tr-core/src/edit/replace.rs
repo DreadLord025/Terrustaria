@@ -12,7 +12,7 @@ use crate::tile::Tile;
 use crate::tiledata as td;
 use crate::world::World;
 
-use super::{can_pound_tile, ensure_frame_important, kill_tile, touch, ObjectDrop, TileKill, WALL_UNBREAKABLE};
+use super::{can_pound_tile, ensure_frame_important, kill_tile, kill_tile_legacy, touch, ObjectDrop, TileKill, WALL_UNBREAKABLE};
 
 /// `WorldGen.ReplaceTile(x, y, targetType, targetStyle)`
 /// (`WorldGen.cs:62558-62580`): the two gates, the anchor move, then the
@@ -213,7 +213,7 @@ fn eliminate_natural_extras(world: &mut World, x: i32, y: i32, drops: &mut Vec<O
             && (td::SET_REPLACE_TILE_BREAK_UP.has(t.kind)
                 || (t.kind == 165 && matches!(t.frame_y, 36 | 54 | 90)))
     }) {
-        if let Some(kill) = kill_tile(world, x, y - 1, false) {
+        if let Some(kill) = kill_tile_legacy(world, x, y - 1, false) {
             drops.extend(kill.object_drops);
         }
     }
@@ -223,7 +223,7 @@ fn eliminate_natural_extras(world: &mut World, x: i32, y: i32, drops: &mut Vec<O
             && (td::SET_REPLACE_TILE_BREAK_DOWN.has(t.kind)
                 || (t.kind == 165 && matches!(t.frame_y, 0 | 18 | 72)))
     }) {
-        if let Some(kill) = kill_tile(world, x, y + 1, false) {
+        if let Some(kill) = kill_tile_legacy(world, x, y + 1, false) {
             drops.extend(kill.object_drops);
         }
     }
@@ -557,7 +557,7 @@ fn eliminate_natural_extras_kills(world: &mut World, x: i32, y: i32) -> Vec<(i32
             && (td::SET_REPLACE_TILE_BREAK_UP.has(up.kind)
                 || (up.kind == 165 && matches!(up.frame_y, 36 | 54 | 90)))
         {
-            if let Some(k) = kill_tile(world, x, y - 1, false) {
+            if let Some(k) = kill_tile_legacy(world, x, y - 1, false) {
                 kills.push((x, y - 1, k));
             }
         }
@@ -567,7 +567,7 @@ fn eliminate_natural_extras_kills(world: &mut World, x: i32, y: i32) -> Vec<(i32
             && (td::SET_REPLACE_TILE_BREAK_DOWN.has(down.kind)
                 || (down.kind == 165 && matches!(down.frame_y, 0 | 18 | 72)))
         {
-            if let Some(k) = kill_tile(world, x, y + 1, false) {
+            if let Some(k) = kill_tile_legacy(world, x, y + 1, false) {
                 kills.push((x, y + 1, k));
             }
         }
@@ -604,7 +604,7 @@ fn replace_area(
     }
     for i in 0..w {
         for j in 0..h {
-            let _ = super::square_tile_frame_default(world, ax + i, ay + j);
+            let _ = super::square_tile_frame_default_legacy(world, ax + i, ay + j);
         }
     }
 }
@@ -667,7 +667,7 @@ fn replace_single(
         crate::framing::reframe_area(world, ax, ay, 1, false);
     }
     // `:62646` тАФ `SquareTileFrame(topLeftX, topLeftY)`.
-    let _ = super::square_tile_frame_default(world, ax, ay);
+    let _ = super::square_tile_frame_default_legacy(world, ax, ay);
 }
 
 #[cfg(test)]

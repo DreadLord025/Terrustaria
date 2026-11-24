@@ -733,11 +733,11 @@ fn stone_patch(world: &mut World, x: i32, y: i32, world_surface: f64, rng: &mut 
                     }
                     if rng.range(0, 3) != 0 {
                         super::spider_gem_moss::place_small_pile(
-                            world, k, l, rng.range(0, 6), 1, 185,
+                            world, k, l, rng.range(0, 6), 1,
                         );
                     }
                     super::spider_gem_moss::place_small_pile(
-                        world, k, l, rng.range(0, 6), 0, 185,
+                        world, k, l, rng.range(0, 6), 0,
                     );
                 }
                 if dist < num4 {
@@ -1113,7 +1113,7 @@ pub(crate) fn pass_sunflowers(world: &mut World, world_surface: f64, rng: &mut R
         // `:19923-19936` тАФ the column scans (`k` from 1 to worldSurface - 1).
         for j in left..right {
             for k in 1..last_row {
-                let Some(t) = world.tile(j, k) else {
+                let Some(t) = world.tile(j, k).copied() else {
                     break;
                 };
                 // `:19927-19930` тАФ the grass-top arm (the type test reads
@@ -1194,7 +1194,7 @@ fn place_sunflower(world: &mut World, x: i32, y: i32, world_surface: f64, rng: &
     // `PlaceTile`'s tail `SquareTileFrame(i, j)` (`:60154`) тАФ the port's
     // worldgen reframe seam; tile 27 is frame-important (boot statics), so
     // the stored frames survive.
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen_legacy(world, x, y);
 }
 
 /// `AlchemyHerbs` (`WorldGen.cs:19964-19980`): `maxTilesX * 1.7` attempts
@@ -1593,7 +1593,7 @@ fn place_dye(world: &mut World, x: i32, y: i32, style: i32) {
             t.frame_x = (34 * style) as i16;
         }
         // `PlaceTile`'s tail `SquareTileFrame` (`:60044`).
-        crate::edit::square_tile_frame_gen(world, x, y);
+        crate::edit::square_tile_frame_gen_legacy(world, x, y);
     }
 }
 
@@ -2059,7 +2059,7 @@ fn flower_cell(world: &mut World, x: i32, y: i32, style: i32, rng: &mut Rng) {
         }
         // `WorldGen.KillTile(x, y)` тАФ the gen-time strip (the cell is
         // inactive or a pile/tree here; the cascade's noItem path).
-        crate::edit::kill_tile(world, x, y, true);
+        crate::edit::kill_tile_legacy(world, x, y, true);
         if rng.range(0, 2) == 0 {
             if let Some(t) = world.tile_mut(x, y + 1) {
                 t.set_slope(0);
@@ -2153,7 +2153,7 @@ fn place_flower(world: &mut World, x: i32, y: i32, rng: &mut Rng) {
     // `PlaceTile`'s tail `SquareTileFrame` (`:60261`, the `if (tile.active())`
     // gate) тАФ only when a write landed.
     if wrote {
-        crate::edit::square_tile_frame_gen(world, x, y);
+        crate::edit::square_tile_frame_gen_legacy(world, x, y);
     }
 }
 
@@ -2355,7 +2355,8 @@ fn spread_wall(world: &mut World, x: i32, y: i32, wall_type: u16) {
                 if conversions >= MAX_WALL_OUT {
                     continue;
                 }
-                world.tiles[world.index(px, py)].wall = wall_type;
+                let wall_idx = world.index(px, py);
+                world.tiles[wall_idx].wall = wall_type;
                 // The 4-way fan (`:3464-3483`).
                 let mut fan = [
                     (px - 1, py),
@@ -2382,7 +2383,8 @@ fn spread_wall(world: &mut World, x: i32, y: i32, wall_type: u16) {
                 }
             } else if t.active() {
                 // The solid-active arm (`:3518-3521`): the wall only.
-                world.tiles[world.index(px, py)].wall = wall_type;
+                let wall_idx = world.index(px, py);
+                world.tiles[wall_idx].wall = wall_type;
             }
         }
         wave = next;
@@ -2642,7 +2644,8 @@ pub(crate) fn grass_wall(world: &mut World, world_surface: f64, rng: &mut Rng, o
             if world.tile(num3, num4).is_some_and(|t| t.wall == WALL_GRASS_UNSAFE)
                 && rng.range(0, 10) == 0
             {
-                world.tiles[world.index(num3, num4)].wall = WALL_FLOWER_UNSAFE;
+                let wall_idx = world.index(num3, num4);
+                world.tiles[wall_idx].wall = WALL_FLOWER_UNSAFE;
             }
             // The dirt fringe (`:19662-19680`): any wall-63/65 cell in the
             // 3├Ч3 converts the dirt tile via SpreadGrass. The C# `break`

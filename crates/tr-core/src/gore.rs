@@ -840,9 +840,9 @@ impl GorePool {
             if !self.slots[num].active {
                 continue;
             }
-            self.update_slot(rng, world, collision, wind_for_visuals, num, sound);
+
             let dust_slot = dust.as_mut().map(|(p, c)| (&mut **p, &**c));
-            self.update_slot(rng, world, collision, wind_for_visuals, num, dust_slot);
+            self.update_slot(rng, world, collision, wind_for_visuals, num, sound, dust_slot);
         }
     }
 

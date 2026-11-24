@@ -50,7 +50,7 @@
 //!   `tenthAnniversaryWorldGen` / `getGoodWorldGen`, and `crimson` is
 //!   `GenOptions.crimson`.
 
-use crate::edit::kill_tile;
+use crate::edit::{kill_tile, kill_tile_legacy};
 use crate::seeds::SeedFlags;
 use crate::tile::{FLAG_ACTIVE, LiquidKind};
 use crate::tiledata as td;
@@ -554,7 +554,7 @@ fn convert_sky_islands(
             // `:24697-24700` — the vanity sakura/willow above dies first.
             let above = world.tile(k, l - 1).map(|u| u.kind).unwrap_or(0);
             if above == TILE_VANITY_SAKURA || above == TILE_VANITY_WILLOW {
-                kill_tile(world, k, l - 1, true);
+                kill_tile_legacy(world, k, l - 1, true);
             }
             // `:24701` — the single-cell Convert. The caller's type 2 is
             // the C3 hallow cell; any other type is unported here (the
@@ -565,7 +565,7 @@ fn convert_sky_islands(
             // `:24702-24706` — the plant kills, on the POST-Convert read.
             let above = world.tile(k, l - 1).map(|u| u.kind).unwrap_or(0);
             if matches!(above, 82 | 83 | 185 | 186 | 187 | 227) {
-                kill_tile(world, k, l - 1, true);
+                kill_tile_legacy(world, k, l - 1, true);
             }
             // `:24707-24710` — the 1-in-3 forest-tree roll
             // (`TryGrowingTreeByType(5, …)`'s case-5 arm, `:30348-30350`).

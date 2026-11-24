@@ -843,16 +843,16 @@ fn horizontal_tunnel(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
 /// are exempt). The cross test reads `.type` WITHOUT an active gate
 /// (`:15728`), the corner test WITH one (`:15735`) — both verbatim.
 pub(crate) fn wood_tree_walls(world: &mut World, world_surface: f64) {
-    let kind_at = |x: i32, y: i32| world.tile(x, y).map_or(0, |t| t.kind);
+    let kind_at = |world: &World, x: i32, y: i32| world.tile(x, y).map_or(0, |t| t.kind);
     for i in 25..world.width - 25 {
         let mut j = 25i32;
         while (j as f64) < world_surface {
             // The 5-cell cross (`:15728`).
-            if kind_at(i, j) == TILE_LIVING_WOOD
-                || kind_at(i, j - 1) == TILE_LIVING_WOOD
-                || kind_at(i - 1, j) == TILE_LIVING_WOOD
-                || kind_at(i + 1, j) == TILE_LIVING_WOOD
-                || kind_at(i, j + 1) == TILE_LIVING_WOOD
+            if kind_at(world, i, j) == TILE_LIVING_WOOD
+                || kind_at(world, i, j - 1) == TILE_LIVING_WOOD
+                || kind_at(world, i - 1, j) == TILE_LIVING_WOOD
+                || kind_at(world, i + 1, j) == TILE_LIVING_WOOD
+                || kind_at(world, i, j + 1) == TILE_LIVING_WOOD
             {
                 let mut ok = true;
                 for k in (i - 1)..=(i + 1) {

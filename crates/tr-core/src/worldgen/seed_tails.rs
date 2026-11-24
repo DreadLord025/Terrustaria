@@ -412,7 +412,7 @@ pub(crate) fn remove_specific_tiles_under_spawn(world: &mut World, spawn_x: i32,
                 .tile(x, y)
                 .is_some_and(|t| t.active() && SET_REMOVE_WHEN_UNDER_SPAWN.has(t.kind))
             {
-                crate::edit::kill_tile(world, x, y, true);
+                crate::edit::kill_tile_legacy(world, x, y, true);
             }
         }
     }

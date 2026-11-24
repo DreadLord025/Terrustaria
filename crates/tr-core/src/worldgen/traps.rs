@@ -263,7 +263,7 @@ fn place_2x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
 /// with `no_item: true` (the C# forces noItem while generating,
 /// `:63545-63548`).
 fn kill(world: &mut World, x: i32, y: i32) {
-    crate::edit::kill_tile(world, x, y, true);
+    crate::edit::kill_tile_legacy(world, x, y, true);
 }
 
 /// The red-wire walk between the plate and the trap

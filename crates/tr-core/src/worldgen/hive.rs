@@ -349,7 +349,8 @@ fn create_dent_for_honey_fall(world: &mut World, x: i32, y: i32, dir: i32) {
         if solid_tile(world, x, y) {
             // `:298` — PoundTile, generation-time (the gated i31 port;
             // worldgen has no chest store, the closure answers false).
-            crate::edit::pound_tile(world, x, y, true, |_, _| false);
+            let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+            crate::edit::pound_tile(world, x, y, true, |_, _| false, &mut _gen_rng);
             if world.tile(x, y + 1).is_some_and(|t| !t.active()) {
                 let idx = world.index(x, y + 1);
                 world.tiles[idx].flags |= FLAG_ACTIVE;

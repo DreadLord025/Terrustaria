@@ -990,7 +990,7 @@ fn convert_powder_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
         // `Convert_ActuallyConvertTile` (`:56312-56327`): active, different,
         // the tree-above validity check, then the write + re-frame.
         if active && kind != new_kind {
-            try_kill_invalid_tree_above(world, x, y, new_kind);
+            try_kill_invalid_tree_above_legacy(world, x, y, new_kind);
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = new_kind;
             }
@@ -1059,7 +1059,7 @@ pub fn convert_cell_mushroom(world: &mut World, x: i32, y: i32) {
         // `Convert_ActuallyConvertTile`: active, different, the tree-above
         // validity check, then the write + re-frame.
         if active && kind != 70 {
-            try_kill_invalid_tree_above(world, x, y, 70);
+            try_kill_invalid_tree_above_legacy(world, x, y, 70);
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = 70;
             }
@@ -1070,7 +1070,7 @@ pub fn convert_cell_mushroom(world: &mut World, x: i32, y: i32) {
     if matches!(kind, 32 | 352 | 69 | 655) {
         // `Conversion.Thorn[type]` → `KillTile` (`:55352-55357`; the netMode
         // send is MP-only). The cleanse arm's kill precedent.
-        let _ = crate::edit::kill_tile(world, x, y, false);
+        let _ = crate::edit::kill_tile_legacy(world, x, y, false);
     }
 }
 
@@ -1109,6 +1109,13 @@ pub fn convert_sized_mushroom(world: &mut World, i: i32, j: i32, size: i32) {
 /// test. The gem/vanity/ash profiles (`GrowTreeSettings.Profiles.
 /// TryGetFromTreeId`, `:3890-3928`) override the vanilla test; the
 /// `ConvertTreeAndGround` cross-conversion half is the documented skip.
+/// [`try_kill_invalid_tree_above`] with the seed stand-in — the conversion
+/// helpers below predate the W4-g83 stream threading (legacy-path stand-in).
+fn try_kill_invalid_tree_above_legacy(world: &mut World, x: i32, y: i32, new_floor: u16) {
+    let mut gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+    try_kill_invalid_tree_above(world, x, y, new_floor, &mut gen_rng);
+}
+
 fn try_kill_invalid_tree_above(
     world: &mut World,
     x: i32,
@@ -1215,7 +1222,7 @@ pub fn convert_hallow_cell_halves(world: &mut World, x: i32, y: i32, tiles: bool
     if !in_world(world, x, y, 1) || (!tiles && !walls) {
         return;
     }
-    let Some(t) = world.tile(x, y) else {
+    let Some(t) = world.tile(x, y).copied() else {
         return;
     };
     let (kind, wall, active) = (t.kind, t.wall, t.active());
@@ -1277,7 +1284,7 @@ pub fn convert_hallow_cell_halves(world: &mut World, x: i32, y: i32, tiles: bool
         if let Some(new_kind) = new_kind {
             // `Convert_ActuallyConvertTile` (`:56312-56327`).
             if active && kind != new_kind {
-                try_kill_invalid_tree_above(world, x, y, new_kind);
+                try_kill_invalid_tree_above_legacy(world, x, y, new_kind);
                 if let Some(t) = world.tile_mut(x, y) {
                     t.kind = new_kind;
                 }
@@ -1285,7 +1292,7 @@ pub fn convert_hallow_cell_halves(world: &mut World, x: i32, y: i32, tiles: bool
             }
         } else if CONV_THORN.contains(&kind) {
             // `:55248-55255` — the thorn bushes die (the netMode arm is MP).
-            let _ = crate::edit::kill_tile(world, x, y, false);
+            let _ = crate::edit::kill_tile_legacy(world, x, y, false);
         }
     }
     // The independent mud arm (`:55256-55259`): the SNAPSHOT type 59 with a
@@ -1301,7 +1308,7 @@ pub fn convert_hallow_cell_halves(world: &mut World, x: i32, y: i32, tiles: bool
         .any(|t| t.is_some_and(|t| t.kind == 109))
     {
         if active && kind != 0 {
-            try_kill_invalid_tree_above(world, x, y, 0);
+            try_kill_invalid_tree_above_legacy(world, x, y, 0);
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = 0;
             }
@@ -1346,7 +1353,7 @@ pub fn convert_sized_spray(world: &mut World, i: i32, j: i32, conversion_type: u
 /// sets). The `RainbowSandAndBlackSandWalls` paint arms are the documented
 /// skip; the re-frame is the `reframe_area` superset.
 pub fn convert_spray_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
-    let Some(t) = world.tile(x, y) else {
+    let Some(t) = world.tile(x, y).copied() else {
         return;
     };
     let (kind, wall, active) = (t.kind, t.wall, t.active());
@@ -1475,7 +1482,7 @@ pub fn convert_spray_cell(world: &mut World, x: i32, y: i32, conversion_type: u8
     if let Some(new_kind) = new_kind {
         // `Convert_ActuallyConvertTile` (`:56312-56327`).
         if active && kind != new_kind {
-            try_kill_invalid_tree_above(world, x, y, new_kind);
+            try_kill_invalid_tree_above_legacy(world, x, y, new_kind);
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = new_kind;
             }
@@ -1485,7 +1492,7 @@ pub fn convert_spray_cell(world: &mut World, x: i32, y: i32, conversion_type: u8
         // `:55400-55407`/`:55437-55444`/`:55518-55525` — the thorn kill
         // (the 69 corrupt-thorn exemption is the C#'s own; the netMode arm
         // is MP-only).
-        let _ = crate::edit::kill_tile(world, x, y, false);
+        let _ = crate::edit::kill_tile_legacy(world, x, y, false);
     }
 }
 
@@ -1545,7 +1552,7 @@ pub fn convert_chlorophyte_cell(world: &mut World, x: i32, y: i32, conversion_ty
     // Type 8 (`:55665-55670`): `tiles && (type == 59 || type == 60)`.
     if conversion_type == 8 {
         if matches!(kind, 59 | 60) && active && kind != 211 {
-            try_kill_invalid_tree_above(world, x, y, 211);
+            try_kill_invalid_tree_above_legacy(world, x, y, 211);
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = 211;
             }
@@ -1570,7 +1577,7 @@ pub fn convert_chlorophyte_cell(world: &mut World, x: i32, y: i32, conversion_ty
     };
     if let Some(new_kind) = new_kind {
         if active && kind != new_kind {
-            try_kill_invalid_tree_above(world, x, y, new_kind);
+            try_kill_invalid_tree_above_legacy(world, x, y, new_kind);
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = new_kind;
             }
@@ -1579,7 +1586,7 @@ pub fn convert_chlorophyte_cell(world: &mut World, x: i32, y: i32, conversion_ty
     } else if matches!(kind, 24 | 32 | 201 | 205 | 352 | 636) {
         // `:55707-55718` / `:55750-55761` — the thorn/evil kinds die (the
         // netMode arm is MP-only).
-        let _ = crate::edit::kill_tile(world, x, y, false);
+        let _ = crate::edit::kill_tile_legacy(world, x, y, false);
     }
 }
 
@@ -1627,7 +1634,7 @@ pub fn convert_sized_biome(world: &mut World, i: i32, j: i32, conversion_type: u
 /// are MP-only. The type-19 wall switch's `case 15` no-op and the default
 /// 15 arm are verbatim (`:56193-56206`).
 pub fn convert_biome_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
-    let Some(t) = world.tile(x, y) else {
+    let Some(t) = world.tile(x, y).copied() else {
         return;
     };
     let (kind, wall, active) = (t.kind, t.wall, t.active());
@@ -1754,7 +1761,7 @@ pub fn convert_biome_cell(world: &mut World, x: i32, y: i32, conversion_type: u8
         // catch-all → mushroom grass 70 (air) / mud 59 (sealed).
         15 => {
             if thorn {
-                let _ = crate::edit::kill_tile(world, x, y, false);
+                let _ = crate::edit::kill_tile_legacy(world, x, y, false);
             }
             if !important {
                 let new_kind = if tile_is_exposed_to_air(world, x, y) { 70 } else { 59 };
@@ -1780,7 +1787,7 @@ pub fn convert_biome_cell(world: &mut World, x: i32, y: i32, conversion_type: u8
             } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind) && kind != 397 {
                 actually_convert_tile(world, x, y, kind, active, 397);
             } else if thorn && kind != 69 {
-                let _ = crate::edit::kill_tile(world, x, y, false);
+                let _ = crate::edit::kill_tile_legacy(world, x, y, false);
             } else if kind != 396 && !important {
                 actually_convert_tile(world, x, y, kind, active, 396);
             }
@@ -1802,7 +1809,7 @@ pub fn convert_biome_cell(world: &mut World, x: i32, y: i32, conversion_type: u8
                 let new_kind = if tile_is_exposed_to_air(world, x, y) { 2 } else { 0 };
                 actually_convert_tile(world, x, y, kind, active, new_kind);
             } else if thorn {
-                let _ = crate::edit::kill_tile(world, x, y, false);
+                let _ = crate::edit::kill_tile_legacy(world, x, y, false);
             } else if kind != 1 && !important {
                 actually_convert_tile(world, x, y, kind, active, 1);
             }
@@ -1831,7 +1838,7 @@ pub fn convert_biome_cell(world: &mut World, x: i32, y: i32, conversion_type: u8
 /// d1-documented skip; the `NetMessage` tail is MP-only.
 fn actually_convert_tile(world: &mut World, x: i32, y: i32, kind: u16, active: bool, new_kind: u16) {
     if active && kind != new_kind {
-        try_kill_invalid_tree_above(world, x, y, new_kind);
+        try_kill_invalid_tree_above_legacy(world, x, y, new_kind);
         if let Some(t) = world.tile_mut(x, y) {
             t.kind = new_kind;
         }
@@ -2073,9 +2080,9 @@ pub fn initialize_hard_mode(world: &mut World, rng: &mut UnifiedRandom) {
     // bool (`corruption = !crimson`).
     let corruption = !world.crimson;
     // The hallow runner: the east side heading further east.
-    gerunner(world, world.width / 2 + offset, speed, true, corruption, rng);
+    gerunner(world, world.width / 2 + offset, 0, speed, 5.0, true, corruption, rng);
     // The evil runner: the west side heading further west.
-    gerunner(world, world.width / 2 - offset, -speed, false, corruption, rng);
+    gerunner(world, world.width / 2 - offset, 0, -speed, 5.0, false, corruption, rng);
 }
 
 #[cfg(test)]

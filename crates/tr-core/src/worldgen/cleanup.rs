@@ -48,7 +48,7 @@
 //!   / NPC-angler tails are flag-absent or no-port-state stand-ins
 //!   (documented at the dispatch site).
 
-use crate::edit::kill_tile;
+use crate::edit::{kill_tile, kill_tile_legacy};
 use crate::liquid::LiquidSystem;
 use crate::seeds::{MicroSeedFlags, SeedFlags};
 use crate::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK, LiquidKind};
@@ -163,7 +163,7 @@ pub(crate) fn tile_cleanup(world: &mut World, rng: &mut Rng, opts: &GenOptions) 
                 t.active() && t.liquid > 0 && td::SET_SLOWLY_DIES_IN_WATER.has(t.kind)
             });
             if dies {
-                kill_tile(world, k, l, true);
+                kill_tile_legacy(world, k, l, true);
             }
             // `:21551-21627` — the drip block: an air cell under a solid
             // shelf, 2/3 of the time.
@@ -667,7 +667,7 @@ fn clear_broken_traps_capped(
             {
                 continue;
             }
-            if !world.wires.wire(item.0, item.1) {
+            if !world.wires.any(item.0, item.1) {
                 continue;
             }
             // `:26874-26875` — record the cell in both lists.
@@ -739,14 +739,14 @@ fn clear_broken_traps_capped(
         // VERIFIED; receipt in research-312 §3).
         let tile = world.tile(x, y).copied().unwrap_or_default();
         if is_it_a_trap(&tile) && tile.kind != 105 {
-            kill_tile(world, x, y, true);
+            kill_tile_legacy(world, x, y, true);
         } else if is_it_a_trigger(&tile) {
             if tile.kind == 314 {
                 if let Some(t) = world.tile_mut(x, y) {
                     t.frame_x = 1;
                 }
             } else {
-                kill_tile(world, x, y, true);
+                kill_tile_legacy(world, x, y, true);
             }
         }
     }
@@ -769,7 +769,7 @@ pub(crate) fn remove_broken_traps(world: &mut World, opts: &GenOptions) {
     let num = 50;
     for i in num..world.width - num {
         for j in 50..world.height - 50 {
-            if world.wires.wire(i, j) && !visited.contains(&(i, j)) {
+            if world.wires.any(i, j) && !visited.contains(&(i, j)) {
                 clear_broken_traps(world, (i, j), &mut visited);
             }
         }
@@ -1149,7 +1149,7 @@ fn final_cleanup_sweep(world: &mut World, ws: f64, rock_layer: f64, opts: &GenOp
             }
             // `:22301-22304` — a palm 323 in liquid dies.
             if kind_at(world, i, j) == 323 && liquid_at(world, i, j) > 0 {
-                kill_tile(world, i, j, true);
+                kill_tile_legacy(world, i, j, true);
             }
             // `:22305-22318` — the dungeon-wall liquid strip.
             if WALL_DUNGEON.contains(&wall) {
@@ -1162,7 +1162,7 @@ fn final_cleanup_sweep(world: &mut World, ws: f64, rock_layer: f64, opts: &GenOp
                     }
                 }
                 if world.tile(i, j).is_some_and(|t| t.active() && t.kind == 56) {
-                    kill_tile(world, i, j, true);
+                    kill_tile_legacy(world, i, j, true);
                     if let Some(t) = world.tile_mut(i, j) {
                         t.set_liquid_kind(LiquidKind::Water);
                         t.liquid = u8::MAX;
@@ -1388,7 +1388,8 @@ pub(crate) fn final_cleanup(world: &mut World, gv: &mut GenVars, streams: &mut S
         for num22 in 0..world.width {
             if let Some(t) = world.tile(num22, num21).copied() {
                 if t.liquid > 0 {
-                    sys.liquid_check(world, num22, num21, liquid_code(t.liquid_kind()), true);
+                    let mut _gen_rng = crate::UnifiedRandom::new(world.seed as i32);
+                    sys.liquid_check(world, num22, num21, liquid_code(t.liquid_kind()), true, &mut _gen_rng);
                 }
             }
         }

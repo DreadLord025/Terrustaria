@@ -18,7 +18,7 @@ use crate::World;
 
 /// `Main.SetBackColor`'s three outputs (`out sunColor, out moonColor` +
 /// `Main.ColorOfTheSkies`), as sRGB bytes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BackColors {
     pub bg: [u8; 3],
     pub sun: [u8; 3],
