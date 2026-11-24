@@ -1,6 +1,6 @@
-//! S1-F-9 wave C — the FURNITURE `DrawData` cases that need animation /
-//! container state: the 92 critter-cage frame-table rewrites and the chest
-//! sub-cell rewrite. The static furniture metrics (chairs 15, tables 14,
+//! S1-F-9 wave C — the FURNITURE `DrawData` cases that need animation
+//! state: the 92 critter-cage frame-table rewrites. The static furniture
+//! metrics (chairs 15, tables 14,
 //! beds 79, workbenches 18, chests 21, the anvil/furnace/beam 16-group, the
 //! pot/statue 28-group) already live in [`crate::drawdata::draw_data`]; this
 //! module ports only the parts that table documents as deviations, so the
@@ -14,9 +14,13 @@
 //! - jellyfish cages    :5898-5907
 //! - the cage index probes `GetWaterAnimalCageFrame` :6528-6533,
 //!   `GetSmallAnimalCageFrame` :6535-6540, `GetBigAnimalCageFrame` :6542-6547
-//! - the chest rewrite `CacheSpecialDraws_Part2` :4287-4330 (runs AFTER
-//!   `GetTileDrawData`, `DrawSingleTile` :993), `TileID.Sets.BasicChest =
-//!   CreateBoolSet(21, 467)` (TileID.cs:570).
+//! - the chest rewrite `CacheSpecialDraws_Part2` :4287-4330 is NOT ported
+//!   here — keep-one (W4-f16): the sole rewrite lives in
+//!   `tr-render/src/chest_frames.rs::chest_frame_adjust` (the W4-d58 move
+//!   of the S1-G-1e slice, wired by `render/tiles.rs::draw_tiles` at the
+//!   `DrawSingleTile` `:993` position, before the source rect `:1007`).
+//!   Only the `TileID.Sets.BasicChest = CreateBoolSet(21, 467)` set probe
+//!   ([`is_basic_chest`], TileID.cs:570) stays here for the wiring's gate.
 //!
 //! The `Main.*CageFrame` tables are animator state (`Main.cageFrames = 25`,
 //! Main.cs:66901; the tables are advanced by `Main.AnimateTiles_CritterCages`,
@@ -200,9 +204,20 @@ pub fn cage_draw_data(
     Some(data)
 }
 
-/// `TileID.Sets.BasicChest = CreateBoolSet(21, 467)` (TileID.cs:570).
+/// `TileID.Sets.BasicChest = CreateBoolSet(21, 467)` (TileID.cs:570) — the
+/// gate the chest rewrite's wiring reads (`CacheSpecialDraws_Part2`,
+/// `TileDrawing.cs:4289`). The rewrite itself is keep-one in
+/// `tr-render/src/chest_frames.rs::chest_frame_adjust` (W4-d58 / W4-f16).
 pub fn is_basic_chest(kind: u16) -> bool {
     kind == 21 || kind == 467
+}
+
+/// Whether a kind rides one of the four cage `case` groups — the G6 key's
+/// in-view gate for the cage animator (the `TileAnimator::is_animated_kind`
+/// convention) and the draw's `Main.critterCage` set probe
+/// (TileDrawing.cs:5672 etc.).
+pub fn is_cage_kind(kind: u16) -> bool {
+    cage_table(kind).is_some()
 }
 
 /// The chest half of `CacheSpecialDraws_Part2` (TileDrawing.cs:4289-4330),
@@ -250,15 +265,20 @@ pub fn chest_draw_rewrite(
 }
 
 /// The wave-C dispatch hook: given the `draw_data` result for a cell, apply
-/// the furniture rewrites this module owns. `cage_frames` is
-/// `Main.cageFrames` ([`CAGE_FRAMES`]); `frame_of` reads the cage tables
-/// (all-zero until the animator lands); `chest_frame` is the opened chest's
-/// animation frame (see [`chest_draw_rewrite`]).
+/// the cage rewrites this module owns. `cage_frames` is `Main.cageFrames`
+/// ([`CAGE_FRAMES`]); `frame_of` reads the cage tables (all-zero until the
+/// animator lands).
 ///
-/// Wiring note for the S1-F-9 merge: the cage half REPLACES the static
-/// cage arms of `drawdata.rs` (the `:5629-5907` deviation arms) inside the
-/// table; the chest half runs AFTER the whole table + campfire epilogue,
-/// matching `DrawSingleTile`'s `CacheSpecialDraws_Part2` position (:993).
+/// W4-f16 keep-one: the chest half is GONE — the `CacheSpecialDraws_Part2`
+/// rewrite (`TileDrawing.cs:4289-4330`) lives once in
+/// `tr-render::chest_frame_adjust` (the W4-d58 move + wiring), applied by
+/// `render/tiles.rs::draw_tiles` after the whole `GetTileDrawData` dispatch
+/// (`DrawSingleTile` :993) and before the source rect (:1007). The former
+/// `chest_draw_rewrite` here was a second port of the same block with zero
+/// live callers (the d62 finding); its behaviour pins ride the survivor's
+/// witnesses. Wiring note for the cage half (S1-F-9 merge / W4-f14): it
+/// REPLACES the static cage arms of `drawdata.rs` (the `:5629-5907`
+/// deviation arms) inside the table.
 pub fn furniture_post_pass(
     kind: u16,
     x: i32,
@@ -267,13 +287,11 @@ pub fn furniture_post_pass(
     frame_y: i16,
     cage_frames: i32,
     frame_of: impl Fn(CageAnim, i32, i32) -> i32,
-    chest_frame: Option<i32>,
     data: &mut TileDrawData,
 ) {
     if let Some(cage) = cage_draw_data(kind, x, y, frame_x, frame_y, cage_frames, frame_of) {
         *data = cage;
     }
-    chest_draw_rewrite(kind, frame_x, frame_y, chest_frame, data);
 }
 
 #[cfg(test)]
@@ -492,81 +510,48 @@ mod tests {
         assert!(cage_draw_data(15, 0, 0, 0, 0, CAGE_FRAMES, zero_tables).is_none());
     }
 
-    // ---- the chest rewrite (TileDrawing.cs:4289-4330) ----
-
-    fn chest_dd(kind: u16, fx: i16, fy: i16, frame: Option<i32>) -> TileDrawData {
-        let mut d = draw_data(kind, 0, 0, fx, fy, 0, false);
-        chest_draw_rewrite(kind, fx, fy, frame, &mut d);
-        d
-    }
+    // ---- the chest set probe + keep-one (W4-f16) ----
 
     #[test]
-    fn closed_chest_folds_to_the_sheet_origin_per_sub_cell() {
-        // Top-left cell: nothing moves.
-        let d = chest_dd(21, 0, 0, None);
-        assert_eq!((d.add_fr_x, d.add_fr_y, d.height), (0, 0, 16));
-        // On the 18-px framing grid `num * 18 - fx` / `num2 * 18 - fy` are
-        // both 0 — the fold's visible effects are the bottom-row height,
-        // the open offsets below, and the addFrY ASSIGNMENT (which discards
-        // the table's `tileFrame * 38` default, see the next test).
-        let d = chest_dd(21, 18, 0, None);
-        assert_eq!((d.add_fr_x, d.add_fr_y, d.height), (0, 0, 16));
-        // Bottom row (fy 18): tileHeight 18 (:4322-4325) — matches the
-        // static case-21 arm's fy == 18 rule.
-        let d = chest_dd(21, 18, 18, None);
-        assert_eq!((d.add_fr_x, d.add_fr_y, d.height), (0, 0, 18));
-        // Containers2 (467) rides the same set (TileID.cs:570).
-        let d = chest_dd(467, 0, 18, None);
-        assert_eq!(d.height, 18);
+    fn basic_chest_set_probe_and_post_pass_leaves_chests_to_the_survivor() {
+        // TileID.Sets.BasicChest (TileID.cs:570) — the wiring's gate.
         assert!(is_basic_chest(21) && is_basic_chest(467));
         assert!(!is_basic_chest(441)); // BasicChestFake is a different set
-    }
-
-    #[test]
-    fn open_chest_frames_shift_the_row_by_38_and_76() {
-        // frame 1 -> +38, frame 2 -> +76 (:4311-4320), on every sub-cell.
-        for (frame, shift) in [(Some(1), 38), (Some(2), 76), (Some(0), 0), (None, 0)] {
-            let top = chest_dd(21, 0, 0, frame);
-            assert_eq!(top.add_fr_y, shift, "frame {frame:?} top row");
-            assert_eq!(top.height, 16);
-            let bottom = chest_dd(21, 18, 18, frame);
-            assert_eq!(bottom.add_fr_y, shift, "frame {frame:?} bottom row");
-            assert_eq!(bottom.height, 18);
-        }
-        // A frame value outside {1, 2} adds nothing (the C# has no else).
-        assert_eq!(chest_dd(21, 0, 0, Some(3)).add_fr_y, 0);
-    }
-
-    #[test]
-    fn chest_rewrite_replaces_the_animation_row_default() {
-        // The C# ASSIGNS addFrY (it does not +=): the GetTileDrawData
-        // default `tileFrame * 38` is discarded for chests.
-        let mut d = draw_data(21, 0, 0, 0, 0, 3, false);
-        assert_eq!(d.add_fr_y, 114); // the table default before the pass
-        chest_draw_rewrite(21, 0, 0, Some(1), &mut d);
-        assert_eq!(d.add_fr_y, 38);
-        // Non-chest kinds keep the table's result untouched.
-        let mut d = draw_data(15, 0, 0, 0, 0, 3, false);
-        let before = d;
-        chest_draw_rewrite(15, 0, 0, Some(2), &mut d);
-        assert_eq!(d, before);
-    }
-
-    #[test]
-    fn post_pass_dispatches_cage_and_chest_disjointly() {
-        // A cage cell goes through the cage rewrite only.
+        // A cage cell goes through the cage rewrite.
         let mut d = draw_data(275, 12, 12, 0, 0, 0, false);
-        furniture_post_pass(275, 12, 12, 0, 0, CAGE_FRAMES, fake_tables, None, &mut d);
+        furniture_post_pass(275, 12, 12, 0, 0, CAGE_FRAMES, fake_tables, &mut d);
         assert_eq!(d.add_fr_y, (fake_tables(CageAnim::Bunny, 0, 6) * 54) as i16);
-        // A chest cell goes through the chest rewrite only.
+        // A chest cell keeps the table's result untouched HERE — the
+        // CacheSpecialDraws_Part2 rewrite (+0/38/76, height 18) runs once,
+        // downstream in tr-render::chest_frame_adjust (the W4-d58 wiring).
         let mut d = draw_data(21, 0, 0, 18, 18, 0, false);
-        furniture_post_pass(21, 0, 0, 18, 18, CAGE_FRAMES, fake_tables, Some(2), &mut d);
-        assert_eq!((d.add_fr_y, d.height), (76, 18));
-        // Anything else is untouched.
+        let before = d;
+        furniture_post_pass(21, 0, 0, 18, 18, CAGE_FRAMES, fake_tables, &mut d);
+        assert_eq!(d, before);
+        // Anything else is untouched too.
         let mut d = draw_data(15, 0, 0, 0, 18, 0, false);
         let before = d;
-        furniture_post_pass(15, 0, 0, 0, 18, CAGE_FRAMES, fake_tables, Some(1), &mut d);
+        furniture_post_pass(15, 0, 0, 0, 18, CAGE_FRAMES, fake_tables, &mut d);
         assert_eq!(d, before);
+    }
+
+    /// W4-f16 keep-one witness (the d62 finding): the chest half of
+    /// `CacheSpecialDraws_Part2` (TileDrawing.cs:4289-4330) must exist ONCE
+    /// — in `tr-render/src/chest_frames.rs::chest_frame_adjust` (the W4-d58
+    /// keep-one move of the S1-G-1e slice, wired by `draw_tiles` at the
+    /// `DrawSingleTile` :993 position). The former `chest_draw_rewrite`
+    /// here was a dead second port of the same block; this pins that no
+    /// rewrite maths creeps back into the cage module.
+    #[test]
+    fn w4_f16_no_second_chest_rewrite_in_the_cage_module() {
+        let src = include_str!("drawdata_furniture.rs");
+        // Concat so the witness's own literals do not self-match.
+        let dup_fn = ["fn chest_draw_", "rewrite("].concat();
+        assert!(!src.contains(&dup_fn), "the dup stays deleted");
+        let lid38 = ["+=", " 38"].concat();
+        let lid76 = ["+=", " 76"].concat();
+        assert!(!src.contains(&lid38) && !src.contains(&lid76), "no lid-row maths here");
+        assert!(src.contains("tr-render/src/chest_frames.rs"), "the doc points at the survivor");
     }
 
     // ---- per-case tests over the STATIC furniture arms (draw_data) ----

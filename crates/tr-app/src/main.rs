@@ -14,13 +14,24 @@ mod achievements_data;
 mod accessory_combat;
 mod audio;
 mod bank;
+mod void_lens;
 mod banners;
 mod bestiary;
+mod bestiary_data;
 mod biome;
 mod buff_effects;
+mod buff_effects_frame;
 mod buff_effects_misc;
+mod buff_effects_summons;
+mod buff_effects_orbs;
+mod buff_effects_potions_sets;
+mod buff_effects_status;
 mod buffs;
 mod buff_effects_accessory;
+mod buff_effects_boosters;
+mod buff_effects_tail;
+mod buff_frame_wiring;
+mod buff_inferno_aura;
 mod bug_net;
 mod chat;
 mod chest;
@@ -39,6 +50,7 @@ mod entity_lights;
 mod item_lights;
 mod npc_lights;
 mod player_lights;
+mod proj_ai_lights;
 mod proj_lights;
 mod eoc_fight;
 mod input_map;
@@ -56,19 +68,52 @@ mod loot_db;
 mod loot_db_gen;
 mod map;
 mod map_layers;
+// W4-g11: the Main.cs `Dust.NewDust*` sites, batch 1 of 3 — `snowing()`
+// (Main.cs:13088) + the `TeleportEffect` App-level dispatcher/seams,
+// per the claim doc (docs/research/64-dust-main-sites-claims.md) and the
+// union-exec (docs/research/116-teleport-reconcile.md).
+mod main_dust;
+// W4-g11 union-exec (research/116 keep-one): the surviving
+// `Main.TeleportEffect` body — g61's widest-11 arms adapted per-hunk +
+// the wired `NPC.UpdateNPC_TeleportVisuals` decay.
+mod teleport_dust;
+// W4-g23: the Main.cs PlaySound census batch 3 (sites 181-271 of 271,
+// :49734-:66248) — the DrawMenu inline-cue census (the rows are landed, the
+// per-site cue seam is g22's in-flight Menu::pending_cue) + the tail sites'
+// pure cue-decision halves (colour/volume hover ticks, star-game hit pair,
+// click-pan toggle, unity-map hover, fullscreen-map close, NewText tail,
+// SelectPlayer/password/IP arms). Code-only — witnesses written not run.
+mod main_sounds_batch3;
+mod map_npc_icons;
+mod map_player_icons;
 mod melee_swing;
 mod menu;
 mod minecart;
+mod main_dust_b;
 mod mount;
+mod mount_dust;
 mod net;
 mod npc;
 mod npc_scaling;
+mod npc_glow;
 mod npc_chat;
+mod npc_death_dust;
+mod npc_names;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
 mod npc_ai_prime_limbs;
 mod npc_ai_style64;
+// W4-f18 first-20 port: the Butterfly 356's AI_065 machine (NPC.cs:
+// 44896-45119) — the style-axis 65 arm claims it (npc.rs).
+mod npc_ai_style65;
+// W4-f18 batch 2: the town-CRITTER path of AI_007 (NPC.cs:52965-55561,
+// the TownCritter subset) — the Frog 361 / Duck 362 / DuckWhite 364 ride
+// the style-axis 7 arm (npc.rs); the full town machine stays unwired.
+mod npc_ai_town_critter;
+// W4-f18 first-20 port: the stat witnesses for the twenty kinds 355-380
+// + 430 (the census doc's first-20 list). WRITTEN NOT RUN (code-only).
+mod npc_w4_f18_witnesses;
 mod npc_ai_style70;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
@@ -80,6 +125,9 @@ mod npc_ai3_speeds;
 // S1-D-3z (zombie fighter audit): the AI_003 obstacle scan tail
 // (NPC.cs:59831-60284) + the Drippler's aiStyle-22 machine.
 mod npc_ai_fighter_scan;
+// W4-d22 (NPC aiStyle 3): the shared AI_003_Fighters core — the
+// walk/jump/fall/knockback/door-bash phases for the plain-walker family.
+mod npc_ai_style3;
 mod npc_ai_drippler;
 mod npc_ai_dungeon_shooter;
 // W4-c9: the gold town-critters' AI_007 wander/hop subset (GoldBunny 443 /
@@ -90,9 +138,16 @@ mod npc_ai_ghost;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
 mod npc_ai_unicorn;
+// W4-c40 — the Sand Elemental's aiStyle-102 machine (UNWIRED, the d41
+// roster wave owns the kind row; the style73 precedent).
+mod npc_ai_sand_elemental;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;
+mod npc_ai_style17;
+mod npc_ai_style18;
+mod npc_ai_style19;
+mod npc_ai_style20;
 mod npc_ai_style24;
 mod npc_ai_style28;
 mod npc_ai_style29;
@@ -144,23 +199,30 @@ mod npc_ai_style66;
 // GoldButterfly 444 wiring) + the d38 TownCritter wander/hop subset
 // (the GoldBunny/GoldFrog/GoldMouse 443/445/447).
 mod npc_ai_style65;
+mod npc_ai_critter;
 mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
 mod npc_ai_style75;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
+// W4-d23 (aiStyle-13): UNWIRED man-eater family (43/56/101/175/259/260,
+// NPC.cs:22615-22847) - the six kinds + the axis claim are the wiring
+// step (the npc_ai_style17/20 precedent).
+mod npc_ai_style13;
 mod npc_ai_style30;
 mod npc_ai_style31;
+mod npc_ai_style32;
+mod npc_ai_style40;
 mod npc_ai_style47;
 mod npc_ai_bat;
 mod npc_ai_eye;
 mod npc_ai_golem;
 mod npc_ai_slime;
-// S1-D-3 cultist: UNWIRED Lunatic Cultist machine (AI_084, 439/440) -
-// the live npc.rs::update_lunatic_cultist stub stays byte-identical
-// until the wiring round (the npc_ai_fishron precedent; states 4/7/8
-// deferred, see the module doc).
+// S1-D-3 cultist / W4-c1: WIRED Lunatic Cultist machine (AI_084, 439) -
+// the aiStyle-84 axis arm (npc.rs::ai_084_cultist) claims the dispatch;
+// the old update_lunatic_cultist stub is retired. The 440 clone has no
+// port kind (solo path); states 4/7/8 deferred, see the module doc.
 mod npc_ai_cultist;
 // S1-D-3 (B-6a): UNWIRED pillar machine (aiStyle 94) - the dispatch swap
 // + the checkDead intercept are the wiring wave; R72 wires the 629
@@ -177,17 +239,53 @@ mod npc_transform_visuals;
 // dispatch claim is the wiring wave (the npc_ai_style39 precedent).
 mod npc_hit_effect_a;
 mod npc_ai_style21;
+mod npc_ai_style22;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
 mod npc_findframe_mid2;
 mod npc_findframe_c;
 mod npc_findframe_high2;
+mod npc_findframe_c;
+mod npc_findframe_extra5;
+mod npc_findframe_extra6;
+mod npc_findframe_extra7;
+mod npc_findframe_extra7b;
+mod npc_findframe_extra7c;
+mod npc_findframe_extra8;
+mod npc_findframe_low1;
+mod npc_findframe_low2;
+mod npc_findframe_mid1;
+mod npc_findframe_mid2;
+mod npc_findframe_high2;
+mod npc_findframe_extra1;
+mod npc_findframe_extra4;
+mod npc_findframe_extra9;
+mod npc_findframe_extra10;
+mod npc_findframe_extra11;
+mod npc_findframe_extra12;
+mod npc_findframe_extra13;
+mod npc_findframe_extra2;
+mod npc_findframe_extra3;
+mod npc_findframe_extra7d;
+mod npc_findframe_extra7e;
+mod npc_findframe_extra7f;
+mod npc_findframe_extra7g;
+mod npc_findframe_extra7h;
+mod npc_findframe_extra7i;
+mod npc_findframe_extra7j;
+mod npc_findframe_extra7k;
+// W4-g6 wiring lane 1 — the FIRST-half unwired findframe waves'
+// modules (the C#-slot order: extra2 84-181, mid2 166-180, extra3
+// 182-219; the SECOND half 233+ rides W4-g7).
 mod persist;
 mod grapple;
 mod gore_seam;
 mod creative;
 mod creative_sacrifices;
+// W4-d122 shop currency: the Defender Medal wallet (CustomCurrencyManager/
+// CustomCurrencySingleCoin) — the Tavernkeep's medal rows buy through it.
+mod custom_currency;
 mod happiness;
 mod hotbar;
 mod hurt_modifiers;
@@ -196,6 +294,7 @@ mod hurt_modifiers;
 mod melee_on_hit;
 mod player;
 mod player_file;
+mod popup_text;
 mod potions;
 mod prefix;
 pub(crate) mod prefix_id;
@@ -204,6 +303,8 @@ pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
 mod projectile_ai001_b;
+mod projectile_ai_dd2_shots;
+mod projectile_ai_rc_drone;
 mod projectile_ai_frostmoon;
 mod projectile_ai_moonlord;
 
@@ -228,6 +329,16 @@ mod projectile_ai_light_items;
 // reusing tr-core's golf.rs + golf_state.rs (code-only round — the
 // witness tests are WRITTEN NOT RUN).
 mod projectile_ai_golf;
+// W4-f42 sandstorm second half: the Desert Djinn's curse (596, aiStyle
+// 107) — the orbit/homing AI + the Kill burst census. The row lands in
+// projectile/data.rs; the dispatch arm (107) + the kill hook are wired
+// in projectile.rs::update. Code-only mode — witnesses written not run.
+mod projectile_ai_djinn;
+// W4-f42 sandstorm second half: the desert debris + family AI (the
+// Vulture 61 aiStyle 17, the Antlion 69 aiStyle 19, the FlyingAntlion 581
+// aiStyle 44; the mummies + WalkingAntlion ride update_zombie, the
+// Tumbleweed 546 rides unicorn_step). Code-only — witnesses written not run.
+mod npc_ai_desert;
 // S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
 // 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
 mod projectile_ai_darts;
@@ -258,12 +369,44 @@ mod projectile_bobber;
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+// W4-g82 — the rope-coil lane: the four coils' aiStyle-35 machine
+// (171/475/505/506, Projectile.cs:27189-27291), the DrawProjDirect chain
+// placement preview (Main.cs:28499-28669), the Kill refund ladder
+// (:77572-77615) + CheckRopeUsability (Player.cs:41506-41545). WIRED:
+// the 35 dispatch arm + rows (projectile.rs / projectile/data.rs), the
+// death-hook refund + ai1==0 cue (the d77 kill_tail_cue pattern), the
+// chain draw in draw_with_hand, the usability gate in use_tile_item.
+mod projectile_rope_coil;
 mod rain;
+// W4-c40c — the storm-bolt lane (research/78 item 4): the LightningGenerator
+// bolt geometry (`LightningGenerator.cs:9-326`, the private-LCG random walk +
+// the CanHitTarget tile/liquid gate) and the damaging SpawnStormLightning
+// spawn chain (`WorldGen.cs:71864-72018`, the strike roll + attractor scan +
+// safe-spot/rain-shelter/nearby-bolt gates). UNWIRED modules — the 1091
+// aiStyle-203 AI + the UpdateWorldGen tick drain are the wiring follow-up
+// (the npc_ai_sand_elemental precedent). Witnesses WRITTEN NOT RUN.
+mod lightning_generator;
+mod storm_lightning;
+mod resource_pack;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
 // helpers (:37718-37991). Wired into update_editing (the boss-spawner seam).
 mod recall_teleport;
+// W4-d51: the player-tick `Dust.NewDust` drain lanes — the extra-jump chain
+// (`Player.JumpMovement`, Player.cs:20818-21012) first; the tick queues the
+// box/velocity snapshot, this module replays on the `UpdatePlayers` stream.
+mod player_dust;
+// W4-g66: the movement-trail drain lanes — the DoubleJumpVisuals and
+// floor-dust chains first. Same snapshot-then-replay convention as
+// `player_dust`.
+mod player_boot_dust;
+mod player_trail_dust;
+mod player_wing_dust;
+// W4-g89f: the Rod of Discord 1326 / Rod of Harmony 5335 use path —
+// ItemCheck_UseTeleportRod (Player.cs:45476-45534) + the chaos-state tax.
+// Wired into update_editing (the recall/boss-spawner seam).
+mod rod_teleport;
 mod regen;
 mod research;
 mod sand;
@@ -290,12 +433,22 @@ mod shimmer;
 mod signs;
 mod sound;
 mod soundid;
+// W4-g22: the Main.cs PlaySound census batch 2 (sites 91-180 of 271,
+// :44118-:49727) — the hair-window scroll machine, the clothes-window
+// open/cancel/save cue arms, the builder-accessory toggle cycles and the
+// case-20 female-hit slot pick. The menu-half cues ride Menu::pending_cue
+// (code-only mode — witnesses written not run).
+mod main_sounds;
+mod sun_scorch;
+mod dryad_stardew;
+mod town_shimmer;
 mod test_world_helpers;
 mod town;
 mod town_arrival;
 mod tracked_sound;
 mod touch_damage;
 mod ui;
+mod world_dust;
 mod world_sim;
 mod world_stepper;
 

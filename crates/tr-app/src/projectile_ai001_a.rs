@@ -287,7 +287,7 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
 /// runs at the pass tail), so one helper keeps the pair.
 fn latch_ai1(p: &mut Projectile, style: i32) {
     if p.ai[1] == 0.0 {
-        p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+        p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
         p.ai[1] = 1.0;
     }
 }
@@ -338,10 +338,12 @@ fn skull(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
     if p.vel.length() < 18.0 {
         p.vel *= 1.02;
     }
-    // `:56075-56088` — the first-tick latch; `SoundID.Item8` and the
-    // 10× dust 5 burst are SKIPPED (no rand draw survives).
+    // `:56075-56088` — the first-tick latch; `SoundID.Item8` queues with the
+    // `localAI[0] = 1f` one-shot (S1-E-21h d76, `:56078` — `base.position`),
+    // the 10× dust 5 burst stays SKIPPED (no rand draw survives).
     if p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
+        p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:56659-56675` — `alpha = 0` (the fade below it is a no-op for
     // 270), `frame++` wrapping at 2; the 2× dust 5 (`:56678-56685`)

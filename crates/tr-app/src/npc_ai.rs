@@ -51,17 +51,27 @@ impl WalkerParams {
     };
 }
 
-/// The flyer tunables.
+/// The flyer tunables — the RETIRED v1 archetype's shape. W4-b2b: the
+/// false `AI_002` citation is dead — neither 0.12 nor 3.0 appears in
+/// `AI_002_FloatingEye` (`NPC.cs:52274-52731`); the faithful eye machine
+/// is `npc_ai_eye::floating_eye_ai`, wired on the aiStyle-2 axis. These
+/// fields exist only for the test-only `flyer_step` A/B pin.
 #[derive(Clone, Copy, Debug)]
 pub struct FlyerParams {
-    /// The acceleration toward the player (`AI_002`'s 0.12).
+    /// The v1 stand-in's normalized-aim acceleration (INVENTED — not an
+    /// `AI_002` constant; the real arm steers 0.1/0.04 per axis).
     pub accel: f32,
-    /// The speed cap (`AI_002`'s 3.0 for the demon eyes).
+    /// The v1 stand-in's symmetric speed clamp (INVENTED — the real arm
+    /// clamps ±4 X / ±1.5 Y × `(2 − scale)`).
     pub max_speed: f32,
 }
 
 impl FlyerParams {
-    /// The demon-eye machine (`AI_002_FloatingEye`, `NPC.cs:52274+`).
+    /// The RETIRED v1 eye stand-in's numbers (W4-b2b killed the false
+    /// `AI_002_FloatingEye` citation — the A-1 audit, research/54 §2).
+    /// Test-only: `the_flyer_homes_and_bounces` pins the legacy archetype;
+    /// no live caller remains (`update_eye` retired with the wiring).
+    #[allow(dead_code)] // test-only A/B pin (W4-b2b) — no live caller
     pub const FLOATING_EYE: Self = Self {
         accel: 0.12,
         max_speed: 3.0,
@@ -91,6 +101,14 @@ pub fn walker_step(
     let aggro = dx.abs() < params.aggro_x && dy.abs() < params.aggro_y;
     if aggro {
         npc.facing = if dx >= 0.0 { 1 } else { -1 };
+        // W4-g4 lane 15 — the Confused debuff (31) reverses the walk
+        // direction (`NPC.cs:77772-77775`, the SetTargetTrackingValues
+        // tail the fighter core's TargetClosest runs; the generic
+        // archetype's ad-hoc facing carries the same flip — the P3
+        // buff-31 latch convention: `buffs.find_buff_index(31)`).
+        if npc.buffs.find_buff_index(31).is_some() {
+            npc.facing *= -1;
+        }
         // `NPC.spriteDirection` is the renderer's flip source
         // (`Main.cs:23124-23128`) and `AI_000_Fighters`' head keeps it in
         // lockstep with the movement direction (`NPC.cs:19867`,
@@ -178,6 +196,11 @@ pub fn walker_step_ladder(
     let aggro = dx.abs() < params.aggro_x && dy.abs() < params.aggro_y;
     if aggro {
         npc.facing = if dx >= 0.0 { 1 } else { -1 };
+        // W4-g4 lane 15 — the Confused (31) walk-direction reversal
+        // (`NPC.cs:77772-77775`), as `walker_step`'s aggro arm.
+        if npc.buffs.find_buff_index(31).is_some() {
+            npc.facing *= -1;
+        }
         // BUG-07's lockstep write, as `walker_step` (`NPC.cs:19867`).
         npc.sprite_dir = npc.facing;
         if !run_ai3_ladder(npc, world, target_x, target_y, gravity, target_dead) {
@@ -270,14 +293,17 @@ pub fn run_ai3_ladder(
 /// true — every fighter chases.
 ///
 /// Stock stand-ins (documented, ANALYSIS "The shared target selection"):
-/// `Main.player[target].ZoneGraveyard` and `Main.dontStarveWorld` have no
-/// port fields — both read false, so their chain terms pass; the
-/// `Main.remixWorld` half of `IsItDay` (`Main.cs:62825-62832`) is unported
-/// (`world.day_time` stands in).
+/// `Main.dontStarveWorld` has no port field — it reads false, so its chain
+/// term passes; the `Main.remixWorld` half of `IsItDay`
+/// (`Main.cs:62825-62832`) is unported (`world.day_time` stands in).
+/// `Main.player[target].ZoneGraveyard` rides the sim's pre-stamp
+/// (`Npc::target_zone_graveyard` ← `scene_metrics.zone_graveyard`, W4-g4
+/// lane 15, the W4-d22 reconcile fold — the d120 biome pass); false
+/// outside the sim (the solo/test convention).
 pub fn fighters_not_discouraged(npc: &Npc, world: &World) -> bool {
     let id = npc.kind.cs_id();
-    // `Main.player[npcInstance.target].ZoneGraveyard` — unported, false.
-    let zone_graveyard = false;
+    // `Main.player[npcInstance.target].ZoneGraveyard` — the pre-stamp.
+    let zone_graveyard = npc.target_zone_graveyard;
     let chain = !world.eclipse
         && world.day_time // `Main.IsItDay()` (`Main.cs:62825-62832`)
         && !npc.spawned_from_statue
@@ -419,11 +445,13 @@ pub fn walker_step_fighter(
     walker_integrate(npc, world, params, gravity, max_fall);
 }
 
-/// `AI_002_FloatingEye`'s fly-and-bob step (`NPC.cs:52274+`, the eye
-/// machine): accelerate toward the player, bounce off the tiles, the bob
-/// rides the anim clock. The last live caller (the bat stand-in) retired
-/// with the S1-D-3 reconcile — the archetype stays for the aiStyle-2
-/// slice's A/B pin (`the_flyer_homes_and_bounces`).
+/// The RETIRED v1 flyer archetype's fly-and-bob step (W4-b2b: was
+/// false-cited as `AI_002_FloatingEye`, `NPC.cs:52274+` — the normalized
+/// 0.12 aim, the ±3 clamp and the `sin(anim*3)*0.4` bob appear NOWHERE in
+/// the C# arm; the faithful machine is `npc_ai_eye::floating_eye_ai`,
+/// wired on the aiStyle-2 axis). Test-only: the last live caller
+/// (`update_eye`) retired with the wiring; the archetype stays for the
+/// A/B pin (`the_flyer_homes_and_bounces`).
 #[allow(dead_code)]
 pub fn flyer_step(
     npc: &mut Npc,
@@ -500,8 +528,11 @@ pub struct HoverParams {
     /// (42) are in the excluded set and never get the extra add.
     pub double_add: bool,
     /// `noTileCollide` (`SetDefaults`) — the kinds that fly through the
-    /// tiles (`AI_005`'s own kind list at `:50656` excludes them from the
-    /// bounce arm); the others bounce with `bounce`.
+    /// tiles. W4-d22: this gates the WRAPPER's integration tail (raw
+    /// `position += velocity` vs the flyer collision), NOT the bounce arm
+    /// — the C# bounce list (`:50656`) includes the noTileCollide kinds
+    /// (6/23); their arm is inert because the raw integration never
+    /// latches `collideX/Y`. The others bounce with `bounce`.
     pub no_tile_collide: bool,
     /// The tile bounce's restitution (`NPC.cs:50656-50688`): `num14` = 0.7
     /// for the family, 0.4 for the types 6/173.
@@ -523,6 +554,73 @@ pub struct HoverParams {
     /// the dead-target flee — `type == 619 && Center.Y > targetData.Center.Y
     /// - 200f` drops `velocity.Y` by 0.3 before the approach.
     pub hover_rise: bool,
+    /// W4-d22: the `num8 | flag4` drift arm (`NPC.cs:50448-50478`). The
+    /// Eater of Souls (6) takes it when the raw aim distance > 100; the
+    /// Hornet (42) and the bees (210/211) take it every tick (`flag4`).
+    pub drift: HoverDrift,
+    /// W4-d22: the wet tail (`NPC.cs:50714-50725` for the types
+    /// 6/94/173/619, `:50739-50753` for 42/176/231-235): the sinking
+    /// ×0.95 damp, the lift and the −2/−4 cap. The Hornet row also
+    /// re-picks the target (`:50752`) — the wrapper resolves it after
+    /// the wet lift.
+    pub wet: HoverWet,
+    /// W4-d22: the per-tick dust gate (`NPC.cs:50656-50713`): the
+    /// `Main.rand.Next(N) == 0` roll consumed EVERY tick, the dust type
+    /// and the colour/scale the spawn carries. `None` for the kinds the
+    /// gate excludes (the Hornet, the bees). The spawn's colour is
+    /// `default(Color)` — the C# passes `this.color` (the NPC field is
+    /// never written on these kinds, `NPC.cs:6489`) or the literal
+    /// default; both are the all-zero XNA colour. The scale is the
+    /// NPC's `scale`.
+    pub dust: Option<HoverDust>,
+    /// W4-d22: the day/dead flee exemption (`NPC.cs:50906`): the
+    /// `Main.IsItDay()` term is gated OFF for the listed kinds, the dead
+    /// term fires for everyone. The servant (5) is NOT on the list — it
+    /// flees at dawn (`velocity.Y -= 0.06`); the Meteor Head (23) IS.
+    pub dawn_exempt: bool,
+}
+
+/// W4-d22: the `num8 | flag4` drift arm (`NPC.cs:50448-50478`) — the
+/// `ai[0]` counter's ±0.023 nudges on the velocity, ahead of the approach.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HoverDrift {
+    /// Outside both sets — no drift (the servant, the Meteor Head).
+    None,
+    /// `num8` (the Eater of Souls, 6): the arm runs only when the raw aim
+    /// distance `num7 > 100` (`:50450`), and the near pass (`num7 < 150`,
+    /// `:50474-50478`) blends the velocity toward the aim by ×0.007.
+    EaterOfSouls,
+    /// `flag4` (the Hornet 42, the bees 210/211): the arm runs every tick
+    /// (`(num7 > 100) | flag4` is unconditionally true); no near pass (the
+    /// `:50474` type list holds only 6/94/173/619).
+    Flag4,
+}
+
+/// W4-d22: the wet tail rows (`NPC.cs:50714-50753`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HoverWet {
+    /// No wet arm (the servant, the Meteor Head).
+    None,
+    /// `:50714-50725` — the Eater of Souls row: `velocity.Y > 0` damps
+    /// ×0.95, then −0.3 lift, cap −2.
+    EaterOfSouls,
+    /// `:50739-50753` — the Hornet row: ×0.95, −0.5 lift, cap −4, and a
+    /// `TargetClosest()` re-pick while wet.
+    Hornet,
+}
+
+/// W4-d22: the per-tick dust gate row (`NPC.cs:50695-50712`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HoverDust {
+    /// The gate's `Main.rand.Next(N)` bound (20 for the bounce-list kinds,
+    /// 40 for the else arm).
+    pub gate: i32,
+    /// The `Dust.NewDust` type (`num16`/the literal 5): 18 for the Eater
+    /// of Souls / Meteor Head, 5 for the servant.
+    pub dust_type: i32,
+    /// The spawn's scale: the bounce-list arm passes `this.scale`
+    /// (`:50702`), the else arm the stock 1.0 (`:50710`).
+    pub use_npc_scale: bool,
 }
 
 impl HoverParams {
@@ -544,6 +642,18 @@ impl HoverParams {
         bob_drift: false,
         close_boost: false,
         hover_rise: false,
+        // W4-d22: `num8` holds type 6 (`:50445`) — the >100 drift + the
+        // <150 near blend; the wet row `:50714`; the `:50695` Next(20)
+        // gate spawns type-18 dust at `this.color`/`this.scale`; type 6
+        // IS on the dawn-flee exemption list (`:50906`).
+        drift: HoverDrift::EaterOfSouls,
+        wet: HoverWet::EaterOfSouls,
+        dust: Some(HoverDust {
+            gate: 20,
+            dust_type: 18,
+            use_npc_scale: true,
+        }),
+        dawn_exempt: true,
     };
     /// The Hornet (type 42; `NPC.cs:50341-50344`: num 3.5, num2 0.021).
     /// Type 205 is the *other* hover kind (`NPC.cs:50364-50367`: 3.25/0.018) —
@@ -562,6 +672,14 @@ impl HoverParams {
         bob_drift: false,
         close_boost: false,
         hover_rise: false,
+        // W4-d22: `flag4` holds type 42 (`:50446`) — the every-tick drift;
+        // the wet row `:50741-50753` (the TargetClosest re-pick rides the
+        // wrapper); the `:50695` dust gate EXCLUDES type 42 (no dust);
+        // type 42 is on the dawn-flee exemption list (`:50906`).
+        drift: HoverDrift::Flag4,
+        wet: HoverWet::Hornet,
+        dust: None,
+        dawn_exempt: true,
     };
     /// The Servant of Cthulhu (type 5; `NPC.cs:50379-50382`: num 5, num2
     /// 0.03). The servant has its own arm now (S1-D-3k); the row stays as
@@ -577,6 +695,19 @@ impl HoverParams {
         bob_drift: false,
         close_boost: false,
         hover_rise: false,
+        // W4-d22: type 5 is in neither drift set nor any wet row; it is
+        // NOT on the `:50656` bounce list, so it takes the ELSE dust arm
+        // (`:50708`): Next(40), type-5 dust, default colour/scale. It is
+        // NOT on the dawn-flee exemption list (`:50906`) — the servant
+        // climbs away at dawn (`velocity.Y -= 0.06`).
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: Some(HoverDust {
+            gate: 40,
+            dust_type: 5,
+            use_npc_scale: false,
+        }),
+        dawn_exempt: false,
     };
     /// The Meteor Head (type 23; `NPC.cs:50374-50377`: num 1, num2 0.03).
     /// `flag5` is true for it, it flies through the tiles (`SetDefaults`
@@ -659,6 +790,18 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.7,
         rotation: HoverRotation::Velocity,
+        // W4-d22: type 23 is in neither drift set nor any wet row; it IS
+        // on the `:50656` bounce list, so the `:50695` Next(20) gate
+        // spawns type-18 dust at `this.color`/`this.scale`; type 23 is on
+        // the dawn-flee exemption list (`:50906`).
+        drift: HoverDrift::None,
+        wet: HoverWet::None,
+        dust: Some(HoverDust {
+            gate: 20,
+            dust_type: 18,
+            use_npc_scale: true,
+        }),
+        dawn_exempt: true,
     };
 }
 
@@ -686,20 +829,32 @@ fn snap8(value: f32) -> f32 {
     ((value / 8.0) as i32 * 8) as f32
 }
 
-/// `AI_005_EaterOfSouls`'s fly core (`NPC.cs:50418-50579`, ahead of the
-/// per-kind dash/attack arms): the desired velocity = the normalized target
-/// vector × `num`; the velocity approaches it by `num2` per tick with the
-/// `flag5`-gated double-add on the sign flips (`:50547-50578`). The type-42
-/// family also takes the `num`/`num2` `2f - scale` factor (`:50350-50351`)
-/// and the surface-gated ×0.97 vertical damping (`:50352-50362`), applied to
-/// `velocity.Y` before the approach like the source.
+/// `AI_005_EaterOfSouls`'s fly core (`NPC.cs:50418-50914`) — the AI-only
+/// step: the desired velocity = the normalized target vector × `num`;
+/// the `num8 | flag4` drift (`:50448-50478`); the velocity approaches the
+/// aim by `num2` per tick with the `flag5`-gated double-add on the sign
+/// flips (`:50547-50578`); the per-kind rotation (`:50580-50655`); the
+/// tile bounce off the PREVIOUS tick's `collideX`/`collideY` latches with
+/// `num14` (`:50656-50688`, the `npc_ai_eye` oldVelocity precedent); the
+/// wet tail (`:50714-50753`); the day/dead flee (`:50906-50910`) and the
+/// velocity-flip netUpdate tail (`:50911-50914`).
+///
+/// W4-d22: the step no longer integrates — the C# integrates in
+/// `UpdateCollision` AFTER `AI()` (`NPC.cs:90490-90498`); the wrapper
+/// (`npc.rs::update_hover`) owns the integration tail
+/// (`integrate_flyer_collision` / `integrate_no_tile_collide`), the
+/// dust/wet half ([`hover_dust_wet`]), the Hornet's stinger ladder
+/// (`:50754-50810`) and the flee/netUpdate half ([`hover_flee`]). The
+/// bounce reads `npc.old_vx`/`old_vy` (LAST tick's pre-collision velocity,
+/// captured by the integration tail at `NPC.cs:92538`) and the
+/// `collide_x`/`collide_y` latches it set — NOT an inline probe (the
+/// pre-W4-d22 stand-in bounced off a same-tick wall test with a mid-step
+/// velocity capture).
 ///
 /// The aim is quantised to the 8-px grid (`:50421-50424`) — the target's
 /// centre and the NPC's own centre both floor to 8 px — and the dead-target
-/// flee vector (`:50480-50484`) replaces it. The step ends with the
-/// per-kind rotation arm (`:50580-50655`) and the tile collision: the
-/// `noTileCollide` kinds fly straight through, the others bounce with
-/// `num14` (`:50656-50688`).
+/// flee vector (`:50480-50484`) replaces it AFTER the drift (the C# order:
+/// normalize `:50427-50444` → drift `:50448` → flee `:50480` → approach).
 pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: HoverParams) {
     let (w, h) = (npc_size_w(npc), npc_size_h(npc));
     // The type-42/231-235 arm (`NPC.cs:50350-50351`): `num`/`num2` scale by
@@ -732,6 +887,8 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
     // distance keeps the current velocity (`num4 = velocity.X`). `num7`
     // (`:50428`) keeps the PRE-normalize snapped distance for the
     // bob/boost gates.
+    // distance keeps the current velocity (`num4 = velocity.X`) — read
+    // BEFORE the drift, exactly the C# order.
     let num6 = (aim_x * aim_x + aim_y * aim_y).sqrt();
     let num7 = num6;
     if num6 == 0.0 {
@@ -742,38 +899,42 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
         aim_x *= scale;
         aim_y *= scale;
     }
-    // `:50445-50478` — the bob + boost block, gated `num8 | flag4`. The
-    // only preset carrying it today is the BloodSquid (619, `flag4`
-    // `:50446`), so the inner `(num7 > 100f) | flag4` gate (`:50450`) is
-    // ALWAYS true — the drift runs every tick. The num8 kinds' >100px
-    // gate rides the hover-family wiring wave (the bee precedent's drift
-    // is bee-local in `update_bee_hover`).
-    if params.bob_drift {
-        // `:50452-50472` — ai[0]++ then the ±0.023 drift: Y by the ai[0]
-        // sign, X by the ±100 band, the 200 wrap to -200.
-        npc.ai[0] += 1.0;
-        if npc.ai[0] > 0.0 {
-            npc.vy += 0.023;
-        } else {
-            npc.vy -= 0.023;
+    // `:50445-50478` — the `num8 | flag4` drift: the ai[0] counter's
+    // ±0.023 nudges (Y by the counter's sign, X by the ±100 band, the 200
+    // wrap), gated on `num7 > 100` for the num8 kinds and unconditional
+    // for flag4; then the num8 kinds' <150 near blend (×0.007 of the
+    // normalized aim). The bees' old stand-in ran the drift BEFORE the
+    // normalize (a zero-distance deviation) — the C# order is restored.
+    let drift_runs = match params.drift {
+        HoverDrift::None => false,
+        HoverDrift::EaterOfSouls => num7 > 100.0,
+        HoverDrift::Flag4 => true,
+    };
+    if params.drift != HoverDrift::None {
+        if drift_runs {
+            npc.ai[0] += 1.0;
+            if npc.ai[0] > 0.0 {
+                npc.vy += 0.023;
+            } else {
+                npc.vy -= 0.023;
+            }
+            if npc.ai[0] < -100.0 || npc.ai[0] > 100.0 {
+                npc.vx += 0.023;
+            } else {
+                npc.vx -= 0.023;
+            }
+            if npc.ai[0] > 200.0 {
+                npc.ai[0] = -200.0;
+            }
         }
-        if npc.ai[0] < -100.0 || npc.ai[0] > 100.0 {
-            npc.vx += 0.023;
-        } else {
-            npc.vx -= 0.023;
-        }
-        if npc.ai[0] > 200.0 {
-            npc.ai[0] = -200.0;
-        }
-        // `:50474-50478` — the <150px approach boost on the NORMALIZED
-        // aim ({6, 94, 173, 619}; the BloodSquid's preset carries it).
-        if params.close_boost && num7 < 150.0 {
+        // `:50474-50478` — the near blend (the num8 type list 6/94/173/619).
+        if params.drift == HoverDrift::EaterOfSouls && num7 < 150.0 {
             npc.vx += aim_x * 0.007;
             npc.vy += aim_y * 0.007;
         }
     }
     // `:50480-50484` — a dead target: the NPC flies off along the facing
-    // direction (`num`/`2` sideways, `-num`/`2` down).
+    // direction (`num`/`2` sideways, `-num`/`2` up).
     if target.dead {
         aim_x = npc.facing as f32 * max_speed / 2.0;
         aim_y = -max_speed / 2.0;
@@ -825,41 +986,140 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
         }
         HoverRotation::Velocity => npc.rotation = npc.vy.atan2(npc.vx) - 1.57,
     }
-    // `:50656-50688` — the tile collision. The `noTileCollide` kinds (the
-    // Eater of Souls, the Meteor Head) fly straight through; the others
-    // bounce off the wall with `num14` and the small-velocity clamps.
-    let old_vx = npc.vx;
-    let old_vy = npc.vy;
-    if params.no_tile_collide {
-        npc.x += npc.vx;
-        npc.y += npc.vy;
-    } else {
-        let nx = npc.x + npc.vx;
-        if !crate::player::collides_rect(world, nx, npc.y, w, h) {
-            npc.x = nx;
-        } else {
-            npc.vx = old_vx * -params.bounce;
-            if npc.facing == -1 && npc.vx > 0.0 && npc.vx < 2.0 {
-                npc.vx = 2.0;
-            }
-            if npc.facing == 1 && npc.vx < 0.0 && npc.vx > -2.0 {
-                npc.vx = -2.0;
-            }
+    // `:50656-50688` — the tile bounce, gated on the kind list (the
+    // ported kinds: 6/23/42/210/211). It reads the PREVIOUS tick's
+    // `collideX`/`collideY` latches and `oldVelocity` (`NPC.cs:92538`'s
+    // capture, the port's integration tail) — the `npc_ai_eye` bounce
+    // precedent. `num14` = 0.4 for the types 6/173, 0.7 for the rest.
+    // The noTileCollide kinds (6/23) never latch, so the arm is inert for
+    // them — the C# shape kept verbatim.
+    if npc.collide_x {
+        npc.net_update = true;
+        npc.vx = npc.old_vx * -params.bounce;
+        if npc.facing == -1 && npc.vx > 0.0 && npc.vx < 2.0 {
+            npc.vx = 2.0;
         }
-        let ny = npc.y + npc.vy;
-        if !crate::player::collides_rect(world, npc.x, ny, w, h) {
-            npc.y = ny;
-        } else {
-            npc.vy = old_vy * -params.bounce;
-            if npc.vy > 0.0 && npc.vy < 1.5 {
-                npc.vy = 2.0;
-            }
-            if npc.vy < 0.0 && npc.vy > -1.5 {
-                npc.vy = -2.0;
+        if npc.facing == 1 && npc.vx < 0.0 && npc.vx > -2.0 {
+            npc.vx = -2.0;
+        }
+    }
+    if npc.collide_y {
+        npc.net_update = true;
+        npc.vy = npc.old_vy * -params.bounce;
+        if npc.vy > 0.0 && npc.vy < 1.5 {
+            npc.vy = 2.0;
+        }
+        if npc.vy < 0.0 && npc.vy > -1.5 {
+            npc.vy = -2.0;
+        }
+    }
+}
+
+/// W4-d22: `AI_005`'s dust gate + wet lift (`NPC.cs:50690-50753`) — the
+/// first half of the post-bounce tail. Split from the flee/netUpdate half
+/// ([`hover_flee`]) so the wrapper can interleave the Hornet's stinger
+/// ladder (`:50754-50810`, between the wet lift and the flee) in the C#
+/// order. `dust`/`dust_ctx`/`rng` ride the `UpdateNPCs` stream.
+pub fn hover_dust_wet(
+    npc: &mut Npc,
+    world: &World,
+    params: HoverParams,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
+    // `:50690-50713` — the per-tick dust gate. The bounce-list kinds
+    // (6/23) roll `Next(20)`, the else arm (the servant) `Next(40)`; on 0
+    // a dust spawns at (x, y + h*0.25) over width × (int)(h*0.5) at the
+    // NPC's velocity (speedY literal 2), alpha 75, then velocity.X *= 0.5
+    // / velocity.Y *= 0.1. The colour is `default(Color)` (`this.color`
+    // is never written on these kinds); the scale is `this.scale` on the
+    // bounce-list arm, the stock 1.0 on the else arm. The netOffset round
+    // trip (`:50689`/`:50706`) is zero in single-player — dropped.
+    if let Some(row) = params.dust {
+        if rng.next_max(row.gate) == 0 {
+            let scale = if row.use_npc_scale { npc.scale } else { 1.0 };
+            let idx = dust.new_dust(
+                rng,
+                dust_ctx,
+                world,
+                glam::Vec2::new(npc.x, npc.y + h * 0.25),
+                w as i32,
+                (h * 0.5) as i32,
+                row.dust_type,
+                npc.vx,
+                2.0,
+                75,
+                tr_core::particles::Color::default(),
+                scale,
+            );
+            if idx != tr_core::particles::DUST_SENTINEL {
+                let d = dust.slot_mut(idx);
+                d.velocity.x *= 0.5;
+                d.velocity.y *= 0.1;
             }
         }
     }
-    npc.facing = if target.center_x >= cx { 1 } else { -1 };
+    // `:50714-50753` — the wet lift. The Eater of Souls row: the sinking
+    // ×0.95 damp, −0.3 lift, −2 cap. The Hornet row: ×0.95, −0.5 lift, −4
+    // cap (the TargetClosest re-pick rides the wrapper — the solo fold:
+    // one player, `targetData` captured at `:50293` before the re-pick).
+    match params.wet {
+        HoverWet::None => {}
+        HoverWet::EaterOfSouls => {
+            if npc.wet {
+                if npc.vy > 0.0 {
+                    npc.vy *= 0.95;
+                }
+                npc.vy -= 0.3;
+                if npc.vy < -2.0 {
+                    npc.vy = -2.0;
+                }
+            }
+        }
+        HoverWet::Hornet => {
+            if npc.wet {
+                if npc.vy > 0.0 {
+                    npc.vy *= 0.95;
+                }
+                npc.vy -= 0.5;
+                if npc.vy < -4.0 {
+                    npc.vy = -4.0;
+                }
+            }
+        }
+    }
+}
+
+/// W4-d22: `AI_005`'s flee + netUpdate tail (`NPC.cs:50906-50914`) — the
+/// second half of the post-bounce tail, after the dust/wet half
+/// ([`hover_dust_wet`]) and (for the Hornet) the stinger ladder.
+pub fn hover_flee(npc: &mut Npc, world: &World, target: HoverTarget, params: HoverParams) {
+    // `:50906-50910` — the day/dead flee: `(IsItDay() && !exempt) | dead`
+    // → `velocity.Y -= num2 * 2` + `EncourageDespawn(10)`. The exemption
+    // list holds 6/23/42/210/211 (every ported kind but the servant — the
+    // servant climbs away at dawn, `num2 * 2 = 0.06`). `IsItDay()` folds
+    // to `day_time` (remixWorld is constants-off, the classic solo env).
+    let accel = if params.surface_damped {
+        params.accel * (2.0 - npc.scale)
+    } else {
+        params.accel
+    };
+    if (world.day_time && !params.dawn_exempt) || target.dead {
+        npc.vy -= accel * 2.0;
+        npc.encourage_despawn(10);
+    }
+    // `:50911-50914` — the velocity sign-flip netUpdate tail (vs the
+    // previous tick's oldVelocity, gated on !justHit).
+    if ((npc.vx > 0.0 && npc.old_vx < 0.0)
+        || (npc.vx < 0.0 && npc.old_vx > 0.0)
+        || (npc.vy > 0.0 && npc.old_vy < 0.0)
+        || (npc.vy < 0.0 && npc.old_vy > 0.0))
+        && !npc.just_hit
+    {
+        npc.net_update = true;
+    }
 }
 
 // S1-D-3: the aiStyle-8 caster family (`CasterParams`/`CasterPhase`/
@@ -1224,6 +1484,82 @@ mod tests {
         sk.y = 1880.0;
         w.eclipse = true;
         assert!(fighters_not_discouraged(&sk, &w));
+    }
+
+    /// W4-g4 lane 15 — the graveyard term of the chain (`NPC.cs:60302`'s
+    /// `!Main.player[target].ZoneGraveyard`): a day-discouraged skeleton
+    /// above the surface chases again when the target's zone pre-stamp
+    /// is set (the sim feeds `scene_metrics.zone_graveyard`).
+    #[test]
+    fn w4_g4_the_graveyard_stamp_cancels_the_day_discouragement() {
+        let mut w = ground(); // day
+        w.world_surface = 130.0;
+        let mut sk = Npc::new(NpcKind::Skeleton, 1600.0, 1880.0, 1, 0.0);
+        assert!(!fighters_not_discouraged(&sk, &w), "the day gate holds");
+        sk.target_zone_graveyard = true;
+        assert!(
+            fighters_not_discouraged(&sk, &w),
+            "the graveyard zone breaks the chain (:60302)"
+        );
+    }
+
+    /// W4-g4 lane 15 — the confused walk-direction reversal in the
+    /// GENERIC walker arms (`NPC.cs:77772-77775`, the
+    /// SetTargetTrackingValues tail): the ad-hoc dx-sign facing flips
+    /// under Confused (31) BEFORE the sprite lockstep and the velocity
+    /// write, so the walker accelerates AWAY from the player. Both
+    /// archetypes carry it — `walker_step` (the direct write) and
+    /// `walker_step_ladder` (the aiStyle-3 ladder reads the flipped
+    /// `direction`). The buff-31 latch convention (P3).
+    #[test]
+    fn w4_g4_the_confused_generic_walkers_reverse_the_walk() {
+        let w = night_ground();
+        // The player parked LEFT of the walker: the calm facing is -1.
+        let player = parked_player(&w, 60.0 * 16.0, 118.0 * 16.0 - 42.0);
+        let (pcx, pcy) = player.center();
+        let params = WalkerParams {
+            speed: 1.0,
+            jump: -6.2,
+            aggro_x: 80.0 * 16.0,
+            aggro_y: 40.0 * 16.0,
+        };
+        // walker_step (the direct write — the archer/shooter stand-ins).
+        let mut calm = Npc::new(NpcKind::GoblinArcher, 90.0 * 16.0, 118.0 * 16.0 - 38.0, 1, 0.0);
+        calm.on_ground = true;
+        let mut conf = calm.clone();
+        conf.buffs.add_buff(31, 600);
+        walker_step(&mut calm, &w, pcx, pcy, params, 0.4, 8.0);
+        walker_step(&mut conf, &w, pcx, pcy, params, 0.4, 8.0);
+        assert_eq!(calm.facing, -1, "the calm walker faces the player");
+        assert_eq!(conf.facing, 1, "the confused flip (:77774)");
+        assert_eq!(conf.sprite_dir, 1, "the lockstep rides the flip");
+        assert_eq!(conf.vx.to_bits(), 1.0f32.to_bits(), "the walk reverses");
+        assert_eq!(calm.vx.to_bits(), (-1.0f32).to_bits());
+        // walker_step_ladder (the aiStyle-3 ladder — the VortexSoldier
+        // stand-in): the ladder's accel reads the flipped direction.
+        // W4-g4 P9: the kind is the Soldier 429 (null immunity row,
+        // `NPCID.cs:8561`), NOT the Headcrab 428 — the headcrab is
+        // Confused-immune (`NPCID.cs:8555-8559`), so its buff-31 add is
+        // rejected and the flip never fires for it in the C#.
+        let mut calm3 = Npc::new(NpcKind::VortexSoldier, 90.0 * 16.0, 118.0 * 16.0 - 56.0, 1, 0.0);
+        calm3.on_ground = true;
+        let mut conf3 = calm3.clone();
+        conf3.buffs.add_buff(31, 600);
+        walker_step_ladder(&mut calm3, &w, pcx, pcy, params, 0.4, 8.0, false);
+        walker_step_ladder(&mut conf3, &w, pcx, pcy, params, 0.4, 8.0, false);
+        assert_eq!(calm3.facing, -1);
+        assert_eq!(conf3.facing, 1, "the ladder arm flips too");
+        assert!(calm3.vx < 0.0, "the calm ladder accelerates left");
+        assert!(conf3.vx > 0.0, "the confused ladder accelerates right");
+        // The fighter core keeps ONE flip (its TargetClosest already
+        // carries :77772 — the generic arms must not double it): the
+        // confused skeleton chases away, not back toward the player.
+        let mut sk = Npc::new(NpcKind::Skeleton, 90.0 * 16.0, 118.0 * 16.0 - 40.0, 1, 0.0);
+        sk.on_ground = true;
+        sk.buffs.add_buff(31, 600);
+        walker_step_fighter(&mut sk, &w, &player, params, 0.4, 8.0);
+        assert_eq!(sk.facing, 1, "one flip only — the core's selection owns it");
+        assert!(sk.vx > 0.0, "the confused fighter walks away");
     }
 
     #[test]

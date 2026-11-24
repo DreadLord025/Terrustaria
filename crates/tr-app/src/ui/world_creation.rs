@@ -259,7 +259,7 @@ pub struct Layout {
 /// exactly like Task 7's `name_w` — it feeds only the draw's text placement.
 pub fn layout(screen: Vec2, plate_w: f32) -> Layout {
     let _ = plate_w; // the plate rect chain is `(-132, 1)` of the info inner; see `draw`.
-    let full = [0.0, 0.0, screen.x, screen.y];
+    let full = super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]); // `UIState.cs:9-11`
     // The root: `Width 500, Height 434+18, Top 170-18, HAlign .5, VAlign 0`
     // (`:166-176`), `SetPadding(0)` (`:175`).
     let root = uistate::resolve(
@@ -778,6 +778,14 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
     // `generate` seeds its noise/RNG but leaves `World::new`'s `seed: 0` —
     // the header records the draft's (`save.rs:61`'s `world.seed` write).
     world.seed = seed;
+    // `WorldFile.CreateMetadata` (`WorldFile.cs:600-604`): the created world
+    // owns its identity — CreationTime (Utc stand-in), the generator-version
+    // literal, the GUID. The WorldId roll is the `genRand.Next(int.MaxValue)`
+    // stand-in (`WorldGen.cs:11337`): a fresh clock-seeded stream, never the
+    // frozen worldgen contract streams (ANALYSIS "The world identity stamp").
+    let mut identity = tr_core::wld::identity_rng();
+    tr_core::wld::stamp_created_identity(&mut world, &mut identity);
+    world.world_id = identity.next_max(i32::MAX);
     let path = worlds_dir.join(format!("{name}.trwld"));
     // `SaveChests`'s v7 section carries the gen-time loot (S1-A-4) — a load
     // reads it as the store, nothing re-rolls.
@@ -1518,6 +1526,15 @@ mod tests {
         assert_eq!(&bytes[0..8], b"TRWLD01\0"); // `save.rs:16`'s magic
         let seed = u64::from_le_bytes(bytes[12..20].try_into().unwrap());
         assert_eq!(seed, 12345);
+        // W4-c43: the created world owns its identity (`CreateMetadata:600-604`
+        // + the `WorldGen.cs:11337` WorldId roll's stand-in) — the v18 tail
+        // carries it through the save.
+        let (world, _) = tr_core::save::load(&path).unwrap();
+        assert_eq!(world.generator_version, tr_core::wld::WORLD_GENERATOR_VERSION);
+        assert_ne!(world.unique_id, [0u8; 16]);
+        assert_eq!(world.unique_id[7] & 0xF0, 0x40, "v4 GUID");
+        assert!(world.world_id >= 0);
+        assert!(world.creation_time > tr_core::clock::TICKS_AT_UNIX_EPOCH);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

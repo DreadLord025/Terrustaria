@@ -111,6 +111,16 @@ pub fn is_melee_buff(buff_type: i32) -> bool {
     in_set(&MELEE_BUFF_IDS, buff_type)
 }
 
+/// `BuffID.Sets.IsWellFed` (`ID/BuffID.cs:43`, `CreateBoolSet(26, 206, 207)`)
+/// — the three Well Fed tiers. `QuickBuff_ShouldBotherUsingThisBuff`
+/// (`Player.cs:5986-5990`) refuses a second well-fed buff while any tier
+/// stands; the food-priority ladder (`Player.cs:5965-5974`) ranks the same
+/// three ids. Distinct from [`is_fed_state`] (`IsFedState` adds the three
+/// Exquisitely Stuffed ids 332-334).
+pub fn is_well_fed(buff_type: i32) -> bool {
+    matches!(buff_type, 26 | 206 | 207)
+}
+
 #[allow(dead_code)]
 pub fn is_pvp_buff(buff_type: i32) -> bool {
     in_set(&PVP_BUFF_IDS, buff_type)
@@ -371,6 +381,24 @@ impl BuffSlots {
         }
     }
 
+    /// `Player.CountBuffs` (`Player.cs:5483-5494`). Faithful quirk: the C#
+    /// loop reads `buffType[num]` — the RUNNING COUNT, not the loop index
+    /// (`for (i = 0; i < maxBuffs; i++) if (buffType[num] > 0) num++;`) —
+    /// so it counts the LEADING RUN of non-empty slots and stops advancing
+    /// at the first hole. `QuickBuff`'s full-bar gates (`Player.cs:5773`,
+    /// `:5800`, `:5814`, `:5821`, `:5835`) read this, not a plain census.
+    pub fn count_buffs(&self) -> i32 {
+        let mut num = 0usize;
+        for _ in 0..MAX_BUFFS {
+            // The read index never exceeds 43: `num` advances at most once
+            // per iteration and only AFTER the read (the C#'s bound too).
+            if self.buff_type[num] > 0 {
+                num += 1;
+            }
+        }
+        num as i32
+    }
+
     /// `Player.FindBuffIndex` (`Player.cs:5250-5262`).
     pub fn find_buff_index(&self, buff_type: i32) -> Option<usize> {
         if buff_type <= 0 || buff_type as usize >= BUFF_ID_COUNT || self.buff_immune[buff_type as usize]
@@ -564,6 +592,50 @@ mod tests {
         b.resist_cold = false;
         b.add_buff(2, 100); // unaffected types pass through
         assert_eq!(b.buff_time[2], 100);
+    }
+
+    /// W4-f12 closeout item 3 — the stack-count SOURCE census
+    /// (research/W4-f12-closeout.md): the HUD xN is NEVER a buff-stack
+    /// count — `AddBuff` has no stack field at all. The full per-buff
+    /// re-grant semantics: DEFAULT = refresh-to-max (`:5419-5421`, never
+    /// additive, never a second slot); the ONLY additive ids are 94
+    /// (cap 600) and 383 (cap 43200) (`BuffID.cs:53`); the tier families
+    /// "stack" by REPLACING the id (fed wipe `:5277-5286`, pet/melee
+    /// exclusivity, the orb/nebula ladders' clear+regrant) — one slot per
+    /// id always. The xN text source is the 28-handler
+    /// `ownedProjectileCounts` sum (ui/resources.rs `buff_text`), which
+    /// beats the timer (`Main.cs:43317-43324`).
+    #[test]
+    fn w4_f12_closeout_regrant_is_refresh_except_the_two_additive_ids() {
+        let mut b = BuffSlots::default();
+        // DEFAULT refresh-to-max: a shorter re-grant never lowers, a longer
+        // one raises, and NO second slot ever appears for the same id.
+        b.add_buff(2, 600);
+        b.add_buff(2, 60);
+        assert_eq!(b.buff_time[0], 600, "max, not additive (:5419)");
+        b.add_buff(2, 900);
+        assert_eq!(b.buff_time[0], 900);
+        assert_eq!(b.active_count(), 1, "one slot per id");
+        // 94 Mana Sickness: additive to 600 (the f49 drink path re-arms
+        // 300 per potion — two drinks inside the window stack the TIME).
+        let mut m = BuffSlots::default();
+        m.add_buff(94, 300);
+        m.add_buff(94, 300);
+        assert_eq!(m.buff_time[0], 600, "additive (:5410-5417)");
+        m.add_buff(94, 300);
+        assert_eq!(m.buff_time[0], 600, "capped (BuffID.cs:53)");
+        // 383 Kite: additive to 43200 — the second additive id.
+        let mut k = BuffSlots::default();
+        k.add_buff(383, 43_000);
+        k.add_buff(383, 400);
+        assert_eq!(k.buff_time[0], 43_200);
+        // The fed family REPLACES (the IsFedState wipe): tier upgrades are
+        // id swaps, not stacks — the xN of a minion buff counts PROJECTILES.
+        let mut f = BuffSlots::default();
+        f.add_buff(26, 1000);
+        f.add_buff(206, 1000);
+        assert_eq!(f.active_count(), 1, "the fed wipe (:5277-5286)");
+        assert!(f.active_types().contains(&206));
     }
 
     #[test]

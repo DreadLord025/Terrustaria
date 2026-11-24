@@ -50,7 +50,12 @@ pub(crate) fn display_name(name: &str) -> String {
 /// Day runs `0..54000` (0 = sunrise, 27000 = noon), night runs `0..32400`
 /// (16200 = midnight). Between 13500 and 37800 the colour is pure white, which is why
 /// vanilla daytime tiles are lit at 100 %.
-pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 3] {
+pub(crate) fn color_of_the_skies(
+    time: f64,
+    day: bool,
+    moon_phase: u8,
+    blood_moon: bool,
+) -> [f32; 3] {
     let byte = |v: f64| (v.clamp(0.0, 255.0) / 255.0) as f32;
     if day {
         if time < 13500.0 {
@@ -81,9 +86,15 @@ pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 
         // `Main.cs:63493-63540`: the two night ramps, then the moon-phase light
         // floor — `Main.cs:63792-63813` grades `minimalLight` 11 (new moon) up
         // to 19 (full moon), applied per channel at `:63818-63829`. The
-        // blood-moon floor of 25 (`:63830-63844`) lands with the blood-moon
-        // system (M4 events); its night ramp is not ported either.
-        let (r, g, b) = if time < 16200.0 {
+        // blood-moon arm (`:63495-63519`) replaces BOTH ramps with the red
+        // sky (`tr_core::sky::blood_moon_sky`) and its floor is 25
+        // (`:63830-63844`), applied AFTER the moon-phase floor — the
+        // `BloodMoonMonolith` half of the C# gate (`Main.cs:61979`) is
+        // unported, the caller passes `World.blood_moon` (W4-g12 doc-sweep).
+        let (r, g, b) = if blood_moon {
+            let c = tr_core::sky::blood_moon_sky(time);
+            (c[0] as f64, c[1] as f64, c[2] as f64)
+        } else if time < 16200.0 {
             let t = 1.0 - time / 16200.0;
             (t * 30.0 + 5.0, t * 30.0 + 5.0, t * 30.0 + 5.0)
         } else {
@@ -93,10 +104,13 @@ pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 
         // `Enums/MoonPhase.cs`: Full=0, Empty=4, the right-half mirror behind.
         const FLOORS: [f64; 8] = [19.0, 17.0, 15.0, 13.0, 11.0, 13.0, 15.0, 17.0];
         let floor = (FLOORS[(moon_phase & 7) as usize] / 255.0) as f32;
+        // `:63830-63844`: the blood-moon floor is a BYTE compare (< 25)
+        // on the already-cast channels, after the moon-phase floor.
+        let bm_floor = if blood_moon { 25.0 / 255.0 } else { 0.0 };
         [
-            byte(r).max(floor),
-            byte(g).max(floor),
-            byte(b).max(floor),
+            byte(r).max(floor).max(bm_floor),
+            byte(g).max(floor).max(bm_floor),
+            byte(b).max(floor).max(bm_floor),
         ]
     }
 }
@@ -650,6 +664,23 @@ pub(crate) fn draw_sky(
     counter: u32,
     // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
     mouse_text_color: u8,
+    // W4-c40: the `SkyManager` "Sandstorm" sky (`SandstormSky.cs`) — drawn
+    // at the `DrawRemainingDepth` flush slot (`Main.cs:59626`), the same
+    // boundary the shallowest ambience entities use. `None` when the sky
+    // is inactive (the manager only walks `_activeSkies`).
+    sandstorm_sky: Option<&crate::render::sandstorm_sky::SandstormSky>,
+    // `Sandstorm.Severity` — the tint quad's `min(1, Severity * 1.5)` term.
+    sandstorm_severity: f32,
+    // S1-G-13 consumers: skip the underground backdrop tail
+    // (`DrawBackground`, `Main.cs:52798`) — the gated layer path renders it
+    // into the backgroundTarget via the `RenderBackground` callback
+    // (`Main.cs:55200-55218`) instead. The fused default passes `false`.
+    skip_underground_background: bool,
+    // W4-f40: the `LanternSky` background lantern field, drawn at the same
+    // `SkyManager` depth boundaries as the ambience (`LanternSky.cs:154-240`).
+    lantern_sky: &crate::render::lantern_sky::LanternSky,
+    // `Main.GlobalTimeWrappedHourly` — the lantern glow's hourly bob.
+    global_time: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -863,7 +894,17 @@ pub(crate) fn draw_sky(
             let dv = (moon.uv[3] - moon.uv[1]) / 8.0;
             let v0 = moon.uv[1] + dv * phase;
             let uv = [moon.uv[0], v0, moon.uv[2], v0 + dv];
-            let c = tr_core::sky::moon_color(clock_time);
+            // `Main.cs:62978`: `DrawSunAndMoon` tints with `SetBackColor`'s
+            // `moonColor` — the blood-moon red ramp (`:63495-63519`) while
+            // `BloodMoonActive`, else `Color.White` (`:63917-63920`). The
+            // port keeps its forest night tint for the no-blood-moon arm
+            // (pre-existing deviation, ANALYSIS "The blood-moon sky
+            // residuals (W4-g12)").
+            let c = if world.blood_moon {
+                tr_core::sky::blood_moon_color(clock_time)
+            } else {
+                tr_core::sky::moon_color(clock_time)
+            };
             let size = [moon.w * body.scale, moon.w * body.scale];
             push_screen_rot(
                 r,
@@ -884,10 +925,104 @@ pub(crate) fn draw_sky(
         }
     }
 
-    // `DrawSurfaceBG_BackMountainsStep1/2`: far then near mountain layer, topped by the
-    // biome's tree line. `backgroundTopMagicNumber` makes the layers move at ~30 % of
-    // the camera's vertical speed; using the local horizon instead would drag the whole
-    // forest down into the view whenever the player is on a hill.
+    // `DrawSurfaceBG_BackMountainsStep1/2` + the front biome chains —
+    // extracted so the capture's background pass renders the SAME chains
+    // at the chunk camera with the capture-only bg-alpha arrays
+    // (`Main.DrawCapture`'s `UpdateBGVisibility_*` override,
+    // `Main.cs:56675-56680`; S1-G-13 consumers). The `SkyManager` depth
+    // tracker threads through the call so the `DrawRemainingDepth` flush
+    // below sees the last boundary the chains emitted.
+    let mut amb_last = f32::INFINITY;
+    let amb_ctx = crate::ambience::SkyDrawCtx {
+        camera,
+        zoom,
+        screen,
+        color_of_the_skies: sky_color,
+        atmo,
+        bg_alpha_front,
+        background_enabled,
+    };
+    draw_surface_bg(
+        r,
+        camera,
+        zoom,
+        screen,
+        world,
+        sky,
+        clouds,
+        bg_alpha_front,
+        bg_alpha_far,
+        tint,
+        storm,
+        background_enabled,
+        anim_time,
+        counter,
+        mouse_text_color,
+        ambience,
+        lookups,
+        &amb_ctx,
+        &mut amb_last,
+    );
+
+    // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
+    // last front-row boundary) draw after every surface layer, before the
+    // underground backdrop.
+    crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    // `Main.DrawBackground_SurfaceTransitionBackground`,
+    // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
+    // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured
+    // underground backdrop, anchored to `worldSurface` across the whole screen, with
+    // the rock bands, the animated magma and the underworld black box below it. (A
+    // per-column gradient used to hang a dark "wall" underneath every player-placed
+    // row of blocks.)
+    if !crate::env::no_bg() && !skip_underground_background {
+        draw_background(
+            r,
+            camera,
+            zoom,
+            screen,
+            world,
+            sky,
+            light,
+            cave_parallax,
+            anim_time,
+            hell_black_box_bottom,
+        );
+    }
+}
+
+/// `Main.DrawSurfaceBG` (`Main.cs:59302-60290` + the per-biome chains
+/// `:59986-61370`): the storm banks, the far/near mountain steps, the three
+/// cloud passes and the front biome tree lines. Extracted verbatim from
+/// [`draw_sky`] so the capture's background pass (`Main.DrawCapture`'s
+/// `DrawSurfaceBG` call, `Main.cs:56837`) renders the SAME chains at the
+/// chunk camera with the capture-only bg-alpha arrays (S1-G-13 consumers).
+/// `amb_ctx`/`amb_last` are the `SkyManager` depth tracker the caller
+/// threads (the flush stays at the caller's `DrawRemainingDepth` site).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_surface_bg(
+    r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    world: &World,
+    sky: &SkyAssets,
+    clouds: &[CloudSprite],
+    bg_alpha_front: &[f32; 16],
+    bg_alpha_far: &[f32; 16],
+    tint: [f32; 3],
+    storm: f32,
+    background_enabled: bool,
+    anim_time: f32,
+    counter: u32,
+    mouse_text_color: u8,
+    ambience: &[crate::ambience::SkyEntity],
+    lookups: &crate::assets::Lookups,
+    amb_ctx: &crate::ambience::SkyDrawCtx<'_>,
+    amb_last: &mut f32,
+) {
+    let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
+    let view_top = camera.y - screen.y * 0.5;
     // `Main.bgAlphaFrontLayer`/`bgAlphaFarBackLayer`: each biome layer is drawn with
     // `ColorOfSurfaceBackgroundsBase * alpha`, so two biomes blend while the style
     // cross-fades (`backgroundLayerTransitionSpeed = 0.05`). Index tables:
@@ -915,11 +1050,12 @@ pub(crate) fn draw_sky(
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
     // clouds above stay, exactly like the original toggle.
     let show_bg = background_enabled && bg_block;
-    // The `SkyManager` depth tracker (`SkyManager.cs:48-78`), reset at the top
-    // of the surface background pass (`Main.cs:59344`). Every `draw_range_min`
-    // below ports one `DrawToDepth` call of `Main.cs:59700-60290`; a call
-    // whose boundary is above the tracker no-ops, exactly like the original's
-    // stale-parallax call (`Main.cs:59890`).
+    // The `SkyManager` depth tracker (`SkyManager.cs:48-78`) is the caller's
+    // `amb_last` (reset at the top of the surface background pass,
+    // `Main.cs:59344`). Every `draw_range_min` below ports one `DrawToDepth`
+    // call of `Main.cs:59700-60290`; a call whose boundary is above the
+    // tracker no-ops, exactly like the original's stale-parallax call
+    // (`Main.cs:59890`).
     //
     // DRAW_TO_DEPTH boundary table (`.code-foundations/build/2026-11-03-
     // M1.4-BG-19-ambient-skies-boundary-table.md`):
@@ -938,6 +1074,29 @@ pub(crate) fn draw_sky(
         atmo,
         bg_alpha_front,
         background_enabled,
+        world_surface: world.world_surface,
+    };
+    // W4-f40: the `LanternSky` rides the SAME `SkyManager` depth tracker as
+    // the ambience — every `DrawToDepth(minDepth)` boundary draws its
+    // `[minDepth, last)` band (`LanternSky.cs:169-187`'s own cull). The
+    // tracker mirrors `amb_last`; the final flush draws the remainder.
+    let mut lantern_last = f32::INFINITY;
+    let draw_lantern_band = |r: &mut SpriteRenderer, min_depth: f32, last: &mut f32| {
+        if *last <= min_depth {
+            return;
+        }
+        lantern_sky.draw(
+            r,
+            lookups,
+            camera,
+            zoom,
+            screen,
+            world.world_surface,
+            global_time,
+            min_depth,
+            *last,
+        );
+        *last = min_depth;
     };
     // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
     // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
@@ -1017,10 +1176,11 @@ pub(crate) fn draw_sky(
         r,
         ambience,
         lookups,
-        &amb_ctx,
+        amb_ctx,
         1.0 / 0.15,
-        &mut amb_last,
+        amb_last,
     );
+    draw_lantern_band(r, 1.0 / 0.15, &mut lantern_last);
     if show_bg {
         if far_forest > 0.0 {
             if let Some(far) = sky.far {
@@ -1083,7 +1243,8 @@ pub(crate) fn draw_sky(
     // Step1's closing `DrawToDepth(5f)` (`Main.cs:59878`) runs before this
     // pass: the mid-depth entities draw between the mountain rows and the
     // closer clouds.
-    crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
+    crate::ambience::draw_range_min(r, ambience, lookups, amb_ctx, 5.0, amb_last);
+    draw_lantern_band(r, 5.0, &mut lantern_last);
     if bg_block {
         let closer_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
@@ -1210,8 +1371,11 @@ pub(crate) fn draw_sky(
     let mut amb_pass = show_bg.then_some(crate::render::bg::AmbiencePass {
         entities: ambience,
         lookups,
-        ctx: &amb_ctx,
-        last: &mut amb_last,
+        ctx: amb_ctx,
+        last: amb_last,
+        lantern_sky,
+        lantern_last: &mut lantern_last,
+        global_time,
     });
     if show_bg {
         // `pushBGTopHack` for the front loop is `30 - 180` (`Main.cs:59302`,
@@ -1525,7 +1689,31 @@ pub(crate) fn draw_sky(
     // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
     // last front-row boundary) draw after every surface layer, before the
     // underground backdrop.
+    // W4-c40: the SandstormSky tint quad rides the SAME flush
+    // (`SkyManager.DrawDepthRange(float.MinValue, _lastDepth)`,
+    // `SkyManager.cs:70-74`): its `Draw` gate (`SandstormSky.cs:51`) passes
+    // for any band reaching below depth 1, so the quad paints here — after
+    // every surface layer, before the underground backdrop. The tracker
+    // value at the flush is the C#'s `_lastDepth` (the port's `amb_last`
+    // BEFORE the ambience flush consumes it); `float.MinValue` is the C#
+    // minDepth.
+    let sky_flush_max = amb_last;
     crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    if let Some(sky) = sandstorm_sky {
+        sky.draw(
+            r,
+            camera,
+            zoom,
+            [screen.x, screen.y],
+            sky_color,
+            sandstorm_severity,
+            f32::MIN,
+            sky_flush_max,
+        );
+    }
+    // W4-f40: the lantern sky's remainder (the shallowest lanterns, below
+    // the last front-row boundary) flush here too (`Main.cs:59626`).
+    draw_lantern_band(r, f32::NEG_INFINITY, &mut lantern_last);
     // `Main.DrawBackground_SurfaceTransitionBackground`,
     // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
     // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured
@@ -1571,17 +1759,17 @@ mod cloud_star_tests {
     fn night_light_floor_follows_the_moon_phase() {
         // `Main.cs:63792-63829`: midnight (t = 16200) with the ramp floor of 5
         // lifted to the phase minimum — 19 at the full moon, 11 at the new one.
-        let full = color_of_the_skies(16200.0, false, 0);
-        let empty = color_of_the_skies(16200.0, false, 4);
+        let full = color_of_the_skies(16200.0, false, 0, false);
+        let empty = color_of_the_skies(16200.0, false, 4, false);
         let full_byte = full[0] * 255.0;
         let empty_byte = empty[0] * 255.0;
         assert!((full_byte - 19.0).abs() < 1e-4, "full moon {full:?}");
         assert!((empty_byte - 11.0).abs() < 1e-4, "new moon {empty:?}");
         // The right-half mirror: phase 5 quarter floors at 13.
-        let quarter = color_of_the_skies(16200.0, false, 5)[0] * 255.0;
+        let quarter = color_of_the_skies(16200.0, false, 5, false)[0] * 255.0;
         assert!((quarter - 13.0).abs() < 1e-4, "quarter {quarter}");
         // Daylight ignores the floor.
-        let day = color_of_the_skies(13500.0, true, 4);
+        let day = color_of_the_skies(13500.0, true, 4, false);
         assert!(day[0] > 0.09, "dawn stays dawn: {day:?}");
     }
 
@@ -1704,18 +1892,44 @@ mod cloud_star_tests {
         // 13500 to 37800 (noon is `Color.White`), the 37800..45900 sunset ramp
         // pulls it to (235,120,170) and past 45900 to the (35,35,35) dusk
         // floor. The 0..13500 sunrise ramp runs 25..255 on the red channel.
-        let noon = color_of_the_skies(27000.0, true, 0);
+        let noon = color_of_the_skies(27000.0, true, 0, false);
         assert_eq!(noon, [1.0, 1.0, 1.0], "noon is pure white");
-        let morning = color_of_the_skies(6750.0, true, 0);
+        let morning = color_of_the_skies(6750.0, true, 0, false);
         let byte = |v: f32| v * 255.0;
         assert!((byte(morning[0]) - 140.0).abs() < 1e-3, "sunrise red");
         assert!((byte(morning[1]) - 145.0).abs() < 1e-3, "sunrise green");
-        let sunset = color_of_the_skies(45900.0, true, 0);
+        let sunset = color_of_the_skies(45900.0, true, 0, false);
         assert!((byte(sunset[0]) - 235.0).abs() < 1e-3, "sunset red");
         assert!((byte(sunset[1]) - 120.0).abs() < 1e-3, "sunset green");
         assert!((byte(sunset[2]) - 170.0).abs() < 1e-3, "sunset blue");
-        let dusk = color_of_the_skies(53999.0, true, 0);
+        let dusk = color_of_the_skies(53999.0, true, 0, false);
         assert!((byte(dusk[0]) - 35.0).abs() < 0.1, "the dusk floor: {dusk:?}");
         assert!(dusk[0] < sunset[0] && sunset[0] < noon[0], "the day darkens");
+    }
+
+    /// W4-g12 doc-sweep: the blood-moon night sky (`Main.cs:63495-63519` +
+    /// the `:63830-63844` floor of 25). The red sky replaces both forest
+    /// ramps; the 25 floor is a byte compare AFTER the moon-phase floor.
+    #[test]
+    fn w4_g12_blood_moon_sky_and_the_25_floor() {
+        // Midnight: the raw ramp is (75, 15, 15); the moon-phase floor
+        // (full moon 19) leaves R alone, then the blood floor lifts G/B
+        // to 25 (`:63836-63843`).
+        let mid = color_of_the_skies(16200.0, false, 0, true);
+        let b = |v: f32| (v * 255.0).round() as i32;
+        assert_eq!([b(mid[0]), b(mid[1]), b(mid[2])], [75, 25, 25]);
+        // New moon: the phase floor 11 never beats the blood floor 25.
+        let mid_new = color_of_the_skies(16200.0, false, 4, true);
+        assert_eq!(mid_new, mid, "the 25 floor dominates every phase floor");
+        // Early night t=1: the ramp is (35, 35, 35) — all above 25.
+        let early = color_of_the_skies(0.0, false, 0, true);
+        assert_eq!([b(early[0]), b(early[1]), b(early[2])], [35, 35, 35]);
+        // Daylight ignores the blood arm entirely (the C# gates on
+        // `!Main.dayTime`, `:63493`).
+        let noon = color_of_the_skies(27000.0, true, 0, true);
+        assert_eq!(noon, [1.0, 1.0, 1.0]);
+        // Without the blood moon the forest ramps are untouched.
+        let forest = color_of_the_skies(16200.0, false, 4, false);
+        assert!((forest[0] * 255.0 - 11.0).abs() < 1e-4);
     }
 }

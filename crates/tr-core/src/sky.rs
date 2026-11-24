@@ -93,16 +93,43 @@ pub fn sun_color(time: f64) -> [u8; 3] {
     }
 }
 
-/// `SetBackColor` moon tint as sRGB bytes (forest, no blood moon).
-pub fn moon_color(time: f64) -> [u8; 3] {
+/// `SetBackColor`'s blood-moon night ramp (`Main.cs:63495-63519`), as
+/// sRGB bytes. BOTH night arms write the SAME moon colour — the
+/// `num >= 16200` arm first writes the forest values (`:63510-63512`)
+/// and then overwrites them (`:63513-63515`), a C# dead-write kept here
+/// by sharing the early-night formula; only the ramp factor differs.
+///
+/// Callers apply the `:63917-63920` tail themselves: outside a blood
+/// moon `SetBackColor` overwrites the whole moon colour with
+/// `Color.White` (the port's `DrawSunAndMoon` keeps its own night-tint
+/// deviation, ANALYSIS "The blood-moon sky residuals (W4-g12)").
+pub fn blood_moon_color(time: f64) -> [u8; 3] {
     let b = |v: f64| v.clamp(0.0, 255.0) as u8;
-    if time < 16200.0 {
-        let t = 1.0 - time / 16200.0;
-        [b(t * 10.0 + 205.0), b(t * 70.0 + 155.0), b(t * 100.0 + 155.0)]
+    // `:63499` / `:63509`: the ramp factor per arm.
+    let t = if time < 16200.0 {
+        1.0 - time / 16200.0
     } else {
-        let t = (time / 32400.0 - 0.5) * 2.0;
-        [b(t * 50.0 + 205.0), b(t * 100.0 + 155.0), b(t * 100.0 + 155.0)]
-    }
+        (time / 32400.0 - 0.5) * 2.0
+    };
+    // `:63500-63502` / `:63513-63515`.
+    [b(t * 10.0 + 205.0), b(t * 170.0 + 55.0), b(t * 200.0 + 55.0)]
+}
+
+/// `SetBackColor`'s blood-moon SKY colour (`Main.cs:63503-63505` /
+/// `:63516-63518` — the same constants in both arms, the same ramp
+/// factor split as [`blood_moon_color`]), as sRGB bytes. Replaces the
+/// two forest night ramps entirely while `BloodMoonActive`
+/// (`Main.bloodMoon || SceneMetrics.BloodMoonMonolith`,
+/// `Main.cs:61979` — the monolith is unported, the caller passes
+/// `World.blood_moon`).
+pub fn blood_moon_sky(time: f64) -> [u8; 3] {
+    let b = |v: f64| v.clamp(0.0, 255.0) as u8;
+    let t = if time < 16200.0 {
+        1.0 - time / 16200.0
+    } else {
+        (time / 32400.0 - 0.5) * 2.0
+    };
+    [b(40.0 - t * 40.0 + 35.0), b(t * 20.0 + 15.0), b(t * 20.0 + 15.0)]
 }
 
 #[cfg(test)]
@@ -156,6 +183,37 @@ mod tests {
         let c = moon_color(0.0);
         assert_eq!(c, [215, 225, 255]);
     }
+    /// W4-g12 doc-sweep: the blood-moon moon ramp (`Main.cs:63497-63515`).
+    /// BOTH night arms share the colour constants — the `>= 16200` arm's
+    /// forest write (`:63510-63512`) is dead, overwritten at `:63513-63515`.
+    #[test]
+    fn w4_g12_blood_moon_moon_ramp_is_red_and_shared() {
+        // Early night t=1: (10+205, 170+55, 200+55).
+        assert_eq!(blood_moon_color(0.0), [215, 225, 255]);
+        // Midnight t=0: the constants alone.
+        assert_eq!(blood_moon_color(16200.0), [205, 55, 55]);
+        // Dawn t=1 again — the late arm's ramp mirrors the early one.
+        assert_eq!(blood_moon_color(32400.0), [215, 225, 255]);
+        // Mid-arm t=0.5: (5+205, 85+55, 100+55) = (210, 140, 155).
+        assert_eq!(blood_moon_color(8100.0), [210, 140, 155]);
+        assert_eq!(blood_moon_color(24300.0), [210, 140, 155]);
+    }
+
+    /// W4-g12 doc-sweep: the blood-moon SKY colour (`Main.cs:63503-63505` /
+    /// `:63516-63518`) — R runs 75→35 while G/B run 15→35.
+    #[test]
+    fn w4_g12_blood_moon_sky_replaces_the_forest_night_ramps() {
+        // Early night t=1: R = 40-40+35 = 35, G/B = 20+15 = 35.
+        assert_eq!(blood_moon_sky(0.0), [35, 35, 35]);
+        // Midnight t=0: R = 40+35 = 75, G/B = 15.
+        assert_eq!(blood_moon_sky(16200.0), [75, 15, 15]);
+        // Dawn t=1: back to (35, 35, 35).
+        assert_eq!(blood_moon_sky(32400.0), [35, 35, 35]);
+        // The forest night ramp differs: midnight is (5, 5, 5) there
+        // (`:63527-63529`), so the replacement is observable.
+        assert_ne!(blood_moon_sky(16200.0), [5, 5, 5]);
+    }
+
     // --- UpdateAtmosphereTransparencyToSkyColor (Main.cs:63185-63199) ---
 
     #[test]

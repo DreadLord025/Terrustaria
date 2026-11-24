@@ -253,6 +253,16 @@ pub struct Settings {
     /// `Main.cMapStyle`..`Main.cMapAlphaDown` (`Main.cs:67190-67195`): the 6
     /// map binds of the menuMode 272727 list (`:4596-4600`).
     pub map_binds: [String; crate::input_map::MAP_BIND_COUNT],
+    /// `Main._lastLoadedPacks` / `SaveResourcePacks` (`Main.cs:6523-6536`):
+    /// the `"ResourcePacks"` config array — one `{FileName, Enabled,
+    /// SortingOrder}` entry per pack (`ResourcePackList.ToJson`,
+    /// `IO/ResourcePackList.cs:47-53`). The selection menu's Back writes
+    /// the live list here (`ApplyListChanges` + `Main.SaveSettings`,
+    /// `UIResourcePackSelectionMenu.cs:476-488`). Kept as raw JSON: the
+    /// line-based [`Settings::parse`] cannot walk an array, so [`load`]
+    /// extracts it from the whole file and [`to_json`] writes it compact
+    /// on one line (docs/ANALYSIS.md "The Workshop/ResourcePack screens").
+    pub resource_packs: serde_json::Value,
 }
 
 impl Default for Settings {
@@ -321,6 +331,8 @@ impl Default for Settings {
             opaque_tooltip_box: true,             // Main.cs:66513
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
+            // `prefs.Get("ResourcePacks", new JArray())` (`Main.cs:6525`).
+            resource_packs: serde_json::Value::Array(vec![]),
         }
     }
 }
@@ -348,7 +360,19 @@ impl Settings {
         let Ok(text) = std::fs::read_to_string(path) else {
             return Self::default();
         };
-        Self::parse(&text)
+        let mut me = Self::parse(&text);
+        // `LoadResourcePacks` (`Main.cs:6523-6526`): `prefs.Get("ResourcePacks",
+        // new JArray())`. The line-based [`Self::parse`] cannot walk a JSON
+        // array, so the whole-file parse extracts it here; a malformed file or
+        // a non-array value keeps the empty default (the `Get` fallback).
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(packs) = v.get("ResourcePacks") {
+                if packs.is_array() {
+                    me.resource_packs = packs.clone();
+                }
+            }
+        }
+        me
     }
 
     /// Reads the `config.json` subset this port stores. Unknown keys are ignored and
@@ -716,6 +740,7 @@ impl Settings {
              \"PlayerResourcesSet\": \"{}\",\n  \"PortraitPreference\": {},\n  \
              \"ShowBossBarHealthText\": {},\n  \"FlashyEffectsInterface\": {},\n  \
              \"SettingsEnabled_OpaqueBoxBehindTooltips\": {},\n  \
+             \"ResourcePacks\": {},\n  \
              \"MinimapFrame\": \"{}\"{}\n}}\n",
             self.auto_save,
             self.auto_pause,
@@ -791,6 +816,10 @@ impl Settings {
             self.boss_bar_text,
             self.flashy_effects_interface,
             self.opaque_tooltip_box,
+            // `SaveResourcePacks` (`Main.cs:6528-6536`): the live pack list's
+            // `ToJson` — compact on one line so [`Self::parse`]'s line walk
+            // stays intact (the field's doc).
+            self.resource_packs,
             self.minimap_frame,
             self.bind_block(),
         )
@@ -1071,6 +1100,40 @@ mod tests {
         assert_eq!(back.portrait_preference, 2);
         assert!(!back.boss_bar_text);
         assert!(!back.flashy_effects_interface);
+    }
+
+    /// `SaveResourcePacks`/`LoadResourcePacks` (`Main.cs:6519-6536`): the
+    /// `"ResourcePacks"` array round-trips through `to_json`/`load`-style
+    /// extraction; the line parser alone cannot walk it (the field's doc).
+    #[test]
+    fn resource_packs_array_round_trips_through_the_whole_file_parse() {
+        let mut s = Settings::default();
+        s.resource_packs = serde_json::json!([
+            {"FileName": "alpha", "Enabled": true, "SortingOrder": 1},
+            {"FileName": "beta", "Enabled": false, "SortingOrder": 0},
+        ]);
+        let text = s.to_json();
+        // The compact one-line write keeps the line parser's other keys alive.
+        assert!(text.contains("\"ResourcePacks\": [{"), "compact array line");
+        let mut back = Settings::parse(&text);
+        assert_eq!(
+            back.resource_packs,
+            serde_json::Value::Array(vec![]),
+            "the line parser leaves the array alone"
+        );
+        // The `load` extraction step (`LoadResourcePacks`, `:6525`).
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(packs) = v.get("ResourcePacks") {
+                if packs.is_array() {
+                    back.resource_packs = packs.clone();
+                }
+            }
+        }
+        assert_eq!(back.resource_packs, s.resource_packs);
+        // A non-array value keeps the `new JArray()` default (`:6525`).
+        let v: serde_json::Value =
+            serde_json::from_str("{\"ResourcePacks\": 7}").unwrap();
+        assert!(!v["ResourcePacks"].is_array());
     }
 
     #[test]

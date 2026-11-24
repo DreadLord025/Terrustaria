@@ -651,6 +651,12 @@ mod tests {
             life_max: 400,
             mana: 100,
             mana_max: 100,
+            ate_artisan_bread: false,
+            used_aegis_crystal: false,
+            used_arcane_crystal: false,
+            used_galaxy_pearl: false,
+            used_gummy_worm: false,
+            used_ambrosia: false,
             hair_color: [215, 90, 55],
             skin_color: [255, 125, 90],
             eye_color: [105, 90, 75],
@@ -660,7 +666,12 @@ mod tests {
             shoe_color: [160, 105, 60],
             inventory,
             inv_favorites: 0,
+            used_aegis_fruit: false,
+            used_gummy_worm: false,
+            used_ambrosia: false,
+            used_aegis_crystal: false,
             last_saved_binary: 0,
+            revision: 0,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
         std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
@@ -716,6 +727,12 @@ mod tests {
             life_max: 400,
             mana: 100,
             mana_max: 100,
+            ate_artisan_bread: false,
+            used_aegis_crystal: false,
+            used_arcane_crystal: false,
+            used_galaxy_pearl: false,
+            used_gummy_worm: false,
+            used_ambrosia: false,
             hair_color: [215, 90, 55],
             skin_color: [255, 125, 90],
             eye_color: [105, 90, 75],
@@ -725,7 +742,12 @@ mod tests {
             shoe_color: [160, 105, 60],
             inventory,
             inv_favorites: 0,
+            used_aegis_fruit: false,
+            used_gummy_worm: false,
+            used_ambrosia: false,
+            used_aegis_crystal: false,
             last_saved_binary: 0,
+            revision: 0,
         };
         crate::player_file::write_player_file(path, &file).unwrap();
     }
@@ -982,6 +1004,12 @@ mod tests {
                 life_max: 120,
                 mana: 20,
                 mana_max: 40,
+                ate_artisan_bread: false,
+                used_aegis_crystal: false,
+                used_arcane_crystal: false,
+                used_galaxy_pearl: false,
+                used_gummy_worm: false,
+                used_ambrosia: false,
                 hair_color: [11, 12, 13],
                 skin_color: [21, 22, 23],
                 eye_color: [31, 32, 33],
@@ -992,7 +1020,12 @@ mod tests {
                 inventory: [(0, 0, 0); 58],
                 // Slots 0 and 4 starred — the BUG-03 half of the card.
                 inv_favorites: 1 << 0 | 1 << 4,
+                used_aegis_fruit: false,
+                used_gummy_worm: false,
+                used_ambrosia: false,
+                used_aegis_crystal: false,
                 last_saved_binary: 0,
+                revision: 0,
             },
         )
         .unwrap();

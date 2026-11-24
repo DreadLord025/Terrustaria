@@ -1079,6 +1079,17 @@ pin_bool! {
     "TR_POST"
 }
 
+pin_bool! {
+    /// `TR_LAYER_TARGETS=1`: the S1-G-13 layer-target CONSUMERS — the draw
+    /// passes render through the `RenderTargetFamily` (per-layer callbacks,
+    /// the skyTarget bind and `Main.DrawCapture`'s chunk render) instead of
+    /// the single cached world range. Default OFF: the fused frame path is
+    /// frozen until the draw-pass-order A/B lands (ANALYSIS "The render-target
+    /// family (S1-G-13)"). A harness gate, not a game rule.
+    layer_targets,
+    "TR_LAYER_TARGETS"
+}
+
 /// `TR_MOUSE=x,y`: the pinned logical pointer position, ignoring real cursor
 /// motion, so screenshots can deterministically show the cursor and a hovered
 /// item tooltip (like `TR_CAM`/`TR_DAY` do for the world).

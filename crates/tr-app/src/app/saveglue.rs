@@ -109,6 +109,11 @@ impl App {
         // the `.trwld` v11 section and the `.wld` flags block both read it
         // from `World.ore_tiers` (S1-J-3b).
         self.world.ore_tiers = self.ore_tiers;
+        // `SaveWorldFlags:1251`: the LastPlayed slot is `DateTime.UtcNow.
+        // ToBinary()` at save time — the loaded file's value is never the
+        // writer's source. Both format branches below read the field, so
+        // stamp it once here (the `.trwld` v18 block, the `.wld` flags).
+        self.world.last_played = tr_core::clock::utc_now_binary();
         // `InternalSaveWorld`'s `array2` (`WorldFile.cs:916-918`): the previous
         // world file, captured before the write — the `.bak` source and the
         // failed-write restore source (S1-J-4).
@@ -176,6 +181,15 @@ impl App {
                 .pairs()
                 .map(|(banner, kills)| BannerKill { banner, kills })
                 .collect();
+            // `BannerSystem.Save`'s `claimableBanners` half
+            // (`BannerSystem.cs:180-185`): the claimable-banner pool the
+            // milestone fills (W4-e24) — the v18 section, sparse like the
+            // kill counts.
+            let banner_claimable: Vec<save::BannerClaimable> = self
+                .banners
+                .claimable_pairs()
+                .map(|(banner, count)| save::BannerClaimable { banner, count })
+                .collect();
             // `NPCKillsTracker.Save` (`NPCKillsTracker.cs:59-70`): the bestiary
             // kill counts ride the world file's section 10 in vanilla; the port
             // had them on the `.trplayer` sidecar, whose line stays written
@@ -224,6 +238,7 @@ impl App {
             let side = save::WorldSide {
                 chests,
                 banners,
+                banner_claimable,
                 bestiary,
                 npcs,
                 ore_tiers: Some(ore_tiers),
@@ -268,6 +283,12 @@ impl App {
                     persist::save(&self.world_path, p, inv, self.coins, armor, &dye, &kills)
                 {
                     log::warn!("player save failed: {e}");
+                }
+                // W4-g56 — the void-vault favorites ride their own `.trvault`
+                // sidecar (the `.plr` bank4-favourited rows are f44's lane, the
+                // `.trplayer` superset g88's; the contract is in ANALYSIS).
+                if let Err(e) = persist::save_vault_favorites(&self.world_path, &p.vault_favorites) {
+                    log::warn!("vault favorites save failed: {e}");
                 }
             }
             // `Player.InternalSaveMap` (`Player.cs:55046`): the explored map is
@@ -339,13 +360,20 @@ impl App {
     /// `WorldGen.SaveAndQuit()`). The C# queues the callback on the thread
     /// pool behind the mode-10 "saving" screen; the port saves inline and
     /// lands straight on `menuMode = 0` (the main menu), the same menu-reopen
-    /// shape `net_disconnect` uses. The tracked-sound stop /
-    /// `CaptureInterface.ResetFocus` halves are not modelled; the frame's
-    /// audio listener flips to menu mode off `menu.is_some()`
-    /// (`frame.rs:256`), covering `StopWaterfallAmbienceAudio`'s effect.
+    /// shape `net_disconnect` uses. `CaptureInterface.ResetFocus` is not
+    /// modelled; the frame's audio listener flips to menu mode off
+    /// `menu.is_some()` (`frame.rs:256`), covering the ¼ s ambience tick —
+    /// the IMMEDIATE `StopWaterfallAmbienceAudio`/`StopTrackedSounds` halves
+    /// are wired below (the W4-g24/g73 quit-stop keep-one: ONE `:6704`
+    /// call site, the g24 seam set + this branch's tracked drain).
     pub(crate) fn save_and_quit(&mut self) {
         // `WorldGen.cs:6703`: `SoundEngine.PlaySound(11)`.
         self.audio.play("Menu_Close");
+        // `WorldGen.cs:6704`: `StopWaterfallAmbienceAudio()` — the 34/35
+        // sentinel pair stops both liquid loops at the quit moment
+        // (`WorldGen.cs:6689-6699`, the `LegacySoundPlayer.cs:1257`/:1287
+        // `x == -1 || y == -1` stop arms).
+        self.audio.stop_waterfall_ambience();
         // `WorldGen.cs:6705-6708`: the invasion bar resets.
         self.invasion_progress = -1;
         self.invasion_progress_display_left = 0;
@@ -354,6 +382,11 @@ impl App {
         // `WorldGen.cs:6714`: `InGameNotificationsTracker.Clear()` — the
         // unlock toasts never survive onto the menu (S1-E-26 wave A).
         self.notifications.clear();
+        // `WorldGen.cs:6715`: `SoundEngine.StopTrackedSounds()` — the
+        // tracked pool empties (`SoundPlayer.StopAll`, `SoundPlayer.cs:
+        // 79-86`). The legacy one-shot cues already playing ride out their
+        // tails (the C# does not stop those either).
+        self.audio.stop_tracked_sounds();
         // `SaveAndQuitCallBack` (`WorldGen.cs:6669-6677`): StopPlayTimer +
         // `Player.SavePlayer` + `WorldFile.SaveWorld` (single-player's
         // `Main.netMode == 0` arm) — the port's one save funnel writes the
@@ -366,6 +399,13 @@ impl App {
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
         self.world.fast_forward_to_dawn = false;
         self.world.fast_forward_to_dusk = false;
+        // W4-d70: `Main.ClearVisualPostProcessEffects` (`Main.cs:52114-52252`,
+        // called at `:48909` on the return to `menuMode = 0`): every active
+        // scene filter deactivates. The port's board carries the M1 subset;
+        // the tower/monolith/MoonLord/test rows have no activation reader.
+        for id in tr_core::scene::FilterId::ALL {
+            self.filter_driver.board.deactivate(id);
+        }
         // `WorldGen.cs:6682`: `Main.menuMode = 0` — back to the main menu
         // (`Main.gameMenu` stays true; the port's `menu.is_some()` is that
         // flag, `frame.rs:256`).
@@ -374,6 +414,73 @@ impl App {
                 self.settings.clone(),
                 self.player_name.clone(),
             ));
+        }
+    }
+
+    /// `WorldGen.JustQuit` (`WorldGen.cs:6627-6662`): exit the world WITHOUT
+    /// saving — the `/quit` debug chat command (`ToolkitDebugCommands.cs:
+    /// 232-237`, `CommandRequirement.Client`: single-player or a net client)
+    /// is the ONLY vanilla caller; the port's F3 debug panel is the chat
+    /// dispatcher's stand-in (the S1-E-29 recorded deviation), so the World
+    /// tab's quit row drives this. The C# body in C# order: the inline
+    /// `StopWaterfallAmbienceAudio` pair (`:6631-6632`), the invasion reset
+    /// (`:6637-6640`), the mode-10/gameMenu/Disconnect/netMode-0 block
+    /// (`:6642-6645` — the port's `net_disconnect` drop shape), the tracked
+    /// stop (`:6646`), the fast-forward clears (`:6649-6650`), then the
+    /// single-player arm's `GoToWorldSelect` + the player-position reset
+    /// (`:6653-6657`) or the multiplayer arm's mode 0 (`:6660`).
+    /// `CaptureInterface.ResetFocus`/`StopPlayTimer`/`UpdateTimeRate`/
+    /// `ClearVisualPostProcessEffects` are engine-side (not modelled — the
+    /// port keeps no play timer and the frame's listener flip covers the
+    /// menu transition).
+    // The only production caller is the F3 debug panel's quit row (the
+    // `debug` feature, OFF by default); the test module exercises it in
+    // every build. The allow keeps the default build warning-clean
+    // (the g24 `7ca8b087` fold, kept by the quit-stop keep-one).
+    #[allow(dead_code)]
+    pub(crate) fn just_quit(&mut self) {
+        // `WorldGen.cs:6631-6632`: the inlined 34/35 sentinel pair (the
+        // `StopWaterfallAmbienceAudio` body, `:6693-6694`).
+        self.audio.stop_waterfall_ambience();
+        // `WorldGen.cs:6637-6640`: the invasion bar resets.
+        self.invasion_progress = -1;
+        self.invasion_progress_display_left = 0;
+        self.invasion_progress_alpha = 0.0;
+        self.invasion_progress_icon = 0;
+        // `WorldGen.cs:6641`: `flag = Main.netMode == 0` — read BEFORE the
+        // netMode drop, so a client quit takes the main-menu arm.
+        let single = matches!(self.net, crate::app::NetRole::Off);
+        // `WorldGen.cs:6644-6645`: `Netplay.Disconnect = true; Main.netMode
+        // = 0` — the port's role drop (the `net_disconnect` shape, without
+        // its reason banner: the C# quit shows none).
+        self.net_dropped = true;
+        self.net_state = crate::net::client_state::NOT_CONNECTED;
+        self.remote_players.clear();
+        self.local_id = 0;
+        self.net = crate::app::NetRole::Off;
+        // `WorldGen.cs:6646`: `SoundEngine.StopTrackedSounds()`.
+        self.audio.stop_tracked_sounds();
+        // `WorldGen.cs:6649-6650`: both fast-forward flags drop.
+        self.world.fast_forward_to_dawn = false;
+        self.world.fast_forward_to_dusk = false;
+        if single {
+            // `WorldGen.cs:6655`: `Main.GoToWorldSelect()` (`Main.cs:
+            // 48176-48180`: menuMode 888 + the world-select UIState) — the
+            // port's front-screen hop re-lists the worlds.
+            self.enter_front(crate::app::flow::FrontScreen::WorldSelect);
+            // `WorldGen.cs:6656`: the local player parks at the origin.
+            if let Some(p) = self.player.as_mut() {
+                p.x = 0.0;
+                p.y = 0.0;
+            }
+        } else {
+            // `WorldGen.cs:6660`: `Main.menuMode = 0` — the main menu.
+            if self.menu.is_none() {
+                self.menu = Some(crate::menu::Menu::new(
+                    self.settings.clone(),
+                    self.player_name.clone(),
+                ));
+            }
         }
     }
 
@@ -705,17 +812,39 @@ mod tests {
         assert_eq!(sections.signs.len(), 1);
         assert_eq!(sections.tile_entities.len(), 2);
 
-        // The second save (F9) writes the same bytes with the revision bumped:
-        // deterministic apart from `FileMetadata`'s counter.
+        // The second save (F9) writes the same state with the revision bumped
+        // and LastPlayed re-stamped (`SaveWorldFlags:1251` writes
+        // `DateTime.UtcNow.ToBinary()` on every save, W4-c43) — the two
+        // wall-moving fields are the metadata revision (bytes 12..16) and
+        // the flags block's LastPlayed long; everything else is identical.
         app.save_world();
         let second = std::fs::read(&path).expect("read back");
         let table2 = tr_core::wld::SectionTable::open(&second).expect("opens");
         assert_eq!(table2.metadata().revision, 2, "increments per save");
-        // Everything past the 24-byte version+metadata head is identical.
+        let first_loaded = tr_core::wld::parse(&first).expect("first parses");
+        let second_loaded = tr_core::wld::parse(&second).expect("second parses");
+        assert!(
+            second_loaded.last_played >= first_loaded.last_played,
+            "LastPlayed re-stamps at save time"
+        );
+        assert_ne!(
+            second_loaded.last_played & (0x4000_0000_0000_0000u64 as i64),
+            0,
+            "the stamp carries the Utc kind bit"
+        );
+        // Locate the LastPlayed slot in the flags block by its own bytes and
+        // pin it as the only moved field past the metadata head.
+        let at = second
+            .windows(8)
+            .position(|w| w == second_loaded.last_played.to_le_bytes())
+            .expect("the LastPlayed long is in the file");
+        let mut normalized = second.clone();
+        normalized[12..16].copy_from_slice(&first[12..16]); // the revision
+        normalized[at..at + 8].copy_from_slice(&first_loaded.last_played.to_le_bytes());
         assert_eq!(
-            second[24..],
+            normalized[24..],
             first[24..],
-            "the revision is the only thing that moved"
+            "the revision and LastPlayed are the only things that moved"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -832,14 +961,14 @@ mod tests {
     #[test]
     fn test_DW_7_2_the_trwld_path_is_unchanged() {
         // DW-7.2: the native `.trwld` branch keeps its exact behaviour — the
-        // world and its sidecar round-trip, and a double-run pair is equal
-        // (both writers are deterministic: no clock, no revision counter).
-        // The workspace carries no hashing crate, so the pair is asserted as
-        // byte equality — strictly stronger than the SHA256 equality the
-        // determinism rule asks for (`tools/pixel_diff.py`'s pairs are taken
-        // at the tool level, outside the test suite). The branch's body is the
-        // pre-phase code verbatim; the only changes are the `&mut self`
-        // receiver and the field rename (see the discovery file's diff note).
+        // world and its sidecar round-trip. Since W4-c43 the v18 tail's
+        // LastPlayed is the save-time `UtcNow` stamp (`SaveWorldFlags:1251`),
+        // so a double-run pair is equal apart from that one long (the C# is
+        // wall-clock-bearing there too); the pair is pinned with the stamp
+        // normalized, strictly stronger than SHA256 equality for every other
+        // byte. The branch's body is the pre-phase code verbatim; the only
+        // changes are the `&mut self` receiver and the field rename (see the
+        // discovery file's diff note).
         let dir = scratch("trwld");
         let path = dir.join("native.trwld");
         let mut app = stocked_app();
@@ -850,11 +979,17 @@ mod tests {
         let one = std::fs::read(&path).expect("world written");
         let sidecar_one = std::fs::read(crate::persist::player_path(&path))
             .expect("the .trplayer sidecar written");
+        let stamp_one = app.world.last_played;
         app.save_world();
         let two = std::fs::read(&path).expect("world written");
         let sidecar_two = std::fs::read(crate::persist::player_path(&path))
             .expect("the .trplayer sidecar written");
-        assert_eq!(one, two, "the world pair is byte-equal");
+        // The v18 tail's LastPlayed long (the final 8 bytes) is the only
+        // wall-clock field — normalize it, then demand byte equality.
+        let mut two_norm = two.clone();
+        let n = two_norm.len();
+        two_norm[n - 8..].copy_from_slice(&stamp_one.to_le_bytes());
+        assert_eq!(one, two_norm, "the world pair is byte-equal modulo LastPlayed");
         assert_eq!(sidecar_one, sidecar_two, "the sidecar pair is byte-equal");
         // The world round-trips through the native reader, and no `.wld`-only
         // write appeared beside it.
@@ -865,6 +1000,48 @@ mod tests {
             "no `.wld` beside a `.trwld`"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The quit paths' audio stops (the W4-g24/g73 quit-stop keep-one):
+    /// `SaveAndQuit` (`WorldGen.cs:6704`/:6715) calls
+    /// `StopWaterfallAmbienceAudio` then `StopTrackedSounds`; `JustQuit`
+    /// (`:6631-6632`/:6646) inlines the same pair. Both drain the tracked
+    /// pool; the sentinel-stop counter pins the immediate liquid-loop stop
+    /// (the frame's ¼ s tick is NOT the seam under test).
+    #[test]
+    fn w4_g24_the_quit_paths_stop_the_ambience_and_the_tracked_pool() {
+        let style = crate::audio::menu_accept_style();
+        // Save & Quit: the world write runs, then the menu reopens.
+        let dir = scratch("quit-stop");
+        let mut app = stocked_app();
+        app.world_path = dir.join("native.trwld");
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.audio.insert_test_cue("menu_accept");
+        let _ = app.audio.play_tracked_global(style.clone());
+        assert_eq!(app.audio.tracked_count_for(&style), 1);
+        app.save_and_quit();
+        assert_eq!(app.audio.liquid_ambience_stop_count(), 1, "the :6704 stop");
+        assert_eq!(app.audio.tracked_count_for(&style), 0, "the :6715 drain");
+        assert!(app.menu.is_some(), "the main menu reopened");
+        let _ = std::fs::remove_dir_all(&dir);
+        // Just Quit (single-player): no save, the world-select hop, the
+        // player parked at the origin (`:6656`).
+        let mut app = stocked_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.audio.insert_test_cue("menu_accept");
+        let _ = app.audio.play_tracked_global(style.clone());
+        app.world.fast_forward_to_dawn = true;
+        app.just_quit();
+        assert_eq!(app.audio.liquid_ambience_stop_count(), 1, "the :6631 pair");
+        assert_eq!(app.audio.tracked_count_for(&style), 0, "the :6646 drain");
+        assert!(matches!(
+            app.front,
+            Some(crate::app::flow::FrontScreen::WorldSelect)
+        ), "GoToWorldSelect (:6655)");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.x, p.y), (0.0, 0.0), "the position reset (:6656)");
+        assert!(!app.world.fast_forward_to_dawn, "the :6649 clear");
+        assert!(matches!(app.net, crate::app::NetRole::Off), "netMode 0");
     }
 }
 mod chest_save_tests {
@@ -1115,8 +1292,9 @@ mod chest_save_tests {
     }
 
     /// DW-2.2: the anchor cull — the vanilla `LoadChests`/`FixAgainstExploits`
-    /// validity sweep. A record whose `(x, y)` is not an active chest tile of
-    /// kind 21/341 in the loaded world is dropped, name and slots with it.
+    /// validity sweep. A record whose `(x, y)` is not an active `BasicChest`
+    /// tile of kind 21/467 (`TileID.cs:570`) in the loaded world is dropped,
+    /// name and slots with it.
     #[test]
     fn dw_2_2_a_record_with_a_missing_anchor_is_dropped() {
         let (ax, ay) = (55, 197);
@@ -1159,6 +1337,7 @@ mod chest_save_tests {
                 bestiary: Vec::new(),
                 npcs: Vec::new(),
                 ore_tiers: None,
+                ..Default::default()
             }),
             PathBuf::new(),
         );
@@ -1209,14 +1388,16 @@ mod chest_save_tests {
             WorldSections::native(save::WorldSide::default()),
             path.clone(),
         );
-        // Two NPC families (the Blue Slime 1 → the banner 69, the Green Slime
+        // Two NPC families (the Blue Slime 1 → the banner 69, the Pinky
         // -4 → the banner 151, `bestiary::npc_to_banner`) — the production
-        // call the death pass makes (`world_sim/npcs.rs`'s kill hook).
+        // call the death pass makes (`world_sim/npcs.rs`'s kill hook). The
+        // counts stay below the milestone (50 / 25), so no announcement
+        // fires and the lang singleton is untouched.
         for _ in 0..7 {
-            app.banners.add_npc_kill_by(1, "Tester");
+            app.banners.add_npc_kill_by(1, 0, "Tester");
         }
         for _ in 0..3 {
-            app.banners.add_npc_kill_by(-4, "Tester");
+            app.banners.add_npc_kill_by(-4, 0, "Tester");
         }
         app.player = None;
         app.settings.map_enabled = false;
@@ -1242,6 +1423,57 @@ mod chest_save_tests {
             PathBuf::new(),
         );
         assert_eq!(control.banners.pairs().count(), 0, "no records — no tally");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-e24: the claimable pool's save → load round-trip through the App
+    /// path — `BannerSystem.Save`'s `claimableBanners` half
+    /// (`BannerSystem.cs:180-185`) rides the v18 section, and the loaded side
+    /// seeds the pool (`BannerSystem.Load`'s `version >= 289` arm `:203-211`).
+    /// The pool is seeded through `load_claimable_pairs` (the Load path
+    /// itself), so no milestone fires and the lang singleton stays untouched.
+    #[test]
+    fn w4_e24_a_saved_claimable_pool_round_trips_through_the_app() {
+        let world = chest_rig();
+        let dir = scratch("w4-e24-claimable-roundtrip");
+        let path = dir.join("world.trwld");
+
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        // Two banners in the pool (the Slime 69 and the Pinky 151), one
+        // fully claimed (0 stays in the map — the sparse-record contract).
+        app.banners.load_claimable_pairs([(69, 2), (151, 0)]);
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            sections.native.banner_claimable.len(),
+            2,
+            "one record per pooled banner — the zeroed entry rides too"
+        );
+        let back = app_for(world, sections, path);
+        let pairs: Vec<(i32, u16)> = back.banners.claimable_pairs().collect();
+        assert_eq!(pairs, vec![(69, 2), (151, 0)], "the pool rides the store");
+        assert_eq!(back.banners.claimable(69), 2);
+        // The Load does NOT arm the new-banner shine (the C# `Load` only
+        // fills claimableBanners; newBanner stays cleared).
+        assert!(!back.banners.is_new_banner(69));
+        assert!(!back.banners.any_new_claimable);
+
+        // The control: a fresh App over the same world starts with no pool.
+        let world2 = chest_rig();
+        let control = app_for(
+            world2,
+            WorldSections::native(save::WorldSide::default()),
+            PathBuf::new(),
+        );
+        assert_eq!(control.banners.claimable_pairs().count(), 0);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -1411,12 +1643,19 @@ mod chest_save_tests {
             ".bak carries the previous save"
         );
         // The third save shifts `.bak` into `.bak2` (the C#'s numbering) and
-        // writes the second save into `.bak`.
+        // writes the second save into `.bak`. The fresh file differs from the
+        // second only in the v18 tail's LastPlayed stamp (W4-c43: every save
+        // re-stamps `UtcNow`, `SaveWorldFlags:1251`).
+        let stamp_second = app.world.last_played;
         app.save_world();
+        let third = std::fs::read(&path).unwrap();
+        let mut third_norm = third.clone();
+        let n = third_norm.len();
+        third_norm[n - 8..].copy_from_slice(&stamp_second.to_le_bytes());
         assert_eq!(
-            std::fs::read(&path).unwrap(),
+            third_norm,
             second,
-            "the fresh file carries the latest save"
+            "the fresh file carries the latest save (modulo LastPlayed)"
         );
         assert_eq!(
             std::fs::read(backup_path(&path, 0)).unwrap(),
@@ -1428,6 +1667,37 @@ mod chest_save_tests {
             first,
             ".bak2 carries the two-saves-ago bytes"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    #[test]
+    fn w4_c43_save_world_stamps_last_played_in_both_formats() {
+        // `SaveWorldFlags:1251` — LastPlayed is `DateTime.UtcNow.ToBinary()`
+        // at save time in both format branches (the `.wld` flags block and
+        // the `.trwld` v18 tail); a never-played world's zero stamp is
+        // replaced, the Utc kind bit rides, and the stamp survives the load.
+        let dir = scratch("w4-c43-lastplayed");
+        for name in ["a.wld", "b.trwld"] {
+            let path = dir.join(name);
+            let mut app = app_for(
+                chest_rig(),
+                WorldSections::native(save::WorldSide::default()),
+                path.clone(),
+            );
+            app.player = None;
+            app.settings.map_enabled = false;
+            assert_eq!(app.world.last_played, 0, "the rig starts unstamped");
+            app.save_world();
+            assert!(app.world.last_played > tr_core::clock::TICKS_AT_UNIX_EPOCH);
+            let (world, _) = crate::app::load_world(&path).expect("the save reloads");
+            assert_eq!(world.last_played, app.world.last_played, "{name}");
+            assert_ne!(
+                world.last_played & (0x4000_0000_0000_0000u64 as i64),
+                0,
+                "{name}: the Utc kind bit"
+            );
+            let _ = std::fs::remove_file(&path);
+        }
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

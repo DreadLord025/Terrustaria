@@ -633,9 +633,14 @@ impl DustPool {
     /// `Dust.NewDustPerfect` (`Dust.cs:54-63`): a `NewDust` with a 0×0 box,
     /// then the position (and velocity) are overwritten exactly. Note the C#
     /// writes into whatever slot `NewDust` returned — the sentinel included.
-    pub fn new_dust_perfect(
+    /// W4-g61 (union-exec per research/116): the stream parameter
+    /// generalised from `&mut UnifiedRandom` to the [`DustRng`] seam
+    /// (behaviour identical — `UnifiedRandom` implements it; the
+    /// teleport-in arms roll a recording witness stream through the
+    /// same internals).
+    pub fn new_dust_perfect<R: DustRng>(
         &mut self,
-        rng: &mut UnifiedRandom,
+        rng: &mut R,
         ctx: &SpawnCtx,
         world: &World,
         position: Vec2,
@@ -657,11 +662,12 @@ impl DustPool {
     }
 
     /// `Dust.NewDustDirect` (`Dust.cs:65-73`): a `NewDust` whose NaN velocity
-    /// is zeroed (`Vector2.HasNaNs`).
+    /// is zeroed (`Vector2.HasNaNs`). W4-g61: the [`DustRng`] seam
+    /// generalisation (see [`Self::new_dust_perfect`]).
     #[allow(clippy::too_many_arguments)]
-    pub fn new_dust_direct(
+    pub fn new_dust_direct<R: DustRng>(
         &mut self,
-        rng: &mut UnifiedRandom,
+        rng: &mut R,
         ctx: &SpawnCtx,
         world: &World,
         position: Vec2,
@@ -689,9 +695,11 @@ impl DustPool {
     /// source's type, overwritten with the copied field list. The
     /// `dustIndex == maxDustToDraw` early return (`:265-268`) is the C#'s own
     /// guard (it fires for the sentinel slot, whose index is 6000).
-    pub fn clone_dust(
+    /// W4-g61: the [`DustRng`] seam generalisation (see
+    /// [`Self::new_dust_perfect`]).
+    pub fn clone_dust<R: DustRng>(
         &mut self,
-        rng: &mut UnifiedRandom,
+        rng: &mut R,
         ctx: &SpawnCtx,
         world: &World,
         dust_index: usize,

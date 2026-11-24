@@ -106,8 +106,10 @@ const BOOMERANGS_CHAKRAMS: &[u16] = &[
 const ITEMS_THAT_CAN_HAVE_LEGENDARY_2: &[u16] = &[3389];
 
 /// `PrefixID.Sets.ReducedNaturalChance` (`PrefixID.cs:14`): the weak prefixes
-/// only survive a natural roll 1/3 of the time.
-const REDUCED_NATURAL_CHANCE: &[u16] = &[
+/// only survive a natural roll 1/3 of the time. The verbatim C#-order carrier
+/// is `prefix_id::SETS_REDUCED_NATURAL_CHANCE` (W4-c45); this working copy is
+/// the same membership sorted for the binary searches, cross-pinned there.
+pub(crate) const REDUCED_NATURAL_CHANCE: &[u16] = &[
     7, 8, 9, 10, 11, 22, 23, 24, 29, 30, 31, 39, 40, 41, 47, 48, 49, 56,
 ];
 
@@ -994,6 +996,105 @@ mod tests {
             assert_eq!(roll_prefix(kind, -2, &mut rng), 0);
         }
         assert_eq!(rng.peek(), before, "the vanity gate draws nothing");
+    }
+
+    #[test]
+    fn w4_e15_category_pins_walk_every_arm_of_the_resolution_ladder() {
+        // `GetRollablePrefixes` (`Item.cs:1101-1137`): one witness per arm,
+        // including the 1.4.5 tails (the 6148-6173 band) and the membership
+        // edges the machine census diffed (PrefixLegacy.cs:98-104). The
+        // membership sets are pairwise DISJOINT in the C# — the arm order
+        // only matters for the accessory fallthrough (the last arm).
+        // Swords (218 kinds): the first (1), the mid-inserted 4258, the
+        // last (5688) and the tail-inserted 186/946/486.
+        for kind in [1u16, 4258, 186, 946, 486, 5688] {
+            assert_eq!(rollable_prefixes(kind), Some(PREFIXES_FOR_SWORDS), "sword {kind}");
+        }
+        // Spears/maces/chainsaws/drills/punch cannon (72): the leading 4463
+        // (the C# list's FIRST member), the lunar chainsaws 2773/2778/2783/
+        // 3463 (the corrections band — membership comes from the SET, not
+        // the row), and the last (5687).
+        for kind in [4463u16, 162, 2773, 2778, 2783, 3463, 5687] {
+            assert_eq!(rollable_prefixes(kind), Some(PREFIXES_FOR_SPEARS), "spear {kind}");
+        }
+        // Guns/bows (93): 39 (the first), 5460 (the last), the 1.4.5 tail.
+        for kind in [39u16, 986, 5117, 5460] {
+            assert_eq!(rollable_prefixes(kind), Some(PREFIXES_FOR_GUNS_BOWS), "gun {kind}");
+        }
+        // Magic (82): 64 (the first) through the 6152-6173 tail — 6171 is
+        // the corrections-seam staff, 6173 the C# list's last member.
+        for kind in [64u16, 1260, 6152, 6155, 6171, 6173] {
+            assert_eq!(rollable_prefixes(kind), Some(PREFIXES_FOR_MAGIC), "magic {kind}");
+        }
+        // Summon (46): 1157 (the first) through the 6148/6149/6161/6164 tail.
+        for kind in [1157u16, 2535, 6148, 6149, 6161, 6164] {
+            assert_eq!(rollable_prefixes(kind), Some(PREFIXES_FOR_SUMMONS), "summon {kind}");
+        }
+        // Boomerangs/chakrams (41): the unsorted C# inserts (561/1324/5298/
+        // 5519 sit mid-list in PrefixLegacy.cs:98) all resolve.
+        for kind in [55u16, 561, 1324, 3030, 5298, 5519] {
+            assert_eq!(rollable_prefixes(kind), Some(PREFIXES_FOR_BOOMERANGS), "boomerang {kind}");
+        }
+        // Legendary2 (1): the Terrarian only.
+        assert_eq!(rollable_prefixes(3389), Some(PREFIXES_FOR_TERRARIAN));
+        // The accessory fallthrough: functional (950) yes; the denial list
+        // (267 guide doll, 6144-6146 the 1.4.5 vanity tails) no.
+        assert_eq!(rollable_prefixes(950), Some(PREFIXES_FOR_ACCESSORIES));
+        for denied in [267u16, 5112, 6144, 6145, 6146] {
+            assert_eq!(rollable_prefixes(denied), None, "denied {denied}");
+        }
+        // The set edges stay OUT: 575 (Soul of Flight — a material inside
+        // the swords id RANGE but not in the set), 5689 and 6174 (one past
+        // the swords/magic maxima, plain non-accessory rows).
+        assert_eq!(rollable_prefixes(575), None);
+        assert_eq!(rollable_prefixes(5689), None);
+        assert_eq!(rollable_prefixes(6174), None);
+    }
+
+    #[test]
+    fn w4_e15_the_reduced_chance_set_pins_the_csharp_members() {
+        // `PrefixID.Sets.ReducedNaturalChance` (`PrefixID.cs:14`): exactly
+        // 18 ids — 7-11, 22-24, 29-31, 39-41, 47-49, 56. The gate
+        // (`Item.cs:556`) fires ONLY for prefixWeWant == -1.
+        let expected = [7u16, 8, 9, 10, 11, 22, 23, 24, 29, 30, 31, 39, 40, 41, 47, 48, 49, 56];
+        assert_eq!(REDUCED_NATURAL_CHANCE, &expected[..]);
+        // The neighbours are NOT reduced: 6/12, 21/25, 28/32, 38/42, 46/50,
+        // 55/57 — a fat-fingered set edit lands here first.
+        for p in [6u16, 12, 21, 25, 28, 32, 38, 42, 46, 50, 55, 57] {
+            assert!(!in_set(REDUCED_NATURAL_CHANCE, p), "not reduced: {p}");
+        }
+        // The mode gate: an EXACT reduced id applies with no 1/3 draw (the
+        // stream stays put — the C# checks `prefixWeWant == -1` first).
+        let mut rng = test_rng(31);
+        let before = rng.peek();
+        assert_eq!(roll_prefix(1, 8, &mut rng), 8, "Terrible applies exact");
+        assert_eq!(rng.peek(), before, "the exact mode draws nothing");
+        // The reforge (-2) never runs the reduced gate either: the FIRST
+        // attempt takes only Next(40) (rolled starts at -2, so the `Next(4)`
+        // natural gate short-circuits — `Item.cs:544`); each rejection retry
+        // re-enters with rolled == -1 and takes Next(4) (result overwritten
+        // by the `prefixWeWant < -1` arm, `:548-551`) + Next(40). Never a
+        // Next(3) — replayed on a twin stream.
+        let mut a = test_rng(77);
+        let mut b = test_rng(77);
+        let iron = crate::registry::item(1).unwrap();
+        for _ in 0..400 {
+            let rolled = roll_prefix(1, -2, &mut a);
+            let mut first = true;
+            loop {
+                if !first {
+                    b.next_max(4); // the retry's overwritten natural gate
+                }
+                first = false;
+                let pick = PREFIXES_FOR_SWORDS[b.next_max(40) as usize];
+                let m = Multipliers::stat_switch(pick);
+                if !m.rejected(iron) {
+                    assert_eq!(rolled, pick);
+                    break;
+                }
+            }
+        }
+        assert_eq!(a.peek(), b.peek(), "-2 takes Next(40) (+Next(4) per retry), never Next(3)");
     }
 
     #[test]

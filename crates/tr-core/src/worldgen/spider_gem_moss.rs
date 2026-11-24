@@ -389,7 +389,7 @@ fn gem_cave(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
 // --- the spider cave ---------------------------------------------------------
 
 /// `WorldGen.PlaceTight` (`WorldGen.cs:38303-38325`) → the stalactite.
-fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) {
+pub(crate) fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) {
     let blocked = world
         .tile(x, y)
         .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer);
@@ -537,8 +537,20 @@ fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bo
     true
 }
 
-/// `WorldGen.PlaceSmallPile` (`WorldGen.cs:46815-46873`).
-fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_size: i32) -> bool {
+/// `WorldGen.PlaceSmallPile` (`WorldGen.cs:46815-46873`) — the `type`
+/// parameter defaults to 185 (the small piles); the Stone Patch pass
+/// (W4-d104 pass 32) passes it explicitly. The 185-only
+/// `InvalidTileForPilesOrSpeleothems` seat veto (`:46843-46846`) reads
+/// `TileID.Sets.Boulders` — inert during worldgen (D20). Shared with the
+/// surface ore/stone pass.
+pub(crate) fn place_small_pile(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    pile_style: i32,
+    pile_size: i32,
+    kind: u16,
+) -> bool {
     let frame_y = (pile_size * 18) as i16;
     let frame_x = (pile_style * 18) as i16;
     if world.tile(x, y).is_some_and(|t| t.liquid_kind() == crate::tile::LiquidKind::Lava) {
@@ -555,7 +567,7 @@ fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_siz
         }
         for (i, fx) in [(x, frame_x), (x + 1, frame_x + 18)] {
             if let Some(t) = world.tile_mut(i, y) {
-                t.kind = TILE_SMALL_PILES;
+                t.kind = kind;
                 t.flags |= FLAG_ACTIVE;
                 t.frame_x = fx;
                 t.frame_y = frame_y;
@@ -564,7 +576,7 @@ fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_siz
         true
     } else if solid_tile2(world, x, y + 1) && !world.tile(x, y).is_some_and(|t| t.active()) {
         if let Some(t) = world.tile_mut(x, y) {
-            t.kind = TILE_SMALL_PILES;
+            t.kind = kind;
             t.flags |= FLAG_ACTIVE;
             t.frame_x = frame_x;
             t.frame_y = frame_y;
@@ -688,11 +700,11 @@ fn spread_spider(
                         if rng.range(0, 3) == 0 {
                             let active = world.tile(item.0, item.1).is_some_and(|t| t.active());
                             if !active {
-                                place_small_pile(world, item.0, item.1, 34 + rng.range(0, 4), 1);
+                                place_small_pile(world, item.0, item.1, 34 + rng.range(0, 4), 1, TILE_SMALL_PILES);
                             }
                             let active = world.tile(item.0, item.1).is_some_and(|t| t.active());
                             if !active {
-                                place_small_pile(world, item.0, item.1, 48 + rng.range(0, 6), 0);
+                                place_small_pile(world, item.0, item.1, 48 + rng.range(0, 6), 0, TILE_SMALL_PILES);
                             }
                         }
                     }

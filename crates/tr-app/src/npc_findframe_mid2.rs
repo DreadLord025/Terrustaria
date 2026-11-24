@@ -43,8 +43,9 @@
 //!   (the `npc.rs::humanoid_town_frame` precedent); the walk band's
 //!   `ExtraFramesCount[178]` = 9 wrap (`NPCID.cs:10464`) IS carried.
 
-// The wiring is a later round (the kinds are not in `NpcKind` yet) — the
-// `npc_findframe_a.rs`/`npc_findframe_b.rs` precedent.
+// W4-g6 wired the `cs_id` hook at the `find_frame` head (stream-inert
+// until the roster wave adds the kinds) — the allow stays for the
+// not-yet-rostered arms (the `npc_findframe_low1.rs` precedent).
 #![allow(dead_code)]
 
 /// The 12 slice-2 kinds, keyed by their VANILLA `NPC.type`
@@ -129,6 +130,31 @@ impl FindFrameMid2Kind {
             Self::PigronCrimson => 14,
         }
     }
+}
+
+/// W4-g6 wiring — the `cs_id` → [`FindFrameMid2Kind`] mapping the
+/// `npc.rs::find_frame` hook reads (the `npc_findframe_low1.rs`
+/// `find_frame_kind_for_cs_id` precedent). Returns `None` for every id
+/// outside this slice's set — so the hook is inert for all current kinds
+/// (none has a `cs_id` in the set; verified over the `npc/data.rs` hand
+/// rows AND the bestiary `net_id` fallback) and fires only once the
+/// roster wave adds them.
+pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameMid2Kind> {
+    Some(match cs_id {
+        166 => FindFrameMid2Kind::SwampThing,
+        168 => FindFrameMid2Kind::CorruptPenguin,
+        169 => FindFrameMid2Kind::IceElemental,
+        170 => FindFrameMid2Kind::PigronCorruption,
+        171 => FindFrameMid2Kind::PigronHallow,
+        172 => FindFrameMid2Kind::RuneWizard,
+        173 => FindFrameMid2Kind::Crimera,
+        175 => FindFrameMid2Kind::AngryTrapper,
+        176 => FindFrameMid2Kind::MossHornet,
+        178 => FindFrameMid2Kind::Steampunker,
+        179 => FindFrameMid2Kind::CrimsonAxe,
+        180 => FindFrameMid2Kind::PigronCrimson,
+        _ => return None,
+    })
 }
 
 /// The `NPC` fields `FindFrame` reads/writes for these arms:

@@ -121,8 +121,8 @@ dusk/dawn event rolls that this module's consumers (music, filters, ambience) re
 | M1.4-BG-19 / BG-20 — ambient skies + emitters | PASS | `tr-app/src/ambience.rs`'s scheduler + `ambient_sound.rs` (`blizzard_loop_volumes`, the thunder cue, the critter table). Out of weather scope beyond the blizzard loops (`SceneState.cs:189-253`, ported at `ambient_sound.rs` + `scene.rs::blizzard_foreground_params` `:1389`). |
 | M1.4-BG-21 — sundial/moondial + dayRate plumbing | PARTIAL | The dial plumbing is ported, **but the row claims the blood-moon/eclipse rolls and the dial-cooldown force-resets are "Out (M4)"** — they are in fact landed: `world_sim/clock.rs::advance_time` `:37-38` (blood moon) and `:72` (eclipse) calling `tr-core/src/world.rs::roll_blood_moon` `:565` / `roll_eclipse` `:594`. The stated remaining gaps (`tenth_anniversary` argument hardcoded `false`, `spawn_eye` hardcoded `false`, `stopEvents` absent) are unstated. |
 | M1.4-BG-22 — the dayRate consumer cluster | PASS | `world_sim/weather.rs::update_world_tick` `:127-276` runs the cluster in C# order; `test_DW_1_2_wind_counter_walk_fires_within_one_tick_at_60_not_at_1`, `test_DW_2_2_update_time_runs_inside_the_world_tick`. Admitted-out: the live `numClouds` system, `updateCloudLayer`, the Lantern Night arm. |
-| M1.4-WEATHER-1 — "wind gusts + thunder" | PARTIAL | The walk + the `NewLightning` chain port verbatim, but two claims fail: (a) "the 0.35 walk cap … already ported and verified" — `Wind::any_player_120_life` (`wind.rs:75`) is set `true` in `Wind::new` `:108` and **never written anywhere in `crates/`**, so `Main.cs:58863-58871/58889`'s low-wind limit is dead code and untested; (b) the lightning **bolt geometry** is still absent (admitted). |
-| M1.4-WEATHER-2 — sandstorm dust | PARTIAL | `sand.rs` ports `EmitDust` + dust-268 and `scene.rs::Sandstorm::update_time` `:570-607` ports the state machine, but the **hardMode branch of `Sandstorm.cs:58-59` is not taken**: `scene.rs:591` hardcodes `21600 * 3` and the comment says "hardmode is not ported yet", while `World::hard_mode` exists (and `roll_eclipse` at `world.rs:601` uses it). |
+| M1.4-WEATHER-1 — "wind gusts + thunder" | PARTIAL | The walk + the `NewLightning` chain port verbatim. Claim (a) "the 0.35 walk cap … never written" is **now FIXED** (S1-L-2): `world_sim/weather.rs:136` writes `Wind.any_player_120_life` from the single-player `statLifeMax >= 120` scan, witnessed by `the_world_tick_writes_any_player_120_life_into_wind` (`weather.rs:1260`). Claim (b) the lightning **bolt geometry** is still absent (admitted — the damaging strike is the "(L) bolt geometry" lane, research/78 item 4). |
+| M1.4-WEATHER-2 — sandstorm dust | PORTED (sim) | `sand.rs` ports `EmitDust` + dust-268 and `scene.rs::Sandstorm::update_time` (`:1041-1081`) ports the state machine. The **hardMode branch of `Sandstorm.cs:58-59` is now TAKEN** (W4-c40): `scene.rs:1065` reads `21600 * if hard_mode { 2 } else { 3 }`, fed `world.hard_mode` from `weather.rs:215`; witnessed (`w4_c40_the_start_denominator_halves_in_hardmode`). The remaining `gfxQuality` pin + the SandstormSky tint quad are f42/dust-lane visuals (research/78). |
 | M2-BUFF-5 — the aura scan | PASS | `scene_scan.rs::scan_tiles`'s aura arm + the `Auras` snapshot + the scene-buff grants; `the_aura_scan_reads_the_frame_gates`, `the_sunflower_count_and_the_graveyard_cancel`. |
 | M6-AUDIO-1 / M6-MUSIC-1 — thunder cue + the music tail | PASS | `ambient_sound.rs` plays the strike; `windy_music`/`quiet_sky` feed the ladder (`frame.rs:439`, `:475`). The port notes the pitch roll is consumed but unplumbed. |
 
@@ -132,7 +132,7 @@ dusk/dawn event rolls that this module's consumers (music, filters, ambience) re
 | --- | --- | --- | --- |
 | `UpdateWeather` wind walk + extreme re-rolls | PORTED | `tr-core/src/wind.rs:168-264` | `step = 0.0003 + \|target*(1+5/9*rain) - current\| * 0.0015` ≡ `Main.cs:58830-58849`; tier walk `:58860-58950`; `±0.8` clamp. `next_int` mods the high 32 bits (WEATHER-1 note). |
 | `ResetWindCounter`'s RNG source | PARTIAL | `wind.rs:268-280`, `Wind::new:94-113` | C# `Main.cs:58700` mints a fresh `FastRandom.CreateWithRandomSeed()` per reset; the port keeps one seeded `Xorshift64` stream — the walk is shape-identical but not stream-identical (behavioural, unverifiable against C#). |
-| low-wind limit (0.35 without a 120-HP player) | FAIL (dead code) | `wind.rs:75` `any_player_120_life`, `:199`, `:211`, `:232` | No writer exists in `crates/`; `Main.cs:58863-58871`'s `flag` is always "strong wind". No test covers it. |
+| low-wind limit (0.35 without a 120-HP player) | PORTED | `wind.rs:75` `any_player_120_life`, `:216`, `:237`; writer `weather.rs:136` | **Fixed S1-L-2**: `update_world_tick` writes the flag from the single-player `statLifeMax >= 120` scan (`Main.cs:58863-58871`); `the_world_tick_writes_any_player_120_life_into_wind` (`weather.rs:1260`) pins both arms. |
 | `UpdateWindyDayState` | PORTED | `wind.rs:120-152`, `frame.rs:507-511` | Hysteresis bands + the storm flag; the `remixWorld` override `:13022-13024` is out. |
 | `UpdateWeather` thunder arm / `NewLightning` | PARTIAL | `rain.rs::thunder_step` `:441-520`, `weather.rs:127-133` | The delay ladder, the tier multipliers, `lightningSpeed`/`lightningDecay`, the graveyard ≥ 0.9 strike, the cue. **Missing: bolt geometry** and the `ParticleOrchestrator` storm-bolt spawner (`Main.cs:58822-58829`'s neighbours). |
 | `UpdateTime` rain state machine | PORTED | `rain.rs:571-761` | `ladyBugRainBoost` drain, `rainTime` drain, the ×5.75/×4.25/ladybug arms, `StartRain`/`ChangeRain`/`StopRain`, the `86400/dayRate` denominators, the `RollLuck(25)` coin arm consumed-not-spawned. |
@@ -140,7 +140,7 @@ dusk/dawn event rolls that this module's consumers (music, filters, ambience) re
 | Snow biome weather | PARTIAL | `rain.rs::update_snow`/`spawn_snow` `:839-920` | The snowflake dust is the port's own approximation; vanilla's `Main.snowing()` (`Main.cs:13032-13051` — the `pow(SnowTileCount/max, 4 - 3*cloudAlpha)` intensity, the `1 + 50*cloudAlpha` emitter count, the Deerclops `÷20`/`÷3` fades) is **not ported**. |
 | `Cloud` live system | MISSING | `render/sky.rs::make_clouds` `:270-342` | No `addCloud` ladder, no `UpdateClouds` sort/kill, no rare clouds, no overlap rejection, no `cloudBGX` drift; `numClouds` is pinned at 100, which pins `change_rain`'s strength bands (`rain.rs:57-63`, `:713-722`). |
 | `SceneMetrics` scan | PORTED | `scene_scan.rs:27-220`, `scene.rs:335-503` | 169×124 window ≡ `SceneMetrics.cs:336-379`; `AggregateTileCounts`/`CalculateZones` order preserved. Divergence: the music-box arm (`:4489-4501`) scans the 169×124 window instead of the visual screen rect (`scene_scan.rs:141-151`). |
-| `Sandstorm` state machine + dust | PARTIAL | `scene.rs:570-695`, `sand.rs` | All of `UpdateTime`/`ChangeSeverityIntentions`/`UpdateSeverity` + `EmitDust` + dust-268; the hardMode denominator (`Sandstorm.cs:58-59`) is not taken; `gfxQuality` pinned 1.0, `SandstormSky` is dead code in 1.4.5.8 (WEATHER-2 verified this claim — PASS). |
+| `Sandstorm` state machine + dust | PORTED (sim) | `scene.rs:1041-1149`, `sand.rs` | All of `UpdateTime`/`ChangeSeverityIntentions`/`UpdateSeverity` + `EmitDust` + dust-268; the hardMode denominator (`Sandstorm.cs:58-59`) **taken W4-c40** (`scene.rs:1065`, fed `world.hard_mode`); the calm-intent bands witnessed (`w4_c40_the_calm_intent_bands_replay_the_rand_stream`). `gfxQuality` pinned 1.0. **`SandstormSky` is NOT dead code** — the WEATHER-2 "never activated" reading was wrong: it activates via the variable-based `SkyManager.Activate(biomeName)` (`SceneState.cs:97→313-317`, `biomeName="Sandstorm"`, `UseStormEffects` default true `Main.cs:66572`); the tint quad is a real f42-lane visual gap the port does not draw (W4-c40 DOC-SWEEP lane 6, research/78, corrected 2026-11-21). |
 | `SceneState` filters | PORTED | `scene.rs:697-888`, `:1107-1530` | The fades, the board, every parameter function; the blizzard `deerclops_smoothed` input is passed 0 (no M1 spawner) — both lerps no-op. |
 | Blood moon / solar eclipse rolls + dial force-reset | PORTED | `world_sim/clock.rs:37-38`, `:72`; `world.rs:565-611` | `Main.cs:65333-65352` and `:65421-65430` including the cooldown resets. Partially folded: `tenth_anniversary`, `spawn_eye`, `netMode != 1`, the `stopEvents` gate, and the `moonPhase != 4` gate is ported but the pumpkin/snow-moon clearings (`Main.cs:64837-64845`) are not. |
 | Lantern Night force-stop | MISSING | `rain.rs:609-610` (admitted) | `Main.cs:64825-64831`'s `cloudBGActive = 0` / `numClouds = 30` clamp and the `:64890` gate resolve as "never a lantern night". |
@@ -211,9 +211,12 @@ dusk/dawn event rolls that this module's consumers (music, filters, ambience) re
 - `tr-app/src/sand.rs` (7) + `tr-app/src/ambient_sound.rs` (9) cover `EmitDust`'s
   budget/cluster/colour arms, the dust-268 AI and the blizzard/thunder emitters.
 
-Coverage gaps: nothing exercises the 0.35 low-wind cap, `any_player_120_life`, the
-Lantern Night arms, `snowing()`'s intensity formula or a live cloud spawn — because none
-of them exist.
+Coverage gaps: the 0.35 low-wind cap / `any_player_120_life` is now witnessed
+(`the_world_tick_writes_any_player_120_life_into_wind`, S1-L-2); the Sandstorm
+calm-intent bands are now witnessed (`w4_c40_the_calm_intent_bands_replay_the_rand_stream`,
+DOC-SWEEP lane 6). Still unexercised: the Lantern Night arms (f39/d130), `snowing()`'s
+intensity formula (d130) and a live cloud spawn (g69) — sibling-lane work, not gaps in
+the landed weather sim (research/78).
 
 ## Deviations & risks
 
@@ -223,10 +226,13 @@ of them exist.
    `statLifeMax >= 120` scan (`Main.cs:58863-58871` / `:64899-64909`), and
    `the_world_tick_writes_any_player_120_life_into_wind` locks the flag. The
    ROADMAP row's "already ported and verified" claim is corrected.
-2. **`Sandstorm.cs:58-59`'s hardMode denominator not taken** — `scene.rs:591` pins
-   `21600 * 3` with the stale comment "hardmode is not ported yet" (`World::hard_mode`
-   exists). Severity: **behavioural** (sandstorms start 1.5× too often in hardmode).
-   Admitted in code, not in ANALYSIS.
+2. **`Sandstorm.cs:58-59`'s hardMode denominator** — *fixed W4-c40 (2026-11-21)*:
+   `scene.rs:1065` now reads `21600 * if hard_mode { 2 } else { 3 }`, fed
+   `world.hard_mode` from `weather.rs:215`; the stale "hardmode is not ported yet"
+   comment is gone. Witnessed (`w4_c40_the_start_denominator_halves_in_hardmode`,
+   `w4_c40_hardmode_does_not_touch_the_decay_or_intention_slots`). The calm-intent
+   bands (`Sandstorm.cs:85-92`) are now witnessed too
+   (`w4_c40_the_calm_intent_bands_replay_the_rand_stream`, DOC-SWEEP lane 6).
 3. **`Main.snowing()` not ported** — the snow dust in `rain.rs:839-920` is a separate
    approximation without the `pow(count/max, 4 - 3*cloudAlpha)` intensity, the
    `1 + 50*cloudAlpha` emitter count or the Deerclops `÷20`/`÷3` fades
@@ -288,13 +294,13 @@ of them exist.
 
 ## Task seeds
 
-- **(M) Wire `Wind::any_player_120_life` from the world tick** — set it in
-  `update_world_tick` beside `any_player_120` (`weather.rs:111`), add a test asserting
-  the `|target| ≤ 0.35` clamp when no 120-HP player exists, and correct the "verified"
-  wording in ROADMAP M1.4-WEATHER-1. Depends on nothing.
-- **(M) Take `Sandstorm.cs:58-59`'s hardMode branch** — thread `world.hard_mode` into
-  `Sandstorm::update_time`'s start denominator (`scene.rs:570-600`), update the stale
-  comment, add the `21600*2` arm to the seeded start-roll test. Depends on nothing.
+- ~~**(M) Wire `Wind::any_player_120_life` from the world tick**~~ — **DONE (S1-L-2)**:
+  `update_world_tick` writes it (`weather.rs:136`), witnessed
+  (`the_world_tick_writes_any_player_120_life_into_wind`).
+- ~~**(M) Take `Sandstorm.cs:58-59`'s hardMode branch**~~ — **DONE (W4-c40)**:
+  `scene.rs:1065` reads `world.hard_mode`, witnessed
+  (`w4_c40_the_start_denominator_halves_in_hardmode`); the calm-intent bands
+  witnessed too (DOC-SWEEP lane 6, research/78).
 - **(M) Port `Main.snowing()`** (`Main.cs:13032-13051`) as the snow weather's single
   source — move `rain.rs::spawn_snow`'s rate onto
   `500 * screenWidth/maxScreenW * (1 + 2*cloudAlpha) * pow(snow/max, 4-3*cloudAlpha)`

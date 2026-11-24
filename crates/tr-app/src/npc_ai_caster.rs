@@ -127,7 +127,7 @@ fn wall_dungeon(wall: u16) -> bool {
 /// `Utils.ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)v >> 4` —
 /// truncate toward zero FIRST, then arithmetic-shift (negative coords
 /// floor, unlike the plain `/16`).
-fn to_tile(v: f32) -> i32 {
+pub(crate) fn to_tile(v: f32) -> i32 {
     (v as i32) >> 4
 }
 
@@ -152,7 +152,7 @@ pub fn global_firing_distance_check(shoot_x: f32, shoot_y: f32, target_x: f32, t
 /// early returns), and the per-tile test is
 /// `active && !inActive && tileSolid && !tileSolidTop` — platforms do NOT
 /// block the body space.
-fn solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
+pub(crate) fn solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
     if x0 < 0 || x1 >= world.width || y0 < 0 || y1 >= world.height - 40 {
         return true;
     }
@@ -288,6 +288,48 @@ fn teleport_burst_draws(rng: &mut UnifiedRandom, net_id: i32) {
             rng.next_range(1, 3); // `:20867` / `:20936`
         }
     }
+}
+
+/// W4-f42 — the Djinn curse volley's tile search (`NPC.cs:21137-21160`):
+/// up to 50 attempts, X then Y (`Next(±6+1)` each), outside BOTH the
+/// target's ±2 box and the caster's ±6 box, the tile not active, no lava,
+/// no solid ±2 box. Returns the picked tile; the caller spawns the 596 at
+/// its centre. The >2000-px gate (`:21133-21136`) is the CALLER's (it
+/// draws nothing either way). Shared by the live bat step and the
+/// faithful re-port (one copy).
+pub(crate) fn djinn_curse_search(
+    world: &World,
+    rng: &mut UnifiedRandom,
+    self_center: (f32, f32),
+    target_center: (f32, f32),
+) -> Option<(i32, i32)> {
+    let self_pt = (to_tile(self_center.0), to_tile(self_center.1));
+    let tgt_pt = (to_tile(target_center.0), to_tile(target_center.1));
+    for _ in 0..50 {
+        // `:21140-21141` — X first, then Y.
+        let x = rng.next_range(tgt_pt.0 - 6, tgt_pt.0 + 6 + 1);
+        let y = rng.next_range(tgt_pt.1 - 6, tgt_pt.1 + 6 + 1);
+        // `:21142` — outside BOTH boxes, and the tile not active.
+        let outside_target =
+            y < tgt_pt.1 - 2 || y > tgt_pt.1 + 2 || x < tgt_pt.0 - 2 || x > tgt_pt.0 + 2;
+        let outside_self =
+            y < self_pt.1 - 6 || y > self_pt.1 + 6 || x < self_pt.0 - 6 || x > self_pt.0 + 6;
+        if !outside_target || !outside_self || world.tile(x, y).is_some_and(|t| t.active()) {
+            continue;
+        }
+        // `:21145-21152` — no lava, no solid ±2 box.
+        if world
+            .tile(x, y)
+            .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava)
+        {
+            continue;
+        }
+        if solid_tiles(world, x - 2, x + 2, y - 2, y + 2) {
+            continue;
+        }
+        return Some((x, y));
+    }
+    None
 }
 
 /// The aiStyle-8 arm (`NPC.cs:20817-21376`) for one NPC, one tick.

@@ -34,7 +34,7 @@ simultaneous-mutation problem lives.
 | `tile_light/` (1 824) | the 147-case `TileLightScanner` port + `FastRandom` palette |
 | `liquid.rs` (542) + `liquid_draw.rs` (522) + `waterfall/` (1 591) | flow sim + draw cache + waterfall manager |
 | `edit.rs` (6 791) | place/break, the KillTile cascade, `TileObjectData` calls |
-| `tileobject.rs` (3 613) | the `TileObjectData` registry (36 defs of the full set) |
+| `tileobject.rs` (3 613) | the `TileObjectData` system; the registry DATA is GENERATED (`tileobject/registry.rs`, S1-F-7 wave A — all 389 tiles) |
 | `growth.rs` (5 305) / `spread.rs` (817) / `ores.rs` (338) | the world-growth ticks |
 | `smart_cursor.rs` (5 197) | the 40-step `SmartCursorHelper` port |
 | `wiring.rs` (4 622) | the wire engine + traps + statues |

@@ -9,8 +9,14 @@
 //!
 //! The C# routine reads `Main.*` statics; the port passes them per frame
 //! through [`SceneVisualInputs`]. The `Noir` parameter block is ported and
-//! unit-tested but has no M1 activation path (the monolith is M4 content);
-//! HeatDistortion/WaterDistortion/Aurora are phase-4/sky-manager work.
+//! unit-tested but has no M1 activation path (the monolith is M4 content).
+//! HeatDistortion/WaterDistortion ARE ported (phase 4: the board slots, the
+//! `heat_zone_flags`/`heat_distortion_intensity`/`water_distortion_intensity`
+//! formulas, the WGSL distortion passes 8/9 + the water mask); the compiled
+//! HLSL amplitudes are visual approximations and the WaterDistortion
+//! entity-wave/ripple buffer is not ported (the mask is the liquid coverage).
+//! Aurora is a `SkyManager` visual, not a filter. W4-d70 DOC-SWEEP: the
+//! HeatDistortion branches read the live `sun_scorch_counter`.
 
 use tr_core::scene::{
     EffectPriority, FilterBoard, FilterId, Sandstorm, SceneMetrics, SceneState, WaterShader,
@@ -77,10 +83,10 @@ impl EnvPins {
     }
 }
 
-/// `Player.sunScorchCounter` — set by the sun-scorch debuff, which has no M1
-/// source; the HeatDistortion branches that read it (`SceneState.cs:98,146`)
-/// take 0.
-const SUN_SCORCH_COUNTER: i32 = 0;
+/// `Player.sunScorchCounter` — W4-d70 DOC-SWEEP: the vampire seed's
+/// sunlight-burn ramp is ported (`Player::update_sun_scorch`); the
+/// HeatDistortion branches that read it (`SceneState.cs:98,146`) take the
+/// live counter through [`SceneVisualInputs::sun_scorch_counter`].
 
 /// The `Main.*` statics and per-frame values `ApplyVisuals` reads
 /// (`SceneState.cs:64-253`).
@@ -121,6 +127,13 @@ pub(crate) struct SceneVisualInputs<'a> {
     pub(crate) bg_delay: i32,
     /// `Main.GlobalTimeWrappedHourly` (`ScreenShaderData.cs:146`).
     pub(crate) global_time: f32,
+    /// The NPC rows `MoonLordScreenShaderData.UpdateMoonLordIndex` reads
+    /// (`MoonLordScreenShaderData.cs:30-68`): the core (398) and deathray eyes
+    /// (400). Filled by `update_scene` from the live NPC list (W4-d70).
+    pub(crate) moon_lord_npcs: &'a [tr_core::scene::MoonLordShaderNpc],
+    /// `Player.sunScorchCounter` (`Player.cs:2356`) — the HeatDistortion
+    /// branches' third term (`SceneState.cs:98,146`). W4-d70 DOC-SWEEP.
+    pub(crate) sun_scorch_counter: i32,
 }
 
 /// The `ApplyVisuals` driver: filter board + storm shader state + the last
@@ -172,6 +185,18 @@ pub(crate) struct FilterDriver {
     pub(crate) moon_lord_shake_wanted: bool,
     /// MoonLordShake's uniform while its filter is visible.
     pub(crate) moon_lord_shake: Option<FilterParams>,
+    /// W4-c40: the `SceneState.cs:97` condition
+    /// (`Main.UseStormEffects && Sandstorm.ShowSandstormVisuals()`) — the
+    /// SAME boolean the Sandstorm filter manage reads; the SkyManager half
+    /// of `ManageSpecialBiomeVisuals` (`:313-321`) flips
+    /// `App::sandstorm_sky` on its edge in `update_scene`.
+    pub(crate) sandstorm_visuals_on: bool,
+    /// `MoonLordScreenShaderData.LatestFilterStrength`
+    /// (`MoonLordScreenShaderData.cs:10`, static ctor `:98-101` starts at 1):
+    /// the value `Main.GetMoonLordColoring` (`Main.cs:26325`) lerps the Moon
+    /// Lord's parts toward `(183, 255, 255)` with. Refreshed by the shake's
+    /// `Apply` each frame it runs (W4-d70).
+    pub(crate) latest_filter_strength: f32,
 }
 
 impl FilterDriver {
@@ -199,6 +224,10 @@ impl FilterDriver {
             moon_lord_shake_intensity: None,
             moon_lord_shake_wanted: false,
             moon_lord_shake: None,
+            sandstorm_visuals_on: false,
+            // `MoonLordScreenShaderData.cs:98-101`: the static ctor starts
+            // `LatestFilterStrength` at 1.
+            latest_filter_strength: 1.0,
             water: None,
         };
         driver.sync_settings(&crate::settings::Settings::default());
@@ -298,7 +327,10 @@ impl FilterDriver {
         // The `ManageSpecialBiomeVisuals` subset, in the source's call order
         // (the activation order is the same-priority tie-break). The tower/
         // monolith/MoonLord rows (`:81-91`), Aurora (`:95`) and
-        // Sepia/Noir/CRT/Test2 (`:101-104`) have no M1 activation reader.
+        // Sepia/CRT/Test2 (`:101,103-104`) have no M1 activation reader.
+        // Noir (`:102`) has a scanned `noir_monolith` metric but no board
+        // manage call either — its pass + parameter block are ported, the
+        // activation reader is the gap (W4-d70 DOC-SWEEP census, research/111).
         let (heat_underworld, heat_desert) = heat_zone_flags(
             metrics.tile_center.1,
             inputs.max_tiles_y,
@@ -331,6 +363,10 @@ impl FilterDriver {
                 is_desert_bg_style(inputs.bg_style),
                 inputs.bg_delay,
             );
+        // W4-c40: the SkyManager half of the same `ManageSpecialBiomeVisuals`
+        // call (`SceneState.cs:313-321`) reads the SAME condition — the
+        // caller flips `App::sandstorm_sky` on its edge.
+        self.sandstorm_visuals_on = sandstorm_on;
         self.board
             .manage(FilterId::Sandstorm, sandstorm_on, inputs.skip_transitions);
         self.board.manage(
@@ -345,7 +381,7 @@ impl FilterDriver {
                 self.use_heat_distortion,
                 heat_underworld,
                 heat_desert,
-                SUN_SCORCH_COUNTER,
+                inputs.sun_scorch_counter,
             ),
             inputs.skip_transitions,
         );
@@ -393,7 +429,7 @@ impl FilterDriver {
         // `:142-162`: HeatDistortion's intensity and `IsHidden = intensity <= 0`.
         if self.board.is_active(FilterId::HeatDistortion) {
             self.heat_intensity = heat_distortion_intensity(
-                SUN_SCORCH_COUNTER,
+                inputs.sun_scorch_counter,
                 heat_underworld,
                 heat_desert,
                 metrics.tile_center.1,
@@ -515,13 +551,24 @@ impl FilterDriver {
         match id {
             FilterId::MoonLordShake => {
                 // S1-G-6: `UseIntensity` (the tick driver) over the
-                // `ScreenShaderData` default 1 (`:17`); `UseTargetPosition(
-                // Zero)` — the exact `UpdateMoonLordIndex` value while the
-                // filter is active, because no Moon Lord exists before the
-                // countdown lands (`MoonLordScreenShaderData.cs`).
+                // `ScreenShaderData` default 1 (`:17`).
                 params.pass_index = tr_render::PassId::MOON_LORD_SHAKE.0;
-                params.target_pos = [0.0, 0.0];
                 params.intensity = self.moon_lord_shake_intensity.unwrap_or(1.0);
+                // W4-d70: `MoonLordScreenShaderData.Apply`
+                // (`MoonLordScreenShaderData.cs:81-96`) — the `aimAtPlayer:
+                // false` row tracks the NPC anchor (`UpdateMoonLordIndex`) and
+                // publishes `LatestFilterStrength` (the `GetMoonLordColoring`
+                // input). While the countdown runs no Moon Lord exists, so the
+                // anchor is Zero and the strength fades by its distance from
+                // the scene centre — the S1-G-6 "unreachable target" note, now
+                // computed rather than assumed.
+                let (target, strength) = tr_core::scene::moon_lord_shader_apply(
+                    false,
+                    metrics.center,
+                    inputs.moon_lord_npcs,
+                );
+                params.target_pos = target;
+                self.latest_filter_strength = strength;
             }
             FilterId::Graveyard => {
                 // `SceneState.cs:107-114` (`:113`'s UseIntensity(1.2) is a
@@ -643,6 +690,8 @@ mod tests {
             bg_style: 0,
             bg_delay: 0,
             global_time: 12.5,
+            moon_lord_npcs: &[],
+            sun_scorch_counter: 0,
         }
     }
 

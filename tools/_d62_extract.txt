@@ -1,0 +1,1731 @@
+
+===== #66 id 703 first@4857 =====
+--- C# first switch ---
+4857: 		case 703:
+4858: 			tileHeight = 20;
+4859: 			if (x % 2 == 0)
+4860: 			{
+4861: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4862: 			}
+--- Rust drawdata.rs arms ---
+// `case 3`-group — plants: 20 px tall, flip on even columns
+// (TileDrawing.cs:4850-4863).
+3 | 24 | 61 | 71 | 110 | 201 | 637 | 703 => {
+data.height = 20;
+data.flip = flip_x;
+}
+
+===== #67 id 20 first@4864 =====
+--- C# first switch ---
+4864: 		case 20:
+4865: 		case 590:
+4866: 		case 595:
+4867: 			tileHeight = 18;
+4868: 			if (x % 2 == 0)
+4869: 			{
+4870: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4871: 			}
+--- Rust drawdata.rs arms ---
+// `case 20 / 590 / 595 / 615` — saplings: 18 px tall, flip on even
+// columns (TileDrawing.cs:4864-4878).
+20 | 590 | 595 | 615 => {
+data.height = 18;
+data.flip = flip_x;
+}
+
+===== #68 id 590 first@4865 =====
+--- C# first switch ---
+4865: 		case 590:
+4866: 		case 595:
+4867: 			tileHeight = 18;
+4868: 			if (x % 2 == 0)
+4869: 			{
+4870: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4871: 			}
+--- Rust drawdata.rs arms ---
+// `case 20 / 590 / 595 / 615` — saplings: 18 px tall, flip on even
+// columns (TileDrawing.cs:4864-4878).
+20 | 590 | 595 | 615 => {
+data.height = 18;
+data.flip = flip_x;
+}
+
+===== #69 id 595 first@4866 =====
+--- C# first switch ---
+4866: 		case 595:
+4867: 			tileHeight = 18;
+4868: 			if (x % 2 == 0)
+4869: 			{
+4870: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4871: 			}
+--- Rust drawdata.rs arms ---
+// `case 20 / 590 / 595 / 615` — saplings: 18 px tall, flip on even
+// columns (TileDrawing.cs:4864-4878).
+20 | 590 | 595 | 615 => {
+data.height = 18;
+data.flip = flip_x;
+}
+
+===== #70 id 615 first@4873 =====
+--- C# first switch ---
+4873: 		case 615:
+4874: 			tileHeight = 18;
+4875: 			if (x % 2 == 0)
+4876: 			{
+4877: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4878: 			}
+--- Rust drawdata.rs arms ---
+// `case 20 / 590 / 595 / 615` — saplings: 18 px tall, flip on even
+// columns (TileDrawing.cs:4864-4878).
+20 | 590 | 595 | 615 => {
+data.height = 18;
+data.flip = flip_x;
+}
+
+===== #71 id 16 first@4880 =====
+--- C# first switch ---
+4880: 		case 16:
+4881: 		case 17:
+4882: 		case 26:
+4883: 		case 32:
+4884: 		case 69:
+4885: 		case 72:
+4886: 		case 77:
+4887: 		case 124:
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #72 id 17 first@4881 =====
+--- C# first switch ---
+4881: 		case 17:
+4882: 		case 26:
+4883: 		case 32:
+4884: 		case 69:
+4885: 		case 72:
+4886: 		case 77:
+4887: 		case 124:
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #73 id 26 first@4882 =====
+--- C# first switch ---
+4882: 		case 26:
+4883: 		case 32:
+4884: 		case 69:
+4885: 		case 72:
+4886: 		case 77:
+4887: 		case 124:
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #74 id 32 first@4883 =====
+--- C# first switch ---
+4883: 		case 32:
+4884: 		case 69:
+4885: 		case 72:
+4886: 		case 77:
+4887: 		case 124:
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #75 id 69 first@4884 =====
+--- C# first switch ---
+4884: 		case 69:
+4885: 		case 72:
+4886: 		case 77:
+4887: 		case 124:
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #76 id 72 first@4885 =====
+--- C# first switch ---
+4885: 		case 72:
+4886: 		case 77:
+4887: 		case 124:
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #77 id 77 first@4886 =====
+--- C# first switch ---
+4886: 		case 77:
+4887: 		case 124:
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #78 id 124 first@4887 =====
+--- C# first switch ---
+4887: 		case 124:
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #79 id 137 first@4888 =====
+--- C# first switch ---
+4888: 		case 137:
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #80 id 138 first@4889 =====
+--- C# first switch ---
+4889: 		case 138:
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #81 id 352 first@4890 =====
+--- C# first switch ---
+4890: 		case 352:
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #82 id 462 first@4891 =====
+--- C# first switch ---
+4891: 		case 462:
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #83 id 487 first@4892 =====
+--- C# first switch ---
+4892: 		case 487:
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #84 id 488 first@4893 =====
+--- C# first switch ---
+4893: 		case 488:
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #85 id 574 first@4894 =====
+--- C# first switch ---
+4894: 		case 574:
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #86 id 575 first@4895 =====
+--- C# first switch ---
+4895: 		case 575:
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #87 id 576 first@4896 =====
+--- C# first switch ---
+4896: 		case 576:
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #88 id 577 first@4897 =====
+--- C# first switch ---
+4897: 		case 577:
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #89 id 578 first@4898 =====
+--- C# first switch ---
+4898: 		case 578:
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #90 id 664 first@4899 =====
+--- C# first switch ---
+4899: 		case 664:
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #91 id 695 first@4900 =====
+--- C# first switch ---
+4900: 		case 695:
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #92 id 704 first@4901 =====
+--- C# first switch ---
+4901: 		case 704:
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #93 id 712 first@4902 =====
+--- C# first switch ---
+4902: 		case 712:
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #94 id 713 first@4903 =====
+--- C# first switch ---
+4903: 		case 713:
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #95 id 714 first@4904 =====
+--- C# first switch ---
+4904: 		case 714:
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #96 id 715 first@4905 =====
+--- C# first switch ---
+4905: 		case 715:
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #97 id 716 first@4906 =====
+--- C# first switch ---
+4906: 		case 716:
+4907: 			tileHeight = 18;
+4908: 			break;
+--- Rust drawdata.rs arms ---
+// Anvils / Furnaces / DemonAltar / thorns / MushroomTrees / Hellforge
+// / WoodenBeam / Traps / Boulder / DjinnLamp / PicnicTable /
+// FallenLog / beams / BouncyBoulder / altars / boulders: 18 px tall
+// (TileDrawing.cs:4880-4908).
+| 712..=716 => {
+data.height = 18;
+}
+
+===== #98 id 79 first@4909 =====
+--- C# first switch ---
+4909: 		case 79:
+4910: 		{
+4911: 			tileHeight = 18;
+4912: 			int num23 = tileFrameY / 2016;
+4913: 			addFrY -= 2016 * num23;
+4914: 			addFrX += 144 * num23;
+4915: 			break;
+4916: 		}
+--- C# second switch @6191 ---
+6191: 		case 79:
+6192: 		{
+6193: 			int num46 = tileFrameY / 36;
+6194: 			if (num46 == 27)
+6195: 			{
+6196: 				glowTexture = TextureAssets.GlowMask[53].Value;
+6197: 				glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 36, tileWidth, tileHeight);
+6198: 				glowColor = this._martianGlow;
+6199: 			}
+6200: 			if (num46 == 28)
+6201: 			{
+6202: 				glowTexture = TextureAssets.GlowMask[114].Value;
+6203: 				glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 36, tileWidth, tileHeight);
+6204: 				glowColor = this._meteorGlow;
+6205: 			}
+6206: 			break;
+6207: 		}
+--- Rust drawdata.rs arms ---
+// `case 79` — beds: 18 px tall; the 2016 style stride unwinds into
+// addFrX/addFrY (TileDrawing.cs:4909-4916).
+79 => {
+data.height = 18;
+let n23 = fy / 2016;
+data.add_fr_y = (tile_frame * 38 - 2016 * n23) as i16;
+data.add_fr_x = (144 * n23) as i16;
+}
+--- cases_a arm ---
+
+        79 => {
+            let num46 = fy / 36;
+            let src = rect_plain(fx, fy % 36, height);
+            if num46 == 27 {
+                out.glow = Some(GlowData { mask: 53, src, color: martian });
+            }
+            if num46 == 28 {
+                out.glow = Some(GlowData { mask: 114, src, color: METEOR_GLOW });
+            }
+        }
+
+===== #99 id 90 first@4917 =====
+--- C# first switch ---
+4917: 		case 90:
+4918: 		{
+4919: 			int num22 = tileFrameY / 2016;
+4920: 			addFrY -= 2016 * num22;
+4921: 			addFrX += 144 * num22;
+4922: 			break;
+4923: 		}
+--- C# second switch @6174 ---
+6174: 		case 90:
+6175: 		{
+6176: 			int num46 = tileFrameY / 36;
+6177: 			if (num46 == 27)
+6178: 			{
+6179: 				glowTexture = TextureAssets.GlowMask[52].Value;
+6180: 				glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 36, tileWidth, tileHeight);
+6181: 				glowColor = this._martianGlow;
+6182: 			}
+6183: 			if (num46 == 28)
+6184: 			{
+6185: 				glowTexture = TextureAssets.GlowMask[113].Value;
+6186: 				glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 36, tileWidth, tileHeight);
+6187: 				glowColor = this._meteorGlow;
+6188: 			}
+6189: 			break;
+6190: 		}
+--- Rust drawdata.rs arms ---
+// `case 90` — Bathtubs: 2016 style stride only
+// (TileDrawing.cs:4917-4923).
+90 => {
+let n22 = fy / 2016;
+data.add_fr_y = (tile_frame * 38 - 2016 * n22) as i16;
+data.add_fr_x = (144 * n22) as i16;
+}
+--- cases_a arm ---
+
+        90 => {
+            let num46 = fy / 36;
+            let src = rect_plain(fx, fy % 36, height);
+            if num46 == 27 {
+                out.glow = Some(GlowData { mask: 52, src, color: martian });
+            }
+            if num46 == 28 {
+                out.glow = Some(GlowData { mask: 113, src, color: METEOR_GLOW });
+            }
+        }
+
+===== #100 id 18 first@4924 =====
+--- C# first switch ---
+4924: 		case 18:
+4925: 		{
+4926: 			int num21 = tileFrameX / 2016;
+4927: 			addFrX -= 2016 * num21;
+4928: 			addFrY += 20 * num21;
+4929: 			break;
+4930: 		}
+--- C# second switch @6429 ---
+6429: 		case 18:
+6430: 		{
+6431: 			int num46 = tileFrameX / 36;
+6432: 			if (num46 == 27)
+6433: 			{
+6434: 				glowTexture = TextureAssets.GlowMask[69].Value;
+6435: 				glowSourceRect = new Rectangle(tileFrameX % 36, tileFrameY, tileWidth, tileHeight);
+6436: 				glowColor = this._martianGlow;
+6437: 			}
+6438: 			if (num46 == 28)
+6439: 			{
+6440: 				glowTexture = TextureAssets.GlowMask[125].Value;
+6441: 				glowSourceRect = new Rectangle(tileFrameX % 36, tileFrameY, tileWidth, tileHeight);
+6442: 				glowColor = this._meteorGlow;
+6443: 			}
+6444: 			break;
+6445: 		}
+--- Rust drawdata.rs arms ---
+// `case 18` — WorkBenches: the 2016 style stride lives in frame X
+// here (TileDrawing.cs:4924-4930).
+18 => {
+let n21 = fx / 2016;
+data.add_fr_x = (-2016 * n21) as i16;
+data.add_fr_y = (tile_frame * 38 + 20 * n21) as i16;
+}
+--- cases_a arm ---
+
+        18 => {
+            let num46 = fx / 36;
+            let src = rect_plain(fx % 36, fy, height);
+            if num46 == 27 {
+                out.glow = Some(GlowData { mask: 69, src, color: martian });
+            }
+            if num46 == 28 {
+                out.glow = Some(GlowData { mask: 125, src, color: METEOR_GLOW });
+            }
+        }
+
+===== #101 id 711 first@4931 =====
+--- C# first switch ---
+4931: 		case 711:
+4932: 			if (tileFrameX > 0)
+4933: 			{
+4934: 				tileWidth = 18;
+4935: 			}
+--- Rust drawdata.rs arms ---
+// `case 711` — RainbowBoulder: 18 wide on later frame columns, 20 px
+// tall; the glow out-params are TILE-DRAW-2 (TileDrawing.cs:4931-4939).
+711 => {
+if fx > 0 {
+data.width = 18;
+}
+data.height = 20;
+}
+
+===== #102 id 654 first@4940 =====
+--- C# first switch ---
+4940: 		case 654:
+4941: 			tileTop += 2;
+4942: 			break;
+--- Rust drawdata.rs arms ---
+// `case 654` — TNTBarrel: top 2 (TileDrawing.cs:4940-4942).
+654 => {
+data.top += 2;
+}
+
+===== #103 id 14 first@4943 =====
+--- C# first switch ---
+4943: 		case 14:
+4944: 		case 21:
+4945: 		case 411:
+4946: 		case 467:
+4947: 		case 469:
+4948: 			if (tileFrameY == 18)
+4949: 			{
+4950: 				tileHeight = 18;
+4951: 			}
+--- C# second switch @6397 ---
+6397: 		case 14:
+6398: 		{
+6399: 			int num46 = tileFrameX / 54;
+6400: 			if (num46 == 31)
+6401: 			{
+6402: 				glowTexture = TextureAssets.GlowMask[67].Value;
+6403: 				glowSourceRect = new Rectangle(tileFrameX % 54, tileFrameY, tileWidth, tileHeight);
+6404: 				glowColor = this._martianGlow;
+6405: 			}
+6406: 			if (num46 == 32)
+6407: 			{
+6408: 				glowTexture = TextureAssets.GlowMask[124].Value;
+6409: 				glowSourceRect = new Rectangle(tileFrameX % 54, tileFrameY, tileWidth, tileHeight);
+6410: 				glowColor = this._meteorGlow;
+6411: 			}
+6412: 			break;
+6413: 		}
+--- Rust drawdata.rs arms ---
+// `case 14`-group — Tables / Chests / Detonator / Containers2 /
+// Tables2: 18 px tall only on the `tileFrameY == 18` row
+// (TileDrawing.cs:4943-4952).
+14 | 21 | 411 | 467 | 469 => {
+if fy == 18 {
+data.height = 18;
+}
+}
+--- cases_a arm ---
+
+        14 => {
+            let num46 = fx / 54;
+            let src = rect_plain(fx % 54, fy, height);
+            if num46 == 31 {
+                out.glow = Some(GlowData { mask: 67, src, color: martian });
+            }
+            if num46 == 32 {
+                out.glow = Some(GlowData { mask: 124, src, color: METEOR_GLOW });
+            }
+        }
+
+===== #104 id 21 first@4944 =====
+--- C# first switch ---
+4944: 		case 21:
+4945: 		case 411:
+4946: 		case 467:
+4947: 		case 469:
+4948: 			if (tileFrameY == 18)
+4949: 			{
+4950: 				tileHeight = 18;
+4951: 			}
+--- C# second switch @6276 ---
+6276: 		case 21:
+6277: 		case 467:
+6278: 		{
+6279: 			int num46 = tileFrameX / 36;
+6280: 			if (num46 == 48)
+6281: 			{
+6282: 				glowTexture = TextureAssets.GlowMask[56].Value;
+6283: 				glowSourceRect = new Rectangle(tileFrameX % 36, tileFrameY, tileWidth, tileHeight);
+6284: 				glowColor = this._martianGlow;
+6285: 			}
+6286: 			if (num46 == 49)
+6287: 			{
+6288: 				glowTexture = TextureAssets.GlowMask[117].Value;
+6289: 				glowSourceRect = new Rectangle(tileFrameX % 36, tileFrameY, tileWidth, tileHeight);
+6290: 				glowColor = this._meteorGlow;
+6291: 			}
+6292: 			break;
+6293: 		}
+--- Rust drawdata.rs arms ---
+// `case 14`-group — Tables / Chests / Detonator / Containers2 /
+// Tables2: 18 px tall only on the `tileFrameY == 18` row
+// (TileDrawing.cs:4943-4952).
+14 | 21 | 411 | 467 | 469 => {
+if fy == 18 {
+data.height = 18;
+}
+}
+--- cases_a arm ---
+
+        21 | 467 => {
+            let num46 = fx / 36;
+            let src = rect_plain(fx % 36, fy, height);
+            if num46 == 48 {
+                out.glow = Some(GlowData { mask: 56, src, color: martian });
+            }
+            if num46 == 49 {
+                out.glow = Some(GlowData { mask: 117, src, color: METEOR_GLOW });
+            }
+        }
+
+===== #105 id 411 first@4945 =====
+--- C# first switch ---
+4945: 		case 411:
+4946: 		case 467:
+4947: 		case 469:
+4948: 			if (tileFrameY == 18)
+4949: 			{
+4950: 				tileHeight = 18;
+4951: 			}
+--- Rust drawdata.rs arms ---
+// `case 14`-group — Tables / Chests / Detonator / Containers2 /
+// Tables2: 18 px tall only on the `tileFrameY == 18` row
+// (TileDrawing.cs:4943-4952).
+14 | 21 | 411 | 467 | 469 => {
+if fy == 18 {
+data.height = 18;
+}
+}
+
+===== #106 id 467 first@4946 =====
+--- C# first switch ---
+4946: 		case 467:
+4947: 		case 469:
+4948: 			if (tileFrameY == 18)
+4949: 			{
+4950: 				tileHeight = 18;
+4951: 			}
+--- C# second switch @6277 ---
+6277: 		case 467:
+6278: 		{
+6279: 			int num46 = tileFrameX / 36;
+6280: 			if (num46 == 48)
+6281: 			{
+6282: 				glowTexture = TextureAssets.GlowMask[56].Value;
+6283: 				glowSourceRect = new Rectangle(tileFrameX % 36, tileFrameY, tileWidth, tileHeight);
+6284: 				glowColor = this._martianGlow;
+6285: 			}
+6286: 			if (num46 == 49)
+6287: 			{
+6288: 				glowTexture = TextureAssets.GlowMask[117].Value;
+6289: 				glowSourceRect = new Rectangle(tileFrameX % 36, tileFrameY, tileWidth, tileHeight);
+6290: 				glowColor = this._meteorGlow;
+6291: 			}
+6292: 			break;
+6293: 		}
+--- Rust drawdata.rs arms ---
+// `case 14`-group — Tables / Chests / Detonator / Containers2 /
+// Tables2: 18 px tall only on the `tileFrameY == 18` row
+// (TileDrawing.cs:4943-4952).
+14 | 21 | 411 | 467 | 469 => {
+if fy == 18 {
+data.height = 18;
+}
+}
+--- cases_a arm ---
+
+        21 | 467 => {
+            let num46 = fx / 36;
+            let src = rect_plain(fx % 36, fy, height);
+            if num46 == 48 {
+                out.glow = Some(GlowData { mask: 56, src, color: martian });
+            }
+            if num46 == 49 {
+                out.glow = Some(GlowData { mask: 117, src, color: METEOR_GLOW });
+            }
+        }
+
+===== #107 id 469 first@4947 =====
+--- C# first switch ---
+4947: 		case 469:
+4948: 			if (tileFrameY == 18)
+4949: 			{
+4950: 				tileHeight = 18;
+4951: 			}
+--- Rust drawdata.rs arms ---
+// `case 14`-group — Tables / Chests / Detonator / Containers2 /
+// Tables2: 18 px tall only on the `tileFrameY == 18` row
+// (TileDrawing.cs:4943-4952).
+14 | 21 | 411 | 467 | 469 => {
+if fy == 18 {
+data.height = 18;
+}
+}
+
+===== #108 id 15 first@4953 =====
+--- C# first switch ---
+4953: 		case 15:
+4954: 		case 497:
+4955: 			if (tileFrameY % 40 == 18)
+4956: 			{
+4957: 				tileHeight = 18;
+4958: 			}
+--- C# second switch @6244 ---
+6244: 		case 15:
+6245: 		case 497:
+6246: 		{
+6247: 			int num46 = tileFrameY / 40;
+6248: 			int num53 = num46 / 51;
+6249: 			addFrY -= 2040 * num53;
+6250: 			addFrX += 36 * num53;
+6251: 			if (typeCache == 15)
+6252: 			{
+6253: 				if (num46 == 32)
+6254: 				{
+6255: 					glowTexture = TextureAssets.GlowMask[54].Value;
+6256: 					glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 40, tileWidth, tileHeight);
+6257: 					glowColor = this._martianGlow;
+6258: 				}
+6259: 				if (num46 == 33)
+6260: 				{
+6261: 					glowTexture = TextureAssets.GlowMask[116].Value;
+6262: 					glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 40, tileWidth, tileHeight);
+6263: 					glowColor = this._meteorGlow;
+6264: 				}
+6265: 			}
+6266: 			break;
+6267: 		}
+--- Rust drawdata.rs arms ---
+// `case 15`-group — chairs/toilets: 18 px tall when
+// `tileFrameY % 40 == 18` (TileDrawing.cs:4953-4959).
+15 | 497 => {
+if fy % 40 == 18 {
+data.height = 18;
+}
+}
+--- cases_a arm ---
+
+        15 | 497 => {
+            let num46 = fy / 40;
+            let num53 = num46 / 51;
+            out.add_fr_y_delta = (-2040 * num53) as i16;
+            out.add_fr_x_delta = (36 * num53) as i16;
+            if kind == 15 {
+                let src = rect_plain(fx, fy % 40, height);
+                if num46 == 32 {
+                    out.glow = Some(GlowData { mask: 54, src, color: martian });
+                }
+                if num46 == 33 {
+                    out.glow = Some(GlowData { mask: 116, src, color: METEOR_GLOW });
+                }
+            }
+        }
+
+===== #109 id 497 first@4954 =====
+--- C# first switch ---
+4954: 		case 497:
+4955: 			if (tileFrameY % 40 == 18)
+4956: 			{
+4957: 				tileHeight = 18;
+4958: 			}
+--- C# second switch @6245 ---
+6245: 		case 497:
+6246: 		{
+6247: 			int num46 = tileFrameY / 40;
+6248: 			int num53 = num46 / 51;
+6249: 			addFrY -= 2040 * num53;
+6250: 			addFrX += 36 * num53;
+6251: 			if (typeCache == 15)
+6252: 			{
+6253: 				if (num46 == 32)
+6254: 				{
+6255: 					glowTexture = TextureAssets.GlowMask[54].Value;
+6256: 					glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 40, tileWidth, tileHeight);
+6257: 					glowColor = this._martianGlow;
+6258: 				}
+6259: 				if (num46 == 33)
+6260: 				{
+6261: 					glowTexture = TextureAssets.GlowMask[116].Value;
+6262: 					glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 40, tileWidth, tileHeight);
+6263: 					glowColor = this._meteorGlow;
+6264: 				}
+6265: 			}
+6266: 			break;
+6267: 		}
+--- Rust drawdata.rs arms ---
+// `case 15`-group — chairs/toilets: 18 px tall when
+// `tileFrameY % 40 == 18` (TileDrawing.cs:4953-4959).
+15 | 497 => {
+if fy % 40 == 18 {
+data.height = 18;
+}
+}
+--- cases_a arm ---
+
+        15 | 497 => {
+            let num46 = fy / 40;
+            let num53 = num46 / 51;
+            out.add_fr_y_delta = (-2040 * num53) as i16;
+            out.add_fr_x_delta = (36 * num53) as i16;
+            if kind == 15 {
+                let src = rect_plain(fx, fy % 40, height);
+                if num46 == 32 {
+                    out.glow = Some(GlowData { mask: 54, src, color: martian });
+                }
+                if num46 == 33 {
+                    out.glow = Some(GlowData { mask: 116, src, color: METEOR_GLOW });
+                }
+            }
+        }
+
+===== #110 id 172 first@4960 =====
+--- C# first switch ---
+4960: 		case 172:
+4961: 		case 376:
+4962: 			if (tileFrameY % 38 == 18)
+4963: 			{
+4964: 				tileHeight = 18;
+4965: 			}
+--- C# second switch @6487 ---
+6487: 		case 172:
+6488: 		{
+6489: 			int num46 = tileFrameY / 38;
+6490: 			int num47 = tileFrameY / 2014;
+6491: 			addFrY -= 2014 * num47;
+6492: 			addFrX += 36 * num47;
+6493: 			if (num46 == 28)
+6494: 			{
+6495: 				glowTexture = TextureAssets.GlowMask[88].Value;
+6496: 				glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 38, tileWidth, tileHeight);
+6497: 				glowColor = this._martianGlow;
+6498: 			}
+6499: 			if (num46 == 29)
+6500: 			{
+6501: 				glowTexture = TextureAssets.GlowMask[122].Value;
+6502: 				glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 38, tileWidth, tileHeight);
+6503: 				glowColor = this._meteorGlow;
+6504: 			}
+6505: 			break;
+6506: 		}
+--- Rust drawdata.rs arms ---
+// `case 172 / 376` — Sinks / FishingCrate: 18 px tall when
+// `tileFrameY % 38 == 18` (TileDrawing.cs:4960-4966).
+172 | 376 => {
+if fy % 38 == 18 {
+data.height = 18;
+}
+}
+--- cases_a arm ---
+
+        172 => {
+            let num46 = fy / 38;
+            let num47 = fy / 2014;
+            out.add_fr_y_delta = (-2014 * num47) as i16;
+            out.add_fr_x_delta = (36 * num47) as i16;
+            let src = rect_plain(fx, fy % 38, height);
+            if num46 == 28 {
+                out.glow = Some(GlowData { mask: 88, src, color: martian });
+            }
+            if num46 == 29 {
+                out.glow = Some(GlowData { mask: 122, src, color: METEOR_GLOW });
+            }
+        }
+
+===== #111 id 376 first@4961 =====
+--- C# first switch ---
+4961: 		case 376:
+4962: 			if (tileFrameY % 38 == 18)
+4963: 			{
+4964: 				tileHeight = 18;
+4965: 			}
+--- Rust drawdata.rs arms ---
+// `case 172 / 376` — Sinks / FishingCrate: 18 px tall when
+// `tileFrameY % 38 == 18` (TileDrawing.cs:4960-4966).
+172 | 376 => {
+if fy % 38 == 18 {
+data.height = 18;
+}
+}
+
+===== #112 id 27 first@4967 =====
+--- C# first switch ---
+4967: 		case 27:
+4968: 			if (tileFrameY % 74 == 54)
+4969: 			{
+4970: 				tileHeight = 18;
+4971: 			}
+--- Rust drawdata.rs arms ---
+// `case 27` — Sunflower: 18 px tall when `tileFrameY % 74 == 54`
+// (TileDrawing.cs:4967-4972).
+27 => {
+if fy % 74 == 54 {
+data.height = 18;
+}
+}
+
+===== #113 id 132 first@4973 =====
+--- C# first switch ---
+4973: 		case 132:
+4974: 		case 135:
+4975: 			tileTop = 2;
+4976: 			tileHeight = 18;
+4977: 			break;
+--- Rust drawdata.rs arms ---
+// `case 132 / 135` — Lever / PressurePlates: top 2, 18 px tall
+// (TileDrawing.cs:4973-4977).
+132 | 135 => {
+data.top = 2;
+data.height = 18;
+}
+--- cases_a arm ---
+
+                132 => Some(KRYPTON_MOSS_GLOW),
+                154 => Some(XENON_MOSS_GLOW),
+                176 => Some(ARGON_MOSS_GLOW),
+                198 => Some(VIOLET_MOSS_GLOW),
+                220 => Some([0, 0, 0, 255]),
+                _ => None,
+            };
+            if let Some(col) = col {
+                out.glow = Some(GlowData { mask: 127, src, color: col });
+            }
+        }
+
+===== #114 id 135 first@4974 =====
+--- C# first switch ---
+4974: 		case 135:
+4975: 			tileTop = 2;
+4976: 			tileHeight = 18;
+4977: 			break;
+--- Rust drawdata.rs arms ---
+// `case 132 / 135` — Lever / PressurePlates: top 2, 18 px tall
+// (TileDrawing.cs:4973-4977).
+132 | 135 => {
+data.top = 2;
+data.height = 18;
+}
+
+===== #115 id 82 first@4978 =====
+--- C# first switch ---
+4978: 		case 82:
+4979: 		case 83:
+4980: 		case 84:
+4981: 			tileHeight = 20;
+4982: 			tileTop = -2;
+4983: 			if (x % 2 == 0)
+4984: 			{
+4985: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4986: 			}
+--- Rust drawdata.rs arms ---
+// `case 82-84` — herbs: 20 px tall, raised 2 px, flip on even columns
+// (TileDrawing.cs:4978-4987).
+82 | 83 | 84 => {
+data.height = 20;
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #116 id 83 first@4979 =====
+--- C# first switch ---
+4979: 		case 83:
+4980: 		case 84:
+4981: 			tileHeight = 20;
+4982: 			tileTop = -2;
+4983: 			if (x % 2 == 0)
+4984: 			{
+4985: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4986: 			}
+--- Rust drawdata.rs arms ---
+// `case 82-84` — herbs: 20 px tall, raised 2 px, flip on even columns
+// (TileDrawing.cs:4978-4987).
+82 | 83 | 84 => {
+data.height = 20;
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #117 id 84 first@4980 =====
+--- C# first switch ---
+4980: 		case 84:
+4981: 			tileHeight = 20;
+4982: 			tileTop = -2;
+4983: 			if (x % 2 == 0)
+4984: 			{
+4985: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4986: 			}
+--- Rust drawdata.rs arms ---
+// `case 82-84` — herbs: 20 px tall, raised 2 px, flip on even columns
+// (TileDrawing.cs:4978-4987).
+82 | 83 | 84 => {
+data.height = 20;
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #118 id 324 first@4988 =====
+--- C# first switch ---
+4988: 		case 324:
+4989: 			tileWidth = 20;
+4990: 			tileHeight = 20;
+4991: 			tileTop = -2;
+4992: 			if (x % 2 == 0)
+4993: 			{
+4994: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+4995: 			}
+--- Rust drawdata.rs arms ---
+// `case 324` — BeachPiles: 20x20, raised 2 px, flip on even columns
+// (TileDrawing.cs:4988-4996).
+324 => {
+data.width = 20;
+data.height = 20;
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #119 id 494 first@4997 =====
+--- C# first switch ---
+4997: 		case 494:
+4998: 			tileTop = 2;
+4999: 			break;
+--- Rust drawdata.rs arms ---
+// `case 494` — GolfTee: top 2 (TileDrawing.cs:4997-4999).
+494 => {
+data.top = 2;
+}
+
+===== #120 id 52 first@5000 =====
+--- C# first switch ---
+5000: 		case 52:
+5001: 		case 62:
+5002: 		case 115:
+5003: 		case 205:
+5004: 		case 382:
+5005: 		case 528:
+5006: 		case 636:
+5007: 		case 638:
+5008: 			tileTop = -2;
+5009: 			if (x % 2 == 0)
+5010: 			{
+5011: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+5012: 			}
+--- Rust drawdata.rs arms ---
+// Vine family: raised 2 px, flip on even columns
+// (TileDrawing.cs:5000-5013).
+52 | 62 | 115 | 205 | 382 | 528 | 636 | 638 => {
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #121 id 62 first@5001 =====
+--- C# first switch ---
+5001: 		case 62:
+5002: 		case 115:
+5003: 		case 205:
+5004: 		case 382:
+5005: 		case 528:
+5006: 		case 636:
+5007: 		case 638:
+5008: 			tileTop = -2;
+5009: 			if (x % 2 == 0)
+5010: 			{
+5011: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+5012: 			}
+--- Rust drawdata.rs arms ---
+// Vine family: raised 2 px, flip on even columns
+// (TileDrawing.cs:5000-5013).
+52 | 62 | 115 | 205 | 382 | 528 | 636 | 638 => {
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #122 id 115 first@5002 =====
+--- C# first switch ---
+5002: 		case 115:
+5003: 		case 205:
+5004: 		case 382:
+5005: 		case 528:
+5006: 		case 636:
+5007: 		case 638:
+5008: 			tileTop = -2;
+5009: 			if (x % 2 == 0)
+5010: 			{
+5011: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+5012: 			}
+--- Rust drawdata.rs arms ---
+// Vine family: raised 2 px, flip on even columns
+// (TileDrawing.cs:5000-5013).
+52 | 62 | 115 | 205 | 382 | 528 | 636 | 638 => {
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #123 id 205 first@5003 =====
+--- C# first switch ---
+5003: 		case 205:
+5004: 		case 382:
+5005: 		case 528:
+5006: 		case 636:
+5007: 		case 638:
+5008: 			tileTop = -2;
+5009: 			if (x % 2 == 0)
+5010: 			{
+5011: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+5012: 			}
+--- Rust drawdata.rs arms ---
+// Vine family: raised 2 px, flip on even columns
+// (TileDrawing.cs:5000-5013).
+52 | 62 | 115 | 205 | 382 | 528 | 636 | 638 => {
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #124 id 382 first@5004 =====
+--- C# first switch ---
+5004: 		case 382:
+5005: 		case 528:
+5006: 		case 636:
+5007: 		case 638:
+5008: 			tileTop = -2;
+5009: 			if (x % 2 == 0)
+5010: 			{
+5011: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+5012: 			}
+--- Rust drawdata.rs arms ---
+// Vine family: raised 2 px, flip on even columns
+// (TileDrawing.cs:5000-5013).
+52 | 62 | 115 | 205 | 382 | 528 | 636 | 638 => {
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #125 id 528 first@5005 =====
+--- C# first switch ---
+5005: 		case 528:
+5006: 		case 636:
+5007: 		case 638:
+5008: 			tileTop = -2;
+5009: 			if (x % 2 == 0)
+5010: 			{
+5011: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+5012: 			}
+--- Rust drawdata.rs arms ---
+// Vine family: raised 2 px, flip on even columns
+// (TileDrawing.cs:5000-5013).
+52 | 62 | 115 | 205 | 382 | 528 | 636 | 638 => {
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #126 id 636 first@5006 =====
+--- C# first switch ---
+5006: 		case 636:
+5007: 		case 638:
+5008: 			tileTop = -2;
+5009: 			if (x % 2 == 0)
+5010: 			{
+5011: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+5012: 			}
+--- Rust drawdata.rs arms ---
+// Vine family: raised 2 px, flip on even columns
+// (TileDrawing.cs:5000-5013).
+52 | 62 | 115 | 205 | 382 | 528 | 636 | 638 => {
+data.top = -2;
+data.flip = flip_x;
+}
+
+===== #127 id 638 first@5007 =====
+--- C# first switch ---
+5007: 		case 638:
+5008: 			tileTop = -2;
+5009: 			if (x % 2 == 0)
+5010: 			{
+5011: 				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+5012: 			}
+--- C# second switch @6080 ---
+6080: 		case 638:
+6081: 			glowTexture = TextureAssets.GlowMask[327].Value;
+6082: 			glowSourceRect = new Rectangle(tileFrameX + addFrX, tileFrameY + addFrY, tileWidth, tileHeight - halfBrickHeight);
+6083: 			glowColor = Color.Lerp(Color.White, color, 0.75f);
+6084: 			break;
+--- Rust drawdata.rs arms ---
+// Vine family: raised 2 px, flip on even columns
+// (TileDrawing.cs:5000-5013).
+52 | 62 | 115 | 205 | 382 | 528 | 636 | 638 => {
+data.top = -2;
+data.flip = flip_x;
+}
+--- cases_a arm ---
+
+        638 => out.glow = Some(GlowData { mask: 327, src: rect_framed(height - half_brick_height), color: lerp_white_75(color) }),
+        // `case 568/569/570` (:6085-6099): the three firefly-bottle glows.
+        568 => out.glow = Some(GlowData { mask: 268, src: rect_anim_y(fx, height), color: [255, 255, 255, 255] }),
+        569 => out.glow = Some(GlowData { mask: 269, src: rect_anim_y(fx, height), color: [255, 255, 255, 255] }),
+        570 => out.glow = Some(GlowData { mask: 270, src: rect_anim_y(fx, height), color: [255, 255, 255, 255] }),
+        // `case 580` (:6100-6104): butterfly jar, (225, 110, 110, 0).
+        580 => out.glow = Some(GlowData { mask: 289, src: rect_anim_y(fx, height), color: [225, 110, 110, 0] }),
+        // `case 564` (:6105-6113): GlowMask 267 below frame column 36,
+        // (200, 200, 200, 0) * text pulse; the trailing `addFrY = 0` is
+        // already applied by drawdata.rs's 564 arm (see module docs).
+        564 => {
+            if fx < 36 {
+                let v = (200.0 * pulse) as u8;
+                out.glow = Some(GlowData { mask: 267, src: rect_anim_y(fx, height), color: [v, v, v, 0] });
+            }
+        }
+
+===== #128 id 80 first@5014 =====
+--- C# first switch ---
+5014: 		case 80:
+5015: 		case 142:
+5016: 		case 143:
+5017: 			tileTop = 2;
+5018: 			break;
+--- Rust drawdata.rs arms ---
+// `case 80 / 142 / 143` — cacti and pumps: top 2
+// (TileDrawing.cs:5014-5018). `DrawSingleTile` adds 54/108/162 to the
+// source Y for the corrupt / hallowed / crimson grounds — `case 80:`
+// only (TileDrawing.cs:1132-1147), applied by
+// `apply_world_corrections`.
+80 | 142 | 143 => {
+data.top = 2;
+}
+
+===== #129 id 142 first@5015 =====
+--- C# first switch ---
+5015: 		case 142:
+5016: 		case 143:
+5017: 			tileTop = 2;
+5018: 			break;
+--- Rust drawdata.rs arms ---
+// `case 80 / 142 / 143` — cacti and pumps: top 2
+// (TileDrawing.cs:5014-5018). `DrawSingleTile` adds 54/108/162 to the
+// source Y for the corrupt / hallowed / crimson grounds — `case 80:`
+// only (TileDrawing.cs:1132-1147), applied by
+// `apply_world_corrections`.
+80 | 142 | 143 => {
+data.top = 2;
+}
+
+===== #130 id 143 first@5016 =====
+--- C# first switch ---
+5016: 		case 143:
+5017: 			tileTop = 2;
+5018: 			break;
+--- Rust drawdata.rs arms ---
+// `case 80 / 142 / 143` — cacti and pumps: top 2
+// (TileDrawing.cs:5014-5018). `DrawSingleTile` adds 54/108/162 to the
+// source Y for the corrupt / hallowed / crimson grounds — `case 80:`
+// only (TileDrawing.cs:1132-1147), applied by
+// `apply_world_corrections`.
+80 | 142 | 143 => {
+data.top = 2;
+}

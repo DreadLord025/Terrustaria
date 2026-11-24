@@ -1099,6 +1099,11 @@ pub(crate) struct AmbiencePass<'a> {
     pub lookups: &'a crate::assets::Lookups,
     pub ctx: &'a crate::ambience::SkyDrawCtx<'a>,
     pub last: &'a mut f32,
+    /// W4-f40: the `LanternSky` + its own depth tracker + the hourly bob
+    /// phase, drawn at the same front-row boundaries as the ambience.
+    pub lantern_sky: &'a crate::render::lantern_sky::LanternSky,
+    pub lantern_last: &'a mut f32,
+    pub global_time: f32,
 }
 
 /// One row of a `DrawSurfaceBG_*` chain (`Main.cs:59986-61370`).
@@ -1347,6 +1352,21 @@ pub(crate) fn draw_front_trees(
     for l in layers {
         if let Some(p) = ambience.as_deref_mut() {
             crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, l.depth, p.last);
+            // W4-f40: the lantern sky's own band at the same boundary.
+            if *p.lantern_last > l.depth {
+                p.lantern_sky.draw(
+                    r,
+                    p.lookups,
+                    p.ctx.camera,
+                    p.ctx.zoom,
+                    p.ctx.screen,
+                    p.ctx.world_surface,
+                    p.global_time,
+                    l.depth,
+                    *p.lantern_last,
+                );
+                *p.lantern_last = l.depth;
+            }
         }
         if let Some(t) = l.tex {
             let tex = background_frame(&t, l.frame_step, counter);
@@ -1371,6 +1391,20 @@ pub(crate) fn draw_front_trees(
     // strata wait for the flush.
     if closes_with_one && let Some(p) = ambience.as_deref_mut() {
         crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, 1.0, p.last);
+        if *p.lantern_last > 1.0 {
+            p.lantern_sky.draw(
+                r,
+                p.lookups,
+                p.ctx.camera,
+                p.ctx.zoom,
+                p.ctx.screen,
+                p.ctx.world_surface,
+                p.global_time,
+                1.0,
+                *p.lantern_last,
+            );
+            *p.lantern_last = 1.0;
+        }
     }
 }
 

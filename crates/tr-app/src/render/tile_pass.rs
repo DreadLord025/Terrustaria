@@ -789,90 +789,160 @@ mod tests {
         w.tiles[i].flags = FLAG_ACTIVE;
     }
 
-    fn inputs(solid: bool) -> DrawLayerInputs {
-        DrawLayerInputs {
-            solid_layer: solid,
-            into_render_targets: false,
-            gfx_quality: 0.5,
-            dev_light_tiles_cheat: false,
-            martian_light: 0.0,
-            draw_to_screen: false,
-            off_screen_range: 192,
-            scaled_position: [320.0, 320.0],
-            scaled_size: [320.0, 320.0],
-            screen_position: [320.0, 320.0],
-            allow_emit_effects: true,
-            sway_enabled: true,
-            preview_gate: PlacementPreviewGate::default(),
-            preview_is_kite: false,
-            preview_hold_style: 0,
-            preview_frames_in_movement: 0,
-        }
-    }
-
-    /// The seam recorder: one log entry per C# call the driver sequences.
-    #[derive(Default)]
-    struct Recorder {
-        log: Vec<String>,
-        strips: Vec<BlackStrip>,
-    }
-
-    impl TilePassSeams for Recorder {
-        fn ensure_wind_grid_size(&mut self, w: i32, h: i32) {
-            self.log.push(format!("wind {w}x{h}"));
-        }
-        fn clear_legacy_cache(&mut self, step: LegacyCacheClear) {
-            self.log.push(format!("legacy {step:?}"));
-        }
-        fn clear_layer_cache(&mut self, step: LayerCacheClear) {
-            self.log.push(format!("layer {step:?}"));
-        }
-        fn rebuild_quality_light_tiers(&mut self, q: f32, cheat: bool) {
-            self.log.push(format!("tiers {q} {cheat}"));
-        }
-        fn reset_critter_cage(&mut self) {
-            self.log.push("critterCage".into());
-        }
-        fn set_martian_glow(&mut self, b: u8) {
-            self.log.push(format!("martian {b}"));
-        }
-        fn reset_paint_lookup_key(&mut self) {
-            self.log.push("paintKey".into());
-        }
-        fn draw_tile_liquid_behind(&mut self, x: i32, y: i32) {
-            self.log.push(format!("liquid {x},{y}"));
-        }
-        fn classify_and_draw_cell(&mut self, x: i32, y: i32, _b: &mut DrawBlackHelper) {
-            self.log.push(format!("cell {x},{y}"));
-        }
-        fn draw_black_strip(&mut self, strip: BlackStrip) {
-            self.log.push("blackStrip".into());
-            self.strips.push(strip);
-        }
-        fn restart_layered_batch(&mut self) {
-            self.log.push("restartLayered".into());
-        }
-        fn draw_tile_cracks(&mut self, site: CrackSite) {
-            self.log.push(format!("cracks {site:?}"));
-        }
-        fn restart_sprite_batch(&mut self) {
-            self.log.push("restartSprite".into());
-        }
-        fn draw_special_tiles_legacy(&mut self) {
-            self.log.push("legacyDraw".into());
-        }
-        fn draw_object_preview(&mut self, opacity: f32) {
-            self.log.push(format!("preview {opacity}"));
-        }
-        fn post_draw_pass(&mut self, step: PostDrawStep) {
-            self.log.push(format!("post {step:?}"));
-        }
-    }
-
-    /// Witness: the layer constants are the static ctor's values
-    /// (`TileDrawing.cs:791-794`) and the legacy cap is 1000 (`:70`).
+    /// Witness: the enum discriminants ARE the C# bucket indices
+    /// (`TileDrawing.cs:21-35` vs `:185`'s `(int)type` index).
     #[test]
-    fn w4_g29_layer_constants_and_legacy_cap() {
+    fn w4_g28_the_counter_discriminants_are_the_bucket_indices() {
+        assert_eq!(TileCounterType::Tree as usize, 0);
+        assert_eq!(TileCounterType::WindyGrass as usize, 1);
+        assert_eq!(TileCounterType::MultiTileGrass as usize, 2);
+        assert_eq!(TileCounterType::MultiTileVine as usize, 3);
+        assert_eq!(TileCounterType::Vine as usize, 4);
+        assert_eq!(TileCounterType::BiomeGrass as usize, 5);
+        assert_eq!(TileCounterType::VoidLens as usize, 6);
+        assert_eq!(TileCounterType::ReverseVine as usize, 7);
+        assert_eq!(TileCounterType::TeleportationPylon as usize, 8);
+        assert_eq!(TileCounterType::MasterTrophy as usize, 9);
+        assert_eq!(TileCounterType::AnyDirectionalGrass as usize, 10);
+        assert_eq!(TILE_COUNTER_COUNT, 11);
+    }
+
+    /// Witness: `AddSpecialPoint` (`TileDrawing.cs:183-186`) appends
+    /// without dedup — only the two crawls dedup (`:757`/`:777`).
+    #[test]
+    fn w4_g28_add_appends_without_dedup() {
+        let mut p = SpecialPoints::default();
+        p.add(1, 2, TileCounterType::WindyGrass);
+        p.add(1, 2, TileCounterType::WindyGrass);
+        assert_eq!(p.buckets[1], vec![(1, 2), (1, 2)]);
+        p.add_legacy(3, 4);
+        p.add_legacy(3, 4);
+        assert_eq!(p.legacy, vec![(3, 4), (3, 4)]);
+    }
+
+    /// Witness: `ClearSpecialBlockCounts` (`TileDrawing.cs:388-402`)
+    /// clears the two root lists and the ten buckets in the C# order —
+    /// index 5 (BiomeGrass) is the one bucket the method never touches;
+    /// the legacy list is NOT cleared here (`ClearLegacyCachedDraws`
+    /// owns it, `:6613-6622`).
+    #[test]
+    fn w4_g28_clear_counts_skips_biome_grass_and_legacy() {
+        let mut p = SpecialPoints::default();
+        for idx in 0..TILE_COUNTER_COUNT {
+            p.buckets[idx].push((idx as i32, 0));
+        }
+        p.vine_roots_seen.insert((1, 1));
+        p.reverse_vine_roots_seen.insert((2, 2));
+        p.add_legacy(9, 9);
+        p.clear_counts();
+        for idx in [0usize, 1, 2, 3, 4, 6, 7, 8, 9, 10] {
+            assert!(p.buckets[idx].is_empty(), "bucket {idx}");
+        }
+        assert_eq!(p.buckets[5], vec![(5, 0)]);
+        assert!(p.vine_roots_seen.is_empty());
+        assert!(p.reverse_vine_roots_seen.is_empty());
+        assert_eq!(p.legacy, vec![(9, 9)]); // untouched
+        p.clear_legacy();
+        assert!(p.legacy.is_empty());
+    }
+
+    /// Witness: `ClearCachedTileDraws` (`TileDrawing.cs:6588-6599`) —
+    /// the counts clear ONLY on the non-solid pass; the solid pass keeps
+    /// the registry (its Tree points ride into `PostDrawTiles(false)`).
+    #[test]
+    fn w4_g28_the_counts_clear_only_before_the_non_solid_pass() {
+        let mut p = SpecialPoints::default();
+        p.add(1, 1, TileCounterType::Tree);
+        p.vine_roots_seen.insert((1, 1));
+        clear_cached_tile_draws(true, &mut p);
+        assert_eq!(p.buckets[0], vec![(1, 1)]); // solid: survives
+        assert!(!p.vine_roots_seen.is_empty());
+        clear_cached_tile_draws(false, &mut p);
+        assert!(p.buckets[0].is_empty()); // non-solid: reset
+        assert!(p.vine_roots_seen.is_empty());
+    }
+
+    /// Witness: `GetScreenDrawArea` (`TileDrawing.cs:6549-6573`) — the
+    /// `(int)` truncations toward zero, the +2/+5 far-edge pads and the
+    /// 4-tile border clamps. Camera at world pixel (160, 320), view
+    /// 320×160: firstX = (int)(160/16 - 1) = 9, lastX = (int)(480/16)+2
+    /// = 32, firstY = 19, lastY = (int)(480/16)+5 = 35.
+    #[test]
+    fn w4_g28_the_screen_area_truncates_pads_and_clamps() {
+        let (off, fx, lx, fy, ly) =
+            screen_draw_area([160.0, 320.0], [320.0, 160.0], false, 64.0, 8400, 2400);
+        assert_eq!(off, [0.0, 0.0]); // drawToScreen — no offscreen pad
+        assert_eq!((fx, lx, fy, ly), (9, 32, 19, 35));
+        // Fractional camera: (int) truncates toward zero, never rounds.
+        let (_, fx, lx, fy, ly) =
+            screen_draw_area([160.9, 320.9], [320.0, 160.0], false, 0.0, 8400, 2400);
+        assert_eq!((fx, lx, fy, ly), (9, 32, 19, 35));
+        // The 4-tile border clamps (`:6558-6573`).
+        let (_, fx, lx, fy, ly) =
+            screen_draw_area([0.0, 0.0], [64.0, 64.0], false, 0.0, 100, 100);
+        assert_eq!((fx, lx, fy, ly), (4, 6, 4, 9));
+        let (_, fx, lx, fy, ly) =
+            screen_draw_area([1600.0, 1600.0], [320.0, 160.0], false, 0.0, 100, 100);
+        assert_eq!((fx, lx, fy, ly), (99, 96, 99, 96)); // last < first: empty walk
+    }
+
+    /// Witness: the offscreen pad (`TileDrawing.cs:6553`) — drawing into
+    /// render targets offsets BOTH edges by `Main.offScreenRange`
+    /// (`useOffscreenRange = !Main.drawToScreen`).
+    #[test]
+    fn w4_g28_the_offscreen_pad_widens_both_edges() {
+        let (off, fx, lx, fy, ly) =
+            screen_draw_area([160.0, 320.0], [320.0, 160.0], true, 64.0, 8400, 2400);
+        assert_eq!(off, [64.0, 64.0]);
+        // firstX = (int)((160-64)/16 - 1) = 5; lastX = (int)(544/16)+2 = 36.
+        // firstY = (int)((320-64)/16 - 1) = 15; lastY = (int)(544/16)+5 = 39.
+        assert_eq!((fx, lx, fy, ly), (5, 36, 15, 39));
+    }
+
+    /// Witness: the `Draw` loop margins (`TileDrawing.cs:504-506`) —
+    /// `i in firstTileY..lastTileY+4` (rows), `j in firstTileX-2..
+    /// lastTileX+2` (columns), both ends exclusive.
+    #[test]
+    fn w4_g28_the_loop_bounds_fold_the_margins() {
+        assert_eq!(draw_area_loop_bounds(9, 32, 19, 35), (7, 34, 19, 39));
+    }
+
+    /// Witness: `IsTileDrawLayerSolid` (`TileDrawing.cs:4469-4476`) —
+    /// the five explicit `DrawTileInSolidLayer` overrides
+    /// (`TileID.cs:516-528`: 11/470/475/78/579 all `true`) win over
+    /// `Main.tileSolid`; a 0 row means null (no override), NOT false.
+    #[test]
+    fn w4_g28_the_solid_layer_override_beats_tile_solid() {
+        for kind in [11u16, 78, 470, 475, 579] {
+            assert!(is_tile_draw_layer_solid(kind), "override kind {kind}");
+        }
+        assert!(is_tile_draw_layer_solid(0)); // dirt — the solid set
+        assert!(!is_tile_draw_layer_solid(52)); // vine — non-solid
+        assert!(!is_tile_draw_layer_solid(4)); // torch — non-solid
+        assert!(!is_tile_draw_layer_solid(700)); // out of table
+        assert!(!is_tile_draw_layer_solid(u16::MAX));
+    }
+
+    /// Witness: the `:517` skip gate — inactive, layer mismatch, and the
+    /// `ShowUnbreakableWall && wall == 350` debug arm (fed false in the
+    /// port, but the predicate keeps the C# shape).
+    #[test]
+    fn w4_g28_the_skip_gate_matches_the_layer_and_debug_arm() {
+        assert!(draw_layer_skips(false, 0, 0, true, false)); // inactive
+        assert!(draw_layer_skips(true, 0, 0, false, false)); // dirt on non-solid
+        assert!(!draw_layer_skips(true, 0, 0, true, false)); // dirt on solid
+        assert!(draw_layer_skips(true, 11, 0, false, false)); // door override
+        assert!(!draw_layer_skips(true, 11, 0, true, false));
+        assert!(draw_layer_skips(true, 0, 350, true, true)); // debug wall
+        assert!(!draw_layer_skips(true, 0, 350, true, false));
+        assert!(!draw_layer_skips(true, 0, 349, true, true)); // only 350
+    }
+
+    /// Witness: the layer constants (`TileDrawing.cs:791-794`) and the
+    /// FROZEN `PostDrawTiles(false)` order (`:421-430`) — reordering
+    /// either changes the composite (S1-G-11).
+    #[test]
+    fn w4_g28_the_layers_and_post_draw_order_are_frozen() {
         assert_eq!(LAYER_LIQUID_BEHIND_TILES, 0);
         assert_eq!(LAYER_BEHIND_TILES, 1);
         assert_eq!(LAYER_TILES, 2);
@@ -1261,5 +1331,116 @@ mod tests {
         let mut r2 = Recorder::default();
         draw_layer(&w, &inp, solid_fn, &mut r2);
         assert!(!r2.log.iter().any(|s| s.starts_with("preview ")));
+        assert_eq!(
+            POST_DRAW_ORDER.map(|t| t as usize),
+            [3, 2, 6, 8, 9, 1, 10, 0, 4, 7]
+        );
+    }
+
+    /// Witness: `ShouldSwayInWind` (`TileDrawing.cs:7702-7717`) — the
+    /// settings gate, the `SwaysInWindBasic` membership, and the frame
+    /// exceptions gated on `type == 227` ONLY (`:7712`).
+    #[test]
+    fn w4_g28_sway_gate_is_settings_set_and_227_only() {
+        assert!(should_sway_in_wind(true, 83, 0)); // herb
+        assert!(!should_sway_in_wind(false, 83, 0)); // setting off
+        assert!(!should_sway_in_wind(true, 0, 0)); // dirt never sways
+        for fx in [204i16, 238, 408, 442, 476] {
+            assert!(!should_sway_in_wind(true, 227, fx), "227 frame {fx}");
+            assert!(should_sway_in_wind(true, 83, fx), "83 frame {fx}");
+        }
+        assert!(should_sway_in_wind(true, 227, 0));
+        assert!(should_sway_in_wind(true, 227, 18));
+    }
+
+    /// Witness: `CrawlToTopOfVineAndAddSpecialPoint` (`TileDrawing.cs:
+    /// 744-762`) via the S1-G-1a delegation — every cell of one strip
+    /// resolves the SAME root (the row below the attachable dirt),
+    /// deduped once into bucket 4.
+    #[test]
+    fn w4_g28_the_forward_crawl_roots_below_the_attachment() {
+        let mut w = world(40, 60);
+        put(&mut w, 10, 19, 0); // dirt — the attachment
+        for y in 20..=22 {
+            put(&mut w, 10, y, 52);
+        }
+        let mut p = SpecialPoints::default();
+        for y in 20..=22 {
+            collect_vine_root(&w, 10, y, &mut p);
+        }
+        assert_eq!(p.buckets[TileCounterType::Vine as usize], vec![(10, 20)]);
+        // Row 0 is never tested (`num > 0`, `:747`): a strip from the
+        // ceiling roots at its own first row (the y = j initialiser).
+        let mut w2 = world(40, 60);
+        for y in 0..=2 {
+            put(&mut w2, 10, y, 52);
+        }
+        let mut p2 = SpecialPoints::default();
+        collect_vine_root(&w2, 10, 1, &mut p2);
+        assert_eq!(p2.buckets[TileCounterType::Vine as usize], vec![(10, 1)]);
+    }
+
+    /// Witness: `CrawlToBottomOfReverseVineAndAddSpecialPoint`
+    /// (`TileDrawing.cs:764-782`) — the loop starts AT j (`:767`), the
+    /// root is the row above the attachment, deduped once; a lone cell
+    /// with empty ground below roots at its own row (k = j+1 inactive).
+    #[test]
+    fn w4_g28_the_reverse_crawl_roots_above_the_attachment() {
+        let mut w = world(40, 60);
+        put(&mut w, 10, 23, 0); // dirt — the ground attachment
+        for y in 20..=22 {
+            put(&mut w, 10, y, 549);
+        }
+        let mut p = SpecialPoints::default();
+        for y in 20..=22 {
+            collect_reverse_vine_root(&w, 10, y, &mut p);
+        }
+        assert_eq!(p.buckets[TileCounterType::ReverseVine as usize], vec![(10, 22)]);
+        // The k = j start: an attachable cell AT j roots at j - 1.
+        let mut w2 = world(40, 60);
+        put(&mut w2, 10, 20, 0);
+        let mut p2 = SpecialPoints::default();
+        collect_reverse_vine_root(&w2, 10, 20, &mut p2);
+        assert_eq!(p2.buckets[TileCounterType::ReverseVine as usize], vec![(10, 19)]);
+        // A lone 549 cell: k = j + 1 is inactive → root = j.
+        let mut w3 = world(40, 60);
+        put(&mut w3, 10, 20, 549);
+        let mut p3 = SpecialPoints::default();
+        collect_reverse_vine_root(&w3, 10, 20, &mut p3);
+        assert_eq!(p3.buckets[TileCounterType::ReverseVine as usize], vec![(10, 20)]);
+    }
+
+    /// Witness: the `Draw` head order (`TileDrawing.cs:477-506`) — the
+    /// legacy list clears on BOTH layers, the counts only on non-solid,
+    /// the tiers rebuild per call, and the loop rect carries the margins.
+    /// Frame order: non-solid first (`Main.cs:63280`), then solid
+    /// (`:63295`) — the solid pass's Tree points survive the second head.
+    #[test]
+    fn w4_g28_the_draw_head_clears_and_builds_in_order() {
+        let mut p = SpecialPoints::default();
+        p.add_legacy(5, 5);
+        p.add(1, 1, TileCounterType::WindyGrass);
+        // The non-solid pass head (:477-478 both fire).
+        let pass = begin_draw_pass(
+            false, 0.5, [160.0, 320.0], [320.0, 160.0], true, 64.0, 8400, 2400, &mut p,
+        );
+        assert!(p.legacy.is_empty());
+        assert!(p.buckets[1].is_empty());
+        assert_eq!(pass.tiers.high, [142, 156, 171]); // q = 0.5
+        assert_eq!(pass.tiers.medium, [26, 28, 31]);
+        assert_eq!(pass.draw_offset, [0.0, 0.0]); // drawToScreen
+        // (9, 32, 19, 35) + margins → x 7..=33, y 19..=38 inclusive.
+        assert_eq!(pass.loop_bounds, (7, 33, 19, 38));
+        // The solid pass head: legacy clears again, counts SURVIVE.
+        p.add(2, 2, TileCounterType::Tree);
+        p.add_legacy(6, 6);
+        let pass2 = begin_draw_pass(
+            true, 0.0, [160.0, 320.0], [320.0, 160.0], false, 64.0, 8400, 2400, &mut p,
+        );
+        assert!(p.legacy.is_empty());
+        assert_eq!(p.buckets[0], vec![(2, 2)]); // Tree survives
+        assert_eq!(pass2.tiers.high, [255, 24, 50]); // q = 0 wrap
+        assert_eq!(pass2.draw_offset, [64.0, 64.0]); // render targets
+        assert_eq!(pass2.loop_bounds, (3, 37, 15, 42));
     }
 }

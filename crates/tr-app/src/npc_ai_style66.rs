@@ -553,6 +553,37 @@ pub fn gold_worm_sparkle(tile_light: [u8; 3], rng: &mut UnifiedRandom) -> bool {
 /// position/velocity/frame/scale rolls (the `DustPool::new_dust`
 /// verbatim). The sentinel slot takes the velocity write too
 /// (`Main.dust[6000]` exists in the C#).
+/// `NPCID.Sets.IsGoldCritter` (`ID/NPCID.cs:10126`) — the C# bool set the
+/// `UpdateNPC_CastLights` sparkle arm gates on (`NPC.cs:92345`:
+/// `this.type >= 0 && NPCID.Sets.IsGoldCritter[this.type]`). The factory
+/// `CreateBoolSet(false, 442, 443, 444, 445, 446, 447, 448, 539, 592,
+/// 593, 601, 605, 613, 627)` — default false, the 14 listed ids true.
+/// W4-d127 FINAL: the GoldBird **442** is a member (the bird lane's gold
+/// critter), alongside the GoldWorm 448 the c8 lane wires; the gate fn
+/// above is kind-agnostic, so the wiring caller gates on THIS predicate
+/// (the c8 `n.kind == GoldWorm` test generalises to the set). The port's
+/// roster has none of these kinds yet (442=d40, 448=c8, the rest their
+/// own lanes) — the predicate is the merge-ready membership census.
+pub fn is_gold_critter(npc_type: i32) -> bool {
+    // `NPCID.cs:10126` — the 14 true ids, verbatim.
+    matches!(
+        npc_type,
+        442 | 443 | 444 | 445 | 446 | 447 | 448 | 539 | 592 | 593 | 601 | 605 | 613 | 627
+    )
+}
+
+/// W4-d127 FINAL (the c8 co-lane pattern) — the sparkle's dust SPAWN
+/// half (`NPC.cs:92363-92364`), the wiring caller [`gold_worm_sparkle`]'s
+/// doc names: ONE `Dust.NewDust(position, width, height, 43, 0f, 0f, 254,
+/// new Color(255, 255, 0), 0.5f)` then `Main.dust[num2].velocity *= 0f`.
+/// The position is the NPC's `base.position` AFTER the `+= netOffset`
+/// round trip's add half (`:92347`; zero in single-player, the style56
+/// precedent keeps the shape). The pool's internal draws ride the
+/// caller's `UpdateNPCs` stream in C# order — the gate's `Next(300)`
+/// FIRST, then the spawn's position/velocity/frame/scale rolls (the
+/// `DustPool::new_dust` verbatim). The sentinel slot takes the velocity
+/// write too (`Main.dust[6000]` exists in the C#). Kind-agnostic: the
+/// caller gates on [`is_gold_critter`] (442 GoldBird AND 448 GoldWorm).
 pub fn gold_worm_sparkle_dust(
     npc: &Npc,
     world: &World,
@@ -972,17 +1003,43 @@ mod tests {
         assert_eq!(rng, witness3);
     }
 
-    /// W4-c8 sweep — the sparkle's spawn half (`NPC.cs:92363-92364`):
-    /// ONE dust 43 at the netOffset-added position, alpha 254, pure
-    /// yellow, scale ×0.5, velocity zeroed AFTER the spawn's rolls;
-    /// the pool's internal draws ride the caller's stream in C# order
-    /// (the gate's Next(300) is the CALLER's — this fn draws only the
-    /// NewDust internals). WRITTEN, NOT RUN (code-only mode).
+    /// W4-d127 FINAL — the `IsGoldCritter` membership census
+    /// (`ID/NPCID.cs:10126`): the 14 true ids verbatim, the GoldBird 442
+    /// AND the GoldWorm 448 both members (the bird lane's gold critter
+    /// shares the c8 sparkle), every other id false (the factory default).
+    /// WRITTEN NOT RUN.
     #[test]
-    fn w4_c8_the_sparkle_dust_spawns_one_zeroed_yellow_43() {
+    fn the_gold_critter_set_matches_the_npcid_factory() {
+        // The 14 true ids (`CreateBoolSet(false, ...)`).
+        for ty in [442, 443, 444, 445, 446, 447, 448, 539, 592, 593, 601, 605, 613, 627] {
+            assert!(is_gold_critter(ty), "{ty} is a gold critter");
+        }
+        // The bird lane's GoldBird 442 is the member this item ports for.
+        assert!(is_gold_critter(442), "the GoldBird sparkles");
+        assert!(is_gold_critter(448), "the GoldWorm sparkles (the c8 lane)");
+        // The factory default is false: the non-gold birds + neighbours.
+        for ty in [74, 297, 298, 611, 671, 675, 689, 441, 449, 0, -1, 697] {
+            assert!(!is_gold_critter(ty), "{ty} is NOT a gold critter");
+        }
+    }
+
+    /// W4-d127 FINAL (the c8 co-lane pattern) — the sparkle's dust SPAWN
+    /// half (`NPC.cs:92363-92364`): ONE dust 43 at the netOffset-added
+    /// position, alpha 254, pure yellow, scale ×0.5, velocity zeroed
+    /// AFTER the spawn's rolls; the pool's internal draws ride the
+    /// caller's stream in C# order (the gate's Next(300) is the CALLER's
+    /// — this fn draws only the NewDust internals). The GoldBird's 14×14
+    /// box (`NPC.cs:14247-14261`) spawns at its own size. WRITTEN NOT RUN.
+    #[test]
+    fn the_sparkle_dust_spawns_one_zeroed_yellow_43() {
         let w = air();
-        let mut n = crawler(448, 1000.0, 1000.0);
-        n.net_offset = glam::Vec2::new(3.0, -2.0);
+        // A GoldBird-shaped slot: 14×14 (the STYLE24_BIRDS 442 row), the
+        // carrier-kind + size_override convention (no bird kind yet).
+        let mut n = Npc::new(NpcKind::Zombie, 1000.0, 1000.0, 0, 0.0);
+        n.size_override = Some((14.0, 14.0));
+        n.hp = 5;
+        n.max_hp = 5;
+        n.net_offset = Vec2::new(3.0, -2.0);
         let mut dust = tr_core::particles::DustPool::new();
         let ctx = tr_core::particles::SpawnCtx {
             game_menu: false,
@@ -998,6 +1055,14 @@ mod tests {
         // (the < 5 floor makes width 10 → Next(6) and height 4 → 5 →
         // Next(1)), the velocity pair, the frame row, the scale roll —
         // the particles.rs verbatim.
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = UnifiedRandom::new(23);
+        // Replay the NewDust internals on a witness stream: the position
+        // (1003, 998) = (1000+3, 1000-2), the 14×14 box, dust 43, the
+        // zero speed, alpha 254, pure yellow, scale 0.5.
         let mut witness = rng.clone();
         let mut expected = tr_core::particles::DustPool::new();
         let exp_idx = expected.new_dust(
@@ -1007,6 +1072,9 @@ mod tests {
             glam::Vec2::new(1003.0, 998.0),
             10,
             4,
+            Vec2::new(1003.0, 998.0),
+            14,
+            14,
             43,
             0.0,
             0.0,
@@ -1029,6 +1097,10 @@ mod tests {
         assert_eq!(d.position, e.position, "the netOffset-added position");
         // The NPC's own position never moved (the port reads a copy).
         assert_eq!((n.x, n.y), (1000.0, 1000.0));
+        assert_eq!(d.scale, 0.5);
+        assert_eq!(d.velocity, Vec2::ZERO, "velocity *= 0f (:92364)");
+        assert_eq!(d.position, e.position, "the netOffset-added position");
+        assert_eq!(d.color, e.color, "the pure yellow");
     }
 
     /// The whole-arm RNG witness: a mixed 120-tick run (grounded walk /

@@ -50,6 +50,16 @@ pub struct World {
     /// framing event resets (`WorldGen.cs:81705-81729`, `Framing.cs:318-321`,
     /// `Framing.cs:390-396`) and reused from storage otherwise.
     pub variants: Vec<u8>,
+    /// The `.trwld` v18 load restored [`World::variants`] from the save
+    /// (W4-d109, the save half of S1-A-3): the full-world framing passes
+    /// reuse the stored values (`TileFrame`/`WallFrame` with
+    /// `resetFrame: false`, `WorldGen.cs:81713`, `Framing.cs:399`) instead
+    /// of re-rolling. A generated world, a retail `.wld` load and a pre-v18
+    /// `.trwld` keep it false — the C#'s own reset semantics (the runtime
+    /// bits are not serialized by `SaveWorldTiles`, `WorldFile.cs:1432-1604`,
+    /// so they reset and re-roll on those paths). Port-only: the C# `.wld`
+    /// has no such persistence (ANALYSIS "Autotiling").
+    pub variants_from_save: bool,
     /// The runtime reset-roll stream of the framing variants — the port's
     /// `WorldGen.genRand` stand-in for `SquareTileFrame`'s centre re-roll
     /// (`WorldGen.cs:81705-81709`, `Framing.cs:389-395`), the same shape as
@@ -320,6 +330,17 @@ pub struct World {
     /// `NPC.boughtBunny` (`WorldFile.cs:1394` / `:2360`) — the 4910 Bunny
     /// License's town-pet unlock (`Player.cs:45362-45365`). W4-g87.
     pub bought_bunny: bool,
+    /// `NPC.combatBookVolumeTwoWasUsed` (`NPC.cs:6341`; the 5336 use arm
+    /// `Player.cs:45337-45348`, `.wld` write `WorldFile.cs:1407` / read
+    /// `:2416-2423` version ≥259) — the same world-field standing-in
+    /// (W4-g89e). The town-NPC stat ladder's second +250/×0.8/+0.25/+8
+    /// block (`NPC.cs:53025-53031`) reads it.
+    pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`NPC.cs:6343`, the 5343 use
+    /// `Player.cs:45370-45382`; `Chest.SetupTravelShop`'s +1 slot row
+    /// `Chest.cs:1303-1306`) — the same standing-in (W4-g90 lane 7; the
+    /// .wld flag reads from v260, `WorldFile.cs:2405`).
+    pub peddlers_satchel_was_used: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -387,6 +408,36 @@ pub struct World {
     /// (a crimson heart = the Brain, a shadow orb = the Eater of Worlds)
     /// summons the boss (`:54294-54321`).
     pub shadow_orb_count: i32,
+    /// W4-g85 final — `WorldGen.CheckOrb`'s summon-half selector
+    /// (`WorldGen.cs:54296-54318`'s `flag` = `type == 31 && frameX >= 36`):
+    /// the LAST completed case-31 smash's crimson bit. A crimson half
+    /// summons the Brain of Cthulhu 266 (`!AnyNPCs(266)` — the second
+    /// operand `(!AnyNPCs(13) || flag)` is vacuously true); the corruption
+    /// half summons the EoW 13 (`!AnyNPCs(13)` — the first operand
+    /// `!(AnyNPCs(266) & flag)` is vacuously true). The core
+    /// kill plan records the bit beside the count; the app's third-orb
+    /// summon polls it (the count-poll deferral keeps the last smash's
+    /// bit — the vanilla summons synchronously inside that smash).
+    pub orb_smash_crimson: bool,
+    /// W4-g85 final — the chat watermark for `:54322-54330`'s arm (the
+    /// else of the summon threshold): the C# broadcasts once per
+    /// non-third 31 smash inside CheckOrb; the port's count-poll cannot
+    /// see per-smash edges, so the sim broadcasts for each count the
+    /// watermark has not covered (`Lang.misc[10]`, the second `[11]`).
+    /// Port-only bookkeeping — no C# field, no save byte.
+    pub orb_smash_chat_count: i32,
+    /// W4-g85 wiring round 2 — `WorldGen.CheckOrb`'s achievement tail
+    /// (`WorldGen.cs:54331`, `AchievementsHelper.NotifyProgressionEvent(7)`
+    /// = SMASHING_POPPET): the call sits INSIDE case 31 (after the
+    /// `:54322-54330` chat arm, before the `:54332` break), so ONLY a 31
+    /// smash queues it — the 12/639/696 cases break at `:54230`/`:54233`/
+    /// `:54236` without reaching it. The core kill plan sets the flag; the
+    /// app's `break_tile` seam drains it into `notify_progression_net(7)`
+    /// (the core carries no achievement system). Co-lane keep-one: W4-c36
+    /// batch 5 (`6c8eb75dd`) carries the same field + drain but sets it
+    /// UNCONDITIONALLY (its base predates the four-case fix); at merge
+    /// keep ONE field/drain and THIS case-31 gate.
+    pub orb_smash_notify_pending: bool,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
     /// raises it, the win/loss clears it.
@@ -603,7 +654,9 @@ pub struct World {
     /// `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1227`, footer `:1756`).
     pub world_id: i32,
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
-    /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
+    /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). The save funnel
+    /// stamps `UtcNow` on every save (`SaveWorldFlags:1251`); 0 = unset/min
+    /// for a world that never went through a save.
     pub last_played: i64,
     /// `Main.ActiveWorldFileData.CreationTime` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1250` write, `:2044` read; S1-J-3b). 0 = unset/min —
@@ -619,6 +672,7 @@ impl World {
             height,
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
             variants: vec![0; (width as usize) * (height as usize)],
+            variants_from_save: false,
             frame_rng: crate::unified_random::UnifiedRandom::new(0),
             place_rng: crate::unified_random::UnifiedRandom::new(0),
             tile_object_random_cache: None,
@@ -695,6 +749,8 @@ impl World {
             bought_cat: false,
             bought_dog: false,
             bought_bunny: false,
+            combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
@@ -739,6 +795,9 @@ impl World {
             altars_smashed: 0,
             shadow_orb_smashed: false,
             shadow_orb_count: 0,
+            orb_smash_crimson: false,
+            orb_smash_chat_count: 0,
+            orb_smash_notify_pending: false,
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,

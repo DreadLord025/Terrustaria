@@ -17,7 +17,11 @@
 //! edit-time reframes reuse the stored value, re-rolling only the
 //! `SquareTileFrame` centre. The `Main.tileLargeFrames` /
 //! `Main.wallLargeFrames` lookups replace the variant per position, exactly as
-//! the C# does.
+//! the C# does. W4-d109 adds the save half: the port's `.trwld` v18 tail
+//! persists the packed variants and the full passes reuse them on such a
+//! load ([`crate::world::World::variants_from_save`]) — a port-only extension
+//! (the C# `.wld` never serializes the bits); generated worlds, retail `.wld`
+//! loads and pre-v18 saves keep the reset roll.
 //!
 //! The merge relation itself is generated into [`crate::tiledata`] from the decompiled
 //! source, so it stays in sync with the game's `TileMergeAttempt` table.
@@ -800,6 +804,222 @@ fn grass_frame_of(x: i32, y: i32, num: i32, variant: usize, n: &mut Nb) -> (i16,
     (fx, fy)
 }
 
+// ------------------------------------------------- SelfFrame8Way (gemspark)
+// `Framing.SelfFrame8Way` (Framing.cs:193-324): the gemspark blocks (255-268),
+// the crystal block (385) and the silly balloons (446-448) frame against
+// same-group neighbours through `WillItBlend` — the 255-268 switch arm of
+// `TileFrameCosmetic` (WorldGen.cs:84819-84833), also reached by the
+// `case 385/446/447/448: break` + `goto case 255` fallthrough
+// (WorldGen.cs:81409-81413, :84818).
+
+/// `Framing.blockStyleLookup` (`Framing.cs:92-98`): which sides a block
+/// presents, by `Tile.blockType()` — 0 full, 1 half brick, 2..5 slope+1.
+/// Fields are `(top, bottom, left, right)`.
+static BLOCK_STYLES: [(bool, bool, bool, bool); 6] = [
+    (true, true, true, true),
+    (false, true, true, true),
+    (false, true, true, false),
+    (false, true, false, true),
+    (true, false, true, false),
+    (true, false, false, true),
+];
+
+/// `Tile.blockType()` (`Tile.cs:202-214`) + `Framing.FindBlockStyle`
+/// (`Framing.cs:141-144`). A neighbour that fails the blend/present-side
+/// test contributes the all-false style instead (the C# `Clear()`s the
+/// slot — Framing.cs:214/231/248/265); the caller models that with `None`.
+#[inline]
+fn find_block_style(t: &Tile) -> (bool, bool, bool, bool) {
+    let bt = if t.half_brick() {
+        1
+    } else {
+        let s = t.slope();
+        if s > 0 { s as usize + 1 } else { 0 }
+    };
+    BLOCK_STYLES[bt]
+}
+
+/// `Framing.WillItBlend` (`Framing.cs:180-191`): forced-dirt gemspark merges
+/// with plain dirt, any two `Main.tileBrick` tiles blend, and equal
+/// `TileID.Sets.GemsparkFramingTypes` entries blend — the 0 default makes
+/// every non-gemspark pair equal, so ordinary blocks merge with their kind
+/// through the style gates alone.
+#[inline]
+fn will_it_blend(my: u16, other: u16) -> bool {
+    if td::SET_FORCED_DIRT_MERGING.has(my) && other == 0 {
+        return true;
+    }
+    if td::TILE_BRICK.has(my) && td::TILE_BRICK.has(other) {
+        return true;
+    }
+    td::SET_GEMSPARK_FRAMING_TYPES[other as usize] == td::SET_GEMSPARK_FRAMING_TYPES[my as usize]
+}
+
+/// The `Framing.Add8WayLookup` rows (`Framing.cs:45-91`), in `(col, row)`
+/// cells of the 18 px grid; a single point serves all three variants
+/// (`Framing.cs:157-166`). Unlisted masks are `None` in the C# (a null
+/// lookup row); every mask the full-block styles can build is listed.
+static SELF_FRAME_8WAY: [Option<[(u8, u8); 3]>; 256] = {
+    let mut t = [None; 256];
+    macro_rules! row3 {
+        ($m:expr, $a:expr, $b:expr, $c:expr) => {
+            t[$m] = Some([$a, $b, $c]);
+        };
+    }
+    macro_rules! row1 {
+        ($m:expr, $p:expr) => {
+            t[$m] = Some([$p, $p, $p]);
+        };
+    }
+    row3!(0, (9, 3), (10, 3), (11, 3)); // Framing.cs:45
+    row3!(1, (6, 3), (7, 3), (8, 3)); // :46
+    row3!(2, (12, 0), (12, 1), (12, 2)); // :47
+    row1!(3, (15, 2)); // :48
+    row3!(4, (9, 0), (9, 1), (9, 2)); // :49
+    row1!(5, (13, 2)); // :50
+    row3!(6, (6, 4), (7, 4), (8, 4)); // :51
+    row1!(7, (14, 2)); // :52
+    row3!(8, (6, 0), (7, 0), (8, 0)); // :53
+    row3!(9, (5, 0), (5, 1), (5, 2)); // :54
+    row1!(10, (15, 0)); // :55
+    row1!(11, (15, 1)); // :56
+    row1!(12, (13, 0)); // :57
+    row1!(13, (13, 1)); // :58
+    row1!(14, (14, 0)); // :59
+    row1!(15, (14, 1)); // :60
+    row3!(19, (1, 4), (3, 4), (5, 4)); // :61
+    row1!(23, (16, 3)); // :62
+    row1!(27, (17, 0)); // :63
+    row1!(31, (13, 4)); // :64
+    row3!(37, (0, 4), (2, 4), (4, 4)); // :65
+    row1!(39, (17, 3)); // :66
+    row1!(45, (16, 0)); // :67
+    row1!(47, (12, 4)); // :68
+    row3!(55, (1, 2), (2, 2), (3, 2)); // :69
+    row3!(63, (6, 2), (7, 2), (8, 2)); // :70
+    row3!(74, (1, 3), (3, 3), (5, 3)); // :71
+    row1!(75, (17, 1)); // :72
+    row1!(78, (16, 2)); // :73
+    row1!(79, (13, 3)); // :74
+    row3!(91, (4, 0), (4, 1), (4, 2)); // :75
+    row3!(95, (11, 0), (11, 1), (11, 2)); // :76
+    row1!(111, (17, 4)); // :77
+    row1!(127, (14, 3)); // :78
+    row3!(140, (0, 3), (2, 3), (4, 3)); // :79
+    row1!(141, (16, 1)); // :80
+    row1!(142, (17, 2)); // :81
+    row1!(143, (12, 3)); // :82
+    row1!(159, (16, 4)); // :83
+    row3!(173, (0, 0), (0, 1), (0, 2)); // :84
+    row3!(175, (10, 0), (10, 1), (10, 2)); // :85
+    row1!(191, (15, 3)); // :86
+    row3!(206, (1, 0), (2, 0), (3, 0)); // :87
+    row3!(207, (6, 1), (7, 1), (8, 1)); // :88
+    row1!(223, (14, 4)); // :89
+    row1!(239, (15, 4)); // :90
+    row3!(255, (1, 1), (2, 1), (3, 1)); // :91
+    t
+};
+
+/// The ids routed to `Framing.SelfFrame8Way` (`WorldGen.cs:84819-84833`'s
+/// case labels plus the `385/446/447/448` fallthrough at `:81409-81413`).
+#[inline]
+fn uses_self_frame_8way(kind: u16) -> bool {
+    matches!(kind, 255..=268 | 385 | 446..=448)
+}
+
+/// `Framing.SelfFrame8Way` with the caller's `frameNumber` variant
+/// (the reset roll lives in the pass functions, `Framing.cs:317-320`).
+/// Side slots join only when both blocks present the touching side; a
+/// corner joins only when both adjacent sides joined AND the corner block
+/// presents both facing sides (`Framing.cs:202-316`).
+fn self_frame_8way(world: &World, x: i32, y: i32, variant: usize) -> Option<(i16, i16)> {
+    let center = world.tile(x, y)?;
+    if !center.active() {
+        return None; // Framing.cs:195-198
+    }
+    let style = find_block_style(center);
+    let blends = |dx: i32, dy: i32| -> Option<(bool, bool, bool, bool)> {
+        let t = world.tile(x + dx, y + dy)?;
+        if t.active() && will_it_blend(center.kind, t.kind) {
+            Some(find_block_style(t))
+        } else {
+            None
+        }
+    };
+    let mut mask = 0u8;
+    let mut up_s = (false, false, false, false);
+    let mut left_s = up_s;
+    let mut right_s = up_s;
+    let mut down_s = up_s;
+    if style.0 {
+        if let Some(s) = blends(0, -1) {
+            if s.1 {
+                mask |= 1;
+                up_s = s;
+            }
+        }
+    }
+    if style.2 {
+        if let Some(s) = blends(-1, 0) {
+            if s.3 {
+                mask |= 2;
+                left_s = s;
+            }
+        }
+    }
+    if style.3 {
+        if let Some(s) = blends(1, 0) {
+            if s.2 {
+                mask |= 4;
+                right_s = s;
+            }
+        }
+    }
+    if style.1 {
+        if let Some(s) = blends(0, 1) {
+            if s.0 {
+                mask |= 8;
+                down_s = s;
+            }
+        }
+    }
+    if up_s.2 && left_s.0 {
+        if let Some(s) = blends(-1, -1) {
+            if s.3 && s.1 {
+                mask |= 0x10;
+            }
+        }
+    }
+    if up_s.3 && right_s.0 {
+        if let Some(s) = blends(1, -1) {
+            if s.2 && s.1 {
+                mask |= 0x20;
+            }
+        }
+    }
+    if down_s.2 && left_s.1 {
+        if let Some(s) = blends(-1, 1) {
+            if s.3 && s.0 {
+                mask |= 0x40;
+            }
+        }
+    }
+    if down_s.3 && right_s.1 {
+        if let Some(s) = blends(1, 1) {
+            if s.2 && s.0 {
+                mask |= 0x80;
+            }
+        }
+    }
+    // Framing.cs:321: `selfFrame8WayLookup[num][frameNumber]`. Sloped/half
+    // masks outside the table are null rows in the C# (it would throw); the
+    // port leaves the stored frame untouched for those (deviation recorded
+    // in ANALYSIS.md — gemsparks are never hammered in generated worlds).
+    let (col, row) = SELF_FRAME_8WAY[mask as usize]?[variant.min(2)];
+    Some((col as i16 * 18, row as i16 * 18))
+}
+
 /// Computes the frame for one tile. Returns `(frameX, frameY)` in tileset pixels.
 ///
 /// `WorldGen.TileFrame(i, j)` with `resetFrame: false` (`WorldGen.cs:81713`) —
@@ -817,6 +1037,13 @@ pub fn frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option
     let tile = world.tile(x, y)?;
     if !tile.active() {
         return None;
+    }
+    // The `TileFrameCosmetic` switch arm (WorldGen.cs:84819-84833): the
+    // gemspark ids bypass the merge chain entirely; 385/446/447/448 reach
+    // the same arm through the inner-switch break + `goto case 255`
+    // (WorldGen.cs:81409-81413, :84818).
+    if uses_self_frame_8way(tile.kind) {
+        return self_frame_8way(world, x, y, variant);
     }
     let me = framing_type(tile.kind);
     let num = me as i32;
@@ -1005,6 +1232,24 @@ pub fn frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option
             td::TILE_MOSS.has(v) || td::SET_TILE_MOSS_BRICK.has(v)
         });
     }
+    // W4-g82 — `TileFrameCosmetic`'s rope arm (`WorldGen.cs:81894-81931`,
+    // the `else if (Main.tileRope[num])` between the dirt branch and the
+    // per-type switch): the IsRope column merges, the 504 mystic-snake
+    // guards, the 698 display-jar bottom anchor, the !solidTop top anchor
+    // vs any-solid bottom and the up!=num side merges. For rope kinds the
+    // generic families above are no-ops (no rope id is in their sets), so
+    // this tail call site is observation-identical to the C#'s arm
+    // position. The :81923-81930 neighbour re-frame requests only write
+    // the NEIGHBOURS' frames — never this cell's neighbour kinds — and the
+    // port's square reframe covers them (framing_rope module doc).
+    if td::TILE_ROPE.has(me) {
+        let (up, down, left, right) =
+            crate::framing_rope::rope_frame_arm(world, x, y, num, n[0], n[1], n[2], n[3]);
+        n[0] = up;
+        n[1] = down;
+        n[2] = left;
+        n[3] = right;
+    }
 
     let mut mask = 0u8;
     for (i, bit) in [
@@ -1085,7 +1330,14 @@ pub fn frame_world(world: &mut World) -> usize {
                     }
                     // Slopes and half bricks frame exactly like full blocks; the draw
                     // pass clips the sprite into the slope/half silhouette.
-                    let rolled = rng.next_range(0, 3) as usize;
+                    // W4-d109: a `.trwld` v18 load restored the variants — reuse
+                    // them (`TileFrame` resetFrame:false, WorldGen.cs:81713);
+                    // otherwise the reset roll (`:81705-81709`).
+                    let rolled = if world.variants_from_save {
+                        world.frame_number(y as usize * w + x) as usize
+                    } else {
+                        rng.next_range(0, 3) as usize
+                    };
                     if let Some((fx, fy)) = frame_of_variant(world, x as i32, y, rolled) {
                         row[x] = (fx, fy, rolled as u8);
                     }
@@ -1199,13 +1451,37 @@ fn wall_mask_neighbour(world: &World, x: i32, y: i32) -> bool {
         && !world.invisible_wall(x, y)
 }
 
+/// `Framing.WallFrame`'s head gates (`Framing.cs:328-342`), the mutating
+/// half: an out-of-range wall id clamps to 0 (`wall >= WallID.Count`), and a
+/// wall-less tile clears its wall paint + coatings (`wallColor(0)` +
+/// `ClearWallPaintAndCoating()`, `Tile.cs:911-916` — paint, fullbright and
+/// invisible bits; the port's extras byte 0x1f/0x80/0x40). Returns whether
+/// the tile still carries a wall to frame.
+fn wall_frame_head(world: &mut World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile_mut(x, y) else {
+        return false;
+    };
+    if t.wall as usize >= td::WALL_COUNT {
+        t.wall = 0; // Framing.cs:332-335
+    }
+    if t.wall == 0 {
+        let idx = world.index(x, y);
+        let b = world.extras_at(idx);
+        world.set_extras_at(idx, b & !(0x1f | 0x40 | 0x80)); // Framing.cs:337-342
+        return false;
+    }
+    true
+}
+
 /// `Framing.WallFrame` for one tile, with the caller's `wallFrameNumber`
 /// variant (the reset roll or the stored read). Returns the 36 px cell and the
 /// effective variant (the large-frame lookups replace it), which the caller
 /// stores. `None` when there is no wall.
 fn wall_frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option<((u8, u8), usize)> {
     let tile = world.tile(x, y)?;
-    if tile.wall == 0 {
+    if tile.wall == 0 || tile.wall as usize >= td::WALL_COUNT {
+        // The clamp/reset mutation lives in `wall_frame_head`; this pure
+        // read treats the clamped id as wall-less (Framing.cs:332-342).
         return None;
     }
     let mut mask = 0u8;
@@ -1257,7 +1533,7 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32, reset: boo
                 continue;
             };
             let idx = world.index(x, y);
-            let (active, kind, wall) = (t.active(), t.kind, t.wall);
+            let (active, kind) = (t.active(), t.kind);
             // `SquareTileFrame`'s centre-only reset: the roll happens where the
             // C# passes `resetFrame` — the centre tile/wall — and is consumed
             // from `world.frame_rng` (the port's `genRand` stand-in).
@@ -1277,7 +1553,11 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32, reset: boo
             if active && td::SET_TORCHES.has(kind) {
                 torches.push((x, y));
             }
-            if wall != 0 {
+            // `Framing.cs:328-342`: the head runs for EVERY tile (the wall
+            // clamp and the wall-less paint/coating reset), before any roll.
+            let has_wall = wall_frame_head(world, x, y);
+            if has_wall {
+                let wall = world.tiles[idx].wall;
                 let variant = if centre && reset {
                     wall_reset_roll(&mut world.frame_rng, wall)
                 } else {
@@ -1344,10 +1624,20 @@ pub fn frame_walls(world: &mut World) -> usize {
                 for x in 1..w - 1 {
                     let i = y * w + x;
                     let wall = world.tiles[i].wall;
-                    if wall == 0 {
+                    // `Framing.cs:332-342`: an out-of-range wall clamps to 0
+                    // BEFORE any roll; wall-less tiles return without drawing
+                    // from genRand. The clamp/extras reset runs in the copy
+                    // phase (`wall_frame_head`).
+                    if wall == 0 || wall as usize >= td::WALL_COUNT {
                         continue;
                     }
-                    let rolled = wall_reset_roll(&mut rng, wall);
+                    let rolled = if world.variants_from_save {
+                        // W4-d109: reuse the stored `wallFrameNumber`
+                        // (`WallFrame` resetFrame:false, Framing.cs:399).
+                        world.wall_frame_number(i) as usize
+                    } else {
+                        wall_reset_roll(&mut rng, wall)
+                    };
                     if let Some((cell, variant)) =
                         wall_frame_of_variant(world, x as i32, y as i32, rolled)
                     {
@@ -1361,6 +1651,9 @@ pub fn frame_walls(world: &mut World) -> usize {
             for x in 1..w - 1 {
                 let ((col, wall_row), variant) = row[x];
                 if col == u8::MAX {
+                    // The wall-less / out-of-range cells still run the
+                    // `Framing.cs:332-342` head: clamp + paint/coating reset.
+                    wall_frame_head(world, x as i32, y as i32);
                     continue;
                 }
                 let idx = y * w + x;
@@ -1604,6 +1897,182 @@ mod tests {
         assert_eq!((t.frame_x, t.frame_y), (108, 216 + v * 36));
     }
 
+    // ---- W4-d110: SelfFrame8Way + the WallFrame head gates ----
+
+    /// W4-d110 — the gemspark 255-268 arm (`WorldGen.cs:84819-84833` →
+    /// `Framing.SelfFrame8Way`, `Framing.cs:193-324`). Code-only: written
+    /// NOT run. A lone amber gemspark (268) frames isolated: mask 0 →
+    /// `Add8WayLookup(0, 9,3, 10,3, 11,3)` (`Framing.cs:45`), variant-scaled.
+    #[test]
+    fn w4_d110_a_lone_gemspark_uses_the_isolated_8way_cell() {
+        let mut w = World::new("t".into(), 11, 11);
+        solid(&mut w, 5, 5, 268);
+        frame_world(&mut w);
+        let t = *w.tile(5, 5).unwrap();
+        let v = w.frame_number(w.index(5, 5)) as i16;
+        assert_eq!((t.frame_x, t.frame_y), ((9 + v) * 18, 3 * 18));
+    }
+
+    /// W4-d110 — `WillItBlend` verbatim (`Framing.cs:180-191`): every
+    /// gemspark id is `Main.tileBrick` (`Main.cs:9455-9470`), so the brick
+    /// arm blends ANY two gemspark groups (the `GemsparkFramingTypes`
+    /// compare at `:190` is only reached for non-brick pairs); a non-brick
+    /// non-dirt neighbour with a different framing-type entry (platform 19:
+    /// entry 0 vs amber's 268, `TileID.cs:541`) does NOT join. Amber with
+    /// amethyst below + platform right → down-only mask 8 →
+    /// `Add8WayLookup(8, 6,0, 7,0, 8,0)` (`Framing.cs:53`). Code-only.
+    #[test]
+    fn w4_d110_gemsparks_blend_through_tile_brick_not_with_non_bricks() {
+        let mut w = World::new("t".into(), 11, 11);
+        solid(&mut w, 5, 5, 268);
+        // A different gemspark group below: amethyst 255 — still blends
+        // (both are tileBrick).
+        solid(&mut w, 5, 6, 255);
+        // A platform (19) to the right: not brick, not dirt, framing-type
+        // entry 0 != 268 — never joins.
+        solid(&mut w, 6, 5, 19);
+        frame_world(&mut w);
+        let t = *w.tile(5, 5).unwrap();
+        let v = w.frame_number(w.index(5, 5)) as i16;
+        assert_eq!((t.frame_x, t.frame_y), ((6 + v) * 18, 0));
+    }
+
+    /// W4-d110 — `WillItBlend`'s first arm (`Framing.cs:182-185`): every
+    /// gemspark is `ForcedDirtMerging` (`TileID.cs:499`), so plain dirt (0)
+    /// joins the mask; the dirt itself frames through the generic path.
+    /// Amber with dirt left+right → mask 6 → row 4 (`Framing.cs:51`).
+    /// Code-only: written NOT run.
+    #[test]
+    fn w4_d110_gemspark_blends_into_plain_dirt() {
+        let mut w = World::new("t".into(), 11, 11);
+        solid(&mut w, 5, 5, 268);
+        solid(&mut w, 4, 5, 0);
+        solid(&mut w, 6, 5, 0);
+        frame_world(&mut w);
+        let t = *w.tile(5, 5).unwrap();
+        let v = w.frame_number(w.index(5, 5)) as i16;
+        assert_eq!((t.frame_x, t.frame_y), ((6 + v) * 18, 4 * 18));
+    }
+
+    /// W4-d110 — the `case 385/446/447/448: break` + `goto case 255`
+    /// fallthrough (`WorldGen.cs:81409-81413`, `:84818`): the crystal block
+    /// and the silly balloons route to SelfFrame8Way too. A lone crystal
+    /// block (385) takes the same isolated cell as a gemspark. Code-only.
+    #[test]
+    fn w4_d110_the_crystal_block_rides_the_8way_arm() {
+        let mut w = World::new("t".into(), 11, 11);
+        solid(&mut w, 5, 5, 385);
+        frame_world(&mut w);
+        let t = *w.tile(5, 5).unwrap();
+        let v = w.frame_number(w.index(5, 5)) as i16;
+        assert_eq!((t.frame_x, t.frame_y), ((9 + v) * 18, 3 * 18));
+        // Two crystal blocks side by side join through tileBrick
+        // (`Framing.cs:186-189`, both are `Main.tileBrick`): the left cell
+        // joins its right side only — mask 4 → col 9, variant row
+        // (`Framing.cs:49`).
+        solid(&mut w, 6, 5, 385);
+        reframe_area(&mut w, 5, 5, 2, false);
+        let t = *w.tile(5, 5).unwrap();
+        let v = w.frame_number(w.index(5, 5)) as i16;
+        assert_eq!((t.frame_x, t.frame_y), ((9) * 18, v * 18));
+    }
+
+    /// W4-d110 — `FindBlockStyle`/`blockType` (`Tile.cs:202-214`,
+    /// `Framing.cs:92-98`): a half-brick gemspark presents no top, so an
+    /// identical neighbour ABOVE never joins (its bottom faces a closed
+    /// side); the half brick below still joins through its top. Mask 8 →
+    /// row 0 col 6..8 (`Framing.cs:53`). Code-only: written NOT run.
+    #[test]
+    fn w4_d110_a_half_brick_gemspark_hides_its_top() {
+        let mut w = World::new("t".into(), 11, 11);
+        solid(&mut w, 5, 5, 268);
+        let i = w.index(5, 5);
+        w.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
+        solid(&mut w, 5, 4, 268); // above: closed top, never joins
+        solid(&mut w, 5, 6, 268); // below: joins through the half brick's bottom
+        frame_world(&mut w);
+        let t = *w.tile(5, 5).unwrap();
+        let v = w.frame_number(w.index(5, 5)) as i16;
+        assert_eq!((t.frame_x, t.frame_y), ((6 + v) * 18, 0));
+    }
+
+    /// W4-d110 — `Framing.WallFrame`'s head (`Framing.cs:332-335`): a wall
+    /// id >= `WallID.Count` (367) clamps to 0 before framing; the tile ends
+    /// wall-less with no frame write. Code-only: written NOT run.
+    #[test]
+    fn w4_d110_an_out_of_range_wall_clamps_to_zero() {
+        let mut w = World::new("t".into(), 9, 9);
+        let i = w.index(4, 4);
+        w.tiles[i].wall = 400;
+        frame_walls(&mut w);
+        assert_eq!(w.tile(4, 4).unwrap().wall, 0);
+        // The reframe path runs the same head.
+        let j = w.index(5, 5);
+        w.tiles[j].wall = 367; // exactly WallID.Count — still out of range
+        reframe_area(&mut w, 5, 5, 1, true);
+        assert_eq!(w.tile(5, 5).unwrap().wall, 0);
+    }
+
+    /// W4-d110 — `Framing.WallFrame`'s wall==0 reset (`Framing.cs:337-342`
+    /// → `Tile.ClearWallPaintAndCoating`, `Tile.cs:911-916`): a wall-less
+    /// tile drops its wall paint AND both wall coatings; the block-side
+    /// paint/echo stay untouched. Code-only: written NOT run.
+    #[test]
+    fn w4_d110_a_wall_less_tile_clears_wall_paint_and_coatings() {
+        let mut w = World::new("t".into(), 9, 9);
+        w.set_wall_paint(4, 4, 13);
+        w.set_invisible_wall(4, 4, true);
+        w.set_fullbright_wall(4, 4, true);
+        w.set_invisible_block(4, 4, true); // block echo — must survive
+        frame_walls(&mut w);
+        assert_eq!(w.wall_paint(4, 4), 0);
+        assert!(!w.invisible_wall(4, 4));
+        assert!(!w.fullbright_wall(4, 4));
+        assert!(
+            w.invisible_block(4, 4),
+            "the block coating is not the wall's"
+        );
+        // The reframe path runs the reset for every tile in the square.
+        w.set_wall_paint(5, 5, 7);
+        reframe_area(&mut w, 5, 5, 1, true);
+        assert_eq!(w.wall_paint(5, 5), 0);
+    }
+
+    /// W4-d110 — the mask-15 offset table (`Framing.cs:401-404`): every
+    /// `(i % 3, j % 3)` of the fully enclosed mask adds
+    /// `centerWallFrameLookup[i % 3][j % 3]` — pinned against the C#'s
+    /// `Initialize` rows (`Framing.cs:111-116`) across all nine offsets.
+    /// Code-only: written NOT run.
+    #[test]
+    fn w4_d110_mask_15_adds_the_center_lookup_for_all_nine_offsets() {
+        assert_eq!(CENTER_WALL_FRAMES, [[2, 0, 0], [0, 1, 4], [0, 3, 0]]);
+        let mut w = World::new("t".into(), 15, 15);
+        for y in 1..14 {
+            for x in 1..14 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 2;
+            }
+        }
+        frame_walls(&mut w);
+        // Interior cells (2..12) are enclosed: mask 15 + the offset.
+        for y in 2..12 {
+            for x in 2..12 {
+                let idx = w.index(x, y);
+                let mask = 15 + CENTER_WALL_FRAMES[(x % 3) as usize][(y % 3) as usize];
+                let v = w.wall_frame_number(idx) as usize;
+                let (col, row) = WALL_FRAMES[mask as usize][v];
+                let t = w.tile(x, y).unwrap();
+                assert_eq!(
+                    (t.wall_col(), t.wall_row()),
+                    (col, row),
+                    "offset ({},{}) mask {mask}",
+                    x % 3,
+                    y % 3
+                );
+            }
+        }
+    }
+
     // ---- S1-A-3: the variants come from the C# roll/store/read mechanism ----
 
     /// The full-world pass rolls a `genRand.Next(0, 3)` variant per framed tile
@@ -1771,6 +2240,117 @@ mod tests {
         let _ = wall_reset_roll(&mut plain, 2);
         let _ = mirror2.next_range(0, 3);
         assert_eq!(plain.next(), mirror2.next());
+    }
+
+    // ---- W4-d109: the save half — a `.trwld` v18 load reuses the stored variants ----
+
+    /// With `variants_from_save` set (a `.trwld` v18 load), `frame_world`
+    /// reuses the stored `frameNumber` (`TileFrame` resetFrame:false,
+    /// `WorldGen.cs:81713`) instead of re-rolling: each interior stone cell
+    /// takes the frame its stored variant selects, and two runs are identical.
+    #[test]
+    fn w4_d109_frame_world_reuses_the_saved_tile_variants() {
+        let build = || {
+            let mut w = World::new("t".into(), 24, 24);
+            for y in 1..23 {
+                for x in 1..23 {
+                    solid(&mut w, x, y, 1);
+                }
+            }
+            // A spread of stored variants across the slab (the save restored them).
+            for y in 1..23 {
+                for x in 1..23 {
+                    let idx = w.index(x, y);
+                    w.set_frame_number(idx, ((x + y) % 3) as u8);
+                }
+            }
+            w.variants_from_save = true;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        frame_world(&mut a);
+        frame_world(&mut b);
+        for y in 2..22 {
+            for x in 2..22 {
+                let idx = a.index(x, y);
+                let v = ((x + y) % 3) as i16;
+                // Interior stone: the plain frame row, variant column.
+                assert_eq!(
+                    (a.tiles[idx].frame_x, a.tiles[idx].frame_y),
+                    ([18, 36, 54][v as usize], 18),
+                    "frame at ({x},{y}) must follow the stored variant {v}",
+                );
+                assert_eq!(a.frame_number(idx) as i16, v, "stored variant kept");
+                assert_eq!(
+                    (a.tiles[idx].frame_x, a.tiles[idx].frame_y),
+                    (b.tiles[idx].frame_x, b.tiles[idx].frame_y),
+                    "a == b across the two reuse runs",
+                );
+            }
+        }
+    }
+
+    /// With `variants_from_save` set, `frame_walls` reuses the stored
+    /// `wallFrameNumber` (`WallFrame` resetFrame:false, `Framing.cs:399`): an
+    /// enclosed normal wall takes the cell its stored variant selects, and the
+    /// value is kept (not re-rolled). Two runs are identical.
+    #[test]
+    fn w4_d109_frame_walls_reuses_the_saved_wall_variants() {
+        let build = || {
+            let mut w = World::new("t".into(), 24, 24);
+            for y in 4..12 {
+                for x in 4..12 {
+                    let i = w.index(x, y);
+                    w.tiles[i].wall = 2; // a normal wall, no large-frame lookup
+                    w.set_wall_frame_number(i, ((x + y) % 3) as u8);
+                }
+            }
+            w.variants_from_save = true;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        frame_walls(&mut a);
+        frame_walls(&mut b);
+        // Fully enclosed interior cells (mask 15 + the center lookup).
+        for y in 5..11 {
+            for x in 5..11 {
+                let idx = a.index(x, y);
+                let v = ((x + y) % 3) as usize;
+                assert_eq!(a.wall_frame_number(idx) as usize, v, "stored variant kept");
+                let mask = 15 + CENTER_WALL_FRAMES[(x % 3) as usize][(y % 3) as usize] as usize;
+                let (col, row) = WALL_FRAMES[mask][v];
+                let t = a.tile(x as i32, y as i32).unwrap();
+                assert_eq!((t.wall_col(), t.wall_row()), (col, row));
+                let tb = b.tile(x as i32, y as i32).unwrap();
+                assert_eq!(
+                    (t.wall_col(), t.wall_row()),
+                    (tb.wall_col(), tb.wall_row()),
+                    "a == b across the two reuse runs",
+                );
+            }
+        }
+    }
+
+    /// The control: with `variants_from_save` FALSE (a fresh generation), the
+    /// full pass re-rolls — the stored variants are overwritten by the stream,
+    /// proving the reuse arm is gated on the flag, not unconditional.
+    #[test]
+    fn w4_d109_a_fresh_world_still_rerolls_the_variants() {
+        let mut w = World::new("t".into(), 24, 24);
+        for y in 1..23 {
+            for x in 1..23 {
+                solid(&mut w, x, y, 1);
+                let idx = w.index(x, y);
+                w.set_frame_number(idx, 0); // a uniform pre-roll the stream must overwrite
+            }
+        }
+        assert!(!w.variants_from_save, "a fresh world rolls");
+        frame_world(&mut w);
+        let spread: std::collections::HashSet<u8> =
+            w.variants.iter().skip(25).copied().collect();
+        assert!(spread.len() > 1, "the reset stream must vary the variants");
     }
 
     /// S1-K-2 wave C: the thin ice (162) carries the `IcesSnow` merge arm

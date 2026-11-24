@@ -34,10 +34,13 @@ use super::biomes::{self, BiomeSpans};
 use super::caves;
 use super::desert;
 use super::desert_dunes;
+use super::dither_snake;
 use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
+use super::island_houses;
+use super::ice_biome;
 use super::islands;
 use super::liquids;
 use super::living_trees;
@@ -47,11 +50,15 @@ use super::micro_surface;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
+use super::passes1;
+use super::passes2;
+use super::shimmer;
 use super::spider_gem_moss;
 use super::structures;
 use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
+use super::traps;
 use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
@@ -366,6 +373,94 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.CurrentDungeonGenVars.dungeonDitherSnake` per dungeon
+    /// (`DitherSnakePass.cs:26`/`:29` — the pass stores each calculated
+    /// snake before painting it). W4-c30: written by the dither-snake step
+    /// on a `dualDungeons` world (index = `GenVars.CurrentDungeon`); empty
+    /// on a classic world (the pass never registers). The dual-dungeon
+    /// crawler's border/room queries are the consumers (W4-c32+).
+    #[allow(dead_code)] // written by the snake step; the crawler consumes it later
+    pub(crate) dither_snakes: Vec<dither_snake::DitherSnake>,
+    /// `GenVars.floatingIslandHouseX/Y/Style` + `skyLake`
+    /// (`WorldGen.cs:13108-13111`) — the house-slot ledger the
+    /// `Floating Islands` pass records and the `Floating Island Houses`
+    /// pass (`:17859`, W4-d104 pass 28) consumes.
+    pub(crate) island_house_slots: Vec<super::island_houses::IslandHouseSlot>,
+    /// `GenVars.orePatchX[..numOrePatch]` (`GenVars.cs:240-244`,
+    /// `maxOrePatch = 50` `:461`, reset `WorldGen.cs:8323`) — the surface
+    /// ore-patch columns the `Surface Ore and Stone` pass (`:18447`,
+    /// W4-d104 pass 32) records and reads for the ±200/±100 spacing.
+    pub(crate) ore_patch_x: Vec<i32>,
+    /// `GenVars.logX/logY` (`GenVars.cs:252-254`, reset
+    /// `WorldGen.cs:11210`) — the fallen log the `Place Fallen Log` pass
+    /// (`:18513`, W4-d104 pass 33) records on its 1-in-2 roll; the Guide
+    /// pass (`:20468-20536`, lane 5) consumes it.
+    pub(crate) log_anchor: Option<(i32, i32)>,
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`, reset Zero
+    /// `WorldGen.cs:7039`) — the shimmer biome's anchor; the shimmer
+    /// lane (d102) publishes it, the Traps pass's 100-tile veto reads it.
+    pub(crate) shimmer_position: (i32, i32),
+    /// `GenVars.boulderPetsPlaced` (`GenVars.cs`, reset
+    /// `WorldGen.cs:8321`) — the pet-boulder cap counter the Traps pass
+    /// (W4-d104 pass 34) advances.
+    pub(crate) boulder_pets_placed: i32,
+    /// `GenVars.numMCaves`/`mCaveX`/`mCaveY` (`GenVars.cs:228-232`, the
+    /// `[30]` arrays allocated in `ResetGenerator`, `:457-458`): the Mount
+    /// Caves pass's mountain-top anchors (`WorldGen.cs:11847-11849`).
+    /// W4-d101 pass 2 publishes them; d102's Mountain Caves (`:14873`) and
+    /// Webs (`:13607`) consume them. Zero-init like the C# statics; the
+    /// pass re-zeroes the counter at its head (`:11788`).
+    pub(crate) num_m_caves: i32,
+    pub(crate) m_cave_x: [i32; 30],
+    pub(crate) m_cave_y: [i32; 30],
+    /// `GenVars.snowOriginLeft/Right` (`GenVars.cs:82-84`, drawn in Reset
+    /// `WorldGen.cs:11401-11414`): the ice walk's starting column pair.
+    /// W4-d101 pass 8: drawn in `reset_genvars` after `crimson_left` (the
+    /// existing consumers re-copy the stream and read only that first
+    /// draw, so no ledger shifts).
+    pub(crate) snow_origin_left: i32,
+    pub(crate) snow_origin_right: i32,
+    /// `GenVars.snowTop/snowBottom` (`GenVars.cs:78-80`, reset 0 at
+    /// `WorldGen.cs:11180-11181`) and the per-row bound arrays
+    /// `snowMinX/snowMaxX` (`GenVars.cs:86-88`, allocated `[maxTilesY]` at
+    /// `:11178-11179`). Written by the Generate Ice Biome walk
+    /// (`:12317`, `:12351-12352`, `:12416-12419`); consumed by d102's
+    /// Slush sweep (`:14697`). Empty until the pass sizes them.
+    pub(crate) snow_top: i32,
+    pub(crate) snow_bottom: i32,
+    pub(crate) snow_min_x: Vec<i32>,
+    pub(crate) snow_max_x: Vec<i32>,
+    /// `GenVars.numMCaves`/`mCaveX`/`mCaveY` (`GenVars.cs:228-232`, the
+    /// arrays allocated `[30]` at `:457-458`, the counter reset 0 in the
+    /// Mount Caves pass `WorldGen.cs:11788`) — the mountain-cave anchors.
+    /// W4-d102 adds the slots (the Webs pass's first-`numMCaves` override
+    /// `:13616-13620` and the Mountain Caves openings `:14878-14885` read
+    /// them); the producer is d101's Mount Caves pass — until it lands the
+    /// counter stays 0 and both consumers are no-ops on the anchors.
+    pub(crate) num_m_caves: i32,
+    pub(crate) m_cave_x: [i32; 30],
+    pub(crate) m_cave_y: [i32; 30],
+    /// `GenVars.snowTop`/`snowBottom`/`snowMinX`/`snowMaxX`
+    /// (`GenVars.cs:78-88`, Reset allocates the per-row arrays at
+    /// `maxTilesY` and zeroes the bounds, `WorldGen.cs:11178-11181`) — the
+    /// snow biome's per-row column span. W4-d102 adds the slots for the
+    /// Slush retype sweep (`WorldGen.cs:14697-14752`); the producer is
+    /// d101's `Generate Ice Biome` pass (`:12317`/`:12418` write the
+    /// bounds) — until it lands `snow_top == snow_bottom == 0` and the
+    /// sweep is a no-op on the empty rect.
+    pub(crate) snow_top: i32,
+    pub(crate) snow_bottom: i32,
+    pub(crate) snow_min_x: Vec<i32>,
+    pub(crate) snow_max_x: Vec<i32>,
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`, reset `Vector2D.Zero`
+    /// at `WorldGen.cs:7039`) — the Shimmer pass's placed site
+    /// (`WorldGen.cs:15241`). W4-d102 pass 6 publishes it; the later
+    /// consumers (the pyramid/altar/moss shimmer-exclusion distances,
+    /// `:15448`, `:15780`, `:17585`) read it once their lanes land. `None`
+    /// is the C# zero-vector "not placed" state (the skyblock skip and the
+    /// sub-vanilla valve).
+    #[allow(dead_code)] // consumed by the later lanes' exclusion gates
+    pub(crate) shimmer_position: Option<(i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -403,6 +498,25 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            island_house_slots: Vec::new(),
+            ore_patch_x: Vec::new(),
+            log_anchor: None,
+            shimmer_position: (0, 0),
+            boulder_pets_placed: 0,
+            // The C# zero-inits the mountain-cave statics; the arrays are
+            // allocated (zeroed) in ResetGenerator (`GenVars.cs:457-458`).
+            num_m_caves: 0,
+            m_cave_x: [0; 30],
+            m_cave_y: [0; 30],
+            // The C# zeroes the snow origins in Reset
+            // (`WorldGen.cs:11208-11209`) before drawing them; the arrays
+            // are null until allocated (`GenVars.snowMinX = new int[..]`).
+            snow_origin_left: 0,
+            snow_origin_right: 0,
+            snow_top: 0,
+            snow_bottom: 0,
+            snow_min_x: Vec::new(),
+            snow_max_x: Vec::new(),
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -426,6 +540,27 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // `dungeonDitherSnake` is null until the DitherSnakePass stores
+            // one (`DitherSnakePass.cs:26`); the port's empty vec carries
+            // the same not-yet-generated semantics.
+            dither_snakes: Vec::new(),
+            // The mountain-cave anchors: counter 0 (`WorldGen.cs:11788`),
+            // arrays zero-filled (`GenVars.cs:457-458`) until Mount Caves
+            // (d101) writes them.
+            num_m_caves: 0,
+            m_cave_x: [0; 30],
+            m_cave_y: [0; 30],
+            // The snow bounds zero in Reset (`WorldGen.cs:11180-11181`);
+            // the per-row arrays allocate there too (`:11178-11179`) — the
+            // port sizes them in `reset_genvars` (the height is not known
+            // to `Default`), empty here.
+            snow_top: 0,
+            snow_bottom: 0,
+            snow_min_x: Vec::new(),
+            snow_max_x: Vec::new(),
+            // The C# resets shimmerPosition to Vector2D.Zero
+            // (`WorldGen.cs:7039`) — the port's None.
+            shimmer_position: None,
         }
     }
 }
@@ -1167,6 +1302,18 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// enabled under dualDungeons, so the port must too.
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Generate Ice Biome",      // GenPassNameID.IceBiome            (:239)
+/// One of the twelve has no executed step in the port yet (`Larva` —
+/// `GenPassNameID.BeeLarvaInBeehives`); listing it keeps the table 1:1 with
+/// the C# so a future step cannot silently un-prune itself. (`Shimmer`
+/// joined the executed chain in W4-d102 pass 6.)
+pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
+    // W4-d101 pass 8: `GenPassNameID.IceBiome` IS "Generate Ice Biome"
+    // (`GenPassNameID.cs:239`) — the `:12312` biome generator this lane
+    // ports. The pre-pass-8 table said "Ice", which is
+    // `FragileIceOverIceBiomeWater` (`:280`, the `:16667` pass the C# does
+    // NOT prune) — corrected to the C# string now that the real step
+    // exists.
+    "Generate Ice Biome",      // GenPassNameID.IceBiome            "Generate Ice Biome"
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
     "Jungle",                  // GenPassNameID.Jungle              "Jungle"
     "Jungle Chests",           // GenPassNameID.JungleShrines       "Jungle Chests"
@@ -1190,6 +1337,21 @@ pub(crate) fn pass_disabled_by_special_seeds(
 ) -> bool {
     flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
         && DUAL_DUNGEON_DISABLED_PASSES.contains(&vanilla)
+}
+
+/// The conditional-registration gate (`WorldGen.cs:14753-14755`): the
+/// `DitherSnakePass` is only `AddGenerationPass`ed when
+/// `SecretSeed.dualDungeons.Enabled` (and `!Skyblock.denyAllGeneration` — the
+/// port has no skyblock step, so that arm is vacuous). A classic world never
+/// registers the pass: no tiles, no draws, no progress weight. Every other
+/// executed step is unconditionally registered (the skyblock pair has no
+/// executed step yet).
+pub(crate) fn pass_registration_gate_closed(
+    vanilla: &str,
+    flags: crate::seeds::MicroSeedFlags,
+) -> bool {
+    vanilla == "Dual Dungeons Dither Snake"
+        && !flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
 }
 
 // --- the executed pipeline (today's order, verbatim call sites) -------------
@@ -1249,16 +1411,53 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // M5-DESERT-structures underground desert.
     step!("full desert", "Full Desert", step_full_desert),
     step!("mushroom patches", "Mushroom Patches", step_mushroom),
+    // The vanilla Sand Patches slot (`WorldGen.cs:11689`): after Ocean Sand
+    // (`:11580`) and before Tunnels (`:11718`) — the port's grouped
+    // surface-biome steps sit earlier (the pinned pre-scaffold order), so
+    // the step lands right before `cave fields`. W4-d101 pass 1: its own
+    // `pass_rng("Sand Patches")` stream shifts no other step's ledger.
+    step!("sand patches", "Sand Patches", step_sand_patches),
     step!("cave fields", "Tunnels", step_cave_fields),
+    // The vanilla Mount Caves slot (`WorldGen.cs:11784`): after Tunnels
+    // (`:11718`) and before Rocks In Dirt (`:11896`) — W4-d101 pass 2. The
+    // mountain anchors (`GenVars.numMCaves/mCaveX/mCaveY`) feed d102's
+    // Mountain Caves (`:14873`) and Webs (`:13607`).
+    step!("mount caves", "Mount Caves", step_mount_caves),
+    // The vanilla Dirt Wall Backgrounds slot (`WorldGen.cs:11858`): after
+    // Mount Caves (`:11784`) and before Rocks In Dirt (`:11896`) — W4-d101
+    // pass 3. The port's `fill_terrain` pre-walls every solid row; this
+    // sweep re-paints the surface band with the C#'s snow-40 arm and its
+    // per-column stop walk (the tile_runner wall-arm doc, `:165-173`).
+    step!("dirt wall backgrounds", "Dirt Wall Backgrounds", step_dirt_wall_backgrounds),
     // The vanilla order is Caves (~:11100-12600) -> Marble (:12757) ->
     // Granite (:12839): the granite caves recruit into pre-carved caves
     // (the `GraniteBiome.CanPlace` inactive-origin gate feeds the
     // pressure simulation's low-resistance air), so the step moves after
     // the carve. The two passes draw from their own isolated streams, so
     // the move is RNG-neutral for every other step.
-    step!("granite and marble", "Marble", step_granite_marble),
+    // W4-d101 pass 9: the combined step splits into its two vanilla rows —
+    // Marble (`:12757`) then Granite (`:12839`), the same call order and
+    // the same per-pass streams (`pass_rng("Marble")`/`pass_rng("Granite")`),
+    // so no draw shifts; the census's "Granite folded into Marble" note
+    // closes.
+    step!("marble", "Marble", step_marble),
+    step!("granite", "Granite", step_granite),
     step!("stone-in-dirt blobs", "Rocks In Dirt", step_stone_in_dirt),
     step!("dirt-in-stone blobs", "Dirt In Rocks", step_dirt_in_stone),
+    // The vanilla Clay slot (`WorldGen.cs:11959`): after Dirt In Rocks
+    // (`:11926`) and before Small Holes (`:12008`) — W4-d101 pass 4.
+    step!("clay", "Clay", step_clay),
+    // The vanilla Small Holes slot (`WorldGen.cs:12008`): after Clay
+    // (`:11959`) and before Dirt Layer Caves (`:12067`) — W4-d101 pass 5.
+    step!("small holes", "Small Holes", step_small_holes),
+    // The vanilla Dirt Layer Caves slot (`WorldGen.cs:12067`): after Small
+    // Holes (`:12008`) and before Rock Layer Caves (`:12107`) — W4-d101
+    // pass 6.
+    step!("dirt layer caves", "Dirt Layer Caves", step_dirt_layer_caves),
+    // The vanilla Rock Layer Caves slot (`WorldGen.cs:12107`): after Dirt
+    // Layer Caves (`:12067`) and before Surface Caves (`:12162`) — W4-d101
+    // pass 7.
+    step!("rock layer caves", "Rock Layer Caves", step_rock_layer_caves),
     // The vanilla Surface Caves slot (`WorldGen.cs:12162`): after Dirt In
     // Rocks (`:11926`) and before Wavy Caves (`:12271`) — the
     // worldgen-caves slice's surface-opening tunnels. The step draws from
@@ -1270,20 +1469,59 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // M5-SEED-1's Don't Starve pass, whose body exists only for that seed
     // (a classic world runs the step and draws nothing).
     step!("wavy caves", "Wavy Caves", step_wavy_caves),
+    // The vanilla Generate Ice Biome slot (`WorldGen.cs:12312`): after
+    // Wavy Caves (`:12271`) and before Grass (`:12423`, the port's
+    // `micro grass` step sits earlier in the pinned order — the slot's
+    // neighbours here are the cave family and `dirt to mud`). W4-d101
+    // pass 8: the snow walk publishes GenVars.snowTop/Bottom/MinX/MaxX
+    // for d102's Slush sweep.
+    step!("generate ice biome", "Generate Ice Biome", step_generate_ice_biome),
     step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
+    // The vanilla Silt slot (`WorldGen.cs:13143`): after Dirt To Mud
+    // (`:13123`) and before Shinies (`:13182`) — W4-d102 pass 1. The step
+    // draws from its own `pass_rng("Silt")` stream, so the insertion shifts
+    // no other step's ledger.
+    step!("silt", "Silt", step_silt),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
+    // The vanilla Webs slot (`WorldGen.cs:13607`): after Shinies (`:13182`)
+    // and before Underworld (`:13645`) — W4-d102 pass 2. Own
+    // `pass_rng("Webs")` stream; the first-`numMCaves` anchor override is a
+    // no-op until d101's Mount Caves producer lands.
+    step!("webs", "Webs", step_webs),
     // The vanilla Corruption slot (`WorldGen.cs:13866`): after Shinies
     // (`:13182`) and Underworld (`:13645`), before Lakes (`:14556`) — the
     // M5-BIOME phase-4 move (was between `mud caves to grass` and
     // `mushroom patches`).
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
+    // The vanilla DitherSnakePass slot (`WorldGen.cs:14753-14755`): after
+    // Slush (`:14697`), before Dungeon (`:14757`) — W4-c30's dual-dungeons
+    // dither snake, conditionally registered: a classic world's gate is
+    // closed (`pass_registration_gate_closed`), no tiles and no draws.
+    // The step name IS the vanilla `GenPassNameID.DualDungeonsDitherSnake`
+    // string (`GenPassNameID.cs:256`) so `pass_rng` mixes the same name the
+    // vanilla pass carries.
+    step!(
+        "Dual Dungeons Dither Snake",
+        "Dual Dungeons Dither Snake",
+        step_dither_snake
+    ),
+    // The vanilla Slush slot (`WorldGen.cs:14697`): after Lakes (`:14556`)
+    // and before Dungeon (`:14757`) — W4-d102 pass 3. A pure retype sweep
+    // (no draws); a no-op on the empty snow rect until d101's Generate Ice
+    // Biome producer lands.
+    step!("slush", "Slush", step_slush),
     step!("dungeon", "Dungeon", step_dungeon),
     // The vanilla Dungeon tail (`WorldGen.cs:14867`): the Constant's
     // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
     // called from the Dungeon pass when the seed is on — M5-SEED-1.
     step!("constant lava layer", "", step_constant_lava_layer),
+    // The vanilla Mountain Caves slot (`WorldGen.cs:14873`): after Dungeon
+    // (`:14757`) and before Beaches (`:14888`) — W4-d102 pass 4. Own
+    // `pass_rng("Mountain Caves")` stream; a no-op until d101's Mount
+    // Caves producer writes the mCave anchors.
+    step!("mountain caves", "Mountain Caves", step_mountain_caves),
     // The vanilla Beaches + Gravitating Sand slots (`WorldGen.cs:14888`,
     // `:15138`): after Dungeon (`:14757`) and before Create Ocean Caves
     // (`:15167`) — the M5-OCEAN phase-2 insertion.
@@ -1293,7 +1531,25 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Gravitating Sand",
         step_gravitating_sand
     ),
+    // The vanilla Gems slot (`WorldGen.cs:15050`): the lane plan groups it
+    // after the port's `gravitating sand` step (the GravitatingSandCleanup
+    // `:15138`) and before `ocean caves` (`:15167`) — W4-d102 pass 5. (The
+    // C# anchor order is Gems `:15050` < sand cleanup `:15138`; the port's
+    // grouping keeps the sand family together, and the isolated stream
+    // makes the relative order RNG-neutral.) Own `pass_rng("Gems")` stream.
+    step!("gems", "Gems", step_gems),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
+    // The vanilla Shimmer slot (`WorldGen.cs:15195`): after Create Ocean
+    // Caves (`:15167`) and before Clean Up Dirt (`:15246`) — W4-d102 pass
+    // 6. Own `pass_rng("Shimmer")` stream; publishes
+    // `GenVars.shimmer_position`. The sub-vanilla valve skips the 512-wide
+    // test worlds before any draw (the x band collapses).
+    step!("shimmer", "Shimmer", step_shimmer),
+    // The vanilla Clean Up Dirt slot (`WorldGen.cs:15246`): after Shimmer
+    // (`:15195`) and before Pyramids (`:15360`) — W4-d102 pass 7. Own
+    // `pass_rng("Clean Up Dirt")` stream; the noSurface micro-seed arm
+    // fills the top instead of scrubbing.
+    step!("clean up dirt", "Clean Up Dirt", step_clean_up_dirt),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -1317,6 +1573,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // insertion.
     step!("wet jungle", "Wet Jungle", step_wet_jungle),
     step!("pyramids", "Pyramids", step_pyramids),
+    // The vanilla Dirt Rock Wall Runner slot (`WorldGen.cs:15461`): after
+    // Pyramids (`:15360`) and before Living Trees (`:15476`) — W4-d102
+    // pass 8. Own `pass_rng("Dirt Rock Wall Runner")` stream.
+    step!(
+        "dirt rock wall runner",
+        "Dirt Rock Wall Runner",
+        step_dirt_rock_wall_runner
+    ),
     step!("pots", "Pots", step_pots),
     step!("beehives", "Hives", step_beehives),
     step!("hell forts", "", step_hell_forts),
@@ -1376,6 +1640,64 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Floating Island Houses slot (`WorldGen.cs:17859`):
+    // after the `Living Trees` block (`:16419` region, the port's compact
+    // chain order) and before Planting Trees (`:19940`) — W4-d104 pass 28.
+    // The house draws move off the shared `drng` (the islands pass was its
+    // last consumer) onto the fresh per-pass stream, so the insertion
+    // shifts no other step's ledger.
+    step!(
+        "floating island houses",
+        "Floating Island Houses",
+        step_floating_island_houses
+    ),
+    // The vanilla Quick Cleanup slot (`WorldGen.cs:17875`): right after
+    // Floating Island Houses, before Pots (`:17996`, the port's earlier
+    // `pots` step — a pre-scaffold deviation) — W4-d104 pass 29. The
+    // sweep's only draws are the beach sand drip's per-check `Next(4, 7)`
+    // on the fresh `pass_rng("Quick Cleanup")` stream.
+    step!("quick cleanup", "Quick Cleanup", step_quick_cleanup),
+    // The vanilla Hellforge slot (`WorldGen.cs:18187`): after Quick
+    // Cleanup (`:17875`), before Spreading Grass (`:18237`) — W4-d104
+    // pass 30. The retry draws ride the fresh `pass_rng("Hellforge")`
+    // stream.
+    step!("hellforge", "Hellforge", step_hellforge),
+    // The vanilla Spreading Grass slot (`WorldGen.cs:18237`): after
+    // Hellforge (`:18187`), before Surface Ore and Stone (`:18447`) —
+    // W4-d104 pass 31. The classic arm draws no RNG; the remix arm is the
+    // seed lane's.
+    step!("spreading grass", "Spreading Grass", step_spreading_grass),
+    // The vanilla Surface Ore and Stone slot (`WorldGen.cs:18447`): after
+    // Spreading Grass (`:18237`), before Place Fallen Log (`:18513`) —
+    // W4-d104 pass 32. The scatter draws ride the fresh
+    // `pass_rng("Surface Ore and Stone")` stream.
+    step!(
+        "surface ore and stone",
+        "Surface Ore and Stone",
+        step_surface_ore_and_stone
+    ),
+    // The vanilla Place Fallen Log slot (`WorldGen.cs:18513`, the
+    // FallenLogsAndWaterFeatures pass's classic arm): after Surface Ore
+    // and Stone (`:18447`), before Traps (`:18657`) — W4-d104 pass 33.
+    step!("place fallen log", "Place Fallen Log", step_place_fallen_log),
+    // The vanilla Traps slot (`WorldGen.cs:18657`): after Place Fallen
+    // Log (`:18513`), before Piles (`:18788`) — W4-d104 pass 34. The
+    // scatter draws ride the fresh `pass_rng("Traps")` stream.
+    step!("traps", "Traps", step_traps),
+    // The vanilla Piles slot (`WorldGen.cs:18788`): after Traps
+    // (`:18657`), before Spawn Point (`:19460`) — W4-d104 pass 35. The
+    // seven scatters draw on the fresh `pass_rng("Piles")` stream.
+    step!("piles", "Piles", step_piles),
+    // The vanilla Spawn Point slot (`WorldGen.cs:19460`): after Piles
+    // (`:18788`), before Grass Wall (`:19589`, lane 5) — W4-d104 pass 36.
+    // The spawn search draws on the fresh `pass_rng("Spawn Point")`
+    // stream; the world tail keeps only the moon/hell draws.
+    step!("spawn point", "Spawn Point", step_spawn_point),
+    // The vanilla Wood Tree Walls slot (`WorldGen.cs:15717`): after Living
+    // Trees (`:15476`) and before Altars (`:15750`) — W4-d102 pass 9. The
+    // sweep draws nothing; it reads the 191 trunks the living-trees step
+    // just planted.
+    step!("wood tree walls", "Wood Tree Walls", step_wood_tree_walls),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -1393,6 +1715,58 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
 
 pub(crate) fn executed_pass_names() -> Vec<&'static str> {
     EXECUTED_PIPELINE.iter().map(|s| s.name).collect()
+}
+
+/// The executed step's `GenPassNameID` key — the `Step::vanilla` mapping
+/// (`GenPassNameID.cs:223-330`'s string values) for a display name
+/// (`EXECUTED_PIPELINE`'s `name`, what `GenProgressHook::begin_step` and
+/// `progress::step_message` carry). `None` for a step that executes no
+/// vanilla pass (`vanilla == ""` — the span planner, the lava layer, the
+/// hell forts, the world tail, the seed finish) or an unknown name.
+/// W4-f23: this is the loading-screen icon lookup's name-mapping half —
+/// `UIWorldGenDebug.GenPassElement.passIcons` keys on the `GenPassNameID`
+/// strings (`UIWorldGenDebug.cs:306-416`), not the port's display names.
+pub fn pass_name_id(step: &str) -> Option<&'static str> {
+    EXECUTED_PIPELINE
+        .iter()
+        .find(|s| s.name == step)
+        .map(|s| s.vanilla)
+        .filter(|v| !v.is_empty())
+}
+
+/// One executed step's public descriptor — the `UIWorldGenDebug` driver's
+/// pass-list row input (W4-f23 closeout item 1). `name` is the display name
+/// (`EXECUTED_PIPELINE`'s `name`, what `GenProgressHook::begin_step` carries),
+/// `vanilla` the `GenPassNameID` key (`Step::vanilla`, "" for a port-only
+/// step), `weight` the vanilla slot's `PassLegacy._weightMap` entry (1.0
+/// where the map has none — the same value `apply_step` hands `begin_step`),
+/// `enabled` the special-seed disable gate (`pass_disabled_by_special_seeds`,
+/// `WorldGen.cs:22493-22509` — a disabled pass applies no tiles).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExecutedStep {
+    pub name: &'static str,
+    pub vanilla: &'static str,
+    pub weight: f64,
+    pub enabled: bool,
+}
+
+/// The executed pipeline as public descriptors, in execution order — the
+/// `UIWorldGenDebug.GenPassList`'s rows (`UIWorldGenDebug.cs:1059-1069` walks
+/// `Controller.Passes`). The driver feeds these to `PassState` per step; the
+/// icon lookup rides [`pass_name_id`] + `ui::worldgen_pass_icons::get_step_icon`.
+pub fn executed_steps(micro_flags: crate::seeds::MicroSeedFlags) -> Vec<ExecutedStep> {
+    EXECUTED_PIPELINE
+        .iter()
+        .map(|s| ExecutedStep {
+            name: s.name,
+            vanilla: s.vanilla,
+            weight: VANILLA_CHAIN
+                .iter()
+                .find(|p| p.name == s.vanilla)
+                .map_or(1.0, |p| p.weight),
+            enabled: !pass_disabled_by_special_seeds(s.vanilla, micro_flags),
+        })
+        .collect()
 }
 
 // --- the step adapters (the generate() call sites, verbatim) ----------------
@@ -1751,6 +2125,163 @@ fn step_dirt_to_mud(
     );
 }
 
+/// The vanilla Silt slot (`WorldGen.cs:13143-13181`) — W4-d102 pass 1: the
+/// two kind-123 TileRunner loops over `GenVars.rockLayerHigh..maxTilesY`
+/// (the remix band swap to `worldSurface..rockLayer` rides the pass fn).
+fn step_silt(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (rock_high, world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.rock_high, l.world_surface, l.rock_layer)
+    };
+    passes2::pass_silt(
+        world,
+        rock_high,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Silt"),
+    );
+}
+
+/// The vanilla Webs slot (`WorldGen.cs:13607-13644`) — W4-d102 pass 2: the
+/// ceiling-hugging cobweb runners with the mountain-cave anchor override.
+fn step_webs(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (surface_high, surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_high, l.surface_low, l.world_surface)
+    };
+    passes2::pass_webs(
+        world,
+        surface_high,
+        surface_low,
+        world_surface,
+        gv.num_m_caves,
+        &gv.m_cave_x,
+        &gv.m_cave_y,
+        &mut streams.pass_rng("Webs"),
+    );
+}
+
+/// The vanilla Slush slot (`WorldGen.cs:14697-14752`) — W4-d102 pass 3:
+/// the snow-rect retype sweep. No RNG — the pass draws nothing in C#.
+fn step_slush(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    passes2::pass_slush(world, gv.snow_top, gv.snow_bottom, &gv.snow_min_x, &gv.snow_max_x);
+}
+
+/// The vanilla Mountain Caves slot (`WorldGen.cs:14873-14887`) — W4-d102
+/// pass 4: CaveOpenater + the recursive Cavinator per mCave anchor.
+fn step_mountain_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let rock_layer = gv.layers().rock_layer;
+    passes2::pass_mountain_caves(
+        world,
+        rock_layer,
+        gv.num_m_caves,
+        &gv.m_cave_x,
+        &gv.m_cave_y,
+        &mut streams.pass_rng("Mountain Caves"),
+    );
+}
+
+/// The vanilla Gems slot (`WorldGen.cs:15050-15137`) — W4-d102 pass 5:
+/// the six gem-kind runner bands + the two-direction sand-edge slide.
+fn step_gems(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_gems(
+        world,
+        world_surface,
+        gv.underground_desert,
+        &mut streams.pass_rng("Gems"),
+    );
+}
+
+/// The vanilla Shimmer slot (`WorldGen.cs:15195-15245`) — W4-d102 pass 6:
+/// the site search + `ShimmerMakeBiome`, publishing `GenVars.shimmerPosition`.
+fn step_shimmer(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    gv.shimmer_position = shimmer::pass_shimmer(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Shimmer"),
+    );
+}
+
+/// The vanilla Clean Up Dirt slot (`WorldGen.cs:15246-15359`) — W4-d102
+/// pass 7: the two surface wall-scrub sweeps (the noSurface fill arm).
+fn step_clean_up_dirt(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_clean_up_dirt(world, world_surface, &mut streams.pass_rng("Clean Up Dirt"));
+}
+
+/// The vanilla Dirt Rock Wall Runner slot (`WorldGen.cs:15461-15475` +
+/// DirtyRockRunner `:77145-77210`) — W4-d102 pass 8: the wall-2→59 blobs.
+fn step_dirt_rock_wall_runner(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_dirt_rock_wall_runner(
+        world,
+        world_surface,
+        &mut streams.pass_rng("Dirt Rock Wall Runner"),
+    );
+}
+
 fn step_evil(
     world: &mut World,
     gv: &mut GenVars,
@@ -1796,7 +2327,10 @@ fn step_mushroom(
     );
 }
 
-fn step_granite_marble(
+/// The vanilla Marble slot (`WorldGen.cs:12757-12838`): the slab caves.
+/// W4-d101 pass 9 split the old combined `granite and marble` step into
+/// its two vanilla rows — the call order and streams are unchanged.
+fn step_marble(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
@@ -1809,6 +2343,20 @@ fn step_granite_marble(
         gv.layers().rock_layer,
         &mut streams.pass_rng("Marble"),
     );
+}
+
+/// The vanilla Granite slot (`WorldGen.cs:12839-12926`): the pressure-sim
+/// caves, recruited into the pre-carved cave pockets (`GraniteBiome.
+/// CanPlace`'s inactive-origin gate — the M5-BIOME-2 move after the cave
+/// carve stands). W4-d101 pass 9: its own executed row.
+fn step_granite(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
     biomes::pass_granite(
         world,
         gv.layers().rock_layer,
@@ -1826,6 +2374,122 @@ fn step_cave_fields(
 ) {
     let (width, heights, hell_top) = (world.width, &gv.map().heights, gv.layers().hell_top);
     caves::carve_caves(world, width, noise, heights, hell_top);
+}
+
+/// The vanilla Sand Patches slot (`WorldGen.cs:11689-11717`): the sand-blob
+/// scatter between the surface and rock lines (W4-d101 pass 1).
+fn step_sand_patches(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    passes1::pass_sand_patches(
+        world,
+        &mut streams.pass_rng("Sand Patches"),
+        gv.layers(),
+    );
+}
+
+/// The vanilla Mount Caves slot (`WorldGen.cs:11784-11857`): the dirt
+/// mountains + their GenVars anchors (W4-d101 pass 2).
+fn step_mount_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_mount_caves(world, gv, &mut streams.pass_rng("Mount Caves"), &layers);
+}
+
+/// The vanilla Dirt Wall Backgrounds slot (`WorldGen.cs:11858-11895`): the
+/// surface-band dirt/snow wall sweep (W4-d101 pass 3).
+fn step_dirt_wall_backgrounds(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_dirt_wall_backgrounds(world, &mut streams.pass_rng("Dirt Wall Backgrounds"), &layers);
+}
+
+/// The vanilla Clay slot (`WorldGen.cs:11959-12007`): the three clay bands
+/// plus the surface tidy sweep (W4-d101 pass 4).
+fn step_clay(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_clay(world, &mut streams.pass_rng("Clay"), &layers);
+}
+
+/// The vanilla Small Holes slot (`WorldGen.cs:12008-12066`): the paired
+/// small/large diggers with the water lottery (W4-d101 pass 5).
+fn step_small_holes(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_small_holes(world, &mut streams.pass_rng("Small Holes"), &layers, gv);
+}
+
+/// The vanilla Dirt Layer Caves slot (`WorldGen.cs:12067-12106`): the long
+/// dirt-band worms (W4-d101 pass 6).
+fn step_dirt_layer_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_dirt_layer_caves(world, &mut streams.pass_rng("Dirt Layer Caves"), &layers, gv);
+}
+
+/// The vanilla Rock Layer Caves slot (`WorldGen.cs:12107-12161`): the deep
+/// worms + the remix paired horizontal diggers (W4-d101 pass 7).
+fn step_rock_layer_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_rock_layer_caves(world, &mut streams.pass_rng("Rock Layer Caves"), &layers, gv);
+}
+
+/// The vanilla Generate Ice Biome slot (`WorldGen.cs:12312-12422`): the
+/// snow column walk (W4-d101 pass 8). The late `"Ice"` step (`:16667`,
+/// FragileIce) is a DIFFERENT pass — this one generates the biome itself.
+fn step_generate_ice_biome(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    ice_biome::pass_ice_biome(world, gv, &mut streams.pass_rng("Generate Ice Biome"), &layers);
 }
 
 fn step_surface_caves(
@@ -1968,6 +2632,84 @@ fn step_liquids(
         }
     };
     liquids::place_liquids(world, &mut streams.rng, gv.map_mut(), &layers, width);
+}
+
+/// The vanilla `DitherSnakePass` slot (`WorldGen.cs:14753-14755`,
+/// `DitherSnakePass.cs:22-31`): on a `dualDungeons` world, calculate +
+/// paint dungeon 0's snake, then dungeon 1's. The gate
+/// (`pass_registration_gate_closed`) keeps classic worlds out entirely.
+///
+/// The setup the C# draws before the pass — the Reset dual block
+/// (`WorldGen.cs:11441-11466`: the two dungeon-location rolls + the safe
+/// constant) and the Dunes-slot style setup (`:11519-11524`:
+/// `SetupDungeonGenVarVariables` per dungeon, the colour roll
+/// `DungeonCrawler.cs:56` + the dual style lists `:111-127`) — rides this
+/// step's own `pass_rng("Dual Dungeons Dither Snake")` stream (the port's
+/// recorded per-pass isolation; the port's dungeon side is fixed Right —
+/// M5-BIOME — so dungeon 0 draws the right-side location and dungeon 1 the
+/// left, `:11447`/`:11456`). The bounds come from
+/// `DungeonUtils.CreatePotentialDungeonBounds` (`:2067-2087`) with the
+/// crawler's call args (`DungeonCrawler.cs:109`).
+fn step_dither_snake(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let mut rng = streams.pass_rng("Dual Dungeons Dither Snake");
+    let (width, height) = (world.width, world.height);
+    // The sub-vanilla guard (the house convention — the evil pass's
+    // centre-draw skip): on a narrow world the location bands collapse
+    // (`Next(leftBeachEnd+50, 0.2·width)` / `Next(0.8·width,
+    // rightBeachStart−50)` invert); the C# throws there, the port skips the
+    // pass body before any draw.
+    let left_lo = gv.left_beach_end + 50;
+    let left_hi = (width as f64 * 0.2) as i32;
+    let right_lo = (width as f64 * 0.8) as i32;
+    let right_hi = gv.right_beach_start - 50;
+    if left_hi < left_lo || right_hi < right_lo {
+        log::debug!("dither snake skipped (sub-vanilla location bands)");
+        return;
+    }
+    let safe = dither_snake::normalized_distance_safe_from_dither(height);
+    let world_surface = gv.layers().world_surface;
+    // The C# draw order on the shared `genRand`: the Reset dual block draws
+    // dungeon 0's location (`:11443`/`:11447`) then dungeon 1's
+    // (`:11456`/`:11460`); the Dunes slot rolls the colours afterwards,
+    // dungeon 0 then dungeon 1 (`:11519-11524`). The port keeps that
+    // relative order on the isolated pass stream. The port's dungeon side
+    // is fixed Right for dungeon 0 (M5-BIOME); the dual block flips it for
+    // dungeon 1 (`WorldGen.cs:11454`).
+    let locations = [
+        dither_snake::roll_dungeon_location(
+            &mut rng,
+            width,
+            gv.left_beach_end,
+            gv.right_beach_start,
+            false,
+        ),
+        dither_snake::roll_dungeon_location(
+            &mut rng,
+            width,
+            gv.left_beach_end,
+            gv.right_beach_start,
+            true,
+        ),
+    ];
+    let mut dungeons = Vec::new();
+    for current_dungeon in 0..2 {
+        // `SetupDungeonGenVarVariables`'s colour roll (`DungeonCrawler.cs:56`
+        // — `genRand.Next(3)`; the remix/drunk arms are classic-only here).
+        let color = dungeon::DungeonColor::roll(&mut |n| rng.range(0, n as i32) as u32);
+        let styles = dither_snake::dual_style_list(current_dungeon, opts.crimson, color);
+        let side_left = current_dungeon == 1;
+        let (bounds, hitbox) =
+            dither_snake::create_potential_dungeon_bounds(width, height, world_surface, side_left);
+        dungeons.push((styles, bounds, hitbox, side_left, locations[current_dungeon as usize]));
+    }
+    gv.dither_snakes = dither_snake::apply_dither_snake_pass(world, &mut rng, width, &dungeons, safe);
 }
 
 fn step_dungeon(
@@ -2554,7 +3296,7 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2563,9 +3305,267 @@ fn step_floating_islands(
         world,
         &heights,
         &mut streams.drng,
+        &mut gv.island_house_slots,
+    );
+}
+
+/// The `Floating Island Houses` pass (`WorldGen.cs:17859-17874`, W4-d104
+/// pass 28): the sunplate houses over the island-slot ledger, on the
+/// fresh `pass_rng("Floating Island Houses")` stream. The
+/// `Skyblock.denyFloatingIslands` gate (`:17861`, `:3087-3096`:
+/// skyblock && !extraFloatingIslands) rides the step.
+fn step_floating_island_houses(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK)
+        && !world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::EXTRA_FLOATING_ISLANDS)
+    {
+        return;
+    }
+    let slots = std::mem::take(&mut gv.island_house_slots);
+    island_houses::pass_floating_island_houses(
+        world,
+        &slots,
+        &mut streams.pass_rng("Floating Island Houses"),
         streams.chest_stock.as_deref_mut(),
         opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        opts.flags.contains(crate::seeds::SeedFlags::DRUNK),
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        opts.crimson,
+        gv.crimson_left,
         &mut gv.sky_island_house_count,
+    );
+    gv.island_house_slots = slots;
+}
+
+/// The `Quick Cleanup` pass (`WorldGen.cs:17875-17993`, W4-d104 pass 29):
+/// the full-world tidy sweep on the fresh `pass_rng("Quick Cleanup")`
+/// stream. The `Skyblock.denyAllGeneration` gate (`:3131`) rides here.
+fn step_quick_cleanup(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    micro_finish::pass_quick_cleanup(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Quick Cleanup"),
+    );
+}
+
+/// The `Hellforge` pass (`WorldGen.cs:18187-18234`, W4-d104 pass 30):
+/// the hell-house forges on the fresh `pass_rng("Hellforge")` stream.
+/// The `Skyblock.denyAllGeneration` gate rides here.
+fn step_hellforge(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    structures::pass_hellforge(world, &mut streams.pass_rng("Hellforge"));
+}
+
+/// The `Spreading Grass` pass (`WorldGen.cs:18237-18446`, W4-d104 pass
+/// 31): the classic surface sweeps. The `Skyblock.denyAllGeneration` +
+/// `notTheBees && !remix && !tenthAnniversary` gate (`:18239`) rides
+/// here. The classic arm draws no RNG — the stream slot is the remix
+/// arm's future home.
+fn step_spreading_grass(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let not_the_bees = opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    if not_the_bees && !remix && !anniversary {
+        return;
+    }
+    let (world_surface, surface_high) = {
+        let l = gv.layers();
+        (l.world_surface, l.surface_high)
+    };
+    surface::pass_spreading_grass(
+        world,
+        world_surface,
+        surface_high,
+        gv.jungle_min_x,
+        gv.jungle_max_x,
+    );
+}
+
+/// The `Surface Ore and Stone` pass (`WorldGen.cs:18447-18511`, W4-d104
+/// pass 32): the ore/stone patch scatters on the fresh
+/// `pass_rng("Surface Ore and Stone")` stream. The
+/// `Skyblock.denyAllGeneration` gate rides here.
+fn step_surface_ore_and_stone(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let (surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_low, l.world_surface)
+    };
+    let copper = world.ore_tiers.copper as u16;
+    let iron = world.ore_tiers.iron as u16;
+    surface::pass_surface_ore_and_stone(
+        world,
+        surface_low,
+        world_surface,
+        copper,
+        iron,
+        &mut gv.ore_patch_x,
+        &mut streams.pass_rng("Surface Ore and Stone"),
+    );
+}
+
+/// The `Place Fallen Log` pass (`WorldGen.cs:18513-18655`, W4-d104 pass
+/// 33): the fallen-log scatter on the fresh `pass_rng("Place Fallen
+/// Log")` stream. The `Skyblock.denySomeGeneration` gate rides the pass
+/// body (it reads the micro-seed surface-shape flags).
+fn step_place_fallen_log(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    surface::pass_place_fallen_log(
+        world,
+        world_surface,
+        opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        &mut gv.log_anchor,
+        &mut streams.pass_rng("Place Fallen Log"),
+    );
+}
+
+/// The `Traps` pass (`WorldGen.cs:18657-18786`, W4-d104 pass 34): the
+/// trap + sand-trap scatters on the fresh `pass_rng("Traps")` stream.
+/// The `Skyblock.denySomeGeneration` + `actuallyNoTrapsForRealIMeanIt`
+/// + `notTheBees && !noTraps && !remix` gate (`:18659`) rides here.
+fn step_traps(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    // `Variations.actuallyNoTrapsForRealIMeanIt` (`:293-303`):
+    // actuallyNoTraps && activeSecretSeedCount < 4.
+    let count = crate::seeds::active_secret_seed_count(world.micro_seeds, world.seeds);
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS)
+        && count < 4
+    {
+        return;
+    }
+    let not_the_bees = opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let no_traps = opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    if not_the_bees && !no_traps && !remix {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    traps::pass_traps(
+        world,
+        world_surface,
+        rock_layer,
+        gv.lava_line,
+        opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        gv.shimmer_position,
+        &mut gv.boulder_pets_placed,
+        &mut streams.pass_rng("Traps"),
+    );
+}
+
+/// The `Piles` pass (`WorldGen.cs:18788-19458`, W4-d104 pass 35): the
+/// seven decor scatters on the fresh `pass_rng("Piles")` stream. The
+/// `Skyblock.denySomeGeneration` gate rides here.
+fn step_piles(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    structures::pass_piles(world, world_surface, rock_layer, &mut streams.pass_rng("Piles"));
+}
+
+/// The `Spawn Point` pass (`WorldGen.cs:19460-19587`, W4-d104 pass 36):
+/// the spawn search on the fresh `pass_rng("Spawn Point")` stream. The
+/// pass has no skyblock deny gate — the skyblock arm is its own branch.
+fn step_spawn_point(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    surface::pass_spawn_point(
+        world,
+        world_surface,
+        opts.flags,
+        &mut streams.pass_rng("Spawn Point"),
     );
 }
 
@@ -2598,6 +3598,20 @@ fn step_living_trees(
         map.right_beach_start,
         (map.desert_start, map.desert_end),
     );
+}
+
+/// The vanilla Wood Tree Walls slot (`WorldGen.cs:15717-15749`) — W4-d102
+/// pass 9: the 191-neighbour wall-244 sweep (draws nothing).
+fn step_wood_tree_walls(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_wood_tree_walls(world, world_surface);
 }
 
 fn step_trees(
@@ -2693,39 +3707,17 @@ fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
     // Not a vanilla pass — the generate() tail writes plus the final two rng
     // draws. They MUST stay the last rng-consuming step
-    // (`worldgen_rolls_hell_back_style` pins the order).
+    // (`worldgen_rolls_hell_back_style` pins the order). The spawn moved
+    // to its own `Spawn Point` step (W4-d104 pass 36).
     let layers = gv.layers();
-    let map = gv.map();
     world.world_surface = layers.world_surface;
     world.rock_layer = layers.rock_layer;
-    // `WorldGen.cs:19574-19584`'s remix spawn arm (M5-SEED-1): the bottom
-    // centre of the map instead of the surface anchor — the first air cell
-    // scanning up from `maxTilesY - 10` at the centre column.
-    let remix_spawn = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
-        let x = world.width / 2;
-        let mut y = world.height - 10;
-        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
-            y -= 1;
-        }
-        Some((x, (y + 1).max(1)))
-    } else {
-        None
-    };
-    let (spawn_x, spawn_y) = match remix_spawn {
-        Some((x, y)) => (x, y),
-        None => (
-            map.spawn_center,
-            (map.heights[map.spawn_center as usize] - 6).max(1),
-        ),
-    };
-    world.spawn_x = spawn_x;
-    world.spawn_y = spawn_y;
     world.time = 27000.0; // noon
     world.day_time = true;
     // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
@@ -2831,6 +3823,15 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[467] = true;
     world.frame_important[441] = true;
     world.frame_important[468] = true;
+    // W4-g84: the jungle-plants family — the detritus 233 (`Main.cs:7391`),
+    // the Plantera bulb 238 (`:10235`), the Life Fruit 236 + replica 702
+    // (`:10247-10248`). The `PlaceJunglePlant` writes leave style frames the
+    // framer must keep, and the kill cascade's `CheckJunglePlant` arm
+    // (`WorldGen.cs:85475-85480`) reaches them only through the bit.
+    world.frame_important[233] = true;
+    world.frame_important[236] = true;
+    world.frame_important[238] = true;
+    world.frame_important[702] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -2858,6 +3859,45 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
     let mut reset_rng = core.pass_rng("Reset");
     gv.crimson_left = reset_rng.range(0, 2) == 1;
     gv.flip_infections = opts.flags.flip_infections();
+    // W4-d101 pass 8: the snow-origin draws (`WorldGen.cs:11378-11414`),
+    // appended AFTER the crimson roll so every existing consumer (which
+    // re-copies the stream and reads only the first draw) is untouched.
+    // `num7 = Next(maxTilesX)` rejected into the dungeon-opposite band;
+    // the port pins dungeon Right (the beach-anchor convention), so the
+    // `DungeonSide.Right` arm `[0.6, 0.75]·width` always runs
+    // (`:11383-11389`). The drunk side-flips (`:11379`, `:11397-11400`)
+    // stay with the drunk-seed lane. Then the origin pair:
+    // `num8 = Next(50, 90)`, `num9 = maxTilesX / 4200.0`,
+    // `left = num7 - (num8 + (int)(Next(20,40)*num9) + (int)(Next(20,40)*num9))`,
+    // `right = num7 + (Next(50,90) + two scaled terms)` (`:11401-11404`),
+    // clamped to `[0, maxTilesX]` (`:11405-11412`).
+    {
+        let width = opts.width.max(512);
+        let mut num7 = reset_rng.range(0, width);
+        while (num7 as f64) < width as f64 * 0.6 || (num7 as f64) > width as f64 * 0.75 {
+            num7 = reset_rng.range(0, width);
+        }
+        let num8 = reset_rng.range(50, 90);
+        let num9 = width as f64 / 4200.0;
+        let mut left = num7
+            - (num8
+                + (reset_rng.range(20, 40) as f64 * num9) as i32
+                + (reset_rng.range(20, 40) as f64 * num9) as i32);
+        let mut right = num7
+            + (reset_rng.range(50, 90)
+                + (reset_rng.range(20, 40) as f64 * num9) as i32
+                + (reset_rng.range(20, 40) as f64 * num9) as i32);
+        left = left.max(0);
+        right = right.min(width);
+        gv.snow_origin_left = left;
+        gv.snow_origin_right = right;
+    }
+    // The snow per-row arrays (`WorldGen.cs:11178-11179`: `new
+    // int[Main.maxTilesY]`) — zero-filled until Generate Ice Biome (d101)
+    // writes the spans.
+    let height = opts.height.max(512) as usize;
+    gv.snow_min_x = vec![0; height];
+    gv.snow_max_x = vec![0; height];
     gv
 }
 
@@ -2867,7 +3907,10 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
 fn total_weight(opts: &GenOptions) -> f64 {
     EXECUTED_PIPELINE
         .iter()
-        .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags))
+        .filter(|s| {
+            !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags)
+                && !pass_registration_gate_closed(s.vanilla, opts.micro_flags)
+        })
         .map(|s| {
             VANILLA_CHAIN
                 .iter()
@@ -2898,6 +3941,13 @@ fn apply_step(
     // skipped step is simply not called.
     if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags) {
         log::debug!("worldgen pass '{}' skipped (dualDungeons)", step.name);
+        return false;
+    }
+    // The conditional registration (`WorldGen.cs:14753`): a pass that was
+    // never `AddGenerationPass`ed does not exist in the loop — same Skipped
+    // semantics, no tiles and no draws (the dither snake on a classic world).
+    if pass_registration_gate_closed(step.vanilla, opts.micro_flags) {
+        log::debug!("worldgen pass '{}' not registered (gate)", step.name);
         return false;
     }
     // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
@@ -3050,12 +4100,16 @@ impl GenerationRunner {
             return GenStep::Aborted;
         }
         // Skip disabled passes without consuming a frame (the C#'s Skipped
-        // arm applies no tiles and draws no RNG, `:488-495`).
+        // arm applies no tiles and draws no RNG, `:488-495`); a
+        // gate-closed pass was never registered at all (`:14753`).
         while self.cursor < EXECUTED_PIPELINE.len()
-            && pass_disabled_by_special_seeds(
+            && (pass_disabled_by_special_seeds(
                 EXECUTED_PIPELINE[self.cursor].vanilla,
                 self.opts.micro_flags,
-            )
+            ) || pass_registration_gate_closed(
+                EXECUTED_PIPELINE[self.cursor].vanilla,
+                self.opts.micro_flags,
+            ))
         {
             log::debug!(
                 "worldgen pass '{}' skipped (dualDungeons)",
@@ -3129,6 +4183,46 @@ mod tests {
         assert_eq!(classic[106 - 1].anchor, "WorldGen.cs:22141");
     }
 
+    /// W4-f23: the display-name → `GenPassNameID` mapping the loading
+    /// screen's icon lookup needs (`Step::vanilla`,
+    /// `GenPassNameID.cs:223-330`'s string values).
+    #[test]
+    fn pass_name_id_maps_display_names_to_the_genpassnameid_keys() {
+        assert_eq!(pass_name_id("terrain fill"), Some("Terrain"));
+        assert_eq!(pass_name_id("cave fields"), Some("Tunnels"));
+        assert_eq!(pass_name_id("ores and gems"), Some("Shinies"));
+        assert_eq!(pass_name_id("evil"), Some("Corruption"));
+        assert_eq!(pass_name_id("granite and marble"), Some("Marble"));
+        assert_eq!(pass_name_id("slopes"), Some("Smooth World"));
+        assert_eq!(pass_name_id("trees"), Some("Planting Trees"));
+        assert_eq!(pass_name_id("surface flora"), Some("Weeds"));
+        assert_eq!(pass_name_id("cacti"), Some("Cactus, Palm Trees, & Coral"));
+        // Multi-step passes share the key (Terrain ×2, Micro Biomes ×5,
+        // Shell Piles ×2 — the C# sets the pass name once).
+        assert_eq!(pass_name_id("terrain height map"), Some("Terrain"));
+        assert_eq!(pass_name_id("thin ice"), Some("Micro Biomes"));
+        assert_eq!(pass_name_id("spike pits"), Some("Shell Piles"));
+        assert_eq!(pass_name_id("shell piles"), Some("Shell Piles"));
+        // The port-only steps (`vanilla == ""`) and unknown names: None.
+        assert_eq!(pass_name_id("plan biome spans"), None);
+        assert_eq!(pass_name_id("constant lava layer"), None);
+        assert_eq!(pass_name_id("hell forts"), None);
+        assert_eq!(pass_name_id("world tail"), None);
+        assert_eq!(pass_name_id("seed finish"), None);
+        assert_eq!(pass_name_id("not a step"), None);
+        // Every mapped key is a real VANILLA_CHAIN pass name (the C#
+        // dictionary keys come from the same GenPassNameID vocabulary).
+        for s in EXECUTED_PIPELINE {
+            if let Some(key) = pass_name_id(s.name) {
+                assert!(
+                    VANILLA_CHAIN.iter().any(|p| p.name == key),
+                    "'{key}' (step '{}') is not a chain pass",
+                    s.name
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_executed_pipeline_is_59_named_steps() {
         let names = executed_pass_names();
@@ -3147,7 +4241,41 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-c30: + `Dual Dungeons Dither Snake` (vanilla `:14755`,
+        // gate-closed on a classic world) between `liquids` and `dungeon`.
+        // W4-d101 pass 1: + `sand patches` (vanilla "Sand Patches",
+        // `WorldGen.cs:11689`) before `cave fields`.
+        // W4-d101 pass 2: + `mount caves` (vanilla "Mount Caves",
+        // `WorldGen.cs:11784`) after `cave fields`.
+        // W4-d101 pass 3: + `dirt wall backgrounds` (vanilla "Dirt Wall
+        // Backgrounds", `WorldGen.cs:11858`) after `mount caves`.
+        // W4-d101 pass 4: + `clay` (vanilla "Clay", `WorldGen.cs:11959`)
+        // after `dirt-in-stone blobs`.
+        // W4-d101 pass 5: + `small holes` (vanilla "Small Holes",
+        // `WorldGen.cs:12008`) after `clay`.
+        // W4-d101 pass 6: + `dirt layer caves` (vanilla "Dirt Layer Caves",
+        // `WorldGen.cs:12067`) after `small holes`.
+        // W4-d101 pass 7: + `rock layer caves` (vanilla "Rock Layer Caves",
+        // `WorldGen.cs:12107`) after `dirt layer caves`.
+        // W4-d101 pass 8: + `generate ice biome` (vanilla "Generate Ice
+        // Biome", `WorldGen.cs:12312`) after `wavy caves`.
+        // W4-d101 pass 9: `granite and marble` splits into `marble` +
+        // `granite` (vanilla `:12757` / `:12839`) — same order, same
+        // streams, +1 row.
+        // W4-d102: + `silt` (vanilla "Silt", `WorldGen.cs:13143`) between
+        // `dirt to mud` and `ash blobs`; + `webs` (vanilla "Webs", `:13607`)
+        // between `ores and gems` and `evil`; + `slush` (vanilla "Slush",
+        // `:14697`) between `liquids` and `dungeon`; + `mountain caves`
+        // (vanilla "Mountain Caves", `:14873`) between `constant lava
+        // layer` and `beaches`; + `gems` (vanilla "Gems", `:15050`)
+        // between `gravitating sand` and `ocean caves`; + `shimmer`
+        // (vanilla "Shimmer", `:15195`) after `ocean caves` (the count
+        // bump the Shimmer landing missed); + `clean up dirt` (vanilla
+        // "Clean Up Dirt", `:15246`) after `shimmer`; + `dirt rock wall
+        // runner` (vanilla "Dirt Rock Wall Runner", `:15461`) after
+        // `pyramids`; + `wood tree walls` (vanilla "Wood Tree Walls",
+        // `:15717`) after `living trees`.
+        assert_eq!(names.len(), 85);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3186,25 +4314,45 @@ mod tests {
                 "mud caves to grass",
                 "full desert",
                 "mushroom patches",
+                "sand patches",
                 "cave fields",
+                "mount caves",
+                "dirt wall backgrounds",
                 // M5-BIOME-2: granite moved after the cave carve (the vanilla
                 // order) — the `GraniteBiome.CanPlace` inactive-origin gate
-                // needs the pre-carved caves.
-                "granite and marble",
+                // needs the pre-carved caves. W4-d101 pass 9: the two halves
+                // carry their own vanilla rows now.
+                "marble",
+                "granite",
                 "stone-in-dirt blobs",
                 "dirt-in-stone blobs",
+                "clay",
+                "small holes",
+                "dirt layer caves",
+                "rock layer caves",
                 "surface caves",
                 "wavy caves",
+                "generate ice biome",
                 "dirt to mud",
+                "silt",
                 "ash blobs",
                 "ores and gems",
+                "webs",
                 "evil",
                 "liquids",
+                // W4-c30: the conditional DitherSnakePass slot
+                // (`WorldGen.cs:14755`) — gate-closed on a classic world.
+                "Dual Dungeons Dither Snake",
+                "slush",
                 "dungeon",
                 "constant lava layer",
+                "mountain caves",
                 "beaches",
                 "gravitating sand",
+                "gems",
                 "ocean caves",
+                "shimmer",
+                "clean up dirt",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
@@ -3216,6 +4364,7 @@ mod tests {
                 "altars",
                 "wet jungle",
                 "pyramids",
+                "dirt rock wall runner",
                 "pots",
                 "beehives",
                 "hell forts",
@@ -3238,6 +4387,7 @@ mod tests {
                 "shell piles",
                 "slopes",
                 "living trees",
+                "wood tree walls",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3247,6 +4397,198 @@ mod tests {
                 "seed finish",
             ]
         );
+    }
+
+    /// W4-d101 pass 1: `sand patches` sits in the vanilla Sand Patches slot
+    /// (`WorldGen.cs:11689`) — after Ocean Sand (`:11580`) and immediately
+    /// before the Tunnels step (`cave fields`, `:11718`). The port's grouped
+    /// surface-biome steps sit earlier (the pinned pre-scaffold order), so
+    /// the adjacency asserted is the Tunnels one; the chain order is the
+    /// vanilla fact.
+    #[test]
+    fn w4_d101_sand_patches_sits_before_the_tunnel_step() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("sand patches") + 1, pos("cave fields"));
+        assert!(pos("ocean sand") < pos("sand patches"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Sand Patches") == cpos("Tunnels") - 1);
+        assert!(cpos("Ocean Sand") < cpos("Sand Patches"));
+    }
+
+    /// W4-d101 pass 2: `mount caves` sits in the vanilla Mount Caves slot
+    /// (`WorldGen.cs:11784`) — immediately after the Tunnels step
+    /// (`cave fields`, `:11718`) and before Rocks In Dirt (`:11896`, the
+    /// port's `stone-in-dirt blobs`).
+    #[test]
+    fn w4_d101_mount_caves_sits_between_tunnels_and_rocks_in_dirt() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mount caves"), pos("cave fields") + 1);
+        assert_eq!(names[pos("mount caves") + 1], "stone-in-dirt blobs");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Mount Caves") == cpos("Tunnels") + 1);
+        assert!(cpos("Mount Caves") < cpos("Rocks In Dirt"));
+        // The later Mountain Caves opener pass (`:14873`, d102's lane) is
+        // a DIFFERENT declaration — the anchors this step publishes feed it.
+        assert!(cpos("Mountain Caves") > cpos("Dungeon"));
+    }
+
+    /// W4-d101 pass 3: `dirt wall backgrounds` sits in its vanilla slot
+    /// (`WorldGen.cs:11858`) — immediately after Mount Caves (`:11784`)
+    /// and immediately before Rocks In Dirt (`:11896`).
+    #[test]
+    fn w4_d101_dirt_wall_backgrounds_sits_between_mount_caves_and_rocks_in_dirt() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dirt wall backgrounds"), pos("mount caves") + 1);
+        assert_eq!(names[pos("dirt wall backgrounds") + 1], "stone-in-dirt blobs");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dirt Wall Backgrounds") == cpos("Mount Caves") + 1);
+        assert!(cpos("Rocks In Dirt") == cpos("Dirt Wall Backgrounds") + 1);
+    }
+
+    /// W4-d101 pass 4: `clay` sits in its vanilla slot
+    /// (`WorldGen.cs:11959`) — immediately after Dirt In Rocks (`:11926`,
+    /// the port's `dirt-in-stone blobs`) and before Small Holes (`:12008`,
+    /// the next lane pass). The port's `surface caves` (`:12162`) and
+    /// `wavy caves` (`:12271`) sit between them until passes 5-7 land.
+    #[test]
+    fn w4_d101_clay_sits_after_dirt_in_rocks() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("clay"), pos("dirt-in-stone blobs") + 1);
+        assert!(pos("clay") < pos("surface caves"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Clay") == cpos("Dirt In Rocks") + 1);
+        assert!(cpos("Small Holes") == cpos("Clay") + 1);
+    }
+
+    /// W4-d101 pass 5: `small holes` sits in its vanilla slot
+    /// (`WorldGen.cs:12008`) — immediately after Clay (`:11959`) and
+    /// before Dirt Layer Caves (`:12067`, the next lane pass).
+    #[test]
+    fn w4_d101_small_holes_sits_after_clay() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("small holes"), pos("clay") + 1);
+        assert!(pos("small holes") < pos("surface caves"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Small Holes") == cpos("Clay") + 1);
+        assert!(cpos("Dirt Layer Caves") == cpos("Small Holes") + 1);
+    }
+
+    /// W4-d101 pass 6: `dirt layer caves` sits in its vanilla slot
+    /// (`WorldGen.cs:12067`) — immediately after Small Holes (`:12008`)
+    /// and before Rock Layer Caves (`:12107`, the next lane pass).
+    #[test]
+    fn w4_d101_dirt_layer_caves_sits_after_small_holes() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dirt layer caves"), pos("small holes") + 1);
+        assert!(pos("dirt layer caves") < pos("surface caves"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dirt Layer Caves") == cpos("Small Holes") + 1);
+        assert!(cpos("Rock Layer Caves") == cpos("Dirt Layer Caves") + 1);
+    }
+
+    /// W4-d101 pass 7: `rock layer caves` sits in its vanilla slot
+    /// (`WorldGen.cs:12107`) — immediately after Dirt Layer Caves
+    /// (`:12067`) and immediately before Surface Caves (`:12162`).
+    #[test]
+    fn w4_d101_rock_layer_caves_sits_before_surface_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("rock layer caves"), pos("dirt layer caves") + 1);
+        assert_eq!(names[pos("rock layer caves") + 1], "surface caves");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Rock Layer Caves") == cpos("Dirt Layer Caves") + 1);
+        assert!(cpos("Surface Caves") == cpos("Rock Layer Caves") + 1);
+    }
+
+    /// W4-d101 pass 8: `generate ice biome` sits in its vanilla slot
+    /// (`WorldGen.cs:12312`) — immediately after Wavy Caves (`:12271`)
+    /// and before Grass (`:12423`). The port's `micro grass` step sits
+    /// earlier (the pinned pre-scaffold order), so the forward neighbour
+    /// asserted is `dirt to mud`; the chain carries the vanilla pair.
+    #[test]
+    fn w4_d101_generate_ice_biome_sits_after_wavy_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("generate ice biome"), pos("wavy caves") + 1);
+        assert_eq!(names[pos("generate ice biome") + 1], "dirt to mud");
+        // The late FragileIce "Ice" step is a different pass, far later.
+        assert!(pos("generate ice biome") < pos("fragile ice"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Generate Ice Biome") == cpos("Wavy Caves") + 1);
+        assert!(cpos("Grass") == cpos("Generate Ice Biome") + 1);
+    }
+
+    /// W4-d101 pass 9: the `marble` + `granite` rows sit adjacent in the
+    /// vanilla order (Marble `WorldGen.cs:12757` → Granite `:12839`),
+    /// after the cave carve (the M5-BIOME-2 CanPlace-gate move stands).
+    /// The split is RNG-neutral: same call order, same per-pass streams.
+    #[test]
+    fn w4_d101_marble_and_granite_carry_their_own_vanilla_rows() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("granite"), pos("marble") + 1);
+        assert_eq!(pos("marble"), pos("cave fields") + 3); // + mount caves + dirt wall backgrounds
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Granite") == cpos("Marble") + 1);
+        // Every classic pass now has an executed row except the other
+        // lanes' unexecuted slices — Granite is off the missing list.
+        let executed: std::collections::HashSet<&str> = EXECUTED_PIPELINE
+            .iter()
+            .map(|s| s.vanilla)
+            .collect();
+        assert!(executed.contains("Granite"));
+        assert!(executed.contains("Marble"));
     }
 
     /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla
@@ -3265,7 +4607,8 @@ mod tests {
         // + surface caves (WORLDGEN-CAVES, the vanilla SurfaceCaves slot
         // `WorldGen.cs:12162`) + wavy caves (M5-SEED-1).
         assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 3);
-        assert_eq!(names[pos("dirt to mud") + 1], "ash blobs");
+        // + silt (W4-d102, the vanilla Silt slot `WorldGen.cs:13143`).
+        assert_eq!(names[pos("dirt to mud") + 2], "ash blobs");
         // The vanilla chain carries both passes in the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3291,9 +4634,12 @@ mod tests {
         assert_eq!(pos("dunes"), pos("plan biome spans") + 1);
         assert_eq!(names[pos("ocean sand") + 1], "micro grass"); // + the M5-SEED-2 Grass slot
         assert_eq!(names[pos("micro grass") + 1], "jungle");
-        assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)
+        // + the seed Constant lava layer (M5-SEED-1) + mountain caves
+        // (W4-d102, the vanilla MountainCaveOpenings slot `:14873`).
+        assert_eq!(pos("beaches"), pos("dungeon") + 3);
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
-        assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
+        // + gems (W4-d102, the vanilla Gems slot `WorldGen.cs:15050`).
+        assert_eq!(names[pos("gravitating sand") + 2], "ocean caves");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3343,8 +4689,13 @@ mod tests {
     fn test_DW_4_3_evil_step_sits_between_ores_and_liquids() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("evil"), pos("ores and gems") + 1);
+        // + webs (W4-d102, the vanilla Webs slot `WorldGen.cs:13607`).
+        assert_eq!(pos("evil"), pos("ores and gems") + 2);
+        // W4-c30: the DitherSnakePass slot sits between Lakes (`:14556`,
+        // the port's `liquids`) and Dungeon (`:14757`) — `:14755`.
         assert_eq!(names[pos("evil") + 1], "liquids");
+        assert_eq!(pos("Dual Dungeons Dither Snake"), pos("liquids") + 1);
+        assert_eq!(pos("dungeon"), pos("Dual Dungeons Dither Snake") + 1);
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3417,6 +4768,42 @@ mod tests {
         assert!(cpos("Webs And Honey") < cpos("Glowing Mushrooms and Jungle Plants"));
     }
 
+    /// W4-d104 pass 28: `floating island houses` sits between the
+    /// `living trees` block and `trees` (Planting Trees,
+    /// `WorldGen.cs:19940`); the vanilla chain carries Floating Island
+    /// Houses (`:17859`) before Planting Trees too.
+    #[test]
+    fn w4_d104_28_the_island_houses_step_sits_before_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("floating island houses"), pos("living trees") + 1);
+        assert_eq!(pos("floating island houses") + 1, pos("quick cleanup"));
+        assert_eq!(pos("quick cleanup") + 1, pos("hellforge"));
+        assert_eq!(pos("hellforge") + 1, pos("spreading grass"));
+        assert_eq!(pos("spreading grass") + 1, pos("surface ore and stone"));
+        assert_eq!(pos("surface ore and stone") + 1, pos("place fallen log"));
+        assert_eq!(pos("place fallen log") + 1, pos("traps"));
+        assert_eq!(pos("traps") + 1, pos("piles"));
+        assert_eq!(pos("piles") + 1, pos("spawn point"));
+        assert!(pos("spawn point") < pos("trees"));
+        assert!(pos("floating islands") < pos("floating island houses"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Floating Islands") < cpos("Floating Island Houses"));
+        assert!(cpos("Floating Island Houses") < cpos("Planting Trees"));
+        // W4-d104 pass 29: Quick Cleanup follows the houses in the chain.
+        assert_eq!(cpos("Quick Cleanup"), cpos("Floating Island Houses") + 1);
+        // W4-d104 pass 30: Hellforge follows Quick Cleanup (Pots sits
+        // between in vanilla but executed earlier — the pre-scaffold
+        // deviation the lane doc records).
+        assert!(cpos("Hellforge") > cpos("Quick Cleanup"));
+        assert!(cpos("Hellforge") < cpos("Planting Trees"));
+    }
+
     /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's
     /// vanilla slot — after `sword shrines` (`WorldGen.cs:20979`) and
     /// before `webs and honey` (the port's grouped neighbour; the mahogany
@@ -3446,19 +4833,204 @@ mod tests {
         assert!(pos("thin ice") < pos("mahogany trees"));
     }
 
+    /// W4-d102 pass 1: `silt` sits in its vanilla slot — after `dirt to mud`
+    /// (Dirt To Mud `WorldGen.cs:13123`) and before `ash blobs` (Underworld
+    /// `:13645`) / `ores and gems` (Shinies `:13182`); the Silt anchor is
+    /// `:13143`.
     #[test]
-    fn every_executed_step_maps_into_the_chain() {
-        let classic_names: std::collections::HashSet<&str> = VANILLA_CHAIN
+    fn w4_d102_the_silt_step_sits_between_dirt_to_mud_and_shinies() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("silt"), pos("dirt to mud") + 1);
+        assert_eq!(names[pos("silt") + 1], "ash blobs");
+        assert!(pos("silt") < pos("ores and gems"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())
             .map(|p| p.name)
             .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dirt To Mud") < cpos("Silt"));
+        assert!(cpos("Silt") < cpos("Shinies"));
+        assert!(cpos("Silt") < cpos("Underworld"));
+    }
+
+    /// W4-d102 pass 2: `webs` sits in its vanilla slot — after `ores and
+    /// gems` (Shinies `WorldGen.cs:13182`) and before `evil` (Corruption
+    /// `:13866`); the Webs anchor is `:13607`, Underworld `:13645` between.
+    #[test]
+    fn w4_d102_the_webs_step_sits_between_shinies_and_underworld() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("webs"), pos("ores and gems") + 1);
+        assert_eq!(names[pos("webs") + 1], "evil");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Shinies") < cpos("Webs"));
+        assert!(cpos("Webs") < cpos("Underworld"));
+        assert!(cpos("Underworld") < cpos("Corruption"));
+    }
+
+    /// W4-d102 pass 3: `slush` sits in its vanilla slot — after `liquids`
+    /// (Lakes `WorldGen.cs:14556`) and before `dungeon` (`:14757`); the
+    /// Slush anchor is `:14697`.
+    #[test]
+    fn w4_d102_the_slush_step_sits_between_lakes_and_dungeon() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("slush"), pos("liquids") + 1);
+        assert_eq!(names[pos("slush") + 1], "dungeon");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Lakes") < cpos("Slush"));
+        assert!(cpos("Slush") < cpos("Dungeon"));
+    }
+
+    /// W4-d102 pass 4: `mountain caves` sits in its vanilla slot — after
+    /// `dungeon` (`WorldGen.cs:14757`, with the port's Constant lava-layer
+    /// tail between) and before `beaches` (`:14888`); the
+    /// MountainCaveOpenings anchor is `:14873`.
+    #[test]
+    fn w4_d102_the_mountain_caves_step_sits_between_dungeon_and_beaches() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mountain caves"), pos("constant lava layer") + 1);
+        assert_eq!(names[pos("mountain caves") + 1], "beaches");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dungeon") < cpos("Mountain Caves"));
+        assert!(cpos("Mountain Caves") < cpos("Beaches"));
+        // The producer/consumer pair: Mount Caves (d101) writes the
+        // anchors this pass reads.
+        assert!(cpos("Mount Caves") < cpos("Mountain Caves"));
+    }
+
+    /// W4-d102 pass 5: `gems` sits between `gravitating sand` and `ocean
+    /// caves` (the lane plan's grouping; the vanilla Gems anchor
+    /// `WorldGen.cs:15050` precedes the sand cleanup `:15138` and Create
+    /// Ocean Caves `:15167`).
+    #[test]
+    fn w4_d102_the_gems_step_sits_before_the_ocean_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("gems"), pos("gravitating sand") + 1);
+        assert_eq!(names[pos("gems") + 1], "ocean caves");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Beaches") < cpos("Gems"));
+        assert!(cpos("Gems") < cpos("Create Ocean Caves"));
+    }
+
+    /// W4-d102 pass 6: `shimmer` sits in its vanilla slot — after `ocean
+    /// caves` (Create Ocean Caves `WorldGen.cs:15167`) and before `fragile
+    /// ice` (the port's next executed step); the Shimmer anchor is
+    /// `:15195`, Clean Up Dirt `:15246` follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_shimmer_step_sits_after_the_ocean_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
+        assert_eq!(names[pos("shimmer") + 1], "clean up dirt");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Create Ocean Caves") < cpos("Shimmer"));
+        assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+    }
+
+    /// W4-d102 pass 7: `clean up dirt` sits in its vanilla slot — after
+    /// `shimmer` (`WorldGen.cs:15195`) and before the port's `fragile ice`
+    /// step; the Clean Up Dirt anchor is `:15246`, Pyramids `:15360`
+    /// follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_clean_up_dirt_step_sits_after_the_shimmer() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("clean up dirt"), pos("shimmer") + 1);
+        assert_eq!(names[pos("clean up dirt") + 1], "fragile ice");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+        assert!(cpos("Clean Up Dirt") < cpos("Pyramids"));
+    }
+
+    /// W4-d102 pass 8: `dirt rock wall runner` sits in its vanilla slot —
+    /// after `pyramids` (`WorldGen.cs:15360`) and before the port's `pots`
+    /// step; the Dirt Rock Wall Runner anchor is `:15461`, Living Trees
+    /// `:15476` follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_dirt_rock_wall_runner_step_sits_after_the_pyramids() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dirt rock wall runner"), pos("pyramids") + 1);
+        assert_eq!(names[pos("dirt rock wall runner") + 1], "pots");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Pyramids") < cpos("Dirt Rock Wall Runner"));
+        assert!(cpos("Dirt Rock Wall Runner") < cpos("Living Trees"));
+    }
+
+    /// W4-d102 pass 9: `wood tree walls` sits in its vanilla slot — after
+    /// `living trees` (`WorldGen.cs:15476`) and before the port's `trees`
+    /// step; the Wood Tree Walls anchor is `:15717`, Altars `:15750`
+    /// follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_wood_tree_walls_step_sits_after_the_living_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("wood tree walls"), pos("living trees") + 1);
+        assert_eq!(names[pos("wood tree walls") + 1], "trees");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Living Trees") < cpos("Wood Tree Walls"));
+        assert!(cpos("Wood Tree Walls") < cpos("Altars"));
+    }
+
+    #[test]
+    fn every_executed_step_maps_into_the_chain() {
+        // All chain names, not just the classic ones: W4-c30's dither-snake
+        // step maps to a gate-carrying declaration (`WorldGen.cs:14755`).
+        let chain_names: std::collections::HashSet<&str> =
+            VANILLA_CHAIN.iter().map(|p| p.name).collect();
         for step in EXECUTED_PIPELINE {
             if step.vanilla.is_empty() {
                 continue; // the span planner, slopes and the tail are not passes
             }
             assert!(
-                classic_names.contains(step.vanilla),
+                chain_names.contains(step.vanilla),
                 "step {:?} cites unknown vanilla pass {:?}",
                 step.name,
                 step.vanilla
@@ -3584,6 +5156,19 @@ mod tests {
         assert_eq!(gv.right_beach_start, 0);
         assert_eq!(gv.water_line, 0);
         assert_eq!(gv.lava_line, 0);
+        // W4-d101: the mountain-cave statics zero-init (`GenVars.cs:228-232`,
+        // the [30] arrays allocated zeroed at `:457-458`).
+        assert_eq!(gv.num_m_caves, 0);
+        assert_eq!(gv.m_cave_x, [0; 30]);
+        assert_eq!(gv.m_cave_y, [0; 30]);
+        // W4-d101 pass 8: the snow statics zero/null-init
+        // (`WorldGen.cs:11180-11181`, `:11208-11209`).
+        assert_eq!(gv.snow_top, 0);
+        assert_eq!(gv.snow_bottom, 0);
+        assert_eq!(gv.snow_origin_left, 0);
+        assert_eq!(gv.snow_origin_right, 0);
+        assert!(gv.snow_min_x.is_empty());
+        assert!(gv.snow_max_x.is_empty());
     }
 
     // --- Phase 6: temple stub -------------------------------------------------
@@ -3712,12 +5297,12 @@ mod tests {
             ]
         );
         // The C# loop can only disable a pass that exists in `_passes`; every
-        // name must therefore be a real chain name — `Shimmer` is the one slot
-        // the port's chain does not declare yet (research/12's missing-pass
-        // list), so it is allowed to be absent and pruned vacuously.
+        // name must therefore be a real chain name. (`Shimmer` joined the
+        // executed chain in W4-d102 pass 6 — the dual-dungeons prune now
+        // reaches a live step.)
         for name in DUAL_DUNGEON_DISABLED_PASSES {
             assert!(
-                VANILLA_CHAIN.iter().any(|p| p.name == name) || name == "Shimmer",
+                VANILLA_CHAIN.iter().any(|p| p.name == name),
                 "'{name}' is not a vanilla chain pass"
             );
         }
@@ -3823,5 +5408,90 @@ mod tests {
             PassMessage::Key("WorldGeneration.LivingTrees").resolve(&text),
             "<WorldGeneration.LivingTrees>"
         );
+        // W4-c30: the DitherSnakePass message (DitherSnakePass.cs:24 —
+        // `Language.GetTextValue("WorldGeneration.DualDungeonsDitherSnake")`).
+        assert!(matches!(
+            step_message("Dual Dungeons Dither Snake"),
+            Some(PassMessage::Key("WorldGeneration.DualDungeonsDitherSnake"))
+        ));
+    }
+
+    // --- W4-c30: the dual-dungeons dither snake ------------------------------
+
+    /// The registration gate (`WorldGen.cs:14753-14755`): the pass exists
+    /// only on a `dualDungeons` world; every other pass is unconditional.
+    #[test]
+    fn w4_c30_the_registration_gate_reads_the_dual_dungeons_micro_seed() {
+        use crate::seeds::MicroSeedFlags;
+        let classic = MicroSeedFlags::none();
+        let dual = MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS);
+        assert!(pass_registration_gate_closed("Dual Dungeons Dither Snake", classic));
+        assert!(!pass_registration_gate_closed("Dual Dungeons Dither Snake", dual));
+        // No other pass is conditionally registered in the executed chain.
+        for step in EXECUTED_PIPELINE {
+            if step.vanilla != "Dual Dungeons Dither Snake" {
+                assert!(!pass_registration_gate_closed(step.vanilla, classic));
+                assert!(!pass_registration_gate_closed(step.vanilla, dual));
+            }
+        }
+        // The weight sum: a classic world banks no snake weight, a dual
+        // world banks the pass's 1.0 (`DitherSnakePass.cs:18`) — tolerance
+        // for the f64 sum-order (the 1.0 lands mid-chain, not appended).
+        let base = GenOptions { width: 1024, height: 512, seed: 42, ..Default::default() };
+        let dual_opts = GenOptions {
+            micro_flags: dual,
+            ..base.clone()
+        };
+        assert!((total_weight(&dual_opts) - total_weight(&base) - 1.0).abs() < 1e-9);
+    }
+
+    /// End to end: a `dualDungeons` world paints both snakes (the wall-350
+    /// unbreakable band is the observable — no classic pass writes it), the
+    /// two runs are byte-identical (the a == b determinism invariant), and
+    /// the classic control world carries no snake tiles at all. The world
+    /// is 2400 wide so both location bands are non-empty (the sub-vanilla
+    /// guard: `0.2·width ≥ leftBeachEnd+50`).
+    #[test]
+    fn w4_c30_a_dual_dungeons_world_paints_the_snakes_deterministically() {
+        use crate::seeds::MicroSeedFlags;
+        use super::super::world_hash::world_hash;
+        let base = GenOptions {
+            width: 2400,
+            height: 800,
+            seed: 42,
+            ..Default::default()
+        };
+        let dual_opts = GenOptions {
+            micro_flags: MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS),
+            ..base.clone()
+        };
+        let a = super::super::generate(&dual_opts);
+        let b = super::super::generate(&dual_opts);
+        assert_eq!(world_hash(&a), world_hash(&b), "a == b for the dual world");
+        assert_eq!(a.tiles, b.tiles);
+        // The unbreakable-wall band (`DungeonControlLine.cs:152`): wall 350
+        // only the snake paints. The Dungeon0/Cavern bands span both halves.
+        let band = a.tiles.iter().filter(|t| t.wall == 350).count();
+        assert!(band > 1000, "the snakes paint the 350 band ({band})");
+        // The style bricks: the Snow band's ice-brick 161 + wall-71 pair is
+        // the snake's Snow style signature (`DungeonGenerationStyles.cs:356
+        // -359`) — the terrain snow band carries no wall 71.
+        let snow_bricks = a.tiles.iter().filter(|t| t.kind == 161 && t.wall == 71 && t.active()).count();
+        assert!(snow_bricks > 100, "the Snow band paints ({snow_bricks})");
+        // The classic control world has no snake output.
+        let classic = super::super::generate(&base);
+        assert_eq!(classic.tiles.iter().filter(|t| t.wall == 350).count(), 0);
+        // The runner path replays the same world (the resumable twin of
+        // `run` — the gate and the skip loop must agree between the two).
+        let mut runner = GenerationRunner::new(&dual_opts);
+        let mut result = GenStep::Running;
+        let mut guard = 0;
+        while result == GenStep::Running {
+            result = runner.advance(None, None);
+            guard += 1;
+            assert!(guard < 1000, "the runner must terminate");
+        }
+        assert_eq!(result, GenStep::Completed);
+        assert_eq!(runner.world().tiles, a.tiles, "the runner matches the one-shot");
     }
 }

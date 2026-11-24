@@ -17,6 +17,7 @@ use crate::net;
 use crate::registry;
 use crate::ui;
 use glam::Vec2;
+use tr_core::TILE_PX;
 
 /// `AlternateClickAction.TransferFromChest`'s cursor id (`ItemSlot.cs:216`) —
 /// the shift-click arrow on a hovered chest slot.
@@ -411,6 +412,52 @@ impl App {
         }
         let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
         ui::inventory::shop_slot_at(self.mouse_pos, cell)
+    }
+
+    /// W4-g56 — `Player.mouseInterface`'s hover surfaces (`Main.cs:61811-
+    /// 61812` latches it into `lastMouseInterface` at the update tail; the
+    /// void-lens gate reads the LAST frame's value, `Main.cs:37688`). The
+    /// port recomputes the same set at the interface-draw tail: the open
+    /// inventory's grid/coin/ammo/trash/equipment cells, the shop grid,
+    /// the chest panel's rect and the bank panel's cells. The reforge
+    /// inline block and the minimap-frame hover ride their own flags
+    /// (`minimap_hover`); the crafting panel's `mouseInterface` is the
+    /// covering gate the chest draw already reads.
+    pub(crate) fn mouse_interface_now(&self) -> bool {
+        if self.minimap_hover.is_some() {
+            return true;
+        }
+        if !self.inventory_open {
+            return self.slot_at_mouse().is_some();
+        }
+        if self.slot_at_mouse().is_some()
+            || self.coin_ammo_at_mouse().is_some()
+            || self.shop_slot_at_mouse().is_some()
+        {
+            return true;
+        }
+        let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
+        let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
+        if ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop) {
+            return true;
+        }
+        if let Some(bi) = crate::bank::bank_for_chest(self.open_container()) {
+            let _ = bi;
+            if ui::inventory::bank_slot_at(self.mouse_pos, m_h).is_some()
+                || ui::inventory::bank_button_at(self.mouse_pos, m_h).is_some()
+            {
+                return true;
+            }
+        }
+        // `ChestUI.cs:364-367` — the whole 10×4 panel rect sets
+        // `mouseInterface` (not only the cells).
+        if ui::chest::panel_visible(self.open_container(), self.crafting_open) {
+            let r = [73.0, 258.0, (10.0 * 56.0 * 0.755) as f32, (4.0 * 56.0 * 0.755) as f32];
+            if crate::ui::in_rect(self.mouse_pos, r) {
+                return true;
+            }
+        }
+        false
     }
 
     /// The coin (ctx 1) or ammo (ctx 2) cell under the cursor —
@@ -860,6 +907,144 @@ impl App {
         self.last_ping_pos = self.mouse_pos;
     }
 
+    /// The fullscreen pylon marker click (`TeleportPylonsMapLayer.cs:90-109`):
+    /// an onscreen marker closes the map and runs the teleport gate ladder
+    /// (`TeleportPylonsSystem.HandleTeleportRequest`, `:100-205`) + sound 11;
+    /// an offscreen one pans the map to it (`Main.PanTargetMapFullscreen`).
+    /// Both consume the press (`Main.mouseLeftRelease = false`, `:95`/`:103`).
+    pub(crate) fn handle_pylon_map_click(&mut self, click: crate::map_layers::PylonClick) {
+        use crate::map_layers::PylonClick;
+        let info = match click {
+            PylonClick::Teleport(i) | PylonClick::PanTo(i) => i,
+        };
+        // `:95`/`:103`: the click is consumed either way.
+        self.ui_left_press = false;
+        match click {
+            PylonClick::PanTo(_) => {
+                // `:103-107`: pan to the offscreen pylon's tile.
+                if let Some(m) = self.map.as_mut() {
+                    m.pan_target = true;
+                    m.pan_target_end = [info.x as f32, info.y as f32];
+                }
+            }
+            PylonClick::Teleport(_) => {
+                // `:95-99`: close the map, request the teleport, sound 11.
+                if let Some(m) = self.map.as_mut() {
+                    m.set_open(false);
+                }
+                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
+                self.request_pylon_teleport(info);
+            }
+        }
+    }
+
+    /// `TeleportPylonsSystem.HandleTeleportRequest` (`:100-205`) — the gate
+    /// ladder over `tr_core::pylons::handle_teleport_request`, then the
+    /// teleport (`Player.Teleport(newPos, 9, pylonType)` + `velocity = 0`,
+    /// `:189-194`) or the refusal chat line (`:203`). The destination metrics
+    /// scan is `SceneMetrics.Scan(BiomeScanCenterPositionInWorld = pylon)`
+    /// (`:134-137`/`:165-168`); the port's `scan_scene_at` is that scan.
+    fn request_pylon_teleport(&mut self, info: tr_core::pylons::PylonInfo) {
+        let Some(player) = self.player.as_ref() else {
+            return;
+        };
+        let (cx, cy) = player.center();
+        let player_tile = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+        let near = tr_core::pylons::is_player_near_a_pylon(&self.world, player_tile);
+        // `DoesPositionHaveEnoughNPCs`'s homes (`:221-238`): the
+        // `isLikeATownNPC && !homeless` NPCs' (homeTile, Center/16) pairs.
+        let homes: Vec<((i32, i32), (f32, f32))> = self
+            .npcs
+            .iter()
+            .filter(|n| n.hp > 0 && n.kind.is_town_npc_like() && n.home.is_some())
+            .map(|n| {
+                let (hx, hy) = n.home.unwrap();
+                let (ncx, ncy) = n.center();
+                ((hx, hy), (ncx / TILE_PX, ncy / TILE_PX))
+            })
+            .collect();
+        let pylons = tr_core::pylons::scan_pylons(&self.world);
+        let raining = self.rain.is_raining();
+        let sandstorm = self.sandstorm.happening;
+        let dest_center = [
+            info.x as f32 * TILE_PX + 8.0,
+            info.y as f32 * TILE_PX + 8.0,
+        ];
+        let metrics = crate::world_sim::scene_scan::scan_scene_at(
+            &self.world,
+            dest_center,
+            raining,
+            sandstorm,
+            false,
+        );
+        let outcome = tr_core::pylons::handle_teleport_request(
+            &self.world,
+            &pylons,
+            info,
+            near,
+            player_tile,
+            &homes,
+            self.world.downed_plant_boss,
+            &metrics,
+            |(x, y)| {
+                crate::world_sim::scene_scan::scan_scene_at(
+                    &self.world,
+                    [x as f32 * TILE_PX + 8.0, y as f32 * TILE_PX + 8.0],
+                    raining,
+                    sandstorm,
+                    false,
+                )
+            },
+        );
+        use tr_core::pylons::TeleportOutcome;
+        if outcome == TeleportOutcome::Teleported {
+            // `:189-194`: `newPos = PositionInTiles.ToWorldCoordinates() -
+            // (0, HeightOffsetBoost)`; `Teleport(newPos, 9, typeOfPylon)`;
+            // `velocity = Vector2.Zero`.
+            let boost = player
+                .mount
+                .data()
+                .filter(|_| player.mount.is_active())
+                .map(|d| d.height_boost)
+                .unwrap_or(0);
+            let new_x = info.x as f32 * TILE_PX + 8.0;
+            let new_y = info.y as f32 * TILE_PX + 8.0 - boost as f32;
+            if let Some(p) = self.player.as_mut() {
+                p.teleport_style(new_x, new_y, 9);
+                p.vx = 0.0;
+                p.vy = 0.0;
+            }
+        } else {
+            // `:203`: the refusal chat line (`ChatColors.ServerMessage`).
+            let key = match outcome {
+                TeleportOutcome::NotNear => {
+                    "Net.CannotTeleportToPylonBecausePlayerIsNotNearAPylon"
+                }
+                TeleportOutcome::NotEnoughNPCs => {
+                    "Net.CannotTeleportToPylonBecauseNotEnoughNPCs"
+                }
+                TeleportOutcome::Temple => {
+                    "Net.CannotTeleportToPylonBecauseAccessingLihzahrdTempleEarly"
+                }
+                TeleportOutcome::Biome => {
+                    "Net.CannotTeleportToPylonBecauseNotMeetingBiomeRequirements"
+                }
+                TeleportOutcome::NoUsablePylon(1) => {
+                    "Net.CannotTeleportToPylonBecauseNotEnoughNPCsAtCurrentPylon"
+                }
+                TeleportOutcome::NoUsablePylon(2) => {
+                    "Net.CannotTeleportToPylonBecauseNotMeetingBiomeRequirements"
+                }
+                TeleportOutcome::NoUsablePylon(_) => {
+                    "Net.CannotTeleportToPylonBecausePlayerIsNotNearAPylon"
+                }
+                TeleportOutcome::Teleported => unreachable!(),
+            };
+            self.chat
+                .new_text(crate::lang::text(key), crate::chat::COLOR_SERVER_MESSAGE);
+        }
+    }
+
     /// `ItemSlot.Handle` (context 0) subset: left click takes, places or swaps a whole
     /// stack, right click takes half or places one; on the closed hotbar a left click
     /// selects the slot like the original.
@@ -878,13 +1063,18 @@ impl App {
             return false;
         }
         // `:42301-42305`: the buttons releasing reset the focus click's
-        // lock and the held-repeat's recipe pin.
-        if !self.mine_down {
+        // lock and the held-repeat's recipe pin — `flag2 = Main.mouseLeft
+        // || Main.mouseRight` (`:42255`), so EITHER held button keeps them.
+        let held = self.mine_down || self.place_down;
+        if !held {
             self.prevent_craft_click = false;
             self.current_recipe_being_crafted = -1;
             return false;
         }
-        if !self.ui_left_press && self.stack_split > 1 {
+        // `flag = (mouseLeftRelease && mouseLeft) || (mouseRightRelease &&
+        // mouseRight)` (`:42254`): either button's press edge selects.
+        let press_edge = self.ui_left_press || self.ui_right_press;
+        if !press_edge && self.stack_split > 1 {
             return true; // the held frame between repeats
         }
         let (sw, sh) = self.screen_size();
@@ -904,9 +1094,16 @@ impl App {
         }
         // The toggles before the grid: the nearby-chests toggle flips the
         // setting (`CraftingUI.cs:336-355`), and a consumed press does not
-        // reach the recipe cells.
-        if ui::crafting::nearby_toggle_hit(screen, self.mouse_pos) {
+        // reach the recipe cells. The toggle reads `Main.mouseLeft &&
+        // Main.mouseLeftRelease` (`:346`) — LEFT only, unlike the recipe
+        // cells' either-button arms.
+        if self.mine_down && ui::crafting::nearby_toggle_hit(screen, self.mouse_pos) {
             self.settings.craft_from_nearby_chests = !self.settings.craft_from_nearby_chests;
+            // `NewCraftingUI.RefreshGrid()` (`CraftingUI.cs:349`): the shown
+            // list re-derives every frame in the port, so the refresh is a
+            // no-op here (the draw rebuilds `craft_raw_list`).
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:350`)
+            let _ = self.settings.save(); // `Main.SaveSettings()` (`:351`)
             self.ui_left_press = false;
             return true;
         }
@@ -949,7 +1146,7 @@ impl App {
         );
         // `:42250`'s `Main.availableRecipe[recipeIndex]` indexes the RAW list, so
         // the grid narrows only what is shown (`NewCraftingUI.cs:596-611`).
-        let available = self.craft_filters.shown(craft::available_with_gates(
+        let raw_available = craft::available_with_gates(
             &self.inventory,
             &self.equip,
             &self.world_chests,
@@ -959,23 +1156,42 @@ impl App {
             self.craft_filter.as_ref(),
             None,
             &gates,
-        ));
-        let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
+        );
+        let available = self.craft_filters.shown(raw_available.clone());
+        let Some(idx) = ui::crafting::hit_test(
+            screen,
+            &self.lookups,
+            self.mouse_pos,
+            &available,
+            self.craft_scroll,
+        )
         else {
             return false;
         };
         let recipe = &craft::RECIPES[idx];
+        // `HandleCraftSlot` (`NewCraftingUI.cs:499-528`): the click on an
+        // unfocused cell selects it — `_selectedRecipeIndex = entry.index`
+        // (`:507`) and `Main.focusRecipe = entry.availableIndex` (`:510`),
+        // the RAW `availableRecipe` position (`UpdateContents` `:610`), NOT
+        // the recipe-table index (the W4-f23 index-space fix: with a filter
+        // active the shown position and the raw position diverge).
+        let available_index =
+            ui::crafting_grid::available_position(&raw_available, idx);
         // `Main.cs:42256-42262` + `:42295-42299`: the first click on an
-        // unfocused row selects it (`focusRecipe = recipeIndex`,
-        // `stackSplit = 15`, the click-consumed lock, the MenuTick sound);
-        // the craft runs only on the focused row.
-        if self.focus_recipe != idx as i32 {
-            if self.ui_left_press {
-                self.focus_recipe = idx as i32;
+        // unfocused row selects it (`stackSplit = 15`, the click-consumed
+        // lock, the MenuTick sound); the craft runs only on the focused row.
+        // `HandleCraftSlot`'s select arm takes EITHER button
+        // (`NewCraftingUI.cs:505`: `(mouseLeft && mouseLeftRelease) ||
+        // (mouseRight && mouseRightRelease)`), and so does
+        // `HoverOverCraftingItemButton`'s (`:42254`'s `flag`).
+        if self.focus_recipe != available_index {
+            if press_edge {
+                self.focus_recipe = available_index;
                 self.stack_split = 15;
                 self.prevent_craft_click = true;
                 self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 self.ui_left_press = false;
+                self.ui_right_press = false;
             }
             return true;
         }
@@ -1027,6 +1243,18 @@ impl App {
             self.rngs.global(),
             num,
         );
+        // `CraftingRequests.CraftItem`'s tail (`CraftingRequests.cs:119`):
+        // `CraftingEffects.OnCraft(recipe, quickCraft)` runs AFTER the craft
+        // loop, UNCONDITIONALLY — even when the loop crafted nothing (the
+        // `i <= 0` first-iteration arm, `:102`, always runs once). `OnCraft`
+        // → `SpawnEffects_BeforeGrantingItem` → `SoundEngine.PlaySound(7)`
+        // (`CraftingEffects.cs:16-24`, `:49-52`): the craft-attempt cue, NOT
+        // a per-item grant sound. The port played it only inside
+        // `!crafted.is_empty()` (the grant), dropping the cue on a
+        // focused-row attempt the ingredients no longer allow — the
+        // g23c-menu-union co-lane census found the gap (W4-f23 closeout 3).
+        // The cue is button-agnostic (`:42276`'s `flag2` feeds both arms).
+        self.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)
         if !crafted.is_empty() {
             // The C# hands the result to the cursor (`Main.CraftItem_GrantItem`,
             // `Main.cs:42607-42612`); the port grants it into the inventory
@@ -1041,9 +1269,6 @@ impl App {
                         (self.inventory[i].count + made.count).min(crate::registry::max_stack(made.kind));
                 }
             }
-            // `SoundEngine.PlaySound(7)` — the grant sound
-            // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
-            self.audio.play("Grab");
             // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
             // crafted item's id rides the event, so `BENCHED`'s workbench set
             // matches the crafted item and not any craft.
@@ -1060,7 +1285,113 @@ impl App {
             };
         }
         self.ui_left_press = false;
+        // The right press edge is consumed by the craft the same way
+        // (`:42254`'s `flag` feeds both arms); the HELD right button keeps
+        // crafting through `flag2` (`:42255`) like the held left.
+        self.ui_right_press = false;
         true
+    }
+
+    /// The craft grid's live shown list — the same inputs
+    /// `handle_crafting_clicks` and the draw path feed
+    /// (`Recipe.UpdateRecipeList` + `NewCraftingUI.UpdateContents`).
+    fn craft_shown_list(&self) -> Vec<usize> {
+        let Some(player) = self.player.as_ref() else {
+            return Vec::new();
+        };
+        let reach = craft::tile_reach(
+            player.equipped[..10].contains(&2215) || player.equipped[..10].contains(&3061),
+            self.mouse_item.kind == 1923,
+            self.creative_powers.far_placement_range(),
+            player.ate_artisan_bread,
+        );
+        let adj = craft::scan_adjacent(&self.world, player, reach);
+        let zones = craft::Zones {
+            snow: self.scene_metrics.zone_snow,
+            graveyard: self.scene_metrics.zone_graveyard,
+        };
+        let gates = craft::Gates {
+            unlocked_biome_torches: player.unlocked_biome_torches,
+            mechdusa: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                && self
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        };
+        let in_range = craft::chests_in_range(
+            &self.world,
+            player,
+            &self.world_chests,
+            self.settings.craft_from_nearby_chests,
+        );
+        let raw = craft::available_with_gates(
+            &self.inventory,
+            &self.equip,
+            &self.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            self.craft_filter.as_ref(),
+            None,
+            &gates,
+        );
+        self.craft_filters.shown(raw)
+    }
+
+    /// `UIList.ScrollWheel` (`UIList.cs:107-114`) for the craft grid:
+    /// `UserInterface.Update` hands the notch to the element under the
+    /// pointer (`:219-221`) — the list rect or the attached bar — and
+    /// zeroes the accumulator whatever the hit (`Main.cs:17453-17456`:
+    /// `NewCraftingUI.Visible` sets `flag = false`, so the classic list's
+    /// scroll never also runs). Returns whether the panel consumed the
+    /// notch (the hotbar arm must not see it).
+    pub(crate) fn craft_wheel(&mut self, delta: i32) -> bool {
+        if !self.crafting_open {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let l = ui::crafting::layout(
+            Vec2::new(sw, sh),
+            ui::crafting::title_width_for(&self.lookups),
+            false,
+        );
+        let n = self.craft_shown_list().len();
+        if ui::crafting::wheel_target(&l, n, self.mouse_pos) {
+            self.craft_scroll = ui::crafting::scroll_wheel(self.craft_scroll, delta, &l, n);
+        }
+        true
+    }
+
+    /// `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`) for the craft
+    /// grid's bar: the handle grab latches `_dragYOffset`, a track press
+    /// jumps the view. Returns whether the bar took the press — the same
+    /// press must not reach the recipe cells (`evt.Target == this`).
+    pub(crate) fn craft_scrollbar_press(&mut self) -> bool {
+        if !self.crafting_open || !self.ui_left_press {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let l = ui::crafting::layout(
+            Vec2::new(sw, sh),
+            ui::crafting::title_width_for(&self.lookups),
+            false,
+        );
+        let n = self.craft_shown_list().len();
+        let Some((scroll, drag)) =
+            ui::crafting::scrollbar_press(&l, n, self.craft_scroll, self.mouse_pos)
+        else {
+            return false;
+        };
+        self.craft_scroll = scroll;
+        self.craft_scroll_drag = drag;
+        self.ui_left_press = false;
+        true
+    }
+
+    /// `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`): the drag latch
+    /// clears on the release.
+    pub(crate) fn craft_scrollbar_release(&mut self) {
+        self.craft_scroll_drag = None;
     }
 
     /// The town-chatter panel's clicks (`NPCChatPanel.DrawButtons`,
@@ -1081,24 +1412,53 @@ impl App {
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
-        let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        let hovered = if ui::in_rect(self.mouse_pos, rect) { 0 } else { -1 };
+        // W4-f30 — the Dryad's Stardew bit (`NPCInteractions.cs:79-103`): the
+        // "Purify" button shows while the cola is held (`CanDryadPlayStardew-
+        // Animation`). It rides the interaction row BEFORE Close (the
+        // `NPCInteractions.All` order, `:515-517`); the port models the two
+        // buttons the panel owns (the shop/happiness/… rows stay deferred).
+        let held = self.inventory.get(self.selected).map_or(0, |s| s.kind);
+        let stardew = crate::dryad_stardew::can_dryad_play_stardew_animation(
+            held,
+            self.talk_npc.and_then(|i| self.npcs.get(i)),
+        );
+        let (stardew_rect, close_rect) =
+            ui::npc_chat::button_rects(&self.lookups, screen, &self.npc_chat_text, stardew);
+        // The hover pick: the Stardew button (index 0) when shown, else Close.
+        let hovered = if stardew && ui::in_rect(self.mouse_pos, stardew_rect) {
+            0
+        } else if ui::in_rect(self.mouse_pos, close_rect) {
+            if stardew { 1 } else { 0 }
+        } else {
+            -1
+        };
         // `:157-160` — the hover-change tick (no gamepad in the port, so
         // the `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
             crate::chest::play_menu_sound(self, 12);
         }
         self.npc_chat_last_hovered = hovered;
-        if hovered == 0 && self.ui_left_press {
-            self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
-            // half is unported; `SetTalkNPC(-1)` + the text clear + sound
-            // 11 + the panel's `Close` reset.
-            self.talk_npc = None;
-            self.npc_chat_text.clear();
-            crate::chest::play_menu_sound(self, 11);
-            self.npc_chat_last_hovered = -1;
+        if hovered == -1 || !self.ui_left_press {
+            return;
         }
+        self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
+        if stardew && hovered == 0 {
+            // `StardewValleyBit.Interact` (`NPCInteractions.cs:97-102`): the
+            // portrait hop + sound 12, then the gift. The hop is the deferred
+            // portrait system; the sound plays here.
+            crate::chest::play_menu_sound(self, 12);
+            crate::dryad_stardew::dryad_do_stardew_valley_bit(self);
+            return;
+        }
+        // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
+        // half is unported; `SetTalkNPC(-1)` + the text clear + sound
+        // 11 + the panel's `Close` reset.
+        self.talk_npc = None;
+        self.npc_chat_text.clear();
+        crate::chest::play_menu_sound(self, 11);
+        self.npc_chat_last_hovered = -1;
+        // W4-f30 — the Joja latches clear on the close (`NPC.cs:93772`).
+        crate::dryad_stardew::reset_joja_latches(self);
     }
 
     /// The bestiary screen's clicks: the inventory button that opens it
@@ -1161,9 +1521,12 @@ impl App {
         // open the emotes wheel.
         if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
             self.inventory_open = false;
-            // `UIEmotesMenu.OnActivate` rebuilds the page, so the wheel opens
-            // with its scroll at 0 (`EmoteSystem::open`).
-            self.emotes.open();
+            // `UIEmotesMenu.OnActivate` rebuilds the page from the CURRENT
+            // downed flags (`InitializePage`'s seven `TryAddingList` calls,
+            // `UIEmotesMenu.cs:90-97`), so the wheel opens with its scroll
+            // at 0 and the gated Critters/Bosses tails fresh (W4-g54).
+            let gates = crate::emotes::EmoteGates::from_world(&self.world);
+            self.emotes.open_with(&gates);
             self.ui_left_press = false;
             return;
         }
@@ -1173,7 +1536,48 @@ impl App {
         if self.emotes.menu_open {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
-            if let Some(id) = ui::emotes::card_at(screen, self.mouse_pos, self.emotes.scroll) {
+            let panel = ui::emotes::panel_rect(screen, true);
+            // The scrollbar first (`UIScrollbar.LeftMouseDown`,
+            // `UIScrollbar.cs:126-143`): a press on the handle latches the
+            // drag, a press on the track jumps the view to centre the
+            // handle under the pointer.
+            if ui::emotes::scrollbar_attaches(&self.emotes.groups, &panel) {
+                let sb = ui::emotes::scrollbar_rect(&panel);
+                let list = ui::emotes::list_rect(&panel, true);
+                let content = ui::emotes::list_content_height(&self.emotes.groups);
+                let handle = crate::ui::panel::scrollbar_handle_at(
+                    sb,
+                    list[3],
+                    content,
+                    self.emotes.scroll,
+                );
+                let m = self.mouse_pos;
+                if m.x >= sb[0] && m.x <= sb[0] + sb[2] && m.y >= sb[1] && m.y <= sb[1] + sb[3] {
+                    let max = ui::emotes::max_scroll(&self.emotes.groups, &list);
+                    if m.x >= handle[0]
+                        && m.x <= handle[0] + handle[2]
+                        && m.y >= handle[1]
+                        && m.y <= handle[1] + handle[3]
+                    {
+                        // `_dragYOffset = mouseY - handle.Y` (`:131-135`).
+                        self.emote_scroll_drag = Some(m.y - handle[1]);
+                    } else {
+                        let value = crate::ui::panel::scrollbar_jump_value(
+                            sb,
+                            list[3],
+                            content,
+                            handle[3],
+                            m.y,
+                        );
+                        self.emotes.scroll_to(value, max);
+                    }
+                    self.ui_left_press = false;
+                    return;
+                }
+            }
+            if let Some(id) =
+                ui::emotes::card_at(screen, self.mouse_pos, &self.emotes.groups, self.emotes.scroll)
+            {
                 // `MakeLocalPlayerEmote`'s dead gate (`:280`):
                 // `Main.netMode == 2 || !Main.LocalPlayer.dead` — the port's
                 // single-player arm silences a dead player.
@@ -1191,7 +1595,6 @@ impl App {
             // not the bestiary's panel it used to borrow (`Top(-25)` on a
             // different container) — the same BUG-18 mis-box the draw side
             // fixed and the click side kept.
-            let panel = ui::emotes::panel_rect(screen, true);
             if ui::emotes::back_hit(&panel, self.mouse_pos) {
                 self.emotes.close();
                 self.ui_left_press = false;
@@ -1200,9 +1603,11 @@ impl App {
     }
 
     /// The achievements menu's clicks (`UIAchievementsMenu`'s
-    /// `GoBackClick`/`FilterList`/`FadedMouseOver`): the Back panel closes
-    /// the overlay, a category toggle flips the filter, the wheel scrolls
-    /// the list. Consumes the press on every hit.
+    /// `GoBackClick`/`FilterList` + the attached `UIScrollbar`'s
+    /// `LeftMouseDown`): the scrollbar takes a press on its own rect first
+    /// (`evt.Target == this`, `UIScrollbar.cs:129`), then the Back panel
+    /// closes the overlay, then a category toggle flips the filter (sound
+    /// 12, `FilterList` `:165`). Consumes the press on every hit.
     pub(crate) fn handle_achievements_clicks(&mut self) {
         let left = self.ui_left_press;
         if !left {
@@ -1214,22 +1619,97 @@ impl App {
             // `OnActivate`'s `Main.gameMenu` arm decides the container's Top.
             let game_menu = self.menu.is_some();
             let panel = ui::achievements::panel_rect(screen, game_menu);
+            // `UIScrollbar.LeftMouseDown` — the handle grab or track jump.
+            let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+            if let Some((pos, drag)) = ui::achievements::scrollbar_press(
+                &panel,
+                rows.len(),
+                self.achievements_scroll,
+                self.mouse_pos,
+            ) {
+                self.achievements_scroll = pos;
+                self.achievements_scroll_drag = drag;
+                self.ui_left_press = false;
+                return;
+            }
             // The Back panel closes the state (`GoBackClick` -> `IngameFancyUI.Close()`).
             if ui::achievements::back_hit(&panel, self.mouse_pos) {
                 self.achievements_open = false;
                 self.achievements_categories = [true; 4];
                 self.achievements_scroll = 0.0;
+                self.achievements_scroll_drag = None;
+                self.achievements_handle_hover = false;
                 self.ui_left_press = false;
                 return;
             }
-            // `FilterList` — a toggle flips and the list rebuilds.
+            // `FilterList` — a toggle flips and the list rebuilds (`:163-175`).
             if let Some(j) = ui::achievements::category_at(&panel, self.mouse_pos) {
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:165`)
                 self.achievements_categories[j] = !self.achievements_categories[j];
-                self.achievements_scroll = 0.0;
+                // `FilterList` does NOT reset the scroll — `Recalculate`'s
+                // `SetView` clamp keeps the position in the new range
+                // (`UIList.cs:104`, `UIScrollbar.cs:75`).
+                let list = ui::achievements::list_rect(&panel);
+                let now_rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+                self.achievements_scroll = self
+                    .achievements_scroll
+                    .clamp(0.0, ui::achievements::max_scroll(now_rows.len(), &list));
                 self.ui_left_press = false;
                 return;
             }
             self.ui_left_press = false;
+        }
+    }
+
+    /// The achievements scrollbar's drag frame (`UIScrollbar.DrawSelf`'s
+    /// `_isDragging` arm, `UIScrollbar.cs:109-112`): while the handle is
+    /// held the view follows the pointer with the latched grab offset.
+    pub(crate) fn achievements_scrollbar_drag(&mut self) {
+        let Some(offset) = self.achievements_scroll_drag else {
+            return;
+        };
+        let (sw, sh) = self.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), self.menu.is_some());
+        let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+        self.achievements_scroll =
+            ui::achievements::scrollbar_drag(&panel, rows.len(), offset, self.mouse_pos.y);
+    }
+
+    /// The achievements overlay's hover edge (`FadedMouseOver`,
+    /// `UIAchievementsMenu.cs:150-155`): sound 12 fires once when the
+    /// pointer enters the Back panel; the latch clears on mouse-out.
+    /// The scrollbar handle's own hover update rides the same tick
+    /// (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:113-120`): the handle rect
+    /// hit-tests the truncated pointer, sound 12 fires on the false→true
+    /// edge, and the latch feeds the handle tint (`:122`).
+    pub(crate) fn achievements_hover_tick(&mut self) {
+        if !self.achievements_open {
+            self.achievements_back_sounded = false;
+            self.achievements_handle_hover = false;
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), self.menu.is_some());
+        let hovered = ui::achievements::back_hit(&panel, self.mouse_pos);
+        if ui::elements::GroupOptionButtonState::hover_sound_tick(
+            hovered,
+            &mut self.achievements_back_sounded,
+        ) {
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:152`)
+        }
+        // `UIScrollbar.cs:113-120` — the handle rect at the current view.
+        let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+        let (hover, edge) = ui::panel::scrollbar_hover_tick(
+            ui::achievements::scrollbar_rect(&panel),
+            ui::achievements::list_rect(&panel)[3],
+            ui::achievements::list_content_height(rows.len()),
+            self.achievements_scroll,
+            self.mouse_pos,
+            self.achievements_handle_hover,
+        );
+        self.achievements_handle_hover = hover;
+        if edge {
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:119`)
         }
     }
 
@@ -1242,6 +1722,9 @@ impl App {
     pub(crate) fn open_achievements_and_goto(&mut self, name: &str) {
         self.achievements_open = true;
         self.achievements_categories = [true; 4];
+        self.achievements_scroll_drag = None;
+        self.achievements_back_sounded = false;
+        self.achievements_handle_hover = false;
         let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
         let idx = rows
             .iter()
@@ -1257,10 +1740,13 @@ impl App {
         self.achievements_scroll = top.clamp(0.0, max);
     }
 
-    /// The achievements list's wheel scroll (`UIList`'s scrollbar, driven by
-    /// the mouse wheel here — `UIScrollbar.SetView(100f, 1000f)` is the
-    /// vanilla control; the port's wheel is the documented stand-in).
-    pub(crate) fn scroll_achievements(&mut self, delta: f32) {
+    /// The achievements list's wheel scroll — `UIList.ScrollWheel`
+    /// (`UIList.cs:107-114`): `_scrollbar.ViewPosition -= evt.ScrollWheelValue`,
+    /// the raw XNA counter (120 units per detent), clamped by `SetView`
+    /// (`UIScrollbar.cs:75`). `notches` is the pointer machine's consumed
+    /// `ScrollWheelDeltaForUI` (`UserInterface.cs:219-222`); the former
+    /// one-row-per-notch stand-in (`delta * (ROW_H + 5)`) is gone.
+    pub(crate) fn scroll_achievements(&mut self, notches: i32) {
         if !self.achievements_open {
             return;
         }
@@ -1275,9 +1761,8 @@ impl App {
             .iter()
             .filter(|a| ui::achievements::filter_visible(&self.achievements_categories, a.category))
             .count();
-        let max = ui::achievements::max_scroll(rows, &list);
         self.achievements_scroll =
-            (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0)).clamp(0.0, max);
+            ui::achievements::scroll_wheel(self.achievements_scroll, notches, rows, &list);
     }
 
     /// `DrawInterface_38_MouseCarriedObject`'s click tail
@@ -1513,7 +1998,21 @@ impl App {
                         }
                         // `:42765-42770`: `SendData(157)` in MP, else the
                         // team-based-spawns respawn in SP (`teamBasedSpawnsSeed`
-                        // is not ported — no team spawn seeds yet).
+                        // is not ported — no team spawn seeds yet). The port
+                        // sends the `45` body (the `157` tail is the unported
+                        // team-spawn seed; `MessageBuffer.cs:2325-2364` reads
+                        // both through the same arm).
+                        let me = self.local_id as u8;
+                        let msg = crate::net::TeamChange { player_id: me, team: i as u8 };
+                        match &self.net {
+                            crate::app::NetRole::Host(server) => {
+                                server.broadcast(&crate::net::S2c::TeamChange(msg));
+                            }
+                            crate::app::NetRole::Client(client) => {
+                                client.send(&crate::net::C2s::TeamChange(msg));
+                            }
+                            crate::app::NetRole::Off => {}
+                        }
                     }
                     None => {}
                 }
@@ -1640,20 +2139,57 @@ impl App {
                             self.rngs.global(),
                             tr_core::UnifiedRandom::default(),
                         );
+                        // W4-g56 — the Sort-feedback glow pairs, collected
+                        // under the `p` borrow and applied to `slot_glow`
+                        // after it ends (the disjoint-field borrow).
+                        let mut sort_glow: Vec<(usize, f32)> = Vec::new();
                         match id {
                             // `ChestUI.LootAll`'s bank arm (:417-473) —
                             // `LootAllFromBank` is the default settings
                             // (`GetItemSettings.cs:55`): no vault arm, so
                             // `None` (the overflow stays in the bank).
-                            0 => crate::bank::loot_all(
-                                &mut p.banks[bi],
-                                &mut self.inventory,
-                                &mut self.equip.coins,
-                                &mut self.equip.ammo,
-                                None,
-                                &mut self.audio,
-                                &mut rng,
-                            ),
+                            // W4-g56 — the void-vault arm (`:447-460`) skips
+                            // the FAVORITED slots (`!player.bank4.item[l]
+                            // .favorited`, `:451`); the other banks' items
+                            // cannot favorite, so the gate is theirs too
+                            // (a no-op).
+                            0 => {
+                                if chest_open == -5 {
+                                    // The favorited stacks park outside the
+                                    // drain, then return to their slots.
+                                    let mut parked = [crate::item::EMPTY_SLOT; crate::bank::BANK_SLOTS];
+                                    for i in 0..crate::bank::BANK_SLOTS {
+                                        if p.vault_favorites[i] {
+                                            parked[i] = p.banks[bi][i];
+                                            p.banks[bi][i] = crate::item::EMPTY_SLOT;
+                                        }
+                                    }
+                                    crate::bank::loot_all(
+                                        &mut p.banks[bi],
+                                        &mut self.inventory,
+                                        &mut self.equip.coins,
+                                        &mut self.equip.ammo,
+                                        None,
+                                        &mut self.audio,
+                                        &mut rng,
+                                    );
+                                    for i in 0..crate::bank::BANK_SLOTS {
+                                        if p.vault_favorites[i] {
+                                            p.banks[bi][i] = parked[i];
+                                        }
+                                    }
+                                } else {
+                                    crate::bank::loot_all(
+                                        &mut p.banks[bi],
+                                        &mut self.inventory,
+                                        &mut self.equip.coins,
+                                        &mut self.equip.ammo,
+                                        None,
+                                        &mut self.audio,
+                                        &mut rng,
+                                    );
+                                }
+                            }
                             // `ChestUI.DepositAll` (`:540-659`) — the
                             // MoveCoins pre-pass runs for every container
                             // kind (:543-562).
@@ -1695,6 +2231,21 @@ impl App {
                                     &mut rng,
                                 );
                             }
+                            // W4-g56 — the bank Sort row (id 4,
+                            // `ItemSorting.SortChest`, `ItemSorting.cs:
+                            // 1629-1653`): every container kind sorts its
+                            // own slots; the damage-ranked layer order reads
+                            // the local player's class multipliers (the
+                            // world-chest `chest_sort_click` precedent).
+                            4 => {
+                                let mult = [
+                                    p.melee_damage,
+                                    p.ranged_damage,
+                                    p.magic_damage,
+                                    p.minion_damage,
+                                ];
+                                sort_glow = crate::item_sorting::sort_chest(&mut p.banks[bi], mult);
+                            }
                             _ => {
                                 let _ = crate::bank::restock(
                                     &mut p.banks[bi],
@@ -1707,6 +2258,12 @@ impl App {
                             }
                         }
                         *self.rngs.global() = rng;
+                        // W4-g56 — the Sort-feedback glow (`ItemSorting.cs:
+                        // 1586`, `chest != -1` true): arm the chest glow pair
+                        // per written slot (the `p` borrow has ended).
+                        for (slot, hue) in sort_glow {
+                            self.slot_glow.set_glow(slot, hue, true);
+                        }
                         return;
                     }
                 }
@@ -1726,6 +2283,28 @@ impl App {
                 ui::inventory::bank_slot_at(self.mouse_pos, m_h)
             }) {
                 let bi = crate::bank::bank_for_chest(chest_open).unwrap();
+                // W4-g56 — the void vault's Alt+left favorite toggle
+                // (`ItemSlot.cs:611-620`'s cursor-3 arm over context 32 —
+                // `canFavoriteAt[32]` is true, `:386-394`): the toggle eats
+                // the press before the movement arms, sound 12 on both
+                // flips (`ToggleFavorited`, `:873-877`). The favorite bit
+                // rides `Player.vault_favorites` (the `.plr` per-slot bools).
+                if left
+                    && chest_open == -5
+                    && self.cursor_override == CURSOR_FAVORITE
+                {
+                    let toggled = self.player.as_mut().is_some_and(|p| {
+                        if p.banks[bi][bank_idx].count == 0 {
+                            return false; // `:607-609` — air returns first
+                        }
+                        p.vault_favorites[bank_idx] = !p.vault_favorites[bank_idx];
+                        true
+                    });
+                    if toggled {
+                        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                    }
+                    return;
+                }
                 // Read the cell and the cursor up front so the `&mut self`
                 // pickup helper never overlaps the player borrow; the cell is
                 // written back once the branch settles.
@@ -1740,6 +2319,53 @@ impl App {
                 let can_take = held.count == 0
                     || (crate::bank::can_stack(&held, &target)
                         && held.count < crate::registry::max_stack(target.kind));
+                // W4-g56 — `RightClick`'s ctx-32 swap block
+                // (`ItemSlot.cs:1685-1697`): a single wearable / dye jumps
+                // to its equipment row on the press edge (the ctx-0/3/4
+                // ladder covers 32 too), ahead of the pickup split. The
+                // `HasItemSwap` cycle (`:1668-1675`) runs first — the
+                // Void Bag 4131 ↔ Closed Void Bag 5325 pair is in the set.
+                if !left
+                    && (held.count == 0 || !crate::bank::can_stack(&held, &target))
+                    && target.count == 1
+                    && target.kind > 0
+                {
+                    if crate::sortdata::HAS_ITEM_SWAP.get(target.kind) {
+                        if right_edge {
+                            if let Some(new_kind) =
+                                crate::app::equip_swap::try_item_swap(&mut target)
+                            {
+                                if let Some(p) = self.player.as_mut() {
+                                    p.banks[bi][bank_idx] = target;
+                                }
+                                self.audio
+                                    .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+                                self.stack_split = 30; // `:2007`
+                                self.ui_right_press = false; // `:2008`
+                            }
+                        }
+                        return;
+                    }
+                    if crate::app::equip_swap::can_be_equipped(&target)
+                        || registry::get(target.kind).is_some_and(|d| d.dye > 0)
+                    {
+                        if right_edge {
+                            let mut item = target;
+                            if self.swap_equip_click(None, &mut item) {
+                                if let Some(p) = self.player.as_mut() {
+                                    p.banks[bi][bank_idx] = item;
+                                    // The source's favourite clears with the
+                                    // move (`retainFavoriteOnMoveAt` keeps 32
+                                    // on a plain move, but `EquipSwap`'s
+                                    // `SwapClearFavorite` clears it — the
+                                    // ctx-0 grid arm's same write).
+                                    p.vault_favorites[bank_idx] = false;
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
                 if left {
                     if held.count == 0 {
                         held = target;
@@ -1786,6 +2412,13 @@ impl App {
                 }
                 if let Some(p) = self.player.as_mut() {
                     p.banks[bi][bank_idx] = target;
+                    // W4-g56 — the vault cell emptied: its favorite clears
+                    // (the flag rides a non-air stack — the draw gate and
+                    // the C#'s `!item.IsAir && item.favorited` arm,
+                    // `ItemSlot.cs:2152`; a re-stocked cell starts plain).
+                    if bi == 3 && target.count == 0 {
+                        p.vault_favorites[bank_idx] = false;
+                    }
                 }
                 return;
             }
@@ -2033,6 +2666,7 @@ impl App {
             item: 0,
             when: crate::shop::StockWhen::Always,
             shop_custom_price: None,
+            shop_special_currency: -1,
             buy_once: false,
             is_a_shop_item: false,
             prefix: 0,
@@ -2308,6 +2942,22 @@ impl App {
                     return;
                 }
             }
+            // W4-g56 — the void vault's cells (context 32) favorite too
+            // (`canFavoriteAt[32]`, `ItemSlot.cs:386-394`); the other banks
+            // (4) are not in the table.
+            if self.open_container() == -5 {
+                let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
+                if let Some(idx) = ui::inventory::bank_slot_at(self.mouse_pos, m_h) {
+                    let stocked = self
+                        .player
+                        .as_ref()
+                        .is_some_and(|p| p.banks[3][idx].count > 0);
+                    if stocked && chest::can_favorite_at(32) {
+                        self.cursor_override = CURSOR_FAVORITE;
+                        return;
+                    }
+                }
+            }
             if let Some(slot) = self.slot_at_mouse() {
                 if slot < crate::item::INV
                     && self.inventory[slot].count > 0
@@ -2495,7 +3145,12 @@ impl App {
             ],
             None => [1.0; 4],
         };
-        crate::item_sorting::sort_chest(&mut wc.slots, mult);
+        let glow = crate::item_sorting::sort_chest(&mut wc.slots, mult);
+        // W4-g56 — the Sort-feedback glow (`ItemSorting.cs:1586`, `chest !=
+        // -1` true — a world chest is open): arm the chest glow pair.
+        for (slot, hue) in glow {
+            self.slot_glow.set_glow(slot, hue, true);
+        }
     }
 
     /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +
@@ -2770,8 +3425,20 @@ impl App {
                 self.achievements_open = true;
                 self.achievements_scroll = 0.0;
                 self.achievements_categories = [true; 4];
+                self.achievements_scroll_drag = None;
+                self.achievements_back_sounded = false;
+                self.achievements_handle_hover = false;
                 // The menu row's `SoundEngine.PlaySound(10)` already fired in
                 // `Menu::click`.
+            }
+            // menuMode 11 row 4 (`Main.cs:48949-48957`): `menuMode = 888` +
+            // `OpenResourcePacksMenu(null)` — the pack-selection screen with
+            // a null back target (Back returns to menuMode 0). The menu
+            // row's `SoundEngine.PlaySound(10)` already fired in `Menu::click`.
+            Action::ResourcePacks => {
+                self.enter_front(FrontScreen::ResourcePackSelection(Box::new(
+                    ui::resource_packs::PackSelectionState::new(),
+                )));
             }
             Action::Join { addr, password } => match net::Client::connect(&addr) {
                 Ok(client) => {
@@ -2820,26 +3487,29 @@ impl App {
 mod tests {
     #[test]
     fn the_wheel_click_spawns_the_drawn_cells_emote() {
-        // The break: `card_at` read the uncentred lattice while the draw
-        // centred the roster (+31 px), so a click on the drawn cell spawned
-        // its neighbour's emote. At the headless 1280x720 the grid origin is
-        // (388, 160); the drawn centre of cell (3, 1) is (514, 214) = id 17.
+        // The break: `card_at` read a different lattice than the draw, so a
+        // click on the drawn cell spawned its neighbour's emote. W4-g54: both
+        // sides read the grouped `EmotesGroupListItem` lattice — General's
+        // cell (row 1, col 3) is roster index 17 = id 91 (`GetEmotesGeneral`,
+        // `UIEmotesMenu.cs:108-116`).
         let mut app = inv_app();
         app.inventory_open = false;
         app.emotes.open();
         let screen = Vec2::new(1280.0, 720.0);
-        let grid = ui::emotes::grid_rect(screen);
-        let origin = ui::emotes::grid_origin(&grid);
-        let mouse = Vec2::new(
-            origin[0] + 3.0 * ui::emotes::CELL + ui::emotes::CELL * 0.5,
-            origin[1] + ui::emotes::CELL + ui::emotes::CELL * 0.5,
+        let panel = ui::emotes::panel_rect(screen, true);
+        let list = ui::emotes::list_rect(&panel, true);
+        let gr = ui::emotes::group_rect(&list, &app.emotes.groups, 0, 0.0);
+        let br = ui::emotes::button_rect(&gr, 17);
+        let mouse = Vec2::new(br[0] + br[2] * 0.5, br[1] + br[3] * 0.5);
+        assert_eq!(
+            ui::emotes::card_at(screen, mouse, &app.emotes.groups, 0.0),
+            Some(91)
         );
-        assert_eq!(ui::emotes::card_at(screen, mouse, 0), Some(17));
         app.mouse_pos = mouse;
         app.ui_left_press = true;
         app.handle_bestiary_clicks();
         assert_eq!(app.emotes.bubbles.len(), 1, "the pick spawned a bubble");
-        assert_eq!(app.emotes.bubbles[0].emote, 17, "the drawn cell's id");
+        assert_eq!(app.emotes.bubbles[0].emote, 91, "the drawn cell's id");
         assert_eq!(app.emotes.bubbles[0].life_time, 360, "the vanilla lifetime");
         assert!(app.emotes.bubbles[0].anchored_to_player);
         // `EmoteButton.LeftClick` closes the wheel (`IngameFancyUI.Close`);
@@ -2858,9 +3528,11 @@ mod tests {
         app.player.as_mut().unwrap().dead = true;
         app.emotes.open();
         let screen = Vec2::new(1280.0, 720.0);
-        let grid = ui::emotes::grid_rect(screen);
-        let origin = ui::emotes::grid_origin(&grid);
-        app.mouse_pos = Vec2::new(origin[0] + 18.0, origin[1] + 18.0);
+        let panel = ui::emotes::panel_rect(screen, true);
+        let list = ui::emotes::list_rect(&panel, true);
+        let gr = ui::emotes::group_rect(&list, &app.emotes.groups, 0, 0.0);
+        let br = ui::emotes::button_rect(&gr, 0);
+        app.mouse_pos = Vec2::new(br[0] + br[2] * 0.5, br[1] + br[3] * 0.5);
         app.ui_left_press = true;
         app.handle_bestiary_clicks();
         assert!(app.emotes.bubbles.is_empty(), "the dead gate silences it");
@@ -2890,6 +3562,246 @@ mod tests {
         app.handle_bestiary_clicks();
         assert!(app.emotes.menu_open, "the bestiary's box is not the wheel's");
         assert!(app.ui_left_press, "the press stays unconsumed");
+    }
+
+    /// W4-g53 witness: the achievements scrollbar is a real `UIScrollbar`
+    /// (`UIAchievementsMenu.cs:81-87`) — a press on the handle latches the
+    /// grab offset (`UIScrollbar.cs:134-135`), the drag frame follows the
+    /// pointer (`:109-112`), and a track press jumps without a latch
+    /// (`:137-141`).
+    #[test]
+    fn g53_the_achievements_scrollbar_grabs_drags_and_jumps() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let bar = ui::achievements::scrollbar_rect(&panel);
+        let list = ui::achievements::list_rect(&panel);
+        let content = ui::achievements::list_content_height(137);
+        let handle = ui::panel::scrollbar_handle_at(bar, list[3], content, 0.0);
+        // The handle grab: offset 4 into the handle, no position change.
+        app.mouse_pos = Vec2::new(handle[0] + 10.0, handle[1] + 4.0);
+        app.ui_left_press = true;
+        app.handle_achievements_clicks();
+        assert_eq!(app.achievements_scroll_drag, Some(4.0));
+        assert_eq!(app.achievements_scroll, 0.0);
+        assert!(!app.ui_left_press, "the bar consumed the press");
+        // The drag frame moves the view by the pointer's travel.
+        app.mouse_pos.y += 120.0;
+        app.achievements_scrollbar_drag();
+        assert!(app.achievements_scroll > 0.0);
+        let dragged = app.achievements_scroll;
+        // The track jump: no latch, the handle centres under the pointer.
+        app.achievements_scroll_drag = None;
+        app.achievements_scroll = 0.0;
+        app.mouse_pos = Vec2::new(bar[0] + 10.0, bar[1] + bar[3] - 8.0);
+        app.ui_left_press = true;
+        app.handle_achievements_clicks();
+        assert_eq!(app.achievements_scroll_drag, None);
+        assert!(app.achievements_scroll > dragged.min(1.0));
+        assert!(app.achievements_scroll <= ui::achievements::max_scroll(137, &list));
+    }
+
+    /// W4-g53 witness: `FilterList` (`UIAchievementsMenu.cs:163-175`) plays
+    /// sound 12, flips the toggle and does NOT reset the scroll — the
+    /// `Recalculate`/`SetView` clamp keeps the position inside the new
+    /// range (`UIList.cs:104`, `UIScrollbar.cs:75`).
+    #[test]
+    fn g53_the_filter_toggle_sounds_and_clamps_the_scroll() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let list = ui::achievements::list_rect(&panel);
+        // Park the view deep in the all-categories list (past the shorter
+        // filtered list's range, inside the full one's).
+        app.achievements_scroll = 14000.0;
+        let cat = ui::achievements::category_rects(&panel)[0];
+        app.mouse_pos = Vec2::new(cat[0] + 16.0, cat[1] + 16.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_achievements_clicks();
+        assert!(!app.achievements_categories[0], "the Slayer toggle flipped");
+        assert_eq!(app.audio.played_count(), before + 1, "sound 12 (`:165`)");
+        // 32 Slayer rows survive (31 registered + the torch row, whose
+        // unset C# `_category` defaults to Slayer); the scroll clamps to
+        // THEIR range instead of resetting to zero.
+        let rows = ui::achievements::visible_rows(&app.achievements, &app.achievements_categories);
+        let max = ui::achievements::max_scroll(rows.len(), &list);
+        assert_eq!(app.achievements_scroll, max);
+        assert!(max < 14000.0, "the shorter list shrank the range");
+    }
+
+    /// W4-g53 witness: the wheel is `UIList.ScrollWheel` — 120 raw px per
+    /// detent (`UIList.cs:112`, `PlayerInput.cs:898-899`), only while the
+    /// pointer rides the list or the bar (`UIInnerList.ContainsPoint`,
+    /// `UIList.cs:16-19`).
+    #[test]
+    fn g53_the_wheel_walks_120_px_per_detent_on_the_list() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let list = ui::achievements::list_rect(&panel);
+        app.mouse_pos = Vec2::new(list[0] + 100.0, list[1] + 100.0);
+        app.scroll_achievements(-1.0); // one detent down
+        assert_eq!(app.achievements_scroll, 120.0);
+        app.scroll_achievements(1.0); // and back up
+        assert_eq!(app.achievements_scroll, 0.0);
+        // Off the list AND the bar: the wheel is not the list's.
+        app.mouse_pos = Vec2::new(5.0, 5.0);
+        app.scroll_achievements(-1.0);
+        assert_eq!(app.achievements_scroll, 0.0);
+    }
+
+    /// W4-g53 witness: the Back panel's `FadedMouseOver` sound-12 edge
+    /// (`UIAchievementsMenu.cs:150-155`) fires once per hover entry, the
+    /// latch holds while hovered and re-arms on mouse-out.
+    #[test]
+    fn g53_the_back_hover_sounds_once_per_edge() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let back = ui::achievements::back_rect(&panel);
+        app.mouse_pos = Vec2::new(back[0] + 10.0, back[1] + 10.0);
+        let before = app.audio.played_count();
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 1, "the entry edge");
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 1, "the latch holds");
+        // Mouse-out re-arms; re-entry sounds again.
+        app.mouse_pos = Vec2::new(5.0, 5.0);
+        app.achievements_hover_tick();
+        app.mouse_pos = Vec2::new(back[0] + 10.0, back[1] + 10.0);
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 2);
+    }
+
+    /// W4-g53 witness: the scrollbar handle's own hover edge
+    /// (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:113-120`) sounds 12 once on
+    /// entry, latches while hovered, and re-arms on mouse-out — the latch
+    /// also feeds the draw's `dragging || hovering` handle tint (`:122`).
+    #[test]
+    fn g53_the_handle_hover_sounds_once_and_latches() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let bar = ui::achievements::scrollbar_rect(&panel);
+        let list = ui::achievements::list_rect(&panel);
+        let content = ui::achievements::list_content_height(137);
+        let handle = ui::panel::scrollbar_handle_at(bar, list[3], content, 0.0);
+        // Off the handle: no hover.
+        app.mouse_pos = Vec2::new(5.0, 5.0);
+        app.achievements_hover_tick();
+        assert!(!app.achievements_handle_hover);
+        // Entry: sound 12 once, latch set.
+        app.mouse_pos = Vec2::new(handle[0] + 10.0, handle[1] + 10.0);
+        let before = app.audio.played_count();
+        app.achievements_hover_tick();
+        assert!(app.achievements_handle_hover);
+        assert_eq!(app.audio.played_count(), before + 1);
+        // Still hovering: the latch holds, no second sound.
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 1);
+        // Mouse-out re-arms; re-entry sounds again.
+        app.mouse_pos = Vec2::new(5.0, 5.0);
+        app.achievements_hover_tick();
+        assert!(!app.achievements_handle_hover);
+        app.mouse_pos = Vec2::new(handle[0] + 10.0, handle[1] + 10.0);
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 2);
+    }
+
+    #[test]
+    fn g54_the_emote_button_rebuilds_the_page_from_the_world_gates() {
+        // `OnActivate` → `InitializePage` (`UIEmotesMenu.cs:30-44`/`:90-97`):
+        // the page is rebuilt from the CURRENT downed flags on every open,
+        // not the fresh-world page — a downed Eye of Cthulhu adds the Bosses
+        // list (id 39, `GetEmotesBosses` `:181-184`) the next time the wheel
+        // opens.
+        let mut app = inv_app();
+        app.world.downed_eoc = true;
+        app.mouse_pos = Vec2::new(549.0, 293.0); // inside `EMOTE_BUTTON_RECT`
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(app.emotes.menu_open);
+        assert!(!app.inventory_open);
+        assert_eq!(app.emotes.groups.len(), 7, "the Bosses list joined");
+        assert_eq!(app.emotes.groups[6].title_key, "UI.EmoteCategoryBosses");
+        assert_eq!(app.emotes.groups[6].emotes, vec![39]);
+        assert_eq!(app.emotes.scroll, 0.0, "the fresh scrollbar starts at 0");
+        // Closing and reopening after a second kill rebuilds again.
+        app.emotes.close();
+        app.inventory_open = true;
+        app.world.downed_slime_king = true;
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert_eq!(app.emotes.groups[6].emotes, vec![39, 51]);
+    }
+
+    #[test]
+    fn g54_the_wheel_scrollbar_latches_drags_and_jumps() {
+        // `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`): a press on
+        // the handle latches `_dragYOffset = mouseY - handle.Y`; a press on
+        // the track jumps the view to centre the handle under the pointer.
+        // At 1280x720 the fresh page's bar is (903, 135, 20, 458), the inner
+        // track y 140..588 (448 tall), view 428 of content 696 → the handle
+        // at scroll 0 is (903, 137, 20, 282) (`GetHandleRectangle` `:93`:
+        // trunc(448·428/696) + 7 = 282).
+        let mut app = inv_app();
+        app.inventory_open = false;
+        app.emotes.open();
+        let screen = Vec2::new(1280.0, 720.0);
+        let panel = ui::emotes::panel_rect(screen, true);
+        let sb = ui::emotes::scrollbar_rect(&panel);
+        assert_eq!(sb, [903.0, 135.0, 20.0, 458.0]);
+        let list = ui::emotes::list_rect(&panel, true);
+        let content = ui::emotes::list_content_height(&app.emotes.groups);
+        let handle = crate::ui::panel::scrollbar_handle_at(sb, list[3], content, 0.0);
+        assert_eq!(handle, [903.0, 137.0, 20.0, 282.0]);
+        // A press inside the handle latches the drag, spawns nothing.
+        app.mouse_pos = Vec2::new(910.0, 200.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert_eq!(app.emote_scroll_drag, Some(200.0 - 137.0));
+        assert_eq!(app.emotes.scroll, 0.0, "the latch alone moves nothing");
+        assert!(app.emotes.menu_open);
+        assert!(app.emotes.bubbles.is_empty());
+        assert!(!app.ui_left_press, "the press was consumed");
+        // The drag math (`DrawSelf` `:109-112`): pointer y 400 with offset
+        // 63 → (400 − 140 − 63)/448 × 696 ≈ 306, clamped to 268; pointer
+        // y 250 → (250 − 140 − 63)/448 × 696 ≈ 73.02 lands mid-range.
+        let value = crate::ui::panel::scrollbar_drag_value(sb, list[3], content, 63.0, 400.0);
+        app.emotes.scroll_to(value, 268.0);
+        assert_eq!(app.emotes.scroll, 268.0, "clamped at maxView − view");
+        let value = crate::ui::panel::scrollbar_drag_value(sb, list[3], content, 63.0, 250.0);
+        let expect = (250.0f32 - 140.0 - 63.0) / 448.0 * 696.0;
+        assert!((value - expect).abs() < 0.01, "got {value}");
+        app.emotes.scroll_to(value, 268.0);
+        assert_eq!(app.emotes.scroll, value);
+        // The release clears the latch (`LeftMouseUp` `:145-149` — loop.rs).
+        app.emote_scroll_drag = None;
+        // A track press off the handle jumps (`:137-141`): at scroll 268 the
+        // handle spans y 309..591, so a press ABOVE it (y 160) jumps to
+        // (160 − 140 − 141)/448 × 696 < 0 → clamped to 0.
+        app.mouse_pos = Vec2::new(910.0, 160.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert_eq!(app.emotes.scroll, 0.0);
+        assert_eq!(app.emote_scroll_drag, None, "the track arm never latches");
+        assert!(!app.ui_left_press);
+        // Back at the top, a track press BELOW the handle (which spans
+        // y 137..419 at scroll 0) lands mid-range: pointer y 430 →
+        // (430 − 140 − 141)/448 × 696 ≈ 231.48.
+        app.emotes.scroll_to(0.0, 268.0);
+        app.mouse_pos = Vec2::new(910.0, 430.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        let expect = (430.0f32 - 140.0 - 141.0) / 448.0 * 696.0;
+        assert!((app.emotes.scroll - expect).abs() < 0.01, "got {}", app.emotes.scroll);
+        assert_eq!(app.emote_scroll_drag, None);
     }
 
     #[test]
@@ -4226,6 +5138,166 @@ mod tests {
         assert!(app.stack_split > 1, "the transfer armed the split cooldown");
     }
 
+    // --- W4-g56: the void vault's context-32 surface ------------------------
+
+    /// A `bank_app` with the VOID VAULT open (chest −5, bank index 3).
+    fn vault_app() -> App {
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().chest = -5;
+        app
+    }
+
+    /// W4-g56 — `ChestUI.LootAll`'s bank4 arm (`ChestUI.cs:447-460`): the
+    /// favorited slots stay (`!player.bank4.item[l].favorited`, `:451`),
+    /// the rest drain into the player.
+    #[test]
+    fn w4_g56_vault_loot_all_skips_the_favorited_slots() {
+        let mut app = vault_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.banks[3][0] = slot(9, 5);
+            p.banks[3][1] = slot(3, 7);
+            p.vault_favorites[1] = true; // the stone is starred
+        }
+        app.mouse_pos = Vec2::new(510.0, 330.0); // the bank's Loot All row (m_h 60)
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.banks[3][0].count, 0, "the unstarred wood drained");
+        assert_eq!(p.banks[3][1], slot(3, 7), "the favorited stone stayed (:451)");
+        assert!(app.inventory.iter().any(|s| s.kind == 9 && s.count == 5));
+        assert!(!app.inventory.iter().any(|s| s.kind == 3 && s.count == 7));
+    }
+
+    /// W4-g56 — Alt+left-click on a vault cell toggles its favorite
+    /// (`canFavoriteAt[32]`, `ItemSlot.cs:386-394`; the cursor-3 arm
+    /// `:611-620` + `ToggleFavorited` `:873-877`, sound 12). The held item
+    /// neither swaps nor merges — the override eats the press.
+    #[test]
+    fn w4_g56_alt_click_toggles_the_vault_favorite() {
+        let mut app = vault_app();
+        app.player.as_mut().unwrap().banks[3][0] = slot(9, 6);
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = Vec2::new(20.0, 330.0); // vault row 0 at m_h 60
+        app.mouse_item = slot(3, 1); // held: the override must eat the click
+        app.ui_left_press = true;
+        // The production chain: the chest handler's hover evaluation lights
+        // cursor 3 (the vault cell is a favoritable context-32 surface),
+        // then the inventory handler's toggle arm consumes the press.
+        assert!(!app.handle_chest_clicks(), "no chest surface takes it");
+        assert_eq!(app.cursor_override, CURSOR_FAVORITE, "the vault cell lit cursor 3");
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().vault_favorites[0], "the toggle fired");
+        assert_eq!(app.mouse_item, slot(3, 1), "the held item stayed");
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0],
+            slot(9, 6),
+            "the cell item stayed"
+        );
+        // The second Alt+click clears it.
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().vault_favorites[0]);
+        // An AIR cell never toggles (`:607-609`).
+        app.mouse_pos = Vec2::new(20.0 + 56.0 * 0.85, 330.0); // cell 1, empty
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().vault_favorites[1]);
+    }
+
+    /// W4-g56 — the bank Sort row (id 4, `ItemSorting.SortChest`,
+    /// `ItemSorting.cs:1629-1653`): the vault's slots reorder through the
+    /// same layer engine the world chest uses.
+    #[test]
+    fn w4_g56_the_bank_sort_row_reorders_the_vault() {
+        let mut app = vault_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.banks[3][0] = slot(2, 10); // dirt
+            p.banks[3][1] = slot(24, 1); // the melee sword
+        }
+        app.mouse_pos = Vec2::new(510.0, 434.0); // the Sort row (id 4, m_h 60)
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.banks[3][0].kind, 24, "the sword sorts before the dirt");
+        assert_eq!(p.banks[3][1].kind, 2);
+    }
+
+    /// W4-g56 — `RightClick`'s ctx-32 `HasItemSwap` cycle
+    /// (`ItemSlot.cs:1668-1675`): a single Void Bag 4131 in the vault
+    /// cycles to the Closed Void Bag 5325 on the press edge (the pair is
+    /// in `ItemID.Sets.HasItemSwap`), ahead of the pickup split.
+    #[test]
+    fn w4_g56_the_vault_right_click_cycles_the_void_bag() {
+        let mut app = vault_app();
+        app.player.as_mut().unwrap().banks[3][0] = slot(4131, 1);
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_pos = Vec2::new(20.0, 330.0);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0].kind,
+            5325,
+            "the 4131 → 5325 cycle (:1906-1910)"
+        );
+        assert_eq!(app.mouse_item.count, 0, "the pickup split never ran");
+        assert_eq!(app.stack_split, 30, ":2007");
+        assert!(!app.ui_right_press, ":2008");
+    }
+
+    /// W4-g56 — `RightClick`'s ctx-32 `SwapEquip` ladder
+    /// (`ItemSlot.cs:1685-1697`): a single wearable in the vault jumps to
+    /// its equipment row on the press edge; the source's favorite clears.
+    #[test]
+    fn w4_g56_the_vault_right_click_equips_a_single_wearable() {
+        let mut app = vault_app();
+        // The Hermes Boots (accessory, `Item.cs`'s row) — a wearable.
+        app.player.as_mut().unwrap().banks[3][0] = slot(54, 1);
+        app.player.as_mut().unwrap().vault_favorites[0] = true;
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_pos = Vec2::new(20.0, 330.0);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0].count,
+            0,
+            "the boots left the vault"
+        );
+        assert!(
+            app.equip.armor.iter().any(|s| s.kind == 54),
+            "the boots landed on an accessory row"
+        );
+        assert!(
+            !app.player.as_ref().unwrap().vault_favorites[0],
+            "the source's favourite cleared with the move"
+        );
+    }
+
+    /// W4-g56 — the vault cell emptied by a left pickup clears its favorite
+    /// (the flag rides a non-air stack, `ItemSlot.cs:2152`'s `!item.IsAir &&
+    /// item.favorited` draw gate); a re-stocked cell starts plain.
+    #[test]
+    fn w4_g56_the_vault_favorite_clears_when_the_cell_empties() {
+        let mut app = vault_app();
+        app.player.as_mut().unwrap().banks[3][0] = slot(9, 1);
+        app.player.as_mut().unwrap().vault_favorites[0] = true;
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_pos = Vec2::new(20.0, 330.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(9, 1), "the stack onto the cursor");
+        assert_eq!(app.player.as_ref().unwrap().banks[3][0].count, 0);
+        assert!(
+            !app.player.as_ref().unwrap().vault_favorites[0],
+            "the emptied cell's favourite cleared"
+        );
+    }
+
     /// M7-UI-2c — shift+click on a coin/ammo cell transfers into the open
     /// chest: `GetAlternateClickAction`'s ctx-1/ctx-2 arms (`ItemSlot.cs:657-665`)
     /// reach the same `TryPlacingInChest` check and the cursor-9 click arm
@@ -5289,8 +6361,8 @@ mod s1_h_7_tests {
             .position(|&r| craft::RECIPES[r].create.0 == 8)
             .expect("the torch recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
-        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
-        Vec2::new(x + 20.0, y + 20.0)
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos, 0.0);
+        Vec2::new(x + 22.0, y + 22.0)
     }
 
     #[test]
@@ -5409,6 +6481,81 @@ mod s1_h_7_tests {
         assert_eq!(torches.count, 9, "only 3 wood -> 3 crafts of 3");
     }
 
+    /// W4-f23 doc-sweep: the RIGHT button crafts exactly like the left —
+    /// `HandleCraftSlot`'s select arm (`NewCraftingUI.cs:505`) and
+    /// `HoverOverCraftingItemButton` (`Main.cs:42254-42255`) OR both
+    /// buttons. There is no craft-max: the bulk arm is Shift x10 only
+    /// (`:42272-42274`).
+    #[test]
+    fn the_right_button_selects_and_crafts_like_the_left() {
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        app.mouse_pos = torch_mouse(&app);
+        app.focus_recipe = 1; // park the focus off the torch row
+        // The right press edge selects (`:505`'s right arm).
+        app.ui_right_press = true;
+        app.place_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert_eq!(app.focus_recipe, 0, "the right click focused the torch");
+        assert!(app.prevent_craft_click);
+        assert_eq!(app.stack_split, 15);
+        assert!(!app.ui_right_press, "the edge is consumed");
+        assert!(
+            !app.inventory.iter().any(|s| s.kind == 8),
+            "the select step crafts nothing"
+        );
+        // Release + re-press: the focused right click crafts ONE recipe
+        // (num = superFastStack + 1 = 1 — no craft-max).
+        app.place_down = false;
+        app.handle_crafting_clicks();
+        assert!(!app.prevent_craft_click, "both buttons released reset the lock");
+        app.stack_split = 0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_crafting_clicks());
+        let torches = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 8)
+            .expect("the right click crafted");
+        assert_eq!(torches.count, 3, "one craft = three torches, not the max");
+    }
+
+    /// W4-f23 doc-sweep: the HELD right button keeps the held-repeat alive
+    /// (`flag2 = mouseLeft || mouseRight`, `Main.cs:42255`) — the lock and
+    /// the recipe pin survive while either button is down (`:42301-42305`).
+    #[test]
+    fn a_held_right_button_keeps_the_craft_locks() {
+        let mut app = craft_app();
+        app.prevent_craft_click = true;
+        app.current_recipe_being_crafted = 5;
+        app.place_down = true; // right held, left up
+        app.mine_down = false;
+        app.stack_split = 0;
+        // No press edge and no pacing: the handler walks to the grid and
+        // returns without resetting the locks (the `!flag2` arm never runs).
+        app.mouse_pos = Vec2::new(-100.0, -100.0); // off every cell
+        app.handle_crafting_clicks();
+        assert!(app.prevent_craft_click, "the held right keeps the lock");
+        assert_eq!(app.current_recipe_being_crafted, 5);
+        // Both up: the reset arm fires.
+        app.place_down = false;
+        app.handle_crafting_clicks();
+        assert!(!app.prevent_craft_click);
+        assert_eq!(app.current_recipe_being_crafted, -1);
+    }
+
     /// The mouse over the filter tab `i` — `ui::crafting::filter_button_rect`'s
     /// square (`UICreativeItemsInfiniteFilteringOptions.cs:56-57`).
     fn filter_mouse(app: &App, i: usize) -> Vec2 {
@@ -5416,6 +6563,85 @@ mod s1_h_7_tests {
         let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
         let b = ui::crafting::filter_button_rect(l.filter_strip, i);
         Vec2::new(b[0] + 20.0, b[1] + 20.0)
+    }
+
+    /// W4-f23 doc-sweep: the refocus-on-craft wiring — after a craft drains
+    /// the ingredients, the draw-path rebuild (`frame/draw.rs`'s
+    /// `try_refocusing_recipe` call, `Recipe.cs:232-233`/`:257`) moves the
+    /// focus off the vanished recipe onto the last row. The witness runs
+    /// the same capture + refocus sequence the draw path runs.
+    #[test]
+    fn crafting_the_last_ingredients_refocuses_to_the_last_row() {
+        let mut app = craft_app();
+        // Exactly one torch craft's worth: 1 wood + 1 gel.
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 1,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 1,
+            prefix: 0,
+        };
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
+        let zones = craft::Zones::default();
+        let in_range = craft::chests_in_range(
+            &app.world,
+            app.player.as_ref().unwrap(),
+            &app.world_chests,
+            false,
+        );
+        let before = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            None,
+            None,
+        );
+        let torch_pos = before
+            .iter()
+            .position(|&r| craft::RECIPES[r].create.0 == 8)
+            .expect("the torch recipe is available");
+        // The draw path's snapshot + focus before the craft.
+        app.craft_last_available = before.clone();
+        app.focus_recipe = torch_pos as i32;
+        // Craft the torch (the focused click).
+        app.mouse_pos = torch_mouse(&app);
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert!(app.inventory.iter().any(|s| s.kind == 8), "the craft ran");
+        // The next frame's rebuild: the torch left the list (no gel/wood
+        // left), the refocus tail captures the OLD recipe from the
+        // snapshot and pins the focus to the new last row.
+        let after = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            None,
+            None,
+        );
+        assert!(
+            !after.contains(&before[torch_pos]),
+            "the torch recipe vanished with its ingredients"
+        );
+        let old_recipe = app.craft_last_available[app.focus_recipe as usize];
+        app.focus_recipe =
+            craft::try_refocusing_recipe(&after, old_recipe, app.focus_recipe);
+        assert_eq!(
+            app.focus_recipe,
+            (after.len() as i32 - 1).max(0),
+            "the focus rides the last row (`Recipe.cs:487-494`)"
+        );
     }
 
     /// The shown grid — the same call `handle_crafting_clicks` makes.
@@ -5514,6 +6740,69 @@ mod s1_h_7_tests {
         assert_eq!(app.focus_recipe, 0, "the focus index space is preserved");
     }
 
+    /// W4-f23 deviation fix: with a filter active the shown position and
+    /// the RAW available position diverge (`NewCraftingUI.cs:596-611`) —
+    /// the focus click stores `entry.availableIndex` (`:510`), the raw
+    /// position, NOT the recipe-table index nor the grid position.
+    #[test]
+    fn a_filtered_focus_click_stores_the_raw_available_position() {
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        // The BuildingBlock tab hides the torch (a Consumable), so the raw
+        // and shown lists differ from row 0 on. A work bench beside the
+        // player opens the wooden-furniture rows too.
+        let p = app.player.as_ref().unwrap();
+        let (bx, by) = ((p.x / 16.0) as i32 + 2, (p.y / 16.0) as i32);
+        let ti = app.world.index(bx, by);
+        app.world.tiles[ti].kind = 18;
+        app.world.tiles[ti].flags |= tr_core::tile::FLAG_ACTIVE;
+        app.craft_filters.click(3);
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
+        let raw = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &[],
+            &adj,
+            &craft::Zones::default(),
+            None,
+            None,
+        );
+        let grid = shown(&app);
+        assert!(!grid.is_empty(), "some blocks are craftable from wood");
+        assert!(grid.len() < raw.len(), "the torch rows are filtered out");
+        assert_ne!(grid[0], raw[0], "the shown list starts past the torch");
+        // Click the FIRST SHOWN cell: the focus must land on its RAW
+        // position, not 0 (the grid position) nor the recipe-table index.
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, 0, 0.0);
+        app.mouse_pos = Vec2::new(x + 22.0, y + 22.0);
+        app.focus_recipe = -1; // nothing focused
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks(), "the focus click is consumed");
+        let expected = raw.iter().position(|&r| r == grid[0]).unwrap() as i32;
+        assert_eq!(app.focus_recipe, expected, "the RAW available position");
+        assert_ne!(app.focus_recipe, grid[0] as i32, "not the recipe index");
+        assert_eq!(app.stack_split, 15);
+        assert!(app.prevent_craft_click);
+        // The draw-side derivation agrees: available[focus] is the clicked
+        // recipe (`OnActivate` `:904`'s index space).
+        assert_eq!(raw[app.focus_recipe as usize], grid[0]);
+    }
+
     /// The mouse over a recipe's cell (the grid origin + the 44 px pitch —
     /// `ui::crafting::hit_test`'s geometry) for the given created item.
     fn recipe_mouse(app: &App, create: u16) -> Vec2 {
@@ -5542,8 +6831,8 @@ mod s1_h_7_tests {
             .position(|&r| craft::RECIPES[r].create.0 == create)
             .expect("the recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
-        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
-        Vec2::new(x + 20.0, y + 20.0)
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos, 0.0);
+        Vec2::new(x + 22.0, y + 22.0)
     }
 
     #[test]
@@ -5605,6 +6894,109 @@ mod s1_h_7_tests {
         assert_eq!(
             pick.prefix, expected,
             "the crafted item keeps the rolled prefix"
+        );
+    }
+
+    /// W4-f23 closeout item 4 — the nearby-chests toggle's full click
+    /// semantics (`CraftingUI.DrawCraftFromNearbyChestsToggle`,
+    /// `CraftingUI.cs:346-352`): the LEFT press flips
+    /// `Player.Settings.CraftFromNearbyChests`, plays sound 12 (`:350`) and
+    /// persists (`Main.SaveSettings`, `:351`). The toggle is LEFT-only
+    /// (`:346` reads `mouseLeft && mouseLeftRelease`), unlike the recipe
+    /// cells' either-button arms.
+    #[test]
+    fn the_nearby_toggle_flips_the_setting_and_plays_the_tick() {
+        let mut app = craft_app();
+        app.settings.craft_from_nearby_chests = true;
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        app.mouse_pos = Vec2::new(l.nearby_toggle[0], l.nearby_toggle[1]);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks(), "the toggle click is consumed");
+        assert!(!app.settings.craft_from_nearby_chests, "the setting flipped");
+        assert!(!app.ui_left_press, "the press was consumed");
+        assert_eq!(app.audio.played_count(), before + 1, "sound 12 (`:350`)");
+        // A second click flips it back.
+        app.mine_down = false;
+        app.handle_crafting_clicks();
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert!(app.settings.craft_from_nearby_chests, "flipped back on");
+    }
+
+    /// The toggle is LEFT-only: a held RIGHT button over the toggle does
+    /// NOT flip the setting (`CraftingUI.cs:346` reads `mouseLeft` only —
+    /// the W4-f23 doc-sweep 4b parity must not let a held right flip it).
+    #[test]
+    fn a_held_right_does_not_flip_the_nearby_toggle() {
+        let mut app = craft_app();
+        app.settings.craft_from_nearby_chests = true;
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        app.mouse_pos = Vec2::new(l.nearby_toggle[0], l.nearby_toggle[1]);
+        app.place_down = true; // right held, left NOT down
+        app.ui_right_press = true;
+        app.handle_crafting_clicks();
+        assert!(
+            app.settings.craft_from_nearby_chests,
+            "the right button never flips the LEFT-only toggle"
+        );
+    }
+
+    /// W4-f23 closeout item 3 — the craft cue is `CraftingEffects.OnCraft`'s
+    /// `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`), run
+    /// UNCONDITIONALLY after `CraftingRequests.CraftItem`'s loop
+    /// (`CraftingRequests.cs:119`) — the C# plays it even when the loop
+    /// crafted nothing (a stale available list at request time). The port's
+    /// click path rebuilds the list live, so an empty `crafted` at the cue
+    /// site is unreachable today; the parity is structural — the cue must
+    /// sit OUTSIDE the `!crafted.is_empty()` grant gate. This pin keeps a
+    /// regression from re-gating it (the pre-closeout shape).
+    #[test]
+    fn the_craft_cue_sits_outside_the_grant_gate() {
+        let src = include_str!("clicks.rs");
+        let cue = src
+            .find("self.audio.play(\"Grab\"); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)")
+            .expect("the craft-attempt cue site exists");
+        let gate = src
+            .find("if !crafted.is_empty() {")
+            .expect("the grant gate exists");
+        assert!(
+            cue < gate,
+            "the OnCraft cue runs BEFORE (outside) the grant gate — \
+             CraftingRequests.cs:119 is unconditional"
+        );
+    }
+
+    /// A focused-row craft plays exactly ONE Grab (the attempt cue) — the
+    /// closeout moved the cue out of the grant gate without doubling it.
+    #[test]
+    fn a_focused_craft_plays_exactly_one_grab() {
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot { kind: 9, name: "Wood", count: 30, prefix: 0 };
+        app.inventory[1] = crate::item::ItemSlot { kind: 23, name: "Gel", count: 30, prefix: 0 };
+        let mouse = torch_mouse(&app);
+        app.mouse_pos = mouse;
+        app.focus_recipe = 1;
+        // The select click (Menu_Tick), then the release reset.
+        app.ui_left_press = true;
+        app.mine_down = true;
+        app.handle_crafting_clicks();
+        app.mine_down = false;
+        app.handle_crafting_clicks();
+        // The craft click: exactly one cue (the Grab), one craft.
+        app.stack_split = 0;
+        app.mine_down = true;
+        app.ui_left_press = true;
+        let before = app.audio.played_count();
+        assert!(app.handle_crafting_clicks());
+        assert_eq!(app.audio.played_count(), before + 1, "one Grab, not two");
+        assert!(
+            app.inventory.iter().any(|s| s.kind == 8),
+            "the torch crafted"
         );
     }
 }
@@ -6005,6 +7397,7 @@ mod s1_p_i44_shop_click_tests {
             item: 8,
             when: crate::shop::StockWhen::Always,
             shop_custom_price: None,
+            shop_special_currency: -1,
             buy_once: true,
             is_a_shop_item: false,
             prefix: 0,

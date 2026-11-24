@@ -44,6 +44,8 @@ pub(crate) fn grant_ammo_mastery(
     p.magic_quiver = false;
     p.has_molten_quiver = false;
     p.acc_sharp_barb = false;
+    // A6 — `ResetEffects`' `accAmmoCyclerDamage = false` (`Player.cs:18523`).
+    p.acc_ammo_cycler_damage = false;
     p.ammo_box = false;
     p.ammo_potion = false;
     p.huntress_ammo_cost90 = false;
@@ -123,12 +125,28 @@ pub(crate) fn grant_ammo_mastery(
             // `:14501` — the Sharp Barb.
             6160 => p.acc_sharp_barb = true,
             // `:14528-14544` — the cycler accessories grant the mode (a later
-            // matching slot wins, like the C#'s `switch` in slot order).
-            6168 => p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::AmmoSlots,
-            6169 => p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::FullInventory,
-            6193 => p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::Random,
-            // `:14541` — the "no cycling" accessory resets the mode.
-            6194 => p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::None,
+            // matching slot wins, like the C#'s `switch` in slot order) AND
+            // `accAmmoCyclerDamage` (A6 — every one of the four arms sets it,
+            // including 6194's "no cycling"; the +8% ranged fold rides the
+            // seam tail below).
+            6168 => {
+                p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::AmmoSlots;
+                p.acc_ammo_cycler_damage = true;
+            }
+            6169 => {
+                p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::FullInventory;
+                p.acc_ammo_cycler_damage = true;
+            }
+            6193 => {
+                p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::Random;
+                p.acc_ammo_cycler_damage = true;
+            }
+            // `:14540-14543` — the "no cycling" accessory resets the mode
+            // but STILL grants the damage flag (`:14542`).
+            6194 => {
+                p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::None;
+                p.acc_ammo_cycler_damage = true;
+            }
             _ => {}
         }
     }
@@ -140,6 +158,20 @@ pub(crate) fn grant_ammo_mastery(
     // port's clear above runs AFTER that update in the tick — so the grant
     // lives here, after the clear, before the shoot path reads the flags.
     crate::armor_sets::grant_set_ammo_flags(p, armor);
+    // A6 — the `UpdateEquips` post-loop stat folds for the flags granted
+    // above (`Player.cs:12958-12961` cycler +8% ranged, `:12966-12969`
+    // Sharp Barb +8 ranged crit), in the C#'s statement order. Both are
+    // ADDITIVE stat adds with no RNG; the barb's +1-arrow-damage half is
+    // the `ammo.rs` resolver's (`:53548-53551`), untouched here. The C#
+    // runs them between the manaFlower fold (`:12962-12965`, ported in
+    // `player.rs`) and the sky-stone bundle (`:12989`) — the adds touch
+    // disjoint stats, so the seam-tail position is order-identical.
+    if p.acc_ammo_cycler_damage {
+        crate::accessory_combat::apply_ammo_cycler_damage(p);
+    }
+    if p.acc_sharp_barb {
+        crate::accessory_combat::apply_sharp_barb_crit(p);
+    }
 }
 
 /// The mechanical-accessory half of `Player.UpdateEquips` (S1-P-i34) — the
@@ -157,13 +189,15 @@ pub(crate) fn grant_ammo_mastery(
 /// `:15295-15298`) runs on the selected slot.
 ///
 /// Scope: the Mechanical Lens (3619) and Wire Kite (3611) grant
-/// `InfoAccMechShowWires` (`:12801-12804`); the Actuation Accessory (3624)
-/// grants `autoActuator` (`:12817-12820`). The Wire Kite's ruler-line/grid
-/// halves (`:12805-12812`) and the auto-paint family are out of this wiring
-/// wave. The `autoActuator` placement consumer
-/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a recorded
-/// follow-up — the flag is granted and read by the visibility gate, but the
-/// auto-place-on-build pass is not ported (ANALYSIS "The wiring tools").
+/// `InfoAccMechShowWires` (`:12801-12804`); the Paint Sprayer (2216) /
+/// Architect Gizmo Pack (3061) / Hand Of Creation (5126) grant `autoPaint`
+/// (`:12813-12816`); the Actuation Accessory (3624) grants `autoActuator`
+/// (`:12817-12820`). The Wire Kite's ruler-line/grid halves (`:12805-12812`)
+/// stay out of this wiring wave. The placement consumer
+/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594-40669`) is
+/// PORTED — both halves (`world_sim/editing/auto_actuator.rs` +
+/// `auto_paint.rs`, wired at the `place_tile` tail); the block-swap
+/// consumer (`:39892/:39909`) is ported in `block_swap.rs`.
 pub(crate) fn grant_mechanical_accs(
     p: &mut Player,
     inventory: &[ItemSlot],
@@ -195,9 +229,22 @@ fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
     if kind == 3619 || kind == 3611 {
         p.info_acc_mech_show_wires = true;
     }
+    // `:12813-12816` — the Paint Sprayer / Architect Gizmo Pack / Hand Of
+    // Creation auto-paint. The held-item arms (`:15271-15274`/:15279-15285/
+    // :15286-15294) grant the same flag for the same three kinds — the
+    // caller's held-kind pass covers them (the 3624 precedent).
+    if kind == 2216 || kind == 3061 || kind == 5126 {
+        p.auto_paint = true;
+    }
     // `:12817-12820` — the Actuation Accessory auto-places actuators.
     if kind == 3624 {
         p.auto_actuator = true;
+    }
+    // `:12825-12828` — the Guide to Critter Companions (4767) and its
+    // upgrade (5323) arm `dontHurtCritters` (the Inferno aura's critter
+    // refusal reads it, `Player.cs:20515`).
+    if kind == 4767 || kind == 5323 {
+        p.dont_hurt_critters = true;
     }
 }
 
@@ -359,6 +406,60 @@ fn update_golf_state(
     golf_state.update(held as i32, held_shoot, local_id, live_ball.as_ref());
 }
 
+/// W4-d80 — `Player.UpdateSunScorchValues`' play/follow half
+/// (`Player.cs:28590-28603`): the vampire sizzle loop's ensure + volume +
+/// position-follow against the tracked pool. Runs on BOTH the live and
+/// dead paths (the counter ticks in `Player::tick_sun_scorch`; the C#
+/// calls `UpdateSunScorchValues` from `UpdateSunScorch` `:25634` AND
+/// `UpdateDead` `:17079`). The `VampireSizzleTracker` condition
+/// (`VampireSizzleTracker.cs:12-19`: `!gameMenu && vampireSeed &&
+/// sunScorchCounter > 0`) folds to a shared atomic the sim refreshes per
+/// tick (the pool cannot hand a live player reference to a `Send`
+/// closure). ZERO gameplay draws — the variation/pitch picks ride the two
+/// audio-only statics (the census' RNG contract, research/64 sites 22/23).
+fn update_sizzle_audio(app: &mut App) {
+    let Some(p) = app.player.as_mut() else {
+        return;
+    };
+    let vampire_seed = app
+        .world
+        .micro_seeds
+        .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+    let lerp = p.sun_scorch_lerp();
+    let (cx, cy) = p.center();
+    // The condition mirror: `!gameMenu && vampireSeed && counter > 0`.
+    // The `gameMenu` term folds with the focus/pause gate that freezes
+    // the pool (the census fold); the seed + counter terms ride here.
+    let condition_live = vampire_seed && p.sun_scorch_counter > 0;
+    let handle = p.sizzle_audio_handle;
+    let active = app.audio.get_active_sound(handle).is_some();
+    if !active && lerp != 0.0 {
+        // The ensure-play (`:28591-28597`): the volume override is the
+        // lerp; the condition reads the shared atomic.
+        if let Some(style) = crate::tracked_sound::TrackedStyle::by_name("VampireSizzle") {
+            let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(condition_live));
+            p.sizzle_alive = Some(alive.clone());
+            let id = app.audio.play_tracked_looped(
+                style,
+                cx,
+                cy,
+                Box::new(move || alive.load(std::sync::atomic::Ordering::Relaxed)),
+                crate::tracked_sound::SoundPlayOverrides { volume: Some(lerp) },
+            );
+            p.sizzle_audio_handle = id;
+        }
+    }
+    // The follow (`:28599-28603`): every tick the live handle's volume +
+    // position ride the player. The condition mirror refreshes too.
+    if let Some(alive) = &p.sizzle_alive {
+        alive.store(condition_live, std::sync::atomic::Ordering::Relaxed);
+    }
+    if let Some(s) = app.audio.get_active_sound_mut(p.sizzle_audio_handle) {
+        s.volume = lerp;
+        s.position = (cx, cy);
+    }
+}
+
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
     let (hold_right, hold_jump) = crate::env::hold_input();
@@ -391,6 +492,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     app.quick_mana_prev = mana_key;
     if mana_edge {
         crate::potions::quick_mana(app);
+    }
+    // W4-a5 — the B-key (`Main.cBuff`) buff hotkey: `TriggersSet.CopyInto`
+    // (`GameInput/TriggersSet.cs:801-804`) calls `Player.QuickBuff()` on
+    // the QuickBuff trigger (`Player.cs:5766-5846`). The port keeps the
+    // press-edge latch like `quick_mana_prev` above (the two-frame seam);
+    // the C# zeroes only the MOVEMENT controls under the open map
+    // (`:24794-24807`), so this key stays live there too.
+    let buff_key = app
+        .keys
+        .iter()
+        .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::QuickBuff, *k));
+    let buff_edge = buff_key && !app.quick_buff_prev;
+    app.quick_buff_prev = buff_key;
+    if buff_edge {
+        crate::potions::quick_buff(app);
     }
     let (sw, sh) = app.screen_size();
     let mouse_world = Vec2::new(
@@ -560,6 +676,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // (`Player.cs:56169-56172`): collected in the tick, run after the player
     // borrow releases `app` (the kills + drop rolls need `&mut App`).
     let mut force_clear: Option<(i32, i32)> = None;
+    // W4-g11 — the `Player.Teleport` effect pair, collected the same way (the
+    // replay needs `&mut App`; the drain runs it after the step).
+    let mut teleport_effect_req: Option<crate::main_dust::PlayerTeleportReq> = None;
     if let Some(p) = app.player.as_mut() {
         // `Player.cs:18802-18804`: `ResetEffects` clears the Actuation Rod's
         // lock ONLY while `releaseUseItem` rides. `releaseUseItem` is
@@ -580,9 +699,40 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // global the source reads): the frame's `update_scene` scan feeds
         // the per-tick aura copy.
         p.auras = app.scene_metrics.auras();
+        // `Player.SceneMetrics.NPCBannerBuff` (`Player.cs:44197-44199`):
+        // the per-banner strength flags the strike lanes' `GetBannerBuffEffect`
+        // reads. The C# reads the live global mid-tick; the port snapshots it
+        // beside the auras (the same one-tick scene-scan latency).
+        p.npc_banner_buff = app.scene_metrics.npc_banner_buff.clone();
         // The zone flags (`Player.ZoneSnow`-family) — the torch-luck table's
         // inputs (`Player.cs:17924-18036`), refreshed beside the auras.
         p.zones = app.scene_metrics.zones();
+        // W4-d70 DOC-SWEEP: the sun-scorch exposure gates
+        // (`Player.cs:28681-28685`) — `ZoneGraveyard` and the Moon Lord's
+        // sky dim (`SceneMetrics.cs:299-310`, the closest core 398).
+        p.zone_graveyard = app.scene_metrics.zone_graveyard;
+        p.moon_lord_sky_intensity = {
+            let core = app.scene_metrics.closest_npc_position[398];
+            if core == [0.0, 0.0] {
+                None
+            } else {
+                let dx = app.scene_metrics.center[0] - core[0];
+                let dy = app.scene_metrics.center[1] - core[1];
+                let dist = (dx * dx + dy * dy).sqrt();
+                // `Utils.SmoothStep` is a clamped inverse lerp (`Utils.cs:126`).
+                Some(1.0 - ((dist - 3000.0) / (6000.0 - 3000.0)).clamp(0.0, 1.0))
+            }
+        };
+        // W4-f40: `Player.RecalculateLuck`'s lantern-night term
+        // (`Player.cs:29146-29149`, `if (LanternNight.LanternsUp) luck +=
+        // 0.3f`). The C# reads the static live inside `UpdateLuck`; the port
+        // snapshots `LanternsUp` once per tick beside the auras/zones (the
+        // flag only flips at the dusk/dawn boundaries and `UpdateTime`, never
+        // mid-player-step), so `update_luck`'s `recalculate_luck` below reads
+        // the same value the C# would. The +0.3 add itself already lives in
+        // `luck.rs::recalculate_luck` (the M4-EVENT-4 neutral-default input
+        // this wires).
+        p.luck_state.lantern_night = crate::world_events::lanterns_up(&app.world_events);
         // The held torch's style (`inventory[selectedItem].createTile == 4`,
         // `Player.cs:17917-17920`).
         p.held_torch_style = app
@@ -646,6 +796,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // (`Player.cs:38984-38986`).
             let moon_event_live =
                 app.world.snow_moon || app.world.pumpkin_moon || app.world.dd2_event_ongoing;
+            // W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045`):
+            // `difficulty == 2 && (statLifeMax <= 0 || !Main.surviveHardcoreDeath)`.
+            let hardcore_permadeath = app.active_player_difficulty() == 2
+                && (app.player.as_ref().map_or(0, |p| p.max_hp) <= 0
+                    || !crate::death::survive_hardcore_death(app.world.seeds));
             app.respawn_skip_available =
                 p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
@@ -666,8 +821,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &app.projectiles,
                     app.local_id as i32,
                 );
-                respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
-                    || respawn_now;
+                respawn_now = p.update_dead(
+                    input.jump,
+                    boss_near,
+                    danger_near,
+                    moon_event_live,
+                    hardcore_permadeath,
+                ) || respawn_now;
+                // `Player.UpdateDead`'s tail (`Player.cs:17079`): the dead
+                // tick still ramps the sun-scorch counter down (−2/tick,
+                // `UpdateSunScorchValues` `:28583-28587` — the dead branch
+                // clears the burn flag first). W4-f30.
+                crate::sun_scorch::update_sun_scorch_values(p);
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);
             });
@@ -692,6 +857,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     }
                 }
                 p.revive();
+                // `Player.Spawn`'s local-player arm (`Player.cs:37569`):
+                // `Main.instantBGTransitionCounter = 10` — the instant-BG
+                // window that also forces the waterfall rescan
+                // (`Main.cs:61841`, world_sim/liquids.rs reads it).
+                app.bg_instant = 10;
                 app.respawn_skip_available = false;
                 app.respawn_skip_frames = 0;
                 app.npcs.clear();
@@ -702,6 +872,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // player pass no longer moves it (the C#'s update half reads the
             // previous frame's position), so the old lerp-follow is gone and
             // the draw-time snap owns every frame's camera.
+            // W4-d80 — `Player.cs:17079`: the dead path's sizzle play/follow
+            // (the counter ticked in `update_dead`'s tail).
+            update_sizzle_audio(app);
             return;
         }
         // `AllowsRespawnTimerSkip` is a death-screen gate: alive again, the
@@ -968,6 +1141,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 .any(|sl| sl.count > 0 && sl.kind == 4131);
             p.void_vault_enabled = holds_lens;
         }
+        // `Player.cs:24554-24557` — the overhead chat timer ticks once per
+        // player update, right after the void-vault refresh:
+        // `if (chatOverhead.timeLeft > 0) chatOverhead.timeLeft--`.
+        if p.chat_overhead.time_left > 0 {
+            p.chat_overhead.time_left -= 1;
+        }
         // `Player.dye`/`miscDyes`' kinds snapshot — `UpdateDyes`' input
         // through `GetEffectiveDye` (`Player.cs:5742-5764`; no loadouts in
         // the port, the slot itself is the source).
@@ -1083,6 +1262,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.miscCounter++` (`Player.cs:31827`): the sandstorm leg
             // pose's 4-tick turn cadence reads it.
             p.misc_counter = p.misc_counter.wrapping_add(1);
+            // W4-f6 wiring — the mount visual-effect inputs: the
+            // `timeForVisualEffects` tick counter (the Pixie tail's even-tick
+            // gate, `Mount.cs:5147`), `WindForVisuals` + the wind-exposure
+            // gate (the Witch Broom trinket sway, `Mount.cs:3568-3572`).
+            p.time_for_visuals = (app.anim_time as f64 * 60.0) % 216000.0;
+            p.wind_for_visuals = app.wind.speed_current;
+            let (mcx, mcy) = p.center();
+            p.wind_in_place = app.wind.in_a_place_with_wind(
+                &app.world, (mcx / 16.0) as i32, (mcy / 16.0) as i32, 1, 1,
+            );
             // `Player.cs:28162-28176,28233-28236`: `vector7` captures the
             // pre-movement position, `flag34` is false on a mount or while
             // tongued, and `HandleRunning` fires after movement when grounded.
@@ -1183,6 +1372,103 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
+            // W4-f12 — the `UpdateBuffs` frame WIRING: one slot-ordered pass
+            // over the buff bar in the exact C# `else if` chain order, driving
+            // the gathered wave modules + the canonical g27 orb module
+            // (keep-one) and folding their accumulators onto the live fields.
+            // Runs AFTER the summon pass (which owns the keep-alives + the
+            // 110/150/348 cap rows) and BEFORE the accessory pass (which owns
+            // the pets/imbues); the wiring skips those ids (no double grant).
+            // The frame head/tails (`:9857-9864`, `:12046-12067`) ride along.
+            {
+                let dont_starve = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+                let remix = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+                let held_item_type = app.inventory[app.selected].kind as i32;
+                let day_time = app.world.day_time;
+                // `WorldGen.SolidTile3` (`WorldGen.cs:70465-70483`) — the
+                // LOOSEST solid test (actuated tiles stay solid); the 1-tile
+                // border refusal maps to the out-of-bounds `None`.
+                let solid3 = |x: i32, y: i32| -> bool {
+                    if x < 1 || x >= app.world.width - 1 || y < 1 || y >= app.world.height - 1 {
+                        return false;
+                    }
+                    let Some(t) = app.world.tile(x, y) else {
+                        return false;
+                    };
+                    t.active()
+                        && !t.inactive()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                };
+                let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+                    day_time,
+                    dont_starve,
+                    remix,
+                    solid3: &solid3,
+                    held_item_type,
+                };
+                crate::buff_frame_wiring::update_buff_frame(
+                    p,
+                    &mut app.projectiles,
+                    &app.world,
+                    &inputs,
+                );
+                // Drain the frame's emote / Hungry-sound requests onto the
+                // live seams (`EmoteBubble.MakeLocalPlayerEmote`,
+                // `SoundEngine.PlaySound(SoundID.Hungry)`).
+                for emote in p.pending_frame_emotes.drain(..) {
+                    app.emotes.new_bubble(emote);
+                }
+                for _ in 0..p.pending_hungry_sounds {
+                    app.audio.play("hungry");
+                }
+                p.pending_hungry_sounds = 0;
+                // W4-f12 gap 2 — the Inferno aura's NPC damage ring
+                // (`Player.cs:10224-10238`): the roster scan the wiring
+                // deferred. Runs right after the frame fold set `p.inferno`
+                // / the cadence gate; the strike requests drain onto the
+                // hit-sound + probe seams below (the C# order: combat text
+                // inside the scan, sound + HitEffect after the strike).
+                let damage_tick = p.inferno_counter % 60 == 0;
+                let strikes = crate::buff_inferno_aura::inferno_aura_scan(
+                    p,
+                    &mut app.npcs,
+                    damage_tick,
+                    &app.scene_metrics,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.combat_texts,
+                    app.lookups.combat_text_font.as_ref(),
+                );
+                for s in strikes {
+                    // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`):
+                    // the kind's `HitSound` at `base.position`, the pitch
+                    // draw on the same `UpdatePlayers` stream.
+                    let (nx, ny) = (app.npcs[s.idx].x, app.npcs[s.idx].y);
+                    if let Some(cue) = app.npcs[s.idx].kind.hit_sound() {
+                        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        app.audio.play_npc_hit_sound(cue, nx, ny, rng);
+                    }
+                    // `StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+                    // the Destroyer body's probe gate rides the strike's
+                    // stream (the melee/proj precedent).
+                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                        &mut app.npcs[s.idx], probe_rng, false,
+                    ) {
+                        app.npcs[s.idx].wants_probe = Some(anchor);
+                    }
+                }
+                // `Player.cs:25605`: `wolfAcc = false` — the C# clears the
+                // flag AFTER `UpdateBuffs` read it (the `:11895` Werewolf
+                // gate); the port's buff scan is this wiring, so the clear
+                // rides here, not inside `update_with_grapple` (clearing it
+                // there would starve the scan). The next tick's equip pass
+                // re-arms it from the worn charm/shell.
+                p.wolf_acc = false;
+            }
             // S1-E-7 wave C: the accessory/set-bonus buff arms
             // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the
             // same `UpdateBuffs` slot chain, in its own module so waves A/B
@@ -1217,6 +1503,49 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
             grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
+            // W4-f30 — `Player.UpdateSunScorch` (`Player.cs:25634`): the
+            // vampire seed's sun-exposure scan + the 120-crossing burn, in
+            // the C#'s `UpdateEquips` → `UpdateSunScorch` → `UpdateArmorSets`
+            // slot (the armor-set fold above already ran inside
+            // `update_equips`; the Molten `buffImmune[24]` gate reads the
+            // flag this scan arms — the burn's `Array.Clear` at `:28653`
+            // strips it again on the burning ticks, matching the C# order
+            // where the clear follows the set grant). The 33 notify fires
+            // on the crossing tick with the vampire vanity set worn.
+            {
+                let zones = app.scene_metrics.zones();
+                // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
+                // the EchoMonolith / Spectre-Goggles `CanSeeInvisibleBlocks`
+                // granters are unported (the draw seam's precedent,
+                // `frame/draw.rs:393`); the `TR_SHOW_INVISIBLE` pin stands in.
+                let show_invisible = crate::env::show_invisible();
+                let vampire_seed = app
+                    .world
+                    .micro_seeds
+                    .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+                if crate::sun_scorch::update_sun_scorch(
+                    p,
+                    &app.world,
+                    &app.npcs,
+                    vampire_seed,
+                    app.world.day_time,
+                    app.rain.is_raining(),
+                    app.world.eclipse,
+                    app.scene_metrics.zone_graveyard,
+                    zones.glowshroom,
+                    show_invisible,
+                ) {
+                    let _ = app.notify_progression_net(33);
+                }
+                // Order seam: on a warm-up burn tick (flag set, counter
+                // < 120) the C#'s Molten grant (`:25685`, AFTER the scorch)
+                // still applies — restore the pre-fold immunity the port's
+                // early fold withheld. At >= 120 the `:28653` Array.Clear
+                // stripped everything, so nothing is restored.
+                if p.vampire_burning_in_sunlight && p.sun_scorch_counter < 120 {
+                    p.buffs.buff_immune[24] = p.fire_immune_pre_molten;
+                }
+            }
             // `Player.cs:25709-25712` — a `maxTurrets` change drives the
             // `UpdateMaxTurrets` sweep (the lowest-`timeLeft` wipable sentry
             // dies while the budget holds); Phase 5's pool method runs it.
@@ -1392,6 +1721,56 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
+            // W4-f42 — `Player.DoubleJumpVisuals`' sandstorm arm
+            // (`Player.cs:21913-21925`): the three type-124 dusts, then the
+            // optional 220-222 gore. The tick queued the geometry; the pool
+            // rolls ride the SAME `UpdatePlayers` stream in the C#'s order
+            // (3 `NewDust`s, then the gore's `Next(220, 223)` type pick +
+            // `NewGore`), so the draw order is the source's (S1-A-10).
+            if let Some(v) = p.take_sandstorm_jump() {
+                for _ in 0..3 {
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        v.dust_pos,
+                        crate::player::WIDTH as i32,
+                        32,
+                        124,
+                        v.dust_vel.x,
+                        v.dust_vel.y,
+                        150,
+                        tr_core::particles::Color::default(),
+                        v.num4,
+                    );
+                    // `:21916-21917` — `velocity *= 0.5*num4`,
+                    // `fadeIn = 1.5*num4` (the refused sentinel takes the
+                    // writes blindly, `Main.dust[6000]`).
+                    let slot = app.dust.slot_mut(idx);
+                    slot.velocity *= 0.5 * v.num4;
+                    slot.fade_in = 1.5 * v.num4;
+                }
+                if let Some((gpos, gvel)) = v.gore {
+                    // `:21922` — `Main.rand.Next(220, 223)` picks the type.
+                    let gore_type = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(220, 223);
+                    let gi = app.gore.new_gore(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &app.world,
+                        gpos,
+                        gvel,
+                        gore_type,
+                        v.num4,
+                    );
+                    // `:21923-21924` — `velocity = base.velocity*0.3*num4`,
+                    // `alpha = 100`.
+                    let g = app.gore.slot_mut(gi);
+                    g.velocity = v.vel * 0.3 * v.num4;
+                    g.alpha = 100;
+                }
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
@@ -1477,6 +1856,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-d51 — the fast-run trail (`Player.cs:20217-20298`): the dust
+            // arm follows the footstep sound on the same stream — the
+            // source's sound-then-dust order inside `SpawnFastRunParticles`
+            // (which runs in `HorizontalMovement`, BEFORE the jump/dash
+            // chains below).
+            if let Some(burst) = p.take_fast_run_dust() {
+                crate::player_dust::drain_fast_run(app, burst);
+            }
             // S1-E-21f — the extra-jump chain's plays: case 16's one
             // `Next(-10, 11) * 0.01` pitch (`LegacySoundPlayer.cs:851`) rides
             // the `UpdatePlayers` stream after the gate; the Fart's Item-16
@@ -1497,6 +1884,97 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     0.0,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
+            }
+            // W4-d51 — the extra-jump chain's dust burst (`Player.cs:
+            // 20818-21012`): the tick snapshotted the box/velocity AFTER the
+            // ascent write; the drain replays the arm's `Dust.NewDust` chain
+            // here, right after the sound drain, so the sound-then-dust draw
+            // order matches the source (the `Main.cs:17754` `UpdatePlayers`
+            // swap covers both). Sandstorm / Blizzard queue no dust.
+            if let Some(burst) = p.take_jump_dust() {
+                crate::player_dust::drain_jump_dust(app, burst);
+            }
+            // W4-d51 — the `DashMovement` dust burst (`Player.cs:21259-21512`):
+            // the trail (active dash) or the start burst, snapshotted at the
+            // C# read moment; no sound rides the dash, so the drain follows
+            // the jump chain's on the same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_dash_dust() {
+                crate::player_dust::drain_dash_dust(app, burst);
+            }
+            // W4-g66 gap-fill — the wall-cling dust (`Player.cs:26758-26766`,
+            // `WallClimbMovement`/`WallslideMovement` `:21607-21840`): the
+            // type-31 puff sits between the dash burst and DoubleJumpVisuals
+            // in the C# call order, same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_wall_dust() {
+                crate::player_trail_dust::drain_wall_dust(app, burst);
+            }
+            // W4-g66 — `DoubleJumpVisuals` (`Player.cs:26767`, `:21892-22021`):
+            // the per-tick performing-jump trail follows the dash burst in
+            // the C# call order, on the same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_double_jump_dust() {
+                crate::player_trail_dust::drain_double_jump_visuals(app, burst);
+            }
+            // W4-g66 — `WingAirVisuals` (`Player.cs:26817`, `:30750-31013`):
+            // the flag19 flying tick's per-wing rolls, snapshotted BEFORE
+            // `WingMovement` shaped the velocity.
+            if let Some(burst) = p.take_wing_air_dust() {
+                crate::player_wing_dust::drain_wing_air(app, burst);
+            }
+            // W4-g66 — `WingFrame`'s dust arms (`Player.cs:26820`,
+            // `:29468-30527`): the jetpack-4/Bat-30/Rainbow-45/Spooky-39
+            // rolls + the Nebula-29 rest roll; the frame machines ran in
+            // the tick (`wing_frame_visuals`).
+            if let Some(burst) = p.take_wing_frame_dust() {
+                crate::player_wing_dust::drain_wing_frame(app, burst);
+            }
+            // W4-g66 gap-fill — the boot/jetpack Item13/Item24 cue
+            // (`Player.cs:26884-26896`, `:29478`, `:30172`, `:27154`): the
+            // case-2 pitch draw rides `UpdatePlayers`, the same queued-sound
+            // convention as the flap Item32 below (the `pending_flap_sound`
+            // precedent — the play queues at the C# moment, the pitch draw
+            // lands at the drain; on a tick where a cue AND a dust arm both
+            // roll, the pitch-vs-dust interleave rides the queue order, the
+            // documented seam deviation). Placed before the boot flames:
+            // the boot cue (`:26884`) precedes `RocketBootVisuals` (`:26918`).
+            if let Some((idx, sx, sy)) = p.take_rocket_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-g66 — `RocketBootVisuals` (`Player.cs:26918`, `:29330-29458`):
+            // the thrust tick's flame pair, snapshotted before the thrust
+            // velocity writes.
+            if let Some(burst) = p.take_rocket_flame_dust() {
+                crate::player_boot_dust::drain_rocket_flames(app, burst);
+            }
+            // W4-g66 — the wing-glide dust (`Player.cs:27040-27315`): the
+            // jump-held falling arm's per-wing rolls; the frame machines ran
+            // in the tick (`wing_glide_frames`).
+            if let Some(burst) = p.take_wing_glide_dust() {
+                crate::player_wing_dust::drain_wing_glide(app, burst);
+            }
+            // W4-g66 — `FloorVisuals` → `MakeFloorDust` (`Player.cs:28271`,
+            // `:23790-24043`): the landing burst / running puffs after the
+            // movement block, before `PlayerFrame`'s draws (`:28286`). The
+            // landing Item177 cue rides inside the drain, before the loop.
+            if let Some(burst) = p.take_floor_dust() {
+                crate::player_trail_dust::drain_floor_dust(app, burst);
+            }
+            // W4-g66 — `PlayerFrame`'s walking-effect rolls
+            // (`Player.cs:35996-36136`): inside `PlayerFrame` (`:28286`),
+            // after the floor dust, in source order.
+            if let Some(burst) = p.take_walk_effect_dust() {
+                crate::player_boot_dust::drain_walk_effects(app, burst);
+            }
+            // W4-g66 — `PlayerFrame`'s Rudolph flight trail
+            // (`Player.cs:36164-36198`): the mount animator runs after the
+            // walking block, same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_rudolph_trail() {
+                crate::player_trail_dust::drain_rudolph_trail(app, burst);
             }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
@@ -1549,6 +2027,45 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.player_no_space_teleport(&app.world);
                 // `Shellphone_Spawn`'s fallback may queue the force-clear.
                 force_clear = p.take_force_clear();
+            }
+            // W4-f6 wiring — the mount dust drain (`Mount.DoSpawnDust`
+            // `Mount.cs:6300`/`:6169` + `DoFailedDismountDust`
+            // `Player.cs:6058`): the tick queued snapshots in C# call order
+            // (the `pending_sticky_dust` convention); the emitters draw on
+            // the same `UpdatePlayers` stream AFTER the tink's case-0 draws
+            // above (`:6057` precedes `:6058`).
+            let mount_dust = p.take_mount_dust();
+            if !mount_dust.is_empty() {
+                crate::mount_dust::drain_mount_dust(
+                    mount_dust,
+                    &app.player_name,
+                    p,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                );
+            }
+            // W4-g11 — the `Player.Teleport` effect pair (`Player.cs:37444`/
+            // `:37489`): the movement core queued it (the no-space teleport
+            // above, the Shellphone fallback). The replay needs `&mut App`
+            // (the pool + the player), which this closure's `p` borrow cannot
+            // hand out — it rides the post-step drain beside `force_clear`
+            // (the same-tick deferral is observation-identical: nothing probes
+            // the dust between the move and the drain). The stream is the
+            // `UpdatePlayers` swap (`Main.cs:17754`).
+            if let Some((ox, oy, nx, ny, style, e2, ei, mult)) = p.take_teleport_effect() {
+                teleport_effect_req = Some(crate::main_dust::PlayerTeleportReq {
+                    old_x: ox,
+                    old_y: oy,
+                    new_x: nx,
+                    new_y: ny,
+                    style,
+                    extra_info2: e2,
+                    extra_info: ei,
+                    mult,
+                    key: crate::app::RngKey::UpdatePlayers,
+                });
             }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
@@ -1617,11 +2134,81 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         });
         app.player_step.drop_backlog();
+        // `Player.cs:25695-25698` (`Main.myPlayer` block): BOTH combat books
+        // used fires progression event 40 (TRAINING_DAY,
+        // `AchievementInitializer.cs:414-415`) every tick the pair stands —
+        // the notify is idempotent once completed (W4-g90 lane 7; the
+        // 4382/5336 uses raise the world flags).
+        if app.world.combat_book_was_used && app.world.combat_book_volume_two_was_used {
+            let _ = app.notify_progression_net(40);
+        }
         if run_pixels > 0.0 {
             // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
             // (`AchievementsHelper.cs:420-423`): grounded, unmounted running
             // advances MARATHON_MEDALIST's `Move` float accumulator.
             let _ = app.achievements.notify_custom_float("Move", run_pixels);
+        }
+        // `Player.UpdateArmorSets`' local-player achievement tail
+        // (`Player.cs:25686-25704`, the `i == Main.myPlayer` block): the
+        // effective armor slots (vanity 10/11/12 over the functional 0/1/2,
+        // `GetEffectiveArmor` — the port has no loadouts, so `equipped[slot]`
+        // IS the effective kind) drive two per-tick progression checks.
+        // TRAINING_DAY (40, `:25695-25698`) reads `NPC.combatBookWasUsed &&
+        // combatBookVolumeTwoWasUsed`; the port carries only the first book
+        // flag (`world.combat_book_was_used`) and the volume-two use is
+        // unported, so that check stays cited-unwired (the second flag never
+        // sets). CheckResearchAchievement (45, `:25703`) rides the research
+        // family — see `research::check_research_achievement` (the live
+        // sacrifice UI is unported, so the tracker never edits in play).
+        {
+            let slot_id = |slot: usize, pick: fn(&crate::registry::ItemDef) -> i16| -> i32 {
+                crate::registry::get(p.equipped[slot]).map_or(-1, |d| pick(d) as i32)
+            };
+            // `:25688-25690` — head/body/legs: the vanity slot's id when it
+            // carries one (`>= 0`), else the functional slot's.
+            let head_v = slot_id(10, |d| d.head_slot);
+            let num21 = if head_v >= 0 { head_v } else { slot_id(0, |d| d.head_slot) };
+            let body_v = slot_id(11, |d| d.body_slot);
+            let num22 = if body_v >= 0 { body_v } else { slot_id(1, |d| d.body_slot) };
+            let legs_v = slot_id(12, |d| d.leg_slot);
+            let num23 = if legs_v >= 0 { legs_v } else { slot_id(2, |d| d.leg_slot) };
+            // ON_FLEEK (38, `:25691-25694`): Sunglasses (head slot 12) worn in
+            // daylight, no rain, not a remix world, above the surface, inside
+            // the day window `time in [3600, 50400]`.
+            let remix = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+            if num21 == 12
+                && !remix
+                && !app.rain.is_raining()
+                && app.world.day_time
+                && app.world.time >= 3600.0
+                && app.world.time <= 50400.0
+                && (p.y as f64) < app.world.world_surface * 16.0
+            {
+                let _ = app.notify_progression_net(38);
+            }
+            // MINI_ME (41, `:25699-25702`): the full Moon Lord vanity set —
+            // the mask (head 187), the body (249) and the legs (217).
+            if num21 == 187 && num22 == 249 && num23 == 217 {
+                let _ = app.notify_progression_net(41);
+            }
+        }
+        // W4-f30 — `Player.UpdateArmorSets`' research tail (`Player.cs:25703`):
+        // `AchievementsHelper.CheckResearchAchievement()` per tick. The tracker
+        // (App.research) never edits in play yet (the live sacrifice UI is
+        // unported), so the LastEditId latch skips unchanged frames; the check
+        // is wired and fires 45 (TRASH_COMPACTOR) once half the researchable
+        // catalogue is complete. The forced EnterWorld call rides
+        // `enter_loaded_world` (`Player.Hooks.EnterWorld`, `:325`).
+        {
+            let (fired, version) = crate::research::check_research_achievement(
+                &app.research,
+                app.last_research_version,
+                false,
+            );
+            app.last_research_version = version;
+            if fired {
+                let _ = app.notify_progression_net(45);
+            }
         }
         // `RemoveAllGrapplingHooks` (`Player.cs:33562-33574`): the jump-off
         // kills every aiStyle-7 slot this player owns, clears the owner's
@@ -1656,6 +2243,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
     }
+    // W4-g11 union-exec — the `Player.Teleport` effect pair
+    // (`Player.cs:37444`/`:37489`): the Entry effect at the OLD box, the
+    // move, the Exit at the NEW box, the grants + the camera transition —
+    // on the `UpdatePlayers` stream. The reachable player-tick caller (the
+    // no-space / Shellphone fallback) rides style 11, which NOW fires
+    // through the union dispatcher (50 Perfect dust, no sound — g61's
+    // arm); the replay re-applies the (already-inline) move and owns the
+    // C#-position grants (gap 6). It drains beside `force_clear` (both
+    // post-step; nothing probes the spawn area between the teleport and
+    // the clear).
+    if let Some(req) = teleport_effect_req {
+        crate::main_dust::player_teleport(app, req);
+    }
+    // W4-g89e — `Player.cs:25695-25698` (the `i == Main.myPlayer` block of
+    // UpdateEquips): BOTH combat books used fires progression event 40
+    // (`TRAINING_DAY`, `AchievementInitializer.cs:414-416`). The C# re-fires
+    // every tick while both flags hold; `notify_progression` is idempotent
+    // after the grant. The borrow-free tail is the port's myPlayer-block
+    // position (the armor-set ammo grants above ride the same fold).
+    if app.world.combat_book_was_used && app.world.combat_book_volume_two_was_used {
+        let _ = app.notify_progression_net(40);
+    }
     // `Spawn_ForceClearArea` (`Player.cs:37914-37935`): the same-tick
     // deferral is observation-identical — nothing probes the spawn area
     // between the teleport and this drain.
@@ -1686,8 +2295,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    // W4-d80 — `Player.cs:25634`: the live path's sizzle play/follow (the
+    // counter ticked in `update_with_grapple`'s `UpdateSunScorch` position).
+    update_sizzle_audio(app);
     if map_open {
         app.update_map_input();
+    } else {
+        // `Player.cs:24909-24965` — the not-fullscreen map-key block.
+        app.update_map_style_keys();
     }
 }
 
@@ -1830,6 +2445,31 @@ mod tests {
         update_player(app, 1.0 / 60.0);
     }
 
+    /// W4-g89e — `Player.cs:25695-25698`: BOTH combat books used fires
+    /// progression event 40 (`TRAINING_DAY`, `AchievementInitializer.cs:414-416`).
+    /// One book alone does not fire; both together grant on the tick.
+    #[test]
+    fn w4_g89e_both_combat_books_fire_the_training_day_progression() {
+        let mut app = ammo_app();
+        app.world.combat_book_was_used = true;
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.achievements.notify_progression(40),
+            Some("TRAINING_DAY"),
+            "one book alone did not grant — the condition is still open"
+        );
+        // Reset: a fresh manager, both flags — the tick itself grants.
+        let mut app = ammo_app();
+        app.world.combat_book_was_used = true;
+        app.world.combat_book_volume_two_was_used = true;
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.achievements.notify_progression(40),
+            None,
+            "the tick already granted TRAINING_DAY (`:25697`)"
+        );
+    }
+
     /// S1-P-i53 — the buff-bar cancel drains for a LIVING player: the drain
     /// used to sit inside the `p.dead` branch, so an alive player's removal
     /// requests were never applied (`Main.DrawBuffIcon`'s cancel,
@@ -1908,6 +2548,79 @@ mod tests {
                 key.name()
             );
         }
+    }
+
+    /// W4-g53 doc-sweep — `Player.cs:24911-24928`: the minimap zoom keys
+    /// multiply ×1.025/×0.975 per tick while held (NOT the fullscreen's
+    /// 1.05/0.95), the alpha keys step ±0.015, and the draw-side clamps
+    /// (`Main.cs:55515-55530`) catch both at 0.2..3 / 0.01..1.
+    #[test]
+    fn g53_the_minimap_keys_step_the_scale_and_alpha_with_the_clamps() {
+        let mut app = ammo_app();
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.map_style = 1;
+        // ZoomIn held: 1.05 × 1.025 per tick.
+        app.keys.insert(KeyCode::NumpadAdd);
+        app.update_map_style_keys();
+        let m = app.map.as_ref().unwrap();
+        assert!((m.minimap_scale - 1.05 * 1.025).abs() < 1e-6);
+        // ZoomOut held: × 0.975.
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadSubtract);
+        app.update_map_style_keys();
+        let m = app.map.as_ref().unwrap();
+        assert!((m.minimap_scale - 1.05 * 1.025 * 0.975).abs() < 1e-6);
+        // AlphaDown held: −0.015 per tick, floored at 0.01.
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageDown);
+        for _ in 0..200 {
+            app.update_map_style_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 0.01);
+        // AlphaUp: back up, capped at 1.
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        for _ in 0..200 {
+            app.update_map_style_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 1.0);
+        // The scale clamp: 3.0 max (`Main.cs:55519-55522`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadAdd);
+        for _ in 0..200 {
+            app.update_map_style_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, 3.0);
+    }
+
+    /// W4-g53 doc-sweep — `Player.cs:24949-24965`: the MapStyle trigger
+    /// (Tab) cycles `Main.mapStyle` 0→1→2→0 on the `releaseMapStyle` press
+    /// latch with sound 12 — held frames never re-cycle.
+    #[test]
+    fn g53_the_tab_key_cycles_the_map_style_once_per_press() {
+        let mut app = ammo_app();
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.map_style = 1;
+        app.release_map_style = true; // the released-frame arm
+        let played = app.audio.played_count();
+        app.keys.insert(KeyCode::Tab);
+        app.update_map_style_keys();
+        assert_eq!(app.map_style, 2, "1 → 2");
+        assert!(app.audio.played_count() > played, "PlaySound(12)");
+        assert!(!app.release_map_style);
+        app.update_map_style_keys();
+        assert_eq!(app.map_style, 2, "held frames never re-cycle");
+        app.keys.clear();
+        app.update_map_style_keys(); // release re-arms
+        assert!(app.release_map_style);
+        app.keys.insert(KeyCode::Tab);
+        app.update_map_style_keys();
+        assert_eq!(app.map_style, 0, "2 → 0 (`> 2` wraps)");
+        app.keys.clear();
+        app.update_map_style_keys();
+        app.keys.insert(KeyCode::Tab);
+        app.update_map_style_keys();
+        assert_eq!(app.map_style, 1, "0 → 1");
     }
 
     /// S1-E-34 — the F3 debug god mode rides `debug_god_mode` and the tick
@@ -2139,6 +2852,66 @@ mod tests {
         );
     }
 
+    /// W4-f12 gap 3 — the full-seam werewolf chain: the Moon Charm (485)
+    /// arms `wolfAcc` (`Player.cs:15182-15189`), the `:25601-25604` night
+    /// grant (inside `update_with_grapple`'s merman tail) adds buff 28, the
+    /// wiring's wave-E status arm then reads the LIVE flag and grants the
+    /// stat block (`:11895-11904`), and the `:25605` clear rides AFTER the
+    /// scan. The port's seam order (grant before scan) lands the effect on
+    /// the SAME tick as the grant — a one-tick lead over the C#'s steady
+    /// state (recorded); from tick 2 the two agree. Day breaks: the buff dies.
+    #[test]
+    fn w4_f12_moon_charm_werewolf_chain_through_the_seam() {
+        let mut app = ammo_app();
+        app.world.day_time = false; // night
+        app.equip.armor[3] = slot(485); // Moon Charm
+        // Tick 1: the night grant adds buff 28, then the wiring arms the
+        // werewolf effect from the live flag; the clear rides after.
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.were_wolf, "the wiring's status arm grants the effect (`:11898`)");
+        assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
+        assert!(!p.wolf_acc, "the `:25605` clear rides after the scan");
+        assert_eq!(p.melee_crit, 4 + 2, "`:11899`");
+        assert_eq!(p.stat_defense, 3, "`:11902`");
+        // Tick 2: the buff persists (TimeLeftDoesNotDecrease), the effect
+        // re-arms from the re-granted flag — the steady state.
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(28).is_some(), "the buff stays pinned");
+        assert!(p.were_wolf);
+        // Day breaks: the wiring's day gate deletes the buff (`:11905-11909`).
+        app.world.day_time = true;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(28).is_none(), "the day gate deletes");
+        assert!(!p.were_wolf);
+    }
+
+    /// W4-f12 gap 2 — the Inferno aura through the seam: the buff arms, the
+    /// ring spreads Hellfire to a nearby zombie, and on the 60-tick cadence
+    /// the strike lands (the combat text + the life drop).
+    #[test]
+    fn w4_f12_inferno_aura_through_the_seam() {
+        let mut app = ammo_app();
+        let p = app.player.as_mut().unwrap();
+        p.buffs.add_buff(116, 14400); // Inferno potion
+        // Arm the cadence counter so the NEXT tick's increment lands on 60
+        // (`:24595-24598` increments, then `:10218` reads `% 60 == 0`) — one
+        // deterministic strike tick instead of 60 (no player drift).
+        p.inferno_counter = 59;
+        let (cx, cy) = p.center();
+        // A zombie inside the 200px ring.
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Zombie, cx - 10.0, cy - 10.0, 1, 0.0,
+        ));
+        let hp0 = app.npcs[0].hp;
+        tick_ammo(&mut app);
+        assert!(app.npcs[0].buffs.has_buff(323), "Hellfire spreads (`:10231`)");
+        assert!(app.npcs[0].hp < hp0, "the cadence strike landed");
+        assert!(!app.combat_texts.is_empty(), "the combat text spawned");
+    }
+
     /// DW-3.3 (the buff half) — the three buff-granted flags (16 Archery,
     /// 93 Ammo Box, 112 Ammo Reservation; `Player.cs:10018`, `:10080`,
     /// `:10195`) derive from the buff slots, and the clear drops them when the
@@ -2257,6 +3030,96 @@ mod tests {
             app.player.as_ref().unwrap().acc_sharp_barb,
             "6160 → accSharpBarb"
         );
+    }
+
+    /// A6 — every cycler accessory (6168/6169/6193/6194) grants
+    /// `accAmmoCyclerDamage` beside its mode (`Player.cs:14528-14543`) and
+    /// the seam tail folds ONE additive +8% ranged damage
+    /// (`:12958-12961`) — melee/magic/minion untouched, crits untouched.
+    /// Two cyclers still fold once (the flag is a bool). Taking them off
+    /// clears the flag (`ResetEffects` `:18523`) and the damage returns to
+    /// the 1.0 base.
+    #[test]
+    fn a6_every_cycler_grants_the_flag_and_folds_8_percent_ranged_once() {
+        for kind in [6168u16, 6169, 6193, 6194] {
+            let mut app = ammo_app();
+            app.equip.armor[3] = slot(kind);
+            tick_ammo(&mut app);
+            {
+                let p = app.player.as_ref().unwrap();
+                assert!(p.acc_ammo_cycler_damage, "kind {kind} grants the flag");
+                assert!(
+                    (p.ranged_damage - 1.08).abs() < 1e-4,
+                    "kind {kind}: +8% ranged"
+                );
+                assert!((p.melee_damage - 1.0).abs() < 1e-4, "melee {kind}");
+                assert!((p.magic_damage - 1.0).abs() < 1e-4, "magic {kind}");
+                assert!((p.minion_damage - 1.0).abs() < 1e-4, "minion {kind}");
+                assert_eq!(p.ranged_crit, 4, "no crit row on the cycler {kind}");
+            }
+            // A second tick re-clears and re-folds — no accumulation.
+            tick_ammo(&mut app);
+            assert!(
+                (app.player.as_ref().unwrap().ranged_damage - 1.08).abs() < 1e-4,
+                "kind {kind}: the fold is per-tick, not cumulative"
+            );
+            // Unequip: the clear + no grant returns the base.
+            app.equip.armor[3] = EMPTY_SLOT;
+            tick_ammo(&mut app);
+            let p = app.player.as_ref().unwrap();
+            assert!(!p.acc_ammo_cycler_damage, "off {kind} clears (:18523)");
+            assert!((p.ranged_damage - 1.0).abs() < 1e-4, "off {kind}");
+        }
+        // Two cyclers in two slots: the bool folds ONCE (+0.08, not +0.16).
+        let mut app = ammo_app();
+        app.equip.armor[3] = slot(6168);
+        app.equip.armor[4] = slot(6169);
+        tick_ammo(&mut app);
+        assert!(
+            (app.player.as_ref().unwrap().ranged_damage - 1.08).abs() < 1e-4,
+            "two cyclers still fold once — the flag is a bool (:12958)"
+        );
+    }
+
+    /// A6 — the Sharp Barb's missing half: +8 ranged crit folded at the
+    /// seam tail (`Player.cs:12966-12969`), additive on the crit CHANCE
+    /// (the per-hit roll reads `ranged_crit` — no spawn stamp, no draws).
+    /// The +1-arrow-ammo-damage half (`:53548-53551`) stays the `ammo.rs`
+    /// resolver's and is pinned separately there. Melee/magic crits and
+    /// every damage class stay at baseline; the clear (`:18475`) returns
+    /// the 4-point base when the barb comes off.
+    #[test]
+    fn a6_the_sharp_barb_folds_8_ranged_crit_and_clears_on_unequip() {
+        let mut app = ammo_app();
+        app.equip.armor[3] = slot(6160);
+        tick_ammo(&mut app);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(p.acc_sharp_barb, "6160 grants the flag (:14501)");
+            assert_eq!(p.ranged_crit, 12, "4 + 8 (:12968)");
+            assert_eq!((p.melee_crit, p.magic_crit), (4, 4), "ranged-only");
+            assert!((p.ranged_damage - 1.0).abs() < 1e-4, "no damage row");
+            assert!((p.melee_damage - 1.0).abs() < 1e-4);
+            assert!((p.magic_damage - 1.0).abs() < 1e-4);
+        }
+        // Re-tick: the per-tick crit base (4) + one fold — no accumulation.
+        tick_ammo(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().ranged_crit, 12);
+        // Both halves on one tick: a cycler + the barb stack their adds.
+        app.equip.armor[4] = slot(6168);
+        tick_ammo(&mut app);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!((p.ranged_damage - 1.08).abs() < 1e-4, "cycler +8%");
+            assert_eq!(p.ranged_crit, 12, "barb +8 crit");
+        }
+        // Unequip the barb: the crit returns to base, the cycler stays.
+        app.equip.armor[3] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.acc_sharp_barb, "the clear (:18475)");
+        assert_eq!(p.ranged_crit, 4, "back to the 4-point base");
+        assert!((p.ranged_damage - 1.08).abs() < 1e-4, "cycler still on");
     }
 
     /// DW-3.4 — the per-tick cycling tick (`Player.Update_AmmoCycler`,
@@ -2570,6 +3433,7 @@ mod tests {
                 glam::Vec2::new(vel_x, 0.0),
                 13.0,
                 0.0,
+                crate::minecart::SparkVariant::Sparks,
             );
             if sparks.len() == want {
                 return s;
@@ -3332,4 +4196,336 @@ mod tests {
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
     }
+
+    // ---- W4-a5: the QuickBuff B-key edge (WRITTEN NOT RUN) ------------------
+
+    /// W4-a5 — `TriggersSet.CopyInto` (`GameInput/TriggersSet.cs:801-804`)
+    /// fires `Player.QuickBuff` on the QuickBuff trigger; the port keeps
+    /// the press-edge latch (`quick_buff_prev`, the `quick_mana_prev`
+    /// precedent). Holding B does not re-buff; release + re-press does.
+    #[test]
+    fn w4_a5_the_quick_buff_key_buffs_once_per_press() {
+        let mut app = ammo_app();
+        app.inventory[4] = crate::item::ItemSlot {
+            kind: 292, // Ironskin Potion, buff 5
+            name: "Ironskin Potion",
+            count: 5,
+            prefix: 0,
+        };
+        // The silent listener: the tail use-sound draws nothing.
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.keys.insert(KeyCode::KeyB); // the default cBuff bind
+        tick_ammo(&mut app);
+        assert!(
+            app.player
+                .as_ref()
+                .unwrap()
+                .buffs
+                .find_buff_index(5)
+                .is_some(),
+            "the press granted Ironskin"
+        );
+        assert_eq!(app.inventory[4].count, 4);
+        // Held: the latch dropped — no second consume (the standing buff
+        // would refuse anyway, so witness the STACK, not the buff).
+        for _ in 0..30 {
+            tick_ammo(&mut app);
+        }
+        assert_eq!(app.inventory[4].count, 4, "one use per press edge");
+        // Release + re-press: the latch re-arms. The buff still stands, so
+        // ShouldBother refuses — clear it first to see the second consume.
+        app.keys.remove(&KeyCode::KeyB);
+        tick_ammo(&mut app);
+        app.player.as_mut().unwrap().buffs.clear_buff(5);
+        app.keys.insert(KeyCode::KeyB);
+        tick_ammo(&mut app);
+        assert_eq!(app.inventory[4].count, 3, "the re-press buffed again");
+        assert!(app
+            .player
+            .as_ref()
+            .unwrap()
+            .buffs
+            .find_buff_index(5)
+            .is_some());
+    }
 }
+
+/// W4-d80 — the vampire sun-scorch sizzle (research/64 sites 22-24): the
+/// counter ramp, the lerp volume, the ensure/follow dance through the
+/// drain, the shared-atomic condition fold and the RNG contract (zero
+/// gameplay draws). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_vampire_sizzle_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::slot::SlotId;
+
+    /// The counter ramp (`Player.cs:28582-28589`): burning +1, alive −6,
+    /// dead −2 (the dead tick clears the burning flag), clamped 0..300.
+    #[test]
+    fn w4_d80_the_scorch_counter_ramps_and_clamps() {
+        let w = World::new("t".into(), 64, 64);
+        let mut p = Player::spawn(&w);
+        // Alive, not burning: −6 per tick, floored at 0.
+        p.sun_scorch_counter = 10;
+        p.tick_sun_scorch();
+        assert_eq!(p.sun_scorch_counter, 4);
+        p.tick_sun_scorch();
+        assert_eq!(p.sun_scorch_counter, 0, "the floor holds");
+        // Burning: +1 per tick, capped at 300.
+        p.vampire_burning_in_sunlight = true;
+        p.sun_scorch_counter = 299;
+        p.tick_sun_scorch();
+        assert_eq!(p.sun_scorch_counter, 300);
+        p.tick_sun_scorch();
+        assert_eq!(p.sun_scorch_counter, 300, "the cap holds");
+        // Dead: the burning flag clears, −2 per tick.
+        p.dead = true;
+        p.tick_sun_scorch();
+        assert!(!p.vampire_burning_in_sunlight, "the dead tick clears the flag");
+        assert_eq!(p.sun_scorch_counter, 298);
+    }
+
+    /// The lerp (`Player.cs:28589`): `GetLerpValue(0, 120, counter,
+    /// clamped)` — 0 at 0, 0.5 at 60, 1 at 120+.
+    #[test]
+    fn w4_d80_the_scorch_lerp_matches_get_lerp_value() {
+        let w = World::new("t".into(), 64, 64);
+        let mut p = Player::spawn(&w);
+        for (counter, want) in [(0i32, 0.0f32), (60, 0.5), (120, 1.0), (300, 1.0)] {
+            p.sun_scorch_counter = counter;
+            assert!(
+                (p.sun_scorch_lerp() - want).abs() < 1e-6,
+                "counter {counter}: {}",
+                p.sun_scorch_lerp()
+            );
+        }
+    }
+
+    /// The headless rig: the sizzle cue seeded silent, the vampire seed
+    /// armed, the player's counter mid-ramp.
+    fn rig() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.audio.test_seed_tracked_cue("sizzle");
+        app.world
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+        let mut p = Player::spawn(&app.world);
+        p.sun_scorch_counter = 60; // lerp 0.5
+        app.player = Some(p);
+        app
+    }
+
+    /// The ensure plays once into the handle with the lerp volume; the
+    /// follow re-points the live loop; a zero lerp never ensures
+    /// (`Player.cs:28590-28603`).
+    #[test]
+    fn w4_d80_the_sizzle_ensures_follows_and_gates_on_lerp() {
+        let mut app = rig();
+        update_sizzle_audio(&mut app);
+        let id = app.player.as_ref().unwrap().sizzle_audio_handle;
+        assert!(id.is_active(), "the ensure stored a live handle");
+        app.audio.test_keep_tracked_alive(id);
+        assert!(
+            (app.audio.get_active_sound(id).unwrap().volume - 0.5).abs() < 1e-6,
+            "the lerp volume override"
+        );
+        // The follow re-points the live loop (no re-play).
+        if let Some(p) = app.player.as_mut() {
+            p.x += 100.0;
+            p.sun_scorch_counter = 120; // lerp 1.0
+        }
+        update_sizzle_audio(&mut app);
+        let id2 = app.player.as_ref().unwrap().sizzle_audio_handle;
+        assert_eq!(id2, id, "no re-play while live");
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        assert_eq!(app.audio.get_active_sound(id).unwrap().position, (cx, cy));
+        assert!((app.audio.get_active_sound(id).unwrap().volume - 1.0).abs() < 1e-6);
+        // A zero lerp with no live handle never ensures.
+        let mut app2 = rig();
+        app2.player.as_mut().unwrap().sun_scorch_counter = 0;
+        update_sizzle_audio(&mut app2);
+        assert_eq!(
+            app2.player.as_ref().unwrap().sizzle_audio_handle,
+            SlotId::INVALID,
+            "the zero lerp gates the ensure"
+        );
+    }
+
+    /// The condition mirror: the shared atomic tracks `vampireSeed &&
+    /// counter > 0` — the seed off OR the counter zero flips it false.
+    #[test]
+    fn w4_d80_the_sizzle_condition_mirrors_the_tracker() {
+        let mut app = rig();
+        update_sizzle_audio(&mut app);
+        let alive = app.player.as_ref().unwrap().sizzle_alive.clone().unwrap();
+        assert!(alive.load(std::sync::atomic::Ordering::Relaxed), "seed + counter live");
+        // The counter drains to zero: the condition flips false.
+        app.player.as_mut().unwrap().sun_scorch_counter = 0;
+        update_sizzle_audio(&mut app);
+        assert!(!alive.load(std::sync::atomic::Ordering::Relaxed), "the zero counter flips it");
+        // The seed off flips it false too.
+        app.player.as_mut().unwrap().sun_scorch_counter = 60;
+        app.world.micro_seeds = tr_core::seeds::MicroSeedFlags::none();
+        update_sizzle_audio(&mut app);
+        assert!(!alive.load(std::sync::atomic::Ordering::Relaxed), "the seed off flips it");
+    }
+
+    /// The RNG contract: the sizzle ensure + follow leave the gameplay
+    /// stream pristine; the pitch roll moves (one variation: no pick).
+    #[test]
+    fn w4_d80_the_sizzle_drain_is_gameplay_draw_free() {
+        let mut app = rig();
+        let before = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let (style_before, pitch_before) = app.audio.test_audio_streams();
+        update_sizzle_audio(&mut app);
+        update_sizzle_audio(&mut app);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            before,
+            "zero Main.rand draws on the sizzle path"
+        );
+        let (style_after, pitch_after) = app.audio.test_audio_streams();
+        assert_eq!(style_after, style_before, "one variation: no variation pick");
+        assert_ne!(pitch_after, pitch_before, "the pitch roll moved");
+    }
+
+    /// The style row: `VampireSizzle` resolves with volume 1, one
+    /// variation, uncapped (`SoundID.cs:1708`'s
+    /// `CreateTrackable("sizzle").WithVolume(1f)`).
+    #[test]
+    fn w4_d80_the_sizzle_style_resolves() {
+        let style = crate::tracked_sound::TrackedStyle::by_name("VampireSizzle").expect("VampireSizzle");
+        assert_eq!(style.cue, "sizzle");
+        assert_eq!(style.variations, 1);
+        assert!((style.volume - 1.0).abs() < 1e-6);
+        assert_eq!(style.max_tracked_instances, 0);
+    }
+
+    // ---- W4-f30: the per-tick armor achievement tail (38 / 41) ------------
+
+    /// A rig for `UpdateArmorSets`' local-player tail (`Player.cs:25686-25704`):
+    /// a standing player above the surface, day clock inside the ON_FLEEK
+    /// window, no rain. The equipped kinds ride `app.equip.armor` (the tick
+    /// snapshots them into `p.equipped`).
+    fn armor_tail_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("armor-tail".into(), 64, 200);
+        app.world.compute_column_surface();
+        app.world.day_time = true;
+        app.world.time = 10000.0; // inside [3600, 50400]
+        let mut p = Player::spawn(&app.world);
+        p.y = 100.0; // above world_surface * 16 (200 * 0.25 * 16 = 800)
+        app.player = Some(p);
+        app
+    }
+
+    fn wear(app: &mut App, slot: usize, kind: u16) {
+        app.equip.armor[slot] = crate::item::ItemSlot { kind, name: "", count: 1, prefix: 0 };
+    }
+
+    fn row_completed(app: &App, name: &str) -> bool {
+        app.achievements.list.iter().find(|a| a.name == name).unwrap().completed
+    }
+
+    /// ON_FLEEK (38, `Player.cs:25691-25694`): Sunglasses (head slot 12) in
+    /// the day window above the surface fires; rain / night / below-surface
+    /// each refuse.
+    #[test]
+    fn f30_on_fleet_needs_sunglasses_in_the_day_window() {
+        let mut app = armor_tail_app();
+        wear(&mut app, 0, 237); // Sunglasses, head_slot 12
+        tick_ammo(&mut app);
+        assert!(row_completed(&app, "ON_FLEEK"), "the day-window sunglasses fire 38");
+
+        // Rain refuses.
+        let mut rainy = armor_tail_app();
+        wear(&mut rainy, 0, 237);
+        rainy.rain.set_raining_for_test(true);
+        tick_ammo(&mut rainy);
+        assert!(!row_completed(&rainy, "ON_FLEEK"), "rain refuses");
+
+        // Night refuses.
+        let mut night = armor_tail_app();
+        wear(&mut night, 0, 237);
+        night.world.day_time = false;
+        tick_ammo(&mut night);
+        assert!(!row_completed(&night, "ON_FLEEK"), "night refuses");
+
+        // Below the surface refuses.
+        let mut deep = armor_tail_app();
+        wear(&mut deep, 0, 237);
+        deep.player.as_mut().unwrap().y = 5000.0;
+        tick_ammo(&mut deep);
+        assert!(!row_completed(&deep, "ON_FLEEK"), "below the surface refuses");
+    }
+
+    /// MINI_ME (41, `Player.cs:25699-25702`): the full Moon Lord vanity set
+    /// (mask head 187 / body 249 / legs 217) fires; a missing piece refuses.
+    /// The vanity slots 10/11/12 carry the set (the effective-armor fold).
+    #[test]
+    fn f30_mini_me_needs_the_full_moon_lord_set() {
+        let mut app = armor_tail_app();
+        wear(&mut app, 10, 3373); // Boss Mask Moonlord, head_slot 187
+        wear(&mut app, 11, 5515); // Moon Lord Body, body_slot 249
+        wear(&mut app, 12, 5001); // Moon Lord Legs, leg_slot 217
+        tick_ammo(&mut app);
+        assert!(row_completed(&app, "MINI_ME"), "the full set fires 41");
+
+        // A missing leg piece refuses.
+        let mut partial = armor_tail_app();
+        wear(&mut partial, 10, 3373);
+        wear(&mut partial, 11, 5515);
+        tick_ammo(&mut partial);
+        assert!(!row_completed(&partial, "MINI_ME"), "two of three refuses");
+    }
+
+    /// W4-f40 — `Player.RecalculateLuck`'s lantern-night term
+    /// (`Player.cs:29146-29149`): while `LanternNight.LanternsUp` the player's
+    /// luck carries +0.3. The port snapshots the flag beside the auras/zones
+    /// each tick, so `update_luck`'s recalculation reads it. The contrast arm
+    /// (lanterns down) keeps the base luck, and the genuine/manual flags both
+    /// drive `LanternsUp` (`LanternNight.cs:17-27`).
+    #[test]
+    fn w4_f40_the_lantern_night_adds_the_luck_bonus_through_the_player_tick() {
+        // Lanterns down: the base luck (no torch/coin/ladybug inputs on the
+        // empty rig) is 0.
+        let mut down = ammo_app();
+        tick_ammo(&mut down);
+        assert!(
+            down.player.as_ref().unwrap().luck().abs() < 1e-6,
+            "no lantern bonus while down"
+        );
+        assert!(!down.player.as_ref().unwrap().luck_state.lantern_night);
+
+        // Manual lanterns up (the `ToggleManualLanterns` path): +0.3.
+        let mut manual = ammo_app();
+        manual.world_events.manual_lanterns = true;
+        tick_ammo(&mut manual);
+        let p = manual.player.as_ref().unwrap();
+        assert!(p.luck_state.lantern_night, "the tick latched the flag");
+        assert!(
+            (p.luck() - 0.3).abs() < 1e-6,
+            "the +0.3 lantern-night luck: {}",
+            p.luck()
+        );
+
+        // Genuine lanterns up (the natural/override path): the same +0.3.
+        let mut genuine = ammo_app();
+        genuine.world_events.genuine_lanterns = true;
+        tick_ammo(&mut genuine);
+        assert!(
+            (genuine.player.as_ref().unwrap().luck() - 0.3).abs() < 1e-6,
+            "the genuine lanterns carry the same bonus"
+        );
+    }
+}
+

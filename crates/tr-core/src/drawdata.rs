@@ -62,10 +62,24 @@ pub struct TileDrawData {
     /// `case 129`'s `new Color(255, 255, 255, 100)` / `Color.Transparent`
     /// (`:1089-1092`): the source alpha of the flat draw (1.0 = opaque).
     pub src_alpha: f32,
+    /// `case 160/692`'s `finalColor = new Color(Main.DiscoR, Main.DiscoG,
+    /// Main.DiscoB, 255)` (`TileDrawing.cs:1078-1088`, W4-g80): the final
+    /// colour is the disco cycle, NOT the light — an actuated cell ghosts
+    /// the DISCO colour via `Tile.actColor` (`Tile.cs:272-280`, the double
+    /// 0.4 truncating multiply). The renderer draws the disco bytes and
+    /// skips both the light shade and the caller's `tileLight` ghost (the
+    /// override replaces `GetFinalLight` wholesale).
+    pub disco_override: bool,
     /// `TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth` (711,
     /// `TileDrawing.cs:1011-1015`): the `(tileWidth - 16) / 2` centring is
     /// skipped, so the sprite hangs from the cell's left edge.
     pub no_width_adjust: bool,
+    /// `DrawSingleTile` `case 83`'s texture re-pick (`TileDrawing.cs:1149-1151`
+    /// → `GetTileDrawTexture(tile, x, y)` `:1450-1455`): a harvestable herb
+    /// (`WorldGen.IsAlchemyPlantHarvestable(frameX / 18, tileY)`) draws from
+    /// the MATURE herb sheet (`key.TileType = 84`) instead of its own.
+    /// `None` = the tile's own sheet (the default for every other kind).
+    pub sheet_kind_override: Option<u16>,
 }
 
 impl Default for TileDrawData {
@@ -89,9 +103,22 @@ impl Default for TileDrawData {
             skip_draw: false,
             light_scale: 1.0,
             src_alpha: 1.0,
+            disco_override: false,
             no_width_adjust: false,
+            sheet_kind_override: None,
         }
     }
+}
+
+/// `Tile.actColor`'s `Color` overload (`Tile.cs:272-280`): an inactive
+/// (actuated) tile ghosts the colour — `new Color((byte)(0.4 * (double)R),
+/// (byte)(0.4 * (double)G), (byte)(0.4 * (double)B), A)` — a DOUBLE 0.4
+/// multiply truncated per channel, alpha preserved (W4-g80). The `Vector3`
+/// overload (`:282-288`) is the f32 `*= 0.4f` the light path already rides.
+#[inline]
+pub fn act_color_bytes(c: [u8; 4]) -> [u8; 4] {
+    let s = |x: u8| (0.4 * x as f64) as u8;
+    [s(c[0]), s(c[1]), s(c[2]), c[3]]
 }
 
 /// Per-type overrides of `TileDrawing.GetTileDrawData`.
@@ -368,7 +395,9 @@ pub fn draw_data(
             data.add_fr_y = (tile_frame * 38 + 20 * n21) as i16;
         }
         // `case 711` — RainbowBoulder: 18 wide on later frame columns, 20 px
-        // tall; the glow out-params are TILE-DRAW-2 (TileDrawing.cs:4931-4939).
+        // tall (TileDrawing.cs:4931-4939). The first-switch glow record
+        // (:4937-4938) rides `drawdata_cases_a::glow_switch`'s 711 arm
+        // (TILE_SHEET_GLOW); binding it is TILE-DRAW-2 (W4-d62).
         711 => {
             if fx > 0 {
                 data.width = 18;
@@ -1287,7 +1316,10 @@ impl TileDrawData {
     /// (323), the dye-plant frame rewrite (227, `tileFrameX == 204`), the
     /// cactus ground shift (80) and the cog parity shift (272). Must run right
     /// after [`draw_data`] — the caller builds the source rectangle from the
-    /// resulting overrides and `add_fr_*` fields.
+    /// resulting overrides and `add_fr_*` fields. `wx` is the live weather
+    /// state the 83 herb-maturity probe reads (`WorldGen.
+    /// IsAlchemyPlantHarvestable`); pass `WeatherCtx::default()` where the
+    /// weather is unavailable (the dry/no-cloud stand-in).
     pub fn apply_world_corrections(
         &mut self,
         world: &World,
@@ -1297,6 +1329,7 @@ impl TileDrawData {
         frame_x: i16,
         frame_y: i16,
         tile_frame: i32,
+        wx: &crate::growth::WeatherCtx,
     ) {
         match kind {
             // `case 5`: `tileFrameX += 176 * (GetTreeBiome(x, y, fx, fy) + 1)`
@@ -1336,13 +1369,30 @@ impl TileDrawData {
             272 => {
                 self.add_fr_y += cog_source_y_offset(x, y, tile_frame) as i16;
             }
+            // `DrawSingleTile` `case 83` (TileDrawing.cs:1149-1151): the draw
+            // texture is re-picked through `GetTileDrawTexture(tile, x, y)`
+            // (:1434-1458), whose `case 83` arm (:1450-1455) swaps
+            // `key.TileType` to 84 while `WorldGen.IsAlchemyPlantHarvestable
+            // (tile.frameX / 18, tileY)` holds — the mature (blooming) herb
+            // sprite. The frame itself is untouched: only the sheet moves.
+            83 => {
+                if crate::growth::is_alchemy_plant_harvestable(
+                    world,
+                    frame_x as i32 / 18,
+                    y,
+                    wx,
+                ) {
+                    self.sheet_kind_override = Some(84);
+                }
+            }
             _ => {}
         }
         // The `DrawSingleTile` switch (`TileDrawing.cs:1020-1159`) — C# revises
         // the draw-local `vector`, the source rectangle's height and the final
         // colour per type. Every arm below is ported verbatim; the disco arms
-        // (160/692) and the texture override (83) stay parked (they need the
-        // `Main.DiscoR/G/B` triple and the per-tile sheet override).
+        // (160/692, W4-g80 — the `disco_override` flag, the renderer feeds the
+        // `Main.DiscoR/G/B` triple) and the 83 herb-maturity sheet swap
+        // (`sheet_kind_override`, the `GetTileDrawTexture` re-pick) landed.
         let block_type = |world: &World, x: i32, y: i32| -> i16 {
             let Some(t) = world.tile(x, y) else {
                 return 0;
@@ -1403,6 +1453,20 @@ impl TileDrawData {
             // `case 51`/`case 697` — cobwebs (`:1078-1080`): half light.
             51 | 697 => {
                 self.light_scale = 0.5;
+            }
+            // `case 160`/`case 692` — RainbowBrick/RainbowMossBlock
+            // (`:1078-1088`, W4-g80): the final colour becomes the
+            // `Main.DiscoR/G/B` cycle (alpha 255), NOT the light; an
+            // actuated cell ghosts that colour through `Tile.actColor`
+            // (the `Color` overload, `Tile.cs:272-280` — a **double** 0.4
+            // multiply truncated per channel, alpha preserved). The
+            // override replaces `GetFinalLight`'s light entirely, so the
+            // ×0.4 ghost of `tileLight` must NOT ride on top: the caller
+            // passes the RAW light and this arm owns the whole tint.
+            // `light_scale`/`src_alpha` are neutral here (no other
+            // positional arm touches 160/692).
+            160 | 692 => {
+                self.disco_override = true;
             }
             // `case 129` — crystal shards (`:1088-1107`): 100/255 alpha, none
             // for the `frameX >= 324` columns (the big shards), and the 2 px
@@ -1473,7 +1537,9 @@ mod tests {
         skip_draw: false,
         light_scale: 1.0,
         src_alpha: 1.0,
+        disco_override: false,
         no_width_adjust: false,
+        sheet_kind_override: None,
     };
 
     fn dd(kind: u16, x: i32, y: i32, fx: i16, fy: i16, tile_frame: i32) -> TileDrawData {
@@ -1645,6 +1711,26 @@ mod tests {
             (bulb.width, bulb.height, bulb.top, bulb.add_fr_y),
             (16, 16, 2, 0)
         );
+    }
+
+    /// W4-g84: the bulb's animation rows — case 238 replaces the generic
+    /// `tileFrame * 38` default with `tileFrame * 36`
+    /// (`TileDrawing.cs:5441-5444`), top 2 on every row; the four rows of
+    /// the `Main.cs:18709-18718` animator map to sheet Y 0/36/72/108.
+    #[test]
+    fn w4_g84_plantera_bulb_animation_rows() {
+        for row in 0..4 {
+            let d = dd(238, 0, 0, 0, 0, row);
+            assert_eq!(d.add_fr_y, (row * 36) as i16, "row {row}");
+            assert_eq!(d.top, 2);
+            assert_eq!((d.width, d.height), (16, 16));
+            assert_eq!(d.add_fr_x, 0);
+            assert!(!d.flip);
+        }
+        // The frame columns (style/col grid) pass through untouched.
+        let d = dd(238, 4, 0, 90, 18, 2);
+        assert_eq!((d.frame_x_override, d.frame_y_override), (None, None));
+        assert_eq!(d.add_fr_y, 72);
     }
 
     #[test]
@@ -2367,22 +2453,22 @@ mod tests {
         }
         put(&mut w, 20, 14, 109); // hallow → variant 2 → +528
         let mut d = dd(5, 20, 10, 22, 198, 0);
-        d.apply_world_corrections(&w, 5, 20, 10, 22, 198, 0);
+        d.apply_world_corrections(&w, 5, 20, 10, 22, 198, 0, &Default::default());
         assert_eq!(d.frame_x_override, Some(22 + 176 * 3));
         // Forest ground (dirt): variant -1 → the frame is untouched.
         put(&mut w, 20, 14, 2);
         let mut d = dd(5, 20, 10, 22, 198, 0);
-        d.apply_world_corrections(&w, 5, 20, 10, 22, 198, 0);
+        d.apply_world_corrections(&w, 5, 20, 10, 22, 198, 0, &Default::default());
         assert_eq!(d.frame_x_override, Some(22));
         // i16 wrap: C#'s `(short)` cast wraps, the port's `as i16` too.
         put(&mut w, 20, 14, 23); // variant 0 → +176
         let mut d = dd(5, 20, 10, 32700, 0, 0);
-        d.apply_world_corrections(&w, 5, 20, 10, 32700, 0, 0);
+        d.apply_world_corrections(&w, 5, 20, 10, 32700, 0, 0, &Default::default());
         assert_eq!(d.frame_x_override, Some(((32700 + 176) as i32) as i16));
         // The variant trunks never shift (TileDrawing.cs:4650-4662).
         for kind in [583u16, 589, 596, 616, 634] {
             let mut d = dd(kind, 20, 10, 22, 198, 0);
-            d.apply_world_corrections(&w, kind, 20, 10, 22, 198, 0);
+            d.apply_world_corrections(&w, kind, 20, 10, 22, 198, 0, &Default::default());
             assert_eq!(d.frame_x_override, None, "kind {kind}");
         }
     }
@@ -2396,31 +2482,31 @@ mod tests {
 
         // 751/752 only draw on their (0, 0) frame (`:1022-1039`).
         let mut a = TileDrawData::default();
-        a.apply_world_corrections(&w, 751, 20, 20, 0, 0, 0);
+        a.apply_world_corrections(&w, 751, 20, 20, 0, 0, 0, &Default::default());
         assert_eq!((a.draw_dx, a.draw_dy, a.skip_draw), (11, -8, false));
         let mut b = TileDrawData::default();
-        b.apply_world_corrections(&w, 751, 20, 20, 18, 0, 0);
+        b.apply_world_corrections(&w, 751, 20, 20, 18, 0, 0, &Default::default());
         assert!(b.skip_draw, "751 off the (0,0) frame draws nothing");
         let mut c = TileDrawData::default();
-        c.apply_world_corrections(&w, 752, 20, 20, 0, 0, 0);
+        c.apply_world_corrections(&w, 752, 20, 20, 0, 0, 0, &Default::default());
         assert_eq!((c.draw_dx, c.draw_dy, c.skip_draw), (8, 0, false));
         let mut d = TileDrawData::default();
-        d.apply_world_corrections(&w, 752, 20, 20, 0, 18, 0);
+        d.apply_world_corrections(&w, 752, 20, 20, 0, 18, 0, &Default::default());
         assert!(d.skip_draw, "752 off the (0,0) frame draws nothing");
 
         // 136 by its frame column (`:1040-1052`).
         for (fx, dx) in [(0i16, 0i16), (18, -2), (36, 2), (54, 0)] {
             let mut t = TileDrawData::default();
-            t.apply_world_corrections(&w, 136, 20, 20, fx, 0, 0);
+            t.apply_world_corrections(&w, 136, 20, 20, fx, 0, 0, &Default::default());
             assert_eq!(t.draw_dx, dx, "136 frameX {fx}");
             assert_eq!(t.draw_dy, 0);
         }
         // 442's third 22-px column (`:1053-1058`).
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&w, 442, 20, 20, 66, 0, 0);
+        t.apply_world_corrections(&w, 442, 20, 20, 66, 0, 0, &Default::default());
         assert_eq!(t.draw_dx, 2);
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&w, 442, 20, 20, 44, 0, 0);
+        t.apply_world_corrections(&w, 442, 20, 20, 44, 0, 0, &Default::default());
         assert_eq!(t.draw_dx, 0);
 
         // 723/724 anchors (`:1108-1125`).
@@ -2432,10 +2518,10 @@ mod tests {
             (72, (0, 0)),
         ] {
             let mut t = TileDrawData::default();
-            t.apply_world_corrections(&w, 723, 20, 20, fx, 0, 0);
+            t.apply_world_corrections(&w, 723, 20, 20, fx, 0, 0, &Default::default());
             assert_eq!((t.draw_dx, t.draw_dy), (dx, dy), "723 frameX {fx}");
             let mut u = TileDrawData::default();
-            u.apply_world_corrections(&w, 724, 20, 20, fx, 0, 0);
+            u.apply_world_corrections(&w, 724, 20, 20, fx, 0, 0, &Default::default());
             assert_eq!((u.draw_dx, u.draw_dy), (dx, dy), "724 frameX {fx}");
         }
 
@@ -2443,13 +2529,13 @@ mod tests {
         // (`:1059-1077`); `Tile.blockType()` is 1 for the half brick and
         // `slope + 1` otherwise (`Tile.cs:202-214`).
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&w, 726, 20, 20, 0, 0, 0);
+        t.apply_world_corrections(&w, 726, 20, 20, 0, 0, 0, &Default::default());
         assert_eq!((t.draw_dx, t.draw_dy), (-2, 0), "flat");
         let mut half = World::new("t".into(), 60, 40);
         let i = half.index(20, 20);
         half.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&half, 726, 20, 20, 0, 0, 0);
+        t.apply_world_corrections(&half, 726, 20, 20, 0, 0, 0, &Default::default());
         assert_eq!((t.draw_dx, t.draw_dy), (-2, 0), "half brick keeps the -2");
         // `Tile.blockType()` = `slope + 1` for every slope (`Tile.cs:208-213`),
         // so slopes 1/3 take the +6 arms (blockType 2/4) and slopes 2/4 the -6
@@ -2459,18 +2545,18 @@ mod tests {
             let i = sl.index(20, 20);
             sl.tiles[i].set_slope(slope);
             let mut t = TileDrawData::default();
-            t.apply_world_corrections(&sl, 726, 20, 20, 0, 0, 0);
+            t.apply_world_corrections(&sl, 726, 20, 20, 0, 0, 0, &Default::default());
             assert_eq!((t.draw_dx, t.draw_dy), (dx, dy), "slope {slope}");
         }
 
         // 51/697 draw at half light (`:1078-1080`).
         for kind in [51u16, 697] {
             let mut t = TileDrawData::default();
-            t.apply_world_corrections(&w, kind, 20, 20, 0, 0, 0);
+            t.apply_world_corrections(&w, kind, 20, 20, 0, 0, 0, &Default::default());
             assert_eq!(t.light_scale, 0.5, "kind {kind}");
         }
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&w, 0, 20, 20, 0, 0, 0);
+        t.apply_world_corrections(&w, 0, 20, 20, 0, 0, 0, &Default::default());
         assert_eq!(t.light_scale, 1.0);
 
         // 129 crystal shards (`:1088-1107`): 100/255 alpha (none for the big
@@ -2484,7 +2570,7 @@ mod tests {
             (324, 0, (0, 2), 0.0),
         ] {
             let mut t = TileDrawData::default();
-            t.apply_world_corrections(&w, 129, 20, 20, fx, fy, 0);
+            t.apply_world_corrections(&w, 129, 20, 20, fx, fy, 0, &Default::default());
             assert_eq!((t.draw_dx, t.draw_dy), (dx, dy), "129 ({fx},{fy})");
             assert!((t.src_alpha - alpha).abs() < 1e-6, "129 ({fx},{fy}) alpha");
         }
@@ -2494,38 +2580,113 @@ mod tests {
         // tree pass) and so are skipped here.
         for fy in [0i16, 22, 44] {
             let mut t = TileDrawData::default();
-            t.apply_world_corrections(&w, 323, 20, 20, 0, fy, 0);
+            t.apply_world_corrections(&w, 323, 20, 20, 0, fy, 0, &Default::default());
             assert_eq!((t.draw_dx, t.skip_draw), (fy, false), "323 frameY {fy}");
         }
         for fx in [88i16, 110, 132] {
             let mut t = TileDrawData::default();
-            t.apply_world_corrections(&w, 323, 20, 20, fx, 22, 0);
+            t.apply_world_corrections(&w, 323, 20, 20, fx, 22, 0, &Default::default());
             assert!(t.skip_draw, "323 frameX {fx} must be skipped");
             assert_eq!(t.draw_dx, 0, "323 frameX {fx} leaves the position alone");
         }
         // The bounds are inclusive; column 66/154 is ordinary trunk.
         for fx in [66i16, 154] {
             let mut t = TileDrawData::default();
-            t.apply_world_corrections(&w, 323, 20, 20, fx, 22, 0);
+            t.apply_world_corrections(&w, 323, 20, 20, fx, 22, 0, &Default::default());
             assert!(!t.skip_draw, "323 frameX {fx} draws");
             assert_eq!(t.draw_dx, 22, "323 frameX {fx} shifts");
         }
 
         // 114 (`:1157-1162`): the source rectangle grows 2 px below row 0.
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&w, 114, 20, 20, 0, 18, 0);
+        t.apply_world_corrections(&w, 114, 20, 20, 0, 18, 0, &Default::default());
         assert_eq!(t.height, 18);
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&w, 114, 20, 20, 0, 0, 0);
+        t.apply_world_corrections(&w, 114, 20, 20, 0, 0, 0, &Default::default());
         assert_eq!(t.height, 16);
 
         // 711 — the rainbow boulder keeps the cell's left edge (`num5 = 0`).
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&w, 711, 20, 20, 0, 0, 0);
+        t.apply_world_corrections(&w, 711, 20, 20, 0, 0, 0, &Default::default());
         assert!(t.no_width_adjust);
         let mut t = TileDrawData::default();
-        t.apply_world_corrections(&w, 0, 20, 20, 0, 0, 0);
+        t.apply_world_corrections(&w, 0, 20, 20, 0, 0, 0, &Default::default());
         assert!(!t.no_width_adjust);
+    }
+
+    /// W4-g80 DOC-SWEEP: `DrawSingleTile` case 83's texture re-pick
+    /// (`TileDrawing.cs:1149-1151` → `GetTileDrawTexture` `:1450-1455`): a
+    /// harvestable herb draws from the mature sheet 84, the frame untouched;
+    /// an unharvestable one keeps its own sheet. The style matrix rides
+    /// `WorldGen.IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`).
+    #[test]
+    fn w4_g80_the_harvestable_herb_swaps_to_the_mature_sheet() {
+        let mut w = World::new("t".into(), 60, 40);
+        w.world_surface = 30.0;
+        let dry = crate::growth::WeatherCtx::default();
+        let rainy = crate::growth::WeatherCtx { raining: true, ..dry };
+        let cloudy = crate::growth::WeatherCtx { cloud_alpha: 0.1, ..dry };
+        // Daybloom (style 0, frameX 0): day → mature, night → own sheet.
+        w.day_time = true;
+        let mut d = dd(83, 20, 20, 0, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 0, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, Some(84), "daybloom by day blooms");
+        w.day_time = false;
+        let mut d = dd(83, 20, 20, 0, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 0, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, None, "daybloom by night stays green");
+        // Moonglow (style 1, frameX 18): night → mature.
+        let mut d = dd(83, 20, 20, 18, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 18, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, Some(84));
+        // Deathweed (style 3, frameX 54): night + full moon (phase 0).
+        w.moon_phase = 0;
+        let mut d = dd(83, 20, 20, 54, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 54, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, Some(84));
+        w.moon_phase = 4;
+        let mut d = dd(83, 20, 20, 54, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 54, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, None, "no moon, no bloom");
+        w.blood_moon = true;
+        let mut d = dd(83, 20, 20, 54, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 54, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, Some(84), "the blood moon blooms it");
+        w.blood_moon = false;
+        // Waterleaf (style 4, frameX 72): rain or any cloud.
+        let mut d = dd(83, 20, 20, 72, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 72, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, None);
+        let mut d = dd(83, 20, 20, 72, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 72, 0, 0, &rainy);
+        assert_eq!(d.sheet_kind_override, Some(84));
+        let mut d = dd(83, 20, 20, 72, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 72, 0, 0, &cloudy);
+        assert_eq!(d.sheet_kind_override, Some(84));
+        // Fireblossom (style 5, frameX 90): time > 40500 and not raining.
+        w.time = 40501.0;
+        let mut d = dd(83, 20, 20, 90, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 90, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, Some(84));
+        w.time = 40500.0;
+        let mut d = dd(83, 20, 20, 90, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 90, 0, 0, &dry);
+        assert_eq!(d.sheet_kind_override, None, "the > 40500 gate is strict");
+        // The swap moves ONLY the sheet: the frame, the 20 px herb metrics
+        // and the flip all stay (the static case 82-84 arm owns them).
+        w.day_time = true;
+        let mut d = dd(83, 20, 20, 0, 0, 0);
+        d.apply_world_corrections(&w, 83, 20, 20, 0, 0, 0, &dry);
+        assert_eq!(d.frame_x_override, None);
+        assert_eq!(d.frame_y_override, None);
+        assert_eq!((d.width, d.height, d.top), (16, 20, -2));
+        // The neighbours never swap: 82 (the plain herb) and 84 (already
+        // mature) have no case-83 arm.
+        for kind in [82u16, 84] {
+            let mut d = dd(kind, 20, 20, 0, 0, 0);
+            d.apply_world_corrections(&w, kind, 20, 20, 0, 0, 0, &dry);
+            assert_eq!(d.sheet_kind_override, None, "kind {kind}");
+        }
     }
 
     #[test]
@@ -2542,7 +2703,7 @@ mod tests {
         put(&mut w, 30, 29, 80);
         put(&mut w, 30, 30, 112);
         let mut dd = TileDrawData::default();
-        dd.apply_world_corrections(&w, 80, 30, 29, 0, 0, 0);
+        dd.apply_world_corrections(&w, 80, 30, 29, 0, 0, 0, &Default::default());
         assert_eq!(dd.src_y_shift, 54, "evil shifts the flat rect");
         assert_eq!(dd.add_fr_y, 0, "addFrY stays clean");
         // The hallow ground 116 → 108; the crimson 234 → 162.
@@ -2550,14 +2711,14 @@ mod tests {
         put(&mut w2, 30, 29, 80);
         put(&mut w2, 30, 30, 116);
         let mut dd2 = TileDrawData::default();
-        dd2.apply_world_corrections(&w2, 80, 30, 29, 0, 0, 0);
+        dd2.apply_world_corrections(&w2, 80, 30, 29, 0, 0, 0, &Default::default());
         assert_eq!(dd2.src_y_shift, 108);
         assert_eq!(dd2.add_fr_y, 0);
         let mut w3 = World::new("t".into(), 60, 40);
         put(&mut w3, 30, 29, 80);
         put(&mut w3, 30, 30, 234);
         let mut dd3 = TileDrawData::default();
-        dd3.apply_world_corrections(&w3, 80, 30, 29, 0, 0, 0);
+        dd3.apply_world_corrections(&w3, 80, 30, 29, 0, 0, 0, &Default::default());
         assert_eq!(dd3.src_y_shift, 162);
         assert_eq!(dd3.add_fr_y, 0);
         // A normal-sand cactus (53) shifts nothing.
@@ -2565,7 +2726,7 @@ mod tests {
         put(&mut w4, 30, 29, 80);
         put(&mut w4, 30, 30, 53);
         let mut dd4 = TileDrawData::default();
-        dd4.apply_world_corrections(&w4, 80, 30, 29, 0, 0, 0);
+        dd4.apply_world_corrections(&w4, 80, 30, 29, 0, 0, 0, &Default::default());
         assert_eq!(dd4.src_y_shift, 0);
         assert_eq!(dd4.add_fr_y, 0);
     }
@@ -2698,7 +2859,7 @@ mod tests {
         }
         put(&mut w, 20, 34, 112);
         let mut palm = dd(323, 20, 30, 18, 0, 0);
-        palm.apply_world_corrections(&w, 323, 20, 30, 18, 0, 0);
+        palm.apply_world_corrections(&w, 323, 20, 30, 18, 0, 0, &Default::default());
         assert_eq!(palm.frame_y_override, Some(66), "ebonsand → row 66");
         assert_eq!(palm.frame_x_override, None);
         // 227 with frameX 204: rewritten by the ground sand (5063-5078).
@@ -2707,12 +2868,12 @@ mod tests {
         put(&mut w2, 30, 31, 80);
         put(&mut w2, 30, 32, 234);
         let mut dye = dd(227, 30, 30, 204, 0, 0);
-        dye.apply_world_corrections(&w2, 227, 30, 30, 204, 0, 0);
+        dye.apply_world_corrections(&w2, 227, 30, 30, 204, 0, 0, &Default::default());
         assert_eq!(dye.frame_x_override, Some(204 + 272), "crimson → +272");
         // 227 with frameX != 204: no frame mutation (plan edge case).
         for fx in [0i16, 238] {
             let mut dye = dd(227, 30, 30, fx, 0, 0);
-            dye.apply_world_corrections(&w2, 227, 30, 30, fx, 0, 0);
+            dye.apply_world_corrections(&w2, 227, 30, 30, fx, 0, 0, &Default::default());
             assert_eq!(dye.frame_x_override, None, "frameX {fx}");
         }
         // 80: source-Y shift on the flat draw's rect (bug 19/19b) — the C#'
@@ -2722,7 +2883,7 @@ mod tests {
         put(&mut w3, 30, 30, 80);
         put(&mut w3, 30, 31, 116);
         let mut cac = dd(80, 30, 30, 0, 0, 0);
-        cac.apply_world_corrections(&w3, 80, 30, 30, 0, 0, 0);
+        cac.apply_world_corrections(&w3, 80, 30, 30, 0, 0, 0, &Default::default());
         assert_eq!(cac.src_y_shift, 108, "pearlsand → +108");
         assert_eq!(cac.add_fr_y, 0, "the flat path stays unshifted");
         assert_eq!(cac.top, 2);
@@ -2730,18 +2891,18 @@ mod tests {
         // `DrawSingleTile` correction is `case 80:` only.
         for kind in [142u16, 143] {
             let mut pump = dd(kind, 30, 30, 0, 0, 0);
-            pump.apply_world_corrections(&w3, kind, 30, 30, 0, 0, 0);
+            pump.apply_world_corrections(&w3, kind, 30, 30, 0, 0, 0, &Default::default());
             assert_eq!(pump.add_fr_y, 0, "kind {kind}");
             assert_eq!(pump.top, 2, "kind {kind}");
         }
         // 272: the parity shift lands on add_fr_y (the arm cleared it).
         let mut cog = dd(272, 3, 0, 0, 0, 0);
-        cog.apply_world_corrections(&w3, 272, 3, 0, 0, 0, 0);
+        cog.apply_world_corrections(&w3, 272, 3, 0, 0, 0, 0, &Default::default());
         assert_eq!(cog.add_fr_y, 90);
         // Kinds outside the correction set are untouched.
         let mut sand = dd(53, 30, 30, 0, 0, 0);
         let before = sand;
-        sand.apply_world_corrections(&w3, 53, 30, 30, 0, 0, 0);
+        sand.apply_world_corrections(&w3, 53, 30, 30, 0, 0, 0, &Default::default());
         assert_eq!(sand, before);
     }
 
@@ -2812,9 +2973,9 @@ mod tests {
         put(&mut w, 30, 40, 53);
         for fx in [0i16, 36, 54, 108, 204, 32767, -32768] {
             let mut cac = dd(80, 30, 39, fx, 32767, 0);
-            cac.apply_world_corrections(&w, 80, 30, 39, fx, 32767, 0);
+            cac.apply_world_corrections(&w, 80, 30, 39, fx, 32767, 0, &Default::default());
             let mut dye = dd(227, 30, 39, fx, 32767, 0);
-            dye.apply_world_corrections(&w, 227, 30, 39, fx, 32767, 0);
+            dye.apply_world_corrections(&w, 227, 30, 39, fx, 32767, 0, &Default::default());
         }
         // A palm trunk over corrupt sand: the biome row stays inside i16.
         for y in 20..24 {
@@ -2822,11 +2983,11 @@ mod tests {
         }
         put(&mut w, 40, 24, 112);
         let mut palm = dd(323, 40, 20, 32767, 32767, 0);
-        palm.apply_world_corrections(&w, 323, 40, 20, 32767, 32767, 0);
+        palm.apply_world_corrections(&w, 323, 40, 20, 32767, 32767, 0, &Default::default());
         assert_eq!(palm.frame_y_override, Some(66));
         // A probe column outside the world is neutral (variant -1 → row -22).
         let mut palm2 = dd(323, 9999, 20, 0, 0, 0);
-        palm2.apply_world_corrections(&w, 323, 9999, 20, 0, 0, 0);
+        palm2.apply_world_corrections(&w, 323, 9999, 20, 0, 0, 0, &Default::default());
         assert_eq!(palm2.frame_y_override, Some(-22));
     }
 
@@ -2957,5 +3118,53 @@ mod tests {
         );
         assert_eq!(dd(325, 0, 0, 0, 0, 0), DEFAULT); // no case
         assert_eq!(dd(655, 0, 0, 0, 0, 0), DEFAULT); // no case, not the 654 arm
+    }
+
+    // ---- W4-g80: the actuated draw lane — the disco arm + actColor ----
+
+    /// W4-g80 census witness 1 — `Tile.actColor`'s `Color` overload
+    /// (`Tile.cs:272-280`): the double 0.4 multiply truncates per channel
+    /// and preserves alpha. 255 → 102 (NOT 101: 0.4*255 = 102.0 exact in
+    /// f64), 100 → 40, 1 → 0 (0.4 truncates to 0), 3 → 1 (1.2 → 1).
+    #[test]
+    fn w4_g80_act_color_bytes_truncates_the_double_multiply() {
+        assert_eq!(act_color_bytes([255, 255, 255, 255]), [102, 102, 102, 255]);
+        assert_eq!(act_color_bytes([100, 50, 25, 77]), [40, 20, 10, 77]);
+        assert_eq!(act_color_bytes([1, 2, 3, 0]), [0, 0, 1, 0]);
+        // An ACTIVE tile passes through untouched (the `!inActive()` early
+        // return, `:274-277`) — the caller gates; the fn itself always
+        // ghosts, matching the overload's body past the guard.
+        assert_eq!(act_color_bytes([0, 0, 0, 255]), [0, 0, 0, 255]);
+    }
+
+    /// W4-g80 census witness 2 — the positional-switch disco arm
+    /// (`TileDrawing.cs:1078-1088`) marks EXACTLY the 160/692 pair
+    /// (RainbowBrick/RainbowMossBlock); the cobweb 51/697 arm keeps its
+    /// `light_scale = 0.5` and no disco flag; nothing else moves.
+    #[test]
+    fn w4_g80_the_disco_arm_marks_exactly_160_and_692() {
+        let w = World::new("g80".into(), 40, 40);
+        for kind in [160u16, 692] {
+            let mut d = draw_data(kind, 3, 4, 0, 0, 0, true);
+            d.apply_world_corrections(&w, kind, 3, 4, 0, 0, 0, &Default::default());
+            assert!(d.disco_override, "kind {kind}");
+            // No other field moves: the arm only replaces finalColor.
+            assert_eq!(
+                d,
+                TileDrawData { disco_override: true, ..Default::default() },
+                "kind {kind} keeps the default shape"
+            );
+        }
+        for kind in [0u16, 1, 51, 697, 129, 159, 161, 627, 628, 691, 693] {
+            let mut d = draw_data(kind, 3, 4, 0, 0, 0, true);
+            d.apply_world_corrections(&w, kind, 3, 4, 0, 0, 0, &Default::default());
+            assert!(!d.disco_override, "kind {kind} must not disco");
+        }
+        // The cobweb pair keeps its half-light arm, no disco flag.
+        for kind in [51u16, 697] {
+            let mut d = draw_data(kind, 3, 4, 0, 0, 0, true);
+            d.apply_world_corrections(&w, kind, 3, 4, 0, 0, 0, &Default::default());
+            assert_eq!(d.light_scale, 0.5);
+        }
     }
 }

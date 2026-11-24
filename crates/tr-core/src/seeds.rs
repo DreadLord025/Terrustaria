@@ -344,6 +344,14 @@ impl SeedFlags {
             && self.contains(Self::FOR_THE_WORTHY)
             && !self.contains(Self::REMIX)
     }
+
+    /// `SpecialSeedFeatures.Mechdusa` (`SpecialSeedFeatures.cs:119-128`):
+    /// `Main.remixWorld ? Main.getGoodWorld : false` — the Mechdusa summon
+    /// (5334) and its QUEEN_MACHINE death arm (`NPC.cs:78857-78869`) gate on
+    /// the remix + for-the-worthy pair.
+    pub fn mechdusa(self) -> bool {
+        self.contains(Self::REMIX) && self.contains(Self::FOR_THE_WORTHY)
+    }
 }
 
 /// `GetFullSeedText`'s serialised-seeds suffix (`WorldFileData.cs:123-155`)
@@ -502,6 +510,20 @@ mod tests {
         let drunk_ftw = SeedFlags::from(SeedFlags::DRUNK | SeedFlags::FOR_THE_WORTHY);
         assert!(drunk_ftw.flip_infections());
         assert!(!drunk_ftw.not_the_bees_and_for_the_worthy_no_celebration());
+    }
+
+    /// W4-f30 — `SpecialSeedFeatures.Mechdusa` (`SpecialSeedFeatures.cs:119-128`):
+    /// remix && for-the-worthy. The QUEEN_MACHINE death arm (progression 31)
+    /// and the Mechdusa summon gate read it.
+    #[test]
+    fn f30_mechdusa_needs_remix_and_for_the_worthy() {
+        let both = SeedFlags::from(SeedFlags::REMIX | SeedFlags::FOR_THE_WORTHY);
+        assert!(both.mechdusa());
+        assert!(!SeedFlags::from(SeedFlags::REMIX).mechdusa(), "remix alone is not enough");
+        assert!(!SeedFlags::from(SeedFlags::FOR_THE_WORTHY).mechdusa(), "FTW alone is not enough");
+        assert!(!SeedFlags::none().mechdusa());
+        // The zenith cascade carries both, so it is a Mechdusa world.
+        assert!(SeedFlags::from_seed_text("getfixedboi").mechdusa());
     }
 
     #[test]

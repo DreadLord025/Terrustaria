@@ -584,8 +584,373 @@ pub(crate) struct StickyDust {
     pub(crate) post_arms: bool,
 }
 
+/// W4-f42 — one tick's `DoubleJumpVisuals` sandstorm arm
+/// (`Player.cs:21905-21926`): the three type-124 dusts + the optional
+/// 220-222 gore. The tick computes the geometry; the drain rolls
+/// `Dust.NewDust`/`Gore.NewGore` on the `UpdatePlayers` stream in the C#'s
+/// order (3 dusts, then the gore's `Next(220, 223)` type pick + spawn), so
+/// the RNG order is unchanged (S1-A-10). `gravDir` is always 1 in the port.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SandstormJumpVisual {
+    /// The dust spawn top-left: `(position.X, position.Y + height/2)`.
+    pub(crate) dust_pos: Vec2,
+    /// The dust `SpeedX/SpeedY`: `velocity * 0.3`.
+    pub(crate) dust_vel: Vec2,
+    /// `num4 = (jump / 75f + 1f) / 2f` — the dust scale + the gore scale.
+    pub(crate) num4: f32,
+    /// The gore request when `miscCounter % 3 == 0`: `(position.X +
+    /// width/2 - 18, position.Y + height/2)` and `-velocity`. The drain
+    /// rolls the 220-222 type and overwrites the velocity to
+    /// `velocity * 0.3 * num4`, alpha 100.
+    pub(crate) gore: Option<(Vec2, Vec2)>,
+    /// The player's live velocity (the gore's post-spawn overwrite reads it).
+    pub(crate) vel: Vec2,
+}
+
+/// One queued extra-jump dust burst (`Player.JumpMovement`,
+/// `Player.cs:20818-21012`): the tick snapshots the box/velocity/centre at the
+/// C# moment (AFTER the ascent-velocity write) and the drain
+/// (`player_dust::drain_jump_dust`) replays each arm's `Dust.NewDust` chain on
+/// the `UpdatePlayers` stream in source order. `height` is `base.height` (the
+/// `gravDir == -1 → 0` fold collapses to `height`, gravDir 1); `cx`/`cy` are
+/// `base.Center` for the ring arms.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct JumpDust {
+    pub(crate) kind: ExtraJump,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) cx: f32,
+    pub(crate) cy: f32,
+}
+
+/// One queued `DashMovement` dust burst (`Player.cs:21259-21512`): the tick
+/// snapshots the box/velocity/facing at the C# moment and the drain
+/// (`player_dust::drain_dash_dust`) replays the arm's `Dust.NewDust` chain on
+/// the `UpdatePlayers` stream in source order. `active` is the `dashDelay < 0`
+/// trail (the per-tick arms, `:21259-21372`); `false` is the dash-start burst
+/// (`:21406-21512`). `mount` is `mount.Type` when active (`-1` unmounted) —
+/// the Bat/Pixie `DashDust` delegates and the Chillet colour pick read it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DashDust {
+    pub(crate) dash: i32,
+    pub(crate) active: bool,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    pub(crate) mount: i32,
+}
+
+/// One queued `SpawnFastRunParticles` dust trail (`Player.cs:20217-20298`):
+/// the tick picks the arm (wings-3/rocket-6, sailDash, desertDash, coldDash,
+/// fairyBoots, hellfireTreads, else the plain foot puff) and snapshots the
+/// box/velocity at the C# moment; the drain (`player_dust::drain_fast_run`)
+/// replays the arm's `Dust.NewDust` chain on the `UpdatePlayers` stream.
+/// `gfx_off_y` rides the coldDash arm's foot line (`:20252`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FastRunDust {
+    pub(crate) arm: FastRunArm,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) gfx_off_y: f32,
+}
+
+/// The fast-run trail's arm picker (`Player.cs:20217-20298`, the else-if
+/// chain in source order).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FastRunArm {
+    /// `wings == 3 || vanityRocketBoots == 6` (`:20217`) — two type-186 puffs.
+    WingsRocket,
+    /// `sailDash` (`:20226`) — four type-253 puffs.
+    Sail,
+    /// `desertDash` (`:20241`) — one type-32 `NewDustDirect`.
+    Desert,
+    /// `coldDash` (`:20248`) — two type-76 puffs.
+    Cold,
+    /// `fairyBoots` (`:20261`) — two puffs of one rolled type.
+    Fairy,
+    /// `hellfireTreads` (`:20283`) — one type-6 puff.
+    Hellfire,
+    /// The plain foot puff (`:20292`) — one type-16.
+    Plain,
+}
+
+/// `Player.OverheadMessage` (`Player.cs:765-784`): the chat text that draws
+/// above the player's head — `ChatHelper.DisplayMessage`'s author arm
+/// (`ChatHelper.cs:86-87`) arms it through `NewMessage(message,
+/// Main.PlayerOverheadChatMessageDisplayTime)` (= 400, `Main.cs:67009`) and
+/// then sets `color`. The C#'s cached `snippets`/`messageSize` are re-derived
+/// at draw time from `text` (the port carries flat text, no `[c:...]`
+/// snippet markup — `chat.rs`'s recorded stand-in).
+#[derive(Clone, Debug, Default)]
+pub struct OverheadMessage {
+    /// `OverheadMessage.chatText` (`Player.cs:767`).
+    pub text: String,
+    /// `OverheadMessage.timeLeft` (`:773`): decremented once per player
+    /// update (`Player.cs:24554-24557`).
+    pub time_left: i32,
+    /// `OverheadMessage.color` (`:775`), set AFTER `NewMessage` by
+    /// `ChatHelper.DisplayMessage` (`ChatHelper.cs:87`).
+    pub color: [u8; 3],
+}
+
+impl OverheadMessage {
+    /// `Main.PlayerOverheadChatMessageDisplayTime = 400` (`Main.cs:67009`).
+    pub const DISPLAY_TIME: i32 = 400;
+
+    /// `OverheadMessage.NewMessage` (`Player.cs:777-783`): the text and the
+    /// timer arm; the color stays as-is (the C# sets it on the next line,
+    /// `ChatHelper.cs:87`).
+    pub fn new_message(&mut self, message: &str, display_time: i32) {
+        self.text = message.to_string();
+        self.time_left = display_time;
+    }
+}
+
+/// W4-g66 — one queued `DoubleJumpVisuals` trail tick (`Player.cs:21892-22021`):
+/// the per-tick arms while an extra jump performs (distinct from the one-shot
+/// [`JumpDust`] start burst). `jump` is the hold-boost counter the Sandstorm
+/// scale and the Sail's two-puff arm read; the drain
+/// (`player_trail_dust::drain_double_jump_visuals`) replays on `UpdatePlayers`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DoubleJumpDust {
+    pub(crate) kind: ExtraJump,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) jump: i32,
+}
+
+/// W4-g66 — one queued `MakeFloorDust` call (`Player.cs:23790-24043`): the
+/// floor tile's kind/frame/paint + the landing flag, snapshotted inside
+/// `FloorVisuals` after the slope carve-out (`:23736-23739` forces `kind=-1`).
+/// The drain (`player_trail_dust::drain_floor_dust`) rolls the per-puff gates
+/// and the spawn chain on `UpdatePlayers`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FloorDust {
+    pub(crate) falling: bool,
+    pub(crate) kind: i32,
+    pub(crate) frame_y: i32,
+    pub(crate) paint: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+}
+
+/// W4-g66 — one queued `WingAirVisuals` call (`Player.cs:30750-31013`, the
+/// flag19 flying tick). `wings` is the look id (the port folds it into
+/// `wings_logic`, the wing grant's note); `vx`/`vy` feed the 26/37 trails'
+/// velocity folds.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WingAirDust {
+    pub(crate) wings: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+}
+
+/// W4-g66 — one queued wing-glide dust call (`Player.cs:27040-27315`, the
+/// jump-held falling arm). The wings-4 arm's frame machine and the per-wing
+/// frame pins stay in the tick (`wing_glide_frames`); only the dust rolls
+/// replay in the drain (`player_wing_dust::drain_wing_glide`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WingGlideDust {
+    pub(crate) wings: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    /// `ShouldDrawWingsThatAreAlwaysAnimated()` at the C# read moment
+    /// (`:27054`, the wings-34 gate).
+    pub(crate) always_animated: bool,
+}
+
+/// W4-g66 — one queued `RocketBootVisuals` call (`Player.cs:29330-29458`):
+/// the thrust tick's flame pair, snapshotted BEFORE the thrust's velocity
+/// writes (`:26918` runs before `:26923-26924`). `netOffset` folds to zero
+/// (the port has no net smoothing on the local player).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RocketFlameDust {
+    /// `Player.cShoe` (`:29396`): the tier-4 roll pins to 2 while dyed.
+    pub(crate) c_shoe: u32,
+    pub(crate) vanity: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    pub(crate) fairy_boots: bool,
+    pub(crate) social_shadow: bool,
+}
+
+/// W4-g66 — one queued `PlayerFrame` walking-effect snapshot
+/// (`Player.cs:35996-36136`): the armor-set trail rolls (the Red's sparkle,
+/// the Shadow/Ninja/Molten walking fires, the Chlorophyte/Necro/Wizard/
+/// Hallowed auras). The tick derives the effective armor trio + the walking
+/// gate; the drain replays each arm's rolls on `UpdatePlayers` in source
+/// order.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WalkEffectDust {
+    pub(crate) head: i32,
+    pub(crate) body: i32,
+    pub(crate) legs: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) cx: f32,
+    pub(crate) cy: f32,
+    pub(crate) gfx_off_y: f32,
+    /// `CanSpawnWalkingEffects()` (`:35750-35753`): `|vx| + |vy| > 1`.
+    pub(crate) walking: bool,
+    /// `rocketFrame` — the Molten/Ninja fire arms skip on a thrust tick.
+    pub(crate) rocket_frame: bool,
+    /// `miscCounter` — the Red's sparkle %15 and the Frost %2 cadences.
+    pub(crate) misc_counter: u32,
+    /// The wings-27 stealth glow (`:36023-36027`): `wings == 27 &&
+    /// wingsLogic == wings` feeds `0.4 * stealth` centre light (no draws).
+    pub(crate) wings: i32,
+    pub(crate) stealth: f32,
+}
+
+/// W4-g66 gap-fill — one queued wall-dust puff (`WallClimbMovement`
+/// `Player.cs:21654-21695`/`:21729-21746`, `WallslideMovement`
+/// `:21790-21803`/`:21826-21838`): the shared type-31 8×8 box at the
+/// slide-side edge, snapshotted AFTER the arm's velocity write (the C#
+/// reads `base.position` post-write). The tick ran the solid-tile probe
+/// (`flag` = the Rat-55 mount, the `!flag || !SolidTile(...)` gate); the
+/// drain replays the spawn + the post chain on `UpdatePlayers`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WallDust {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    /// `slideDir` at the C# read moment (−1 mirrors X by −10).
+    pub(crate) slide_dir: i32,
+    /// `flag` — the Rat mount's active flag (`:21609`): its dust halves the
+    /// scale (`:21667-21670`); the Wallslide arms never set it.
+    pub(crate) rat: bool,
+}
+
+/// W4-g66 — one queued Rudolph flight trail (`Player.cs:36164-36198`): the
+/// mount-0 (Rudolph) flight arm inside `PlayerFrame`'s mount animator — two
+/// 1/4 type-64 puffs per tick at the facing-mirrored foot boxes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RudolphTrail {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+}
+
+/// W4-g66 — one queued `WingFrame` dust call (`Player.cs:29468-30527`): the
+/// jetpack-4 flap flames, the Bat-30 sparkles, the Rainbow-45 glow, the
+/// Spooky-39 shadow puffs, the Nebula-29 rest roll. The tick ran the arm's
+/// frame machine; `count` is the wings-39 puff count (0/1/5) and `hover_up`
+/// the wings-4 count pick, both read at the C# moment.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WingFrameDust {
+    pub(crate) wings: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    pub(crate) hover_up: bool,
+    pub(crate) count: i32,
+    /// W4-g66 gap-fill — the wings-33 eye-colour HSL pair (`:30324`):
+    /// `eyeColor` at the C# read moment (alpha kept — the XNA colour ctor).
+    pub(crate) eye_color: [u8; 4],
+    /// W4-g66 gap-fill — the wings-38 orbit triples' tint (`:30425`).
+    pub(crate) under_shirt_color: [u8; 4],
+    /// W4-g66 gap-fill — `miscCounter` (`:30411`, the wings-38 orbit phase).
+    pub(crate) misc_counter: u32,
+    /// W4-g66 gap-fill — `justSwitched` (`:30000`/`:30071`/`:30142`): the
+    /// frame machine crossed a row boundary THIS call (47/49/50 bursts).
+    pub(crate) just_switched: bool,
+    /// W4-g66 gap-fill — `controlJump` (`:30573`/`:30654`, the burst gates).
+    pub(crate) control_jump: bool,
+    /// W4-g66 gap-fill — `wingFrame` AFTER the arm's machine ran
+    /// (`:30531`/`:30611`/`:30695` read it post-machine).
+    pub(crate) wing_frame: i32,
+    /// W4-g66 gap-fill — the Heroicis-49 light gate (`:30653`):
+    /// `MountedCenter` (`:3337`, folds to `center()` — no mount offsets)
+    /// at the C# read moment; the drain samples the light map there.
+    pub(crate) mounted_cx: f32,
+    pub(crate) mounted_cy: f32,
+    /// `blind` — the drain's `Lighting.GetColor` brightness pick
+    /// (`Lighting.cs:109-116`: 1.2, or 1.0 under Darkness).
+    pub(crate) blind: bool,
+}
+
+impl WingFrameDust {
+    /// The box/velocity snapshot every `WingFrame` arm shares — the
+    /// appearance/frame extras default off (only the 33/38/47/49/50 arms
+    /// read them, and those arms set them explicitly).
+    pub(crate) fn base(wings: i32, p: &Player) -> Self {
+        Self {
+            wings,
+            x: p.x,
+            y: p.y,
+            width: p.width,
+            height: p.height,
+            vx: p.vx,
+            vy: p.vy,
+            facing: p.facing,
+            hover_up: false,
+            count: 0,
+            eye_color: p.eye_color,
+            under_shirt_color: p.under_shirt_color,
+            misc_counter: p.misc_counter,
+            just_switched: false,
+            control_jump: p.control_jump,
+            wing_frame: p.wing_frame,
+            mounted_cx: p.mounted_center().0,
+            mounted_cy: p.mounted_center().1,
+            blind: p.blind,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
+    /// `Player.chatOverhead` (`Player.cs:798`) — the overhead chat text
+    /// (`Main.DrawPlayerChatBubbles`, `Main.cs:63248-63263`).
+    pub chat_overhead: OverheadMessage,
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
     // crit 4 and a 1.0 damage multiplier; the equipment modifies them
     // (M3-EQUIP).
@@ -726,6 +1091,18 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.ghost` (`Player.cs:38909`'s spectating / `:17053`): the
+    /// hardcore permadeath ghost — set when the respawn timer expires on a
+    /// hardcore player whose `statLifeMax` hit 0 (or whose world does not
+    /// survive hardcore death). A ghost never respawns
+    /// (`AllowsRespawnTimerSkip` `:38964`, `UpdateDead` `:17045-17055`).
+    /// W4-f30: the hardcore death penalty (`death.rs`).
+    pub ghost: bool,
+    /// W4-f30 — `PlayerDeathReason.SourceProjectileType` on the killing blow
+    /// (`Player.cs:38834`): the projectile kind that zeroed the life pool, if
+    /// any. The gravestone teammate-death check (`KillMe`'s 36 arm) reads it;
+    /// the death path consumes it. `None` for a non-projectile death.
+    pub death_source_projectile: Option<u16>,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
     /// the facing-inheritance gate reads (`:77749`). The stealth armour
@@ -841,6 +1218,14 @@ pub struct Player {
     /// tick from the scene scan; the buff grants and the regen inputs read
     /// it (`M2-BUFF-5`).
     pub auras: tr_core::scene::Auras,
+    /// `Player.SceneMetrics.NPCBannerBuff` (`SceneMetrics.cs:134`,
+    /// `Player.HasNPCBannerBuff` `:44197-44199`) — the per-banner strength
+    /// flags the strike lanes read through `GetBannerBuffEffect`
+    /// (`Player.cs:20483-20492`). The app refreshes it per tick from the
+    /// scene scan beside `auras` (the `M2-BUFF-8` tile-91 decode); the
+    /// melee/contact/projectile banner arms (`banners::banner_buff_for`)
+    /// consume this snapshot, exactly the C#'s `Player.SceneMetrics` read.
+    pub npc_banner_buff: Vec<bool>,
     /// `Player.manaRegenBonus` — the star-in-bottle's +10 per slot
     /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
     pub mana_regen_bonus: i32,
@@ -924,6 +1309,14 @@ pub struct Player {
     /// Buff 18 (Gravitation): the gravity-flip key — unported, flag only
     /// (`:10027`).
     pub grav_control: bool,
+    /// `Player.bleed` (`Player.cs:2362`): Bleeding (30) sets it (`:10031`) and
+    /// Obstructed (163) sets it too (`:11829`, the misc table's `e.bleed` half).
+    /// `ResetEffects` clears it (`:18694`). The sole consumer is
+    /// `UpdateLifeRegen`'s `lifeRegenTime = 0f` (`:19178-19181`), which the port
+    /// derives through the DoT fold's `holding(30)` read in `derive_dot_inputs`
+    /// (the same convention as the other DoT flags); this field mirrors the C#
+    /// flag for the 163 writer and any future consumer.
+    pub bleed: bool,
     /// Buff 31 (Confused): the control swap (`:10035`, `:24996-25004`).
     pub confused: bool,
     /// Buff 35 (Silenced): mana items refuse (`:10043`, `:52221`).
@@ -960,9 +1353,13 @@ pub struct Player {
     /// `Player.lavaVision` (`Player.cs`): the Lava Shark's (buff 305) grant
     /// (`:9910`); `ResetEffects` clears (`:18757`). Draw-side, flag only.
     pub lava_vision: bool,
-    /// `Player.spikedBoots` (`Player.cs`): the Rat mount's wall-slide grant
+    /// `Player.spikedBoots` (`Player.cs:1092`): the Climbing Claws 953 /
+    /// Shoe Spikes 975 (+1, `:15038-15045`), the Tiger Climbing Gear 976 /
+    /// Master Ninja Gear 984 (+2 / =2, `:15046-15049`/`:15062-15067`), the
+    /// Frog Gear 3995/3996 (+2, `:14432-14444`) and the Rat mount's grant
     /// (`Mount.UpdateAfterEquips` `Mount.cs:3002`); `ResetEffects` clears
-    /// (`:18660`). The slide consumer is unported — flag only.
+    /// (`:18660`). W4-g66 gap-fill: `WallClimbMovement`/`WallslideMovement`
+    /// (`:21607-21840`) consume it.
     pub spiked_boots: i32,
     /// `Player.slideDir` (`Player.cs:28084` reset, `:28242-28252` writes):
     /// the slope-slide direction the Rat's rotation lerp reads
@@ -1007,9 +1404,17 @@ pub struct Player {
     /// in `ResetEffects` (`:18534`), re-granted by
     /// `RefreshMechanicalAccsFromItemType` (`:12817-12820`) and the held-item
     /// arm (`:15295-15298`). The placement consumer
-    /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a
-    /// recorded follow-up (ANALYSIS "The wiring tools (S1-P-i34)").
+    /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is ported
+    /// (`world_sim/editing/auto_actuator.rs`, ANALYSIS "The autoActuator
+    /// build pass").
     pub auto_actuator: bool,
+    /// `Player.autoPaint` (`Player.cs:2472`): the Paint Sprayer (2216) /
+    /// Architect Gizmo Pack (3061) / Hand Of Creation (5126) auto-paint
+    /// newly placed tiles/walls. Cleared in `ResetEffects` (`:18533`),
+    /// re-granted by `RefreshMechanicalAccsFromItemType` (`:12813-12816`)
+    /// and the held-item arms (`:15271-15294`). The consumer is the paint
+    /// half of the same pass (`world_sim/editing/auto_paint.rs`).
+    pub auto_paint: bool,
     /// `Player.builderAccStatus` (`Player.cs:814`, `BuilderAccToggleIDs.Count
     /// = 12` at `:77`): the info-accessory toggle states. Slots 4/5/6/7 are
     /// the red/blue/green/yellow wire visibility, 9 the actuator visibility
@@ -1060,6 +1465,12 @@ pub struct Player {
     pub c_head: u32,
     pub c_body: u32,
     pub c_legs: u32,
+    /// W4-g66 — `Player.cShoe` (`Player.cs:9590` zero-fill, `:9659-9673` the
+    /// `shoeSlot` dye grant): the rocket-flame tier-4 roll pins to 2 while
+    /// dyed (`:29396-29399`). The port's item rows carry no `shoeSlot`, so
+    /// the grant has no producer yet — the field stays 0 (the dye deviation
+    /// family, docs/ANALYSIS.md).
+    pub c_shoe: u32,
     pub c_pet: u32,
     pub c_light: u32,
     pub c_minecart: u32,
@@ -1096,13 +1507,47 @@ pub struct Player {
     /// flush reads). Updated by `chest::tick_open` each player tick
     /// (S1-P-i43).
     pub prev_synced_chest: i32,
+    /// `Player.lastChest` (`Player.cs:2870`) — the previous tick's chest for
+    /// `ChestChangeEvents` (`:28760-28775`): a change to a world chest
+    /// (`chest >= 0`) arms `ItemSlot.forceClearGlowsOnChest` (`:28771`).
+    /// Updated by `chest::tick_open` each player tick. W4-g56.
+    pub last_chest: i32,
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
+    /// `Player.voidLensChest` (`Player.cs:2874`) — the tracked Void Lens
+    /// projectile the chest −5 open latches (`Main.cs:37727`); the
+    /// per-tick range/death close reads it (`Player.cs:31051-31073`,
+    /// W4-g56 `void_lens.rs`).
+    pub void_lens_chest: crate::void_lens::LensTracker,
+    /// `Player.disableVoidBag` (`Player.cs:3100`, default −1): the net-slot
+    /// lock that refuses the void-vault open while a quick-stack-to-nearby-
+    /// chests transfer owns a bank4 slot. MP-ONLY — set solely by
+    /// `QuickStacking.SendQuickStackToNearbyChests` (`QuickStacking.cs:293`,
+    /// the `Main.netMode == 1` client gate `:258`) through `LockNetSlot`
+    /// (`Player.cs:23123-23133`: `slot >= Bank4_0` → `slot - Bank4_0`), and
+    /// cleared by the server's slot-5 echo (`MessageBuffer.cs:434-437`).
+    /// Readers: `IsStackingItems` (`:23116`, gates `QuickStackAllChests`),
+    /// the tile-vault open (`:33135`, `disableVoidBag < 0`) and the lens
+    /// open (`Main.cs:37718`). The port has no quick-stack-to-nearby-chests
+    /// producer yet, so the flag stays −1 in play (SP-inert); the two open
+    /// guards and the lock/clear seam are ported for when it lands. W4-g56.
+    pub disable_void_bag: i32,
+    /// `bank4.item[i].favorited` (`Player.cs:55495`'s per-slot bools) —
+    /// the void vault is the one bank whose slots CAN favorite
+    /// (`ItemSlot.canFavoriteAt[32]`, `ItemSlot.cs:386-394`); the
+    /// favorited stacks refuse LootAll (`ChestUI.cs:451`) and draw the
+    /// `Inventory_Back19` frame (`ItemSlot.cs:2155-2158`). W4-g56.
+    pub vault_favorites: [bool; crate::bank::BANK_SLOTS],
     /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
-    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
-    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
-    /// so the flag stays false in play — the reach formula reads it.
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). PERMANENT —
+    /// set once by the 5326 use (`ItemCheck_UseArtisanLoaf`,
+    /// `Player.cs:45218-45221`, W4-g90: `editing.rs::use_artisan_loaf`),
+    /// never cleared by `ResetEffects`; persisted in the `.plr`
+    /// (`Player.cs:54779`/`:55245`) and the `.trplayer` v7 line. The other
+    /// consumer is the Skeleton Merchant's stock gate (`Chest.cs:2958` —
+    /// the 5326 row hides once eaten); the reforge roll
+    /// (`Main.cs:41902-41933`) does NOT read this flag in 1.4.5.8.
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
@@ -1166,6 +1611,35 @@ pub struct Player {
     /// Paladin's/Frozen/Hero shields above 25% life (`:15348-15353`).
     /// The hurt-side team redirect (`:38190`) rides C-7.
     pub has_paladin_shield: bool,
+    /// `Player.defendedByPaladin` (`Player.cs:1406`, reset `:18776`): the
+    /// Paladin's Shield buff (43) arm (`:11882-11885`). The draw half is
+    /// `Main.DrawPaladinsShield`'s second loop (`Main.cs:57224-57233`).
+    pub defended_by_paladin: bool,
+    /// `Player.inferno` (`Player.cs:946`, reset `:18489`): the Inferno
+    /// Potion buff (116) flag arm (`:10212-10213`). The light half is
+    /// already fed by `player_lights.rs`; the draw half is
+    /// `Main.DrawInfernoRings` (`Main.cs:64275-64324`).
+    pub inferno: bool,
+    /// `Player.flameRingScale` (`Player.cs:950`, default 1f): the inferno
+    /// halo's breathing scale, advanced 0.004/draw and reset to 0.8 at 1
+    /// (`Main.cs:64290-64300`). Never reset by `ResetEffects` — it persists
+    /// across buff expiry exactly like the C# field.
+    pub flame_ring_scale: f32,
+    /// `Player.flameRingRot` (`Player.cs:948`): the halo rotation, advanced
+    /// 0.05/draw and wrapped at ±2π (`Main.cs:64301-64311`).
+    pub flame_ring_rot: f32,
+    /// `Player._advancedShadows` (`Player.cs:1898-1902`, MaxAdvancedShadows =
+    /// 60): the per-tick position trail the lens flare's shadow offset reads
+    /// (`LensFlareElement.cs:34-37`). The port keeps only `Position` — the
+    /// `EntityShadowInfo` rotation/origin/direction/frame fields feed the
+    /// unported advanced-shadow DRAW layers (`PlayerDrawLayers.cs:2643+`).
+    advanced_shadows: [[f32; 2]; 60],
+    /// `Player.availableAdvancedShadowsCount` (`Player.cs:1900`): the trail's
+    /// fill, capped at 60 (`UpdateAdvancedShadows` `:4330-4334`).
+    pub available_advanced_shadows_count: i32,
+    /// `Player._lastAddedAvancedShadow` (the C# typo, `Player.cs:4335-4338`):
+    /// the ring's write head, wrapping at 60.
+    last_added_advanced_shadow: i32,
     /// M5-SEED-2: `Main.vampireSeed` — the `vampirism` micro seed's
     /// `InitializeSecretSeeds` write (`WorldGen.cs:555-558`). `UpdateLifeRegen`'s
     /// OnFire row reads it (`Player.cs:18983-18992`: −100 instead of −8, and the
@@ -1211,13 +1685,19 @@ pub struct Player {
     pub pulley_dir: u8,
     /// `Player.shieldRaised` (`Player.cs:36481`): body row 10.
     pub shield_raised: bool,
-    /// `Player.sliding` (`Player.cs`): the slope/ice slide pose (body row 3 in
-    /// the air). No port source sets it yet, so the arm is coded but
-    /// unreachable.
+    /// `Player.sliding` (`Player.cs:21614`/`:21705` et al.): the wall-cling
+    /// slide pose (body row 3 in the air). W4-g66 gap-fill:
+    /// `WallClimbMovement`/`WallslideMovement` set/clear it per tick
+    /// (`:21607-21840`); the wing/rocket rest refills read it (`:26777`).
     pub sliding: bool,
     /// `Player.sandStorm` (`Player.cs:36298`): the Sandstorm-in-a-Bottle dash
     /// pose (leg row 0, body row 6, a 4-tick turn cadence).
     pub sand_storm: bool,
+    /// `Player.windPushed` (`Player.cs:2342`): the Strong Wind debuff (194)
+    /// flag — `ResetEffects` clears it (`:16970`), the buff arm re-grants
+    /// (`:11835-11838`), `HorizontalMovement`'s push arm reads it
+    /// (`:19795-19817`). W4-c40.
+    pub wind_pushed: bool,
     /// `Player.carpetFrame` (`Player.cs:1094`, init `-1`): the Magic Carpet
     /// glide pose (leg row 0, body row 6).
     pub carpet_frame: i32,
@@ -1281,6 +1761,17 @@ pub struct Player {
     /// Bottom the 4870 use records (`:37506`), the return-gate hitbox centre
     /// (`PotionOfReturnHelper.TryGetGateHitbox`).
     pub potion_of_return_home_position: Option<(f32, f32)>,
+    /// `Player.lastDeathPostion` (`Player.cs:846`): the `Center` at the
+    /// death (`KillMe`, `:38846`) — the map's death marker anchor
+    /// (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`).
+    pub last_death_position: Option<(f32, f32)>,
+    /// `Player.lastDeathTime` (`Player.cs:848`): the death wall-clock stamp
+    /// (`:38847`); the map hover's `Game.PlayerDeathTime` duration reads
+    /// `DateTime.Now - lastDeathTime` (`Main.cs:55986`).
+    pub last_death_time: Option<std::time::SystemTime>,
+    /// `Player.showLastDeath` (`Player.cs:850`): set at the death (`:38848`),
+    /// gates the map's death marker (`Main.cs:55979`).
+    pub show_last_death: bool,
     pub hp: i32,
     pub max_hp: i32,
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
@@ -1612,6 +2103,37 @@ pub struct Player {
     /// (`TR_WINGS=<ArmorIDs.Wing>` pins it; the granting items land with
     /// M3-EQUIP-3).
     pub wings_logic: i32,
+    /// W4-g66 gap-fill — `Player.eyeColor = new Color(105, 90, 75)`
+    /// (`Player.cs:2558`): the character-creation colour
+    /// (`NewPlayerDraft.eye_color`, randomised by `RandomizePlayer`'s
+    /// `ScaledHslToRgb` loop, `UICharacterCreation.cs:1252-1258`). The
+    /// wings-33 `WingFrame` arm reads it (`:30324`, the HSL round-trip);
+    /// the session glue (`App::apply_session_appearance`) copies the draft
+    /// at world entry, `.plr` load rides the f44 save lane.
+    pub eye_color: [u8; 4],
+    /// W4-g66 gap-fill — `Player.underShirtColor = new Color(160, 180, 215)`
+    /// (`Player.cs:2562`): the wings-38 orbit triples' tint (`:30425`).
+    pub under_shirt_color: [u8; 4],
+    /// W4-g66 gap-fill — `Player.carpet` (`Player.cs:1090`): the Magic
+    /// Carpet (934) accessory grant (`:15034-15037`), `ResetEffects` clears
+    /// (`:18657`). `CarpetMovement` (`:21842-21890`) gates on it.
+    pub carpet: bool,
+    /// W4-g66 gap-fill — `Player.canCarpet` (`Player.cs:1098`): the carpet
+    /// launch latch — the rest tick re-arms (`:26105-26111`), the grapple
+    /// (`:22624`) re-arms, the launch consumes (`:21849`). The pulley
+    /// re-arm (`:26483`) rides the unported pulley movement (documented).
+    pub can_carpet: bool,
+    /// W4-g66 gap-fill — `Player.carpetTime` (`Player.cs:1100`): the 300-tick
+    /// glide budget (`:21850`), decremented per glide tick (`:21856`); the
+    /// rest tick zeroes it (`:26108`).
+    pub carpet_time: i32,
+    /// W4-g66 gap-fill — `Player.carpetFrameCounter` (`Player.cs:1096`,
+    /// float): `+= 1 + |vx*0.5|` per glide tick, wraps at >8 (`:21866-21871`).
+    pub carpet_frame_counter: f32,
+    /// W4-g66 gap-fill — `Player.rocketSoundDelay` (`Player.cs:2752`): the
+    /// Item13/Item24 boot cue cadence (`:26884-26896`), decremented every
+    /// tick (`:26903-26906`).
+    pub rocket_sound_delay: i32,
     /// `Player.rocketTime` / `rocketTimeMax` / `rocketDelay` / `rocketDelay2`
     /// (`Player.cs:2744-2748`): the rocket-boots fuel and its thrust cadence.
     pub rocket_time: i32,
@@ -1621,6 +2143,18 @@ pub struct Player {
     /// `Player.rocketBoots` (`Player.cs:2756`): the boots tier
     /// (`TR_BOOTS=<1..5>` pins it).
     pub rocket_boots: i32,
+    /// W4-d51 — the boot-run visual flags (`Player.cs:2758-2762` +
+    /// `UpdateBootVisualEffects` `:36704-36751`): the fast-run trail arm
+    /// picker (`SpawnFastRunParticles`, `:20217-20298`). `vanity_rocket_boots`
+    /// is the look tier (the wings-3/rocket-6 trail gates on it, `:20217`).
+    /// ResetEffects clears them (`:18315-18316`/`:18354`/`:18600-18603`);
+    /// the equip pass re-grants per slot in source order.
+    pub vanity_rocket_boots: i32,
+    pub sail_dash: bool,
+    pub cold_dash: bool,
+    pub desert_dash: bool,
+    pub fairy_boots: bool,
+    pub hellfire_treads: bool,
     /// `Player.canRocket` / `rocketRelease` (`Player.cs:2762,2752`): the
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
@@ -1636,6 +2170,13 @@ pub struct Player {
     /// (861/3110/497, `:15134-15143`/`:15402-15410`/`:15566-15573`), read by
     /// the merman derivation then cleared (`:25598`).
     acc_merman: bool,
+    /// `Player.wolfAcc` (`Player.cs:2346`): the Moon Charm (485,
+    /// `:15182-15189`), Moon Shell (861, `:15134-15143`) and Celestial Shell
+    /// (3110, `:15402-15411`) grant — the Werewolf buff-28 gate reads it
+    /// (`:11895`), the `:25601-25604` night grant re-arms the buff, then it
+    /// clears (`:25605`). Neptune's Shell (497) does NOT grant it
+    /// (`:15566-15573` is accMerman-only).
+    pub wolf_acc: bool,
     /// `Player.timeSinceLastDashStarted` (`Player.cs:1050`): ticks since the
     /// last dash start, capped at 300 (`:24600-24604`); the Long Trail
     /// Rainbow wings' (45) run-slowdown ×6 gates on >= 60 (`:29324-29327`).
@@ -1937,6 +2478,35 @@ pub struct Player {
     /// `(floor_x, floor_y)` — the kills + liquid wipes need `&mut World` and
     /// the cascade's drop rolls, so the drain runs them (`editing`).
     pending_force_clear: Option<(i32, i32)>,
+    /// W4-g11 — `Player.teleportTime` (`Player.cs:37490`'s `= 1f` grant):
+    /// the `TeleportEffect` dust-count multiplier reads it
+    /// (`Clamp(1 - t*0.99, 0.01, 1)`, `:37442`). The per-tick
+    /// `UpdateTeleportVisuals` decay (`:16613-16670`) is the W4-e1 dust lane's
+    /// — until it lands the field stays at its grant (the C# clamps the
+    /// multiplier at 0.01 either way).
+    pub teleport_time: f32,
+    /// W4-g11 — `Player.teleportStyle` (`Player.cs:37491`): the last
+    /// `Teleport` style, the `UpdateTeleportVisuals` per-tick arm's selector
+    /// (the W4-e1 lane's consumer).
+    pub teleport_style_id: i32,
+    /// W4-g11 — `Player.lastPortalColorIndex` (`Player.cs:37435`/`:37477`):
+    /// the portal pair's colour index — the Entry effect reads the OLD
+    /// value, the post-move write arms the Exit effect's.
+    pub last_portal_color_index: i32,
+    /// W4-g11 union-exec (research/116 gap 3) —
+    /// `Player.lastTeleportPylonStyleUsed` (`Player.cs:37439`): the pylon
+    /// hop's tile style — style 9 latches `extraInfo` here and the Entry
+    /// effect reads it back as `extraInfo2` (`:37437-37441`).
+    pub last_teleport_pylon_style_used: i32,
+    /// W4-g11 — the `Player.Teleport` effect request (`Player.cs:37444`/
+    /// `:37489`): `(old_x, old_y, new_x, new_y, style, extra_info2,
+    /// extra_info, dust_count_mult)` — the movement core
+    /// (`teleport_style_with_extra`) queues it, the drain replays the Entry
+    /// effect at the OLD box, the move, then the Exit effect at the NEW box
+    /// on the caller's pass stream (the `pending_force_clear` convention;
+    /// `main_dust::player_teleport`).
+    #[allow(clippy::type_complexity)]
+    pending_teleport_effect: Option<(f32, f32, f32, f32, i32, i32, i32, f32)>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -1955,6 +2525,92 @@ pub struct Player {
     /// the RNG order is unchanged (S1-A-10). The type-153 `velocity *= 0.1`
     /// and `noGravity` post-arms ride the drain too.
     pending_sticky_dust: Vec<StickyDust>,
+    /// W4-d51 — the tick's queued extra-jump dust burst (`Player.JumpMovement`,
+    /// `Player.cs:20818-21012`): one [`JumpDust`] snapshot per triggered arm,
+    /// taken AFTER the ascent-velocity write. The drain
+    /// (`player_dust::drain_jump_dust`) replays the arm's `Dust.NewDust` chain
+    /// on the `UpdatePlayers` stream right after the chain's sound drain, so
+    /// the sound-then-dust draw order is the source's (S1-A-10).
+    pending_jump_dust: Option<JumpDust>,
+    /// W4-d51 — the tick's queued `DashMovement` dust bursts
+    /// (`Player.cs:21259-21512`): at most one per tick (the trail arms and the
+    /// start arms are exclusive branches). Same queue convention as
+    /// [`JumpDust`] — the drain replays on the `UpdatePlayers` stream.
+    pending_dash_dust: Option<DashDust>,
+    /// W4-d51 — the tick's queued fast-run trail (`Player.cs:20217-20298`):
+    /// one snapshot per footstep tick, drained on the `UpdatePlayers` stream
+    /// right after the footstep sound (`player_dust::drain_fast_run`).
+    pending_fast_run_dust: Option<FastRunDust>,
+    /// W4-f6 wiring — the tick's queued mount dust events
+    /// (`Mount.DoSpawnDust` / `DoFailedDismountDust` / the `UpdateFrame`
+    /// per-type extras, the `pending_sticky_dust` convention): the drain
+    /// calls `mount_dust::drain_mount_dust` on the `UpdatePlayers` stream.
+    pending_mount_dust: Vec<crate::mount_dust::MountDustRequest>,
+    /// W4-f6 wiring — `Player.basiliskCharge` (`Player.cs:842`): the
+    /// Basilisk's charge accumulator (`Mount.cs:4089-4093` folds it,
+    /// `:4121-4133` reads it). PLAYER state — survives the dismount (the
+    /// vanilla never zeroes it outside the case-14 slow arm).
+    pub basilisk_charge: f32,
+    /// W4-f6 wiring — `Main.timeForVisualEffects` (`Main.cs:1181`, the
+    /// per-update tick counter wrapped at 216000, `:17162-17164`): the
+    /// Pixie tail's even-tick gate reads it (`Mount.cs:5147`). The world-sim
+    /// sets it from the update count before each tick (the `frame_inputs`
+    /// convention); the pure `update` path leaves 0.
+    pub time_for_visuals: f64,
+    /// W4-f6 wiring — `Main.WindForVisuals` (= `windSpeedCurrent`,
+    /// `Main.cs:2823`): the Witch Broom trinket sway reads it
+    /// (`Mount.cs:3572`). The world-sim sets it before each tick.
+    pub wind_for_visuals: f32,
+    /// W4-f6 wiring — `WorldGen.InAPlaceWithWind(Center.ToTileCoordinates(),
+    /// 1, 1)` (`Mount.cs:3568`): the trinket sway's wind-exposure gate. The
+    /// world-sim sets it before each tick (needs `&World` + the wind model).
+    pub wind_in_place: bool,
+    /// W4-g66 — the tick's queued `DoubleJumpVisuals` trail
+    /// (`Player.cs:21892-22021`): one per performing extra jump while the
+    /// ascent lasts, drained after the dash burst (`:26767` order).
+    pending_double_jump_dust: Option<DoubleJumpDust>,
+    /// W4-g66 — the tick's queued `MakeFloorDust` call
+    /// (`Player.cs:23740-23743`): drained after the jump/dash bursts, before
+    /// the flight section's draws (`:28271` runs after the movement block).
+    pending_floor_dust: Option<FloorDust>,
+    /// W4-g66 — the tick's queued `WingAirVisuals` call (`Player.cs:26817`).
+    pending_wing_air_dust: Option<WingAirDust>,
+    /// W4-g66 — the tick's queued wing-glide dust (`Player.cs:27040-27315`).
+    pending_wing_glide_dust: Option<WingGlideDust>,
+    /// W4-g66 — the tick's queued `RocketBootVisuals` pair
+    /// (`Player.cs:26918`): snapshotted before the thrust velocity writes.
+    pending_rocket_flame_dust: Option<RocketFlameDust>,
+    /// W4-g66 — `Player.rocketFrame` (`Player.cs:26488`/`:26913`/`:26917`):
+    /// true on a thrust tick; the Molten/Ninja walking-fire arms gate on it
+    /// (`:36067`/`:36087`).
+    rocket_frame: bool,
+    /// W4-g66 — `Player.socialShadowRocketBoots` (`Player.cs:1550`): the
+    /// full Shadow armor set (functional or social) turns the tier-1 rocket
+    /// flame into type 27 (`:29363-29367`). `PlayerFrame` clears + re-grants
+    /// it per tick (`:35933`/`:36030`/`:36039`/`:36043`).
+    social_shadow_rocket_boots: bool,
+    /// W4-g66 — the tick's queued `PlayerFrame` walking-effect snapshot
+    /// (`Player.cs:35996-36136`).
+    pending_walk_effect_dust: Option<WalkEffectDust>,
+    /// W4-g66 — the tick's queued Rudolph flight trail (`Player.cs:36164`).
+    pending_rudolph_trail: Option<RudolphTrail>,
+    /// W4-g66 — the tick's queued `WingFrame` dust call
+    /// (`Player.cs:29468-30527`).
+    pending_wing_frame_dust: Option<WingFrameDust>,
+    /// W4-g66 gap-fill — the tick's queued wall-dust puff
+    /// (`WallClimbMovement`/`WallslideMovement`, `Player.cs:21607-21840`):
+    /// drained after the dash burst, before `DoubleJumpVisuals`
+    /// (`:26758-26766` runs between them).
+    pending_wall_dust: Option<WallDust>,
+    /// W4-g66 gap-fill — the boot Item13/Item24 cue (`Player.cs:26884-26896`)
+    /// + the wings-4/45 `WingFrame`/glide cadences (`:29478`/`:30172`/
+    /// `:27154`): `(style_index, x, y)` — the `pending_flap_sound`
+    /// convention (the case-2 pitch draw rides `UpdatePlayers` at the drain).
+    pending_rocket_sound: Option<(u16, f32, f32)>,
+    /// W4-f42 — the tick's `DoubleJumpVisuals` sandstorm arm
+    /// (`Player.cs:21905-21926`): `None` unless the sandstorm jump is
+    /// performing + ascending. The drain rolls the 3 dust-124s + the gore.
+    pending_sandstorm_jump: Option<SandstormJumpVisual>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2032,6 +2688,110 @@ pub struct Player {
     /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
     /// sets the 881 and 934 flags shared with buffs 284/317).
     pub pet_flags: [bool; PROJ_COUNT],
+    // ---- W4-f12: the buff-frame wiring's persistent state (the C# `Player`
+    // fields the orb scan / ice barrier / frame read-write across ticks).
+    /// The lunar-orb scan counters (`beetleOrbs`/`solarShields`/`nebulaLevel*`,
+    /// `Player.cs:18501`/`:18505`/`:18755` zero them every frame) — the
+    /// canonical `buff_effects_orbs.rs` module owns them; `reset_effects()`
+    /// runs once per frame before the scan (the g27 merger contract).
+    pub orb_scan: crate::buff_effects_orbs::OrbScanState,
+    /// `Player.beetleBuff` (`Player.cs:18502`'s clear, `:10374`/`:10441`'s
+    /// grant) — the beetle-orb visual lane's flag (unported consumer).
+    pub beetle_buff: bool,
+    /// `Player.iceBarrier` (`Player.cs:18446`'s clear, `:10467`'s grant).
+    pub ice_barrier: bool,
+    /// `Player.iceBarrierFrameCounter`/`iceBarrierFrame` (`Player.cs:10469-
+    /// 10478`) — the 3-tick × 12-frame barrier animation pair; NOT reset per
+    /// tick (the barrier keeps its phase across ticks).
+    pub ice_barrier_frame_counter: i32,
+    pub ice_barrier_frame: i32,
+    /// The `UpdateBuffs` frame's persistent fields (`oldLuckPotion`
+    /// `Player.cs:1136`, `lavaOpacity` `:1534` `= 1f`) — neither is cleared by
+    /// `ResetEffects`; `buff_effects_frame.rs` owns the ladder.
+    pub frame_state: crate::buff_effects_frame::FrameState,
+    /// `Player.soulDrain` (`Player.cs:820`) — the Spirit Flame's drain
+    /// counter; the frame head grants buff 151 while it is positive
+    /// (`:9857`). The Spirit Flame producer is unported (the field stays 0).
+    pub soul_drain: i32,
+    /// `Player.infernoCounter` (`Player.cs:1104`) — the Inferno aura's 60-tick
+    /// damage cadence (`:10218`), incremented per tick (`:24595-24598`, cap
+    /// 180). The aura scan rides `buff_frame_wiring::inferno_aura_scan`.
+    pub inferno_counter: i32,
+    /// `Player.dontHurtCritters` (`Player.cs:1390`): the Guide to Critter
+    /// Companions (4767) / its upgrade (5323) refuse critter damage
+    /// (`CanNPCBeHitByPlayerOrPlayerProjectile`, `:20513-20529`). Cleared in
+    /// `ResetEffects` (`:18780`), re-granted by
+    /// `RefreshMechanicalAccsFromItemType` (`:12825-12828`).
+    pub dont_hurt_critters: bool,
+    // ---- W4-f12: the wired debuff/status flag halves (the C# `Player` bools
+    // the wave-B/E arms set; `ResetEffects` clears them, the scan re-arms).
+    // The DoT flags (poisoned/venom/onFire/…) are NOT here — the regen lane
+    // reads them off the buff bar via `holding()` (derive_dot_inputs).
+    pub stoned: bool,            // 156, `:10057`
+    pub ichor: bool,             // 69, `:10061`
+    pub broken_armor: bool,      // 36, `:10066`
+    pub honey: bool,             // 48, `:10070`
+    pub palladium_regen: bool,   // 58, `:10082`
+    pub has_titanium_storm_buff: bool, // 306, `:10086`
+    pub chaos_state: bool,       // 88, `:10090`
+    pub accelerate_poisons: bool, // 398, `:10094`
+    pub blue_lightning: bool,    // 399, `:10098`
+    pub red_lightning: bool,     // 400, `:10102`
+    pub calmed: bool,            // 106, `:10142`
+    pub danger_sense: bool,      // 111, `:10189`
+    pub life_force: bool,        // 113, `:10197`
+    pub inferno: bool,           // 116, `:10212`
+    pub love_struck: bool,       // 119, `:10272`
+    pub dryad_ward: bool,        // 165, `:10303`
+    pub electrified: bool,       // 144, `:10313`
+    pub tipsy: bool,             // 25, `:11918`
+    pub blackout: bool,          // 80, `:11727`
+    pub dripping_sparkle_slime: bool, // 320, `:11756`
+    pub headcovered: bool,       // 163, `:11826`
+    pub bleed: bool,             // 163, `:11829`
+    pub wind_pushed: bool,       // 194, `:11835`
+    pub withered_armor: bool,    // 195, `:11839`
+    pub withered_weapon: bool,   // 196, `:11847`
+    pub slow_ogre_spit: bool,    // 197, `:11851`
+    pub parry_damage_buff: bool, // 198, `:11855`
+    pub moon_leech: bool,        // 145, `:11859`
+    pub defended_by_paladin: bool, // 43, `:11882`
+    pub were_wolf: bool,         // 28, `:11893`
+    pub hungry: bool,            // 333, `:11979`
+    pub starving: bool,          // 334, `:11994`
+    pub hearty_meal: bool,       // 336, `:12009`
+    // The DoT flag halves (the C# `Player` bools the wave-D misc arms set;
+    // the regen lane reads them off the buff bar via `holding()`, so these
+    // are the faithful record of the C# write, not the regen input).
+    pub venom: bool,             // 70, `:11707`
+    pub chlorophyte_spore: bool, // 397, `:11711`
+    pub poisoned: bool,          // 20, `:11715`
+    pub on_fire: bool,           // 24, `:11736`
+    pub dripping: bool,          // 103, `:11747`
+    pub dripping_slime: bool,    // 137, `:11752`
+    pub burned: bool,            // 67, `:11760`
+    pub suffocating: bool,       // 68, `:11764`
+    pub on_fire2: bool,          // 39, `:11768`
+    pub on_fire3: bool,          // 323, `:11772`
+    pub on_frost_burn: bool,     // 44, `:11776`
+    pub on_frost_burn2: bool,    // 324, `:11780`
+    /// `Player.blockRange` bonus (`:10162` Builder `blockRange++`).
+    pub block_range: i32,
+    /// `Player.statLifeMax2` (`:10200` Lifeforce add; the base is `max_hp`).
+    pub stat_life_max2: i32,
+    /// `Player.luckNeedsSync` (`:12049`) — the luck-tier change's net flag.
+    pub luck_needs_sync: bool,
+    /// W4-f12 — the buff arms' `lifeRegen` adds (the orb Nebula Life `:10451`,
+    /// the booster Nebula Life, the debuff Dryad's Ward `:10305`, the status
+    /// Werewolf `:11897`). A SEPARATE accumulator from `accessory_life_regen`
+    /// (which the equip pass resets AFTER the wiring seam); folded into
+    /// `RegenInputs::extra_regen` beside it. `ResetEffects` zeroes it.
+    pub buff_life_regen: i32,
+    /// The frame's emote requests (`EmoteBubble.MakeLocalPlayerEmote`,
+    /// `:12118`/`:12137`/`:12179`) — the world_sim seam drains them.
+    pub pending_frame_emotes: Vec<i32>,
+    /// The frame's `SoundID.Hungry` play count (`:12138`) — the seam drains it.
+    pub pending_hungry_sounds: u32,
     // `Player.shroomiteStealth` + `stealth` (`Player.cs`): the shroomite
     // armour's ranged knockback scale (`Main.cs:20342-20345`).
     pub shroomite_stealth: bool,
@@ -2074,17 +2834,61 @@ pub struct Player {
     pub catalyst_band: bool,
     /// `Player.vampireBurningInSunlight` (`Player.cs:28709`): the vampire
     /// seed's sun-scorch flag — the gate on the Molten set's
-    /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter
-    /// (`VampireSeedSunlightExposure`, `:28672-28719`) is unported, so the
-    /// flag stays false in play; `ResetEffects` clears it (`:18730`).
+    /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter is
+    /// `sun_scorch.rs::update_sun_scorch` (`VampireSeedSunlightExposure`,
+    /// `:28672-28719`, W4-f30); `ResetEffects` clears it (`:18730`).
     pub vampire_burning_in_sunlight: bool,
+    /// `Player.sunScorchCounter` (`Player.cs:28588`): the vampire seed's
+    /// sun-scorch ramp — `Clamp(counter + (burning ? 1 : -num), 0, 300)`,
+    /// `num = 6` alive / 2 dead (the dead tick also clears the burning
+    /// flag, `:28583-28587`). `UpdateSunScorchValues` (`:28580-28604`)
+    /// ticks it on BOTH the live and dead paths (`:17079` / `:25634`);
+    /// the sizzle loop's volume rides `GetLerpValue(0, 120, counter,
+    /// clamped)`. W4-d80 (research/64 sites 22-24).
+    pub sun_scorch_counter: i32,
+    /// `Player._sizzleAudioHandle` (`Player.cs:28590`): the tracked sizzle
+    /// loop's `SlotId` (the `VampireSizzleTracker` condition reads the
+    /// counter mirror — the census fold). `SlotId::INVALID` while none.
+    pub sizzle_audio_handle: tr_core::slot::SlotId,
+    /// W4-d80 — the sizzle loop's live flag (the `VampireSizzleTracker`
+    /// condition fold, `VampireSizzleTracker.cs:12-19`): the closure reads
+    /// a shared mirror of `!gameMenu && vampireSeed && sunScorchCounter >
+    /// 0`; the sim refreshes it per tick (the pool cannot hand a live
+    /// player reference to a `Send` closure). `None` while no loop plays.
+    pub(crate) sizzle_alive: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// `Player.ZoneGraveyard` (`Player.cs:16709` copies `SceneMetrics`):
+    /// the sun-scorch exposure gate (`:28681`). Fed from the scene scan
+    /// beside `zones` (the `craft::Zones` precedent).
+    pub zone_graveyard: bool,
+    /// `SceneMetrics.MoonLordSkyIntensity` (`SceneMetrics.cs:299-310`):
+    /// `1 - SmoothStep(3000, 6000, DistanceToMoonLord)` when a core (398)
+    /// is present, else `None`. The exposure gate (`:28682-28685`) refuses
+    /// above 0.5. Fed from the scan's `closest_npc_position[398]`.
+    pub moon_lord_sky_intensity: Option<f32>,
+    /// W4-f30 order seam: `buffImmune[24]` captured BEFORE the Molten set
+    /// fold (`armor_sets::apply_armor_set_bonuses`). The C# grants Molten's
+    /// fire immunity AFTER `UpdateSunScorch` (`Player.cs:25634` < `:25685`),
+    /// gated on `!vampireBurningInSunlight`; the port's fold runs first, so
+    /// the sun-scorch call site restores this value on a warm-up burn tick
+    /// (flag set, counter < 120 — the `:28653` `Array.Clear` has not run).
+    pub(crate) fire_immune_pre_molten: bool,
     /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
     /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
     /// damage (`:53537-53541`).
     pub has_molten_quiver: bool,
     /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
-    /// +1 ammo damage on arrows (`:53548`).
+    /// +1 ammo damage on arrows (`:53548`) AND +8 ranged crit (the
+    /// `UpdateEquips` post-loop fold, `:12966-12969` — A6, applied by
+    /// `accessory_combat::apply_sharp_barb_crit` at the ammo-mastery seam).
     pub acc_sharp_barb: bool,
+    /// `Player.accAmmoCyclerDamage` (`Player.cs:1222`): the four Ammo Cycler
+    /// accessories 6168/6169/6193/6194 (`:14528-14543`) each set it beside
+    /// the cycling mode — +8% ranged damage (the `UpdateEquips` post-loop
+    /// fold, `:12958-12961` — A6, applied by
+    /// `accessory_combat::apply_ammo_cycler_damage` at the ammo-mastery
+    /// seam). A bool: two cyclers still fold only once. `ResetEffects`
+    /// clears it (`:18523`).
+    pub acc_ammo_cycler_damage: bool,
     // S1-P-i35 — the fishing family (`Player.cs:1088-1102` region).
     /// `Player.fishingSkill` (`Player.cs:1092`): the +15 Fishing potion
     /// (buff 121, `UpdateBuffs` `:10146-10149`), the Angler armor pieces
@@ -2123,10 +2927,57 @@ pub struct Player {
     /// 36702`: items 5139-5146 → 986-993), read by `ItemCheck_Shoot`
     /// (`:47181-47184`). Reset to -1 (`:16990`/`:18410`).
     pub override_fishing_bobber: i32,
-    /// `Player.usedGummyWorm` (`Player.cs:2074`): the 5341 permanent +3
+    /// `Player.usedGummyWorm` (`Player.cs:860`): the 5341 permanent +3
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
     /// ResetEffects — a permanent unlock (the player-file field).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit
+    /// permanent +4 defense (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45393-45398`, `UpdatePermanentBoosters` `:12853-12856`). NOT
+    /// cleared by ResetEffects — a permanent unlock (the player-file
+    /// field, ctor `:56079` false, save `:54782` / load `:55256`).
+    pub used_aegis_fruit: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia
+    /// permanent mining/placement speed (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45417-45422`, `UpdatePermanentBoosters` `:12861-12866` —
+    /// `pickSpeed -= 0.05f; tileSpeed += 0.05f; wallSpeed += 0.05f`). NOT
+    /// cleared by ResetEffects — a permanent unlock (the player-file
+    /// field, ctor `:56083` false, save `:54786` / load `:55260`).
+    pub used_ambrosia: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// permanent life-regen ramp +0.2/tick (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45387-45392`, `UpdateLifeRegen` `:19113-19116` — the `regen.rs`
+    /// `aegis_crystal` slot BETWEEN the base +1 and the crimson fold, the
+    /// g90 lane-7 shape per research/138 §3.3). NOT cleared by ResetEffects
+    /// — a permanent unlock (ctor `:56078` false, save `:54781` / load
+    /// `:55255`; the g88/g90 declaration spot — after `used_ambrosia`).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// permanent life-regen ramp +0.2/tick (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45387-45392`, `UpdateLifeRegen` `:19113-19116`). NOT cleared by
+    /// ResetEffects — a permanent unlock (ctor `:56078` false, save `:54781` /
+    /// load `:55255`; W4-g90 DOC-SWEEP lane 7).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 Arcane Crystal
+    /// permanent mana-regen boost (`:45399-45404`; `UpdateManaRegen`
+    /// `:19430-19433` delay −0.05 + `:19453-19456` regen +statManaMax2/50).
+    /// NOT cleared by ResetEffects (ctor `:56080`, save `:54783` / load
+    /// `:55257`; W4-g90 lane 7).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`): the 5340 Galaxy Pearl
+    /// permanent +0.03 luck (`:45405-45410`, `RecalculateLuck`
+    /// `:29142-29145`). NOT cleared by ResetEffects (ctor `:56081`, save
+    /// `:54784` / load `:55258`; W4-g90 lane 7). The consumer lives in
+    /// `LuckState.used_galaxy_pearl`; `update_luck` mirrors this field into
+    /// it every tick (the persistence owner is here).
+    pub used_galaxy_pearl: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia permanent
+    /// +5% mining/building/wall speed (`:45417-45422`,
+    /// `UpdatePermanentBoosters` `:12861-12866`: pickSpeed −0.05, tileSpeed
+    /// +0.05, wallSpeed +0.05). NOT cleared by ResetEffects (ctor `:56083`,
+    /// save `:54786` / load `:55260`; W4-g90 lane 7). NOT a minion slot —
+    /// the Demon Heart 3335 owns that (g87's lane).
+    pub used_ambrosia: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2494,7 +3345,12 @@ impl Player {
             ),
         };
         Self {
+            // `Player.chatOverhead` starts empty (`OverheadMessage`'s default
+            // struct — `timeLeft` 0, no text).
+            chat_overhead: OverheadMessage::default(),
             dead: false,
+            ghost: false,
+            death_source_projectile: None,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -2538,6 +3394,10 @@ impl Player {
             repeat_whips_reset_cooldown: 0,
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
+            // `SceneMetrics.NPCBannerBuff`'s `new bool[MaxBannerTypes]`
+            // (`SceneMetrics.cs:134`) — the port's 320-slot mirror
+            // (`tr_core::scene::SceneMetrics::new`).
+            npc_banner_buff: vec![false; 320],
             mana_regen_bonus: 0,
             stat_defense: 0,
             well_fed: false,
@@ -2629,6 +3489,7 @@ impl Player {
             actuation_rod_lock_setting: false,
             info_acc_mech_show_wires: false,
             auto_actuator: false,
+            auto_paint: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
             // (`:56092`): the ruler-line toggle starts off, the rest on.
             builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -2647,6 +3508,7 @@ impl Player {
             shield_raised: false,
             sliding: false,
             sand_storm: false,
+            wind_pushed: false,
             carpet_frame: -1,
             legs_armor: 0,
             frame_inputs: FrameInputs::default(),
@@ -2667,6 +3529,15 @@ impl Player {
             no_knockback: false,
             fire_walk: false,
             has_paladin_shield: false,
+            // `Player.cs:1406`/`:946`/`:948-950` — the buff-granted flags
+            // start false; `flameRingScale`'s field initializer is 1f.
+            defended_by_paladin: false,
+            inferno: false,
+            flame_ring_scale: 1.0,
+            flame_ring_rot: 0.0,
+            advanced_shadows: [[0.0; 2]; 60],
+            available_advanced_shadows_count: 0,
+            last_added_advanced_shadow: 0,
             // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) — the
             // OnFire regen row's source (`Player.cs:18983-18992`).
             vampirism: world
@@ -2681,6 +3552,7 @@ impl Player {
             c_head: 0,
             c_body: 0,
             c_legs: 0,
+            c_shoe: 0,
             c_pet: 0,
             c_light: 0,
             c_minecart: 0,
@@ -2696,7 +3568,11 @@ impl Player {
             chest_y: 0,
             edited_chest_name: false,
             prev_synced_chest: crate::bank::CHEST_CLOSED,
+            last_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,
+            void_lens_chest: crate::void_lens::LensTracker::default(),
+            disable_void_bag: -1,
+            vault_favorites: [false; crate::bank::BANK_SLOTS],
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
             pinned_jumps: [false; 9],
@@ -2716,6 +3592,9 @@ impl Player {
             spawn_y: sy,
             potion_of_return_original_use_position: None,
             potion_of_return_home_position: None,
+            last_death_position: None,
+            last_death_time: None,
+            show_last_death: false,
             hp: 100,
             max_hp: 100,
             armor_penetration: 0,
@@ -2785,15 +3664,32 @@ impl Player {
             wing_time: 0.0,
             wing_time_max: 0,
             wings_logic: 0,
+            // `Player.cs:2558`/`:2562` — the `new Player()` colour inits.
+            eye_color: [105, 90, 75, 255],
+            under_shirt_color: [160, 180, 215, 255],
+            carpet: false,
+            can_carpet: false,
+            carpet_time: 0,
+            carpet_frame_counter: 0.0,
+            rocket_sound_delay: 0,
+            pending_wall_dust: None,
+            pending_rocket_sound: None,
             rocket_time: 0,
             rocket_time_max: 7,
             rocket_delay: 0,
             rocket_delay2: 0,
             rocket_boots: 0,
+            vanity_rocket_boots: 0,
+            sail_dash: false,
+            cold_dash: false,
+            desert_dash: false,
+            fairy_boots: false,
+            hellfire_treads: false,
             can_rocket: false,
             rocket_release: false,
             merman: false,
             acc_merman: false,
+            wolf_acc: false,
             time_since_last_dash_started: 0,
             cart_mount: 13,
             release_grappling_hooks: false,
@@ -2881,10 +3777,34 @@ impl Player {
             pending_no_space_sound: None,
             pending_no_space_teleport: false,
             pending_force_clear: None,
+            teleport_time: 0.0,
+            teleport_style_id: 0,
+            last_portal_color_index: 0,
+            last_teleport_pylon_style_used: 0,
+            pending_teleport_effect: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
+            pending_jump_dust: None,
+            pending_dash_dust: None,
+            pending_fast_run_dust: None,
+            pending_mount_dust: Vec::new(),
+            basilisk_charge: 0.0,
+            time_for_visuals: 0.0,
+            wind_for_visuals: 0.0,
+            wind_in_place: false,
+            pending_double_jump_dust: None,
+            pending_floor_dust: None,
+            pending_wing_air_dust: None,
+            pending_wing_glide_dust: None,
+            pending_rocket_flame_dust: None,
+            rocket_frame: false,
+            social_shadow_rocket_boots: false,
+            pending_walk_effect_dust: None,
+            pending_rudolph_trail: None,
+            pending_wing_frame_dust: None,
+            pending_sandstorm_jump: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -2906,6 +3826,66 @@ impl Player {
             rabid: false,
             melee_enchant: 0,
             pet_flags: [false; PROJ_COUNT],
+            orb_scan: crate::buff_effects_orbs::OrbScanState::default(),
+            beetle_buff: false,
+            ice_barrier: false,
+            ice_barrier_frame_counter: 0,
+            ice_barrier_frame: 0,
+            frame_state: crate::buff_effects_frame::FrameState::default(),
+            soul_drain: 0,
+            inferno_counter: 0,
+            dont_hurt_critters: false,
+            stoned: false,
+            ichor: false,
+            broken_armor: false,
+            honey: false,
+            palladium_regen: false,
+            has_titanium_storm_buff: false,
+            chaos_state: false,
+            accelerate_poisons: false,
+            blue_lightning: false,
+            red_lightning: false,
+            calmed: false,
+            danger_sense: false,
+            life_force: false,
+            inferno: false,
+            love_struck: false,
+            dryad_ward: false,
+            electrified: false,
+            tipsy: false,
+            blackout: false,
+            dripping_sparkle_slime: false,
+            headcovered: false,
+            bleed: false,
+            wind_pushed: false,
+            withered_armor: false,
+            withered_weapon: false,
+            slow_ogre_spit: false,
+            parry_damage_buff: false,
+            moon_leech: false,
+            defended_by_paladin: false,
+            were_wolf: false,
+            hungry: false,
+            starving: false,
+            hearty_meal: false,
+            venom: false,
+            chlorophyte_spore: false,
+            poisoned: false,
+            on_fire: false,
+            dripping: false,
+            dripping_slime: false,
+            burned: false,
+            suffocating: false,
+            on_fire2: false,
+            on_fire3: false,
+            on_frost_burn: false,
+            on_frost_burn2: false,
+            block_range: 0,
+            stat_life_max2: 0,
+            luck_needs_sync: false,
+            buff_life_regen: 0,
+            pending_frame_emotes: Vec::new(),
+            pending_hungry_sounds: 0,
             shroomite_stealth: false,
             stealth: 0.0,
             space_gun: false,
@@ -2916,8 +3896,15 @@ impl Player {
             magma_stone: false,
             catalyst_band: false,
             vampire_burning_in_sunlight: false,
+            sun_scorch_counter: 0,
+            sizzle_audio_handle: tr_core::slot::SlotId::INVALID,
+            sizzle_alive: None,
+            zone_graveyard: false,
+            moon_lord_sky_intensity: None,
+            fire_immune_pre_molten: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
+            acc_ammo_cycler_damage: false,
             // S1-P-i35 — the fishing family's spawn defaults.
             fishing_skill: 0,
             crate_potion: false,
@@ -2928,6 +3915,13 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_fruit: false, // `Player.cs:56079`
+            used_ambrosia: false,    // `Player.cs:56083`
+            used_aegis_crystal: false, // `Player.cs:56078` (the g88/g90 spot)
+            used_aegis_crystal: false, // `Player.cs:56078`
+            used_arcane_crystal: false, // `:56080`
+            used_galaxy_pearl: false, // `:56081`
+            used_ambrosia: false, // `:56083`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -2958,6 +3952,7 @@ impl Player {
             water_walk: false,
             detect_creature: false,
             grav_control: false,
+            bleed: false,
             confused: false,
             silence: false,
             dazed: false,
@@ -3387,6 +4382,17 @@ impl Player {
         self.pending_force_clear.take()
     }
 
+    /// W4-g11 — takes the `Player.Teleport` effect request
+    /// (`Player.cs:37444`/`:37489`): `(old_x, old_y, new_x, new_y, style,
+    /// extra_info2, extra_info, dust_count_mult)` — the drain runs
+    /// `main_dust::player_teleport` (the Entry effect at the OLD box, the
+    /// movement core, the Exit effect at the NEW box, the
+    /// `teleportTime`/`teleportStyle` grants).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn take_teleport_effect(&mut self) -> Option<(f32, f32, f32, f32, i32, i32, i32, f32)> {
+        self.pending_teleport_effect.take()
+    }
+
     /// Takes the queued mana-restore text amount (`Player.ManaEffect`,
     /// `Player.cs:4531-4538`) — the caller owns `Main.combatText`.
     pub(crate) fn take_mana_effect(&mut self) -> Option<i32> {
@@ -3474,6 +4480,127 @@ impl Player {
         std::mem::take(&mut self.pending_sticky_dust)
     }
 
+    /// W4-d51 — takes the extra-jump chain's queued dust snapshot
+    /// (`Player.cs:20818-21012`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_jump_dust`).
+    pub(crate) fn take_jump_dust(&mut self) -> Option<JumpDust> {
+        self.pending_jump_dust.take()
+    }
+
+    /// W4-d51 — takes the `DashMovement` dust snapshot
+    /// (`Player.cs:21259-21512`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_dash_dust`).
+    pub(crate) fn take_dash_dust(&mut self) -> Option<DashDust> {
+        self.pending_dash_dust.take()
+    }
+
+    /// W4-d51 — takes the fast-run trail snapshot (`Player.cs:20217-20298`);
+    /// the caller owns `Main.dust` and the `UpdatePlayers` stream
+    /// (`player_dust::drain_fast_run`).
+    pub(crate) fn take_fast_run_dust(&mut self) -> Option<FastRunDust> {
+        self.pending_fast_run_dust.take()
+    }
+
+    /// W4-g66 — takes the `DoubleJumpVisuals` trail snapshot
+    /// (`Player.cs:21892-22021`); drained on `UpdatePlayers`
+    /// (`player_trail_dust::drain_double_jump_visuals`).
+    pub(crate) fn take_double_jump_dust(&mut self) -> Option<DoubleJumpDust> {
+        self.pending_double_jump_dust.take()
+    }
+
+    /// W4-g66 — takes the `MakeFloorDust` snapshot (`Player.cs:23790-24043`);
+    /// drained on `UpdatePlayers` (`player_trail_dust::drain_floor_dust`).
+    pub(crate) fn take_floor_dust(&mut self) -> Option<FloorDust> {
+        self.pending_floor_dust.take()
+    }
+
+    /// W4-g66 — takes the `WingAirVisuals` snapshot (`Player.cs:30750-31013`);
+    /// drained on `UpdatePlayers` (`player_wing_dust::drain_wing_air`).
+    pub(crate) fn take_wing_air_dust(&mut self) -> Option<WingAirDust> {
+        self.pending_wing_air_dust.take()
+    }
+
+    /// W4-g66 — takes the wing-glide dust snapshot (`Player.cs:27040-27315`);
+    /// drained on `UpdatePlayers` (`player_wing_dust::drain_wing_glide`).
+    pub(crate) fn take_wing_glide_dust(&mut self) -> Option<WingGlideDust> {
+        self.pending_wing_glide_dust.take()
+    }
+
+    /// W4-g66 — takes the `RocketBootVisuals` snapshot
+    /// (`Player.cs:29330-29458`); drained on `UpdatePlayers`
+    /// (`player_boot_dust::drain_rocket_flames`).
+    pub(crate) fn take_rocket_flame_dust(&mut self) -> Option<RocketFlameDust> {
+        self.pending_rocket_flame_dust.take()
+    }
+
+    /// W4-g66 — takes the `PlayerFrame` walking-effect snapshot
+    /// (`Player.cs:35996-36136`); drained on `UpdatePlayers`
+    /// (`player_boot_dust::drain_walk_effects`).
+    pub(crate) fn take_walk_effect_dust(&mut self) -> Option<WalkEffectDust> {
+        self.pending_walk_effect_dust.take()
+    }
+
+    /// W4-g66 — takes the Rudolph flight-trail snapshot
+    /// (`Player.cs:36164-36198`); drained on `UpdatePlayers`
+    /// (`player_trail_dust::drain_rudolph_trail`).
+    pub(crate) fn take_rudolph_trail(&mut self) -> Option<RudolphTrail> {
+        self.pending_rudolph_trail.take()
+    }
+
+    /// W4-g66 — takes the `WingFrame` dust snapshot (`Player.cs:29468-30527`);
+    /// drained on `UpdatePlayers` (`player_wing_dust::drain_wing_frame`).
+    pub(crate) fn take_wing_frame_dust(&mut self) -> Option<WingFrameDust> {
+        self.pending_wing_frame_dust.take()
+    }
+
+    /// W4-g66 gap-fill — takes the wall-dust snapshot
+    /// (`Player.cs:21607-21840`); drained on `UpdatePlayers`
+    /// (`player_trail_dust::drain_wall_dust`).
+    pub(crate) fn take_wall_dust(&mut self) -> Option<WallDust> {
+        self.pending_wall_dust.take()
+    }
+
+    /// W4-g66 gap-fill — takes the boot/jetpack Item13/Item24 cue
+    /// (`Player.cs:26884-26896`, `:29478`, `:30172`, `:27154`) —
+    /// `(style_index, x, y)`, the `take_flap_sound` convention.
+    pub(crate) fn take_rocket_sound(&mut self) -> Option<(u16, f32, f32)> {
+        self.pending_rocket_sound.take()
+    }
+
+    /// W4-g66 gap-fill — queues one Item13/Item24 style play at the C#
+    /// read moment (`SoundEngine.PlaySound(SoundID.ItemN, base.position)`).
+    fn queue_rocket_sound(&mut self, name: &str) {
+        if let Some(idx) = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == name)
+        {
+            self.pending_rocket_sound = Some((idx as u16, self.x, self.y));
+        }
+    }
+
+    /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
+    /// velocity writes above each site have already landed).
+    fn queue_dash_dust(&mut self, active: bool) {
+        self.pending_dash_dust = Some(DashDust {
+            dash: self.dash,
+            active,
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            vx: self.vx,
+            vy: self.vy,
+            facing: self.facing,
+            mount: if self.mount.is_active() { self.mount.kind() } else { -1 },
+        });
+    }
+
+    /// W4-f42 — takes the tick's `DoubleJumpVisuals` sandstorm arm
+    /// (`Player.cs:21905-21926`) — the caller owns `Main.dust` + `Main.gore`.
+    pub(crate) fn take_sandstorm_jump(&mut self) -> Option<SandstormJumpVisual> {
+        self.pending_sandstorm_jump.take()
+    }
+
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
     /// the seat tile re-decodes through `GetSittingTargetInfo` (`:56-61`),
     /// any control input / the mount / a facing mismatch stands up
@@ -3549,6 +4676,9 @@ impl Player {
         self.jump = 0;
         self.fall_start = (y / TILE_PX) as i32;
         self.gfx_off_y = 0.0;
+        // The C#'s `Player.Teleport` clears the trail (`Player.cs:37483`);
+        // the debug hook is a teleport too.
+        self.reset_advanced_shadows();
     }
 
     /// `Player.ResetFallDamage` (`Player.cs:37712-37716`): `fallStart =
@@ -3614,6 +4744,9 @@ impl Player {
         self.breath_cd = 0;
         self.regen = RegenState::default();
         self.dot_death = None;
+        // W4-f30 — the killing-blow source clears on the respawn (the next
+        // death latches its own).
+        self.death_source_projectile = None;
         self.fall_start = (self.y / TILE_PX) as i32;
         self.wet = false;
         self.lava_wet = false;
@@ -3642,6 +4775,21 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.pending_sticky_dust.clear();
+        self.pending_jump_dust = None;
+        self.pending_dash_dust = None;
+        self.pending_fast_run_dust = None;
+        self.pending_mount_dust.clear();
+        self.pending_double_jump_dust = None;
+        self.pending_floor_dust = None;
+        self.pending_wing_air_dust = None;
+        self.pending_wing_glide_dust = None;
+        self.pending_rocket_flame_dust = None;
+        self.pending_walk_effect_dust = None;
+        self.pending_rudolph_trail = None;
+        self.pending_wing_frame_dust = None;
+        self.pending_wall_dust = None;
+        self.pending_rocket_sound = None;
+        self.pending_sandstorm_jump = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -3669,6 +4817,9 @@ impl Player {
         // revive clears the sit/sleep state.
         self.sit_up();
         self.stop_sleeping();
+        // `Player.cs:37642` — `ResetAdvancedShadows`: the spawn clears the
+        // trail (the lens flare's shadow offset reads it).
+        self.reset_advanced_shadows();
     }
 
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
@@ -3683,11 +4834,20 @@ impl Player {
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
         self.deaths_pve = self.deaths_pve.saturating_add(1);
+        // `Player.KillMe`'s death-marker stamp (`Player.cs:38846-38848`):
+        // `lastDeathPostion = Center`, `lastDeathTime = DateTime.Now`,
+        // `showLastDeath = true` — the map's death marker reads all three
+        // (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`).
+        self.last_death_position = Some(self.center());
+        self.last_death_time = Some(std::time::SystemTime::now());
+        self.show_last_death = true;
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
-        // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
-        let _ = self.dismount(world, true);
+        // `Player.KillMe` -> `mount.Dismount(this)` (`Player.cs:38907`):
+        // the default `ignoreEffect = false` — the spawn dust fires
+        // (W4-f6; the old `true` was the no-dust-system stand-in).
+        let _ = self.dismount(world, false);
         // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
         // legacy "Player Killed" id 5 (`Player.cs:38737`, the default arm).
         self.pending_death_sound = Some("Player_Killed");
@@ -3756,8 +4916,9 @@ impl Player {
 
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
     /// 90-tick lockout, with no boss hindering, no danger NPCs nearby and
-    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The
-    /// `ghost`/`pvpDeath` branches stay unreachable in the port.
+    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The `ghost`
+    /// branch is live since W4-f30 (the hardcore permadeath); `pvpDeath`
+    /// stays unreachable (no PVP).
     pub fn allows_respawn_timer_skip(
         &self,
         boss_near: bool,
@@ -3767,9 +4928,10 @@ impl Player {
         !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near || moon_event_live)
     }
 
-    /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
+    /// `Player.ghost` (the hardcore permadeath, W4-f30) — the PVP-death
+    /// half stays false (no PVP).
     fn ghost_like(&self) -> bool {
-        false
+        self.ghost
     }
 
     /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
@@ -3782,6 +4944,11 @@ impl Player {
         boss_near: bool,
         danger_near: bool,
         moon_event_live: bool,
+        // W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045`):
+        // `difficulty == 2 && (statLifeMax <= 0 || !Main.surviveHardcoreDeath)`.
+        // The caller folds the difficulty + the seed predicate; a true value
+        // routes the expiry to the ghost instead of the respawn.
+        hardcore_permadeath: bool,
     ) -> bool {
         self.dead_time += 1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
@@ -3809,13 +4976,149 @@ impl Player {
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
         self.chest = crate::bank::CHEST_CLOSED;
+        // W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045-17067`):
+        // a hardcore player whose life pool hit 0 (or whose world does not
+        // survive hardcore death) never respawns — the timer still counts
+        // down, but the expiry sets the ghost instead of reviving. The
+        // respawn-skip below is already ghost-gated (`AllowsRespawnTimerSkip`
+        // `:38964`), so a ghost can neither skip nor revive.
+        if hardcore_permadeath {
+            if self.respawn_timer <= 0 {
+                // `:17051-17054` — `whoAmI == Main.myPlayer || netMode == 2`;
+                // the port's dead branch is the local player.
+                self.ghost = true;
+            }
+            return false;
+        }
+        // W4-g56 — the tracker clears with the close: the next alive tick's
+        // `HandleBeingInChestRange` else-arm (`Player.cs:31095`) writes it;
+        // the port clears here so a dead tick never leaves a stale latch.
+        self.void_lens_chest.clear();
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
+        // W4-d80 — `Player.cs:17079`: `UpdateDead`'s tail ticks the
+        // sun-scorch counter (the dead arm: num 2, burning cleared) —
+        // AFTER the respawn-skip gates, exactly the C#'s placement.
+        self.tick_sun_scorch();
         if can_skip && jump_edge && self.respawn_timer > 0 {
             return true;
         }
         self.respawn_timer <= 0
+    }
+
+    /// `Player.UpdateSunScorchValues`' counter half (`Player.cs:28582-28589`):
+    /// `num = 6` alive, 2 dead (the dead tick also clears the burning flag);
+    /// `sunScorchCounter = Clamp(counter + (burning ? 1 : -num), 0, 300)`.
+    /// Runs on BOTH the live (`UpdateSunScorch` `:25634`) and dead
+    /// (`UpdateDead` `:17079`) paths. The sizzle play/follow half rides the
+    /// sim drain (`update_sizzle_audio`) — the player tick holds no `Audio`
+    /// borrow (the `wants_sound` convention). W4-d80 (research/64 site 24).
+    pub fn tick_sun_scorch(&mut self) {
+        let mut num = 6;
+        if self.dead {
+            self.vampire_burning_in_sunlight = false;
+            num = 2;
+        }
+        let delta = if self.vampire_burning_in_sunlight { 1 } else { -num };
+        self.sun_scorch_counter = (self.sun_scorch_counter + delta).clamp(0, 300);
+    }
+
+    /// `Player.UpdateSunScorchValues`' lerp (`Player.cs:28589`):
+    /// `GetLerpValue(0f, 120f, sunScorchCounter, clamped: true)` — the
+    /// sizzle loop's volume override.
+    pub fn sun_scorch_lerp(&self) -> f32 {
+        tr_core::scene::get_lerp_value(0.0, 120.0, self.sun_scorch_counter as f32, true)
+    }
+
+    /// `Player.VampireSeedSunlightExposure` (`Player.cs:28672-28719`) — the
+    /// vampire seed's sun-burning flag granter, called by `UpdateSunScorch`
+    /// (`:28632`) BEFORE the counter tick. W4-d80 (the deferred granter the
+    /// sizzle loop's ensure reads). ZERO draws.
+    ///
+    /// The gate chain: the seed off returns; the surface/day/dry/no-eclipse/
+    /// no-graveyard/no-glowshroom flag; the Moon Lord sky-shade override; the
+    /// wet refusal; the umbrella (946/4707) refusal (the bat mount 56 cancels
+    /// it); then the 15-tile upward wall scan — an open wall (0/21/318 or an
+    /// echo-invisible wall) sets the burning flag, a solid roof stops the scan.
+    ///
+    /// Folds (ANALYSIS): `MoonLordSkyIntensity` is unported (`None` — the
+    /// shade gate is vacuous); `ShouldShowInvisibleBlocksAndWalls` reads false
+    /// (the `framing.rs` precedent); `base.wet` is `WetCollision` (ANY liquid,
+    /// `Player.cs:27749`/`:27850`) — the port's four wet flags' union;
+    /// `Main.raining` is the live `Rain::is_raining()` (the `raining` arg).
+    pub fn vampire_seed_sunlight_exposure(&mut self, world: &World, raining: bool) {
+        // `:28674-28675` — the scan anchors: `(int)Center.X / 16` and
+        // `(int)(Bottom.Y - 1f) / 16` (the live width/height, i41).
+        let (cx, _) = self.center();
+        let num = cx as i32 / 16;
+        let mut num2 = (self.y + self.height - 1.0) as i32 / 16;
+        // `:28676-28679` — the seed gate.
+        if !world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM)
+        {
+            return;
+        }
+        // `:28680-28681` — the exposure flag: below the surface, day, dry,
+        // no eclipse, no graveyard, no glowshroom.
+        let flag = (num2 as f64) < world.world_surface
+            && world.day_time
+            && !raining
+            && !world.eclipse
+            && !self.zones.graveyard
+            && !self.zones.glowshroom;
+        // `:28682-28685` — the Moon Lord sky-shade override (> 0.5 cancels).
+        // `MoonLordSkyIntensity` is unported (`None`), so the gate is vacuous.
+        // `:28686-28689` — the flag-off / wet refusal (`base.wet` = any liquid).
+        let any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        if !flag || any_wet {
+            return;
+        }
+        // `:28690-28698` — the umbrella refusal; the bat mount (56) cancels it.
+        let mut flag2 = self.held_item_kind == 946 || self.held_item_kind == 4707;
+        if self.mount.is_active() && self.mount.kind() == 56 {
+            flag2 = false;
+        }
+        if flag2 {
+            return;
+        }
+        // `:28699-28718` — the 15-tile upward wall scan.
+        let mut num4 = 15;
+        while num4 > 0 {
+            // `:28702-28706` — the current cell; a null tile breaks.
+            let Some(tile) = world.tile(num, num2) else {
+                break;
+            };
+            let old_row = num2;
+            let old_kind = tile.kind;
+            let old_wall = tile.wall;
+            // `:28707-28711` — an open wall sets the burning flag. The
+            // `ShouldShowInvisibleBlocksAndWalls` override reads false, so the
+            // echo-invisible-wall term is unconditional.
+            if old_wall == 0
+                || old_wall == 21
+                || old_wall == 318
+                || world.invisible_wall(num, old_row)
+            {
+                self.vampire_burning_in_sunlight = true;
+                break;
+            }
+            // `:28712-28713` — step up one tile.
+            num4 -= 1;
+            num2 -= 1;
+            // `:28714-28717` — the roof stop. The C# quirk: `SolidTile3` reads
+            // the NEW (upper) cell, but `tile.type`/`invisibleBlock` still read
+            // the OLD cell. `ShouldShowInvisibleBlocksAndWalls` false folds the
+            // two `|| ShouldShow` terms to the plain tests.
+            if tr_core::stray::solid_tile3(world, num, num2)
+                && old_kind != 54
+                && !world.invisible_block(num, old_row)
+                && old_kind != 541
+            {
+                break;
+            }
+        }
     }
 
     /// `Player.Spawn(ReviveFromDeath)`: the dead flags clear, then the
@@ -3825,6 +5128,35 @@ impl Player {
         self.dead_time = 0;
         self.respawn_timer = 0;
         self.respawn();
+    }
+
+    /// `Player.LockNetSlot` (`Player.cs:23123-23133`): the quick-stack-to-
+    /// nearby-chests transfer locks each source slot before the `5` send
+    /// (`QuickStacking.SendQuickStackToNearbyChests:293`). A bank4 slot
+    /// (`slot >= Bank4_0`) arms `disableVoidBag = slot - Bank4_0` (the vault
+    /// open refuses while the transfer owns it); an inventory slot
+    /// (`slot < Bank4_0`) arms `inventoryChestStack[slot]` — the port has no
+    /// `inventoryChestStack` array (the quick-stack producer is unported), so
+    /// that half is a documented no-op. `PlayerItemSlotID.Bank4_0` is the
+    /// bank4 base in the C# slot-id space; the port passes the bank4-relative
+    /// index directly (the caller maps it). MP-only — no SP producer. W4-g56.
+    pub fn lock_net_slot(&mut self, bank4_slot: i32) {
+        // `:23125-23128` — the bank4 arm. The inventory arm (`:23131`) has no
+        // port state; the caller only ever locks bank4 slots for the vault.
+        self.disable_void_bag = bank4_slot;
+    }
+
+    /// The slot-5 echo clear (`MessageBuffer.cs:432-438`): the server's
+    /// `SyncItem` for a bank4 slot clears `disableVoidBag` when it matches the
+    /// locked slot (`netMode == 1`, `slot >= Bank4_0 && slot <
+    /// Loadout1_Armor_0`). `bank4_slot` is the bank4-relative index the echo
+    /// addresses. MP-only — the port's net glue calls this when the slot-sync
+    /// producer lands. W4-g56.
+    pub fn clear_void_bag_lock_on_echo(&mut self, bank4_slot: i32) {
+        // `:434-437` — `if (disableVoidBag == num26 - Bank4_0) disableVoidBag = -1`.
+        if self.disable_void_bag == bank4_slot {
+            self.disable_void_bag = -1;
+        }
     }
 
 /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
@@ -4386,6 +5718,13 @@ impl Player {
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
+        // W4-f30 — the killing blow's source projectile (`PlayerDeathReason.
+        // SourceProjectileType`, `Player.cs:38834`): the gravestone teammate-
+        // death check (`KillMe`'s 36 arm) reads it. Latched only on the hit
+        // that zeroes the life pool; the death path consumes it.
+        if self.hp <= 0 {
+            self.death_source_projectile = source_projectile;
+        }
         // `Player.Hurt`'s immunity window (`Player.cs:38382-38385`):
         // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
         // : (this.longInvince ? 40 : 20)));` then, on the General lane,
@@ -4687,6 +6026,110 @@ impl Player {
         self.center()
     }
 
+    /// `Player.UpdateAdvancedShadows` (`Player.cs:4328-4340`): the count
+    /// caps at 60, the write head pre-increments and wraps at 60, then the
+    /// slot takes the player's position (`EntityShadowInfo.CopyPlayer`
+    /// `:21-29` — the port keeps only `Position`). Runs at `Player.Update`'s
+    /// tail (`:28303`), after the movement.
+    pub fn update_advanced_shadows(&mut self) {
+        self.available_advanced_shadows_count += 1;
+        if self.available_advanced_shadows_count > 60 {
+            self.available_advanced_shadows_count = 60;
+        }
+        self.last_added_advanced_shadow += 1;
+        if self.last_added_advanced_shadow >= 60 {
+            self.last_added_advanced_shadow = 0;
+        }
+        self.advanced_shadows[self.last_added_advanced_shadow as usize] = [self.x, self.y];
+    }
+
+    /// `Player.GetAdvancedShadow` (`Player.cs:4318-4326`): index 0 is the
+    /// freshest slot; the index clamps at the available count (the C#'s `>`
+    /// test, kept verbatim) and walks back through the ring
+    /// (`ModulusPositive(60)`).
+    pub fn get_advanced_shadow(&self, shadow_index: i32) -> [f32; 2] {
+        let shadow_index = shadow_index.min(self.available_advanced_shadows_count);
+        let num = (self.last_added_advanced_shadow - shadow_index).rem_euclid(60);
+        self.advanced_shadows[num as usize]
+    }
+
+    /// `Player.ResetAdvancedShadows` (`Player.cs:4342-4345`): the teleport
+    /// (`:37483`) and spawn (`:37642`) clears — only the count, the ring
+    /// keeps its stale slots (the C# does not zero them).
+    pub fn reset_advanced_shadows(&mut self) {
+        self.available_advanced_shadows_count = 0;
+    }
+
+    /// `Player.VampireSeedSunlightExposure` (`Player.cs:28672-28719`): the
+    /// vampire seed's column probe — 15 tiles up from the feet, burning
+    /// while the sky is open (no wall, or the 21/318 glass walls). The
+    /// `raining`/`zone_graveyard`/`zone_glowshroom` gates read the scene
+    /// snapshot; the umbrella (946/4707) and the UFO mount (56) shield.
+    /// Deviations: the invisible-block/wall terms (`Tile.cs:528-559`) have
+    /// no port bit, so they fold to false (`ShouldShowInvisibleBlocksAndWalls`
+    /// is the debug toggle, off in play).
+    // [merge-P] duplicate fn vampire_seed_sunlight_exposure removed (same-scope duplicate; longest implementation kept)
+
+    /// `Player.UpdateSunScorchValues` (`Player.cs:28580-28604`): the counter
+    /// ramps +1 while burning, −6 (−2 dead) otherwise, clamped 0..300. The
+    /// sizzle-loop sound half is unmodelled (no tracked-loop seam here).
+    pub fn update_sun_scorch_values(&mut self) {
+        let num = if self.dead {
+            self.vampire_burning_in_sunlight = false;
+            2
+        } else {
+            6
+        };
+        let delta = if self.vampire_burning_in_sunlight { 1 } else { -num };
+        self.sun_scorch_counter = (self.sun_scorch_counter + delta).clamp(0, 300);
+    }
+
+    /// `Player.UpdateSunScorch` (`Player.cs:28626-28670`): the exposure
+    /// probe + the counter ramp, then the ≥120 burn — the buff-immune wipe,
+    /// the OnFire/CursedInferno/Ichor grants, the mount dismount and the
+    /// wing/rocket strip. The `PlayerFrame` charred-visual swap
+    /// (`:28639-28652`) and the VampireOnFire particle (`:28656-28659`) are
+    /// draw seams, unmodelled.
+    pub fn update_sun_scorch(&mut self, world: &World, raining: bool) {
+        self.vampire_seed_sunlight_exposure(world, raining);
+        let num = self.sun_scorch_counter;
+        self.update_sun_scorch_values();
+        if !self.vampire_burning_in_sunlight || self.sun_scorch_counter < 120 {
+            return;
+        }
+        let _ = num; // the charred-frame edge (`:28639`) is the draw seam
+        // `:28653`: `Array.Clear(buffImmune, 0, BuffID.Count)`.
+        self.buffs.reset_buff_immune();
+        // `:28661-28663`: the three burn debuffs, 3 ticks each.
+        self.buffs.add_buff(24, 3);
+        self.buffs.add_buff(23, 3);
+        self.buffs.add_buff(32, 3);
+        // `:28664-28667`: the mount dismounts.
+        if self.mount.is_active() {
+            self.try_dismount(world);
+        }
+        // `:28668-28669`: the flight strip.
+        self.wings_logic = 0;
+        self.rocket_boots = 0;
+    }
+
+    /// `Player.CanDefendWithPaladinsShield` (`Player.cs:38188-38195`):
+    /// active, alive, shield-bearing, on a non-zero team matching the
+    /// other player's, and above 25% of the effective life cap
+    /// (`statLife > statLifeMax2 * 0.25f`, strict >). The port's single
+    /// `max_hp` stands in for `statLifeMax2` (the `player_lights.rs`
+    /// half-life-gate precedent). `active` is true for the live player.
+    pub fn can_defend_with_paladins_shield(&self, other_player_team: i32) -> bool {
+        if !self.dead
+            && self.has_paladin_shield
+            && self.team > 0
+            && self.team == other_player_team
+        {
+            return self.hp as f32 > self.max_hp as f32 * 0.25;
+        }
+        false
+    }
+
     /// `Player.MountedTop` (`Player.cs:3349-3360`):
     /// `(position.X + width/2, position.Y + HeightOffsetHitboxCenter)`, or
     /// `Bottom.Y - HeightOffsetHitboxCenter` under reversed gravity. The port
@@ -4695,6 +6138,31 @@ impl Player {
     /// accessor so the sentry-backpack reposition cites the C# point.
     pub fn mounted_top(&self) -> (f32, f32) {
         (self.x + self.width * 0.5, self.y)
+    }
+
+    /// `Player.GetBannerBuffEffect(NPC, out effect)` (`Player.cs:20478-20492`)
+    /// for the port's single player: the banner strength pair
+    /// `(DamageDealt, DamageReceived)` when the NPC's banner stands in the
+    /// scene window, `None` otherwise. Reads the per-tick
+    /// `npc_banner_buff` snapshot (`Player.SceneMetrics.NPCBannerBuff`,
+    /// `:44197-44199`); the classic `BannerEffect(1f)` sample is the port's
+    /// 1.5/0.75 pair (`tr_core::bestiary`, the `ItemID.cs:23-32` ctor).
+    /// W4-g4 P1 (the W4-d22 reconcile fold).
+    pub fn banner_buff_for_npc(&self, net_id: i32) -> Option<(f32, f32)> {
+        let banner = tr_core::bestiary::npc_to_banner(net_id);
+        if banner <= 0 {
+            return None;
+        }
+        self.npc_banner_buff
+            .get(banner as usize)
+            .copied()
+            .filter(|b| *b)
+            .map(|_| {
+                (
+                    tr_core::bestiary::BANNER_DAMAGE_DEALT,
+                    tr_core::bestiary::BANNER_DAMAGE_RECEIVED,
+                )
+            })
     }
 
     /// S1-P-i35 — `Player.GetFishingConditions` (`Player.cs:42176-42206`)
@@ -4868,6 +6336,15 @@ impl Player {
         (worn(267), worn(1307))
     }
 
+    /// `Player.GetBannerBuffEffect(NPC, out effect)` (`Player.cs:20478-20492`)
+    /// for the port's single player: the banner strength pair
+    /// `(DamageDealt, DamageReceived)` when the NPC's banner stands in the
+    /// scene window, `None` otherwise. Reads the per-tick
+    /// `npc_banner_buff` snapshot (`Player.SceneMetrics.NPCBannerBuff`,
+    /// `:44197-44199`); the classic `BannerEffect(1f)` sample is the port's
+    /// 1.5/0.75 pair (`tr_core::bestiary`, the `ItemID.cs:23-32` ctor).
+    // [merge-P] duplicate fn banner_buff_for_npc removed (same-scope duplicate; longest implementation kept)
+
     /// `Player.IsItemSlotUnlockedAndUsable` (`Player.cs:12579-12604`): the
     /// slot 8 needs the Demon Heart's `extraAccessory` AND expert mode, the
     /// slot 9 needs master mode. Deviations: the `Main.gameMenu` escape arms
@@ -4994,6 +6471,17 @@ impl Player {
                 }
             }
         }
+    }
+
+    /// `Player.CancelAllBootRunVisualEffects` (`Player.cs:36664-36671`):
+    /// the five run-trail flags clear together; the granting boot re-sets
+    /// its own below it (`UpdateBootVisualEffects`, `:36704-36751`).
+    fn cancel_boot_run_visuals(&mut self) {
+        self.sail_dash = false;
+        self.cold_dash = false;
+        self.desert_dash = false;
+        self.fairy_boots = false;
+        self.hellfire_treads = false;
     }
 
     /// `Player.ApplyEquipFunctional` (`Player.cs:14368-15560`): the per-kind
@@ -5128,8 +6616,22 @@ impl Player {
                 self.no_fall_dmg = true;
             }
             // The base boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
-            // `:15017-15020` Sailfish - `accRunSpeed = 6f`).
-            54 | 1579 | 3200 => self.acc_run_speed = 6.0,
+            // `:15017-15020` Sailfish - `accRunSpeed = 6f`). W4-d51: the
+            // `UpdateBootVisualEffects` halves (`:36711-36743`) ride each arm.
+            54 => {
+                self.acc_run_speed = 6.0;
+                self.cancel_boot_run_visuals();
+            }
+            1579 => {
+                self.acc_run_speed = 6.0;
+                self.cancel_boot_run_visuals();
+                self.cold_dash = true;
+            }
+            3200 => {
+                self.acc_run_speed = 6.0;
+                self.cancel_boot_run_visuals();
+                self.sail_dash = true;
+            }
             // The Amphibian Boots (`:14399-14404`): the base run speed plus
             // the auto-jump, the +1.6 jump-speed add and +10 safe-fall tiles.
             // (`autoJump` re-derives per tick; a mount's own `constantJump`
@@ -5139,24 +6641,59 @@ impl Player {
                 self.auto_jump = true;
                 self.jump_speed_boost += 1.6;
                 self.extra_fall += 10;
+                self.cancel_boot_run_visuals();
+                self.sail_dash = true;
             }
             // The Fairy Boots (`:14418-14421`): the Spectre row (6f + tier 2).
             3993 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 2;
+                self.cancel_boot_run_visuals();
+                self.fairy_boots = true;
+                self.vanity_rocket_boots = 2;
+            }
+            // W4-g66 gap-fill — the Frog Leg 3994 / Frog Gear 3995 / Frog Webbing
+            // 3996 (`:14426-14444`): the auto-jump + 1.6 jump-speed + 10
+            // safe-fall trio; 3994/3995 add the flipper, 3995/3996 the +2
+            // wall-cling grant (`WallslideMovement` consumes it).
+            3994 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+            }
+            3995 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+                self.spiked_boots += 2;
+            }
+            3996 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.spiked_boots += 2;
             }
             // The Sand Boots (`:14422-14425`): 6f plus the desert-run flag
             // (the sand-floor 1.75x rides the floor-modifier chain).
             4055 => {
                 self.acc_run_speed = 6.0;
                 self.desert_boots = true;
+                self.cancel_boot_run_visuals();
+                self.desert_dash = true;
             }
             // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
-            128 => self.rocket_boots = 1,
+            128 => {
+                self.rocket_boots = 1;
+                self.vanity_rocket_boots = 1;
+            }
             // The Spectre Boots (`:15219-15223` - tier 2).
             405 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 2;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 2;
             }
             // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
             // +8% move).
@@ -5164,6 +6701,8 @@ impl Player {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 2;
                 self.move_speed += 0.08;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 2;
             }
             // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
             // skates).
@@ -5172,6 +6711,8 @@ impl Player {
                 self.rocket_boots = 3;
                 self.move_speed += 0.08;
                 self.ice_skate = true;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 3;
             }
             // The Terraspark Boots (`:15390-15396` - tier 4).
             5000 => {
@@ -5182,11 +6723,16 @@ impl Player {
                 // The Terraspark row (`:15168-15174`): the water/fire walk
                 // and the lava charm's 420 ticks.
                 self.lava_max += 420;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 4;
             }
             // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
             4874 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 5;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 5;
+                self.hellfire_treads = true;
             }
             _ if Self::wing_slot(kind as i32) > 0 => {
                 // `:15593-15602`: the accessory's `wingSlot` is both the
@@ -5272,13 +6818,22 @@ impl Player {
                 self.empress_brooch = true;
                 self.move_speed += 0.075;
             }
-            // The merman shells (`:15134-15143` Moon Charm 861,
-            // `:15402-15410` Celestial Shell 3110, `:15566-15573` Neptune's
+            // The merman shells (`:15134-15143` Moon Shell 861,
+            // `:15402-15411` Celestial Shell 3110, `:15566-15573` Neptune's
             // Shell 497): `accMerman` arms the wet transformation the flight
             // gates read (`CanUseWingAbilities` `:3994`, `WingAirLogicTweaks`
-            // `:26496`). The `wolfAcc`/`hideMerman` halves are the werewolf /
-            // visibility families (out of flight scope).
-            861 | 3110 | 497 => self.acc_merman = true,
+            // `:26496`). The Moon/Celestial Shells ALSO arm `wolfAcc` (the
+            // Werewolf lane, W4-f12 gap 3); Neptune's Shell does NOT
+            // (`:15566-15573` is accMerman-only). The `hideMerman`/`hideWolf`
+            // halves are the visibility family (draw seams, out of scope).
+            861 | 3110 => {
+                self.acc_merman = true;
+                self.wolf_acc = true;
+            }
+            497 => self.acc_merman = true,
+            // The Moon Charm (`:15182-15189`): `wolfAcc` only — no merman
+            // half (the charm is the werewolf-only accessory).
+            485 => self.wolf_acc = true,
             // The penetration rows: the Shark Tooth Necklace (3212,
             // `:13286-13289`) and the Honey Comb (4007, `:14485-14489`)
             // add a flat 5 each.
@@ -5323,6 +6878,14 @@ impl Player {
             535 | 860 => self.p_stone = true,
             // The Ice Skates (`:15089-15092`).
             950 => self.ice_skate = true,
+            // W4-g66 gap-fill — the wall-cling family: the Magic Carpet 934
+            // (`:15034-15037`), the Climbing Claws 953 / Shoe Spikes 975
+            // (+1, `:15038-15045`), the Tiger Climbing Gear 976 (+2,
+            // `:15046-15049`). `WallClimbMovement`/`WallslideMovement`/
+            // `CarpetMovement` (`:21607-21890`) consume them.
+            934 => self.carpet = true,
+            953 | 975 => self.spiked_boots += 1,
+            976 => self.spiked_boots += 2,
             // The Aglet / the Anklet of the Wind (`:15114-15121`).
             285 => self.move_speed += 0.05,
             212 => self.move_speed += 0.1,
@@ -5368,9 +6931,10 @@ impl Player {
             963 => self.black_belt = true,
             984 => {
                 self.black_belt = true;
-                // `:15065`: the Tabi's dash. (`spikedBoots = 2` at `:15066`
-                // has no port field - the wall-cling is unported.)
+                // `:15065`: the Tabi's dash; `:15066` the wall-cling grant
+                // (W4-g66 gap-fill — `WallslideMovement` consumes it).
                 self.dash_type = 1;
+                self.spiked_boots = 2;
             }
             // The dash granters: the Tabi (`:15050-15053`, type 1) and the
             // Shield of Cthulhu (`:15054-15057`, type 2).
@@ -5726,6 +7290,12 @@ impl Player {
         // `Player.cs:24591`: the tag stack's update right after the buff head —
         // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
         self.tag_effects.update_tick();
+        // `Player.cs:24595-24598`: the Inferno aura's cadence counter ticks
+        // and caps at 180 (the `:10218` `% 60 == 0` damage gate reads it).
+        self.inferno_counter += 1;
+        if self.inferno_counter >= 180 {
+            self.inferno_counter = 0;
+        }
         // `Player.cs:24600-24604`: the dash-age counter ticks and caps at 300
         // (the wings-45 run-slowdown ×6 reads it at >= 60).
         self.time_since_last_dash_started += 1;
@@ -5933,6 +7503,15 @@ impl Player {
         self.chilled = false;
         self.frozen = false;
         self.webbed = false;
+        // `Player.cs:16970`: `ResetEffects` clears `windPushed` — the buff-194
+        // arm below re-grants it per tick (W4-c40).
+        self.wind_pushed = false;
+        // `Player.cs:18489` (`inferno = false`) and `:18776`
+        // (`defendedByPaladin = false`): the buff-116 / buff-43 arms below
+        // re-grant per tick. `flameRingScale`/`flameRingRot` are NOT reset
+        // (no ResetEffects writer exists — the halo animation persists).
+        self.inferno = false;
+        self.defended_by_paladin = false;
         // S1-P-i41 — the water-mount / Cursed flag clears of `ResetEffects`:
         // `canFloatInWater = false` (`Player.cs:18332`), `accFlipper = false`
         // (`:18361`), `noItems = false` / `cursed = false` (`:18687-18688`),
@@ -5947,6 +7526,9 @@ impl Player {
         // `Player.cs:18455`: `empressBrooch = false`.
         self.empress_brooch = false;
         self.spiked_boots = 0;
+        // W4-g66 gap-fill — `:18657`: `carpet = false` beside the spiked-boot
+        // clear; the equip pass re-grants both per tick.
+        self.carpet = false;
         self.ignore_water = false;
         self.lava_vision = false;
 
@@ -5972,6 +7554,11 @@ impl Player {
         // (`RefreshMechanicalAccsFromItemType`, `:12799-12820`).
         self.info_acc_mech_show_wires = false;
         self.auto_actuator = false;
+        // `Player.cs:18533` — autoPaint clears with the rest.
+        self.auto_paint = false;
+        // `Player.cs:18780`: `dontHurtCritters = false` — the critter-book
+        // grant (`:12825-12828`) re-arms it per tick.
+        self.dont_hurt_critters = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()
@@ -5987,8 +7574,8 @@ impl Player {
         // (`Player.cs:18355` fireWalk, `:18367-18374` lavaImmune/gills/
         // slowFall/findTreasure/biomeSight/invis/nightVision/enemySpawns,
         // `:18378` waterWalk, `:18380-18381` detectCreature/gravControl,
-        // `:18394` manaRegenBuff, `:18650` dazed, `:18695` confused,
-        // `:18705` silence) — the buff arms below re-set them per tick.
+        // `:18394` manaRegenBuff, `:18650` dazed, `:18694` bleed, `:18695`
+        // confused, `:18705` silence) — the buff arms below re-set them per tick.
         self.lava_immune = false;
         self.fire_walk = false;
         // S1-C-12 wave D — the armor-set flag clears of `ResetEffects`
@@ -6022,6 +7609,7 @@ impl Player {
         self.detect_creature = false;
         self.grav_control = false;
         self.confused = false;
+        self.bleed = false; // `:18694` — the Bleeding (30) flag clear
         self.silence = false;
         self.dazed = false;
         self.weak_stacks = 0;
@@ -6035,6 +7623,71 @@ impl Player {
         // is unported, `potions.rs`'s tail note).
         self.mana_sick = false;
         self.mana_heat = 1.0;
+        // W4-f12 — the orb-scan / ice-barrier `ResetEffects` clears: the
+        // canonical orb module's counters (`beetleOrbs` `:18501`,
+        // `solarShields` `:18505`, the nebula trio `:18755`) zero every frame
+        // via `reset_effects()` (the g27 merger contract — c17's correction
+        // over d73's persistence claim); `beetleBuff` `:18502` and
+        // `iceBarrier` `:18446` clear beside them. The ice frame pair is NOT
+        // reset (the barrier keeps its phase across ticks, `:10469-10478`).
+        self.orb_scan.reset_effects();
+        self.beetle_buff = false;
+        self.ice_barrier = false;
+        // W4-f12 — the pet/light-pet flag clear (`Player.cs:18413-18600`),
+        // moved here from the accessory pass so it precedes BOTH the wiring
+        // pass's late-pet grants and the accessory pass's pet grants.
+        self.pet_flags = [false; PROJ_COUNT];
+        // W4-f12 — the wired debuff/status flag clears (`ResetEffects`, the
+        // per-flag citations ride the field docs). The scan re-arms them.
+        self.stoned = false;
+        self.ichor = false;
+        self.broken_armor = false;
+        self.honey = false;
+        self.palladium_regen = false;
+        self.has_titanium_storm_buff = false;
+        self.chaos_state = false;
+        self.accelerate_poisons = false;
+        self.blue_lightning = false;
+        self.red_lightning = false;
+        self.calmed = false;
+        self.danger_sense = false;
+        self.life_force = false;
+        self.inferno = false;
+        self.love_struck = false;
+        self.dryad_ward = false;
+        self.electrified = false;
+        self.tipsy = false;
+        self.blackout = false;
+        self.dripping_sparkle_slime = false;
+        self.headcovered = false;
+        self.bleed = false;
+        self.wind_pushed = false;
+        self.withered_armor = false;
+        self.withered_weapon = false;
+        self.slow_ogre_spit = false;
+        self.parry_damage_buff = false;
+        self.moon_leech = false;
+        self.defended_by_paladin = false;
+        self.were_wolf = false;
+        self.hungry = false;
+        self.starving = false;
+        self.hearty_meal = false;
+        self.venom = false;
+        self.chlorophyte_spore = false;
+        self.poisoned = false;
+        self.on_fire = false;
+        self.dripping = false;
+        self.dripping_slime = false;
+        self.burned = false;
+        self.suffocating = false;
+        self.on_fire2 = false;
+        self.on_fire3 = false;
+        self.on_frost_burn = false;
+        self.on_frost_burn2 = false;
+        self.block_range = 0;
+        self.stat_life_max2 = self.max_hp; // the Lifeforce add stacks on the base
+        self.luck_needs_sync = false;
+        self.buff_life_regen = 0;
         // `:18338`/`:18396-18399` — the ranged effective-damage components.
         self.ranged_mult_damage = 1.0;
         self.arrow_damage = 1.0;
@@ -6517,6 +8170,13 @@ impl Player {
                 // `:10025-10028` — Gravitation (18): the gravity-flip key
                 // (unported — flag only).
                 18 => self.grav_control = true,
+                // `:10029-10032` — Bleeding (30): `bleed = true`. The spike
+                // debuff's only consumer is `UpdateLifeRegen`'s ramp reset
+                // (`:19178-19181`), which the DoT fold already derives from
+                // `holding(30)` (`derive_dot_inputs`) — this arm mirrors the C#
+                // field grant (the 163 Obstructed arm sets the same flag,
+                // `:11829`). W4-g26 census: the one id no wave had ported.
+                30 => self.bleed = true,
                 // `:10033-10036` — Confused (31): the control swap below.
                 31 => self.confused = true,
                 // `:10041-10044` — Silenced (35): mana items refuse.
@@ -6557,13 +8217,14 @@ impl Player {
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
                 // +12 armor penetration.
                 159 => self.melee_armor_penetration += 12,
-                // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
-                // Shell): +25% while at or below half life.
-                62 => {
-                    if self.hp as f32 <= self.max_hp as f32 * 0.5 {
-                        self.endurance += 0.25;
-                    }
-                }
+                // W4-f12 keep-one: the Ice Barrier (62) arm moved WHOLESALE to
+                // the wiring pass (`buff_frame_wiring.rs` → d73
+                // `apply_booster_effect_arm`, `Player.cs:10462-10485`): the
+                // flag + the 3-tick × 12-frame counter + the above-half-life
+                // `DelBuff(j); j--` were the missing halves, and the endurance
+                // +0.25 rides the SAME arm now (the C# gate is `statLifeMax2`,
+                // the f64 compare). The inline endurance-only half is folded
+                // out so it is not applied twice (the g27/d73 merge contract).
                 // `:11887-11892` — `BuffID.MagicPower` (29): the crit, the
                 // damage, the 20 mana and the −0.02 cost.
                 29 => {
@@ -6572,17 +8233,26 @@ impl Player {
                     self.mana_max += 20;
                     self.mana_cost -= 0.02;
                 }
+                // `:11911-11917` — Weak (33): meleeDamage −0.051, meleeSpeed
+                // −0.051 (W4-f12 sweep gap 5 — the speed half was missing),
+                // statDefense −4, moveSpeed −0.1, per Weak slot.
                 33 => {
                     self.weak_stacks += 1; // `BuffID.Weak`
-                    self.melee_damage -= 0.051;
-                    self.move_speed -= 0.1;
-                    // `:11915`: `statDefense -= 4` per Weak slot.
-                    self.stat_defense -= 4;
+                    self.melee_damage -= 0.051; // `:11913`
+                    self.melee_speed_bonus -= 0.051; // `:11914`
+                    self.stat_defense -= 4; // `:11915`
+                    self.move_speed -= 0.1; // `:11916`
                 }
                 // `:9962` — `BuffID.Ironskin`: `statDefense += 8`.
                 5 => self.stat_defense += 8,
-                // `:10064` — `BuffID.Ichor`: `statDefense -= 15`.
-                69 => self.stat_defense -= 15,
+                // `:10061-10065` — `BuffID.Ichor`: `ichor = true` (W4-f12
+                // sweep — the flag half was missing; the wave-B module's
+                // copy is not dispatched, 69 is inline-owned) +
+                // `statDefense -= 15`.
+                69 => {
+                    self.ichor = true; // `:10063`
+                    self.stat_defense -= 15; // `:10064`
+                }
                 // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
                 // C#: `statDefense += 5`).
                 215 => self.stat_defense += 5,
@@ -6598,11 +8268,14 @@ impl Player {
                 // one snowflake/spark; the buff re-affirms the flag per tick.
                 312 => self.cool_whip_buff = true,
                 365 => self.cob_whip_buff = true,
-                // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
-                // `lifeRegen += 6` (the regen half has no consumer yet) and
-                // `thorns += 0.5` while under 1.
+                // `:10303-10312` — `BuffID.DryadsWard`: `lifeRegen += 6`
+                // (the regen half rides the accessory-regen lane's 165 arm
+                // below), `statDefense += 8`, `dryadWard = true` (W4-f12
+                // sweep gap 3 — the flag half was missing) and `thorns +=
+                // 0.5` while under 1.
                 165 => {
                     self.stat_defense += 8;
+                    self.dryad_ward = true; // `:10307`
                     if self.thorns < 1.0 {
                         self.thorns += 0.5;
                     }
@@ -6613,8 +8286,23 @@ impl Player {
                         self.thorns = 1.0;
                     }
                 }
-                // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
-                25 => self.stat_defense -= 4,
+                // `Player.cs:11918-11930` — `BuffID.Tipsy` (25): the COMPLETE
+                // arm (W4-f12 gap 1 keep-one — the old inline copy carried
+                // only the defense half). The Ale (3821) held adds the ranged
+                // pair on top of the melee block. `held_item_kind` is the
+                // `inventory[selectedItem]` snapshot the world_sim feeds
+                // before the tick (`world_sim/player.rs`).
+                25 => {
+                    self.tipsy = true;
+                    self.stat_defense -= 4;
+                    self.melee_crit += 2;
+                    self.melee_damage += 0.1;
+                    self.melee_speed_bonus += 0.1;
+                    if self.held_item_kind == 3821 {
+                        self.ranged_damage += 0.1;
+                        self.ranged_crit += 5;
+                    }
+                }
                 // The whip attack-speed buffs (`Player.cs:10110-10121`):
                 // 311 +0.35, 308 +0.25, 314 +0.12 onto
                 // `summonerWeaponSpeedBonus` — `ApplyItemAnimation`'s
@@ -6623,10 +8311,13 @@ impl Player {
                 308 => self.summoner_weapon_speed_bonus += 0.25,
                 314 => self.summoner_weapon_speed_bonus += 0.12,
                 // `:10158-10163` — the Builder Potion (107): tileSpeed /
-                // wallSpeed += 0.25 (the blockRange half rides the reach).
+                // wallSpeed += 0.25 + `blockRange++` (W4-f12 sweep gap 4 —
+                // the reach half was missing; the field feeds the placement
+                // reach, `ResetEffects` zeroes it `:18689`).
                 107 => {
                     self.tile_speed_bonus += 0.25;
                     self.wall_speed_bonus += 0.25;
+                    self.block_range += 1; // `:10162`
                 }
 
                 // S1-P-i35 — `UpdateBuffs`' fishing potions
@@ -6640,6 +8331,14 @@ impl Player {
                 // `accFlipper`/`cursed` too; the i35 duplicates folded in.)
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
+                // `Player.cs:11835-11838`: buff 194 (Strong Wind) —
+                // `windPushed = true`; `HorizontalMovement`'s push arm
+                // (`:19795-19817`) reads it. W4-c40. (The pure effect
+                // table `buff_effects_misc.rs:660` carries the same arm —
+                // this live loop is the wired path, keep-one.)
+                194 => self.wind_pushed = true,
+                // (W4-f12's duplicate Bleeding (30) arm deduped into the
+                // W4-g26 arm above — same `:10029-10032` grant.)
                 // `:11001-11004`: the Sunflower buff's movement tier —
                 // `moveSpeed += 0.1f; moveSpeed *= 1.1f` per slot.
                 146 => {
@@ -6652,9 +8351,11 @@ impl Player {
                 // above through `potions::apply_mana_sickness_arm` — the i37
                 // canonical fn; the i19 inline copy was identical maths
                 // (`0.25 * buffTime / 300`) and dropped, an unreachable arm.)
-                // The WellFed tiers (`:11931-11969`): the per-slot stat adds —
-                // the defense rows (26 +2, 206 +3, 207 +4) since M3-EQUIP-5;
-                // the minion halves wait for M4-MINION.
+                // The WellFed tiers (`:11931-11978`): the per-slot stat adds.
+                // W4-f12 sweep gaps 6-8 — the minion halves (minionDamage +
+                // minionKB per tier) were missing ("waits for M4-MINION" —
+                // the fields are live now); the C# order is melee, magic,
+                // ranged, minion, move, pick.
                 26 => {
                     self.well_fed = true;
                     // `:11934`: `statDefense += 2`.
@@ -6666,6 +8367,8 @@ impl Player {
                     self.ranged_damage += 0.05;
                     self.magic_crit += 2;
                     self.magic_damage += 0.05;
+                    self.minion_damage += 0.05; // `:11942`
+                    self.minion_kb += 0.5; // `:11943`
                     self.move_speed += 0.2;
                     self.pick_speed_bonus += 0.05;
                 }
@@ -6680,6 +8383,8 @@ impl Player {
                     self.ranged_damage += 0.075;
                     self.magic_crit += 3;
                     self.magic_damage += 0.075;
+                    self.minion_damage += 0.075; // `:11958`
+                    self.minion_kb += 0.75; // `:11959`
                     self.move_speed += 0.3;
                     self.pick_speed_bonus += 0.1;
                 }
@@ -6694,6 +8399,8 @@ impl Player {
                     self.ranged_damage += 0.1;
                     self.magic_crit += 4;
                     self.magic_damage += 0.1;
+                    self.minion_damage += 0.1; // `:11974`
+                    self.minion_kb += 1.0; // `:11975` `minionKB++`
                     self.move_speed += 0.4;
                     self.pick_speed_bonus += 0.15;
                 }
@@ -6726,14 +8433,24 @@ impl Player {
                         };
                     }
                 }
-                // `:9920-9924`: buff 383 (Kite) — the tier is
-                // `buffTime / 10800` clamped 0..3, assigned only while the
-                // buff is active: the C# never zeroes the field, so it stays
-                // stale after expiry (no `kiteLuckLevel = 0` exists).
+                // `:9914-9926`: buff 383 (Kite) — W4-f12 sweep gap 10: the
+                // stat block (moveSpeed +0.15, pickSpeed −0.1, tileSpeed /
+                // wallSpeed +0.15, `:9916-9919`) was missing. The tier is
+                // `buffTime / 10800` clamped 0..3, assigned only ON CHANGE
+                // with `luckNeedsSync = true` (`:9920-9925`); the C# never
+                // zeroes the field, so it stays stale after expiry (no
+                // `kiteLuckLevel = 0` exists).
                 383 => {
+                    self.move_speed += 0.15; // `:9916`
+                    self.pick_speed_bonus += 0.1; // `:9917` (−pickSpeed)
+                    self.tile_speed_bonus += 0.15; // `:9918`
+                    self.wall_speed_bonus += 0.15; // `:9919`
                     if let Some(i) = self.buffs.find_buff_index(383) {
-                        self.luck_state.kite_luck_level =
-                            (self.buffs.buff_time[i] / 10_800).clamp(0, 3) as u8;
+                        let b = (self.buffs.buff_time[i] / 10_800).clamp(0, 3) as u8;
+                        if b != self.luck_state.kite_luck_level {
+                            self.luck_state.kite_luck_level = b; // `:9923`
+                            self.luck_needs_sync = true; // `:9924`
+                        }
                     }
                 }
                 // S1-P-i41 — `UpdateBuffs`' mount sub-arms (`Player.cs:9885-
@@ -6760,6 +8477,17 @@ impl Player {
                     self.lava_vision = true;
                     self.fire_walk = true;
                 }
+                // W4-d70 — `:10212-10213`: the Inferno Potion (116) flag
+                // arm. The `AddLight` half (`:10215`) is already fed by
+                // `player_lights.rs::player_buff_lights` (same RGB, no
+                // double-feed); the NPC/PvP damage scan (`:10216-10264`)
+                // rides the buff-wiring lane (R15), not the screen-effect
+                // draw this flag gates (`Main.DrawInfernoRings`).
+                116 => self.inferno = true,
+                // W4-d70 — `:11882-11885`: the Paladin's Shield buff (43)
+                // grants `defendedByPaladin` (the `DrawPaladinsShield`
+                // second loop's gate, `Main.cs:57224`).
+                43 => self.defended_by_paladin = true,
                 _ => {}
             }
         }
@@ -6792,6 +8520,14 @@ impl Player {
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
+        // W4-d51 — the boot-run visual clears (`Player.cs:18315-18316`,
+        // `:18354`, `:18600-18603`); the equip pass re-grants per slot.
+        self.vanity_rocket_boots = 0;
+        self.sail_dash = false;
+        self.cold_dash = false;
+        self.desert_dash = false;
+        self.fairy_boots = false;
+        self.hellfire_treads = false;
         self.no_knockback = false;
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
@@ -6811,12 +8547,18 @@ impl Player {
         self.empress_brooch = false;
         // `:25598`: `accMerman = false` clears after the derivation read it;
         // the shell grants below re-arm it. `merman` itself is re-derived
-        // per tick (`:25577-25589`), not reset here.
+        // per tick (`:25577-25589`), not reset here. (`wolfAcc`'s `:25605`
+        // clear rides the world_sim seam AFTER the wiring's buff scan — the
+        // C# order: the `:11895` gate reads the live grant first.)
         self.acc_merman = false;
         self.accessory_life_regen = 0;
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // `Player.cs:25634` — `UpdateSunScorch` right after `UpdateEquips`
+        // (W4-d70 DOC-SWEEP): the vampire seed's exposure probe + the
+        // sun-scorch counter the lens flare / HeatDistortion read.
+        self.update_sun_scorch(world, raining);
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -6891,10 +8633,43 @@ impl Player {
         // `set_player_caps` form (the same three C# `if`s, same order,
         // same values). i27's `add_player_scalars` twin was dropped at the
         // gate (it would double the adds); the seam stays available.
+        // W4-g89 — `UpdatePermanentBoosters`' Aegis Fruit row
+        // (`Player.cs:12853-12856`, called at `:25644` right after
+        // `UpdateEquips` `:25633`): the permanent +4 defense. The C# adds
+        // 4, NOT 5 — the row is verbatim. Ahead of the Gummy Worm row
+        // (the C#'s own order inside the booster pass) and ahead of the
+        // `:25927` defense floor below.
+        if self.used_aegis_fruit {
+            self.stat_defense += 4;
+        }
         // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
         // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
         if self.used_gummy_worm {
             self.fishing_skill += 3;
+        }
+        // W4-g89c — `UpdatePermanentBoosters`' Ambrosia row
+        // (`Player.cs:12861-12866`): `pickSpeed -= 0.05f; tileSpeed +=
+        // 0.05f; wallSpeed += 0.05f` — the LAST row of the pass (the C#'s
+        // own order: fruit, worm, ambrosia). The port's signed
+        // `pick_speed_bonus` mirrors `1 - pickSpeed` (`pick_speed()`
+        // reads `1 - bonus`), so the C# SUBTRACT maps to an ADD here;
+        // the tile/wall bonuses are the C# fields minus their 1f base
+        // (`tile_speed_multiplier`'s `1/(1+bonus)` fold).
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
+        }
+        // W4-g90 lane 7 — `UpdatePermanentBoosters`' Ambrosia row
+        // (`Player.cs:12861-12866`, the pass's LAST row): pickSpeed −0.05
+        // (the port's signed `pick_speed_bonus` +0.05, `pick_speed()`
+        // reads `1 - bonus`), tileSpeed/wallSpeed +0.05. The three adds
+        // re-run every tick after `ResetEffects` resets the speeds
+        // (`:18531-18532`, `:18690`) — the flag is permanent, the stats are not.
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
         }
         // S1-P-i35 — `UpdateEquips`' post-loop bobber row
         // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
@@ -6912,6 +8687,26 @@ impl Player {
         // per-tick clear runs after this update). The C# call sits after
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
+        // W4-d80 — `Player.UpdateSunScorch` (`Player.cs:25634` →
+        // `:28626-28670`): the burning flag's granter
+        // (`VampireSeedSunlightExposure` `:28632`) runs BEFORE the counter
+        // tick (`:28634`), exactly the C#'s order. The sizzle play/follow
+        // half rides the sim drain (`update_sizzle_audio`). The C# call sits
+        // just before `UpdateArmorSets` (`:25685`), matching this position.
+        // The `whoAmI != Main.myPlayer` gate (`:28628`) folds to the port's
+        // single local player. The post-120-counter scorch effects
+        // (`:28635-28669`: the buff-immunity wipe, the OnFire/Dazed/Cursed
+        // grants, the mount dismount, the wings/rocket strip) are the
+        // vampire seed's damage half — deferred with the seed's combat wave.
+        self.vampire_seed_sunlight_exposure(world, raining);
+        self.tick_sun_scorch();
+        // W4-f30 — the Molten `buffImmune[24]` gate reads the sun-scorch
+        // flag, which the port's `UpdateSunScorch` seam arms AFTER this
+        // fold (the world_sim call site, `Player.cs:25634` precedes
+        // `:25685` in the C# but the port's equipment phase is one call).
+        // Capture the pre-Molten immunity so the seam can restore it on a
+        // warm-up burn tick (flag set, counter < 120 — no `Array.Clear`).
+        self.fire_immune_pre_molten = self.buffs.buff_immune[24];
         crate::armor_sets::apply_armor_set_bonuses(self);
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
@@ -6946,6 +8741,20 @@ impl Player {
             && !self.lava_wet
             && (!self.mount.is_active() || !self.mount.is_considered_a_slime_mount());
         self.merman = self.acc_merman && merman_wet;
+        // `Player.cs:25601-25604`: the Werewolf night grant — a Moon Charm /
+        // Moon Shell / Celestial Shell (`wolfAcc`) while NOT merman, at
+        // night, without the buff already riding, re-arms buff 28 for 60
+        // ticks (the `TimeLeftDoesNotDecrease` set keeps it pinned). The
+        // `wereWolf` term reads THIS tick's `UpdateBuffs` result (the buff
+        // scan ran earlier in the tick, `:25566` < `:25601`). (W4-f12 gap 3
+        // — the d71 werewolf EFFECT landed; this is the accessory GRANT lane
+        // it was waiting on.) The `:25605` `wolfAcc = false` clear runs at
+        // the world_sim seam AFTER the wiring's buff scan reads the flag
+        // (the C# order: the `:11895` gate reads the live grant, THEN the
+        // `:25605` clear) — clearing it here would starve the wiring.
+        if self.wolf_acc && !self.merman && !world.day_time && !self.were_wolf {
+            self.buffs.add_buff(28, 60);
+        }
         // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
         // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
         // the C# never lets `statDefense` go negative (a negative value would
@@ -7028,6 +8837,20 @@ impl Player {
         if self.auras.sunflower {
             self.buffs.add_buff(146, 2);
         }
+        // `Player.cs:25556-25559`: `!behindBackWall && ZoneSandstorm` →
+        // `AddBuff(194, 2)` — the Strong Wind indicator. The gate rides the
+        // scan snapshot (`Auras::sandstorm_wind`); the effect arm above
+        // reads the PREVIOUS tick's grant, exactly like the source
+        // (W4-c40).
+        if self.auras.sandstorm_wind {
+            self.buffs.add_buff(194, 2);
+        }
+        // `Player.cs:25552-25555` — `if (Player.SceneMetrics.hasBanner)
+        // AddBuff(147, 2)`: the MonsterBanner indicator refreshes from the
+        // scan's strength-enabled banner flag (the M2-BUFF-8 tile-91 arm).
+        if self.auras.banner {
+            self.buffs.add_buff(147, 2);
+        }
         // `Player.Update` → `UpdateLuck` (`Player.cs:25645` → `:29041`): the
         // decay timers + `RecalculateLuck`, after the buff effects derived
         // stinky/luckPotion/kiteLuckLevel above and before movement.
@@ -7087,6 +8910,36 @@ impl Player {
             } else {
                 self.run_slowdown *= 0.1;
             }
+        }
+        // `Player.cs:26573-26577`: the Sandstorm-in-a-Bottle dash's run
+        // boost — `sandStorm → runAcceleration ×1.5, maxRunSpeed ×2`.
+        // W4-c40: reuses the LANDED i12 `sand_storm` field (the `:19837`
+        // direction lock and the `:36298` leg pose already read it); the
+        // jump-setter (`:21919`) rides the bottle's jump chain. The
+        // sibling extra-jump boosts (`:26578-26612`) and the carpet
+        // (`:26613-26617`) have no port block yet — out of scope, the
+        // sandStorm arm keeps its C# slot right after the floor chain.
+        if self.sand_storm {
+            self.run_acceleration *= 1.5;
+            self.max_run_speed *= 2.0;
+        }
+        // W4-g66 final (f3 keep-one input) — `Player.cs:26613-26617`: the
+        // Magic Carpet glide boosts the run (acceleration ×1.25, max ×1.5).
+        // The C# reads `carpetFrame != -1` BEFORE `CarpetMovement`
+        // (`:26766`) rewrites it this tick — the PREVIOUS tick's glide
+        // state, like the floor flags above. The performing-jump run
+        // boosts (`:26573-26612`) stay the extra-jump lane's.
+        if self.carpet_frame != -1 {
+            self.run_acceleration *= 1.25;
+            self.max_run_speed *= 1.5;
+        }
+        // W4-f42 — `Player.cs:26573-26577`: the sandstorm dash's run boost
+        // reads the PREVIOUS tick's `sandStorm` (the per-tick clear at
+        // `:26743` runs later in the tick; `DoubleJumpVisuals` `:26767`
+        // re-sets it while the jump performs). Acceleration ×1.5, top ×2.
+        if self.sand_storm {
+            self.run_acceleration *= 1.5;
+            self.max_run_speed *= 2.0;
         }
         // `Player.cs:25256-25287`: the hover latches — a down press edge
         // latches hover-down, an up edge swaps to hover-up; landing clears
@@ -7192,7 +9045,10 @@ impl Player {
             // it — the two never fire together (no cart row in the mount
             // table; M2-MOUNT-3 bridges them).
             self.update_mount(world, raining, wind);
-            self.horizontal_movement(input);
+            // W4-c40: the Strong Wind push reads `Main.windSpeedCurrent`
+            // (`Player.cs:19797`); the calm default (no wind model) is 0.0.
+            let wind_speed_current = wind.map(|w| w.speed_current).unwrap_or(0.0);
+            self.horizontal_movement(input, wind_speed_current);
         }
         // `Player.cs:19637-19641` (`UpdateJumpHeight`'s tail): Dazed (160)
         // divides the jump statics — height /5, speed /2 — after the sticky
@@ -7219,6 +9075,21 @@ impl Player {
 
         let jump_pressed = input.jump && !self.jump_held;
         self.jump_held = input.jump;
+        // `Player.cs:26743`: the movement block clears `sandStorm` right
+        // before `JumpMovement` (`:26744`); `DoubleJumpVisuals` (`:26767`,
+        // the sim seam below, after the grapple pull) re-arms it while the
+        // bottle jump ascends. W4-c40 — the i12 field's live lifecycle
+        // (the run boost above and the `:19837` lock read the PREVIOUS
+        // tick's state, like the C#'s `:26573`/`:19837` order).
+        if !grappling {
+            self.sand_storm = false;
+        }
+        // W4-f42 — `Player.cs:26743`: the per-tick `sandStorm = false`
+        // ahead of `JumpMovement`; `DoubleJumpVisuals` (`:26767`, wired
+        // after the flight section below) re-sets it while the sandstorm
+        // jump performs, so the flag stands exactly one tick per ascent
+        // tick — the run boost above read the PREVIOUS tick's value.
+        self.sand_storm = false;
         // `:21024` clears the latch at the END of the held block, so the
         // jump branches read the PREVIOUS tick's latch — capture it first.
         let released = self.release_jump;
@@ -7301,6 +9172,25 @@ impl Player {
                     }
                     self.vy = -self.jump_speed;
                     self.jump = (self.jump_height as f32 * j.hold_multiplier()) as i32;
+                    // W4-d51 — the dust snapshot, taken AFTER the velocity
+                    // write (`Player.cs:20816`/`:20847`/...): the dust sites
+                    // read `base.velocity` at this moment. `height` is the
+                    // gravDir-1 fold of the arms' `num` (gravDir == -1 → 0,
+                    // no gravity flip in the port); `center()` is
+                    // `base.Center` for the mount rings. Sandstorm / Blizzard
+                    // play no dust (`:20787-20806`) — the drain skips them.
+                    let (cx, cy) = self.center();
+                    self.pending_jump_dust = Some(JumpDust {
+                        kind: j,
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        vx: self.vx,
+                        vy: self.vy,
+                        cx,
+                        cy,
+                    });
                 } else {
                     // `:20746`: the Cloud fall-through consumed even when
                     // unarmed — the can flag clears all the same.
@@ -7320,10 +9210,99 @@ impl Player {
         // `Player.cs:26061-26099`: the stale option clear while airborne.
         self.clear_stale_jumps();
 
+        // `Player.cs:26753-26756`: `jump == 0` cancels the jump visual
+        // effects (`CancelAllJumpVisualEffects(includeDownDash: false)`,
+        // `:36649-36662` — the seven bottle flags). The port's single
+        // `performing_jump` slot models the family: the hold-boost counter
+        // exhausted ends the performing state, so the DoubleJumpVisuals
+        // seam below stops re-arming `sandStorm` (W4-c40). The DownDash
+        // flag is a separate port predicate (`is_performing_down_dash`),
+        // untouched — the C# excludes it here too.
+        if self.jump == 0 && !grappling {
+            self.performing_jump = None;
+        }
+
+        // W4-g66 gap-fill — `Player.cs:26100-26115`: the carpet latch — no
+        // carpet clears it; a rest tick (vy 0 or sliding) re-arms the launch
+        // and zeroes the glide state. The gravDir −1 clear folds away.
+        if !self.carpet {
+            self.can_carpet = false;
+            self.carpet_frame = -1;
+        } else if self.vy == 0.0 || self.sliding {
+            self.can_carpet = true;
+            self.carpet_time = 0;
+            self.carpet_frame = -1;
+            self.carpet_frame_counter = 0.0;
+        }
+
+        // `Player.cs:26753-26756`: the hold-boost spent cancels the performing
+        // flag (`CancelAllJumpVisualEffects(includeDownDash: false)`,
+        // `:36649-36662`) BEFORE `DashMovement`/`DoubleJumpVisuals` read it.
+        // The C# clear list (`:36655-36661`) covers Cloud..Santank only — the
+        // Goat/Basilisk flags survive (they have no `DoubleJumpVisuals` arm).
+        if self.jump == 0
+            && matches!(
+                self.performing_jump,
+                Some(
+                    ExtraJump::Cloud
+                        | ExtraJump::Sandstorm
+                        | ExtraJump::Blizzard
+                        | ExtraJump::Fart
+                        | ExtraJump::Sail
+                        | ExtraJump::Unicorn
+                        | ExtraJump::Santank
+                )
+            )
+        {
+            self.performing_jump = None;
+        }
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
         // velocity-only dash pass before the collision step.
         if !grappling {
             self.dash_movement(world, input);
+        }
+        // W4-g66 gap-fill — `Player.cs:26758-26766`: the wall-cling trio
+        // between `DashMovement` and `DoubleJumpVisuals` — the Rat mount
+        // climbs, everything else wallslides, then the Magic Carpet glide.
+        // The C# block is `grappling[0] == -1 && !tongued` (`:26494`); the
+        // f3 wall batch's tongue gate lands here (the keep-one input).
+        // The type-31 wall dust queues one snapshot; the drain replays it
+        // on `UpdatePlayers` (`player_trail_dust::drain_wall_dust`).
+        if !grappling && !self.tongued {
+            if self.mount.is_active() && self.mount.kind() == 55 {
+                self.wall_climb_movement(world, gravity);
+            } else {
+                self.wallslide_movement(world, gravity);
+            }
+            self.carpet_movement(gravity);
+        }
+        // W4-g66 — `Player.DoubleJumpVisuals` (`Player.cs:26767`,
+        // `:21892-22021`): the per-tick trail while an extra jump performs
+        // (the one-shot start burst is W4-d51's `pending_jump_dust`). The
+        // C# gates each arm on `isPerformingJump_X && hasJumpOption_X &&
+        // !canJumpAgain_X` + the ascent sign (the Sail widens to `vy < 1`);
+        // the port's `performing_jump` + option tables carry the same state.
+        if !grappling {
+            if let Some(j) = self.performing_jump {
+                let ascent = if j == ExtraJump::Sail { self.vy < 1.0 } else { self.vy < 0.0 };
+                if self.has_jump_options[j.index()] && !self.can_jump_again[j.index()] && ascent {
+                    // `:21919`: the Sandstorm arm re-arms the hover flag (the
+                    // wings/mount clear at `:26768-26771` runs right after).
+                    if j == ExtraJump::Sandstorm {
+                        self.sand_storm = true;
+                    }
+                    self.pending_double_jump_dust = Some(DoubleJumpDust {
+                        kind: j,
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        vx: self.vx,
+                        vy: self.vy,
+                        jump: self.jump,
+                    });
+                }
+            }
         }
         // `Player.cs:26799-26812`: while CCed the mount dismounts and the
         // plain gravity takes over (the port's CC input zeroing and the
@@ -7340,6 +9319,25 @@ impl Player {
             self.grapple_movement(world, grapple, input, item_in_use);
         }
 
+        // `Player.DoubleJumpVisuals` (`Player.cs:21892-21990`, called at
+        // `:26767` after `CarpetMovement`): the sim half of the Sandstorm
+        // arm — `isPerformingJump_Sandstorm && hasJumpOption_Sandstorm &&
+        // !canJumpAgain_Sandstorm && velocity.Y < 0` re-arms `sandStorm`
+        // every ascending tick (`:21905-21919`; gravDir is 1 in the port).
+        // The dust-124 trail + the 220-222 gore (`:21913-21925`, a
+        // `Main.rand.Next(220,223)` draw on the miscCounter%3 edge) are
+        // VISUAL seams — f42/dust lanes own them; this seam draws nothing
+        // (the gore draw stays with the visual port, RNG slot recorded in
+        // ANALYSIS W4-c40). W4-c40 — the i12 field's live setter.
+        if !grappling
+            && self.performing_jump == Some(ExtraJump::Sandstorm)
+            && self.has_jump_options[ExtraJump::Sandstorm.index()]
+            && !self.can_jump_again[ExtraJump::Sandstorm.index()]
+            && self.vy < 0.0
+        {
+            self.sand_storm = true;
+        }
+
         // `Player.cs:27654`: `StickyMovement()` right after `GrappleMovement()`
         // and before `CheckDrowning()` (`:27655`). `flag` is the cart above
         // 5 px/tick (`:22918-22921`), `flag2` the gel/slime mounts (`:22922-22925`).
@@ -7351,6 +9349,14 @@ impl Player {
             || self.mount.kind() == 61;
         self.sticky_movement(world, sticky_cart, sticky_half, rng);
 
+        // W4-f42 — `Player.cs:26767`: `DoubleJumpVisuals()` runs after
+        // `CarpetMovement` (no port carpet) and BEFORE the wings/mount
+        // sandStorm clear — the port's clear rides `flight_section`'s head
+        // (`:26768-26771`, the next statement here), so the call sits ahead
+        // of it: the visual sets the flag, a wing/mount tick clears it
+        // again, exactly the C# order. The wet/webbed/grapple bypass keeps
+        // the flight section (and its clear) out — the flag stands.
+        self.double_jump_visuals();
         // The flight section (`Player.cs:26744-27360`): the wings and the
         // rocket boots REPLACE the gravity integration on the ticks they run.
         // The plain gravity below applies only in the fallback. The wet ticks
@@ -7489,6 +9495,7 @@ impl Player {
                     body_h,
                     10,
                     pre_rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
             if flags.bouncy_bumper() {
@@ -7536,6 +9543,10 @@ impl Player {
         // tell "moved onto the plate" from "stands on it".
         self.old_x = self.x;
         self.old_y = self.y;
+        // W4-g66 — `Player.cs:28073-28081`: `falling` reads the PRE-integration
+        // velocity outside ±gravity; `FloorVisuals(falling)` below spends it
+        // on the landing burst's 20-puff arm.
+        let falling = self.vy > gravity || self.vy < -gravity;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -7644,9 +9655,10 @@ impl Player {
         }
 
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
-        // the movement block reads the flags next tick (one tick stale).
+        // the movement block reads the flags next tick (one tick stale). The
+        // `falling` snapshot (`:28073-28081`) was taken pre-integration above.
         if self.vy == 0.0 && !grappling {
-            self.floor_visuals(world);
+            self.floor_visuals(world, falling);
         }
 
         self.update_survival(world, rng);
@@ -7676,10 +9688,59 @@ impl Player {
 
         self.update_frames(world);
 
+        // `Player.cs:28300-28303`: the grapple clear + the advanced-shadow
+        // trail's per-tick push, at the update's tail (the port's grapple
+        // registration rebuilds on the projectile pass — the clear's own
+        // seam; the shadow push lands here, after the movement).
+        self.update_advanced_shadows();
+
         // `Player.cs:27618-27635`: the release flags recompute at the end of
         // the tick — the double-tap reads the press edges against them.
         self.right_prev = input.right;
         self.left_prev = input.left;
+    }
+
+    /// W4-f6 wiring — `Mount.UpdateFrame` (`Mount.cs:3581`) with the
+    /// per-type extras head (`:3637-4142`): the Basilisk charge fold runs
+    /// player-side (`Player.basiliskCharge` survives the dismount), the
+    /// extras queue their dusts onto `pending_mount_dust` (the drain draws
+    /// on `UpdatePlayers`), and the possibly re-routed state feeds the
+    /// frame-table switch. The five `PlayerFrame` call sites
+    /// (`Player.cs:36200-36216` + `TryLanding` `Mount.cs:4566`) route here.
+    fn mount_update_frame(&mut self, state: i32) {
+        // `:4083-4093` — the charge fold (case 14 only; the emitter reads
+        // the POST-fold value).
+        if self.mount.kind() == 14 {
+            self.basilisk_charge = crate::mount_dust::basilisk_charge_update(
+                self.basilisk_charge,
+                self.vx,
+                self.mount.run_speed(),
+            );
+        }
+        let (cx, cy) = self.center();
+        let snap = crate::mount_dust::MountFrameSnap {
+            pos_x: self.x,
+            pos_y: self.y,
+            center_x: cx,
+            center_y: cy,
+            width: self.width,
+            height: self.height,
+            facing: self.facing,
+            basilisk_charge: self.basilisk_charge,
+        };
+        let mut reqs = Vec::new();
+        let state = self.mount.frame_extras(state, self.vx, self.vy, &snap, &mut reqs);
+        self.pending_mount_dust.extend(reqs);
+        self.mount.update_frame(
+            state,
+            self.vx,
+            self.vy,
+            self.just_jumped,
+            self.control_down,
+            self.sliding,
+            self.dash,
+            self.dash_delay,
+        );
     }
 
     /// `Mount.TryLanding` (`Mount.cs:4562-4568`): while the frame state is
@@ -7716,17 +9777,7 @@ impl Player {
             } else {
                 crate::mount::FRAME_RUNNING
             };
-            self.mount
-                .update_frame(
-                    state,
-                    self.vx,
-                    self.vy,
-                    self.just_jumped,
-                    self.control_down,
-                    self.sliding,
-                    self.dash,
-                    self.dash_delay,
-                );
+            self.mount_update_frame(state);
         }
     }
 
@@ -7765,6 +9816,65 @@ impl Player {
                 self.swim_time = 0;
             }
         }
+        // W4-g66 — `:35933`: `socialShadowRocketBoots = false` clears before
+        // the walking-effect grants (`:36030`/`:36039`/`:36043` re-arm it on
+        // the full Shadow sets). The rocket-flame snapshot read it earlier
+        // this tick (`:26918` precedes `PlayerFrame` `:28286`) — one tick
+        // stale, exactly as the source.
+        self.social_shadow_rocket_boots = false;
+        // W4-g66 — `:35992-35994`: CCed (or a paused game) skips the whole
+        // walking-effect block. The port's single player has no pause here.
+        if !self.cced() {
+            // `:35765-35767`: the effective armor trio — the social slots
+            // (10..12) override the functional ones when worn. The port's
+            // item rows carry the texture ids (`head/body/leg_slot`).
+            let slot_id = |slot: usize, f: fn(&crate::itemdata::ItemDef) -> i16| {
+                crate::registry::get(self.equipped[slot]).map_or(-1i32, |d| f(d) as i32)
+            };
+            let mut head = slot_id(0, |d| d.head_slot);
+            let mut body = slot_id(1, |d| d.body_slot);
+            let mut legs = slot_id(2, |d| d.leg_slot);
+            let social_head = slot_id(10, |d| d.head_slot);
+            let social_body = slot_id(11, |d| d.body_slot);
+            let social_legs = slot_id(12, |d| d.leg_slot);
+            if social_head >= 0 {
+                head = social_head;
+            }
+            if social_body >= 0 {
+                body = social_body;
+            }
+            if social_legs >= 0 {
+                legs = social_legs;
+            }
+            // `:36028-36043`: the full Shadow sets (5/5/5, 76/49/45,
+            // 74/48/44) turn the tier-1 rocket flame dark.
+            if (head == 5 && body == 5 && legs == 5)
+                || (head == 76 && body == 49 && legs == 45)
+                || (head == 74 && body == 48 && legs == 44)
+            {
+                self.social_shadow_rocket_boots = true;
+            }
+            let (cx, cy) = self.center();
+            self.pending_walk_effect_dust = Some(WalkEffectDust {
+                head,
+                body,
+                legs,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+                cx,
+                cy,
+                gfx_off_y: self.gfx_off_y,
+                walking: self.vx.abs() + self.vy.abs() > 1.0,
+                rocket_frame: self.rocket_frame,
+                misc_counter: self.misc_counter,
+                wings: self.wings_logic,
+                stealth: self.stealth,
+            });
+        }
         // `:36148-36240`: `flag7` — the mount owns the leg frames unless it is
         // one of the 57-60 roller-skate mounts
         // (`MountID.Sets.DoesNotOverrideLegFrames`, `MountID.cs:39`). Every
@@ -7787,45 +9897,32 @@ impl Player {
                     && self.control_jump
                     && !self.mount.can_hover()
                 {
+                    // W4-g66 — `:36164-36198`: the Rudolph (mount 0) flight
+                    // trail — two 1/4 type-64 puffs at the facing-mirrored
+                    // foot boxes, drained on `UpdatePlayers`
+                    // (`player_trail_dust::drain_rudolph_trail`).
+                    if self.mount.kind() == 0 {
+                        self.pending_rudolph_trail = Some(RudolphTrail {
+                            x: self.x,
+                            y: self.y,
+                            width: self.width,
+                            height: self.height,
+                            vx: self.vx,
+                            vy: self.vy,
+                            facing: self.facing,
+                        });
+                    }
                     // `:36199-36200`: `TryBeginningFlight` only fires for
-                    // hover mounts (`Mount.cs:4537` — none in this table);
-                    // the Rudolph dust trail is a visual seam.
-                    self.mount.update_frame(
-                        crate::mount::FRAME_FLYING,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    // hover mounts (`Mount.cs:4537` — none in this table).
+                    self.mount_update_frame(crate::mount::FRAME_FLYING);
                     self.try_landing(world);
                 } else if self.wet {
                     // `:36203-36206`: the swim state (the ground mounts'
                     // swim sets reuse their in-air frames).
-                    self.mount.update_frame(
-                        crate::mount::FRAME_SWIMMING,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    self.mount_update_frame(crate::mount::FRAME_SWIMMING);
                 } else {
                     // `:36207-36212`: plain air.
-                    self.mount.update_frame(
-                        crate::mount::FRAME_IN_AIR,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    self.mount_update_frame(crate::mount::FRAME_IN_AIR);
                     self.try_landing(world);
                 }
             } else {
@@ -7839,16 +9936,7 @@ impl Player {
                 } else {
                     crate::mount::FRAME_RUNNING
                 };
-                self.mount.update_frame(
-                    state,
-                    self.vx,
-                    self.vy,
-                    self.just_jumped,
-                    self.control_down,
-                    self.sliding,
-                    self.dash,
-                    self.dash_delay,
-                );
+                self.mount_update_frame(state);
             }
         }
 
@@ -8368,11 +10456,15 @@ impl Player {
 
     /// `Player.ShouldDrawWingsThatAreAlwaysAnimated` (`Player.cs:30737-30748`):
     /// the three always-animated wing sets keep the rest legs while airborne.
+    /// W4-g66 gap-fill: the mount gate is `mount.CanUseWings` (`:30743`) —
+    /// `Mount.cs:570-580` returns TRUE when `_data == null || !_active`;
+    /// the previous `data().is_some_and` folded it to false and starved
+    /// the Rainbow/Spooky arms unmounted.
     fn should_draw_wings_that_are_always_animated(&self) -> bool {
         self.vy != 0.0
             && !self.grappling_active
             && (!self.wet || !self.should_float_in_water())
-            && self.mount.data().is_some_and(|d| d.can_use_wings)
+            && self.mount.can_use_wings()
     }
 
     /// `Player.ShouldFloatInWater` (`Player.cs:3872-3885`): `canFloatInWater`
@@ -8662,9 +10754,11 @@ impl Player {
             DotDeath::Burned
         };
         // The generic lane's kill reason — `:19361-19384`. The C# tests
-        // `vampireBurningInSunlight` (22) first; nothing grants it in the
-        // port, so the chain starts at poisoned/venom (9).
-        let death_generic = if self.holding(20) || self.holding(70) {
+        // `vampireBurningInSunlight` (22) first (W4-f30: the sun-scorch
+        // granter landed, `sun_scorch.rs`), then poisoned/venom (9).
+        let death_generic = if self.vampire_burning_in_sunlight {
+            DotDeath::VampireSunlight
+        } else if self.holding(20) || self.holding(70) {
             DotDeath::Poison
         } else if self.holding(144) {
             DotDeath::Electrified
@@ -8705,18 +10799,96 @@ impl Player {
         }
     }
 
-    /// `Player.SpawnFastRunParticles`' sound half (`Player.cs:20205-20216`):
-    /// the fast-run footstep — `runSoundDelay == 0` and grounded plays
-    /// `hermesStepSound` at `position` (the top-left, NOT the centre) and
-    /// re-arms the cooldown (`:20212-20215`). The caller drains the queue
-    /// through `Audio::play_step_sound`. The dust trails (`:20217-20300`:
-    /// the wings-3/rocket-6, sailDash, shoe-dye arms) are visual seams.
+    /// W4-f42 — `Player.DoubleJumpVisuals`' sandstorm arm
+    /// (`Player.cs:21905-21926`), called from `Player.Update` at `:26767`
+    /// (after `CarpetMovement`, before the wings/mount sandStorm clear at
+    /// `:26768-26771`). While the sandstorm jump is performing + ascending
+    /// (`gravDir` is always 1 in the port): three type-124 dusts at
+    /// `(position.X, position.Y + height/2)` with `velocity * 0.3`, alpha
+    /// 150, scale `num4 = (jump/75 + 1)/2`, then `velocity *= 0.5*num4` and
+    /// `fadeIn = 1.5*num4`; `sandStorm = true`; and on `miscCounter % 3 == 0`
+    /// a 220-222 gore at `(position.X + width/2 - 18, position.Y + height/2)`
+    /// with `-velocity`, scale `num4`, then `velocity = velocity*0.3*num4`,
+    /// alpha 100. The dust/gore bodies ride the drain (the caller owns the
+    /// pools); the geometry + the `sandStorm` set land here.
+    fn double_jump_visuals(&mut self) {
+        let i = ExtraJump::Sandstorm.index();
+        // `:21905` — performing && has && !canJumpAgain && ascending.
+        if self.performing_jump != Some(ExtraJump::Sandstorm)
+            || !self.has_jump_options[i]
+            || self.can_jump_again[i]
+            || self.vy >= 0.0
+        {
+            return;
+        }
+        // `:21907-21911` — num3 = height (gravDir 1).
+        let num3 = self.height;
+        // `:21912` — num4 = (jump / 75f + 1f) / 2f.
+        let num4 = (self.jump as f32 / 75.0 + 1.0) / 2.0;
+        let dust_pos = Vec2::new(self.x, self.y + num3 / 2.0);
+        let dust_vel = Vec2::new(self.vx, self.vy) * 0.3;
+        // `:21919` — the flag the run boost + the leg pose + the direction
+        // lock all read.
+        self.sand_storm = true;
+        // `:21920-21925` — the every-3rd-tick gore.
+        let gore = if self.misc_counter % 3 == 0 {
+            Some((
+                Vec2::new(self.x + self.width / 2.0 - 18.0, self.y + num3 / 2.0),
+                -Vec2::new(self.vx, self.vy),
+            ))
+        } else {
+            None
+        };
+        self.pending_sandstorm_jump = Some(SandstormJumpVisual {
+            dust_pos,
+            dust_vel,
+            num4,
+            gore,
+            vel: Vec2::new(self.vx, self.vy),
+        });
+    }
+
+    /// `Player.SpawnFastRunParticles` (`Player.cs:20205-20299`): the fast-run
+    /// footstep — `runSoundDelay == 0` and grounded plays `hermesStepSound` at
+    /// `position` (the top-left, NOT the centre) and re-arms the cooldown
+    /// (`:20212-20215`). The caller drains the queue through
+    /// `Audio::play_step_sound`. W4-d51: the dust trail (`:20217-20298`) queues
+    /// one arm snapshot per call — the else-if chain in source order; the
+    /// drain (`player_dust::drain_fast_run`) replays it after the sound.
     fn spawn_fast_run_particles(&mut self) {
         if self.run_sound_delay == 0 && self.vy == 0.0 {
             let (sound_type, style, cooldown) = self.hermes_step_sound;
             self.pending_step_sound = Some((sound_type, style, self.x, self.y));
             self.run_sound_delay = cooldown;
         }
+        // `:20217-20298`: the arm picker. `wings` is the look id — the port's
+        // `wings_logic` (same field, the wing grant's note); the gravDir == -1
+        // foot-offset fold (`:20207-20211`) collapses to 0 (no gravity flip).
+        let arm = if self.wings_logic == 3 || self.vanity_rocket_boots == 6 {
+            FastRunArm::WingsRocket
+        } else if self.sail_dash {
+            FastRunArm::Sail
+        } else if self.desert_dash {
+            FastRunArm::Desert
+        } else if self.cold_dash {
+            FastRunArm::Cold
+        } else if self.fairy_boots {
+            FastRunArm::Fairy
+        } else if self.hellfire_treads {
+            FastRunArm::Hellfire
+        } else {
+            FastRunArm::Plain
+        };
+        self.pending_fast_run_dust = Some(FastRunDust {
+            arm,
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            vx: self.vx,
+            vy: self.vy,
+            gfx_off_y: self.gfx_off_y,
+        });
     }
 
     /// `Player.HorizontalMovement` (`Player.cs:19772-20088`): the primary
@@ -8763,7 +10935,11 @@ impl Player {
             let mut mid = 0.96f32;
             let mut cooldown = 20;
             match self.dash {
+                // `:21259-21270`: the Tabi trail (W4-d51 — the dust drain
+                // replays before the decay below, as the source does).
+                1 => self.queue_dash_dust(true),
                 // `:21271-21285`: the shield decays faster, cooldowns longer.
+                // Its dust loop is `for (m = 0; m < 0; …)` — dead, no queue.
                 2 => {
                     fast = 0.985;
                     mid = 0.94;
@@ -8771,12 +10947,15 @@ impl Player {
                 }
                 // `:21286-21307`: the Solar dash rides higher and longer.
                 3 => {
+                    self.queue_dash_dust(true);
                     threshold = 14.0;
                     fast = 0.985;
                     mid = 0.94;
                 }
+                // `:21328-21343`: the Vortex trail (no constant changes).
+                5 => self.queue_dash_dust(true),
                 // `:21346-21351`: a direction flip or losing the capability
-                // ends a mount dash at 30 with a damp.
+                // ends a mount dash at 30 with a damp — no dust that tick.
                 6 => {
                     if self.vx.signum() as i32 != self.facing || self.dash_type != 6 {
                         self.dash_delay = 30;
@@ -8784,6 +10963,8 @@ impl Player {
                         self.dash_time = 0;
                         return;
                     }
+                    // `:21354-21371`: the Chillet light + trail.
+                    self.queue_dash_dust(true);
                 }
                 _ => {}
             }
@@ -8836,6 +11017,15 @@ impl Player {
         self.dash_delay = -1;
         if self.dash == 2 {
             self.eoc_dash = 15;
+        }
+        // W4-d51 — the dash-start dust bursts (`:21419-21426` Tabi,
+        // `:21474-21484` Solar), queued after the velocity/flag writes exactly
+        // as the source reads them. The dash-2 start loop is dead (`m < 0`),
+        // the dash-6 start plays no dust; the Vortex start (`:21500-21510`)
+        // lands with the dashType-5 launch port (the speed match above has no
+        // 5 arm yet). The Tabi gore pair (`:21427-21434`) is W4-d55's.
+        if self.dash == 1 || self.dash == 3 {
+            self.queue_dash_dust(false);
         }
     }
 
@@ -9070,12 +11260,247 @@ impl Player {
         self.buffs.clear_buff(bt);
     }
 
+    /// W4-f6 wiring — `Mount.DoSpawnDust`'s request (`Mount.cs:6371`): the
+    /// resolved box `r` (`:6439-6459`) computed at the C# read moment (the
+    /// GROWN hitbox for a mount, the pre-restore box for a dismount —
+    /// `Dismount` calls it BEFORE `Reset` + the 20×42 restore, `:6167-6176`).
+    /// The emitter itself drains on the `UpdatePlayers` stream via
+    /// `mount_dust::drain_mount_dust` (the `pending_sticky_dust` convention).
+    fn queue_spawn_dust(&mut self, kind: i32, is_dismounting: bool) {
+        let Some(row) = crate::mount::mount_data(kind) else {
+            return;
+        };
+        let pos = Vec2::new(self.x, self.y);
+        let vel = Vec2::new(self.vx, self.vy);
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        // `:6439` — the default box: `(int)position.X - 20, (int)position.Y,
+        // width + 40, height` (the truncating int casts).
+        let mut r_top_left = Vec2::new(pos.x as i32 as f32 - 20.0, pos.y as i32 as f32);
+        let mut r_w = self.width as i32 + 40;
+        let mut r_h = self.height as i32;
+        // `:6440-6452` — the Bat (56) / Pixie (61) box: the dismount reads
+        // the Bottom-anchored DefaultSize (20×42), the mount the live
+        // hitbox; both inflate (10, 10).
+        if kind == 56 || kind == 61 {
+            if is_dismounting {
+                let bottom = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                r_top_left = Vec2::new(
+                    bottom.x as i32 as f32 - (WIDTH as i32 / 2) as f32,
+                    bottom.y as i32 as f32 - HEIGHT as i32 as f32,
+                );
+                r_w = WIDTH as i32;
+                r_h = HEIGHT as i32;
+            } else {
+                r_top_left = Vec2::new(pos.x as i32 as f32, pos.y as i32 as f32);
+                r_w = self.width as i32;
+                r_h = self.height as i32;
+            }
+            r_top_left -= Vec2::new(10.0, 10.0);
+            r_w += 20;
+            r_h += 20;
+        }
+        // `:6453-6459` — the roller skates' bottom strip.
+        if kind > 0 && crate::mount::is_roller_skates(kind) {
+            let num3 = self.width as i32 / 2;
+            r_top_left = Vec2::new(
+                cx as i32 as f32 - num3 as f32 - 10.0,
+                (self.y + self.height) as i32 as f32 - 10.0,
+            );
+            r_w = (num3 + 20).max(1);
+            r_h = 10;
+        }
+        self.pending_mount_dust
+            .push(crate::mount_dust::MountDustRequest::Spawn {
+                kind,
+                spawn_dust: row.spawn_dust,
+                spawn_dust_no_gravity: row.spawn_dust_no_gravity,
+                // `MountID.Sets.Cart` (`:6462`) — the full 27-cart set.
+                is_cart: crate::mount::is_cart(kind),
+                is_dismounting,
+                pos,
+                width: self.width as i32,
+                height: self.height as i32,
+                r_top_left,
+                r_w,
+                r_h,
+                vel,
+                center,
+            });
+    }
+
+    /// Takes the tick's queued mount dust events (`Mount.DoSpawnDust` /
+    /// `DoFailedDismountDust` / the `UpdateFrame` + `UpdateEffects` arms) —
+    /// the caller owns `Main.dust` + the `UpdatePlayers` stream (the
+    /// `take_sticky_dust` convention).
+    pub(crate) fn take_mount_dust(&mut self) -> Vec<crate::mount_dust::MountDustRequest> {
+        std::mem::take(&mut self.pending_mount_dust)
+    }
+
+    /// W4-f6 wiring — `Mount.UpdateEffects`' dust-bearing switch arms
+    /// (`Mount.cs:4804-5165`): the gem carts 25-31 (`:4858-4878`), the Witch
+    /// Broom 23 sparkle + trail (`:4815-4856`), the Drill-mount 11 trail
+    /// (`:5016-5078`), the Lava-cart 22 trail (`:5080-5114`), the
+    /// steam/exhaust/confetti carts 36/32/34 (`:5124-5132`) and the Pixie 61
+    /// tail (`:5142-5165`). The caller folds the `RotatedRelativePoint`
+    /// anchors (`player.rs::rotated_relative_point`); the emitters draw on
+    /// `UpdatePlayers` via the drain. `Directions` = `(facing, 1)` (no
+    /// gravity flip). The `Lighting.AddLight` heads + the shader writes are
+    /// the documented drops (mount_dust.rs module doc).
+    fn queue_mount_effect_dust(&mut self) {
+        use crate::mount_dust::MountDustRequest as Req;
+        let kind = self.mount.kind();
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        let vel = Vec2::new(self.vx, self.vy);
+        let dir = Vec2::new(self.facing as f32, 1.0);
+        match kind {
+            // `:4858-4878` — the gem carts (the per-cart dust id).
+            25..=31 => {
+                let dust_type = match kind {
+                    25 => 86, 26 => 87, 27 => 88, 28 => 89,
+                    29 => 90, 30 => 91, _ => 262,
+                };
+                // `:4702-4703` — Center + (0,10)*Directions, rotated.
+                let spawn_point = self.rotated_relative_point(center + Vec2::new(0.0, 10.0) * dir, 0);
+                self.pending_mount_dust.push(Req::GemSparkle { spawn_point, dust_type });
+            }
+            // `:4815-4856` — the Witch Broom sparkle + trail.
+            23 => {
+                // `:4817-4819` — the trinket point (the RNG-free swing).
+                let rot = crate::mount_dust::witch_broom_trinket_rotation(
+                    self.vx, self.misc_counter, self.wind_for_visuals, self.wind_in_place,
+                );
+                let offset = crate::mount_dust::witch_broom_trinket_origin_offset(self.facing);
+                let rv = Vec2::new(
+                    (rot + std::f32::consts::FRAC_PI_2).cos(),
+                    (rot + std::f32::consts::FRAC_PI_2).sin(),
+                );
+                let trinket_point = self.rotated_relative_point(center + offset + rv * 11.0, 0);
+                self.pending_mount_dust.push(Req::BroomSparkle { trinket_point });
+                // `:4834-4838` — the trail anchors. The pos4 jitter NextFloat
+                // draws inside the emitter (BEFORE the gate, :4835) and the
+                // drain folds it through `rotated_relative_point`; the caller
+                // passes the un-jittered base + the rotated pos5.
+                let pos4_base = center + Vec2::new(18.0, 12.0);
+                let pos5 = self.rotated_relative_point(center + Vec2::new(52.0 * self.facing as f32, -6.0), 0);
+                self.pending_mount_dust.push(Req::BroomTrail {
+                    pos4_base, pos5, facing: self.facing,
+                    full_rotation: self.full_rotation, vel_len: vel.length(),
+                });
+            }
+            // `:5016-5078` — the Drill-mount trail (the vector6/7 folds).
+            11 => {
+                let (anchor_now, anchor_old) = self.drill_trail_anchors();
+                self.pending_mount_dust.push(Req::DrillTrail { center, anchor_now, anchor_old });
+            }
+            // `:5080-5114` — the Lava-cart trail (the shadow-offset anchors).
+            22 => {
+                let (value, anchor, delta) = self.lava_trail_anchors();
+                self.pending_mount_dust.push(Req::LavaTrail { value, anchor, delta, vel_len: vel.length() });
+            }
+            // `:5124-5132` — the steam/exhaust/confetti carts.
+            36 => {
+                let spawn_point = self.rotated_relative_point(center + Vec2::new(-10.0, -4.0) * dir, 0);
+                self.pending_mount_dust.push(Req::SteamPuff {
+                    spawn_point, dust_type: 303, vx: self.vx, frame: self.mount.frame(),
+                });
+            }
+            32 => {
+                self.pending_mount_dust.push(Req::ExhaustSmoke {
+                    center, facing: self.facing, vel, dust_type: 31,
+                });
+            }
+            34 => {
+                self.pending_mount_dust.push(Req::ConfettiBurst { center, facing: self.facing, vel });
+            }
+            // `:5142-5165` — the Pixie tail.
+            61 => {
+                self.pending_mount_dust.push(Req::PixieTail {
+                    center, vel, time_for_visuals: self.time_for_visuals,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    /// W4-f6 wiring — the Drill-mount trail anchors (`Mount.cs:5035-5051`):
+    /// `vector6 = (num9*num8, -19).RotatedBy(fullRotation)`, `vector7` the
+    /// Lerp pair (scaled when `num8 == Sign(fullRotation)`), `vector8 =
+    /// Bottom + vector6 + vector7`, `vector9 = oldPosition + Size*(0.5,1) +
+    /// vector6 + vector7`. `num8 = Sign(vx)` (facing when 0), `num9 = -24`
+    /// (-22 when facing != num8, +1 when num8 == -1). RNG-free.
+    fn drill_trail_anchors(&self) -> (Vec2, Vec2) {
+        let sign_i = |v: f32| if v > 0.0 { 1 } else if v < 0.0 { -1 } else { 0 };
+        let mut num8 = sign_i(self.vx);
+        if num8 == 0 {
+            num8 = self.facing; // `:5021-5024`
+        }
+        let mut num9 = -24.0f32;
+        if self.facing != num8 {
+            num9 = -22.0; // `:5036-5039`
+        }
+        if num8 == -1 {
+            num9 += 1.0; // `:5040-5043`
+        }
+        let rot = self.full_rotation;
+        let vector6 = crate::bow_launch::rotated_by(Vec2::new(num9 * num8 as f32, -19.0), rot as f64);
+        // `:5045` — the Lerp pair, both rotated by fullRotation.
+        let t = rot / (std::f32::consts::PI / 4.0);
+        let mut vector7 = crate::bow_launch::rotated_by(
+            Vec2::new(
+                0.0 + (-8.0 - 0.0) * t,
+                0.0 + (2.0 - 0.0) * t.abs(),
+            ),
+            rot as f64,
+        );
+        // `:5046-5049` — the scale when num8 == Sign(fullRotation).
+        if num8 == sign_i(rot) {
+            vector7 *= 1.0 + (0.6 - 1.0) * t.abs();
+        }
+        let bottom = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+        let anchor_now = bottom + vector6 + vector7; // `:5050`
+        let anchor_old = Vec2::new(self.old_x, self.old_y)
+            + Vec2::new(self.width * 0.5, self.height)
+            + vector6 + vector7; // `:5051`
+        (anchor_now, anchor_old)
+    }
+
+    /// W4-f6 wiring — the Lava-cart trail anchors (`Mount.cs:5083-5093`):
+    /// `vector2 = Center + (20,10)*Directions`, `pos = vector2 + velocity`,
+    /// `pos2 = vector2 + (-1,-0.5)*Directions`, all folded through
+    /// `RotatedRelativePoint`; `value = shadowPos[2] - position + vector2`,
+    /// then `vector3 = pos - vector2` added to both `vector2` and `value`,
+    /// `vector4 = pos - pos2`. The port has no advanced shadows
+    /// (`shadowPos[2] == position`, the `ResetAdvancedShadows` default), so
+    /// `value` starts at `vector2`. RNG-free.
+    fn lava_trail_anchors(&self) -> (Vec2, Vec2, Vec2) {
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        let dir = Vec2::new(self.facing as f32, 1.0);
+        let vel = Vec2::new(self.vx, self.vy);
+        let vector2 = center + Vec2::new(20.0, 10.0) * dir;
+        let pos = vector2 + vel;
+        let pos2 = vector2 + Vec2::new(-1.0, -0.5) * dir;
+        let vector2 = self.rotated_relative_point(vector2, 0);
+        let pos = self.rotated_relative_point(pos, 0);
+        let pos2 = self.rotated_relative_point(pos2, 0);
+        // `:5089` — shadowPos[2] - position == 0 (no advanced shadows).
+        let mut value = vector2;
+        let vector3 = pos - vector2;
+        let anchor = vector2 + vector3; // `:5091`
+        value += vector3; // `:5092`
+        let delta = pos - pos2; // `:5093`
+        (value, anchor, delta)
+    }
+
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
     /// swap, the buff clear/add (`:6203`/`:6226`), the swap resets
     /// (`:6205-6213`), the pirate-ship dash reset (`:6228-6235`), the
     /// PlayerSize-delegate resize (`:6244-6263` — Rat 14×14, Bat 20×18,
     /// Pixie 8×14) or the bottom-anchored `42 + heightBoost` growth
     /// (`:6264-6277`), and the Chillet sound queue (`:6283-6286`).
+    /// W4-f6: the `DoSpawnDust` queue (`:6300`) runs after the growth.
     pub fn set_mount(&mut self, m: i32, wet: bool) -> bool {
         let Some(equip) = self.mount.set_mount(m, wet) else {
             return false;
@@ -9132,6 +11557,9 @@ impl Player {
             let (cx, cy) = self.center();
             self.pending_chillet_sound = Some((cx, cy));
         }
+        // `:6300` — `DoSpawnDust(mountedPlayer, isDismounting: false)` after
+        // `FinalizeMountData`, on the GROWN hitbox (W4-f6 wiring).
+        self.queue_spawn_dust(m, false);
         true
     }
 
@@ -9146,9 +11574,10 @@ impl Player {
     /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
     /// (`:6150`), the transformation mounts' `noItems` restore (`:6152-6155`),
     /// the cart flip/boost clears (`:6156-6160`), the full-rotation reset
-    /// (`:6161-6162`) and the 20×42 hitbox restore (`:6176-6193`).
-    /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
-    /// system yet). The petting stop (`:6163-6166`) has no port counterpart.
+    /// (`:6161-6162`), the `DoSpawnDust` queue (`:6167-6170`, W4-f6 — BEFORE
+    /// the state clears, on the still-mounted hitbox) and the 20×42 hitbox
+    /// restore (`:6176-6193`). The petting stop (`:6163-6166`) has no port
+    /// counterpart.
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
         // `:6148` — `bool cart = this.Cart` is read BEFORE the state clears
         // (`Mount.Cart` = `Minecart && _active`, `Mount.cs:530-540`).
@@ -9158,10 +11587,17 @@ impl Player {
                 .data()
                 .is_some_and(|d| d.minecart);
         let was_type = self.mount.kind();
+        if !self.mount.is_active() {
+            return false; // `:6144-6147`
+        }
+        // `:6167-6170` — `DoSpawnDust(isDismounting: true)` runs while the
+        // mount data is still live (`Reset` is `:6171`), on the mounted box.
+        if !ignore_effect {
+            self.queue_spawn_dust(was_type, true);
+        }
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
-        let _ = ignore_effect;
         self.clear_buff_type(buff);
         // `:6152-6155` — the Rat (55) / Bat (56) transformation mounts free
         // the item lock unless Cursed keeps it.
@@ -9382,10 +11818,28 @@ impl Player {
             self.failed_no_space_count += 1;
             if self.failed_no_space_count < 3 {
                 // `:6057` — `PlaySound(0, (int)position.X, (int)position.Y)`;
-                // the case-0 Dig draws ride the drain's stream. The
-                // `DoFailedDismountDust` (`:6058`) is a visual seam (no dust
-                // request channel for mounts yet — ANALYSIS).
+                // the case-0 Dig draws ride the drain's stream.
                 self.pending_no_space_sound = Some((self.x.trunc(), self.y.trunc()));
+                // `:6058` — `DoFailedDismountDust(this, FailedNoSpaceCount *
+                // 20)` (W4-f6 wiring): the hitbox inflates (10, 10)
+                // (`Mount.cs:6335-6336`); the emitter drains on the tick's
+                // `UpdatePlayers` stream AFTER the tink's case-0 draws.
+                if let Some(row) = crate::mount::mount_data(self.mount.kind()) {
+                    let (cx, cy) = self.center();
+                    self.pending_mount_dust.push(
+                        crate::mount_dust::MountDustRequest::FailedDismount {
+                            kind: self.mount.kind(),
+                            spawn_dust: row.spawn_dust,
+                            spawn_dust_no_gravity: row.spawn_dust_no_gravity,
+                            hitbox_top_left: Vec2::new(self.x - 10.0, self.y - 10.0),
+                            hitbox_w: self.width as i32 + 20,
+                            hitbox_h: self.height as i32 + 20,
+                            dust_amount: self.failed_no_space_count * 20,
+                            vel: Vec2::new(self.vx, self.vy),
+                            center: Vec2::new(cx, cy),
+                        },
+                    );
+                }
                 return None;
             }
             // `:6061-6066`: the third strike forces the dismount
@@ -9483,7 +11937,69 @@ impl Player {
     /// `oldPosition` sync. The camera/effect/map halves are render seams.
     /// The velocity is NOT zeroed here — the C# scan zeroes it before the
     /// call (`TeleportHelpers.cs:12`) and `Shellphone_Spawn` after (`:56175`).
+    ///
+    /// W4-g11: the full `Teleport` shape queues the effect pair
+    /// (`pending_teleport_effect`) — the Entry `TeleportEffect` at the OLD
+    /// box BEFORE the move (`:37444`), the Exit at the NEW box AFTER
+    /// (`:37489`), the style-4 portal-colour hand-off (`:37433-37436`/
+    /// `:37475-37481`) and the `teleportTime = 1`/`teleportStyle` grants
+    /// (`:37490-37491`). The drain (`world_sim/player.rs`) replays it through
+    /// `main_dust::player_teleport` on the `UpdatePlayers` stream — the
+    /// `pending_force_clear` convention (the effects need `&mut App`).
     pub fn teleport_style(&mut self, new_x: f32, new_y: f32, style: i32) {
+        self.teleport_style_with_extra(new_x, new_y, style, 0);
+    }
+
+    /// The `extraInfo`-carrying form (`Player.cs:37414`'s third parameter) —
+    /// the portal pair's colour index (`Style == 4`, `:37433-37436`); every
+    /// other style passes 0 (the C# default). The effect pair queues and the
+    /// movement core runs inline; the drain replays the effects around the
+    /// (already-applied) move — see [`Self::queue_teleport_effect`] for the
+    /// deferred form the wiring pads use.
+    pub fn teleport_style_with_extra(&mut self, new_x: f32, new_y: f32, style: i32, extra_info: i32) {
+        self.queue_teleport_effect(new_x, new_y, style, extra_info);
+        self.teleport_move_core(new_x, new_y, style);
+        // Union-exec (research/116 gap 6): the grants moved to the replay
+        // (`main_dust::player_teleport`, the C#-position write at
+        // `:37490-37491`) — the inline duplicate is retired. The queue
+        // captured the PRE-move mult, so the drain's effect counts are
+        // unchanged; the drain runs the same tick (nothing probes
+        // `teleportTime` between the move and the drain).
+    }
+
+    /// W4-g11 — queue the `Player.Teleport` effect pair WITHOUT moving: the
+    /// caller defers the move to the replay (`main_dust::player_teleport`),
+    /// which runs Entry-at-OLD, the move, Exit-at-NEW in the C# order. The
+    /// wiring pads use this (the replay needs `&mut App`, which the wiring
+    /// closure's disjoint captures cannot hand out — the `party_credits`
+    /// post-step drain convention).
+    pub(crate) fn queue_teleport_effect(&mut self, new_x: f32, new_y: f32, style: i32, extra_info: i32) {
+        // `:37432-37436` — the Entry effect reads the OLD portal colour.
+        let mut extra_info2 = if style == 4 { self.last_portal_color_index } else { 0 };
+        // `:37437-37441` — the pylon hop latches the tile style and reads
+        // it back (research/116 gap 3).
+        if style == 9 {
+            self.last_teleport_pylon_style_used = extra_info;
+            extra_info2 = self.last_teleport_pylon_style_used;
+        }
+        // `:37442` — `MathHelper.Clamp(1 - teleportTime*0.99, 0.01, 1)`.
+        let mult = (1.0 - self.teleport_time * 0.99).clamp(0.01, 1.0);
+        // `:37444`/`:37489` — the effect pair rides the drain (the Entry at
+        // the OLD box, the move, the Exit at the NEW box).
+        self.pending_teleport_effect =
+            Some((self.x, self.y, new_x, new_y, style, extra_info2, extra_info, mult));
+        // `:37475-37481` — the post-move portal hand-off: the Exit effect
+        // reads the NEW colour (`extraInfo`), the flag/gravity writes are the
+        // portal physics lane's (cited skip — no portal caller yet).
+        if style == 4 {
+            self.last_portal_color_index = extra_info;
+        }
+    }
+
+    /// The movement core shared by `teleport_style_with_extra` and the
+    /// effect drain (which must NOT re-queue): `:37420-37431` + `:37446`/
+    /// `:37455`/`:37488`.
+    pub(crate) fn teleport_move_core(&mut self, new_x: f32, new_y: f32, style: i32) {
         // `:37420-37423` — every style but 10 removes the hooks.
         if style != 10 {
             self.release_grappling_hooks = true;
@@ -9507,6 +12023,9 @@ impl Player {
         self.fall_start = (new_y / TILE_PX) as i32;
         self.prev_x = new_x;
         self.prev_y = new_y;
+        // `:37483` — `ResetAdvancedShadows`: the teleport clears the trail
+        // (the lens flare's shadow offset must not read the pre-jump path).
+        self.reset_advanced_shadows();
     }
 
     /// `Player.Shellphone_Spawn` (`Player.cs:56164-56181`): the world-spawn
@@ -9586,11 +12105,17 @@ impl Player {
         // `Mount.cs:5137-5145` (`UpdateEffects` cases 55/56/61): the
         // transformation mounts lock item use every tick
         // (`IsAllowedToHoldItems = false` rides the draw's
-        // `mounted_blocks_hold`; the Pixie's dust tail `:5146-5160` is the
-        // visual seam).
+        // `mounted_blocks_hold`).
         if matches!(self.mount.kind(), 55 | 56 | 61) {
             self.no_items = true;
         }
+        // W4-f6 wiring — the `UpdateEffects` dust arms (the switch at
+        // `Mount.cs:4804`), queued at their case positions: the gem carts
+        // (:4858-4878) run BEFORE the stat arms below, the steam/exhaust/
+        // confetti (:5124-5132) + the Pixie tail (:5142-5165) after them.
+        // The emitters drain on `UpdatePlayers` (the `pending_mount_dust`
+        // channel); the caller folds the `RotatedRelativePoint` anchors.
+        self.queue_mount_effect_dust();
         // `Mount.cs:4949-4981`: the ground-dash mounts arm their extra jumps
         // (the PHYS-8 priority chain consumes them) and pin knockback off
         // above the charge speed. The Santank's (46) jump rides the
@@ -9656,6 +12181,240 @@ impl Player {
         // M2-MOUNT-4) have no rows in this table yet; the ability counters
         // still tick (`:26663`).
         self.mount.ability_recovery();
+    }
+
+    /// W4-g66 gap-fill — `WorldGen.SolidTile(i, j)`
+    /// (`WorldGen.cs:70111-70132`), the `grapple.rs` shape: active, fully
+    /// solid, no solid-top/half-brick/slope/inactive; out of world false.
+    fn wall_solid_tile(world: &World, x: i32, y: i32) -> bool {
+        let Some(t) = world.tile(x, y) else {
+            return false;
+        };
+        t.active()
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            && !t.half_brick()
+            && t.slope() == 0
+            && !t.inactive()
+    }
+
+    /// W4-g66 gap-fill — the shared wall-dust probe + queue
+    /// (`Player.cs:21652-21671` et al.): `!flag || !SolidTile((Center +
+    /// (0, vy).SafeNormalize(Zero) * 10).ToTileCoordinates())` gates ONE
+    /// type-31 8×8 puff at the slide-side edge; the drain replays it.
+    /// `rat` is the WallClimb `flag` (the scale halver); the position
+    /// snapshot is taken AFTER the arm's velocity write (the C# reads
+    /// `base.velocity.Y` inside the probe post-write).
+    fn queue_wall_dust(&mut self, world: &World, rat: bool) {
+        if rat {
+            let v = Vec2::new(0.0, self.vy);
+            let dir = if v == Vec2::ZERO { Vec2::ZERO } else { v.normalize() };
+            let p = Vec2::new(self.x + self.width * 0.5, self.y + self.height * 0.5)
+                + dir * 10.0;
+            // `ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)X >> 4`.
+            if Self::wall_solid_tile(world, p.x as i32 >> 4, p.y as i32 >> 4) {
+                return;
+            }
+        }
+        self.pending_wall_dust = Some(WallDust {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            slide_dir: self.slide_dir,
+            rat,
+        });
+    }
+
+    /// W4-g66 gap-fill — `Player.WallClimbMovement`
+    /// (`Player.cs:21607-21748`): the Rat mount's (55) wall climb — the
+    /// up/down keys drive vy −3/+4 with the type-31 dust, otherwise the
+    /// cling holds vy at −gravity+1e-5. `gravDir` folds to +1 (the port
+    /// convention); `controlUp` is the port's own field.
+    fn wall_climb_movement(&mut self, world: &World, gravity: f32) {
+        // `:21609-21613`: only the Rat mount climbs.
+        let rat = self.mount.is_active() && self.mount.kind() == 55;
+        if !rat {
+            return;
+        }
+        self.sliding = false;
+        // `:21615-21618`: pressing INTO the wall.
+        if self.slide_dir == 0
+            || ((!self.control_left || self.slide_dir != -1)
+                && (!self.control_right || self.slide_dir != 1))
+        {
+            return;
+        }
+        // `:21619-21634`: the wall probe — the tile beside the slide-side
+        // edge at the foot row.
+        let mut num = self.x;
+        if self.slide_dir == 1 {
+            num += self.width;
+        }
+        num += self.slide_dir as f32;
+        let num2 = self.y + self.height + 1.0;
+        let wall = Self::wall_solid_tile(world, (num / 16.0) as i32, (num2 / 16.0) as i32);
+        // `:21635-21636`: flag3 = up (gravDir +1), flag4 = down.
+        let flag3 = self.control_up;
+        let flag4 = self.control_down;
+        if self.spiked_boots >= 2 {
+            // `:21639-21642`: the wall + (a direction key or falling).
+            if !wall || (!(flag3 | flag4) && self.vy <= 0.0) {
+                return;
+            }
+            // `:21643-21647`: the Featherfall-scaled cling gravity.
+            let num3 = if self.slow_fall {
+                if self.trying_to_hover_up() { gravity / 10.0 } else { gravity / 3.0 }
+            } else {
+                gravity
+            };
+            self.fall_start = (self.y / 16.0) as i32;
+            if flag3 {
+                // `:21651-21671`: the climb-up arm.
+                self.vy = -3.0;
+                self.queue_wall_dust(world, rat);
+            } else if flag4 {
+                // `:21675-21695`: the slide-down arm.
+                self.vy = 4.0;
+                self.queue_wall_dust(world, rat);
+            } else {
+                // `:21701-21704`: the cling.
+                self.vy = -num3 + 1e-5;
+            }
+            self.sliding = true;
+        } else {
+            // `:21709-21712`: the claws-only arm — a direction key or
+            // falling past 0.5.
+            if !wall || (!(flag3 | flag4) && self.vy <= 0.5) {
+                return;
+            }
+            self.fall_start = (self.y / 16.0) as i32;
+            // `:21714-21725`: up −2, down +4, cling +0.5.
+            if self.control_up {
+                self.vy = -2.0;
+            } else if self.control_down {
+                self.vy = 4.0;
+            } else {
+                self.vy = 0.5;
+            }
+            self.sliding = true;
+            // `:21727-21746`: the dust (the same probe).
+            self.queue_wall_dust(world, rat);
+        }
+    }
+
+    /// W4-g66 gap-fill — `Player.WallslideMovement`
+    /// (`Player.cs:21750-21840`): the spiked boots' wall slide (no mount).
+    /// Level 2+ clings at −gravity+1e-5 (down key: +4 with dust); level 1
+    /// slides at +0.5 (down: +4) while falling past 0.5, always with dust.
+    fn wallslide_movement(&mut self, world: &World, gravity: f32) {
+        self.sliding = false;
+        // `:21753-21756`: boots + pressing into the wall, no mount.
+        if self.slide_dir == 0
+            || self.spiked_boots <= 0
+            || self.mount.is_active()
+            || ((!self.control_left || self.slide_dir != -1)
+                && (!self.control_right || self.slide_dir != 1))
+        {
+            return;
+        }
+        // `:21757-21774`: the TWO-tile wall probe (foot row + the one above).
+        let mut num = self.x;
+        if self.slide_dir == 1 {
+            num += self.width;
+        }
+        num += self.slide_dir as f32;
+        let num2 = self.y + self.height + 1.0;
+        let tx = (num / 16.0) as i32;
+        let ty = (num2 / 16.0) as i32;
+        let wall = Self::wall_solid_tile(world, tx, ty)
+            && Self::wall_solid_tile(world, tx, ty - 1);
+        if self.spiked_boots >= 2 {
+            // `:21777-21780`: the wall + falling (vy > 0).
+            if !wall || self.vy <= 0.0 {
+                return;
+            }
+            let num3 = if self.slow_fall {
+                if self.trying_to_hover_up() { gravity / 10.0 } else { gravity / 3.0 }
+            } else {
+                gravity
+            };
+            self.fall_start = (self.y / 16.0) as i32;
+            if self.control_down {
+                // `:21789-21802`: the fast slide + dust (no rat halver).
+                self.vy = 4.0;
+                self.queue_wall_dust(world, false);
+            } else {
+                // `:21808-21811`: the cling.
+                self.vy = -num3 + 1e-5;
+            }
+            self.sliding = true;
+        } else if wall && self.vy > 0.5 {
+            // `:21814-21838`: the level-1 slide.
+            self.fall_start = (self.y / 16.0) as i32;
+            self.vy = if self.control_down { 4.0 } else { 0.5 };
+            self.sliding = true;
+            self.queue_wall_dust(world, false);
+        }
+    }
+
+    /// W4-g66 gap-fill — `Player.CarpetMovement` (`Player.cs:21842-21890`):
+    /// the Magic Carpet glide — no dust, the vy pin + the frame machine.
+    /// The nine `canJumpAgain_X` gates read the port's table (the C# flags
+    /// are false unless an extra jump is mid-flight).
+    fn carpet_movement(&mut self, gravity: f32) {
+        let mut glide = false;
+        // `:26745-26752` runs BEFORE the carpet in the C# tick (the port's
+        // zeroing lives at the flight-section head, later): an unequipped
+        // tier's budget reads as zero here. KEEP-ONE (the f3 wall batch
+        // reads the raw fields — this synthesized zero-read is the
+        // C#-faithful form; ANALYSIS "the f3 wall/carpet keep-one").
+        let wing_time = if self.wings_logic == 0 { 0.0 } else { self.wing_time };
+        let rocket_time = if self.rocket_boots == 0 { 0 } else { self.rocket_time };
+        // `:21845`: the big gate.
+        if !self.grappling_active
+            && self.carpet
+            && !self.can_jump_again.iter().any(|&c| c)
+            && self.jump == 0
+            && self.vy != 0.0
+            && rocket_time == 0
+            && wing_time == 0.0
+            && !self.mount.is_active()
+        {
+            // `:21847-21851`: the launch consumes the latch.
+            if self.control_jump && self.can_carpet {
+                self.can_carpet = false;
+                self.carpet_time = 300;
+            }
+            // `:21852-21880`: the glide tick.
+            if self.carpet_time > 0 && self.control_jump {
+                self.fall_start = (self.y / 16.0) as i32;
+                glide = true;
+                self.carpet_time -= 1;
+                // `:21857-21861`: the vy pin at −(gravity + 1e-6).
+                if self.vy > -gravity {
+                    self.vy = -(gravity + 1e-6);
+                }
+                // `:21866-21879`: the frame machine.
+                self.carpet_frame_counter += 1.0 + (self.vx * 0.5).abs();
+                if self.carpet_frame_counter > 8.0 {
+                    self.carpet_frame_counter = 0.0;
+                    self.carpet_frame += 1;
+                }
+                if self.carpet_frame < 0 {
+                    self.carpet_frame = 0;
+                }
+                if self.carpet_frame > 5 {
+                    self.carpet_frame = 0;
+                }
+            }
+        }
+        // `:21882-21889`: the rest frame / the Featherfall cancel.
+        if !glide {
+            self.carpet_frame = -1;
+        } else {
+            self.slow_fall = false;
+        }
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
@@ -9724,31 +12483,51 @@ impl Player {
         // (the rocket thrust included). The visual-effect cancels are seams.
         if self.cced() {
             self.sand_storm = false;
+            // `:26811`: `CancelAllJumpVisualEffects()` — the CCed arm
+            // cancels the performing state too (W4-c40).
+            self.performing_jump = None;
             self.vy += gravity;
             if self.vy > fall_cap {
                 self.vy = fall_cap;
             }
             return true;
         }
-        // `:26815-26818`: the flying tick — `WingAirVisuals` (the per-wing
-        // dust rolls, `:30750-30963`) is a visual seam the port defers (its
-        // `Main.rand` draws would ride the UpdatePlayers stream; see
-        // docs/ANALYSIS.md "The wings/flight accessory block").
+        // `:26815-26818`: the flying tick — W4-g66: `WingAirVisuals`' dust
+        // rolls (`:30750-31013`) queue one snapshot BEFORE `WingMovement`
+        // shapes the velocity (the C# call order); the drain replays them on
+        // the `UpdatePlayers` stream (`player_wing_dust::drain_wing_air`).
         if flag19 {
+            self.pending_wing_air_dust = Some(WingAirDust {
+                wings: self.wings_logic,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+                facing: self.facing,
+            });
             self.wing_movement();
         }
         // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // W4-g66: the jetpack-4 / Bat-30 / Rainbow-45 / Spooky-39 dust arms
+        // run their own frame machines and queue their rolls here; the
+        // gap-fill adds the 33/38 appearance arms + the 47/49/50 machines.
+        self.wing_frame_visuals(flag19);
         // The port runs the DEFAULT arm's frame machine (`:30448-30526`:
         // num35 = 4, num36 = 4, num37 = 0, num38 = 0, num39 = 1 — the
         // wings-43/48/32 constants and the hover wings' own tables are visual
         // seams): counter > 4 wraps the frame 0..3, the airborne rest frame 1,
         // the grounded 0. The machine sits behind the C#'s exclusion gate
         // (`:26835`: wings 4/22/0/24/28/30/33/45 — the early-return arms own
-        // their frames). The `wingFrame == 3` flap edge (`:26835-26858`) runs
-        // AFTER the rocket→wing conversion below, in the C# order; wings
-        // 43/44 read frame 4 and 49 reads frame 5 — their frame tables are
-        // unported, so their flap arms stay silent (the documented deviation).
-        if !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 45) {
+        // their frames; W4-g66 adds 39, whose Spooky arm early-returns at
+        // `:30307`, and the gap-fill adds 38/47/49/50 — their `WingFrame`
+        // arms early-return at `:30446`/`:30021`/`:30092`/`:30163`). The
+        // `wingFrame == 3` flap edge (`:26835-26858`) runs AFTER the
+        // rocket→wing conversion below, in the C# order; wings 43/44 read
+        // frame 4 and 49 reads frame 5 — 49's machine landed with the
+        // gap-fill, 43/44's tables stay unported (the documented deviation).
+        if !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 38 | 39 | 45 | 47 | 49 | 50) {
             if flag19 || self.jump > 0 {
                 self.wing_frame_counter += 1;
                 if self.wing_frame_counter > 4 {
@@ -9761,6 +12540,12 @@ impl Player {
             } else if self.vy != 0.0 {
                 // `:30482-30484` — the airborne rest frame (num39 = 1).
                 self.wing_frame = 1;
+                // W4-g66 — `:30505-30521`: the Nebula-29 rest roll (1/5
+                // type-6 scale 2.4 + the 1/10 fadeIn 2), drained on
+                // `UpdatePlayers`.
+                if self.wings_logic == 29 {
+                    self.pending_wing_frame_dust = Some(WingFrameDust::base(29, self));
+                }
             } else {
                 // `:30523-30526` — the grounded rest frame (num38 = 0).
                 self.wing_frame = 0;
@@ -9780,9 +12565,16 @@ impl Player {
         }
         // `:26835-26858`: the flap-sound edge — `wingFrame == 3` plays
         // `SoundID.Item32` once through the `flapSound` latch; the façade
-        // draw rides the drain.
+        // draw rides the drain. W4-g66 gap-fill: wings 49 reads frame 5
+        // (`:26842-26845` — its machine landed); the 43/44 frame-4 edge
+        // stays with their unported tables.
         if flag19 && !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 45) {
-            if self.wing_frame == 3 {
+            let flap_edge = if self.wings_logic == 49 {
+                self.wing_frame == 5
+            } else {
+                self.wing_frame == 3
+            };
+            if flap_edge {
                 if !self.flap_sound {
                     if let Some(idx) = crate::soundid::SOUND_STYLES
                         .iter()
@@ -9823,22 +12615,60 @@ impl Player {
                     // `:26875-26882`: tier 1 cadence 30, tiers 2/3/4/5 15.
                     self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
                 }
-                // `:26884-26896`: the rocketSoundDelay cue (Item13/Item24 per
-                // vanity tier) is an audio seam — the port's rocket sound
-                // rides the S1-E-21 family, not this block.
+                // W4-g66 gap-fill — `:26884-26896`: the rocketSoundDelay cue
+                // — vanity tiers 1/5 play Item13 (cadence 30), tiers 2/3/4/6
+                // Item24 (cadence 15). The play queues on the
+                // `pending_flap_sound` convention (the drain's case-2 pitch
+                // draw rides `UpdatePlayers`).
+                if self.rocket_sound_delay <= 0 {
+                    if self.vanity_rocket_boots == 1 || self.vanity_rocket_boots == 5 {
+                        self.rocket_sound_delay = 30;
+                        self.queue_rocket_sound("Item13");
+                    } else if matches!(self.vanity_rocket_boots, 2 | 3 | 4 | 6) {
+                        self.rocket_sound_delay = 15;
+                        self.queue_rocket_sound("Item24");
+                    }
+                }
             } else {
                 self.can_rocket = false;
             }
         }
+        // W4-g66 gap-fill — `:26903-26906`: the cue cadence ticks every tick.
+        if self.rocket_sound_delay > 0 {
+            self.rocket_sound_delay -= 1;
+        }
         // `:26907-26910`: the flame cadence delay ticks every tick.
         if self.rocket_delay2 > 0 {
             self.rocket_delay2 -= 1;
+        }
+        // `:26911-26914`: a non-thrust tick clears the flame frame (the
+        // Molten/Ninja walking-fire arms gate on it, `:36067`/`:36087`).
+        if self.rocket_delay == 0 {
+            self.rocket_frame = false;
         }
         // `:26915-26955`: the rocket thrust — 10 ticks per fuel tick. The
         // fall origin refreshes via the caller's `:25379-25382` block (the
         // `rocketDelay > 0` term) — the port keeps its own refresh here so
         // the last thrust tick (delay decremented to 0) still resets it.
         if self.rocket_delay > 0 {
+            // `:26917-26918`: `rocketFrame = true` + `RocketBootVisuals()`
+            // run BEFORE the delay decrement and the thrust velocity writes
+            // — W4-g66 snapshots the pair here (`:29330-29458`); the drain
+            // replays it on `UpdatePlayers` (`drain_rocket_flames`).
+            self.rocket_frame = true;
+            self.pending_rocket_flame_dust = Some(RocketFlameDust {
+                c_shoe: self.c_shoe,
+                vanity: self.vanity_rocket_boots,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+                facing: self.facing,
+                fairy_boots: self.fairy_boots,
+                social_shadow: self.social_shadow_rocket_boots,
+            });
             self.rocket_delay -= 1;
             self.vy -= 0.1;
             if self.vy > 0.0 {
@@ -9936,15 +12766,33 @@ impl Player {
             }
             // `:27034-27350`: the wing glide — jump held while falling: the
             // fall origin refreshes per tick (`:27037`, no fall damage
-            // accrues), the per-wing glide dust rolls (`:27040-27337`) are
-            // visual seams, then gravity / 3 and the fall cap / 3 — the cap
-            // SKIPS while hover-down (`:27342`, the dampening owns the float).
+            // accrues), W4-g66 queues the per-wing glide dust rolls
+            // (`:27040-27315`, drained by `player_wing_dust::drain_wing_glide`),
+            // then gravity / 3 and the fall cap / 3 — the cap SKIPS while
+            // hover-down (`:27342`, the dampening owns the float).
             if self.wings_logic > 0
                 && self.control_jump
                 && self.vy > 0.0
                 && !self.is_performing_down_dash()
             {
                 self.fall_start = (self.y / TILE_PX) as i32;
+                self.pending_wing_glide_dust = Some(WingGlideDust {
+                    wings: self.wings_logic,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    vx: self.vx,
+                    vy: self.vy,
+                    facing: self.facing,
+                    always_animated: self.should_draw_wings_that_are_always_animated(),
+                });
+                // `:27149-27190`: the wings-4 glide flame's own frame machine
+                // and the `:27194-27333` per-wing frame pins — tick-side
+                // state, the dust rolls ride the drain. The wings-4 Item13
+                // cadence (`:27151-27156`) queues on `pending_rocket_sound`
+                // (gap-fill).
+                self.wing_glide_frames();
                 self.vy += gravity / 3.0;
                 if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                     self.vy = fall_cap / 3.0;
@@ -9954,6 +12802,344 @@ impl Player {
             return false;
         }
         true
+    }
+
+    /// W4-g66 — the `WingFrame` dust arms' frame machines
+    /// (`Player.cs:29471-30527`): the jetpack-4 flap flames (2 or 4 per tick,
+    /// the hover-up pick), the Bat-30 sparkle machine, the Rainbow-45 glow
+    /// cadence, the Spooky-39 shadow puffs and (gap-fill) the wings-33/38
+    /// appearance arms + the 47/49/50 `justSwitched` machines. The dust
+    /// rolls queue one snapshot; the drain replays them on `UpdatePlayers`.
+    /// The wings-4/45 Item13/Item24 cadences (`:29475-29480`, `:30167-30175`)
+    /// queue on the `pending_rocket_sound` seam (gap-fill).
+    fn wing_frame_visuals(&mut self, wing_flap: bool) {
+        match self.wings_logic {
+            // `:29471-29541`: the jetpack — flames while flapping or in the
+            // initial jump burst; the rest frame 3 otherwise.
+            4 => {
+                if wing_flap || self.jump > 0 {
+                    self.rocket_delay2 -= 1;
+                    if self.rocket_delay2 <= 0 {
+                        // `:29478`: the Item13 flap cue (gap-fill).
+                        self.queue_rocket_sound("Item13");
+                        self.rocket_delay2 = 60;
+                    }
+                    let mut b = WingFrameDust::base(4, self);
+                    b.hover_up = self.trying_to_hover_up();
+                    self.pending_wing_frame_dust = Some(b);
+                    // `:29526-29535`: counter > 4 wraps the frame 0..2.
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter > 4 {
+                        self.wing_frame += 1;
+                        self.wing_frame_counter = 0;
+                        if self.wing_frame >= 3 {
+                            self.wing_frame = 0;
+                        }
+                    }
+                } else if !self.control_jump || self.vy == 0.0 {
+                    self.wing_frame = 3;
+                }
+            }
+            // `:29772-29859`: the Bat wings — the 2-tick rows 1..3 machine
+            // while flapping / hold-jumping airborne; the sparkles ride the
+            // drain only when the machine ran (flag2).
+            30 => {
+                let mut ran = false;
+                if wing_flap || self.jump > 0 {
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= 6 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = 1 + self.wing_frame_counter / 2;
+                    ran = true;
+                } else if self.vy != 0.0 {
+                    if self.control_jump {
+                        self.wing_frame_counter += 1;
+                        if self.wing_frame_counter >= 6 {
+                            self.wing_frame_counter = 0;
+                        }
+                        self.wing_frame = 1 + self.wing_frame_counter / 2;
+                        ran = true;
+                    } else {
+                        self.wing_frame = 0;
+                    }
+                } else {
+                    self.wing_frame = 0;
+                }
+                if ran {
+                    self.pending_wing_frame_dust = Some(WingFrameDust::base(30, self));
+                }
+            }
+            // `:30165-30204`: the Rainbow wings — the always-animated gate,
+            // the Item24 cadence while the budget lasts, the 3/5-tick rows.
+            45 if self.should_draw_wings_that_are_always_animated() => {
+                if self.wing_time > 0.0 {
+                    self.rocket_delay2 -= 1;
+                    if self.rocket_delay2 <= 0 {
+                        // `:30172`: the Item24 flutter cue (gap-fill).
+                        self.queue_rocket_sound("Item24");
+                        self.rocket_delay2 = 30;
+                    }
+                }
+                if self.vy == 0.0 {
+                    self.wing_frame_counter = 0;
+                    self.wing_frame = 0;
+                } else {
+                    self.wing_frame_counter += 1;
+                    let num25 = if self.wing_time == 0.0 { 5 } else { 3 };
+                    if self.wing_frame_counter >= num25 * 6 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = self.wing_frame_counter / num25;
+                }
+                self.pending_wing_frame_dust = Some(WingFrameDust::base(45, self));
+            }
+            // `:30244-30307`: the Spooky wings — the 4/9/6-tick rows and the
+            // 0/1/5 shadow-puff count at the foot box.
+            39 if self.should_draw_wings_that_are_always_animated() => {
+                if wing_flap || self.jump > 0 {
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= 24 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = self.wing_frame_counter / 4;
+                } else if self.vy != 0.0 {
+                    let step = if self.control_jump { 9 } else { 6 };
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= step * 6 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = self.wing_frame_counter / step;
+                } else {
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= 24 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = self.wing_frame_counter / 4;
+                }
+                let mut count = if self.wing_frame == 3 { 5 } else { 1 };
+                if self.vy == 0.0 {
+                    count = 0;
+                }
+                let mut b = WingFrameDust::base(39, self);
+                b.count = count;
+                self.pending_wing_frame_dust = Some(b);
+            }
+            // W4-g66 gap-fill — `:30309-30360`: the Fairy wings (33) — the
+            // eye-colour HSL pair. No frame machine; the flap/jump/held-jump
+            // gate only, the drain reads `eye_color`.
+            33 => {
+                let flag9 = wing_flap
+                    || self.jump > 0
+                    || (self.vy != 0.0 && self.control_jump);
+                if flag9 {
+                    self.pending_wing_frame_dust = Some(WingFrameDust::base(33, self));
+                }
+            }
+            // W4-g66 gap-fill — `:30362-30446`: the Leaf wings (38) — the
+            // 8-tick rows 1..3 (frame 4 folds to 2) machine, the under-shirt
+            // orbit triples ride the drain when the machine ran (flag10).
+            38 => {
+                let mut ran = false;
+                if wing_flap || self.jump > 0 {
+                    self.wing_frame_counter += 1;
+                    if self.wing_frame_counter >= 32 {
+                        self.wing_frame_counter = 0;
+                    }
+                    self.wing_frame = 1 + self.wing_frame_counter / 8;
+                    if self.wing_frame == 4 {
+                        self.wing_frame = 2;
+                    }
+                    ran = true;
+                } else if self.vy != 0.0 {
+                    if self.control_jump {
+                        self.wing_frame_counter += 1;
+                        if self.wing_frame_counter >= 32 {
+                            self.wing_frame_counter = 0;
+                        }
+                        self.wing_frame = 1 + self.wing_frame_counter / 8;
+                        if self.wing_frame == 4 {
+                            self.wing_frame = 2;
+                        }
+                        ran = true;
+                    } else {
+                        self.wing_frame = 0;
+                    }
+                } else {
+                    self.wing_frame = 0;
+                }
+                if ran {
+                    self.pending_wing_frame_dust = Some(WingFrameDust::base(38, self));
+                }
+            }
+            // W4-g66 gap-fill — `:29952-30021`: the Chicken Bones wings (47)
+            // — the shared 2/3/4/6-tick machine (`justSwitched` at the row
+            // boundary), the burst + rest roll ride the drain.
+            47 => {
+                let b = self.dev_wing_frame_machine(wing_flap, 6, 10, 2, 3, 10);
+                self.pending_wing_frame_dust = Some(b);
+            }
+            // W4-g66 gap-fill — `:30023-30092`: the Heroicis wings (49) —
+            // the SAME machine as 47; the drain gates its rolls on the
+            // mounted-centre light sample.
+            49 => {
+                let b = self.dev_wing_frame_machine(wing_flap, 6, 10, 2, 3, 10);
+                self.pending_wing_frame_dust = Some(b);
+            }
+            // W4-g66 gap-fill — `:30094-30163`: the Kazzymodus wings (50) —
+            // the 5-tick falling step, the 1→3 / 2→1 / wrap-at-9 ladder.
+            50 => {
+                let b = self.dev_wing_frame_machine(wing_flap, 5, 9, 2, 2, 3);
+                self.pending_wing_frame_dust = Some(b);
+            }
+            _ => {}
+        }
+    }
+
+    /// W4-g66 gap-fill — the dev-wing `justSwitched` frame machine
+    /// (`Player.cs:29952-30021` wings 47, `:30023-30092` wings 49,
+    /// `:30094-30163` wings 50 — one shape, three constant sets).
+    /// `fall_step` = num22/23/24's airborne step (6/6/5), `wrap` = the
+    /// `++wingFrame > wrap` ceiling (10/10/9), `restart` = the wrapped-to
+    /// frame (2), `jump_from` = the flag3 ladder edge's source frame
+    /// (47/49: 3→1; 50: 2→1) and `fold_to` = the `wingFrame == 1` fold
+    /// target (10/10/3). `GetWingsFunctionalityForVisuals` (`:29461-29466`)
+    /// returns canHover/canBoost false for 47/49/50 (none is in the
+    /// 22/30/31/28/33/35/44/45 or 44/45 lists) and the stats' hover override
+    /// is −1 (`WingStatsInitializer.cs:59-61`), so the flap-step ladder
+    /// collapses to `vy > 0 ? 2 : 4`.
+    fn dev_wing_frame_machine(
+        &mut self,
+        wing_flap: bool,
+        fall_step: i32,
+        wrap: i32,
+        restart: i32,
+        jump_from: i32,
+        fold_to: i32,
+    ) -> WingFrameDust {
+        let mut flag3 = false;
+        let mut animate = true;
+        let step;
+        if wing_flap {
+            // `:29963`/`:30034`/`:30105`: the collapsed ladder.
+            step = if self.vy > 0.0 { 2 } else { 4 };
+        } else if self.vy != 0.0 {
+            let mut s = fall_step;
+            if self.vy > 0.0 {
+                flag3 = self.control_jump && !self.is_performing_down_dash();
+                if flag3 {
+                    // `:29973`/`:30044`/`:30115`: the held-jump step is 3.
+                    s = 3;
+                    if self.wing_frame == 1 {
+                        animate = false;
+                    }
+                } else if self.wing_frame == 2 {
+                    animate = false;
+                }
+            }
+            step = s;
+        } else {
+            // `:29987-29988`: grounded — the machine rests at 0.
+            step = fall_step;
+            animate = false;
+            self.wing_frame = 0;
+        }
+        let mut just_switched = false;
+        if animate {
+            if self.wing_frame == 0 {
+                self.wing_frame = restart;
+            }
+            self.wing_frame_counter += 1;
+            if self.wing_frame_counter >= step {
+                just_switched = true;
+                self.wing_frame_counter = 0;
+                if self.wing_frame == 1 {
+                    self.wing_frame = fold_to;
+                } else if self.wing_frame == jump_from && flag3 {
+                    self.wing_frame = 1;
+                } else {
+                    self.wing_frame += 1;
+                    if self.wing_frame > wrap {
+                        self.wing_frame = restart;
+                    }
+                }
+            }
+        } else {
+            self.wing_frame_counter = 0;
+        }
+        // The snapshot reads the POST-machine frame (`:30531` et al.).
+        let mut b = WingFrameDust::base(self.wings_logic, self);
+        b.just_switched = just_switched;
+        b
+    }
+
+    /// W4-g66 — the wing-glide frame pins (`Player.cs:27149-27333`): the
+    /// wings-4 flame machine (the Item13 cadence — gap-fill — then counter
+    /// > 4 wraps 0..2) and the per-wing rest frames the glide arm owns. No
+    /// draws — the dust rolls ride `player_wing_dust::drain_wing_glide`; the
+    /// wings-30/34/39 counters advance here exactly as the source (their
+    /// `WingFrame` arms are separate).
+    fn wing_glide_frames(&mut self) {
+        match self.wings_logic {
+            // `:27149-27190`: the glide flame's Item13 cadence (gap-fill)
+            // then counter > 4 → frame++ wrap at 3.
+            4 => {
+                // `:27151-27156`: the SAME rocketDelay2 the WingFrame arm
+                // ticks — the glide arm runs on the non-flag19 falling
+                // ticks, so the two never double-tick.
+                self.rocket_delay2 -= 1;
+                if self.rocket_delay2 <= 0 {
+                    self.queue_rocket_sound("Item13");
+                    self.rocket_delay2 = 60;
+                }
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter > 4 {
+                    self.wing_frame += 1;
+                    self.wing_frame_counter = 0;
+                    if self.wing_frame >= 3 {
+                        self.wing_frame = 0;
+                    }
+                }
+            }
+            // `:27194-27203`: 5-tick rows 1..3.
+            30 => {
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter >= 15 {
+                    self.wing_frame_counter = 0;
+                }
+                self.wing_frame = 1 + self.wing_frame_counter / 5;
+            }
+            // `:27204-27213`: 7-tick rows 0..5.
+            34 => {
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter >= 42 {
+                    self.wing_frame_counter = 0;
+                }
+                self.wing_frame = self.wing_frame_counter / 7;
+            }
+            48 => self.wing_frame = 3,   // `:27216-27219`
+            40 => self.wing_frame = 0,   // `:27222-27225`
+            44 => self.wing_frame = 2,   // `:27226-27229`
+            // `:27230-27239`: 12-tick rows 0..5.
+            39 => {
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter >= 72 {
+                    self.wing_frame_counter = 0;
+                }
+                self.wing_frame = self.wing_frame_counter / 12;
+            }
+            // `:27240-27273` / `:27274-27316`: the Beetle/Festive glide dust
+            // arms pin frame 2 after their rolls.
+            26 | 37 => self.wing_frame = 2,
+            43 => self.wing_frame = 1,   // `:27319-27322`
+            12 => self.wing_frame = 3,   // `:27325-27328`
+            // `:27329-27332`: the default glide rest frame — 22/28/51/47/45/
+            // 24/49/50 keep theirs (the else-if chain's exclusion gates).
+            w if !matches!(w, 22 | 28 | 51 | 47 | 45 | 24 | 49 | 50) => {
+                self.wing_frame = 2;
+            }
+            _ => {}
+        }
     }
 
     /// `Player.WingMovement` (`Player.cs:22023-22243`): the ascent physics —
@@ -10161,6 +13347,7 @@ impl Player {
             height as i32,
             25,
             self.full_rotation,
+            minecart::spark_variant_of(self.mount.kind()),
         );
         true
     }
@@ -10187,9 +13374,10 @@ impl Player {
         if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
             self.try_dismount(world);
         }
-        // `:22624-22640` — the carpet/wing frame head. `canCarpet`/`rocketFrame`
-        // have no port fields; `carpetFrame = -1` and the wing frame ladder are
-        // the visual seam (the wings-4/30 overrides ride the wing draw).
+        // `:22624-22640` — the carpet/wing frame head. W4-g66 gap-fill:
+        // `canCarpet` re-arms while grappling (`:22624`); `rocketFrame`
+        // (`:22642`) still rides the flight section's own writes.
+        self.can_carpet = true;
         self.carpet_frame = -1;
         self.wing_frame = 1;
         // `:22627-22628` — `flag` (nearly stationary) and `flag2` (floating in
@@ -10315,17 +13503,80 @@ impl Player {
         }
     }
 
+    /// `Player.CanBePushedByWind` (`Player.cs:19751-19770`): the Strong Wind
+    /// push gate — a tile-locked player never drifts (`isLockedToATile` has
+    /// no port system, constant false — ANALYSIS W4-c40), the roller skates
+    /// grip the ground (`MountID.Sets.IsRollerSkates`), and a mounted player
+    /// pressing a direction key on the ground steers instead of drifting
+    /// (the C#'s non-short-circuit `&` is behaviourally the `&&` here — both
+    /// operands are side-effect-free). W4-c40.
+    fn can_be_pushed_by_wind(&self) -> bool {
+        let flag = self.control_left || self.control_right;
+        // `:19754-19757`: isLockedToATile — unported (constant false).
+        if self.mount.is_active() {
+            // `:19760-19763`: the roller skates refuse the push.
+            if crate::mount::is_roller_skates(self.mount.kind()) {
+                return false;
+            }
+            // `:19764-19767`: `(velocity.Y == 0f) & flag`.
+            if self.vy == 0.0 && flag {
+                return false;
+            }
+        }
+        true
+    }
+
     /// `Player.HorizontalMovement` (`Player.cs:19772-20090`), the exact if/else
     /// chain: the pending booster push applies pre-input and clamps
     /// (`:19818-19833`), the cart arms gate their accel on `velocity.Y == 0`
     /// (`:19849/:19907`), the off-track brakes pull the roll toward rest
     /// (`:19858-19865`, `:19948-19956`), the cart coast arm clamps ±max without
     /// on-track friction (`:20023-20058`), and the grounded/airborne friction
-    /// tails close the chain (`:20059-20087`).
-    fn horizontal_movement(&mut self, input: PlayerInput) {
+    /// tails close the chain (`:20059-20087`). `wind_speed_current` is
+    /// `Main.windSpeedCurrent` — the Strong Wind push arm (`:19795-19817`)
+    /// and its flag2 tail (`:20089-20107`) read it (W4-c40; the plain
+    /// `update` harness passes 0.0 = calm).
+    fn horizontal_movement(&mut self, input: PlayerInput, wind_speed_current: f32) {
         // `Player.cs:19779`: the fast-run threshold — halfway between the
         // boot top speed and the base run speed.
-        let fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
+        let mut fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
+        // `Player.cs:19778-19780`: `flag`/`num2`/`flag2` — the push arm's
+        // carry-outs to the threshold penalty and the velocity tail.
+        let flag = self.control_left || self.control_right;
+        let mut num2 = 0.0f32;
+        let mut flag2 = false;
+        // `Player.cs:19795-19817`: the Strong Wind push — `windPushed &&
+        // CanBePushedByWind()`. (The mount-43 basilisk hop arm `:19782-19794`
+        // ahead of it has no port mount row — it consumes nothing.)
+        if self.wind_pushed && self.can_be_pushed_by_wind() {
+            // `:19797`: `Math.Sign(windSpeedCurrent) * 0.06f`.
+            let wind_sign = (wind_speed_current > 0.0) as i32 - (wind_speed_current < 0.0) as i32;
+            num2 = wind_sign as f32 * 0.06;
+            // `:19798-19801`: the gale tier ×1.37.
+            if wind_speed_current.abs() > 0.5 {
+                num2 *= 1.37;
+            }
+            // `:19802-19805`: airborne ×1.5.
+            if self.vy != 0.0 {
+                num2 *= 1.5;
+            }
+            // `:19806-19811`: while steering, ×0.8 then clamp ±0.072.
+            if flag {
+                num2 *= 0.8;
+                let num4 = 0.072f32;
+                num2 = num2.clamp(0.0 - num4, num4);
+            }
+            flag2 = true;
+            // `:19813-19816`: facing against the push lowers the fast-run
+            // threshold by `|num2| * 40` — the C# compares
+            // `Math.Sign(direction)` to `Math.Sign(num2)` (Sign(0)=0 differs
+            // from a ±1 facing, but num2==0 makes the penalty a no-op).
+            let facing_sign = (self.facing > 0) as i32 - (self.facing < 0) as i32;
+            let push_sign = (num2 > 0.0) as i32 - (num2 < 0.0) as i32;
+            if facing_sign != push_sign {
+                fast_run_threshold -= num2.abs() * 40.0;
+            }
+        }
         // `Player.cs:19818-19833`: the boost applies before any input reads
         // the velocity, then clamps.
         if self.track_boost != 0.0 {
@@ -10406,6 +13657,7 @@ impl Player {
                     vel,
                     max_run,
                     rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
         } else if self.control_right && self.vx < self.max_run_speed {
@@ -10447,6 +13699,7 @@ impl Player {
                     vel,
                     max_run,
                     rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
         } else if self.control_left && self.vx > -self.acc_run_speed && self.dash_delay >= 0 {
@@ -10544,27 +13797,49 @@ impl Player {
                 self.vx = 0.0;
             }
         }
+        // `Player.cs:20089-20107`: the flag2 tail — the Strong Wind push
+        // approaches the velocity toward num2 ONE-SIDED: a leftward push
+        // only fires while `velocity.X > num2` (dragging rightward motion
+        // down to the wind speed, never accelerating past it), the mirror
+        // for a rightward push. The clamp lands exactly on num2 on the
+        // crossing tick. W4-c40.
+        if flag2 {
+            if num2 < 0.0 && self.vx > num2 {
+                self.vx += num2;
+                if self.vx < num2 {
+                    self.vx = num2;
+                }
+            }
+            if num2 > 0.0 && self.vx < num2 {
+                self.vx += num2;
+                if self.vx > num2 {
+                    self.vx = num2;
+                }
+            }
+        }
     }
 
     /// `Player.FloorVisuals` (`Player.cs:23708-23743`) + `GetFloorTile`
     /// (`:23755-23783`): the tile row at the feet, center column first, then
-    /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
-    /// the slope dust carve-out stay with the particle tasks.
-    fn floor_visuals(&mut self, world: &World) {
+    /// the neighbors, solid tiles only. W4-g66: the Stinky-tile buff grant
+    /// (`:23732-23735`), the slope dust carve-out (`:23736-23739`) and the
+    /// `MakeFloorDust` snapshot (`:23740-23743`) — the drain replays the
+    /// per-puff chain on `UpdatePlayers` (`player_trail_dust::drain_floor_dust`).
+    fn floor_visuals(&mut self, world: &World, falling: bool) {
         let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
         // the live hitbox height (the mount framework's equip; the cart's 52).
         let y = ((self.y + self.body_height()) / TILE_PX) as i32;
-        let mut kind = None;
+        let mut floor = None;
         for tx in [x, x - 1, x + 1] {
             if let Some(t) = world.tile(tx, y) {
                 if t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind) {
-                    kind = Some(t.kind);
+                    floor = Some(*t);
                     break;
                 }
             }
         }
-        let Some(kind) = kind else {
+        let Some(tile) = floor else {
             self.sticky = false;
             self.slippy = false;
             self.slippy2 = false;
@@ -10572,6 +13847,7 @@ impl Player {
             self.running_on_sand = false;
             return;
         };
+        let kind = tile.kind;
         // `Player.cs:23727-23731`: cobweb 229, the IceSkateSlippery set
         // (`TileID.cs:481`), FrozenSlimeBlock 197, Asphalt 198, and the sand
         // conversions (`TileID.cs:92-94`).
@@ -10582,6 +13858,37 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+        // `:23732-23735`: the Stinky tiles (666/712) grant buff 120 for 180
+        // ticks — `whoAmI == Main.myPlayer` is the port's single player.
+        if kind == 666 || kind == 712 {
+            self.buffs.add_buff(120, 180);
+        }
+        // `:23736-23739`: any sloped tile in the row kills the dust kind (the
+        // flags above keep the real tile).
+        let sloped = [x - 1, x, x + 1]
+            .iter()
+            .any(|&tx| world.tile(tx, y).is_some_and(|t| t.slope() != 0));
+        let dust_kind = if sloped { -1 } else { kind as i32 };
+        // `:23740-23743`: `!base.wet && !mount.Cart` — the port's water-only
+        // `wet` stand-in (docs/ANALYSIS.md Phase 4); the cart arm covers both
+        // the ride flag and the framework's cart rows.
+        let any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        let cart = self.cart_mounted
+            || (self.mount.is_active() && crate::mount::is_cart(self.mount.kind()));
+        if !any_wet && !cart {
+            self.pending_floor_dust = Some(FloorDust {
+                falling,
+                kind: dust_kind,
+                frame_y: tile.frame_y as i32,
+                paint: tile.paint() as i32,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+            });
+        }
     }
 
     /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read
@@ -10615,6 +13922,12 @@ impl Player {
             self.zones,
         );
         self.luck_state.update_broken_mirror_decay(day_rate);
+        // W4-g90 lane 7 — the Galaxy Pearl mirror: `RecalculateLuck`
+        // (`Player.cs:29142-29145`) reads the player-file flag directly; the
+        // port's consumer lives in `LuckState.used_galaxy_pearl`, so the
+        // persistence owner (`Player.used_galaxy_pearl`, the 5340 use) seeds
+        // it before every recalculation.
+        self.luck_state.used_galaxy_pearl = self.used_galaxy_pearl;
         self.luck_state.recalculate_luck();
     }
 
@@ -11200,13 +14513,22 @@ impl Player {
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting || self.sleeping,
-                extra_regen: self.accessory_life_regen,
+                extra_regen: self.accessory_life_regen + self.buff_life_regen,
                 // S1-C-12 wave D — the Crimson set's regen halves
                 // (`ArmorSetBonuses.cs:248-251` grants the flag):
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
                 extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
+                // W4-g89i — the Aegis Crystal's permanent +0.2 time add
+                // (`Player.cs:19113-19116`) rides its OWN slot, applied
+                // BETWEEN the base +1 and the crimson fold (the g90 lane-7
+                // shape, research/138 §3.3 — the C#'s f32 order).
+                aegis_crystal: self.used_aegis_crystal,
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
+                // W4-g90 lane 7 — the permanent shimmer crystals
+                // (`Player.cs:19113-19116` / `:19430-19433` + `:19453-19456`).
+                aegis_crystal: self.used_aegis_crystal,
+                arcane_crystal: self.used_arcane_crystal,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
@@ -11331,7 +14653,10 @@ impl Player {
                 &mut self.gfx_off_y,
             );
         }
-        if dry && vel[1] >= gravity && !down && !self.cart_mounted {
+        // W4-g66 final (f3 keep-one input) — `Player.cs:28066`/`:23537`:
+        // the carpet glide (`carpetFrame != -1`) steps up even while
+        // rising — the Magic Carpet climbs ledges mid-flight.
+        if dry && (self.carpet_frame != -1 || vel[1] >= gravity) && !down && !self.cart_mounted {
             collision::step_up(
                 world,
                 &mut pos,
@@ -11948,6 +15273,68 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 
 mod tests {
+    /// W4-d70 DOC-SWEEP — `Player.cs:28580-28604`: the counter ramps +1
+    /// while burning, −6 (−2 dead) otherwise, clamped 0..300.
+    #[test]
+    fn the_sun_scorch_counter_ramps_and_clamps() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Not burning: −6/tick, floored at 0.
+        p.sun_scorch_counter = 10;
+        p.update_sun_scorch_values();
+        assert_eq!(p.sun_scorch_counter, 4);
+        p.update_sun_scorch_values();
+        assert_eq!(p.sun_scorch_counter, 0);
+        // Burning: +1/tick, capped at 300.
+        p.vampire_burning_in_sunlight = true;
+        p.sun_scorch_counter = 299;
+        p.update_sun_scorch_values();
+        assert_eq!(p.sun_scorch_counter, 300);
+        p.update_sun_scorch_values();
+        assert_eq!(p.sun_scorch_counter, 300);
+        // Dead: the flag clears and the decay is −2.
+        p.dead = true;
+        p.update_sun_scorch_values();
+        assert!(!p.vampire_burning_in_sunlight);
+        assert_eq!(p.sun_scorch_counter, 298);
+    }
+
+    /// W4-d70 DOC-SWEEP — `Player.cs:28672-28719`: the exposure probe only
+    /// fires on the vampire seed, above the surface, in daylight, with an
+    /// open sky column; a wall shelters, the umbrella shields.
+    #[test]
+    fn the_vampire_exposure_probe_gates_on_seed_sky_and_shelter() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.world_surface = 100.0;
+        w.day_time = true;
+        let mut p = Player::spawn(&w);
+        // Stand above the surface with an open column.
+        p.x = 32.0 * 16.0;
+        p.y = 50.0 * 16.0;
+        // Not the vampire seed: never burns.
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight);
+        // The vampire seed + open sky: burns.
+        p.vampirism = true;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(p.vampire_burning_in_sunlight);
+        // Rain shelters.
+        p.vampire_burning_in_sunlight = false;
+        p.vampire_seed_sunlight_exposure(&w, true);
+        assert!(!p.vampire_burning_in_sunlight);
+        // The umbrella (946) shields.
+        p.held_item_kind = 946;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight);
+        p.held_item_kind = 0;
+        // A wall shelters: the probe starts at the feet tile
+        // ((50*16 + 42 - 1)/16 = 52), centre-x tile (512+10)/16 = 32.
+        let i = w.index(32, 52);
+        w.tiles[i].wall = 1;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight);
+    }
+
     #[test]
     fn dye_cache_mirrors_update_dyes() {
         let mut p = Player::spawn(&World::new("t".into(), 64, 800));
@@ -12279,6 +15666,33 @@ mod tests {
         assert_eq!(p.accessory_life_regen_value(), 22);
     }
 
+    /// W4-f12 SEAL item 2 — the extra_regen SUM (:11492) is the merge-keep
+    /// form. f49's SEALED tree reads `extra_regen: self.accessory_life_regen`
+    /// only (their player.rs:11345); THIS tree sums the buff-fold
+    /// accumulator beside it (`accessory_life_regen + buff_life_regen`).
+    /// Their RT1 remainder item 4 rules the merge keeps the SUM — without
+    /// it the Nebula Life +6 (`:10451`) and every wave-fold regen add never
+    /// reaches the engine even with the LIFTED `update_survival` (the lift
+    /// makes the fold visible; the sum carries it). This witness drives
+    /// the read directly: accessory 2 (the Band) + buff-fold 6 (the Nebula
+    /// Life tier-1 add, simulated post-fold) = regen 8 on a fresh ramp
+    /// (life_regen_time 1 -> num3 0, no auras — the engine's own zero).
+    #[test]
+    fn w4_f12_seal_extra_regen_sums_the_accessory_and_buff_fold() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 49; // the Band of Regeneration: Item.lifeRegen 2
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 2);
+        // The wiring's fold has landed (the LIFTED read sits after it).
+        p.buff_life_regen = 6;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(
+            p.regen.life_regen, 8,
+            "the :11492 SUM feeds both halves — an accessory-only read gives 2"
+        );
+    }
+
     /// M3-EQUIP-16 — the lava immunity budget.
     #[test]
     fn the_lava_charm_buys_immunity_ticks() {
@@ -12352,6 +15766,88 @@ mod tests {
         assert_eq!(p.thorns_damage(20), 35, "20 from the potion + the flat 15");
     }
 
+    /// W4-g89 — `UpdatePermanentBoosters`' Aegis Fruit row
+    /// (`Player.cs:12853-12856`, called at `:25644`): the permanent +4
+    /// defense, re-added EVERY tick after `ResetEffects` zeroes
+    /// `statDefense` (`:18327`) — the flag itself is never cleared (the
+    /// player-file field, ctor `:56079` false). The C# adds 4, NOT 5.
+    #[test]
+    fn w4_g89_the_aegis_fruit_adds_four_defense_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_aegis_fruit, "ctor false (`Player.cs:56079`)");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0, "no fruit, no bonus");
+        p.used_aegis_fruit = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 4, "the +4 row (`:12855`)");
+        // The next tick's ResetEffects zero + re-add: still exactly 4,
+        // never compounding — the unlock is a bool, not a stack.
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 4, "one +4 per tick, no compounding");
+        assert!(p.used_aegis_fruit, "ResetEffects never clears the unlock");
+    }
+
+    /// W4-g89c — `UpdatePermanentBoosters`' Ambrosia row
+    /// (`Player.cs:12861-12866`, called at `:25644`): `pickSpeed -= 0.05f;
+    /// tileSpeed += 0.05f; wallSpeed += 0.05f`, re-added EVERY tick after
+    /// `ResetEffects` resets the three (`:18690` pickSpeed=1f, `:18531`
+    /// wallSpeed=1f, `:18532` tileSpeed=1f) — the flag itself is never cleared
+    /// (ctor `:56083` false). The port's signed bonuses mirror the C#
+    /// fields minus their 1f base (pick: `1 - bonus`; tile/wall:
+    /// `1/(1 + bonus)`).
+    #[test]
+    fn w4_g89c_the_ambrosia_speeds_apply_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_ambrosia, "ctor false (`Player.cs:56083`)");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.pick_speed(), 1.0, "no ambrosia, base pickSpeed 1f");
+        assert_eq!(p.tile_speed_multiplier(), 1.0);
+        assert_eq!(p.wall_speed_multiplier(), 1.0);
+        p.used_ambrosia = true;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.pick_speed() - 0.95).abs() < 1e-6,
+            "pickSpeed -= 0.05 (`:12863`): {}",
+            p.pick_speed()
+        );
+        assert!(
+            (p.tile_speed_multiplier() - 1.0 / 1.05).abs() < 1e-6,
+            "tileSpeed += 0.05 (`:12864`), the :25913-25917 invert"
+        );
+        assert!(
+            (p.wall_speed_multiplier() - 1.0 / 1.05).abs() < 1e-6,
+            "wallSpeed += 0.05 (`:12865`), the :25918-25922 invert"
+        );
+        // The next tick's ResetEffects reset + re-add: same values, never
+        // compounding — the unlock is a bool, not a stack.
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed() - 0.95).abs() < 1e-6, "one row per tick");
+        assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6);
+        assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6);
+        assert!(p.used_ambrosia, "ResetEffects never clears the unlock");
+    }
+
+    /// W4-g89i — the Aegis Crystal unlock is a permanent bool: ctor false
+    /// (`Player.cs:56078`), `ResetEffects` never clears it (the C# clears
+    /// only the per-tick `chaosState`-style latches, not `usedAegisCrystal`
+    /// — it is absent from the `:18333-18810` reset block). The +0.2
+    /// consumer rides the `regen.rs` `aegis_crystal` slot (the feeder reads
+    /// `self.used_aegis_crystal` every tick); the f32-order witness lives in
+    /// `regen.rs` (`w4_g89i_the_aegis_crystal_adds_between_the_base_and_the_crimson`).
+    #[test]
+    fn w4_g89i_the_aegis_crystal_unlock_survives_reset_effects() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_aegis_crystal, "ctor false (`Player.cs:56078`)");
+        p.used_aegis_crystal = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_aegis_crystal, "ResetEffects never clears the unlock");
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_aegis_crystal, "still set after a second tick");
+    }
+
     /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.
     #[test]
     fn the_sky_stones_add_their_bundle() {
@@ -12386,6 +15882,112 @@ mod tests {
         assert!(p.sky_stone_effects);
     }
 
+    /// W4-f12 gap 3 — the Moon Charm (485) arms `wolfAcc` (`Player.cs:
+    /// 15182-15189`) and the `:25601-25604` night grant re-arms buff 28. The
+    /// d71 werewolf EFFECT (the wave-E status arm) runs in the world_sim
+    /// wiring, so this witness drives `update_buff_frame` directly for the
+    /// stat block (the `Player::update` path owns the GRANT half only).
+    /// Neptune's Shell (497) does NOT arm `wolfAcc` (`:15566-15573`).
+    #[test]
+    fn w4_f12_moon_charm_grants_the_werewolf_at_night() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.day_time = false; // night
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 485; // Moon Charm
+        // Tick 1: the equip pass arms wolfAcc, the night grant adds buff 28.
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
+        assert!(p.wolf_acc, "the flag stays live until the wiring reads it (`:25605` rides the seam)");
+        // The wiring's status arm reads the live wolfAcc (re-armed by the
+        // equip pass) and grants the werewolf stat block (`:11895-11904`).
+        p.update(&w, PlayerInput::default()); // re-arm wolfAcc + the buff
+        let mut pool = crate::projectile::ProjectilePool::default();
+        static NO_SOLID: fn(i32, i32) -> bool = |_, _| false;
+        let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+            day_time: false,
+            dont_starve: false,
+            remix: false,
+            solid3: &NO_SOLID,
+            held_item_type: 0,
+        };
+        crate::buff_frame_wiring::update_buff_frame(&mut p, &mut pool, &w, &inputs);
+        assert!(p.were_wolf, "the werewolf effect arms");
+        assert_eq!(p.melee_crit, 4 + 2, "`:11899`");
+        assert_eq!(p.stat_defense, 3, "`:11902`");
+        assert!((p.melee_damage - 1.051).abs() < 1e-4, "`:11900`");
+        assert!((p.melee_speed_bonus - 0.051).abs() < 1e-4, "`:11901`");
+        assert!((p.move_speed - 1.05).abs() < 1e-4, "`:11903`");
+        // Day breaks: the wiring's day gate deletes the buff (`:11905-11909`).
+        let day_inputs = crate::buff_frame_wiring::BuffFrameInputs {
+            day_time: true,
+            ..inputs
+        };
+        crate::buff_frame_wiring::update_buff_frame(&mut p, &mut pool, &w, &day_inputs);
+        assert!(p.buffs.find_buff_index(28).is_none(), "the day gate deletes");
+        assert!(!p.were_wolf);
+    }
+
+    /// W4-f12 gap 3 — Neptune's Shell (497) arms accMerman but NOT wolfAcc,
+    /// so no werewolf grant fires (`:15566-15573` vs `:15182-15189`).
+    #[test]
+    fn w4_f12_neptunes_shell_does_not_grant_the_werewolf() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.day_time = false;
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 497; // Neptune's Shell
+        p.update(&w, PlayerInput::default());
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(28).is_none(), "no wolfAcc -> no grant");
+        assert!(!p.were_wolf);
+    }
+
+    /// W4-f12 gap 3 — the Moon Shell (861) and Celestial Shell (3110) arm
+    /// BOTH accMerman and wolfAcc (`:15134-15143`/`:15402-15411`); dry at
+    /// night the werewolf grant fires (the merman gate is false while dry).
+    #[test]
+    fn w4_f12_moon_and_celestial_shells_grant_the_werewolf_dry() {
+        for kind in [861u16, 3110] {
+            let mut w = World::new("t".into(), 64, 800);
+            w.day_time = false;
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            p.update(&w, PlayerInput::default());
+            assert!(p.buffs.find_buff_index(28).is_some(), "{kind} grants at night");
+            assert!(!p.merman, "dry: not merman");
+            // The wiring's status arm grants the werewolf effect.
+            let mut pool = crate::projectile::ProjectilePool::default();
+            static NO_SOLID: fn(i32, i32) -> bool = |_, _| false;
+            let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+                day_time: false,
+                dont_starve: false,
+                remix: false,
+                solid3: &NO_SOLID,
+                held_item_type: 0,
+            };
+            crate::buff_frame_wiring::update_buff_frame(&mut p, &mut pool, &w, &inputs);
+            assert!(p.were_wolf, "{kind} arms the werewolf");
+        }
+    }
+
+    /// W4-f12 gap 3 — the merman gate (`:25601`): a Moon Shell while WET
+    /// turns the player merman, so the werewolf grant refuses (the C# never
+    /// runs both transformations at once).
+    #[test]
+    fn w4_f12_merman_shell_wet_refuses_the_werewolf() {
+        let mut w = liquid_pool_world(tr_core::tile::LiquidKind::Water);
+        w.day_time = false;
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 861; // Moon Shell
+        for _ in 0..30 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.wet, "the player settles in the water");
+        assert!(p.merman, "the shell turns the player merman");
+        assert!(p.buffs.find_buff_index(28).is_none(), "merman blocks the grant");
+        assert!(!p.were_wolf);
+    }
+
     /// M3-EQUIP-13 — the armor pieces carry their own damage/crit/speed rows
     /// (before this the worn armor only contributed defense).
     #[test]
@@ -12409,6 +16011,79 @@ mod tests {
         p.equipped[1] = 2764;
         p.update(&w, PlayerInput::default());
         assert!((p.melee_damage - 1.29).abs() < 1e-4);
+    }
+
+    /// W4-g90 lane 7 — `UpdatePermanentBoosters`' Ambrosia row
+    /// (`Player.cs:12861-12866`): the permanent +0.05 pick/tile/wall bonus
+    /// triple, re-added EVERY tick after `ResetEffects` resets the speeds
+    /// (`:18531-18532`, `:18690`) — never compounding, the flag survives.
+    #[test]
+    fn w4_g90_the_ambrosia_adds_its_speed_triple_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_ambrosia, "ctor false (`Player.cs:56083`)");
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.0).abs() < 1e-6, "no ambrosia, no bonus");
+        p.used_ambrosia = true;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.05).abs() < 1e-6, "`:12863`");
+        assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6, "`:12864`");
+        assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6, "`:12865`");
+        // The next tick's reset + re-add: still exactly 0.05 each.
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.05).abs() < 1e-6, "no compounding");
+        assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6);
+        assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6);
+        assert!(p.used_ambrosia, "ResetEffects never clears the unlock");
+    }
+
+    /// W4-g90 lane 7 — the Galaxy Pearl mirror: `update_luck` seeds
+    /// `LuckState.used_galaxy_pearl` from the player-file flag before
+    /// `RecalculateLuck` (`Player.cs:29142-29145`), so the +0.03 lands.
+    #[test]
+    fn w4_g90_the_galaxy_pearl_feeds_the_luck_recalculation() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(p.luck().abs() < 1e-6, "the neutral state stays 0");
+        p.used_galaxy_pearl = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.luck_state.used_galaxy_pearl, "the mirror seeds the state");
+        assert!((p.luck() - 0.03).abs() < 1e-6, "the +0.03 term (`:29144`)");
+    }
+
+    /// W4-g90 lane 7 — the Aegis Crystal's +0.2 life-regen ramp
+    /// (`Player.cs:19113-19116`): the ramp time climbs 1.2/tick instead of
+    /// 1.0, and the Arcane Crystal's mana rows (`:19430-19433`,
+    /// `:19453-19456`) ride the same update. Driven through
+    /// `update_survival` directly (the standing-still state pinned).
+    #[test]
+    fn w4_g90_the_crystals_feed_the_regen_engines() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.used_aegis_crystal = true;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert!(
+            (p.regen.life_regen_time - 1.2).abs() < 1e-5,
+            "the base +1 plus the crystal's +0.2 (`:19112-19116`)"
+        );
+        // The arcane crystal: a positive delay drains an extra 0.05. The
+        // player stands still (vx = vy = 0), so the base −1 and the
+        // still/grapple −1 both run: 4 − 1 − 1 − 0.05 = 1.95.
+        p.used_arcane_crystal = true;
+        p.regen.mana_regen_delay = 4.0;
+        p.mana = 0;
+        p.mana_max = 200;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert!(
+            (p.regen.mana_regen_delay - 1.95).abs() < 1e-5,
+            "the −0.05 delay row (`:19432`), got {}",
+            p.regen.mana_regen_delay
+        );
+        // The sub-4 window counts as expired (ManaV2 flag3): the regen line
+        // ran — 200/3+1 = 67, doubled (still) = 134, +200/50 = 4 (the
+        // crystal's `:19455`), ×0.05 window scale → 6 (≥ the min 2).
+        assert!(p.regen.mana_regen > 0, "the regen line ran in the window");
     }
 
     /// M3-EQUIP-12 — the immunity rows of the accessories and the Snow/Molten
@@ -12987,6 +16662,168 @@ mod tests {
         assert!(!p.well_fed);
     }
 
+    /// W4-f12 gap 1 — Tipsy (25) completes in the inline arm (`Player.cs:
+    /// 11918-11930`): the flag, −4 defense, +2 melee crit, +10% melee
+    /// damage/speed; the Ale (3821) held adds +10% ranged damage +5 ranged
+    /// crit. ONE application — the wiring's misc dispatch excludes 25.
+    #[test]
+    fn w4_f12_tipsy_completes_the_inline_arm() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(25, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.tipsy, "the flag arms (`:11920`)");
+        assert_eq!(p.stat_defense, 0, "−4 floors at 0 (`:25927`)");
+        assert_eq!(p.melee_crit, 4 + 2, "`:11922`");
+        assert!((p.melee_damage - 1.1).abs() < 1e-4, "`:11923`");
+        assert!((p.melee_speed_bonus - 0.1).abs() < 1e-4, "`:11924`");
+        assert!((p.ranged_damage - 1.0).abs() < 1e-4, "no Ale held");
+        assert_eq!(p.ranged_crit, 4, "no Ale held");
+        // The Ale (3821) in hand arms the ranged pair (`:11925-11929`).
+        p.held_item_kind = 3821;
+        p.update(&w, PlayerInput::default());
+        assert!((p.ranged_damage - 1.1).abs() < 1e-4);
+        assert_eq!(p.ranged_crit, 4 + 5);
+        // Taking the Ale away drops the pair (the per-tick re-derivation).
+        p.held_item_kind = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.ranged_damage - 1.0).abs() < 1e-4);
+        assert_eq!(p.ranged_crit, 4);
+    }
+
+    /// W4-f12 gap 1 — the keep-one census: the wiring pass must NOT apply
+    /// Tipsy's effect a second time (the misc module owns a 25 arm, but the
+    /// wiring's MISC_DISPATCH excludes it — the inline arm is the ONE grant).
+    #[test]
+    fn w4_f12_tipsy_is_not_double_granted_by_the_wiring() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(25, 3600);
+        let mut pool = crate::projectile::ProjectilePool::default();
+        static NO_SOLID: fn(i32, i32) -> bool = |_, _| false;
+        let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+            day_time: true,
+            dont_starve: false,
+            remix: false,
+            solid3: &NO_SOLID,
+            held_item_type: 0,
+        };
+        crate::buff_frame_wiring::update_buff_frame(&mut p, &mut pool, &w, &inputs);
+        assert!(!p.tipsy, "the wiring skips 25 (inline-owned)");
+        assert_eq!(p.stat_defense, 0, "no second −4");
+        assert_eq!(p.melee_crit, 4, "no second +2");
+    }
+
+    /// W4-f12 sweep gap 9 — Bleeding (30) had NO owner: the inline arm now
+    /// sets `bleed` (`Player.cs:10029-10032`), the flag the regen ramp-time
+    /// reset reads (`:19178-19181`).
+    #[test]
+    fn w4_f12_sweep_bleeding_arms_the_flag_inline() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(30, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.bleed, "`:10031`");
+        // The wiring skips 30 (INLINE_OWNED) — no second grant lane.
+        p.buffs.clear_buff(30);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.bleed, "the per-tick reset drops it");
+    }
+
+    /// W4-f12 sweep gap 4 — the Builder Potion (107) completes its
+    /// `blockRange++` half (`Player.cs:10162`).
+    #[test]
+    fn w4_f12_sweep_builder_potion_adds_block_range() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(107, 600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.block_range, 1, "`:10162`");
+        assert!((p.tile_speed_bonus - 0.25).abs() < 1e-6, "`:10160`");
+        assert!((p.wall_speed_bonus - 0.25).abs() < 1e-6, "`:10161`");
+    }
+
+    /// W4-f12 sweep gap 3 — the Dryad's Ward (165) flag half
+    /// (`Player.cs:10307`) joins the inline defense/thorns arm; the +6
+    /// regen stays in the accessory-regen lane (one grant each).
+    #[test]
+    fn w4_f12_sweep_dryads_ward_arms_the_flag() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(165, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.dryad_ward, "`:10307`");
+        assert_eq!(p.stat_defense, 8, "`:10306`");
+        assert_eq!(p.accessory_life_regen_value(), 6, "`:10305` ONE lane");
+    }
+
+    /// W4-f12 sweep gap 5 — Weak (33) completes its meleeSpeed −0.051 half
+    /// (`Player.cs:11914`).
+    #[test]
+    fn w4_f12_sweep_weak_subtracts_melee_speed() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(33, 600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_speed_bonus + 0.051).abs() < 1e-6, "`:11914`");
+        assert!((p.melee_damage - (1.0 - 0.051)).abs() < 1e-6, "`:11913`");
+        assert_eq!(p.weak_stacks, 1);
+    }
+
+    /// W4-f12 sweep gap 10 — Ichor (69) completes its flag half
+    /// (`Player.cs:10063`): the −15 defense was inline but `Player.ichor`
+    /// had NO live writer (the wave-B module's copy is not dispatched —
+    /// 69 is inline-owned). ONE grant: the wiring skips 69.
+    #[test]
+    fn w4_f12_sweep_ichor_arms_the_flag_inline() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(69, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.ichor, "`:10063`");
+        assert_eq!(p.stat_defense, 0, "−15 floors at 0 (`:25927`)");
+        p.buffs.clear_buff(69);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.ichor, "the per-tick reset drops it");
+    }
+
+    /// W4-f12 sweep gaps 6-8 — the WellFed tiers' minion halves
+    /// (`Player.cs:11942-11943`/`:11958-11959`/`:11974-11975`).
+    #[test]
+    fn w4_f12_sweep_fed_tiers_grant_the_minion_halves() {
+        let w = World::new("t".into(), 64, 800);
+        for (id, dmg, kb) in [(26, 0.05f32, 0.5f32), (206, 0.075, 0.75), (207, 0.1, 1.0)] {
+            let mut p = Player::spawn(&w);
+            p.buffs.add_buff(id, 600);
+            p.update(&w, PlayerInput::default());
+            assert!(p.well_fed);
+            assert!((p.minion_damage - (1.0 + dmg)).abs() < 1e-6, "tier {id} damage");
+            assert!((p.minion_kb - kb).abs() < 1e-6, "tier {id} knockback");
+        }
+    }
+
+    /// W4-f12 sweep gap 10 — Kite (383) completes its stat block
+    /// (`Player.cs:9916-9919`) and the tier now fires `luckNeedsSync` only
+    /// ON CHANGE (`:9921-9925`), not on every scan tick.
+    #[test]
+    fn w4_f12_sweep_kite_stats_and_change_gated_sync() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(383, 32_402);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.15).abs() < 1e-4, "`:9916`");
+        assert!((p.pick_speed_bonus - 0.1).abs() < 1e-6, "`:9917`");
+        assert!((p.tile_speed_bonus - 0.15).abs() < 1e-6, "`:9918`");
+        assert!((p.wall_speed_bonus - 0.15).abs() < 1e-6, "`:9919`");
+        assert_eq!(p.luck_state.kite_luck_level, 3, "32401/10800");
+        assert!(p.luck_needs_sync, "the tier CHANGED 0 -> 3 (`:9924`)");
+        // Steady state: the same tier does not re-arm the sync flag
+        // (32400/10800 is still 3 — the boundary is not crossed).
+        p.update(&w, PlayerInput::default());
+        assert!(!p.luck_needs_sync, "no change -> no sync (the reset ran)");
+        assert_eq!(p.luck_state.kite_luck_level, 3);
+    }
+
     #[test]
     fn the_sunflower_buff_moves_and_the_star_buffs_mana_regen() {
         // `Player.cs:11001-11004`: the 146 slot — `moveSpeed += 0.1; *= 1.1`
@@ -13182,6 +17019,32 @@ mod tests {
     }
 
     #[test]
+    fn w4_g26_bleeding_30_arms_the_flag_and_resets_the_regen_ramp() {
+        // W4-g26 census gap: Bleeding (30) was the one `UpdateBuffs` id no wave
+        // had ported. `Player.cs:10029-10032` sets `bleed = true`; the sole
+        // consumer is `UpdateLifeRegen`'s `lifeRegenTime = 0f` (`:19178-19181`),
+        // derived here through the DoT fold's `holding(30)` read.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(!p.bleed, "spawn starts clear");
+        p.buffs.add_buff(30, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.bleed, "the 30 arm grants the flag (`:10031`)");
+        // The ramp reset: a built-up regen ramp is zeroed while bleeding.
+        p.regen.life_regen_time = 500.0;
+        let dots = p.derive_dot_inputs(false);
+        assert!(dots.resets_time, "bleeding resets the ramp (`:19178-19181`)");
+        assert_eq!(dots.regen, 0, "bleeding drains nothing itself");
+        // Expiry: the ResetEffects clear (`:18694`) leaves the flag down.
+        let mut q = Player::spawn(&w);
+        q.buffs.add_buff(30, 2);
+        for _ in 0..4 {
+            q.update(&w, PlayerInput::default());
+        }
+        assert!(!q.bleed, "expired — the clear leaves it down");
+    }
+
+    #[test]
     fn s1_e_7a_confused_swaps_the_run_keys() {
         // `Player.cs:10035` + `:24996-25004`: left↔right after the controls
         // land — a right press runs the player LEFT.
@@ -13228,6 +17091,115 @@ mod tests {
         assert!((p.move_speed - 1.0).abs() < 1e-4);
         p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
         assert!((p.move_speed - 1.21).abs() < 1e-4);
+    }
+
+    /// W4-g4 — the MonsterBanner (147) indicator grant (`Player.cs:25552-25555`):
+    /// `SceneMetrics.hasBanner` refreshes the 2-tick buff from the scan, like
+    /// the campfire/sunflower arms beside it.
+    #[test]
+    fn w4_g4_the_banner_aura_grants_the_monster_banner_buff() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.auras.banner = true;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.buffs.active_types().contains(&147),
+            "the hasBanner aura grants MonsterBanner (147)"
+        );
+        // No banner → no grant (the indicator decays with its 2-tick window).
+        let mut q = Player::spawn(&w);
+        q.auras.banner = false;
+        q.update(&w, PlayerInput::default());
+        assert!(!q.buffs.active_types().contains(&147));
+    }
+
+    #[test]
+    fn w4_e28_the_bast_aura_grants_the_defense_buff() {
+        // `Player.cs:25536-25539`: `HasCatBast` → `AddBuff(215, 2)`; the
+        // effect arm (`:10106-10109`) reads the PREVIOUS tick's grant:
+        // `statDefense += 5`.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.auras.cat_bast = true;
+        p.update(&w, PlayerInput::default());
+        let slot = p.buffs.find_buff_index(215).expect("the 2-tick grant");
+        assert_eq!(p.buffs.buff_time[slot], 2);
+        assert_eq!(p.stat_defense, 0, "the effect reads the previous tick");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 5, "the +5 defense arm");
+    }
+
+    #[test]
+    fn w4_e28_the_aura_grants_expire_when_the_player_leaves() {
+        // The 2-tick grants refresh only while the aura holds
+        // (`Player.cs:25532-25547`): leaving the scan window lets the buff
+        // times run out — campfire/heart/star/bast all drop.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.auras.campfire = true;
+        p.auras.heart_lantern = true;
+        p.auras.star_in_bottle = true;
+        p.auras.cat_bast = true;
+        p.update(&w, PlayerInput::default());
+        for id in [87, 89, 158, 215] {
+            assert!(p.buffs.find_buff_index(id).is_some(), "buff {id} granted");
+        }
+        // The aura vanishes (the player walked out of the scan window).
+        p.auras = Default::default();
+        for _ in 0..3 {
+            p.update(&w, PlayerInput::default());
+        }
+        for id in [87, 89, 158, 215] {
+            assert!(p.buffs.find_buff_index(id).is_none(), "buff {id} expired");
+        }
+        assert_eq!(p.mana_regen_bonus, 0, "the star's +10 dropped too");
+        assert_eq!(p.stat_defense, 0, "the bast's +5 dropped too");
+    }
+
+    #[test]
+    fn w4_e28_the_campfire_and_heart_auras_feed_the_regen() {
+        // `UpdateLifeRegen` (`Player.cs:19170-19177`): the campfire adds +1
+        // regen and ×1.1 ramp, the heart lantern +2 — the aura snapshot,
+        // not the buff slot, feeds these rows (the wiring:
+        // `update_survival`'s `campfire: self.auras.campfire`).
+        use crate::regen::{RegenInputs, RegenState, update_life_regen};
+        let mut st = RegenState::default();
+        let mut life = 50;
+        let mut in_ = RegenInputs {
+            max_life: 100,
+            ..RegenInputs::default()
+        };
+        in_.campfire = true;
+        in_.heart_lantern = true;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        // +1 (campfire) +2 (heart) before the ramp rows; the base ramp at
+        // life_regen_time 1 contributes round(0) = 0 — the tick regens 3.
+        assert_eq!(st.life_regen, 3);
+        // Without the auras the same tick regens 0.
+        let mut st2 = RegenState::default();
+        let mut life2 = 50;
+        let _ = update_life_regen(&mut st2, &RegenInputs { max_life: 100, ..RegenInputs::default() }, &mut life2);
+        assert_eq!(st2.life_regen, 0);
+    }
+
+    #[test]
+    fn w4_e28_the_clairvoyance_buff_arm_is_verbatim() {
+        // `Player.cs:11886-11892` — the Crystal Ball's buff 29: magicCrit
+        // +2, magicDamage +0.05, statManaMax2 +20, manaCost −0.02.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let (crit0, dmg0, mana0, cost0) =
+            (p.magic_crit, p.magic_damage, p.mana_max, p.mana_cost);
+        p.buffs.add_buff(29, 108000);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.magic_crit, crit0 + 2);
+        assert!((p.magic_damage - (dmg0 + 0.05)).abs() < 1e-5);
+        assert_eq!(p.mana_max, mana0 + 20);
+        assert!((p.mana_cost - (cost0 - 0.02)).abs() < 1e-5);
+        // 108000 ticks = 30 minutes at 60 Hz — the grant duration.
+        let slot = p.buffs.find_buff_index(29).unwrap();
+        assert!(p.buffs.buff_time[slot] > 107000);
     }
 
     #[test]
@@ -13421,7 +17393,7 @@ mod tests {
         // the last tick reports the respawn.
         let mut revived_at = None;
         for tick in 0..700 {
-            if p.update_dead(false, false, false, false) {
+            if p.update_dead(false, false, false, false, false) {
                 revived_at = Some(tick);
                 break;
             }
@@ -13441,7 +17413,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, true, true);
         p.respawn_timer = 4000; // the save-load can exceed the cap
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
         assert_eq!(p.respawn_timer, 3600);
     }
@@ -13457,12 +17429,12 @@ mod tests {
         p.chest_x = 20;
         p.chest_y = 10;
         p.start_death(&w, false, false);
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert_eq!(p.chest, -1, "the world chest closes (:17020)");
         assert_eq!((p.chest_x, p.chest_y), (20, 10), "the origin stays");
         // A bank closes too (the C# writes -1 unconditionally).
         p.chest = -4;
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert_eq!(p.chest, -1, "the safe closes too");
     }
 
@@ -13562,6 +17534,49 @@ mod tests {
         assert!(!p.try_removing_buff(&w, poison, 20, [0, 0]), "a debuff refuses");
         assert!(p.try_removing_buff(&w, iron, 5, [0, 0]), "the non-debuff removes");
         assert_eq!(p.buffs.find_buff_index(5), None);
+    }
+
+    #[test]
+    fn w4_f12_final_cancel_every_debuff_refuses_and_the_60_151_guards() {
+        // The W4-f12 final debuff-refusal census (`Main.cs:43373`):
+        // `!Main.debuff[b] && b != 60 && b != 151` gates the whole removal
+        // arm. The 76-id `Main.debuff` set (`Main.cs:8865-8940`,
+        // script-diffed against `buffs.rs::DEBUFF_IDS` — zero missing,
+        // zero extra) ALL refuse the right-click cancel, and the two
+        // non-debuff guards 60 (Petrified) / 151 (Webbed) refuse too.
+        // Every refused buff SURVIVES the attempt (the C# never enters
+        // the arm — no DelBuff, no sound).
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        const DEBUFFS: [i32; 76] = [
+            20, 21, 22, 23, 24, 25, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 43, 44, 46, 47,
+            67, 68, 69, 70, 72, 80, 86, 87, 88, 89, 94, 103, 119, 120, 137, 144, 145, 146, 147,
+            148, 149, 153, 156, 157, 158, 160, 163, 164, 169, 183, 186, 189, 194, 195, 196, 197,
+            199, 203, 204, 215, 320, 321, 323, 324, 332, 333, 334, 344, 350, 353, 395, 397, 398,
+            399, 400,
+        ];
+        for &b in DEBUFFS.iter().chain([60, 151].iter()) {
+            assert!(crate::buffs::is_debuff(b) || b == 60 || b == 151, "id {b}");
+            p.buffs = crate::buffs::BuffSlots::default();
+            p.buffs.add_buff(b, 3600);
+            let slot = p.buffs.find_buff_index(b).unwrap();
+            assert!(
+                !p.try_removing_buff(&w, slot, b, [0, 0]),
+                "debuff/guard {b} must refuse the cancel"
+            );
+            assert_eq!(p.buffs.buff_type[slot], b, "the refused {b} survives");
+            assert_eq!(p.buffs.buff_time[slot], 3600, "its timer is untouched");
+        }
+        // The complement: a sample of NON-debuff ids across the range all
+        // cancel (the arm dels the slot and returns true for the MenuTick).
+        for b in [1, 5, 26, 48, 71, 101, 113, 147, 165, 206, 322, 383] {
+            assert!(!crate::buffs::is_debuff(b), "{b} is not a debuff");
+            p.buffs = crate::buffs::BuffSlots::default();
+            p.buffs.add_buff(b, 3600);
+            let slot = p.buffs.find_buff_index(b).unwrap();
+            assert!(p.try_removing_buff(&w, slot, b, [0, 0]), "{b} cancels");
+            assert_eq!(p.buffs.buff_type[slot], 0, "the slot cleared");
+        }
     }
 
     #[test]
@@ -13757,13 +17772,13 @@ mod tests {
         // Inside the 90-tick lockout: no skip even on the jump edge (the
         // held jump's edge is consumed while the lockout runs).
         for _ in 0..89 {
-            assert!(!p.update_dead(true, false, false, false));
+            assert!(!p.update_dead(true, false, false, false, false));
         }
         // The lockout expired but the held jump has no fresh edge; a release
         // and a new press do.
-        assert!(!p.update_dead(true, false, false, false));
-        assert!(!p.update_dead(false, false, false, false));
-        assert!(p.update_dead(true, false, false, false));
+        assert!(!p.update_dead(true, false, false, false, false));
+        assert!(!p.update_dead(false, false, false, false, false));
+        assert!(p.update_dead(true, false, false, false, false));
     }
 
     #[test]
@@ -13772,7 +17787,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(false, false, false, false);
+            p.update_dead(false, false, false, false, false);
         }
         assert!(!p.allows_respawn_timer_skip(true, false, false));
         assert!(p.allows_respawn_timer_skip(false, false, false));
@@ -13786,13 +17801,13 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(true, false, false, false);
+            p.update_dead(true, false, false, false, false);
         }
         // The held jump consumed its edge at the lockout expiry...
-        assert!(!p.update_dead(true, false, false, false));
+        assert!(!p.update_dead(true, false, false, false, false));
         // ...release and press again: the edge fires.
-        p.update_dead(false, false, false, false);
-        assert!(p.update_dead(true, false, false, false));
+        p.update_dead(false, false, false, false, false);
+        assert!(p.update_dead(true, false, false, false, false));
     }
 
     use super::*;
@@ -13813,6 +17828,180 @@ mod tests {
         w.spawn_x = 10;
         w.spawn_y = 40;
         w
+    }
+
+    // ---- W4-d80: VampireSeedSunlightExposure (Player.cs:28672-28719) ----
+    // WRITTEN NOT RUN (code-only mode). The granter's gate chain + the
+    // 15-tile wall scan; zero draws (the method takes no rng).
+
+    /// A vampire-seed world: day, dry, surface at row 60, the player standing
+    /// at row 50 (above the surface) in open air (no walls). The granter's
+    /// happy path — the open wall at the player's feet sets the burning flag.
+    fn vampire_world() -> World {
+        let mut w = World::new("vamp".into(), 64, 128);
+        w.micro_seeds.insert(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+        w.world_surface = 60.0;
+        w.day_time = true;
+        w.eclipse = false;
+        w
+    }
+
+    /// A player whose feet sit at tile row `foot_row` (Bottom.Y = foot_row*16),
+    /// centre at tile column 10. `Bottom.Y - 1` truncates to row foot_row-1
+    /// when the feet are exactly on the boundary; place the feet mid-tile so
+    /// the scan anchor is `foot_row`.
+    fn vampire_player(w: &World, foot_row: i32) -> Player {
+        let mut p = Player::spawn(w);
+        // Bottom.Y = foot_row*16 + 8 (mid-tile) → (int)(Bottom.Y-1)/16 = foot_row.
+        p.y = (foot_row * 16 + 8) as f32 - p.height;
+        p.x = 10.0 * 16.0 + 8.0 - p.width * 0.5; // centre at column 10
+        p
+    }
+
+    /// The seed gate (`:28676-28679`): no vampire seed → the flag never sets.
+    #[test]
+    fn w4_d80_the_sun_exposure_needs_the_vampire_seed() {
+        let mut w = vampire_world();
+        w.micro_seeds = tr_core::seeds::MicroSeedFlags::none();
+        let mut p = vampire_player(&w, 50);
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "the seed gate refuses");
+    }
+
+    /// The happy path (`:28681`/`:28707-28710`): below-surface false (the
+    /// player is ABOVE the surface row 60), day, dry, no eclipse/graveyard/
+    /// glowshroom, no umbrella, open air (wall 0) → the burning flag sets.
+    #[test]
+    fn w4_d80_the_sun_exposure_burns_in_open_daylight() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 50); // row 50 < surface 60
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(p.vampire_burning_in_sunlight, "open daylight burns");
+    }
+
+    /// The surface gate (`:28681`): at/below the surface row → no burn.
+    #[test]
+    fn w4_d80_the_sun_exposure_refuses_below_the_surface() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 61); // row 61 >= surface 60
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "below the surface");
+    }
+
+    /// The night / rain / eclipse gates (`:28681`): each refuses the burn.
+    #[test]
+    fn w4_d80_the_sun_exposure_refuses_night_rain_eclipse() {
+        let mut w = vampire_world();
+        let mut p = vampire_player(&w, 50);
+        w.day_time = false;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "night");
+        w.day_time = true;
+        p.vampire_seed_sunlight_exposure(&w, true); // raining
+        assert!(!p.vampire_burning_in_sunlight, "rain");
+        w.eclipse = true;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "eclipse");
+    }
+
+    /// The graveyard / glowshroom zone gates (`:28681`): each refuses.
+    #[test]
+    fn w4_d80_the_sun_exposure_refuses_graveyard_and_glowshroom() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 50);
+        p.zones.graveyard = true;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "graveyard");
+        p.zones.graveyard = false;
+        p.zones.glowshroom = true;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "glowshroom");
+    }
+
+    /// The wet gate (`:28686`): any liquid (the four-flag union) refuses.
+    #[test]
+    fn w4_d80_the_sun_exposure_refuses_any_liquid() {
+        let w = vampire_world();
+        for wet in ["water", "lava", "honey", "shimmer"] {
+            let mut p = vampire_player(&w, 50);
+            match wet {
+                "water" => p.wet = true,
+                "lava" => p.lava_wet = true,
+                "honey" => p.honey_wet = true,
+                _ => p.shimmer_wet = true,
+            }
+            p.vampire_seed_sunlight_exposure(&w, false);
+            assert!(!p.vampire_burning_in_sunlight, "{wet} refuses");
+        }
+    }
+
+    /// The umbrella gate (`:28690-28698`): 946/4707 held refuses; the bat
+    /// mount (56) cancels the umbrella so the burn lands.
+    #[test]
+    fn w4_d80_the_sun_exposure_umbrella_and_bat_mount() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 50);
+        p.held_item_kind = 946; // Umbrella
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "the umbrella shades");
+        p.held_item_kind = 4707; // Tragic Umbrella
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "the tragic umbrella shades");
+        // The bat mount (56) cancels the umbrella (`:28691-28694`).
+        p.mount.set_mount(56, false);
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(p.vampire_burning_in_sunlight, "the bat mount cancels the umbrella");
+    }
+
+    /// The wall scan (`:28707-28711`): a solid roof (wall != 0/21/318) above
+    /// the player stops the scan before it reaches open air → no burn. The
+    /// C# quirk: `SolidTile3` reads the UPPER cell, `tile.type` the current.
+    #[test]
+    fn w4_d80_the_sun_exposure_roof_stops_the_scan() {
+        let mut w = vampire_world();
+        // A stone roof (kind 1, wall 1) at row 49 — one tile above the feet
+        // anchor (row 50). The scan reads row 50 (wall 0 → would burn), but
+        // place a wall at row 50 itself so the FIRST cell is walled.
+        let i = w.index(10, 50);
+        w.tiles[i].wall = 1; // a normal wall — not 0/21/318
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // The cell above (row 49) is solid stone → the roof stop fires.
+        let j = w.index(10, 49);
+        w.tiles[j] = Tile { kind: 1, ..Default::default() };
+        w.tiles[j].flags |= FLAG_ACTIVE;
+        let mut p = vampire_player(&w, 50);
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "the roof stops the scan");
+    }
+
+    /// The wall scan's open-wall ids (`:28707`): wall 21 and 318 burn like 0.
+    #[test]
+    fn w4_d80_the_sun_exposure_open_wall_ids_burn() {
+        for wall in [0u16, 21, 318] {
+            let mut w = vampire_world();
+            let i = w.index(10, 50);
+            w.tiles[i].wall = wall;
+            let mut p = vampire_player(&w, 50);
+            p.vampire_seed_sunlight_exposure(&w, false);
+            assert!(p.vampire_burning_in_sunlight, "wall {wall} burns");
+        }
+    }
+
+    /// The RNG contract: the granter draws nothing (it takes no rng — the
+    /// gate chain + the wall scan are pure reads). The counter tick that
+    /// follows is also draw-free (`tick_sun_scorch`).
+    #[test]
+    fn w4_d80_the_sun_exposure_is_draw_free() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 50);
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        p.vampire_seed_sunlight_exposure(&w, false);
+        p.tick_sun_scorch();
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the granter path");
+        assert!(p.vampire_burning_in_sunlight);
+        assert_eq!(p.sun_scorch_counter, 1, "the burning tick ramps +1");
     }
 
     #[test]
@@ -15983,6 +20172,64 @@ mod tests {
         assert_eq!(p.jump, (15.0 * 0.75) as i32, "cloud 0.75x boost");
     }
 
+    /// W4-f42 — `Player.cs:21905-21926`: the performing sandstorm jump sets
+    /// `sandStorm` and queues the 3-dust + gore visual; the per-tick clear
+    /// (`:26743`) drops it again once the ascent ends.
+    #[test]
+    fn w4_f42_the_sandstorm_jump_sets_the_field_and_queues_the_visual() {
+        let w = ground_world();
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Sandstorm]);
+        // Ground jump, then the air tap consumes the sandstorm.
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        tap_air(&w, &mut p);
+        assert_eq!(p.performing_jump, Some(ExtraJump::Sandstorm));
+        assert!(p.vy < 0.0, "ascending");
+        assert!(p.sand_storm, "the visual set the flag (:21919)");
+        let v = p.take_sandstorm_jump().expect("the visual queued");
+        // num4 = (jump/75 + 1)/2 — jump 45 → (0.6 + 1)/2 = 0.8.
+        assert!((v.num4 - 0.8).abs() < 1e-6, "num4 = (45/75+1)/2");
+        assert_eq!(v.dust_pos, Vec2::new(p.x, p.y + p.height / 2.0));
+        assert_eq!(v.dust_vel, Vec2::new(p.vx, p.vy) * 0.3);
+        // The ascent ends: the flag clears on the next rest tick.
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert!(!p.sand_storm, "the per-tick clear dropped the flag");
+        assert!(p.take_sandstorm_jump().is_none(), "no visual at rest");
+    }
+
+    /// W4-f42 — `Player.cs:26573-26577`: the sandStorm run boost —
+    /// acceleration ×1.5, top speed ×2 — reads the flag at the stat slot
+    /// (before the `:26743` clear). One rightward tick from rest: the
+    /// boosted acceleration integrates a larger vx than the plain tick.
+    #[test]
+    fn w4_f42_the_sandstorm_field_boosts_the_run_stats() {
+        let w = ground_world();
+        let mut plain = Player::spawn(&w);
+        let mut boosted = Player::spawn(&w);
+        for _ in 0..120 {
+            plain.update(&w, PlayerInput::default());
+            boosted.update(&w, PlayerInput::default());
+        }
+        boosted.sand_storm = true;
+        let right = PlayerInput { right: true, ..Default::default() };
+        plain.update(&w, right);
+        boosted.update(&w, right);
+        assert!(
+            boosted.vx > plain.vx,
+            "the ×1.5 acceleration boost: {} > {}",
+            boosted.vx,
+            plain.vx
+        );
+        // The per-tick clear (`:26743`) dropped the flag after the stat
+        // slot read it — the boost applied exactly this tick.
+        assert!(!boosted.sand_storm, "the per-tick clear ran");
+        assert!(!plain.sand_storm);
+    }
+
     /// `Player.cs:20755-20758`: the ground jump re-arms every granted option.
     #[test]
     fn ground_jump_rearms_the_options() {
@@ -17882,6 +22129,7 @@ mod tests {
                 Vec2::new(vel_x, 0.0),
                 13.0,
                 0.0,
+                crate::minecart::SparkVariant::Sparks,
             );
             if sparks.len() == want {
                 return s;
@@ -19968,18 +24216,48 @@ mod tests {
             assert!(p.dead);
             assert_eq!(p.respawn_timer, 600);
             for _ in 0..599 {
-                assert!(!p.update_dead(false, false, false, false));
+                assert!(!p.update_dead(false, false, false, false, false));
             }
             assert_eq!(p.respawn_timer, 1);
-            assert!(p.update_dead(false, false, false, false), "revive on tick 600");
+            assert!(p.update_dead(false, false, false, false, false), "revive on tick 600");
             // The dead tick zeroes the life (`:17016`).
             p.hp = 40;
-            p.update_dead(false, false, false, false);
+            p.update_dead(false, false, false, false, false);
             assert_eq!(p.hp, 0, "UpdateDead sets statLife = 0");
             p.revive();
             assert!(!p.dead);
             assert_eq!(p.hp, 100, "max(max/2, 100)");
             assert!(p.immune && p.immune_time == 180, "180 revive i-frames");
+        }
+
+        /// W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045-17055`):
+        /// a permadeath hardcore player's timer expiry sets the ghost, never
+        /// the respawn; the ghost refuses the respawn skip (`:38964`).
+        #[test]
+        fn the_hardcore_ghost_never_respawns() {
+            let w = ground_world();
+            let mut p = Player::spawn(&w);
+            p.start_death(&w, false, false);
+            assert_eq!(p.respawn_timer, 600);
+            for _ in 0..599 {
+                assert!(!p.update_dead(false, false, false, false, true));
+            }
+            assert!(!p.ghost, "no ghost before the expiry");
+            // Tick 600: the expiry ghosts instead of reviving.
+            assert!(!p.update_dead(false, false, false, false, true));
+            assert!(p.ghost, "the expiry sets the ghost");
+            assert!(p.dead, "the ghost stays dead");
+            // The ghost refuses the skip even with a jump press.
+            assert!(!p.allows_respawn_timer_skip(false, false, false));
+            assert!(!p.update_dead(true, false, false, false, true));
+            // A surviving-world hardcore player (gate false) still respawns.
+            let mut q = Player::spawn(&w);
+            q.start_death(&w, false, false);
+            for _ in 0..599 {
+                q.update_dead(false, false, false, false, false);
+            }
+            assert!(q.update_dead(false, false, false, false, false), "the survivor revives");
+            assert!(!q.ghost);
         }
     }
 }
@@ -20654,11 +24932,11 @@ mod s1_player_composite_tests {
         p.control_left = true;
         p.control_right = false;
         p.sand_storm = true;
-        p.horizontal_movement(PlayerInput::default());
+        p.horizontal_movement(PlayerInput::default(), 0.0);
         assert_eq!(p.facing, 1, "the sandstorm keeps the facing");
         // The flag down, the same press turns.
         p.sand_storm = false;
-        p.horizontal_movement(PlayerInput::default());
+        p.horizontal_movement(PlayerInput::default(), 0.0);
         assert_eq!(p.facing, -1);
     }
 
@@ -21355,24 +25633,305 @@ mod s1_p_i05_thrust_tests {
             item_in_use: true,
             held_use_turn: false,
             ..Default::default()
-        });
+        }, 0.0);
         assert_eq!(p.facing, 1, "the stab locks the facing");
         // useTurn (the pickaxe's row) turns mid-swing.
         p.horizontal_movement(PlayerInput {
             item_in_use: true,
             held_use_turn: true,
             ..Default::default()
-        });
+        }, 0.0);
         assert_eq!(p.facing, -1, "useTurn exempts the lock");
         // Idle (itemAnimation == 0) turns freely.
         p.facing = 1;
-        p.horizontal_movement(PlayerInput::default());
+        p.horizontal_movement(PlayerInput::default(), 0.0);
         assert_eq!(p.facing, -1, "the idle turn is unlocked");
         // The sandstorm dash owns the turn cadence (`:19837` !sandStorm).
         p.facing = 1;
         p.sand_storm = true;
-        p.horizontal_movement(PlayerInput::default());
+        p.horizontal_movement(PlayerInput::default(), 0.0);
         assert_eq!(p.facing, 1, "the sandstorm gates the run-key turn");
+    }
+
+    // ---- W4-c40: the Strong Wind push chain (written, NOT run) ----
+
+    /// `Player.cs:25556-25559` + `:11835-11838`: the scene grant arms buff
+    /// 194 from `Auras::sandstorm_wind`, and the NEXT tick's slot scan sets
+    /// `wind_pushed` (the effect reads the previous tick's grant, like the
+    /// sunflower precedent). The `ResetEffects` clear (`:16970`) drops the
+    /// flag when the aura leaves.
+    #[test]
+    fn w4_c40_the_sandstorm_aura_grants_the_wind_push_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.auras.sandstorm_wind = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.active_types().contains(&194), "the grant lands");
+        assert!(!p.wind_pushed, "the effect reads the PREVIOUS tick's grant");
+        p.update(&w, PlayerInput::default());
+        assert!(p.wind_pushed, "the second tick's scan arms the flag");
+        // The aura gone: the 2-tick buff expires and the reset clears.
+        p.auras.sandstorm_wind = false;
+        for _ in 0..4 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(!p.wind_pushed, "ResetEffects clears with no re-grant");
+        assert!(!p.buffs.active_types().contains(&194));
+    }
+
+    /// `Player.cs:19795-19817` + `:20089-20107`: the push maths, probed at
+    /// the movement seam directly. Grounded + idle + wind 0.7 (> 0.5):
+    /// num2 = 0.06 × 1.37 = 0.0822; friction zeroes vx first, then the
+    /// flag2 tail clamps to num2 on the crossing tick.
+    #[test]
+    fn w4_c40_the_push_accelerates_to_the_wind_speed() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wind_pushed = true;
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.control_left = false;
+        p.control_right = false;
+        p.horizontal_movement(PlayerInput::default(), 0.7);
+        // 0.06 * 1.37 — f32 exact: both operands are f32 literals.
+        let want = 0.06f32 * 1.37f32;
+        assert_eq!(p.vx, want, "the one-sided tail clamps onto num2");
+        // At the wind speed the tail no longer fires (vx == num2 fails the
+        // strict `<`), but grounded friction pulls it back under, and the
+        // tail re-clamps — the equilibrium oscillates within one slowdown.
+        let before = p.vx;
+        p.horizontal_movement(PlayerInput::default(), 0.7);
+        assert!(p.vx <= before, "never accelerates past num2");
+        assert!(p.vx > before - p.run_slowdown - 1e-6);
+    }
+
+    /// `Player.cs:19802-19811`: airborne ×1.5, steering ×0.8 + the ±0.072
+    /// clamp. Wind 0.7 airborne idle: 0.06×1.37×1.5 = 0.1233. Steering:
+    /// ×0.8 → 0.09864 → clamped to 0.072.
+    #[test]
+    fn w4_c40_the_push_tiers_airborne_and_steering() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wind_pushed = true;
+        p.vx = 0.0;
+        p.vy = -2.0; // airborne
+        p.control_left = false;
+        p.control_right = false;
+        p.horizontal_movement(PlayerInput::default(), 0.7);
+        let airborne = 0.06f32 * 1.37f32 * 1.5f32;
+        // Airborne friction (runSlowdown*0.5) zeroes the 0 vx, the tail
+        // adds num2 once — vx lands exactly on num2.
+        assert_eq!(p.vx, airborne, "airborne ×1.5");
+        // Steering: the clamp caps num2 at 0.072. Exact f32 replay of the
+        // C# statement order: the right-key airborne input arm
+        // (`:19907-19916`: vx < -runSlowdown → += runSlowdown, then
+        // += runAcceleration), then the flag2 tail approaches from below
+        // (`:20099-20106`: vx += num2, no clamp crossing).
+        let mut q = Player::spawn(&w);
+        for _ in 0..120 {
+            q.update(&w, PlayerInput::default());
+        }
+        q.wind_pushed = true;
+        q.vx = -1.0; // moving against the wind
+        q.vy = -2.0;
+        q.control_right = true;
+        let (slow, accel) = (q.run_slowdown, q.run_acceleration);
+        q.horizontal_movement(
+            PlayerInput { right: true, ..Default::default() },
+            0.7,
+        );
+        let mut want = -1.0f32;
+        want += slow;
+        want += accel;
+        want += 0.072;
+        assert_eq!(q.vx, want, "the clamped push adds exactly 0.072");
+        // Direct pin of the clamp maths (the C# literals).
+        let mut num2 = 0.06f32 * 1.37f32 * 1.5f32 * 0.8f32;
+        num2 = num2.clamp(-0.072, 0.072);
+        assert_eq!(num2, 0.072, "0.09864 clamps to 0.072");
+    }
+
+    /// `Player.cs:19751-19770`: `CanBePushedByWind` — the roller skates
+    /// refuse; a mounted player grounded WITH a direction key refuses;
+    /// mounted airborne or idle allows.
+    #[test]
+    fn w4_c40_can_be_pushed_by_wind_gates() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.vy = 0.0;
+        p.control_left = false;
+        p.control_right = false;
+        assert!(p.can_be_pushed_by_wind(), "unmounted idle");
+        p.control_right = true;
+        assert!(p.can_be_pushed_by_wind(), "unmounted steering still drifts");
+        // The roller skates (57) grip.
+        assert!(p.set_mount(57, false));
+        p.control_right = false;
+        assert!(!p.can_be_pushed_by_wind(), "the skates refuse");
+        // A flying mount (the Bat 56) grounded + steering refuses; airborne
+        // allows.
+        assert!(p.set_mount(56, false));
+        p.control_right = true;
+        p.vy = 0.0;
+        assert!(!p.can_be_pushed_by_wind(), "mounted grounded steering");
+        p.vy = -1.0;
+        assert!(p.can_be_pushed_by_wind(), "mounted airborne");
+        p.vy = 0.0;
+        p.control_right = false;
+        assert!(p.can_be_pushed_by_wind(), "mounted grounded idle");
+    }
+
+    /// `Player.cs:19813-19816`: facing against the push lowers the fast-run
+    /// threshold by |num2|×40 — the Hermes footstep arm (`:19987-19990`,
+    /// the port's `spawn_fast_run_particles` step-sound request) fires
+    /// earlier. The arm lives in the over-max refine band, so the player
+    /// needs boots (`acc_run_speed > max_run_speed`); with vx between the
+    /// lowered and the normal threshold the request fires only when the
+    /// facing opposes the push.
+    #[test]
+    fn w4_c40_the_facing_penalty_lowers_the_fast_run_threshold() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // The Hermes-boot shape: the over-max band exists only when
+        // acc_run_speed > max_run_speed (the default 3/3 has no band).
+        p.max_run_speed = 3.0;
+        p.acc_run_speed = 6.0;
+        p.run_acceleration = 0.1;
+        p.run_slowdown = 0.2;
+        p.wind_pushed = true;
+        p.vy = 0.0;
+        p.control_left = true;
+        p.control_right = false;
+        let normal = (p.acc_run_speed + p.max_run_speed) / 2.0; // 4.5
+        let num2 = (0.06f32 * 1.37f32 * 0.8f32).clamp(-0.072, 0.072); // steering
+        let lowered = normal - num2.abs() * 40.0; // 4.5 - 2.88 = 1.62
+        assert!(lowered < normal, "the penalty is real when opposed");
+        // vx in the band (lowered, normal), running left (negative): the
+        // arm reads `vx < -threshold`. Facing +1 vs push +1: no penalty,
+        // no step request. Facing -1 vs push +1: penalty, request fires.
+        // (The C# reads `direction`, not the keys.) The input arm decays
+        // vx by runSlowdown+accel*0.2 first — start mid-band so the
+        // post-decay value still straddles the two thresholds.
+        let mid = -(lowered + normal) / 2.0; // -3.06
+        p.vx = mid;
+        p.facing = 1;
+        p.run_sound_delay = 0;
+        p.pending_step_sound = None;
+        p.horizontal_movement(PlayerInput { left: true, ..Default::default() }, 0.7);
+        let same_dir = p.pending_step_sound.is_some();
+        p.vx = mid;
+        p.facing = -1;
+        p.run_sound_delay = 0;
+        p.pending_step_sound = None;
+        p.horizontal_movement(PlayerInput { left: true, ..Default::default() }, 0.7);
+        let opposed = p.pending_step_sound.is_some();
+        assert!(!same_dir, "the aligned facing keeps the normal threshold");
+        assert!(opposed, "the opposed facing fires the trail earlier");
+    }
+
+    /// W4-c40 RNG census: the whole push chain draws NOTHING — the grant,
+    /// the flag arm, the gate and both movement arms are pure. Twin ticks
+    /// with the flag on/off leave the stage stream at the same position.
+    #[test]
+    fn w4_c40_the_push_chain_draws_nothing() {
+        let w = ground_world();
+        let mut a = Player::spawn(&w);
+        let mut b = Player::spawn(&w);
+        for _ in 0..60 {
+            a.update(&w, PlayerInput::default());
+            b.update(&w, PlayerInput::default());
+        }
+        a.auras.sandstorm_wind = true;
+        let mut rng_a = DodgeRng::with_rolls(&[]);
+        let mut rng_b = DodgeRng::with_rolls(&[]);
+        for _ in 0..10 {
+            a.update_with_grapple(&w, PlayerInput::default(), &[], false, false, false, None, &mut rng_a);
+            b.update_with_grapple(&w, PlayerInput::default(), &[], false, false, false, None, &mut rng_b);
+        }
+        assert!(a.wind_pushed, "the grant armed by tick 2");
+        assert_eq!(rng_a.draws.len(), rng_b.draws.len(), "zero added draws");
+        assert_eq!(rng_a.draws, rng_b.draws, "the draw sequence is identical");
+    }
+
+    /// W4-c40 — `Player.cs:26573-26577`: the i12 `sand_storm` field's run
+    /// boost — `runAcceleration ×1.5, maxRunSpeed ×2`, applied right after
+    /// the floor-modifier chain. Probed through the movement seam: with
+    /// the flag set, the input accel and the over-max band both scale.
+    #[test]
+    fn w4_c40_the_sandstorm_dash_boosts_the_run_stats() {
+        let w = ground_world();
+        // The observable is the VELOCITY gain: grounded right-key accel
+        // is runAcceleration (boosted ×1.5) while under maxRunSpeed (×2).
+        // The boost reads the flag set BEFORE the tick — the :26743 clear
+        // fires after the stat block, so this tick's movement sees the
+        // boosted stats (the C#'s :26573-before-:26743 order).
+        let mut q = Player::spawn(&w);
+        for _ in 0..120 {
+            q.update(&w, PlayerInput::default());
+        }
+        q.sand_storm = true;
+        q.control_right = true;
+        q.update(&w, PlayerInput { right: true, ..Default::default() });
+        let mut r = Player::spawn(&w);
+        for _ in 0..120 {
+            r.update(&w, PlayerInput::default());
+        }
+        r.control_right = true;
+        r.update(&w, PlayerInput { right: true, ..Default::default() });
+        // Both start from vx 0; the boosted accel is 1.5x.
+        assert!(
+            (q.vx - r.vx * 1.5).abs() < 1e-4,
+            "the dash accel is ×1.5 ({} vs {})",
+            q.vx,
+            r.vx
+        );
+    }
+
+    /// W4-c40 — the i12 field's live lifecycle: the bottle jump's ascent
+    /// re-arms `sandStorm` (`DoubleJumpVisuals` `:21905-21919`), the
+    /// hold-boost exhaustion cancels the performing state (`:26753-26756`
+    /// → `CancelAllJumpVisualEffects`), and the next tick's `:26743` clear
+    /// drops the flag. The whole chain through the public update seam.
+    #[test]
+    fn w4_c40_the_bottle_jump_arms_and_expires_the_sandstorm_flag() {
+        let w = ground_world();
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Sandstorm]);
+        // Ground jump.
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert!(!p.sand_storm, "the ground jump is not the bottle");
+        // Release + gap + air tap: the Sandstorm consumes (3x = 45).
+        tap_air(&w, &mut p);
+        assert_eq!(p.performing_jump, Some(ExtraJump::Sandstorm));
+        assert_eq!(p.jump, 45);
+        assert!(p.sand_storm, "the ascending bottle arms the flag");
+        // Hold the jump: the counter drains one per tick while ascending;
+        // the flag stays armed every tick the visuals gate holds.
+        let mut armed_ticks = 0;
+        for _ in 0..60 {
+            p.update(&w, PlayerInput { jump: true, ..Default::default() });
+            if p.sand_storm {
+                armed_ticks += 1;
+            }
+            if p.jump == 0 && p.vy >= 0.0 {
+                break;
+            }
+        }
+        assert!(armed_ticks > 10, "the ascent keeps the flag armed");
+        // After the boost exhausts and the ascent ends, the flag drops.
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(!p.sand_storm, "the flag expires with the jump");
+        assert_eq!(p.performing_jump, None, "the performing state cancelled");
     }
 }
 
@@ -21724,5 +26283,377 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    // -- W4-g66 gap-fill: the wall-cling / carpet / audio-cue ticks ---------
+    // Witnesses WRITTEN NOT RUN (code-only mode).
+
+    /// `:21750-21840` — the Wallslide tick: level-1 boots + a wall at the
+    /// slide edge + falling past 0.5 pins vy 0.5 (down key: 4) and queues
+    /// the puff; level 2 clings at −gravity+1e-5 with NO puff unless the
+    /// down key drives the fast slide.
+    #[test]
+    fn w4_g66_the_wallslide_tick_clings_and_queues() {
+        let mut w = ground_world();
+        // The probe: x = (300 + 20 + 1)/16 = 20, foot row (600+42+1)/16 = 40
+        // and the row above (`:21771` needs BOTH).
+        for y in [39, 40] {
+            let i = w.index(20, y);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&w);
+        p.x = 300.0;
+        p.y = 600.0;
+        p.vx = 2.0;
+        p.vy = 1.0;
+        p.slide_dir = 1;
+        p.spiked_boots = 1;
+        p.control_right = true;
+        p.wallslide_movement(&w, 0.4);
+        assert!(p.sliding);
+        assert_eq!(p.vy, 0.5, "the level-1 slide");
+        let b = p.take_wall_dust().expect("the level-1 slide always puffs");
+        assert_eq!(b.slide_dir, 1);
+        assert!(!b.rat);
+        // Level 2: the cling, no puff.
+        p.spiked_boots = 2;
+        p.vy = 1.0;
+        p.wallslide_movement(&w, 0.4);
+        assert!(p.sliding);
+        // f32: -0.4 + 1e-5 rounds onto -0.4's own ulp grid (~3e-8).
+        assert!((p.vy - (-0.4f32 + 1e-5)).abs() < 1e-7, "the cling: {}", p.vy);
+        assert!(p.take_wall_dust().is_none());
+        // Level 2 + down: the fast slide WITH the puff.
+        p.vy = 1.0;
+        p.control_down = true;
+        p.wallslide_movement(&w, 0.4);
+        assert_eq!(p.vy, 4.0);
+        assert!(p.take_wall_dust().is_some());
+        // No wall on the left → no slide at all.
+        p.slide_dir = -1;
+        p.control_right = false;
+        p.control_left = true;
+        p.control_down = false;
+        p.vy = 1.0;
+        p.wallslide_movement(&w, 0.4);
+        assert!(!p.sliding);
+        assert!(p.take_wall_dust().is_none());
+    }
+
+    /// `:21607-21748` — the Rat's WallClimb: up −3 / down +4 with the
+    /// rat-halved puff, the level-1 up −2; the solid-tile probe skips the
+    /// dust when the move direction points into a tile.
+    #[test]
+    fn w4_g66_the_rat_wall_climb_arms() {
+        let mut w = ground_world();
+        for y in [39, 40] {
+            let i = w.index(20, y);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&w);
+        p.x = 300.0;
+        p.y = 600.0;
+        p.vy = 1.0;
+        p.slide_dir = 1;
+        p.control_right = true;
+        p.control_up = true;
+        p.spiked_boots = 2;
+        p.mount.set_mount(55, false);
+        p.wall_climb_movement(&w, 0.4);
+        assert_eq!(p.vy, -3.0, "the climb-up arm");
+        assert!(p.sliding);
+        let b = p.take_wall_dust().expect("the Rat climb puffs");
+        assert!(b.rat, "the Rat halves the scale");
+        // Down: +4.
+        p.control_up = false;
+        p.control_down = true;
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, 0.4);
+        assert_eq!(p.vy, 4.0);
+        assert!(p.take_wall_dust().is_some());
+        // Level 1 (claws only): up −2.
+        p.spiked_boots = 1;
+        p.control_down = false;
+        p.control_up = true;
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, 0.4);
+        assert_eq!(p.vy, -2.0);
+        // Not the Rat → the whole method returns.
+        p.mount.dismount();
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, 0.4);
+        assert_eq!(p.vy, 1.0, "no Rat, no climb");
+    }
+
+    /// `:21842-21890` — the Carpet glide: the launch consumes the latch,
+    /// the vy pin at −(g+1e-6), the frame counter's |vx| accumulation, the
+    /// 300-tick budget, the rest frame −1 and the slowFall cancel.
+    #[test]
+    fn w4_g66_the_carpet_glide_pins_vy_and_frames() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.carpet = true;
+        p.can_carpet = true;
+        p.control_jump = true;
+        p.vy = 2.0;
+        p.vx = 4.0;
+        p.wing_time = 0.0;
+        p.rocket_time = 0;
+        p.slow_fall = true;
+        p.carpet_movement(0.4);
+        assert!(!p.can_carpet, "the launch consumed the latch");
+        assert_eq!(p.carpet_time, 299, "300 minus this tick");
+        assert_eq!(p.vy, -(0.4 + 1e-6), "the vy pin");
+        assert!(!p.slow_fall, "the glide cancels Featherfall");
+        // counter += 1 + |4*0.5| = 3 per tick; >8 wraps at the third.
+        assert_eq!(p.carpet_frame_counter, 3.0);
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_frame_counter, 6.0);
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_frame_counter, 0.0, "9 > 8 wraps");
+        assert_eq!(p.carpet_frame, 1);
+        // The budget spends out → the rest frame.
+        p.carpet_time = 1;
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_time, 0);
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_frame, -1, "the spent glide rests");
+        // No jump held → no glide even with budget.
+        p.carpet_time = 100;
+        p.control_jump = false;
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_frame, -1);
+        assert_eq!(p.carpet_time, 100, "the budget only ticks while gliding");
+    }
+
+    /// `:26884-26896` + `:26903-26906` — the boot cue: vanity tier 1 plays
+    /// Item13 at cadence 30, tier 2 Item24 at 15; the delay decrements every
+    /// tick and gates the re-play.
+    #[test]
+    fn w4_g66_the_boot_cue_picks_the_vanity_tier() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.rocket_boots = 1;
+        p.vanity_rocket_boots = 1;
+        p.rocket_time = 5;
+        p.control_jump = true;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.vy = 1.0;
+        p.flight_section(0.4, 10.0);
+        let (idx, _, _) = p.take_rocket_sound().expect("tier 1 plays Item13");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item13");
+        // `:26903-26906` runs BEFORE the thrust early-return — 30 minus
+        // the same-tick decrement.
+        assert_eq!(p.rocket_sound_delay, 29);
+        // The next trigger tick is inside the cadence → silent.
+        p.rocket_delay = 0;
+        p.rocket_time = 5;
+        p.flight_section(0.4, 10.0);
+        assert!(p.take_rocket_sound().is_none(), "the cadence gates");
+        // Tier 2 → Item24 at 15.
+        let mut q = Player::spawn(&w);
+        q.rocket_boots = 2;
+        q.vanity_rocket_boots = 2;
+        q.rocket_time = 5;
+        q.control_jump = true;
+        q.can_rocket = true;
+        q.rocket_release = true;
+        q.vy = 1.0;
+        q.flight_section(0.4, 10.0);
+        let (idx, _, _) = q.take_rocket_sound().expect("tier 2 plays Item24");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item24");
+        assert_eq!(q.rocket_sound_delay, 14);
+    }
+
+    /// `:29475-29480` — the jetpack flap cue: the rocketDelay2 wrap plays
+    /// Item13 and re-arms 60; `:30167-30175` — the Rainbow flutter plays
+    /// Item24 at 30 while the budget lasts.
+    #[test]
+    fn w4_g66_the_wing_frame_cues_play_on_the_wrap() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.wings_logic = 4;
+        p.rocket_delay2 = 1;
+        p.wing_frame_visuals(true);
+        let (idx, _, _) = p.take_rocket_sound().expect("the jetpack wrap plays");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item13");
+        assert_eq!(p.rocket_delay2, 60);
+        // No wrap → silent.
+        p.wing_frame_visuals(true);
+        assert!(p.take_rocket_sound().is_none());
+        assert_eq!(p.rocket_delay2, 59);
+        // Rainbow: the always-animated gate needs vy != 0, no grapple.
+        let mut q = Player::spawn(&w);
+        q.wings_logic = 45;
+        q.wing_time = 10.0;
+        q.vy = 1.0;
+        q.rocket_delay2 = 1;
+        q.wing_frame_visuals(false);
+        let (idx, _, _) = q.take_rocket_sound().expect("the Rainbow flutter plays");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item24");
+        assert_eq!(q.rocket_delay2, 30);
+    }
+
+    /// `:29952-30021`/`:30094-30163` — the dev-wing machines: 47's flag3
+    /// step-3 ladder (frame 1 rests, 3→1 on the held jump), 50's 1→3 fold
+    /// and wrap at 9. `justSwitched` marks the row boundary.
+    #[test]
+    fn w4_g66_the_dev_wing_machines_switch_rows() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.wings_logic = 47;
+        p.vy = 1.0;
+        p.control_jump = true;
+        p.wing_frame = 1;
+        p.wing_frame_counter = 0;
+        p.wing_frame_visuals(false);
+        // flag3 + frame 1 → animate false, the counter rests.
+        assert_eq!(p.wing_frame, 1);
+        assert_eq!(p.wing_frame_counter, 0);
+        let b = p.take_wing_frame_dust().expect("47 queues every call");
+        assert!(!b.just_switched);
+        // Frame 2 + flag3: the step-3 machine runs, 3→1 at the boundary.
+        p.wing_frame = 3;
+        p.wing_frame_counter = 2;
+        p.wing_frame_visuals(false);
+        assert_eq!(p.wing_frame, 1, "the flag3 ladder edge");
+        let b = p.take_wing_frame_dust().unwrap();
+        assert!(b.just_switched);
+        // 50: the 1→3 fold at the boundary (no controlJump needed).
+        let mut q = Player::spawn(&w);
+        q.wings_logic = 50;
+        q.vy = 1.0;
+        q.control_jump = true;
+        q.wing_frame = 1;
+        q.wing_frame_counter = 2;
+        q.wing_frame_visuals(false);
+        assert_eq!(q.wing_frame, 3, "the 50 fold 1→3");
+        let b = q.take_wing_frame_dust().unwrap();
+        assert!(b.just_switched);
+        assert_eq!(b.wing_frame, 3, "the snapshot reads post-machine");
+        // Grounded: the machine rests at 0, no queue extras.
+        q.vy = 0.0;
+        q.wing_frame_visuals(false);
+        assert_eq!(q.wing_frame, 0);
+        // 33: the gate-only arm — no flap/jump/held-jump, no queue.
+        let mut r = Player::spawn(&w);
+        r.wings_logic = 33;
+        r.vy = 1.0;
+        r.control_jump = false;
+        r.wing_frame_visuals(false);
+        assert!(r.take_wing_frame_dust().is_none());
+        r.control_jump = true;
+        r.wing_frame_visuals(false);
+        let b = r.take_wing_frame_dust().expect("the held jump arms 33");
+        assert_eq!(b.eye_color, [105, 90, 75, 255], "the default eye colour");
+    }
+
+    /// The appearance producer: the session draft's colours land on the
+    /// live player at world entry; no draft keeps the ctor initializers.
+    #[test]
+    fn w4_g66_the_session_appearance_lands_on_the_player() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        let mut draft = crate::ui::char_creation::NewPlayerDraft::new();
+        draft.eye_color = [10, 200, 30, 255];
+        draft.undershirt_color = [200, 10, 30, 255];
+        app.session_draft = Some(draft);
+        app.apply_session_appearance();
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.eye_color, [10, 200, 30, 255]);
+        assert_eq!(p.under_shirt_color, [200, 10, 30, 255]);
+        // No draft → the defaults survive.
+        app.session_draft = None;
+        app.apply_session_appearance();
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.eye_color, [10, 200, 30, 255], "no draft, no overwrite");
+    }
+
+    // -- W4-g66 final: the f3 wall/carpet keep-one inputs --------------------
+    // Witnesses WRITTEN NOT RUN (code-only mode).
+
+    /// `:26613-26617` — the glide run boost reads the PREVIOUS tick's
+    /// `carpetFrame`: a live glide pose multiplies accel ×1.25 / max ×1.5;
+    /// the rest frame (−1) does not. Driven through the full tick (the
+    /// boost sits in the movement head, before `CarpetMovement` rewrites
+    /// the frame — no carpet equipped, so the frame survives the tick).
+    #[test]
+    fn w4_g66_final_the_carpet_glide_boosts_the_run() {
+        let w = ground_world();
+        let input = PlayerInput::default();
+        let mut p = Player::spawn(&w);
+        p.update(&w, input);
+        let acc0 = p.run_acceleration_value();
+        let max0 = p.max_run_speed_value();
+        let mut q = Player::spawn(&w);
+        q.carpet_frame = 0;
+        q.update(&w, input);
+        assert_eq!(q.run_acceleration_value(), acc0 * 1.25, ":26615");
+        assert_eq!(q.max_run_speed_value(), max0 * 1.5, ":26616");
+        assert_eq!(q.carpet_frame, -1, "no carpet: the :26100 clear fires");
+    }
+
+    /// `:26745-26752` — the carpet gate reads the ZEROED budgets: a bare
+    /// tier's residual wing/rocket budget reads as zero (the C# zeroes
+    /// before `CarpetMovement`), so the glide still launches. The f3 raw
+    /// read would refuse here — the keep-one verdict keeps the zero-read.
+    #[test]
+    fn w4_g66_final_the_carpet_gate_reads_zeroed_budgets() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.carpet = true;
+        p.can_carpet = true;
+        p.control_jump = true;
+        p.vy = 2.0;
+        p.wings_logic = 0;
+        p.wing_time = 50.0; // residual — the C# :26747 zeroes it first
+        p.rocket_boots = 0;
+        p.rocket_time = 30; // residual — :26751 zeroes it first
+        p.carpet_movement(0.4);
+        assert_eq!(p.carpet_time, 299, "the launch arms despite residuals");
+        assert!(p.carpet_frame >= 0, "the glide pose lands");
+        // An EQUIPPED tier's live budget still refuses (`:21845`).
+        let mut q = Player::spawn(&w);
+        q.carpet = true;
+        q.can_carpet = true;
+        q.control_jump = true;
+        q.vy = 2.0;
+        q.wings_logic = 1;
+        q.wing_time = 50.0;
+        q.carpet_movement(0.4);
+        assert_eq!(q.carpet_time, 0, "a live wing budget refuses");
+        assert_eq!(q.carpet_frame, -1);
+    }
+
+    /// `:21750-21840` — the level-2 down-drop puff is UNGATED: no Rat probe
+    /// runs on the Wallslide arms (`:21790` has no `!flag ||` clause), and
+    /// the mount gate already returned — a solid tile ahead never kills it.
+    #[test]
+    fn w4_g66_final_the_wallslide_puff_is_never_probe_gated() {
+        let mut w = ground_world();
+        for y in [39, 40] {
+            let i = w.index(20, y);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        // A solid tile 10 px BELOW the centre too (the Rat probe's target).
+        let i = w.index(19, 39);
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Player::spawn(&w);
+        p.x = 300.0;
+        p.y = 600.0;
+        p.vy = 1.0;
+        p.slide_dir = 1;
+        p.spiked_boots = 2;
+        p.control_right = true;
+        p.control_down = true;
+        p.wallslide_movement(&w, 0.4);
+        assert_eq!(p.vy, 4.0);
+        let b = p.take_wall_dust().expect("the down-drop puff is ungated");
+        assert!(!b.rat, "no Rat halver on the Wallslide arms");
     }
 }

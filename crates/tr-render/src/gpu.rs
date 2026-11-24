@@ -174,3 +174,70 @@ pub fn offscreen_target_on(
         view_formats: &[],
     })
 }
+
+/// S1-G-13 consumers: read `texture` back as tightly-packed RGBA rows
+/// (`CaptureCamera.DrawTick`'s `GetData`, `CaptureCamera.cs:202`/`:327`).
+/// The BGRA surface formats are swizzled to RGBA (the FNA arm's byte order,
+/// `CaptureCamera.cs:351-366`). Blocks on the GPU via `device.poll`.
+pub fn read_texture_rgba(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    format: wgpu::TextureFormat,
+) -> Vec<u8> {
+    let size = texture.size();
+    let (w, h) = (size.width, size.height);
+    let bpr = (w * 4).div_ceil(256) * 256;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("capture-readback"),
+        size: (bpr as u64) * (h as u64),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("capture-readback"),
+    });
+    enc.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bpr),
+                rows_per_image: Some(h),
+            },
+        },
+        wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit(Some(enc.finish()));
+    let slice = buffer.slice(..);
+    slice.map_async(wgpu::MapMode::Read, |r| r.expect("capture readback map"));
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    let data = slice.get_mapped_range().expect("capture readback range");
+    let bgra = matches!(
+        format,
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+    );
+    let mut out = Vec::with_capacity((w * h * 4) as usize);
+    for row in 0..h {
+        let start = (row * bpr) as usize;
+        let row_data = &data[start..start + (w * 4) as usize];
+        if bgra {
+            for px in row_data.chunks_exact(4) {
+                out.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
+            }
+        } else {
+            out.extend_from_slice(row_data);
+        }
+    }
+    out
+}

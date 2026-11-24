@@ -58,6 +58,32 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// v18 appended the three town-pet license world flags (`NPC.boughtCat` /
 /// `boughtDog` / `boughtBunny`, `WorldFile.cs:1392-1394`) the 4829/4830/4910
 /// Pet License use-unlocks raise (W4-g87); a pre-v18 file loads them false.
+/// v18 appended the world-identity block (W4-c43): the generator version
+/// (`WorldFile.cs:1225`), the 16-byte GUID (`:1226`), the world id (`:1227`,
+/// footer `:1756`), `CreationTime` and `LastPlayed` as `DateTime.ToBinary`
+/// longs (`:1250-1251`) — the fields the `.wld` header already round-trips
+/// (S1-J-2), which the native format used to drop. A pre-v18 file loads the
+/// `World::new` zeros; the save funnel re-stamps the identity on its first
+/// re-save (`wld::stamp_created_identity` + the WorldId roll).
+/// v18 appended the packed framing variants (`World::variants`, the runtime
+/// `Tile.bTileHeader2` bits 4-7, `Tile.cs:464-482`) as a dense `width*height`
+/// byte block (W4-d109, the save half of S1-A-3). The C# `.wld` never
+/// serializes these bits (`SaveWorldTiles` `WorldFile.cs:1432-1604`), so this
+/// is a port-only persistence: a v18 load restores them and sets
+/// `World::variants_from_save`, and the full-world framing passes reuse the
+/// stored values (`TileFrame`/`WallFrame` resetFrame:false) instead of
+/// re-rolling. A pre-v18 file loads with the `World::new` zeros and re-rolls
+/// (the C#'s own reset semantics).
+/// v17 appended `NPC.downedFishron` (the case-370 death flag, S1-D-3 W-9).
+/// v18 appended the banner claimable counts (`BannerSystem.Save`'s
+/// `claimableBanners` half, `BannerSystem.cs:180-185`, the `version >= 289`
+/// load arm `:203-211`) — the claimable-banner pool the milestone fills
+/// (W4-e24); a pre-v18 file loads none (the pool starts empty).
+/// v19 appended the combat-book-two + Peddler's-Satchel world flags
+/// (`NPC.combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed`, the C#
+/// .wld flags bytes `WorldFile.cs:1407-1408`; W4-g90 lane 7, renumbered
+/// from its v18 claim — v18 is the c43/d109/e24 union); a pre-v19 file
+/// loads both false.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -69,6 +95,14 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
 pub const VERSION: u32 = 18;
+///
+/// W4-f40 RETIRE receipt (research/105 §9.3): this branch claims NO v18
+/// tail bytes — the lantern quad persists through f45's `.wld` flags-block
+/// sites (`wld/sections/flags.rs`, the v≥207 arm), NOT a TRWLD tail field.
+/// The v18 UNION (c39 research/114 §8, tip `4f72847e`: the 9-way 106-byte
+/// fixed head + d109 dense LAST, VERSION 18) carries no f40 row; this
+/// constant stays 17 until that union lands at the merge.
+pub const VERSION: u32 = 19;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -77,6 +111,11 @@ pub const VERSION: u32 = 18;
 pub struct WorldSide {
     pub chests: Vec<ChestRecord>,
     pub banners: Vec<BannerKill>,
+    /// `BannerSystem.Save`'s `claimableBanners` half (`BannerSystem.cs:180-185`,
+    /// the `version >= 289` load arm `:203-211`) — the claimable-banner pool
+    /// the milestone fills (W4-e24). Sparse like `banners`; a pre-v18 file
+    /// loads none (the pool starts empty, the C#'s pre-289 reset).
+    pub banner_claimable: Vec<BannerClaimable>,
     pub bestiary: Vec<BestiaryKill>,
     pub npcs: Vec<NpcRecord>,
     /// `WorldGen.SavedOreTiers` (`WorldGen.cs:3283-3297`) — seven `i32` metal
@@ -118,6 +157,16 @@ pub struct NpcRecord {
 pub struct BannerKill {
     pub banner: i32,
     pub kills: i32,
+}
+
+/// One banner's claimable count — the C# `BannerSystem.Save`'s
+/// `claimableBanners` half (`ushort` per banner id, `BannerSystem.cs:180-185`);
+/// the port stores the counts sparsely like `BannerKill`, so each record
+/// carries its id (W4-e24).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BannerClaimable {
+    pub banner: i32,
+    pub count: u16,
 }
 
 /// One bestiary entry's kill count — the C# `NPCKillsTracker.Save` shape
@@ -443,6 +492,52 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
         u8::from(world.bought_cat),
         u8::from(world.bought_dog),
         u8::from(world.bought_bunny),
+    // v18: the world-identity block (W4-c43) — the `.wld` header's identity
+    // fields (`WorldFile.cs:1225-1227` + `SaveWorldFlags:1250-1251`), the
+    // same values the retail writer emits; a `.trwld` round trip used to
+    // drop them.
+    w.write_all(&world.generator_version.to_le_bytes())?; // `:1225`
+    w.write_all(&world.unique_id)?; // `:1226`
+    w.write_all(&world.world_id.to_le_bytes())?; // `:1227`
+    w.write_all(&world.creation_time.to_le_bytes())?; // `:1250`
+    w.write_all(&world.last_played.to_le_bytes())?; // `:1251`
+    // v18: the packed framing variants (`World::variants`, the runtime
+    // `Tile.bTileHeader2` bits 4-7, `Tile.cs:464-482`) as a dense
+    // `width*height` byte block, row-major like the tiles (W4-d109, the save
+    // half of S1-A-3). The C# `.wld` never writes these bits
+    // (`SaveWorldTiles` `WorldFile.cs:1432-1604`) — a port-only persistence so
+    // a `.trwld` load-after-quit keeps the rolled `frameNumber`/
+    // `wallFrameNumber` instead of re-rolling. The reader restores them and
+    // sets `variants_from_save`, which the framing passes read.
+    w.write_all(&world.variants)?;
+    // v18: the banner claimable counts (`BannerSystem.Save`'s
+    // `claimableBanners` half, `BannerSystem.cs:180-185`) — a u32 count, then
+    // per banner the id (i32) and the count (u16). The port's sparse map
+    // where the vanilla writes a dense `ushort[293]` array (W4-e24).
+    w.write_all(&(side.banner_claimable.len() as u32).to_le_bytes())?;
+    for c in &side.banner_claimable {
+        w.write_all(&c.banner.to_le_bytes())?;
+        w.write_all(&c.count.to_le_bytes())?;
+    }
+    // v19: the combat-book-two + Peddler's-Satchel world flags (W4-g90
+    // lane 7) — `NPC.combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed`
+    // (`NPC.cs:6341/6343`; the C# .wld flags bytes `WorldFile.cs:1407-1408`,
+    // read gates 259/260). The v15 queen-slime byte's shape; book ONE
+    // (`combat_book_was_used`) rides the .wld flags half only (its .trwld
+    // carrier is the recorded remainder — the i35 fishing context reads
+    // the .wld-loaded field).
+    // UNION SEAT (research/135 §10g, the 107-DEFINITIVE receipt — g88
+    // research/103 §L3-DEFINITIVE D3, fc5cf11ae): at the merge this pair
+    // rides offsets [61]/[62] of the 107-byte fixed head — the LAST flags
+    // block (STRICT C# row order: crimson [50] → moon [51..56] → underworld
+    // [56] → pets [57..60] → empress [60] → books [61..63]), identity
+    // [63..107] closes the head, d109's dense variants LAST ([107..]);
+    // journey 19/20 (135 §4, 21-byte) → 22/23 (138 §5a, 68-byte) → 104/105
+    // (114 §8, 106-byte) → 61/62 (103 D3, 107-byte). This branch keeps its
+    // own 2-byte tail until the union lands (the standing decision).
+    w.write_all(&[
+        u8::from(world.combat_book_volume_two_was_used),
+        u8::from(world.peddlers_satchel_was_used),
     ])?;
     Ok(())
 }
@@ -826,15 +921,58 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
-    // v18: the town-pet license world flags (W4-g87, see the writer — the
-    // union seats them [57..60], research/263 §6.4).
+    // v18: the world-identity block (see the writer's citation) — a pre-v18
+    // file keeps the `World::new` zeros, exactly the values the pre-W4-c43
+    // saves carried.
     if version >= 18 {
-        world.bought_cat = r.u8()? != 0;
-        world.bought_dog = r.u8()? != 0;
-        world.bought_bunny = r.u8()? != 0;
+        world.generator_version = r.u64()?;
+        for b in &mut world.unique_id {
+            *b = r.u8()?;
+        }
+        world.world_id = r.i32()?;
+        world.creation_time = r.u64()? as i64;
+        world.last_played = r.u64()? as i64;
+    }
+    // v18: the packed framing variants (see the writer's citation). A dense
+    // `width*height` block, row-major like the tiles; the load restores them
+    // and arms `variants_from_save` so the full-world framing passes reuse the
+    // stored values instead of re-rolling. A pre-v18 file keeps the
+    // `World::new` zeros and re-rolls (the C#'s reset semantics).
+    if version >= 18 {
+        let n = world.tiles.len();
+        world.variants = r.take(n)?.to_vec();
+        world.variants_from_save = true;
+    }
+    // v18: the banner claimable counts (`BannerSystem.Load`'s `version >= 289`
+    // claimable half, `BannerSystem.cs:203-211`); a pre-v18 file loads none
+    // (the pool starts empty, the C#'s pre-289 reset). W4-e24.
+    if version >= 18 {
+        side.banner_claimable = read_banner_claimable_v18(&mut r)?;
+    }
+    // v19: the combat-book-two + Peddler's-Satchel world flags (W4-g90
+    // lane 7 — the v15 queen-slime byte's shape). A pre-v18 file loads
+    // both false (the fresh-world default; the C# reads them from .wld
+    // v259/v260, `WorldFile.cs:2404-2405`). UNION SEAT: [61]/[62] of the
+    // 107-byte DEFINITIVE head at the merge (research/135 §10g / g88
+    // research/103 §L3-DEFINITIVE D3, fc5cf11ae — the writer's seat note).
+    if version >= 19 {
+        world.combat_book_volume_two_was_used = r.u8()? != 0;
+        world.peddlers_satchel_was_used = r.u8()? != 0;
     }
     world.revision = 0;
     Ok((world, side))
+}
+
+/// The v18 banner-claimable reader — the exact inverse of the v18 write.
+fn read_banner_claimable_v18(r: &mut Reader<'_>) -> Result<Vec<BannerClaimable>> {
+    let count = r.u32()? as usize;
+    let mut out = Vec::with_capacity(count.min(4096));
+    for _ in 0..count {
+        let banner = r.i32()?;
+        let count = r.u16()?;
+        out.push(BannerClaimable { banner, count });
+    }
+    Ok(out)
 }
 
 /// The v8 banners reader — the exact inverse of the v8 write.
@@ -1087,15 +1225,20 @@ mod tests {
 
     #[test]
     fn dw_1_4_v3_loads_zero_cooldowns() {
-        // DW-1.4: a pristine v3 file (the current stream stripped of the
-        // v4 tail (2 bytes) and the v5 tail (1 presence byte — the world has
-        // no bed spawn), the version field restored) loads with both
-        // cooldowns at 0.
+        // DW-1.4: a v3 payload (the version field patched) loads with both
+        // cooldowns at 0 — the v3 parse stops after the paint extras and
+        // never reads the v4 cooldown bytes (`World::new`'s 0s stand). The
+        // end-trim only has to stay inside the post-extras tail (the v18
+        // banner-claimable count lengthens it, W4-e24); 3 bytes is safely
+        // within it.
         let mut w = World::new("Test".into(), 32, 32);
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf.truncate(buf.len() - 3);
+        // Peel the v18 tail (identity 44 + variants w*h, v18_tail_len
+        // covers both), then the v4 (2) + v5 (1) tails.
+        let tail = v18_tail_len(&buf) + 3;
+        buf.truncate(buf.len() - tail);
         buf[8..12].copy_from_slice(&3u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 0);
@@ -1107,6 +1250,9 @@ mod tests {
         // DW-1.4 (dirty): the existing loader rejects a version above the
         // current one (`save.rs` version gate). v18 (the town-pet license
         // flags, W4-g87) is now the current format, so the gate pins 18.
+        // current one (`save.rs` version gate). v19 (the book-two/satchel
+        // pair, W4-g90 lane 7, after the v18 c43/d109/e24 union) is now
+        // the current format, so the gate pins 19.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
@@ -1189,8 +1335,10 @@ mod tests {
         // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // the v18 tail — identity 44 + variants — peels via v18_tail_len.)
+        let tail = v19_tail_len(&buf) + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1;
+        buf.truncate(buf.len() - tail);
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1240,7 +1388,9 @@ mod tests {
         assert_eq!(back.micro_seeds, w.micro_seeds);
         // A v11 file (the same stream minus the v12 block and the v13..v16
         // tails, the version byte restored) loads as the classic world it was.
-        buf.truncate(buf.len() - 10 - EMPTY_V16_TAIL);
+        // The v18 tail (identity 44 + variants) peels via v18_tail_len.
+        let tail = v18_tail_len(&buf) + 10 + EMPTY_V16_TAIL;
+        buf.truncate(buf.len() - tail);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
@@ -1304,6 +1454,11 @@ mod tests {
         // the v17 fishron flag (1) and the v18 pet-license flags (3, W4-g87).
         let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 3;
         v12.truncate(cur_len - tail - 1);
+        // the v17 fishron flag (1) and the v18 identity block (44).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + EMPTY_V18_TAIL;
+        // Peel the v18 variants block first (W4-d109); the -1 is the v13
+        // block's leading u32 sign count.
+        v12.truncate(cur_len - v19_tail_len(&v12) - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
         assert!(back.signs.is_empty(), "a v12 file has no sign block");
@@ -1318,6 +1473,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         }
     }
 
@@ -1332,16 +1488,55 @@ mod tests {
     /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
     /// v18 town-pet license flags (3 bytes, W4-g87).
     const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 3;
+    /// five style bytes and the v17 downedFishron byte (S1-D-3 W-9).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1;
+    /// The v18 identity block (W4-c43): u64 generator version + 16 GUID bytes
+    /// + i32 world id + two i64 ToBinary stamps.
+    const EMPTY_V18_TAIL: usize = 8 + 16 + 4 + 8 + 8;
+
+    /// The v18 framing-variants block's size: a dense `width*height` byte
+    /// array (W4-d109). The end-relative fixtures below peel it off before
+    /// truncating the older tails; the version is read from the header.
+    fn v18_tail_len(buf: &[u8]) -> usize {
+        let version = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+        if version < 18 {
+            return 0;
+        }
+        // The v18 identity block (W4-c43, 44 bytes) precedes the variants.
+        // Header layout: magic(8) + version(4) + seed(8) + name_len(4) + name
+        // + width(4) + height(4). The name length sits at offset 20.
+        let name_len = u32::from_le_bytes(buf[20..24].try_into().unwrap()) as usize;
+        let dims = 24 + name_len;
+        let width = i32::from_le_bytes(buf[dims..dims + 4].try_into().unwrap()) as usize;
+        let height = i32::from_le_bytes(buf[dims + 4..dims + 8].try_into().unwrap()) as usize;
+        // v18 layout: identity (44) + variants (w*h) + the banner
+        // claimable block (u32 count + 6 bytes per entry, W4-e24). The
+        // end-relative fixtures below all carry EMPTY pools (count 0),
+        // so the tail is 44 + w*h + 4; a non-empty pool's exact length
+        // rides the sequential parse, never this helper.
+        44 + width * height + 4
+    }
+
+    /// The v19 tail: the v18 union (identity 44 + variants + claimable)
+    /// plus the book-two/satchel pair (2 bytes, W4-g90 lane 7). The
+    /// end-relative fixtures carry empty pools (the v18 helper's note).
+    fn v19_tail_len(buf: &[u8]) -> usize {
+        let version = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+        if version < 19 {
+            return v18_tail_len(buf);
+        }
+        v18_tail_len(buf) + 2
+    }
 
     fn back_flags(buf: &[u8]) -> u16 {
-        let end = buf.len() - EMPTY_V16_TAIL;
+        let end = buf.len() - EMPTY_V16_TAIL - v18_tail_len(buf);
         u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
     /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
     /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        let end = buf.len() - EMPTY_V16_TAIL;
+        let end = buf.len() - EMPTY_V16_TAIL - v18_tail_len(buf);
         u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
@@ -1521,35 +1716,103 @@ mod tests {
         // flags ride behind the v15 flag (9 bytes).
         let mut v14 = buf.clone();
         v14.truncate(v14.len() - 1 - 5 - 1 - 3);
+        // The v16 style bytes + the v17 fishron byte ride behind the v15
+        // flag (6 bytes); the v18 identity block (44) rides the stream end
+        // after the v18 variants block (W4-d109) — peel the variants first.
+        let mut v14 = buf.clone();
+        let tail = v19_tail_len(&v14) + 1 + 5 + 1;
+        v14.truncate(v14.len() - tail);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
     }
 
-    /// W4-g87 — the three town-pet license world flags (`NPC.boughtCat`/
-    /// `boughtDog`/`boughtBunny`, `WorldFile.cs:1392-1394`) ride the v18 tail.
-    /// All three survive the save/load; a pre-v18 file loads them false.
+    /// W4-g90 lane 7: the book-two + satchel world flags round-trip through
+    /// the v18 tail (`NPC.combatBookVolumeTwoWasUsed` /
+    /// `peddlersSatchelWasUsed`, the C# .wld bytes `WorldFile.cs:1407-1408`);
+    /// a pre-v18 file loads both false (the fresh-world default).
     #[test]
-    fn w4_g87_the_pet_license_flags_round_trip_in_v18() {
+    fn w4_g90_the_book_two_and_satchel_flags_round_trip_in_v18() {
         let mut w = World::new("Test".into(), 64, 48);
-        w.bought_cat = true;
-        w.bought_dog = true;
-        w.bought_bunny = true;
+        w.combat_book_volume_two_was_used = true;
+        w.peddlers_satchel_was_used = true;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         let (back, _) = parse(&buf).unwrap();
-        assert!(back.bought_cat, "boughtCat survives");
-        assert!(back.bought_dog, "boughtDog survives");
-        assert!(back.bought_bunny, "boughtBunny survives");
-        // A pre-v18 file (the 3-byte tail truncated, the version patched)
-        // loads all three false — the vanilla's own reset arm.
+        assert!(back.combat_book_volume_two_was_used, "book two survives");
+        assert!(back.peddlers_satchel_was_used, "the satchel survives");
+        // A pre-v18 file (the pair truncated, the version patched) loads
+        // both false — the version gate, not a length guess. Union re-pin:
+        // the -2 becomes -107 (research/135 §10g / g88 103 D3, the
+        // 107-byte definitive head).
         let mut v17 = buf.clone();
-        v17.truncate(v17.len() - 3);
+        v17.truncate(v17.len() - 2);
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back, _) = parse(&v17).unwrap();
-        assert!(!back.bought_cat, "a pre-v18 file resets boughtCat");
-        assert!(!back.bought_dog, "a pre-v18 file resets boughtDog");
-        assert!(!back.bought_bunny, "a pre-v18 file resets boughtBunny");
+        assert!(!back.combat_book_volume_two_was_used, "pre-v18: false");
+        assert!(!back.peddlers_satchel_was_used);
+        // The mixed state: one flag up, one down — each byte is its own.
+        w.peddlers_satchel_was_used = false;
+        buf.clear();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.combat_book_volume_two_was_used);
+        assert!(!back.peddlers_satchel_was_used);
+    }
+
+    #[test]
+    fn w4_c43_the_world_identity_round_trips_in_v18() {
+        // W4-c43: the v18 tail carries the `.wld` header's identity fields
+        // (`WorldFile.cs:1225-1227` + `SaveWorldFlags:1250-1251`) — a
+        // `.trwld` round trip used to drop them (the audit's placeholder
+        // finding, research/42).
+        let mut w = World::new("Test".into(), 32, 32);
+        w.generator_version = 140_015_933_8497; // `CreateMetadata:603`
+        w.unique_id = [1, 2, 3, 4, 5, 6, 7, 0x48, 0x89, 10, 11, 12, 13, 14, 15, 16];
+        w.world_id = 0x1234_5678;
+        w.creation_time = 0x48DF_4506_E391_C000u64 as i64; // the fixture clock
+        w.last_played = w.creation_time + 10_000_000; // +1 s of ticks
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.generator_version, w.generator_version);
+        assert_eq!(back.unique_id, w.unique_id);
+        assert_eq!(back.world_id, w.world_id);
+        assert_eq!(back.creation_time, w.creation_time);
+        assert_eq!(back.last_played, w.last_played);
+        // A pre-v18 file (the block truncated, the version patched) loads the
+        // `World::new` zeros — the values the pre-W4-c43 saves carried.
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - EMPTY_V18_TAIL);
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&v17).unwrap();
+        assert_eq!(back.generator_version, 0);
+        assert_eq!(back.unique_id, [0u8; 16]);
+        assert_eq!(back.world_id, 0);
+        assert_eq!(back.creation_time, 0);
+        assert_eq!(back.last_played, 0);
+    }
+
+    #[test]
+    fn w4_c43_the_created_identity_stamp_follows_create_metadata() {
+        // `WorldFile.CreateMetadata` (`WorldFile.cs:600-604`): the stamp sets
+        // the version literal, a v4-shaped GUID and a Utc-kind CreationTime.
+        let mut w = World::new("Test".into(), 32, 32);
+        let mut rng = crate::unified_random::UnifiedRandom::new(1234);
+        crate::wld::stamp_created_identity(&mut w, &mut rng);
+        assert_eq!(w.generator_version, crate::wld::WORLD_GENERATOR_VERSION);
+        assert_eq!(w.unique_id[7] & 0xF0, 0x40, "the GUID version nibble is 4");
+        assert_eq!(w.unique_id[8] & 0xC0, 0x80, "the RFC-4122 variant bits");
+        assert_ne!(w.creation_time & (0x4000_0000_0000_0000u64 as i64), 0, "Utc kind");
+        assert!(w.creation_time > crate::clock::TICKS_AT_UNIX_EPOCH);
+        // The WorldId is NOT part of the stamp — the caller rolls it (the
+        // `WorldGen.cs:11337` stand-in), so the stamp leaves it untouched.
+        assert_eq!(w.world_id, 0);
+        // A different stream draws a different GUID (uniqueness per world).
+        let mut w2 = World::new("Test2".into(), 32, 32);
+        let mut rng2 = crate::unified_random::UnifiedRandom::new(4321);
+        crate::wld::stamp_created_identity(&mut w2, &mut rng2);
+        assert_ne!(w.unique_id, w2.unique_id);
     }
 
     #[test]
@@ -1565,8 +1828,10 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // the v18 tail — identity 44 + variants — peels via v18_tail_len.)
+        let tail = v19_tail_len(&buf) + 2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4;
+        buf.truncate(buf.len() - tail);
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -1586,7 +1851,8 @@ mod tests {
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf.truncate(buf.len() - 2); // inside the TE record
+        // Peel the v18 variants block, then cut inside the TE record (W4-d109).
+        buf.truncate(buf.len() - v18_tail_len(&buf) - 2);
         assert!(parse(&buf).is_err());
     }
 
@@ -1702,7 +1968,8 @@ mod tests {
         }];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        buf.truncate(buf.len() - 3); // inside the item record
+        // Peel the v18 variants block, then cut inside the item record (W4-d109).
+        buf.truncate(buf.len() - v18_tail_len(&buf) - 3);
         assert!(parse(&buf).is_err());
     }
 
@@ -1764,6 +2031,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1796,6 +2064,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1819,10 +2088,12 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the banner record
+        // Peel the v18 variants block, then cut inside the banner record (W4-d109).
+        buf.truncate(buf.len() - v18_tail_len(&buf) - 2);
         assert!(parse(&buf).is_err());
     }
 
@@ -1849,6 +2120,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -1858,6 +2130,136 @@ mod tests {
         let (_, back) = parse(&a).unwrap();
         assert_eq!(back.banners.len(), 3);
         assert_eq!(back.banners[0].banner, 3331);
+    }
+
+    #[test]
+    fn w4_e24_the_banner_claimable_counts_round_trip_in_v18() {
+        // W4-e24: the v18 tail carries `BannerSystem.Save`'s claimable half
+        // (`ushort` per banner id, `BannerSystem.cs:180-185`) as the port's
+        // sparse records — including a zeroed banner (a fully claimed pool
+        // entry survives, the `BannerKill` zero precedent) and the 9999 cap
+        // (`Item.CommonMaxStack`, `Item.cs:49966`).
+        let w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: vec![BannerKill {
+                banner: 69,
+                kills: 150,
+            }],
+            banner_claimable: vec![
+                BannerClaimable {
+                    banner: 69,
+                    count: 3,
+                },
+                BannerClaimable {
+                    banner: 151,
+                    count: 0,
+                },
+                BannerClaimable {
+                    banner: 119,
+                    count: 9999,
+                },
+            ],
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        assert_eq!(&buf[8..12], &[18, 0, 0, 0], "the writer emits v18");
+        let (_, back_side) = parse(&buf).unwrap();
+        assert_eq!(back_side.banner_claimable, side.banner_claimable);
+        assert_eq!(back_side.banners, side.banners, "the kill counts still ride");
+    }
+
+    #[test]
+    fn w4_e24_a_pre_v18_payload_loads_no_claimable_banners() {
+        // W4-e24: a v17 payload (the version field patched — the v18 tail
+        // sits unread) parses with the kill counts intact and no claimable
+        // pool: the C# `Load`'s pre-289 reset (`BannerSystem.cs:203-211`
+        // guards the claimable half on the version).
+        let w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: vec![BannerKill {
+                banner: 69,
+                kills: 50,
+            }],
+            banner_claimable: vec![BannerClaimable {
+                banner: 69,
+                count: 1,
+            }],
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        buf[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (_, back_side) = parse(&buf).unwrap();
+        assert_eq!(back_side.banners, side.banners, "the v8 kills still load");
+        assert!(
+            back_side.banner_claimable.is_empty(),
+            "no claimable pool below v18"
+        );
+    }
+
+    #[test]
+    fn w4_e24_a_truncated_claimable_section_bails() {
+        // W4-e24 (dirty): the claimable section is self-delimiting; a payload
+        // cut mid-record is a structural error. The tail is the u32 count +
+        // one (i32, u16) record; -2 cuts into the record's u16 count.
+        let w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: Vec::new(),
+            banner_claimable: vec![BannerClaimable {
+                banner: 69,
+                count: 1,
+            }],
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        buf.truncate(buf.len() - 2); // inside the claimable record's u16
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn w4_e24_the_claimable_section_is_deterministic() {
+        // W4-e24: the same records written twice are byte-equal.
+        let w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: Vec::new(),
+            banner_claimable: vec![
+                BannerClaimable {
+                    banner: 69,
+                    count: 2,
+                },
+                BannerClaimable {
+                    banner: 151,
+                    count: 7,
+                },
+            ],
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+            ..Default::default()
+        };
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        write_world(&mut a, &w, &side).unwrap();
+        write_world(&mut b, &w, &side).unwrap();
+        assert_eq!(a, b);
+        let (_, back) = parse(&a).unwrap();
+        assert_eq!(back.banner_claimable.len(), 2);
+        assert_eq!(back.banner_claimable[0].banner, 69);
     }
 
     #[test]
@@ -1886,6 +2288,7 @@ mod tests {
             ],
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1911,6 +2314,7 @@ mod tests {
             }],
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1934,10 +2338,12 @@ mod tests {
             }],
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
+        // Peel the v18 variants block, then cut inside the bestiary record (W4-d109).
+        buf.truncate(buf.len() - v18_tail_len(&buf) - 2);
         assert!(parse(&buf).is_err());
     }
 
@@ -1960,6 +2366,7 @@ mod tests {
             ],
             npcs: Vec::new(),
             ore_tiers: None,
+            ..Default::default()
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -2000,6 +2407,7 @@ mod tests {
                 },
             ],
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2030,6 +2438,7 @@ mod tests {
                 home_y: 1,
             }],
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2061,10 +2470,12 @@ mod tests {
                 home_y: 1,
             }],
             ore_tiers: None,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
+        // Peel the v18 variants block, then cut inside the NPC record (W4-d109).
+        buf.truncate(buf.len() - v18_tail_len(&buf) - 2);
         assert!(parse(&buf).is_err());
     }
 
@@ -2097,6 +2508,7 @@ mod tests {
                 },
             ],
             ore_tiers: None,
+            ..Default::default()
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -2118,6 +2530,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: Some([166, 12, 169, 172, -1, -1, -1]),
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2142,6 +2555,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: Some([166, 6, 9, 8, 107, -1, -1]),
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -2162,10 +2576,12 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: Some([7, 6, 9, 8, -1, -1, -1]),
+            ..Default::default()
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 3); // inside the tiers
+        // Peel the v18 variants block, then cut inside the tiers (W4-d109).
+        buf.truncate(buf.len() - v18_tail_len(&buf) - 3);
         assert!(parse(&buf).is_err());
     }
 
@@ -2179,6 +2595,7 @@ mod tests {
             bestiary: Vec::new(),
             npcs: Vec::new(),
             ore_tiers: Some([13, 6, 9, 8, -1, -1, -1]),
+            ..Default::default()
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -2215,5 +2632,91 @@ mod tests {
             crate::world::surface_bg_texture_ids(8, 2),
             Some([234, 235, 236])
         );
+    }
+
+    // ---- W4-d109: the v18 framing-variants block (the save half of S1-A-3) ----
+
+    /// The packed variants round-trip byte-for-byte and arm `variants_from_save`
+    /// so the framing passes reuse them. Both 2-bit fields survive, including a
+    /// wall variant of 3 (the lazure fourth lookup column).
+    #[test]
+    fn w4_d109_the_framing_variants_round_trip_in_v18() {
+        let mut w = World::new("Test".into(), 16, 12);
+        for y in 0..12 {
+            for x in 0..16 {
+                let i = w.index(x, y);
+                w.set_frame_number(i, ((x + y) % 3) as u8);
+                w.set_wall_frame_number(i, ((x * 2 + y) % 4) as u8); // reaches 3
+            }
+        }
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        assert_eq!(&buf[8..12], &[18, 0, 0, 0], "the writer emits v18");
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.variants_from_save, "a v18 load arms the reuse seam");
+        assert_eq!(back.variants, w.variants, "the packed bits round-trip");
+        for y in 0..12 {
+            for x in 0..16 {
+                let i = back.index(x, y);
+                assert_eq!(back.frame_number(i), w.frame_number(i));
+                assert_eq!(back.wall_frame_number(i), w.wall_frame_number(i));
+            }
+        }
+        // The block is dense width*height and rides the file's tail.
+        assert_eq!(v18_tail_len(&buf), 16 * 12);
+        assert_eq!(&buf[buf.len() - 16 * 12..], w.variants.as_slice());
+    }
+
+    /// A pre-v18 file (the v18 block truncated, the version patched to 17) loads
+    /// with the `World::new` zero variants and `variants_from_save` false — the
+    /// C#'s own reset semantics (the runtime bits are not in the `.wld`, so they
+    /// reset and re-roll). The older tails still load.
+    #[test]
+    fn w4_d109_a_pre_v18_file_resets_the_variants() {
+        let mut w = World::new("Test".into(), 16, 12);
+        for i in 0..w.tiles.len() {
+            w.set_frame_number(i, 2);
+            w.set_wall_frame_number(i, 3);
+        }
+        w.downed_fishron = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        // Peel the dense v18 block and patch the version to 17.
+        buf.truncate(buf.len() - v18_tail_len(&buf));
+        buf[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&buf).unwrap();
+        assert!(!back.variants_from_save, "a pre-v18 file re-rolls");
+        assert!(back.variants.iter().all(|&v| v == 0), "the zeros of World::new");
+        assert!(back.downed_fishron, "the v17 flag still loads");
+    }
+
+    /// A v18 payload cut mid-variants-block is a structural error (the dense
+    /// block is self-delimiting by `width*height`), not a silent default.
+    #[test]
+    fn w4_d109_a_truncated_variants_block_bails() {
+        let mut w = World::new("Test".into(), 16, 12);
+        for i in 0..w.tiles.len() {
+            w.set_frame_number(i, 1);
+        }
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        buf.truncate(buf.len() - 5); // inside the dense variants block
+        assert!(parse(&buf).is_err());
+    }
+
+    /// The same world written twice is byte-equal — the variants block is a
+    /// dense row-major array, so no iteration order can leak into the stream.
+    #[test]
+    fn w4_d109_the_variants_block_is_deterministic() {
+        let mut w = World::new("Test".into(), 16, 12);
+        for i in 0..w.tiles.len() {
+            w.set_frame_number(i, (i % 3) as u8);
+            w.set_wall_frame_number(i, (i % 4) as u8);
+        }
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        write_world(&mut a, &w, &WorldSide::default()).unwrap();
+        write_world(&mut b, &w, &WorldSide::default()).unwrap();
+        assert_eq!(a, b);
     }
 }

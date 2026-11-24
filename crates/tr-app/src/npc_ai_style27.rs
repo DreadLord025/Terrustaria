@@ -129,8 +129,10 @@
 //!   `netUpdatePendingFullSpamCooldown` — the port's `net_update` flag
 //!   stands in (the net-spam cooldown system is unported).
 //! * `SoundEngine.PlaySound(4, ...)` (`:25720`/`:25942`) — the roar /
-//!   death cues ride the S1-E-21 sound family; the RNG draws around
-//!   them are kept even though the cue itself is skipped.
+//!   death cues queue on `wants_sound` (S1-D-3 W-1d, the S1-E-21g
+//!   drain): the int killed overload style 10, one case-4 pitch draw
+//!   at the slot's own turn on the `UpdateNPCs` stream. The RNG draws
+//!   around them were always kept.
 //! * `Main.wofNPCIndex = whoAmI` (`:25724`) → `ctx.wof_npc_index` is an
 //!   out-field the caller writes back to the World presence seam.
 //! * The band statics are INTs in the C# (`Main.cs:757`/`:759`); the
@@ -316,7 +318,15 @@ pub fn style27_step(npc: &mut Npc, world: &World, ctx: &mut Style27Context) {
     npc.local_ai[3] += 1.0;
     if npc.local_ai[3] >= (600 + ctx.rng.next_max(1000)) as f32 {
         npc.local_ai[3] = -ctx.rng.next_max(200) as f32;
-        // SoundEngine.PlaySound(4, ...) — the S1-E-21 cue family.
+        // `:25720` — SoundEngine.PlaySound(4, (int)position.X,
+        // (int)position.Y, 10): the int killed overload, style 10. The
+        // cue queues on `wants_sound` and drains at the slot's own turn
+        // on the UpdateNPCs stream (the case-4 pitch draw, S1-E-21g).
+        npc.wants_sound.push(crate::npc::NpcSoundRequest {
+            cue: crate::npc::NpcSoundCue::NpcDeath(10),
+            x: npc.x,
+            y: npc.y,
+        });
     }
     // `:25722-25727` — the scan bounds. `Main.UnderworldLayer =
     // maxTilesY - 200` (`Main.cs:2790`).
@@ -494,7 +504,16 @@ pub fn style27_step(npc: &mut Npc, world: &World, ctx: &mut Style27Context) {
     if tp_dead {
         npc.local_ai[1] += 1.0 / 180.0;
         if npc.local_ai[1] >= 1.0 {
-            // SoundEngine.PlaySound(4, ...) — the death roar cue.
+            // `:25942` — SoundEngine.PlaySound(4, (int)position.X,
+            // (int)position.Y, 10): the abandonment death cry, queued
+            // BEFORE the life=0 kill (the C#'s order). The corpse's
+            // `wants_sound` still drains at the slot's tail — the sim's
+            // drain loop runs for every slot, dead included.
+            npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                cue: crate::npc::NpcSoundCue::NpcDeath(10),
+                x: npc.x,
+                y: npc.y,
+            });
             npc.hp = 0; // `life = 0; active = false`
             return;
         }
@@ -1209,6 +1228,66 @@ mod tests {
         assert_eq!(ha.bottom, hb.bottom);
         assert_eq!(ha.spawns, hb.spawns);
         assert_eq!(ha.rng, hb.rng);
+    }
+
+    /// S1-D-3 W-1d — the roar cue (`:25720`): when the cadence fires,
+    /// the arm queues `PlaySound(4, (int)position.X, (int)position.Y,
+    /// 10)` on `wants_sound` — the int killed overload, style 10. The
+    /// two cadence draws still ride the stream in the cited order.
+    #[test]
+    fn the_roar_queues_the_style_10_death_cue() {
+        let w = underworld();
+        let players = [cand(1200.0, 220.0 * 16.0)];
+        let mut n = wall(1000.0, 220.0 * 16.0);
+        n.local_ai[0] = 2.0;
+        n.local_ai[3] = 1599.0; // 1600 >= 600 + any Next(1000)
+        n.vx = 1.0;
+        let mut h = Harness::new(1);
+        let before = h.rng.clone();
+        h.step(&mut n, &w, &players);
+        assert_eq!(n.wants_sound.len(), 1, "the roar fired");
+        let req = n.wants_sound[0];
+        assert!(matches!(req.cue, crate::npc::NpcSoundCue::NpcDeath(10)));
+        assert_eq!(req.x, n.x);
+        assert_eq!(req.y, n.y);
+        // The stream order: Next(1000) then the re-arm Next(200).
+        let mut probe = before.clone();
+        let _threshold = probe.next_max(1000);
+        let rearm = probe.next_max(200);
+        assert_eq!(n.local_ai[3], -(rearm as f32));
+        assert_eq!(probe, h.rng, "exactly the two cited draws");
+        // A non-firing tick queues nothing.
+        let mut n2 = wall(1000.0, 220.0 * 16.0);
+        n2.local_ai[0] = 2.0;
+        n2.vx = 1.0;
+        let mut h2 = Harness::new(1);
+        h2.step(&mut n2, &w, &players);
+        assert!(n2.wants_sound.is_empty(), "localAI[3] = 1 < 600");
+    }
+
+    /// S1-D-3 W-1d — the abandonment cry (`:25942`): the kill tick
+    /// queues the same style-10 cue BEFORE `life = 0` (the C#'s order)
+    /// and returns; the corpse's queue drains at the slot's tail.
+    #[test]
+    fn the_abandonment_kill_queues_the_cue_before_dying() {
+        let w = underworld();
+        let mut dead = cand(1200.0, 220.0 * 16.0);
+        dead.dead = true;
+        let players = [dead];
+        let mut n = wall(1000.0, 220.0 * 16.0);
+        n.local_ai[0] = 2.0;
+        n.local_ai[1] = 1.0 - 1.0 / 360.0;
+        n.vx = 1.0;
+        let mut h = Harness::new(1);
+        h.step(&mut n, &w, &players);
+        assert_eq!(n.hp, 0, "the abandonment kill");
+        assert_eq!(n.wants_sound.len(), 1);
+        assert!(matches!(
+            n.wants_sound[0].cue,
+            crate::npc::NpcSoundCue::NpcDeath(10)
+        ));
+        assert_eq!(n.wants_sound[0].x, n.x);
+        assert_eq!(n.wants_sound[0].y, n.y);
     }
 
     /// The liquid term counts in the BOTTOM walk too (`:25746`): two

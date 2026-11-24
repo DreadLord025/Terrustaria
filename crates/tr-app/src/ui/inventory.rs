@@ -501,11 +501,24 @@ fn draw_row_slot(
     context: i32,
     scale: f32,
     favored: bool,
+    pulse: super::UiPulse,
+    coin_slot: &mut super::coin_slot::CoinSlotState,
+    vanilla_slot: i32,
+    mouse_air: bool,
+    mouse_is_dye: bool,
 ) {
     if favored {
-        slot::draw_slot_favorited(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK);
+        slot::draw_slot_favorited(
+            r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK,
+            pulse,
+            Some(coin_slot), vanilla_slot, mouse_air, mouse_is_dye,
+        );
     } else {
-        slot::draw_slot(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK);
+        slot::draw_slot(
+            r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK,
+            pulse,
+            Some(coin_slot), vanilla_slot, mouse_air, mouse_is_dye,
+        );
     }
 }
 
@@ -550,6 +563,15 @@ pub fn draw(
     mouse: Vec2,
     m_h: f32,
     bank: Option<(&[ItemSlot], i32)>,
+    // W4-g56 — the void vault's per-slot favorite bits (`Item.favorited`
+    // on `bank4.item`, the `.plr` bools `Player.cs:55495`): context 32's
+    // favorited arm swaps to `Inventory_Back19` (`ItemSlot.cs:2155-2158`).
+    // `None` for the other banks (their slots cannot favorite).
+    bank_favorites: Option<&[bool; crate::bank::BANK_SLOTS]>,
+    // W4-g56 — the chest-glow state (`ItemSlot.Draw:2314-2326`): the open
+    // container's per-slot glow time/hue (contexts 4/32 here, 3 in the chest
+    // panel). `None` outside the glow system's reach (the closed inventory).
+    glow: Option<&crate::ui::glow::GlowState>,
     chest_or_shop: bool,
     // `Player.hideVisibleAccessory` — the per-accessory visual-hide flags the
     // ticks beside the accessory column read and flip (`Main.cs:41425-41460`).
@@ -561,6 +583,16 @@ pub fn draw(
     // pair (`Player.cs:4276-4292`) — the slot-8 row joins the columns once
     // the Demon Heart unlock (or a stored item) shows it.
     extra: ExtraAccessoryShow,
+    // W4-g35: the item-slot glow clocks (`ItemSlot.cs:2891-2929`) — the
+    // miscCounter/disco/global-time trio the glow tints read.
+    pulse: super::UiPulse,
+    // The `CoinSlot` machine (`ui/coin_slot.rs`) — `ItemSlot.Draw`'s
+    // `CoinSlot.UpdateDrawState` (`ItemSlot.cs:2349`) feeds the grid/coin/
+    // ammo/bank cells (W4-d122 S1-H-9 follow-up).
+    coin_slot: &mut super::coin_slot::CoinSlotState,
+    // `Main.mouseItem.dye > 0` — the dye-slot dim gate
+    // (`GetDimSlotForMouseItem`, `ItemSlot.cs:1382`).
+    mouse_is_dye: bool,
 ) -> InventoryHit {
     // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
     // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
@@ -604,6 +636,11 @@ pub fn draw(
                     slot_idx == selected,
                     INVENTORY_SCALE,
                     INVENTORY_BACK,
+                    pulse,
+                    Some(&mut *coin_slot),
+                    slot_idx as i32,
+                    mouse_air,
+                    mouse_is_dye,
                 );
             } else {
                 slot::draw_slot(
@@ -617,6 +654,11 @@ pub fn draw(
                     slot_idx == selected,
                     INVENTORY_SCALE,
                     INVENTORY_BACK,
+                    pulse,
+                    Some(&mut *coin_slot),
+                    slot_idx as i32,
+                    mouse_air,
+                    mouse_is_dye,
                 );
             }
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y, INVENTORY_SCALE, cell) {
@@ -646,6 +688,11 @@ pub fn draw(
             1,
             COIN_SCALE,
             favored,
+            pulse,
+            coin_slot,
+            crate::inv::coin_slot_index(k) as i32,
+            mouse_air,
+            mouse_is_dye,
         );
         if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((1, k)) {
             hit.hovered = Some(HoverRef::Coin(k));
@@ -671,6 +718,11 @@ pub fn draw(
             2,
             AMMO_SCALE,
             favored,
+            pulse,
+            coin_slot,
+            crate::inv::ammo_slot_index(k) as i32,
+            mouse_air,
+            mouse_is_dye,
         );
         if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((2, k)) {
             hit.hovered = Some(HoverRef::Ammo(k));
@@ -706,6 +758,11 @@ pub fn draw(
                         false,
                         INVENTORY_SCALE,
                         INVENTORY_BACK,
+                        pulse,
+                        None,
+                        m as i32,
+                        mouse_air,
+                        mouse_is_dye,
                     );
                     if hit.hovered.is_none() && hit_test(mouse, x, y, INVENTORY_SCALE, cell) {
                         hit.hovered = Some(HoverRef::MiscEquip(m));
@@ -723,6 +780,11 @@ pub fn draw(
                         false,
                         INVENTORY_SCALE,
                         INVENTORY_BACK,
+                        pulse,
+                        None,
+                        m as i32,
+                        mouse_air,
+                        mouse_is_dye,
                     );
                     if hit.hovered.is_none() && hit_test(mouse, x, y, INVENTORY_SCALE, cell) {
                         hit.hovered = Some(HoverRef::MiscDye(m));
@@ -795,6 +857,12 @@ pub fn draw(
                 false,
                 INVENTORY_SCALE,
                 equip_tint(context, back),
+                equip_tint(context, INVENTORY_BACK),
+                pulse,
+                None,
+                idx as i32,
+                mouse_air,
+                mouse_is_dye,
             );
             if hit.hovered.is_none() && hit_test(mouse, armor_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
@@ -852,6 +920,12 @@ pub fn draw(
                 false,
                 INVENTORY_SCALE,
                 equip_tint(context, back),
+                equip_tint(context, INVENTORY_BACK),
+                pulse,
+                None,
+                idx as i32,
+                mouse_air,
+                mouse_is_dye,
             );
             if hit.hovered.is_none() && hit_test(mouse, vanity_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
@@ -884,6 +958,12 @@ pub fn draw(
                 false,
                 INVENTORY_SCALE,
                 equip_tint(12, back),
+                equip_tint(12, INVENTORY_BACK),
+                pulse,
+                None,
+                idx as i32,
+                mouse_air,
+                mouse_is_dye,
             );
             if hit.hovered.is_none() && hit_test(mouse, dye_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Dye(idx));
@@ -914,6 +994,11 @@ pub fn draw(
         false,
         trash_scale,
         INVENTORY_BACK,
+        pulse,
+        None,
+        -1,
+        mouse_air,
+        mouse_is_dye,
     );
     if hit.hovered.is_none() && hit_test(mouse, trash_x, trash_y, trash_scale, cell) {
         hit.hovered = Some(HoverRef::Trash);
@@ -924,7 +1009,11 @@ pub fn draw(
     // the 0.85 cell geometry and appends the grid BELOW the inventory rows
     // (the vanilla interleaves it under the hotbar; the deviation keeps the
     // port's own grid clean). The titles (`Lang.inter[32]/[33]` and the
-    // forge/vault item names, `ChestUI.cs:143-158`).
+    // forge/vault item names, `ChestUI.cs:143-158`). W4-g56: the void vault
+    // (chest −5) draws context 32 (`ChestUI.cs:356-359`) — the same
+    // `Inventory_Back2` frame, but its slots CAN favorite
+    // (`canFavoriteAt[32]`, `ItemSlot.cs:386-394`) and the favorited arm
+    // swaps to `Inventory_Back19` (`:2155-2158`).
     if let Some((slots, chest)) = bank {
         let title = match chest {
             -2 => "Piggy Bank",
@@ -932,18 +1021,21 @@ pub fn draw(
             -4 => "Defender's Forge",
             _ => "Void Vault",
         };
+        let context = if chest == -5 { 32 } else { 4 };
         text::hud_text(r, lookups, 40.0, BANK_PIVOT_Y + m_h - 14.0, 0.85, LABEL_COLOR, title);
         // The transfer button row (`ChestUI.DrawButton`, `ChestUI.cs:187-228`):
         // the labels stacked top-to-bottom, 26 px apart — the vanilla sits at
         // x 506 right of the columns; the port's panel-fidelity parks the row
         // under the title. RenameChest (5) is bank-hidden (:198 — `chest <
-        // -1`); the port's no-world-chest UI shows 0-3 only (Sort rides the
-        // M3-CHEST-UI panel).
+        // -1`); the port's no-world-chest UI shows 0-3 + Sort (4, W4-g56 —
+        // `ItemSorting.SortChest` covers every container kind,
+        // `ItemSorting.cs:1629-1653`).
         for (id, label) in [
             (0u8, "Loot All"),
             (1, "Deposit All"),
             (2, "Quick Stack"),
             (3, "Restock"),
+            (4, "Sort"),
         ] {
             let p = bank_button_pos(id);
             let ready = hit.hovered.is_none()
@@ -958,18 +1050,54 @@ pub fn draw(
             let i = idx % 10;
             let j = idx / 10;
             let p = bank_pos(i, j);
-            slot::draw_slot(
-                r,
-                lookups,
-                &slots[idx],
-                p.x,
-                p.y + m_h,
-                4,
-                idx as i32,
-                false,
-                INVENTORY_SCALE,
-                INVENTORY_BACK,
-            );
+            let favored = context == 32
+                && bank_favorites.is_some_and(|f| f[idx])
+                && slots[idx].count > 0;
+            // W4-g56 — the chest-glow entries for this slot (`ItemSlot.Draw:
+            // 2314-2326`): the bank/vault contexts (4/32) glow when the Sort
+            // feedback armed them; the favorite arm still wins.
+            let slot_glow = glow.map(|g| (g.chest_time_at(idx), g.chest_hue_at(idx)));
+            if favored {
+                slot::draw_slot_glow(
+                    r,
+                    lookups,
+                    &slots[idx],
+                    p.x,
+                    p.y + m_h,
+                    context,
+                    idx as i32,
+                    false,
+                    INVENTORY_SCALE,
+                    INVENTORY_BACK,
+                    pulse,
+                    true,
+                    slot_glow,
+                    Some(&mut *coin_slot),
+                    idx as i32,
+                    mouse_air,
+                    mouse_is_dye,
+                );
+            } else {
+                slot::draw_slot_glow(
+                    r,
+                    lookups,
+                    &slots[idx],
+                    p.x,
+                    p.y + m_h,
+                    context,
+                    idx as i32,
+                    false,
+                    INVENTORY_SCALE,
+                    INVENTORY_BACK,
+                    pulse,
+                    false,
+                    slot_glow,
+                    Some(&mut *coin_slot),
+                    idx as i32,
+                    mouse_air,
+                    mouse_is_dye,
+                );
+            }
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y + m_h, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Bank(idx));
             }
@@ -992,9 +1120,10 @@ fn bank_button_pos(id: u8) -> Vec2 {
 }
 
 /// The transfer button under `mouse` (`None` off the row). `id` is the
-/// `ChestUI.ButtonID` (0 LootAll / 1 DepositAll / 2 QuickStack / 3 Restock).
+/// `ChestUI.ButtonID` (0 LootAll / 1 DepositAll / 2 QuickStack / 3 Restock /
+/// 4 Sort — W4-g56 added the bank Sort row, `ItemSorting.cs:1629-1653`).
 pub(crate) fn bank_button_at(mouse: Vec2, m_h: f32) -> Option<u8> {
-    for id in 0..4u8 {
+    for id in 0..5u8 {
         let p = bank_button_pos(id);
         let m = Vec2::new(mouse.x, mouse.y - m_h);
         if mouse.x >= p.x

@@ -16,19 +16,26 @@ mod wall;
 // the i33 copy reads the full 279-wall Main.wallHouse, the C# table the
 // Player.cs:45924 gate actually reads, not the housing room-check subset).
 pub use wall::{
-    break_wall, can_player_smash_wall, kill_wall_drop, kill_wall_sound, near_friendly_wall,
-    place_wall, replace_wall, wall_house, WALL_COUNT,
+    break_wall, can_player_smash_wall, kill_wall, kill_wall_drop, kill_wall_sound,
+    near_friendly_wall, place_wall, replace_wall, wall_house, WallBreak, WALL_COUNT,
 };
 mod hammer;
 pub use hammer::{
     can_pound_tile, forbids_sloping, is_a_hammer_target, is_tile_poundable, pound_damage,
     pound_tile, slope_tile, try_finding_wall_to_hammer, try_pound_tile, PoundOutcome,
 };
+mod paint;
+pub use paint::{paint_coat_tile, paint_coat_wall, paint_tile, paint_wall};
+mod replace;
+pub use replace::{
+    is_tile_replaceable, move_replace_anchor, replace_tile_write, would_tile_replacement_work,
+    Replaced,
+};
 mod kill;
 pub use kill::{
     actuation_square_frame, can_kill_tile, kill_tile, kill_tile_sound, pot_break_sound,
-    square_tile_frame_default, HerbEvent, KillSounds, ObjectDrop, PileLootEvent, PotEvent,
-    SoundCue, TileKill, TreeDropEvent,
+    square_tile_frame_default, BulbSummonEvent, HerbEvent, KillSounds, ObjectDrop,
+    PileLootEvent, PotEvent, SoundCue, TileKill, TreeDropEvent,
 };
 pub(crate) use kill::{
     remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,
@@ -249,6 +256,16 @@ pub enum TileInteraction {
     /// the consumption). No world write here — the extraction only consumes the
     /// held item and spawns the output.
     Extractinator,
+    /// The station-buff arms (W4-e28): the Crystal Ball (tile 125,
+    /// `Player.cs:32594-32599`) grants Clairvoyance (29) and the Ammo Box
+    /// (tile 287, `:32630-32635`) grants Ammo Box (93), both `AddBuff(id,
+    /// 108000)` (30 min) then `SoundEngine.PlaySound(SoundID.Item4/Item149,
+    /// base.position)` — the buff slots and the cue are app-side (the core
+    /// has neither); the sound rides the PLAYER's position, not the tile's.
+    StationBuff {
+        buff_type: i32,
+        buff_time: i32,
+    },
 }
 
 /// The world-interaction dispatcher — the port of the right-click tile hook:
@@ -283,6 +300,16 @@ pub fn interact_at(
     if matches!(t.kind, 132 | 136 | 144) {
         return TileInteraction::HitSwitch { x: i, y: j };
     }
+    // The station-buff arms (W4-e28, `Player.cs:32594-32599`/`:32630-32635`):
+    // the C# chain tests the kind literals 125 (Crystal Ball → buff 29) and
+    // 287 (Ammo Box → buff 93) before the dials; both grant 108000 ticks and
+    // consume the click (`flag2 = true`). The buff + cue land app-side.
+    if t.kind == 125 || t.kind == 287 {
+        return TileInteraction::StationBuff {
+            buff_type: if t.kind == 125 { 29 } else { 93 },
+            buff_time: 108000,
+        };
+    }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
     // defs for 356/663 (they place through the legacy single-tile route), so
@@ -295,7 +322,8 @@ pub fn interact_at(
     // vanilla opens via `OpenChest(num74, num75, num76)`; the port's banks
     // are player-bounded (`Player.bank[1..4]`, `Player.cs:1580-1591`), so
     // only the chest index moves. The vault's `disableVoidBag` gate
-    // (:33127-33133) has no port mechanic yet.
+    // (:33134-33139) is enforced downstream by `chest::toggle_open`
+    // (W4-g56 — the MP-only net-slot lock, `Player.disable_void_bag`).
     if matches!(t.kind, 29 | 97 | 463 | 491) {
         let bank = match t.kind {
             29 => -2,
@@ -813,6 +841,80 @@ pub fn open_door(
     // keep their frames (frame-important), neighbours re-derive theirs.
     ensure_frame_important(world, 11);
     framing::reframe_area(world, num6, num, 2, false);
+    true
+}
+
+/// `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): swaps the tall gate
+/// covering `(x, y)` between its closed (388) and open (389) kinds. `closing`
+/// selects the target kind (true → 388, false → 389); the source is the
+/// opposite. `forced` skips the `Collision.EmptyTile` occupancy gate (the
+/// wired caller); the NPC door-bash drain sends false. `cell_blocked` is the
+/// player/NPC overlap check of `EmptyTile(ignoreTiles: true)`
+/// (`Collision.cs:1359`). The `PlaySound(8)` cue is app-side (the drain plays
+/// it on the `UpdateNPCs` stream, the `open_door` convention). `drops`
+/// collects the validate-cleanup kills.
+pub fn shift_tall_gate(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    closing: bool,
+    forced: bool,
+    cell_blocked: &dyn Fn(i32, i32) -> bool,
+    drops: &mut Vec<ObjectDrop>,
+) -> bool {
+    let target: u16 = if closing { 388 } else { 389 }; // :51725
+    let source: u16 = if closing { 389 } else { 388 }; // :51726
+    let Some(tile) = world.tile(x, y) else {
+        return false;
+    };
+    if tile.kind != source {
+        return false; // :51728-51731
+    }
+    // :51732-51743 — the gate's top row: the style from frameX/18, the
+    // in-gate row from frameY modulo the def's full coordinate height, then
+    // the coordinate-heights walk back to the top.
+    let style = i32::from(tile.frame_x) / 18;
+    let Some(def) = crate::tileobject::def_for_tile(388) else {
+        return false;
+    };
+    let Some(data) = crate::tileobject::get_tile_data(def, style, 1) else {
+        return false;
+    };
+    let full_h = data.coordinate_full_height();
+    if full_h <= 0 {
+        return false;
+    }
+    let mut row = i32::from(tile.frame_y) % full_h;
+    let mut i = 0i32;
+    while i < data.height && row - data.coordinate_heights[i as usize] >= 0 {
+        row -= data.coordinate_heights[i as usize];
+        i += 1;
+    }
+    let top = y - i;
+    let (width, height) = (data.width, data.height);
+    // :51744-51747 — the intact source square, or the cleanup kills refuse.
+    if !validate_tile_square(world, x, top, width, height, source, drops) {
+        return false;
+    }
+    // :51748-51754 — `Wiring.SkipWire`: no wiring in the port.
+    // :51755-51761 — every gate cell must be entity-free (ignoreTiles: true).
+    for k in 0..height {
+        if !forced && cell_blocked(x, top + k) {
+            return false;
+        }
+    }
+    // :51762 — `SoundEngine.PlaySound(8, x*16+16, y*16+16)`: app-side.
+    // :51763-51766 — the kind swap, row by row.
+    for l in 0..height {
+        if let Some(t) = world.tile_mut(x, top + l) {
+            t.kind = target;
+            touch(world, x, top + l);
+        }
+    }
+    // :51767-51773 — the `WorldGen.TileFrame` 3×(height+2) neighbourhood:
+    // gate cells keep their frames (frame-important), neighbours re-derive.
+    ensure_frame_important(world, target);
+    framing::reframe_area(world, x, top + height / 2, 2, false);
     true
 }
 
@@ -1467,6 +1569,45 @@ mod tests {
         false
     }
 
+    /// W4-g4 — `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the
+    /// zombie door-bash drain's gate-388 open. A closed tall gate (388, the
+    /// 1×5 style-0 object) shifts to its open kind (389) row by row; the
+    /// frames keep, the occupancy gate refuses a blocked cell, and a
+    /// non-gate cell refuses outright.
+    #[test]
+    fn w4_g4_shift_tall_gate_opens_the_closed_gate() {
+        let mut w = doorway_world();
+        // The closed tall gate at column 10, rows 14..18 (the 1×5 style-0
+        // object): frameX 0, frameY the coordinate-heights prefix
+        // (0/18/34/50/66 — the def's [18,16,16,16,18] rows). Set directly so
+        // the witness pins the SHIFT, not the placement anchors.
+        for (k, y) in (14..=18).enumerate() {
+            set_active(&mut w, 10, y, 388);
+            let fy = [0i16, 18, 34, 50, 66][k];
+            w.tile_mut(10, y).unwrap().frame_y = fy;
+        }
+        let mut drops = Vec::new();
+        assert!(shift_tall_gate(&mut w, 10, 18, false, false, &no_blocker, &mut drops));
+        for y in 14..=18 {
+            let t = w.tile(10, y).unwrap();
+            assert!(t.active() && t.kind == 389, "gate row {y} opens to 389");
+        }
+        // The open gate shifts back to closed (388) with `closing: true`.
+        assert!(shift_tall_gate(&mut w, 10, 18, true, false, &no_blocker, &mut drops));
+        for y in 14..=18 {
+            assert_eq!(w.tile(10, y).unwrap().kind, 388, "gate row {y} closes");
+        }
+        // A blocked cell refuses the shift (the occupancy gate).
+        let blocked = |_: i32, _: i32| true;
+        assert!(!shift_tall_gate(&mut w, 10, 18, false, false, &blocked, &mut drops));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 388, "the blocked shift leaves the gate");
+        // `forced` skips the occupancy gate.
+        assert!(shift_tall_gate(&mut w, 10, 18, false, true, &blocked, &mut drops));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
+        // A non-gate cell refuses outright.
+        assert!(!shift_tall_gate(&mut w, 12, 18, false, false, &no_blocker, &mut drops));
+    }
+
     #[test]
     fn test_DW_4_2_open_door_right_leaf_frames() {
         // `WorldGen.OpenDoor` direction +1 (`WorldGen.cs:37733-37776`): the
@@ -1941,6 +2082,39 @@ mod tests {
         let mut w = soil_world(2);
         let hit = interact_at(&mut w, 10, 20, 1, &|_, _| false);
         assert!(matches!(hit, TileInteraction::StationInteract { .. }));
+    }
+
+    #[test]
+    fn w4_e28_the_station_buff_arms_dispatch_the_grants() {
+        // W4-e28 — `Player.cs:32594-32599`: tile 125 (Crystal Ball) grants
+        // buff 29 for 108000 ticks; `:32630-32635`: tile 287 (Ammo Box)
+        // grants buff 93 for 108000. Both consume the click; the buff slots
+        // and the cue are the app's, the dispatch only carries the row.
+        for (kind, buff) in [(125u16, 29), (287u16, 93)] {
+            let mut w = object_world();
+            set_active(&mut w, 10, 19, kind);
+            let blocked = no_blocker as fn(i32, i32) -> bool;
+            match interact_at(&mut w, 10, 19, 1, &blocked) {
+                TileInteraction::StationBuff {
+                    buff_type,
+                    buff_time,
+                } => {
+                    assert_eq!(buff_type, buff, "tile {kind}");
+                    assert_eq!(buff_time, 108000, "the 30-minute grant");
+                }
+                other => panic!("expected StationBuff for {kind}, got {other:?}"),
+            }
+            // No world write: the cell keeps its kind and frame.
+            let t = w.tile(10, 19).unwrap();
+            assert_eq!((t.kind, t.frame_x, t.frame_y), (kind, 0, 0));
+        }
+        // The neighbouring kinds keep the station tail (no over-capture).
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 126);
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &no_blocker),
+            TileInteraction::StationInteract { .. }
+        ));
     }
 
     // ---- Phase 2 (M1.4-BG-21): the dial triggers (356/663) -----------------

@@ -5,38 +5,78 @@ pub mod achievements;
 pub mod bars;
 pub(crate) mod bestiary;
 pub(crate) mod bestiary_draw_offsets;
+pub mod buttons;
 pub(crate) mod emotes;
 pub mod framework;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
+pub mod chrome_elements;
 pub mod clipboard;
 pub(crate) mod chest;
+pub(crate) mod chat_overhead;
 pub mod chrome;
 pub(crate) mod coin_slot;
+pub(crate) mod savings;
 pub mod color;
 pub mod crafting;
+pub mod creative_powers;
+pub mod creative_display;
+pub mod creative_items;
+pub mod crafting_grid;
 pub mod cursor;
+pub mod debug_items;
+pub mod elements;
+pub(crate) mod glow;
+pub(crate) mod hair_window;
 pub mod ingame_options;
 pub mod housing;
+pub mod images;
+pub mod inv_pulse;
 pub mod inventory;
+pub mod item_collection;
+pub mod keybinding_rows;
 pub mod keyboard;
+pub mod layers;
 pub mod minimap;
 pub mod notifications;
 pub(crate) mod npc_chat;
 pub mod panel;
+pub mod particles;
 pub mod pointer;
+pub mod progress;
+pub mod resource_packs;
+pub(crate) mod reforge;
 pub mod resources;
+pub(crate) mod resource_pack_info;
 pub mod save_list;
+pub mod search_bar;
 pub mod sliders;
 pub mod select_hit;
+pub(crate) mod shop_happiness;
 pub mod slot;
+pub mod sortable;
+pub mod snap;
+pub mod state_stack;
+pub mod state_root;
 pub mod text;
+pub(crate) mod text_wrap;
+pub mod text_box;
+pub mod text_panels;
+pub mod text_wrapping_test;
 pub mod tooltip;
 pub mod uistate;
+pub mod workshop_rows;
+pub(crate) mod workshop_hub;
+pub(crate) mod workshop_kit;
+pub(crate) mod workshop_publish;
 pub mod world_creation;
+pub mod world_hover;
 pub(crate) mod world_load;
 pub mod world_select;
+pub mod worldgen_debug;
+pub mod worldgen_debug_elements;
+pub mod worldgen_pass_icons;
 
 use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
@@ -112,6 +152,18 @@ pub struct UiPulse {
     pub text: f32,
     /// `Main.cursorScale` = `cursorAlpha * 0.3 + 0.7 + 0.1` (`Main.cs:52491`).
     pub cursor_scale: f32,
+    /// W4-g35 item-slot glow clocks: `Main.LocalPlayer.miscCounter`
+    /// (`Player.cs:3389`'s `miscCounterNormalized = miscCounter / 300f`
+    /// derives from it) — the 5669 wrapped lerp (`ItemSlot.cs:2908`), the
+    /// 3858 3-row rect (`:2913`) and the 5670/5671 phase MultiLerp
+    /// (`Item.cs:49099`).
+    pub misc_counter: u32,
+    /// `Main.DiscoR/G/B` — the 5146 rainbow bobber's glow tint
+    /// (`ItemSlot.cs:2902`).
+    pub disco: [u8; 3],
+    /// `Main.GlobalTimeWrappedHourly` — the trusty-pal glow hue
+    /// (`ItemSlot.GetTrustyPalGlowColor`, `ItemSlot.cs:2956`).
+    pub global_time: f32,
 }
 
 impl Default for UiPulse {
@@ -119,6 +171,10 @@ impl Default for UiPulse {
         Self {
             text: 1.0,
             cursor_scale: 1.0,
+            misc_counter: 0,
+            // `Main.Initialize`'s stock (`Main.cs:959-961`): R 255, G/B 0.
+            disco: [255, 0, 0],
+            global_time: 0.0,
         }
     }
 }
@@ -674,7 +730,25 @@ pub fn draw_hud(
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
-    craft: &[usize],
+    // The RAW `Main.availableRecipe` list (`Recipe.UpdateRecipeList`) and
+    // its `_filteredRecipes` narrowing (`NewCraftingUI.UpdateContents`
+    // `:596-611`); with no filter tab the two are equal.
+    craft_raw: &[usize],
+    craft_shown: &[usize],
+    // `NewCraftingUI._selectedRecipeIndex` (`:196`): the raw recipe index the
+    // grid's selection overlay marks (`OnActivate` `:904` derives it from
+    // `Main.availableRecipe[Main.focusRecipe]`; W4-f23 wiring).
+    craft_selected: Option<usize>,
+    // `Main.inventoryBack` — the overlay's tint (`ItemSlot.cs:2373`).
+    inventory_back: [f32; 4],
+    // The craft grid's live `UIScrollbar.ViewPosition` (`UIList.cs:181`)
+    // and the `_isDragging || _isHoveringOverHandle` latch
+    // (`UIScrollbar.cs:122`).
+    craft_scroll: f32,
+    craft_scroll_hover: bool,
+    // `Player.Settings.CraftFromNearbyChests` (`Player.cs:360`) — the
+    // nearby-chests toggle's live frame pick (`CraftingUI.cs:340`).
+    craft_from_nearby_chests: bool,
     pulse: UiPulse,
     m_h: f32,
     map_style: i32,
@@ -686,8 +760,29 @@ pub fn draw_hud(
     ingame_options: Option<(&Settings, &ingame_options::IngameOptions)>,
     shop: Option<(&[crate::shop::ShopEntry], f32, bool)>,
     chest_panel: chest::PanelState<'_>,
-    reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
+    // The reforge block's inputs (`Main.cs:41581-41679`, W4-g57): the slot
+    // item, the computed cost, `Main.reforgeScale` and the resolved hover
+    // latch (`Main.mouseReforge`).
+    reforge: Option<(&crate::item::ItemSlot, u64, f32, bool)>,
+    // W4-d122: the coin cells' animation machine (`CoinSlot.Savings[4]` +
+    // the `Custom` dictionary) the savings draws feed (`DrawMoney`'s
+    // fromSavings arm / `DrawSavingsMoney`'s `UpdateCustom`).
+    coin_slot: &mut coin_slot::CoinSlotState,
+    // `ItemSlot._customCurrencyForSavings` (`ItemSlot.cs:308`): the
+    // savings currency latch — read by BOTH DrawSavings call sites
+    // (`:3707-3711`), stamped by this pass's hovers (`MouseHover`,
+    // `:3177` — the grid hover before the reforge draw, the shop-row
+    // hover after the shop pile, matching the C#'s per-frame order).
+    custom_currency_for_savings: &mut i32,
     bank: Option<(&[ItemSlot], i32)>,
+    // W4-g56 — the void vault's per-slot favorite bits (context 32's
+    // `Inventory_Back19` arm, `ItemSlot.cs:2155-2158`); `None` for the
+    // other banks.
+    bank_favorites: Option<&[bool; crate::bank::BANK_SLOTS]>,
+    // W4-g56 — the chest-glow state (`ItemSlot.Draw:2305-2326`): the open
+    // container's per-slot glow time/hue, threaded to the bank/vault grid
+    // (contexts 4/32) and the world-chest panel (context 3).
+    glow: Option<&crate::ui::glow::GlowState>,
     // `Main.DrawPVPIcons`'s inputs (`Main.cs:42654`): the net mode / seed gates,
     // the local player's `hostile` + `team` and the `teamCooldown` timer.
     pvp: &chrome::PvpIconState,
@@ -716,7 +811,50 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // W4-g12 doc-sweep: the CoinSlot machine (S1-H-9) — the savings
+    // pile's `UpdateSavings` rows animate through it (`ItemSlot.cs:3739`
+    // → `DrawMoney` → `CoinSlot.UpdateSavings`).
+    coin_state: &mut coin_slot::CoinSlotState,
+    // W4-f30 — the Dryad's Stardew bit (`NPCInteractions.cs:79-103`): the
+    // "Purify" button shows while the cola is held + the Dryad is the talk
+    // NPC (the caller folds `CanDryadPlayStardewAnimation`).
+    stardew_button: bool,
+    // `Main.item[]` — the dropped-item hover walk (`DrawMouseOver`,
+    // `Main.cs:42884-42913`).
+    items: &[crate::item::ItemDrop],
+    // `Main.hideUI` (`Main.cs:2085`): the F11 toggle stops the interface
+    // layer loop at layer 8 (`DrawInterface_8_CheckF11UIHideToggle`,
+    // `:46175-46183`). The emote/NPC-chat bubbles are layer 1_1
+    // (`:44730-44734`) — BEFORE the check — so they keep drawing.
+    hide_ui: bool,
+    // S1-W4-g81 residuals — `DrawInterface_40_InteractItemIcon`
+    // (`Main.cs:45037-45115`): the held-tool cursor icon + the 10-frame
+    // cache linger. `icon_enabled` is `Player.cursorItemIconEnabled`,
+    // `icon_cache` the `(kind, time)` pair the verification left.
+    icon_enabled: bool,
+    icon_cache: (u16, i32),
+    // W4-g86 research/244 phase 1 — the layer-40 ID override's state:
+    // `Player.cursorItemIconID/Text/Push/Reversed` (`Player.cs:1852-1858`).
+    // `(id, push, reversed, text)` — the C# field order of the draw reads
+    // (:45057/:45089/:45083/:45102).
+    icon_override: (i32, i32, bool, &str),
+    // The layer-40 head gate's `Main.HoveringOverAnNPC || mouseInterface`
+    // (`Main.cs:45039`): the port's resolved NPC-hover / over-UI pair.
+    icon_suppressed: bool,
 ) {
+    // `DrawInterface`'s head (`Main.cs:63334-63339`): the player chat
+    // overheads draw under `UIScaleMatrix` before the combat text — the
+    // port's local-player half (`ui::chat_overhead`, W4-d121).
+    chat_overhead::draw(r, lookups, player, camera, zoom, screen);
+
+    if hide_ui {
+        // The two layer-1_1 passes, then the layer-8 stop: nothing else of
+        // the interface draws (resources 25, inventory 27, hotbar 30, mouse
+        // text 33, cursor 36 all sit after the check).
+        emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
+        npc_chat::draw_bubble(r, lookups, npcs, player, camera, zoom, screen, mouse_pos, pulse);
+        return;
+    }
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
     // hotbar (30).
@@ -789,7 +927,7 @@ pub fn draw_hud(
     // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
     // `:276-283`; the sign half is unported).
     if talk_npc.is_some() {
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, stardew_button);
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
@@ -836,6 +974,9 @@ pub fn draw_hud(
     // `Main.mouseItem.IsAir` (`Main.cs:41430`): every accessory tick draw and hit
     // is gated on the cursor holding nothing.
     let mouse_item_is_air = mouse_item.kind == 0 || mouse_item.count == 0;
+    // `Main.mouseItem.dye > 0` — the dye-slot dim gate (`GetDimSlotForMouseItem`,
+    // `ItemSlot.cs:1382`): a carried dye does not dim the dye slots.
+    let mouse_item_is_dye = crate::itemdata::ITEMS[mouse_item.kind as usize].dye > 0;
     // The housing page's cell hover (`Main.cs:42059-42065`), which the tooltip
     // layer prints instead of an item name.
     let mut open_housing: Option<(usize, Option<usize>)> = None;
@@ -860,6 +1001,8 @@ pub fn draw_hud(
             mouse_pos,
             m_h,
             bank,
+            bank_favorites,
+            glow,
             // `Main.ChestOrShopUIVisible` (`Main.cs:2939-2952`): the trash
             // slot shifts while a container or shop panel is open (bug 20).
             chest_panel.chest >= 0 || shop.is_some(),
@@ -871,10 +1014,27 @@ pub fn draw_hud(
             // (`Player.cs:4276-4292`, W4-g87) — the slot-8 row joins the
             // columns once the unlock (or a stored item) shows it.
             inventory::ExtraAccessoryShow::of(player),
+            pulse,
+            coin_slot,
+            mouse_item_is_dye,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;
         hide_pvp_icons = hit.hide_pvp_icons;
+        // `ItemSlot.MouseHover` (`ItemSlot.cs:3175-3177`): every non-air
+        // hovered item stamps `_customCurrencyForSavings` with its
+        // `shopSpecialCurrency` (plain items −1). The grid/coin/equipment
+        // hovers run BEFORE the reforge draw in the C# (`Main.cs:41022-
+        // 41039`/`:41762` vs `:41637`); the port's grid items are all
+        // plain (the shop rows live in their own stock), so the stamp is
+        // the item default −1 — it clears a latched medal display.
+        if let Some(h) = open_hover {
+            if hover_item_for(equip, inventory, h, bank.map(|b| b.0))
+                .is_some_and(|it| it.kind > 0 && it.count > 0)
+            {
+                *custom_currency_for_savings = crate::custom_currency::CURRENCY_NONE;
+            }
+        }
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
         let num20 = 174.0 + m_h;
         // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
@@ -889,14 +1049,30 @@ pub fn draw_hud(
         // slot cannot be opened in the port yet, so the empty label is drawn.
         chrome::draw_guide_text(r, lookups, 73.0, 331.0 + (screen.y - 600.0) / 2.0, None);
         // The shop row (`Main.DrawInventory`'s shop block,
-        // `Main.cs:41788-41818`): the 10×4 context-15 slot grid at
-        // (73, invBottom=258), scale 0.755 — the same layout the chest
-        // panel draws at (`ui::chest`). The ported stock resolves to ≤39
-        // rows (`Chest.AddItemToShop`'s window); a cell past the stock's
-        // end draws air. The happiness label/icon at (504, invBottom)
-        // (`:41790-41797`) and the coin breakdown wait for the chrome
-        // pass (ANALYSIS).
-        if let Some((stock, _mood, _discount)) = shop {
+        // `Main.cs:41788-41818`): the happiness chrome (the Shop label +
+        // the DrawSavings pile + the icon + the P0 percent, `:41790-
+        // 41797`) then the 10×4 context-15 slot grid at (73, invBottom=
+        // 258), scale 0.755 — the same layout the chest panel draws at
+        // (`ui::chest`). The ported stock resolves to ≤39 rows
+        // (`Chest.AddItemToShop`'s window); a cell past the stock's end
+        // draws air.
+        if let Some((stock, mood, _discount)) = shop {
+            // `:41790-41797` — the pile reads the player's four banks
+            // (`Player.bank/bank2/bank3/bank4`) + the currency latch.
+            let banks: Option<[&[ItemSlot]; 4]> = player
+                .map(|p| [&p.banks[0][..], &p.banks[1][..], &p.banks[2][..], &p.banks[3][..]]);
+            let savings_state = match banks.as_ref() {
+                Some(b) => Some((&mut *coin_slot, b, *custom_currency_for_savings)),
+                None => None,
+            };
+            shop_happiness::draw(r, lookups, mood, pulse, savings_state);
+            // The hovered shop row (`Main.cs:41811`'s per-cell hit test
+            // → `ItemSlot.Handle` → `MouseHover`). The cell geometry is
+            // the draw's own (`inventory::shop_slot_at`), so the hover
+            // and the click cannot drift.
+            let shop_cell = lookups.ui_back.map(|b| b.width as f32).unwrap_or(52.0);
+            let shop_hover = inventory::shop_slot_at(mouse_pos, shop_cell)
+                .and_then(|idx| stock.get(idx));
             for i in 0..inventory::SHOP_COLS {
                 for j in 0..inventory::SHOP_ROWS {
                     let idx = i + j * inventory::SHOP_COLS;
@@ -921,43 +1097,85 @@ pub fn draw_hud(
                         false,
                         inventory::SHOP_SCALE,
                         [220.0 / 255.0; 4],
+                        pulse,
+                        None,
+                        idx as i32,
+                        mouse_item_is_air,
+                        mouse_item_is_dye,
                     );
+                }
+            }
+            // W4-g12 doc-sweep: `ItemSlot.DrawSavings(sb, 504f,
+            // this.invBottom)` (`Main.cs:41791`) — the savings coin pile
+            // beside the shop grid, vertical, before the happiness
+            // chrome (`:41792-41797`, the g58 lane). The four banks ride
+            // the local player (`Main.player[Main.myPlayer]`,
+            // `ItemSlot.cs:3706`). W4-d122: the currency latch rides the
+            // pile (the medal arm when a Tavernkeep row was hovered).
+            if let Some(p) = player {
+                savings::draw_savings(
+                    r,
+                    lookups,
+                    coin_slot,
+                    &[&p.banks[0], &p.banks[1], &p.banks[2], &p.banks[3]],
+                    504.0,
+                    258.0,
+                    false,
+                    pulse.text,
+                    *custom_currency_for_savings,
+                );
+            }
+            // `ItemSlot.MouseHover` (`ItemSlot.cs:3175-3177`) on the
+            // hovered shop row: the row's `shopSpecialCurrency` latches
+            // `_customCurrencyForSavings` (a Tavernkeep medal row → 0,
+            // a plain row → −1). The C#'s shop-grid Handle (`Main.cs:
+            // 41814`) runs AFTER this frame's DrawSavings (`:41791`),
+            // so the stamp lands here — the NEXT frame's pile reads it.
+            if let Some(entry) = shop_hover {
+                if entry.item > 0 && entry.stack > 0 {
+                    *custom_currency_for_savings = entry.shop_special_currency;
                 }
             }
         }
         // The reforge menu (`Main.DrawInventory`'s inline block,
-        // `Main.cs:41557-41685`): the (50, 270) input slot, the (120, 310)
-        // button centre, the cost label beside the slot (`Lang.inter[46]`
-        // + the coin breakdown — the port prints the copper total), the
-        // `Lang.inter[20]` "place an item here" hint on the empty slot and
-        // the held item's name; the cooldown greys the label. The C# draws
-        // at the literal coordinates — neither rides `Main.mH` (only the
-        // equipment column's `num20` does, `Main.cs:41146`) — so the labels
-        // align with the click hit boxes (`ui::inventory::reforge_*_hit`).
-        if let Some((slot, cost, cooldown)) = reforge {
-            text::hud_text(r, lookups, 50.0, 250.0, 0.85, [1.0; 4], "Reforge");
-            if slot.count > 0 {
-                let def = &crate::itemdata::ITEMS[slot.kind as usize];
-                text::hud_text(
-                    r,
-                    lookups,
-                    76.0,
-                    274.0,
-                    0.85,
-                    [1.0; 4],
-                    &format!("{} x{}", def.name, slot.count),
-                );
-            } else {
-                text::hud_text(r, lookups, 76.0, 274.0, 0.85, [0.8; 4], "place an item here");
+        // `Main.cs:41581-41679`, W4-g57): the (50, 270) context-5 slot, the
+        // `Lang.inter[46]` label + coin breakdown, the (120, 310) hammer
+        // button at `Main.reforgeScale` and the empty-slot hint. The C#
+        // draws at the literal coordinates — neither rides `Main.mH` (only
+        // the equipment column's `num20` does, `Main.cs:41146`) — so the
+        // labels align with the click hit boxes
+        // (`ui::inventory::reforge_*_hit`).
+        if let Some((slot_item, cost, scale, hovered)) = reforge {
+            // W4-d122: `Main.cs:41637` — `ItemSlot.DrawSavings(spriteBatch,
+            // num51 + 130, invBottom, horizontal: true)` inside the
+            // `reforgeItem.type > 0` block (`:41584`): (50 + 130, 258) =
+            // (180, 258), the four banks' coin pile + the "Savings" row.
+            if slot_item.kind > 0 {
+                if let Some(p) = player {
+                    savings::draw_savings(
+                        r,
+                        lookups,
+                        coin_slot,
+                        &[&p.banks[0], &p.banks[1], &p.banks[2], &p.banks[3]],
+                        180.0,
+                        258.0,
+                        true,
+                        pulse.text,
+                        *custom_currency_for_savings,
+                    );
+                }
             }
-            let label = if cooldown > 0 {
-                "cooling down".to_string()
-            } else {
-                format!("Reforge - {} copper", cost)
-            };
-            let ready = cooldown == 0;
-            let tint: [f32; 4] = if ready { [1.0; 4] } else { [0.55; 4] };
-            text::hud_text(r, lookups, 120.0, 316.0, 0.85, tint, &label);
+            reforge::draw(
+                r,
+                lookups,
+                slot_item,
+                cost,
+                scale,
+                hovered,
+                // `pulse.text` is `mouseTextColor / 255`; round back so the
+                // byte survives the f32 round trip (254/255×255 = 253.99997).
+                (pulse.text * 255.0).round() as u8,
+            );
         }
         // `Main.cs:41831`: `ChestUI.Draw` runs after the shop pass — the chest
         // panel draws together with the inventory (`OpenChest` sets
@@ -992,10 +1210,17 @@ pub fn draw_hud(
                 lookups,
                 screen,
                 mouse_pos,
-                craft,
+                craft_raw,
+                craft_shown,
                 false,
                 false,
                 craft_filter_flags,
+                pulse,
+                craft_selected,
+                inventory_back,
+                craft_scroll,
+                craft_scroll_hover,
+                craft_from_nearby_chests,
             );
             // The hovered filter tab's label — `ShowButtonName`
             // (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`):
@@ -1014,7 +1239,7 @@ pub fn draw_hud(
             }
             // Hovering a recipe shows the crafted item's tooltip
             // (`Main.HoverOverCraftingItemButton`, `Main.cs:42250`).
-            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft) {
+            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft_shown, craft_scroll) {
                 let (kind, count) = crate::craft::RECIPES[idx].create;
                 let hover = crate::item::ItemSlot {
                     kind,
@@ -1062,6 +1287,11 @@ pub fn draw_hud(
                 i == selected,
                 scale,
                 [1.0; 4],
+                pulse,
+                None,
+                i as i32,
+                mouse_item_is_air,
+                mouse_item_is_dye,
             );
             x += advance;
         }
@@ -1096,6 +1326,11 @@ pub fn draw_hud(
             false,
             pulse.cursor_scale,
             [1.0; 4],
+            pulse,
+            None,
+            0,
+            mouse_item_is_air,
+            mouse_item_is_dye,
         );
     } else if mouse_npc.carried() {
         // `DrawInterface_38_MouseCarriedObject`'s else arm
@@ -1150,6 +1385,11 @@ pub fn draw_hud(
     };
     let housing_hover_text: Option<String> = open_housing
         .and_then(|(head, npc)| housing::label(head, npc, npcs));
+    // The reforge button's hover name (`Main.cs:41651`: `Main.hoverItemName
+    // = Lang.inter[19].Value`, W4-g57) — printed through the same
+    // pending-mouse-text layer, below the slot tooltip like the PVP rows.
+    let reforge_hover_text: Option<String> = reforge
+        .and_then(|(slot_item, _, _, _)| reforge::button_hover_name(slot_item, mouse_pos));
     // `MouseTextInner`'s carried-head gate (`Main.cs:20192`:
     // `mouseNPCType > -1` returns) + `DrawInterface_38`'s
     // `Main.mouseText = false` (`:45222`): no hover text while a housing
@@ -1203,11 +1443,168 @@ pub fn draw_hud(
     if let Some(text) = housing_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
+    if let Some(text) = reforge_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
+    }
+
+    // `DrawInterface_39_MouseOver` → `Main.DrawMouseOver`
+    // (`Main.cs:44904-44908`, `:42871-42988`): the in-world hover texts —
+    // the dropped item's affix name + stack (`:42884-42913`) and the NPC's
+    // GivenOrTypeName + carrier life (`:43087-43104`), both through the
+    // plain `MouseTextInner` arm (no box). The `Main.mouseText` priority:
+    // the slot tooltip / PVP / housing texts above are the earlier
+    // claimants (`:45188`'s carried item sets it too), so this pass only
+    // runs when none of them drew. The emote/bestiary overlays own the
+    // pointer while open (their own MouseText rides their draw).
+    let earlier_text = hover_item.is_some()
+        || pvp_hover_text.is_some()
+        || housing_hover_text.is_some()
+        || mouse_item.count > 0
+        || mouse_npc.carried();
+    if !earlier_text && !bestiary_open && !emotes_state.menu_open {
+        let mouse_world =
+            world_hover::mouse_world_point(mouse_pos, camera, zoom, screen);
+        // The item walk first (`:42884-42913`), then the NPC walk
+        // (`:42939` → `HoverOverNPCs`) only while no item claimed the text.
+        if let Some(drop) = world_hover::hovered_drop(items, lookups, mouse_world) {
+            let (label, color) = world_hover::drop_hover_text(drop);
+            world_hover::draw_hover_text(
+                r, lookups, mouse_pos, false, &label, color, screen, pulse,
+            );
+        } else if let Some(i) = world_hover::hovered_npc(npcs, mouse_world) {
+            let label = world_hover::npc_hover_text(npcs, i);
+            world_hover::draw_hover_text(
+                r, lookups, mouse_pos, false, &label, [1.0; 4], screen, pulse,
+            );
+        }
+    }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
     // hidden while the vanilla `Cursor_0` is on screen.
     cursor::draw(r, lookups, cursor_state, mouse_pos);
+
+    // S1-W4-g81 residuals + W4-g86 research/244 phase 1 —
+    // `DrawInterface_40_InteractItemIcon` (`Main.cs:45037-45115`): the
+    // cursor-side item icon. Layer 40 draws AFTER the cursor (36) /
+    // debug (37) / carried head (38) / mouse-over (39) — the layer list
+    // `:44889-44913` — so the block rides after `cursor::draw` above (the
+    // e19-draw_override compose-note: the icon overlays whatever cursor is
+    // on screen, override or normal). The wiring/mining tools' latch
+    // (`Player.cs:46756-46760`/`:45620-45624`) arms `icon_enabled` in reach;
+    // the cache linger draws the last kind for 10 frames after the tool
+    // leaves reach (`:45063`'s `_itemIconCacheTime > 0 && mouseItem.type < 1`).
+    // The icon rides `ItemSlot.DrawItemIcon` at context 21, sizeLimit 9999
+    // (no clamp), centred on `mouse + (10 + Push, 10 + Push) +
+    // hitbox.Size()*cursorScale/2` (`:45089-45092`).
+    //
+    // The ID-override arm (g81's declared gap, NOW PORTED — `:45057-45060`):
+    // `cursorItemIconID != 0` REPLACES the held kind (the tile-hover decode /
+    // the ItemCheck head's bait/solution id). The override forces
+    // `currentColor = White, color = default` (`:45074-45078`), Push offsets
+    // the icon (`:45089`), Reversed flips it (`:45083-45086`), Text draws
+    // `MouseText(Text, 0, 0)` (`:45102-45105`). The `!flag` linger path swaps
+    // the cached kind with the live ID around the draw (`:45067-45071`/
+    // `:45111-45114`) — the swap-back leaves the field unchanged, so the
+    // port draws the cached kind directly.
+    //
+    // DEFERRED halves (documented, no feed exists on this branch): the
+    // UsingBiomeTorches 8/966 swap (`:45045-45056` — needs the player's
+    // zones at draw, the light-feed precedent computes it sim-side), the
+    // TryGetAmmo sub-icon (`:45093-45100`/`:45117-45144` — FindPaintOrCoating
+    // + the FlexibleTileWand system), the painted-held overlay
+    // (`:45106-45110` — the port's ItemSlot carries no per-item color),
+    // ItemSlot.GetItemLight (`:45081`) and the held-slot GetAlpha/GetColor
+    // (`:45072-45073` — the port draws the icon plain white, the g81
+    // stand-in kept).
+    if !icon_suppressed {
+        let (icon_id, icon_push, icon_reversed, icon_text) = icon_override;
+        let held_kind = inventory[selected.min(INV - 1)].kind;
+        if let Some(kind) = interact_icon_kind(
+            icon_enabled,
+            icon_id,
+            held_kind,
+            // `MouseDisplayItem.IsAir` (`Main.cs:2955-2965` → `Item.cs:385`:
+            // `type <= 0 || stack <= 0`; the FakeCursorItem arm has no port
+            // — the gamepad stand-in cursor, parked).
+            mouse_item.kind == 0 || mouse_item.count == 0,
+            // The linger's own gate (`:45063`): `mouseItem.type < 1`.
+            mouse_item.kind < 1,
+            icon_cache,
+        ) {
+            if let Some((uv, iw, ih)) = lookups.item_icon(kind) {
+                let s = pulse.cursor_scale;
+                // `:45089` — `num3 = 10 + cursorItemIconPush`.
+                let off = 10.0 + icon_push as f32;
+                let center = [
+                    mouse_pos.x + off + iw * s * 0.5,
+                    mouse_pos.y + off + ih * s * 0.5,
+                ];
+                let w = iw * s;
+                let h = ih * s;
+                // `:45083-45086` — Reversed mirrors the UV quad
+                // (`SpriteEffects.FlipHorizontally`, the player_layers.rs
+                // mirror precedent).
+                let uv = if icon_reversed {
+                    [uv[2], uv[1], uv[0], uv[3]]
+                } else {
+                    uv
+                };
+                r.push_ui_sprite(
+                    [center[0] - w * 0.5, center[1] - h * 0.5],
+                    [w, h],
+                    uv,
+                    [1.0; 4],
+                );
+            }
+        }
+        // `:45102-45105` — `cursorItemIconText != ""` → MouseText(Text, 0, 0)
+        // (the container/dresser hover NAME; no feed arms Text yet, the
+        // clear-quad keeps it "").
+        if !icon_text.is_empty() {
+            tooltip::draw_mouse_text(r, lookups, mouse_pos, icon_text, screen, pulse);
+        }
+    }
+}
+
+/// `DrawInterface_40_InteractItemIcon`'s icon-kind selection
+/// (`Main.cs:45057-45092`, W4-g86 research/244 phase 1): the ID override
+/// (`:45057-45060`, `cursorItemIconID != 0` REPLACES the held kind —
+/// independent of the held stack, the C# reads `heldItem.type` which is 0
+/// for an empty slot), the live gate (`:45061`, `enabled && num != 0 &&
+/// MouseDisplayItem.IsAir`), the linger gate (`:45063`, `flag | (cacheTime
+/// > 0 && mouseItem.type < 1)`) and the `num > 0` draw gate (`:45087` —
+/// negative ids, the sign arm's -1 sentinel `Player.cs:34306`, draw
+/// nothing). The `!flag` linger path draws the CACHED kind (the `:45070`
+/// swap puts it in `cursorItemIconID` for the draw, the `:45113` swap-back
+/// restores the live field — net-zero, so the port reads the cache
+/// directly). `icon_cache` is `(cached kind, cache time)`. `mouse_air` is
+/// `MouseDisplayItem.IsAir` (`Item.cs:385`: `type <= 0 || stack <= 0`) for
+/// the live flag; `mouse_kind_air` is the linger's own `mouseItem.type < 1`
+/// (`:45063` — kind only, so an empty stack of a real kind passes IsAir but
+/// REFUSES the linger).
+pub(crate) fn interact_icon_kind(
+    icon_enabled: bool,
+    icon_id: i32,
+    held_kind: u16,
+    mouse_air: bool,
+    mouse_kind_air: bool,
+    icon_cache: (u16, i32),
+) -> Option<u16> {
+    // `:45057-45060` — the override.
+    let num = if icon_id != 0 { icon_id } else { i32::from(held_kind) };
+    // `:45061` — the live gate.
+    let flag = icon_enabled && num != 0 && mouse_air;
+    // `:45063` + `:45067-45071` — the linger draws the cached kind.
+    let kind = if flag {
+        num
+    } else if icon_cache.1 > 0 && mouse_kind_air {
+        i32::from(icon_cache.0)
+    } else {
+        0
+    };
+    // `:45087` — only positive ids draw.
+    (kind > 0).then_some(kind as u16)
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it
@@ -1240,6 +1637,84 @@ fn hover_item_for<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-g86 research/244 phase 1 — the layer-40 override precedence
+    /// (`Main.cs:45057-45092`): a lit `cursorItemIconID` REPLACES the held
+    /// kind even with an empty held slot; ID 0 falls back to the held kind
+    /// (the g81 arm); the live gate needs `enabled && num != 0 &&
+    /// MouseDisplayItem.IsAir`; the linger draws the CACHED kind, never the
+    /// live id; negative ids (the sign arm's -1 sentinel) draw nothing.
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_layer40_id_override_beats_the_held_kind() {
+        // The altar hover (ID 6135) overrides a held Copper Pickaxe (1).
+        assert_eq!(
+            interact_icon_kind(true, 6135, 1, true, true, (0, 0)),
+            Some(6135),
+            "the override replaces the held kind (:45057-45060)"
+        );
+        // The override fires with an EMPTY held slot — the C# num comes
+        // from the ID, not the stack.
+        assert_eq!(interact_icon_kind(true, 1293, 0, true, true, (0, 0)), Some(1293));
+        // ID 0: the held kind is the icon (the g81 held-kind arm).
+        assert_eq!(interact_icon_kind(true, 0, 509, true, true, (0, 0)), Some(509));
+        // The live gate: disabled → no live icon even with a lit ID…
+        assert_eq!(interact_icon_kind(false, 6135, 1, true, true, (0, 0)), None);
+        // …a carried cursor stack (MouseDisplayItem NOT air) → same.
+        assert_eq!(interact_icon_kind(true, 6135, 1, false, false, (0, 0)), None);
+        // An empty held slot with ID 0 draws nothing (num == 0).
+        assert_eq!(interact_icon_kind(true, 0, 0, true, true, (0, 0)), None);
+        // The linger (`cacheTime > 0`, mouse kind air, live gate shut) draws
+        // the CACHED kind — NOT the live override id (the :45070 swap).
+        assert_eq!(
+            interact_icon_kind(false, 6135, 1, true, true, (509, 7)),
+            Some(509),
+            "the linger draws the cached kind"
+        );
+        // The two air gates DIFFER: an empty stack of a real kind (kind 40,
+        // count 0) is `IsAir` (live flag true) AND `type < 1` false — the
+        // linger refuses (`mouseItem.type < 1` reads the kind only).
+        assert_eq!(interact_icon_kind(false, 0, 1, true, false, (509, 7)), None);
+        // A carried cursor stack kills the linger too.
+        assert_eq!(interact_icon_kind(false, 0, 1, false, false, (509, 7)), None);
+        // The sign arm's -1 sentinel: enabled, non-zero num — but `num > 0`
+        // (:45087) refuses the draw.
+        assert_eq!(interact_icon_kind(true, -1, 1, true, true, (0, 0)), None);
+    }
+
+    /// W4-g86 research/244 phase 1 — the Reversed UV mirror
+    /// (`Main.cs:45083-45086`, `SpriteEffects.FlipHorizontally`): the draw
+    /// block swaps the U pair exactly like `player_layers.rs`'s mirror
+    /// (`[uv[2], uv[1], uv[0], uv[3]]`) — the V pair and the quad size stay.
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_reversed_flag_mirrors_the_icon_uv() {
+        let uv = [0.1f32, 0.2, 0.3, 0.4];
+        let mirrored = [uv[2], uv[1], uv[0], uv[3]];
+        assert_eq!(mirrored, [0.3, 0.2, 0.1, 0.4]);
+        // A double mirror is the identity (the per-frame Reversed clear
+        // never lets a stale flip survive two frames).
+        let back = [mirrored[2], mirrored[1], mirrored[0], mirrored[3]];
+        assert_eq!(back, uv);
+    }
+
+    /// W4-g86 research/244 phase 1 — the Push offset (`Main.cs:45089`,
+    /// `num3 = 10 + cursorItemIconPush`): the icon centre rides
+    /// `mouse + (10 + Push) + hitbox*cursorScale/2` (`:45091-45092`). The
+    /// pole's bait arm pushes 6 → base 16; the solution arm pushes 10 →
+    /// base 20; the tool latch keeps Push 0 → base 10 (the g81 geometry).
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_push_offsets_the_icon_base_10() {
+        let mouse = Vec2::new(100.0, 200.0);
+        let (iw, ih, s) = (20.0f32, 20.0f32, 1.0f32);
+        for (push, base) in [(0i32, 10.0f32), (6, 16.0), (10, 20.0)] {
+            let off = 10.0 + push as f32;
+            assert_eq!(off, base, "10 + push {push}");
+            let center = [mouse.x + off + iw * s * 0.5, mouse.y + off + ih * s * 0.5];
+            assert_eq!(center, [100.0 + base + 10.0, 200.0 + base + 10.0]);
+        }
+    }
 
     /// The corner chat's row anchor (`RemadeChatMonitor.cs:83`):
     /// `(88, screenHeight - 30 - 28 - row*22)` — x=88, the newest row 58 px

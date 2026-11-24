@@ -19,49 +19,29 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
-use super::{text, UiPulse};
+use super::{text, text_wrap, UiPulse};
 use crate::assets::Lookups;
 use crate::npc::Npc;
 use crate::npc_chat::{chat_box_height, chat_box_rect};
 
 /// `TextDisplayCache.PrepareCache` (`TextDisplayCache.cs:19-30`):
 /// `Utils.WordwrapString(text, FontAssets.MouseText.Value, 460, 10, …)`
-/// (`Utils.cs:860-867`) — the font-measured wrap at 460 px, capped at 10
-/// lines. The port measures with the retail `Mouse_Text` sheet when loaded
-/// (`text::ui_font_width`); the bitmap fallback estimates 8 px per char
+/// (`Utils.cs:860-867`) — the ReLogic `WrappedTextBuilder` wrap at 460 px,
+/// capped at 10 lines, ported 1:1 in `ui::text_wrap` (W4-d121, the
+/// research/37 gap). The port measures with the retail `Mouse_Text` sheet
+/// when loaded; the bitmap fallback estimates 8 px per char
 /// (docs/ANALYSIS.md "Town chatter UI (S1-E-10b)"). The selection half's
-/// `format_chat_lines` keeps its char-count wrap for the tests; the drawn
-/// panel measures the real font.
+/// `format_chat_lines` keeps its char-count wrap for the tests.
 pub(crate) fn panel_lines(lookups: &Lookups, chat_text: &str) -> Vec<String> {
     const MAX_LINES: usize = 10; // `TextDisplayCache.cs:27`'s maxLines
-    let width = |s: &str| {
-        text::ui_font_width(lookups, s, 1.0).unwrap_or(s.chars().count() as f32 * 8.0)
-    };
     let max_w = crate::npc_chat::CHAT_TEXT_WRAP_WIDTH as f32;
-    let mut rows: Vec<String> = Vec::new();
-    for paragraph in chat_text.split('\n') {
-        let mut cur = String::new();
-        for word in paragraph.split(' ') {
-            if cur.is_empty() {
-                cur.push_str(word);
-            } else if width(&format!("{cur} {word}")) <= max_w {
-                cur.push(' ');
-                cur.push_str(word);
-            } else {
-                rows.push(std::mem::take(&mut cur));
-                cur.push_str(word);
-            }
-            if rows.len() >= MAX_LINES {
-                return rows;
-            }
-        }
-        rows.push(cur);
-        if rows.len() >= MAX_LINES {
-            return rows;
-        }
-    }
-    rows.truncate(MAX_LINES);
-    rows
+    text_wrap::wordwrap_string(
+        lookups.ui_font.as_ref(),
+        chat_text,
+        max_w,
+        MAX_LINES,
+        crate::lang::active_culture(),
+    )
 }
 
 /// The interaction row count the port renders: only `CloseChat`
@@ -94,6 +74,34 @@ pub(crate) fn close_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str
     let y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
     // `:117` — `rectangle.Width = (int)(stringSize.X * num4)`.
     [x, y, (w0 * shrink).trunc(), 22.0]
+}
+
+/// W4-f30 — the interaction row's button rects (`NPCChatPanel.DrawButtons`,
+/// `NPCChatPanel.cs:93-135`): the row origin is the Close rect's origin; the
+/// buttons lay left-to-right, each `width + 30` apart (`:135`). When the
+/// Dryad's Stardew bit shows (`stardew` true), the "Purify" button is index 0
+/// and Close index 1; otherwise Close is index 0. Returns
+/// `(stardew_rect, close_rect)` — the stardew rect is zero-width when absent.
+pub(crate) fn button_rects(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    stardew: bool,
+) -> ([f32; 4], [f32; 4]) {
+    let close = close_button_rect(lookups, screen, chat_text);
+    if !stardew {
+        return ([0.0, 0.0, 0.0, 0.0], close);
+    }
+    let label = crate::dryad_stardew::give_cola_button_text();
+    let w0 = text::ui_font_width(lookups, &label, 0.9)
+        .unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+    let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
+    let sw = (w0 * shrink).trunc();
+    // The Purify button sits at the row origin; Close shifts right by its
+    // width + 30 (`:135` — `rectangle.X += rectangle.Width + 30`).
+    let purify = [close[0], close[1], sw, 22.0];
+    let close_shifted = [close[0] + sw + 30.0, close[1], close[2], close[3]];
+    (purify, close_shifted)
 }
 
 /// One crop of a sheet pushed at 1:1 — the panel's `ChatBack` splices draw
@@ -131,6 +139,7 @@ pub(crate) fn draw_panel(
     chat_text: &str,
     pulse: UiPulse,
     mouse: Vec2,
+    stardew: bool,
 ) -> bool {
     let lines = panel_lines(lookups, chat_text);
     let panel = panel_rect(lookups, screen, chat_text);
@@ -173,7 +182,7 @@ pub(crate) fn draw_panel(
             line,
         );
     }
-    draw_close_button(r, lookups, screen, chat_text, pulse, mouse);
+    draw_close_button(r, lookups, screen, chat_text, pulse, mouse, stardew);
     super::in_rect(mouse, panel)
 }
 
@@ -190,9 +199,32 @@ fn draw_close_button(
     chat_text: &str,
     pulse: UiPulse,
     mouse: Vec2,
+    stardew: bool,
 ) {
-    let rect = close_button_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52);
+    // W4-f30 — the interaction row: the Purify button (index 0) when the
+    // Stardew bit shows, then Close. Both ride the same label-draw shape.
+    let (purify_rect, rect) = button_rects(lookups, screen, chat_text, stardew);
+    if stardew {
+        draw_interaction_button(r, lookups, purify_rect, &crate::dryad_stardew::give_cola_button_text(), pulse, mouse);
+    }
+    draw_interaction_button(r, lookups, rect, &crate::lang::inter(52), pulse, mouse);
+}
+
+/// One interaction button's label (`NPCChatPanel.DrawButtons`,
+/// `NPCChatPanel.cs:98-135`): idle scale 0.9 / hover 1.2 (`:96`, `:119`), the
+/// label colour `(b, b/1.1, b/2, b)` (`:102`), the shadow Black idle / Brown
+/// hovered (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
+/// left/centre-Y (`:120-122`) with the hover x-shift
+/// `−(1.2−0.9)·width·0.5` (`:125`). W4-f30: extracted from the Close-only
+/// draw so the Purify button shares it (the house shared-helper rule).
+fn draw_interaction_button(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    rect: [f32; 4],
+    label: &str,
+    pulse: UiPulse,
+    mouse: Vec2,
+) {
     let hovered = super::in_rect(mouse, rect);
     let b = (pulse.text * 255.0) as i32;
     let chat_color = [
@@ -208,7 +240,7 @@ fn draw_close_button(
         [0.0, 0.0, 0.0, 1.0]
     };
     let scale = if hovered { 1.2 } else { 0.9 };
-    let w0 = text::ui_font_width(lookups, &label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+    let w0 = text::ui_font_width(lookups, label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
     let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
     let mut px = rect[0];
     if hovered {
@@ -234,7 +266,7 @@ fn draw_close_button(
             scale * shrink,
             &[],
             shadow,
-            &label,
+            label,
         );
     }
     text::draw_border_string(
@@ -246,7 +278,7 @@ fn draw_close_button(
         scale * shrink,
         &[],
         chat_color,
-        &label,
+        label,
     );
 }
 

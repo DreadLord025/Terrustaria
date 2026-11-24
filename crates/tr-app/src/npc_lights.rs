@@ -32,6 +32,9 @@
 //! fallback) wait for those kinds — neither exists in the port's roster
 //! (`NPCID.cs:10843`/`:11035`; PrimeVice 130 rides aiStyle 34 and
 //! DD2KoboldFlyerT3 575 aiStyle 108, so they never reach that chain).
+//!
+//! S1-D-3 W-1d adds the WoF Hungry's aiStyle-29 tail (`NPC.cs:26403`,
+//! the (0.3, 0.2, 0.1) centre light) — the same RNG-free draw-side feed.
 
 use glam::Vec2;
 
@@ -66,6 +69,16 @@ pub(crate) fn npc_light(
         // Fire Imp is the port's only other aiStyle-8 kind; the remaining
         // vanilla members (693/172/281-286) are not ported.
         NpcKind::FireImp => (XAnchor::Center, [0.6, 0.6 * 0.65, 0.6 * 0.4]),
+        // S1-D-3 W-1d — the Hungry's aiStyle-29 light tail
+        // (`NPC.cs:26403`): `Lighting.AddLight((int)(position.X +
+        // (float)(width / 2)) / 16, (int)(position.Y + (float)(height /
+        // 2)) / 16, 0.3f, 0.2f, 0.1f)`. The halves are INTEGER
+        // (`width / 2` on the int hitbox), the centre is truncated to
+        // int BEFORE the /16 — `XAnchor::CenterTruncated` (the Shine
+        // precedent). For the Hungry's even 30×30 box the integer and
+        // float halves agree; the anchor keeps the C# form for any
+        // future odd-sized consumer.
+        NpcKind::Hungry => (XAnchor::CenterTruncated, [0.3, 0.2, 0.1]),
         _ => return None,
     };
     Some((
@@ -144,6 +157,25 @@ mod tests {
             .expect("FireImp emits the else arm's light");
         assert_eq!((x, y), (10, 12));
         assert_eq!(rgb, [0.6, 0.6 * 0.65, 0.6 * 0.4]);
+    }
+
+    /// S1-D-3 W-1d — the Hungry's aiStyle-29 tail (`NPC.cs:26403`):
+    /// `AddLight((int)(position.X + width/2) / 16, (int)(position.Y +
+    /// height/2) / 16, 0.3, 0.2, 0.1)` — the CenterTruncated anchor
+    /// (the C#'s cast order; for the even 30×30 box the integer halves
+    /// and the truncation commute with the /16, so the placement pins
+    /// the colour + the centre tile).
+    #[test]
+    fn the_hungry_emits_the_style29_tail_light() {
+        let (x, y, rgb) = npc_light(NpcKind::Hungry, Vec2::new(160.0, 176.0), 30.0, 30.0)
+            .expect("the Hungry lights its centre");
+        // Centre (175, 191) → tiles (10, 11).
+        assert_eq!((x, y), (10, 11));
+        assert_eq!(rgb, [0.3, 0.2, 0.1]);
+        // A fractional centre: 240.9 + 15 = 255.9 → (int)255 → tile 15.
+        let (x2, _, _) = npc_light(NpcKind::Hungry, Vec2::new(240.9, 0.0), 30.0, 30.0)
+            .expect("the Hungry lights");
+        assert_eq!(x2, 255 / 16, "(int)centre then /16");
     }
 
     #[test]

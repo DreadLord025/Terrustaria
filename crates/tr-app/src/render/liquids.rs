@@ -30,7 +30,9 @@ pub(crate) fn is_liquid_style_water(style: usize) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_waters(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -51,14 +53,18 @@ pub(crate) fn draw_waters(
         } else {
             liquid_alpha[j]
         };
-        quads += draw_liquids(r, lookups, light, style, anim_time, draws, pass, j, alpha, true);
+        quads += draw_liquids(
+            r, world, lookups, atlas, light, style, anim_time, draws, pass, j, alpha, true,
+        );
         fading = true;
     }
     // `this.DrawLiquid(isBackground, Main.waterStyle, flag ? liquidAlpha[style] : 1f)`.
     let alpha = if fading { liquid_alpha[water_style] } else { 1.0 };
     quads += draw_liquids(
         r,
+        world,
         lookups,
+        atlas,
         light,
         style,
         anim_time,
@@ -69,7 +75,7 @@ pub(crate) fn draw_waters(
         false,
     );
     // `if (!waterOnly) { LiquidRenderer.Instance.DrawShimmer(...); }`.
-    quads += draw_shimmer(r, lookups, anim_time, draws, pass);
+    quads += draw_shimmer(r, world, lookups, atlas, light, style, anim_time, draws, pass);
     quads
 }
 
@@ -84,7 +90,9 @@ pub(crate) fn draw_waters(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_liquids(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -114,6 +122,25 @@ pub(crate) fn draw_liquids(
             2 => (11, 0.95),
             _ => (water_style, 0.60),
         };
+        // `Main.DrawTileInWater(drawOffset, i, j)` — the submerged pad
+        // redraw BEFORE the water quad (`LiquidRenderer.cs:664`, W4-g12
+        // render-sweep-2: the earlier "only caller is retro oldDrawWater"
+        // reading was wrong, this LIVE record path calls it too). The
+        // tint is `Lighting.GetColor(x, y)` (`Main.cs:57549`) through the
+        // port's mode-shader stand-in `style.shade` (the shroom-cap
+        // convention); `draw_offset` is Vec2::ZERO in world-pixel quads.
+        if let Some(a) = atlas {
+            quads += draw_tile_in_water(
+                r,
+                world,
+                lookups,
+                a,
+                style.shade(light.get(d.x, d.y), d.x, d.y, anim_time),
+                [0.0, 0.0],
+                d.x,
+                d.y,
+            );
+        }
         let corners = light.corner4(d.x, d.y);
         // `DrawNormalLiquids`: surface tiles snap to the still frame at y=1280,
         // everything else advances inside its 80 px block.
@@ -194,30 +221,57 @@ pub(crate) fn draw_liquids(
 /// `rgb/max(r,g,b)` with `alpha = max(r,g,b)` — the same source contribution
 /// with a slightly dimmed backdrop under the sparkle (documented deviation).
 ///
-/// `Main.DrawTileInWater` (the tile-518 submerged redraw) is not ported: the
-/// generator never places tile 518.
+/// `Main.DrawTileInWater` (the tile-518 submerged redraw) runs here per
+/// visible shimmer cell BEFORE the base quad (`LiquidRenderer.cs:707`,
+/// W4-g12 render-sweep-2): the earlier "only caller is the retro
+/// `oldDrawWater` pass" reading was wrong — the LIVE record path calls it
+/// too (`:664` in `DrawNormalLiquids`, `:707` here). The retro sprite
+/// pass (`Main.cs:57667`) stays unported; g13 owns its dust feeds.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_shimmer(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
+    light: &LightMap,
+    style: &LightStyle,
     anim_time: f32,
     draws: &[tr_core::liquid_draw::LiquidDraw],
     pass: LiquidPass,
 ) -> u32 {
     let anim_frame = ((anim_time * 8.0) as i32) & 15;
-    // `Main.timeForVisualEffects` (`Main.cs:19751`-shaped wrap at 216000).
-    let tve = (anim_time * 60.0) % 216000.0;
+    // `Main.timeForVisualEffects` is a DOUBLE tick counter (`Main.cs:1181`,
+    // `++` then wrap at 216000, `Main.cs:17162-17164`). The product runs in
+    // f64 so whole ticks stay exact through the f32 narrowing (f32 holds
+    // integers below 2^24 losslessly); the old f32 product quantised the
+    // phase by up to one ULP at 216000 (W4-g76).
+    let tve = ((anim_time as f64 * 60.0) % 216000.0) as f32;
     let mut quads = 0;
     for d in draws {
         if !d.visible || d.liquid_type != 3 || d.src_w <= 0 || d.src_h <= 0 {
             continue;
         }
-        // `val = Opacity * (isBackgroundDraw ? 1f : 0.75f)`.
-        let val = if pass == LiquidPass::Background {
-            d.opacity
-        } else {
-            d.opacity * 0.75
+        // `Main.DrawTileInWater(drawOffset, num3, num4)` — the submerged
+        // pad redraw BEFORE the shimmer base quad (`LiquidRenderer.cs:707`;
+        // the cell coords are the record's, `:703-704`). The tint is
+        // `Lighting.GetColor(x, y)` (`Main.cs:57549`) through the port's
+        // mode-shader stand-in `style.shade` (the shroom-cap convention);
+        // `draw_offset` is Vec2::ZERO in the port's world-pixel quads.
+        if let Some(a) = atlas {
+            quads += draw_tile_in_water(
+                r,
+                world,
+                lookups,
+                a,
+                style.shade(light.get(d.x, d.y), d.x, d.y, anim_time),
+                [0.0, 0.0],
+                d.x,
+                d.y,
+            );
         }
-        .min(1.0);
+        // `val = Math.Min(1f, Opacity * (isBackgroundDraw ? 1f : 0.75f))`
+        // (`LiquidRenderer.cs:700-702`).
+        let val = shimmer_base_val(d.opacity, pass == LiquidPass::Background);
         let src_y = if d.is_surface { 1280 } else { d.src_y + anim_frame * 80 };
         let Some(uv) = lookups.liquid_uv(14, d.src_x, src_y, d.src_w as u32, d.src_h as u32)
         else {
@@ -250,24 +304,111 @@ pub(crate) fn draw_shimmer(
         else {
             continue;
         };
-        let glitter: [[f32; 3]; 4] = corners
-            .iter()
-            .zip([[d.x, d.y], [d.x + 1, d.y], [d.x, d.y + 1], [d.x + 1, d.y + 1]])
-            .map(|(_, [cx, cy])| {
-                let o = glitter_opacity(flag, cx, cy, tve);
-                let g = tr_core::tile_light::hsl_to_rgb(
-                    (((cx as f32 + cy as f32 / 6.0) + tve / 30.0) / 6.0) % 1.0,
-                    1.0,
-                    0.5,
-                );
-                [g[0] * o * val, g[1] * o * val, g[2] * o * val]
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("four corners");
+        // `SetShimmerVertexColors_Sparkle` (`LiquidRenderer.cs:725-736`)
+        // multiplies the glitter colour by the RAW `ptr2->Opacity` (:715),
+        // NOT the base quad's clamped foreground `val` — the old port dimmed
+        // the sparkle by the extra 0.75 (W4-g76).
+        let glitter: [[f32; 3]; 4] = [[d.x, d.y], [d.x + 1, d.y], [d.x, d.y + 1], [d.x + 1, d.y + 1]]
+            .map(|[cx, cy]| shimmer_glitter_corner(flag, cx, cy, tve, d.opacity));
         quads += push_split_premultiplied(r, suv, d, &glitter);
     }
     quads
+}
+
+/// One corner of `SetShimmerVertexColors_Sparkle` (`LiquidRenderer.cs:725-736`):
+/// `GetShimmerGlitterColor(top, x, y) * opacity` — the byte-quantised rainbow
+/// hue (`Main.hslToRgb`, alpha forced to 0 at :762, i.e. the additive term),
+/// times the wave/noise opacity, times the RAW record opacity (:731-734).
+fn shimmer_glitter_corner(top: bool, x: i32, y: i32, tve: f32, opacity: f32) -> [f32; 3] {
+    let o = glitter_opacity(top, x, y, tve);
+    let g = tr_core::tile_light::hsl_to_rgb(shimmer_glitter_hue(x as f32, y as f32, tve), 1.0, 0.5);
+    [g[0] * o * opacity, g[1] * o * opacity, g[2] * o * opacity]
+}
+
+/// `WorldGen.SolidTile(x, y)` (`WorldGen.cs:70111-70131`) for the
+/// submerged-redraw probe: `nactive` (active, non-actuated), solid,
+/// non-solidTop, non-halfBrick, slopeless. Out-of-world reads false
+/// (the C# try/catch).
+fn solid_tile_probe(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && !t.inactive()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+}
+
+/// `Main.DrawTileInWater` (`Main.cs:57536-57551`, W4-g12 doc-sweep): the
+/// retro `oldDrawWater` pass redraws a submerged LILY PAD (tile 518)
+/// OVER the water quad so the pad floats on the surface instead of
+/// drowning under it. `num = tile.liquid / 16 - 3` (byte integer
+/// divide), clamped to 8 under a solid ceiling (`WorldGen.SolidTile(x,
+/// y - 1) && num > 8`); the sprite is the tile's own 16x16 frame at
+/// `(x*16, y*16 - num) + drawOffset`, tinted `Lighting.GetColor(x, y)`,
+/// no rotation/flip/scale.
+///
+/// WIRED (W4-g12 render-sweep-2): the LIVE record path calls it per
+/// visible liquid cell — [`draw_liquids`] (`LiquidRenderer.cs:664`) and
+/// [`draw_shimmer`] (`:707`), before each water/shimmer quad; the tile
+/// pass skips wet pads (`TileDrawing.cs:872-875`, the tiles.rs twin), so
+/// this redraw is their ONLY sprite. The retro `oldDrawWater` sprite
+/// pass (`Main.cs:57667`) stays unported (g13 owns its dust feeds).
+/// `draw_offset` is the C#'s `-screenPosition + offScreenRange` vector —
+/// the port's world-pixel equivalent is `Vec2::ZERO` (the GPU transform
+/// applies). The tint is `Lighting.GetColor(x, y)` (`Main.cs:57549`)
+/// through the callers' `style.shade` mode-shader stand-in (the
+/// shroom-cap convention — raw GetColor in Color/White, the mode ramp
+/// in Trippy/Retro); `atlas` resolves the frame through
+/// `Lookups::rect_uv`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_tile_in_water(
+    r: &mut SpriteRenderer,
+    world: &World,
+    lookups: &assets::Lookups,
+    atlas: &tr_render::Atlas,
+    tint: [f32; 3],
+    draw_offset: [f32; 2],
+    x: i32,
+    y: i32,
+) -> u32 {
+    // `:57538`: active AND type 518 — nothing else redraws.
+    let Some(tile) = world.tile(x, y) else {
+        return 0;
+    };
+    if !tile.active() || tile.kind != 518 {
+        return 0;
+    }
+    // `:57542-57546`: the integer lift + the solid-ceiling clamp.
+    let mut num = tile.liquid as i32 / 16 - 3;
+    if solid_tile_probe(world, x, y - 1) && num > 8 {
+        num = 8;
+    }
+    // `:57547-57548`: the tile's own frame (`GetTileDrawTexture` — the
+    // 518 sheet has no paint/style variants, the plain frame is exact).
+    let Some(tf) = lookups.rect_uv(
+        atlas,
+        518,
+        tile.frame_x,
+        tile.frame_y,
+        16,
+        16,
+    ) else {
+        return 0;
+    };
+    // `:57549`.
+    r.push_sprite(
+        [
+            x as f32 * TILE_PX + draw_offset[0],
+            y as f32 * TILE_PX - num as f32 + draw_offset[1],
+        ],
+        [16.0, 16.0],
+        tf.uv,
+        [tint[0], tint[1], tint[2], 1.0],
+    );
+    1
 }
 
 /// Pushes one record's quad as the 3x3 bilinear split (the shared light-split
@@ -344,30 +485,60 @@ fn push_split_premultiplied(
 
 /// `LiquidRenderer.GetShimmerFrame` (`LiquidRenderer.cs:782-792`): the sparkle
 /// strip's frame for a cell, a 16-frame cycle along the same diagonal wave.
+/// The phase `(wx + wy/6)/10` is computed in f32, then `timeForVisualEffects /
+/// 360.0` is subtracted in DOUBLE (:786); the `!top` offset adds the f32 sum
+/// `(wx + wy)` cast to double (:789). The old all-f32 phase drifted the frame
+/// index at large tick counts (W4-g76, mirroring the W4-d66 palette split).
 fn shimmer_frame(x: i32, y: i32, top: bool, tve: f32) -> i32 {
     let wx = x as f32 + 0.5;
     let wy = y as f32 + 0.5;
-    let mut num = (wx + wy / 6.0) / 10.0 - tve / 360.0;
+    let mut num = ((wx + wy / 6.0) / 10.0) as f64 - tve as f64 / 360.0;
     if !top {
-        num += wx + wy;
+        num += (wx + wy) as f64;
     }
     ((num as i32) % 16 + 16) % 16
 }
 
 /// `LiquidRenderer.GetShimmerGlitterOpacity` (`LiquidRenderer.cs:766-773`).
+/// The inner sine is `Math.Sin((double)((float)SimpleWhiteNoise / 10f) +
+/// timeForVisualEffects / 180.0)` (:772): the noise is narrowed to f32 and
+/// divided by 10 in f32, THEN widened to double for the `+ tve/180` add and the
+/// double sin. The old all-f32 add lost the `tve/180` term entirely once the
+/// noise/10 magnitude exceeded the f32 ULP (the sparkle froze in time).
 fn glitter_opacity(top: bool, x: i32, y: i32, tve: f32) -> f32 {
     if top {
         return 0.5;
     }
     let wave = shimmer_wave(x as f32, y as f32, tve);
-    let noise = simple_white_noise(x as u32, y as u32) as f32;
-    let inner = (noise / 10.0 + tve / 180.0).sin();
+    let noise = simple_white_noise(x as u32, y as u32) as f32 / 10.0;
+    let inner = (noise as f64 + tve as f64 / 180.0).sin() as f32;
     remap(remap(wave, -0.5, 1.0, 0.0, 0.35) * inner, 0.0, 0.5, 0.0, 1.0)
 }
 
-/// `LiquidRenderer.GetShimmerWave` (`LiquidRenderer.cs:754-757`).
+/// `LiquidRenderer.GetShimmerWave` (`LiquidRenderer.cs:754-757`): the position
+/// `(x + y/6)/10` is f32, the `timeForVisualEffects / 360.0` subtraction, the
+/// `* 6.2831854820251465` and the sin are DOUBLE before the f32 narrowing
+/// (W4-g76 — same split W4-d66 landed on the palette-side base colour).
 fn shimmer_wave(x: f32, y: f32, tve: f32) -> f32 {
-    (((x + y / 6.0) / 10.0 - tve / 360.0) * std::f32::consts::TAU).sin()
+    let pos = (x + y / 6.0) / 10.0;
+    ((pos as f64 - tve as f64 / 360.0) * 6.2831854820251465).sin() as f32
+}
+
+/// `LiquidRenderer.GetShimmerGlitterColor`'s hue (`LiquidRenderer.cs:761`):
+/// `(float)(((double)(x + y/6f) + timeForVisualEffects / 30.0) / 6.0) % 1f` —
+/// the `x + y/6` sum is f32, widened to double for `+ tve/30` and `/6`, narrowed
+/// back to f32, and only THEN taken `% 1f` (the modulo is f32, not double).
+fn shimmer_glitter_hue(x: f32, y: f32, tve: f32) -> f32 {
+    let sum = x + y / 6.0;
+    (((sum as f64 + tve as f64 / 30.0) / 6.0) as f32) % 1.0
+}
+
+/// `DrawShimmer`'s base-quad opacity (`LiquidRenderer.cs:700-702`):
+/// `val = Math.Min(1f, Opacity * (isBackgroundDraw ? 1f : 0.75f))`. The sparkle
+/// overlay (:715) instead multiplies by the RAW `Opacity`, not this clamped
+/// `val` — see [`draw_shimmer`].
+fn shimmer_base_val(opacity: f32, background: bool) -> f32 {
+    (opacity * if background { 1.0 } else { 0.75 }).min(1.0)
 }
 
 /// `LiquidRenderer.SimpleWhiteNoise` (`LiquidRenderer.cs:775-780`).
@@ -405,6 +576,160 @@ pub(crate) fn water_mask_rects(draws: &[tr_core::liquid_draw::LiquidDraw]) -> Ve
         .collect()
 }
 
+/// `TileDrawing.DrawTile_LiquidBehindTile`'s refusal gate
+/// (`TileDrawing.cs:3858`): `!active() || inActive() || tileSolidTop[type]`
+/// — plus the port's solidity bail (`!tileSolid[type]`) and the
+/// `BlocksWaterDrawingBehindSelf && slope() == 0` arm. W4-g80: the
+/// `tileCache.inActive()` term was MISSING — an actuated block stands in
+/// liquid like air, so the behind-mask never draws for it (the C# refuses
+/// before the neighbour-liquid scan). The C#'s half-brick +
+/// `waterfallManager.CheckForWaterfall` clause stays a recorded deviation
+/// (the port has no waterfall probe here); `DebugOptions.hideWater` rides
+/// the caller's `env::no_liqbehind()` gate.
+fn liquid_behind_refused(tile: &tr_core::tile::Tile, blocks_behind: bool) -> bool {
+    // `TileDrawing.cs:3858` verbatim terms the port carries.
+    if !tile.active()
+        || tile.inactive()
+        || !td::TILE_SOLID.has(tile.kind)
+        || td::TILE_SOLID_TOP.has(tile.kind)
+    {
+        return true;
+    }
+    blocks_behind && tile.slope() == 0
+}
+
+/// `WaterfallManager.DrawWaterfall(int waterfallType, ...)`'s type-25 arm
+/// (`WaterfallManager.cs:969-985`): a shimmer FALL quad draws twice — the base
+/// with `SetShimmerVertexColors` (`LiquidRenderer.cs:738-752`: white × opacity
+/// × `GetShimmerBaseColor` per corner — the `GetCornerColors` result is
+/// DISCARDED, so the fall is self-luminous like the liquid surface) and the
+/// sparkle at `sourceRect.Y += 42` with `SetShimmerVertexColors_Sparkle(top:
+/// true)` (`:725-736`): `GetShimmerGlitterColor` per corner × opacity, and
+/// `top: true` pins the glitter opacity at 0.5 (`:768-770`). The glitter
+/// colour carries alpha 0 (additive); the premultiplied encoding matches
+/// [`draw_shimmer`]'s documented deviation. Distinct from the g76 liquid-
+/// surface lane — the falls sample the wave at the walked CELL, not the
+/// liquid record.
+pub(crate) fn draw_shimmer_fall(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    anim_time: f32,
+    d: &tr_core::waterfall::WaterfallDraw,
+) -> u32 {
+    // `Main.timeForVisualEffects` — the same wrapped tick clock the liquid
+    // shimmer pass reads.
+    let tve = (anim_time * 60.0) % 216000.0;
+    let [x, y] = d.cell;
+    let corners: [[i32; 2]; 4] = [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]];
+    let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
+        return 0;
+    };
+    // The base corners: `Color.White * opacity` then `* GetShimmerBaseColor`.
+    let base: [[f32; 3]; 4] = corners.map(|[cx, cy]| {
+        let b = tr_core::tile_light::shimmer_base_color(cx, cy, tve);
+        [b[0] * d.opacity, b[1] * d.opacity, b[2] * d.opacity]
+    });
+    let mut quads = push_waterfall_split(r, uv, d, &base, d.opacity);
+    // The sparkle strip: `sourceRect.Y += 42` (`WaterfallManager.cs:977`).
+    let mut spark_src = d.source;
+    spark_src[1] += 42;
+    let Some(suv) = lookups.waterfall_uv(d.texture as usize, spark_src) else {
+        return quads;
+    };
+    // `GetShimmerGlitterColor(top: true, cx, cy)` × opacity: the hue rides the
+    // same diagonal as the liquid surface, the glitter opacity is the flat
+    // 0.5 of the `top` arm.
+    let glitter: [[f32; 3]; 4] = corners.map(|[cx, cy]| {
+        let g = tr_core::tile_light::hsl_to_rgb(
+            (((cx as f32 + cy as f32 / 6.0) + tve / 30.0) / 6.0) % 1.0,
+            1.0,
+            0.5,
+        );
+        let o = 0.5 * d.opacity;
+        [g[0] * o, g[1] * o, g[2] * o]
+    });
+    // The additive encoding of `push_split_premultiplied`: rgb/max per corner,
+    // one quad alpha = the brightest corner.
+    let max = |c: [f32; 3]| c[0].max(c[1]).max(c[2]);
+    let alpha = glitter.iter().map(|c| max(*c)).fold(0.0f32, f32::max);
+    let encoded: [[f32; 3]; 4] = glitter.map(|c| {
+        let m = max(c);
+        if m <= 0.0 {
+            [0.0; 3]
+        } else {
+            [c[0] / m, c[1] / m, c[2] / m]
+        }
+    });
+    quads += push_waterfall_split(r, suv, d, &encoded, alpha);
+    quads
+}
+
+/// [`push_split`] for a waterfall quad: the 3x3 bilinear split over the
+/// walk's world-pixel `pos`/`source` instead of a liquid record. A flipped
+/// quad mirrors the SOURCE columns (the tint stays on its destination
+/// corner), matching `flip_uv` over the whole quad.
+fn push_waterfall_split(
+    r: &mut SpriteRenderer,
+    uv: [f32; 4],
+    d: &tr_core::waterfall::WaterfallDraw,
+    corners: &[[f32; 3]; 4],
+    alpha: f32,
+) -> u32 {
+    let (sw, sh) = (d.source[2] as f32, d.source[3] as f32);
+    let xs = [0.0, sw / 3.0, sw * 2.0 / 3.0, sw];
+    let ys = [0.0, sh / 3.0, sh * 2.0 / 3.0, sh];
+    let mut quads = 0;
+    for i in 0..3 {
+        for j in 0..3 {
+            let cw = xs[i + 1] - xs[i];
+            let ch = ys[j + 1] - ys[j];
+            if cw <= 0.0 || ch <= 0.0 {
+                continue;
+            }
+            let u = (xs[i] + xs[i + 1]) * 0.5 / sw;
+            let v = (ys[j] + ys[j + 1]) * 0.5 / sh;
+            let tint = bilerp_corners(*corners, u, v);
+            // The flipped quad samples the mirrored source column.
+            let si = if d.flip { 2 - i } else { i };
+            let mut sub = sub_uv_frac(uv, xs[si], ys[j], cw, ch, sw, sh);
+            if d.flip {
+                sub = [sub[2], sub[1], sub[0], sub[3]];
+            }
+            r.push_sprite(
+                [d.pos[0] + xs[i], d.pos[1] + ys[j]],
+                [cw, ch],
+                sub,
+                [tint[0], tint[1], tint[2], alpha],
+            );
+            quads += 1;
+        }
+    }
+    quads
+}
+
+/// `TileDrawing.cs:3858`'s half-brick spout clause (W4-g75 retire-contract
+/// `a3093a66f`, folded): `tileCache.halfBrick() && (num3 > 160 || num > 160)
+/// && Main.instance.waterfallManager.CheckForWaterfall(tileX, tileY)` — a
+/// half-brick that spouts a waterfall suppresses its OWN behind-water mask
+/// so the fall reads clean. `num3`/`num` are the LEFT/RIGHT neighbours'
+/// liquid with the type-379 (bubble) exclusion (`:3835-3844`). The
+/// `inActive()` half of the same refusal line is owned by the g80 actuator
+/// lane (`liquid_behind_refused`, af6cd44f — that commit explicitly leaves
+/// THIS clause as a recorded deviation); the two halves compose by OR.
+fn liquid_behind_spout_refused(
+    tile: &tr_core::tile::Tile,
+    left: &tr_core::tile::Tile,
+    right: &tr_core::tile::Tile,
+    waterfall: &tr_core::waterfall::WaterfallManager,
+    tx: i32,
+    ty: i32,
+) -> bool {
+    // `num3` (`:3843`) / `num` (`:3837`): a 379 neighbour contributes 0.
+    let num3 = if left.kind != 379 { left.liquid as i32 } else { 0 };
+    let num = if right.kind != 379 { right.liquid as i32 } else { 0 };
+    tile.half_brick() && (num3 > 160 || num > 160) && waterfall.check_for_waterfall(tx, ty)
+}
+
 /// `TileDrawing.DrawTile_LiquidBehindTile`: a block that stands in liquid gets the
 /// liquid drawn *behind* it, so the transparent parts of edge and slope frames show
 /// water instead of the parallax background.
@@ -420,6 +745,7 @@ pub(crate) fn draw_tile_liquid_behind(
     ty: i32,
     tile: &tr_core::tile::Tile,
     water_style: usize,
+    waterfall: &tr_core::waterfall::WaterfallManager,
 ) -> u32 {
     // `BlocksWaterDrawingBehindSelf`: chests and friends never draw water behind
     // themselves, and while sloped they fall back to the plain liquid frame.
@@ -428,17 +754,19 @@ pub(crate) fn draw_tile_liquid_behind(
         return 0;
     }
     let blocks_behind = BLOCKS_WATER_BEHIND.contains(&tile.kind);
-    // `!tileSolid[type] || tileSolidTop[type]` both bail out (line 4064).
-    if !tile.active() || !td::TILE_SOLID.has(tile.kind) || td::TILE_SOLID_TOP.has(tile.kind) {
+    if liquid_behind_refused(tile, blocks_behind) {
         return 0;
     }
     let slope = tile.slope();
-    if blocks_behind && slope == 0 {
-        return 0;
-    }
     let neighbor = |dx: i32, dy: i32| world.tile(tx + dx, ty + dy).copied().unwrap_or_default();
     let right = neighbor(1, 0);
     let left = neighbor(-1, 0);
+    // `TileDrawing.cs:3858`'s spout clause (before the neighbour-liquid scan,
+    // as in C#): a spouting half-brick refuses its own behind-water mask.
+    // (W4-g75 retire-contract `a3093a66f`, folded.)
+    if liquid_behind_spout_refused(tile, &left, &right, waterfall, tx, ty) {
+        return 0;
+    }
     let above = neighbor(0, -1);
     let below = neighbor(0, 1);
     let mut level = 0i32;
@@ -632,6 +960,114 @@ mod tests {
     use super::*;
     use tr_core::liquid_draw::LiquidDraw;
 
+    /// W4-g12 doc-sweep: `DrawTileInWater`'s lift maths
+    /// (`Main.cs:57542-57546`): `liquid/16 - 3` integer, clamped to 8
+    /// ONLY under a solid ceiling and ONLY when above 8.
+    #[test]
+    fn w4_g12_the_submerged_lift_is_the_byte_divide_with_the_ceiling_clamp() {
+        let mut w = World::new("t".into(), 64, 64);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16, liquid: u8| {
+            let i = w.index(x, y);
+            w.tiles[i].kind = kind;
+            w.tiles[i].liquid = liquid;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        };
+        // The pad cell: liquid 255 -> 255/16 - 3 = 15 - 3 = 12.
+        put(&mut w, 10, 10, 518, 255);
+        let lift = |w: &World| -> i32 {
+            let t = w.tile(10, 10).unwrap();
+            let mut num = t.liquid as i32 / 16 - 3;
+            if super::solid_tile_probe(w, 10, 9) && num > 8 {
+                num = 8;
+            }
+            num
+        };
+        // No ceiling: the raw 12 stands.
+        assert_eq!(lift(&w), 12);
+        // A solid stone ceiling clamps to 8.
+        put(&mut w, 10, 9, 1, 0);
+        assert_eq!(lift(&w), 8);
+        // A platform ceiling (solidTop) does NOT clamp.
+        w.tiles[w.index(10, 9)].kind = 19;
+        assert_eq!(lift(&w), 12);
+        // A shallow pad under the ceiling: 128/16 - 3 = 5, below the
+        // clamp threshold — the clamp never lowers.
+        w.tiles[w.index(10, 9)].kind = 1;
+        w.tiles[w.index(10, 10)].liquid = 128;
+        assert_eq!(lift(&w), 5);
+        // An actuated ceiling is not solid (nactive).
+        w.tiles[w.index(10, 9)].flags |= tr_core::tile::FLAG_INACTIVE;
+        w.tiles[w.index(10, 10)].liquid = 255;
+        assert_eq!(lift(&w), 12);
+    }
+
+    /// W4-g12 doc-sweep: the redraw gate (`Main.cs:57538`) — only an
+    /// ACTIVE type-518 cell redraws; the source scan pins the anchor
+    /// (`y*16 - num`), the 16x16 frame and the no-flip/no-rot draw.
+    #[test]
+    fn w4_g12_the_redraw_gate_and_anchor_match_the_csharp() {
+        let src = include_str!("liquids.rs");
+        let body = &src[src.find("pub(crate) fn draw_tile_in_water(").unwrap()..];
+        let body = &body[..body.find("/// Pushes one record's quad")];
+        assert!(body.contains("tile.kind != 518"), "the type gate");
+        assert!(body.contains("!tile.active()"), "the active gate");
+        assert!(body.contains("/ 16 - 3"), "the integer lift");
+        assert!(body.contains("num > 8"), "the clamp threshold");
+        assert!(body.contains("- num as f32"), "the y anchor lifts by num");
+        assert!(body.contains("[16.0, 16.0]"), "the 16x16 frame");
+    }
+
+    /// W4-g12 render-sweep-2: the LIVE record path calls the pad redraw
+    /// per visible cell BEFORE the water/shimmer quad
+    /// (`LiquidRenderer.cs:664`/`:707`) — the earlier "only caller is the
+    /// retro oldDrawWater pass" staging note was wrong. Source scan pins
+    /// both call sites and their order (the redraw precedes the pass's
+    /// corner sample / base quad push).
+    #[test]
+    fn w4_g12_sweep2_the_record_path_calls_the_pad_redraw_before_the_quads() {
+        let src = include_str!("liquids.rs");
+        let liquids = &src[src.find("pub(crate) fn draw_liquids(").unwrap()..];
+        let liquids = &liquids[..liquids.find("pub(crate) fn draw_shimmer(").unwrap()];
+        let call = liquids.find("draw_tile_in_water(").expect("normal-path call");
+        let corners = liquids.find("light.corner4").expect("the corner sample");
+        assert!(call < corners, "the :664 redraw precedes the water quad");
+        assert!(liquids[..call].contains("LiquidRenderer.cs:664"), "citation");
+        let shimmer = &src[src.find("pub(crate) fn draw_shimmer(").unwrap()..];
+        let shimmer = &shimmer[..shimmer.find("fn solid_tile_probe").unwrap()];
+        let call = shimmer.find("draw_tile_in_water(").expect("shimmer-path call");
+        let val = shimmer.find("let val =").expect("the base opacity");
+        assert!(call < val, "the :707 redraw precedes the shimmer base quad");
+        assert!(shimmer[..call].contains("LiquidRenderer.cs:707"), "citation");
+        // Both sample the cell light (`Main.cs:57549`'s GetColor) through
+        // the port's `style.shade` stand-in, and pass the zero world-pixel
+        // draw offset.
+        assert!(liquids.contains("style.shade(light.get(d.x, d.y)"));
+        assert!(shimmer.contains("style.shade(light.get(d.x, d.y)"));
+        assert!(liquids.contains("[0.0, 0.0]"));
+        assert!(shimmer.contains("[0.0, 0.0]"));
+    }
+
+    /// W4-g12 render-sweep-2: the tile pass's twin of `DrawSingleTile`'s
+    /// wet-pad early return (`TileDrawing.cs:872-875`) — active 518 with
+    /// liquid > 0 never draws in the tile loop (the liquid pass owns its
+    /// sprite), the gate sits BEFORE GetTileDrawData, and it breaks an
+    /// open dark run (the C# return precedes DrawBlack, `:988-990`).
+    #[test]
+    fn w4_g12_sweep2_the_tile_pass_skips_wet_pads_before_draw_data() {
+        let src = include_str!("tiles.rs");
+        let gate = src
+            .find("tile.kind == 518 && tile.liquid > 0")
+            .expect("the wet-pad gate");
+        let dd = src.find("tr_core::drawdata::draw_data(").unwrap();
+        assert!(gate < dd, "the :872 return precedes GetTileDrawData");
+        let end = gate + src[gate..].find("let vine_cell").unwrap();
+        let block = &src[gate..end];
+        assert!(block.contains("scratch.cur.push"), "breaks the dark run");
+        assert!(block.contains("run_start = -1"));
+        assert!(block.contains("continue;"), "no tile-pass sprite");
+        assert!(src[..gate].contains("TileDrawing.cs:872-875"), "citation");
+    }
+
     fn record(x: i32, y: i32, w: i32, h: i32, visible: bool) -> LiquidDraw {
         LiquidDraw {
             x,
@@ -713,5 +1149,257 @@ mod tests {
         let empty = World::new("mask-dry".into(), 40, 40);
         let dry = tr_core::liquid_draw::build(&empty, 0, 0, 39, 39);
         assert!(water_mask_rects(&dry).is_empty());
+    }
+
+    // ---- W4-g76 shimmer-draw witnesses (WRITTEN NOT RUN, code-only) ----
+    // Reference values from an f32/f64-split evaluation of the exact C#
+    // expressions (LiquidRenderer.cs:754-797): f32 position sums, double
+    // time subtraction / multiplication / sin, f32 narrowing where the C#
+    // casts. Tolerances 1e-6 discriminate the old all-f32 drift while
+    // allowing libm last-ULP differences in the double sin.
+
+    fn close3(a: [f32; 3], b: [f32; 3]) {
+        for i in 0..3 {
+            assert!((a[i] - b[i]).abs() < 1e-6, "channel {i}: {a:?} != {b:?}");
+        }
+    }
+
+    /// `GetShimmerWave` (:756): double sin of the f32 position minus
+    /// `tve/360.0` in double, times the C# literal 6.2831854820251465.
+    /// The old all-f32 wave gave -0.98482203 at (10,20,200000) — 2.6e-6 off.
+    #[test]
+    fn w4_g76_shimmer_wave_sins_in_double() {
+        for (x, y, tve, want) in [
+            (10.0, 20.0, 200000.0, -0.9848246574401855f64),
+            (3.0, 7.0, 0.0, 0.5),
+            (120.0, 340.0, 123456.0, -0.9945167899131775),
+            (0.0, 0.0, 215999.0, 0.017347514629364014),
+        ] {
+            let w = shimmer_wave(x, y, tve);
+            assert!((w - want as f32).abs() < 1e-6, "({x},{y},{tve}): {w}");
+        }
+        // The old all-f32 wrap-edge value (0.0176287) is 2.8e-4 away.
+        assert!((shimmer_wave(0.0, 0.0, 215999.0) - 0.0176287).abs() > 1e-4);
+    }
+
+    /// `GetShimmerFrame` (:782-792): f32 `(wx + wy/6)/10`, double
+    /// `- tve/360`, `!top` adds the f32 `(wx + wy)` cast to double; the
+    /// truncation is toward zero and the double modulo re-wraps negatives.
+    #[test]
+    fn w4_g76_shimmer_frame_double_phase_and_offsets() {
+        for (top, x, y, tve, want) in [
+            (true, 10, 20, 200000.0, 6),
+            (false, 10, 20, 200000.0, 5),
+            (true, 120, 340, 123456.0, 11),
+            (false, 120, 340, 123456.0, 7),
+            (true, 10, 20, 0.0, 1),
+            (false, 10, 20, 0.0, 0),
+            (true, 0, 0, 215999.0, 9),
+            (false, 0, 0, 215999.0, 10),
+        ] {
+            assert_eq!(shimmer_frame(x, y, top, tve), want, "({x},{y},{top},{tve})");
+        }
+        // The old all-f32 phase answered 6 here; the double phase gives 7.
+        assert_eq!(shimmer_frame(120, 340, true, 113661.0), 7);
+    }
+
+    /// `SimpleWhiteNoise` (:775-780): unchecked u32 arithmetic, the two
+    /// 16-bit lanes folded with 36469 / 18012 then packed `(x << 16) + y`.
+    #[test]
+    fn w4_g76_simple_white_noise_pins() {
+        assert_eq!(simple_white_noise(10, 20), 2425847600);
+        assert_eq!(simple_white_noise(3, 7), 2875255940);
+        assert_eq!(simple_white_noise(120, 340), 3342168624);
+        assert_eq!(simple_white_noise(0, 0), 0);
+        // (float)uint narrows: 2425847600 -> 2425847552 (f32 ULP = 256 here).
+        assert_eq!(simple_white_noise(10, 20) as f32, 2425847552.0);
+    }
+
+    /// `GetShimmerGlitterOpacity` (:766-773): top is a flat 0.5; otherwise
+    /// Remap(Remap(wave,-0.5,1,0,0.35) * sin((double)(noise/10f) + tve/180),
+    /// 0,0.5,0,1). The inner sin's time term lives in DOUBLE — the old f32
+    /// add dropped it once noise/10 exceeded the f32 ULP (0.145 vs 0.261).
+    #[test]
+    fn w4_g76_glitter_opacity_double_inner_sin() {
+        assert_eq!(glitter_opacity(true, 1, 12, 100.0), 0.5);
+        for (x, y, want) in [
+            (1, 12, 0.2608494460582733f64),
+            (1, 25, 0.6818357706069946),
+            (1, 19, 0.49602243304252625),
+        ] {
+            let o = glitter_opacity(false, x, y, 100.0);
+            assert!((o - want as f32).abs() < 1e-6, "({x},{y}): {o}");
+        }
+        // The old all-f32 answers (0.14531924 / 0.49842459) are far away.
+        assert!((glitter_opacity(false, 1, 12, 100.0) - 0.14531924).abs() > 0.1);
+        assert!((glitter_opacity(false, 1, 25, 100.0) - 0.49842459).abs() > 0.1);
+        // Negative wave remaps to 0 -> the product and the opacity are 0.
+        assert_eq!(glitter_opacity(false, 10, 20, 200000.0), 0.0);
+    }
+
+    /// The glitter hue (:761): `(float)(((double)(x + y/6f) + tve/30) / 6) % 1f`
+    /// — the modulo runs on the f32 narrowing, not in double. At the wrap
+    /// edge (0,0,215999) the old all-f32 chain gave 0.99450684 (1.2e-4 off).
+    #[test]
+    fn w4_g76_glitter_hue_double_add_f32_modulo() {
+        for (x, y, tve, want) in [
+            (1.0, 12.0, 100.0, 0.05555558204650879f64),
+            (10.0, 20.0, 200000.0, 0.3333740234375),
+            (0.0, 0.0, 215999.0, 0.994384765625),
+        ] {
+            let h = shimmer_glitter_hue(x, y, tve);
+            assert!((h - want as f32).abs() < 1e-6, "({x},{y},{tve}): {h}");
+            assert!((0.0..1.0).contains(&h), "hue stays in [0,1): {h}");
+        }
+        assert!((shimmer_glitter_hue(0.0, 0.0, 215999.0) - 0.99450684).abs() > 1e-4);
+    }
+
+    /// `SetShimmerVertexColors_Sparkle` (:725-736): the byte-quantised
+    /// rainbow (hslToRgb, sat 1, lum 0.5) times the glitter opacity times
+    /// the RAW record opacity — never the base quad's clamped `val`.
+    #[test]
+    fn w4_g76_glitter_corner_uses_raw_opacity() {
+        // (1,12,100): hue 0.0555556 -> bytes (255,85,0), o = 0.26084945.
+        let want = [0.2608494460582733f32, 0.08694981783628464, 0.0];
+        close3(shimmer_glitter_corner(false, 1, 12, 100.0, 1.0), want);
+        // Raw opacity 0.5 halves the corner — the old port's `val` path
+        // would have multiplied by 0.75 * 0.5 = 0.375 instead.
+        let half = [0.13042472302913666, 0.04347490891814232, 0.0];
+        close3(shimmer_glitter_corner(false, 1, 12, 100.0, 0.5), half);
+        // top: flat 0.5 opacity; hue 0.5277778 -> bytes (0,212,255).
+        close3(
+            shimmer_glitter_corner(true, 5, 5, 100.0, 1.0),
+            [0.0, 0.4156862795352936, 0.5],
+        );
+        // Zero wave opacity -> a black (invisible) additive corner.
+        close3(shimmer_glitter_corner(false, 10, 20, 200000.0, 1.0), [0.0; 3]);
+    }
+
+    /// `DrawShimmer`'s `val` (:700-702): background keeps the raw opacity
+    /// (clamped to 1), foreground takes the 0.75 factor before the clamp.
+    #[test]
+    fn w4_g76_base_val_foreground_factor_and_clamp() {
+        assert_eq!(shimmer_base_val(0.8, true), 0.8);
+        assert_eq!(shimmer_base_val(0.8, false), 0.6);
+        assert_eq!(shimmer_base_val(1.5, true), 1.0);
+        assert_eq!(shimmer_base_val(1.5, false), 1.0);
+        assert_eq!(shimmer_base_val(1.0, false), 0.75);
+    }
+
+    // ---- W4-g80: the actuated draw lane — the behind-liquid refusal ----
+
+    /// W4-g80 witness — `DrawTile_LiquidBehindTile`'s refusal gate
+    /// (`TileDrawing.cs:3858`): the `tileCache.inActive()` term. An actuated
+    /// (framed-off) block never draws the behind-mask even when its
+    /// neighbours carry liquid — the C# refuses BEFORE the neighbour scan;
+    /// the pre-g80 port drew it (the term was MISSING).
+    #[test]
+    fn w4_g80_an_actuated_block_refuses_the_liquid_behind_draw() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE, FLAG_INACTIVE};
+        // A sloped stone block: the plain gate passes (active, solid,
+        // not solidTop, slope != 0 so the BlocksWater arm is inert).
+        let mut t = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        t.set_slope(1);
+        assert!(!liquid_behind_refused(&t, false), "the sloped block draws");
+        // Actuated: refused, whatever the neighbours hold.
+        t.flags |= FLAG_INACTIVE;
+        assert!(liquid_behind_refused(&t, false), "TileDrawing.cs:3858 inActive()");
+        // The refusal is independent of the actuator bit — `inActive()` is
+        // the framed-off flag alone (`Tile.cs:606-608`); a tile can be
+        // inactive without an actuator (net/world state).
+        assert_eq!(t.flags & tr_core::tile::FLAG_ACTUATOR, 0);
+    }
+
+    /// W4-g80 witness — the gate's other `:3858` terms stay verbatim:
+    /// `!active()` refuses, `tileSolidTop` refuses, the port's
+    /// `!tileSolid` bail refuses, and `BlocksWaterDrawingBehindSelf`
+    /// refuses only while unsloped.
+    #[test]
+    fn w4_g80_the_liquid_behind_gate_keeps_its_other_terms() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        // Inactive cell (`!active()`).
+        let air = Tile { kind: 1, ..Default::default() };
+        assert!(liquid_behind_refused(&air, false));
+        // A solidTop kind (19, the platform) refuses.
+        let plat = Tile { kind: 19, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(liquid_behind_refused(&plat, false));
+        // A non-solid kind (a torch, 4) refuses via the port's solidity bail.
+        let torch = Tile { kind: 4, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(liquid_behind_refused(&torch, false));
+        // BlocksWaterDrawingBehindSelf (54, the chest family stand-in):
+        // unsloped refuses, sloped passes (`:3858`'s `slope() == 0` clause).
+        let mut chest = Tile { kind: 54, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(liquid_behind_refused(&chest, true));
+        chest.set_slope(2);
+        assert!(!liquid_behind_refused(&chest, true));
+    }
+
+    /// W4-g75 retire-contract (`a3093a66f`, folded) — `TileDrawing.cs:3858`'s
+    /// half-brick spout clause: a half-brick with >160 liquid to a side that
+    /// the manager's `CheckForWaterfall` list carries refuses its own
+    /// behind-water mask. The manager list is built by the REAL
+    /// `find_waterfalls` scan (`WaterfallManager.cs:182-197`), not a
+    /// hand-stuffed probe.
+    #[test]
+    fn w4_g75_a_spouting_half_brick_refuses_its_liquid_behind_draw() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
+        let mut w = World::new("spout".into(), 40, 40);
+        let brick = w.tile_mut(10, 10).unwrap();
+        brick.kind = 1;
+        brick.flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        // Water running down the right-hand side (>160), open air left.
+        w.tile_mut(11, 10).unwrap().liquid = 200;
+        let mut mgr = tr_core::waterfall::WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert!(mgr.check_for_waterfall(10, 10), "the scan found the spout");
+        let t = w.tile(10, 10).copied().unwrap();
+        let left = w.tile(9, 10).copied().unwrap_or_default();
+        let right = w.tile(11, 10).copied().unwrap();
+        assert!(
+            liquid_behind_spout_refused(&t, &left, &right, &mgr, 10, 10),
+            "TileDrawing.cs:3858 halfBrick && num > 160 && CheckForWaterfall"
+        );
+        // 160 exactly does NOT trip `> 160` (the C# comparison is strict).
+        let mut edge = Tile { kind: 1, ..Default::default() };
+        edge.flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        let mut side = Tile::default();
+        side.liquid = 160;
+        assert!(!liquid_behind_spout_refused(&edge, &side, &side, &mgr, 10, 10));
+        // A full block never refuses via this clause even with a spout list
+        // entry at its cell (halfBrick() gates the whole arm).
+        let full = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        assert!(!liquid_behind_spout_refused(&full, &right, &left, &mgr, 10, 10));
+        // An unlisted cell keeps its behind-water (CheckForWaterfall false).
+        assert!(!liquid_behind_spout_refused(&t, &left, &right, &mgr, 12, 10));
+    }
+
+    /// W4-g75 retire-contract (`a3093a66f`, folded) — the `:3835-3844`
+    /// type-379 (bubble) exclusion: a 379 neighbour contributes 0 to
+    /// `num3`/`num`, so a bubble-packed side cannot trip the spout clause
+    /// on its own.
+    #[test]
+    fn w4_g75_a_bubble_neighbour_does_not_feed_the_spout_clause() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
+        let mut mgr = tr_core::waterfall::WaterfallManager::new();
+        // Force a list entry by scanning a real spout, then probe the clause
+        // with bubble sides: the >160 test must read 0 for kind 379.
+        let mut w = World::new("bubble".into(), 40, 40);
+        let brick = w.tile_mut(10, 10).unwrap();
+        brick.kind = 1;
+        brick.flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        w.tile_mut(11, 10).unwrap().liquid = 200;
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let mut t = Tile { kind: 1, ..Default::default() };
+        t.flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        let bubble = Tile { kind: 379, liquid: 255, ..Default::default() };
+        assert!(
+            !liquid_behind_spout_refused(&t, &bubble, &bubble, &mgr, 10, 10),
+            "TileDrawing.cs:3835/:3841 — type 379 neighbours read num = 0"
+        );
+        // One real side >160 still trips (the other side's 379 zeroes only
+        // its own term).
+        let side = Tile { liquid: 200, ..Default::default() };
+        assert!(liquid_behind_spout_refused(&t, &bubble, &side, &mgr, 10, 10));
+        assert!(liquid_behind_spout_refused(&t, &side, &bubble, &mgr, 10, 10));
     }
 }

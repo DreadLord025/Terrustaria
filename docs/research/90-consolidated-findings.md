@@ -79,7 +79,8 @@ Overall verdict is derived from the file's own status table (the `Status` column
 | 41 | Render pipeline vs the C# graphics layer | **PARTIAL** | One blend state for the whole frame; the atlas merges textures vanilla keeps separate | 15 | 9 | 278 / 27 583 |
 | 42 | Save/load (IO) + Stage-2 compression hooks | **PARTIAL** | The `.wld` tile section drops the four wire bits — data loss on a `.wld` round trip | 8 | 12 | 281 / 25 256 |
 
-**Totals:** 39 modules reviewed · 483 deviation/risks rows · 371 task seeds.
+**Totals:** 39 modules reviewed · 483 deviation/risks rows · 372 task seeds
+(+R-24-11, the W4-g85 retire-phase day-ladder seed).
 
 ---
 
@@ -136,7 +137,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-09-5 | Vine/rope family (`DrawVines`/`DrawReverseVines`/`DrawVineStrip`/`DrawRisingVineStrip`/`DrawMultiTileVinesInWind` + `DrawTile_BackRope`) | 09 | M | behavioural/pixel (medium) | R-09-6 | 09-tile-drawing.md:244 |
 | R-06-3 | Add the `oldPos`/`oldRot`/`oldSpriteDirection` ring buffer (`TrailCacheLength`) + the trail draw pass | 06 | M | pixel (medium) | — | 06-projectile-core.md:138 |
 | R-06-4 | Port `Projectile.light` into the slot and the draw's light emission for the ~40 kinds whose `SetDefaults` sets it | 06 | M | pixel (low-med) | R-10-1 | 06-projectile-core.md:141 |
-| R-09-2 | Port `CacheSpecialDraws_Part2`'s chest rewrite (`+38/+76` by `Main.chest[i].frame`, `tileHeight = 18`) | 09 | M | behavioural (medium) | — | 09-tile-drawing.md:235 |
+| R-09-2 | Port `CacheSpecialDraws_Part2`'s chest rewrite (`+38/+76` by `Main.chest[i].frame`, `tileHeight = 18`) — DONE via W4-d58 (keep-one `tr-render::chest_frames` + `draw_tiles` wiring); the `drawdata_furniture::chest_draw_rewrite` dup deleted W4-f16 | 09 | M | behavioural (medium) | — | 09-tile-drawing.md:235 |
 | R-14-4 | `MapBG` zone branches (`ZoneDungeon`, `ZoneGlowshroom`, `ZoneCorrupt`/`Crimson`/`Hallow`/`Jungle`, `bloodMoon`, `ZoneGraveyard`) | 14 | M | cosmetic (medium) | module 16 (SceneMetrics) | 14-map-minimap.md:327 |
 | R-10-5 | `slotGetFinalLight` in the sliced path (actuation ×0.4 / `light_scale` / paint tint per slice) | 10 | S | pixel (medium) | — | 10-lighting.md:172 |
 | R-10-6 | `NON_VISIBLE_PADDING` fixed 18 — drop the `/3` clamp in `blur.rs:43` | 10 | S | pixel (low) | — | 10-lighting.md:174 |
@@ -265,12 +266,14 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-36-6 | The per-kind/per-tier kill worth — port `GetMonsterPointsWorth` (`DD2Event.cs:546-554` → `:1106`, `:1199`, `:1509`) and drop the constant `KILL_WORTH_T1` | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:186 |
 | R-36-7 | The D1 wave-6 win transition — the `waveNumber`/`currentKillCount` write-back + the victory-scene call (`DD2Event.cs:998-1005`) | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:190 |
 | R-36-9 | The wave-break skip — `IsStandActive` + `RequestToSkipWaitTime` + `AttemptToSkipWaitTime` (`DD2Event.cs:1765-1801`) | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:193 |
-| R-36-10 | `DropMedals` (`DD2Event.cs:802-813`, called at `:405-420`) → the Defender Medal item 3817 | 36 | S | behavioural (loot) | — | 36-cinematics-film.md:196 |
+| R-36-10 | `DropMedals` (`DD2Event.cs:802-813`, called at `:405-420`) → the Defender Medal item 3817 — **DONE** (S1-E-12b/c decisions+wiring; W4-f36 drop-side: rect-truncation fix + 5 witnesses) | 36 | S | behavioural (loot) | — | 36-cinematics-film.md:196 |
 | R-36-13 | The zone metric — `Player.SceneMetrics.CloseEnoughToDD2LanePortal` → `Player.ZoneOldOneArmy` + `NPC.ZoneOldOneArmy` + the `NPC.cs:799` despawn gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:204 |
 | R-36-14 | The OOA's invasion id — set `invasion_type = 3` (`DD2Event.cs:47`) and route the progress through `invasion_progress_icon = 3` | 36 | S | behavioural (UI) | — | 36-cinematics-film.md:207 |
 | R-36-15 | Replace the `DD2Event.Ongoing` stub (`dd2.rs:17-19`) with the world's real flag and re-enable the sentry-persistence gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:210 |
+| R-26-13 | The projectile-loot seam — a `TileKill` drain for the projectile pool: all 7 pool `kill_tile` sites discard the record (ai_ice_block :7598, ai_dungeon_debris :12786, debris_death_crack :20393, celeb2_death :20472, explode_bomb :22064/:22109, explode_rocket :22256, the coil dispatch :17632) — the cleared plants/herbs/pots vanish (the mining path resolves via `break_drop_events`, the pool has no drain); queue + drain under the `UpdateProjectiles` rng stream, the per-site C# stream audit + the frame-roll resolution cited | 26 | M | behavioural (loot) | — | 26e-f-rope-union-final.md (W4-g82 final census) |
 
 ### (d) missing subsystems — 52 seeds
+### (d) missing subsystems - 52 seeds
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -326,6 +329,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-14-9 | Legacy `.map` migration — `DecompressChunk` + `LoadMapVersion1` / `LoadMapVersionCompressed` | 14 | L | behavioural (medium) | — | 14-map-minimap.md:347 |
 | R-36-2 | Port the film framework verbatim into `crates/tr-core/src/cinematics.rs` (`Film.cs:1-144` + `FrameEvent.cs` + `FrameEventData.cs` + `CinematicManager.cs:1-41`) + a `Main.cs:16789`-equivalent hook | 36 | S | behavioural (dead-code parity) | — | 36-cinematics-film.md:173 |
 | R-36-3 | Port `DSTFilm` (`DSTFilm.cs:1-177`): the `Main.hideUI` toggle, the `Player.isControlledByFilm` flag + the `Player.cs:24765` gate, the Deerclops/Chester spawns, the DST shader item 5113 | 36 | S | behavioural (dead-code parity) | R-36-1 | 36-cinematics-film.md:177 |
+| R-24-11 | Port the day-surface spawn ladder (`NPC.cs:4202-4501`, 16 draw-bearing rungs — the W4-g85 §7.2 draw table VERBATIM is the contract) into `spawner.rs:1155-1160`'s day fallthrough, incl. the Goblin Scout rung 11 (`:4478`: static gate → `Next(15)` always → conditional `Next(7)` only while `!downedGoblins && shadowOrbSmashed` → 73); UNCLAIMED re-verified across all 356 W4 tips (g61c-done/f42b-active carry no scout content) | 24 | M | behavioural (high — a scout-only insert desyncs the ladder stream) | W4-d35 (the 73 kind), the W4-g85 merge (the case-31-gated flag) | W4-g85-orb-draw.md §7.2 + §9.3 |
 
 ### (e) data / coverage gaps (includes doc-truth and verification work) — 63 seeds
 

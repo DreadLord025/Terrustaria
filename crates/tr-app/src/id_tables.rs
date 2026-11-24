@@ -575,6 +575,15 @@ pub const SOUND_STYLE: &[(&str, i32, i32)] = &[
     ("BellHurt", 2, 35),
 ];
 
+/// `SoundID.NPCDeathCount` (`SoundID.cs:1383`): 69 - the NPC-death style
+/// count the case-4 player sizes its playing-guard arrays with
+/// (`LegacySoundPlayer`'s `SoundInstanceNPCDeath` slots).
+pub const NPC_DEATH_COUNT: i32 = 69;
+
+/// `SoundID.ItemSoundCount` (`SoundID.cs:1595`): 211 - the item-sound style
+/// count (the case-2 player's `SoundInstanceItem` array bound).
+pub const ITEM_SOUND_COUNT: i32 = 211;
+
 /// `ArmorIDs.Head` — `(head_id, const name)` verbatim.
 pub const ARMOR_HEAD: &[(i32, &str)] = &[
     (0, "FamiliarWig"),
@@ -1779,6 +1788,31 @@ mod tests {
         assert_eq!(ARMOR_HANDOFF_COUNT, 19);
         assert_eq!(ARMOR_BACK_COUNT, 42);
         assert_eq!(ARMOR_FRONT_COUNT, 18);
+        assert_eq!(ARMOR_BODY.len(), 204, "the named Body constants (Count 262 bounds the array)");
+        assert_eq!(ARMOR_LEGS.len(), 232);
+        assert_eq!(ARMOR_HANDON.len(), 34, "the ClimbingClaws trio aliases ride");
+        assert_eq!(ARMOR_HANDOFF.len(), 20);
+        assert_eq!(ARMOR_BACK.len(), 41);
+        assert_eq!(ARMOR_FRONT.len(), 17);
+        assert_eq!(ARMOR_SHOE.len(), 31);
+        assert_eq!(ARMOR_SHOE_COUNT, 31);
+        assert_eq!(ARMOR_WAIST.len(), 18);
+        assert_eq!(ARMOR_WAIST_COUNT, 18);
+        assert_eq!(ARMOR_WING.len(), 51);
+        assert_eq!(ARMOR_WING_COUNT, 52);
+        assert_eq!(ARMOR_SHIELD.len(), 12);
+        assert_eq!(ARMOR_SHIELD_COUNT, 13);
+        assert_eq!(ARMOR_NECK.len(), 14);
+        assert_eq!(ARMOR_NECK_COUNT, 15);
+        assert_eq!(ARMOR_FACE.len(), 23);
+        assert_eq!(ARMOR_FACE_COUNT, 24);
+        assert_eq!(ARMOR_BALLOON.len(), 19);
+        assert_eq!(ARMOR_BALLOON_COUNT, 20);
+        assert_eq!(ARMOR_ROCKETBOOTS.len(), 7, "no Count constant in the C# class");
+        assert_eq!(ARMOR_BEARD.len(), 4);
+        assert_eq!(ARMOR_BEARD_COUNT, 5);
+        assert_eq!(NPC_DEATH_COUNT, 69, "`SoundID.cs:1383`");
+        assert_eq!(ITEM_SOUND_COUNT, 211, "`SoundID.cs:1595`");
         let slots = player_item_slot_ids();
         // `AllocateSlots` returns `_nextSlotId` BEFORE the increment
         // (`PlayerItemSlotID.cs:195-206`), so `Inventory0 = 0` and the rest
@@ -1788,5 +1822,526 @@ mod tests {
         assert_eq!(slots[2], ("Armor0", 59), "Armor0 follows the mouse slot");
         assert_eq!(slots[8], ("TrashItem", 499));
         assert_eq!(player_item_slot_count(), 990, "the ledger's total");
+    }
+
+    /// W4-c45 -- the full-coverage census over the sixteen ArmorIDs
+    /// walks: EVERY `(id, name)` pair pinned against the decompiled
+    /// `ArmorIDs.cs` constants (parsed 2026-11-20). The earlier
+    /// `s1_f_6` test only pinned the Head length + the `Count` bounds;
+    /// this one fails on any renamed/mis-numbered/dropped row in any
+    /// slot. The walks keep the C#'s declaration order, and the C#'s
+    /// own alias spellings ride (HandOn/HandOff's ClimbingClaws trio
+    /// all = 11/6, Shoe's ShoeSpikes/TigerClimbingGear both = 4).
+    /// WRITTEN NOT RUN (code-only wave).
+    #[test]
+    fn w4_c45_the_armor_walks_pin_every_csharp_constant() {
+        // ArmorIDs.Head (`ArmorIDs.cs`, 293 named constants, Count = 293).
+        let head: &[(i32, &str)] = &[
+            (0, "FamiliarWig"), (1, "CopperHelmet"), (2, "IronHelmet"), (3, "SilverHelmet"),
+            (4, "GoldHelmet"), (5, "ShadowHelmet"), (6, "MeteorHelmet"), (7, "NecroHelmet"),
+            (8, "JungleHat"), (9, "MoltenHelmet"), (10, "Goggles"), (11, "MiningHelmet"),
+            (12, "Sunglasses"), (13, "EmptyBucket"), (14, "WizardHat"), (15, "TopHat"),
+            (16, "SummerHat"), (17, "BunnyHood"), (18, "PlumbersHat"), (19, "HerosHat"),
+            (20, "FishBowl"), (21, "ArchaeologistsHat"), (22, "NinjaHood"), (23, "Unused"),
+            (24, "RedHat"), (25, "RobotHat"), (26, "GoldCrown"), (27, "DivingHelmet"),
+            (28, "MimeMask"), (29, "CobaltHat"), (30, "CobaltHelmet"), (31, "CobaltMask"),
+            (32, "MythrilHood"), (33, "MythrilHelmet"), (34, "MythrilHat"), (35, "AdamantiteHeadgear"),
+            (36, "AdamantiteHelmet"), (37, "AdamantiteMask"), (38, "Werewolf"), (39, "Merman"),
+            (40, "ClownHat"), (41, "HallowedHelmet"), (42, "HallowedHeadgear"), (43, "HallowedMask"),
+            (44, "SantaHat"), (45, "RedsHelmet"), (46, "FrostHelmet"), (47, "TinHelmet"),
+            (48, "LeadHelmet"), (49, "TungstenHelmet"), (50, "PlatinumHelmet"), (51, "PlatinumCrown"),
+            (52, "WoodHelmet"), (53, "EbonwoodHelmet"), (54, "RichMahoganyHelmet"), (55, "PearlwoodHelmet"),
+            (56, "RuneHat"), (57, "CrimsonHelmet"), (58, "EskimoHood"), (59, "SteampunkHat"),
+            (60, "BeeHat"), (61, "PharaohsMask"), (62, "Tiara"), (63, "GreenCap"),
+            (64, "MushroomCap"), (65, "TamOShanter"), (66, "MummyMask"), (67, "CowboyHat"),
+            (68, "PirateHat"), (69, "VikingHelmet"), (70, "CactusHelmet"), (71, "ShadewoodHelmet"),
+            (72, "AncientIronHelmet"), (73, "AncientGoldHelmet"), (74, "AncientShadowHelmet"), (75, "AncientNecroHelmet"),
+            (76, "AncientCobaltHelmet"), (77, "PinkEskimoHood"), (78, "ChlorophyteMask"), (79, "ChlorophyteHelmet"),
+            (80, "ChlorophyteHeadgear"), (81, "RainHat"), (82, "TikiMask"), (83, "PalladiumMask"),
+            (84, "PalladiumHelmet"), (85, "PalladiumHeadgear"), (86, "OrichalcumMask"), (87, "OrichalcumHelmet"),
+            (88, "OrichalcumHeadgear"), (89, "TitaniumMask"), (90, "TitaniumHelmet"), (91, "TitaniumHeadgear"),
+            (92, "UmbrellaHat"), (93, "Skull"), (94, "BallaHat"), (95, "GangstaHat"),
+            (96, "SailorHat"), (97, "EyePatch"), (98, "SkeletronMask"), (99, "TurtleHelmet"),
+            (100, "Beanie"), (101, "SpectreHood"), (102, "SWATHelmet"), (103, "ShroomiteHeadgear"),
+            (104, "ShroomiteMask"), (105, "ShroomiteHelmet"), (106, "CenxsTiara"), (107, "CrownosMask"),
+            (108, "WillsHelmet"), (109, "JimsHelmet"), (110, "AaronsHelmet"), (111, "DTownsHelmet"),
+            (112, "PumpkinHelmet"), (113, "NurseHat"), (114, "WizardsHat"), (115, "GuyFawkesMask"),
+            (116, "SteampunkGoggles"), (117, "CyborgHelmet"), (118, "CreeperMask"), (119, "CatMask"),
+            (120, "GhostMask"), (121, "PumpkinMask"), (122, "RobotMask"), (123, "UnicornMask"),
+            (124, "VampireMask"), (125, "WitchHat"), (126, "LeprechaunHat"), (127, "PrincessHat"),
+            (128, "BrideofFrankensteinMask"), (129, "KarateTortoiseMask"), (130, "ScarecrowHat"), (131, "ReaperHood"),
+            (132, "FoxMask"), (133, "CatEars"), (134, "SpookyHelmet"), (135, "SpaceCreatureMask"),
+            (136, "WolfMask"), (137, "JackOLanternMask"), (138, "GiantBow"), (139, "ReindeerAntlers"),
+            (140, "MrsClausHat"), (141, "TreeMask"), (142, "ParkaHood"), (143, "SnowHat"),
+            (144, "ElfHat"), (145, "Fez"), (146, "BrainofCthulhuMask"), (147, "WallofFleshMask"),
+            (148, "TwinMask"), (149, "SkeletronPrimeMask"), (150, "QueenBeeMask"), (151, "PlanteraMask"),
+            (152, "GolemMask"), (153, "EaterofWorldsMask"), (154, "EyeofCthulhuMask"), (155, "DestroyerMask"),
+            (156, "SpectreMask"), (157, "BeetleHelmet"), (158, "PeddlersHat"), (159, "MagicHat"),
+            (160, "BeeHeadgear"), (161, "AnglerHat"), (162, "SpiderMask"), (163, "SeashellHairpin"),
+            (164, "KingSlimeMask"), (165, "FishCostumeMask"), (166, "BorealWoodHelmet"), (167, "PalmWoodHelmet"),
+            (168, "DukeFishronMask"), (169, "VortexHelmet"), (170, "NebulaHelmet"), (171, "SolarFlareHelmet"),
+            (172, "MoonMask"), (173, "SunMask"), (174, "MartianCostumeMask"), (175, "MartianUniformHelmet"),
+            (176, "SolarCultistHood"), (177, "LunarCultistHood"), (178, "HiTekSunglasses"), (179, "NightVisionHelmet"),
+            (180, "GladiatorHelmet"), (181, "LazuresValkyrieCirclet"), (182, "TaxCollectorsHat"), (183, "DyeTradersTurban"),
+            (184, "BuccaneerBandana"), (185, "ObsidianOutlawHat"), (186, "AncientCultistMask"), (187, "MoonLordMask"),
+            (188, "FossilHelmet"), (189, "StardustHelmet"), (190, "WeddingVeil"), (191, "Yoraiz0rsRecoloredGoggles"),
+            (192, "SkiphssMask"), (193, "LokisHelmet"), (194, "EngineeringHelmet"), (195, "PartyHat"),
+            (196, "SillySunflowerPetals"), (197, "PedguinsHood"), (198, "_0x33sAviators"), (199, "AncientArmor"),
+            (200, "AncientBattleArmor"), (201, "LamiaMale"), (202, "LamiaFemale"), (203, "ApprenticeHat"),
+            (204, "SquireGreatHelm"), (205, "HuntressWig"), (206, "MonkBrows"), (207, "MaskBetsy"),
+            (208, "MaskDarkMage"), (209, "MaskOgre"), (210, "ValhallaKnight"), (211, "ApprenticeDark"),
+            (212, "RedRidingHuntress"), (213, "ShinobiInfiltrator"), (214, "ArkhalisHat"), (215, "LeinforsHat"),
+            (216, "UltraBrightHelmet"), (217, "Maid"), (218, "MaidAlt"), (219, "GolfHat"),
+            (220, "GolfVisor"), (221, "GoldGoldfishBowl"), (222, "StarPrincessCrown"), (223, "DemonHorns"),
+            (224, "BunnyEars"), (225, "DevilHorns"), (226, "Fedora"), (227, "ChefHat"),
+            (228, "StarHairpin"), (229, "HeartHairpin"), (230, "SuperHeroMask"), (231, "UndertakerHat"),
+            (232, "PrettyPinkRibbon"), (233, "FuneralHat"), (234, "VictorianGothHat"), (235, "GhostarSkullPin"),
+            (236, "DrManFlyMask"), (237, "ButcherMask"), (238, "SafemanSunHair"), (239, "FoodBarbarianHelm"),
+            (240, "GroxTheGreatHelm"), (241, "RockGolemHead"), (242, "DogEars"), (243, "FoxEars"),
+            (244, "LizardEars"), (245, "PandaEars"), (246, "DogEarsBack"), (247, "FoxEarsBack"),
+            (248, "LizardEarsBack"), (249, "PandaEarsBack"), (250, "MushroomHat"), (251, "FairyQueenMask"),
+            (252, "CatEarsBack"), (253, "BunnyEarsBack"), (254, "HallowedHood"), (255, "AncientHallowedMask"),
+            (256, "AncientHallowedHelmet"), (257, "AncientHallowedHeadgear"), (258, "AncientHallowedHood"), (259, "RabbitOrder"),
+            (260, "QueenSlimeMask"), (261, "CrystalNinjaHelmet"), (262, "GraduationCapBlue"), (263, "GraduationCapMaroon"),
+            (264, "GraduationCapBlack"), (265, "BadgersHat"), (266, "PlaguebringerHelmet"), (267, "RoninHat"),
+            (268, "TimelessTravelerHood"), (269, "FloretProtectorHelmet"), (270, "CapricornMask"), (271, "TVHeadMask"),
+            (272, "RoyalTiara"), (273, "GarlandHat"), (274, "VulkelfEars"), (275, "Eyebrella"),
+            (276, "DeerclopsMask"), (277, "GoblorcEars"), (278, "AshWoodHelmet"), (279, "JimsCap"),
+            (280, "DizzyHat"), (281, "LincolnsHood"), (282, "DeadCellsBeheadedHead"), (283, "ChlorophyteVisor"),
+            (284, "ChickenBonesHead"), (285, "UpgradedMiningHead"), (286, "UpgradedFishingHead"), (287, "ChippysHead"),
+            (288, "HeroicisHead"), (289, "HallowedCrown"), (290, "LilacDuskHead"), (291, "KazzymodusHood"),
+            (292, "LunasHead"),
+        ];
+        assert_eq!(ARMOR_HEAD, head, "ArmorIDs.Head walk");
+        assert_eq!(ARMOR_HEAD_COUNT, 293);
+        // ArmorIDs.Body (`ArmorIDs.cs`, 204 named constants, Count = 262).
+        let body: &[(i32, &str)] = &[
+            (0, "FamiliarShirt"), (1, "CopperChainmail"), (2, "IronChainmail"), (3, "SilverChainmail"),
+            (4, "GoldChainmail"), (5, "ShadowScalemail"), (6, "MeteorSuit"), (7, "NecroBreastplate"),
+            (8, "JungleShirt"), (9, "MoltenBreastplate"), (10, "TuxedoShirt"), (11, "PlumbersShirt"),
+            (12, "HerosShirt"), (13, "ArchaeologistsJacket"), (14, "NinjaShirt"), (15, "Robe"),
+            (16, "TheDoctorsShirt"), (17, "CobaltBreastplate"), (18, "MythrilChainmail"), (19, "AdamantiteBreastplate"),
+            (20, "MiningShirt"), (21, "Werewolf"), (22, "Merman"), (23, "ClownShirt"),
+            (24, "HallowedPlateMail"), (25, "SantaShirt"), (26, "RedsBreastplate"), (27, "FrostBreastplate"),
+            (28, "TinChainmail"), (29, "LeadChainmail"), (30, "TungstenChainmail"), (31, "PlatinumChainmail"),
+            (32, "WoodBreastplate"), (33, "EbonwoodBreastplate"), (34, "RichMahoganyBreastplate"), (35, "PearlwoodBreastplate"),
+            (36, "RuneRobe"), (37, "CrimsonScalemail"), (38, "EskimoCoat"), (39, "SteampunkShirt"),
+            (40, "BeeShirt"), (41, "PrincessCostume"), (42, "PharaohsRobe"), (43, "MummyShirt"),
+            (44, "CowboyJacket"), (45, "PirateShirt"), (46, "CactusBreastplate"), (47, "ShadewoodBreastplate"),
+            (48, "AncientShadowScalemail"), (49, "AncientCobaltBreastplate"), (50, "PinkEskimoCoat"), (51, "ChlorophytePlateMail"),
+            (52, "RainCoat"), (53, "TikiShirt"), (54, "PalladiumBreastplate"), (55, "OrichalcumBreastplate"),
+            (56, "TitaniumBreastplate"), (57, "SailorShirt"), (58, "AmethystRobe"), (59, "TopazRobe"),
+            (60, "SapphireRobe"), (61, "EmeraldRobe"), (62, "RubyRobe"), (63, "DiamondRobe"),
+            (64, "WhiteTuxedoShirt"), (65, "TurtleScaleMail"), (66, "SpectreRobe"), (67, "ShroomiteBreastplate"),
+            (68, "CenxsBreastplate"), (69, "CrownosBreastplate"), (70, "WillsBreastplate"), (71, "JimsBreastplate"),
+            (72, "AaronsBreastplate"), (73, "DTownsBreastplate"), (74, "CenxsDress"), (75, "PumpkinBreastplate"),
+            (76, "NurseShirt"), (77, "DyeTraderRobe"), (78, "CyborgShirt"), (79, "CreeperShirt"),
+            (80, "CatShirt"), (81, "GhostShirt"), (82, "PumpkinShirt"), (83, "RobotShirt"),
+            (84, "UnicornShirt"), (85, "VampireShirt"), (86, "LeprechaunShirt"), (87, "PixieShirt"),
+            (88, "PrincessDress"), (89, "WitchDress"), (90, "BrideofFrankensteinDress"), (91, "KarateTortoiseShirt"),
+            (92, "ScarecrowShirt"), (93, "ReaperRobe"), (94, "FoxShirt"), (95, "SpookyBreastplate"),
+            (96, "SpaceCreatureShirt"), (97, "WolfShirt"), (98, "TreasureHunterShirt"), (99, "DryadCoverings"),
+            (100, "MrsClausShirt"), (101, "TreeShirt"), (102, "ParkaCoat"), (103, "UglySweater"),
+            (104, "ElfShirt"), (105, "BeetleScaleMail"), (106, "BeetleShell"), (165, "Gi"),
+            (166, "Kimono"), (167, "GypsyRobe"), (168, "BeeBreastplate"), (169, "AnglerVest"),
+            (170, "SpiderBreastplate"), (171, "MermaidAdornment"), (172, "FishCostumeShirt"), (173, "BorealWoodBreastplate"),
+            (174, "PalmWoodBreastplate"), (175, "VortexBreastplate"), (176, "NebulaBreastplate"), (177, "SolarFlareBreastplate"),
+            (178, "MartianCostumeShirt"), (179, "MartianUniformTorso"), (180, "SolarCultistRobe"), (181, "LunarCultistRobe"),
+            (182, "GladiatorBreastplate"), (183, "LazuresValkyrieCloak"), (184, "TaxCollectorsSuit"), (185, "ClothiersJacket"),
+            (186, "BuccaneerTunic"), (187, "ObsidianLongcoat"), (188, "FallenTuxedoShirt"), (189, "FossilPlate"),
+            (190, "StardustPlate"), (191, "WeddingDress"), (192, "Yoraiz0rsUniform"), (193, "SkiphssSkin"),
+            (194, "LokisBreastplate"), (195, "SillySunflowerTops"), (196, "PedguinsJacket"), (197, "AncientArmor"),
+            (198, "AncientBattleArmor"), (199, "Lamia"), (200, "ApprenticeRobe"), (201, "SquirePlating"),
+            (202, "HuntressJerkin"), (203, "MonkShirt"), (204, "ValhallaKnight"), (205, "ApprenticeDark"),
+            (206, "RedRidingHuntress"), (207, "ShinobiInfiltrator"), (208, "ArkhalisShirt"), (209, "LeinforsShirt"),
+            (210, "Maid"), (211, "MaidAlt"), (212, "Golf"), (213, "AmberRobe"),
+            (214, "GameMasterShirt"), (215, "StarPrincessDress"), (216, "ChefOutfit"), (217, "SuperHeroCostume"),
+            (218, "PrettyPinkDress"), (219, "UndertakerCoat"), (220, "FuneralCoat"), (221, "VictorianGothDress"),
+            (222, "GhostarShirt"), (223, "DrManFlyLabCoat"), (224, "ButcherApron"), (225, "SafemanSunDress"),
+            (226, "FoodBarbarianArmor"), (227, "GroxTheGreatArmor"), (228, "MushroomVest"), (229, "AncientHallowedPlateMail"),
+            (230, "CrystalNinjaChestplate"), (231, "GraduationGownBlue"), (232, "GraduationGownMaroon"), (233, "GraduationGownBlack"),
+            (234, "DeadMansSweater"), (235, "PlaguebringerChestplate"), (236, "RoninShirt"), (237, "TimelessTravelerRobe"),
+            (238, "FloretProtectorChestplate"), (239, "CapricornChestplate"), (240, "TVHeadSuit"), (241, "FlinxFurCoat"),
+            (242, "RoyalDressTop"), (243, "PrinceUniform"), (244, "WilsonShirt"), (245, "WillowShirt"),
+            (246, "AshWoodBreastplate"), (247, "LincolnsHoodie"), (248, "DeadCellsBeheadedBody"), (249, "MoonLordBody"),
+            (250, "ChickenBonesBody"), (251, "ChickenBonesRobe"), (252, "UpgradedMiningBody"), (253, "UpgradedFishingBody"),
+            (254, "ChippysBody"), (255, "BlueBikiniBody"), (256, "RedSwimsuitBody"), (257, "HeroicisBody"),
+            (258, "LilacDuskBody"), (259, "KazzymodusChestpiece"), (260, "PalworldPalMetalArmorBody"), (261, "LunasBody"),
+        ];
+        assert_eq!(ARMOR_BODY, body, "ArmorIDs.Body walk");
+        assert_eq!(ARMOR_BODY_COUNT, 262);
+        // ArmorIDs.Legs (`ArmorIDs.cs`, 232 named constants, Count = 254).
+        let legs: &[(i32, &str)] = &[
+            (0, "FamiliarPants"), (1, "CopperGreaves"), (2, "IronGreaves"), (3, "SilverGreaves"),
+            (4, "GoldGreaves"), (5, "ShadowGreaves"), (6, "MeteorLeggings"), (7, "NecroGreaves"),
+            (8, "JunglePants"), (9, "MoltenGreaves"), (10, "TuxedoPants"), (11, "PlumbersPants"),
+            (12, "HerosPants"), (13, "ArchaeologistsPants"), (14, "NinjaPants"), (15, "TheDoctorsPants"),
+            (16, "CobaltLeggings"), (17, "MythrilGreaves"), (18, "AdamantiteLeggings"), (19, "MiningPants"),
+            (20, "Werewolf"), (21, "Merman"), (22, "ClownPants"), (23, "HallowedGreaves"),
+            (24, "SantaPants"), (25, "RedsLeggings"), (26, "FrostLeggings"), (27, "TinGreaves"),
+            (28, "LeadGreaves"), (29, "TungstenGreaves"), (30, "PlatinumGreaves"), (31, "WoodGreaves"),
+            (32, "EbonwoodGreaves"), (33, "RichMahoganyGreaves"), (34, "PearlwoodGreaves"), (35, "CrimsonGreaves"),
+            (36, "EskimoPants"), (37, "SteampunkPants"), (38, "BeePants"), (39, "MummyPants"),
+            (40, "CowboyPants"), (41, "PiratePants"), (42, "CactusLeggings"), (43, "ShadewoodGreaves"),
+            (44, "AncientShadowGreaves"), (45, "AncientCobaltLeggings"), (46, "PinkEskimoPants"), (47, "ChlorophyteGreaves"),
+            (48, "TikiPants"), (49, "PalladiumLeggings"), (50, "OrichalcumLeggings"), (51, "TitaniumLeggings"),
+            (52, "SailorPants"), (53, "WhiteTuxedoPants"), (54, "TurtleLeggings"), (55, "SpectrePants"),
+            (56, "ShroomiteLeggings"), (57, "CenxsLeggings"), (58, "CrownosLeggings"), (59, "WillsLeggings"),
+            (60, "JimsLeggings"), (61, "AaronsLeggings"), (62, "DTownsLeggings"), (63, "CenxsDressPants"),
+            (64, "PumpkinLeggings"), (65, "NursePants"), (66, "CyborgPants"), (67, "CreeperPants"),
+            (68, "CatPants"), (69, "PumpkinPants"), (70, "RobotPants"), (71, "UnicornPants"),
+            (72, "VampirePants"), (73, "LeprechaunPants"), (74, "PixiePants"), (75, "WitchBoots"),
+            (76, "KarateTortoisePants"), (77, "ScarecrowPants"), (78, "FoxPants"), (79, "SpookyLeggings"),
+            (80, "SpaceCreaturePants"), (81, "WolfPants"), (82, "TreasureHunterPants"), (83, "DryadLoincloth"),
+            (84, "MrsClausHeels"), (85, "TreeTrunks"), (86, "ParkaPants"), (87, "ElfPants"),
+            (98, "BeetleLeggings"), (99, "GiFemaleExtension"), (101, "GypsyRobeMaleExtension"), (102, "GypsyRobeFemaleExtension"),
+            (103, "BeeGreaves"), (104, "AnglerPants"), (105, "SpiderGreaves"), (106, "MermaidTail"),
+            (107, "FishCostumeFinskirt"), (108, "BorealWoodGreaves"), (109, "PalmWoodGreaves"), (110, "VortexLeggings"),
+            (111, "NebulaLeggings"), (112, "SolarFlareLeggings"), (113, "MartianCostumePants"), (114, "MartianUniformPants"),
+            (118, "GiMaleExtension"), (122, "GladiatorLeggings"), (124, "TaxCollectorsPants"), (125, "ClothiersPants"),
+            (126, "BuccaneerPantaloons"), (127, "ObsidianPants"), (128, "FallenTuxedoPants"), (129, "FossilGreaves"),
+            (130, "StardustLeggings"), (132, "Yoraiz0rsSkirt"), (133, "SkiphssBearButt"), (134, "LokisGreaves"),
+            (138, "SillySunflowerBottoms"), (139, "PedguinsTrousers"), (140, "DjinnsCurse"), (141, "AncientArmor"),
+            (142, "AncientBattleArmor"), (143, "Lamia"), (144, "ApprenticeTrousers"), (145, "SquireGreaves"),
+            (146, "HuntressPantsMale"), (147, "HuntressPantsFemale"), (148, "MonkPants"), (149, "ApprenticeRobeExtension"),
+            (150, "SquirePlatingExtension"), (151, "HuntressJerkinExtension"), (152, "ValhallaKnight"), (153, "ApprenticeDark"),
+            (154, "RedRidingHuntress"), (155, "RedRidingHuntress_Male"), (156, "ShinobiInfiltrator"), (157, "ArkhalisPants_Male"),
+            (158, "ArkhalisPants_Female"), (159, "LeinforsPants"), (160, "LeinforsPantsCoat"), (161, "ShinobiInfiltratorBodyExtension"),
+            (162, "ForbiddenArmorBodyExtension"), (163, "GladiatorBreastplateBodyExtension"), (164, "BeeBreastplateBodyExtension"), (165, "ReaperRobe"),
+            (166, "BrideOfFrankensteinDress"), (167, "WitchDress"), (168, "PrincessDress"), (169, "GhostShirt"),
+            (170, "DTownBreastplateBodyExtension"), (171, "RaincoatMaleBodyExtension"), (172, "RaincoatFemaleBodyExtension"), (173, "ObsidianLongcoatBodyExtension"),
+            (174, "ApprenticeDarkBodyExtension"), (175, "TikiShirtBodyExtensionMale"), (176, "TikiShirtBodyExtensionFemale"), (177, "MaidBodyExtensionFemale"),
+            (178, "MaidBodyExtensionMale"), (179, "MaidFemale"), (180, "MaidMale"), (181, "MaidAltBodyExtensionFemale"),
+            (182, "MaidAltBodyExtensionMale"), (183, "MaidAltFemale"), (184, "MaidAltMale"), (185, "Golf"),
+            (186, "WitchDressBodyExtension"), (187, "AmberRobe"), (188, "GameMasterPants"), (189, "StarPrincessDress"),
+            (190, "ChefPants"), (191, "SuperHeroTightsMale"), (192, "SuperHeroTightsFemale"), (193, "PrettyPinkDressPantsMale"),
+            (194, "PrettyPinkDressPantsFemale"), (195, "PrettyPinkDressSkirt"), (196, "UndertakerCoat"), (197, "FuneralPantsMale"),
+            (198, "FuneralPantsFemale"), (199, "VictorianGothDressExtension"), (200, "GhostarShirtExtensionFemale"), (201, "GhostarShirtExtensionMale"),
+            (202, "GhostarLegsFemale"), (203, "GhostarLegsMale"), (204, "DrManFlyLabCoatLegs"), (205, "ButcherPants"),
+            (206, "SafemanSunDressExtension"), (207, "SafemanDressLeggingsFemale"), (208, "SafemanDressLeggingsMale"), (209, "FoodBarbarianGreaves"),
+            (210, "GroxTheGreatGreaves"), (211, "MushroomPants"), (212, "AncientHallowedGreaves"), (213, "CrystalNinjaLeggings"),
+            (214, "GraduationGownBlueExtension"), (215, "GraduationGownMaroonExtension"), (216, "GraduationGownBlackExtension"), (217, "MoonLordLegs"),
+            (218, "PlaguebringerGreaves"), (219, "RoninPantsMale"), (220, "RoninPantsFemale"), (221, "RoninShirtExtension"),
+            (222, "TimelessTravelerBottom"), (223, "TimelessTravelerRobeExtension"), (224, "FloretProtectorLegs"), (225, "CapricornLegs"),
+            (226, "CapricornTail"), (227, "TVHeadPants"), (228, "RoyalDressBottom"), (229, "FlinxFurCoatExtension"),
+            (230, "PrincePants"), (231, "WilsonPants"), (232, "WillowSkirtMale"), (233, "WillowSkirtFemale"),
+            (234, "AshWoodGreaves"), (235, "LincolnsPants"), (236, "DeadCellsBeheadedLegsMale"), (237, "ChickenBonesLegs"),
+            (238, "ChickenBonesRobeExtension"), (239, "ChickenBonesRobeExtensionBack"), (240, "UpgradedMiningLegs"), (241, "UpgradedFishingLegs"),
+            (242, "ChippysLegs"), (243, "BlueBikiniLegs"), (244, "RedSwimsuitExtension"), (245, "GreenSwimshorts"),
+            (246, "GraySwimshorts"), (247, "HeroicisLegs"), (248, "DeadCellsBeheadedLegsFemale"), (249, "LilacDuskLegsMale"),
+            (250, "LilacDuskLegsFemale"), (251, "KazzymodusLeggings"), (252, "PalworldPalMetalArmorLegs"), (253, "LunasLegs"),
+        ];
+        assert_eq!(ARMOR_LEGS, legs, "ArmorIDs.Legs walk");
+        assert_eq!(ARMOR_LEGS_COUNT, 254);
+        // ArmorIDs.HandOn (`ArmorIDs.cs`, 34 named constants, Count = 33).
+        let handon: &[(i32, &str)] = &[
+            (1, "ManaRegenerationBand"), (2, "BandofRegeneration"), (3, "BandofStarpower"), (4, "CharmofMyths"),
+            (5, "FeralClaws"), (6, "FireGauntlet"), (7, "HandWarmer"), (8, "MagicCuffs"),
+            (9, "MechanicalGlove"), (10, "PowerGlove"), (11, "MasterNinjaGear"), (11, "TigerClimbingGear"),
+            (11, "ClimbingClaws"), (12, "Shackle"), (13, "SunStone"), (14, "MoonStone"),
+            (15, "TitanGlove"), (16, "DiamondRing"), (17, "CelestialCuffs"), (18, "YoyoGlove"),
+            (19, "HuntressBuckler"), (20, "BersekerGlove"), (21, "FrogWebbing"), (22, "BoneGlove"),
+            (23, "HandOfCreation"), (24, "LavaCharm"), (25, "WickedClaws"), (26, "CatalystBand"),
+            (27, "SilverBracer"), (28, "SnakeBand"), (29, "WickedArmlet"), (30, "OuroborosRing"),
+            (31, "TwilightGrasp"), (32, "ArmletOfRuin"),
+        ];
+        assert_eq!(ARMOR_HANDON, handon, "ArmorIDs.HandOn walk");
+        assert_eq!(ARMOR_HANDON_COUNT, 33);
+        // ArmorIDs.HandOff (`ArmorIDs.cs`, 20 named constants, Count = 19).
+        let handoff: &[(i32, &str)] = &[
+            (1, "FireGauntlet"), (2, "HandWarmer"), (3, "MagicCuffs"), (4, "MechanicalGlove"),
+            (5, "PowerGlove"), (6, "MasterNinjaGear"), (6, "TigerClimbingGear"), (6, "ClimbingClaws"),
+            (7, "Shackle"), (8, "TitanGlove"), (9, "FeralClaws"), (10, "CelestialCuffs"),
+            (11, "YoyoGlove"), (12, "BersekerGlove"), (13, "FrogWebbing"), (14, "BoneGlove"),
+            (15, "HandOfCreation"), (16, "WickedClaws"), (17, "SilverBracer"), (18, "TwilightGrasp"),
+        ];
+        assert_eq!(ARMOR_HANDOFF, handoff, "ArmorIDs.HandOff walk");
+        assert_eq!(ARMOR_HANDOFF_COUNT, 19);
+        // ArmorIDs.Back (`ArmorIDs.cs`, 41 named constants, Count = 42).
+        let back: &[(i32, &str)] = &[
+            (1, "BeeCloak"), (2, "StarCloak"), (3, "CrimsonCloak"), (4, "MysteriousCape"),
+            (5, "RedCape"), (6, "WinterCape"), (7, "MagicQuiver"), (8, "ArchitectGizmoPack"),
+            (9, "HivePack"), (10, "AnglerTackleBag"), (11, "ApprenticeDark"), (12, "RedRidingHuntress"),
+            (13, "ShinobiInfiltrator"), (14, "ManaCloak"), (15, "MoltenQuiver"), (16, "StalkersQuiver"),
+            (17, "ClothiersJacket"), (18, "SpaceCreatureShirt"), (19, "FoxShirt"), (20, "VampireShirt"),
+            (21, "CatShirt"), (22, "SuperHeroCostumeMale"), (23, "SuperHeroCostumeFemale"), (24, "HunterCloak"),
+            (25, "DogTail"), (26, "FoxTail"), (27, "LizardTail"), (28, "BunnyTail"),
+            (29, "HallowedCape"), (30, "PlaguebringerCloak"), (31, "RoninCloak"), (32, "FloretProtecterChestplate"),
+            (33, "LavaproofTackleBag"), (34, "PrinceCape"), (35, "HandOfCreation"), (36, "ShimmerCloak"),
+            (37, "ChickenBonesRobe"), (38, "ChippysWings"), (39, "LunasCloak"), (40, "PhoenixQuiver"),
+            (41, "DruidicSerpentCloak"),
+        ];
+        assert_eq!(ARMOR_BACK, back, "ArmorIDs.Back walk");
+        assert_eq!(ARMOR_BACK_COUNT, 42);
+        // ArmorIDs.Front (`ArmorIDs.cs`, 17 named constants, Count = 18).
+        let front: &[(i32, &str)] = &[
+            (1, "CrimsonCloak"), (2, "MysteriousCape"), (3, "RedCape"), (4, "WinterCape"),
+            (5, "ManaCloak"), (6, "TaxCollectorsSuit"), (7, "VampireShirt"), (8, "HunterCloak"),
+            (9, "PlaguebringerCloak"), (10, "RoninCloak"), (11, "PrinceCape"), (12, "ShimmerCloak"),
+            (13, "DeadCellsBeheadedBody"), (14, "ChickenBonesRobe"), (15, "ChippysWings"), (16, "LunasCloak"),
+            (17, "DruidicSerpentCloak"),
+        ];
+        assert_eq!(ARMOR_FRONT, front, "ArmorIDs.Front walk");
+        assert_eq!(ARMOR_FRONT_COUNT, 18);
+        // ArmorIDs.Shoe (`ArmorIDs.cs`, 31 named constants, Count = 31).
+        let shoe: &[(i32, &str)] = &[
+            (1, "Flipper"), (2, "WaterWalkingBoots"), (3, "Tabi"), (4, "TigerClimbingGear"),
+            (4, "ShoeSpikes"), (5, "FlurryBoots"), (6, "HermesBoots"), (7, "IceSkates"),
+            (8, "LavaWaders"), (9, "FrostsparkBoots"), (10, "LightningBoots"), (11, "ObsidianWaterWalkingBoots"),
+            (12, "RocketBoots"), (13, "SpectreBoots"), (14, "MasterNinjaGear"), (15, "FrogLeg"),
+            (16, "FlowerBoots"), (17, "SailfishBoots"), (18, "AmphibianBoots"), (19, "FairyBoots"),
+            (20, "FrogFlipper"), (21, "SandBoots"), (22, "FlameWakerBoots"), (23, "HellfireTreads"),
+            (24, "TerrasparkBoots"), (25, "GlassSlipperMale"), (26, "GlassSlipperFemale"), (27, "RollerSkates"),
+            (28, "RollerSkatesGreen"), (29, "RollerSkatesWhite"), (30, "RollerSkatesPink"),
+        ];
+        assert_eq!(ARMOR_SHOE, shoe, "ArmorIDs.Shoe walk");
+        assert_eq!(ARMOR_SHOE_COUNT, 31);
+        // ArmorIDs.Waist (`ArmorIDs.cs`, 18 named constants, Count = 18).
+        let waist: &[(i32, &str)] = &[
+            (1, "CloudinaBottle"), (2, "CopperWatch"), (3, "GoldWatch"), (4, "PlatinumWatch"),
+            (5, "Toolbelt"), (6, "ManaFlower"), (7, "SilverWatch"), (8, "TinWatch"),
+            (9, "TungstenWatch"), (10, "MasterNinjaGear"), (10, "BlackBelt"), (11, "TsunamiinaBottle"),
+            (12, "MonkBelt"), (13, "BlizzardinaBottle"), (14, "FartinaJar"), (15, "SandstorminaBottle"),
+            (16, "TreasureMagnet"), (17, "MysticArtsSash"),
+        ];
+        assert_eq!(ARMOR_WAIST, waist, "ArmorIDs.Waist walk");
+        assert_eq!(ARMOR_WAIST_COUNT, 18);
+        // ArmorIDs.Wing (`ArmorIDs.cs`, 51 named constants, Count = 52).
+        let wing: &[(i32, &str)] = &[
+            (1, "DemonWings"), (2, "AngelWings"), (3, "RedsWings"), (4, "Jetpack"),
+            (5, "ButterflyWings"), (6, "FairyWings"), (7, "HarpyWings"), (8, "BoneWings"),
+            (9, "FlameWings"), (10, "FrozenWings"), (11, "SpectreWings"), (12, "SteampunkWings"),
+            (13, "LeafWings"), (14, "BatWings"), (15, "BeeWings"), (16, "DTownsWings"),
+            (17, "WillsWings"), (18, "CrownosWings"), (19, "CenxsWings"), (20, "TatteredFairyWings"),
+            (21, "SpookyWings"), (22, "Hoverboard"), (23, "FestiveWings"), (24, "BeetleWings"),
+            (25, "FinWings"), (26, "FishronWings"), (27, "MothronWings"), (28, "LazuresBarrierPlatform"),
+            (29, "SolarWings"), (30, "VortexBooster"), (31, "NebulaMantle"), (32, "StardustWings"),
+            (33, "Yoraiz0rsSpell"), (34, "JimsWings"), (35, "SkiphssPaws"), (36, "LokisWings"),
+            (37, "BetsyWings"), (38, "ArkhalisWings"), (39, "LeinforsWings"), (40, "GhostarsWings"),
+            (41, "SafemanWings"), (42, "FoodBarbarianWings"), (43, "GroxTheGreatWings"), (44, "RainbowWings"),
+            (45, "LongTrailRainbowWings"), (46, "CreativeWings"), (47, "ChickenBonesWings"), (48, "ChippysWings"),
+            (49, "HeroicisWings"), (50, "KazzymodusWings"), (51, "LunasWings"),
+        ];
+        assert_eq!(ARMOR_WING, wing, "ArmorIDs.Wing walk");
+        assert_eq!(ARMOR_WING_COUNT, 52);
+        // ArmorIDs.Shield (`ArmorIDs.cs`, 12 named constants, Count = 13).
+        let shield: &[(i32, &str)] = &[
+            (1, "CobaltShield"), (2, "PaladinsShield"), (3, "ObsidianShield"), (4, "AnkhShield"),
+            (5, "ShieldofCthulhu"), (6, "SquireShield"), (7, "Frozen"), (8, "Hero"),
+            (9, "BouncingShield"), (10, "SilverShield"), (11, "RoyalGuardHarness"), (12, "RestorationShield"),
+        ];
+        assert_eq!(ARMOR_SHIELD, shield, "ArmorIDs.Shield walk");
+        assert_eq!(ARMOR_SHIELD_COUNT, 13);
+        // ArmorIDs.Neck (`ArmorIDs.cs`, 14 named constants, Count = 15).
+        let neck: &[(i32, &str)] = &[
+            (1, "JellyfishNecklace"), (2, "CrossNecklace"), (3, "PanicNecklace"), (4, "PygmyNecklace"),
+            (5, "StarVeil"), (6, "SweetheartNecklace"), (7, "SharkToothNecklace"), (8, "WormScarf"),
+            (9, "ApprenticeScarf"), (10, "Stinger"), (11, "Magiluminescence"), (12, "MoltenCharm"),
+            (13, "CrossedHeartNecklace"), (14, "SeraphNecklace"),
+        ];
+        assert_eq!(ARMOR_NECK, neck, "ArmorIDs.Neck walk");
+        assert_eq!(ARMOR_NECK_COUNT, 15);
+        // ArmorIDs.Face (`ArmorIDs.cs`, 23 named constants, Count = 24).
+        let face: &[(i32, &str)] = &[
+            (1, "NaturesGift"), (2, "ArcticDivingGear"), (3, "JellyfishDivingGear"), (4, "DivingGear"),
+            (5, "Blindfold"), (6, "ObsidianRose"), (7, "AngelHalo"), (8, "JungleRose"),
+            (9, "ArcaneFlower"), (10, "LavaSkull"), (11, "MoltenSkullRose"), (12, "ObsidianSkull"),
+            (13, "ObsidianSkullRose"), (14, "SpectreGoggles"), (15, "LavaSkullAlt"), (16, "MoltenSkullRoseAlt"),
+            (17, "ObsidianSkullAlt"), (18, "ObsidianSkullRoseAlt"), (19, "BoneHelm"), (20, "ReflectiveShades"),
+            (21, "JimsDroneVisor"), (22, "WeldingMask"), (23, "ChippysHeadband"),
+        ];
+        assert_eq!(ARMOR_FACE, face, "ArmorIDs.Face walk");
+        assert_eq!(ARMOR_FACE_COUNT, 24);
+        // ArmorIDs.Balloon (`ArmorIDs.cs`, 19 named constants, Count = 20).
+        let balloon: &[(i32, &str)] = &[
+            (1, "BlizzardinaBalloon"), (2, "BlueHorseshoeBalloon"), (3, "BundleofBalloons"), (4, "CloudinaBalloon"),
+            (5, "FartinaBalloon"), (6, "SandstorminaBalloon"), (7, "HoneyBalloon"), (8, "ShinyRedBalloon"),
+            (9, "WhiteHorseshoeBalloon"), (10, "YellowHorseshoeBalloon"), (11, "BalloonPufferfish"), (12, "SharkronBalloon"),
+            (13, "GreenHorseshoeBalloon"), (14, "AmberHorseshoeBalloon"), (15, "PinkHorseshoeBalloon"), (16, "BundledPartyBalloons"),
+            (17, "BalloonAnimal"), (18, "RoyalScepter"), (19, "HorseshoeBundle"),
+        ];
+        assert_eq!(ARMOR_BALLOON, balloon, "ArmorIDs.Balloon walk");
+        assert_eq!(ARMOR_BALLOON_COUNT, 20);
+        // ArmorIDs.RocketBoots (`ArmorIDs.cs`, 7 named constants, no Count constant).
+        let rocketboots: &[(i32, &str)] = &[
+            (0, "None"), (1, "SimpleRocketBoots"), (2, "SpectreBoots"), (3, "FrostsparkBoots"),
+            (4, "TerrasparkBoots"), (5, "HellfireTreads"), (6, "RedsLeggings"),
+        ];
+        assert_eq!(ARMOR_ROCKETBOOTS, rocketboots, "ArmorIDs.RocketBoots walk");
+        // ArmorIDs.Beard (`ArmorIDs.cs`, 4 named constants, Count = 5).
+        let beard: &[(i32, &str)] = &[
+            (1, "GingerBeard"), (2, "WilsonBeardShort"), (3, "WilsonBeardLong"), (4, "WilsonBeardMagnificent"),
+        ];
+        assert_eq!(ARMOR_BEARD, beard, "ArmorIDs.Beard walk");
+        assert_eq!(ARMOR_BEARD_COUNT, 5);
+    }
+
+    /// W4-c45 -- the DustID walk's full coverage: every one of the 207
+    /// named constants (`DustID.cs`, 184 primary + the t_*/Gem aliases;
+    /// the C#'s own unnamed gap bands stay gaps) pinned verbatim.
+    /// WRITTEN NOT RUN (code-only wave).
+    #[test]
+    fn w4_c45_the_dust_walk_pins_every_csharp_constant() {
+        let cs: &[(i32, &str)] = &[
+            (0, "Dirt"), (1, "Stone"), (2, "Grass"), (3, "GrassBlades"),
+            (4, "TintableDust"), (5, "Blood"), (6, "Torch"), (8, "Iron"),
+            (9, "Copper"), (10, "Gold"), (11, "Silver"), (12, "LifeCrystal"),
+            (13, "Glass"), (14, "Corruption"), (15, "JesterSparkleBlue"), (16, "Cloud"),
+            (17, "CorruptPlants"), (18, "CorruptGibs"), (26, "Bone"), (27, "Shadowflame"),
+            (29, "WaterCandle"), (30, "Web"), (31, "Smoke"), (32, "Sand"),
+            (34, "UnderwaterBubble"), (35, "Lava"), (36, "Ash"), (40, "JunglePlants"),
+            (43, "TintableDustLighted"), (47, "HallowedPlants"), (57, "JesterSparkleYellow"), (58, "PinkStarfury"),
+            (59, "BlueTorch"), (60, "RedTorch"), (61, "GreenTorch"), (62, "PurpleTorch"),
+            (63, "WhiteTorch"), (64, "YellowTorch"), (65, "DemonTorch"), (66, "RainbowTorch"),
+            (68, "BlueCrystalShard"), (69, "PinkCrystalShard"), (70, "PurpleCrystalShard"), (75, "CursedTorch"),
+            (80, "Ice"), (81, "Tin"), (82, "Lead"), (83, "Tungsten"),
+            (84, "Platinum"), (93, "GreenMoss"), (94, "BrownMoss"), (95, "RedMoss"),
+            (96, "BlueMoss"), (97, "PurpleMoss"), (107, "Terra"), (110, "PureSpray"),
+            (111, "HallowSpray"), (112, "CorruptSpray"), (113, "MushroomSpray"), (114, "CrimsonSpray"),
+            (115, "Crimson"), (125, "CrimsonPlants"), (127, "Flare"), (135, "IceTorch"),
+            (139, "Confetti"), (143, "TintablePaint"), (152, "Honey"), (156, "UltraBrightTorch"),
+            (157, "Chlorophyte"), (158, "OrangeTorch"), (160, "BlueGreenElectricity"), (162, "HeatRay"),
+            (166, "PlanteraPetal"), (167, "PlanteraGrass"), (168, "PlanteraBulb"), (169, "IchorTorch"),
+            (170, "IchorSplash"), (171, "Spider"), (173, "Shadowbeam"), (174, "InfernoFlame"),
+            (184, "Eater"), (185, "FrostHydra"), (187, "BlueFlare"), (197, "SnowflakeIce"),
+            (219, "Fireworks"), (226, "Electric"), (227, "MartianBlood"), (228, "GoldFlame"),
+            (229, "Vortex"), (234, "BoneTorch"), (236, "Marble"), (237, "Mothron"),
+            (238, "MothronEgg"), (239, "Silk"), (240, "Granite"), (241, "MarblePot"),
+            (242, "PinkTorch"), (243, "PinkSlime"), (244, "CopperCoin"), (245, "SilverCoin"),
+            (246, "GoldCoin"), (247, "PlatinumCoin"), (248, "EnchantedNightcrawler"), (249, "Grubby"),
+            (250, "Sluggy"), (251, "Buggy"), (254, "CrystalPulse"), (255, "CrystalPulse2"),
+            (256, "ToxicBubble"), (257, "BubbleBlock"), (258, "LavaMoss"), (259, "SolarFlare"),
+            (260, "SparksMech"), (261, "AncientLight"), (262, "AmberBolt"), (263, "PortalBolt"),
+            (264, "PortalBoltTrail"), (265, "LunarOre"), (266, "SomethingRed"), (267, "RainbowMk2"),
+            (268, "Sandstorm"), (269, "Sandnado"), (270, "FlameBurst"), (271, "HealingPlus"),
+            (272, "WitherLightning"), (273, "GreenBlood"), (274, "ApprenticeStorm"), (275, "DungeonBlue"),
+            (276, "DungeonGreen"), (277, "DungeonPink"), (278, "FireworksRGB"), (279, "SilverFlame"),
+            (280, "BeachShell"), (281, "RedStarfish"), (282, "PinkStarfish"), (283, "YellowStarfish"),
+            (284, "FoodPiece"), (285, "GolfPaticle"), (286, "OrangeStainedGlass"), (287, "DesertPot"),
+            (288, "DesertWater2"), (289, "SeaOatsOasis"), (290, "SeaOatsBeach"), (291, "OasisCactus"),
+            (292, "YellowStarDust"), (293, "DesertTorch"), (294, "CoralTorch"), (295, "CorruptTorch"),
+            (296, "CrimsonTorch"), (297, "HallowedTorch"), (298, "JungleTorch"), (299, "KryptonMoss"),
+            (300, "XenonMoss"), (301, "ArgonMoss"), (302, "Terragrim"), (303, "SteampunkSteam"),
+            (304, "Firefly"), (305, "VioletMoss"), (306, "SparkForLightDisc"), (307, "MushroomTorch"),
+            (308, "ShimmerSplash"), (309, "ShimmerSpark"), (310, "ShimmerTorch"), (311, "SandSpray"),
+            (312, "SnowSpray"), (313, "DirtSpray"), (314, "LunarRust"), (315, "DarkCelestial"),
+            (316, "Astra"), (317, "CosmicEmber"), (318, "Cryocore"), (319, "Mercury"),
+            (320, "StarRoyale"), (321, "Heavenforge"), (322, "Poop"), (323, "MoonBoulder"),
+            (324, "ShimmerStream"), (325, "PinkPhaseblade"), (326, "LavaCloud"), (327, "StarCloud"),
+            (328, "RainbowCloud"), (329, "BirdDroppings"), (330, "PrettyMirror"), (331, "TintableElectric"),
+            (214, "t_BorealWood"), (4, "t_Slime"), (8, "t_SteampunkMetal"), (78, "t_LivingWood"),
+            (147, "t_Honey"), (40, "t_Cactus"), (226, "t_Martian"), (23, "t_Meteor"),
+            (240, "t_Granite"), (236, "t_Marble"), (68, "t_Crystal"), (10, "t_Golden"),
+            (78, "t_PearlWood"), (148, "t_Lihzahrd"), (5, "t_Flesh"), (80, "t_Frozen"),
+            (86, "GemAmethyst"), (87, "GemTopaz"), (88, "GemSapphire"), (89, "GemEmerald"),
+            (90, "GemRuby"), (91, "GemDiamond"), (138, "GemAmber"),
+        ];
+        assert_eq!(DUST_ID, cs, "the DustID walk");
+        assert_eq!(DUST_COUNT, 332, "`DustID.Count = 332` (`DustID.cs:423`)");
+    }
+
+    /// W4-c45 -- `SoundID`'s two size counters (`SoundID.cs:1383`/`:1595`
+    /// -- the audit's SoundID row had no Rust carrier for them) and the
+    /// generated 506-style table's coverage of every C# field name.
+    /// WRITTEN NOT RUN (code-only wave).
+    #[test]
+    fn w4_c45_the_sound_counters_and_field_coverage() {
+        // `SoundID.NPCDeathCount = 69` (`SoundID.cs:1383`) -- the case-4
+        // playing guard's bound (`audio.rs` reads 10 instances).
+        assert_eq!(NPC_DEATH_COUNT, 69);
+        // `SoundID.ItemSoundCount = 211` (`SoundID.cs:1595`).
+        assert_eq!(ITEM_SOUND_COUNT, 211);
+        // Every one of the C#'s 506 `LegacySoundStyle` fields
+        // has a row in the generated table (the S1-E-21 wave-A walk).
+        assert_eq!(crate::soundid::SOUND_STYLES.len(), 506);
+        let names: Vec<&str> = crate::soundid::SOUND_STYLES.iter().map(|s| s.name).collect();
+        let cs_fields: &[&str] = &[
+            "NPCHit1", "NPCHit2", "NPCHit3", "NPCHit4", "NPCHit5", "NPCHit6",
+            "NPCHit7", "NPCHit8", "NPCHit9", "NPCHit10", "NPCHit11", "NPCHit12",
+            "NPCHit13", "NPCHit14", "NPCHit15", "NPCHit16", "NPCHit17", "NPCHit18",
+            "NPCHit19", "NPCHit20", "NPCHit21", "NPCHit22", "NPCHit23", "NPCHit24",
+            "NPCHit25", "NPCHit26", "NPCHit27", "NPCHit28", "NPCHit29", "NPCHit30",
+            "NPCHit31", "NPCHit32", "NPCHit33", "NPCHit34", "NPCHit35", "NPCHit36",
+            "NPCHit37", "NPCHit38", "NPCHit39", "NPCHit40", "NPCHit41", "NPCHit42",
+            "NPCHit43", "NPCHit44", "NPCHit45", "NPCHit46", "NPCHit47", "NPCHit48",
+            "NPCHit49", "NPCHit50", "NPCHit51", "NPCHit52", "NPCHit53", "NPCHit54",
+            "NPCHit55", "NPCHit56", "NPCHit57", "NPCHit58", "NPCDeath1", "NPCDeath2",
+            "NPCDeath3", "NPCDeath4", "NPCDeath5", "NPCDeath6", "NPCDeath7", "NPCDeath8",
+            "NPCDeath9", "NPCDeath10", "NPCDeath11", "NPCDeath12", "NPCDeath13", "NPCDeath14",
+            "NPCDeath15", "NPCDeath16", "NPCDeath17", "NPCDeath18", "NPCDeath19", "NPCDeath20",
+            "NPCDeath21", "NPCDeath22", "NPCDeath23", "NPCDeath24", "NPCDeath25", "NPCDeath26",
+            "NPCDeath27", "NPCDeath28", "NPCDeath29", "NPCDeath30", "NPCDeath31", "NPCDeath32",
+            "NPCDeath33", "NPCDeath34", "NPCDeath35", "NPCDeath36", "NPCDeath37", "NPCDeath38",
+            "NPCDeath39", "NPCDeath40", "NPCDeath41", "NPCDeath42", "NPCDeath43", "NPCDeath44",
+            "NPCDeath45", "NPCDeath46", "NPCDeath47", "NPCDeath48", "NPCDeath49", "NPCDeath50",
+            "NPCDeath51", "NPCDeath52", "NPCDeath53", "NPCDeath54", "NPCDeath55", "NPCDeath56",
+            "NPCDeath57", "NPCDeath58", "NPCDeath59", "NPCDeath60", "NPCDeath61", "NPCDeath62",
+            "NPCDeath63", "NPCDeath64", "NPCDeath65", "NPCDeath66", "NPCDeath67", "NPCDeath68",
+            "Item1", "Item2", "Item3", "Item4", "Item5", "Item6",
+            "Item7", "Item8", "Item9", "Item10", "Item11", "Item12",
+            "Item13", "Item14", "Item15", "Item16", "Item17", "Item18",
+            "Item19", "Item20", "Item21", "Item22", "Item23", "Item24",
+            "Item25", "Item26", "Item27", "Item28", "Item29", "Item30",
+            "Item31", "Item32", "Item33", "Item34", "Item35", "Item36",
+            "Item37", "Item38", "Item39", "Item40", "Item41", "Item42",
+            "Item43", "Item44", "Item45", "Item46", "Item47", "Item48",
+            "Item49", "Item50", "Item51", "Item52", "Item53", "Item54",
+            "Item55", "Item56", "Item57", "Item58", "Item59", "Item60",
+            "Item61", "Item62", "Item63", "Item64", "Item65", "Item66",
+            "Item67", "Item68", "Item69", "Item70", "Item71", "Item72",
+            "Item73", "Item74", "Item75", "Item76", "Item77", "Item78",
+            "Item79", "Item80", "Item81", "Item82", "Item83", "Item84",
+            "Item85", "Item86", "Item87", "Item88", "Item89", "Item90",
+            "Item91", "Item92", "Item93", "Item94", "Item95", "Item96",
+            "Item97", "Item98", "Item99", "Item100", "Item101", "Item102",
+            "Item103", "Item104", "Item105", "Item106", "Item107", "Item108",
+            "Item109", "Item110", "Item111", "Item112", "Item113", "Item113_Quiet",
+            "Item114", "Item115", "Item116", "Item117", "Item118", "Item119",
+            "Item120", "Item121", "Item122", "Item123", "Item124", "Item125",
+            "Item126", "Item127", "Item128", "Item129", "Item130", "Item131",
+            "Item132", "Item133", "Item134", "Item135", "Item136", "Item137",
+            "Item138", "Item139", "Item140", "Item141", "Item142", "Item143",
+            "Item144", "Item145", "Item146", "Item147", "Item148", "Item149",
+            "Item150", "Item151", "Item152", "Item153", "Item154", "Item155",
+            "Item156", "Item157", "Item158", "Item159", "Item160", "Item161",
+            "Item162", "Item163", "Item164", "Item165", "Item166", "Item167",
+            "Item168", "Item169", "Item170", "Item171", "Item172", "Item173",
+            "Item174", "Item175", "Item176", "Item177", "Item178", "Item179",
+            "Item180", "Item181", "Item182", "Item183", "Item184", "Item185",
+            "Item186", "Item187", "Item188", "Item189", "Item190", "Item191",
+            "Item192", "Item193", "Item194", "Item195", "Item196", "Item197",
+            "Item198", "Item199", "MysticBloom", "GlacierFang_Muzzle", "Unused", "ArcSurge",
+            "LightningStrikeHit", "StackableItem8ForRubyStaff", "PyroclasticStone", "ArmletOfRuin", "Unused2", "Unused3",
+            "GlacierFang_Charging", "DD2_GoblinBomb", "AchievementComplete", "BlizzardInsideBuildingLoop", "BlizzardStrongLoop", "LiquidsHoneyWater",
+            "LiquidsHoneyLava", "LiquidsWaterLava", "DD2_BallistaTowerShot", "DD2_ExplosiveTrapExplode", "DD2_FlameburstTowerShot", "DD2_LightningAuraZap",
+            "DD2_DefenseTowerSpawn", "DD2_BetsyDeath", "DD2_BetsyFireballShot", "DD2_BetsyFireballImpact", "DD2_BetsyFlameBreath", "DD2_BetsyFlyingCircleAttack",
+            "DD2_BetsyHurt", "DD2_BetsyScream", "DD2_BetsySummon", "DD2_BetsyWindAttack", "DD2_DarkMageAttack", "DD2_DarkMageCastHeal",
+            "DD2_DarkMageDeath", "DD2_DarkMageHealImpact", "DD2_DarkMageHurt", "DD2_DarkMageSummonSkeleton", "DD2_DrakinBreathIn", "DD2_DrakinDeath",
+            "DD2_DrakinHurt", "DD2_DrakinShot", "DD2_GoblinDeath", "DD2_GoblinHurt", "DD2_GoblinScream", "DD2_GoblinBomberDeath",
+            "DD2_GoblinBomberHurt", "DD2_GoblinBomberScream", "DD2_GoblinBomberThrow", "DD2_JavelinThrowersAttack", "DD2_JavelinThrowersDeath", "DD2_JavelinThrowersHurt",
+            "DD2_JavelinThrowersTaunt", "DD2_KoboldDeath", "DD2_KoboldExplosion", "DD2_KoboldHurt", "DD2_KoboldIgnite", "DD2_KoboldIgniteLoop",
+            "DD2_KoboldScreamChargeLoop", "DD2_KoboldFlyerChargeScream", "DD2_KoboldFlyerDeath", "DD2_KoboldFlyerHurt", "DD2_LightningBugDeath", "DD2_LightningBugHurt",
+            "DD2_LightningBugZap", "DD2_OgreAttack", "DD2_OgreDeath", "DD2_OgreGroundPound", "DD2_OgreHurt", "DD2_OgreRoar",
+            "DD2_OgreSpit", "DD2_SkeletonDeath", "DD2_SkeletonHurt", "DD2_SkeletonSummoned", "DD2_WitherBeastAuraPulse", "DD2_WitherBeastCrystalImpact",
+            "DD2_WitherBeastDeath", "DD2_WitherBeastHurt", "DD2_WyvernDeath", "DD2_WyvernHurt", "DD2_WyvernScream", "DD2_WyvernDiveDown",
+            "DD2_EtherianPortalDryadTouch", "DD2_EtherianPortalIdleLoop", "DD2_EtherianPortalOpen", "DD2_EtherianPortalSpawnEnemy", "DD2_CrystalCartImpact", "DD2_DefeatScene",
+            "DD2_WinScene", "DD2_BetsysWrathShot", "DD2_BetsysWrathImpact", "DD2_BookStaffCast", "DD2_BookStaffTwisterLoop", "DD2_GhastlyGlaiveImpactGhost",
+            "DD2_GhastlyGlaivePierce", "DD2_MonkStaffGroundImpact", "DD2_MonkStaffGroundMiss", "DD2_MonkStaffSwing", "DD2_PhantomPhoenixShot", "DD2_SonicBoomBladeSlash",
+            "DD2_SkyDragonsFuryCircle", "DD2_SkyDragonsFuryShot", "DD2_SkyDragonsFurySwing", "PlayerHurt1", "PlayerHurt2", "LucyTheAxeTalk",
+            "DeerclopsHit", "DeerclopsDeath", "DeerclopsScream", "DeerclopsIceAttack", "DeerclopsRubbleAttack", "DeerclopsStep",
+            "ChesterOpen", "ChesterClose", "AbigailSummon", "AbigailCry", "AbigailAttack", "AbigailUpgrade",
+            "GlommerBounce", "DSTMaleHurt", "DSTFemaleHurt", "JimsDrone", "RCCar", "VampireSizzle",
+            "RainbowBoulder", "MenuAccept", "Hungry", "PalSummon", "PalCattiva", "PalCattivaPain",
+            "PalCattivaJoy", "PalChillet", "PalChilletJoy", "PalChilletAttack", "PalFoxparks", "PalFoxparksPain",
+            "PalFoxparksJoy", "PalFoxparksAttack", "PalDigtoise", "PalDigtoiseJoy", "FoxparksFlame", "LeafBlower",
+            "DeadCellsBarrelLauncherFire", "DeadCellsBarrelLauncherExplode", "DeadCellsMushroomSummon", "DeadCellsMushroomLand", "DeadCellsMushroomJump", "DeadCellsMushroomExplode",
+            "DeadCellsFlintCharge", "DeadCellsFlintRelease", "DeadCellsFlintWave", "MeteorShower", "BestReforge", "TrashItem",
+            "InstantThunder", "SonarPotion", "StatueMimicScare", "StatueMimicJump", "StatueMimicLaugh", "DefaultPlayerHurt",
+            "BellHurt", "ChickenHurt", "ChickenHurtRare", "FrogHurt", "GoatHurt", "RetroHurt",
+            "RetroDeath", "CatHurt", "DogHurt", "TurkeyHurt", "GoblinHurt", "CrowHurt",
+            "BalloonHurt", "BalloonDeath", "UndeadHurt", "VampireHurt", "FairyHurt", "FishSplash",
+            "EOWDiggin", "BombFuse",
+        ];
+        assert_eq!(names, cs_fields, "the SoundID field walk, ctor order");
     }
 }

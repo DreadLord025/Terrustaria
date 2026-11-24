@@ -165,7 +165,7 @@ pub struct Ai64NpcView {
 
 impl Ai64NpcView {
     /// `Entity.Center` — `position + (float)width / 2f` (FLOAT halves).
-    fn center(&self) -> (f32, f32) {
+    pub fn center(&self) -> (f32, f32) {
         (
             self.x + self.width as f32 / 2.0,
             self.y + self.height as f32 / 2.0,

@@ -161,7 +161,7 @@ impl Layout {
 /// `MaxWidth 650`, `Top 220`, `Height (-220, 1)`, `HAlign 0.5`.
 fn root_rect(screen: Vec2) -> [f32; 4] {
     uistate::resolve(
-        [0.0, 0.0, screen.x, screen.y],
+        super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]), // `UIState.cs:9-11`
         Style::px(0.0),          // Left unset (`StyleDimension.Empty`)
         Style::px(220.0),        // `uIElement.Top.Set(220f, 0f)` (`:40`)
         Style::new(0.0, 0.8),    // `Width.Set(0f, 0.8f)` (`:38`)
@@ -298,7 +298,10 @@ pub fn detached_list_width(screen: Vec2) -> f32 {
 
 /// The `UIList` content height (`UIList.cs:120-128`): every row's outer height
 /// plus one `ListPadding` per row (`:122`'s per-item `num2`; the single-row list
-/// drops it). N cards = N*(96+5); one card = 96; none = 0.
+/// drops it). N cards = N*(96+5); one card = 96; none = 0. The shared port is
+/// `uistate::list_total_height`; the uniform-height closed form below is its
+/// exact sum (`n*(CARD_H+5)` for n≥2) without the per-draw allocation — the
+/// `scrollbar_branch_attaches_at_six_cards` witness pins the equivalence.
 pub fn list_content_height(cards: usize) -> f32 {
     match cards {
         0 => 0.0,
@@ -560,6 +563,77 @@ pub fn difficulty_text(difficulty: u8) -> (String, [u8; 4]) {
         3 => (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR),
         // `case 0` and the unlabelled fallthrough both land on Classic/White.
         _ => (crate::lang::text("UI.Softcore"), [255, 255, 255, 255]),
+    }
+}
+
+/// `DrawSelf`'s play-time string (`UICharacterListItem.cs:376-378`):
+/// `num5 = Days*24 + Hours`, zero-padded to two digits when under 10, then
+/// `playTime.ToString("\:mm\:ss")` — `"HH:MM:SS"` with the hours riding past
+/// 24 into the day count. The port pins `00:00:00` (no play-time tracking,
+/// the documented disposition); this is the source's formatter for the
+/// tracking's landing.
+#[allow(dead_code)] // the draw pins PLAYTIME_TEXT until play-time tracking lands
+pub fn playtime_text(total_seconds: u64) -> String {
+    let days = total_seconds / 86_400;
+    let hours = (total_seconds % 86_400) / 3_600;
+    let minutes = (total_seconds % 3_600) / 60;
+    let seconds = total_seconds % 60;
+    let num5 = days * 24 + hours; // `:377`
+    let pad = if num5 < 10 { "0" } else { "" }; // `:378`
+    format!("{pad}{num5}:{minutes:02}:{seconds:02}")
+}
+
+// --- UICharacterListItem's missing halves (W4-d81 census row 17) ----------------
+//
+// The card geometry/colours/labels/hit table/draw are landed above; these port
+// CompareTo, the rename-finish trim and the unplayable-name prefix.
+
+/// `CompareTo` (`UICharacterListItem.cs:285-292`): another card compares by
+/// `_orderInList` — the ctor's insertion index (`:49`, `:65`), the list's
+/// build order, NOT the favourite/LastPlayed chain (that is
+/// `UICharacterSelect.UpdatePlayersList`, [`sort_players`]).
+pub fn compare_card_order(a: usize, b: usize) -> std::cmp::Ordering {
+    a.cmp(&b) // `:289`
+}
+
+/// `OnFinishedSettingName` (`UICharacterListItem.cs:208-214`): the keyboard's
+/// result is `name.Trim()` (`:210`) before `PlayerFileData.Rename` — C#
+/// `string.Trim` strips Unicode whitespace both ends, like Rust's `trim`.
+/// The rename itself + `menuMode = 10` + re-open are App flow (`:211-213`).
+pub fn renamed_player_name(keyboard_result: &str) -> String {
+    keyboard_result.trim().to_string() // `:210`
+}
+
+/// `StatusID.Search.GetName` (`ID/StatusID.cs:25-32` over
+/// `IdDictionary.Create<StatusID, int>`, `ReLogic.Reflection/IdDictionary.cs:
+/// 84-94` — the public static int fields' names keyed by value). `GetName`
+/// throws on an unknown id (`IdDictionary.cs:45`); the port maps only the
+/// seven declared ids and returns `None` otherwise.
+pub fn load_status_name(status: i32) -> Option<&'static str> {
+    Some(match status {
+        0 => "Ok",                // `StatusID.cs:25`
+        1 => "LaterVersion",      // `:26`
+        2 => "UnknownError",      // `:27`
+        3 => "EmptyFile",         // `:28`
+        4 => "DecryptionError",   // `:29`
+        5 => "BadSectionPointer", // `:30`
+        6 => "BadFooter",         // `:31`
+        _ => return None,
+    })
+}
+
+/// `DrawSelf`'s name line (`UICharacterListItem.cs:324-330`): an Ok
+/// `loadStatus` draws the plain name in White; anything else prefixes
+/// `"(" + StatusID.Search.GetName(loadStatus) + ") "` (`:328`) and draws Gray.
+/// Returns `(text, is_gray)`; the draw already picks [`GRAY`] on `!playable`
+/// but carries no prefix yet (every entry is Ok today, save_list).
+#[allow(dead_code)] // no .plr loadStatus reader yet (every entry is Ok)
+pub fn card_name_text(name: &str, load_status: i32) -> (String, bool) {
+    if load_status == 0 {
+        (name.to_string(), false) // `:323-324`, Color.White
+    } else {
+        let status = load_status_name(load_status).unwrap_or("");
+        (format!("({status}) {name}"), true) // `:327-328`, Color.Gray
     }
 }
 
@@ -1076,11 +1150,18 @@ mod tests {
         // on a synthetic tall list, not deleted.
         let l = layout(SCREEN, 100.0, detached_list_width(SCREEN));
         assert_eq!(l.list[2], 626.0);
-        // The `UIList` content heights (`UIList.cs:120-128`).
+        // The `UIList` content heights (`UIList.cs:120-128`) — the closed form
+        // is the verbatim `list_total_height` sum's exact value.
         assert_eq!(list_content_height(0), 0.0);
         assert_eq!(list_content_height(1), 96.0);
         assert_eq!(list_content_height(5), 505.0);
         assert_eq!(list_content_height(6), 606.0);
+        for n in [0usize, 1, 2, 5, 6, 8] {
+            assert_eq!(
+                list_content_height(n),
+                uistate::list_total_height(&vec![CARD_H; n], LIST_PADDING)
+            );
+        }
         // 5 cards: 505 < 546 — `SetView` clamps the view onto the content, so
         // `CanScroll` is false (`UIScrollbar.cs:78`, `:49`) — it never attaches
         // below 6 cards.
@@ -1684,5 +1765,56 @@ mod tests {
         assert!(wheel_target(&l, 8, Vec2::new(500.0, 400.0)));
         assert!(wheel_target(&l, 8, over_bar(400.0)));
         assert!(!wheel_target(&l, 8, Vec2::new(500.0, 830.0)));
+    }
+
+    // --- W4-d81 batch 7: UICharacterListItem (census row 17) --------------------
+    // Written in code-only mode — NOT RUN here. Hand-derived from
+    // `UICharacterListItem.cs:208-214`, `:285-292`, `:324-330`, `:376-378`,
+    // `ID/StatusID.cs:25-32`.
+
+    #[test]
+    fn the_card_order_and_rename_trim_match_the_source() {
+        // `CompareTo` (`:285-292`) rides `_orderInList`, the ctor index.
+        assert_eq!(compare_card_order(0, 1), std::cmp::Ordering::Less);
+        assert_eq!(compare_card_order(3, 3), std::cmp::Ordering::Equal);
+        assert_eq!(compare_card_order(5, 2), std::cmp::Ordering::Greater);
+        // `OnFinishedSettingName` (`:210`): `name.Trim()` both ends.
+        assert_eq!(renamed_player_name("  Bob  "), "Bob");
+        assert_eq!(renamed_player_name("\tAlice\n"), "Alice");
+        assert_eq!(renamed_player_name(""), "");
+    }
+
+    #[test]
+    fn the_unplayable_name_prefixes_the_status() {
+        // `StatusID` (`ID/StatusID.cs:25-32`): the seven field names.
+        assert_eq!(load_status_name(0), Some("Ok"));
+        assert_eq!(load_status_name(1), Some("LaterVersion"));
+        assert_eq!(load_status_name(3), Some("EmptyFile"));
+        assert_eq!(load_status_name(6), Some("BadFooter"));
+        assert_eq!(load_status_name(7), None); // GetName would throw
+        // `DrawSelf` (`:324-330`): Ok -> plain White; else "(Status) name" Gray.
+        assert_eq!(card_name_text("Bob", 0), ("Bob".to_string(), false));
+        assert_eq!(
+            card_name_text("Bob", 1),
+            ("(LaterVersion) Bob".to_string(), true)
+        );
+        assert_eq!(
+            card_name_text("Alice", 3),
+            ("(EmptyFile) Alice".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn the_playtime_formatter_rides_days_into_hours() {
+        // `:376-378`: num5 = Days*24 + Hours, "0"-padded under 10, then
+        // ToString("\:mm\:ss").
+        assert_eq!(playtime_text(0), "00:00:00");
+        assert_eq!(playtime_text(3_661), "01:01:01");
+        assert_eq!(playtime_text(35_999), "09:59:59"); // still padded
+        assert_eq!(playtime_text(36_000), "10:00:00"); // pad drops at 10
+        // 1 day + 2 h + 3 m + 4 s -> 26:03:04 (`Days*24 + Hours`).
+        assert_eq!(playtime_text(86_400 + 7_200 + 180 + 4), "26:03:04");
+        // 10 days -> 240 hours, no wrap.
+        assert_eq!(playtime_text(864_000), "240:00:00");
     }
 }

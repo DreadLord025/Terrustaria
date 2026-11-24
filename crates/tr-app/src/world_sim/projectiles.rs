@@ -4,7 +4,156 @@
 use glam::Vec2;
 
 use crate::app::App;
-use crate::projectile::{FlailInputs, SHURIKEN, YoyoInputs};
+use crate::projectile::{FlailInputs, ProjTrackedCue, Projectile, SHURIKEN, YoyoInputs};
+
+/// W4-d80 — one drained bomb-fuse tracked-sound intent: the ensure-play /
+/// stop dance against the pool, the handle float written back into
+/// `Projectile.local_ai[2]` (the C# `localAI[2]` dance,
+/// `Projectile.cs:46917-46921` / `:70673-70677`). The ensure's null test
+/// is the pool's versioned-slot lookup PLUS the playing state — a
+/// stopped-but-not-reaped slot must not re-play (the C# `GetActiveSound`
+/// returns stopped slots too). The `ProjectileAudioTracker` condition
+/// (`ProjectileAudioTracker.cs:15-27`: `!gameMenu && active && type ==
+/// expectedType`) folds to the explicit death stop (the census fold 4 —
+/// the pool cannot hand a live projectile reference to a `Send` closure;
+/// the `gameMenu` term folds with the focus/pause gate that freezes the
+/// pool). ZERO gameplay draws.
+fn apply_proj_tracked_cue(
+    audio: &mut crate::audio::Audio,
+    slots: &mut [Projectile],
+    slot: usize,
+    cue: ProjTrackedCue,
+    x: f32,
+    y: f32,
+) {
+    use tr_core::slot::SlotId;
+    let Some(p) = slots.get_mut(slot) else {
+        return;
+    };
+    let handle = SlotId::from_float(p.local_ai[2]);
+    match cue {
+        ProjTrackedCue::BombFuseEnsure => {
+            // The authoritative null test: a live, playing handle holds
+            // the ensure (no re-play); a reaped OR stopped slot re-plays.
+            let live = audio
+                .get_active_sound(handle)
+                .is_some_and(|s| s.is_playing());
+            if !live {
+                let Some(style) = crate::tracked_sound::TrackedStyle::by_name("BombFuse") else {
+                    return;
+                };
+                // The `ProjectileAudioTracker` condition fold (the census
+                // fold 4): the closure reads a shared atomic the slot's
+                // death/detonation flips false (the pool cannot hand a
+                // live projectile reference to a `Send` closure). The
+                // `gameMenu` term folds with the focus/pause gate that
+                // freezes the pool.
+                let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+                p.fuse_alive = Some(alive.clone());
+                let id = audio.play_tracked_looped(
+                    style,
+                    x,
+                    y,
+                    Box::new(move || alive.load(std::sync::atomic::Ordering::Relaxed)),
+                    Default::default(),
+                );
+                p.local_ai[2] = id.to_float();
+            }
+        }
+        ProjTrackedCue::BombFuseStop => {
+            // `:70675-70677`: `GetActiveSound(localAI[2])?.Stop()` then
+            // `localAI[2] = 0`. The shared atomic flips false too (the
+            // condition fold — the loop's `Update` stops it the moment
+            // the slot dies, even before the explicit stop drains).
+            if let Some(s) = audio.get_active_sound_mut(handle) {
+                s.stop();
+            }
+            if let Some(alive) = p.fuse_alive.take() {
+                alive.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+            p.local_ai[2] = 0.0;
+        }
+        // W4-d80 — the DD2 projectile one-shots (research/64 deferred): the
+        // fire-and-forget tracked plays + the handle-store-and-follow dance.
+        // ZERO gameplay draws (the variation/pitch picks ride the two
+        // audio-only statics).
+        ProjTrackedCue::OneShot(name) | ProjTrackedCue::KillOneShot(name) => {
+            // `PlayTrackedSound(style, Center)` — the handle is discarded
+            // (`Projectile.cs:56509`/`:68615`/`:68905`/`:56466`/`:36441`/
+            // `:71637`). The 10 000-px guard + the cap run inside the play.
+            if let Some(style) = crate::tracked_sound::TrackedStyle::by_name(name) {
+                let _ = audio.play_tracked(style, x, y, Default::default());
+            }
+        }
+        ProjTrackedCue::GlobalOneShot(name) => {
+            // `PlayTrackedSound(style)` — the global overload (no position,
+            // `SoundEngine.cs:142-149`): the Explosive Trap's explode
+            // (`Projectile.cs:69362`). No distance guard (global).
+            if let Some(style) = crate::tracked_sound::TrackedStyle::by_name(name) {
+                let _ = audio.play_tracked_global(style);
+            }
+        }
+        ProjTrackedCue::HandlePlayFollow { style, idx, play } => {
+            // `:68462-68475` / `:55774-55798`: the one-shot play into
+            // `localAI[idx]` (the arm's latch gates `play`), then the
+            // per-tick follow: `GetActiveSound == null` → `SlotId.Invalid`,
+            // else `Position = Center`.
+            if play {
+                if let Some(style) = crate::tracked_sound::TrackedStyle::by_name(style) {
+                    let id = audio.play_tracked(style, x, y, Default::default());
+                    p.local_ai[idx] = id.to_float();
+                }
+            }
+            let h = SlotId::from_float(p.local_ai[idx]);
+            match audio.get_active_sound_mut(h) {
+                None => p.local_ai[idx] = SlotId::INVALID.to_float(),
+                Some(s) => s.position = (x, y),
+            }
+        }
+        ProjTrackedCue::EngineLoop { style, vol, pitch } => {
+            // `:38256-38267` / `:38288-38299` / `:40986-40997`: the ensure
+            // (`GetActiveSound(localAI[2]) == null && vol != 0`) then the
+            // follow (`Volume = vol`, `Position = Center`, `Pitch = pitch`).
+            // The `ProjectileAudioTracker` condition folds to the shared
+            // atomic (the census fold 4, the bomb-fuse precedent).
+            let live = audio
+                .get_active_sound(handle)
+                .is_some_and(|s| s.is_playing());
+            if !live && vol != 0.0 {
+                if let Some(style) = crate::tracked_sound::TrackedStyle::by_name(style) {
+                    let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+                    p.fuse_alive = Some(alive.clone());
+                    let id = audio.play_tracked_looped(
+                        style,
+                        x,
+                        y,
+                        Box::new(move || alive.load(std::sync::atomic::Ordering::Relaxed)),
+                        Default::default(),
+                    );
+                    p.local_ai[2] = id.to_float();
+                }
+            }
+            // The follow: the live handle's volume/position/pitch ride the
+            // engine-speed envelope every tick.
+            let h = SlotId::from_float(p.local_ai[2]);
+            if let Some(s) = audio.get_active_sound_mut(h) {
+                s.volume = vol;
+                s.position = (x, y);
+                s.pitch = pitch;
+            }
+        }
+        ProjTrackedCue::EngineLoopStop => {
+            // `:70863`: `GetActiveSound(localAI[2])?.Stop()` — the drone's
+            // explicit Kill stop. The condition atomic flips false too.
+            if let Some(s) = audio.get_active_sound_mut(handle) {
+                s.stop();
+            }
+            if let Some(alive) = p.fuse_alive.take() {
+                alive.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    }
+}
 
 /// Fixed 60 Hz pool stepping. Damage lands through `Npc::hurt`, so the
 /// knockback chain is shared with melee; the immunity bookkeeping is the
@@ -332,6 +481,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // `Player.SceneMetrics.NPCBannerBuff` as the hostile shots' `Damage_EVP`
+    // banner arm reads it (`Projectile.cs:14832` → `Player.cs:44197`); the
+    // per-tick scene-scan snapshot (the `set_disco` precedent).
+    app.projectiles
+        .set_npc_banner_buff(app.scene_metrics.npc_banner_buff.clone());
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -420,6 +574,32 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = secs;
         app.item_time = secs;
     }
+    // W4-g11 union-exec (research/116 gap 1) — the Queen-Slime hook's
+    // `Player.Teleport(vector, 10)` (`Projectile.cs:52775` →
+    // `Player.cs:22753`): the 935 latch queued the style-10 effect pair
+    // (the move ran inline); the replay runs Entry-at-OLD → Exit-at-NEW
+    // on the `UpdateProjectiles` stream (`Main.cs:17775` — the C# executes
+    // `Teleport` inside the projectile pass). The same-tick deferral is
+    // observation-identical (nothing probes the dust between the latch
+    // and this drain); the replay owns the grants + the camera transition.
+    if let Some((ox, oy, nx, ny, style, e2, ei, mult)) =
+        app.player.as_mut().and_then(|p| p.take_teleport_effect())
+    {
+        crate::main_dust::player_teleport(
+            app,
+            crate::main_dust::PlayerTeleportReq {
+                old_x: ox,
+                old_y: oy,
+                new_x: nx,
+                new_y: ny,
+                style,
+                extra_info2: e2,
+                extra_info: ei,
+                mult,
+                key: crate::app::RngKey::UpdateProjectiles,
+            },
+        );
+    }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-
@@ -441,14 +621,63 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
         );
     }
-    // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays
-    // (`NPC.cs:81544-81553` via `Projectile.Damage` `Projectile.cs:13649`):
+    // W4-d116 — the landed strikes' combat texts (`NPC.cs:81250-81264`,
+    // inside `StrikeNPC_Inner` BEFORE `HitEffect`/`HitSound`): the pool
+    // queued `(hitbox, dealt num, crit, friendly)` per landed hit on a
+    // `lifeMax > 1` NPC; the spawn's 2 (+1 crit) `Main.rand` rolls ride the
+    // `UpdateProjectiles` stream here, ahead of the hit-sound drain below
+    // (the C#'s order; the S1-E-21c batch convention defers both from
+    // mid-walk — ANALYSIS W4-d116).
+    for (location, amount, crit, friendly) in app.projectiles.drain_npc_damage_texts() {
+        let text = amount.to_string();
+        let font = if crit {
+            app.lookups.combat_crit_font.as_ref()
+        } else {
+            app.lookups.combat_text_font.as_ref()
+        };
+        // `FontAssets.CombatText[crit ? 1 : 0].MeasureString`
+        // (`CombatText.cs:76`).
+        let size = match font {
+            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+            None => [text.chars().count() as f32 * 8.0, 10.0],
+        };
+        let color = crate::combat_text::damage_text_color(crit, friendly, false);
+        crate::combat_text::spawn(
+            &mut app.combat_texts,
+            location,
+            color,
+            text,
+            crit,
+            false,
+            size,
+            1.0,
+            rng,
+        );
+    }
+    // W4-d116 — the Destroyer-probe roll intents (`NPC.cs:81488` →
+    // `:89266-89285`): the landed body hits queue their index; the roll runs
+    // HERE, after the text draws above and before the hit-sound drain —
+    // the C#'s inside-the-strike order (text → HitEffect → HitSound).
+    for idx in app.projectiles.drain_probe_rolls() {
+        // The queued index rides this tick's list (the death retain runs in
+        // the NPC pass, after this one); the guard keeps a stale index from
+        // ever panicking.
+        let Some(n) = app.npcs.get_mut(idx) else { continue };
+        if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(n, rng, false) {
+            n.wants_probe = Some(anchor);
+        }
+    }
+    // S1-E-21 wave C — the landed strikes' sound plays
+    // (`NPC.cs:81476-81554` via `Projectile.Damage` `Projectile.cs:13649`):
     // the case-3 volume arms + the `Main.rand.Next(-10, 11) * 0.01` pitch
     // draw ride the `UpdateProjectiles` stream (`Main.cs:17775`), only
     // after each play's attenuation gate passed. The C# draws mid-walk;
-    // the port drains at the pass tail (ANALYSIS, S1-E-21c).
-    for (cue, x, y) in app.projectiles.drain_npc_hit_sounds() {
-        app.audio.play_npc_hit_sound(cue, x, y, rng);
+    // the port drains at the pass tail (ANALYSIS, S1-E-21c). W4-c13: the
+    // requests carry the HitEffect cues (the bubble's int-4 style-3, the
+    // spheres' Item10) ahead of each hit/voice cue — the shared
+    // dispatcher keeps the C#'s per-strike order and case maths.
+    for req in app.projectiles.drain_npc_hit_sounds() {
+        crate::world_sim::npcs::play_npc_sound_request(&mut app.audio, req, rng);
     }
     // S1-E-21h — the projectile-family cue plays (the AI arms' first-tick
     // latches, the boomerang whoosh, the missile hum, the bomb blast): the
@@ -457,19 +686,42 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // passed. The C# plays inline mid-walk; the port drains at the pass
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
-    for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
+    for (id, style, x, y, pitch_offset, volume_scale) in app.projectiles.drain_proj_sounds() {
         // S1-P-i08 + W3-i39 — the aiStyle-3 wall thud (`Projectile.cs:19571`)
         // and `AI_007`'s latch dig cue (`Projectile.cs:52757`:
         // `PlaySound(0, i*16, j*16)`) are the int-id Dig play: case 0's
         // `Next(3)` variation + `Next(-10, 11)*0.01` pitch ride the same
         // stream, attenuation gate first (the `play_place_sound` façade's
         // id-0 arm, `LegacySoundPlayer.cs:440-452`, S1-E-21 wave B); the
-        // id-2 styles keep the wave-A façade.
+        // id-2 styles keep the wave-A façade. The d76 DOC-SWEEP volume term
+        // rides the id-2/3/4 façades (the Corrupt Whip ×0.6 / Lights Bane
+        // `0.15*ai[0]`); the id-0 Dig sites all queue volume 1.
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
         } else {
-            app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+            app.audio.play_proj_sound((id, style), x, y, pitch_offset, volume_scale, rng);
         }
+    }
+    // W4-c15 — the explosion wall-walk's `KillWall_PlaySounds` plays
+    // (`Projectile.ExplodeTiles`' 3×3 `WorldGen.KillWall`, `Projectile.cs:
+    // 78745`): the four-arm table's draws ride the SAME `UpdateProjectiles`
+    // stream (`Main.cs:17775`), attenuation gate first. Drained AFTER the
+    // proj cues — the blast cue queues at detonation, the wall walk runs in
+    // `Kill` after it (the C# draws mid-walk; the pass-tail batch convention,
+    // ANALYSIS "The world-sounds wave" addendum).
+    for (cue, x, y) in app.projectiles.drain_wall_break_sounds() {
+        app.audio.play_wall_break_sound(cue, x, y, rng);
+    }
+    // W4-d80 — the bomb-fuse tracked-sound intents (research/64 sites
+    // 20/21): the ensure-play / stop the C# runs inline
+    // (`Projectile.cs:46917-46921` / `:70673-70677`). The drain applies
+    // them against the tracked pool and writes the `SlotId` floats back
+    // into the slots' `local_ai[2]`. ZERO gameplay draws — the
+    // variation/pitch picks ride the two audio-only statics (the census'
+    // RNG contract); the `ProjectileAudioTracker` condition folds to the
+    // explicit death stop (the census fold 4).
+    for (slot, cue, x, y) in app.projectiles.drain_proj_tracked() {
+        apply_proj_tracked_cue(&mut app.audio, app.projectiles.slots_mut(), slot, cue, x, y);
     }
     // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):
     // the local spawns of this tick track the cancel key's expected type —
@@ -479,6 +731,34 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // key (S1-P-i23).
     if let Some(p) = app.player.as_mut() {
         app.projectiles.apply_channel_tracks(p);
+    }
+    // W4-f30 — the aiStyle-17 gravestone's landing (`Projectile.cs:25348-
+    // 25364`): the placement + the epitaph sign + the Dig sound + the Kill.
+    // The AI arm queued the intent (it cannot borrow the world mutably); the
+    // pass resolves it here. `place_item_tile(85, style)` is the C#'s
+    // `TileObject.CanPlace/Place`; a refused placement keeps the stone
+    // falling (no Kill, the `flag7` false arm).
+    for (slot, tx, ty, style, text) in app.projectiles.drain_gravestone_places() {
+        if tr_core::edit::place_item_tile(&mut app.world, tx, ty, 85, style, 1) {
+            // `Sign.ReadSign` + `Sign.TextSign` (`:25358-25361`): the epitaph
+            // lands on the tombstone's sign record (the origin decode resolves
+            // the 2-wide tile's top-left).
+            if let Some((ox, oy)) = crate::signs::origin(&app.world, tx, ty) {
+                if let Some(idx) = crate::signs::find_or_create(&mut app.world.signs, ox, oy) {
+                    crate::signs::text_sign(&mut app.world, idx, ox, oy, text);
+                }
+            }
+            // `SoundEngine.PlaySound(0, x*16, y*16)` (`:25357`) — the Dig cue,
+            // the id-0 place façade (the wave-B precedent above).
+            app.audio.play_place_sound((0, 0), (tx * 16) as f32, (ty * 16) as f32, rng);
+            app.projectiles.kill_gravestone(slot);
+            app.world_key = None;
+        }
+    }
+    // W4-f30 — `Player.OnKillNPC`'s GRAVE_MISTAKE (`Player.cs:20471-20474`):
+    // a gravestone's strike killed a town NPC this tick → progression 36.
+    if app.projectiles.drain_grave_mistake() {
+        let _ = app.notify_progression_net(36);
     }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
@@ -597,6 +877,25 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-g82 — the coil refund drain (`Projectile.cs:77572-77615` →
+    // `Item.RequestNewItem` = `Item.NewItem`, a world DROP at
+    // `base.Center`): the velocity-triplet-then-prefix draws ride the
+    // `UpdateProjectiles` stream (the C# spawns inside `Kill()` under the
+    // `Main.cs:17775` swap; the port drains at the pass tail, the
+    // S1-E-21c convention — the ai1==0 Dig cue already drained above in
+    // `drain_proj_sounds`, the C#'s cue-before-refund order kept).
+    for (item, stack, cx, cy) in app.projectiles.drain_coil_drops() {
+        if stack <= 0 {
+            continue;
+        }
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            item,
+            stack as u32,
+            glam::Vec2::new(cx, cy),
+        );
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's
@@ -627,12 +926,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 if let Some(text) = chat {
                     app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
                 }
-                if let Some((id, style, x, y, pitch)) = cue {
+                if let Some((id, style, x, y, pitch, vol)) = cue {
                     app.audio.play_proj_sound(
                         (id, style),
                         x,
                         y,
                         pitch,
+                        vol,
                         app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
                     );
                 }
@@ -803,6 +1103,114 @@ mod s1_e_21h_sound_stream_tests {
             witness,
             "the one-cue-per-life latch draws nothing on tick 2"
         );
+    }
+}
+
+/// W4-c15 — the explosion wall-walk drain's stream contract (written, NOT
+/// run — code-only mode): the queued `KillWall_PlaySounds` cues draw on the
+/// `UpdateProjectiles` stream at the pass-tail drain, attenuation gate
+/// first — the draw census equals the queue's payload census (Shatter 0,
+/// Dig 2 per cue), plus the blast cue's one case-2 pitch draw.
+#[cfg(test)]
+mod w4_c15_wall_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::projectile::BOMB;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::World;
+
+    /// The bomb + slab fixture: glass walls (21 → Shatter, draw-free) with
+    /// one pre-Skeletron dungeon wall (7 → the Dig fail arm) at the centre.
+    fn bomb_wall_app(sound_volume: f32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("t".into(), 64, 64);
+        for y in 14..34 {
+            for x in 10..40 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i] = Tile { kind: 1, wall: 21, ..Default::default() };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let i = app.world.index(20, 20);
+        app.world.tiles[i].wall = 7;
+        app.projectiles.spawn_with_data(BOMB, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0, 0.0);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (320.0, 320.0),
+            sound_volume,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    #[test]
+    fn w4_c15_the_wall_drain_draws_match_the_queue_census_on_update_projectiles() {
+        // The queue census: a sibling pool run (the bomb_tests shape) drains
+        // the intents the pass will play — every Dig cue owes two draws
+        // (`Next(3)` + `Next(-10, 11)`), every Shatter none.
+        let mut census = bomb_wall_app(1.0);
+        for _ in 0..181 {
+            census.projectiles.update(
+                &mut census.world,
+                &mut census.npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        let queued = census.projectiles.drain_wall_break_sounds();
+        let digs = queued.iter().filter(|(c, _, _)| *c == (0, 1)).count();
+        let shatters = queued.iter().filter(|(c, _, _)| *c == (13, 1)).count();
+        assert!(digs >= 1, "the dungeon fail arm queued");
+        assert!(shatters >= 1, "the glass walk queued");
+        // The muted pass: the gate refuses every play — the stream state is
+        // the gameplay-only baseline (the bomb arc's dust draws are skipped).
+        let mut muted = bomb_wall_app(0.0);
+        for _ in 0..181 {
+            update_projectiles(&mut muted, 1.0 / 60.0);
+        }
+        // The audible pass: baseline + the blast's one case-2 default pitch
+        // (`Next(-6, 7)`) + the wall census, in drain order (proj cues first).
+        let mut audible = bomb_wall_app(1.0);
+        for _ in 0..181 {
+            update_projectiles(&mut audible, 1.0 / 60.0);
+        }
+        let mut witness = muted.rngs.stream(RngKey::UpdateProjectiles).clone();
+        let _ = witness.next_range(-6, 7);
+        for _ in 0..digs {
+            let _ = witness.next_range(0, 3);
+            let _ = witness.next_range(-10, 11);
+        }
+        assert_eq!(
+            *audible.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "the drain drew exactly the blast + the queue census"
+        );
+        // Every other stage stream matches the muted baseline — the wall
+        // cues never leak onto another stage's stream.
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *audible.rngs.stream(key),
+                *muted.rngs.stream(key),
+                "{} stayed on the muted baseline",
+                key.name()
+            );
+        }
+        // The refused wall stayed through the whole pass.
+        assert_eq!(audible.world.tile(20, 20).unwrap().wall, 7);
+        assert_eq!(audible.world.tile(19, 20).unwrap().wall, 0, "the glass broke");
     }
 }
 
@@ -1190,3 +1598,371 @@ mod s1_p_i09_yoyo_snapshot_tests {
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
     }
 }
+
+/// W4-d80 — the bomb-fuse tracked loop (research/64 sites 20/21): the
+/// ensure-play / stop dance through the drain, the `local_ai[2]` handle
+/// write-back, the shared-atomic condition fold and the RNG contract
+/// (zero gameplay draws). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_bomb_fuse_tests {
+    use super::*;
+    use crate::projectile::{is_bomb_with_fuse, ProjTrackedCue};
+    use tr_core::slot::SlotId;
+
+    /// The headless rig: the fuse cue seeded silent so the play resolves
+    /// its asset and adds a slot (no output device).
+    fn rig() -> (crate::audio::Audio, Vec<Projectile>) {
+        let mut audio = crate::audio::Audio::new(None);
+        audio.test_seed_tracked_cue("fuse");
+        let mut p = Projectile {
+            active: true,
+            kind: crate::projectile::BOMB,
+            owner: 0,
+            pos: Vec2::new(96.0, 96.0),
+            time_left: 180,
+            ..Default::default()
+        };
+        p.local_ai[2] = 0.0;
+        (audio, vec![p])
+    }
+
+    /// The membership gate: the verbatim `IsABombWithFuse` set
+    /// (`ProjectileID.cs:424`) — every member passes, the grenades and
+    /// the launcher rockets do not.
+    #[test]
+    fn w4_d80_the_fuse_set_matches_the_census() {
+        for kind in [
+            28u16, 37, 516, 519, 910, 911, 1086, 1087, 906, 905, 904, 903, 773,
+            1077, 75, 102, 681, 470, 29, 637,
+        ] {
+            assert!(is_bomb_with_fuse(kind), "kind {kind} is a fuse bomb");
+        }
+        for kind in [30u16, 397, 517, 133, 134, 776, 862] {
+            assert!(!is_bomb_with_fuse(kind), "kind {kind} is NOT a fuse bomb");
+        }
+    }
+
+    /// The ensure plays once into `local_ai[2]`; a live, playing handle
+    /// holds the ensure (no re-play); the stop zeroes the handle and
+    /// flips the shared atomic (`Projectile.cs:46917-46921` /
+    /// `:70673-70677`).
+    #[test]
+    fn w4_d80_the_fuse_ensures_once_then_stops() {
+        let (mut audio, mut slots) = rig();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::BombFuseEnsure, 100.0, 100.0);
+        let id = SlotId::from_float(slots[0].local_ai[2]);
+        assert!(id.is_active(), "the ensure stored a live handle");
+        assert!(slots[0].fuse_alive.is_some(), "the condition atomic armed");
+        audio.test_keep_tracked_alive(id);
+        // The ensure is a no-op while the slot lives and plays.
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::BombFuseEnsure, 100.0, 100.0);
+        assert_eq!(SlotId::from_float(slots[0].local_ai[2]), id, "no re-play while live");
+        // The stop zeroes the handle and flips the atomic false.
+        let alive = slots[0].fuse_alive.clone().unwrap();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::BombFuseStop, 100.0, 100.0);
+        assert_eq!(slots[0].local_ai[2], 0.0, "the stop zeroes localAI[2]");
+        assert!(slots[0].fuse_alive.is_none(), "the atomic released");
+        assert!(!alive.load(std::sync::atomic::Ordering::Relaxed), "the condition flipped false");
+    }
+
+    /// The RNG contract: the fuse ensure + stop leave the gameplay stream
+    /// pristine; the two audio-only statics move on the play.
+    #[test]
+    fn w4_d80_the_fuse_drain_is_gameplay_draw_free() {
+        let (mut audio, mut slots) = rig();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let (style_before, pitch_before) = audio.test_audio_streams();
+        // The drain takes no gameplay rng at all — the tracked plays draw
+        // only the audio-only statics. Assert via a witness stream that
+        // the ensure/stop path never touches a `Main.rand` stand-in.
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::BombFuseEnsure, 100.0, 100.0);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::BombFuseStop, 100.0, 100.0);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the fuse path");
+        let (style_after, pitch_after) = audio.test_audio_streams();
+        // The fuse is one variation (`SoundID.cs:1764`) — `random_sound`
+        // draws NOTHING (`LegacySoundStyle.cs:24`'s `Variations != 1`
+        // gate); only the always-drawn pitch roll moves.
+        assert_eq!(style_after, style_before, "one variation: no variation pick");
+        assert_ne!(pitch_after, pitch_before, "the pitch roll moved");
+    }
+
+    /// The style row: `BombFuse` resolves with volume 0.2, one variation,
+    /// uncapped (`SoundID.cs:1764`'s `CreateTrackable("fuse").WithVolume(0.2f)`).
+    #[test]
+    fn w4_d80_the_fuse_style_resolves() {
+        let style = crate::tracked_sound::TrackedStyle::by_name("BombFuse").expect("BombFuse");
+        assert_eq!(style.cue, "fuse");
+        assert_eq!(style.variations, 1);
+        assert!((style.volume - 0.2).abs() < 1e-6, "the 0.2 volume");
+        assert_eq!(style.max_tracked_instances, 0);
+    }
+}
+
+/// W4-d80 — the DD2 projectile one-shots (research/64 deferred): the
+/// fire-and-forget tracked plays, the handle-store-and-follow dance and the
+/// RNG contract (zero gameplay draws). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_dd2_one_shot_tests {
+    use super::*;
+    use crate::projectile::ProjTrackedCue;
+    use tr_core::slot::SlotId;
+
+    /// The headless rig: the DD2 cues seeded silent so the plays resolve
+    /// their assets and add slots (no output device). EVERY variation of
+    /// each family is seeded — the `random_sound` pick draws 0..3, so a
+    /// missing `_1`/`_2` would fold the play to `SlotId::INVALID`.
+    fn rig() -> (crate::audio::Audio, Vec<Projectile>) {
+        let mut audio = crate::audio::Audio::new(None);
+        for cue in [
+            "dd2_betsy_fireball_shot_0",
+            "dd2_betsy_fireball_shot_1",
+            "dd2_betsy_fireball_shot_2",
+            "dd2_betsy_fireball_impact_0",
+            "dd2_betsy_fireball_impact_1",
+            "dd2_betsy_fireball_impact_2",
+            "dd2_flameburst_tower_shot_0",
+            "dd2_flameburst_tower_shot_1",
+            "dd2_flameburst_tower_shot_2",
+            "dd2_phantom_phoenix_shot_0",
+            "dd2_phantom_phoenix_shot_1",
+            "dd2_phantom_phoenix_shot_2",
+            "dd2_explosive_trap_explode_0",
+            "dd2_explosive_trap_explode_1",
+            "dd2_explosive_trap_explode_2",
+        ] {
+            audio.test_seed_tracked_cue(cue);
+        }
+        let p = Projectile {
+            active: true,
+            kind: crate::projectile::BETSY_FIREBALL,
+            owner: 0,
+            pos: Vec2::new(96.0, 96.0),
+            time_left: 180,
+            ..Default::default()
+        };
+        (audio, vec![p])
+    }
+
+    /// The fire-and-forget one-shot (`OneShot`/`KillOneShot`): the play adds
+    /// a slot, the handle is NOT stored (the C# discards it). The global
+    /// overload (`GlobalOneShot`) plays without a position.
+    #[test]
+    fn w4_d80_the_dd2_one_shot_plays_and_discards() {
+        let (mut audio, mut slots) = rig();
+        let before = audio.test_audio_streams();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::OneShot("DD2_BetsyFireballShot"), 100.0, 100.0);
+        // The handle is discarded — local_ai stays 0.
+        assert_eq!(slots[0].local_ai[0], 0.0, "the one-shot discards the handle");
+        assert_eq!(slots[0].local_ai[1], 0.0);
+        assert_eq!(slots[0].local_ai[2], 0.0);
+        // The play drew the audio-only statics (3 variations → the pick +
+        // the always-drawn pitch roll).
+        let after = audio.test_audio_streams();
+        assert_ne!(after.0, before.0, "the variation pick moved");
+        assert_ne!(after.1, before.1, "the pitch roll moved");
+        // The kill-tail one-shot plays too.
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::KillOneShot("DD2_BetsyFireballImpact"), 100.0, 100.0);
+        // The global overload (the trap explode).
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::GlobalOneShot("DD2_ExplosiveTrapExplode"), 100.0, 100.0);
+    }
+
+    /// The handle-store-and-follow (`HandlePlayFollow`): the play tick
+    /// stores the handle into `local_ai[idx]`; the follow re-points the live
+    /// sound; a reaped handle folds to `SlotId.Invalid`.
+    #[test]
+    fn w4_d80_the_dd2_handle_play_follow() {
+        let (mut audio, mut slots) = rig();
+        // The play tick (idx 1, the Flameburst convention).
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::HandlePlayFollow { style: "DD2_FlameburstTowerShot", idx: 1, play: true }, 100.0, 100.0);
+        let id = SlotId::from_float(slots[0].local_ai[1]);
+        assert!(id.is_active(), "the play stored a live handle");
+        audio.test_keep_tracked_alive(id);
+        // The follow tick: no re-play, the position re-points.
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::HandlePlayFollow { style: "DD2_FlameburstTowerShot", idx: 1, play: false }, 200.0, 200.0);
+        assert_eq!(SlotId::from_float(slots[0].local_ai[1]), id, "no re-play");
+        assert_eq!(audio.get_active_sound(id).unwrap().position, (200.0, 200.0), "the follow re-points");
+        // A reaped handle folds to Invalid (the C# null arm). Clear the
+        // keep-alive seam so the headless slot (no sink) reaps on update.
+        if let Some(s) = audio.get_active_sound_mut(id) {
+            s.set_test_keep_alive(false);
+        }
+        audio.update_tracked(false);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::HandlePlayFollow { style: "DD2_FlameburstTowerShot", idx: 1, play: false }, 300.0, 300.0);
+        assert_eq!(slots[0].local_ai[1].to_bits(), 65535, "the reaped handle folds to SlotId.Invalid");
+    }
+
+    /// The RNG contract: the DD2 one-shot drain leaves the gameplay stream
+    /// pristine (the plays draw only the audio-only statics).
+    #[test]
+    fn w4_d80_the_dd2_one_shot_drain_is_gameplay_draw_free() {
+        let (mut audio, mut slots) = rig();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::OneShot("DD2_BetsyFireballShot"), 100.0, 100.0);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::HandlePlayFollow { style: "DD2_PhantomPhoenixShot", idx: 0, play: true }, 100.0, 100.0);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::GlobalOneShot("DD2_ExplosiveTrapExplode"), 100.0, 100.0);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the DD2 one-shot path");
+    }
+
+    /// The style rows resolve through `soundid.rs` (the trackable names).
+    #[test]
+    fn w4_d80_the_dd2_one_shot_styles_resolve() {
+        for (name, cue, variations) in [
+            ("DD2_BetsyFireballShot", "dd2_betsy_fireball_shot", 3u32),
+            ("DD2_BetsyFireballImpact", "dd2_betsy_fireball_impact", 3),
+            ("DD2_FlameburstTowerShot", "dd2_flameburst_tower_shot", 3),
+            ("DD2_PhantomPhoenixShot", "dd2_phantom_phoenix_shot", 3),
+            ("DD2_SkyDragonsFuryShot", "dd2_sky_dragons_fury_shot", 3),
+            ("DD2_ExplosiveTrapExplode", "dd2_explosive_trap_explode", 3),
+            ("DD2_SkeletonSummoned", "dd2_skeleton_summoned", 1),
+        ] {
+            let style = crate::tracked_sound::TrackedStyle::by_name(name).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(style.cue, cue, "{name}");
+            assert_eq!(style.variations, variations, "{name}");
+            assert_eq!(style.max_tracked_instances, 0, "{name} uncapped");
+        }
+    }
+
+    /// W4-d80 final — the bank-only rows resolve too (the producers stay
+    /// deferred): the 711 Betsy's Wrath impact shares the 686 impact's
+    /// three assets at volume 0.4 (`Projectile.cs:71641`, `SoundID.cs:1675`
+    /// — `DD2_BetsyFireballImpact.WithVolume(0.4f)`); the
+    /// ParticleOrchestrator plays (`ParticleOrchestrator.cs:1888`/`:2123`/
+    /// `:2427`) — the Monk Staff ground impact (3 variations, both the
+    /// flint spike burst and the down-dash explosion) and the mushroom-boi
+    /// explosion (one variation, 0.15 volume, behind the `Next(2)` coin).
+    #[test]
+    fn w4_d80_final_the_bank_only_styles_resolve() {
+        let wrath = crate::tracked_sound::TrackedStyle::by_name("DD2_BetsysWrathImpact")
+            .expect("DD2_BetsysWrathImpact");
+        assert_eq!(wrath.cue, "dd2_betsy_fireball_impact", "the shared assets");
+        assert_eq!(wrath.variations, 3);
+        assert!((wrath.volume - 0.4).abs() < 1e-6, "the 0.4 volume");
+        let impact = crate::tracked_sound::TrackedStyle::by_name("DD2_BetsyFireballImpact")
+            .expect("DD2_BetsyFireballImpact");
+        assert_eq!(wrath.cue, impact.cue, "the SAME family as the 686 impact");
+        assert!((impact.volume - 1.0).abs() < 1e-6, "the 686 keeps volume 1");
+        let staff = crate::tracked_sound::TrackedStyle::by_name("DD2_MonkStaffGroundImpact")
+            .expect("DD2_MonkStaffGroundImpact");
+        assert_eq!(staff.cue, "dd2_monk_staff_ground_impact");
+        assert_eq!(staff.variations, 3);
+        let mush = crate::tracked_sound::TrackedStyle::by_name("DeadCellsMushroomExplode")
+            .expect("DeadCellsMushroomExplode");
+        assert_eq!(mush.cue, "deadcells_mushroom_explode");
+        assert_eq!(mush.variations, 1);
+        assert!((mush.volume - 0.15).abs() < 1e-6, "the 0.15 volume");
+    }
+}
+
+/// W4-d80 — the RC-car / Jim's-drone engine loops (research/64 deferred):
+/// the ensure-play into `localAI[2]`, the per-tick volume/position/pitch
+/// follow, the drone's explicit Kill stop and the RNG contract (zero
+/// gameplay draws). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_engine_loop_tests {
+    use super::*;
+    use crate::projectile::ProjTrackedCue;
+    use tr_core::slot::SlotId;
+
+    /// The headless rig: the two engine cues seeded silent so the looped
+    /// plays resolve their assets and add slots (no output device).
+    fn rig() -> (crate::audio::Audio, Vec<Projectile>) {
+        let mut audio = crate::audio::Audio::new(None);
+        audio.test_seed_tracked_cue("rccar");
+        audio.test_seed_tracked_cue("Drone");
+        let p = Projectile {
+            active: true,
+            kind: crate::projectile::REMOTE_CONTROL_CAR,
+            owner: 0,
+            pos: Vec2::new(96.0, 96.0),
+            time_left: 2,
+            ..Default::default()
+        };
+        (audio, vec![p])
+    }
+
+    /// The ensure + follow (`Projectile.cs:38256-38267`): the first cue
+    /// plays the loop into `localAI[2]` and arms the condition atomic; a
+    /// live handle holds the ensure (no re-play) while the follow re-points
+    /// the volume/position/pitch every tick.
+    #[test]
+    fn w4_d80_the_engine_loop_ensures_then_follows() {
+        let (mut audio, mut slots) = rig();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 12.0, pitch: 0.5 }, 100.0, 100.0);
+        let id = SlotId::from_float(slots[0].local_ai[2]);
+        assert!(id.is_active(), "the ensure stored a live handle");
+        assert!(slots[0].fuse_alive.is_some(), "the condition atomic armed");
+        audio.test_keep_tracked_alive(id);
+        // The second tick: no re-play, the envelope follow rides.
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 25.0, pitch: -0.2 }, 200.0, 200.0);
+        assert_eq!(SlotId::from_float(slots[0].local_ai[2]), id, "no re-play while live");
+        let s = audio.get_active_sound(id).unwrap();
+        assert_eq!(s.volume, 25.0, "the follow volume");
+        assert_eq!(s.position, (200.0, 200.0), "the follow position");
+        assert_eq!(s.pitch, -0.2, "the follow pitch");
+    }
+
+    /// The zero-volume gate (`:38257`'s `num11 != 0f`): a silent envelope
+    /// never plays the loop.
+    #[test]
+    fn w4_d80_the_engine_loop_zero_volume_does_not_play() {
+        let (mut audio, mut slots) = rig();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 0.0, pitch: -1.0 }, 100.0, 100.0);
+        assert_eq!(slots[0].local_ai[2], 0.0, "no play at zero volume");
+        assert!(slots[0].fuse_alive.is_none(), "no atomic armed");
+    }
+
+    /// The drone's Kill stop (`:70863`): `GetActiveSound(localAI[2])?.Stop()`
+    /// — the explicit stop + the atomic flip. The C# does NOT zero
+    /// `localAI[2]` here (contrast the bomb fuse's `:70677`).
+    #[test]
+    fn w4_d80_the_engine_loop_stop() {
+        let (mut audio, mut slots) = rig();
+        slots[0].kind = crate::projectile::JIMS_DRONE;
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "JimsDrone", vol: 12.0, pitch: 0.0 }, 100.0, 100.0);
+        let id = SlotId::from_float(slots[0].local_ai[2]);
+        assert!(id.is_active());
+        audio.test_keep_tracked_alive(id);
+        let alive = slots[0].fuse_alive.clone().unwrap();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoopStop, 100.0, 100.0);
+        assert!(!alive.load(std::sync::atomic::Ordering::Relaxed), "the condition flipped false");
+        assert!(slots[0].fuse_alive.is_none(), "the atomic released");
+        assert_eq!(SlotId::from_float(slots[0].local_ai[2]), id, "the C# keeps the handle (`:70863` has no zero write)");
+    }
+
+    /// The RNG contract: the engine-loop drain leaves the gameplay stream
+    /// pristine; both styles are one variation (`soundid.rs` rows) so the
+    /// variation pick draws NOTHING — only the always-drawn pitch roll moves.
+    #[test]
+    fn w4_d80_the_engine_loop_drain_is_gameplay_draw_free() {
+        let (mut audio, mut slots) = rig();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let (style_before, pitch_before) = audio.test_audio_streams();
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoop { style: "RCCar", vol: 12.0, pitch: 0.0 }, 100.0, 100.0);
+        apply_proj_tracked_cue(&mut audio, &mut slots, 0, ProjTrackedCue::EngineLoopStop, 100.0, 100.0);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the engine-loop path");
+        let (style_after, pitch_after) = audio.test_audio_streams();
+        assert_eq!(style_after, style_before, "one variation: no variation pick");
+        assert_ne!(pitch_after, pitch_before, "the pitch roll moved");
+    }
+
+    /// The style rows (`soundid.rs`, the `SoundID.cs` static-ctor port):
+    /// `RCCar` → "rccar" vol 0.015, `JimsDrone` → "Drone" vol 0.1, one
+    /// variation each, uncapped.
+    #[test]
+    fn w4_d80_the_engine_loop_styles_resolve() {
+        let style = crate::tracked_sound::TrackedStyle::by_name("RCCar").expect("RCCar");
+        assert_eq!(style.cue, "rccar");
+        assert_eq!(style.variations, 1);
+        assert!((style.volume - 0.015).abs() < 1e-6, "the 0.015 volume");
+        assert_eq!(style.max_tracked_instances, 0);
+        let style = crate::tracked_sound::TrackedStyle::by_name("JimsDrone").expect("JimsDrone");
+        assert_eq!(style.cue, "Drone");
+        assert_eq!(style.variations, 1);
+        assert!((style.volume - 0.1).abs() < 1e-6, "the 0.1 volume");
+        assert_eq!(style.max_tracked_instances, 0);
+    }
+}
+

@@ -3,7 +3,7 @@
 //! (finding, frame counters, cadence) stays readable; the walk is a faithful
 //! port and keeps the original local numbering (`num11`..`num34`).
 
-use super::{WaterfallDraw, WaterfallManager, GFX_QUALITY};
+use super::{AmbientScan, ScreenInfo, WaterfallDraw, WaterfallManager, GFX_QUALITY};
 use crate::lighting::{DynamicLight, LightMap, LightStyle};
 use crate::tile::Tile;
 use crate::tile_light::FastRandom;
@@ -17,7 +17,9 @@ fn blocks_water_drawing_behind_self(kind: u16) -> bool {
 }
 
 impl WaterfallManager {
-    /// `WaterfallManager.DrawWaterfall`.
+    /// `WaterfallManager.DrawWaterfall`. Returns the pass's
+    /// `Main.ambientWaterfallX/Y/Strength` + `Main.ambientLavafallX/Y/Strength`
+    /// stores (`WaterfallManager.cs:960-965`), in that order.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_waterfall(
         &mut self,
@@ -29,10 +31,27 @@ impl WaterfallManager {
         time: f32,
         mouse_text: u8,
         sparkle_rng: &mut FastRandom,
-        view: [i32; 4],
+        screen: ScreenInfo,
+        drew_lava: bool,
         out: &mut Vec<WaterfallDraw>,
         lights: &mut Vec<DynamicLight>,
-    ) {
+    ) -> (AmbientScan, AmbientScan) {
+        // The water-style ambience locals (`WaterfallManager.cs:328-332`): num
+        // strength, num2/num3 nearest distances (99999 sentinels), num4/num5
+        // the nearest segment's cell-centre world pixels (-1 until visited).
+        let mut num = 0.0f32;
+        let mut num2 = 99999.0f32;
+        let mut num3 = 99999.0f32;
+        let mut num4 = -1i32;
+        let mut num5 = -1i32;
+        // The lavafall ambience locals (`WaterfallManager.cs:333-337`): num6
+        // strength, num7/num8 nearest distances (99999 sentinels), num9/num10
+        // the nearest segment's cell-centre world pixels (-1 until visited).
+        let mut num6 = 0.0f32;
+        let mut num7 = 99999.0f32;
+        let mut num8 = 99999.0f32;
+        let mut num9 = -1i32;
+        let mut num10 = -1i32;
         for index in 0..self.current_max {
             let mut wf = self.waterfalls[index];
             let mut num13 = wf.x;
@@ -50,12 +69,16 @@ impl WaterfallManager {
             let mut num12 = wf.kind;
             let num21;
             if num12 == 1 || num12 == 14 || num12 == 25 {
-                // `Main.drewLava` is always false in our draw order.
-                if wf.stop_at_step == 0 {
+                // `WaterfallManager.cs:354`: `Main.drewLava || stopAtStep == 0`.
+                if drew_lava || wf.stop_at_step == 0 {
                     continue;
                 }
                 num21 = 32 * self.slow_frame;
             } else if num12 == 11 || num12 == 22 || num12 == 26 {
+                // `WaterfallManager.cs:368`: the rain arms skip on drewLava.
+                if drew_lava {
+                    continue;
+                }
                 let mut num22 = self.waterfall_dist / 4;
                 if num12 == 22 {
                     num22 = self.waterfall_dist / 2;
@@ -63,10 +86,12 @@ impl WaterfallManager {
                 if wf.stop_at_step > num22 {
                     wf.stop_at_step = num22;
                 }
+                // `WaterfallManager.cs:381`: the view cull reads the raw
+                // `Main.screenPosition`/`screenWidth`, not the scan rectangle.
                 if wf.stop_at_step == 0
-                    || (num14 + num22) < view[1]
-                    || num13 < view[0] - 20
-                    || num13 > view[2] + 20
+                    || (num14 + num22) as f32 < screen.position[1] / 16.0
+                    || (num13 as f32) < screen.position[0] / 16.0 - 20.0
+                    || (num13 as f32) > (screen.position[0] + screen.width) / 16.0 + 20.0
                 {
                     continue;
                 }
@@ -151,7 +176,12 @@ impl WaterfallManager {
             } else {
                 match num12 {
                     0 => num12 = draw_style,
-                    2 => {}
+                    // `WaterfallManager.cs:531`: the disco fall skips on drewLava.
+                    2 => {
+                        if drew_lava {
+                            continue;
+                        }
+                    }
                     _ => {}
                 }
                 num21 = 32 * self.regular_frame;
@@ -176,7 +206,12 @@ impl WaterfallManager {
                     });
                 }
                 let tile3 = world.tile(num13, num14).copied().unwrap_or_default();
+                // `tile3.nactive()` (`WaterfallManager.cs:555`): the break
+                // needs active AND not actuated-off; `solid_tile_draw` already
+                // carries the same `nactive` half (the explicit gate mirrors
+                // the C# call shape).
                 if tile3.active()
+                    && !tile3.inactive()
                     && solid_tile_draw(&tile3)
                     && !td::TILE_SOLID_TOP.has(tile3.kind)
                     && !td::SET_PLATFORMS.has(tile3.kind)
@@ -284,8 +319,18 @@ impl WaterfallManager {
                         &mut self.pending_sparkles,
                     );
                 }
-                let alpha = get_alpha(draw_alpha, num22, num12, num14, k, &tile3, world);
-                let color5 = stylize_color(
+                let alpha = get_alpha(
+                    draw_alpha,
+                    num22,
+                    num12,
+                    num14,
+                    k,
+                    &tile3,
+                    world,
+                    num13,
+                    self.show_invisible_blocks_and_walls,
+                );
+                let mut color5 = stylize_color(
                     alpha,
                     num12,
                     light_tint(light, style, num13, num14, time),
@@ -294,7 +339,73 @@ impl WaterfallManager {
                     self.disco_b,
                 );
 
+                // `Main.ambientLavafall*` scan (`WaterfallManager.cs:685-707`):
+                // per lava segment inside the 2x-screen box, sum
+                // `1 - dist/(screenWidth*0.75)` when positive; track the
+                // nearest cell-centre world pixel per axis. The Y arm keeps
+                // the original's verbatim quirk (`:702-705`): it tests num36
+                // but stores num35 (the X distance) into num8.
+                if num12 == 1 {
+                    let centre = screen.centre();
+                    let num35 = ((num13 * 16 + 8) as f32 - centre[0]).abs();
+                    let num36 = ((num14 * 16 + 8) as f32 - centre[1]).abs();
+                    if num35 < screen.width * 2.0 && num36 < screen.height * 2.0 {
+                        let num37 = 1.0
+                            - (num35 * num35 + num36 * num36).sqrt() / (screen.width * 0.75);
+                        if num37 > 0.0 {
+                            num6 += num37;
+                        }
+                    }
+                    if num35 < num7 {
+                        num7 = num35;
+                        num9 = num13 * 16 + 8;
+                    }
+                    if num36 < num8 {
+                        num8 = num35;
+                        num10 = num14 * 16 + 8;
+                    }
+                } else if num12 != 1
+                    && num12 != 14
+                    && num12 != 25
+                    && num12 != 11
+                    && num12 != 12
+                    && num12 != 22
+                {
+                    // `Main.ambientWaterfall*` scan (`WaterfallManager.cs:708-729`):
+                    // the same near-screen strength sum for every fall type
+                    // EXCEPT the lava (1), honey (14), shimmer (25) and the
+                    // rain arms (11/12/22) — the honey fall contributes to
+                    // neither ambience triple. The Y arm keeps the original's
+                    // verbatim quirk (`:725-728`): it tests num39 but stores
+                    // num38 (the X distance) into num3.
+                    let centre = screen.centre();
+                    let num38 = ((num13 * 16 + 8) as f32 - centre[0]).abs();
+                    let num39 = ((num14 * 16 + 8) as f32 - centre[1]).abs();
+                    if num38 < screen.width * 2.0 && num39 < screen.height * 2.0 {
+                        let num40 = 1.0
+                            - (num38 * num38 + num39 * num39).sqrt() / (screen.width * 0.75);
+                        if num40 > 0.0 {
+                            num += num40;
+                        }
+                    }
+                    if num38 < num2 {
+                        num2 = num38;
+                        num4 = num13 * 16 + 8;
+                    }
+                    if num39 < num3 {
+                        num3 = num38;
+                        num5 = num14 * 16 + 8;
+                    }
+                }
+
                 let num41 = tile3.liquid as i32 / 16;
+                // Every quad the geometry arms push this step belongs to the
+                // walked cell `(num13, num14)` at `GetAlpha`'s opacity — the
+                // `DrawWaterfall(int, ...)` overload's `(x, y, opacity)`
+                // arguments (`WaterfallManager.cs:969`), which the shimmer
+                // consumer needs for its vertex colours. Filled below,
+                // before the cell advances.
+                let quad_mark = out.len();
                 if flag2 && num17 != num31 {
                     let num42 = 2;
                     let src = [num21, 24, 32, 16 - num41 - num42];
@@ -327,14 +438,18 @@ impl WaterfallManager {
                 if num15 == 0 && num30 != 0 && num16 == 1 && num17 != num18 {
                     num30 = 0;
                     num17 = num18;
-                    let color = [1.0, 1.0, 1.0, 1.0];
+                    // `WaterfallManager.cs:749`: `color5 = Color.White` — the
+                    // MUTATION sticks for the rest of the step (the later
+                    // arms draw white and `color4 = color5` carries it into
+                    // the next step), not just this quad.
+                    color5 = [1.0, 1.0, 1.0, 1.0];
                     let src = [num21, 24, 32, 16 - num41];
                     push(
                         out,
                         num12 as u8,
                         [num13 as f32 * 16.0 - 16.0, num14 as f32 * 16.0 + 16.0],
                         src,
-                        color,
+                        color5,
                         true,
                     );
                 }
@@ -610,6 +725,12 @@ impl WaterfallManager {
                 if tile3.liquid > 0 && !tile3.half_brick() {
                     k = 1000;
                 }
+                // The overload arguments for this step's quads (see
+                // `quad_mark` above) — captured before the cell advances.
+                for q in &mut out[quad_mark..] {
+                    q.cell = [num13, num14];
+                    q.opacity = alpha;
+                }
                 num16 = num33;
                 num18 = num17;
                 num15 = num32;
@@ -632,6 +753,20 @@ impl WaterfallManager {
                 k += 1;
             }
         }
+        // `WaterfallManager.cs:960-965`: the water-style then lavafall triple
+        // stores, verbatim order.
+        (
+            AmbientScan {
+                x: num4 as f32,
+                y: num5 as f32,
+                strength: num,
+            },
+            AmbientScan {
+                x: num9 as f32,
+                y: num10 as f32,
+                strength: num6,
+            },
+        )
     }
 }
 
@@ -728,7 +863,8 @@ fn stylize_color(
     ]
 }
 
-/// `WaterfallManager.GetAlpha`.
+/// `WaterfallManager.GetAlpha` (`WaterfallManager.cs:1030-1044`).
+#[allow(clippy::too_many_arguments)]
 fn get_alpha(
     alpha: f32,
     max_steps: i32,
@@ -737,13 +873,22 @@ fn get_alpha(
     s: i32,
     tile: &Tile,
     world: &World,
+    x: i32,
+    show_invisible: bool,
 ) -> f32 {
     let mut num = match kind {
         1 => 1.0,
         14 => 0.8,
         25 => 0.75,
+        // `:1037`: `(wall != 0 && (showInvisible || (wall != 318 &&
+        // !invisibleWall()))) || !(y < worldSurface)` — the Echo-coated wall
+        // (or the glass wall 318) skips the damp unless the invisible-view
+        // latch is on.
         _ => {
-            if (tile.wall != 0 && tile.wall != 318) || (y as f64) >= world.world_surface {
+            if (tile.wall != 0
+                && (show_invisible || (tile.wall != 318 && !world.invisible_wall(x, y))))
+                || (y as f64) >= world.world_surface
+            {
                 0.6 * alpha
             } else {
                 alpha
@@ -823,9 +968,12 @@ fn try_sparkling(
     }
 }
 
-/// `WorldGen.SolidTile`: active, solid, not a solid top, not a half brick or slope.
+/// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`): nactive (active AND not
+/// actuated-inactive, `Tile.cs:240-247`), solid, not a solid top, not a half
+/// brick or slope.
 pub(super) fn solid_tile(t: &Tile) -> bool {
     t.active()
+        && !t.inactive()
         && (t.kind as usize) < td::TILE_COUNT
         && td::TILE_SOLID.has(t.kind)
         && !td::TILE_SOLID_TOP.has(t.kind)
@@ -864,12 +1012,67 @@ fn push(
         source,
         flip,
         color,
+        // The walk fills these per step before the cell advances (the
+        // `DrawWaterfall` overload's `(x, y, opacity)`); the rain arm never
+        // reads them (no vertex-colour path).
+        cell: [0, 0],
+        opacity: 1.0,
     });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tile::FLAG_INACTIVE;
+
+    /// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`) reads `nactive()`
+    /// (`Tile.cs:240-247`: active AND not actuated-off), so an actuated tile
+    /// never stops a fall or a spout. (g73's union witness, kept alongside
+    /// the mod.rs spout/column replays.)
+    #[test]
+    fn an_actuated_tile_is_not_solid() {
+        let mut t = Tile::default();
+        t.kind = 1; // stone
+        t.flags |= crate::tile::FLAG_ACTIVE;
+        assert!(solid_tile(&t));
+        t.flags |= FLAG_INACTIVE;
+        assert!(!solid_tile(&t));
+    }
+
+    /// `WaterfallManager.GetAlpha`'s wall gate (`WaterfallManager.cs:1037`):
+    /// `wall != 0 && (showInvisible || (wall != 318 && !invisibleWall()))`,
+    /// OR'd with the below-`worldSurface` dim — both dim to `0.6 * Alpha`.
+    /// (g73's union witness; the latch form feeds `show_invisible` from
+    /// `WaterfallManager::set_show_invisible`, the `:1120` head latch.)
+    #[test]
+    fn get_alpha_wall_gate_matches_the_csharp() {
+        let mut w = World::new("test".into(), 40, 40);
+        w.world_surface = 20.0;
+        let mut t = Tile::default();
+        // Above the surface, no wall: full alpha.
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        // Below the surface: 0.6 regardless of wall.
+        assert_eq!(get_alpha(1.0, 100, 0, 20, 0, &t, &w, 5, false), 0.6);
+        // A plain wall above the surface dims.
+        t.wall = 4;
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 0.6);
+        // Wall 318 (the fake wall) never dims — unless invisible sight is on.
+        t.wall = 318;
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, true), 0.6);
+        // An Echo-coated wall never dims — unless invisible sight is on.
+        t.wall = 4;
+        w.set_invisible_wall(5, 10, true);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, true), 0.6);
+        // The typed falls bypass the gate entirely.
+        assert_eq!(get_alpha(1.0, 100, 1, 30, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 14, 30, 0, &t, &w, 5, false), 0.8);
+        assert_eq!(get_alpha(1.0, 100, 25, 30, 0, &t, &w, 5, false), 0.75);
+        // The last-10-steps fade multiplies after the gate (`:1039-1042`):
+        // wall-dimmed 0.6 x the k=99 fade 0.1.
+        assert!((get_alpha(1.0, 100, 0, 10, 99, &t, &w, 5, true) - 0.06).abs() < 1e-6);
+    }
 
     /// `TrySparkling` is the only randomness in the waterfall walk: one
     /// 1-in-20000 roll per lit fall per frame, keyed on the frame-derived

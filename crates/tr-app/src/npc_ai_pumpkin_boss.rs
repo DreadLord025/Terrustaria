@@ -29,10 +29,12 @@
 //! * the type-344 (Everscream) branches are not ported — the kind does not
 //!   exist in the roster (S1-F-13c); only the type-325 arms run;
 //! * the Pumpking's two `PumpkingBlade` (328, aiStyle 59) spawns
-//!   (`:33093-33103`) are deferred — the blade kind is unported; the
-//!   `NPC.NewNPC` calls draw no `Main.rand` outside the `getGoodWorld`
-//!   variant roll (`NPC.cs:80752`), which the port's spawn plumbing does
-//!   not model (`variants.rs`), so skipping them keeps the stream exact.
+//!   (`:33093-33103`) ride the W4-c6 style-59 wiring: the init arm raises
+//!   `wants_blade_pair` and the sim's drain spawns the pair (the
+//!   `wants_force_bubble` shape). The `NPC.NewNPC` calls draw no
+//!   `Main.rand` outside the `getGoodWorld` variant roll
+//!   (`NPC.cs:80752`), which the port's spawn plumbing does not model
+//!   (`variants.rs`), so the stream stays exact.
 
 use crate::npc::Npc;
 use crate::player::Player;
@@ -297,8 +299,9 @@ pub fn mourning_wood_step(npc: &mut Npc, world: &World, player: &Player, rng: &m
 /// `NPC.AI`'s aiStyle-58 block (`NPC.cs:33044-33197`) — the Pumpking: the
 /// `localAI` frame cycle, the 300-tick attack-mode pick, the Greek-fire
 /// lob while mode 0, the hover (`num875`/15) / scythe-charge (16/50) /
-/// flee states and the velocity tilt. The blade spawns are deferred
-/// (module docs). Ends with the `noTileCollide` integration.
+/// flee states and the velocity tilt. The blade pair spawn rides the
+/// `wants_blade_pair` request (W4-c6 — the sim's drain, module docs).
+/// Ends with the `noTileCollide` integration.
 pub fn pumpking_step(npc: &mut Npc, world: &World, player: &Player, rng: &mut UnifiedRandom) {
     // `:33046-33055` — the frame cycle: localAI[0] counts 7 ticks,
     // localAI[1] cycles 0..4.
@@ -345,11 +348,16 @@ pub fn pumpking_step(npc: &mut Npc, world: &World, player: &Player, rng: &mut Un
         }
     }
     // `:33087-33104` — the one-time init: retarget, arm the hover state
-    // and spawn the two blades (deferred — module docs; no rand draws).
+    // and spawn the two blades. W4-c6 style-59 wiring: the pair spawn
+    // rides the sim's `wants_blade_pair` drain (the pool grows there —
+    // the ForceBubble request's shape); the two `NewNPC` calls draw no
+    // `Main.rand` outside the `getGoodWorld` variant roll
+    // (`NPC.cs:80752`, constants-off), so the stream is untouched.
     if npc.ai[0] == 0.0 {
         target_closest(npc, world, player, 58);
         npc.ai[0] = 1.0;
         npc.net_update = true;
+        npc.wants_blade_pair = true;
     }
     // `:33105-33117` — the dead/far retarget: beyond 2000 px on either
     // axis (or a dead target) the boss gives up and flees.

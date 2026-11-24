@@ -319,6 +319,7 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/inventory.rs` | `Main.DrawInventory` | 10×5 grid, coins/ammo, equipment columns, misc page, trash, labels |
 | `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` + `Main.DrawInventory`'s map-style row | page tabs (**drawn and clickable**: per-tab mouse-item gates, the same-tab→page-0 toggle, `EquipPageSelected` + `ItemSlot.SelectEquipPage`), defence shield, guide text, the PVP toggle + six team-select cells (drawn **and** hit-tested: hover text, `teamCooldown` dim, `PVP_2` hover ring, the click chain), the four map-style icons |
 | `ui/minimap.rs` | `MinimapFrame`/`MinimapFrameManager`/`MinimapFrameTemplate` (+ `SelectionHolder.CycleSelection`) | the minimap frame chrome: 9 style table, backdrop, frame + button hover sheets, zoom buttons |
+| `ui/world_hover.rs` | `Main.DrawMouseOver` + `HoverOverNPCs` (`Main.cs:42871-43114`, layer 39) | the in-world hover texts: the dropped item's affix name + stack in its rare colour, the NPC's `GivenOrTypeName` + carrier `life/lifeMax` — the plain `MouseTextInner` arm (no box), gated on the earlier slot/PVP/housing texts (W4-g53 doc-sweep, `docs/research/81-doc-sweep-ui.md`) |
 | `ui/bars.rs` | `BigProgressBarHelper.DrawFancyBar` (+ `DrawHealthText`) | the boss health bar: 516×58 `UI_BossBar` rows, 456×22 bar, boss head icon, `current / max` text |
 | `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
 | `ui/chest.rs` | `Terraria/UI/ChestUI.cs` | the world-chest panel: name line, rename buttons, the Loot All/Deposit All/Quick Stack/Restock button row, the 10×4 chest slot window, context-3 slot backgrounds |
@@ -400,11 +401,36 @@ source's child order:
 * the right-aligned search bar, its width inset by the title's measured width
   (`:424`): the 22 px magnifier (`Button_Search_2`), the 24 px `Name:` text field
   and the 24 px cancel button (`UIWrappedSearchBar.cs`);
-* the 4 px `UIHorizontalSeparator`, then the recipe grid
+* the 4 px `UIHorizontalSeparator`, then the recipe grid with its auto-hidden
   (`UIDynamicItemCollection`, 40×40 cells on a 44 px pitch centred in the
   `UIList`; the list is `OverflowHidden` so rows past its bottom are scissored
   mid-cell, `UIList.cs:59` / `UIElement.cs:222-237` — W4-d67) with its
   auto-hidden scrollbar;
+
+  scrollbar — 44×44 cells centred on the `UIList` rect
+  (`GetGridParameters`/`GetItemSlotHitbox`, `UIDynamicItemCollection.cs:75-97`),
+  each drawing the context-41 `Inventory_Back18` background at
+  `inventoryScale = 3465/4095` (52 px × 11/13 = exactly 44) and running the
+  nested `ItemGrid.DrawSlot` machine (`ui/crafting_grid.rs`, W4-f23 wiring):
+  the base walk's hover gate (`UIDynamicItemCollection.cs:52`, int-truncated
+  mouse, exclusive edges), the `Available ? White : DisabledSlotColor(160,160,160,255)`
+  tint (`NewCraftingUI.cs:74`) and the selected-recipe `Inventory_Back24`
+  overlay in `Main.inventoryBack` (`ItemSlot.cs:2371-2374`; the selection
+  derives from `Main.focusRecipe` via `availableRecipe[focusRecipe]`,
+  `OnActivate` `:904` — `focusRecipe` and `availableIndex` are RAW
+  available-list positions, `:610`/`:510`, so a filter tab diverges the
+  shown grid from the focus index space). `Main.inventoryBack` is the live
+  `invAlpha` pulse (`ui/inv_pulse.rs`, `Main.cs:45697-45708`: 180..240 by
+  0.2/tick, byte-truncated). The grid **scrolls** (W4-f23 doc-sweep): the
+  wheel spends 120 px/notch on `UIScrollbar.ViewPosition`
+  (`UIList.ScrollWheel` `:107-114`), the Cyan bar grabs/drags/track-jumps
+  (`UIScrollbar.cs:109-143`, handle alpha 1 vs 0.85 `:122`, hover-enter
+  sound 12 `:119`), the cells ride the `-ViewPosition` lift
+  (`UIList.cs:181`) inside the list's `OverflowHidden` scissor, and
+  `GetGridParameters`' culling window (`:87-96`, content height =
+  `UpdateSize`'s `44·ceil(n/cols)` MinHeight `:160-165`) bounds the draw
+  and the hover/click walk — a row lifted above the list top draws clipped
+  but is not hoverable;
 * the 11-tab filter strip (40×46 tabs cut from the 84×192 `Infinite_Tabs_B_2`
   sheet, 28×30 icons from the 330×30 `Infinite_Icons` sheet; strip at
   `(45, 316)`, above the panel body) with the non-sequential `ItemFilters.GetImage`
@@ -412,10 +438,24 @@ source's child order:
 * the detail area — craft slot (`Inventory_Back18` context 42) plus the
   `Images/UI/Craft` arrow at 0.8 scale — and the grid/nearby-chests toggles at
   `(42, 285)` / `(82, 285)` with the `DrawSelectedCraftingBarIndicator` bars.
+  The nearby-chests toggle's frame reads the LIVE setting (W4-f23 closeout):
+  `num = 2 − CraftFromNearbyChests·2 + hover` (`CraftingUI.cs:340`) — ON draws
+  the open chest (`ChestCraft_0/1`), OFF the closed chest (`ChestCraft_2/3`);
+  the LEFT click flips the setting + plays sound 12 + `Main.SaveSettings`
+  (`:346-351`), and the hover-enter cue rides `DoStatefulTickSound` (`:354`).
 
-Deviations: draw-only chrome (no filter/search/scrollbar interaction), the detail
-area renders without a selected recipe, the cancel button never hides — the full
-list is in `docs/ANALYSIS.md` → "Crafting panel".
+Deviations: no search interaction (the filter strip IS live, S1-H-7; the grid
+scroll IS live, W4-f23 doc-sweep), the detail area renders without a selected
+recipe, the cancel button never hides. Clicking a recipe cell crafts it with
+EITHER mouse button (select edge `HandleCraftSlot` `:505`, craft gate
+`Main.cs:42254-42255` — no craft-max exists; bulk is Shift ×10), and after a
+craft the focus follows the recipe across the rebuild
+(`Recipe.TryRefocusingRecipe` `:477-495`, W4-f23 doc-sweep). The rebuild runs
+whenever the inventory is open (W4-f23 closeout — the classic pip-list arm
+`Main.cs:41712` collapses onto the one grid), and the craft cue is
+`CraftingEffects.OnCraft`'s unconditional `PlaySound(7)`
+(`CraftingRequests.cs:119`, even on a no-op attempt) — the full list is
+in `docs/ANALYSIS.md` → "Crafting panel".
 
 ### Chest panel (`ui/chest.rs`, `Terraria/UI/ChestUI.cs`)
 
@@ -472,8 +512,9 @@ into the favorite toggle (the `ItemSlot.cs:602-625` cursorOverride-3 arm, sound 
 the `can_favorite_at` gate — the C# binding; the row sketch's right-click wording was
 wrong); favorited slots swap their background to the gold `Inventory_Back10`
 (`ItemSlot.cs:2149-2156`, packed as `lookups.ui_back10`, tint still
-`Main.inventoryBack`; `Inventory_Back17`/`_19` are the gamepad-highlight and
-loadout variants — neither surface is ported) and shift-transfer refuses them.
+`Main.inventoryBack`; `Inventory_Back17` is the gamepad-highlight variant —
+unported; `Inventory_Back19` is the void vault's favorite frame, landed with
+W4-g56 — see the void-vault section below) and shift-transfer refuses them.
 The coin (ctx 1) and ammo (ctx 2) rows are click surfaces too
 (`Main.cs:41752-41782` handle every cell they draw): left runs the shared
 action-0 move behind `PickItemMovementAction`'s gate (coins 71-74 only; the
@@ -502,6 +543,93 @@ the game UI under `InGameUI`) — the full list is in `docs/ANALYSIS.md` →
 Screenshots: `TR_CHEST` stages a stocked style-0 chest on the spawn plateau and opens
 the panel deterministically (the `TR_INV`/`TR_CRAFT` presence-flag pattern); double
 runs are SHA256-equal.
+
+### Void vault (`chest = -5`, W4-g56) — the lens projectile + the context-32 grid
+
+The Void Bag's storage is reachable two ways: the Void Vault tile (491, the
+S1-P-i43 open path) and the Void Lens projectile (734) the bag throws. Both open
+the same `Player.chest = -5` / bank index 3 window; the lens adds the tracker.
+
+The lens projectile (`projectile/data.rs` + `projectile.rs`): the `SetDefaults`
+row (`Projectile.cs:7726-7735` — 30×24, aiStyle 154, timeLeft 10800, alpha 255,
+penetrate 1) + `projFrames[734] = 8` (`Main.cs:8504`); `AI_154_VoidLens`
+(`Projectile.cs:52154-52196`) — the same-owner/same-kind sibling cull (the
+lower-timeLeft slot dies), ×0.94 velocity decay, direction 1, the 5-tick frame
+machine, the 0.03/tick Opacity fade-in through the setter's `(int)Clamp`
+truncation; the free `HandleMovement` integrate (tileCollide false) runs even on
+the culled tick. `damage_player` exempts the lens (no friendly fire). The draw
+is `VoidLensHelper.DrawToDrawData` (`VoidLensHelper.cs:77-104`) — the shared
+`render/pylons.rs::void_lens_sprites_at` body both the tile pass (S1-G-1 wave D)
+and the projectile ctor feed: base sprite tinted
+`Lerp(GetColor(tile), White, 0.5) × opacity`, the 3-copy 1.1-scale purple ring
+at the 0.34f cadence, the `Extra_93` selection glow; `draw_with_hand`/the generic
+projectile emit early-return for 734 (`Main.DrawProjDirect`'s type arm,
+`Main.cs:27920-27931`). The AI-side `AddLight(0.4, 0.2, 0.9)`
+(`VoidLensHelper.cs:34-38`) feeds the `EntityLights` pair in the draw's
+proj-light loop (one frame late, the tile-lens precedent).
+
+The interaction is DRAW-time, exactly like the C#: `frame/draw.rs` calls
+`void_lens::update_selection` at the draw head (gated
+`!game_paused && menu.is_none() && front.is_none()`), which runs
+`Main.TryInteractingWithVoidLens` (`Main.cs:37673-37745`) per active lens and
+stores the selection modes on `App.void_lens_selection` (indexed by projectile
+slot). The gate chain: in-range (`IsProjectileInteractableAndInInteractionRange`
+— the hitbox's closest point to the player centre, tile-truncated, inside the
+live `tile_interaction_reach` bounds) + the world-mouse hitbox hover +
+`!lastMouseInterface` (`App.last_mouse_interface`, recomputed at the draw tail
+by `App::mouse_interface_now()` — the `Main.cs:61811` latch). A hover arms
+`noThrow = 2`; the right press toggles: re-click on the open vault closes with
+Item130, else `stackSplit = 600`, `chest = -5`, chestX/Y off the lens CENTRE,
+the tracker latch (`Player.void_lens_chest: LensTracker` — the packed
+`ProjectileKey` bits, `ProjectileKey.cs:27-32`), the talk/shop/crafting clears,
+the inventory open, Item130 (`void_lens.rs::try_interacting`). The per-tick
+close is `HandleBeingInChestRange`'s lens arm (`Player.cs:31051-31073`) via
+`void_lens::tick_tracker` at `chest::tick_open`'s head: a dead/absent tracked
+lens or an out-of-range hitbox point force-closes with Item130; the live arm
+re-seeds chestX/Y from the closest point each tick and its `tracked_open` gate
+skips the tile-range close (the C# `flag` return, `:31074-31077`). The
+`chest != -5` / `chest == -1` arms clear the tracker (`:31023-31026`/`:31095`);
+`UpdateDead` clears it too. The C# bank-tile open path does NOT clear trackers
+(only the dresser default arm does) — a tile-vault open relies on the default
+tracker answering `try_get_active = None`.
+
+The context-32 grid (`ui/inventory.rs` bank panel): the void vault draws the
+same 10×4 window as the banks but with context 32 (`ChestUI.cs:356-359`) — the
+`Inventory_Back2` frame (contexts 4 AND 32, `ItemSlot.cs:2218-2221`, packed as
+`lookups.ui_back2`). The vault is the one bank whose slots CAN favorite
+(`canFavoriteAt[32]`, `ItemSlot.cs:386-394`): `Player.vault_favorites: [bool;
+40]` (the `.plr` bank4 per-slot bools), Alt+left-click toggles (the cursor-3
+arm over the bank cell, sound 12), the favorited cell swaps to the purple
+`Inventory_Back19` frame (`ItemSlot.cs:2155-2158`, `lookups.ui_back19`; the
+gold frame stands in on a content-less build). An emptied cell clears its
+favorite (the flag rides a non-air stack). LootAll parks the favorited slots
+outside the drain and restores them (`ChestUI.cs:451`); the bank Sort row
+(id 4, `bank_button_at` now 0..5) runs `ItemSorting.SortChest` over the open
+bank (`ItemSorting.cs:1629-1653`); right-click runs the ctx-32 `HasItemSwap`
+cycle (the Void Bag 4131 ↔ Closed Void Bag 5325 pair) then the `SwapEquip`
+ladder ahead of the paced pickup split (`ItemSlot.cs:1668-1697`). The pickup
+room probe (`item.rs::item_space`) reads the vault slot's OWN favorited flag
+for the Cofveve accept (`ItemSpaceForCofveve`, `Player.cs:39199-39218`).
+
+The void-chain continuation (items 1-5) closes the use-side gaps: the HELD-item
+right-click 4131↔5325 swap (`ItemCheck_ManageRightClickFeatures`,
+`Player.cs:31560-31565`, sound 7) now flips the held bag in place — distinct
+from the slot-context cycle above; the `hovering_lens` probe keeps the lens-open
+interaction exclusive (C# has NO bag-open spawn-suppression — LMB fires the lens
+734 via the generic `ItemCheck_Shoot`). The `disableVoidBag` net-lock is ported
+(MP-only, SP-inert — `Player.disable_void_bag` + the two open guards). The vault
+favorites now PERSIST via the `<world>.trvault` sidecar (the `.plr` bank4 rows
+are f44's lane, the fold contract in ANALYSIS). The `SetGlowForChest` glow
+package landed (`ui/glow.rs`): the open-time clear, the Sort-feedback hue ramp,
+the per-frame decay and the context-3/4/32 draw tint (`Inventory_Back13` +
+base→hsl lerp). The auto-pickup is the already-landed `GetItem` void-bag arm
+(S1-P-i43/i47/i50), confirmed complete.
+
+Deviations (ANALYSIS "The void vault UI (W4-g56)"): the smart-cursor/gamepad
+selection arms, the cursorItemIcon surface and the lens dust rolls stay
+unported; the `FillAmmoFromInventory` ammo-row glow (`ItemSorting.cs:1695`)
+stays out (the ammo-sort producer is unported); the bank CONTENTS still do not
+persist (f44's lane).
 
 ### Minimap frame (`ui/minimap.rs`, `MinimapFrame.cs`)
 
@@ -550,6 +678,21 @@ Key geometry (1600×900, `MapScale = 1`):
   so hearts and the inventory paint over the frame where they overlap.
 * Hovering a button sets the vanilla `mouseInterface` behaviour: mine/place
   inputs are suppressed behind the frame (`MinimapFrame.cs:164`).
+* The map keys (W4-g53 doc-sweep): with the map NOT fullscreen,
+  MapZoomIn/Out (`Add`/`Subtract`) step the minimap scale ×1.025/×0.975
+  (`Player.cs:24913-24920` — the button multipliers, not the fullscreen's
+  1.05/0.95) and MapAlphaUp/Down (`PageUp`/`PageDown`) step the alpha
+  ±0.015 (`:24921-24928`), clamped 0.2..3 / 0.01..1 at draw
+  (`Main.cs:55515-55530`); the overlay (`mapStyle == 2`) carries its own
+  scale/alpha state (×1.05/×0.95, `:24930-24947`). Tab (`cMapStyle`)
+  cycles `Main.mapStyle` 0→1→2→0 on the press latch with sound 12
+  (`:24949-24965`). `App::update_map_style_keys`.
+* F11 hides the interface (W4-g53 doc-sweep): `Main.DoUpdate_F11_ToggleUI`
+  (`Main.cs:18402-18424`) flips `Main.hideUI` on the press latch with
+  sound 12; the layer-8 check (`:46175-46183`) stops the interface draw —
+  the emote/NPC-chat bubbles (layer 1_1) keep drawing, the combat text
+  skips (`:62334`), and the game cursor hides with the rest.
+  `App::toggle_hide_ui` / `App.hide_ui`.
 
 Deviations: `MapScale` is `1.0` only (no scale slider — the `CreateScale(MapScale)`
 transforms of `Main.cs:55308-55329,55768` cite the single reference value), the
@@ -595,9 +738,14 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 ## Deviations
 
 * The framework ports the **flat/event halves** of `UIElement`/`UserInterface`:
-  the retained tree, `IsElementUnderMouse`/`MouseCaptured` as a general predicate,
-  `UIList`'s scroll mechanics and `UIScrollbar`'s drag/handle are deliberately out
-  (the immediate-mode ruling + no ported consumer). The child→parent **event bubble**
+  the retained tree and `IsElementUnderMouse`/`MouseCaptured` as a general predicate
+  are deliberately out (the immediate-mode ruling). `UIList`'s scroll mechanics
+  *are* ported for the list screens: the inner-height sum verbatim
+  (`uistate::list_total_height`, `UIList.cs:116-128`), the raw-counter wheel
+  (120 px/detent), the `SetView` clamp and — for char/world select — the
+  `UIScrollbar` drag/handle; the achievements list gained the same wheel + range
+  and its clipped draw + scrollbar in W4-d88 (its bar's drag and the emotes
+  wheel's px scroll remain). The child→parent **event bubble**
   (`UIElement.cs:414-546`) *is* ported (`framework.rs::bubble_chain` + `Element`
   parent links, S1-H-1) and drives the select screens' card-button resolution;
   `OverflowHidden` **clipping** is ported too (S1-H-2): `tr-render/src/clip.rs` +
@@ -613,7 +761,11 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 * Not ported yet, shown as a notice when clicked: Resource Packs, Credits, and the
   backing systems behind rows that now render at the original geometry. The
   Achievements row opens the `UIAchievementsMenu` overlay (M6-ACH-2: the 137-row
-  registry, the category filters, `TR_ACHIEVEMENTS`/`TR_ACHIEVEMENTS_CATS`). — window resolution / borderless / fullscreen (menuMode 111), language
+  registry, the category filters, `TR_ACHIEVEMENTS`/`TR_ACHIEVEMENTS_CATS`;
+  W4-g53: the real scrollbar drag/wheel, the category tooltips, the centre-out
+  progress bars; round 2: the ReLogic-wrapped descriptions on d121's
+  `text_wrap`, the scrollbar handle's hover sound/tint, and the torch row
+  filtering as Slayer -- the C# enum-field default, not `None`). — window resolution / borderless / fullscreen (menuMode 111), language
   switching (1213/1212), and the menuMode-888 `ManageControlsMenu` UIState (the
   1127 "Keybindings" row). The P5 sub-screens themselves are ported (see
   "Menu sub-screens (P5)"); their remaining gaps are collected in
@@ -636,18 +788,24 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   yet: the `SetMouseNPC` click (`:42065-42071`, the port has no `Main.mouseNPC`
   housing query), the `Inventory_Back14` white gamepad highlight and the
   `hidePVPAndTeamIcons` third-column suppression.
-* The emote wheel + bubbles (S1-E-26 wave B, `ui/emotes.rs` + `emotes.rs`): the
+* The emote wheel + bubbles (S1-E-26 wave B + **W4-g54 grouped page**,
+  `ui/emotes.rs` + `emotes.rs`): the
   inventory's emote button (`Main.DrawEmoteBubblesButton`, `Main.cs:42369-42408`,
   the `(534, 278)` 30×30 box) opens the `UIEmotesMenu` wheel — its own 590-wide
-  container (`Top 120 / Height −120` in game), the 36 px / 14-col `EmoteButton`
-  lattice, the border-tint hover + `/EmojiName.*` tooltip and the wheel's own
-  `Top(−45)` Back panel. A pick spawns the 360-tick bubble above the local player
+  container (`Top 120 / Height −120` in game), rebuilt on every open from the
+  world's downed flags (`InitializePage`'s seven `TryAddingList` rosters,
+  `UIEmotesMenu.cs:90-97`): the General/RPS/Items/BiomesAndEvents/TownNPCs/
+  Critters/Bosses category lists with localized titles + separators, the
+  36 px / 14-col `EmoteButton` lattice per group, the pixel `UIScrollbar`
+  (wheel notches, handle drag + track jump), the border-tint hover +
+  `/EmojiName.*` tooltip and the wheel's own `Top(−45)` Back panel. A pick
+  spawns the 360-tick bubble above the local player
   (`EmoteBubble.Draw`'s pop shells, 8-tick frame flip, 87/89 un-flip, camera/zoom
   transform) and closes; Back/Escape close. The update ticks on the world step,
   the draw rides the HUD pass beside the notifications. Local display only — the
-  MP broadcast, NPC anchors/reactions, reverse gravity, the per-group category
-  layout and the gamepad nav are deferred (ANALYSIS "The emote bubble wheel
-  (S1-E-26 wave B)").
+  MP broadcast, NPC anchors/reactions, reverse gravity, the six unowned
+  downed-gate flags (Empress/Halloween/Christmas) and the gamepad nav are
+  deferred (ANALYSIS "The emote wheel's grouped page (W4-g54)").
 * Chest panel (M3-CHEST-UI) deviations are collected in `docs/ANALYSIS.md` →
   "Chest UI + world chests (M3-CHEST-UI)" (lazy store entries, no lid animation,
   the rename keyboard pauses the sim, the cursor-override textures deferred …);
@@ -664,6 +822,16 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   interaction buttons, the portrait, the corner item, the sign/IME blinker,
   the Dryad Stardew override and the gamepad arms — `docs/ANALYSIS.md` →
   "Town chatter UI (S1-E-10b)".
+* Overhead chat + text wrap (W4-d121): `ui::chat_overhead` draws the local
+  player's chat text above the head (`Main.DrawPlayerChatBubbles`,
+  `Main.cs:63248-63263`) — the 400-tick `Player.chat_overhead`
+  (`Player.cs:765-784`), the `GetChatDrawPosition` anchor (`:63243-63246`)
+  and the ±2 px four-way shadow; the Say path arms it through
+  `ChatMonitor.pending_overhead` (`ChatHelper.cs:86-87`). `ui::text_wrap`
+  ports the ReLogic `WrappedTextBuilder` word wrap (research/37's MISSING
+  row) and the dialogue panel's 460 px/10-line wrap now rides it. Deferred:
+  remote players' overheads, the snippet markup, `hideUI` —
+  `docs/ANALYSIS.md` → "Overhead chat + text wrap (W4-d121)".
 
 ## Dev hooks and verification
 

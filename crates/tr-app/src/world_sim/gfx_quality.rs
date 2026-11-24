@@ -5,8 +5,8 @@
 //! — the port's `LiquidSystem::cycles`/`cur_max_liquid`, S1-A-8's runtime
 //! pair), `LegacyLighting.RenderPhases` (`:17085-17101` — the field rides
 //! for S1-E-19's legacy engine) and `Main.mapTimeMax` (`:16995-17000`). The
-//! snow-dust budget gate (`:13057`) lives on the rain rig's spawn cap
-//! ([`snow_cap`]).
+//! snow-dust budget gate (`:13057`) is `Main.snowing()`'s own break
+//! (`main_dust.rs`, W4-g11 — the retired `snow_cap` stand-in is gone).
 
 use crate::app::App;
 
@@ -47,13 +47,9 @@ impl Default for GfxQuality {
     }
 }
 
-/// The snow-dust budget the spawn loop caps against —
-/// `Main.cs:13057`'s `num2 * (gfxQuality / 2f + 0.5f) + num2 * 0.1f` over
-/// the port's per-screen snow budget (`rain.rs`'s `MAX_SNOW`).
-pub(crate) fn snow_cap(max_snow: usize, quality: f32) -> usize {
-    let num2 = max_snow as f32;
-    (num2 * (quality / 2.0 + 0.5) + num2 * 0.1) as usize
-}
+// W4-g11: `snow_cap` retired — the `Main.cs:13057` budget gate is
+// `Main.snowing()`'s own per-iteration break over the live type-76 pool
+// population (`main_dust.rs`), not a Rain-vector cap.
 
 impl GfxQuality {
     /// The per-frame half of the adaptive loop
@@ -228,13 +224,18 @@ fn int_ceil(v: f32) -> i32 {
     v as i32
     }
 
-    /// S1-B-6 — the snow budget (`Main.cs:13057`): the cap scales down with
-    /// the quality and only bites below ~0.8 on the port's 600 budget.
+    /// S1-B-6 — the snow budget formula (`Main.cs:13057`), now pinned through
+    /// `Main.snowing()`'s break (`main_dust.rs::w4_g11_snowing_breaks_on_the_live_76_budget`):
+    /// the arithmetic witness stays as the formula's unit pin.
     #[test]
     fn s1_b_6_the_snow_cap_scales_with_quality() {
-        let full = snow_cap(600, 1.0);
-        let half = snow_cap(600, 0.5);
-        let zero = snow_cap(600, 0.0);
+        let cap = |max_snow: usize, quality: f32| -> usize {
+            let num2 = max_snow as f32;
+            (num2 * (quality / 2.0 + 0.5) + num2 * 0.1) as usize
+        };
+        let full = cap(600, 1.0);
+        let half = cap(600, 0.5);
+        let zero = cap(600, 0.0);
         assert_eq!(full, 600 + 60, "`600 * 1.0 + 60` at q=1");
         assert_eq!(half, 510, "`600 * 0.75 + 60` at q=0.5");
         assert_eq!(zero, 360, "`600 * 0.5 + 60` at q=0");

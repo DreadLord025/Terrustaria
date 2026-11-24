@@ -144,6 +144,15 @@ pub fn mul(rgb: [u8; 4], m: f32) -> [u8; 4] {
     [f(rgb[0]), f(rgb[1]), f(rgb[2]), f(rgb[3])]
 }
 
+/// `Utils.MultiplyRGBA` (`Utils.cs:1995-1998`): per-channel
+/// `(byte)((float)(a * b) / 255f)` — the product computed as int, divided in
+/// float, truncated to the byte. Alpha rides along (unlike `MultiplyRGB`,
+/// `:1990-1993`, which drops it to the `Color(byte,byte,byte)` ctor's 255).
+pub fn multiply_rgba(a: [u8; 4], b: [u8; 4]) -> [u8; 4] {
+    let f = |x: u8, y: u8| ((x as i32 * y as i32) as f32 / 255.0) as i64 as u8;
+    [f(a[0], b[0]), f(a[1], b[1]), f(a[2], b[2]), f(a[3], b[3])]
+}
+
 /// Renderer tint: `[r/255, g/255, b/255, a/255]`.
 pub fn tint(rgb: [u8; 4]) -> [f32; 4] {
     [
@@ -249,5 +258,23 @@ mod tests {
             74.0 / 255.0,
             162.0 / 255.0,
         ]);
+    }
+
+    /// `Utils.MultiplyRGBA` (`Utils.cs:1995-1998`): the keybinding rows' rest
+    /// tint `(63,65,151,255).MultiplyRGBA((180,180,180,255))` —
+    /// `63*180/255 = 44.47 -> 44`, `65*180/255 = 45.88 -> 45`,
+    /// `151*180/255 = 106.58 -> 106`, alpha `255*255/255 = 255`.
+    #[test]
+    fn multiply_rgba_truncates_the_per_channel_product() {
+        assert_eq!(
+            multiply_rgba([63, 65, 151, 255], [180, 180, 180, 255]),
+            [44, 45, 106, 255]
+        );
+        // Alpha multiplies too (the RGBA variant, not MultiplyRGB).
+        assert_eq!(
+            multiply_rgba([255, 255, 255, 128], [255, 255, 255, 128]),
+            [255, 255, 255, 64] // 128*128/255 = 64.25 -> 64
+        );
+        assert_eq!(multiply_rgba([0, 10, 20, 30], [255, 255, 255, 255]), [0, 10, 20, 30]);
     }
 }

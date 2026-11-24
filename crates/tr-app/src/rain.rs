@@ -6,8 +6,11 @@
 //! original fall velocity (`wind * 18, 14` px/tick). Drops are drawn rotated around
 //! their top-left origin with the local light colour, and die on solid or wet tiles
 //! with a splash. In a snow biome the event renders as snowfall instead: no rain
-//! drops, and `Dust` type 76 flakes (vanilla's ambient snow dust) drift down all the
-//! time, with the storm intensity increasing the count and the wind.
+//! drops. W4-g11: the ambient flakes are the verbatim `Main.snowing()` port
+//! (`main_dust.rs`, `Main.cs:13032-13116`) spawning type-76 dust into the shared
+//! `DustPool` — the retired session-local `Snowflake` vector stand-in is gone
+//! (the `:17238` slot runs once per `Main.Update` on the bare `Main.rand`, NOT
+//! per rain tick; `world_sim::scene_scan::update_scene` owns the call).
 //!
 //! Since M1.4-BG-22 the event lifecycle is the vanilla `UpdateTime` rain section
 //! (`Main.cs:64833-64949`) — the `ladyBugRainBoost` drain, the `rainTime` drain with
@@ -44,8 +47,6 @@ use crate::assets;
 
 /// `Main.maxRain`.
 const MAX_DROPS: usize = 750;
-/// Active snowflakes; vanilla caps the snow dust counter near 500 per screen.
-const MAX_SNOW: usize = 600;
 const TICKS_PER_SEC: f32 = 60.0;
 /// `cloudAlpha` change per tick while raining (vanilla `0.0005 * dayRate`).
 const RAMP_PER_TICK: f32 = 0.0005;
@@ -83,7 +84,7 @@ struct Splash {
     frame: u8,
 }
 
-/// A `WaterfallManager.TrySparkling` particle: `Dust.NewDust(..., 43, ...)` with
+/// One `WaterfallManager.TrySparkling` particle: `Dust.NewDust(..., 43, ...)` with
 /// the velocity zeroed (`WaterfallManager.cs:1061-1062`), drawn from the `Dust`
 /// sheet's frame 43 at scale 0.5. The generic dust fade (`alpha -= 25` per
 /// tick) stands in for the type's own AI.
@@ -91,17 +92,6 @@ struct Splash {
 struct Sparkle {
     pos: Vec2,
     alpha: f32,
-}
-
-/// One `DustID.Snowflake` (type 76) particle.
-#[derive(Clone, Copy, Debug)]
-struct Snowflake {
-    pos: Vec2,
-    vel: Vec2,
-    scale: f32,
-    /// Sway phase; each flake drifts horizontally on its own sine.
-    phase: f32,
-    frame: u8,
 }
 
 pub struct Rain {
@@ -144,12 +134,18 @@ pub struct Rain {
     drops: Vec<Drop>,
     splashes: Vec<Splash>,
     sparkles: Vec<Sparkle>,
-    snow: Vec<Snowflake>,
-    /// The camera is in a snow biome: rain is replaced by snowfall.
+    /// The camera is in a snow biome: rain is replaced by snowfall. W4-g11:
+    /// the flakes themselves live in the shared `DustPool` (`Main.snowing`,
+    /// `main_dust.rs`); this flag only suppresses the rain-drop spawn.
     snow_mode: bool,
     /// The gfx-quality value the snow cap scales with (S1-B-6) — the
     /// weather pass copies `App.gfx_quality.quality` in.
     pub gfx_quality: f32,
+    /// `Main.waterStyle` at spawn time (`Rain.cs:205` reads the stored
+    /// static, not a re-derivation): the weather pass copies the frame's
+    /// `CalculateWaterStyle` value in — the fountain head arm included
+    /// (`Main.cs:57390-57393`).
+    pub water_style: u32,
     rng: u64,
     spawn_acc: f32,
     forced: Option<f32>,
@@ -260,9 +256,9 @@ impl Rain {
             drops: Vec::with_capacity(MAX_DROPS),
             splashes: Vec::with_capacity(128),
             sparkles: Vec::with_capacity(64),
-            snow: Vec::with_capacity(MAX_SNOW),
             snow_mode: false,
             gfx_quality: 0.0,
+            water_style: 0,
             rng,
             spawn_acc: 0.0,
             forced,
@@ -279,6 +275,12 @@ impl Rain {
     /// `Main.cloudAlpha` clamped to the range the sky tint uses.
     pub fn visual_alpha(&self) -> f32 {
         self.intensity.clamp(0.0, 1.0)
+    }
+
+    /// `Main.cloudAlpha` RAW (W4-g11): `Main.snowing()`'s formulas read the
+    /// unclamped value (`Main.cs:13044-13046` — the event can push it past 1).
+    pub(crate) fn intensity_value(&self) -> f32 {
+        self.intensity
     }
 
     /// `Main.raining`: the toggle the tile-light scanner reads for the water
@@ -320,10 +322,6 @@ impl Rain {
 
     pub fn drop_count(&self) -> usize {
         self.drops.len()
-    }
-
-    pub fn snow_count(&self) -> usize {
-        self.snow.len()
     }
 
     /// Storm cloud-bank opacity (`Main.cloudBGAlpha`).
@@ -466,13 +464,11 @@ impl Rain {
 
         // Each tick advances the drops at the original 60 Hz velocity.
         self.update_drops(world, camera, screen, zoom);
-        self.update_snow(world, camera, screen, zoom);
         if self.snow_mode {
-            // Vanilla suppresses rain drops in a snow biome and lets the ambient
-            // snow dust carry the weather instead.
-            if rain_zone(world, camera) {
-                self.spawn_snow(world, camera, screen, zoom);
-            }
+            // Vanilla suppresses rain drops in a snow biome; the ambient
+            // snow dust is `Main.snowing()` (`Main.cs:17238`, the W4-g11
+            // `main_dust.rs` port) — it runs once per Main.Update on the
+            // shared pool, never from this rain tick.
         } else if self.intensity > 0.01 {
             self.spawn(
                 world,
@@ -946,9 +942,13 @@ impl Rain {
             }
             let scale = 1.0 + (self.rand01() * 2.0 - 1.0) * 0.2;
             let vel = Vec2::new(wind * 18.0 * scale, 14.0 * scale);
-            // `Rain.cs:205`: `type = (byte)(Main.waterStyle * 3 + Main.rand.Next(3))`.
-            let water_style = crate::biome::calculate_water_style(world, camera) as u32;
-            let kind = (water_style * 3 + self.range(0, 3)) as u8;
+            // `Rain.cs:205`: `type = (byte)(Main.waterStyle * 3 + Main.rand.Next(3))`
+            // — `Main.waterStyle` is the STORED per-frame static
+            // (`Main.cs:57475` `DrawWaters` writes it, the fountain head arm
+            // `:57390-57393` included), never a spawn-time re-derivation;
+            // the weather pass latches it into `Rain::water_style` beside
+            // `gfx_quality` (the same seam convention).
+            let kind = (self.water_style * 3 + self.range(0, 3)) as u8;
             self.drops.push(Drop {
                 pos: Vec2::new(x, y),
                 vel,
@@ -959,72 +959,12 @@ impl Rain {
         }
     }
 
-    fn update_snow(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
-        let bottom = camera.y + screen.y * 0.5 / zoom + 40.0 / zoom;
-        let px = tr_core::TILE_PX;
-        let mut i = 0;
-        while i < self.snow.len() {
-            let mut s = self.snow[i];
-            s.phase += 0.06;
-            s.pos.x += s.vel.x + s.phase.sin() * 0.45;
-            s.pos.y += s.vel.y;
-            let tx = (s.pos.x / px).floor() as i32;
-            let ty = (s.pos.y / px).floor() as i32;
-            let hit = world.tile(tx, ty).is_some_and(|t| {
-                (t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind))
-                    || t.liquid > 0
-            });
-            if hit || s.pos.y > bottom {
-                self.snow.swap_remove(i);
-            } else {
-                self.snow[i] = s;
-                i += 1;
-            }
-        }
-    }
-
-    /// Ambient snowfall: vanilla spawns `500 * screenWidth/1920` dust flakes in a snow
-    /// biome, multiplied by `1 + 2*cloudAlpha` during a storm. The spawn cap
-    /// carries the gfx-quality budget (`Main.cs:13057`'s
-    /// `num2 * (gfxQuality / 2f + 0.5f) + num2 * 0.1f` — S1-B-6), so the
-    /// low-quality mode flakes fewer.
-    fn spawn_snow(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
-        let px = tr_core::TILE_PX;
-        let half = screen * 0.5 / zoom;
-        let rate = screen.x / 1920.0 * 2.4 * (0.6 + 1.8 * self.intensity);
-        let cap = crate::world_sim::gfx_quality::snow_cap(MAX_SNOW, self.gfx_quality);
-        if self.snow.len() >= cap {
-            return;
-        }
-        let count = rate.max(0.0).floor() as usize;
-        for _ in 0..count {
-            if self.snow.len() >= cap {
-                break;
-            }
-            let x = camera.x + (self.rand01() * 2.0 - 1.0) * (half.x + 90.0);
-            let y = camera.y - half.y - 10.0 - self.rand01() * 60.0;
-            let tx = (x / px).floor() as i32;
-            let ty = (y / px).floor() as i32;
-            if !world
-                .tile(tx, ty)
-                .is_some_and(|t| !t.active() && t.wall == 0)
-            {
-                continue;
-            }
-            let scale = 0.55 + self.rand01() * 0.45;
-            let vy = (2.2 + self.rand01() * 2.4) * scale;
-            let vx = self.wind * (5.0 + 9.0 * self.intensity) + (self.rand01() * 2.0 - 1.0) * 0.5;
-            let frame = self.range(0, 3) as u8;
-            let phase = self.rand01() * std::f32::consts::TAU;
-            self.snow.push(Snowflake {
-                pos: Vec2::new(x, y),
-                vel: Vec2::new(vx, vy),
-                scale,
-                phase,
-                frame,
-            });
-        }
-    }
+    // W4-g11: `update_snow`/`spawn_snow` (the session-local `Snowflake`
+    // vector stand-in) are retired — the ambient flakes are `Main.snowing()`
+    // (`Main.cs:13032-13116`, the `main_dust.rs` port) spawning type-76 dust
+    // into the shared `DustPool` at the `Main.cs:17238` slot; the pool's
+    // generic `UpdateDust` pass integrates them (the 76 physics arm is the
+    // d50 `dust_physics` lane's).
 
     fn spawn_splash(&mut self, d: Drop) {
         let n = 1 + (self.next_u64() & 1) as usize;
@@ -1057,7 +997,6 @@ impl Rain {
     ) {
         if self.drops.is_empty()
             && self.splashes.is_empty()
-            && self.snow.is_empty()
             && self.flash <= 0.01
         {
             return;
@@ -1088,21 +1027,9 @@ impl Rain {
                 d.rot,
             );
         }
-        for s in &self.snow {
-            let Some(uv) = lookups.dust_uv(760, s.frame as i32 * 10, 8, 8) else {
-                continue;
-            };
-            let c = light_at(light, s.pos);
-            let shade = [c[0] * 0.92 + 0.12, c[1] * 0.95 + 0.12, c[2] + 0.14];
-            let a = (s.scale * 0.75).clamp(0.35, 0.9);
-            r.push_fx_sprite_rot(
-                to_screen(s.pos),
-                [8.0 * s.scale * zoom, 8.0 * s.scale * zoom],
-                uv,
-                [shade[0], shade[1], shade[2], a],
-                0.0,
-            );
-        }
+        // W4-g11: the snow-flake draw retired with the `Snowflake` vector —
+        // the type-76 pool slots draw through the dust lane (`Main.DrawDust`,
+        // the d50 draw pass), not here.
         for s in &self.splashes {
             let Some(uv) = lookups.dust_uv(330, s.frame as i32 * 10, 8, 8) else {
                 continue;
@@ -1135,13 +1062,9 @@ impl Rain {
     }
 }
 
-/// Vanilla only rains while `SceneMetrics.ZoneRain` is set; approximate it by
-/// requiring the camera to be near that column's surface.
-fn rain_zone(world: &World, camera: Vec2) -> bool {
-    let tx = (camera.x / tr_core::TILE_PX) as i32;
-    let ty = (camera.y / tr_core::TILE_PX) as i32;
-    ty < world.surface_of(tx) + 24
-}
+// W4-g11: the `rain_zone` surface approximation retired with `spawn_snow` —
+// `Main.snowing()` gates on `SceneMetrics.SnowTileCount`/`SurfaceAtmospherics`
+// (`Main.cs:13040`), not a camera-column probe.
 
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
 pub(crate) fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
@@ -1177,6 +1100,11 @@ mod tests {
 
     fn run(rain: &mut Rain, w: &World, n: usize) {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        // The live seam's latch (`world_sim/weather.rs::update_rain`): the
+        // drop fixtures run over the plain forest `ground()` world, so the
+        // stored `Main.waterStyle` is 0 — the pre-port spawn re-derived
+        // exactly this from the camera.
+        rain.water_style = crate::biome::calculate_water_style(w, camera) as u32;
         for _ in 0..n {
             rain.update(
                 w,
@@ -1204,6 +1132,46 @@ mod tests {
         assert!(!rain.splashes.is_empty(), "impacts should leave splashes");
     }
 
+    /// W4-g73 retire phase — `Rain.NewRain` reads the STORED
+    /// `Main.waterStyle` (`Rain.cs:205`: `type = waterStyle*3 + Next(3)`),
+    /// not a spawn-time camera re-derivation: the fountain head arm's
+    /// colour (`Main.cs:57390-57393`, latched by `update_rain`) reaches the
+    /// drop frame types. The fixture camera derives OCEAN (13) from the
+    /// 64-wide world's edge rule — a flowing underground-desert fountain
+    /// (colour 12) must override it: every drop kind lands in 36..=38,
+    /// never 39..=41.
+    #[test]
+    fn the_stored_fountain_water_style_feeds_the_drop_frame_types() {
+        let w = ground();
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        assert_eq!(crate::biome::calculate_water_style(&w, camera), 13);
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        // The `update_rain` latch with a flowing colour-12 fountain.
+        rain.water_style =
+            crate::biome::calculate_water_style_with_fountain(&w, camera, 12) as u32;
+        assert_eq!(rain.water_style, 12);
+        for _ in 0..120 {
+            rain.update(
+                &w,
+                camera,
+                Vec2::new(1600.0, 200.0),
+                1.0,
+                1.0 / 60.0,
+                false,
+                1,
+                0.0,
+                1.0,
+                0,
+                true,
+            );
+        }
+        assert!(rain.drop_count() > 100, "drops {}", rain.drop_count());
+        assert!(
+            rain.drops.iter().all(|d| (36..=38).contains(&d.kind)),
+            "every drop rides the fountain style 12, not the biome's 13"
+        );
+    }
+
     #[test]
     fn calm_weather_has_no_drops() {
         let w = ground();
@@ -1213,6 +1181,9 @@ mod tests {
         assert_eq!(rain.visual_alpha(), 0.0);
     }
 
+    /// W4-g11 keep-one: the snow biome suppresses rain drops; the flakes are
+    /// `Main.snowing()`'s type-76 pool spawns (`main_dust.rs` witnesses pin
+    /// the draw sequence) — Rain itself carries no snow state any more.
     #[test]
     fn snow_replaces_rain_in_a_snow_biome() {
         let w = ground();
@@ -1234,9 +1205,10 @@ mod tests {
             );
         }
         assert_eq!(rain.drop_count(), 0, "no rain drops while snowing");
-        assert!(rain.snow_count() > 50, "snow {}", rain.snow_count());
     }
 
+    /// W4-g11 keep-one: leaving the snow biome re-arms the rain spawn on the
+    /// next tick (the `snow_mode` flag is the only gate).
     #[test]
     fn snow_settles_back_into_rain_outside_the_snow_biome() {
         let w = ground();
@@ -1258,8 +1230,7 @@ mod tests {
                 true,
             );
         }
-        let snow = rain.snow_count();
-        assert!(snow > 0);
+        assert_eq!(rain.drop_count(), 0);
         for _ in 0..600 {
             rain.update(
                 &w,
@@ -1275,7 +1246,6 @@ mod tests {
                 true,
             );
         }
-        assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
         assert!(rain.drop_count() > 0);
     }
 

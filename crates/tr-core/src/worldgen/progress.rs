@@ -60,6 +60,22 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "dunes" => PassMessage::Gen(1),
         // WorldGen.cs:11584.
         "ocean sand" => PassMessage::Key("WorldGeneration.OceanSand"),
+        // WorldGen.cs:11693 (Sand Patches, W4-d101).
+        "sand patches" => PassMessage::Key("WorldGeneration.SandPatches"),
+        // WorldGen.cs:11789 (Mount Caves, W4-d101 — Lang.gen[2]).
+        "mount caves" => PassMessage::Gen(2),
+        // WorldGen.cs:11862 (Dirt Wall Backgrounds, W4-d101 — Lang.gen[3]).
+        "dirt wall backgrounds" => PassMessage::Gen(3),
+        // WorldGen.cs:11963 (Clay, W4-d101 — Lang.gen[6]).
+        "clay" => PassMessage::Gen(6),
+        // WorldGen.cs:12012 (Small Holes, W4-d101 — Lang.gen[7]).
+        "small holes" => PassMessage::Gen(7),
+        // WorldGen.cs:12071 (Dirt Layer Caves, W4-d101 — Lang.gen[8]).
+        "dirt layer caves" => PassMessage::Gen(8),
+        // WorldGen.cs:12111 (Rock Layer Caves, W4-d101 — Lang.gen[9]).
+        "rock layer caves" => PassMessage::Gen(9),
+        // WorldGen.cs:12316 (Generate Ice Biome, W4-d101 — Lang.gen[56]).
+        "generate ice biome" => PassMessage::Gen(56),
         // JunglePass.cs:21.
         "jungle" => PassMessage::Gen(11),
         // WorldGen.cs:12472.
@@ -70,8 +86,10 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "mushroom patches" => PassMessage::Gen(13),
         // WorldGen.cs:11722 (Tunnels).
         "cave fields" => PassMessage::Key("WorldGeneration.SurfaceTunnels"),
-        // WorldGen.cs:12761 (Marble; the granite half shares the pass slot).
-        "granite and marble" => PassMessage::Gen(80),
+        // WorldGen.cs:12761 (Marble — the W4-d101 pass-9 split row).
+        "marble" => PassMessage::Gen(80),
+        // WorldGen.cs:12843 (Granite — Lang.gen[81], the pass-9 split row).
+        "granite" => PassMessage::Gen(81),
         // WorldGen.cs:11900.
         "stone-in-dirt blobs" => PassMessage::Gen(4),
         // WorldGen.cs:11930.
@@ -82,21 +100,33 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "wavy caves" => PassMessage::Key("WorldGeneration.WavyCaves"),
         // WorldGen.cs:13127.
         "dirt to mud" => PassMessage::Gen(14),
+        // WorldGen.cs:13147 (W4-d102).
+        "silt" => PassMessage::Gen(15),
         // WorldGen.cs:13649.
         "ash blobs" => PassMessage::Gen(18),
         // WorldGen.cs:13186.
         "ores and gems" => PassMessage::Gen(16),
+        // WorldGen.cs:13611 (W4-d102).
+        "webs" => PassMessage::Gen(17),
         // WorldGen.cs:13945.
         "evil" => PassMessage::Gen(72),
         // WorldGen.cs:14560.
         "liquids" => PassMessage::Gen(19),
+        // DitherSnakePass.cs:24 — the dual-dungeons snake pass's message.
+        "Dual Dungeons Dither Snake" => PassMessage::Key("WorldGeneration.DualDungeonsDitherSnake"),
         // DungeonCrawler.cs:346 — the pass's first progress message
         // (the later UpdateDungeonProgress rows are the faithful-pass work).
         "dungeon" => PassMessage::Key("WorldGeneration.DungeonVariableSetup"),
+        // WorldGen.cs:14877 (W4-d102).
+        "mountain caves" => PassMessage::Gen(21),
         // WorldGen.cs:14899.
         "beaches" => PassMessage::Gen(22),
         // WorldGen.cs:15142.
         "gravitating sand" => PassMessage::Gen(24),
+        // WorldGen.cs:15054 (W4-d102).
+        "gems" => PassMessage::Gen(23),
+        // WorldGen.cs:15256 (W4-d102).
+        "clean up dirt" => PassMessage::Gen(25),
         // WorldGen.cs:15180.
         "ocean caves" => PassMessage::Gen(90),
         // WorldGen.cs:17845 (Jungle Trees).
@@ -133,6 +163,27 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "slopes" => PassMessage::Gen(60),
         // WorldGen.cs:15480.
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
+        // WorldGen.cs:17863 (Floating Island Houses, W4-d104).
+        "floating island houses" => PassMessage::Key("WorldGeneration.FloatingIslandHouses"),
+        // WorldGen.cs:17879 (Quick Cleanup, W4-d104).
+        "quick cleanup" => PassMessage::Key("WorldGeneration.QuickCleanup"),
+        // WorldGen.cs:18191 — Lang.gen[36] (Hellforge, W4-d104).
+        "hellforge" => PassMessage::Gen(36),
+        // WorldGen.cs:18241 — Lang.gen[37] (Spreading Grass, W4-d104).
+        "spreading grass" => PassMessage::Gen(37),
+        // WorldGen.cs:18451 — the pass sets only progress.Set(1.0), no
+        // message (Surface Ore and Stone, W4-d104): absent from the table.
+        // WorldGen.cs:18524 — Lang.gen[85] (Place Fallen Log, W4-d104).
+        "place fallen log" => PassMessage::Gen(85),
+        // WorldGen.cs:18663 — Lang.gen[34] (Traps, W4-d104; the noTraps
+        // Lang.gen[91] arm is the seed lane's).
+        "traps" => PassMessage::Gen(34),
+        // WorldGen.cs:18792 — Lang.gen[89] (Piles, W4-d104).
+        "piles" => PassMessage::Gen(89),
+        // WorldGen.cs:19460 — the Spawn Point pass sets only
+        // progress.Set(1.0), no message (W4-d104): absent from the table.
+        // WorldGen.cs:15721 (W4-d102) — the same key as Living Trees.
+        "wood tree walls" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.

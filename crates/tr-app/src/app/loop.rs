@@ -186,6 +186,19 @@ impl ApplicationHandler for App {
                                             &mut self.emotes,
                                             self.player.as_ref(),
                                         );
+                                        // `ChatHelper.DisplayMessage`'s author
+                                        // arm (`ChatHelper.cs:86-87`): the Say
+                                        // path's bare text arms the local
+                                        // player's overhead (400 ticks).
+                                        if let Some((msg, color)) =
+                                            self.chat.pending_overhead.take()
+                                        {
+                                            if let Some(p) = self.player.as_mut() {
+                                                crate::ui::chat_overhead::arm_overhead(
+                                                    p, &msg, color,
+                                                );
+                                            }
+                                        }
                                     }
                                     // The host relays the lines its own submit
                                     // produced (slot 0 is the host's author).
@@ -256,6 +269,9 @@ impl ApplicationHandler for App {
                             self.achievements_open = false;
                             self.achievements_categories = [true; 4];
                             self.achievements_scroll = 0.0;
+                            self.achievements_scroll_drag = None;
+                            self.achievements_back_sounded = false;
+                            self.achievements_handle_hover = false;
                             return;
                         }
                         if self.menu.is_some() {
@@ -267,12 +283,31 @@ impl ApplicationHandler for App {
                                         }
                                     }
                                 }
+                                // W4-g22 — the text-edit cue (`Main.cs:
+                                // 50794-50797`/`:50899-50902`/`:48549-48552`/
+                                // `:48673-48676`): `character` queued 12 on
+                                // the change; drain before the key arm runs.
+                                if let Some(cue) =
+                                    self.menu.as_mut().and_then(|m| m.take_cue())
+                                {
+                                    self.audio.play(cue);
+                                }
                             }
                             let action = self
                                 .menu
                                 .as_mut()
                                 .map(|m| m.key(code))
                                 .unwrap_or(menu::Action::None);
+                            // W4-g22 — the per-site cue the key arm queued
+                            // (the Back rows' 11, the confirm No's 11, the
+                            // backspace change-diff 12). The old blanket
+                            // `Menu_Tick` never ran on the key path; the
+                            // queue is the C#'s own per-site plays.
+                            if let Some(cue) =
+                                self.menu.as_mut().and_then(|m| m.take_cue())
+                            {
+                                self.audio.play(cue);
+                            }
                             self.apply_menu_action(action, event_loop);
                             return;
                         }
@@ -290,6 +325,11 @@ impl ApplicationHandler for App {
                         self.world_key(code);
                     } else {
                         self.keys.remove(&code);
+                        // `DoUpdate_F11_ToggleUI`'s else arm (`Main.cs:18420-18423`):
+                        // the released key re-arms the press latch.
+                        if code == KeyCode::F11 {
+                            self.release_ui = true;
+                        }
                         // The smart-cursor hold mode (`Player.cs:28835-28839`):
                         // releasing the key turns the wanted state off when the
                         // toggle mode (`Main.cSmartCursorModeIsToggleAndNotHold`,
@@ -324,14 +364,29 @@ impl ApplicationHandler for App {
                 if self.achievements_open {
                     // `UserInterface.Update`'s scroll arm (`:219-223`): the
                     // machine owns `PlayerInput.ScrollWheelDeltaForUI`
-                    // (accumulated, then consumed once). The overlay's `UIList`
-                    // is the element under the pointer.
-                    self.pointer.queue_scroll(d.round() as i32);
-                    if matches!(
-                        self.pointer.scroll_wheel(Some(SCROLL_UI)),
-                        Some(PointerEvent::ScrollWheel { .. })
-                    ) {
-                        self.scroll_achievements(d);
+                    // (accumulated, then consumed once whatever the hit). The
+                    // wheel reaches the list only through `GetElementAt` —
+                    // a point inside the list rect lands on the inner list
+                    // (`UIList.cs:16-19`'s `ContainsPoint => true`), whose
+                    // `ScrollWheel` bubbles to the `UIList`; the scrollbar is
+                    // a panel child, so a wheel over it bubbles past the list.
+                    let step = d.round() as i32;
+                    self.pointer.queue_scroll(step);
+                    let hit = if step != 0 {
+                        let (sw, sh) = self.screen_size();
+                        let panel = crate::ui::achievements::panel_rect(
+                            Vec2::new(sw, sh),
+                            self.menu.is_some(),
+                        );
+                        crate::ui::achievements::wheel_target(&panel, self.mouse_pos)
+                            .then_some(SCROLL_UI)
+                    } else {
+                        None
+                    };
+                    if let Some(PointerEvent::ScrollWheel { delta }) =
+                        self.pointer.scroll_wheel(hit)
+                    {
+                        self.scroll_achievements(delta);
                     }
                     return;
                 }
@@ -342,6 +397,17 @@ impl ApplicationHandler for App {
                 // the accumulator whatever the hit, so the hotbar arm below
                 // never sees a front-screen wheel.
                 if self.front_wheel(d.round() as i32) {
+                    return;
+                }
+                // `Main.DoScrollingInInventory`'s tail
+                // (`Main.cs:17453-17456`): `NewCraftingUI.Visible` sets
+                // `flag = false` — the classic crafting list never scrolls
+                // while the modern panel is up; the panel's own `UIList`
+                // owns the notch through `UserInterface.Update`
+                // (`:219-222`), and the accumulator is consumed whatever
+                // the hit.
+                if self.menu.is_none() && self.front.is_none() && self.crafting_open {
+                    self.craft_wheel(d.round() as i32);
                     return;
                 }
                 if self.map.as_ref().is_some_and(|m| m.open) {
@@ -373,16 +439,24 @@ impl ApplicationHandler for App {
                         _ => 0,
                     };
                     // `UIList.ScrollWheel`: the emotes wheel scrolls while it is
-                    // open, clamped at the roster's end (`UIScrollbar.cs:37-47`).
+                    // open — `ViewPosition -= evt.ScrollWheelValue` in PIXELS
+                    // (`UIList.cs:107-114`), clamped by the setter
+                    // (`UIScrollbar.cs:45`). The wheel delta is the raw
+                    // `PlayerInput.ScrollWheelDeltaForUI` (XNA 120/notch,
+                    // `PlayerInput.cs:898-899`); the port's notch stand-in
+                    // scales it to the 36 px cell stride (W4-g54).
                     if ui_delta != 0
                         && self.menu.is_none()
                         && self.front.is_none()
                         && self.emotes.menu_open
                     {
                         let (sw, sh) = self.screen_size();
-                        let grid = crate::ui::emotes::grid_rect(Vec2::new(sw, sh));
+                        let screen = Vec2::new(sw, sh);
+                        let panel = crate::ui::emotes::panel_rect(screen, true);
+                        let list = crate::ui::emotes::list_rect(&panel, true);
+                        let max = crate::ui::emotes::max_scroll(&self.emotes.groups, &list);
                         self.emotes
-                            .scroll_by(ui_delta, crate::ui::emotes::visible_rows(&grid));
+                            .scroll_by(ui_delta as f32 * crate::ui::emotes::CELL, max);
                     }
                     // `Main.DoScrollingInInventory`'s chest arm
                     // (`Main.cs:17435-17452`): the wheel scrolls the chest
@@ -395,11 +469,7 @@ impl ApplicationHandler for App {
                     {
                         crate::ui::chest::scroll(self, ui_delta, self.mouse_pos);
                     }
-                    if step != 0
-                        && self.menu.is_none()
-                        && self.front.is_none()
-                        && !self.inventory_open
-                    {
+                    if step != 0 && self.hotbar_wheel_allowed() {
                         // S1-P-i54 — `HandleHotbarControls` (`Player.cs:
                         // 31766-31796`): `num += ScrollWheelDelta / -120`
                         // (`:31790`) — wheel-UP (+120) steps BACKWARD — and
@@ -436,6 +506,12 @@ impl ApplicationHandler for App {
                             // bars drag off this flag (`Main.cs:51533-51576`),
                             // held between the press and release events.
                             m.mouse_down = pressed;
+                            if !pressed {
+                                // `UIScrollbar.LeftMouseUp` — the achievements
+                                // bar's drag latch clears on release in the
+                                // menu arm too (the world arm's twin below).
+                                self.achievements_scroll_drag = None;
+                            }
                             if pressed {
                                 // `UIAchievementsMenu` rides over the legacy menu
                                 // (`Main.MenuUI.SetState`), so its Back and filter
@@ -447,11 +523,18 @@ impl ApplicationHandler for App {
                                 }
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
-                                // Bug 17: the legacy menu's click tick —
-                                // `Main.DoStatefulTickSound` (`Main.cs:3244`,
-                                // `:3256`) / the settings rows' activation.
-                                if !matches!(action, menu::Action::None) {
-                                    self.audio.play("Menu_Tick");
+                                // W4-g22 — the per-site cue the activation
+                                // queued (`Main.DrawMenu`'s inline plays:
+                                // 10 forward / 11 Back / 12 toggles, the
+                                // g22 window `Main.cs:48489-49727`). The
+                                // old blanket `Menu_Tick` on every non-None
+                                // action is gone — the C# never plays a
+                                // uniform tick (the Quit row `:48975-48978`
+                                // is silent). The hover tick above stays:
+                                // it is `DoStatefulTickSound` (`:3244`/
+                                // `:3256`), g21's site.
+                                if let Some(cue) = m.take_cue() {
+                                    self.audio.play(cue);
                                 }
                                 self.apply_menu_action(action, event_loop);
                             }
@@ -509,6 +592,13 @@ impl ApplicationHandler for App {
                         if !pressed {
                             #[cfg(feature = "debug")]
                             crate::debug_panel::end_drag(self);
+                            // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
+                            // the wheel bar's drag latch clears on release.
+                            self.emote_scroll_drag = None;
+                            // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
+                            // the achievements bar's drag latch clears on
+                            // release (the front screens' twin rides above).
+                            self.achievements_scroll_drag = None;
                             // S1-P-i54 — `TriggersSet.CopyInto`
                             // (`TriggersSet.cs:844-847`): the left release
                             // clears `Main.blockMouse`, so the next press
@@ -521,9 +611,24 @@ impl ApplicationHandler for App {
                             // achievement popup's click reads
                             // (`InGamePopups.cs:124`), consumed per frame.
                             self.ui_left_release = true;
+                            // `UIScrollbar.LeftMouseUp`
+                            // (`UIScrollbar.cs:145-149`): the craft bar's
+                            // drag latch clears on the release.
+                            self.craft_scrollbar_release();
                         }
                         if pressed {
                             self.ui_left_press = true;
+                            // `UIScrollbar.LeftMouseDown`
+                            // (`UIScrollbar.cs:126-143`): the craft grid's
+                            // bar grabs the handle or jumps the track
+                            // before the recipe cells see the press
+                            // (`evt.Target == this`).
+                            if self.menu.is_none()
+                                && self.front.is_none()
+                                && self.craft_scrollbar_press()
+                            {
+                                return;
+                            }
                             // The debug panel's click (the self-contained
                             // cheat-sheet — the panel consumes the clicks
                             // inside its rect).
@@ -583,6 +688,13 @@ impl ApplicationHandler for App {
                 if self.front_scroll_drag.is_some() {
                     self.front_scrollbar_drag();
                 }
+                // The achievements overlay's twins: the scrollbar drag and
+                // the Back panel's `FadedMouseOver` sound-12 edge
+                // (`UIAchievementsMenu.cs:150-155`).
+                if self.achievements_open {
+                    self.achievements_scrollbar_drag();
+                    self.achievements_hover_tick();
+                }
                 // Bug 17: the front-end hover edge — `FadedMouseOver`'s
                 // menu tick (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`)
                 // fires once when the pointer enters an element.
@@ -606,6 +718,7 @@ impl ApplicationHandler for App {
                     let hit = crate::ui::emotes::card_at(
                         Vec2::new(sw, sh),
                         self.mouse_pos,
+                        &self.emotes.groups,
                         self.emotes.scroll,
                     );
                     if hit != self.emotes.hover {
@@ -616,6 +729,30 @@ impl ApplicationHandler for App {
                     }
                 } else {
                     self.emotes.hover = None;
+                }
+                // `UIScrollbar.DrawSelf`'s drag (`UIScrollbar.cs:109-112`):
+                // while the wheel's handle is held the view follows the
+                // pointer — the same latch the front screens use
+                // (`front_scrollbar_drag`).
+                if let Some(offset) = self.emote_scroll_drag {
+                    if self.emotes.menu_open {
+                        let (sw, sh) = self.screen_size();
+                        let panel = crate::ui::emotes::panel_rect(Vec2::new(sw, sh), true);
+                        let sb = crate::ui::emotes::scrollbar_rect(&panel);
+                        let list = crate::ui::emotes::list_rect(&panel, true);
+                        let content = crate::ui::emotes::list_content_height(&self.emotes.groups);
+                        let max = crate::ui::emotes::max_scroll(&self.emotes.groups, &list);
+                        let value = crate::ui::panel::scrollbar_drag_value(
+                            sb,
+                            list[3],
+                            content,
+                            offset,
+                            pointer.y,
+                        );
+                        self.emotes.scroll_to(value, max);
+                    } else {
+                        self.emote_scroll_drag = None;
+                    }
                 }
                 // The middle-button world-camera drag is suppressed while the map is
                 // fullscreen, like the other world controls (`Player.cs:24798`).
@@ -659,6 +796,22 @@ impl App {
     /// `Main.cMapAlphaDown`, `Main.cs:67190-67195`)?
     pub(crate) fn is_map_bound(&self, action: crate::input_map::MapAction, code: KeyCode) -> bool {
         self.map_binds[action.index()].as_str() == crate::input_map::key_name(code)
+    }
+
+    /// S1-P-i54 + W4-g53 doc-sweep — the hotbar wheel arm's gate:
+    /// `Player.cs:25203-25212` routes the wheel to `HandleHotbarControls`
+    /// only with the inventory closed (and no map/capture/hair window — the
+    /// caller's branches), and `:31788-31791` gates the wheel delta itself
+    /// on `!Main.inFancyUI && !Main.ingameOptionsWindow`. The port's fancy
+    /// states are the bestiary/emotes overlays (the achievements overlay
+    /// consumes the wheel earlier in the handler) and the options window.
+    pub(crate) fn hotbar_wheel_allowed(&self) -> bool {
+        self.menu.is_none()
+            && self.front.is_none()
+            && !self.inventory_open
+            && !self.bestiary_open
+            && !self.emotes.menu_open
+            && !self.ingame_options.open
     }
 
     /// S1-P-i54 — one hotbar digit press (`Player.cs:25095-25134` +
@@ -728,6 +881,11 @@ impl App {
                 log::info!("light mode: {}", self.light_mode.label());
             }
             KeyCode::F9 => self.save_world(),
+            KeyCode::F11 => {
+                // `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`): the
+                // press latch flips `Main.hideUI` + plays sound 12.
+                self.toggle_hide_ui(true);
+            }
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
                 // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
                 // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only
@@ -792,6 +950,54 @@ mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::map::WorldMap;
+
+    /// W4-g53 doc-sweep — `Player.cs:31788-31791`: the wheel's hotbar arm
+    /// is gated on `!Main.inFancyUI && !Main.ingameOptionsWindow` — the
+    /// bestiary/emotes overlays and the options window eat the notch; the
+    /// plain closed-inventory world still cycles.
+    #[test]
+    fn g53_the_fancy_ui_and_options_window_eat_the_hotbar_wheel() {
+        let mut app = flow_app(None, vec![], vec![]);
+        assert!(app.hotbar_wheel_allowed(), "the plain world cycles");
+        app.bestiary_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the bestiary is inFancyUI");
+        app.bestiary_open = false;
+        app.emotes.menu_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the emotes wheel is inFancyUI");
+        app.emotes.menu_open = false;
+        app.ingame_options.open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the options window");
+        app.ingame_options.open = false;
+        app.inventory_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the open inventory routes to DoScrollingInInventory (`:25205-25207`)");
+    }
+
+    /// W4-g53 doc-sweep — `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`):
+    /// the press latch flips `hideUI` once per press (never on held repeats),
+    /// plays sound 12, and re-arms on release. The static `releaseUI` starts
+    /// false (`Main.cs:2087`); the first released-frame pass arms it.
+    #[test]
+    fn g53_f11_flips_hide_ui_once_per_press_with_the_tick() {
+        let mut app = flow_app(None, vec![], vec![]);
+        assert!(!app.hide_ui);
+        // The first update with the key released arms the latch
+        // (`:18420-18423`).
+        app.toggle_hide_ui(false);
+        assert!(app.release_ui);
+        let played = app.audio.played_count();
+        // The press frame: flip + sound 12 (`:18408-18416`).
+        app.world_key(KeyCode::F11);
+        assert!(app.hide_ui, "the press flips hideUI on");
+        assert!(!app.release_ui, "the latch drops while held");
+        assert!(app.audio.played_count() > played, "PlaySound(12)");
+        // Held repeats (winit delivers them as presses): no second flip.
+        app.world_key(KeyCode::F11);
+        assert!(app.hide_ui, "held frames never re-flip");
+        // The release re-arms (`:18420-18423`); the next press flips back.
+        app.release_ui = true; // the window_event release arm's write
+        app.world_key(KeyCode::F11);
+        assert!(!app.hide_ui, "the next press flips hideUI off");
+    }
 
     /// A headless App with the map live and open (`M` while `mapEnabled`),
     /// ready for the world-key chain.

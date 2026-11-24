@@ -184,8 +184,19 @@ and one persistent store per world (the `.wld` section 10 triple).
   asserts `SLAYER_OF_WORLDS == (1,3)` (vanilla: `(1,15)`) and
   `the_ported_hooks_still_complete_their_rows` asserts `GELATIN_WORLD_TOUR`
   completes on one gel kill (vanilla: 24 conditions).
-- `crates/tr-app/src/ui/achievements.rs::tests` (9): the panel/list/back/filter/
-  sort/row-hit/scroll/icon-frame layout tests (784-898).
+- `crates/tr-app/src/ui/achievements.rs::tests`: the panel/list/back/filter/
+  sort/row-hit/scroll/icon-frame layout tests (M6-ACH-2), d81's five pure-half
+  witnesses (row height/icon offsets/icon frame/description clamp/tracker
+  geometry+colours, `6d700ed7`), and W4-g53's three new ones
+  (`the_scrollbar_rides_the_lists_right_edge`,
+  `the_content_height_and_scroll_range_are_the_ui_list_walk`,
+  `the_scrollbar_press_grabs_the_handle_or_jumps_the_track`) plus the two
+  re-derived onto the padded layout (`the_list_and_rows_follow_the_layout_constants`,
+  `the_scroll_range_is_the_list_overflow`). App-level W4-g53 witnesses in
+  `app/clicks.rs::tests`: `g53_the_achievements_scrollbar_grabs_drags_and_jumps`,
+  `g53_the_filter_toggle_sounds_and_clamps_the_scroll`,
+  `g53_the_wheel_walks_120_px_per_detent_on_the_list`,
+  `g53_the_back_hover_sounds_once_per_edge` — all written not run (code-only).
 - `crates/tr-core/src/bestiary.rs::tests` (7): `the_tier_ladder_is_the_half_and_fifth_steps`
   (335), `the_quick_unlock_skips_the_ladder` (378),
   `the_kill_tracker_caps_and_persists_pairs` (392),
@@ -200,9 +211,13 @@ and one persistent store per world (the `.wld` section 10 triple).
 - `crates/tr-core/src/wld/sections/bestiary.rs::tests` (17): the `.wld` section-10
   codec, the version gates at 210/220, the hostile-input and round-trip tests
   (210-512).
-- No test covers: the per-row condition count against `AchievementInitializer.cs`,
-  the `notify` sites' reachability, the achievement save being called, or the
-  bestiary's drop lines.
+- `crates/tr-app/src/achievements_data.rs::tests` (2, W4-e22):
+  `every_rows_conditions_match_the_initializer_verbatim` (a second verbatim
+  transcription of `AchievementInitializer.cs:16-443` compared entry-by-entry:
+  row order, per-row count, kind + arguments; 137 rows / 180 conditions) and
+  `the_create_many_rows_stay_expanded` (the 3/4/24/15 shapes, no empty row).
+- No test covers: the `notify` sites' reachability, the achievement save being
+  called, or the bestiary's drop lines.
 
 ## Deviations & risks
 
@@ -211,38 +226,108 @@ and one persistent store per world (the `.wld` section 10 triple).
 | 1 | `CreateMany` rows expanded to 1:1 (S1-E-18): all 180 conditions present. | behavioural | Resolved (S1-E-18) |
 | 2 | Save is now wired (S1-E-18): path bound at bootstrap/world swap, saved on completion and from `save_world`; headless apps have no bound path. Format remains the port's plain-text `achievements.trdat` (not vanilla Rijndael+BSON). | behavioural / interop | Partial — call sites wired, format differs by design |
 | 3 | Notify wrappers and additional sites landed (S1-E-18), but many progression/custom rows remain unreachable because their owning systems/paths are not ported (e.g. 17 partial, 18, 19/20, nurse `Pay`, and most other progression/custom flags). Progression 29 is explicitly blocked on S1-F-15. | behavioural | Partly — expanded, not complete |
-| 4 | `kills_needed_for` returns 0 for net ids outside the 11-pair banner table; 0 means "≥ full", so 164 of 172 entries report tier 4 (`CanShowDropsWithDropRates`) with zero kills. The C# default is 50. | behavioural | **No** |
-| 5 | `quick_unlock` on 5 entries instead of every boss + the override rows; the town NPC `Guide` wrongly carries it (the C# uses the chat provider). | behavioural | **No** |
-| 6 | The town-NPC (chat) and critter (sight) unlock providers are absent, and the `sights`/`chats` sets are never recorded. | behavioural | Yes — `tr-core/src/bestiary.rs:124-130`, ANALYSIS "the sightings/chats stay empty until the recording behaviour lands" |
+| 4 | ~~`kills_needed_for` returns 0 for net ids outside the 11-pair banner table; 0 means "≥ full", so 164 of 172 entries report tier 4 (`CanShowDropsWithDropRates`) with zero kills. The C# default is 50.~~ **FIXED (S1-F-15 + W4-c37)** — the full banner chain (`npc_to_banner`/`banner_to_item`/`kills_to_banner_item`) with the 50 default; the fresh-world witness pins every roster entry at `NotKnownAtAll`. | behavioural | Resolved |
+| 5 | ~~`quick_unlock` on 5 entries instead of every boss + the override rows; the town NPC `Guide` wrongly carries it (the C# uses the chat provider).~~ **FIXED (W4-c37)** — the flag census matches the `SetDefaults` boss rows + `ShouldBeCountedAsBossForBestiary`; the per-entry providers (`bestiary_data::gate`) carry the town chat / critter sight / DD2 quick rows / boss-credit folds / Skeletron Highest-of-two. | behavioural | Resolved |
+| 6 | The town-NPC (chat) and critter (sight) unlock providers are absent, and the `sights`/`chats` sets are never recorded. **Providers DONE (W4-c37)** — `Gate::Town`/`Gate::Critter` read the trackers; the RECORDING (`ScanWorldForFinds:102-130` + the chat hook) stays open. | behavioural | Partly — providers landed, recording still state-only (`tr-core/src/bestiary.rs:124-130`) |
 | 7 | `ReportDroprates` / the drop-rate tables are absent: the bestiary's drop list is a 4-row hand-written table, so the tier-3/tier-4 drop lines are empty for 168 of 172 entries. | behavioural / pixel | Yes — ANALYSIS.md:2969 "not ported — M4-BEST-1 territory" |
 | 8 | `TryGrantingBestiary100PercentAchievement` (→ progression event 29 → `BOOK_WORM`) never fires. | behavioural | Yes — `tr-core/src/bestiary.rs:82` "no achievement hook (M6-ACH-1's)" |
 | 9 | The achievement save format is plain text (`achievements.trdat`), not the vanilla Rijndael-CBC+BSON `"RELOGIC-TERRARIA"`. | behavioural (interop) | Yes — `achievements.rs:390-394` |
 | 10 | ~~The unlock popup, `AchievementAdvisor` and the chat tag handler are missing.~~ **Popup DONE (S1-E-26 wave A)** — `ui/notifications.rs` + the drain seam; the advisor and the chat tag's snippet rendering remain open. | cosmetic / behavioural | Yes — ANALYSIS "The achievement unlock popup (S1-E-26 wave A)" |
 | 11 | ~~`notify` returns only the last completed achievement; the C# fires `OnCompleted` (and a save) for every one.~~ **FIXED (S1-E-26 wave A)** — `notify_with` queues every completing row into `completed_events` (save + event per row); the return value keeps the last-name shape for the existing callers. Pinned by `one_event_completing_two_rows_queues_both`. | behavioural (minor) | Resolved |
-| 12 | `completion_percent` divides by the port's 172-entry roster, not the C#'s full roster; combined with #4 it reads ~95% at start, which gates the Zoologist's shop (`Chest.cs:3265`). | behavioural | **No** |
+| 12 | `completion_percent` divides by the port's 172-entry roster, not the C#'s full roster; ~~combined with #4 it reads ~95% at start~~ — with #4 fixed it reads 0 at start (W4-c37's fresh-world witness); the roster-denominator half stays until the roster waves land. | behavioural | Partly — the start-value bug resolved (W4-c37), the denominator is the port roster |
 | 13 | `ENTRIES` (172) vs `BESTIARY_NPC_SHEET_IDS` (174) — 2 sheet slots have no entry row. | cosmetic | Partly — BUG-15 removed the literal drift, not the skew |
 | 14 | The kill-count and sight/chat sets iterate in sorted order vs the C#'s unspecified `Dictionary`/`HashSet` order — deterministic, but a different byte order in the save. | determinism | Yes — documented in `tr-core/src/bestiary.rs:96-100, 132-136` |
 | 15 | `banner_to_item` keeps only 3 bands (276+/88+/default); the C# has the 292/291/290/289/273/251 specials and the 186-275 bands. It agrees on the port's 11 banners but is wrong on extension. | behavioural (latent) | Partly — `tr-core/src/bestiary.rs:286-287` |
 | 16 | ~~No MP sync of the bestiary kill counts (NetBestiaryModule).~~ **PORTED (S1-I-5)** - module 4 carries the kill count, the 97/98 wires carry the credit and the progression id; the Sight/Chat halves are still open. | behavioural (MP) | Yes - pp/netmodules.rs::BestiaryKill, pp/netglue.rs |
 | 17 | `Player.HasAchievement`, `Main.achievementTracker` and a `BossAchievement` type **do not exist** in the 1.4.5.8 decompile. The boss kill requirement is the bestiary's banner→`KillsToBanner` chain, and the achievement query is `Main.Achievements.GetAchievement(name).IsCompleted`. | n/a | n/a |
-| 18 | `Achievement.completed` (flag) vs `is_completed()` (derived) disagree for a zero-condition row before and after a load. | behavioural (minor) | **No** |
+| 18 | ~~`Achievement.completed` (flag) vs `is_completed()` (derived) disagree for a zero-condition row before and after a load.~~ Moot after S1-E-18/W4-e22: no shipped row has zero conditions (`the_create_many_rows_stay_expanded` pins it); the flag/derived skew is unreachable through the registry. | behavioural (minor) | Resolved (W4-e22 re-verification) |
 | 19 | `CustomFloat` sub-unit progress (`Condition.frac`) is in-memory only; `load_pairs` resets it because the text save stores the whole `value` only. | behavioural (minor) | **No** (documented, S1-E-18) |
 | 20 | Altar hammer smash is routed through `break_tile` + `smash_altar` in the active-tile branch (`app.ore_tiers` updated), firing BEGONE_EVIL; `tile_drop(26)=None` (C# empty drop group). Self-hurt/wraith halves of the C# refusal are follow-ups. | behavioural (partial) | Partly (S1-E-18) |
 | 21 | `StopSlimeRain` sets the negative cooldown clock (`Main.cs:64787-64820`); `stopMoonEvent` does not clear `bloodMoon` (cleared in `UpdateTime_StartDay`). | behavioural (closer) | Yes (S1-E-18) |
+
+## W4-f30 tail census — the second notify batch (2026-11-21)
+
+The co-lane reservation (c36's claim above) gives f30 the *tail* sites:
+progression 33-41/43-46, `MechaMayhem_*` (21) and the `CheckResearchAchievement`
+family (45). The full C# call-site census of those ids, each marked WIRED (the
+owning system is ported and the notify fires) or CITED (the owning system is
+unported — the site stays unwired with its C# anchor, per the lane rule "sites
+neither lane's systems own stay unwired and cited"). Code-only mode: the 13
+witness tests are WRITTEN NOT RUN.
+
+| id | row | C# site | verdict |
+| --- | --- | --- | --- |
+| 21 | MECHA_MAYHEM | `AchievementsHelper.cs:447-483` (`MechaMayhem_Kill`), `NPC.cs:79842`/`:79847` (`CountKillForAchievements`), `:80664-80685` (`SpawnBoss` bookends) | **WIRED** — the machine on `AchievementManager` (`mecha_mayhem_{clear,start,kill}`), the summon bookends in `use_boss_summon_item` (544 per-eye, 556/557 shared), the death-path switch + the `DropEoWLoot` last-segment boss latch (`NPC.cs:78414-78430`). |
+| 33 | FEAR_THE_SUN | `Player.cs:28647` (`UpdateSunScorch`, the vampire 124/85/72 set at `sunScorchCounter` 120) | **WIRED (W4-f30 system 2)** — `sun_scorch.rs`: the exposure scan + the clamp-300 ramp + the 120-crossing burn (the `Array.Clear`/24-23-32 triple/mount-dismount/wings-rocket zero) + the vampire-set check; the `update_equips`-tail call site fires 33, the Molten `buffImmune[24]` gate reads the live flag. The sizzle sound / VampireOnFire particle / PlayerFrame side effects cited. |
+| 34 | ITS_SHALING_OUTSIDE | `WorldGen.cs:71694` (`SpawnFallingObjects`, the boulder-rain start on drunk+getGood+storm) | CITED — `SpawnFallingObjects` / `_isRainingBoulders` unported (no boulder-rain weather pass). |
+| 35 | EXTRA_LIFE | `Player.cs:38782` (`HardcoreDeathPenalty`, `Main.surviveHardcoreDeath` + `statLifeMax -= 60`) | **WIRED (W4-f30 system 3)** — `death.rs::hardcore_death_penalty`: the `survive_hardcore_death` seed predicate (DST+Anniversary unless FTW), the `max_hp-60` clamp + the 35 notify on the surviving world, `kill_me_for_good`'s `.plr`/`.bak` erase + session-draft reset; the ghost flag (`update_dead`'s hardcore gate) never respawns. |
+| 36 | GRAVE_MISTAKE | `Player.cs:20473` (`OnKillNPC`, a gravestone projectile kills a town NPC) + `:38836` (`KillMe`, a teammate's gravestone) | **WIRED (W4-f30 system 1)** — the gravestone is the REAL aiStyle-17 projectile (`projectile.rs::ai_gravestone`, the `DropTombstone` spawn with the FTW `friendly&&hostile` pair); the `OnKillNPC` town-kill latch in `damage_pve` + the `KillMe` teammate-gravestone arm (the single-player self-kill stand-in, the MP deviation documented) both fire 36. The landing places tile 85 + the epitaph sign. |
+| 37 | SPICY_LICKS | `Player.cs:46574` (The Axe 1305), `:46588` (Carbon/Ivy guitars 4057/4372), `:46603` (Sparkle Guitar 4715) | **WIRED (4715)** — the Sparkle Guitar's note spawn fires 37 (`fire_non_ammo_shot`'s 4715 arm, the chord-use stand-in). The Axe + Carbon/Ivy guitars have no ported chord-use arm — those two sites CITED. |
+| 38 | ON_FLEEK | `Player.cs:25693` (`UpdateArmorSets`, Sunglasses head-slot 12 in the day window) | **WIRED** — `update_player`'s armor tail: head-slot 12 + `!remix && !rain && dayTime && time in [3600,50400] && y < worldSurface*16`. |
+| 39 | FORTUNE_FAVORS_THE_BOULD | `Main.cs:61828` (`_rainbowBoulderMusicFramesCounter > 0`, the rainbow-boulder draw) | CITED — the rainbow boulder (proj 1047/1090) draw + its music counter are unported (the pet flag exists, `buff_effects_misc.rs:206`, but no boulder projectile/draw). |
+| 40 | TRAINING_DAY | `Player.cs:25697` (`UpdateArmorSets`, `combatBookWasUsed && combatBookVolumeTwoWasUsed`) | CITED — the port carries `world.combat_book_was_used` but the volume-two book (5336) use is unported (`ItemCheck_UseCombatBook` `Player.cs:45337-45349` has no port; the second flag never sets). |
+| 41 | MINI_ME | `Player.cs:25701` (`UpdateArmorSets`, the Moon Lord set 187/249/217) | **WIRED** — `update_player`'s armor tail: effective head 187 + body 249 + legs 217 (the vanity-over-functional fold). |
+| 43 | NEW_DIGS | `NPC.cs:53273` (`AI_007`'s shimmer-dunk transform, `townNpcVariationIndex == 1`) | **CORE PORTED (W4-f30 system 4)** — `town_shimmer.rs::town_shimmer_step`: the RNG-free state-25 decision core (the ai2 hold/climb/transparency-decay/completion variant-flip + the 43 gate). The full visual/teleport machine + the inline 43 wire are the liquid-shimmer lane's (W4-f47 `e5aebe3e`, on its unmerged branch); the town AI itself is unwired on this base (the `update_guide` stand-in) and the shimmer trigger (buff 353 → GetShimmered) is f47's — the core is exercised by the witnesses, the wiring cites it. |
+| 44 | MY_PEOPLE_NEED_ME | `Player.cs:24076` (`BordersMovement`, the remix/forced-gravity top-world death) | CITED — `BordersMovement` is unported (no world-border movement pass; the port's player has no top-world kill). |
+| 45 | TRASH_COMPACTOR | `AchievementsHelper.cs:387-399` (`CheckResearchAchievement`), `Player.cs:325` (`EnterWorld`, forced) + `:25703` (per tick) | **WIRED (W4-f30)** — `App.research` + `last_research_version`; the per-tick armor-tail check (`world_sim/player.rs`) + the forced `enter_loaded_world` check both call `check_research_achievement` → 45. The live sacrifice UI is unported, so the tracker never edits in play and the check is inert until the Journey research lands — but the helper, the count, the App field and both call sites are wired (PREP → WIRED). |
+| 46 | INTERDIMENSIONAL_RECYCLING | `Main.cs:40294` (`DryadText_Do_StardewValleyBit`, the Joja-cola gift) | **WIRED (W4-f30 system 5)** — VERIFIED LIVE (`NPCInteractions.cs:517` registers `StardewValleyBit`; the dead wrapper is `DryadText_WorldPurityOrStardewValleyBit`). `dryad_stardew.rs`: `CanDryadPlayStardewAnimation`, the gift (`ConsumeItem(5275, reverseOrder)` + the Dryad state-24 + the Junimo 995 spawn + the 46 notify), the Purify button + the `OverrideChatTextWithShenanigans` reminder/reroll machine. The AI_192 Junimo animation / the 144 relay / the DryadPurification status button cited. |
+
+Also landed: `tr_core::seeds::SeedFlags::mechdusa` (`SpecialSeedFeatures.cs:119-128`,
+remix && for-the-worthy) — the gate the QUEEN_MACHINE (31) death arm
+(`NPC.cs:78857-78869`, the Mechdusa last-mech kill) reads. Progression 31 itself
+stays CITED: the Mechdusa summon (5334) + its combined-boss death are unported
+(the summon seam handles 544/556/557 only; `SpecialSeedFeatures.Mechdusa`'s
+`SpawnMechQueen` has no port).
+
+**Net (after the W4-f30 owning-systems batch):** 9 progressions wired
+(21, 33, 35, 36, 37-partial, 38, 41, 45, 46), 1 core ported (43 — the decision
+core; the visual/teleport machine + the inline wire are f47's lane), 4 cited
+(34, 39, 40, 44) + 31 cited. The e22 condition table (180 conditions) is
+untouched — f30 wires notify sites only, never `achievements_data.rs`.
+
+The owning-systems batch (2026-11-21, user order "port UNPORTED OWNING
+SYSTEMS"): system 1 gravestone kills (36), system 2 sun-scorch (33), system 3
+hardcore death penalty (35), system 4 town shimmer decision core (43, the
+lane-split with f47), system 5 Dryad Joja bit (46, verified LIVE not dead
+code), then the prepared research 45 wired. The boulder-rain (34),
+rainbow-boulder (39), combat-book-v2 (40) and Mechdusa-summon (31) systems
+stay with their active lanes (worldgen / d54 orch / g89b / boss-summon).
+
+### W4-f30 RETIRE phase (2026-11-21) — `335-f30-systems-retire.md` (renamed 240→335)
+
+The sibling lanes landed their overlapping halves (c46 hardcore `7330cd4e`,
+d70 sun-scorch `a7620eec`, c24 Journey sacrifice `ff99f148`, f47 shimmer
+`1997be09`, d2 tombstones `f430ccf8` — all UNMERGED at this writing). The
+retire verdicts, the exact keep-one drop-hunks and the compose meeting points
+are published in **`335-f30-systems-retire.md`** (renamed 240→335 per the d54
+collision registry 150 §9.2 — g58's earlier rename wins 240): 35 → KEEP c46 (the verbatim two-file delete + the no-draft-clear
+ruling + the seeded `update_dead`), 33 → KEEP f30's scan/33 wire, DROP d70's
+method copies (its lens-flare/shadow/HeatDistortion halves survive on the kept
+field), 45 → COMPOSE with c24 (its clamped `register_sacrifice` + f30's
+`LastEditId` bump at the `MarkContentsDirty` slot; the forced EnterWorld check
+is the load-path 45 site — C# `Load` does not dirty), 43 → KEEP f47's wired
+machine, DROP f30's core (+ add the `netMode != 1` completion gate f47 omits),
+36 → KEEP d2's verbatim flight + f30's 36 machinery/date/FTW-hostile folds.
+The census table above stays the band's record; the FINAL systems-family
+declaration (the lane is census-complete for its reserved band) is 335 §6.
 
 ## Task seeds
 
 - ~~**S** — Model `NPCKilledCondition.CreateMany` faithfully~~ — **done (S1-E-18)**.
 - ~~**S** — Call `achievements::save` from the autosave/F9 pass~~ — **done (S1-E-18)** (save on completion + `save_world`, path-bound bootstrap).
 - **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: 17 partial, 18, 19/20, nurse `Pay`, most progression/custom flags; 29 blocked on S1-F-15). Partially done (S1-E-18). Dep: owning systems.
-- **S** — Make `kills_needed_for` fall back to
+- ~~**S** — Make `kills_needed_for` fall back to
   `ItemID_Sets_DefaultKillsForBannerNeeded` (50) instead of 0, and pin it with a
   regression test that a fresh tracker leaves a non-quick entry at
-  `NotKnownAtAll`. Fixes #4.
-- **M** — Replace the `quick_unlock` bool with a per-entry provider enum
+  `NotKnownAtAll`. Fixes #4.~~ **DONE (S1-F-15 + W4-c37)** — the full banner
+  chain + the fresh-world census witness.
+- ~~**M** — Replace the `quick_unlock` bool with a per-entry provider enum
   (`CommonEnemy` / `TownNPC` / `Critter` / `HighestOfMultiple` / `GoldCritter` /
-  `Salamander`) and record sightings and chats. Fixes #5, #6. Dep: the S task
-  above for the denominator.
+  `Salamander`) and record sightings and chats. Fixes #5, #6.~~ **Providers DONE
+  (W4-c37)** — `bestiary_data::Gate` (Common/Town/Critter/Highest) over the
+  populator's override walk; the GoldCritter/Salamander/TorturedSoul gates have
+  no port entries yet (recorded in `gate`'s doc). The sight/chat RECORDING stays
+  open (#6's second half).
 - **L** — Port `ReportDroprates`: add a `report_droprates` method to the drop-rule
   traits (`tr-core/src/loot.rs`) and feed the resulting `DropRateInfo` rows into
   the bestiary entries as the C#'s `ItemDropBestiaryInfoElement`. Fixes #7.
@@ -262,6 +347,15 @@ and one persistent store per world (the `.wld` section 10 triple).
   `SerializeKillCount` on a kill (`NPCKillsTracker.cs:23-33`) and syncs the counts on
   player join (`:98-107`), with the `97`/`98` achievement wires
   (`MessageBuffer.cs:3558-3569`). Fixes #16. The `Sight`/`Chat` halves remain open.
-- **S** — Add a data test that pins every Rust row's condition count against
+- ~~**S** — Add a data test that pins every Rust row's condition count against
   `AchievementInitializer.cs` (137 rows / 180 conditions) so the `CreateMany`
-  class of bug cannot return. Dep: the first S task.
+  class of bug cannot return. Dep: the first S task.~~ **DONE (W4-e22,
+  2026-11-20)** — `achievements_data.rs::tests::every_rows_conditions_match_the_initializer_verbatim`
+  compares `ROWS` against a second verbatim transcription
+  (`CONDITION_COUNTS`) of `AchievementInitializer.cs:16-443`: row order,
+  per-row count, and every condition's kind + arguments (137 rows / 180
+  conditions). An independent C#-vs-Rust diff (kinds, ids, condition names,
+  trackers, icons, categories) found **0 mismatches** — the table itself
+  needed no porting; S1-E-18's `b93459de` had already landed the expansion.
+  `the_create_many_rows_stay_expanded` pins the four `CreateMany` shapes
+  (3/4/24/15) and that no row is born complete.

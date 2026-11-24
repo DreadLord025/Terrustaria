@@ -65,6 +65,7 @@ pub use grass::{
     spread_desert_walls, spread_grass, spread_grass_walls, update_world_grass_growth,
 };
 pub(crate) use grass::convert_wall_by_case;
+pub(crate) use trees::ALLOWS_PLANTS_TO_GROW;
 use grass::{grow_moss_arm, SPREAD_UNDERGROUND};
 
 // S1-K-3: the decorations family lives in `growth/decorations.rs`; the public

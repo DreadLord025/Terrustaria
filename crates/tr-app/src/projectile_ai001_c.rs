@@ -55,9 +55,12 @@
 //! by re-reading the cited C# blocks and hand arithmetic.
 //!
 //! Deliberate skips (recorded in ANALYSIS "aiStyle-1 per-type arms, slice C"):
-//! - Dust, light (`Lighting.AddLight` `:54571`), sound (`Item34` `:54488`,
-//!   `Item11` `:55247`, `Item17` `:55339`/`:55344`,
-//!   `DD2_DarkMageAttack` `:56466`) and `netUpdate` — no such layers.
+//! - Dust, light (`Lighting.AddLight` `:54571`) and `netUpdate` — no such
+//!   layers. SOUND now rides the `wants_sound` seam (S1-E-21h d76): the
+//!   634/635 blaze Item34 (`:54488`), the 110 Item11 (`:55247`) and the
+//!   275/276 Item17 (`:55339`/`:55344`). The 675 Dark Mage's
+//!   `DD2_DarkMageAttack` (`:56466`) is a PlayTrackedSound — the D3
+//!   trackable family, DEFERRED (its latch rides cue-less).
 //! - 275/276's expert homing (`:57212-57231`): the port is single-difficulty
 //!   NORMAL (`tr-core/src/world.rs:772`), so `Main.expertMode` is const
 //!   false and the branch is unreachable — skipped by construction.
@@ -142,8 +145,8 @@ enum Rot {
 pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], num_updates: i32) {
     match p.kind {
         BULLET_SNOWMAN => {
-            // `:55244-55248` — `ai[1] = 1f` + `SoundID.Item11` (SKIPPED).
-            latch_ai1(p);
+            // `:55244-55248` — `ai[1] = 1f` + `SoundID.Item11` (S1-E-21h d76).
+            latch_ai1(p, 11);
             // `:55613` + `:55626-55633` — the alpha switch: `alpha -= 15`
             // while positive, clamp 0.
             fade_alpha(p, 15);
@@ -163,8 +166,8 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], num_updates:
                     p.frame = 0;
                 }
             }
-            // `:55336-55345` — `ai[1] = 1f` + `SoundID.Item17` (SKIPPED).
-            latch_ai1(p);
+            // `:55336-55345` — `ai[1] = 1f` + `SoundID.Item17` (S1-E-21h d76).
+            latch_ai1(p, 17);
             // 275/276 are NOT on the flag3 skip list — they count into the
             // 35/0.025 gravity arm (`:57197-57211`).
             finish(p, world, true, Gravity::Seed, Rot::Default);
@@ -181,10 +184,11 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], num_updates:
         DARK_MAGE_FLAME => {
             // `:56461-56473` (below the counter in the C#, but the counter
             // and this hook commute — no shared state): the localAI[0]
-            // one-shot (`PlayTrackedSound(DD2_DarkMageAttack)` SKIPPED)
-            // and `alpha -= 20`, clamp 0.
+            // one-shot (`PlayTrackedSound(DD2_DarkMageAttack)`, `:56466` —
+            // W4-d80) and `alpha -= 20`, clamp 0.
             if p.local_ai[0] == 0.0 {
                 p.local_ai[0] = 1.0;
+                p.wants_tracked = Some(crate::projectile::ProjTrackedCue::OneShot("DD2_DarkMageAttack"));
             }
             fade_alpha(p, 20);
             // Not on the flag3 skip list — the counter runs, but the
@@ -196,11 +200,14 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], num_updates:
     }
 }
 
-/// The `ai[1] == 0f → ai[1] = 1f` first-tick latch (the sound cue is
-/// SKIPPED pool-wide; the latch state gates the cue to one play in C#).
-fn latch_ai1(p: &mut Projectile) {
+/// The `ai[1] == 0f → ai[1] = 1f` first-tick latch. S1-E-21h d76: the
+/// arm's `SoundID.ItemN` cue queues with the latch at `base.position`
+/// (110→Item11 `:55247`, 275/276→Item17 `:55339`/`:55344`); the latch
+/// state gates the cue to one play in C#.
+fn latch_ai1(p: &mut Projectile, style: i32) {
     if p.ai[1] == 0.0 {
         p.ai[1] = 1.0;
+        p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
     }
 }
 
@@ -240,9 +247,11 @@ fn blaze(p: &mut Projectile, world: &World, npcs: &[Npc]) {
     let cx = p.pos.x + p.w * 0.5;
     let cy = p.pos.y + p.h * 0.5;
     if p.ai[1] == 0.0 {
-        // `:54484-54489` — the first-tick latch; the rand seed and the
-        // Item34 cue are SKIPPED (module doc).
+        // `:54484-54489` — the first-tick latch; the rand seed
+        // (`localAI[0] = -Next(48)`) stays SKIPPED (dust-only reader), the
+        // Item34 cue queues at base.position (S1-E-21h d76, `:54488`).
         p.ai[1] = 1.0;
+        p.wants_sound = Some((2, 34, p.pos.x, p.pos.y, 0.0, 1.0));
     } else if p.ai[1] == 1.0 {
         // `:54490-54518` — the acquisition scan. The `owner ==
         // Main.myPlayer` gate folds into the pool's locally-simulated
@@ -868,5 +877,33 @@ mod tests {
             saucer.slots()[0].local_ai[0], 100.0,
             "slice B still owns 449 (its +3/tick ramp saturates at 100)"
         );
+    }
+
+    // ---- S1-E-21h d76: the slice-C cue witnesses (WRITTEN, NOT RUN) --------
+
+    /// 110 (`:55247`) → Item11, 275/276 (`:55339`/`:55344`) → Item17,
+    /// 634/635 (`:54488`) → Item34 — each once per life at base.position.
+    #[test]
+    fn s1_e_21h_d76_the_slice_c_latches_carry_their_cues() {
+        let w = world();
+        for (kind, style) in [
+            (BULLET_SNOWMAN, 11),       // :55247
+            (SEED_PLANTERA, 17),        // :55339
+            (POISON_SEED_PLANTERA, 17), // :55344
+            (NEBULA_BLAZE_1, 34),       // :54488
+            (NEBULA_BLAZE_2, 34),       // :54488
+        ] {
+            let mut p = proj(kind, 2.0, 0.0);
+            step(&mut p, &w, &[], -1);
+            assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
+            assert_eq!(
+                p.wants_sound,
+                Some((2, style, 160.0, 160.0, 0.0, 1.0)),
+                "kind {kind}'s cue at base.position"
+            );
+            p.wants_sound = None;
+            step(&mut p, &w, &[], -1);
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
+        }
     }
 }

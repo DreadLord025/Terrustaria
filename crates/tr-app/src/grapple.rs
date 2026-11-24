@@ -667,7 +667,7 @@ pub(crate) fn ai_hook(
                     // the UpdateProjectiles stream, attenuation-gated). The
                     // slot parks the intent; the pool drains it (the E-21h
                     // `wants_sound` seam, id 0 = the int overload).
-                    slot.wants_sound = Some((0, 0, i as f32 * 16.0, j as f32 * 16.0, 0.0));
+                    slot.wants_sound = Some((0, 0, i as f32 * 16.0, j as f32 * 16.0, 0.0, 1.0));
                     return HookTick::attached_at(
                         Vec2::new(slot.center().0, slot.center().1),
                         true,
@@ -1660,7 +1660,7 @@ mod i39_census_tests {
         let pc = Vec2::new(40.0 * 16.0, 62.0 * 16.0 - 100.0);
         let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
         assert!(t.attached.is_some());
-        let (id, _style, x, y, _pitch) = h.wants_sound.expect("the dig cue");
+        let (id, _style, x, y, _pitch, _vol) = h.wants_sound.expect("the dig cue");
         assert_eq!(id, 0, "the int overload PlaySound(0)");
         assert_eq!((x, y), (40.0 * 16.0, 62.0 * 16.0), "at the tile origin");
     }

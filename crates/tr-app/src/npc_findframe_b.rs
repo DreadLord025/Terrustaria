@@ -37,8 +37,11 @@
 //! and the dust spawns of the case-48 group's OTHER members (60/634 —
 //! not this wave's kinds).
 
-// The `find_frame` wiring is a later wave (the kinds are not in
-// `NpcKind` yet) — the `ammo.rs`/`drawdata_anim.rs` precedent.
+// The `find_frame` wiring landed for the residual fighter pair 294/296
+// (the `find_frame_kind_b` mapper below + the npc.rs `find_frame_wave_b`
+// hook — research/125 §14); the module's OTHER kinds are not in
+// `NpcKind` on this branch yet — the `ammo.rs`/`drawdata_anim.rs`
+// precedent keeps the allow until their lanes' kinds land.
 #![allow(dead_code)]
 
 /// The 25 wave-B kinds, keyed by their VANILLA `NPC.type`
@@ -595,6 +598,20 @@ pub fn find_frame_b(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
     }
 }
 
+/// W4-d44 wire — the wiring seam: the vanilla type → this module's
+/// kind (the `find_frame_kind_extra6` in-module-lookup precedent).
+/// The d38 residual pair ONLY (research/125 §14, the SEAL-RECEIPT
+/// re-probed at this tip): 289 GiantCursedSkull is EXCLUDED (the E3
+/// dedupe keeps the d38 inline arm — the dropped twin), the other
+/// wave-B kinds await their roster lanes. `None` outside.
+pub fn find_frame_kind_b(vanilla_type: i16) -> Option<FindFrameKind> {
+    Some(match vanilla_type {
+        294 => FindFrameKind::AngryBonesBig,
+        296 => FindFrameKind::AngryBonesBigHelmet,
+        _ => return None,
+    })
+}
+
 /// The humanoid-group fighter walk (`NPC.cs:68647-69655`) for the
 /// non-town members: the grounded flip (`:68649-68656` — only `direction`
 /// ±1 writes), the idle snap (`:69489-69519` — row 0, or row 1 for the
@@ -604,8 +621,12 @@ pub fn find_frame_b(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
 /// The town `ai[0]` pose zones (`:68662-69488`) are unreachable for these
 /// aiStyle-3 fighters (their turn counter leaves `ai[0]` at 0/1,
 /// `NPC.cs:57381-57397`) and are not carried — the `humanoid_town_frame`
-/// precedent in `npc.rs`.
-fn humanoid_fighter_frame(
+/// precedent in `npc.rs`. Shared with `npc_findframe_extra2` (the
+/// Chaos Elemental 120 / Face Monster 181 ride the same group) and
+/// `npc_findframe_extra3` (the Snow Flinx 185 / Nymph 196 / Lihzahrd
+/// 198 + the batch-2 skeletons) — the keep-one house rule, the e14/f26
+/// delegate precedent.
+pub(crate) fn humanoid_fighter_frame(
     s: &mut FrameState,
     i: &FrameInput,
     count: u32,
@@ -1106,5 +1127,28 @@ mod tests {
             rows_over(FindFrameKind::GiantCursedSkull, spin, 8),
             [3, 3, 3, 4, 4, 4, 4, 5]
         );
+    }
+
+    /// The wiring seam maps EXACTLY the two residual fighter ids
+    /// (294/296, `NPC.cs:68591/:68593` — research/125 §14); 289 is
+    /// EXCLUDED per the d38 E3 dedupe (the d38 inline arm is the kept
+    /// twin), the module's other 22 kinds are NOT claimed by this
+    /// batch, and the band edges stay outside. WRITTEN NOT RUN.
+    #[test]
+    fn the_wiring_seam_maps_only_the_two_residual_fighter_ids() {
+        assert_eq!(find_frame_kind_b(294), Some(FindFrameKind::AngryBonesBig));
+        assert_eq!(
+            find_frame_kind_b(296),
+            Some(FindFrameKind::AngryBonesBigHelmet)
+        );
+        // 289 NEVER (the E3 keep-inline verdict), 295 is extra6's.
+        assert_eq!(find_frame_kind_b(289), None);
+        assert_eq!(find_frame_kind_b(295), None);
+        // The band edges + the module's other kinds stay outside.
+        for id in [293i16, 297, 31, 34, 75, 77, 78, 79, 80, 82, 85, 86,
+                   104, 109, 110, 122, 140, 155, 167, 174, 177, 197, 206,
+                   630] {
+            assert_eq!(find_frame_kind_b(id), None, "{id}");
+        }
     }
 }

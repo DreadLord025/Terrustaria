@@ -50,9 +50,20 @@ pub struct SpawnFlags {
     /// hardmode.
     pub hard_dungeon: bool,
     pub zone_sandstorm: bool,
+    /// `Sandstorm.Happening` (`NPC.cs:3949`'s desert-override gate — the
+    /// zone flag alone is not enough: the C# reads BOTH). W4-c40.
+    pub sandstorm_happening: bool,
+    /// `NPC.downedBoss1` (`NPC.cs:3951`'s pre-hardmode desert ladder gate).
+    /// W4-c40.
+    pub downed_boss1: bool,
     pub zone_underground_desert: bool,
     pub zone_jungle: bool,
     pub zone_evil: bool,
+    /// `Player.ZoneCrimson` — the town gate's explicit `!ZoneCrimson` term
+    /// (`NPC.cs:799`), which survives `Main.infectedSeed`'s clear of the
+    /// corrupt/crimson `flag` (`:794-798`). W4-c41: split out of `zone_evil`
+    /// so the infected-seed world opens the gate in corruption only.
+    pub zone_crimson: bool,
     pub zone_meteor: bool,
     pub zone_temple: bool,
     pub zone_hallow_deep: bool,
@@ -71,7 +82,283 @@ pub struct SpawnFlags {
     pub enemy_spawns: bool,
     /// `Main.wofNPCIndex >= 0` (the Wall of Flesh is alive).
     pub wof_active: bool,
+    /// `Main.infectedSeed` (`WorldGen.cs`'s `worldIsInfected` micro seed →
+    /// `MicroSeedFlags::WORLD_IS_INFECTED`): clears the town gate's
+    /// corrupt/crimson `flag` (`NPC.cs:795-798`) — the explicit
+    /// `!ZoneCrimson` term (`:799`) still closes it in crimson. W4-c41.
+    pub infected_seed: bool,
 }
+
+/// W4-d127 chain item 4 — the style-24 birds' SPAWN gates, transcribed
+/// verbatim from `NPC.SpawnAnNPC` (`NPC.cs:1282+`). UNWIRED helpers
+/// (the census-ownership rule): the bird kinds land on the roster
+/// co-lanes (74=d35, 297/298=d38, 442=d40, 611=d42, 671-675/689=d43)
+/// and the spawner-ladder wiring is that merge step — these pure gates
+/// pin the C#'s conditions + draw order so the merge has the census in
+/// one place (the `moon_boss_slots` precedent). g61 owns spawn DUST
+/// only (its tip touches npc_spawn_visuals.rs, not the pool ladder).
+///
+/// RNG census (the enclosing `case 2/109/477/492` block,
+/// `NPC.cs:2377+`, `flag10 = surfaceSpawn`):
+/// * the owl gate `(!raining && !dayTime && Next(5) == 0) & flag10`
+///   (`:2437`): ONE Next(5); on hit `RollBadLuckExtreme(100)`
+///   (`Luck.cs:40-51` — positive luck: NextFloat + Next(1000) on hit;
+///   negative: NextFloat + Next(10) on hit; zero luck: Next(100)
+///   only) picks 689 mimic on 0 else 611 owl;
+/// * the day-bird gate `(dayTime && time < 18000.0 && Next(3) != 0)
+///   & flag10` (`:2449`): Next(3); on hit ONE Next(4) pick, then the
+///   gold promotion `RollLuck(goldCritterChance=400)`
+///   (`NPC.cs:95159`) → 442, else pick 0→297, 1→298, default→74
+///   (`:2451-2470` — the Next(4) draws BEFORE the gold roll);
+/// * the ANYTIME bird gate `(Next(2) == 0) & flag10` (`:2532`): ONE
+///   Next(2), day OR night, no weather/time gate; on hit the SAME
+///   Next(4) pick + gold RollLuck(400) → 442/297/298/74 (`:2534-2552`,
+///   [`bird_spawn_anytime_pick`]) — the case-block's last bird band,
+///   reached only when the owl/day/stinkbug/butterfly gates above miss;
+/// * the jungle surface gate `surfaceSpawn && ZoneJungle &&
+///   !ZoneCrimson && !ZoneCorrupt && Next(7) == 0` (`:3801`): on hit
+///   `dayTime && time < 43200.00064373016 && Next(3) != 0` → ONE
+///   Next(5) pick 671-675 (`:3803-3826`); else `SpawnFrog`
+///   (`:5609-5622` — the 687/445/361 ladder, NOT a bird);
+/// * the jungle MUD tile gate `tileType == 60 && dayTime &&
+///   Next(3) != 0` (`:2336-2361`, the water-ladder mud-critter scan):
+///   ONE Next(5) pick 671-675; else SpawnFrog.
+#[derive(Clone, Copy)]
+pub struct BirdSpawnGates {
+    /// `this.surfaceSpawn` (`NPC.cs:1202`).
+    pub surface: bool,
+    /// `Main.dayTime`.
+    pub day_time: bool,
+    /// `Main.time` (the day clock, 0..54000 day / 0..32400 night).
+    pub time: f64,
+    /// `this.raining` (`Main.raining`).
+    pub raining: bool,
+    /// `this.ZoneJungle`.
+    pub zone_jungle: bool,
+    /// `this.ZoneCrimson || this.ZoneCorrupt` (the jungle gate's
+    /// exclusion pair).
+    pub zone_evil: bool,
+    /// `Player.luck` — the RollLuck/RollBadLuckExtreme input.
+    pub luck: f32,
+}
+
+/// The owl gate's pick (`NPC.cs:2437-2447`): `Some(true)` = the 689
+/// mimic, `Some(false)` = the 611 owl, `None` = no spawn (the gate
+/// missed). Draw order: Next(5) gate, then RollBadLuckExtreme(100).
+pub fn bird_spawn_owl_pick(g: &BirdSpawnGates, rng: &mut UnifiedRandom) -> Option<bool> {
+    // `:2437` — `(!this.raining && !Main.dayTime && Main.rand.Next(5)
+    // == 0) & flag10`: the C# `&` evaluates BOTH sides, but the Next(5)
+    // sits inside the parenthesised `&&` chain — it draws only when
+    // !raining && !dayTime hold (the short-circuit), and flag10 gates
+    // the SPAWN, not the draw. The port keeps the draw gated by the
+    // weather/time pair and the spawn gated by surface (the vanilla
+    // stream shape: a non-surface roll still consumes).
+    if g.raining || g.day_time {
+        return None;
+    }
+    if rng.next_max(5) != 0 {
+        return None;
+    }
+    if !g.surface {
+        return None;
+    }
+    // `:2439` — RollBadLuckExtreme(100) == 0 → 689, else 611.
+    Some(roll_bad_luck_extreme(g.luck, 100, rng) == 0)
+}
+
+/// `Luck.RollBadLuckExtreme(float luck, int range)` (`Luck.cs:40-51`):
+/// positive luck rolls NextFloat() then Next(range*10) on a hit;
+/// negative rolls NextFloat() then Next(range/10) on a hit; zero luck
+/// draws Next(range) only. (The style-24 module's
+/// `roll_only_bad_luck_extreme` is the ONLY-bad sibling, `:53-60`.)
+pub fn roll_bad_luck_extreme(luck: f32, range: i32, rng: &mut UnifiedRandom) -> i32 {
+    if luck > 0.0 && rng.next_float() < luck {
+        return rng.next_max(range * 10);
+    }
+    if luck < 0.0 && rng.next_float() < 0.0 - luck {
+        return rng.next_max(range / 10);
+    }
+    rng.next_max(range)
+}
+
+/// `Luck.RollLuck(float luck, int range)` (`Luck.cs:5-16`): positive
+/// luck NextFloat + Next(Next(range/2, range)) on hit; negative
+/// NextFloat + Next(Next(range, range*2)) on hit; else Next(range).
+pub fn roll_luck(luck: f32, range: i32, rng: &mut UnifiedRandom) -> i32 {
+    if luck > 0.0 && rng.next_float() < luck {
+        return rng.next_max(rng.next_range(range / 2, range));
+    }
+    if luck < 0.0 && rng.next_float() < 0.0 - luck {
+        return rng.next_max(rng.next_range(range, range * 2));
+    }
+    rng.next_max(range)
+}
+
+/// The day-bird gate's pick (`NPC.cs:2449-2470`): the vanilla type
+/// (74/297/298/442) or `None`. Draw order: Next(3) gate, Next(4) pick,
+/// THEN the gold RollLuck(400) — the pick draws even when the gold
+/// promotion wins (`num38 = Main.rand.Next(4)` precedes the roll).
+pub fn bird_spawn_day_pick(g: &BirdSpawnGates, rng: &mut UnifiedRandom) -> Option<i32> {
+    // `:2449` — `(Main.dayTime && Main.time < 18000.0 &&
+    // Main.rand.Next(3) != 0) & flag10`.
+    if !g.day_time || g.time >= 18000.0 {
+        return None;
+    }
+    if rng.next_max(3) == 0 {
+        return None;
+    }
+    if !g.surface {
+        return None;
+    }
+    // `:2451` — the pick draws FIRST.
+    let num38 = rng.next_max(4);
+    // `:2452-2456` — the gold promotion (goldCritterChance = 400,
+    // `NPC.cs:95159`).
+    if roll_luck(g.luck, 400, rng) == 0 {
+        return Some(442);
+    }
+    // `:2457-2469` — 0→297, 1→298, default→74.
+    Some(match num38 {
+        0 => 297,
+        1 => 298,
+        _ => 74,
+    })
+}
+
+/// The jungle-surface gate's pick (`NPC.cs:3803-3829`): `Some(ty)` =
+/// one of 671-675, `None` = no bird (the gate missed OR the SpawnFrog
+/// fallback won — the frog ladder is NOT this lane's). Draw order:
+/// Next(7) gate, Next(3) day gate, Next(5) pick.
+///
+/// CENSUS LINE FIX (W4-d127 final): the gate is `:3803` (NOT `:3801` —
+/// that line is the PRECEDING `else if`'s 359 spawn); the inner day
+/// gate is `:3805`, the Next(5) pick `:3807-3823`, the SpawnFrog
+/// fallback `:3828`. The conditions/draw order below are unchanged.
+pub fn bird_spawn_jungle_pick(g: &BirdSpawnGates, rng: &mut UnifiedRandom) -> Option<i32> {
+    // `:3803` — `this.surfaceSpawn && this.ZoneJungle &&
+    // !this.ZoneCrimson && !this.ZoneCorrupt && Main.rand.Next(7) == 0`.
+    if !g.surface || !g.zone_jungle || g.zone_evil {
+        return None;
+    }
+    if rng.next_max(7) != 0 {
+        return None;
+    }
+    // `:3805` — `Main.dayTime && Main.time < 43200.00064373016 &&
+    // Main.rand.Next(3) != 0` (the double literal kept verbatim).
+    if !g.day_time || g.time >= 43200.00064373016 || rng.next_max(3) == 0 {
+        return None; // the SpawnFrog fallback (`:3828`)
+    }
+    // `:3807-3823` — the Next(5) pick, case 0..4 → 671..675.
+    Some(671 + rng.next_max(5))
+}
+
+/// The ANYTIME bird gate's pick (`NPC.cs:2532-2553`): the case-block's
+/// FOURTH bird band, after the owl/day/stinkbug/butterfly gates. Unlike
+/// [`bird_spawn_day_pick`] it has NO day/time/weather gate — day OR
+/// night, rain or clear. `Some(ty)` = 74/297/298/442, `None` = the
+/// Next(2) gate missed (the C# falls through to the `flag11` depth
+/// ladder, `:2554+`). Draw order: Next(2) gate, Next(4) pick, THEN the
+/// gold RollLuck(400) — the pick draws even when the gold promotion
+/// wins (`num39 = Main.rand.Next(4)` precedes the roll, `:2534`).
+pub fn bird_spawn_anytime_pick(g: &BirdSpawnGates, rng: &mut UnifiedRandom) -> Option<i32> {
+    // `:2532` — `(Main.rand.Next(2) == 0) & flag10`: the Next(2) draws
+    // unconditionally (no && short-circuit ahead of it), flag10 gates
+    // the SPAWN, not the draw — the vanilla stream shape.
+    if rng.next_max(2) != 0 {
+        return None;
+    }
+    // `:2534` — the pick draws FIRST, even on a non-surface roll: the
+    // C# `& flag10` evaluates BOTH sides, so the body's Next(4) + gold
+    // roll run whenever the Next(2) hit, and only the SpawnNPC is
+    // surface-gated. The port keeps the draws and refuses the spawn.
+    let num39 = rng.next_max(4);
+    // `:2535-2539` — the gold promotion (goldCritterChance = 400,
+    // `NPC.cs:95159`).
+    let gold = roll_luck(g.luck, 400, rng) == 0;
+    if !g.surface {
+        return None;
+    }
+    if gold {
+        return Some(442);
+    }
+    // `:2540-2551` — 0→297, 1→298, default→74.
+    Some(match num39 {
+        0 => 297,
+        1 => 298,
+        _ => 74,
+    })
+}
+
+// =====================================================================
+// W4-d127 FINAL — the bird-band ATTACH-CONTRACT (publish for the merger).
+// =====================================================================
+//
+// CENSUS VERDICT: the g61 spawn-wiring tip (`task/W4-g61-npc-spawn-dust`,
+// b4e40449 / origin a96289284) carries NO NPC-spawn ladder seam — its
+// `spawner.rs` diff vs main is EMPTY (0 lines); its two wiring seams are
+// the bug-net catch poof (`bug_net.rs`, NPC.cs:79883/:79912) and the
+// play_sound caller-stream + teleport fields (`audio.rs`/`npc.rs`), both
+// in `npc_spawn_visuals.rs`'s dust lane, NOT the `SpawnAnNPC` pool
+// ladder. So there is no g61 seam to attach to; the bird bands wire into
+// THIS lane's `spawn_npc_at` at the merge. The exact attach points:
+//
+// C# STRUCTURE (`NPC.SpawnAnNPC`, NPC.cs:1282+): the general surface
+// chain is an else-if ladder. After the bound-NPC arms (:2084/:2088/
+// :2092) the `else if (this.spawnFriendly)` block (:2096-2322) handles
+// the town-friendly water/beach critters and RETURNS (:2321) — it never
+// reaches the bird bands. When spawnFriendly is FALSE the chain falls to
+// the `switch (tileType)` (:2323); `case 2/109/477/492` (:2372-2576) is
+// the grass/hallow tile block that carries the FOUR bird bands:
+//
+//   1. rain-underworld critter ladder (:2378-2405, `break`s out),
+//   2. starfall 484 (:2406), firefly friendly (:2411),
+//   3. OWL band      (:2437-2447) — `bird_spawn_owl_pick`,
+//   4. DAY-BIRD band (:2449-2470) — `bird_spawn_day_pick`,
+//   5. stinkbug 669 (:2471), butterfly 356/444 (:2484), windy 604/605
+//      (:2504) — each `break`s on hit,
+//   6. ANYTIME bird band (:2532-2553) — `bird_spawn_anytime_pick`,
+//   7. flag11 depth ladder (:2554+) — the fall-through when every band
+//      above misses.
+//
+// The jungle band is NOT in this switch: it is a LATER else-if arm of
+// the general chain (`:3803`, `bird_spawn_jungle_pick`), reached only
+// when the surfaceSpawn probe arm (:4165) and every zone arm before it
+// miss. The mud-tile band (:2336-2361) is the spawnFriendly water
+// switch's `case 60` — a town-block path, NOT this lane's.
+//
+// PORT ATTACH (this lane's `spawn_npc_at`): the port's surface day arm
+// (`if ctx.day_time { return spawn_basic_slime(...) }`, the forest-slime
+// fallthrough) and night arm currently SKIP the whole case-2 bird block.
+// At the merge the four bands insert AHEAD of the slime/zombie defaults,
+// gated by `tile_kind in {2,109,477,492}` and `!spawn_friendly`, in the
+// C# order: owl → day-bird → (stinkbug/butterfly/windy) → anytime. Each
+// band's gate draws on the spawn stream EXACTLY where the C# draws it;
+// a hit returns the bird kind via `kind_from_net_id` (None until the
+// roster co-lanes land the kind — the consume-and-return-None shape the
+// Wyvern arm uses, `spawn_npc_at`'s :1131).
+//
+// STREAM DEPENDENCIES the merger MUST land first (the bands' gates draw
+// AFTER these in the C#; skipping them shifts the stream):
+//   * `NPC.setFireFlyChance` (NPC.cs:93352-93399) — the per-world
+//     fireFlyChance/fireFlyFriendly/fireFlyMultiple/butterflyChance/
+//     stinkBugChance rolls (WorldGen.genRand gates + Main.rand picks).
+//     UNPORTED: `World.butterfly_chance` exists (world.rs:569) but is
+//     never written (ctor 0, world.rs:800); the firefly/stinkbug fields
+//     have no `World` slot. The stinkbug/butterfly/windy bands (:2471/
+//     :2484/:2504) read these chances — until they land, those bands'
+//     Next(chance) draws must be modelled or the bird bands' stream
+//     position is wrong.
+//   * `tooWindyForButterflies` (NPC.TooWindyForButterflies) and `flag`
+//     (|windSpeedTarget| > 0.45) — the wind gates ahead of the butterfly
+//     bands; constants-off in the port today.
+//   * the bird KINDS (74/297/298/442/611/671-675/689) — `kind_from_net_id`
+//     reads None until d35/d38/d40/d42/d43 merge; the gates still draw.
+//
+// Until those land, the bands stay PURE helpers (the moon_boss_slots
+// precedent) — wiring them into spawn_npc_at NOW would either consume
+// draws the port's slime/zombie defaults don't expect (breaking the
+// frozen stream) or spawn None-kinds. The census + this contract is the
+// merge-ready deliverable; the wiring is the roster co-lanes' merge step.
 
 /// The wave-20 boss kinds the `Spawner` ctor weights (`NPC.cs:273-286`):
 /// 315/325/327/328/344/345/346, each with its `SetDefaults` `npcSlots`
@@ -101,7 +388,8 @@ pub fn moon_boss_slots(npc_type: u16) -> Option<f32> {
 /// the vanilla ids, so the count goes live for exactly those three (1.0/3.0/
 /// 5.0 - their `SetDefaults` `npcSlots` rows); `S1-F-13c` slices A+B add the
 /// Everscream (344, 3.0), the Ice Queen (345, 5.0) and Santa-NK1 (346, 4.0).
-/// 328 stays unported and contributes nothing.
+/// W4-c6 lands the blade kind (328): its row is live but `npcSlots = 0f`
+/// (`NPC.cs:13172`), so a living blade still contributes nothing.
 pub fn moon_boss_cap_count(npcs: &[Npc]) -> f32 {
     npcs.iter()
         .filter(|n| n.hp > 0)
@@ -201,6 +489,12 @@ pub struct SpawnContext<'a> {
     /// `NPC.CountNPCS(id)`'s scan source (`NPC.cs:7982-7995`): the moon
     /// ladders' `CountNPCS(id) < cap` gates read it per arm.
     pub moon_npc_counts: &'a [u16],
+    /// W4-f42 — `NPC.downedBoss1` (the EoC defeated): the sandstorm spawn
+    /// arm's pre-hardmode gate (`NPC.cs:3951`).
+    pub downed_boss1: bool,
+    /// W4-f42 — `Sandstorm.Happening`: the sandstorm spawn arm's event gate
+    /// (`NPC.cs:3949`).
+    pub sandstorm_happening: bool,
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap,
@@ -432,9 +726,11 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
     if rate.max_spawns > DEFAULT_MAX_SPAWNS * 3 {
         rate.max_spawns = DEFAULT_MAX_SPAWNS * 3;
     }
-    // The invasion overrides (`:792-801`) — the moon events force the raid
-    // pacing; the pre-Skeletron dungeon crawls at rate 10 (`:806-809`).
-    if f.moon_event {
+    // The moon-event raid pacing (`NPC.cs:771-775`): gated on the PLAYER
+    // being above the surface line (`player.position.Y < worldSurface * 16`;
+    // `Main.remixWorld` has no port counterpart) — an underground player
+    // during a moon event keeps the un-paced rate (research 24, errata).
+    if f.moon_event && pos_y < ctx.world.world_surface * 16.0 {
         rate.max_spawns = (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32;
         rate.spawn_rate = 20;
     }
@@ -451,19 +747,23 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
     // (unless it is night), no evil/crimson zone, no meteor zone and no
     // Old-One-army zone, the town count picks a ladder and draws `Main.rand`
     // for the `noWorms` latch and the `spawnFriendly`/spawnRate rescale.
-    // `flag = ZoneCorrupt || ZoneCrimson` (`:794-798`) folded with the
-    // explicit `!ZoneCrimson` term is one `!corrupt && !crimson` check — the
-    // port's `zone_evil`. `ZoneOldOneArmy` has no scene source yet (S1-E-12)
-    // and `inRemixStartingArea` (`:801`, remix-only) is constants-off — both
+    // `flag = ZoneCorrupt || ZoneCrimson` (`:794`), cleared by
+    // `Main.infectedSeed` (`:795-798`, W4-c41) — but the gate's explicit
+    // `!this.ZoneCrimson` term (`:799`) survives the clear, so an infected
+    // world opens the gate in corruption and stays closed in crimson.
+    // `ZoneOldOneArmy` has no scene source yet (S1-E-12) and
+    // `inRemixStartingArea` (`:801`, remix-only) is constants-off — both
     // false. `WorldGen.Skyblock.lowTiles` (the underworld-1 guard `:805` /
     // surface-1 guard `:858`), the shadow candle's `townNPCs = 0`
     // (`:419-424`) and `Main.expertMode` (the World carries no game mode)
     // are constants-off too. The draws ride the caller's stream in the C#'s
     // order; `townNPCs == 0` matches no arm and draws nothing.
+    let flag = f.zone_evil && !f.infected_seed; // `:794-798`
     if !ctx.invaders
         && ((!f.blood_moon && !f.moon_event) || ctx.day_time)
         && (!f.eclipse || !ctx.day_time)
-        && !f.zone_evil
+        && !flag
+        && !f.zone_crimson
         && !f.zone_meteor
     {
         // `player.Center.Y / 16f > (float)Main.UnderworldLayer` (`:801`).
@@ -607,6 +907,49 @@ fn check_not_spawning_on_screen(ctx: &SpawnContext, safe: &SpawnArea, x: i32, y:
         && tile_px < rect_x + (S_WIDTH + safe_range_x * 2) as f32
         && tile_py + TILE_PX > rect_y
         && tile_py < rect_y + (S_HEIGHT + safe_range_y * 2) as f32)
+}
+
+/// `Spawner.Spawning_SandstoneCheck` (`NPC.cs:5452-5491`): the sandstorm
+/// desert ladder's floor gate — count the connected sand mass below and
+/// beside the spawn tile: 8 rows down, each row the centre cell + up to 4
+/// right + up to 4 left, every side breaking on the first non-sand cell.
+/// `>= 40` passes (the remix `>= 10` arm is constants-off — the port has
+/// no remix worlds). `WorldGen.InWorld(x, y, 10)` refuses the border.
+/// W4-c40.
+pub(crate) fn spawning_sandstone_check(world: &World, x: i32, y: i32) -> bool {
+    // `WorldGen.InWorld(x, y, 10)` (`WorldGen.cs:9688-9695`).
+    if x < 10 || x >= world.width - 10 || y < 10 || y >= world.height - 10 {
+        return false;
+    }
+    let is_sand = |tx: i32, ty: i32| {
+        world
+            .tile(tx, ty)
+            .is_some_and(|t| t.active() && tr_core::tiledata::SET_CONVERSION_SAND.has(t.kind))
+    };
+    let mut num = 0;
+    for i in 0..8 {
+        // `:5461-5466`: the centre cell — a break ends the WHOLE scan.
+        if !is_sand(x, y + i) {
+            break;
+        }
+        num += 1;
+        // `:5467-5475`: up to 4 right.
+        for j in 1..=4 {
+            if !is_sand(x + j, y + i) {
+                break;
+            }
+            num += 1;
+        }
+        // `:5476-5484`: up to 4 left.
+        for k in 1..=4 {
+            if !is_sand(x - k, y + i) {
+                break;
+            }
+            num += 1;
+        }
+    }
+    // `:5486-5490`: the remix arm (`>= 10`) is constants-off.
+    num >= 40
 }
 
 /// `Spawner.FindGroundTile` (NPC.cs:5866-5885): walk down at most 30 tiles to
@@ -781,6 +1124,91 @@ pub fn town_npc_at_spawn(micro_seeds: tr_core::seeds::MicroSeedFlags) -> u16 {
     } else {
         22 // the Guide (`WorldGen.cs:19886-19895`)
     }
+}
+
+/// `NPC.SpawnOnPlayer`'s generic ground scan (`NPC.cs:80565-80632`) — the
+/// default arm the Plantera bulb's `SpawnOnPlayer(plr, 262)` rides (the
+/// per-type arms 245/370/398/… are their own ports: the Golem altar's
+/// `doors.rs::spawn_golem_on_altar`, the Duke's bobber scan). 500 attempts ×
+/// 50 candidates: a random tile in the spawn area, refused when
+/// `nactive && tileSolid` or `wallHouse && m < 499` (the house-wall arm is
+/// unmodelled — the port has no `wallHouse` table, the `try_spawn_an_npc`
+/// precedent); descend to the first `nactive && tileSolid` cell; the LAST
+/// attempt (`flag2`) bypasses the safe-area + spawn-space gates, every other
+/// attempt needs `!safeArea.Contains` + `HasTileSpawnSpace` +
+/// `CheckNotSpawningOnScreen`. Returns the chosen ground tile — the caller
+/// runs `SpawnBoss(num10 * 16 + 8, num11 * 16, …)` (`:80631`).
+///
+/// Deviations (the `try_spawn_an_npc` precedent): the skyblock midair arm
+/// (`WorldGen.Skyblock.lowTiles`, `:80581-80584`) and the type-50 EoW
+/// clearance special (`:80604-80614`) are constants-off / type-gated out;
+/// the `nactive` actuated-bit refinement follows the port's spawner
+/// convention (`active()` — the actuated-spawn edge is unmodelled).
+pub fn spawn_on_player_tile(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<(i32, i32)> {
+    let (spawn_area, safe_area) = get_spawn_area(ctx);
+    let num12 = 500; // `:80568` (the 316/82 arm's 200/30 is type-gated out).
+    let num13 = 50; // `:80569`.
+    // `num14 = num12 / 2` (`:80575`) feeds only the skyblock midair arm
+    // (`:80581-80584`) and the type-50 clearance special — both out of scope.
+    let solid = |x: i32, y: i32| {
+        ctx.world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+    };
+    let mut found: Option<(i32, i32)> = None;
+    for m in 0..num12 {
+        let flag2 = m == num12 - 1; // `:80579`.
+        for _ in 0..num13 {
+            let num15 = rng.next_range(spawn_area.left, spawn_area.right); // `:80587`.
+            let num16 = rng.next_range(spawn_area.top, spawn_area.bottom); // `:80588`.
+            // `:80589` — the solid / house-wall refusal (the wallHouse arm
+            // unmodelled; the type-50 `Main.tile[num16, num16]` quirk arm is
+            // type-gated out).
+            if solid(num15, num16) {
+                continue;
+            }
+            // `:80593-80603` — descend to the first solid cell.
+            let mut ground: Option<i32> = None;
+            for num17 in num16..spawn_area.bottom {
+                if solid(num15, num17) && (flag2 || !safe_area.contains(num15, num16)) {
+                    ground = Some(num17);
+                    break;
+                }
+            }
+            let Some(num11) = ground else { continue };
+            // `:80615-80618` — the non-final attempts need the spawn space.
+            if !flag2 && !has_tile_spawn_space(ctx.world, num15, num11) {
+                continue;
+            }
+            found = Some((num15, num11));
+            break;
+        }
+        // `:80624-80628` — `(!flag || flag2 || CheckNotSpawningOnScreen) &&
+        // flag`: the final attempt spawns anywhere, the others must lie
+        // off-screen.
+        if let Some((x, y)) = found {
+            if flag2 || check_not_spawning_on_screen(ctx, &safe_area, x, y) {
+                return Some((x, y));
+            }
+            found = None;
+        }
+    }
+    None
+}
+
+/// `NPC.SpawnBoss`'s post-spawn stamp (`NPC.cs:80661-80714`) for the port's
+/// single-player roster: `NewNPC` seeds `timeLeft = activeTime * 1.25` = 937
+/// (`:80772`, `activeTime = 750` `:95186`), `SpawnBoss` multiplies it ×20
+/// (`:80686`) → 18740, and the default arm broadcasts `Announcement.
+/// HasAwoken` in `ChatColors.BossOrEvent` (`:80702-80704`). The caller
+/// places the NPC by `Bottom = (X, Y)` (`NewNPC` `:80770`) and pushes it.
+pub fn stamp_boss_spawn(n: &mut Npc, chat: &mut crate::chat::ChatMonitor, name: &str) {
+    n.despawn_timer = 937 * 20; // `:80772` × `:80686`.
+    crate::chat::broadcast_death_text(
+        chat,
+        &format!("{} has awoken!", name),
+        crate::chat::COLOR_BOSS_OR_EVENT,
+    );
 }
 
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<Npc> {
@@ -1157,6 +1585,129 @@ fn spawn_npc_at(
                 return Some(n);
             }
             return None;
+        }
+        // ---- the sandstorm desert override (`NPC.cs:3949-4019`, W4-c40) ----
+        // `Sandstorm.Happening && this.ZoneSandstorm &&
+        // TileID.Sets.Conversion.Sand[tileType] && Spawning_SandstoneCheck`.
+        // The arm sits in the SAME else-if chain as the moon/eclipse arms —
+        // after them, ahead of the hardmode mummy rows (`:4020-4035`, the
+        // port's day/night ladders below map those outcomes) and the
+        // surfaceSpawn probe (`:4165`). Matching it is terminal: the whole
+        // ladder draws its rolls in the C# order and returns.
+        if let Some((pick, spawn_y)) =
+            sandstorm_desert_pick(ctx, rng, tile_kind, no_worms, x, y)
+        {
+            // The kinds 546/61/69/541/510/542-545/78/79/630/80/580/581 have
+            // no `NpcKind` rows yet (the d41/d42 roster lanes own them) —
+            // every outcome consumes its draws exactly where the C# does
+            // and spawns nothing until the roster wave (the Wyvern arm's
+            // consume-and-return shape, `:989-994`). The kind map lands
+            // through `kind_from_net_id` — when the rows arrive the spawn
+            // goes live without touching the roll order.
+            if let Some((kind, _)) = crate::npc::kind_from_net_id(pick as i32) {
+                let (nw, nh) = kind.size();
+                let mut n = Npc::new(
+                    kind,
+                    x as f32 * TILE_PX + 8.0 - nw * 0.5,
+                    spawn_y as f32 - nh,
+                    if ctx.player_center.0 >= x as f32 * TILE_PX + 8.0 { 1 } else { -1 },
+                    0.0,
+                );
+                n.hp = n.max_hp;
+                return Some(n);
+            }
+            return None;
+        }
+        // W4-f42 — the sandstorm spawn arm (`NPC.cs:3949-4018`): the
+        // zone chain's `else if (Sandstorm.Happening && ZoneSandstorm &&
+        // TileID.Sets.Conversion.Sand[tileType] && Spawning_SandstoneCheck)`
+        // — after the moon-event arms, before the post-sandstorm mummy
+        // arms (`:4020-4035`) and the surface probe. The pre-hardmode
+        // ladder (546/61/69), the hardmode ladder (541/510/542-545/78/79/
+        // 630/80), and the 546/580/581 fallthrough. The 541 SandElemental
+        // / 510 DuneSplicer / 542-545 SandSharks are unported kinds —
+        // their rolls consume and spawn nothing (the Wyvern arm's
+        // consume-and-return-None shape). d33's unwired npc_ai_style102/
+        // 103 modules are keyed on the vanilla npc_type; wiring these
+        // arms waits on the roster kinds (research/108-input-f42 §5).
+        if ctx.sandstorm_happening
+            && ctx.flags.zone_sandstorm
+            && matches!(tile_kind, 53 | 112 | 116 | 234)
+            && spawning_sandstone_check(ctx.world, x, y / 16)
+        {
+            let hard = ctx.flags.hard_mode;
+            if !ctx.downed_boss1 && !hard {
+                // `:3953-3964` — the 1/2 tumbleweed, else the 1/2 vulture,
+                // else the antlion.
+                if rng.next_max(2) == 0 {
+                    return spawn_desert_ground(ctx, x, y, NpcKind::Tumbleweed);
+                } else if rng.next_max(2) == 0 {
+                    return spawn_desert_flyer(ctx, x, y, NpcKind::Vulture);
+                } else {
+                    return spawn_desert_ground(ctx, x, y, NpcKind::Antlion);
+                }
+            } else if hard && rng.next_max(20) == 0 && !ctx.moon_npc_counts.contains(&541) {
+                // `:3966-3969` — the SandElemental (541, unported): consume.
+                // (The roster scan rides `to_u16`'s protocol ids, but the
+                // unported 541/510's vanilla ids are free protocol slots —
+                // no ported kind encodes them, so `AnyNPCs(541)` is false
+                // and `CountNPCS(510)` is 0: the gates never close. The
+                // documented unported-kind fold, the Wyvern arm's shape.)
+                return None;
+            } else if hard && !no_worms && rng.next_max(3) == 0
+                && ctx.moon_npc_counts.iter().filter(|&&t| t == 510).count() < 4
+            {
+                // `:3970-3973` — the DuneSplicer (510, unported): consume.
+                return None;
+            } else if hard && !no_worms && rng.next_max(2) == 0 {
+                // `:3974-3990` — the SandShark family (542-545, unported):
+                // the corrupt/crimson/hallow tile picks the type; consume.
+                return None;
+            } else if hard && tile_kind == 53 && rng.next_max(3) == 0 {
+                // `:3991-3994` — the Mummy (78).
+                return spawn_desert_ground(ctx, x, y, NpcKind::Mummy);
+            } else if hard && tile_kind == 112 && rng.next_max(3) == 0 {
+                // `:3995-3998` — the DarkMummy (79).
+                return spawn_desert_ground(ctx, x, y, NpcKind::DarkMummy);
+            } else if hard && tile_kind == 234 && rng.next_max(3) == 0 {
+                // `:3999-4002` — the BloodMummy (630).
+                return spawn_desert_ground(ctx, x, y, NpcKind::BloodMummy);
+            } else if hard && tile_kind == 116 && rng.next_max(3) == 0 {
+                // `:4003-4006` — the LightMummy (80).
+                return spawn_desert_ground(ctx, x, y, NpcKind::LightMummy);
+            } else if rng.next_max(2) == 0 {
+                // `:4007-4010` — the Tumbleweed (546).
+                return spawn_desert_ground(ctx, x, y, NpcKind::Tumbleweed);
+            } else if rng.next_max(2) == 0 {
+                // `:4011-4014` — the WalkingAntlion (580).
+                return spawn_desert_ground(ctx, x, y, NpcKind::WalkingAntlion);
+            } else {
+                // `:4015-4018` — the FlyingAntlion (581).
+                return spawn_desert_flyer(ctx, x, y, NpcKind::FlyingAntlion);
+            }
+        }
+        // W4-f42 — the post-sandstorm mummy arms (`NPC.cs:4020-4035`): the
+        // zone chain's next four `else if`s AFTER the sandstorm arm, so
+        // they fire on the SAME conversion-sand rows with NO event gate —
+        // the everyday hardmode desert spawns. The 53 row keeps its
+        // `Next(3)` (1/3); the 112/234/116 rows tighten to `Next(2)` (1/2)
+        // outside the event (`:4024`/`:4028`/`:4032`). Each arm is
+        // terminal: a hit spawns, a miss falls through to the next arm's
+        // own roll — exactly the else-if chain's order. The `:4036`
+        // underground-hallow arm that follows needs `underGround`/remix
+        // and never fires inside this surface block (unmodelled).
+        if ctx.flags.hard_mode && tile_kind == 53 && rng.next_max(3) == 0 {
+            // `:4020-4023` — the Mummy (78).
+            return spawn_desert_ground(ctx, x, y, NpcKind::Mummy);
+        } else if ctx.flags.hard_mode && tile_kind == 112 && rng.next_max(2) == 0 {
+            // `:4024-4027` — the DarkMummy (79).
+            return spawn_desert_ground(ctx, x, y, NpcKind::DarkMummy);
+        } else if ctx.flags.hard_mode && tile_kind == 234 && rng.next_max(2) == 0 {
+            // `:4028-4031` — the BloodMummy (630).
+            return spawn_desert_ground(ctx, x, y, NpcKind::BloodMummy);
+        } else if ctx.flags.hard_mode && tile_kind == 116 && rng.next_max(2) == 0 {
+            // `:4032-4035` — the LightMummy (80).
+            return spawn_desert_ground(ctx, x, y, NpcKind::LightMummy);
         }
         // The surface probe arm (`NPC.cs:4164-4199`, the `surfaceSpawn`
         // branch): the graveyard/snow-rain/rain specials ahead of it sit
@@ -1979,17 +2530,107 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
         }),
         5 => moon_chain(ctx, rng, &[(10, Some(1), 315)], |_| Some(329)),
         4 => {
-            // Verbatim quirk (`:3511-3513`): the roll gates on `!AnyNPCs(325)`
-            // but the arm spawns 330.
-            moon_chain(ctx, rng, &[(8, Some(1), 330), (2, None, 326)], |r| {
-                Some(305 + r.next_max(10) as u16)
-            })
+            // Verbatim quirk (`NPC.cs:3511-3513`): the roll gates on
+            // `!AnyNPCs(325)` but the arm spawns 330 — the cap must count the
+            // GATE kind 325, not the spawned 330 (`moon_chain`'s generic
+            // count-by-kind would count the wrong family).
+            let mut picked = None;
+            let gate_count = ctx.moon_npc_counts.iter().filter(|&&t| t == 325).count() as i32;
+            moon_arm_count(&mut picked, rng, 8, Some(1), 330, gate_count);
+            if picked.is_some() {
+                return picked;
+            }
+            moon_chain(ctx, rng, &[(2, None, 326)], |r| Some(305 + r.next_max(10) as u16))
         }
         3 => moon_chain(ctx, rng, &[(3, None, 329)], |_| Some(326)),
         2 => moon_chain(ctx, rng, &[(3, None, 326)], |r| Some(305 + r.next_max(10) as u16)),
         // `:3545` — the C#'s default: no roll gate, the type is `Next(305, 315)`.
         _ => Some(305 + rng.next_max(10) as u16),
     }
+}
+
+/// The sandstorm desert override's pick ladder (`NPC.cs:3949-4019`,
+/// W4-c40). Returns `Some((vanilla_type, spawn_y_px))` when the arm's
+/// gates pass — the gate itself (`Happening && ZoneSandstorm &&
+/// Conversion.Sand[tileType] && Spawning_SandstoneCheck`) is checked here
+/// so the witness can drive it directly; `None` means the chain advances
+/// to the next arm (the C#'s `else if` miss). Every conditional roll
+/// consumes exactly where the C# draws it, including the arms whose
+/// kinds are unported (the roster-wave map is the caller's).
+///
+/// The roll order (the C# statement order):
+/// - pre-hardmode + !downedBoss1 (`:3951-3965`): Next(2) → 546, else
+///   Next(2) → 61, else 69.
+/// - hardmode (`:3966-4018`): Next(20)==0 && !AnyNPCs(541) → 541;
+///   !noWorms && Next(3)==0 && CountNPCS(510)<4 → 510 at +10 tiles;
+///   !noWorms && Next(2)==0 → the 542-545 sandshark (the tile's
+///   Corrupt/Crimson/Hallow swaps); the four mummy rows (53→78, 112→79,
+///   234→630, 116→80, each Next(3)); Next(2)==0 → 546; Next(2)==0 → 580;
+///   else 581.
+/// - downedBoss1 && !hardmode: the pre-hardmode gate FAILS and every
+///   hardmode arm's `Main.hardMode` term short-circuits — the chain falls
+///   straight to the 546/580/581 tail (the C#'s own shape).
+fn sandstorm_desert_pick(
+    ctx: &SpawnContext,
+    rng: &mut UnifiedRandom,
+    tile_kind: u16,
+    no_worms: bool,
+    x: i32,
+    y: i32,
+) -> Option<(u16, i32)> {
+    if !(ctx.flags.sandstorm_happening
+        && ctx.flags.zone_sandstorm
+        && tr_core::tiledata::SET_CONVERSION_SAND.has(tile_kind)
+        && spawning_sandstone_check(ctx.world, x, y / 16))
+    {
+        return None;
+    }
+    let count = |id: u16| ctx.moon_npc_counts.iter().filter(|&&t| t == id).count() as i32;
+    let pick = if !ctx.flags.downed_boss1 && !ctx.flags.hard_mode {
+        // `:3951-3965`: the pre-EoC ladder.
+        if rng.next_max(2) == 0 {
+            546 // Tumbleweed
+        } else if rng.next_max(2) == 0 {
+            61 // Vulture
+        } else {
+            69 // Antlion
+        }
+    } else if ctx.flags.hard_mode && rng.next_max(20) == 0 && count(541) == 0 {
+        // `:3966-3969`: the Sand Elemental — unique.
+        541
+    } else if ctx.flags.hard_mode && !no_worms && rng.next_max(3) == 0 && count(510) < 4 {
+        // `:3970-3973`: the Dune Splicer at `(spawnTileY + 10) * 16`.
+        return Some((510, y + 10 * 16));
+    } else if ctx.flags.hard_mode && !no_worms && rng.next_max(2) == 0 {
+        // `:3974-3990`: the Sandshark — the conversion swaps in the C#'s
+        // order (a hallowed corrupt tile takes the LAST write).
+        let mut type3 = 542u16;
+        if tr_core::tiledata::SET_CORRUPT.has(tile_kind) {
+            type3 = 543;
+        }
+        if tr_core::tiledata::SET_CRIMSON.has(tile_kind) {
+            type3 = 544;
+        }
+        if tr_core::tiledata::SET_HALLOW.has(tile_kind) {
+            type3 = 545;
+        }
+        type3
+    } else if ctx.flags.hard_mode && tile_kind == 53 && rng.next_max(3) == 0 {
+        78 // Mummy (`:3991-3994`)
+    } else if ctx.flags.hard_mode && tile_kind == 112 && rng.next_max(3) == 0 {
+        79 // Dark Mummy (`:3995-3998`)
+    } else if ctx.flags.hard_mode && tile_kind == 234 && rng.next_max(3) == 0 {
+        630 // Blood Mummy (`:3999-4002`)
+    } else if ctx.flags.hard_mode && tile_kind == 116 && rng.next_max(3) == 0 {
+        80 // Light Mummy (`:4003-4006`)
+    } else if rng.next_max(2) == 0 {
+        546 // Tumbleweed (`:4007-4010`)
+    } else if rng.next_max(2) == 0 {
+        580 // Walking Antlion (`:4011-4014`)
+    } else {
+        581 // Flying Antlion (`:4015-4018`)
+    };
+    Some((pick, y))
 }
 
 /// `Spawner.GetBasicSlimeToSpawn` (`NPC.cs:5625-5654`) + the Pinky swap
@@ -2269,9 +2910,260 @@ fn spawn_basic_slime(
     Npc::spawn_slime_variant(ctx.world, x, variant)
 }
 
+// (W4-f42's duplicate spawning_sandstone_check deduped into the W4-c40
+// definition above — the sand set {53,112,116,234} is SET_CONVERSION_SAND.)
+
+/// W4-f42 — the sandstorm arm's ground spawn (`SpawnNPC(spawnTileX * 16 + 8,
+/// spawnTileY * 16, kind)` → `NewNPC`'s `Bottom = (X, Y)`, `NPC.cs:80772`):
+/// feet on the found tile's top edge, X centred 8 px into the tile, facing
+/// toward the player (the invaders arm's placement).
+fn spawn_desert_ground(ctx: &SpawnContext, x: i32, y: i32, kind: NpcKind) -> Option<Npc> {
+    let (nw, nh) = kind.size();
+    let mut n = Npc::new(
+        kind,
+        x as f32 * TILE_PX + 8.0 - nw * 0.5,
+        y as f32 - nh,
+        if ctx.player_center.0 >= x as f32 * TILE_PX + 8.0 { 1 } else { -1 },
+        0.0,
+    );
+    n.hp = n.max_hp;
+    Some(n)
+}
+
+/// W4-f42 — the sandstorm arm's flyer spawn: the same Bottom placement (the
+/// C#'s `SpawnNPC` for the Vulture/FlyingAntlion uses the same call shape;
+/// the flyer's own AI lifts it on the first tick).
+fn spawn_desert_flyer(ctx: &SpawnContext, x: i32, y: i32, kind: NpcKind) -> Option<Npc> {
+    spawn_desert_ground(ctx, x, y, kind)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-f42 — `Spawner.Spawning_SandstoneCheck` (`NPC.cs:5452-5491`): the
+    /// 8×9 sand scan counts ≥ 40 (5 full rows) — 4 rows (36) fail, and a
+    /// non-sand centre breaks the row run early.
+    #[test]
+    fn sandstone_check_needs_forty_sand() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut w = World::new("t".into(), 200, 200);
+        let sand = |w: &mut World, x: i32, y: i32| {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind: 53, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        };
+        // The InWorld(x, y, 10) margin refuses the edge.
+        assert!(!spawning_sandstone_check(&w, 5, 50));
+        // 4 full rows = 36 < 40.
+        for y in 50..54 {
+            for x in 26..=34 {
+                sand(&mut w, x, y);
+            }
+        }
+        assert!(!spawning_sandstone_check(&w, 30, 50));
+        // The 5th row reaches 45 ≥ 40.
+        for x in 26..=34 {
+            sand(&mut w, x, 54);
+        }
+        assert!(spawning_sandstone_check(&w, 30, 50));
+        // A non-sand centre on row 0 breaks the whole scan.
+        let i = w.index(30, 50);
+        w.tiles[i] = Tile { kind: 0, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert!(!spawning_sandstone_check(&w, 30, 50));
+        // The conversion family (112/116/234) counts as sand too.
+        let i = w.index(30, 50);
+        w.tiles[i] = Tile { kind: 234, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert!(spawning_sandstone_check(&w, 30, 50));
+    }
+
+    /// W4-f42 — the sandstorm arm's pre-hardmode ladder (`NPC.cs:3951-3964`):
+    /// the 546/61/69 picks over the found sand tile, the Bottom placement,
+    /// and the event gate (no sandstorm → no desert pick).
+    #[test]
+    fn sandstorm_pre_hardmode_picks_the_desert_trio() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.compute_column_surface();
+        let mut c = ctx(&w, 290.0 * 16.0, true);
+        c.sandstorm_happening = true;
+        c.flags.zone_sandstorm = true;
+        let mut seen = [false; 3];
+        for seed in 0..300u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) else {
+                continue;
+            };
+            let idx = match n.kind {
+                NpcKind::Tumbleweed => 0,
+                NpcKind::Vulture => 1,
+                NpcKind::Antlion => 2,
+                other => panic!("seed {seed}: the pre-hardmode arm picked {other:?}"),
+            };
+            seen[idx] = true;
+            // `SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, kind)` →
+            // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80772`).
+            let (nw, nh) = n.kind.size();
+            assert_eq!(n.x, 210.0 * TILE_PX + 8.0 - nw * 0.5);
+            assert_eq!(n.y, 300.0 * TILE_PX - nh);
+            assert_eq!(n.hp, n.max_hp);
+        }
+        assert!(seen.iter().all(|&s| s), "all three pre-hardmode kinds spawn");
+        // The event gate: no sandstorm → the arm never fires (the day
+        // ladder's slime fallthrough takes over).
+        c.sandstorm_happening = false;
+        for seed in 0..50u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) {
+                assert!(
+                    !matches!(n.kind, NpcKind::Tumbleweed | NpcKind::Vulture | NpcKind::Antlion),
+                    "seed {seed}: the desert arm fired without the event"
+                );
+            }
+        }
+    }
+
+    /// W4-f42 — the sandstorm arm's hardmode ladder (`NPC.cs:3966-4018`):
+    /// the mummy family rides the sand-type rows (53 → 78, 112 → 79,
+    /// 234 → 630, 116 → 80) and the fallthrough picks 546/580/581; the
+    /// unported 541/510/542-545 arms consume their rolls and spawn nothing.
+    #[test]
+    fn sandstorm_hardmode_picks_the_mummies_and_antlions() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.compute_column_surface();
+        let mut c = ctx(&w, 290.0 * 16.0, true);
+        c.sandstorm_happening = true;
+        c.flags.zone_sandstorm = true;
+        c.flags.hard_mode = true;
+        let mut kinds = std::collections::HashSet::new();
+        for seed in 0..600u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) {
+                assert!(
+                    matches!(
+                        n.kind,
+                        NpcKind::Mummy
+                            | NpcKind::Tumbleweed
+                            | NpcKind::WalkingAntlion
+                            | NpcKind::FlyingAntlion
+                    ),
+                    "seed {seed}: unexpected hardmode pick {:?}",
+                    n.kind
+                );
+                kinds.insert(n.kind.to_u16());
+            }
+        }
+        assert!(kinds.contains(&NpcKind::Mummy.to_u16()), "the 53 row spawns the Mummy");
+        assert!(kinds.contains(&NpcKind::Tumbleweed.to_u16()));
+        assert!(kinds.contains(&NpcKind::WalkingAntlion.to_u16()));
+        assert!(kinds.contains(&NpcKind::FlyingAntlion.to_u16()));
+        // The 112 row spawns the DarkMummy.
+        for x in 206..=214 {
+            for y in 300..308 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 112, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut c = ctx(&w, 290.0 * 16.0, true);
+        c.sandstorm_happening = true;
+        c.flags.zone_sandstorm = true;
+        c.flags.hard_mode = true;
+        let mut dark = false;
+        for seed in 0..600u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) {
+                if n.kind == NpcKind::DarkMummy {
+                    dark = true;
+                    break;
+                }
+            }
+        }
+        assert!(dark, "the 112 row spawns the DarkMummy");
+    }
+
+    /// W4-f42 — the post-sandstorm mummy arms (`NPC.cs:4020-4035`): with
+    /// NO event (`Sandstorm.Happening` false) the hardmode conversion-sand
+    /// rows still spawn their mummy — the 53 row on `Next(3)`, the
+    /// 112/234/116 rows on `Next(2)`. The witness replays the exact draw
+    /// order (`GetZombieSettings`' `Next(7)` first, `NPC.cs:1284`, then
+    /// the arm's own roll — the tile-mismatched arms above draw nothing)
+    /// and pins the spawn iff the replayed roll hits.
+    #[test]
+    fn post_sandstorm_mummy_arms_fire_without_the_event() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        for (tile, kind, denom) in [
+            (53u16, NpcKind::Mummy, 3),
+            (112, NpcKind::DarkMummy, 2),
+            (234, NpcKind::BloodMummy, 2),
+            (116, NpcKind::LightMummy, 2),
+        ] {
+            let mut w = World::new("t".into(), 400, 700);
+            for x in 0..400 {
+                for y in 300..700 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile { kind: tile, ..Default::default() };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            w.world_surface = 310.0;
+            w.rock_layer = 320.0;
+            w.compute_column_surface();
+            let mut c = ctx(&w, 290.0 * 16.0, true);
+            c.flags.hard_mode = true;
+            // The event gates stay OFF — the arms are the outside-event
+            // desert spawns (`:4020`'s chain position after `:3949`).
+            assert!(!c.sandstorm_happening && !c.flags.zone_sandstorm);
+            let mut hits = 0;
+            for seed in 0..400u64 {
+                let mut replay = UnifiedRandom::new(seed as i32);
+                let _ = replay.next_max(7); // the zombie-style roll
+                let expect = replay.next_max(denom) == 0;
+                let mut rng = UnifiedRandom::new(seed as i32);
+                let got = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false);
+                if expect {
+                    let n = got.unwrap_or_else(|| panic!("tile {tile} seed {seed}: the arm's roll hit but nothing spawned"));
+                    assert_eq!(n.kind, kind, "tile {tile} seed {seed}");
+                    let (nw, nh) = kind.size();
+                    assert_eq!(n.x, 210.0 * TILE_PX + 8.0 - nw * 0.5);
+                    assert_eq!(n.y, 300.0 * TILE_PX - nh);
+                    hits += 1;
+                } else if let Some(n) = got {
+                    assert_ne!(n.kind, kind, "tile {tile} seed {seed}: spawned on a missed roll");
+                }
+            }
+            assert!(hits > 0, "tile {tile}: no mummy across the sweep");
+            // The hardmode gate: pre-hardmode the arms never fire.
+            c.flags.hard_mode = false;
+            for seed in 0..100u64 {
+                let mut rng = UnifiedRandom::new(seed as i32);
+                if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 300 * 16, false, false, false) {
+                    assert_ne!(n.kind, kind, "tile {tile} seed {seed}: pre-hardmode mummy");
+                }
+            }
+        }
+    }
 
     fn ctx(world: &World, y_px: f32, day: bool) -> SpawnContext<'_> {
         SpawnContext {
@@ -2305,6 +3197,8 @@ mod tests {
             probe_exists: false,
             sky_behind_player: false,
             moon_boss_cap_count: 0.0,
+            downed_boss1: false,
+            sandstorm_happening: false,
         }
     }
 
@@ -2605,10 +3499,10 @@ mod tests {
         // `NPC.cs:799`: `!invaders && ((!bloodMoon && !pumpkinMoon &&
         // !snowMoon) || dayTime) && (!eclipse || !dayTime) && !flag &&
         // !ZoneCrimson && !ZoneMeteor && !ZoneOldOneArmy` — each closure
-        // leaves the stream untouched and the flags false. The port's
-        // `zone_evil` folds `flag = ZoneCorrupt || ZoneCrimson` (`:794-798`)
-        // with the explicit `!ZoneCrimson` term into one `!corrupt &&
-        // !crimson` check.
+        // leaves the stream untouched and the flags false. The port reads
+        // `flag = zone_evil && !infected_seed` (`:794-798`, W4-c41) plus the
+        // explicit `!zone_crimson` term; on a classic world (`infected_seed`
+        // false) `zone_evil` alone closes the gate as before.
         let w = ground();
         let mut cases: Vec<SpawnContext<'_>> = Vec::new();
         let mut night_blood = ctx(&w, 25.0 * 16.0, false);
@@ -2957,12 +3851,36 @@ mod tests {
 
     #[test]
     fn moon_event_forces_the_raid_pacing() {
-        // NPC.cs:792-796: maxSpawns = 5 x (2 + 0.3x1) = 11, spawnRate = 20.
+        // NPC.cs:771-775: maxSpawns = 5 x (2 + 0.3x1) = 11, spawnRate = 20 —
+        // gated on the player above the surface line (25 < worldSurface 30).
         let w = ground();
         let mut c = ctx(&w, 25.0 * 16.0, false);
         c.flags.moon_event = true;
         let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+    }
+
+    #[test]
+    fn the_moon_pacing_keeps_the_unpaced_rate_underground() {
+        // `NPC.cs:771`: `(Main.pumpkinMoon || Main.snowMoon) &&
+        // (Main.remixWorld || player.position.Y < Main.worldSurface * 16.0)`
+        // — an UNDERGROUND player during a moon event keeps the un-paced
+        // rate (research 24's errata; the port had applied it everywhere).
+        // y = 600 px = tile 37.5 >= worldSurface 30, but below the depth
+        // band's `worldSurface*16 + sHeight` = 1680 px, so the plain night
+        // arm applies: 600 x0.6 = 360, (float)6.5 -> 6. The inner night
+        // moon arm (`:542-546`) carries the same `< worldSurface*16` gate,
+        // so neither the x0.2/x2 nor the 20/11 override fires.
+        let w = ground();
+        let mut c = ctx(&w, 600.0, false);
+        c.flags.moon_event = true;
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (360, 6));
+        // The boundary is STRICT `<`: exactly on the line stays un-paced.
+        let mut on_line = ctx(&w, 30.0 * 16.0, false);
+        on_line.flags.moon_event = true;
+        let r = get_spawn_rate(&on_line, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (360, 6));
     }
 
     #[test]
@@ -2973,6 +3891,252 @@ mod tests {
         c.invaders = true;
         let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+    }
+
+    // ---- W4-c41: the town-block + invaders re-verification census ----
+
+    #[test]
+    fn the_infected_seed_opens_the_town_gate_in_corruption_only() {
+        // `NPC.cs:794-799`: `flag = ZoneCorrupt || ZoneCrimson`, cleared by
+        // `Main.infectedSeed` (`:795-798`) — but the gate's explicit
+        // `!this.ZoneCrimson` term survives the clear. The pre-fix port
+        // folded both into `zone_evil` and closed the gate on an infected
+        // corruption world (the dirty case below).
+        let w = ground();
+        let cases = [
+            // (zone_evil, zone_crimson, infected_seed, gate_open)
+            (true, false, false, false), // classic corruption closes
+            (true, false, true, true),   // infected corruption OPENS (the fix)
+            (true, true, true, false),   // infected crimson stays closed
+            (false, true, false, false), // crimson alone closes
+            (false, true, true, false),  // infected crimson alone still closes
+        ];
+        for (i, (evil, crimson, infected, open)) in cases.into_iter().enumerate() {
+            let mut c = ctx(&w, 25.0 * 16.0, true);
+            c.town_npcs = 2;
+            c.flags.zone_evil = evil;
+            c.flags.zone_crimson = crimson;
+            c.flags.infected_seed = infected;
+            let seed = 11;
+            let got = post_draws(seed, |rng| {
+                let r = get_spawn_rate(&c, rng);
+                if open {
+                    assert!(r.no_worms, "case {i}: the surface latch (`:882`)");
+                } else {
+                    assert!(!r.no_worms && !r.spawn_friendly, "case {i} closed");
+                }
+            });
+            if open {
+                assert_ne!(got, fresh_draws(seed), "case {i}: the ladder drew");
+            } else {
+                assert_eq!(got, fresh_draws(seed), "case {i}: stream untouched");
+            }
+        }
+    }
+
+    #[test]
+    fn the_invaders_override_outranks_the_chain_but_yields_to_the_dungeon_ten() {
+        // The override (`NPC.cs:781-785`) runs AFTER the floor/cap
+        // (`:749-756`), so it overwrites whatever the chain produced; the
+        // pre-Skeletron dungeon arm (`:786-789`) runs AFTER it and takes
+        // the rate back to 10 while the override's max 11 stays.
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.flags.blood_moon = true; // the chain would give 108/10 (`:540-548`)
+        c.invaders = true;
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+        c.flags.zone_dungeon = true; // `:786-789` after the override
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (10, 11));
+        c.flags.downed_boss3 = true; // Skeletron down — the dungeon arm off
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+    }
+
+    #[test]
+    fn the_invaders_rate_stage_draws_nothing() {
+        // The override (`NPC.cs:781-785`) is pure arithmetic and the town
+        // gate's `!invaders` term (`:799`) closes the block — the whole
+        // rate stage consumes zero draws even with town NPCs and a
+        // graveyard up (the invasion ladder's draws come later, in
+        // `SpawnAnNPC`).
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, true);
+        c.invaders = true;
+        c.town_npcs = 3;
+        c.flags.zone_graveyard = true;
+        let seed = 7;
+        let got = post_draws(seed, |rng| {
+            let r = get_spawn_rate(&c, rng);
+            assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+            assert!(!r.no_worms && !r.spawn_friendly);
+        });
+        assert_eq!(got, fresh_draws(seed), "the rate stage must draw nothing");
+    }
+
+    /// One C#-transcribed reference run of the town block (`NPC.cs:799-923`):
+    /// consumes the arm's draws from `reference` in the vanilla order (the
+    /// census — every width and condition re-derived from the source, not
+    /// from the port) and returns the expected (rate, max, noWorms,
+    /// spawnFriendly). `base` is the (rate, max) pair the chain handed the
+    /// block (the candle modifiers already applied).
+    fn town_block_reference(
+        reference: &mut UnifiedRandom,
+        underworld: bool,
+        town: i32,
+        graveyard: bool,
+        peace_candle: bool,
+        base: (i32, i32),
+    ) -> (i32, i32, bool, bool) {
+        let (mut rate, mut max) = base;
+        let (mut nw, mut fr) = (false, false);
+        if underworld {
+            match town {
+                1 => {
+                    nw = reference.next_max(2) == 0; // `:807`
+                    if reference.next_max(10) == 0 {
+                        // `:811` — always drawn, the `if` is not an else-if
+                        fr = true;
+                        max = (max as f32 as f64 * 0.5) as i32; // `:814`
+                    } else {
+                        rate = (rate as f32 as f64 * 1.25) as i32; // `:818`
+                    }
+                }
+                2 => {
+                    nw = reference.next_max(4) != 0; // `:824`
+                    if reference.next_max(5) == 0 {
+                        // `:828`
+                        fr = true;
+                        max = (max as f32 as f64 * 0.5) as i32; // `:831`
+                    } else {
+                        rate = (rate as f32 as f64 * 1.5) as i32; // `:835`
+                    }
+                }
+                _ => {
+                    nw = reference.next_max(10) != 0; // `:840`
+                    if reference.next_max(3) == 0 {
+                        // `:844`
+                        fr = true;
+                        max = (max as f32 as f64 * 0.5) as i32; // `:847`
+                    } else {
+                        rate = (rate as f32 * 2.0) as i32; // `:851` `(float)x * 2f`
+                    }
+                }
+            }
+        } else {
+            nw = true; // `:857/:882/:904` — the unconditional surface latch
+            // `:860/:883/:905`: `ZoneGraveyard && (!ZonePeaceCandle ||
+            // Next(3) == 0)` — the gate draw fires only against a candle.
+            let graveyard_arm = graveyard && (!peace_candle || reference.next_max(3) == 0);
+            match town {
+                1 => {
+                    if graveyard_arm {
+                        rate = (rate as f32 as f64 * 1.66) as i32; // `:862`
+                        if reference.next_max(9) == 1 {
+                            // `:863`
+                            fr = true;
+                            max = (max as f32 as f64 * 0.6) as i32; // `:866`
+                        }
+                    } else if reference.next_max(3) == 1 {
+                        // `:869` — a SECOND Next(3) after a failed gate
+                        fr = true;
+                        max = (max as f32 as f64 * 0.6) as i32; // `:872`
+                    } else {
+                        rate = (rate as f32 * 2.0) as i32; // `:876`
+                    }
+                }
+                2 => {
+                    if graveyard_arm {
+                        rate = (rate as f32 as f64 * 2.33) as i32; // `:885`
+                        if reference.next_max(6) == 1 {
+                            // `:886`
+                            fr = true;
+                            max = (max as f32 as f64 * 0.6) as i32; // `:889`
+                        }
+                    } else if reference.next_max(3) != 0 {
+                        // `:892`
+                        fr = true;
+                        max = (max as f32 as f64 * 0.6) as i32; // `:895`
+                    } else {
+                        rate = (rate as f32 * 3.0) as i32; // `:899`
+                    }
+                }
+                _ => {
+                    if graveyard_arm {
+                        rate = (rate as f32 * 3.0) as i32; // `:907`
+                        if reference.next_max(3) == 1 {
+                            // `:908`
+                            fr = true;
+                            max = (max as f32 as f64 * 0.6) as i32; // `:911`
+                        }
+                    } else {
+                        fr = true; // `:918` (`Main.expertMode` off, `:916` draws nothing)
+                        max = (max as f32 as f64 * 0.6) as i32; // `:920`
+                    }
+                }
+            }
+        }
+        (rate, max, nw, fr)
+    }
+
+    #[test]
+    fn the_town_block_census_replays_the_c_draw_order_across_seeds() {
+        // The CRITICAL census: every town arm × depth × graveyard/candle
+        // combination, 63 seeds each — the port's `SpawnRate` AND its whole
+        // stream tail must equal the C#-transcribed reference (the draw
+        // widths, order and short-circuits of `NPC.cs:799-923`).
+        let w = ground();
+        // The graveyard ladders are surface-only (`NPC.cs:855-921`); the
+        // underworld arms (`:803-853`) never read the graveyard/candles.
+        const UNDERWORLD_COMBOS: &[(bool, bool)] = &[(false, false)];
+        const SURFACE_COMBOS: &[(bool, bool)] =
+            &[(false, false), (true, false), (true, true)];
+        for underworld in [false, true] {
+            let y = if underworld { 620.0 * 16.0 } else { 25.0 * 16.0 };
+            let combos = if underworld { UNDERWORLD_COMBOS } else { SURFACE_COMBOS };
+            for town in [1, 2, 3] {
+                for &(graveyard, peace) in combos {
+                    for seed in 1..64u64 {
+                        let mut c = ctx(&w, y, true);
+                        c.town_npcs = town;
+                        c.flags.zone_graveyard = graveyard;
+                        c.flags.zone_peace_candle = peace;
+                        // The chain ahead of the block: the peace candle
+                        // alone rescales 600→780 / 5→3 (`:738-739`); the
+                        // underworld depth ladder doubles the cap 5→10
+                        // (`:485`).
+                        let base = if underworld {
+                            (600, 10)
+                        } else if peace {
+                            (780, 3)
+                        } else {
+                            (600, 5)
+                        };
+                        let mut reference = UnifiedRandom::new(seed as i32);
+                        let want = town_block_reference(
+                            &mut reference,
+                            underworld,
+                            town,
+                            graveyard,
+                            peace,
+                            base,
+                        );
+                        let mut rng = UnifiedRandom::new(seed as i32);
+                        let r = get_spawn_rate(&c, &mut rng);
+                        let got = (r.spawn_rate, r.max_spawns, r.no_worms, r.spawn_friendly);
+                        assert_eq!(
+                            got, want,
+                            "underworld {underworld} town {town} graveyard {graveyard} peace {peace} seed {seed}"
+                        );
+                        assert_eq!(
+                            rng, reference,
+                            "the draw census: underworld {underworld} town {town} graveyard {graveyard} peace {peace} seed {seed}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     use super::*;
@@ -3324,6 +4488,8 @@ mod tests {
             probe_exists: false,
             sky_behind_player: false,
             moon_boss_cap_count: 0.0,
+            downed_boss1: false,
+            sandstorm_happening: false,
         }
     }
 
@@ -3456,6 +4622,54 @@ mod tests {
         }
     }
 
+    /// W4-g84: the `SpawnOnPlayer` generic ground scan
+    /// (`NPC.cs:80565-80632`) — the bulb's Plantera summon rides it. On the
+    /// open `ground_tall` floor the scan finds a ground tile inside the
+    /// spawn area, deterministically per seed; the chosen cell is solid
+    /// with the 2×3 clear rect above it (the non-final attempts' gates).
+    #[test]
+    fn w4_g84_spawn_on_player_tile_finds_open_ground() {
+        let w = ground_tall();
+        let mut c = ctx_at(&w, true);
+        c.nearby_active_npcs = 0.0;
+        let (spawn_area, _) = get_spawn_area(&c);
+        for seed in 1..40u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let (x, y) = spawn_on_player_tile(&c, &mut rng)
+                .unwrap_or_else(|| panic!("seed {seed} found no ground"));
+            assert!(
+                x >= spawn_area.left && x < spawn_area.right,
+                "the column inside the spawn area"
+            );
+            assert!(
+                y >= spawn_area.top && y <= spawn_area.bottom,
+                "the ground row inside the area"
+            );
+            assert!(
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)),
+                "the chosen cell is solid ground"
+            );
+            // Determinism: the same seed replays the same tile.
+            let mut rng2 = UnifiedRandom::new(seed as i32);
+            assert_eq!(spawn_on_player_tile(&c, &mut rng2), Some((x, y)));
+        }
+    }
+
+    /// W4-g84: `stamp_boss_spawn` — the `NewNPC` 937 window × the
+    /// `SpawnBoss` ×20 (`NPC.cs:80772`/`:80686`) and the `HasAwoken`
+    /// broadcast in `ChatColors.BossOrEvent` (`:80702-80704`).
+    #[test]
+    fn w4_g84_stamp_boss_spawn_window_and_broadcast() {
+        let mut n = Npc::new(NpcKind::Plantera, 0.0, 0.0, 1, 0.0);
+        let mut chat = crate::chat::ChatMonitor::default();
+        stamp_boss_spawn(&mut n, &mut chat, "Plantera");
+        assert_eq!(n.despawn_timer, 18740);
+        assert_eq!(chat.messages.len(), 1);
+        assert!(chat.messages[0].text.contains("Plantera has awoken"));
+        assert_eq!(chat.messages[0].color, crate::chat::COLOR_BOSS_OR_EVENT);
+    }
+
     #[test]
     fn spawn_space_requires_clear_tiles() {
         let mut w = ground_tall();
@@ -3542,6 +4756,8 @@ mod tests {
                     probe_exists: false,
                     sky_behind_player: false,
                     moon_boss_cap_count: 0.0,
+                    downed_boss1: false,
+                    sandstorm_happening: false,
                 };
                 let (spawned, _) = spawn_npc_call(Some(ctx), &mut rng, false);
                 decisions.push(spawned.map(|n| (n.kind as u8, n.x.to_bits())));
@@ -3804,6 +5020,8 @@ mod tests {
             probe_exists: false,
             sky_behind_player: true,
             moon_boss_cap_count: 0.0,
+            downed_boss1: false,
+            sandstorm_happening: false,
         }
     }
 
@@ -5001,5 +6219,660 @@ mod tests {
         assert_eq!((rate.spawn_rate, rate.max_spawns), (360, 6));
         let rate = get_spawn_rate(&day, &mut UnifiedRandom::new(1));
         assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
+    }
+
+    // ---- W4-c38: the moon-roster re-verification witnesses ----
+
+    /// The pumpkin wave-4 quirk (`NPC.cs:3510-3522`): the leading arm rolls
+    /// `Next(8) == 0 && !AnyNPCs(325)` but SPAWNS 330 — the cap counts the
+    /// GATE kind 325, not the spawned 330 (the pre-fix port counted the
+    /// wrong family through `moon_chain`'s generic count-by-kind).
+    #[test]
+    fn the_pumpkin_wave_4_gate_counts_325_not_the_spawned_330() {
+        let w = moon_world(4, false);
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        // A seed whose first ladder roll (Next(8)) hits.
+        let hit_seed = (1..=100u64)
+            .find(|&s| UnifiedRandom::new(s as i32).next_max(8) == 0)
+            .unwrap();
+        // (a) One live Mourning Wood (325) closes the gate — the roll still
+        // draws, the chain advances (the vanilla `&&` order), the second
+        // arm's Next(2) decides 326 vs the scarecrow band.
+        let roster = [325u16];
+        c.moon_npc_counts = &roster;
+        let mut rng = UnifiedRandom::new(hit_seed as i32);
+        let picked = pumpkin_moon_ladder(&c, &mut rng);
+        let mut r#ref = UnifiedRandom::new(hit_seed as i32);
+        let _gate = r#ref.next_max(8); // drawn behind the closed gate
+        let expect = if r#ref.next_max(2) == 0 {
+            Some(326u16)
+        } else {
+            Some(305 + r#ref.next_max(10) as u16)
+        };
+        assert_eq!(picked, expect, "the closed 325 gate suppresses the 330 arm");
+        assert_ne!(picked, Some(330), "one live 325 refuses the arm");
+        assert_eq!(rng.peek(), r#ref.peek(), "the stream replays the C# order");
+        // (b) A live Poltergeist (330) does NOT close the gate — the count
+        // reads 325, so the arm still fires and spawns 330.
+        let roster2 = [330u16];
+        c.moon_npc_counts = &roster2;
+        let mut rng2 = UnifiedRandom::new(hit_seed as i32);
+        assert_eq!(
+            pumpkin_moon_ladder(&c, &mut rng2),
+            Some(330),
+            "a live 330 leaves the !AnyNPCs(325) gate open"
+        );
+        let mut ref2 = UnifiedRandom::new(hit_seed as i32);
+        let _ = ref2.next_max(8);
+        assert_eq!(rng2.peek(), ref2.peek(), "the hit consumes only its Next(8)");
+        // (c) The open gate fires 330 on the same seed.
+        c.moon_npc_counts = &[];
+        let mut rng3 = UnifiedRandom::new(hit_seed as i32);
+        assert_eq!(pumpkin_moon_ladder(&c, &mut rng3), Some(330));
+    }
+
+    /// The separate-327 quirk (`NPC.cs:3263-3278`/`:3281-3300`/`:3325-3344`/
+    /// `:3347-3374`, cases 18/17/15/14): the leading 327 `if` is its own
+    /// statement — its roll ALWAYS draws even when it fires, and the chain
+    /// after it draws too. The picker keeps the first pick (the C#'s second
+    /// spawn is the documented deviation, ANALYSIS "the pumpkin-327 quirk");
+    /// the stream must stay 1:1 with BOTH rolls consumed.
+    #[test]
+    fn the_pumpkin_327_lead_draws_even_when_it_fires() {
+        // Case 18: Next(7)==0 && CountNPCS(327)<2 → 327, then the chain
+        // Next(7) 325 / Next(7) 315 / else 330 — all rolls drawn.
+        let hit_seed = (1..=100u64)
+            .find(|&s| UnifiedRandom::new(s as i32).next_max(7) == 0)
+            .unwrap();
+        let w = moon_world(18, false);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        let mut rng = UnifiedRandom::new(hit_seed as i32);
+        assert_eq!(pumpkin_moon_ladder(&c, &mut rng), Some(327));
+        let mut r#ref = UnifiedRandom::new(hit_seed as i32);
+        let _lead = r#ref.next_max(7); // the 327 arm — fired
+        let n325 = r#ref.next_max(7); // the chain STILL draws (`:3267`)
+        if n325 != 0 {
+            let _n315 = r#ref.next_max(7); // `:3271` (the count gates are open)
+        }
+        assert_eq!(
+            rng.peek(), r#ref.peek(),
+            "the fired 327 lead does not skip the chain's rolls"
+        );
+        // A seed sweep: the full stream (lead + chain) replays per seed.
+        for seed in 1..=100u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let _ = pumpkin_moon_ladder(&c, &mut rng);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let lead = r#ref.next_max(7);
+            let n325 = r#ref.next_max(7);
+            if n325 != 0 {
+                let n315 = r#ref.next_max(7);
+                let _ = (lead, n315); // both arms' rolls consumed either way
+            }
+            assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: lead + chain");
+        }
+    }
+
+    /// The frost wave-14 chain (`NPC.cs:2958-2975`) has NO final `else`:
+    /// when all four arms miss their rolls the C# spawns nothing — and the
+    /// stream holds exactly the four Next(10)/Next(10)/Next(10)/Next(3).
+    #[test]
+    fn the_frost_wave_14_all_miss_spawns_nothing() {
+        let w = moon_world(14, true);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        let mut saw_none = 0;
+        for seed in 1..=200u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let picked = frost_moon_ladder(&c, &mut rng);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let head = r#ref.next_max(30); // the 341 head (`:2807`)
+            let expect = if head == 0 {
+                Some(341u16)
+            } else {
+                let a = r#ref.next_max(10); // 345 (`:2959`)
+                if a == 0 {
+                    Some(345)
+                } else {
+                    let b = r#ref.next_max(10); // 346 (`:2963`)
+                    if b == 0 {
+                        Some(346)
+                    } else {
+                        let d = r#ref.next_max(10); // 344 (`:2967`)
+                        if d == 0 {
+                            Some(344)
+                        } else if r#ref.next_max(3) == 0 {
+                            Some(343) // `:2971`
+                        } else {
+                            None // the missing `else` (`:2975` break)
+                        }
+                    }
+                }
+            };
+            assert_eq!(picked, expect, "seed {seed}: the wave-14 chain");
+            if expect.is_none() {
+                saw_none += 1;
+            }
+            assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: the draw order");
+        }
+        assert!(saw_none > 0, "the all-miss no-spawn outcome must occur");
+    }
+
+    /// The frost wave-12 fallback (`NPC.cs:3019-3021`): the final `else`
+    /// spawns `Main.rand.Next(338, 341)` — the DRAW ITSELF is the type
+    /// (338/339/340 the Gingerbread family), one extra slot consumed.
+    #[test]
+    fn the_frost_wave_12_fallback_draw_is_the_gingerbread_type() {
+        let w = moon_world(12, true);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        let mut band = std::collections::BTreeSet::new();
+        for seed in 1..=300u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let picked = frost_moon_ladder(&c, &mut rng);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let head = r#ref.next_max(30);
+            let expect = if head == 0 {
+                Some(341u16)
+            } else if r#ref.next_max(10) == 0 {
+                Some(345) // `:3003`
+            } else if r#ref.next_max(10) == 0 {
+                Some(344) // `:3007`
+            } else if r#ref.next_max(8) == 0 {
+                Some(343) // `:3011`
+            } else if r#ref.next_max(3) == 0 {
+                Some(342) // `:3015`
+            } else {
+                Some(338 + r#ref.next_max(3) as u16) // `:3021`
+            };
+            assert_eq!(picked, expect, "seed {seed}: the wave-12 chain");
+            assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: the draw order");
+            if let Some(ty @ 338..=340) = picked {
+                band.insert(ty);
+            }
+        }
+        assert_eq!(
+            band,
+            [338u16, 339, 340].into_iter().collect(),
+            "the Next(338, 341) band spreads across its three kinds"
+        );
+    }
+
+    // ---- W4-c40: the sandstorm desert override (written, NOT run) ----
+
+    /// A desert world: a 400x700 world with a deep sand mass (kind 53)
+    /// from row 300 down — the sandstone check's 8-row × 9-column scan
+    /// passes everywhere on the surface.
+    fn desert_world() -> World {
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.spawn_x = 200;
+        w.spawn_y = 296;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn storm_ctx(w: &World, hard: bool, boss1: bool) -> SpawnContext<'_> {
+        let mut c = ctx(w, 295.0 * 16.0, true);
+        c.flags.sandstorm_happening = true;
+        c.flags.zone_sandstorm = true;
+        c.flags.hard_mode = hard;
+        c.flags.downed_boss1 = boss1;
+        c
+    }
+
+    /// `NPC.cs:5452-5491`: the sandstone scan counts the centre + up to 4
+    /// each side over 8 rows; a full sand mass counts 8×9 = 72 ≥ 40. A
+    /// 4-wide column strip counts 8×(1+3+0)... the scan breaks per side:
+    /// centre + right-until-gap + left-until-gap. Pin the boundary: a
+    /// 5-wide strip (centre ±2) counts 8×5 = 40 — exactly the threshold.
+    #[test]
+    fn w4_c40_the_sandstone_check_counts_the_connected_mass() {
+        let w = desert_world();
+        assert!(spawning_sandstone_check(&w, 200, 300));
+        // A single-column sand pillar: 8 rows × 1 = 8 < 40.
+        let mut w2 = World::new("t".into(), 400, 700);
+        for y in 300..700 {
+            let i = w2.index(200, y);
+            w2.tiles[i] = Tile { kind: 53, ..Default::default() };
+            w2.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        assert!(!spawning_sandstone_check(&w2, 200, 300));
+        // A 5-wide strip: 8 × 5 = 40 — passes (the `>= 40` boundary).
+        let mut w3 = World::new("t".into(), 400, 700);
+        for x in 198..203 {
+            for y in 300..700 {
+                let i = w3.index(x, y);
+                w3.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w3.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        assert!(spawning_sandstone_check(&w3, 200, 300));
+        // 4-wide (198..202): the scan from 200 counts centre + 1 right +
+        // 2 left = 4/row → 32 < 40.
+        let mut w4 = World::new("t".into(), 400, 700);
+        for x in 198..202 {
+            for y in 300..700 {
+                let i = w4.index(x, y);
+                w4.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w4.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        assert!(!spawning_sandstone_check(&w4, 200, 300));
+        // The border refusal (InWorld 10).
+        assert!(!spawning_sandstone_check(&w, 5, 300));
+        // Non-sand floor (the dirt world) never passes.
+        let g = ground_tall();
+        assert!(!spawning_sandstone_check(&g, 200, 300));
+    }
+
+    /// `NPC.cs:3951-3965`: the pre-hardmode ladder replays the two-Next(2)
+    /// chain — 546 on the first hit, 61 on the second, 69 on the double
+    /// miss — and the stream position matches the C# reference per seed.
+    #[test]
+    fn w4_c40_the_pre_hardmode_desert_ladder_replays_the_roll_order() {
+        let w = desert_world();
+        let c = storm_ctx(&w, false, false);
+        for seed in 1..=300u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let got = sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let want = if r#ref.next_max(2) == 0 {
+                546
+            } else if r#ref.next_max(2) == 0 {
+                61
+            } else {
+                69
+            };
+            assert_eq!(got, Some((want, 300 * 16)), "seed {seed}");
+            assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: stream position");
+        }
+    }
+
+    /// `NPC.cs:3966-4018`: the hardmode chain — the 541 uniqueness gate,
+    /// the 510 noWorms+cap gate (+10 tiles), the sandshark conversion
+    /// swaps, the four mummy Next(3) rows, and the 546/580/581 tail. The
+    /// reference replay mirrors every conditional draw.
+    #[test]
+    fn w4_c40_the_hardmode_desert_ladder_replays_the_roll_order() {
+        let w = desert_world();
+        let c = storm_ctx(&w, true, true);
+        for seed in 1..=400u64 {
+            for no_worms in [false, true] {
+                let mut rng = UnifiedRandom::new(seed as i32);
+                let got = sandstorm_desert_pick(&c, &mut rng, 53, no_worms, 200, 300 * 16);
+                let mut r#ref = UnifiedRandom::new(seed as i32);
+                // The C# chain on tile 53 (plain sand, no conversion):
+                let want = if r#ref.next_max(20) == 0 {
+                    Some((541u16, 300 * 16)) // count(541)==0 (empty roster)
+                } else if !no_worms && r#ref.next_max(3) == 0 {
+                    Some((510, 300 * 16 + 160)) // count(510)<4, +10 tiles
+                } else if !no_worms && r#ref.next_max(2) == 0 {
+                    Some((542, 300 * 16)) // plain sand — no swap
+                } else if r#ref.next_max(3) == 0 {
+                    Some((78, 300 * 16)) // tile 53's mummy row
+                } else if r#ref.next_max(2) == 0 {
+                    Some((546, 300 * 16))
+                } else if r#ref.next_max(2) == 0 {
+                    Some((580, 300 * 16))
+                } else {
+                    Some((581, 300 * 16))
+                };
+                assert_eq!(got, want, "seed {seed} no_worms={no_worms}");
+                assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: stream position");
+            }
+        }
+    }
+
+    /// The closed gates suppress their arms but still draw (the C# `&&`
+    /// order): a live 541 blocks the elemental arm, four 510s block the
+    /// splicer, noWorms blocks both worm arms — the chain advances.
+    #[test]
+    fn w4_c40_the_closed_roster_gates_advance_the_chain() {
+        let w = desert_world();
+        let mut c = storm_ctx(&w, true, true);
+        let roster: Vec<u16> = vec![541, 510, 510, 510, 510];
+        c.moon_npc_counts = &roster;
+        // Find a seed whose Next(20) hits: with the 541 alive the arm is
+        // suppressed and the chain draws the Next(3) splicer gate too.
+        let hit = (1..=200u64)
+            .find(|&s| UnifiedRandom::new(s as i32).next_max(20) == 0)
+            .unwrap();
+        let mut rng = UnifiedRandom::new(hit as i32);
+        let got = sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16);
+        assert_ne!(got.map(|(t, _)| t), Some(541), "the uniqueness gate holds");
+        assert_ne!(got.map(|(t, _)| t), Some(510), "the 4-cap holds");
+        let mut r#ref = UnifiedRandom::new(hit as i32);
+        let _ = r#ref.next_max(20); // drawn, suppressed
+        // The splicer gate: !noWorms && Next(3) — drawn; the cap closed.
+        let n3 = r#ref.next_max(3);
+        if n3 != 0 {
+            // The sandshark Next(2) follows only on the splicer miss.
+            let _ = r#ref.next_max(2);
+        }
+        // (The tail draws depend on the branch; the pick is never 541/510.)
+        assert!(got.is_some(), "the chain still picks from the tail");
+    }
+
+    /// `NPC.cs:3974-3990`: the sandshark conversion swaps — a corrupt
+    /// sand tile (112 is ebonsand; the Conversion.Sand set carries it)
+    /// takes 543, crimson (234) 544, hallow (116) 545. The mummy rows
+    /// then never fire on those tiles (the shark arm precedes them).
+    #[test]
+    fn w4_c40_the_sandshark_takes_the_tile_conversion() {
+        let mut w = desert_world();
+        // Recolour the whole mass per case so the sandstone check passes.
+        for (kind, want) in [(112u16, 543u16), (234, 544), (116, 545)] {
+            for x in 0..400 {
+                for y in 300..700 {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = kind;
+                }
+            }
+            let c = storm_ctx(&w, true, true);
+            // Find a seed reaching the shark arm: Next(20) miss, Next(3)
+            // miss, Next(2) hit.
+            let hit = (1..=500u64)
+                .find(|&s| {
+                    let mut r = UnifiedRandom::new(s as i32);
+                    r.next_max(20) != 0 && r.next_max(3) != 0 && r.next_max(2) == 0
+                })
+                .unwrap();
+            let mut rng = UnifiedRandom::new(hit as i32);
+            let got = sandstorm_desert_pick(&c, &mut rng, kind, false, 200, 300 * 16);
+            assert_eq!(got.map(|(t, _)| t), Some(want), "tile {kind}");
+        }
+    }
+
+    /// The gate itself: no storm / no zone / non-sand tile / a failed
+    /// sandstone check all advance the chain with ZERO draws.
+    #[test]
+    fn w4_c40_the_desert_gate_draws_nothing_on_a_miss() {
+        let w = desert_world();
+        let g = ground_tall();
+        // Storm off.
+        let mut c = storm_ctx(&w, false, false);
+        c.flags.sandstorm_happening = false;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert_eq!(sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16), None);
+        assert_eq!(rng.peek(), before, "a gate miss consumes nothing");
+        // Zone off.
+        let mut c = storm_ctx(&w, false, false);
+        c.flags.zone_sandstorm = false;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert_eq!(sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16), None);
+        assert_eq!(rng.peek(), before);
+        // Non-sand tile (the dirt world's floor).
+        let c = storm_ctx(&g, false, false);
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert_eq!(sandstorm_desert_pick(&c, &mut rng, 1, false, 200, 300 * 16), None);
+        assert_eq!(rng.peek(), before);
+        // Sand tile but a failed sandstone check (a lone pillar).
+        let mut w2 = World::new("t".into(), 400, 700);
+        for y in 300..700 {
+            let i = w2.index(200, y);
+            w2.tiles[i] = Tile { kind: 53, ..Default::default() };
+            w2.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let c = storm_ctx(&w2, false, false);
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert_eq!(sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16), None);
+        assert_eq!(rng.peek(), before);
+    }
+
+    /// W4-d127 chain item 4 — the bird spawn-gates census: the FOUR
+    /// gates' conditions + draw order vs the C# (`NPC.cs:2437-2470`,
+    /// `:2532-2553`, `:3803-3829`), swept over seeds with a stream
+    /// mirror. WRITTEN NOT RUN.
+    #[test]
+    fn the_bird_spawn_gates_match_the_census() {
+        let night_clear = BirdSpawnGates {
+            surface: true, day_time: false, time: 0.0, raining: false,
+            zone_jungle: false, zone_evil: false, luck: 0.0,
+        };
+        // The owl gate: rain or day consumes NOTHING (the && chain
+        // short-circuits before the Next(5)).
+        for mut g in [
+            BirdSpawnGates { raining: true, ..night_clear },
+            BirdSpawnGates { day_time: true, ..night_clear },
+        ] {
+            g.surface = true;
+            let mut rng = UnifiedRandom::new(7);
+            let mut mirror = UnifiedRandom::new(7);
+            assert_eq!(bird_spawn_owl_pick(&g, &mut rng), None);
+            // No draw consumed: the mirror's next draw matches.
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+        // The night gate over seeds: every hit is 611 or 689, and the
+        // zero-luck RollBadLuckExtreme(100) is a plain Next(100) — the
+        // 689 pick fires exactly when that draw is 0.
+        let mut owls = 0;
+        let mut mimics = 0;
+        // 20000 seeds: the mimic path is 1/5 * 1/100 per seed (~40
+        // expected hits) — the both-forms assertion is stream-safe.
+        for seed in 0..20000u64 {
+            let mut rng = UnifiedRandom::new(seed);
+            let mut mirror = UnifiedRandom::new(seed);
+            match bird_spawn_owl_pick(&night_clear, &mut rng) {
+                Some(mimic) => {
+                    // The mirror replays: Next(5) gate then Next(100).
+                    let gate = mirror.next_max(5);
+                    assert_eq!(gate, 0, "a hit means the gate drew 0");
+                    let roll = mirror.next_max(100);
+                    assert_eq!(mimic, roll == 0, "the 689 pick is the roll==0");
+                    if mimic { mimics += 1; } else { owls += 1; }
+                }
+                None => {
+                    let gate = mirror.next_max(5);
+                    if gate == 0 {
+                        // Gate hit but non-surface? No — surface true;
+                        // a None with gate 0 cannot happen here.
+                        panic!("seed {seed}: gate hit but no pick");
+                    }
+                }
+            }
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000), "stream aligned");
+        }
+        assert!(owls > 0 && mimics > 0, "both owl forms reachable");
+        // The day gate: night or late-day consumes nothing; morning
+        // hits pick 74/297/298 (zero luck never promotes gold — the
+        // RollLuck(400) is a plain Next(400), 0 promotes).
+        let morning = BirdSpawnGates { day_time: true, time: 0.0, ..night_clear };
+        let mut picks = std::collections::BTreeSet::new();
+        // 20000 seeds: the gold promotion is 2/3 * 1/400 per seed
+        // (~33 expected hits).
+        for seed in 0..20000u64 {
+            let mut rng = UnifiedRandom::new(seed);
+            if let Some(ty) = bird_spawn_day_pick(&morning, &mut rng) {
+                picks.insert(ty);
+            }
+        }
+        assert!(picks.contains(&74) && picks.contains(&297) && picks.contains(&298));
+        assert!(picks.contains(&442), "the gold promotion reachable at zero luck");
+        // The jungle gate: the five macaws, and the evil-zone /
+        // non-jungle exclusions consume nothing.
+        let jungle = BirdSpawnGates {
+            zone_jungle: true, day_time: true, time: 0.0, ..night_clear
+        };
+        let mut jpick = std::collections::BTreeSet::new();
+        // 20000 seeds: each macaw is 1/7 * 2/3 * 1/5 per seed (~380
+        // expected hits each) — the exactly-five assertion is safe.
+        for seed in 0..20000u64 {
+            let mut rng = UnifiedRandom::new(seed);
+            if let Some(ty) = bird_spawn_jungle_pick(&jungle, &mut rng) {
+                jpick.insert(ty);
+            }
+        }
+        assert_eq!(
+            jpick.into_iter().collect::<Vec<_>>(),
+            vec![671, 672, 673, 674, 675],
+            "exactly the five jungle birds"
+        );
+        for g in [
+            BirdSpawnGates { zone_evil: true, ..jungle },
+            BirdSpawnGates { zone_jungle: false, ..jungle },
+            BirdSpawnGates { surface: false, ..jungle },
+        ] {
+            let mut rng = UnifiedRandom::new(3);
+            let mut mirror = UnifiedRandom::new(3);
+            assert_eq!(bird_spawn_jungle_pick(&g, &mut rng), None);
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000), "no draw on the exclusion");
+        }
+        // The jungle day cutoff: the C# double literal 43200.00064373016
+        // — time just under it still spawns, at/after it falls to frog.
+        let late = BirdSpawnGates { time: 43200.0, ..jungle };
+        let mut hit = false;
+        for seed in 0..2000u64 {
+            if bird_spawn_jungle_pick(&late, &mut UnifiedRandom::new(seed)).is_some() {
+                hit = true;
+                break;
+            }
+        }
+        assert!(hit, "time 43200.0 < the literal cutoff still spawns");
+        let past = BirdSpawnGates { time: 43200.00064373016, ..jungle };
+        for seed in 0..50u64 {
+            let mut rng = UnifiedRandom::new(seed);
+            let mut mirror = UnifiedRandom::new(seed);
+            assert_eq!(bird_spawn_jungle_pick(&past, &mut rng), None);
+            // The Next(7) still draws (the gate precedes the time test).
+            let _ = mirror.next_max(7);
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+    }
+
+    /// W4-d127 FINAL — the ANYTIME bird band (`NPC.cs:2532-2553`), the
+    /// case-block's fourth bird gate: NO day/time/weather gate, the
+    /// Next(2) draws unconditionally, flag10 gates the spawn not the
+    /// draw; on hit Next(4) pick THEN gold RollLuck(400). The stream
+    /// mirror replays the C# order over seeds; day AND night both fire
+    /// (the band's defining difference from the day gate). WRITTEN NOT
+    /// RUN.
+    #[test]
+    fn the_anytime_bird_band_fires_day_and_night() {
+        let night = BirdSpawnGates {
+            surface: true, day_time: false, time: 0.0, raining: false,
+            zone_jungle: false, zone_evil: false, luck: 0.0,
+        };
+        // Rain does NOT gate this band (unlike the owl gate) — the C#
+        // condition is just `(Next(2) == 0) & flag10`.
+        let rainy_night = BirdSpawnGates { raining: true, ..night };
+        let day = BirdSpawnGates { day_time: true, time: 30000.0, ..night };
+        let mut night_hits = 0;
+        let mut day_hits = 0;
+        let mut rainy_hits = 0;
+        let mut picks = std::collections::BTreeSet::new();
+        // 20000 seeds: the band is 1/2 per seed, the gold promotion
+        // 1/2 * 1/400 (~25 expected) — the four-kind assertion is safe.
+        for seed in 0..20000u64 {
+            for (g, counter) in [
+                (&night, &mut night_hits),
+                (&day, &mut day_hits),
+                (&rainy_night, &mut rainy_hits),
+            ] {
+                let mut rng = UnifiedRandom::new(seed as i32);
+                let mut mirror = UnifiedRandom::new(seed as i32);
+                let got = bird_spawn_anytime_pick(g, &mut rng);
+                // The mirror replays: Next(2) gate; on hit Next(4) pick
+                // then Next(400) gold (zero luck).
+                let gate = mirror.next_max(2);
+                if gate == 0 {
+                    let pick = mirror.next_max(4);
+                    let gold = mirror.next_max(400);
+                    let expect = if gold == 0 {
+                        442
+                    } else {
+                        match pick { 0 => 297, 1 => 298, _ => 74 }
+                    };
+                    assert_eq!(got, Some(expect), "seed {seed}: the pick order");
+                    *counter += 1;
+                    picks.insert(expect);
+                } else {
+                    assert_eq!(got, None, "seed {seed}: the gate missed");
+                }
+                assert_eq!(rng.next_max(1000), mirror.next_max(1000), "stream aligned");
+            }
+        }
+        assert!(night_hits > 0 && day_hits > 0, "the band fires day AND night");
+        assert!(rainy_hits > 0, "rain does not gate the anytime band");
+        assert_eq!(
+            picks.into_iter().collect::<Vec<_>>(),
+            vec![74, 297, 298, 442],
+            "exactly the four day-bird kinds (the gold promotion included)"
+        );
+        // Non-surface: the Next(2) STILL draws (flag10 gates the spawn,
+        // not the draw — the vanilla stream shape), but no bird spawns.
+        let underground = BirdSpawnGates { surface: false, ..night };
+        for seed in 0..50u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let mut mirror = UnifiedRandom::new(seed as i32);
+            let gate = mirror.next_max(2);
+            let got = bird_spawn_anytime_pick(&underground, &mut rng);
+            if gate == 0 {
+                // The hit still draws the pick + gold before the surface
+                // refusal returns None.
+                let _ = mirror.next_max(4);
+                let _ = mirror.next_max(400);
+                assert_eq!(got, None, "non-surface spawns nothing");
+            } else {
+                assert_eq!(got, None);
+            }
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000), "the draw consumed");
+        }
+    }
+
+    /// W4-d127 chain item 4 — the luck-roll draw census
+    /// (`Luck.cs:5-16`/`:40-51`): zero luck = ONE Next(range); positive
+    /// luck hit = NextFloat + the doubled-range draw; negative luck hit
+    /// = NextFloat + the halved-range draw. The nested RollLuck draws
+    /// Next(inner) THEN Next(outer) — order pinned. WRITTEN NOT RUN.
+    #[test]
+    fn the_luck_rolls_draw_in_the_census_order() {
+        // Zero luck: exactly one Next(range), no NextFloat.
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        assert_eq!(roll_bad_luck_extreme(0.0, 100, &mut rng), mirror.next_max(100));
+        assert_eq!(rng.next_max(999), mirror.next_max(999));
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        assert_eq!(roll_luck(0.0, 400, &mut rng), mirror.next_max(400));
+        assert_eq!(rng.next_max(999), mirror.next_max(999));
+        // Full luck (1.0): the NextFloat ALWAYS hits (< 1.0), so the
+        // extreme roll draws NextFloat + Next(range*10) — two draws.
+        let mut rng = UnifiedRandom::new(5);
+        let mut mirror = UnifiedRandom::new(5);
+        let f = mirror.next_float();
+        assert!(f < 1.0);
+        assert_eq!(roll_bad_luck_extreme(1.0, 100, &mut rng), mirror.next_max(1000));
+        assert_eq!(rng.next_max(999), mirror.next_max(999));
+        // Full bad luck (-1.0): NextFloat < 1.0 always hits → Next(10).
+        let mut rng = UnifiedRandom::new(5);
+        let mut mirror = UnifiedRandom::new(5);
+        let _ = mirror.next_float();
+        assert_eq!(roll_bad_luck_extreme(-1.0, 100, &mut rng), mirror.next_max(10));
+        // RollLuck at full luck: NextFloat, Next(range/2..range) inner,
+        // then Next(inner) outer — three draws, inner BEFORE outer.
+        let mut rng = UnifiedRandom::new(9);
+        let mut mirror = UnifiedRandom::new(9);
+        let _ = mirror.next_float();
+        let inner = mirror.next_range(200, 400);
+        assert_eq!(roll_luck(1.0, 400, &mut rng), mirror.next_max(inner));
+        assert_eq!(rng.next_max(999), mirror.next_max(999));
+        // RollLuck at full BAD luck: the widened range (400..800).
+        let mut rng = UnifiedRandom::new(9);
+        let mut mirror = UnifiedRandom::new(9);
+        let _ = mirror.next_float();
+        let inner = mirror.next_range(400, 800);
+        assert_eq!(roll_luck(-1.0, 400, &mut rng), mirror.next_max(inner));
     }
 }

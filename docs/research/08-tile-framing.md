@@ -41,8 +41,10 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   (`:913-970`), grass family branch `grass_frame_of` (`:224-798`).
 - `tr-core/src/framing.rs::frame_world` `:1010-1063`, `reframe_area` `:1132-1175`,
   `wall_frame_of` `:1106-1128`, `frame_walls` `:1179-1199`.
-- `tr-core/src/tileobject.rs::TABLE` `:293-330` — 36 `TileObjectDef`s; `TileObjectDef::211`;
-  `base_def` (`:456`) = `TileObjectData.SetupBaseObject` (`TileObjectData.cs:1743-1803`).
+- `tr-core/src/tileobject.rs` — the system (`can_place`/`place`, `def_for_tile`
+  ≈ `GetTileData`, `base_def` ≈ `SetupBaseObject` `TileObjectData.cs:1743-1803`);
+  the DATA lives in GENERATED `tr-core/src/tileobject/registry.rs` (S1-F-7 wave A,
+  `tools/GenTileObjectData/gen.py`): all 389 `addTile` kinds, 604 defs.
 - `crates/tr-core/src/tiledata/` — `mod.rs` (hand-written; `TILE_COUNT=754`, `WALL_COUNT=367`),
   generated `sets.rs` (46 `TileSet`s), `merge.rs` (`MERGE` dense bitset, `LARGE_FRAMES`,
   `GRASS_DIRT`), `emissive.rs` (`EMISSIVE[754]`, `WALL_LIGHT[367]`); generator
@@ -76,14 +78,25 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | `frameNumber` per-tile RNG (`genRand` `:319`, `:390`) | PARTIAL | `framing.rs:138`, `:1097` | replaced by a position hash (documented) |
 | `Main.tileLargeFrames` variant override | PORTED | `framing.rs:988-995`, `tiledata/merge.rs:10` | `LARGE_FRAMES` 0/1/2 arms |
 | `frame_world` / `Main.tileFrameImportant` gate | PORTED | `framing.rs:1010-1063` | band-parallel, skips important tiles |
-| `Framing.SelfFrame8Way` + `BlockStyle` + `WillItBlend` | NOT-FOUND | — | no `self_frame`/`eight_way` symbol in `crates/`; sole caller `WorldGen.cs:84833` (ids 255-268) |
+| `Framing.SelfFrame8Way` + `BlockStyle` + `WillItBlend` | PORTED (W4-d110, code-only) | `framing.rs::self_frame_8way` | full 47-row lookup + style gates; dispatch covers 255-268 AND the 385/446/447/448 `goto case 255` fallthrough (`WorldGen.cs:81409-81413`/`:84818`); witnesses `w4_d110_*` written NOT run |
 | `SquareTileFrame` / `SquareWallFrame` (3×3 refresh) | PARTIAL | `framing.rs:1132-1175` (`reframe_area`) | square re-frame, radius clamped 1..4 (superset of 3×3) |
-| `Framing.WallFrame` | PARTIAL | `framing.rs:1106-1128` | missing `TruncatesWalls`/`invisibleWall` gates, `wallLargeFrames` arms, wall-21 roll, wall==0 reset |
+| `Framing.WallFrame` | PORTED | `framing.rs::wall_frame_of_variant` + `wall_frame_head` | `TruncatesWalls`/`invisibleWall` gates (S1-P-i33), `wallLargeFrames` arms + wall-21 roll (S1-A-3), wall-id clamp + wall==0 paint/coating reset (W4-d110, code-only) |
 | `wallFrameLookup` / `centerWallFrameLookup` | PORTED | `framing.rs:1069-1093` | 20×3 table + the mask-15 offset add |
 | phlebas/lazure wall lookups (`Framing.cs:35-39`, `:378-387`) | NOT-FOUND | — | large-frame walls keep the generic mask |
-| `TileObjectData` registry | PARTIAL | `tileobject.rs:293-330` | 36 defs registered out of the C#'s full registry (`Initialize` `:2110`); ROADMAP:1319 admits "remaining: the full-registry generator" |
+| `TileObjectData` registry | PORTED (generated) | `tileobject/registry.rs` (GENERATED) | S1-F-7 wave A 2026-11-18: `tools/GenTileObjectData/gen.py` interprets `Initialize` `:2110-5014` 1:1 — all 389 tiles / 604 defs; freeze `tests/tileobject_registry_freeze.rs`, `gen.py --check`; W4-d111 re-census 2026-11-20 confirmed 0 missing `addTile` ids (witness pins `tests/tileobject_registry_witness.rs`) |
 | `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5312`) | PARTIAL | `tileobject.rs::base_def` + `edit.rs:2600-2612` | base/style routing ported; dynamic stalactite/detritus arms not found |
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263` |
+
+| `TileObjectData` registry | PARTIAL | `tileobject.rs:293-330` | 36 defs registered out of the C#'s full registry (`Initialize` `:2110`); ROADMAP:1319 admits "remaining: the full-registry generator" |
+| `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5327`) | PORTED | `tileobject.rs::resolve_tile_def` + `apply_style_override` (W4-d112) + the `RandomStyleRange` draw (S1-F-7b) | the tile-based `GetTileData(Tile)` frameY consumer `:5196-5261` ported 1:1 (thresholds 36/18/36-72-90); witnesses `tests/tileobject_resolve_witness_d112.rs` written-not-run |
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (`get_tile_data` = the (type,style,alternate) overload `:5126-5161`, `resolve_tile_def` = the Tile overload `:5196-5261`; tests `get_tile_data_resolution`, `coordinate_full_extents`) | `TryGetTileBounds` `:5163-5194` still unported (coordinate pickup consumer) |
+
 | `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`; W4-d113: `try_get_tile_bounds` — the :5163-5194 coordinate walk, resolver-parameterised on d112's `GetTileData(Tile)` seam, tests `w4_d113_walk_*`) | `CoordinateFullWidth/Height` `:256-263` |
+
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263`; **W4-e12**: the int overload's alternate tail corrected 1:1 (:5150-5159 — an out-of-range alternate KEEPS the resolved def, the port answered None; consumers `TileObject.Place` :31 / `DrawPreview` :859; witnesses `test_w4_e12_*` written-not-run). The Tile overload :5196-5261 + bounds :5163-5194 are the d112/d113/e11/d114 branch claims |
+
+| `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5327`) | PORTED | `tileobject.rs::get_tile_data_for_tile` + `resolve_from_frames` (W4-e11) | the frameY override arms + the `[Style, Style+RandomStyleRange]` bands (:5249-5258); witnesses `tileobject_frame_resolution_witness.rs` (written-not-run) |
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED | `tileobject.rs` (`get_tile_data`, `get_tile_data_for_tile` :5196-5261, `try_get_tile_bounds` :5163-5194, `check_water_death`/`check_lava_death` :5083-5119 — W4-e11) | `CoordinateFullWidth/Height` `:256-263`; the `Liquid.cs:1190` settlement-kill wiring is the liquid task's seam |
 | `tiledata` sets | PARTIAL | `tiledata/sets.rs` | 46 `TileSet`s vs 152 `Factory.CreateBoolSet(` sites in `TileID.cs` (upper bound: nested/Conversion sets) |
 | `tiledata` merge relation | PORTED | `tiledata/merge.rs` | dense 754×12-word bitset, generated |
 | emissive tile/wall tables | PORTED | `tiledata/emissive.rs` | full coverage 754 + 367 |
@@ -102,6 +115,22 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   style frames, failed place, kills cut tiles), `test_DW_1_4_door_*`, `test_DW_1_5_module_doc_maps_csharp_fields`,
   `test_DW_1_6_reframe_area_keeps_object_frames`, `test_calculate_placement_style_matches_csharp`,
   `test_get_tile_data_resolution`, `test_is_valid_anchor_lists`.
+- `tests/tileobject_registry_freeze.rs` (2): the generated registry's FNV-1a pin
+  (389 tiles / 604 defs) + the `BY_KIND` lookup census.
+- `tests/tileobject_registry_witness.rs` (7, W4-d111 2026-11-20): the full
+  389-kind `addTile` census vs the C# `Initialize` scan, plus verbatim def pins
+  for kinds 19/10/11/3/165/171/185 (sub-tiles, alternates, hooks, style-override
+  tags) — batch 1 of the d11x series covers the first 120 registered kinds
+  (3..=270); d112+ start at kind 271.
+
+- `tests/tileobject_resolve_witness_d112.rs` (10, W4-d112 2026-11-20, WRITTEN
+  NOT RUN — code-only lane): the `resolve_tile_def` frameY consumer
+  (`GetTileData(Tile)` :5196-5261) — the three `GetStyle_*` override thresholds
+  incl. boundaries (233/185/165), chair 15 multiplier + sub-tile-own
+  alternates, door 10 line-skip re-decode + style-19 sub-tile, lamp 93
+  zero-wrap line-skip, sunflower 20 overlapping `[Style, Style+Range]`
+  windows (inclusive upper bound, first-match), torch 4 sub-tile→alternate
+  walk, the 3-kind override tag census.
 - No test pins the `frameNumber`/`wallFrameNumber` variant question, and no golden
   `.wld`-load framing test exists.
 
@@ -115,18 +144,31 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
    (the ANALYSIS "Autotiling" section records the deliberate stream deviations), the
    phlebas/lazure wall lookups with their re-store (which exposed the missing fourth
    `wallFrameLookup` column) and the wall-21 quirk. The hash functions are gone
-   (framing.rs no longer has `variant`/`wall_variant`).
+   (framing.rs no longer has `variant`/`wall_variant`). **W4-d109 (2026-11-20) added the
+   save half**: the port's `.trwld` v18 tail persists `World::variants` and a v18 load
+   reuses the stored values in the full passes (`World::variants_from_save`) — a
+   port-only extension, since the C# `.wld` never serializes the bits (the refutation
+   above stands for the vanilla file). ANALYSIS "Autotiling" records the old→new.
 
-- **`Framing.SelfFrame8Way` not ported** — *behavioural*. Its only caller is
-  `WorldGen.cs:84833` for ids 255-268; those tile ids get the generic merge path in the
-  port (no `self_frame` symbol exists). Touched ids include torch/statue-family frames.
-- **`WallFrame` incomplete** — *behavioural/pixel*. Missing: the `TruncatesWalls[tile.type]`
-  neighbour condition (`Framing.cs:348/356/364/372`), the `ShouldShowInvisibleBlocksAndWalls`
-  / `invisibleWall()` gate (`:344`), and the `wall == 0` →
-  `wallColor(0)` + `ClearWallPaintAndCoating()` reset (`:337-342`). Consequence: walls
-  behind echo-coated/invisible blocks frame one variant off. (S1-A-3 landed the rest of
-  this list: the `wallLargeFrames == 1/2` phlebas/lazure arms with their re-store and
-  the wall-21 third-variant roll.)
+- **~~`Framing.SelfFrame8Way` not ported~~ — RESOLVED by W4-d110 (2026-11-20, code-only)**.
+  `self_frame_8way` + `find_block_style`/`will_it_blend` + the const 256-mask lookup port
+  `Framing.cs:9-23/92-98/141-191/193-324` verbatim; dispatch in `frame_of_variant` covers
+  255-268 AND 385/446/447/448 — the earlier claim "sole caller ids 255-268" missed the
+  inner-switch `case 385/446/447/448: break` + `goto case 255` fallthrough
+  (`WorldGen.cs:81409-81413`, `:84818`). Variant rolls stay with the d109/S1-A-3 pass
+  mechanism. Deviation: null lookup rows (sloped/half gemspark masks with no
+  `Add8WayLookup` entry) return `None` instead of the C#'s throw (ANALYSIS "Autotiling").
+  Witnesses `w4_d110_*` written NOT run.
+- **~~`WallFrame` incomplete~~ — RESOLVED (S1-P-i33 + S1-A-3 + W4-d110)**. The
+  `TruncatesWalls[tile.type]` neighbour condition and the `invisibleWall()` gate landed
+  with S1-P-i33 (`wall_mask_neighbour`); the `wallLargeFrames == 1/2` phlebas/lazure arms
+  with their re-store and the wall-21 third-variant roll with S1-A-3; the wall-id clamp
+  (`wall >= WallID.Count` → 0, `Framing.cs:332-335`) and the `wall == 0` →
+  `wallColor(0)` + `ClearWallPaintAndCoating()` reset (`:337-342`) with W4-d110
+  (`wall_frame_head`, code-only). Remaining deviation:
+  `ShouldShowInvisibleBlocksAndWalls()` reads as false (unmodelled, the
+  `render/tile_cracks.rs` precedent), and `frame_walls` runs the heads in the copy phase
+  after the parallel mask reads (ANALYSIS "Autotiling" item 7).
 - **Wiring + coatings moved out of `Tile`** — *cosmetic/structural*. `WireState` uses four
   `HashSet<(i32,i32)>` (`wiring.rs:91-96`) and wall paint/coatings use
   `World::extras: HashMap<u32,u8>` (`world.rs:20`, `wld/mod.rs:460-511`). Memory/perf
@@ -143,9 +185,16 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   `Factory.CreateBoolSet(` call sites in `TileID.cs`; many extras are the nested
   `Conversion.*`/sub-class factories, but sets needed outside framing are hand-copied
   (`tiledata/mod.rs` names `wind.rs`'s `SwaysInWindBasic`) — duplication drift risk.
-- **`TileObjectData` registry is hand-maintained** — *gap*, admitted by ROADMAP:1319.
-  36 consts in `TABLE` vs the C#'s `Initialize` table; no generator, so every added
-  object style is a manual transcription with its own citation comments.
+- **~~`TileObjectData` registry is hand-maintained~~ — RESOLVED by S1-F-7 wave A
+  (2026-11-18).** The 36-def hand `TABLE` is retired; `tileobject/registry.rs` is
+  GENERATED by `tools/GenTileObjectData/gen.py` (all 389 `addTile` kinds, 604 defs
+  incl. sub-tiles/alternates, the copy-on-write `Initialize` chain interpreted
+  statement-by-statement). Never hand-edit it; `gen.py --check` + the
+  `tileobject_registry_freeze` FNV pin guard drift. W4-d111 (2026-11-20) re-censused
+  the C# `addTile` ids against the registry: 389/389 present, 0 missing — the
+  "port ~120 missing defs" task series (d111-d114/e11/e12) is a no-op for data;
+  d111 landed witness pins instead (`tests/tileobject_registry_witness.rs`,
+  batch range = first 120 registered kinds 3..=270; d112+ start at 271).
 - **Parallel-framing claim** (`frame_world`/`frame_walls`, ROADMAP:1247 "outputs identical")
    — *verification gap*. The comment's premise ("frames depend only on kinds/flags") holds for
    the merge path; the hash `variant()` is position-only, so the band-parallel scheme is
@@ -164,11 +213,33 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 - **S** — Decide + document the `frameNumber` policy: decode the stored byte from the save
   (and use it when reframing) or keep the hash; add a test that a loaded world's frames are
   stable across two loads. (Depends on a shipped test `.wld`.)
+- **~~M — Write a `TileObjectData` generator~~ — DONE (S1-F-7 wave A):**
+  `tools/GenTileObjectData/gen.py` parses `TileObjectData.Initialize` (`:2110`)
+  into the GENERATED `tileobject/registry.rs`; `RandomStyleRange` alternation
+  landed with wave B. Remaining: the `GetStyle_Detritus/SmallPiles/Stalactite`
+  (`:5294-5312`) frameY resolution — the tags are generated data
+  (`get_style_override`), the tile-based `GetTileData(Tile)` consumer
+  (`:5196-5261`) is the open half. (`reframe_area` keeps object frames —
+  tested by `test_DW_1_6`.)
+
 - **M** — Write a `TileObjectData` generator (extend or clone `tools/GenTileData`) that
   parses `TileObjectData.Initialize` (`:2110`) into the `TABLE` consts; then the style
   alternation arms `GetStyle_Detritus/SmallPiles/Stalactite` (`:5294-5312`) and
   `RandomStyleRange` alternation. (Depends on the S tasks above only insofar as
   `reframe_area` must keep object frames — already tested by `test_DW_1_6`.)
+  **Status:** generator DONE (S1-F-7 wave A, `tools/GenTileObjectData/gen.py`);
+  `RandomStyleRange` DONE (S1-F-7b); the `GetStyle_*` frameY resolution DONE
+  (W4-d112, `tileobject::resolve_tile_def` — the `GetTileData(Tile)` consumer
+  `:5196-5261`; witnesses written-not-run). Remaining: wire the framing /
+  liquid-death consumers onto the resolver + `TryGetTileBounds` `:5163-5194`.
+
+  **DONE**: the generator landed with S1-F-7 wave A (389 tiles/604 defs,
+  d111 census proved it complete); the `RandomStyleRange` runtime hook with
+  wave B (S1-F-7b); the tile-based `GetTileData(Tile)` frameY resolution
+  (:5196-5261, the override arms :5294-5327) with **W4-e11** —
+  `tileobject::get_tile_data_for_tile` + `try_get_tile_bounds` + the
+  tile-based `check_water_death`/`check_lava_death`, witnessed by
+  `tests/tileobject_frame_resolution_witness.rs` (written-not-run).
 - **S** — Audit `tiledata` coverage: list `TileID.Sets.*` actually consumed across
   `crates/`, diff against `tiledata/sets.rs`, migrate hand-copied sets (e.g.
   `wind.rs`'s `SwaysInWindBasic`) into the generator.
@@ -177,3 +248,62 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   and the variant policy). Depends on the `frameNumber` decision above.
 - **S** — Perf hardening (optional, behaviour-frozen): replace `WireState`'s four
   `HashSet`s with an index-keyed bitset (same `get/set` API) — measure with `TR_STATS`.
+
+## W4-e12 — TileObjectData remainder census (2026-11-20, code-only)
+
+> Sixth/remainder lane of the TileObjectData batch (d111–d114/e11 before). The
+> "missing defs" premise of the row above is **STALE**: S1-F-7 wave A already
+> generated the FULL registry. Re-verified against source, not docs:
+>
+> - `python tools/GenTileObjectData/gen.py . --check` → `registry.rs is current
+>   (389 tiles, 604 defs)`.
+> - The distinct `addTile` kinds of `Initialize` (`TileObjectData.cs:2110-5014`,
+>   incl. the `435..439` loop `:2149-2160`) == the registry's top-level kinds
+>   exactly: **389 == 389, set-difference empty both ways**. Zero placement defs
+>   are missing.
+>
+> **The genuinely missing TileObjectData DATA is the draw-field class.** `gen.py`
+> PARSES `DrawXOffset/DrawYOffset/DrawFlipHorizontal/DrawFlipVertical/DrawStepDown`
+> (`TileObjectData.cs:778-941`), `DrawStyleOffset` (`:1637-1671`),
+> `DrawFrameOffsets` (`:1460-1501`) and the two visual overrides
+> `StyleWrapLimitVisualOverride`/`styleLineSkipVisualOverride` (`:1042-1106`)
+> through the same copy-on-write machinery, but does NOT emit them (the
+> documented S1-F-9 DrawData remainder, `tileobject.rs:50-55`). 254 top-level
+> kinds carry a non-default draw value. The sole C# consumer is
+> `TileObject.DrawPreview` (`TileObject.cs:855-953`): `num5 = DrawYOffset` `:864`,
+> `drawXOffset = DrawXOffset` `:865`, `num3 += DrawStyleOffset` `:866`, the two
+> visual overrides `:869-876`, the `DrawStepDown` solid-above bump `:900-903`,
+> the 567 top-row special `:904-907`, the parity flips `:929-936`, and the
+> `DrawFrameOffsets[i,j]` source-rect add `:946-953`. Emitting these fields is a
+> generator + struct + freeze-hash change owned by S1-F-9, NOT this data lane.
+>
+> **This lane's range (collision-free with the sibling batches):** emission
+> indices **501–604** of `registry.rs` = the last **104 defs**, owned by tile
+> kinds **605–753** (76 kinds). Verified kind-disjoint: every def owned by those
+> kinds falls exactly in the tail (no def of an earlier kind leaks in, no tail
+> def belongs to an earlier kind). Deliverable = a verbatim per-def witness
+> (`crates/tr-core/tests/tileobject_e12_defs.rs`) pinning the range's placement
+> identity fields against the C#-interpreted values, plus the draw-field
+> remainder table below. Data-only; no production behaviour touched; RNG
+> untouched (pure data). Witnesses WRITTEN NOT RUN (code-only mode).
+>
+> Draw-field remainder for the range (the non-default values, verbatim from the
+> interpreted `Initialize`; `Y`=`DrawYOffset`, `X`=`DrawXOffset`, `FH`=
+> `DrawFlipHorizontal`, `FO`=`DrawFrameOffsets`, `WVO`/`LSVO`= the visual
+> overrides). All other range kinds carry the `SetupBaseObject` defaults
+> (`:1793-1796`, X/Y/step 0, flips false) and null `DrawFrameOffsets`:
+>
+> | kind(s) | draw values | C# anchor |
+> |---|---|---|
+> | 605–614, 619–623, 629, 632, 640, 642–645, 647–654, 657, 658, 699, 705, 706, 710, 720, 721, 725, 753 | Y=2 | the per-kind `DrawYOffset = 2` writes |
+> | 615, 637, 703 | FH=true | `:4964`/`:4324`/`:4296` chains |
+> | 617 (+A1) | Y=2, WVO=2, LSVO=0 | `:3426-3435` |
+> | 646 | Y=−4 | `:2373` chain |
+> | 660 | Y=−2; A1 Y=−10 | `:2464-2468` |
+> | 698 (+S1/S2/A1s) | X=10, Y=−2 (alts Y=−10), FO=[[0,0,20,0],[0,−2,20,28]] (sub1 X+20, sub2 X+40) | `:2470-2502` |
+> | 700 | Y=2, FH=true | `:4268` chain |
+> | 701 | Y=−16, FH=true | `:4280` chain |
+> | 711 | FO=[[0,0,0,0],[0,0,2,0]],[[0,0,0,2],[0,0,2,2]] | `:3638-3649` |
+> | 723/724 | base Y=2; A1 Y=−2, A2 X=2, A3 X=−2 | `:4517`/`:4549` chains |
+> | 733 | Y=2, FO=3×3 all [54,0,0,0] | `:4125` chain |
+> | 751 | X=9, Y=−8, FO=[[0,0,34,32],[0,0,−16,−16]],[[0,0,−16,−16],[0,0,−16,−16]] | `:4015` chain |

@@ -542,7 +542,7 @@ pub(super) fn kill_invalid_tree_above(world: &mut World, i: i32, j: i32, new_flo
 /// `DefaultTreeWallTest` (`WorldGen.cs:30260-30267`) reads — the vanity and
 /// ash profiles' `WallTest`. Hand-transcribed (the generated tables carry
 /// neither set).
-const ALLOWS_PLANTS_TO_GROW: [u16; 27] = [
+pub(crate) const ALLOWS_PLANTS_TO_GROW: [u16; 27] = [
     0, 150, 138, 145, 107, 152, 140, 139, 141, 106, 245, 315, 317, 63, 64, 65, 66, 67, 68, 69, 81, 70,
     264, 268, 265, 74, 80,
 ];

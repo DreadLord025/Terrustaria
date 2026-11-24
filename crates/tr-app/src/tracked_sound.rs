@@ -62,6 +62,29 @@ pub struct TrackedStyle {
 }
 
 impl TrackedStyle {
+    /// W4-d80 — resolve a `SoundID` field name to its tracked style through
+    /// the generated `SOUND_STYLES` table (`soundid.rs`, the `SoundID.cs`
+    /// static-ctor port): the trackable base name, the variation count, the
+    /// baked volume/pitch-variance and the slider type. Every W4-d80 style
+    /// is a plain `CreateTrackable` (`SoundID.cs:1205-1213`, `maxInstances`
+    /// defaults 0 — uncapped). `None` for a non-trackable or unknown name.
+    pub fn by_name(name: &str) -> Option<Self> {
+        let def = crate::soundid::SOUND_STYLES.iter().find(|s| s.name == name)?;
+        let cue = def.trackable?;
+        Some(Self {
+            cue,
+            variations: u32::from(def.variations),
+            volume: def.volume,
+            pitch_variance: def.pitch_variance,
+            sound_type: match def.sound_type {
+                1 => SoundType::Ambient,
+                2 => SoundType::Music,
+                _ => SoundType::Sound,
+            },
+            max_tracked_instances: 0,
+        })
+    }
+
     /// `SoundStyle.GetRandomSound` for the trackable family: the `Style`
     /// getter picks the variation — `LegacySoundStyle.Random.Next(_style,
     /// _style + Variations)` (`LegacySoundStyle.cs:21-28`) — and the port
@@ -132,6 +155,11 @@ pub struct ActiveSound {
     /// force the playing state to exercise the count/cap/update paths.
     #[cfg(test)]
     test_playing: bool,
+    /// The test seam: the headless tracked plays have no sink, so the pool
+    /// would reap every sound on its first update — the flag keeps the
+    /// addressable slot alive for the ensure/follow witnesses.
+    #[cfg(test)]
+    test_keep_alive: bool,
 }
 
 impl ActiveSound {
@@ -158,6 +186,8 @@ impl ActiveSound {
             pan,
             #[cfg(test)]
             test_playing: false,
+            #[cfg(test)]
+            test_keep_alive: false,
         }
     }
 
@@ -165,7 +195,7 @@ impl ActiveSound {
     /// — a finished rodio sink is empty; the test seam forces the state.
     pub fn is_playing(&self) -> bool {
         #[cfg(test)]
-        if self.test_playing {
+        if self.test_playing || self.test_keep_alive {
             return true;
         }
         self.sound.as_ref().is_some_and(|sink| !sink.empty())
@@ -240,6 +270,13 @@ impl ActiveSound {
     #[cfg(test)]
     pub(crate) fn set_test_playing(&mut self, playing: bool) {
         self.test_playing = playing;
+    }
+
+    /// The test seam: keep the headless slot addressable across pool
+    /// updates (no sink, so `is_playing` would reap it otherwise).
+    #[cfg(test)]
+    pub(crate) fn set_test_keep_alive(&mut self, keep: bool) {
+        self.test_keep_alive = keep;
     }
 
     /// The engine attaches the built instance after computing the initial
@@ -369,6 +406,17 @@ impl SoundPlayer {
             .pairs()
             .find(|(_, sound)| sound.as_ref().is_some_and(|s| s.style.cue == style.cue))
             .and_then(|(_, sound)| sound.as_ref())
+    }
+
+    /// The pool-entry count of one style (no `IsPlaying` filter — the
+    /// `find_active_sound` semantics) — the test seam the headless flows
+    /// count plays through (no output device ever drains an entry).
+    #[allow(dead_code)] // the reader is Audio::tracked_count_for's test seam
+    pub fn count_style_entries(&self, style: &TrackedStyle) -> usize {
+        self.tracked_sounds
+            .pairs()
+            .filter(|(_, sound)| sound.as_ref().is_some_and(|s| s.style.cue == style.cue))
+            .count()
     }
 }
 

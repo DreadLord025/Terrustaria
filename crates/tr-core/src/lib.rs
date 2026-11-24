@@ -9,9 +9,11 @@ pub mod bcrypt;
 pub mod armor_sets;
 pub mod bestiary;
 pub mod binio;
+pub mod clock;
 pub mod damage;
 pub mod drawdata;
 pub mod drawdata_anim;
+pub mod drawdata_cages;
 pub mod drawdata_furniture;
 pub mod dd2;
 pub mod dd2_victory;
@@ -21,7 +23,12 @@ pub mod extract;
 pub mod falling;
 pub mod flame;
 pub mod framing;
+// W4-g82 — TileFrameCosmetic's rope arm (WorldGen.cs:81894-81931), the
+// tr-core home of render/ropes.rs's verbatim decision maths; wired into
+// framing::frame_of_variant's merge-chain tail.
+pub mod framing_rope;
 pub mod generation_progress;
+pub mod glowmask;
 pub mod housing;
 pub mod hit_tile;
 pub mod lighting;
@@ -56,12 +63,16 @@ pub mod tile_entities;
 pub mod torch;
 pub mod unified_random;
 pub mod tree;
+pub mod retro_water;
 pub mod waterfall;
 pub mod wiring;
 pub mod wind;
 pub mod wld;
 pub mod world;
 pub mod worldgen;
+pub mod worldgen_dust;
+pub mod worldgen_dust_tile;
+pub mod worldgen_dust_wall;
 
 pub use tile::Tile;
 pub use unified_random::UnifiedRandom;

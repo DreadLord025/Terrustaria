@@ -95,7 +95,9 @@ pub(crate) struct WorldChest {
     /// `Main.cs:17810`). `Default` 0 — the C# field's zero init.
     pub(crate) frame_counter: i32,
     /// `Chest.frame` (`Chest.cs:86`): the draw frame the chest rewrite reads
-    /// (`TileDrawing.cs:4309-4320`, `render/special_tiles.rs::chest_frame_adjust`)
+    /// (`TileDrawing.cs:4309-4320`; the keep-one selection is
+    /// `tr-render/src/chest_frames.rs::chest_frame_adjust`, the W4-d58 move
+    /// wired by `draw_tiles` via `chest_draw_frame` — W4-f16 dedupe)
     /// — 0 closed, 1 half-open, 2 open.
     pub(crate) frame: i32,
     /// `Chest.eatingAnimationTime` (`Chest.cs:88`): the hopper/vacuum eat
@@ -148,6 +150,52 @@ pub(crate) fn find_chest(chests: &[WorldChest], x: i32, y: i32) -> Option<usize>
     chests
         .iter()
         .position(|c| !is_removed(c) && c.tile == (x, y))
+}
+
+/// W4-d58: the draw-side `_chestPositions` lookup
+/// (`TileDrawing.cs:4291-4303` + `:4309-4311`). The anchor key steps
+/// left/up off the 36 px grid (`tr_render::chest_anchor`, `:4292-4299`),
+/// the `FindChest` result is cached per draw in `positions` (the C# dict,
+/// cleared each draw by `ClearLegacyCachedDraws`, `:6613-6615` — the port
+/// hands a fresh map per `draw_tiles` call), and the answer is the chest's
+/// lid `frame` (`Chest.cs:86`) or `None` for the `-1` miss. Read-only over
+/// the store: the draw side never rolls RNG and never writes sim state —
+/// the frame is produced by [`update_chest_frames`] on the world step.
+pub(crate) fn chest_draw_frame(
+    chests: &[WorldChest],
+    positions: &mut std::collections::HashMap<(i32, i32), Option<i32>>,
+    x: i32,
+    y: i32,
+    frame_x: i16,
+    frame_y: i16,
+) -> Option<i32> {
+    let key = tr_render::chest_anchor(x, y, frame_x, frame_y);
+    *positions
+        .entry(key)
+        .or_insert_with(|| find_chest(chests, key.0, key.1).map(|i| chests[i].frame))
+}
+
+/// W4-d58 G6 key input: a hash of every live chest's anchor + lid frame —
+/// the values [`chest_draw_frame`] feeds the chest rewrite inside the
+/// cached world range. FNV-1a over the raw `i32` little-endian bytes (the
+/// `TileAnimator::anim_key` convention): deterministic, order-sensitive,
+/// no RNG. Coords ride along so a lazily-created or moved entry changes
+/// the key even while every frame is 0; removed (null) slots are skipped
+/// like the C#'s null array entries.
+pub(crate) fn chest_frame_key(chests: &[WorldChest]) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    let mut feed = |v: i32| {
+        for b in v.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    for c in chests.iter().filter(|c| !is_removed(c)) {
+        feed(c.tile.0);
+        feed(c.tile.1);
+        feed(c.frame);
+    }
+    h
 }
 
 /// `Chest.FindEmptyChest` (`Chest.cs:522-541`): the first null slot index, or
@@ -849,6 +897,35 @@ fn unlock_progression(kind: u16, style: i16) -> Option<u32> {
     }
 }
 
+/// W4-f6 wiring — `Chest.Unlock`'s 4-per-tile dust (`Chest.cs:418-421`,
+/// site 420): the unlock click runs inside `Player.ItemCheck` →
+/// `TileInteractionsUse` (`Player.cs:33178`/:33204), under the
+/// `UpdatePlayers` swap (`Main.cs:17754`) — NOT the bare global the staged
+/// doc guessed. The match flags read the PRE-shift frames (the C# reads
+/// `tileSafely2.type == type2` inside the same loop that shifts). ZERO
+/// explicit rand — only the pool internals roll.
+fn unlock_dust(app: &mut App, ox: i32, oy: i32) {
+    let Some(origin) = app.world.tile(ox, oy) else {
+        return;
+    };
+    let kind = origin.kind;
+    let matched = [
+        app.world.tile(ox, oy).is_some_and(|t| t.kind == kind),
+        app.world.tile(ox, oy + 1).is_some_and(|t| t.kind == kind),
+        app.world.tile(ox + 1, oy).is_some_and(|t| t.kind == kind),
+        app.world.tile(ox + 1, oy + 1).is_some_and(|t| t.kind == kind),
+    ];
+    let ctx = app.spawn_ctx();
+    crate::world_dust::chest_unlock_dust(
+        (ox, oy),
+        matched,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        &mut app.dust,
+        &ctx,
+        &app.world,
+    );
+}
+
 /// The shared `Unlock`/`Lock` frame pass (`Chest.cs:409-424`/:483-494): the
 /// shift applies to every 2×2 tile whose type matches the chest's.
 fn shift_chest_frames(world: &mut World, x: i32, y: i32, kind: u16, shift: i16) {
@@ -867,8 +944,9 @@ fn shift_chest_frames(world: &mut World, x: i32, y: i32, kind: u16, shift: i16) 
 /// panel close (`NewCraftingUI.Close(quiet: true)` `:33516`), the inventory
 /// open (`Main.playerInventory = true` `:33517`) and the tile origin — set
 /// for the banks too (`:33524-33525`), or the per-tick range close would
-/// probe a stale tile. The `ItemSlot.SetGlowForChest`/input-navigator arms
-/// are UI state the port does not carry (`:33508-33515`/:33518-33523).
+/// probe a stale tile. The `ItemSlot.SetGlowForChest` half NOW LANDS below
+/// (W4-g56 void-chain item 5, `ui/glow.rs` — research/274 §4 keep-one); the
+/// input-navigator arms stay unported UI state (`:33518-33523`).
 ///
 /// The browsed chest's 40-slot window materializes on open: the C#
 /// `Chest.item[]` is 40 real entries for every chest (`Chest.cs:107-109`,
@@ -895,6 +973,32 @@ fn open_chest(app: &mut App, x: i32, y: i32, new_chest: i32) {
             c.slots.resize(c.max_items, EMPTY_SLOT);
         }
     }
+    // W4-g56 — `ItemSlot.SetGlowForChest(currentContainer)` (`Player.cs:33508-
+    // 33515`): the open clears the chest glow arrays (and grows them to the
+    // container's `maxItems`). The `CoinSlot.ForceSlotState(j, 3, ...)` half
+    // (`ItemSlot.cs:488-491`) resets the coin-cell ranks for the open window.
+    let max_items = if new_chest >= 0 {
+        app.world_chests
+            .get(new_chest as usize)
+            .map_or(crate::chest::DEFAULT_MAX_ITEMS as usize, |c| c.max_items)
+    } else {
+        crate::bank::BANK_SLOTS
+    };
+    app.slot_glow.set_glow_for_chest(max_items);
+    for j in 0..max_items {
+        let (kind, count) = if new_chest >= 0 {
+            app.world_chests
+                .get(new_chest as usize)
+                .and_then(|c| c.slots.get(j))
+                .map_or((0, 0), |s| (s.kind, s.count))
+        } else {
+            app.player
+                .as_ref()
+                .and_then(|p| crate::bank::bank_for_chest(new_chest).map(|bi| p.banks[bi][j]))
+                .map_or((0, 0), |s| (s.kind, s.count))
+        };
+        app.coin_slot.force_slot_state(j as i32, 3, kind, count);
+    }
 }
 
 /// `Player.cs:33230-33252` — the open toggle shared by every container kind
@@ -911,6 +1015,14 @@ pub(crate) fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: i32) -> u32 
     let Some(current) = app.player.as_ref().map(|p| p.chest) else {
         return 0; // no player — no container state (the front screens park the routes)
     };
+    // W4-g56 — the tile-vault open's `disableVoidBag` guard (`Player.cs:33134-
+    // 33139`): `case 4: if (this.disableVoidBag < 0) num76 = -5;` — a locked
+    // vault slot leaves `num76 = -1`, so the shared open block (`:33230`)
+    // never runs (no stackSplit, no toggle, no cue). The net-slot lock is
+    // MP-only (`Player.disable_void_bag`); SP keeps −1 and always opens.
+    if new_chest == -5 && app.player.as_ref().is_some_and(|p| p.disable_void_bag >= 0) {
+        return 0;
+    }
     app.stack_split = 600; // `:33232` — `Main.stackSplit = 600`, before the branch
     if new_chest == current {
         if let Some(p) = app.player.as_mut() {
@@ -1060,6 +1172,8 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             // `SoundID.Unlock` cue (`SoundID.cs:66`), banked as "Unlock".
             app.audio
                 .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+            // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420).
+            unlock_dust(app, ox, oy);
             if consumes {
                 // `:33183-33189` — the consumed key's stack decrements; an
                 // emptied slot turns to air.
@@ -1102,6 +1216,8 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 }
                 app.audio
                     .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+                // `:418-421` — the 4-per-tile dust (W4-f6 wiring, site 420).
+                unlock_dust(app, ox, oy);
                 if consumes {
                     slot.count -= 1; // `:33210-33214`
                     if slot.count == 0 {
@@ -1259,15 +1375,31 @@ pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool
 /// close for every open container (the unified `Player.chest` covers the
 /// world chests and the banks): out of the container's multi-tile-hitbox
 /// interaction range or a dead origin tile force-closes with sound 11
-/// (`:31078-31090`). The bank-projectile arms (`:31019-31076`) are the
-/// remote opens — out of scope. Runs for alive players only (the C# call
-/// site sits after the dead branch's return, `:24752`/:25290) — the
-/// `update_player` hook inherits that gating.
+/// (`:31078-31090`). The void-lens tracker arm (`:31051-31073`, W4-g56
+/// `void_lens::tick_tracker`) runs first and its `flag` return
+/// (`:31074-31077`) skips the tile probe while the lens open is live; the
+/// piggy-trough arm (`:31028-31050`) stays out (no remote piggy open).
+/// Runs for alive players only (the C# call site sits after the dead
+/// branch's return, `:24752`/:25290) — the `update_player` hook inherits
+/// that gating.
 pub(crate) fn tick_open(app: &mut App) {
     let Some(p) = app.player.as_ref() else {
         return;
     };
-    if p.chest != -1 {
+    // W4-g56 — `HandleBeingInChestRange`'s void-lens arm
+    // (`Player.cs:31051-31073`): the tracked lens's death/range close runs
+    // AHEAD of the tile-range close below (the C# `flag` return at
+    // `:31074-31077` skips the multi-tile-hitbox probe while a bank
+    // projectile tracker is live). The Item130 cue plays here.
+    let lens_sound = crate::void_lens::tick_tracker(app);
+    if lens_sound != 0 {
+        app.audio.play("Item_130"); // `:31056`/`:31068` — `SoundID.Item130`
+    }
+    let tracked_open = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.chest == -5 && p.void_lens_chest != crate::void_lens::LensTracker::default());
+    if p.chest != -1 && !tracked_open {
         let (chest_x, chest_y) = (p.chest_x, p.chest_y);
         // Both probes read the world only; the close below mutates the
         // player after the borrow ends.
@@ -1296,6 +1428,22 @@ pub(crate) fn tick_open(app: &mut App) {
     }
     if let Some(p) = app.player.as_mut() {
         p.prev_synced_chest = p.chest;
+    }
+    // W4-g56 — `Player.ChestChangeEvents` (`Player.cs:28760-28775`, the
+    // `:25384` call): a change to a WORLD chest (`lastChest != chest && chest
+    // >= 0`) arms `ItemSlot.forceClearGlowsOnChest` (`:28771`), consumed by
+    // the next glow decay. The bank values (−2..−5) never arm it (the C#
+    // `chest >= 0` gate); the gas-trap / big-mimic halves (`:28766`/:28770`)
+    // are unported. `lastChest` updates every tick.
+    let (cur_chest, last_chest) = app
+        .player
+        .as_ref()
+        .map_or((-1, -1), |p| (p.chest, p.last_chest));
+    if last_chest != cur_chest && cur_chest >= 0 {
+        app.slot_glow.force_clear_chest = true;
+    }
+    if let Some(p) = app.player.as_mut() {
+        p.last_chest = p.chest;
     }
 }
 
@@ -1493,6 +1641,7 @@ pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
         0,
         |idx| app.is_favorite(idx),
         if vault_enabled { vault } else { None },
+        |i| app.player.as_ref().is_some_and(|p| p.vault_favorites[i]),
     )
     .can_take
     {
@@ -2701,6 +2850,29 @@ mod tests {
         assert_eq!(app.player.as_ref().unwrap().chest, -2);
     }
 
+    /// W4-g56 — the tile-vault open's `disableVoidBag` guard (`Player.cs:33134-
+    /// 33139`): a locked vault slot leaves `num76 = -1`, so the shared open
+    /// block never runs — `toggle_open(-5)` answers 0 (no cue), the chest stays
+    /// closed, no stackSplit. The other banks (−2..−4) ignore the lock. The
+    /// slot-5 echo clear re-opens the vault. MP-only; the witness arms the lock
+    /// directly (the quick-stack producer is unported).
+    #[test]
+    fn w4_g56_the_tile_vault_open_refuses_while_the_slot_is_locked() {
+        let mut app = interact_app(world());
+        app.player.as_mut().unwrap().lock_net_slot(0);
+        assert_eq!(toggle_open(&mut app, 10, 19, -5), 0, "the locked vault refuses");
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "stays closed");
+        assert_eq!(app.stack_split, 0, "no stackSplit on the refused open");
+        // The other banks ignore the vault lock.
+        assert_eq!(toggle_open(&mut app, 10, 19, -2), 10, "the piggy opens");
+        assert_eq!(app.player.as_ref().unwrap().chest, -2);
+        // The echo clears the lock; the vault opens — with the piggy still
+        // open this is the SWITCH arm, sound 12 (`Player.cs:33248-33252`).
+        app.player.as_mut().unwrap().clear_void_bag_lock_on_echo(0);
+        assert_eq!(toggle_open(&mut app, 10, 19, -5), 12, "the cleared lock opens (the switch)");
+        assert_eq!(app.player.as_ref().unwrap().chest, -5);
+    }
+
     /// DW-1.4 — the one open-container field carries the full C# index space
     /// (`Player.chest`, `Player.cs:2876`): −1 closed, −2..−5 the banks (the
     /// `bank_for_chest` resolver order), ≥ 0 the `App.world_chests` store
@@ -3045,9 +3217,10 @@ mod tests {
     }
 
     /// `TileID.Sets.BasicChest` (`TileID.cs:570`) gates the open path: tile
-    /// 341 (the craft scan's frozen second entry) is not a `BasicChest`, and
-    /// an inactive chest tile never reaches the interaction chain
-    /// (`:32035-32041`).
+    /// 341 (`LivingDemonFire`, `TileID.cs:1311` — the craft/cull scans'
+    /// former wrong second entry, fixed by i46 / W4-a2) is not a
+    /// `BasicChest`, and an inactive chest tile never reaches the
+    /// interaction chain (`:32035-32041`).
     #[test]
     fn non_basic_chest_and_inactive_tiles_are_not_openable() {
         let mut w = world();
@@ -4108,6 +4281,95 @@ mod tests {
         assert_eq!(cues, vec![0], "the :3628-3631 chime");
         assert_eq!(chests[0].eating_animation_time, 8);
         assert_eq!(chests[0].frame_counter, 8);
+    }
+
+    // --- W4-d58: the draw-side frame-state witnesses --------------------------
+
+    /// W4-d58 — `chest_draw_frame` (`TileDrawing.cs:4291-4311`): all four
+    /// sub-cells of the 2×2 chest resolve through the ONE anchor key, the
+    /// `FindChest` miss answers `None`, and the per-draw cache holds one
+    /// entry per anchor (`_chestPositions`, `:4300-4303`). The lookup is
+    /// read-only — the store is untouched (no sim state, no RNG).
+    #[test]
+    fn w4_d58_chest_draw_frame_walks_the_anchor_grid_and_caches() {
+        let mut chests = vec![chest_at(10, 18, "A")];
+        chests[0].frame = 1;
+        let before = format!("{chests:?}");
+        let mut positions = std::collections::HashMap::new();
+        // The four sub-cells: (fx, fy) in {0,18}² — the anchor steps back
+        // to (10, 18) for each (`chest_anchor`, :4292-4299).
+        for (x, y, fx, fy) in [
+            (10, 18, 0, 0),
+            (11, 18, 18, 0),
+            (10, 19, 0, 18),
+            (11, 19, 18, 18),
+        ] {
+            assert_eq!(
+                chest_draw_frame(&chests, &mut positions, x, y, fx, fy),
+                Some(1),
+                "sub-cell ({x},{y}) reads the lid frame"
+            );
+        }
+        assert_eq!(positions.len(), 1, "one cache entry per anchor");
+        // A chest-less anchor: the -1 miss (:4309), cached too.
+        assert_eq!(chest_draw_frame(&chests, &mut positions, 30, 40, 0, 0), None);
+        assert_eq!(positions.len(), 2);
+        assert_eq!(format!("{chests:?}"), before, "the draw lookup writes nothing");
+    }
+
+    /// W4-d58 frame-state witness: the i43 animator's whole open/close walk
+    /// (`Chest.cs:3603-3662`) reaches the draw selection — tick 0 closed
+    /// (+0), ticks 1..9 half-open (+38), tick 10 open (+76), and the close
+    /// walk replays the bands in reverse. The selection is
+    /// `tr_render::chest_frame_adjust` over the live `WorldChest.frame`.
+    #[test]
+    fn w4_d58_the_lid_states_reach_the_draw_selection() {
+        let mut chests = vec![chest_at(10, 18, "A")];
+        let mut positions = std::collections::HashMap::new();
+        let row = |chests: &[WorldChest], positions: &mut std::collections::HashMap<
+            (i32, i32),
+            Option<i32>,
+        >| {
+            // A fresh cache per draw (ClearLegacyCachedDraws, :6613-6615).
+            positions.clear();
+            let lid = chest_draw_frame(chests, positions, 10, 18, 0, 0);
+            tr_render::chest_frame_adjust(21, 0, 0, 16, 16, lid).add_fr_y
+        };
+        assert_eq!(row(&chests, &mut positions), 0, "tick 0: closed");
+        for tick in 1..=10 {
+            update_chest_frames(&mut chests, 0);
+            let want = if tick == 10 { 76 } else { 38 };
+            assert_eq!(row(&chests, &mut positions), want, "open tick {tick}");
+        }
+        for tick in 1..=10 {
+            update_chest_frames(&mut chests, -1);
+            let want = if tick == 10 { 0 } else { 38 };
+            assert_eq!(row(&chests, &mut positions), want, "close tick {tick}");
+        }
+    }
+
+    /// W4-d58 — `chest_frame_key`: deterministic (no RNG), tracks the lid
+    /// frame and the anchor, and skips removed (null) slots like the C#
+    /// array walk. Two identical stores hash equal; a lid tick or a moved
+    /// anchor changes the hash.
+    #[test]
+    fn w4_d58_chest_frame_key_is_deterministic_and_tracks_the_lid() {
+        let mut chests = vec![chest_at(10, 18, "A"), chest_at(30, 40, "B")];
+        let k0 = chest_frame_key(&chests);
+        assert_eq!(k0, chest_frame_key(&chests.clone()), "no RNG, same state");
+        update_chest_frames(&mut chests, 0);
+        let k1 = chest_frame_key(&chests);
+        assert_ne!(k0, k1, "the lid tick rides the key");
+        assert_eq!(k1, chest_frame_key(&chests), "a still store hashes equal");
+        // The anchor rides too (a lazily-created entry changes the pixels).
+        chests[1].tile = (31, 40);
+        assert_ne!(k1, chest_frame_key(&chests));
+        // A removed slot drops out of the hash entirely.
+        let k2 = chest_frame_key(&chests);
+        remove_chest(&mut chests, 1);
+        let solo = vec![chests[0].clone()];
+        assert_eq!(chest_frame_key(&chests), chest_frame_key(&solo));
+        assert_ne!(k2, chest_frame_key(&chests));
     }
 
     /// S1-P-i43 — `Chest.GetCurrentlyOpenChests` (`Chest.cs:283-294`): the

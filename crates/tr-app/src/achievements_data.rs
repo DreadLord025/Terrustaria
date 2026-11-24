@@ -9,9 +9,13 @@
 //! CompareTo` sorts the menu list by it, while the icon index has its own
 //! order (e.g. `BENCHED` is constructed second but carries icon 88).
 //!
-//! One row (`GAIN_TORCH_GODS_FAVOR`) has no category: the initializer never
-//! passes it to `RegisterAchievementCategory`, so it stays
-//! `AchievementCategory.None` (`AchievementCategory.cs`: `None = -1`).
+//! One row (`GAIN_TORCH_GODS_FAVOR`) is never passed to
+//! `RegisterAchievementCategory` (`:360-362` constructs it; `:582-721`
+//! skips it). `Achievement._category` is an unset enum FIELD, so its CLR
+//! default is `(AchievementCategory)0 = Slayer` — NOT `None = -1`
+//! (`Achievement.cs:25`, `AchievementCategory.cs:5-6`). Vanilla filters
+//! and icons it as Slayer; the port's row carries `Category::Slayer`
+//! (W4-g53 census correction — the old `None` pin was the deviation).
 
 use crate::achievements::Category;
 
@@ -1002,8 +1006,10 @@ pub const ROWS: &[Row] = &[
 	},
 	Row {
 		name: "GAIN_TORCH_GODS_FAVOR",
-		// `AchievementInitializer.cs:360-362`
-		category: Category::None,
+		// `AchievementInitializer.cs:360-362` — no RegisterAchievementCategory
+		// call, so `_category` keeps the CLR enum default 0 = Slayer
+		// (`Achievement.cs:25`, `AchievementCategory.cs:5-6`).
+		category: Category::Slayer,
 		icon: 109,
 		conditions: &[Cond::Flag("Use")],
 		tracker: None,
@@ -1225,3 +1231,207 @@ pub const ROWS: &[Row] = &[
 		tracker: None,
 	},
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::{Cond::*, ROWS};
+
+    /// W4-e22 witness: a second, independent transcription of
+    /// `AchievementInitializer.Load` (`AchievementInitializer.cs:16-443`) —
+    /// every row's condition count and full `AddCondition`/`AddConditions`
+    /// argument list, with the four `CreateMany` calls already expanded
+    /// (`NPCKilledCondition.cs:69-77`: one condition per id). `BENCHED`'s
+    /// `ItemID.Sets.Workbenches` is expanded from `ItemID.cs:1375-1421`.
+    /// The test below compares this against `ROWS` entry by entry, so a
+    /// folded or dropped condition (the old "139 of 180" lossy-`CreateMany`
+    /// bug class) fails the build's test pass.
+    #[rustfmt::skip] // verbatim transcription — keep the initializer's row shape
+    const CONDITION_COUNTS: &[(&str, usize, &[Cond])] = &[
+		("TIMBER", 1, &[Items(&[9, 619, 2504, 620, 2503, 2260, 621, 911, 1729, 5215])]),
+		("BENCHED", 1, &[
+			Crafts(&[36, 635, 636, 637, 673, 811, 812, 813, 814, 815, 916, 1145, 1398, 1401, 1404, 1461, 1511, 1795, 1817, 2229, 2251, 2252, 2253, 2534, 2631, 2632, 2633, 2826, 3156, 3157, 3158, 3909, 3910, 3949, 3975, 4163, 4184, 4205, 4226, 4315, 4584, 5166, 5187, 5208]),
+		]),
+		("NO_HOBO", 1, &[Progression(8)]),
+		("OBTAIN_HAMMER", 1, &[
+			Items(&[2775, 2746, 5283, 3505, 654, 3517, 7, 3493, 2780, 1513, 2516, 660, 3481, 657, 922, 3511, 2785, 3499, 3487, 196, 367, 104, 797, 2320, 787, 1234, 1262, 3465, 204, 217, 1507, 3524, 3522, 3525, 3523, 4317, 1305]),
+		]),
+		("OOO_SHINY", 1, &[
+			Tiles(&[7, 6, 9, 8, 166, 167, 168, 169, 22, 204, 58, 107, 108, 111, 221, 222, 223, 211]),
+		]),
+		("HEART_BREAKER", 1, &[Tile(12)]),
+		("HEAVY_METAL", 1, &[Items(&[35, 716])]),
+		("I_AM_LOOT", 1, &[Flag("Peek")]),
+		("STAR_POWER", 1, &[Flag("Use")]),
+		("HOLD_ON_TIGHT", 1, &[Flag("Equip")]),
+		("EYE_ON_YOU", 1, &[Npc(4)]),
+		("SMASHING_POPPET", 1, &[Progression(7)]),
+		("WORM_FODDER", 1, &[Npcs(&[13, 14, 15])]),
+		("MASTERMIND", 1, &[Npc(266)]),
+		("WHERES_MY_HONEY", 1, &[Flag("Reach")]),
+		("STING_OPERATION", 1, &[Npc(222)]),
+		("BONED", 1, &[Npc(35)]),
+		("DUNGEON_HEIST", 2, &[Item(327), Progression(19)]),
+		("ITS_GETTING_HOT_IN_HERE", 1, &[Flag("Reach")]),
+		("MINER_FOR_FIRE", 1, &[Craft(122)]),
+		("STILL_HUNGRY", 1, &[Npcs(&[113, 114])]),
+		("ITS_HARD", 1, &[Progression(9)]),
+		("BEGONE_EVIL", 1, &[Progression(6)]),
+		("EXTRA_SHINY", 1, &[Tiles(&[107, 108, 111, 221, 222, 223])]),
+		("HEAD_IN_THE_CLOUDS", 1, &[Flag("Equip")]),
+		("LIKE_A_BOSS", 1, &[
+			Items(&[1133, 1331, 1307, 267, 1293, 5334, 557, 544, 556, 560, 43, 70, 3601, 5120, 4961, 4988, 2673]),
+		]),
+		("BUCKETS_OF_BOLTS", 3, &[Npcs(&[125, 126]), Npc(127), Npc(134)]),
+		("DRAX_ATTAX", 1, &[Crafts(&[579, 990])]),
+		("PHOTOSYNTHESIS", 1, &[Tile(211)]),
+		("GET_A_LIFE", 1, &[Flag("Use")]),
+		("THE_GREAT_SOUTHERN_PLANTKILL", 1, &[Npc(262)]),
+		("TEMPLE_RAIDER", 1, &[Progression(22)]),
+		("LIHZAHRDIAN_IDOL", 1, &[Npc(245)]),
+		("ROBBING_THE_GRAVE", 1, &[
+			Items(&[1513, 938, 963, 977, 1300, 1254, 1514, 679, 759, 1446, 1445, 1444, 1183, 1266, 671, 3291, 4679, 4789]),
+		]),
+		("BIG_BOOTY", 1, &[Progression(20)]),
+		("FISH_OUT_OF_WATER", 1, &[Npc(370)]),
+		("OBSESSIVE_DEVOTION", 1, &[Npc(439)]),
+		("STAR_DESTROYER", 4, &[Npc(517), Npc(422), Npc(507), Npc(493)]),
+		("CHAMPION_OF_TERRARIA", 1, &[Npc(398)]),
+		("BLOODBATH", 1, &[Progression(5)]),
+		("SLIPPERY_SHINOBI", 1, &[Npc(50)]),
+		("GOBLIN_PUNTER", 1, &[Progression(10)]),
+		("WALK_THE_PLANK", 1, &[Progression(11)]),
+		("KILL_THE_SUN", 1, &[Progression(3)]),
+		("DO_YOU_WANT_TO_SLAY_A_SNOWMAN", 1, &[Progression(12)]),
+		("TIN_FOIL_HATTER", 1, &[Progression(13)]),
+		("BALEFUL_HARVEST", 1, &[Progression(15)]),
+		("ICE_SCREAM", 1, &[Progression(14)]),
+		("STICKY_SITUATION", 1, &[Progression(16)]),
+		("REAL_ESTATE_AGENT", 1, &[Progression(17)]),
+		("NOT_THE_BEES", 1, &[Flag("Use")]),
+		("JEEPERS_CREEPERS", 1, &[Flag("Reach")]),
+		("FUNKYTOWN", 1, &[Flag("Reach")]),
+		("INTO_ORBIT", 1, &[Flag("Reach")]),
+		("ROCK_BOTTOM", 1, &[Flag("Reach")]),
+		("MECHA_MAYHEM", 1, &[Progression(21)]),
+		("GELATIN_WORLD_TOUR", 24, &[
+			Npc(-5), Npc(-6), Npc(1), Npc(81), Npc(71), Npc(-3), Npc(147), Npc(138), Npc(-10),
+			Npc(50), Npc(59), Npc(16), Npc(-7), Npc(244), Npc(-8), Npc(-1), Npc(-2), Npc(184),
+			Npc(204), Npc(225), Npc(-9), Npc(141), Npcs(&[183, -24, -25]), Npc(-4),
+		]),
+		("FASHION_STATEMENT", 1, &[Flag("Equip")]),
+		("VEHICULAR_MANSLAUGHTER", 1, &[Flag("Hit")]),
+		("BULLDOZER", 1, &[Int("Pick", 10000)]),
+		("THERE_ARE_SOME_WHO_CALL_HIM", 1, &[Npc(45)]),
+		("DECEIVER_OF_FOOLS", 1, &[Npc(196)]),
+		("SWORD_OF_THE_HERO", 1, &[Item(757)]),
+		("LUCKY_BREAK", 1, &[Flag("Hit")]),
+		("THROWING_LINES", 1, &[Flag("Use")]),
+		("DYE_HARD", 1, &[Flag("Equip")]),
+		("SICK_THROW", 1, &[Item(3389)]),
+		("FREQUENT_FLYER", 1, &[Float("Pay", 10000)]),
+		("THE_CAVALRY", 1, &[Flag("Equip")]),
+		("COMPLETELY_AWESOME", 1, &[Item(98)]),
+		("TIL_DEATH", 1, &[Npc(53)]),
+		("ARCHAEOLOGIST", 1, &[Npc(52)]),
+		("PRETTY_IN_PINK", 1, &[Npc(-4)]),
+		("RAINBOWS_AND_UNICORNS", 1, &[Flag("Use")]),
+		("YOU_AND_WHAT_ARMY", 1, &[Flag("Spawn")]),
+		("PRISMANCER", 1, &[Item(495)]),
+		("IT_CAN_TALK", 1, &[Progression(18)]),
+		("WATCH_YOUR_STEP", 1, &[Flag("Hit")]),
+		("MARATHON_MEDALIST", 1, &[Float("Move", 1106688)]),
+		("GLORIOUS_GOLDEN_POLE", 1, &[Item(2294)]),
+		("SERVANT_IN_TRAINING", 1, &[Flag("Finish")]),
+		("GOOD_LITTLE_SLAVE", 1, &[Int("Finish", 10)]),
+		("TROUT_MONKEY", 1, &[Int("Finish", 25)]),
+		("FAST_AND_FISHIOUS", 1, &[Int("Finish", 50)]),
+		("SUPREME_HELPER_MINION", 1, &[Int("Finish", 200)]),
+		("TOPPED_OFF", 1, &[Flag("Use")]),
+		("SLAYER_OF_WORLDS", 15, &[
+			Npcs(&[13, 14, 15]), Npcs(&[113, 114]), Npcs(&[125, 126]), Npc(4), Npc(266), Npc(35),
+			Npc(50), Npc(222), Npc(134), Npc(127), Npc(262), Npc(245), Npc(439), Npc(398),
+			Npc(370),
+		]),
+		("YOU_CAN_DO_IT", 1, &[Progression(1)]),
+		("MATCHING_ATTIRE", 1, &[Flag("Equip")]),
+		("DEFEAT_EMPRESS_OF_LIGHT", 1, &[Npc(636)]),
+		("DEFEAT_QUEEN_SLIME", 1, &[Npc(657)]),
+		("DEFEAT_DREADNAUTILUS", 1, &[Npc(618)]),
+		("DEFEAT_OLD_ONES_ARMY_TIER3", 1, &[Progression(23)]),
+		("GET_ZENITH", 1, &[Item(4956)]),
+		("GET_TERRASPARK_BOOTS", 1, &[Item(5000)]),
+		("FLY_A_KITE_ON_A_WINDY_DAY", 1, &[Flag("Use")]),
+		("FOUND_GRAVEYARD", 1, &[Flag("Reach")]),
+		("GO_LAVA_FISHING", 1, &[Flag("Do")]),
+		("TURN_GNOME_TO_STATUE", 1, &[Progression(24)]),
+		("TALK_TO_NPC_AT_MAX_HAPPINESS", 1, &[Flag("Do")]),
+		("PET_THE_PET", 1, &[Flag("Do")]),
+		("FIND_A_FAIRY", 1, &[Flag("Do")]),
+		("THROW_A_PARTY", 1, &[Progression(25)]),
+		("DIE_TO_DEAD_MANS_CHEST", 1, &[Flag("Do")]),
+		("DEFEAT_DEERCLOPS", 1, &[Npc(668)]),
+		("GET_GOLDEN_DELIGHT", 1, &[Item(4022)]),
+		("DRINK_BOTTLED_WATER_WHILE_DROWNING", 1, &[Flag("Use")]),
+		("GET_CELL_PHONE", 1, &[Item(3124)]),
+		("GET_ANKH_SHIELD", 1, &[Item(1613)]),
+		("GAIN_TORCH_GODS_FAVOR", 1, &[Flag("Use")]),
+		("PLAY_ON_A_SPECIAL_SEED", 1, &[Flag("Do")]),
+		("ALL_TOWN_SLIMES", 1, &[Progression(26)]),
+		("TRANSMUTE_ITEM", 1, &[Progression(27)]),
+		("PURIFY_ENTIRE_WORLD", 1, &[Flag("Do")]),
+		("TO_INFINITY_AND_BEYOND", 1, &[Flag("Do")]),
+		("BOOK_WORM", 1, &[Progression(29)]),
+		("BOULDER_LORD", 1, &[Progression(30)]),
+		("QUEEN_MACHINE", 1, &[Progression(31)]),
+		("ROLLIN_IN_YOUR_GRAVE", 1, &[Progression(32)]),
+		("FEAR_THE_SUN", 1, &[Progression(33)]),
+		("ITS_SHALING_OUTSIDE", 1, &[Progression(34)]),
+		("EXTRA_LIFE", 1, &[Progression(35)]),
+		("GRAVE_MISTAKE", 1, &[Progression(36)]),
+		("SPICY_LICKS", 1, &[Progression(37)]),
+		("ORGANIZED_CHAOS", 1, &[Item(1326)]),
+		("ON_FLEEK", 1, &[Progression(38)]),
+		("FORTUNE_FAVORS_THE_BOULD", 1, &[Progression(39)]),
+		("TRAINING_DAY", 1, &[Progression(40)]),
+		("MINI_ME", 1, &[Progression(41)]),
+		("TERRARIST", 1, &[Progression(42)]),
+		("NEW_DIGS", 1, &[Progression(43)]),
+		("MY_PEOPLE_NEED_ME", 1, &[Progression(44)]),
+		("GOING_OLDSCHOOL", 1, &[Flag("Do")]),
+		("SEA_YOU_LATER", 1, &[Item(5358)]),
+		("TRASH_COMPACTOR", 1, &[Progression(45)]),
+		("CONSERVATIONIST", 1, &[Int("Do", 100)]),
+		("INTERDIMENSIONAL_RECYCLING", 1, &[Progression(46)]),
+    ];
+
+    /// The registry equals the initializer's table: same rows, same order,
+    /// same per-row condition count, same condition arguments
+    /// (`AchievementInitializer.cs:16-443`; 137 rows / 180 conditions).
+    #[test]
+    fn every_rows_conditions_match_the_initializer_verbatim() {
+        assert_eq!(ROWS.len(), CONDITION_COUNTS.len(), "row count");
+        assert_eq!(ROWS.len(), 137);
+        let mut total = 0usize;
+        for (row, (name, count, conds)) in ROWS.iter().zip(CONDITION_COUNTS) {
+            assert_eq!(row.name, *name, "construction order");
+            assert_eq!(row.conditions.len(), *count, "{name}: condition count");
+            assert_eq!(row.conditions, *conds, "{name}: condition arguments");
+            total += count;
+        }
+        assert_eq!(total, 180, "the initializer's condition total");
+    }
+
+    /// The four `CreateMany` rows keep their expanded shapes — the exact
+    /// rows the lossy fold used to collapse (`AchievementInitializer.cs:97`,
+    /// `:131`, `:188-190`, `:288-291`).
+    #[test]
+    fn the_create_many_rows_stay_expanded() {
+        let row = |n: &str| ROWS.iter().find(|r| r.name == n).unwrap();
+        assert_eq!(row("BUCKETS_OF_BOLTS").conditions.len(), 3);
+        assert_eq!(row("STAR_DESTROYER").conditions.len(), 4);
+        assert_eq!(row("GELATIN_WORLD_TOUR").conditions.len(), 24);
+        assert_eq!(row("SLAYER_OF_WORLDS").conditions.len(), 15);
+        // No row is born complete: every row has at least one condition.
+        assert!(ROWS.iter().all(|r| !r.conditions.is_empty()));
+    }
+}

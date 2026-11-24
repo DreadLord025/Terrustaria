@@ -301,26 +301,13 @@ pub fn draw_carried(
     }
 }
 
-/// The localized type name of a town kind — the C# reads
-/// `Main.npc[num].FullName`, which is the *given* name ("Andrew") plus the
-/// type name; the port stores no per-NPC names, so the type name is what the
-/// tooltip can honestly show (recorded in `docs/ANALYSIS.md`).
-///
-/// `Lang.GetNPCName(netId)` (`Lang.cs:188-195`) answers it from the
-/// `NPCName.{const name}` key, so the table is the id class' own spellings
-/// (`NPCID.cs`) instead of a hand-written list.
-fn npc_type_name(kind: NpcKind) -> Option<String> {
-    let name = crate::lang::npc_name(kind.cs_id() as i32);
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
-}
-
-/// `Main.cs:42062-42063`: `text = (num6 != 0) ? Main.npc[num7].FullName :
-/// Lang.inter[8].Value`. Returns the hovered cell's label, `None` when the
-/// pointer is over no cell.
+/// `Main.cs:42053`: `text = (num6 != 0) ? Main.npc[num7].FullName :
+/// Lang.inter[8].Value` — `FullName` (`NPC.cs:6729-6739`) is the *given* name
+/// plus the type ("Andrew the Guide"), the bare `TypeName` while unnamed.
+/// W4-f38: the naming layer (`npc_names.rs`) writes `given_name` at spawn, so
+/// the hover reads the real `FullName` through the shared seam — the former
+/// type-name-only deviation is closed. Returns the hovered cell's label,
+/// `None` when the pointer is over no cell.
 pub fn hover_text(
     cells: &[Cell],
     mouse: [f32; 2],
@@ -338,12 +325,16 @@ pub fn label(head: usize, npc: Option<usize>, npcs: &[Npc]) -> Option<String> {
         // `Lang.inter[8]`: the housing-query label (`Main.cs:42053`).
         return Some(crate::lang::inter(8));
     }
-    let kind = npcs.get(npc?)?.kind;
-    Some(match npc_type_name(kind) {
-        Some(name) => name,
+    let n = npcs.get(npc?)?;
+    // `Main.cs:42053`: `Main.npc[num7].FullName` — the given name plus the
+    // type through `Game.NPCTitle`, the bare type name while unnamed.
+    let name = crate::npc_names::full_name(n);
+    Some(if name.is_empty() {
         // A head with no key keeps its vanilla type surface rather than an
         // empty tooltip.
-        None => crate::lang::inter(8),
+        crate::lang::inter(8)
+    } else {
+        name
     })
 }
 
@@ -517,15 +508,21 @@ mod tests {
             Cell { head: HOUSING_QUERY, npc: None, x: 1508.0, y: 324.0 },
             Cell { head: 2, npc: Some(0), x: 1508.0, y: 371.0 },
         ];
-        let npcs = vec![npc(NpcKind::Merchant)];
+        let mut npcs = vec![npc(NpcKind::Merchant)];
         // `Lang.inter[8]` = "Housing Query" (`Main.cs:42053`) — the key is
         // `LegacyInterface.8`, not the broken `Inter.8`.
         let query = hover_text(&cells, [1530.0, 340.0], 0.85, &npcs);
         assert_eq!(query.as_deref(), Some("Housing Query"));
-        // `Main.npc[0].FullName` → the type name while the port has no given
-        // names (`NPCName.Merchant`).
+        // `Main.npc[0].FullName` while unnamed = the bare `TypeName`
+        // (`NPC.cs:6733-6736`, `NPCName.Merchant`).
         let merchant = hover_text(&cells, [1530.0, 390.0], 0.85, &npcs);
         assert_eq!(merchant.as_deref(), Some("Merchant"));
+        // W4-f38: a named arrival reads the full `Game.NPCTitle` —
+        // "{0} the {1}" (`NPC.cs:6737`), the same string the move-in
+        // announcement broadcasts (`WorldGen.cs:5575`).
+        npcs[0].given_name = "Alfred".into();
+        let named = hover_text(&cells, [1530.0, 390.0], 0.85, &npcs);
+        assert_eq!(named.as_deref(), Some("Alfred the Merchant"));
         // Off the cells: no text.
         assert!(hover_text(&cells, [10.0, 10.0], 0.85, &npcs).is_none());
     }

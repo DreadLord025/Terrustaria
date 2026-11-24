@@ -37,6 +37,36 @@ pub fn map_key_scale(scale: f32, zoom_in: bool) -> f32 {
     if zoom_in { scale * 1.05 } else { scale * 0.95 }
 }
 
+/// `Player.cs:24913-24920`: the minimap's zoom keys use the frame buttons'
+/// multipliers — `* 1.025` / `* 0.975` (`MinimapFrame.cs:61-63`), not the
+/// fullscreen's 1.05/0.95.
+pub fn minimap_key_scale(scale: f32, zoom_in: bool) -> f32 {
+    if zoom_in {
+        scale * crate::ui::minimap::ZOOM_IN_MULTIPLIER
+    } else {
+        scale * crate::ui::minimap::ZOOM_OUT_MULTIPLIER
+    }
+}
+
+/// `Player.cs:24921-24928` / `:24940-24947`: MapAlphaUp/Down step the map
+/// alpha ±0.015 per update while held.
+pub fn map_key_alpha(alpha: f32, up: bool) -> f32 {
+    if up { alpha + 0.015 } else { alpha - 0.015 }
+}
+
+/// `Main.cs:55523-55530` / `:55559-55566`: both map alphas clamp to
+/// `[0.01, 1]` at draw.
+pub fn map_alpha_clamp(alpha: f32) -> f32 {
+    alpha.clamp(0.01, 1.0)
+}
+
+/// `Main.cs:55550-55558`: the overlay scale clamps to
+/// `[screen_w / world_w, 16 * RenderZoom]` (`RenderZoom` is the port's
+/// in-game zoom, 1.0..2.0).
+pub fn overlay_scale_clamp(screen_w: f32, world_w: i32, render_zoom: f32, proposed: f32) -> f32 {
+    proposed.clamp(screen_w / world_w as f32, 16.0 * render_zoom)
+}
+
 /// `Main.cs:55398-55413`: X into `10..=maxTilesX-10`, Y into `10..=maxTilesY-19`.
 pub fn map_clamp_pos(pos: [f32; 2], world: &World) -> [f32; 2] {
     [
@@ -52,6 +82,50 @@ pub fn map_clamp_pos(pos: [f32; 2], world: &World) -> [f32; 2] {
 pub fn map_drag_delta(delta: [f32; 2], scale: f32) -> [f32; 2] {
     let s = 0.06255 * (16.0 / scale);
     [-delta[0] * s, -delta[1] * s]
+}
+
+/// The pylon right-click's map view fit (`Player.cs:32188-32212`): start from
+/// the clicked pylon's anchor as a zero-size rect, `Including` every revealed
+/// pylon, `Inflate(20, 20)`, recentre on the rect's centre and clamp the scale
+/// so the whole rect fits inside `screen - 40`. Returns `(pos, scale)`; the
+/// caller also clears `PanTargetMapFullscreen`/`resetMapFull` (`:32199-32200`).
+///
+/// `Rectangle.Including` (`Utils.cs:957-963`) grows the rect to contain the
+/// point; `Inflate(20, 20)` adds 20 to every side (XNA semantics: x -= 20,
+/// width += 40). `rect.Center` is integer `(x + width/2, y + height/2)`.
+pub fn pylon_view_fit(
+    anchor: (i32, i32),
+    revealed: &[(i32, i32)],
+    screen: Vec2,
+    scale: f32,
+) -> ([f32; 2], f32) {
+    // `new Rectangle(MapPylonTile.X, MapPylonTile.Y, 0, 0)`.
+    let (mut left, mut top, mut right, mut bottom) =
+        (anchor.0, anchor.1, anchor.0, anchor.1);
+    for &(x, y) in revealed {
+        left = left.min(x);
+        right = right.max(x);
+        top = top.min(y);
+        bottom = bottom.max(y);
+    }
+    // `rect.Inflate(20, 20)`.
+    left -= 20;
+    top -= 20;
+    right += 20;
+    bottom += 20;
+    let (w, h) = (right - left, bottom - top);
+    // `rect.Center` — INTEGER division of the width/height.
+    let pos = [(left + w / 2) as f32, (top + h / 2) as f32];
+    let mut scale = scale;
+    let fit_x = (screen.x - 40.0) / w as f32;
+    let fit_y = (screen.y - 40.0) / h as f32;
+    if scale > fit_x {
+        scale = fit_x;
+    }
+    if scale > fit_y {
+        scale = fit_y;
+    }
+    (pos, scale)
 }
 
 /// One map quad: `dest` is a screen rect `[x, y, w, h]`, `uv` the texture subrect
@@ -386,6 +460,91 @@ pub fn draw_map_background(r: &mut SpriteRenderer, bg: MapBg, screen: Vec2, sky:
     r.push_map_back_sprite([0.0, 0.0], [screen.x, screen.y], uv, color);
 }
 
+/// `Main.DrawMap`'s fullscreen tile-hover text (`Main.cs:55782-55913`): the
+/// hovered map cell's name — the chest/dresser style rows with the stored
+/// name suffix (`DrawMap_FindChestName`, `Main.cs:56631-56643`), else
+/// `Lang.GetMapObjectName(type)`. `None` when the cursor is outside the
+/// drawable window (`flag2`, `:55786-55802`), the map cell is dark
+/// (`Light > 40`, `:55809`) or the row has no name. The icon layers' hover
+/// text overrides this one (`:55922`'s `ref text`), so the caller reads it
+/// as the fallback.
+pub(crate) fn fullscreen_hover_name(
+    world: &World,
+    map: &WorldMap,
+    chests: &[crate::chest::WorldChest],
+    mouse: Vec2,
+    screen: Vec2,
+) -> Option<String> {
+    // `:55784-55785`: `(int)((0 - num + mouseX) / num5 + num6)` — `num` is
+    // the drawing origin (`map_origin`), `num6`/`num7` are 10.
+    let origin = map_origin(map.pos, map.scale, screen);
+    let x = ((mouse.x - origin[0]) / map.scale + 10.0) as i32;
+    let y = ((mouse.y - origin[1]) / map.scale + 10.0) as i32;
+    // `:55786-55802`: the drawable window `[10, width-10) x [10, height-19)`.
+    if x < 10 || x >= world.width - 10 || y < 10 || y >= world.height - 19 {
+        return None;
+    }
+    let cell = map.tiles[world.index(x, y)];
+    if cell.light <= 40 {
+        return None;
+    }
+    let table = tr_core::map::color_table();
+    let ty = cell.ty as usize;
+    let lookup = |tile: usize| table.tile_lookup[tile] as usize;
+    let options = |tile: usize| table.tile_option_counts[tile] as usize;
+    // `:55820-55821`: the legacy style tables. `Lang.cs:503-506` aliases
+    // `chestType[52..]` to `chestType[0]`.
+    let chest_row = |style: i32| crate::lang::chest_type(if style >= 52 { 0 } else { style as usize });
+    // `DrawMap_FindChestName` (`:56631-56643`): no chest -> row 0; a named
+    // chest appends ": <name>".
+    let find_name = |row: String, ax: i32, ay: i32| match crate::chest::find_chest(chests, ax, ay) {
+        None => crate::lang::chest_type(0),
+        Some(i) if !chests[i].name.is_empty() => format!("{row}: {}", chests[i].name),
+        Some(_) => row,
+    };
+    let tile = world.tile(x, y)?;
+    let (fx, fy) = (tile.frame_x as i32, tile.frame_y as i32);
+    let text = if ty >= lookup(21) && ty < lookup(21) + options(21) {
+        // `:55822-55839`: tile 21 (Containers) — the anchor cell shift.
+        let ax = if fx % 36 != 0 { x - 1 } else { x };
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        find_name(chest_row(fx / 36), ax, ay)
+    } else if ty >= lookup(467) && ty < lookup(467) + options(467) {
+        // `:55840-55857`: tile 467 (Containers2) — the same walk over
+        // `chestType2`.
+        let ax = if fx % 36 != 0 { x - 1 } else { x };
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        match crate::chest::find_chest(chests, ax, ay) {
+            None => crate::lang::chest_type2(0),
+            Some(i) if !chests[i].name.is_empty() => {
+                format!("{}: {}", crate::lang::chest_type2((fx / 36) as usize), chests[i].name)
+            }
+            Some(_) => crate::lang::chest_type2((fx / 36) as usize),
+        }
+    } else if ty >= lookup(441) && ty < lookup(441) + options(21) {
+        // `:55858-55875`: tile 441 (FakeContainers) — the bare style row.
+        chest_row(fx / 36)
+    } else if ty >= lookup(468) && ty < lookup(468) + options(467) {
+        // `:55876-55893`: tile 468 (FakeContainers2).
+        crate::lang::chest_type2((fx / 36) as usize)
+    } else if ty >= lookup(88) && ty < lookup(88) + options(88) {
+        // `:55894-55908`: tile 88 (Dressers) — the 54-px anchor shift.
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        let ax = x - fx % 54 / 18;
+        match crate::chest::find_chest(chests, ax, ay) {
+            None => crate::lang::dresser_type(0),
+            Some(i) if !chests[i].name.is_empty() => {
+                format!("{}: {}", crate::lang::dresser_type((fx / 54) as usize), chests[i].name)
+            }
+            Some(_) => crate::lang::dresser_type((fx / 54) as usize),
+        }
+    } else {
+        // `:55911`: every other cell reads the map legend row.
+        crate::lang::map_object_name(ty)
+    };
+    if text.is_empty() { None } else { Some(text) }
+}
+
 pub struct WorldMap {
     /// Row-major `y * width + x`, matching `World::index`.
     pub tiles: Vec<MapTile>,
@@ -397,8 +556,24 @@ pub struct WorldMap {
     /// `Main.mapFullscreenScale` (px per tile) and `Main.mapFullscreenPos` (tiles).
     pub scale: f32,
     pub pos: [f32; 2],
-    /// `Main.mapMinimapScale` (`Main.cs:66751`), fixed at 1.05 (no minimap-zoom UI yet).
+    /// `Main.mapMinimapScale` (`Main.cs:66751-66752`, default 1.05): the
+    /// minimap zoom axis — the frame buttons (`MinimapFrame.cs:107-136`) and
+    /// the MapZoomIn/Out keys (`Player.cs:24913-24920`) multiply it, clamped
+    /// 0.2..3 (`Main.cs:55515-55522`).
     pub minimap_scale: f32,
+    /// `Main.mapMinimapAlpha` (`Main.cs:66753`, default 1): the MapAlphaUp/Down
+    /// keys step it ±0.015 (`Player.cs:24921-24928`), clamped 0.01..1
+    /// (`Main.cs:55523-55530`); it tints the backdrop AND the tile pass
+    /// (`b = (byte)(255 * alpha)`, `:55532`).
+    pub minimap_alpha: f32,
+    /// `Main.mapOverlayScale` (`Main.cs:66754`, default 2.5): the overlay's
+    /// zoom axis — keys ×1.05/×0.95 (`Player.cs:24932-24939`), clamped
+    /// `screen_w/world_w .. 16*RenderZoom` (`Main.cs:55550-55558`). The
+    /// overlay draw itself is out of P4 scope; the state rides for the keys.
+    pub overlay_scale: f32,
+    /// `Main.mapOverlayAlpha` (`Main.cs:66755`, default 0.35): keys ±0.015
+    /// (`Player.cs:24940-24947`), clamped 0.01..1 (`Main.cs:55559-55566`).
+    pub overlay_alpha: f32,
     /// `Main.mapTime` (`Main.cs:803`) — the countdown that gates the
     /// lighting → map export (`LegacyLighting.cs:349`).
     map_time: i32,
@@ -422,6 +597,25 @@ pub struct WorldMap {
     /// `Main.TriggerPing`'s MP half (`Main.cs:56546-56549`): the markers added
     /// this frame that still need the `NetPingModule` relay.
     pub ping_outbox: Vec<[f32; 2]>,
+    /// `Main.MapPylonTile` (`Main.cs`, default `Point16(-1, -1)`): the pylon
+    /// whose network lines the fullscreen map draws — set by the pylon tile
+    /// right-click (`Player.cs:32187`), cleared by `TryOpeningFullscreenMap`
+    /// (`:29113`) and the inventory map icon (`Main.cs:41102`).
+    pub pylon_tile: (i32, i32),
+    /// `Main.PanTargetMapFullscreen` (`Main.cs:55361-55385`): the offscreen
+    /// pylon click pans the map toward `pan_target_end` at a 0.15 lerp.
+    pub pan_target: bool,
+    /// `Main.PanTargetMapFullscreenEnd` — the pan destination, world tiles.
+    pub pan_target_end: [f32; 2],
+    /// `Main.mouseLeft && Main.mouseLeftRelease` (`Main.cs:55363`): the press
+    /// edge that cancels an in-progress pan, sampled by the frame before
+    /// `prepare` (the C# reads the live input inside `DrawMap`).
+    pub pan_cancel_press: bool,
+    /// `Main.cancelWormHole` (`Main.cs`): the pylon marker hover sets it
+    /// (`TeleportPylonsMapLayer.cs:81`) so a same-frame unity-potion hover
+    /// cannot also claim the click; the fullscreen tail clears it
+    /// (`Main.cs:56006`).
+    pub cancel_wormhole: bool,
 }
 
 impl WorldMap {
@@ -434,6 +628,9 @@ impl WorldMap {
             scale: MAP_FULLSCREEN_SCALE_DEFAULT,
             pos: [0.0, 0.0],
             minimap_scale: 1.05,
+            minimap_alpha: 1.0,
+            overlay_scale: 2.5,
+            overlay_alpha: 0.35,
             map_time: 0,
             map_time_max: 0,
             dirty: Vec::new(),
@@ -442,6 +639,11 @@ impl WorldMap {
             reset_pos: true,
             pings: Vec::new(),
             ping_outbox: Vec::new(),
+            pylon_tile: (-1, -1),
+            pan_target: false,
+            pan_target_end: [0.0, 0.0],
+            pan_cancel_press: false,
+            cancel_wormhole: false,
         }
     }
 
@@ -659,11 +861,14 @@ impl WorldMap {
 
     /// `KeyM`: opening also arms the recentre (`Main.resetMapFull = true`) and
     /// resets the scale (`Main.mapFullscreenScale = 2.5`, `Main.cs:41101`).
+    /// `TryOpeningFullscreenMap` (`Player.cs:29113`) also clears
+    /// `Main.MapPylonTile` — the pylon network lines reset on every open.
     pub fn set_open(&mut self, open: bool) {
         self.open = open;
         if open {
             self.reset_pos = true;
             self.scale = MAP_FULLSCREEN_SCALE_DEFAULT;
+            self.pylon_tile = (-1, -1);
         }
     }
 
@@ -681,13 +886,38 @@ impl WorldMap {
         screen: Vec2,
         center_tile: [f32; 2],
     ) {
+        // `Main.cs:55361-55385`: the offscreen-pylon pan runs BEFORE the
+        // scale/position clamps. A held left press cancels it; otherwise the
+        // position lerps toward the target at 0.15 (or `1/dist` when that
+        // would overshoot), snapping when within 1 tile.
+        if self.pan_target {
+            if self.pan_cancel_press {
+                self.pan_target = false;
+            } else {
+                let dx = self.pan_target_end[0] - self.pos[0];
+                let dy = self.pan_target_end[1] - self.pos[1];
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < 1.0 {
+                    self.pos = self.pan_target_end;
+                    self.pan_target = false;
+                } else {
+                    let mut amount = 0.15f32;
+                    if dist * 0.15 < 1.0 {
+                        amount = 1.0 / dist;
+                    }
+                    self.pos[0] += dx * amount;
+                    self.pos[1] += dy * amount;
+                }
+            }
+        }
         // `Main.cs:55387-55395`.
         self.scale = map_scale_clamp(screen.x, world.width, self.scale);
         // `Main.cs:55398-55413`.
         self.pos = map_clamp_pos(self.pos, world);
         // `Main.cs:55416-55424`: `resetMapFull` overrides the clamp with the unclamped
-        // view centre `(screenPosition + screenSize/2)/16f`.
+        // view centre `(screenPosition + screenSize/2)/16f` and clears the pan.
         if self.reset_pos {
+            self.pan_target = false;
             self.pos = center_tile;
             self.reset_pos = false;
         }
@@ -745,11 +975,15 @@ impl WorldMap {
         map_scale: f32,
     ) {
         let q = map_minimap_quad(center_tile, self.minimap_scale, map_scale, screen, world);
+        // `b = (byte)(255f * Main.mapMinimapAlpha)` (`Main.cs:55532`) →
+        // `MapRenderer.DrawMap(..., b)` tints the tile pass
+        // `new Color(alpha, alpha, alpha, alpha)` (`MapRenderer.cs:438`).
+        let a = (255.0 * self.minimap_alpha) as u8 as f32 / 255.0;
         r.push_map_sprite(
             [q.dest[0], q.dest[1]],
             [q.dest[2], q.dest[3]],
             q.uv,
-            [1.0; 4],
+            [a, a, a, a],
         );
     }
 
@@ -1053,6 +1287,103 @@ mod tests {
     }
 
     #[test]
+    fn w4_c21_fullscreen_hover_reads_the_map_legend_and_chest_names() {
+        // `Main.cs:55782-55913` + `DrawMap_FindChestName` (`:56631-56643`):
+        // the hovered cell answers the legend row, the chest style rows
+        // carry the stored ": <name>" suffix, and a dark cell / a cursor
+        // outside the drawable window answers nothing.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        m.pos = [100.0, 60.0];
+        m.scale = 4.0;
+        let screen = Vec2::new(800.0, 600.0);
+        let table = color_table();
+        // The mouse over tile (100, 60): origin + (tile - 10) * scale.
+        let origin = map_origin(m.pos, m.scale, screen);
+        let mouse_at = |tx: i32, ty: i32| {
+            Vec2::new(
+                origin[0] + (tx - 10) as f32 * m.scale + 1.0,
+                origin[1] + (ty - 10) as f32 * m.scale + 1.0,
+            )
+        };
+        // An iron-ore cell (tile 6, `MapObject.Iron`, `Lang.cs:575`).
+        let i = world.index(100, 60);
+        m.tiles[i] = MapTile::create(table.tile_lookup[6], 200, 0);
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen).as_deref(),
+            Some("Iron")
+        );
+        // A dark cell (`Light <= 40`, `:55809`) answers nothing.
+        m.tiles[i] = MapTile::create(table.tile_lookup[6], 40, 0);
+        assert_eq!(fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen), None);
+        // Outside the drawable window (`flag2`, `:55786-55802`).
+        assert_eq!(fullscreen_hover_name(&world, &m, &[], mouse_at(5, 60), screen), None);
+        // A chest cell (tile 21 style 0) with a named chest at the anchor:
+        // "<style row>: <name>" (`:56640`).
+        m.tiles[i] = MapTile::create(table.tile_lookup[21], 200, 0);
+        world.tiles[i] = Tile { kind: 21, ..Default::default() };
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        let mut chest = crate::chest::WorldChest { tile: (100, 60), ..Default::default() };
+        chest.name = "Loot".into();
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[chest], mouse_at(100, 60), screen).as_deref(),
+            Some("Chest: Loot")
+        );
+        // No chest at the anchor -> the bare row 0 (`:56634-56637`).
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen).as_deref(),
+            Some("Chest")
+        );
+    }
+
+    /// W4-e17 — the pylon right-click's view fit (`Player.cs:32188-32212`):
+    /// the rect spans the anchor + every revealed pylon, inflated 20 per
+    /// side; the centre is the INTEGER rect centre; the scale clamps so the
+    /// rect fits inside `screen - 40`.
+    #[test]
+    fn w4_e17_the_pylon_view_fit_centres_and_fits_the_network() {
+        let screen = Vec2::new(800.0, 600.0);
+        // A single pylon at (100, 100): the rect is (80, 80)..(120, 120)
+        // after the inflate, 40x40; centre (100, 100). The fit scale is
+        // min(760/40, 560/40) = 14 — a 2.5 start stays 2.5 (no clamp up).
+        let (pos, scale) = pylon_view_fit((100, 100), &[(100, 100)], screen, 2.5);
+        assert_eq!(pos, [100.0, 100.0]);
+        assert_eq!(scale, 2.5);
+        // A wide network forces the scale down: pylons at x 100 and 500 →
+        // rect x 80..520 (440 wide), fit_x = 760/440 ≈ 1.727.
+        let (pos, scale) = pylon_view_fit((100, 100), &[(100, 100), (500, 100)], screen, 2.5);
+        assert_eq!(pos, [300.0, 100.0]); // centre x = 80 + 440/2 = 300
+        assert!((scale - 760.0 / 440.0).abs() < 1e-4);
+        // The integer centre: an odd-width rect truncates. Pylons at x 100
+        // and 101 → rect 80..121 (41 wide), centre x = 80 + 41/2 = 100.
+        let (pos, _) = pylon_view_fit((100, 100), &[(100, 100), (101, 100)], screen, 2.5);
+        assert_eq!(pos[0], 100.0);
+        // No revealed pylons: the rect is just the anchor inflated.
+        let (pos, _) = pylon_view_fit((50, 60), &[], screen, 2.5);
+        assert_eq!(pos, [50.0, 60.0]);
+    }
+
+    /// W4-e17 — `set_open(true)` clears `Main.MapPylonTile`
+    /// (`TryOpeningFullscreenMap`, `Player.cs:29113`); the pan state survives
+    /// a close (the C# only clears it on the reset/open paths).
+    #[test]
+    fn w4_e17_opening_the_map_clears_the_selected_pylon() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        assert_eq!(m.pylon_tile, (-1, -1), "the default is no selection");
+        m.pylon_tile = (40, 30);
+        m.set_open(true);
+        assert_eq!(m.pylon_tile, (-1, -1), "the open clears the selection");
+        assert!(m.reset_pos, "the open arms the recentre");
+        assert_eq!(m.scale, MAP_FULLSCREEN_SCALE_DEFAULT);
+    }
+
+    #[test]
+    // [merge-P] duplicate fn w4_c21_fullscreen_hover_reads_the_map_legend_and_chest_names removed (same-scope duplicate; longest implementation kept)
+
+    #[test]
     fn update_type_refreshes_a_queued_tile_after_an_edit() {
         // `WorldMap.cs:65-93`: the queued flag arms a re-derive; the tile
         // keeps its light and picks the new world state.
@@ -1278,6 +1609,164 @@ mod tests {
         let changed = q.update(&world, &mut m);
         assert_eq!(changed.len(), 1, "the dedupe");
         assert_ne!(m.tiles[i].ty, 1);
+    }
+
+    /// W4-c35 — `MapUpdateQueue.Update` (`MapUpdateQueue.cs:62-71`): the
+    /// drain order is deterministic — `UpdateTiles` first (`:66`, FIFO
+    /// enqueue order), then `UpdateAreas` (`:67`, area enqueue order, each
+    /// area walked column-major `i` outer / `j` inner, `:76-79`). A tile
+    /// whose flag the tile pass consumed does not report twice.
+    #[test]
+    fn w4_c35_drain_order_is_tiles_fifo_then_areas_column_major() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let cells = [(100, 70), (101, 70), (100, 71), (101, 71)];
+        for (x, y) in cells {
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+        }
+        for (x, y) in cells {
+            world.tiles[world.index(x, y)] = Tile::default(); // the edit
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, 101, 70); // FIFO: second column first
+        q.add_tile(&mut m, 100, 71);
+        q.add_area(&mut m, 100, 70, 2, 2); // arms (100,70) + (101,71)
+        let changed = q.update(&world, &mut m);
+        assert_eq!(
+            changed,
+            vec![(101, 70), (100, 71), (100, 70), (101, 71)],
+            "tiles FIFO, then the area walk column-major, no duplicates"
+        );
+        assert!(q.update(&world, &mut m).is_empty(), "both queues cleared");
+    }
+
+    /// W4-c35 — `MapUpdateQueue.Add`'s budget (`MapUpdateQueue.cs:49-55`):
+    /// at `MAX_QUEUED_UPDATES` the entry drops, but `QueueUpdate` armed the
+    /// flag BEFORE the cap check (`:43`), so an area walk still refreshes
+    /// the tile (`UpdateAreas` reads the flag, not the tile queue).
+    #[test]
+    fn w4_c35_at_the_budget_the_entry_drops_but_the_flag_stays_armed() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 70);
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        world.tiles[i] = Tile::default(); // the edit
+        let mut q = MapUpdateQueue::default();
+        // Fill the tile queue to the cap with out-of-bounds dummies (the
+        // drain's `UpdateType` bounds-check refuses them, `WorldMap.cs:65`).
+        q.tiles = vec![(-1, -1); MAX_QUEUED_UPDATES];
+        q.add_tile(&mut m, 100, 70);
+        assert_eq!(q.tiles.len(), MAX_QUEUED_UPDATES, "the entry dropped");
+        assert!(m.tiles[i].update_queued(), "the flag armed before the cap");
+        assert!(q.update(&world, &mut m).is_empty(), "no tile-queue entry");
+        assert!(m.tiles[i].update_queued(), "the drain never saw the tile");
+        // The area path recovers it (`:30-37` queues the rect regardless of
+        // the per-tile budget; `:80` consumes the flag).
+        q.add_area(&mut m, 100, 70, 1, 1);
+        assert_eq!(q.update(&world, &mut m), vec![(100, 70)]);
+        assert!(!m.tiles[i].update_queued());
+    }
+
+    /// W4-c35 — `WorldGen.RangeFrame` (`WorldGen.cs:80400-80413`): the
+    /// vanilla rect width `startX - endX + 4` (`:80402`) is inverted for a
+    /// range wider than 4, so the clamped area walk runs empty; the refresh
+    /// rides the per-tile walk, which covers `[start-1, end+1]` inclusive
+    /// (`:80403`'s `num = endX + 1` compared `< num + 1`).
+    #[test]
+    fn w4_c35_range_frame_walks_start_minus_1_to_end_plus_1() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        // The two extreme corners of the walk, plus a tile the "fixed"
+        // (positive-width) rect would have covered at (95, 70).
+        for (x, y) in [(99, 69), (111, 81), (95, 70)] {
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+        }
+        for (x, y) in [(99, 69), (111, 81)] {
+            world.tiles[world.index(x, y)] = Tile::default();
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_range_frame(&mut m, 100, 70, 110, 80);
+        assert!(
+            !m.tiles[world.index(95, 70)].update_queued(),
+            "the inverted rect's area walk ran empty"
+        );
+        assert_eq!(
+            q.update(&world, &mut m),
+            vec![(99, 69), (111, 81)],
+            "both walk corners refresh, column-major"
+        );
+    }
+
+    /// W4-c35 — `WorldGen.TileFrame`'s border gate (`WorldGen.cs:81330-81334`):
+    /// the 5-tile world border skips BEFORE the `Add`, so a border tile
+    /// never arms its flag even inside the range walk.
+    #[test]
+    fn w4_c35_range_frame_skips_the_5_tile_world_border() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        for (x, y) in [(5, 6), (6, 6)] {
+            let t = world.tile_mut(x, y).unwrap();
+            t.kind = 1;
+            t.flags |= FLAG_ACTIVE;
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+            world.tiles[world.index(x, y)] = Tile::default();
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_range_frame(&mut m, 4, 4, 6, 6);
+        assert!(!m.tiles[world.index(5, 6)].update_queued(), "i <= 5 skips");
+        assert_eq!(q.update(&world, &mut m), vec![(6, 6)], "the first interior tile");
+    }
+
+    /// W4-c35 — the reveal interaction: `UpdateLighting`'s rebuild goes
+    /// through `MapTile.Create` (`MapTile.cs:98-101`), whose `_extraData`
+    /// is `color | 0x80` — the `UpdateQueued` bit is CLEARED. A reveal that
+    /// rebuilds a queued tile consumes the flag; the later drain finds
+    /// nothing (`WorldMap.cs:71-74`) and does not report twice.
+    #[test]
+    fn w4_c35_a_reveal_rebuild_consumes_the_queued_flag() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 70);
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        world.tiles[i] = Tile::default(); // the edit
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, 100, 70);
+        assert!(m.tiles[i].update_queued());
+        // The reveal window reaches the tile first: the rebuild derives the
+        // CURRENT world state at the brighter light and clears the flag.
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 255));
+        assert!(!m.tiles[i].update_queued(), "Create resets _extraData");
+        assert_eq!(m.tiles[i].light, 255);
+        assert!(
+            q.update(&world, &mut m).is_empty(),
+            "the drain's UpdateType refuses the consumed flag"
+        );
+    }
+
+    /// W4-c35 — `.map` IO compat: the serializer writes only type/light/
+    /// colour (`MapHelper.cs:3135-3226`), and the loader rebuilds through
+    /// `MapTile.Create` (`:4004`) — a queued flag armed at save time never
+    /// survives the round trip, and the loaded tile queues fresh.
+    #[test]
+    fn w4_c35_the_queued_flag_does_not_survive_a_map_round_trip() {
+        let world = test_world();
+        let mut original = test_tiles(40, 40);
+        original[7].set_update_queued(true); // (7, 0), light 30
+        original[10].set_update_queued(true); // (10, 0), painted
+        let dir = unique_dir("c35flag");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("flag.map");
+        save_map_file(&world, &original, &path).unwrap();
+        let mut loaded = vec![MapTile::default(); original.len()];
+        assert!(load_map_file(&world, &mut loaded, &path).unwrap());
+        assert_eq!(loaded, test_tiles(40, 40), "the flags stripped, pixels kept");
+        assert!(loaded[7].is_changed(), "Create always arms IsChanged");
+        assert!(!loaded[7].update_queued());
+        // The loaded tile enqueues fresh (the flag is free again).
+        let mut m = WorldMap::new(&world);
+        m.tiles = loaded;
+        assert!(m.queue_update(7, 0));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -1970,15 +2459,25 @@ pub struct MapUpdateQueue {
     tiles: Vec<(i32, i32)>,
 }
 
+/// `MapUpdateQueue.MAX_QUEUED_UPDATES` (`MapUpdateQueue.cs:11`): the per-tile
+/// queue's hard budget. The C# grows a `Point16[1024]` by doubling (`:55`)
+/// until this cap; the port's `Vec` growth is the same semantics without the
+/// array resizes.
+const MAX_QUEUED_UPDATES: usize = 262_144;
+
 impl MapUpdateQueue {
     /// `MapUpdateQueue.Add(Rectangle)` (`MapUpdateQueue.cs:23-41`): the
-    /// world-clamped rect queues every tile it covers.
+    /// world-clamped rect queues every tile it covers. The clamp is
+    /// `WorldUtils.ClampToWorld(area)` at `fluff = 0` (`WorldUtils.cs:9-14`):
+    /// each edge clamps independently, so an inverted rect keeps a negative
+    /// extent and both walks run empty (vanilla's `RangeFrame` rect relies on
+    /// this — see [`Self::add_range_frame`]).
     pub fn add_area(&mut self, map: &mut WorldMap, x: i32, y: i32, w: i32, h: i32) {
         let (mw, mh) = (map.tiles_w as i32, map.tiles_h as i32);
-        let x0 = x.max(0);
-        let y0 = y.max(0);
-        let x1 = (x + w).min(mw);
-        let y1 = (y + h).min(mh);
+        let x0 = x.clamp(0, mw);
+        let y0 = y.clamp(0, mh);
+        let x1 = (x + w).clamp(0, mw);
+        let y1 = (y + h).clamp(0, mh);
         self.areas.push([x0, y0, x1 - x0, y1 - y0]);
         for i in x0..x1 {
             for j in y0..y1 {
@@ -1993,12 +2492,58 @@ impl MapUpdateQueue {
         if !map.queue_update(x, y) {
             return; // `:44`: the gate skips the enqueue
         }
+        // `:49-55`: at the budget the entry drops — but the `UpdateQueued`
+        // flag stays armed (the C# sets it inside `QueueUpdate` BEFORE the
+        // cap check), so the tile refreshes only when an area walk, a reveal
+        // rebuild or a later `UpdateType` consumes the flag.
+        if self.tiles.len() >= MAX_QUEUED_UPDATES {
+            return;
+        }
         self.tiles.push((x, y));
+    }
+
+    /// `WorldGen.RangeFrame`'s map enqueue (`WorldGen.cs:80399-80411`, the
+    /// `MessageBuffer.cs:1438` net-`20` tail): the area add plus the
+    /// `TileFrame` walk's per-tile adds. The vanilla rect width is
+    /// `startX - endX + 4` (`:80402`) — inverted for a normal range, so the
+    /// clamped area walk runs empty and the refresh rides the per-tile adds
+    /// alone; the expression is kept verbatim. The walk covers
+    /// `[start-1, end+1]` inclusive — `:80403` sets `num = endX + 1` and the
+    /// loops compare `i < num + 1` (`:80405-80407`) — and each `TileFrame`
+    /// gates the 5-tile world border BEFORE its `Add`
+    /// (`WorldGen.cs:81329-81334`).
+    pub fn add_range_frame(
+        &mut self,
+        map: &mut WorldMap,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+    ) {
+        self.add_area(
+            map,
+            start_x - 2,
+            start_y - 2,
+            start_x - end_x + 4,
+            start_y - end_y + 4,
+        );
+        let (mw, mh) = (map.tiles_w as i32, map.tiles_h as i32);
+        for i in (start_x - 1)..(end_x + 2) {
+            for j in (start_y - 1)..(end_y + 2) {
+                if i <= 5 || j <= 5 || i >= mw - 5 || j >= mh - 5 {
+                    continue; // `WorldGen.cs:81329-81332`
+                }
+                self.add_tile(map, i, j);
+            }
+        }
     }
 
     /// `MapUpdateQueue.Update` (`MapUpdateQueue.cs:62-71`): both queues drain
     /// through `WorldMap.UpdateType`; the changed tiles return (the C#'s
-    /// `MapRenderer.QueueChange`).
+    /// `MapRenderer.QueueChange`). The drain order is deterministic and the
+    /// C#'s: `UpdateTiles` first (`:66`, FIFO enqueue order), then
+    /// `UpdateAreas` (`:67`, area enqueue order, each area walked
+    /// column-major `i` outer / `j` inner — `:76-79`), both cleared after.
     pub fn update(&mut self, world: &World, map: &mut WorldMap) -> Vec<(i32, i32)> {
         let mut changed = Vec::new();
         for (x, y) in std::mem::take(&mut self.tiles) {

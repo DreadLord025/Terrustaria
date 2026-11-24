@@ -28,10 +28,20 @@ impl App {
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
+    // The achievements overlay's clicks (`UIAchievementsMenu` rides
+    // `IngameFancyUI`): the scrollbar/Back/toggles consume the press
+    // before the chest/crafting/inventory handlers see it (W4-g53).
+    self.handle_achievements_clicks();
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.
     self.handle_npc_chat_clicks();
+    // W4-f30 — the Dryad's Stardew text override (`NPCChatPanel.
+    // OverrideChatTextWithShenanigans`, `NPCChatPanel.cs:195-213`): the
+    // holding-cola reminder + the post-gift reroll state machine. The C#
+    // runs it in the panel's draw (`PrepareText`); the port folds it into
+    // the per-frame update (the text is state, the draw reads it).
+    self.update_dryad_chat_override();
     // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest
@@ -57,6 +67,76 @@ impl App {
     // `if (CanPauseGame()) { DoUpdate_WhilePaused(); gamePaused = true;
     // return; } gamePaused = false;`. The click cluster above it is the
     // pre-gate interface pass (DW-1.3: the UI stays live while paused).
+    }
+
+    /// W4-f30 — `NPCChatPanel.OverrideChatTextWithShenanigans`
+    /// (`NPCChatPanel.cs:195-213`): the Dryad's cola reminder + the post-gift
+    /// reroll state machine. The C# runs it in the panel's `PrepareText`
+    /// (per draw); the port folds it into the per-frame update. The reroll
+    /// arm (`:206`) re-rolls `GetChat()` — the full chat context is rebuilt
+    /// here (the `talk_to_npc` open arm's shape).
+    fn update_dryad_chat_override(&mut self) {
+        if self.talk_npc.is_none() {
+            return;
+        }
+        let held = self.inventory.get(self.selected).map_or(0, |s| s.kind);
+        match crate::dryad_stardew::override_dryad_chat_text(self, held) {
+            Some(text) if text.is_empty() => {
+                // The reroll sentinel: re-roll GetChat() for the talk NPC.
+                if let Some(i) = self.talk_npc {
+                    if let Some(npc) = self.npcs.get(i) {
+                        let has_cola = self.inventory.iter().any(|s| s.kind == 5275);
+                        let rng = self.rngs.global();
+                        let mut draw = |n: i32| rng.next_max(n);
+                        let mut ctx = crate::npc_chat::ChatContext {
+                            npcs: &self.npcs,
+                            rng: &mut draw,
+                            day_time: self.world.day_time,
+                            time: self.world.time,
+                            blood_moon: self.world.blood_moon,
+                            eclipse: self.world.eclipse,
+                            slime_rain: self.world.slime_rain,
+                            hard_mode: self.world.hard_mode,
+                            moon_phase: self.world.moon_phase,
+                            remix_world: false,
+                            raining: self.world.raining,
+                            storming: false,
+                            windy_day: false,
+                            zone_graveyard: false,
+                            party_is_up: false,
+                            crimson: false,
+                            downed_boss1: self.world.downed_eoc,
+                            downed_boss2: self.world.downed_eow,
+                            downed_boss3: self.world.downed_skeletron,
+                            downed_moonlord: false,
+                            dd2_downed_t1: self.world.dd2_downed_t1,
+                            dd2_downed_t2: self.world.dd2_downed_t2,
+                            dd2_ongoing: self.world.dd2_event_ongoing,
+                            lanterns_up: false,
+                            player_life: self.player.as_ref().map_or(0, |p| p.hp),
+                            player_life_max: self.player.as_ref().map_or(0, |p| p.max_hp),
+                            player_base_life_max: self.player.as_ref().map_or(0, |p| p.max_hp),
+                            player_defense: 0,
+                            player_male: true,
+                            player_head: 0,
+                            player_deaths_pve: self.player.as_ref().map_or(0, |p| p.deaths_pve as i32),
+                            player_luck: 0.0,
+                            player_has_cola: has_cola,
+                            angler_quest_finished: false,
+                            angler_quests_finished: self.player.as_ref().map_or(0, |p| p.angler_quests_finished),
+                            golfer_score: self.player.as_ref().map_or(0, |p| p.golfer_score),
+                        };
+                        let text = crate::npc_chat::get_chat(npc, &mut ctx);
+                        self.npc_chat_text = text;
+                    }
+                }
+            }
+            Some(text) => {
+                // The holding-cola reminder (`:211`).
+                self.npc_chat_text = text;
+            }
+            None => {}
+        }
     }
 
     /// S1-B-3 — the in-game pause gate (`Main.cs:17194-17201`). Yields the
@@ -440,8 +520,16 @@ impl App {
     let rng = self.rngs.global();
     let step = &mut self.tile_anim_step;
     let animator = &mut self.tile_anim;
+    // W4-f14: `Main.AnimateTiles`'s tail call
+    // `Main.AnimateTiles_CritterCages()` (`Main.cs:19303`) rides the SAME
+    // tick and the SAME `Main.rand` stream, after the tile-493 counter —
+    // the cage animator's `critter_cage` gate (set by the draw while a
+    // cage is in view, TileDrawing.cs:5672 etc.) returns before any draw
+    // when no cage is on screen, so the interleave stays bit-for-bit.
+    let cages = &mut self.cage_anim;
     step.tick(dt, |_| {
         animator.animate_tiles(wind, rng, false);
+        cages.animate_critter_cages(rng);
     });
     step.cap_backlog();
     }
@@ -519,6 +607,35 @@ impl App {
     };
     ambience.update(dt, &ctx, ambience_rng);
                     }
+    // W4-c40: `SkyManager.Update` (`Main.cs:17139`, `SkyManager.cs:24-46`)
+    // runs the active skies `max(1, dayRate)` times per update — the
+    // SandstormSky tint fade (`SandstormSky.cs:24-47`) rides the same loop
+    // the ambience entities use (`AmbienceCtx::day_rate`). The manager's
+    // `!IsActive()` removal (`:39-42`) is the sky's own below-zero
+    // deactivate; the `FocusHelper.PauseSkies` head is this phase's
+    // `!paused` gate (the f40 lantern-sky fold).
+    let sky_iters = self.world.day_rate().max(1);
+    for _ in 0..sky_iters {
+        self.sandstorm_sky.update(dt);
+    }
+    // W4-f40: `SkyManager.Update`'s `LanternSky` iteration (`SkyManager.cs:
+    // 24-46`, `max(1, dayRate)` per 60 Hz tick). The sky's private RNG draws
+    // on no named stream; the opacity walk + lantern drift ride the same
+    // step gate as the ambience (the `FocusHelper.PauseSkies` fold — module
+    // docs). The dedicated accumulator keeps the cadence frame-rate
+    // independent (the ambience precedent).
+    {
+        let lanterns_up = crate::world_events::lanterns_up(&self.world_events);
+        let wind = self.wind.speed_current;
+        let (max_x, surface) = (self.world.width, self.world.world_surface);
+        let day_rate = self.world.day_rate().max(1);
+        let sky = &mut self.lantern_sky;
+        self.lantern_sky_step.tick(dt, |_| {
+            for _ in 0..day_rate {
+                sky.update(lanterns_up, wind, max_x, surface);
+            }
+        });
+    }
     }
 
     /// S1-B-3 (batch review fix 1): the tile-edit and net halves ride the
@@ -530,8 +647,47 @@ impl App {
                     // world update, on the same step gate as the strike that
                     // spawns the numbers.
                     crate::combat_text::update_all(&mut self.combat_texts);
+                    // `Main.cs:18078` — `PopupText.UpdateItemText()` right after
+                    // the combat-text walk (`UpdateWorld_FloatingText`, W4-g57):
+                    // the reforge popups' rise/fade clock. Visual only — no RNG.
+                    self.update_popup_texts(screen);
                     self.phase("net");
                     self.net_tick(dt);
+    }
+
+    /// `PopupText.UpdateItemText` (`Main.cs:18078`, W4-g57): the pool's
+    /// per-tick walk beside the combat text. `TargetScale = UIScale /
+    /// RenderZoom.X` (`PopupText.cs:88`) — the port's applied UI scale over
+    /// the same `bg_zoom * zoom` product the draw half uses; the per-slot
+    /// sizes are `MeasureString(displayText)` (`:672`), the renderer-free
+    /// `text::ui_font_*` twins with the bitmap estimate fallback. No RNG.
+    fn update_popup_texts(&mut self, screen: Vec2) {
+        // `UpdateItemText` walks all 20 slots and refreshes `numActive` even
+        // when none is active (`PopupText.cs:752-764`) — no early return.
+        let ui_scale = self.settings.applied_ui_scale(screen.x, screen.y);
+        let render_zoom = App::forced_minimum_zoom((screen.x, screen.y)) * self.zoom;
+        let mut target_scale = if render_zoom > 0.0 { ui_scale / render_zoom } else { 0.0 };
+        if target_scale == 0.0 {
+            target_scale = 1.0; // `Main.cs:62398-62400`'s zero guard
+        }
+        let env = crate::popup_text::Env {
+            disco: self.disco,
+            master_color: self.master_color,
+            mouse_text_color: self.mouse_text_color,
+            global_time_wrapped_hourly: self.anim_time % 3600.0,
+            grav_dir: 1.0, // the port's player gravDir is unported (always 1)
+        };
+        let mut sizes = [[0.0f32; 2]; crate::popup_text::MAX_POPUPS];
+        for (i, slot) in sizes.iter_mut().enumerate() {
+            if let Some(t) = self.popup_texts.texts.get(i).filter(|t| t.active) {
+                *slot = [
+                    crate::ui::text::ui_font_width(&self.lookups, &t.display_text, 1.0)
+                        .unwrap_or(t.display_text.chars().count() as f32 * 8.0),
+                    crate::ui::text::ui_font_height(&self.lookups, 1.0).unwrap_or(8.0),
+                ];
+            }
+        }
+        crate::popup_text::update_all(&mut self.popup_texts, target_scale, env, &sizes);
     }
 
     /// The map reveal keeps the pause gate only (its C# source is the

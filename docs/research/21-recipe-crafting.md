@@ -128,7 +128,7 @@ and render the list of craftable recipes in the panel.
 | The ingredient count (`_ownedItems`) | PORTED | `craft.rs::collect_owned` (451-470) | Inventory + in-range chests, summed per item id; the group fold is done per requirement (equivalent totals). |
 | The consume order | PARTIAL | `craft.rs::try_craft` (607-649) | Inventory pass first, then the chests in collection order, slot index order, partial-decrement-then-clear — matches `ConsumeItemsFrom` (244-291). But the inventory capacity is equivalent — **corrected 2026-11-13** (S1-L-11f): `Player.inventory = Item[59]` (`Player.cs:1576`) splits in the port as `inventory[50]` + `equip.coins[4]` + `equip.ammo[4]` + `equip.trash` (the 59th slot, `inventory[58]`'s trash stash at `:5130/:5145`); and the C#’s `CreateResult` (`OnCreated` + `Prefix(-1)`) is not applied. |
 | The alchemy discount | PORTED | `craft.rs::ingredient_discount` (`:382-396`) | 1/3 roll per unit while brewing at an alchemy table, applied to the consumed stack while availability counts the full stack — same split as the C#. The RNG stream is the C#'s `UnifiedRandom` generator (`App.craft_rng`, seeded per world — S1-L-11e closed the splitmix stand-in; the shared-stream interleave is the S1-A-11 residual). |
-| The nearby-chest ingredients | PORTED | `craft.rs::chests_in_range` (401-444) | 600 px radius (`NearbyChests.cs:14`), tiles 21/341, raster order (the C# iterates `Main.chest[]`'s instance order — the port has no instance registry; documented in ANALYSIS). |
+| The nearby-chest ingredients | PORTED | `craft.rs::chests_in_range` (401-444) | 600 px radius (`NearbyChests.cs:14`), tiles 21/467 (`TileID.Sets.BasicChest`, `TileID.cs:570` — the former 21/341 pair fixed by i46; the chest_gen cull twin by W4-a2), raster order (the C# iterates `Main.chest[]`'s instance order — the port has no instance registry; documented in ANALYSIS). |
 | The craft grant (result + sound + achievement) | PARTIAL | `app/clicks.rs::handle_crafting_clicks` | **S1-L-11d (2026-11-14)**: the created item is the C#'s `CreateResult` (`CraftingRequests.cs:122-131`) — the `OnCreated` swap (5437 → 5358) and the natural prefix roll (`Item.Prefix(-1)`, stack ≤ 1) — and the grant keeps the prefix (`Item.CanStack`). The cursor gate (`Main.CursorHasSpaceToCraftRecipe`, `Main.cs:42309-42345`) makes a prefixable recipe craft once per click. The `Grab` cue plays (`CraftingEffects.cs:51`). **Remaining deviation**: the C# hands the result to the cursor (`Main.CraftItem_GrantItem`, `Main.cs:42607-42612`) and the port grants it into the inventory directly (ANALYSIS). |
 | Focus / refocused recipe / repositioning | MISSING | — | `Main.focusRecipe`, `TryRefocusingRecipe`, `craftingUI.VisuallyRepositionRecipes` have no counterpart. |
 
@@ -304,9 +304,14 @@ below can no longer pass the suite.
   `:14955-14958`), the `TileReachCheckSettings.Simple` clamp of 20
   (`TileReachCheckSettings.cs:20-34`, `:84`) and the artisan loaf's +4
   (`Player.cs:35671`). Closes: D10. Tests `s1_l_11d_the_tile_reach_follows_the_csharp_formula`
-  and `s1_l_11d_the_artisan_bread_reaches_a_far_station`. The loaf's own use
+  and `s1_l_11d_the_artisan_bread_reaches_a_far_station`. ~~The loaf's own use
   effect (item 5326, `Player.cs:45218-45221`) is still unported — the flag
-  `Player.ateArtisanBread` rides the player and stays false in play.
+  `Player.ateArtisanBread` rides the player and stays false in play.~~ —
+  **DONE (W4-g90)**: `editing.rs::use_artisan_loaf` ports
+  `ItemCheck_UseArtisanLoaf` (`Player.cs:45216-45224`) — the once-only
+  permanent flag, the `.plr`/`.trplayer` persistence and the Skeleton
+  Merchant's stock gate (`Chest.cs:2958`). The 1.4.5.8 reforge roll never
+  reads the flag (no reforge-tier consumer — full-source grep verified).
 - **S — the generator's tail branch** (`expand_body`, `tools/gen_recipes.py`): the
   expansion loop broke out on the `Recipe.CreateReverseWallRecipes()` tail
   **before** copying the text that precedes it, so the 414 authored rows

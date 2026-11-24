@@ -796,6 +796,15 @@ impl Wiring {
         std::mem::take(&mut self.teleport_events)
     }
 
+    /// A test hook (not a behaviour): re-queues one drained pad pair so the
+    /// app-layer drain can be exercised without a second `TripWire` (the
+    /// mech re-trip path would register another pair). NOT `cfg(test)` —
+    /// the consumer is `tr-app`'s wiring witness (the `Rain::with_forced`
+    /// injectable-constructor convention).
+    pub fn push_teleport_event_for_test(&mut self, pair: ((f32, f32), (f32, f32))) {
+        self.teleport_events.push(pair);
+    }
+
     /// Drains the announcement-box texts (case 425's `Main.NewTextMultiline`).
     pub fn take_announcement_events(&mut self) -> Vec<(i32, i32, String)> {
         std::mem::take(&mut self.announcement_events)
@@ -5640,6 +5649,58 @@ mod device_tests {
         assert_eq!(shot.y, (20 * 16 + 2) as f32);
         assert_eq!(shot.ai0, 10.0, "the fountain's own column");
         assert_eq!(shot.ai1, 20.0, "the fountain's own row");
+    }
+
+    /// `WorldGen.SwitchFountain` (`WorldGen.cs:51150-51198`, W4-g73 closeout
+    /// chain witness): the wire trip's case 207 (`Wiring.cs:2018-2019`)
+    /// walks the 2x4 body from the frame-derived corner and flips every
+    /// fountain cell's frameY by 72 (the flowing/idle sheet halves). The
+    /// corner maths: frameX/18 mod-2 down to 0/1, frameY/18 minus 4 when
+    /// >= 4 (`:51155-51164`).
+    #[test]
+    fn the_water_fountain_trip_flips_the_2x4_body_frame() {
+        // The 2x4 fountain body at (10..11, 20..23); the tripped cell is
+        // the bottom-right (11, 23) — frameX 18 (col 1), frameY 54 (row 3):
+        // num3 = 1, num4 = 3 → corner (10, 20).
+        let mut w = world();
+        for x in 10..12 {
+            for y in 20..24 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 207,
+                    frame_x: ((x - 10) * 18) as i16,
+                    frame_y: ((y - 20) * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let si = w.index(8, 23);
+        w.tiles[si] = Tile { kind: 135, ..Default::default() };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        for x in 8..12 {
+            w.wires.set(x, 23, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 23, 1, 1);
+        // Every body cell jumped to the flowing half (+72).
+        for x in 10..12 {
+            for y in 20..24 {
+                assert_eq!(
+                    w.tile_frame_y(x, y),
+                    (y - 20) * 18 + 72,
+                    "cell ({x}, {y}) flips to the flowing sheet"
+                );
+            }
+        }
+        // The second trip flips back (frameY >= 72 → -72).
+        let mut wiring2 = Wiring::new();
+        wiring2.trip_wire(&mut w, 8, 23, 1, 1);
+        for x in 10..12 {
+            for y in 20..24 {
+                assert_eq!(w.tile_frame_y(x, y), (y - 20) * 18);
+            }
+        }
     }
 
     #[test]

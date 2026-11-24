@@ -281,4 +281,25 @@ mod tests {
             ]
         );
     }
+
+    /// W4-g84: the bulb's map icon — `MapHelper.Initialize`
+    /// (`MapHelper.cs:518`): `array[238][0] = new Color(225, 128, 206)`
+    /// (the pink bulb dot), one option only; the 655 GlowingMushroom shares
+    /// the colour (`:519`). The packed table must resolve both to it.
+    #[test]
+    fn w4_g84_plantera_bulb_map_icon_is_pink() {
+        let table = MapColorTable::new();
+        assert_eq!(table.tile_option_counts[238], 1);
+        assert_eq!(
+            table.color(table.tile_lookup[238]),
+            [225, 128, 206],
+            "the bulb's map dot (MapHelper.cs:518)"
+        );
+        assert_eq!(
+            table.color(table.tile_lookup[655]),
+            [225, 128, 206],
+            "the glowing mushroom shares the colour (:519)"
+        );
+        assert_eq!(crate::mapdata::TILE_COLORS[238][0], [225, 128, 206, 255]);
+    }
 }

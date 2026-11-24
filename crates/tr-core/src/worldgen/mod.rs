@@ -20,13 +20,17 @@ mod biomes;
 pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;
+pub mod dungeon_styles;
 mod caves;
 mod config;
 mod desert;
 mod desert_dunes;
 mod desert_entrances;
+mod dither_snake;
 pub mod evil;
+mod ice_biome;
 mod islands;
+mod island_houses;
 mod liquids;
 mod living_trees;
 pub mod meteor;
@@ -36,14 +40,19 @@ mod micro_surface;
 mod mini_biomes;
 mod noise;
 mod ocean;
+mod passes1;
+mod passes2;
 pub mod pipeline;
+mod place_helpers;
 pub mod progress;
+mod shimmer;
 mod spider_gem_moss;
 mod structures;
 mod surface;
 mod temple;
 mod terrain;
 mod tile_runner;
+mod traps;
 mod wavy;
 mod world_hash;
 mod finish_seeds;
@@ -837,7 +846,10 @@ mod tests {
             let t = w
                 .tile(c.x, c.y)
                 .expect("the record's anchor is inside the world");
-            if t.active() && (t.kind == 21 || t.kind == 341) {
+            // `TileID.Sets.BasicChest` = {21, 467} (`TileID.cs:570`) — the
+            // former 21||341 pair counted `LivingDemonFire` (`TileID.cs:1311`),
+            // never a chest (W4-a2 / P0-3).
+            if t.active() && (t.kind == 21 || t.kind == 467) {
                 survivors += 1;
             }
         }
@@ -1344,7 +1356,13 @@ mod tests {
         // Every executed step got its bookend, in pipeline order, and the
         // weights sum to the total the hook was handed (`TotalProgress`
         // reaches exactly 1.0 — `WorldGenerator.cs:424`'s enabled-sum).
-        assert_eq!(hook.steps.len(), pipeline::executed_pass_names().len());
+        // W4-c30: the gate-closed dither-snake step never registers on a
+        // classic world (`WorldGen.cs:14753`) — count the registered steps.
+        let registered = pipeline::EXECUTED_PIPELINE
+            .iter()
+            .filter(|s| !pipeline::pass_registration_gate_closed(s.vanilla, opts.micro_flags))
+            .count();
+        assert_eq!(hook.steps.len(), registered);
         let summed: f64 = hook.steps.iter().map(|(_, w)| w).sum();
         assert_eq!(hook.progress.total_weight, summed);
         assert_eq!(hook.progress.total_progress(), 1.0);
@@ -1410,8 +1428,14 @@ mod tests {
         let incremental = runner.into_world();
         assert_eq!(one_shot.tiles, incremental.tiles, "the tile field is identical");
         assert_eq!(one_shot.chests.len(), incremental.chests.len());
-        // The hook saw every executed step, and the weighted progress hit 1.0.
-        assert_eq!(hook.steps.len(), pipeline::executed_pass_names().len());
+        // The hook saw every registered step, and the weighted progress hit
+        // 1.0 (W4-c30: the gate-closed dither snake is not registered on a
+        // classic world — `WorldGen.cs:14753`).
+        let registered = pipeline::EXECUTED_PIPELINE
+            .iter()
+            .filter(|s| !pipeline::pass_registration_gate_closed(s.vanilla, opts.micro_flags))
+            .count();
+        assert_eq!(hook.steps.len(), registered);
         assert_eq!(hook.progress.total_progress(), 1.0);
     }
 

@@ -4,19 +4,16 @@
 //! platform slope side-fills (`DrawBasicTile`, `TileDrawing.cs:1515-1545`,
 //! glow arm `:1367-1401`).
 //!
-//! **UNWIRED module (code-only mode, 2026-11-18).** The draw-pass seam
-//! (`render/tiles.rs::draw_tiles` + `tr_core::drawdata`) is contested by the
-//! in-flight S1-G-1 siblings (vines G-1a, ropes G-1b, cracks G-1c, pylons
-//! G-1d), so this slice lands as pure draw/decision functions with the
-//! wiring deferred to the family's merge step — the `drawdata_anim.rs`
-//! (S1-F-9b) pattern. Intended call sites:
-//! * [`chest_frame_adjust`] — after `draw_data` in the tile-frame resolution
-//!   (`render/tiles.rs::resolve_tile_frame`), keyed on
-//!   `chest::find_chest(chests, anchor)` over [`chest_anchor`]; the C# caches
-//!   the lookup per frame in `_chestPositions` (`TileDrawing.cs:4300-4303`).
-//! * [`platform_side_fill`] + [`push_platform_side_fill`] — the
-//!   `TileID.Sets.Platforms && slope > 0` arm of `DrawBasicTile`, BEFORE the
-//!   generic `push_slope` column path (the C# returns early, `:1544`).
+//! **Partially wired (W4-d59, 2026-11-20).** The platform slope side-fills
+//! are WIRED: `render/tiles.rs`'s cell dispatch calls [`platform_side_fill`]
+//! + [`push_platform_side_fill`] in the `TileID.Sets.Platforms && slope > 0`
+//! arm of `DrawBasicTile`, BEFORE the generic `push_slope` column path (the
+//! C# returns early, `:1544`). The remaining slices stay UNWIRED (the
+//! `drawdata_anim.rs` S1-F-9b pattern). Intended call sites:
+//! * The chest frame offsets MOVED to `tr_render::chest_frames` and were
+//!   WIRED by W4-d58 — `render/tiles.rs::draw_tiles` applies them after the
+//!   drawdata dispatch, keyed on `chest::find_chest` over the anchor with
+//!   the per-draw `_chestPositions` cache (`TileDrawing.cs:4300-4303`).
 //! * [`draw_sun_orb`] / [`draw_butterfly_cage`] / [`push_weapon_rack_item`] —
 //!   the non-solid-layer special pass (`TileDrawing.cs:736`), fed by the
 //!   `CacheSpecialDraws_Part1` legacy-point collection (`:4152-4255`).
@@ -32,7 +29,7 @@
 //!   yet (the S1-G-13 layer-target family is unwired); the side-fill push
 //!   draws into the world range and the layer decision is returned in
 //!   [`PlatformSideFill`] for the wiring step.
-#![allow(dead_code)] // UNWIRED — see the module doc; the wiring is the S1-G-1 merge step.
+#![allow(dead_code)] // the legacy/chest arms stay UNWIRED — see the module doc.
 
 use tr_core::tiledata::{SET_BLOCKS_STAIRS, SET_PLATFORMS, TILE_SOLID};
 use tr_render::SpriteRenderer;
@@ -59,99 +56,24 @@ pub(crate) fn xna_scale_color(c: [u8; 4], scale: f32) -> [u8; 4] {
 // ---------------------------------------------------------------------------
 // Chest frames — CacheSpecialDraws_Part2 (TileDrawing.cs:4287-4330)
 // ---------------------------------------------------------------------------
-
-/// The chest block's writes to the draw data: `addFrX`/`addFrY`, the
-/// bottom-row height clamp and the optional glow rect (golden-chest styles
-/// 48/49).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ChestFrameAdjust {
-    /// `drawData.addFrX = num * 18 - tileFrameX` (`TileDrawing.cs:4307`).
-    pub add_fr_x: i16,
-    /// `drawData.addFrY = num4 - tileFrameY` (`:4321`), `num4` carrying the
-    /// open-frame row shift +38 / +76.
-    pub add_fr_y: i16,
-    /// `drawData.tileHeight = 18` when `frameY / 18 != 0` (`:4322-4325`);
-    /// `None` keeps the incoming height.
-    pub height_override: Option<i16>,
-    /// `drawData.glowSourceRect` for tile 21 styles 48/49 (`:4326-4329`):
-    /// `(16 * (num % 2), tileFrameY + addFrY, tileWidth, tileHeight)` —
-    /// the height AFTER the clamp above.
-    pub glow_src: Option<[i32; 4]>,
-}
-
-/// The `_chestPositions` key: the chest's top-left cell
-/// (`TileDrawing.cs:4291-4299`) — step left/up when the frame is not on the
-/// 36 px anchor grid. The caller resolves it through `chest::find_chest`
-/// (the C# `Chest.FindChest`, `:4302`).
-pub(crate) fn chest_anchor(x: i32, y: i32, frame_x: i16, frame_y: i16) -> (i32, i32) {
-    let mut key = (x, y);
-    if frame_x % 36 != 0 {
-        key.0 -= 1;
-    }
-    if frame_y % 36 != 0 {
-        key.1 -= 1;
-    }
-    key
-}
-
-/// `CacheSpecialDraws_Part2`'s `TileID.Sets.BasicChest` block
-/// (`TileDrawing.cs:4289-4330`). `chest_frame` is `Main.chest[i].frame`
-/// (`Chest.cs:86`): 0 closed, 1 half-open (+38), 2 open (+76); `None` is the
-/// `FindChest == -1` miss (no row shift, `:4309`).
-pub(crate) fn chest_frame_adjust(
-    kind: u16,
-    frame_x: i16,
-    frame_y: i16,
-    tile_width: i16,
-    tile_height: i16,
-    chest_frame: Option<i32>,
-) -> ChestFrameAdjust {
-    // TileDrawing.cs:4304-4308
-    let num = frame_x as i32 / 18;
-    let num2 = frame_y as i32 / 18;
-    let num3 = frame_x as i32 / 36;
-    let add_fr_x = num * 18 - frame_x as i32;
-    let mut num4 = num2 * 18;
-    // TileDrawing.cs:4309-4320 — the open-frame row shift.
-    if let Some(frame) = chest_frame {
-        if frame == 1 {
-            num4 += 38;
-        }
-        if frame == 2 {
-            num4 += 76;
-        }
-    }
-    let add_fr_y = num4 - frame_y as i32;
-    // TileDrawing.cs:4322-4325 — the bottom row draws 18 px tall.
-    let height_override = if num2 != 0 { Some(18) } else { None };
-    let height = height_override.unwrap_or(tile_height);
-    // TileDrawing.cs:4326-4329 — the two golden-chest styles glow.
-    let glow_src = if kind == 21 && (num3 == 48 || num3 == 49) {
-        Some([
-            16 * (num % 2),
-            frame_y as i32 + add_fr_y,
-            tile_width as i32,
-            height as i32,
-        ])
-    } else {
-        None
-    };
-    ChestFrameAdjust {
-        add_fr_x: add_fr_x as i16,
-        add_fr_y: add_fr_y as i16,
-        height_override,
-        glow_src,
-    }
-}
+//
+// W4-d58 (R2 chest slice): the frame-selection maths MOVED to
+// `tr_render::chest_frames` (`chest_anchor`/`chest_frame_adjust`/
+// `ChestFrameAdjust`) and is WIRED — `render/tiles.rs::draw_tiles` applies
+// it after the drawdata dispatch (the C# `:993` position), keyed on
+// `chest::find_chest` over the anchor with the per-draw `_chestPositions`
+// cache. The i43 sim-side lid animator (`chest::update_chest_frames`) feeds
+// `WorldChest.frame`; the draw side reads it without RNG.
 
 // ---------------------------------------------------------------------------
 // Platform slope side-fills — DrawBasicTile (TileDrawing.cs:1515-1545)
 // ---------------------------------------------------------------------------
 
 /// The neighbour-cell facts the side-fill gates read. `invisible` is
-/// `Tile.invisibleBlock()` (`Tile.cs:528-531`, `bTileHeader3 & 0x20`) — the
-/// port's `Tile` does not carry that bit yet, so the wiring passes `false`
-/// (recorded deviation, ANALYSIS "S1-G-1e special tiles").
+/// `Tile.invisibleBlock()` (`Tile.cs:528-531`, `bTileHeader3 & 0x20`); the
+/// port carries it in the world extras byte (`World::invisible_block`,
+/// `world.rs`), so [`FillNeighbor::from_world`] reads the real bit —
+/// [`FillNeighbor::from_tile`] keeps `false` for callers without the world.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct FillNeighbor {
     pub active: bool,
@@ -162,8 +84,8 @@ pub(crate) struct FillNeighbor {
 }
 
 impl FillNeighbor {
-    /// Snapshot a world tile; the invisible bit reads `false` until the
-    /// port's `Tile` carries `bTileHeader3` (see the struct doc).
+    /// Snapshot a world tile; the invisible bit reads `false` (no world
+    /// handle — use [`FillNeighbor::from_world`] at the draw seam).
     pub(crate) fn from_tile(t: &tr_core::tile::Tile) -> Self {
         Self {
             active: t.active(),
@@ -171,6 +93,20 @@ impl FillNeighbor {
             slope: t.slope(),
             half_brick: t.half_brick(),
             invisible: false,
+        }
+    }
+
+    /// Snapshot the tile at `(x, y)` WITH the Echo-coating bit
+    /// (`Tile.invisibleBlock()` via `World::invisible_block`). An
+    /// out-of-world cell reads the default (inactive) tile — the C#
+    /// `Main.tile[x, y]` outside the draw area never reaches the gates.
+    pub(crate) fn from_world(world: &tr_core::world::World, x: i32, y: i32) -> Self {
+        match world.tile(x, y) {
+            Some(t) => Self {
+                invisible: world.invisible_block(x, y),
+                ..Self::from_tile(t)
+            },
+            None => Self::default(),
         }
     }
 }
@@ -269,17 +205,30 @@ pub(crate) fn platform_side_fill(
 /// sheet rect from [`PlatformSideFill::src`] (`TileDrawing.cs:1532`/`:1542`).
 /// `sheet_uv` maps platform-sheet pixels to atlas UVs (the caller's
 /// `Atlas::uv("Tiles_19", …)` equivalent); the tint is `drawData.finalColor`.
+/// The C# passes `drawData.tileSpriteEffect` (`:1532`) and the painted
+/// `drawTexture`, so the flip and the paint byte ride the push too.
 pub(crate) fn push_platform_side_fill(
     r: &mut SpriteRenderer,
     sheet_uv: impl Fn(f32, f32, f32, f32) -> Option<[f32; 4]>,
     pos: [f32; 2],
     fill: &PlatformSideFill,
     color: [f32; 4],
-) {
+    flip: bool,
+    paint: u8,
+) -> u32 {
     let [sx, sy, sw, sh] = fill.src;
     if let Some(uv) = sheet_uv(sx as f32, sy as f32, sw as f32, sh as f32) {
-        r.push_sprite([pos[0], pos[1] + 16.0], [sw as f32, sh as f32], uv, color);
+        r.push_sprite_paint(
+            [pos[0], pos[1] + 16.0],
+            [sw as f32, sh as f32],
+            crate::render::entities::flip_uv(uv, flip),
+            color,
+            0.0,
+            paint,
+        );
+        return 1;
     }
+    0
 }
 
 // ---------------------------------------------------------------------------
@@ -537,75 +486,8 @@ mod tests {
     }
 
     // -- chest frames --------------------------------------------------------
-
-    #[test]
-    fn chest_anchor_steps_to_the_top_left() {
-        assert_eq!(chest_anchor(10, 20, 0, 0), (10, 20));
-        assert_eq!(chest_anchor(11, 20, 18, 0), (10, 20));
-        assert_eq!(chest_anchor(10, 21, 0, 18), (10, 20));
-        assert_eq!(chest_anchor(11, 21, 18, 18), (10, 20));
-    }
-
-    #[test]
-    fn closed_chest_keeps_the_frame_row() {
-        // Top-left cell: addFr 0/0, height untouched, no glow.
-        let a = chest_frame_adjust(21, 0, 0, 16, 16, Some(0));
-        assert_eq!(a.add_fr_x, 0);
-        assert_eq!(a.add_fr_y, 0);
-        assert_eq!(a.height_override, None);
-        assert_eq!(a.glow_src, None);
-        // Bottom-right cell of style 0: frame (18, 18) → addFrX 0, row 18.
-        let b = chest_frame_adjust(21, 18, 18, 16, 16, Some(0));
-        assert_eq!(b.add_fr_x, 0);
-        assert_eq!(b.add_fr_y, 0);
-        assert_eq!(b.height_override, Some(18));
-    }
-
-    #[test]
-    fn open_frames_shift_38_and_76() {
-        // frame == 1 → num4 = row*18 + 38 (TileDrawing.cs:4312-4315).
-        let half = chest_frame_adjust(21, 0, 0, 16, 16, Some(1));
-        assert_eq!(half.add_fr_y, 38);
-        let half_bottom = chest_frame_adjust(21, 18, 18, 16, 16, Some(1));
-        assert_eq!(half_bottom.add_fr_y, 38); // 18 + 38 - 18
-        // frame == 2 → +76 (:4316-4319).
-        let open = chest_frame_adjust(21, 0, 0, 16, 16, Some(2));
-        assert_eq!(open.add_fr_y, 76);
-        let open_bottom = chest_frame_adjust(21, 18, 18, 16, 16, Some(2));
-        assert_eq!(open_bottom.add_fr_y, 76);
-        assert_eq!(open_bottom.height_override, Some(18));
-        // FindChest miss → no shift (:4309).
-        let miss = chest_frame_adjust(21, 0, 0, 16, 16, None);
-        assert_eq!(miss.add_fr_y, 0);
-    }
-
-    #[test]
-    fn style_columns_shift_x_by_the_18px_grid() {
-        // Style 1 top-left: frameX 36 → num = 2, addFrX = 36 - 36 = 0;
-        // its right column frameX 54 → num = 3, addFrX = 54 - 54 = 0.
-        // A style whose sheet column differs (the C# num*18 rewrite) is
-        // exercised by the golden styles below.
-        let s1 = chest_frame_adjust(21, 36, 0, 16, 16, Some(0));
-        assert_eq!(s1.add_fr_x, 0);
-        let s1r = chest_frame_adjust(21, 54, 0, 16, 16, Some(0));
-        assert_eq!(s1r.add_fr_x, 0);
-    }
-
-    #[test]
-    fn golden_chest_styles_48_49_glow() {
-        // Style 48: frameX = 48*36 = 1728, num = 96 (even → glow x 0).
-        let g = chest_frame_adjust(21, 1728, 0, 16, 16, Some(1));
-        assert_eq!(g.glow_src, Some([0, 38, 16, 16]));
-        // Right column frameX 1746: num = 97 (odd → glow x 16), bottom row
-        // clamps the glow height to 18.
-        let g2 = chest_frame_adjust(21, 1746, 18, 16, 16, Some(1));
-        assert_eq!(g2.glow_src, Some([16, 56, 16, 18]));
-        // Style 49 also glows; style 47 does not.
-        assert!(chest_frame_adjust(21, 49 * 36, 0, 16, 16, Some(0)).glow_src.is_some());
-        assert!(chest_frame_adjust(21, 47 * 36, 0, 16, 16, Some(0)).glow_src.is_none());
-        // Containers2 (467) never glows even at style 48.
-        assert!(chest_frame_adjust(467, 48 * 36, 0, 16, 16, Some(0)).glow_src.is_none());
-    }
+    // W4-d58: the chest_frame_adjust/chest_anchor witnesses moved with the
+    // functions into `tr_render::chest_frames::tests` (keep-one).
 
     // -- platform side-fills ---------------------------------------------------
 
@@ -694,6 +576,36 @@ mod tests {
         assert_eq!(block_type(true, 3), 1); // half brick wins
         assert_eq!(block_type(false, 1), 2);
         assert_eq!(block_type(false, 4), 5);
+    }
+
+    #[test]
+    fn from_world_reads_the_echo_bit_and_defaults_out_of_world() {
+        // W4-d59: the draw seam snapshots neighbours WITH the Echo bit
+        // (`World::invisible_block`, the extras byte's 0x20).
+        let mut w = tr_core::world::World::new("fills".into(), 8, 8);
+        let t = w.tile_mut(3, 4).unwrap();
+        t.kind = 1;
+        t.flags = tr_core::tile::FLAG_ACTIVE;
+        t.set_slope(2);
+        let n = FillNeighbor::from_world(&w, 3, 4);
+        assert!(n.active && n.kind == 1 && n.slope == 2 && !n.invisible);
+        w.set_invisible_block(3, 4, true);
+        assert!(FillNeighbor::from_world(&w, 3, 4).invisible);
+        // from_tile keeps the bit false (no world handle).
+        assert!(!FillNeighbor::from_tile(w.tile(3, 4).unwrap()).invisible);
+        // Out-of-world: the default inactive tile (the gates never fire).
+        let o = FillNeighbor::from_world(&w, -1, 4);
+        assert!(!o.active && !o.invisible);
+        // The Echo veto: a coated right-below neighbour blocks the slope-1
+        // fill unless Echo sight is on (`TileDrawing.cs:1524`).
+        let mut rb = solid(1);
+        rb.invisible = true;
+        assert!(platform_side_fill(1, 0, &FillNeighbor::default(), &FillNeighbor::default(), &rb, false).is_none());
+        assert!(platform_side_fill(1, 0, &FillNeighbor::default(), &FillNeighbor::default(), &rb, true).is_some());
+        // …and a coated stair-blocker BELOW vetoes via the shared tail.
+        let mut below = solid(386);
+        below.invisible = true;
+        assert!(platform_side_fill(1, 0, &below, &FillNeighbor::default(), &solid(1), false).is_some());
     }
 
     // -- DrawSpecialTilesLegacy ----------------------------------------------
