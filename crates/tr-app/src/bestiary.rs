@@ -710,8 +710,224 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Flying Antlion",
+    // W4-d41 — the cavern crawdads/shellies (`BestiaryEntry.Enemy`, the
+    // automated populator `BestiaryDatabaseNPCsPopulator.cs:851-868`;
+    // the Caverns tag `:1121-1122`/`:1148-1149`). ONE entry per pair:
+    // the 2-variants' draw modifiers hide them (`NPCID.cs`'s redigit
+    // dictionary, the merge's last word) and their credits fold onto
+    // the 1-variant (`ContentSamples.cs:1019-1020`, `entry_for_npc`).
+    // The name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "Crawdad",
+        net_id: 494,
+        kind: NpcKind::Crawdad,
+        variant: None,
+        quick_unlock: false,
+        name: "Crawdad",
     },
-    // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
+    BestiaryEntryDef {
+        credit_id: "GiantShelly",
+        net_id: 496,
+        kind: NpcKind::GiantShelly,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Shelly",
+    },
+    // W4-d41 — the salamanders: ONE entry for the nine colours. The
+    // vanilla's automated populator registers 499 only (the redigit
+    // dictionary hides 498/500-506), and `ContentSamples.cs:1021-1025`
+    // folds ALL of 498-506 onto the 499 credit — the entry's kind is
+    // Salamander2 (net 499), every other colour folds onto it
+    // (`entry_for_npc`). The Caverns tag (`:1435-1443`).
+    BestiaryEntryDef {
+        credit_id: "Salamander2",
+        net_id: 499,
+        kind: NpcKind::Salamander2,
+        variant: None,
+        quick_unlock: false,
+        name: "Salamander",
+    },
+    // W4-d41 — the desert antlions (`BestiaryEntry.Enemy`, the automated
+    // populator; the UndergroundDesert tag `:1256-1257`/`:1523`).
+    BestiaryEntryDef {
+        credit_id: "GiantWalkingAntlion",
+        net_id: 508,
+        kind: NpcKind::GiantWalkingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Antlion Charger",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFlyingAntlion",
+        net_id: 509,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Antlion Swarmer",
+    },
+    // W4-d41 — the Dune Splicer: ONE entry on the head's id 510 — the
+    // body/tail's draw modifiers hide them (the leinfors dictionary's
+    // `Hide = true`) and the kills credit the head (the Devourer's fold,
+    // `entry_for_npc`). The UndergroundDesert tag (`:626`/`:1385`).
+    BestiaryEntryDef {
+        credit_id: "DuneSplicerHead",
+        net_id: 510,
+        kind: NpcKind::DuneSplicerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Dune Splicer",
+    },
+    // W4-d41 — the Tomb Crawler: ONE entry on the head's id 513 — the
+    // body/tail's draw modifiers hide them (the leinfors dictionary's
+    // `Hide = true`) and the kills credit the head (the Devourer's fold,
+    // `entry_for_npc`). The UndergroundDesert tag (`:1150`).
+    BestiaryEntryDef {
+        credit_id: "TombCrawlerHead",
+        net_id: 513,
+        kind: NpcKind::TombCrawlerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Tomb Crawler",
+    },
+    // W4-d41 — the solar fragments (516/519) have NO bestiary entries:
+    // their draw modifiers hide them (the leinfors dictionary's
+    // `Hide = true`) and `entry_for_npc` keeps them entry-less (the
+    // `has_entry` filter skips them in the frame sweep). The ancient
+    // orbs (522/523) are Hide=true too — no entries.
+    // W4-d41 — the desert ghouls (`BestiaryEntry.Enemy`, the automated
+    // populator; the UndergroundDesert/CorruptUndergroundDesert/
+    // CrimsonUndergroundDesert tags `:1420-1422`).
+    BestiaryEntryDef {
+        credit_id: "DesertGhoul",
+        net_id: 524,
+        kind: NpcKind::DesertGhoul,
+        variant: None,
+        quick_unlock: false,
+        name: "Ghoul",
+    },
+    BestiaryEntryDef {
+        credit_id: "DesertGhoulCorruption",
+        net_id: 525,
+        kind: NpcKind::DesertGhoulCorruption,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Ghoul",
+    },
+    BestiaryEntryDef {
+        credit_id: "DesertGhoulCrimson",
+        net_id: 526,
+        kind: NpcKind::DesertGhoulCrimson,
+        variant: None,
+        quick_unlock: false,
+        name: "Tainted Ghoul",
+    },
+    // W4-d41 — the hallowed ghoul + the lamias (`BestiaryEntry.Enemy`,
+    // the automated populator; the HallowUndergroundDesert tag
+    // `:1423`, the UndergroundDesert/evil tags `:1557-1558`).
+    BestiaryEntryDef {
+        credit_id: "DesertGhoulHallow",
+        net_id: 527,
+        kind: NpcKind::DesertGhoulHallow,
+        variant: None,
+        quick_unlock: false,
+        name: "Dreamer Ghoul",
+    },
+    BestiaryEntryDef {
+        credit_id: "DesertLamiaLight",
+        net_id: 528,
+        kind: NpcKind::DesertLamiaLight,
+        variant: None,
+        quick_unlock: false,
+        name: "Lamia",
+    },
+    BestiaryEntryDef {
+        credit_id: "DesertLamiaDark",
+        net_id: 529,
+        kind: NpcKind::DesertLamiaDark,
+        variant: None,
+        quick_unlock: false,
+        name: "Lamia",
+    },
+    // W4-d41 — the sand poacher: ONE entry on the walker's id 530 — the
+    // wall form's draw modifiers hide it (the leinfors dictionary's
+    // `Hide = true`) and its credit folds onto 530
+    // (`ContentSamples.cs:1038`, `entry_for_npc`). The UndergroundDesert
+    // tag (`:1337`/`:1647`).
+    BestiaryEntryDef {
+        credit_id: "DesertScorpionWalk",
+        net_id: 530,
+        kind: NpcKind::DesertScorpionWalk,
+        variant: None,
+        quick_unlock: false,
+        name: "Sand Poacher",
+    },
+    // W4-d41 — the basilisk + the tortured soul + the slimes + the bride
+    // (`BestiaryEntry.Enemy`, the automated populator; the
+    // UndergroundDesert tag `:1257`, the TheUnderworld tag `:1444`, the
+    // BloodMoon tag `:1424`, the UndergroundDesert tag `:1106`).
+    BestiaryEntryDef {
+        credit_id: "DesertBeast",
+        net_id: 532,
+        kind: NpcKind::DesertBeast,
+        variant: None,
+        quick_unlock: false,
+        name: "Basilisk",
+    },
+    BestiaryEntryDef {
+        credit_id: "DemonTaxCollector",
+        net_id: 534,
+        kind: NpcKind::DemonTaxCollector,
+        variant: None,
+        quick_unlock: false,
+        name: "Tortured Soul",
+    },
+    BestiaryEntryDef {
+        credit_id: "TheBride",
+        net_id: 536,
+        kind: NpcKind::TheBride,
+        variant: None,
+        quick_unlock: false,
+        name: "The Bride",
+    },
+    BestiaryEntryDef {
+        credit_id: "SandSlime",
+        net_id: 537,
+        kind: NpcKind::SandSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Sand Slime",
+    },
+    // W4-d41 — the spiked slime (535) has NO bestiary entry: its draw
+    // modifiers hide it (the redigit dictionary's `Hide = true`).
+    // W4-d41 — the critters + the tumbler (`BestiaryEntry.Critter`/
+    // `Enemy`, the automated populator; the Surface tag `:1153-1162`,
+    // the UndergroundDesert/Sandstorm tags `:1292`). The gold squirrel's
+    // UI provider folds onto [299, 538]
+    // (`BestiaryDatabaseNPCsPopulator.cs:716`) — the entry keeps its own
+    // 539 net id (the gold-critter pattern).
+    BestiaryEntryDef {
+        credit_id: "SquirrelRed",
+        net_id: 538,
+        kind: NpcKind::SquirrelRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Red Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "SquirrelGold",
+        net_id: 539,
+        kind: NpcKind::SquirrelGold,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "PartyBunny",
+        net_id: 540,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
+// The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (R4 FINAL, research/322 — stat-identical, one aiStyle-9
     // arm, one {31} immunity, one name; both net ids are Hide=true
     // exclusions in C# (`NPCID.cs:1443-1456`) — the port's entry is the
@@ -776,15 +992,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Bunny",
     },
-    BestiaryEntryDef {
-        credit_id: "PartyBunny",
-        net_id: 540,
-        kind: NpcKind::PartyBunny,
-        variant: None,
-        quick_unlock: false,
-        name: "Party Bunny",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "DevourerHead",
         net_id: 7,
         kind: NpcKind::DevourerHead,
@@ -1675,7 +1883,9 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 551,
         kind: NpcKind::DD2Betsy,
         variant: None,
-        quick_unlock: false,
+        // W4-d41: `BestiaryDatabaseNPCsPopulator.cs:681` — the boss's
+        // `CommonEnemyUICollectionInfoProvider(..., quickUnlock: true)`.
+        quick_unlock: true,
         name: "Betsy",
     },
     BestiaryEntryDef {
@@ -3321,14 +3531,6 @@ BestiaryEntryDef {
     // Swarmer", 509 "Giant Antlion Swarmer", 587 "Wandering Eye Fish" —
     // NOT the credit-id spellings).
     // E8 merge: the FlyingFish 224 entry is d37's row above (dup drop).
-    BestiaryEntryDef {
-        credit_id: "GiantFlyingAntlion",
-        net_id: 509,
-        kind: NpcKind::GiantFlyingAntlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Giant Antlion Swarmer",
-    },
 BestiaryEntryDef {
         credit_id: "EyeballFlyingFish",
         net_id: 587,
@@ -3578,6 +3780,7 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Spike Ball",
+    }
     }
     }
     },
@@ -4695,6 +4898,33 @@ pub fn try_entry_for_npc(
         // (`NPCID.cs:3735`, the populator's `GetExclusions`) — it folds
         // onto the blue archer's 379 entry (the Sharkron2 precedent).
         NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
+        // W4-d41 — the cavern 2-variants fold onto the 1-variants' credits
+        // (`ContentSamples.cs:1019-1020`: {495→494}, {497→496}); their
+        // draw modifiers hide them (the redigit dictionary's `Hide=true`).
+        NpcKind::Crawdad2 => NpcKind::Crawdad,
+        NpcKind::GiantShelly2 => NpcKind::GiantShelly,
+        // W4-d41 — the salamander colours fold onto the 499 entry
+        // (`ContentSamples.cs:1021-1025`: ALL of 498-506 → the 499
+        // credit; the redigit dictionary hides 498/500-506).
+        NpcKind::Salamander
+        | NpcKind::Salamander3
+        | NpcKind::Salamander4
+        | NpcKind::Salamander5
+        | NpcKind::Salamander6
+        | NpcKind::Salamander7
+        | NpcKind::Salamander8
+        | NpcKind::Salamander9 => NpcKind::Salamander2,
+        // W4-d41 — the Dune Splicer segments fold onto the head's entry
+        // (the leinfors dictionary's `Hide = true` — one credit for the
+        // whole worm, the Devourer precedent).
+        NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerHead,
+        // W4-d41 — the Tomb Crawler segments fold onto the head's entry
+        // (the leinfors dictionary's `Hide = true`).
+        NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerHead,
+        // W4-d41 — the sand poacher's wall form folds onto the walker's
+        // entry (`ContentSamples.cs:1038`: {531→530}; the leinfors
+        // dictionary's `Hide = true`).
+        NpcKind::DesertScorpionWall => NpcKind::DesertScorpionWalk,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -4876,6 +5106,30 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // Sharkron2 precedent). The DRAW sheet stays NPC_380 through
         // `texture_net_id`'s own row.
         NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
+        // W4-d41 — the cavern 2-variants ride the 1-variants' rows
+        // (`ContentSamples.cs:1019-1020`'s credit fold; the redigit
+        // dictionary's `Hide = true` keeps them out of the roster).
+        NpcKind::Crawdad2 => NpcKind::Crawdad,
+        NpcKind::GiantShelly2 => NpcKind::GiantShelly,
+        // W4-d41 — the salamander colours ride the 499 row
+        // (`ContentSamples.cs:1021-1025`'s credit fold).
+        NpcKind::Salamander
+        | NpcKind::Salamander3
+        | NpcKind::Salamander4
+        | NpcKind::Salamander5
+        | NpcKind::Salamander6
+        | NpcKind::Salamander7
+        | NpcKind::Salamander8
+        | NpcKind::Salamander9 => NpcKind::Salamander2,
+        // W4-d41 — the Dune Splicer segments ride the head's row (the
+        // leinfors dictionary's `Hide = true`).
+        NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerHead,
+        // W4-d41 — the Tomb Crawler segments ride the head's row (the
+        // leinfors dictionary's `Hide = true`).
+        NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerHead,
+        // W4-d41 — the sand poacher's wall form rides the walker's row
+        // (`ContentSamples.cs:1038`'s credit fold).
+        NpcKind::DesertScorpionWall => NpcKind::DesertScorpionWalk,
         other => other,
     };
     ENTRIES

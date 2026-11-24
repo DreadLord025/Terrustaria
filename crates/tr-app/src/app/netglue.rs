@@ -4312,9 +4312,108 @@ fn npc_seed(
         crate::npc::NpcKind::ChatteringTeethBomb
         | crate::npc::NpcKind::CultistArcherBlue
         | crate::npc::NpcKind::CultistArcherWhite => {
+        // W4-d41 — the cavern crawdads/shellies (aiStyle 3/39): the
+        // ground walkers plant their feet on the column surface (the
+        // scarecrow band's shape; `NPC.cs:14666-14690` writes no
+        // noGravity/noTileCollide).
+        crate::npc::NpcKind::Crawdad
+        | crate::npc::NpcKind::Crawdad2
+        | crate::npc::NpcKind::GiantShelly
+        | crate::npc::NpcKind::GiantShelly2 => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d41 — the salamanders (aiStyle 3's shooter block): the
+        // ground walkers plant their feet (`NPC.cs:14691-14703` writes
+        // no noGravity/noTileCollide).
+        crate::npc::NpcKind::Salamander
+        | crate::npc::NpcKind::Salamander2
+        | crate::npc::NpcKind::Salamander3
+        | crate::npc::NpcKind::Salamander4
+        | crate::npc::NpcKind::Salamander5
+        | crate::npc::NpcKind::Salamander6
+        | crate::npc::NpcKind::Salamander7
+        | crate::npc::NpcKind::Salamander8
+        | crate::npc::NpcKind::Salamander9 => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d41 — the antlion charger (aiStyle 3): the ground walker
+        // plants its feet (`NPC.cs:14828-14840` writes no
+        // noGravity/noTileCollide).
+        crate::npc::NpcKind::GiantWalkingAntlion => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d41 — the antlion swarmer (aiStyle 44) + the Dune Splicer
+        // chain (aiStyle 6, noGravity/noTileCollide): the flyers ride the
+        // hover ctor (the net state overwrites the position below); the
+        // chain links rebuild through the worm pass — a lone segment
+        // dies finding no leader (the worm families' net shape).
+        crate::npc::NpcKind::GiantFlyingAntlion
+        | crate::npc::NpcKind::DuneSplicerHead
+        | crate::npc::NpcKind::DuneSplicerBody
+        | crate::npc::NpcKind::DuneSplicerTail => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d41 — the Tomb Crawler chain (aiStyle 6, noGravity/
+        // noTileCollide) + the solar fragments (516/519, noGravity): the
+        // flyers ride the hover ctor; the chain links rebuild through
+        // the worm pass.
+        crate::npc::NpcKind::TombCrawlerHead
+        | crate::npc::NpcKind::TombCrawlerBody
+        | crate::npc::NpcKind::TombCrawlerTail
+        | crate::npc::NpcKind::SolarFlare
+        | crate::npc::NpcKind::SolarGoop => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d41 — the ancient orbs (aiStyle 100/101, noGravity/
+        // noTileCollide): the flyers ride the hover ctor.
+        crate::npc::NpcKind::AncientLight | crate::npc::NpcKind::AncientDoom => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d41 — the desert ghouls (aiStyle 3): the ground walkers
+        // plant their feet (`NPC.cs:14882-14919` writes no
+        // noGravity/noTileCollide).
+        crate::npc::NpcKind::DesertGhoul
+        | crate::npc::NpcKind::DesertGhoulCorruption
+        | crate::npc::NpcKind::DesertGhoulCrimson => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d41 — the hallowed ghoul + the lamias + the sand poacher
+        // walker (aiStyle 3): the ground walkers plant their feet.
+        crate::npc::NpcKind::DesertGhoulHallow
+        | crate::npc::NpcKind::DesertLamiaLight
+        | crate::npc::NpcKind::DesertLamiaDark
+        | crate::npc::NpcKind::DesertScorpionWalk => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d41 — the sand poacher's wall form (aiStyle 40, noGravity):
+        // the flyer rides the hover ctor.
+        crate::npc::NpcKind::DesertScorpionWall => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d41 — the basilisk + the tortured soul + the bride (aiStyle
+        // 3) + the slimes (aiStyle 1): the ground walkers plant their
+        // feet.
+        crate::npc::NpcKind::DesertBeast
+        | crate::npc::NpcKind::DemonTaxCollector
+        | crate::npc::NpcKind::TheBride
+        | crate::npc::NpcKind::SlimeSpiked
+        | crate::npc::NpcKind::SandSlime => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d41 — the critters (aiStyle 7) + the tumbler (aiStyle 26):
+        // the ground walkers plant their feet.
+        crate::npc::NpcKind::SquirrelRed
+        | crate::npc::NpcKind::SquirrelGold
+        | crate::npc::NpcKind::PartyBunny
+        | crate::npc::NpcKind::Tumbleweed => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
     })
+}
 }
 }
 }

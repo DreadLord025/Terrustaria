@@ -231,6 +231,20 @@ const SFX_CUES: &[(&str, u32)] = &[
     // content; the S1-E-21 bank-gap close.
     ("NPC_Hit_56", 3),
     ("NPC_Killed_60", 4),
+    // W4-d41 — the cavern crawdads' NPCHit33 (`NPC.cs:14674`) and the
+    // shellies' NPCHit38 (`:14686`) — the bank-gap close.
+    ("NPC_Hit_33", 3),
+    ("NPC_Hit_38", 3),
+    // W4-d41 — the salamanders' NPCHit50 (`NPC.cs:14699`).
+    ("NPC_Hit_50", 3),
+    // W4-d41 — the antlion charger's NPCHit31 (`NPC.cs:14836`) and the
+    // swarmer's NPCHit32 (`:14850`).
+    ("NPC_Hit_31", 3),
+    ("NPC_Hit_32", 3),
+    // W4-d41 — the desert ghouls' NPCHit37 (`NPC.cs:14890`).
+    ("NPC_Hit_37", 3),
+    // W4-d41 — the sand poachers' NPCHit13 (`NPC.cs:14941`).
+    ("NPC_Hit_13", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -340,6 +354,20 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_25", 4),
     // W4-g8 lane 1 batch 3 — the FlyingSnake's NPCDeath26 (`NPC.cs:11922`).
     ("NPC_Killed_26", 4),
+    // W4-d41 — the cavern crawdads' NPCDeath36 (`NPC.cs:14675`) and the
+    // shellies' NPCDeath41 (`:14687`) — the bank-gap close.
+    ("NPC_Killed_36", 4),
+    ("NPC_Killed_41", 4),
+    // W4-d41 — the salamanders' NPCDeath53 (`NPC.cs:14700`).
+    ("NPC_Killed_53", 4),
+    // W4-d41 — the antlion charger's NPCDeath34 (`NPC.cs:14837`) and the
+    // swarmer's NPCDeath35 (`:14851`).
+    ("NPC_Killed_34", 4),
+    ("NPC_Killed_35", 4),
+    // W4-d41 — the desert ghouls' NPCDeath40 (`NPC.cs:14891`).
+    ("NPC_Killed_40", 4),
+    // W4-d41 — the sand poachers' NPCDeath19 (`NPC.cs:14942`).
+    ("NPC_Killed_19", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),
@@ -1419,6 +1447,9 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             1 => "NPC_Hit_1",
+            // W4-d41 — the Tumbleweed's hop cue (`NPC.cs:62568`:
+            // `PlaySound(3, base.Center, 11)`).
+            11 => "NPC_Hit_11",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Hit_", 3)?;

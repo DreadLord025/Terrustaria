@@ -863,6 +863,13 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESERT_SHEETS)
             .chain(CULTIST_DRAGON_SHEETS)
             .chain(CRITTER_SHEETS)
+            .chain(CAVERN_SHEETS)
+            .chain(DESERT_SHEETS)
+            .chain(TOMB_SOLAR_SHEETS)
+            .chain(ANCIENT_GHOUL_SHEETS)
+            .chain(LAMIA_SCORPION_SHEETS)
+            .chain(BASILISK_SOUL_SHEETS)
+            .chain(CRITTER_TUMBLER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1141,10 +1148,10 @@ fn tower_draw<'a>(
 fn npc_add_height(n: &Npc) -> f32 {
     use NpcKind::*;
     // `n.townNPC` in the C# — the port's `is_town_npc` list is narrower
-    // than the vanilla's (it omits the Mechanic/the Wizard/the Tavernkeep
-    // and the rest of the post-1.1 arrivals), so the vanilla's own
-    // `townNPC = true` family is added here rather than in the enum
-    // helper the housing/town machine reads.
+    // than the vanilla's (it omits the Mechanic/the Wizard and the rest of
+    // the post-1.1 arrivals; the Tavernkeep joined it in W4-d41), so the
+    // vanilla's own `townNPC = true` family is added here rather than in
+    // the enum helper the housing/town machine reads.
     let town = n.kind.is_town_npc()
         || matches!(
             n.kind,
@@ -1835,6 +1842,39 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::FairyCritterGreen => 584,
         NpcKind::FairyCritterBlue => 585,
         NpcKind::WindyBalloon => 594,
+        // W4-d41 — the cavern crawdads/shellies: the 2-variants' bestiary
+        // credits fold onto the 1-variants (`ContentSamples.cs:1019-1020`),
+        // but their DRAW sheets are their own NPC_495/NPC_497 — the
+        // fishron-hazard precedent.
+        NpcKind::Crawdad2 => 495,
+        NpcKind::GiantShelly2 => 497,
+        // W4-d41 — the salamander colours fold onto the 499 bestiary
+        // entry, but their DRAW sheets are their own NPC_<type> — the
+        // fishron-hazard precedent. (499 is the entry's own id, so
+        // Salamander2 rides the fallback.)
+        NpcKind::Salamander => 498,
+        NpcKind::Salamander3 => 500,
+        NpcKind::Salamander4 => 501,
+        NpcKind::Salamander5 => 502,
+        NpcKind::Salamander6 => 503,
+        NpcKind::Salamander7 => 504,
+        NpcKind::Salamander8 => 505,
+        NpcKind::Salamander9 => 506,
+        // W4-d41 — the Dune Splicer segments fold onto the head's
+        // bestiary entry, but their DRAW sheets are their own
+        // NPC_511/NPC_512 — the fishron-hazard precedent. (510 is the
+        // entry's own id, so the head rides the fallback.)
+        NpcKind::DuneSplicerBody => 511,
+        NpcKind::DuneSplicerTail => 512,
+        // W4-d41 — the Tomb Crawler segments fold onto the head's
+        // bestiary entry, but their DRAW sheets are their own
+        // NPC_514/NPC_515. (513 is the entry's own id.)
+        NpcKind::TombCrawlerBody => 514,
+        NpcKind::TombCrawlerTail => 515,
+        // W4-d41 — the sand poacher's wall form folds onto the walker's
+        // bestiary entry, but its DRAW sheet is its own NPC_531. (530 is
+        // the entry's own id.)
+        NpcKind::DesertScorpionWall => 531,
         _ => kind.net_id() as u16,
     }
 }
@@ -2443,6 +2483,48 @@ pub(crate) const CRITTER_SHEETS: &[u32] = &[
     379, // the blue Cultist Archer
     380, // the white Cultist Archer (the Hide fold's own DRAW sheet)
 ];
+
+/// W4-d41 — the cavern crawdads'/shellies' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `WAVE_A_SHEETS`. The 2-variants
+/// draw their OWN NPC_495/NPC_497 art (the bestiary credit folds onto the
+/// 1-variant, the draw sheet does not — `texture_net_id`).
+pub(crate) const CAVERN_SHEETS: &[u32] = &[
+    494, 495, 496, 497,
+    // W4-d41 — the nine salamander colours (498-506).
+    498, 499, 500, 501, 502, 503, 504, 505, 506,
+];
+
+/// W4-d41 — the desert antlions' + the Dune Splicer chain's own sheets
+/// (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id
+/// in `NpcAssets::npc_sheets` exactly like `CAVERN_SHEETS`.
+pub(crate) const DESERT_SHEETS: &[u32] = &[508, 509, 510, 511, 512];
+
+/// W4-d41 — the Tomb Crawler chain's + the solar fragments' own sheets
+/// (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id
+/// in `NpcAssets::npc_sheets` exactly like `DESERT_SHEETS`.
+pub(crate) const TOMB_SOLAR_SHEETS: &[u32] = &[513, 514, 515, 516, 519];
+
+/// W4-d41 — the ancient orbs' + the desert ghouls' own sheets (the
+/// vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `TOMB_SOLAR_SHEETS`.
+pub(crate) const ANCIENT_GHOUL_SHEETS: &[u32] = &[522, 523, 524, 525, 526];
+
+/// W4-d41 — the hallowed ghoul's + the lamias' + the sand poachers' own
+/// sheets (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla
+/// net id in `NpcAssets::npc_sheets` exactly like `ANCIENT_GHOUL_SHEETS`.
+pub(crate) const LAMIA_SCORPION_SHEETS: &[u32] = &[527, 528, 529, 530, 531];
+
+/// W4-d41 — the basilisk's + the tortured soul's + the slimes' + the
+/// bride's own sheets (the vanilla's `TextureAssets.Npc[type]`), keyed by
+/// the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `LAMIA_SCORPION_SHEETS`.
+pub(crate) const BASILISK_SOUL_SHEETS: &[u32] = &[532, 534, 535, 536, 537];
+
+/// W4-d41 — the critters' + the tumbler's own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `BASILISK_SOUL_SHEETS`.
+pub(crate) const CRITTER_TUMBLER_SHEETS: &[u32] = &[538, 539, 540, 546];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -5390,6 +5472,108 @@ pub(crate) fn draw_npcs(
             NpcKind::CultistArcherWhite => {
                 pumpkin_moon_draw(assets.npc_sheet(380), npc_rows(380), n, w, h)
             }
+            // W4-d41 — the cavern crawdads/shellies draw their OWN sheets
+            // (`CAVERN_SHEETS`) at `Main.npcFrameCount[type]` rows
+            // (`Main.cs:67082`: 494/495 eight frames, 496/497 twelve) with
+            // the generic centred anchor — the wave-A shape.
+            NpcKind::Crawdad | NpcKind::Crawdad2 | NpcKind::GiantShelly | NpcKind::GiantShelly2 => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the salamanders draw their OWN sheets
+            // (`CAVERN_SHEETS`) at the 11-row strip
+            // (`Main.npcFrameCount[498..506]` = 11, `Main.cs:67082`) with
+            // the generic centred anchor — the wave-A shape.
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the desert antlions + the Dune Splicer chain draw
+            // their OWN sheets (`DESERT_SHEETS`) at `Main.npcFrameCount`
+            // rows (`Main.cs:67082`: 508 six, 509 nine, 510-512 one) with
+            // the generic centred anchor — the wave-A shape. The chain's
+            // segments rotate with the trail (the rotation whitelist).
+            NpcKind::GiantWalkingAntlion
+            | NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the Tomb Crawler chain + the solar fragments draw
+            // their OWN sheets (`TOMB_SOLAR_SHEETS`) at
+            // `Main.npcFrameCount` rows (`Main.cs:67082`: 513-515 one,
+            // 516 four, 519 one) with the generic centred anchor. The
+            // chain's segments rotate with the trail; the flare spins.
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail
+            | NpcKind::SolarGoop => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the ancient orbs + the desert ghouls draw their
+            // OWN sheets (`ANCIENT_GHOUL_SHEETS`) at
+            // `Main.npcFrameCount` rows (`Main.cs:67082`: 522 one, 523
+            // five, 524-526 eight) with the generic centred anchor.
+            NpcKind::AncientLight
+            | NpcKind::AncientDoom
+            | NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the hallowed ghoul + the lamias + the sand
+            // poachers draw their OWN sheets (`LAMIA_SCORPION_SHEETS`)
+            // at `Main.npcFrameCount` rows (`Main.cs:67082`: 527/528/529
+            // eight/nine/nine, 530 five, 531 four) with the generic
+            // centred anchor. The wall form rotates with its flight.
+            NpcKind::DesertGhoulHallow
+            | NpcKind::DesertLamiaLight
+            | NpcKind::DesertLamiaDark
+            | NpcKind::DesertScorpionWalk
+            | NpcKind::DesertScorpionWall => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride draw their OWN sheets (`BASILISK_SOUL_SHEETS`)
+            // at `Main.npcFrameCount` rows (`Main.cs:67082`: 532 eight,
+            // 534 eight, 535 two, 536 three, 537 three) with the generic
+            // centred anchor. The spiked slime's 1.1 scale rides
+            // `scaled_anchor` (the BlazingWheel convention).
+            NpcKind::DesertBeast
+            | NpcKind::DemonTaxCollector
+            | NpcKind::TheBride
+            | NpcKind::SandSlime => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            NpcKind::SlimeSpiked => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d41 — the critters + the tumbler draw their OWN sheets
+            // (`CRITTER_TUMBLER_SHEETS`) at `Main.npcFrameCount` rows
+            // (`Main.cs:67082`: 538/539 six, 540 seven, 546 one) with
+            // the generic centred anchor. The tumbler rotates with its
+            // roll (the rotation whitelist).
+            NpcKind::SquirrelRed
+            | NpcKind::SquirrelGold
+            | NpcKind::PartyBunny
+            | NpcKind::Tumbleweed => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -5433,6 +5617,15 @@ pub(crate) fn draw_npcs(
                 k[3] as f32 / 255.0 * fade,
             ]
         } else {
+            // W4-d41 — the sand slime's (537) `color = new Color(255,
+            // 250, 0, 0) * 0.2f` row (`NPC.cs:15869`, the byte-truncated
+            // (51, 50, 0, 0)) rides the generic draw's `color !=
+            // default` overlay (`Main.cs:25513-25516`) through
+            // `GetColor` (`NPC.cs:93695-93750`): the overlay's alpha is
+            // `color.A - (255 - light.A)` = 0, so it draws nothing in
+            // the premultiplied pipeline — the base GetAlpha pass (the
+            // light * fade here, the alpha-50 ctor row) is the whole
+            // visible tint. Documented no-op, not a missing row.
             [c[0] * fade, c[1] * fade, c[2] * fade, fade]
         };
         // W4-c3 gap 4 — the style-10 family's `GetAlpha` overrides, ported
@@ -5584,6 +5777,33 @@ pub(crate) fn draw_npcs(
                     | NpcKind::WyvernBody2
                     | NpcKind::WyvernBody3
                     | NpcKind::WyvernTail
+                    // W4-d41 — the Dune Splicer chain's trail/head
+                    // rotations (the same `AI_006` atan2 tilt) and the
+                    // antlion swarmer's velocity tilt (`NPC.cs:30963`,
+                    // `velocity.X * 0.1`).
+                    | NpcKind::DuneSplicerHead
+                    | NpcKind::DuneSplicerBody
+                    | NpcKind::DuneSplicerTail
+                    // W4-d41 — the Tomb Crawler chain's trail/head
+                    // rotations, the Solar Flare's spin
+                    // (`NPC.cs:21499`, `0.1 * direction`) and the Solar
+                    // Goop's velocity aim (`:39953`, `ToRotation - π/2`).
+                    | NpcKind::TombCrawlerHead
+                    | NpcKind::TombCrawlerBody
+                    | NpcKind::TombCrawlerTail
+                    | NpcKind::SolarGoop
+                    // W4-d41 — the Ancient Light's velocity aim
+                    // (`NPC.cs:40012`, `ToRotation - π/2`) and the
+                    // Ancient Doom's scale/alpha ramp (the rotation
+                    // stays 0 — the orb pulses, it does not spin).
+                    | NpcKind::AncientLight
+                    | NpcKind::AncientDoom
+                    // W4-d41 — the sand poacher's wall form rotates with
+                    // its flight (`NPC.cs:29810-29815`, the atan2 aim +
+                    // π/2).
+                    | NpcKind::DesertScorpionWall
+                    // W4-d41 — the tumbler's roll rotation
+                    // (`NPC.cs:62921`, `velocity.X * 0.05`).
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,

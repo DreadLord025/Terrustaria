@@ -2680,6 +2680,252 @@ pub enum NpcKind {
     /// Sharkron2 precedent), `cs_id` rides the folded net id (the
     /// s1_f_3 invariant).
     CultistArcherWhite,
+    /// `NPCID.Crawdad` (494, `NPCID.cs:11661`) — the cavern crab
+    /// (`aiStyle 3`, `NPC.cs:14666-14677`): 28x22, dmg 28, def 6, 50 HP,
+    /// kb 1 (the head default — the branch writes no row), value 120,
+    /// NPCHit33/NPCDeath36. The `AI_003_Fighters` charge family
+    /// (`NPC.cs:58262-58321`): the 42-px close-range stop into the
+    /// `ai[2]` charge, the ×1.5 charge damage. W4-d41.
+    Crawdad,
+    /// `NPCID.Crawdad2` (495, `NPCID.cs:11663`) — the second cavern crab
+    /// colour (`NPC.cs:14666-14677`'s `type >= 494 && <= 495` group —
+    /// identical stats). The bestiary credit folds onto 494
+    /// (`ContentSamples.cs:1020`); the draw sheet stays NPC_495. W4-d41.
+    Crawdad2,
+    /// `NPCID.GiantShelly` (496, `NPCID.cs:11665`) — the cavern snail
+    /// (`aiStyle 39`, `NPC.cs:14678-14690`): 28x22, dmg 16, def 12,
+    /// 50 HP, kb 0.75, value 120, NPCHit38/NPCDeath41. The style-39
+    /// machine's shelly branches (`npc_ai_style39.rs`: the 0.5 walk cap,
+    /// the +2/+4 aggro, the 0.5-tick wind-up, the ×1.5 lunge damage,
+    /// the ×0.75 lunge speed). W4-d41.
+    GiantShelly,
+    /// `NPCID.GiantShelly2` (497, `NPCID.cs:11667`) — the second cavern
+    /// snail colour (`NPC.cs:14678-14690`'s `type >= 496 && <= 497`
+    /// group — identical stats). The bestiary credit folds onto 496
+    /// (`ContentSamples.cs:1019`); the draw sheet stays NPC_497. W4-d41.
+    GiantShelly2,
+    /// `NPCID.Salamander` (498, `NPCID.cs:11669`) — the cavern
+    /// salamander (`aiStyle 3`, `NPC.cs:14691-14703`): 24x44, dmg 18,
+    /// def 10, 65 HP, kb 0.45, value 120, NPCHit50/NPCDeath53. The
+    /// `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
+    /// 498-506 terms): the 70-tick cadence, the 7-speed spit 572 at
+    /// 14 dmg, the 190-px engage range, the centre −8 aim anchor.
+    /// W4-d41.
+    Salamander,
+    /// `NPCID.Salamander2` (499, `NPCID.cs:11671`) — the second
+    /// salamander colour (`NPC.cs:14691-14703`'s `type >= 498 &&
+    /// <= 506` group — identical stats). The bestiary credit folds onto
+    /// 499 (`ContentSamples.cs:1021-1025`); the draw sheet stays
+    /// NPC_499. W4-d41.
+    Salamander2,
+    /// `NPCID.Salamander3` (500, `NPCID.cs:11673`) — the third
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_500. W4-d41.
+    Salamander3,
+    /// `NPCID.Salamander4` (501, `NPCID.cs:11675`) — the fourth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_501. W4-d41.
+    Salamander4,
+    /// `NPCID.Salamander5` (502, `NPCID.cs:11677`) — the fifth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_502. W4-d41.
+    Salamander5,
+    /// `NPCID.Salamander6` (503, `NPCID.cs:11679`) — the sixth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_503. W4-d41.
+    Salamander6,
+    /// `NPCID.Salamander7` (504, `NPCID.cs:11681`) — the seventh
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_504. W4-d41.
+    Salamander7,
+    /// `NPCID.Salamander8` (505, `NPCID.cs:11683`) — the eighth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_505. W4-d41.
+    Salamander8,
+    /// `NPCID.Salamander9` (506, `NPCID.cs:11685`) — the ninth
+    /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
+    /// folds onto 499; the draw sheet stays NPC_506. W4-d41.
+    Salamander9,
+    /// `NPCID.GiantWalkingAntlion` (508, `NPCID.cs:11687`) — the desert
+    /// antlion charger (`aiStyle 3`, `NPC.cs:14828-14840`): 50x31,
+    /// dmg 38, def 16, 110 HP, kb 0.4, value 175, NPCHit31/NPCDeath34.
+    /// The `AI_003_Fighters` 508/580/582 lerp machine
+    /// (`NPC.cs:58139-58202`): the 2.5/10 base, the speed-tiered
+    /// 3.5/90 + 3/70 bumps, the near-ground counter brake, the airborne
+    /// weight ×3. W4-d41.
+    GiantWalkingAntlion,
+    /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11689`) — the desert
+    /// antlion swarmer (`aiStyle 44`, `NPC.cs:14841-14853`): 40x31,
+    /// dmg 34, def 12, 90 HP, kb 0.3, value 195, NPCHit32/NPCDeath35.
+    /// The style-44 swimmer's 509 parameter overrides
+    /// (`npc_ai_style44.rs`: the 0.08/0.03 accel, the 4.5/2 caps, the
+    /// 40/150 bands, the swarm separation). W4-d41.
+    /// `NPCID.DuneSplicerHead` (510, `NPCID.cs:11691`) — the desert
+    /// worm's head (`aiStyle 6`, `NPC.cs:14773-14789`): 34x34, dmg 58,
+    /// def 18, 500 HP, kb 0, value 700, noGravity/noTileCollide/
+    /// behindTiles, npcSlots 5, NPCHit1/NPCDeath1. The `AI_006_Worms`
+    /// chain (`NPC.cs:51253-51276`): the Next(12,21) body budget, the
+    /// sandstorm 16/0.35 vs 10/0.25 dig tunables (`:51707-51718`).
+    /// W4-d41.
+    DuneSplicerHead,
+    /// `NPCID.DuneSplicerBody` (511, `NPCID.cs:11693`) — the desert
+    /// worm's body (`aiStyle 6`, `NPC.cs:14790-14808`): 34x34, dmg 54,
+    /// def 28, 500 HP, kb 0, value 700, noGravity/noTileCollide/
+    /// behindTiles, netAlways/dontCountMe/npcSlots 0. The bestiary
+    /// credit folds onto 510 (the head); the draw sheet stays NPC_511.
+    /// W4-d41.
+    DuneSplicerBody,
+    /// `NPCID.DuneSplicerTail` (512, `NPCID.cs:11695`) — the desert
+    /// worm's tail (`aiStyle 6`, `NPC.cs:14809-14827`): 34x34, dmg 50,
+    /// def 34, 500 HP, the rest of the 511 row. The bestiary credit
+    /// folds onto 510; the draw sheet stays NPC_512. W4-d41.
+    DuneSplicerTail,
+    /// `NPCID.TombCrawlerHead` (513, `NPCID.cs:11697`) — the desert
+    /// worm's head (`aiStyle 6`, `NPC.cs:14718-14734`): 22x22, dmg 18,
+    /// def 0, 60 HP, kb 0, value 130, noGravity/noTileCollide/
+    /// behindTiles, npcSlots 4, NPCHit1/NPCDeath1. The `AI_006_Worms`
+    /// chain (`NPC.cs:51229-51252`): the Next(6,10) body budget, the
+    /// 7/0.1 dig tunables (`:51682-51686`), the underground-desert
+    /// surface gate (`:51114-51117`). W4-d41.
+    TombCrawlerHead,
+    /// `NPCID.TombCrawlerBody` (514, `NPCID.cs:11699`) — the desert
+    /// worm's body (`aiStyle 6`, `NPC.cs:14735-14753`): 22x22, dmg 7,
+    /// def 12, 60 HP, kb 0, value 130, noGravity/noTileCollide/
+    /// behindTiles, netAlways/dontCountMe/npcSlots 0. The bestiary
+    /// credit folds onto 513 (the head); the draw sheet stays NPC_514.
+    /// W4-d41.
+    TombCrawlerBody,
+    /// `NPCID.TombCrawlerTail` (515, `NPCID.cs:11701`) — the desert
+    /// worm's tail (`aiStyle 6`, `NPC.cs:14754-14772`): 22x22, dmg 7,
+    /// def 14, 60 HP, the rest of the 514 row. The bestiary credit
+    /// folds onto 513; the draw sheet stays NPC_515. W4-d41.
+    TombCrawlerTail,
+    /// `NPCID.SolarFlare` (516, `NPCID.cs:11703`) — the solar pillar's
+    /// homing flare (`aiStyle 9`, `NPC.cs:15394-15408`): 26x26, dmg 100,
+    /// def 0, 1 HP, kb 0, noGravity (noTileCollide FALSE — it collides),
+    /// null sounds, alpha 0. The aiStyle-9 arm's 516 branches
+    /// (`NPC.cs:21380-21406`/`:21497-21515`): the alpha ramp, the
+    /// RotatedByRandom launch, the collide/proximity self-strike, the
+    /// 15-blend homing steer. W4-d41.
+    /// `NPCID.SolarGoop` (519, `NPCID.cs:11709`) — the solar pillar's
+    /// falling fragment (`aiStyle 99`, `NPC.cs:15409-15423`): 26x26,
+    /// dmg 120, def 0, 1 HP, kb 0, noGravity (noTileCollide FALSE),
+    /// null sounds, alpha 0. The aiStyle-99 arm (`NPC.cs:39927-39990`):
+    /// the 0.2 gravity to the 12 cap, the ground-strike 5-tick
+    /// HitEffect death. W4-d41.
+    SolarGoop,
+    /// `NPCID.AncientLight` (522, `NPCID.cs:11721`) — the cultist's
+    /// light orb (`aiStyle 100`, `NPC.cs:15780-15794`): 26x26, dmg 120,
+    /// def 0, 400 HP, kb 0, noGravity/noTileCollide, null sounds,
+    /// alpha 0. The aiStyle-100 arm (`NPC.cs:39991-40066`): the
+    /// ground-strike latch, the ai[2]/ai[3] launch velocity, the
+    /// 60-tick rotation + the 120-tick decay. W4-d41.
+    AncientLight,
+    /// `NPCID.AncientDoom` (523, `NPCID.cs:11723`) — the cultist's doom
+    /// orb (`aiStyle 101`, `NPC.cs:15795-15812`): 42x42, dmg 30, def 0,
+    /// 500 HP, kb 0, noGravity/noTileCollide, alpha 255, chaseable
+    /// false, canGhostHeal false, NPCHit1/NPCDeath6. The aiStyle-101
+    /// arm (`NPC.cs:40067-40146`): the 120-tick scale/alpha ramp, the
+    /// 420-tick 4-spoke 593 burst, the boss-link orphan death. W4-d41.
+    AncientDoom,
+    /// `NPCID.DesertGhoul` (524, `NPCID.cs:11725`) — the desert ghoul
+    /// (`aiStyle 3`, `NPC.cs:14882-14919`): 24x44, dmg 50, def 26,
+    /// 180 HP, kb 0.6, value 500, npcSlots 0.5, NPCHit37/NPCDeath40.
+    /// The `AI_003_Fighters` cap-2 group (`NPC.cs:57554-57579`).
+    /// W4-d41.
+    DesertGhoul,
+    /// `NPCID.DesertGhoulCorruption` (525, `NPCID.cs:11727`) — the
+    /// corrupt ghoul (`NPC.cs:14897-14903`): the 524 row +70 HP, +4 def,
+    /// +10 dmg, −0.1 kb, +150 value (250 HP, 30 def, 60 dmg, kb 0.5,
+    /// value 650). W4-d41.
+    DesertGhoulCorruption,
+    /// `NPCID.DesertGhoulCrimson` (526, `NPCID.cs:11729`) — the crimson
+    /// ghoul (`NPC.cs:14904-14910`): the 524 row +40 HP, +6 def, +14 dmg,
+    /// −0.1 kb, +150 value (220 HP, 32 def, 64 dmg, kb 0.5, value 650).
+    /// W4-d41.
+    DesertGhoulCrimson,
+    /// `NPCID.DesertGhoulHallow` (527, `NPCID.cs:11731`) — the hallowed
+    /// ghoul (`NPC.cs:14911-14917`): the 524 row +120 HP, +6 def, +4 dmg,
+    /// −0.2 kb, +250 value (300 HP, 32 def, 54 dmg, kb 0.4, value 750).
+    /// W4-d41.
+    DesertGhoulHallow,
+    /// `NPCID.DesertLamiaLight` (528, `NPCID.cs:11733`) — the light
+    /// lamia (`aiStyle 3`, `NPC.cs:14920-14932`): 24x44, dmg 52, def 28,
+    /// 350 HP, kb 0.35, value 600, NPCHit1/NPCDeath1. The
+    /// `AI_003_Fighters` cap-3 group (`NPC.cs:57520-57553`). W4-d41.
+    DesertLamiaLight,
+    /// `NPCID.DesertLamiaDark` (529, `NPCID.cs:11735`) — the dark lamia
+    /// (`NPC.cs:14920-14932`'s `type >= 528 && <= 529` group — identical
+    /// stats). W4-d41.
+    DesertLamiaDark,
+    /// `NPCID.DesertScorpionWalk` (530, `NPCID.cs:11737`) — the sand
+    /// poacher's walker form (`aiStyle 3`, `NPC.cs:14933-14945`):
+    /// 50x20, dmg 66, def 24, 320 HP, kb 0.5, value 600,
+    /// NPCHit13/NPCDeath19. The `AI_003_Fighters` cap-2 group
+    /// (`NPC.cs:57554-57579`); the wall-stick transform into 531
+    /// (`:58875-58905`). W4-d41.
+    DesertScorpionWalk,
+    /// `NPCID.DesertScorpionWall` (531, `NPCID.cs:11739`) — the sand
+    /// poacher's wall form (`aiStyle 40`, `NPC.cs:14946-14959`):
+    /// 36x36, dmg 66, def 24, 320 HP, kb 0.5, value 600, noGravity,
+    /// NPCHit13/NPCDeath19. The aiStyle-40 wall-crawler
+    /// (`NPC.cs:29666-29898`): the 4/0.16 flight, the 8-px snapped aim,
+    /// the bounce, the no-wall transform back into 530. The bestiary
+    /// credit folds onto 530 (`ContentSamples.cs:1038`); the draw sheet
+    /// stays NPC_531. W4-d41.
+    DesertScorpionWall,
+    /// `NPCID.DesertBeast` (532, `NPCID.cs:11741`) — the basilisk
+    /// (`aiStyle 3`, `NPC.cs:14960-14973`): 32x31, dmg 65, def 34,
+    /// 270 HP, kb 0.3, value 800, npcSlots 0.75, NPCHit1/NPCDeath1.
+    /// The `AI_003_Fighters` carrier group (`NPC.cs:58232-58237`:
+    /// the 5/0.15/0.98 row). W4-d41.
+    DesertBeast,
+    /// `NPCID.DemonTaxCollector` (534, `NPCID.cs:11745`) — the tortured
+    /// soul (`aiStyle 3`, `NPC.cs:15813-15828`): 18x40, dmg 14, def 20,
+    /// 400 HP, kb 0.3, value 0, lavaImmune, netAlways, rarity 2,
+    /// NPCHit1/NPCDeath1. The humanoid FindFrame group
+    /// (`NPC.cs:68615`); the purification-powder transform into the
+    /// Tax Collector 441 (`Projectile.cs:14728-14733`). W4-d41.
+    DemonTaxCollector,
+    /// `NPCID.SlimeSpiked` (535, `NPCID.cs:11747`) — the spiked slime
+    /// (`aiStyle 1`, `NPC.cs:15829-15842`): 24x18, dmg 14, def 5,
+    /// 50 HP, scale 1.1, value 40, NPCHit1/NPCDeath1. The slime hop
+    /// machine + the 2-row hop strip (`NPC.cs:70818-70846`). W4-d41.
+    SlimeSpiked,
+    /// `NPCID.TheBride` (536, `NPCID.cs:11749`) — the blood-moon bride
+    /// (`aiStyle 3`, `NPC.cs:15843-15856`): 18x40, dmg 14, def 8,
+    /// 200 HP, kb 0.5, value 1000, rarity 2, NPCHit1/NPCDeath2. The
+    /// walker FindFrame group (`NPC.cs:76344-76391`). W4-d41.
+    TheBride,
+    /// `NPCID.SandSlime` (537, `NPCID.cs:11751`) — the sand slime
+    /// (`aiStyle 1`, `NPC.cs:15857-15872`): 30x24, dmg 15, def 5,
+    /// 50 HP, kb 0.7, value 75, alpha 50, color (255,250,0,0)*0.2,
+    /// npcSlots 2, NPCHit1/NPCDeath1. The slime hop machine + the
+    /// 3-row hop strip (`NPC.cs:70818-70846`). W4-d41.
+    SandSlime,
+    /// `NPCID.SquirrelRed` (538, `NPCID.cs:11753`) — the red squirrel
+    /// critter (`aiStyle 7`, `NPC.cs:15873-15884`): 18x20, dmg 0,
+    /// def 0, 5 HP, catchItem 3563, NPCHit1/NPCDeath1. The town-critter
+    /// walker + the 6-row hop strip (`NPC.cs:76459-76512`). W4-d41.
+    SquirrelRed,
+    /// `NPCID.SquirrelGold` (539, `NPCID.cs:11755`) — the gold squirrel
+    /// critter (`aiStyle 7`, `NPC.cs:15885-15897`): 18x20, dmg 0,
+    /// def 0, 5 HP, catchItem 3564, rarity 3, NPCHit1/NPCDeath1. The
+    /// gold-critter bestiary fold (`BestiaryDatabaseNPCsPopulator.cs:716`:
+    /// {539→[299,538]}). W4-d41.
+    SquirrelGold,
+    /// `NPCID.PartyBunny` (540, `NPCID.cs:11757`) — the party bunny
+    /// critter (`aiStyle 7`, `NPC.cs:9336-9347`'s 46/303/337/540 group):
+    /// 18x20, dmg 0, def 0, 5 HP, catchItem 2019, NPCHit1/NPCDeath1.
+    /// The town-critter walker + the 7-row hop strip
+    /// (`NPC.cs:76857-76904`). W4-d41.
+    /// `NPCID.Tumbleweed` (546, `NPCID.cs:11769`) — the angry tumbler
+    /// (`aiStyle 26`, `NPC.cs:15972-15984`): 30x30, dmg 30, def 6,
+    /// 50 HP, kb 0.8, value 100, NPCHit11/NPCDeath15. The
+    /// `AI_026_Unicorns` wind-driven walk (`NPC.cs:62703-62716`: the
+    /// 4 + wind*3 cap, the 0.05 accel, the 0.92 turnaround), the
+    /// rotation tail (`:62919-62923`), the desert despawn gate
+    /// (`:62570-62580`). W4-d41.
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3485,6 +3731,20 @@ pub struct Npc {
     /// slot order (the `twin_time_lefts` pre-pass convention — the AI's
     /// `&World` borrow cannot see its siblings).
     pub tumbleweed_siblings: Vec<(f32, f32)>,
+    /// W4-d41 — `Main.windSpeedTarget` pre-stamped by the sim — the
+    /// Tumbleweed's wind-driven walk cap reads it (`NPC.cs:62709-62714`).
+    pub wind_speed_target: f32,
+    /// W4-d41 — `Main.player[target].ZoneSandstorm` / `ZoneDesert`
+    /// pre-stamped by the sim — the Tumbleweed's sandstorm wind gate +
+    /// the desert despawn gate read them (`NPC.cs:62710`/`:62570`).
+    pub zone_sandstorm: bool,
+    pub zone_desert: bool,
+    /// W4-d41 — the OTHER active Tumbleweeds' (x, y) in slot order — the
+    /// AI_026 sibling-spread scan's inputs (`NPC.cs:62382-62403`'s
+    /// `Main.npc[i]` loop). `Npc::update_rng` cannot see its siblings, so
+    /// the sim's pre-pass stamps this (the twin_time_lefts carrier
+    /// precedent); outside the sim it stays empty.
+    pub tumbler_siblings: Vec<(f32, f32)>,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -3743,6 +4003,17 @@ pub struct Npc {
     /// `NPC.cs:51061`'s `SpawnStardustMark_StardustWorm`): the sim
     /// resolves the 405/402/407 pick (the 540 hop unmodelled).
     pub wants_stardust_mark: bool,
+    /// W4-d41 — the Solar Flare spawn request (`NPC.cs:39729`'s
+    /// StardustJellyfishBig ai[0]==2 arm / `:56849`'s SolarDrakomire
+    /// charge arm): `(x, y)` in world px — the sim spawns the 516
+    /// Bottom-anchored (`NPC.cs:80770`). The jellyfish's is the
+    /// centre+(0,26); the drakomire's the centre+(spriteDir*45, 8).
+    pub wants_solar_flare: Option<(f32, f32)>,
+    /// W4-d41 — the Solar Goop spawn request (`NPC.cs:39378`'s
+    /// StardustCellSmall aiStyle-95 arm): `(x, y, vx, vy)` — the sim
+    /// spawns the 519 at the truncated position with the launch
+    /// velocity (`:39379`).
+    pub wants_solar_goop: Option<(f32, f32, f32, f32)>,
     pub wants_obstruct: bool,
     pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
@@ -4909,6 +5180,12 @@ impl Npc {
                 } else {
                     1.0
                 }
+                // W4-d41 — the spiked slime's `scale = 1.1f` row
+                // (`NPC.cs:15837`).
+                .unwrap_or(match kind {
+                    NpcKind::BlazingWheel => 1.2,
+                    NpcKind::SlimeSpiked => 1.1,
+                    _ => 1.0,
                 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
@@ -4991,8 +5268,9 @@ impl Npc {
             // `dontTakeDamage = false`, `:36383`) and the BlazingWheel
             // (`NPC.cs:9729`, the small-kinds wave). The shell 392's row
             // (`:14008`) rides the aiStyle-75 family slice; the Brain's
-            // Creeper shield is written by the sim. Every other kind keeps
-            // the false default (`NPC.cs:8507`, the SetDefaults reset).
+            // Creeper shield is written by the sim. The lane portal 549's
+            // row (`:16049`, W4-d41) joins the list below. Every other kind
+            // keeps the false default (`NPC.cs:8507`, the SetDefaults reset).
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
@@ -5019,6 +5297,13 @@ impl Npc {
                     // `dontTakeDamage = true` row (`NPC.cs:9694`): the
                     // dungeon trap is unkillable by damage.
                     | NpcKind::SpikeBall
+                NpcKind::PlanterasHook
+                    | NpcKind::MartianSaucerCore
+                    | NpcKind::BlazingWheel
+                    // W4-d41: the lane portal 549 spawns unkillable
+                    // (`NPC.cs:16049`); the aiStyle-106 fade's 550-tick end
+                    // drops the flag and zeroes the life (`:41040-41042`).
+                    | NpcKind::DD2LanePortal
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -5037,6 +5322,9 @@ impl Npc {
                 kind,
                 NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite
             ),
+            // W4-d41 — the Ancient Doom's `chaseable = false` row
+            // (`NPC.cs:15809`).
+            chaseable: kind != NpcKind::AncientDoom,
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
@@ -5129,6 +5417,10 @@ impl Npc {
             player_zone_sandstorm: false,
             player_zone_desert: false,
             tumbleweed_siblings: Vec::new(),
+            wind_speed_target: 0.0,
+            zone_sandstorm: false,
+            zone_desert: false,
+            tumbler_siblings: Vec::new(),
             twin_time_lefts: Vec::new(),
             gallop_siblings: Vec::new(),
             dragonfly_neighbors: Vec::new(),
@@ -5272,6 +5564,13 @@ impl Npc {
                             // (`NPC.cs:10475`).
                             // W4-g8 lane 1 batch 4 — the Squid's alpha 20
                             // (`NPC.cs:11852`).
+                            // W4-d41 — the Ancient Doom's `alpha = 255`
+                            // row (`NPC.cs:15810` — the second write
+                            // overrides the `:15807` 0).
+                            NpcKind::AncientDoom => 255,
+                            // W4-d41 — the sand slime's `alpha = 50` row
+                            // (`NPC.cs:15868`).
+                            NpcKind::SandSlime => 50,
                             _ => 0,
                         }
                     }),
@@ -5292,6 +5591,8 @@ impl Npc {
             wants_lane_portals: None,
             wants_lane_right: false,
             wants_stardust_mark: false,
+            wants_solar_flare: None,
+            wants_solar_goop: None,
             wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
@@ -6108,6 +6409,61 @@ impl Npc {
             // the archer pair kb 0.55 (`:13849`).
             NpcKind::ChatteringTeethBomb => 0.5,
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 0.55,
+            // W4-d41 — the crawdads keep the head's 1 (`NPC.cs:8533` —
+            // the `:14666-14677` branch writes no kb row); the shellies
+            // 0.75 (`:14688`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 1.0,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 0.75,
+            // W4-d41 — the salamanders' kb 0.45 (`NPC.cs:14701`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 0.45,
+            // W4-d41 — the antlion charger's kb 0.4 (`NPC.cs:14838`),
+            // the swarmer's 0.3 (`:14849`), the Dune Splicer chain's 0
+            // (`:14786`/`:14803`/`:14822`).
+            NpcKind::GiantWalkingAntlion => 0.4,
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => 0.0,
+            // W4-d41 — the Tomb Crawler chain's kb 0
+            // (`NPC.cs:14731`/`:14748`/`:14767`), the solar fragments'
+            // 0 (`:15407`/`:15422`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => 0.0,
+            NpcKind::SolarFlare | NpcKind::SolarGoop => 0.0,
+            // W4-d41 — the ancient orbs' kb 0 (`NPC.cs:15793`/`:15808`);
+            // the desert ghouls' 0.6/0.5/0.5 (`:14892` − the
+            // `:14901`/`:14908` 0.1 subtracts).
+            NpcKind::AncientLight | NpcKind::AncientDoom => 0.0,
+            NpcKind::DesertGhoul => 0.6,
+            NpcKind::DesertGhoulCorruption | NpcKind::DesertGhoulCrimson => 0.5,
+            // W4-d41 — the hallowed ghoul's 0.4 (`NPC.cs:14892` − the
+            // `:14915` 0.2), the lamias' 0.35 (`:14930`), the sand
+            // poachers' 0.5 (`:14943`/`:14957`).
+            NpcKind::DesertGhoulHallow => 0.4,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 0.35,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 0.5,
+            // W4-d41 — the basilisk's kb 0.3 (`NPC.cs:14970`), the
+            // tortured soul's 0.3 (`:15823`), the bride's 0.5
+            // (`:15853`), the sand slime's 0.7 (`:15871`); the spiked
+            // slime keeps the head's 1 (`:8533` — the branch writes no
+            // kb row).
+            NpcKind::DesertBeast => 0.3,
+            NpcKind::DemonTaxCollector => 0.3,
+            NpcKind::TheBride => 0.5,
+            NpcKind::SandSlime => 0.7,
+            NpcKind::SlimeSpiked => 1.0,
+            // W4-d41 — the critters keep the head's 1 (`NPC.cs:8533` —
+            // the branches write no kb row); the tumbler's 0.8
+            // (`:15982`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 1.0,
             _ => 0.4,
         }
     }
@@ -6893,6 +7249,57 @@ impl Npc {
             // the archer pair def 14 (`:13845`).
             NpcKind::ChatteringTeethBomb => 30,
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 14,
+            // W4-d41 — the cavern crawdads' defense 6 (`NPC.cs:14672`)
+            // and the shellies' 12 (`:14684`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 6,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 12,
+            // W4-d41 — the salamanders' defense 10 (`NPC.cs:14697`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 10,
+            // W4-d41 — the antlion charger's defense 16 (`NPC.cs:14834`),
+            // the swarmer's 12 (`:14847`), the Dune Splicer head's 18
+            // (`:14780`), body's 28 (`:14797`), tail's 34 (`:14815`).
+            NpcKind::GiantWalkingAntlion => 16,
+            NpcKind::DuneSplicerHead => 18,
+            NpcKind::DuneSplicerBody => 28,
+            NpcKind::DuneSplicerTail => 34,
+            // W4-d41 — the Tomb Crawler head's defense 0
+            // (`NPC.cs:14725`), body's 12 (`:14742`), tail's 14
+            // (`:14760`); the solar fragments' 0 (`:15400`/`:15415`).
+            NpcKind::TombCrawlerHead => 0,
+            NpcKind::TombCrawlerBody => 12,
+            NpcKind::TombCrawlerTail => 14,
+            NpcKind::SolarFlare | NpcKind::SolarGoop => 0,
+            // W4-d41 — the ancient orbs' defense 0 (`NPC.cs:15786`/
+            // `:15801`); the desert ghouls' 26/30/32 (`:14888` + the
+            // `:14899`/`:14906` adds).
+            NpcKind::AncientLight | NpcKind::AncientDoom => 0,
+            NpcKind::DesertGhoul => 26,
+            NpcKind::DesertGhoulCorruption => 30,
+            NpcKind::DesertGhoulCrimson => 32,
+            // W4-d41 — the hallowed ghoul's 32 (`NPC.cs:14888` + the
+            // `:14913` +6), the lamias' 28 (`:14926`), the sand
+            // poachers' 24 (`:14939`/`:14953`).
+            NpcKind::DesertGhoulHallow => 32,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 28,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 24,
+            // W4-d41 — the basilisk's defense 34 (`NPC.cs:14966`), the
+            // tortured soul's 20 (`:15819`), the slimes' 5
+            // (`:15835`/`:15864`), the bride's 8 (`:15849`).
+            NpcKind::DesertBeast => 34,
+            NpcKind::DemonTaxCollector => 20,
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => 5,
+            NpcKind::TheBride => 8,
+            // W4-d41 — the critters' defense 0 (`NPC.cs:15879`/`:15891`/
+            // `:9342`), the tumbler's 6 (`:15978`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -7688,6 +8095,58 @@ impl Npc {
             // the archer pair value 1000 (`:13850`) — copper.
             NpcKind::ChatteringTeethBomb => 450.0,
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 1000.0,
+            // W4-d41 — the cavern crawdads'/shellies' value 120 copper
+            // (`NPC.cs:14676`/`:14689`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 120.0,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 120.0,
+            // W4-d41 — the salamanders' value 120 copper (`NPC.cs:14702`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 120.0,
+            // W4-d41 — the antlion charger's value 175 (`NPC.cs:14839`),
+            // the swarmer's 195 (`:14852`), the Dune Splicer chain's 700
+            // (`:14788`/`:14805`/`:14824`).
+            NpcKind::GiantWalkingAntlion => 175.0,
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => 700.0,
+            // W4-d41 — the Tomb Crawler chain's value 130
+            // (`NPC.cs:14733`/`:14750`/`:14769`); the solar fragments
+            // write no value row (the head's 0, `NPC.cs:8544`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => 130.0,
+            NpcKind::SolarFlare | NpcKind::SolarGoop => 0.0,
+            // W4-d41 — the ancient orbs write no value row (the head's
+            // 0, `NPC.cs:8544`); the desert ghouls' 500/650/650
+            // (`:14893` + the `:14902`/`:14909` adds).
+            NpcKind::AncientLight | NpcKind::AncientDoom => 0.0,
+            NpcKind::DesertGhoul => 500.0,
+            NpcKind::DesertGhoulCorruption | NpcKind::DesertGhoulCrimson => 650.0,
+            // W4-d41 — the hallowed ghoul's 750 (`NPC.cs:14893` + the
+            // `:14916` +250), the lamias' 600 (`:14931`), the sand
+            // poachers' 600 (`:14944`/`:14958`).
+            NpcKind::DesertGhoulHallow => 750.0,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 600.0,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 600.0,
+            // W4-d41 — the basilisk's value 800 (`NPC.cs:14971`), the
+            // tortured soul's 0 (`:15824`), the spiked slime's 40
+            // (`:15841`), the bride's 1000 (`:15854`), the sand slime's
+            // 75 (`:15870`).
+            NpcKind::DesertBeast => 800.0,
+            NpcKind::DemonTaxCollector => 0.0,
+            NpcKind::SlimeSpiked => 40.0,
+            NpcKind::TheBride => 1000.0,
+            NpcKind::SandSlime => 75.0,
+            // W4-d41 — the critters write no value row (the head's 0,
+            // `NPC.cs:8544`); the tumbler's 100 (`:15983`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -11705,6 +12164,127 @@ impl Npc {
             NpcKind::UndeadMiner => {
                 unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
             }
+            NpcKind::Skeleton => self.update_skeleton(world, player, dt),
+            NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
+            // W4-d41 — the cavern crawdads (494/495, aiStyle 3): the
+            // walker family; the `AI_003_Fighters` charge arm
+            // (`NPC.cs:58262-58321`, the 42-px stop + the ×1.5 charge
+            // damage) rides `npc_ai3_speeds::apply_ladder` through
+            // `run_ai3_ladder` (the type reads cs_id 494/495).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => self.update_skeleton(world, player, dt),
+            // W4-d41 — the antlion charger (508, aiStyle 3): the walker
+            // family; the `AI_003_Fighters` 508/580/582 lerp machine
+            // (`NPC.cs:58139-58202`) rides `npc_ai3_speeds::apply_ladder`
+            // through `run_ai3_ladder` (the type reads cs_id 508).
+            NpcKind::GiantWalkingAntlion => self.update_skeleton(world, player, dt),
+            // W4-d41 — the antlion swarmer (509, aiStyle 44): the
+            // style-44 swimmer's 509 parameter overrides
+            // (`npc_ai_style44.rs`, `NPC.cs:30954-30985`). The solo path
+            // runs a one-slot pool (no siblings); the SIM's pooled path
+            // (`world_sim/npcs.rs`) feeds the whole roster so the swarm
+            // separation resolves.
+            NpcKind::GiantFlyingAntlion => self.update_giant_flying_antlion(world, player, rng),
+            // W4-d41 — the Dune Splicer chain (510-512, aiStyle 6): the
+            // movement runs in the world sim's worm pass (the chain
+            // needs the sibling segments; `AI_006` reads `Main.npc` the
+            // same way). The head's own fixed-budget spawn
+            // (`NPC.cs:51253-51276`) + the dig tunables ride that pass.
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => {}
+            // W4-d41 — the Tomb Crawler chain (513-515, aiStyle 6): the
+            // movement runs in the world sim's worm pass (the head's own
+            // Next(6,10) budget, `NPC.cs:51229-51252`, the 7/0.1 dig
+            // tunables `:51682-51686`, the underground-desert surface
+            // gate `:51114-51117`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => {}
+            // W4-d41 — the Solar Flare (516, aiStyle 9): the style axis
+            // claims style 9 (`ai_009_sphere_family`); this arm is
+            // unreachable through `update_rng` (the sphere precedent).
+                unreachable!("aiStyle 9 rides the style axis (W4-d41)")
+            }
+            // W4-d41 — the Solar Goop (519, aiStyle 99): the falling
+            // fragment's gravity + ground-strike death
+            // (`NPC.cs:39927-39990`).
+            NpcKind::SolarGoop => self.update_solar_goop(world, player),
+            // W4-d41 — the Ancient Light (522, aiStyle 100): the
+            // ground-strike latch + the ai[2]/ai[3] launch + the
+            // 60-tick rotation / 120-tick decay (`NPC.cs:39991-40066`).
+            NpcKind::AncientLight => self.update_ancient_light(world, player),
+            // W4-d41 — the Ancient Doom (523, aiStyle 101): the
+            // 120-tick scale/alpha ramp + the 420-tick 4-spoke 593
+            // burst + the boss-link orphan death (`NPC.cs:40067-40146`).
+            // The boss-link reads the pool — the sim's pooled path owns
+            // it (the solo path runs the orphan arm).
+            NpcKind::AncientDoom => self.update_ancient_doom(world, player, rng),
+            // W4-d41 — the desert ghouls (524-526, aiStyle 3): the
+            // walker family; the `AI_003_Fighters` cap-2 group
+            // (`NPC.cs:57554-57579`, the 524-527 range) rides
+            // `npc_ai3_speeds::apply_ladder` through `run_ai3_ladder`.
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => self.update_skeleton(world, player, dt),
+            // W4-d41 — the hallowed ghoul + the lamias (527-529, aiStyle
+            // 3): the walker family; the cap-2/cap-3 ladder rows ride
+            // `npc_ai3_speeds::apply_ladder` (already covers 524-527 +
+            // 528/529).
+            NpcKind::DesertGhoulHallow
+            | NpcKind::DesertLamiaLight
+            | NpcKind::DesertLamiaDark => self.update_skeleton(world, player, dt),
+            // W4-d41 — the sand poacher's walker form (530, aiStyle 3):
+            // the walker family + the wall-stick transform into 531
+            // (`NPC.cs:58875-58905`).
+            NpcKind::DesertScorpionWalk => self.update_sand_poacher_walk(world, player, dt),
+            // W4-d41 — the sand poacher's wall form (531, aiStyle 40):
+            // the wall-crawler (`NPC.cs:29666-29898`) + the no-wall
+            // transform back into 530.
+            NpcKind::DesertScorpionWall => self.update_sand_poacher_wall(world, player),
+            // W4-d41 — the basilisk (532, aiStyle 3): the walker family;
+            // the `AI_003_Fighters` carrier group's 532 row
+            // (`NPC.cs:58232-58237`, the 5/0.15/0.98) rides
+            // `npc_ai3_speeds::apply_ladder` through `run_ai3_ladder`.
+            NpcKind::DesertBeast => self.update_skeleton(world, player, dt),
+            // W4-d41 — the tortured soul (534, aiStyle 3): the walker
+            // family (the num107 default 1f cap). The purification-
+            // powder transform into the Tax Collector 441
+            // (`Projectile.cs:14728-14733`) rides the projectile's hit
+            // seam (the follow-up).
+            NpcKind::DemonTaxCollector => self.update_skeleton(world, player, dt),
+            // W4-d41 — the bride (536, aiStyle 3): the walker family
+            // (the num107 default 1f cap).
+            NpcKind::TheBride => self.update_skeleton(world, player, dt),
+            // W4-d41 — the slimes (535/537, aiStyle 1): the slime hop
+            // machine on their OWN SetDefaults boxes.
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => self.update_slime(world, player, dt),
+            // W4-d41 — the critters (538-540, aiStyle 7): the town-critter
+            // walker (the guide's wander stand-in — the full AI_007
+            // town machine is the follow-up). The catchable window rides
+            // the ctor's `bug_net::npc_catchable` friendly arm.
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => {
+                self.update_guide(world, dt)
+            }
+            // W4-d41 — the tumbler (546, aiStyle 26): the
+            // `AI_026_Unicorns` wind-driven walk
+            // (`npc_ai_unicorn.rs`, the 546 branches).
+                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+            }
+            // W4-d41 — the salamanders (498-506, aiStyle 3): the
+            // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
+            // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
+            // at 14 dmg, the 190-px engage range. The ladder DECLINES
+            // the type (`npc_ai3_speeds::shooter_excluded`), so the
+            // shooter's own 1f/0.07 walk (`:59717-59790`) runs instead.
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => self.update_salamander(world, player, rng),
             // The goblin army's fighters (aiStyle 3, NPC.cs:15644/15658/
             // :15714 cases 26/27/111): W4-d22 — the plain walkers ride the
             // style axis; the archer keeps its shooter machine.
@@ -11901,7 +12481,7 @@ impl Npc {
                 unreachable!("aiStyle 26 rides the style axis (W4-d25)")
             }
             NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
-            NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
+            NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player, rng),
             // The drakomire's rider: aiStyle 75 rides the style axis
             // (S1-D-3-wire-saucer) — this arm is unreachable.
             NpcKind::SolarDrakomireRider => {
@@ -11913,6 +12493,10 @@ impl Npc {
             NpcKind::SolarCorite => {
                 unreachable!("aiStyle 74 rides the style axis (W4-c12)")
             }
+            NpcKind::SolarSroller
+            | NpcKind::GiantShelly
+            | NpcKind::GiantShelly2 => self.update_solar_sroller(world, player, rng),
+            NpcKind::SolarCorite => self.update_solar_corite(world, player, rng),
             NpcKind::SolarSelenian => self.update_solar_selenian(world, player),
             // The nebula trio: the floater's aiStyle-97 teleport cycle, the
             // suckler's aiStyle-85 hover + attachment, the predictor's
@@ -13045,7 +13629,6 @@ impl Npc {
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => {
                 self.update_zombie(world, player, dt)
             }
-        }
 
     /// `NPC._deerclopsAttack1Frames` (`NPC.cs:95277-95279`): the 12-frame
     /// wind-up + slam sequence the ai[0]==1/4 states play.
@@ -14623,6 +15206,550 @@ impl Npc {
             // counter, the `ai[0] == 2` dive splits `ai[1]` into rows
             // 5/6/7, the `ai[0] == -2` death spin walks 5..7 at > 12;
             // states 3/4 hold the frame. W4-c12: the module twin.
+            // W4-d41 — `case 496 : case 497` (`NPC.cs:69994-70066`): the
+            // shelly pair's OWN state machine over the 12-row strip (NOT
+            // the style-39 tail's tortoise bands, `:77292-77368` — the
+            // case breaks before it). The walk laps at 24 (the else
+            // resets the counter, leaves the row); the wind-up pins
+            // 4/5/6 off ai[1], the settle 10/11/3, any other state 7.
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => {
+                if self.ai[0] == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                    } else if self.vy < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame_counter += self.vx.abs() * 1.1;
+                    if self.frame_counter < 6.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 12.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 18.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 3;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                } else if self.ai[0] == 1.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.ai[1] < 10.0 {
+                        4
+                    } else if self.ai[1] < 20.0 {
+                        5
+                    } else {
+                        6
+                    };
+                } else if self.ai[0] == 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.ai[1] < 10.0 {
+                        10
+                    } else if self.ai[1] < 20.0 {
+                        11
+                    } else {
+                        3
+                    };
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 7;
+                }
+            }
+            // W4-d41 — `case 498..506` (`NPC.cs:69849-69907`): the
+            // salamanders' grounded walk cycles rows 0..7 at the |vx|
+            // accumulator's >4 step (the wrap back to 0), the stop's
+            // ai[1] bands pin 8/9/8, the idle row 0, the air row 10.
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = if self.ai[1] < 12.0 {
+                            8
+                        } else if self.ai[1] < 34.0 {
+                            9
+                        } else {
+                            8
+                        };
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        return;
+                    }
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter > 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 7 {
+                        self.frame = 0;
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 10;
+                }
+            }
+            // W4-d41 — `case 508` (shared with 532/580/582,
+            // `NPC.cs:70067-70103`): the antlion charger's grounded walk
+            // climbs from row 2 at the `1 + |vx|/2` accumulator's >6
+            // step, wrapping at the 6-row strip; the air holds row 1,
+            // the idle row 0.
+            NpcKind::GiantWalkingAntlion => {
+                if self.vy != 0.0 {
+                    self.frame = 1;
+                    return;
+                }
+                if self.vx == 0.0 {
+                    self.frame = 0;
+                    return;
+                }
+                if self.facing < 0 && self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                if self.facing > 0 && self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.frame < 2 {
+                    self.frame = 2;
+                }
+                self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                if self.frame_counter > 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 6 {
+                    self.frame = 2;
+                }
+            }
+            // W4-d41 — `case 509` (shared with 581, `NPC.cs:70104-70119`):
+            // the antlion swarmer's 3-tick counter over the 9-row strip;
+            // the sprite faces the motion only when they agree.
+            NpcKind::GiantFlyingAntlion => {
+                if (self.vx > 0.0 && self.facing > 0) || (self.vx < 0.0 && self.facing < 0) {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 3.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 9 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d41 — the Dune Splicer chain has NO `FindFrame` case
+            // (`NPC.cs:66684-77370` has no `case 510/511/512`;
+            // `Main.npcFrameCount[510..512]` = 1, `Main.cs:67082`) — the
+            // single frame never advances (the worm-segment precedent).
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => {
+                self.frame = 0;
+            }
+            // W4-d41 — `case 516` (`NPC.cs:70740-70757`): the Solar
+            // Flare's one-shot random row pick + the 3-tick counter over
+            // the 4-row strip. The C# draws `Main.rand.Next(3)` twice on
+            // the localAI[1] latch; `find_frame` has no rng param, so the
+            // hash stand-in gives the same 0..2 jitter (the MoonLordHead
+            // precedent, `npc.rs:8085`).
+                if self.local_ai[1] == 0.0 {
+                    self.local_ai[1] = 1.0;
+                    let h = (self.uid as i32)
+                        .wrapping_mul(0x9E37_79B1u32 as i32)
+                        .wrapping_add((self.frame_counter as i32).wrapping_mul(0x85EB_CA6Bu32 as i32));
+                    self.frame = ((h >> 24) & 0x3) as u32 % 3;
+                    self.frame_counter += (((h >> 20) & 0x3) as u32 % 3) as f32;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter > 3.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame > 3 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d41 — the Solar Goop has NO `FindFrame` case
+            // (`NPC.cs:66684-77370` has no `case 519`;
+            // `Main.npcFrameCount[519]` = 1) — the single frame never
+            // advances.
+            NpcKind::SolarGoop => {
+                self.frame = 0;
+            }
+            // W4-d41 — the Tomb Crawler chain has NO `FindFrame` case
+            // (`Main.npcFrameCount[513..515]` = 1) — the single frame
+            // never advances (the worm-segment precedent).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => {
+                self.frame = 0;
+            }
+            // W4-d41 — `case 523` (`NPC.cs:72127-72137`): the Ancient
+            // Doom's 6-tick counter over the 5-row strip.
+            NpcKind::AncientDoom => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                    if self.frame >= 5 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d41 — the Ancient Light has NO `FindFrame` case
+            // (`Main.npcFrameCount[522]` = 1) — the single frame never
+            // advances.
+            NpcKind::AncientLight => {
+                self.frame = 0;
+            }
+            // W4-d41 — the squirrels ride the case-538/539 arm
+            // (`NPC.cs:76459-76512`): the grounded walk climbs from row 1
+            // at the `|vx|*0.5 + 1` >6 step, wrapping at count-1 (6) back
+            // to 1; the idle row 0, the rising air row 2, the falling
+            // air row 4.
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    self.frame_counter += self.vx.abs() * 0.5;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 5 {
+                        self.frame = 1;
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
+            }
+            // W4-d41 — the party bunny rides the case-540 arm
+            // (`NPC.cs:76857-76904`): the grounded walk cycles rows 0..6
+            // at the `|vx| + 1` >6 step, wrapping at 7 back to 0; the
+            // idle row 0, the rising air row 4, the falling air row 6.
+            NpcKind::PartyBunny => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 7 {
+                        self.frame = 0;
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            // W4-d41 — the tumbler has NO `FindFrame` case
+            // (`Main.npcFrameCount[546]` = 1) — the single frame never
+            // advances (the roll rides the rotation, not the strip).
+                self.frame = 0;
+            }
+            // W4-d41 — the basilisk rides the SAME case-508 arm
+            // (`NPC.cs:70067-70103` lists 508/532/580/582): the grounded
+            // walk climbs from row 2 at the `1 + |vx|/2` >6 step,
+            // wrapping at the 8-row strip back to 2; the air row 1, the
+            // idle row 0.
+            NpcKind::DesertBeast => {
+                if self.vy != 0.0 {
+                    self.frame = 1;
+                    return;
+                }
+                if self.vx == 0.0 {
+                    self.frame = 0;
+                    return;
+                }
+                if self.facing < 0 && self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                if self.facing > 0 && self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.frame < 2 {
+                    self.frame = 2;
+                }
+                self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                if self.frame_counter > 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 8 {
+                    self.frame = 2;
+                }
+            }
+            // W4-d41 — the tortured soul rides the humanoid FindFrame
+            // group (`NPC.cs:68615`): the 8-row strip, the num108 = 12
+            // walk clock (`:69528-69531`) over the generic `|vx|*2 + 1`
+            // counter (`:69552-69553` — the +0.5 counter is the 489
+            // row's, NOT this one), the idle row 0 (`:69515-69519` —
+            // only 140/489 take the row-1 branch), the air row 1
+            // (`:69642-69646`, the non-town-slime else).
+            NpcKind::DemonTaxCollector => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() * 2.0;
+                        self.frame_counter += 1.0;
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        if self.frame_counter > 12.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 8 {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // W4-d41 — the bride rides the walker FindFrame group
+            // (`NPC.cs:76344-76391` lists 536/590/691): the 3-row strip,
+            // the |vx| accumulator's 8/16/24/32 bands stepping rows
+            // 0/1/2/1, the air/turn row 2, the idle row 0.
+            NpcKind::TheBride => {
+                self.walker_frame();
+            }
+            // W4-d41 — the slimes ride the slime-group FindFrame arm
+            // (`NPC.cs:70818-70846` lists 535/537): the 8-tick hop strip
+            // over the 2/3-row sheet, doubled while moving/airborne and
+            // tripled while attacking (the num2 motion class).
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => {
+                let count = self.rows();
+                self.frame_counter += 1.0;
+                if num2 > 0 {
+                    self.frame_counter += 1.0;
+                }
+                if num2 == 4 {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= count {
+                    self.frame = 0;
+                }
+            }
+            // W4-d41 — `case 528 : case 529` (`NPC.cs:69946-69977`): the
+            // lamias' grounded walk climbs from row 1 at the `|vx| + 1`
+            // accumulator's >9 step, wrapping at count-1 (9) back to 1;
+            // the idle row 0, the air row count-1 (8).
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 9.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 8 {
+                        self.frame = 1;
+                    }
+                } else {
+                    self.frame = 8;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // W4-d41 — `case 530` (`NPC.cs:73086-73111`): the sand
+            // poacher walker's grounded walk cycles rows 0..3 at the
+            // |vx|*1.1 accumulator's 6-step (the while loop), the air
+            // holds row 4 (rising) / 0 (falling).
+            NpcKind::DesertScorpionWalk => {
+                if self.vy != 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.vy < 0.0 { 4 } else { 0 };
+                    return;
+                }
+                self.sprite_dir = self.facing;
+                self.frame_counter += self.vx.abs() * 1.1;
+                while self.frame_counter >= 6.0 {
+                    self.frame_counter -= 6.0;
+                    self.frame += 1;
+                    if self.frame > 3 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d41 — `case 531` (`NPC.cs:73116-73145`): the sand
+            // poacher wall's (|vx|+|vy|)*0.4 accumulator's 6/12/18/24
+            // bands stepping rows 0/1/2/3 (the lap resets at 24).
+            NpcKind::DesertScorpionWall => {
+                self.frame_counter += (self.vx.abs() + self.vy.abs()) * 0.4;
+                if self.frame_counter < 6.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 18.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 3;
+                } else {
+                    self.frame_counter = 0.0;
+                }
+            }
+            // W4-d41 — `case 524..527` (`NPC.cs:69908-69945`): the
+            // desert ghouls' grounded walk climbs from row 2 at the
+            // `|vx| + 1` accumulator's >9 step, wrapping at the 8-row
+            // strip back to 2; the idle row 0, the air row 1.
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson
+            | NpcKind::DesertGhoulHallow => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    if self.frame <= 1 {
+                        self.frame = 2;
+                    }
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 9.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 8 {
+                        self.frame = 2;
+                    }
+                } else {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // W4-d41 — `case 494 : case 495` (`NPC.cs:69657-69733`): the
+            // crawdads' charge bands (ai[2] 1..7/7..14/14..20 → rows
+            // 5/6/7), the air/turn row 2/3, the idle row 0, and the
+            // |vx| accumulator's 8/16/24/32/39 bands stepping rows
+            // 0/1/2/3/4 (the lap resets at 39).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => {
+                if self.ai[2] > 0.0 {
+                    self.frame = if self.ai[2] < 7.0 {
+                        5
+                    } else if self.ai[2] < 14.0 {
+                        6
+                    } else if self.ai[2] < 20.0 {
+                        7
+                    } else {
+                        // `:69659-69674` — ai[2] >= 20 falls through the
+                        // three bands to the break: the row holds.
+                        return;
+                    };
+                    return;
+                }
+                if self.vy == 0.0 {
+                    // `:69677-69684` — the two ±1 writes (direction 0
+                    // leaves the sprite alone).
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.vy < 0.0 { 2 } else { 3 };
+                    return;
+                }
+                if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                    return;
+                }
+                self.frame_counter += self.vx.abs();
+                if self.frame_counter < 8.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 16.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 32.0 {
+                    self.frame = 3;
+                } else if self.frame_counter < 39.0 {
+                    self.frame = 4;
+                } else {
+                    self.frame = 4;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // 418 (the solar corite, `NPC.cs:70757-70803`): the idle/hover
+            // states (`ai[0]` 0, +/-1) walk rows 0..4 at 6 ticks, the
+            // `ai[0] == 2` dive splits `ai[1]` into rows 5/6/7, and the
+            // `ai[0] == -2` death spin walks 5..7 at 12 ticks.
             NpcKind::SolarCorite => {
                 let (row, counter) = crate::npc_ai_style74::corite_find_frame(
                     self.frame,
@@ -15698,7 +16825,6 @@ impl Npc {
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
                 self.frame = 0;
-            }
             NpcKind::AncientCultistSquidhead => {
                 // `:72104-72111` — the X-sign facing + the sprite copy.
                 self.facing = if self.vx < 0.0 { -1 } else { 1 };
@@ -17953,7 +19079,6 @@ impl Npc {
                 // No FindFrame case (`NPC.cs`'s switch has no 546) — the
                 // single frame stands; the AI's rotation tail spins it.
                 self.frame = 0;
-            }
             NpcKind::DukeFishron => {
                 if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
                     // `:72144-72160` — num45 = 5 (state 0) / 4 (state 5).
@@ -23262,6 +24387,673 @@ impl Npc {
         }
     }
 
+    /// W4-d41 — `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59801`)
+    /// for the salamanders (498-506). The 70-tick cadence (`num162 = 70`
+    /// default, `:59098` — no 498-506 override), the half-cooldown fire
+    /// (`num163 = 35`, `:59184`), the 7-speed spit (`num164 = 7f`,
+    /// `:59275-59278`) from the centre −8 anchor (`:59300-59303`), the
+    /// `|dx| * Next(1,11) * 0.0025` arc (`:59340-59343`) + the
+    /// `Next(-40,41) * 0.3` per-axis jitter (`:59369-59373`), the 572
+    /// SalamanderSpit at 14 dmg (`:59452-59456`), the 190-px engage range
+    /// (`num179 = 190f`, `:59664-59667`) and the 1f/0.07/0.8 walk
+    /// (`:59717-59790`, no type override). The octant table
+    /// (`:59595-59617`/`:59689-59711`) pins ai[2] 1..5.
+    ///
+    /// Deviations (the martian shooter's convention): the player's
+    /// `stealth`/`itemAnimation` gate (`:59641`) is constants-off; the
+    /// confused reset (`:59197-59201`) reads the buff engine's Confused
+    /// (31) — the salamanders carry no immunity row, so it can fire; the
+    /// spit's OnFire-on-hit roll (`Projectile.cs:12189`) is a HIT-time
+    /// draw on the projectile's own tick (the player-debuff layer is
+    /// unported, ANALYSIS). The walk rides `walker_step` at the C#'s
+    /// shooter params (the ladder declines the type —
+    /// `npc_ai3_speeds::shooter_excluded`).
+    fn update_salamander(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        // The octant table (the vanilla's `ai[2]` 1..5 rows).
+        let octant = |dx: f32, dy: f32| -> f32 {
+            if dy.abs() > dx.abs() * 2.0 {
+                if dy > 0.0 { 1.0 } else { 5.0 }
+            } else if dx.abs() > dy.abs() * 2.0 {
+                3.0
+            } else if dy > 0.0 {
+                2.0
+            } else {
+                4.0
+            }
+        };
+        // `:59086-59089` — the cooldown decays.
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `:59091-59097` — justHit rests the cycle 30.
+        if self.hurt_cd > 0.0 {
+            self.ai[1] = 30.0;
+            self.ai[2] = 0.0;
+            self.net_update = true;
+        }
+        // `:59197-59201` — the confused reset.
+        if self.buffs.find_buff_index(31).is_some() {
+            self.ai[1] = 0.0;
+            self.ai[2] = 0.0;
+        }
+        if self.ai[2] > 0.0 {
+            // `:59204-59207` — TargetClosest while stopped (flag18 true).
+            let cand = crate::npc_target::session_candidate_for(player, self.kind);
+            crate::npc_target::target_closest(self, world, &[cand], true, 3, 0);
+            // `:59208` — the fire at the half-cooldown (35).
+            if self.ai[1] == 35.0 {
+                // `:59275-59278` — the 7-speed; `:59300-59303` — the
+                // centre −8 anchor.
+                let anchor_y = cy - 8.0;
+                let mut ax = pcx - cx;
+                // `:59340-59343` — the arc offset.
+                let mut ay = pcy - anchor_y - ax.abs() * (rng.next_range(1, 11) as f32 * 0.0025);
+                // `:59369-59373` — the per-axis jitter.
+                ax += rng.next_range(-40, 41) as f32 * 0.3;
+                ay += rng.next_range(-40, 41) as f32 * 0.3;
+                // `:59397-59401` — normalise to the 7 speed.
+                let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                let inv = 7.0 / len;
+                self.net_update = true;
+                // `:59452-59456` + `:59592` — the 572 spit at 14 dmg.
+                self.wants_hostile_shot.push((
+                    crate::projectile::SALAMANDER_SPIT,
+                    cx,
+                    anchor_y,
+                    ax * inv,
+                    ay * inv,
+                    14,
+                ));
+                // `:59595-59617` — the post-fire octant.
+                self.ai[2] = octant(ax, ay);
+            }
+            // `:59619-59623` — the airborne / spent exit.
+            if self.vy != 0.0 || self.ai[1] <= 0.0 {
+                self.ai[2] = 0.0;
+                self.ai[1] = 0.0;
+            } else {
+                // `:59624-59628` — the stop's X damp + the sprite.
+                self.vx *= 0.9;
+                self.sprite_dir = self.facing;
+            }
+        } else {
+            // `:59634-59713` — the engage gate: grounded, the cooldown
+            // spent, the target alive, CanHit, the aim under 190 px.
+            if self.vy == 0.0
+                && self.ai[1] <= 0.0
+                && player.hp > 0
+                && crate::projectile::can_hit(
+                    world,
+                    self.x,
+                    self.y,
+                    w,
+                    h,
+                    player.x,
+                    player.y,
+                    crate::player::WIDTH,
+                    player.height,
+                )
+            {
+                // `:59647-59654` — the 10-speed normalised aim with the
+                // ±40 jitter (the distance check reads the jittered aim).
+                let mut ax = dx + rng.next_range(-40, 41) as f32;
+                let mut ay = dy - dx.abs() * 0.1 + rng.next_range(-40, 41) as f32;
+                let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                // `:59664-59667` + `:59680` — the 190-px range.
+                if len < 190.0 {
+                    self.net_update = true;
+                    self.vx *= 0.5;
+                    let inv = 10.0 / len;
+                    ax *= inv;
+                    ay *= inv;
+                    self.ai[1] = 70.0;
+                    // `:59689-59711` — the entry octant.
+                    self.ai[2] = octant(ax, ay);
+                }
+            }
+        }
+        // `:59715-59790` — the walk while not stopped: the 1f cap, the
+        // 0.07 accel, the grounded over-cap ×0.8 brake. The port's
+        // `walker_step` carries the same shape at the shooter params.
+        if self.ai[2] <= 0.0 {
+            crate::npc_ai::walker_step(
+                self,
+                world,
+                pcx,
+                pcy,
+                crate::npc_ai::WalkerParams {
+                    speed: 1.0,
+                    jump: -6.2,
+                    aggro_x: 80.0 * TILE_PX,
+                    aggro_y: 40.0 * TILE_PX,
+                },
+                GRAVITY,
+                MAX_FALL,
+            );
+        } else {
+            // The stopped body still moves (the C#'s UpdateNPC integrates
+            // the damped vx + gravity every tick).
+            let nx = self.x + self.vx;
+            if !crate::player::collides_rect(world, nx, self.y, w, h) {
+                self.x = nx;
+            } else {
+                self.vx = 0.0;
+            }
+            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+            let ny = self.y + self.vy;
+            if !crate::player::collides_rect(world, self.x, ny, w, h) {
+                self.y = ny;
+                self.on_ground = false;
+            } else if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+                self.vy = 0.0;
+                self.on_ground = true;
+            }
+        }
+    }
+
+    /// W4-d41 — `NPC.AI()`'s aiStyle-44 block (`NPC.cs:30861-31124`) for
+    /// the GiantFlyingAntlion (509). The faithful module
+    /// (`npc_ai_style44.rs`) owns the steering machine; this wrapper
+    /// fills the Env seam (the session player as slot 0, the NPC's own
+    /// wet probe, the ticker-0 stand-in) and runs the caller-side
+    /// integration tail the module leaves to `UpdateNPC`
+    /// (`NPC.cs:92523-92580` — the no-gravity flyer collision, the
+    /// bat/fish convention). The solo path runs a one-slot sibling pool
+    /// (the separation loop finds no neighbours); the SIM's pooled path
+    /// feeds the whole roster.
+    fn update_giant_flying_antlion(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        let player_wet = [player.wet];
+        let siblings = [crate::npc_ai_style44::Style44Sibling {
+            active: true,
+            npc_type: crate::npc_ai_style44::GIANT_FLYING_ANTLION,
+            x: self.x,
+            y: self.y,
+        }];
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut env = crate::npc_ai_style44::Style44Env {
+            npc_type: crate::npc_ai_style44::GIANT_FLYING_ANTLION,
+            self_index: 0,
+            siblings: &siblings,
+            world,
+            players: &players,
+            player_wet: &player_wet,
+            ticker: 0,
+            dust: &mut dust,
+            dust_ctx: &dust_ctx,
+            rng,
+            wants_no_gravity: false,
+        };
+        crate::npc_ai_style44::style44_step(self, &mut env);
+        // The no-gravity flyer collision tail (`NPC.cs:92523-92580`).
+        self.integrate_flyer_collision(world);
+    }
+
+    /// W4-d41 — `NPC.AI()`'s aiStyle-99 block (`NPC.cs:39927-39990`) for
+    /// the SolarGoop (519): the falling fragment. The 0.2 gravity to the
+    /// 12 cap, the velocity-aim rotation (`ToRotation - π/2`), the
+    /// ground-strike latch (ai[0] 0 → 1 on the first vy==0 tick) and the
+    /// 5-tick HitEffect death. The dust arms (`:39958-39989`) are the
+    /// documented skip (the port's NPC-side dust feed). The
+    /// `noTileCollide = false` row (`NPC.cs:15420`) means the fragment
+    /// collides — the integration is the axis-separated tile move.
+    fn update_solar_goop(&mut self, world: &World, _player: &Player) {
+        // `:39929-39935` — the ground-strike latch.
+        if self.vy == 0.0 && self.ai[0] == 0.0 {
+            self.ai[0] = 1.0;
+            self.ai[1] = 0.0;
+            self.net_update = true;
+            return;
+        }
+        // `:39936-39947` — the strike: freeze, rewind, the 5-tick death.
+        if self.ai[0] == 1.0 {
+            self.vx = 0.0;
+            self.vy = 0.0;
+            self.x = self.old_x;
+            self.y = self.old_y;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 5.0 {
+                // `HitEffect(0, 9999.0)` + `active = false` — the port's
+                // hp = 0 (the death pass owns the dust/gore).
+                self.hp = 0;
+            }
+            return;
+        }
+        // `:39948-39953` — the gravity + the rotation.
+        self.vy = (self.vy + 0.2).min(12.0);
+        self.rotation = self.vy.atan2(self.vx) - std::f32::consts::FRAC_PI_2;
+        // The tile collision (`noTileCollide = false`): the blocked axes
+        // zero the velocity and latch collideX/Y (the ground-strike
+        // reads vy == 0 next tick).
+        let (w, h) = self.size();
+        self.old_x = self.x;
+        self.old_y = self.y;
+        let nx = self.x + self.vx;
+        self.collide_x = crate::player::collides_rect(world, nx, self.y, w, h);
+        if self.collide_x {
+            self.vx = 0.0;
+        } else {
+            self.x = nx;
+        }
+        let ny = self.y + self.vy;
+        self.collide_y = crate::player::collides_rect(world, self.x, ny, w, h);
+        if self.collide_y {
+            if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+            } else if self.vy < 0.0 {
+                let ty = (ny / TILE_PX).floor() as i32;
+                self.y = (ty + 1) as f32 * TILE_PX;
+            }
+            self.vy = 0.0;
+        } else {
+            self.y = ny;
+        }
+    }
+
+    /// W4-d41 — `NPC.AI()`'s aiStyle-100 block (`NPC.cs:39991-40066`)
+    /// for the AncientLight (522): the ground-strike latch (ai[0] 0 →
+    /// -1 on the first vy==0 tick), the 5-tick HitEffect death, the
+    /// ai[2]/ai[3] launch velocity on the first flight tick, the
+    /// velocity-aim rotation, the 60-tick rotation by ai[1] + the
+    /// 120-tick 0.98 decay + the 0.2-length zero. The dust arms
+    /// (`:40017-40049`) are the documented skip. The
+    /// `noTileCollide = true` row means the orb flies through tiles —
+    /// the integration is the raw step.
+    fn update_ancient_light(&mut self, world: &World, _player: &Player) {
+        // `:39993-39999` — the ground-strike latch.
+        if self.vy == 0.0 && self.ai[0] >= 0.0 {
+            self.ai[0] = -1.0;
+            self.ai[1] = 0.0;
+            self.net_update = true;
+            return;
+        }
+        // `:40000-40011` — the strike: freeze, rewind, the 5-tick death.
+        if self.ai[0] == -1.0 {
+            self.vx = 0.0;
+            self.vy = 0.0;
+            self.x = self.old_x;
+            self.y = self.old_y;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 5.0 {
+                self.hp = 0;
+            }
+            return;
+        }
+        // `:40012` — the velocity-aim rotation.
+        self.rotation = self.vy.atan2(self.vx) - std::f32::consts::FRAC_PI_2;
+        // `:40017-40029` — the first flight tick: the ai[2]/ai[3] launch
+        // velocity + the 13-dust burst (the documented skip).
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.vx = self.ai[2];
+            self.vy = self.ai[3];
+        }
+        // `:40050-40065` — the 60-tick rotation + the 120-tick decay.
+        if self.ai[0] >= 0.0 {
+            self.ai[0] += 1.0;
+            if self.ai[0] > 60.0 {
+                let (vx, vy) = (self.vx, self.vy);
+                let c = self.ai[1].cos();
+                let s = self.ai[1].sin();
+                self.vx = vx * c - vy * s;
+                self.vy = vx * s + vy * c;
+            }
+            if self.ai[0] > 120.0 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+            }
+            if (self.vx * self.vx + self.vy * self.vy).sqrt() < 0.2 {
+                self.vx = 0.0;
+                self.vy = 0.0;
+            }
+        }
+        // The raw integration (noTileCollide).
+        self.old_x = self.x;
+        self.old_y = self.y;
+        self.x += self.vx;
+        self.y += self.vy;
+        let _ = world;
+    }
+
+    /// W4-d41 — `NPC.AI()`'s aiStyle-101 block (`NPC.cs:40067-40146`)
+    /// for the AncientDoom (523): the 120-tick scale/alpha ramp (the
+    /// boss-link's life thirds/quarters drive the 1/2/3 tick rate), the
+    /// 420-tick 4-spoke 593 burst (4 damage = this.damage), the
+    /// boss-link orphan death. The boss-link reads `Main.npc[ai[0]]` —
+    /// the solo path runs the orphan arm (no boss); the sim's pooled
+    /// path feeds the boss's life. The dust arms (`:40097-40126`) are
+    /// the documented skip.
+    fn update_ancient_doom(&mut self, _world: &World, _player: &Player, _rng: &mut UnifiedRandom) {
+        // `:40075-40090` — the boss-link gate. The solo path has no
+        // boss pool: flag109 = true (the orphan arm). The sim's pooled
+        // path overrides this with the boss's life thirds/quarters.
+        let mut tick_rate = 1.0f32;
+        let mut orphan = true;
+        // `:40091-40096` — the ramp.
+        self.ai[1] += tick_rate;
+        let t = (self.ai[1] / 120.0).clamp(0.0, 1.0);
+        self.scale = t;
+        self.alpha = (255.0 - t * 255.0) as u8;
+        // `:40127-40128` — the localAI pulse counters.
+        self.local_ai[0] += std::f32::consts::PI / 60.0;
+        self.local_ai[1] = 0.25 + (self.ai[1] * std::f32::consts::TAU / 60.0).sin() * 0.25;
+        // `:40129-40140` — the 420-tick burst: the 4-spoke 593 at the
+        // centre, 4 speed, this.damage.
+        if self.ai[1] >= 420.0 {
+            orphan = true;
+            let (cx, cy) = self.center();
+            for k in 0..4 {
+                let ang = std::f32::consts::FRAC_PI_2 * k as f32;
+                let vx = -4.0 * ang.sin();
+                let vy = -4.0 * ang.cos();
+                self.wants_hostile_shot.push((593u16, cx, cy, vx, vy, self.kind.contact_damage()));
+            }
+        }
+        // `:40141-40145` — the orphan death.
+        if orphan {
+            self.hp = 0;
+        }
+        let _ = tick_rate;
+    }
+
+    /// W4-d41 — the sand poacher's walker form (530): the aiStyle-3
+    /// walker + the wall-stick transform into 531 (`NPC.cs:58875-58905`):
+    /// grounded + not confused + the 3x3 wall probe (>4 wall tiles) +
+    /// the bottom-center hitbox resize fits → Transform(531) with
+    /// withReposition=false, the 12-tick localAI[1] cooldown.
+    fn update_sand_poacher_walk(&mut self, world: &World, player: &mut Player, dt: f32) {
+        self.update_skeleton(world, player, dt);
+        // `:58875` — the transform gate: grounded + not confused.
+        if self.vy == 0.0 && self.buffs.find_buff_index(31).is_none() && self.local_ai[1] == 0.0 {
+            // `:58896` — NPCCanStickToWalls(531): the 3x3 wall probe.
+            if self.can_stick_to_walls(world, NpcKind::DesertScorpionWall) {
+                // `TryMoveToTransformableSpaceInto(531)` — the
+                // bottom-center resize (the 36x36 wall box from the
+                // 50x20 walker box: the height grows 16, the width
+                // shrinks 14 — the shrink always fits, the growth needs
+                // the headroom).
+                if let Some((nx, ny)) = self.transform_space(world, NpcKind::DesertScorpionWall) {
+                    self.x = nx;
+                    self.y = ny;
+                    self.transform_to_kind_no_reposition(world, player, NpcKind::DesertScorpionWall);
+                    self.local_ai[1] = 12.0;
+                }
+            }
+        }
+        // `:58902-58905` — the cooldown decay.
+        self.local_ai[1] = (self.local_ai[1] - 1.0).max(0.0);
+    }
+
+    /// W4-d41 — the sand poacher's wall form (531): the aiStyle-40
+    /// wall-crawler (`NPC.cs:29666-29898`). The 4/0.16 flight, the 8-px
+    /// snapped aim, the CanHit-gated approach/wander, the bounce, the
+    /// no-wall transform back into 530 (`:29888-29892`). The expert
+    /// 472-shot arm (`:29849-29868`) is constants-off (the port is
+    /// single-difficulty classic).
+    fn update_sand_poacher_wall(&mut self, world: &World, player: &Player) {
+        // `:29668-29671` — the retarget.
+        if self.target < 0 || self.target == 255 || player.dead {
+            let cand = crate::npc_target::session_candidate(player);
+            crate::npc_target::target_closest(self, world, &[cand], true, 40, 0);
+        }
+        // `:29679-29683` — the 531 parameters: 4 speed, 0.16 accel.
+        let (num596, num597) = (4.0f32, 0.16f32);
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:29687-29692` — the 8-px snapped aim.
+        let mut dx = ((pcx / 8.0) as i32 * 8 - (cx / 8.0) as i32 * 8) as f32;
+        let mut dy = ((pcy / 8.0) as i32 * 8 - (cy / 8.0) as i32 * 8) as f32;
+        // `:29693-29697` — the confused flip.
+        if self.buffs.find_buff_index(31).is_some() {
+            dx *= -2.0;
+            dy *= -2.0;
+        }
+        // `:29698-29710` — the normalized aim at the speed.
+        let d = (dx * dx + dy * dy).sqrt();
+        if d == 0.0 {
+            dx = self.vx;
+            dy = self.vy;
+        } else {
+            let inv = num596 / d;
+            dx *= inv;
+            dy *= inv;
+        }
+        // `:29711-29715` — the dead-target flee.
+        if player.dead {
+            dx = self.facing as f32 * num596 / 2.0;
+            dy = -num596 / 2.0;
+        }
+        self.sprite_dir = -1;
+        // `:29717-29811` — the CanHit-gated approach/wander.
+        let can_hit = crate::projectile::can_hit(
+            world, self.x, self.y, w, h, player.x, player.y,
+            crate::player::WIDTH, player.height,
+        );
+        if !can_hit {
+            // The wander: the ai[0] counter's ±0.023 drift + the 0.007
+            // aim nudge + the 1.5/3 caps.
+            self.ai[0] += 1.0;
+            if self.ai[0] > 0.0 {
+                self.vy += 0.023;
+            } else {
+                self.vy -= 0.023;
+            }
+            if self.ai[0] < -100.0 || self.ai[0] > 100.0 {
+                self.vx += 0.023;
+            } else {
+                self.vx -= 0.023;
+            }
+            if self.ai[0] > 200.0 {
+                self.ai[0] = -200.0;
+            }
+            self.vx += dx * 0.007;
+            self.vy += dy * 0.007;
+            self.rotation = self.vy.atan2(self.vx);
+            if self.vx.abs() > 1.5 {
+                self.vx *= 0.9;
+            }
+            if self.vy.abs() > 1.5 {
+                self.vy *= 0.9;
+            }
+            self.vx = self.vx.clamp(-3.0, 3.0);
+            self.vy = self.vy.clamp(-3.0, 3.0);
+        } else {
+            // The approach: the double-add accel toward the aim.
+            if self.vx < dx {
+                self.vx += num597;
+                if self.vx < 0.0 && dx > 0.0 {
+                    self.vx += num597;
+                }
+            } else if self.vx > dx {
+                self.vx -= num597;
+                if self.vx > 0.0 && dx < 0.0 {
+                    self.vx -= num597;
+                }
+            }
+            if self.vy < dy {
+                self.vy += num597;
+                if self.vy < 0.0 && dy > 0.0 {
+                    self.vy += num597;
+                }
+            } else if self.vy > dy {
+                self.vy -= num597;
+                if self.vy > 0.0 && dy < 0.0 {
+                    self.vy -= num597;
+                }
+            }
+            self.rotation = dy.atan2(dx);
+        }
+        // `:29812-29815` — the 531 rotation offset.
+        self.rotation += std::f32::consts::FRAC_PI_2;
+        // `:29816-29842` — the bounce: the blocked axes reflect at
+        // ×-0.5 with the 2/1.5 floors.
+        if self.collide_x {
+            self.net_update = true;
+            self.vx = self.old_vx * -0.5;
+            if self.facing == -1 && self.vx > 0.0 && self.vx < 2.0 {
+                self.vx = 2.0;
+            }
+            if self.facing == 1 && self.vx < 0.0 && self.vx > -2.0 {
+                self.vx = -2.0;
+            }
+        }
+        if self.collide_y {
+            self.net_update = true;
+            self.vy = self.old_vy * -0.5;
+            if self.vy > 0.0 && self.vy < 1.5 {
+                self.vy = 2.0;
+            }
+            if self.vy < 0.0 && self.vy > -1.5 {
+                self.vy = -2.0;
+            }
+        }
+        // `:29888-29892` — the no-wall transform back into 530.
+        if self.local_ai[1] == 0.0 && !self.can_stick_to_walls(world, NpcKind::DesertScorpionWalk) {
+            if let Some((nx, ny)) = self.transform_space(world, NpcKind::DesertScorpionWalk) {
+                self.x = nx;
+                self.y = ny;
+                // The transform needs a &Player for the target re-pick;
+                // the wall form's target is the session player.
+                let mut p_clone = player.clone();
+                self.transform_to_kind_no_reposition(world, &mut p_clone, NpcKind::DesertScorpionWalk);
+                self.local_ai[1] = 12.0;
+            }
+        }
+        // `:29894-29897` — the cooldown decay.
+        self.local_ai[1] = (self.local_ai[1] - 1.0).max(0.0);
+        // The tile collision (the wall form has no noTileCollide row —
+        // `NPC.cs:14946-14959` writes only noGravity).
+        self.integrate_flyer_collision(world);
+    }
+
+    /// W4-d41 — `NPC.NPCCanStickToWalls` (`NPC.cs:55812-55831`): the 3x3
+    /// tile probe around the centre — a tile counts when it is NOT
+    /// (active && solid && !platform) AND has a wall; >4 counts → true.
+    /// The transformID overload (`:55787-55810`) probes the TARGET's
+    /// adjusted hitbox first, then the current centre.
+    fn can_stick_to_walls(&self, world: &World, target: NpcKind) -> bool {
+        // The target's adjusted hitbox (the bottom-center resize).
+        if let Some((nx, ny)) = self.transform_space(world, target) {
+            let (tw, th) = target.size();
+            let cx = nx + tw * 0.5;
+            let cy = ny + th * 0.5;
+            if self.wall_probe(world, cx, cy) {
+                return true;
+            }
+        }
+        let (w, h) = self.size();
+        self.wall_probe(world, self.x + w * 0.5, self.y + h * 0.5)
+    }
+
+    /// The 3x3 wall probe (`NPC.cs:55812-55831`).
+    fn wall_probe(&self, world: &World, cx: f32, cy: f32) -> bool {
+        let tx = (cx as i32) / 16;
+        let ty = (cy as i32) / 16;
+        let mut count = 0;
+        for i in (tx - 1)..=(tx + 1) {
+            for j in (ty - 1)..=(ty + 1) {
+                if let Some(t) = world.tile(i, j) {
+                    let solid = t.active()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::SET_PLATFORMS.has(t.kind);
+                    if !solid && t.wall > 0 {
+                        count += 1;
+                        if count > 4 {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// W4-d41 — `Collision.TryChangingSizeFromBottomCenter`
+    /// (`Collision.cs:2486-2532`): the bottom-center hitbox resize for
+    /// the transform. The height growth probes the up/down headroom
+    /// (the 16-px step collision), the width shrink always fits. Returns
+    /// the new top-left, or None when the growth does not fit. The
+    /// port's stand-in: the height growth needs the full headroom above
+    /// (the `TileCollisionInStepsOf16` probe folds to the
+    /// `collides_rect` check at the grown box — the documented
+    /// granularity, the transform-space convention).
+    fn transform_space(&self, world: &World, target: NpcKind) -> Option<(f32, f32)> {
+        let (w, h) = self.size();
+        let (tw, th) = target.size();
+        let dh = th - h;
+        let dw = tw - w;
+        // The bottom-center anchor: the bottom edge stays, the centre X
+        // stays.
+        let bottom = self.y + h;
+        let cx = self.x + w * 0.5;
+        let nx = cx - tw * 0.5;
+        let ny = bottom - th;
+        if dh > 0.0 {
+            // The growth needs the headroom above (the up-probe).
+            if crate::player::collides_rect(world, nx, ny, tw, th) {
+                return None;
+            }
+        }
+        if dw > 0.0 {
+            // The width growth needs the side headroom.
+            if crate::player::collides_rect(world, nx, ny, tw, th) {
+                return None;
+            }
+        }
+        Some((nx, ny))
+    }
+
+    /// W4-d41 — `NPC.Transform` with `withReposition: false`
+    /// (`NPC.cs:81084-81114`): the caller already moved the position via
+    /// `TryMoveToTransformableSpaceInto`, so the bottom-anchored
+    /// reposition is SKIPPED — the kind swap + the SetDefaults subset +
+    /// the life rescale + the target re-pick only.
+    fn transform_to_kind_no_reposition(&mut self, world: &World, player: &Player, new_kind: NpcKind) {
+        let num = self.hp;
+        let num2 = self.max_hp;
+        self.kind = new_kind;
+        self.size_override = None;
+        self.max_hp = new_kind.max_hp();
+        self.scale = 1.0;
+        self.alpha = 0;
+        self.net_update = true;
+        self.ai = [0.0; 4];
+        self.local_ai = [0.0; 4];
+        self.target = 255;
+        self.old_target = 255;
+        self.target_rect = (0, 0, 0, 0);
+        self.frame = 0;
+        self.frame_counter = 0.0;
+        self.collide_x = false;
+        self.collide_y = false;
+        let cand = crate::npc_target::session_candidate(player);
+        crate::npc_target::target_closest(self, world, &[cand], true, new_kind.ai_style() as i32, 0);
+        self.hp = if num2 > 0 { (num * self.max_hp / num2).max(1) } else { 1 };
+        self.ai = [0.0; 4];
+        self.carrier_x = -1.0;
+        self.carrier_y = -1.0;
+        self.wants_transform = None;
+    }
+
     // `update_scutlix_rider` RETIRED (S1-D-3-wire-saucer): the 390 arm is
     // the faithful `npc_ai_style75::style75_step` now (the carrier-spawn
     // latch + the ride + the four-draw fire jitter + the idle octant +
@@ -24353,7 +26145,7 @@ impl Npc {
     /// Jellyfish: the desired-velocity bands (20/40/80 px → 0.35/0.65/1.0
     /// × 5 of the 250-px-above-the-player vector), the `moveSpeed = 0.15`
     /// fly, the 70-tick 539 shot (60 damage) from the random ring.
-    fn update_stardust_jellyfish(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn update_stardust_jellyfish(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -24396,6 +26188,29 @@ impl Npc {
                 guard += 1;
             }
             self.wants_hostile_shot.push((539u16, cx, cy, sx, sy, 60));
+        }
+        // W4-d41 — the ai[0]==2 flare spawn (`NPC.cs:39720-39735`): the
+        // player within 300 px X + CanHit → the 0.96 brake, the ai[1]
+        // counter, the 20th tick's 516 at centre+(0,26). The sibling
+        // separation (`:39736-39747`) needs the pool — the sim's
+        // pooled path owns it (the solo path skips it).
+        if self.ai[0] == 2.0 {
+            let (w, _h) = self.size();
+            if (pcx - cx).abs() < 300.0
+                && crate::projectile::can_hit(
+                    world, self.x, self.y, w, _h, player.x, player.y,
+                    crate::player::WIDTH, player.height,
+                )
+            {
+                self.vx *= 0.96;
+                self.vy *= 0.96;
+                self.ai[1] += 1.0;
+                if self.ai[1] == 20.0 {
+                    self.wants_solar_flare = Some((cx, cy + 26.0));
+                } else if self.ai[1] >= 30.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
         }
     }
 
@@ -26096,7 +27911,7 @@ impl Npc {
     /// `AI_003_Fighters`'s SolarDrakomire arm (`NPC.cs:58214-58219`'s
     /// 4/0.1/0.95 jump assist + `:58422-58431`'s rider-hide) — the walker
     /// with the mob-specific speed, hidden while a 416 rides it.
-    fn update_solar_drakomire(&mut self, world: &World, player: &Player) {
+    fn update_solar_drakomire(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // S1-D-3p (walker migration): the shared selection at the C#
         // position (`NPC.cs:57369`); S1-D-3's 415 carrier row
         // (`NPC.cs:58214-58219`) rides the same ladder.
@@ -26116,6 +27931,40 @@ impl Npc {
         // `:58426-58430`'s hide: the mount hides while a rider links to it —
         // the vanilla's `hide` has no port field (the pre-pass owns the
         // link), so the mount stays visible.
+        // W4-d41 — the 415 flare charge (`NPC.cs:56786-56853`): the
+        // justHit 120 rest, the ai[2] countdown, the 0-tick's >6-flare
+        // cap + the facing/CanHit gate into the -1 charge, the charge's
+        // 0.8 brake + the -18/-26/-34 dust ticks, the -42 end's
+        // 180+30*Next(10) rearm + the 516 spawn at centre+(spriteDir*45,8).
+        // The flare-count cap needs the pool — the sim's pooled path owns
+        // it (the solo path spawns unconditionally, the documented fold).
+        if self.just_hit {
+            self.ai[2] = 120.0;
+            self.net_update = true;
+        }
+        if self.ai[2] > 0.0 {
+            self.ai[2] -= 1.0;
+        }
+        if self.ai[2] == 0.0 {
+            let (pcx, _pcy) = player.center();
+            let (cx, _cy) = self.center();
+            if ((pcx < cx && self.facing < 0) || (pcx > cx && self.facing > 0))
+                && crate::projectile::can_hit_line(world, cx, _cy, 0.0, 0.0, pcx, _pcy, 0.0, 0.0)
+            {
+                self.ai[2] = -1.0;
+                self.net_update = true;
+            }
+        } else if self.ai[2] < 0.0 && self.ai[2] > -42.0 {
+            self.ai[2] -= 1.0;
+            if self.ai[2] == -42.0 {
+                self.ai[2] = (180 + 30 * rng.next_max(10)) as f32;
+            }
+            self.vx *= 0.8;
+            if self.ai[2] == -42.0 {
+                let (cx, cy) = self.center();
+                self.wants_solar_flare = Some((cx + self.sprite_dir as f32 * 45.0, cy + 8.0));
+            }
+        }
     }
 
     // `update_solar_drakomire_rider` RETIRED (S1-D-3-wire-saucer): the 416
@@ -26155,8 +28004,19 @@ impl Npc {
             npc_type_no_aggro: false,
             tank_pet: None,
         };
+        // W4-d41 — the shelly pair rides the SAME style-39 arm on its
+        // `Style39Type::GiantShelly` branches (the module's `is_shelly`
+        // axis: the 0.5 cap, the +2/+4 aggro, the 0.5-tick wind-up, the
+        // ×1.5/×0.75 lunge — `NPC.cs:29236-29499`). The ball states 5/6
+        // are 417-only, so the bounce tail below never fires for them.
+        let ty = match self.kind {
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => {
+                crate::npc_ai_style39::Style39Type::GiantShelly
+            }
+            _ => crate::npc_ai_style39::Style39Type::SolarSroller,
+        };
         let mut ctx = crate::npc_ai_style39::Style39Context {
-            kind: crate::npc_ai_style39::Style39Type::SolarSroller,
+            kind: ty,
             difficulty: 1.0, // Classic — the port's difficulty fold
             just_hit: self.hurt_cd > 0.0,
             ticker: 0, // the update_zombie stand-in (no ticker plumbed)
@@ -27200,6 +29060,36 @@ impl Npc {
             self.wants_hostile_shot
                 .push((ritual, pcx, pcy, 0.0, 0.0, 0));
             let _ = ritual;
+        }
+        // W4-d41 — the Solar Tower's aiStyle-94 goop spawn
+        // (`NPC.cs:39370-39382`): the ai[1] cooldown, the live target
+        // within 1080 px and above the 700-px band → the 519 at the
+        // top-band random spot with the upward launch velocity. The
+        // dust arms (`:39351-39369`) are the documented skip.
+        if self.kind == NpcKind::SolarTower {
+            if self.ai[1] > 0.0 {
+                self.ai[1] -= 1.0;
+            }
+            if self.ai[1] <= 0.0
+                && player.hp > 0
+                && !player.dead
+                && (pcx - cx).hypot(pcy - cy) < 1080.0
+                && player.y - self.y < 700.0
+            {
+                // `:39376` — the top-band spot: Top + (-w*0.33, -20) +
+                // (w*0.66, 20) * RandomVector2(0, 1).
+                let rx = rng.next_float();
+                let ry = rng.next_float();
+                let gx = self.x - w * 0.33 + w * 0.66 * rx;
+                let gy = self.y - 20.0 + 20.0 * ry;
+                // `:39377` — -UnitY rotated ±π/4, scaled 7..12.
+                let ang = rng.next_float_direction() * std::f32::consts::FRAC_PI_4;
+                let speed = 7.0 + rng.next_float() * 5.0;
+                let gvx = ang.sin() * speed;
+                let gvy = -ang.cos() * speed;
+                self.wants_solar_goop = Some((gx, gy, gvx, gvy));
+                self.ai[1] = 60.0;
+            }
         }
         let _ = rng;
     }
@@ -29734,6 +31624,9 @@ impl Npc {
                     | NpcKind::Steampunker
                     | NpcKind::Cyborg
                     | NpcKind::BartenderUnconscious
+                    // W4-d41: the Tavernkeep's dmg 10 never reaches the
+                    // player (the aiStyle-7 town no-contact, `NPC.cs:16268`).
+                    | NpcKind::DD2Bartender
             ) {
                 let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -30615,6 +32508,70 @@ impl Npc {
             NpcKind::ChatteringTeethBomb => 378,
             NpcKind::CultistArcherBlue => 379,
             NpcKind::CultistArcherWhite => 380,
+            // W4-d41 — the cavern crawdads/shellies: the vanilla type ids
+            // (the same values `to_u16` rides) — unused by every arm
+            // above, so the G6 key stays injective.
+            NpcKind::Crawdad => 494,
+            NpcKind::Crawdad2 => 495,
+            NpcKind::GiantShelly => 496,
+            NpcKind::GiantShelly2 => 497,
+            // W4-d41 — the nine salamanders' vanilla type ids (the same
+            // values `to_u16` rides) — unused by every arm above, so the
+            // G6 key stays injective.
+            NpcKind::Salamander => 498,
+            NpcKind::Salamander2 => 499,
+            NpcKind::Salamander3 => 500,
+            NpcKind::Salamander4 => 501,
+            NpcKind::Salamander5 => 502,
+            NpcKind::Salamander6 => 503,
+            NpcKind::Salamander7 => 504,
+            NpcKind::Salamander8 => 505,
+            NpcKind::Salamander9 => 506,
+            // W4-d41 — the antlions + the Dune Splicer chain's vanilla
+            // type ids (the same values `to_u16` rides) — unused by every
+            // arm above, so the G6 key stays injective.
+            NpcKind::GiantWalkingAntlion => 508,
+            NpcKind::DuneSplicerHead => 510,
+            NpcKind::DuneSplicerBody => 511,
+            NpcKind::DuneSplicerTail => 512,
+            // W4-d41 — the Tomb Crawler chain + the solar fragments'
+            // vanilla type ids (the same values `to_u16` rides) — unused
+            // by every arm above, so the G6 key stays injective.
+            NpcKind::TombCrawlerHead => 513,
+            NpcKind::TombCrawlerBody => 514,
+            NpcKind::TombCrawlerTail => 515,
+            NpcKind::SolarGoop => 519,
+            // W4-d41 — the ancient orbs + the desert ghouls' vanilla
+            // type ids (the same values `to_u16` rides) — unused by every
+            // arm above, so the G6 key stays injective.
+            NpcKind::AncientLight => 522,
+            NpcKind::AncientDoom => 523,
+            NpcKind::DesertGhoul => 524,
+            NpcKind::DesertGhoulCorruption => 525,
+            NpcKind::DesertGhoulCrimson => 526,
+            // W4-d41 — the hallowed ghoul + the lamias + the sand
+            // poachers' vanilla type ids (the same values `to_u16`
+            // rides) — unused by every arm above, so the G6 key stays
+            // injective.
+            NpcKind::DesertGhoulHallow => 527,
+            NpcKind::DesertLamiaLight => 528,
+            NpcKind::DesertLamiaDark => 529,
+            NpcKind::DesertScorpionWalk => 530,
+            NpcKind::DesertScorpionWall => 531,
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride's vanilla type ids (the same values `to_u16`
+            // rides) — unused by every arm above, so the G6 key stays
+            // injective.
+            NpcKind::DesertBeast => 532,
+            NpcKind::DemonTaxCollector => 534,
+            NpcKind::SlimeSpiked => 535,
+            NpcKind::TheBride => 536,
+            NpcKind::SandSlime => 537,
+            // W4-d41 — the critters + the tumbler's vanilla type ids
+            // (the same values `to_u16` rides) — unused by every arm
+            // above, so the G6 key stays injective.
+            NpcKind::SquirrelRed => 538,
+            NpcKind::SquirrelGold => 539,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -36152,7 +38109,7 @@ mod tests {
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
     
-    pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 565] = [
+    pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 603] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -36718,6 +38675,44 @@ mod tests {
         NpcKind::ChatteringTeethBomb,
         NpcKind::CultistArcherBlue,
         NpcKind::CultistArcherWhite,
+        NpcKind::Crawdad,
+        NpcKind::Crawdad2,
+        NpcKind::GiantShelly,
+        NpcKind::GiantShelly2,
+        NpcKind::Salamander,
+        NpcKind::Salamander2,
+        NpcKind::Salamander3,
+        NpcKind::Salamander4,
+        NpcKind::Salamander5,
+        NpcKind::Salamander6,
+        NpcKind::Salamander7,
+        NpcKind::Salamander8,
+        NpcKind::Salamander9,
+        NpcKind::GiantWalkingAntlion,
+        NpcKind::DuneSplicerHead,
+        NpcKind::DuneSplicerBody,
+        NpcKind::DuneSplicerTail,
+        NpcKind::TombCrawlerHead,
+        NpcKind::TombCrawlerBody,
+        NpcKind::TombCrawlerTail,
+        NpcKind::SolarGoop,
+        NpcKind::AncientLight,
+        NpcKind::AncientDoom,
+        NpcKind::DesertGhoul,
+        NpcKind::DesertGhoulCorruption,
+        NpcKind::DesertGhoulCrimson,
+        NpcKind::DesertGhoulHallow,
+        NpcKind::DesertLamiaLight,
+        NpcKind::DesertLamiaDark,
+        NpcKind::DesertScorpionWalk,
+        NpcKind::DesertScorpionWall,
+        NpcKind::DesertBeast,
+        NpcKind::DemonTaxCollector,
+        NpcKind::SlimeSpiked,
+        NpcKind::TheBride,
+        NpcKind::SandSlime,
+        NpcKind::SquirrelRed,
+        NpcKind::SquirrelGold,
     ];;
 
     #[test]
@@ -37015,6 +39010,1356 @@ mod tests {
         assert_eq!(NpcKind::Crab.death_sound(), Some("NPC_Killed_1"));
         assert_eq!(NpcKind::DungeonGuardian.hit_sound(), Some("NPC_Hit_2"));
         assert_eq!(NpcKind::DungeonGuardian.death_sound(), Some("NPC_Killed_2"));
+    // ---- W4-d41 (npc-kinds band 491-560) — the cavern crawdads/shellies
+    // (494-497). Tests-as-code, WRITTEN NOT RUN (code-only mode — no
+    // compiler invoked). Every constant pins to its C# literal. ----
+
+    /// The cavern crawdads'/shellies' `SetDefaults` rows
+    /// (`NPC.cs:14666-14677` for 494/495, `:14678-14690` for 496/497):
+    /// size, aiStyle, lifeMax, damage, defense, value, knockBackResist —
+    /// the crawdads keep the head's kb 1 (`:8533`, the branch writes no
+    /// row), the shellies 0.75.
+    #[test]
+    fn w4_d41_the_cavern_crawdad_shelly_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::Crawdad, 494u16, 28.0, 22.0, 3u8, 50, 28, 6, 120.0, 1.0f32),
+            (NpcKind::Crawdad2, 495, 28.0, 22.0, 3, 50, 28, 6, 120.0, 1.0),
+            (NpcKind::GiantShelly, 496, 28.0, 22.0, 39, 50, 16, 12, 120.0, 0.75),
+            (NpcKind::GiantShelly2, 497, 28.0, 22.0, 39, 50, 16, 12, 120.0, 0.75),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            // The 1-variants keep their own cs_id; the 2-variants fold
+            // onto the 1-variant's bestiary net id (the L-B cs_id==net_id
+            // invariant — the Destroyer-segment precedent).
+            let cs = match kind {
+                NpcKind::Crawdad2 => 494,
+                NpcKind::GiantShelly2 => 496,
+                _ => vanilla,
+            };
+            assert_eq!(kind.cs_id(), cs, "{kind:?} cs_id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            // The grounded walkers: no gravity/tile-collide/behind-tiles
+            // rows (the branch writes none).
+            assert!(!kind.no_gravity(), "{kind:?} noGravity");
+            assert!(!kind.behind_tiles(), "{kind:?} behindTiles");
+            assert_eq!(n.scale, 1.0, "{kind:?} scale");
+            // The protocol ids keep the vanilla slots (free in the wire
+            // space) and round-trip.
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The sound rows: the crawdads NPCHit33/NPCDeath36
+        // (`NPC.cs:14674-14675`), the shellies NPCHit38/NPCDeath41
+        // (`:14686-14687`).
+        assert_eq!(NpcKind::Crawdad.hit_sound(), Some("NPC_Hit_33"));
+        assert_eq!(NpcKind::Crawdad2.hit_sound(), Some("NPC_Hit_33"));
+        assert_eq!(NpcKind::Crawdad.death_sound(), Some("NPC_Killed_36"));
+        assert_eq!(NpcKind::Crawdad2.death_sound(), Some("NPC_Killed_36"));
+        assert_eq!(NpcKind::GiantShelly.hit_sound(), Some("NPC_Hit_38"));
+        assert_eq!(NpcKind::GiantShelly2.hit_sound(), Some("NPC_Hit_38"));
+        assert_eq!(NpcKind::GiantShelly.death_sound(), Some("NPC_Killed_41"));
+        assert_eq!(NpcKind::GiantShelly2.death_sound(), Some("NPC_Killed_41"));
+        // The Confused (31) immunity rows (`NPCID.cs:8916-8943`).
+        for kind in [
+            NpcKind::Crawdad,
+            NpcKind::Crawdad2,
+            NpcKind::GiantShelly,
+            NpcKind::GiantShelly2,
+        ] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+    }
+
+    /// The bestiary rows: ONE entry per pair — the 1-variants carry the
+    /// visible rows (`BestiaryDatabaseNPCsPopulator.cs:851-868`'s
+    /// automated populator), the 2-variants fold onto them
+    /// (`ContentSamples.cs:1019-1020`'s credit map; the redigit
+    /// dictionary's `Hide = true`). The draw sheets stay the variants'
+    /// own (`texture_net_id`).
+    #[test]
+    fn w4_d41_the_cavern_pairs_fold_their_bestiary_credits() {
+        let crawdad = crate::bestiary::entry_for_npc(NpcKind::Crawdad, SlimeVariant::Blue);
+        assert_eq!(crawdad.net_id, 494);
+        assert_eq!(crawdad.credit_id, "Crawdad");
+        assert_eq!(crawdad.name, "Crawdad");
+        let shelly = crate::bestiary::entry_for_npc(NpcKind::GiantShelly, SlimeVariant::Blue);
+        assert_eq!(shelly.net_id, 496);
+        assert_eq!(shelly.credit_id, "GiantShelly");
+        assert_eq!(shelly.name, "Giant Shelly");
+        // The folds.
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Crawdad2, SlimeVariant::Blue).net_id,
+            494
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::GiantShelly2, SlimeVariant::Blue).net_id,
+            496
+        );
+        // The DRAW sheets keep the variants' own ids.
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::Crawdad), 494);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::Crawdad2), 495);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::GiantShelly), 496);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::GiantShelly2), 497);
+        // The row counts (`Main.npcFrameCount`, `Main.cs:67082`): the
+        // crawdads 8, the shellies 12.
+        assert_eq!(crate::render::entities::npc_rows(494), 8);
+        assert_eq!(crate::render::entities::npc_rows(495), 8);
+        assert_eq!(crate::render::entities::npc_rows(496), 12);
+        assert_eq!(crate::render::entities::npc_rows(497), 12);
+    }
+
+    /// The crawdads' `FindFrame` case (`NPC.cs:69657-69733`): the charge
+    /// bands pin rows 5/6/7 off ai[2], the air/turn holds 2/3, the idle
+    /// snaps to 0, and the |vx| accumulator steps rows 0/1/2/3/4 over
+    /// the 8/16/24/32/39 bands.
+    #[test]
+    fn w4_d41_the_crawdads_find_frame_bands() {
+        let mut n = bare(NpcKind::Crawdad);
+        // The charge bands.
+        for (ai2, want) in [(1.0, 5), (6.9, 5), (7.0, 6), (13.9, 6), (14.0, 7), (19.9, 7)] {
+            n.ai[2] = ai2;
+            n.frame = 0;
+            n.find_frame();
+            assert_eq!(n.frame, want, "the charge band at ai[2] {ai2}");
+        }
+        // ai[2] >= 20 falls through the bands — the row holds.
+        n.ai[2] = 20.0;
+        n.frame = 3;
+        n.find_frame();
+        assert_eq!(n.frame, 3, "the past-20 hold");
+        n.ai[2] = 0.0;
+        // The idle.
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.frame = 4;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the idle row");
+        // The air: rising 2, falling 3.
+        n.vy = -1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 2, "the rising row");
+        n.vy = 1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 3, "the falling row");
+        n.vy = 0.0;
+        // The walk: 4 px/tick steps a band every 2 ticks.
+        n.vx = 4.0;
+        n.facing = 1;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut bands = Vec::new();
+        for _ in 0..10 {
+            n.find_frame();
+            bands.push(n.frame);
+        }
+        assert_eq!(&bands[..], &[0, 1, 1, 2, 2, 3, 3, 4, 4, 4], "the five bands");
+        assert!(bands.iter().all(|f| *f < 8), "no row past the strip");
+    }
+
+    /// The shellies' `FindFrame` case (`NPC.cs:69994-70066`): the state-0
+    /// walk laps at 24, the wind-up pins 4/5/6 off ai[1], the settle
+    /// 10/11/3, any other state 7.
+    #[test]
+    fn w4_d41_the_shellies_find_frame_states() {
+        let mut n = bare(NpcKind::GiantShelly);
+        // The wind-up bands.
+        n.ai[0] = 1.0;
+        for (ai1, want) in [(0.0, 4), (9.9, 4), (10.0, 5), (19.9, 5), (20.0, 6)] {
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!(n.frame, want, "the wind-up band at ai[1] {ai1}");
+        }
+        // The settle bands.
+        n.ai[0] = 5.0;
+        for (ai1, want) in [(0.0, 10), (10.0, 11), (20.0, 3)] {
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!(n.frame, want, "the settle band at ai[1] {ai1}");
+        }
+        // Any other state pins 7.
+        n.ai[0] = 3.0;
+        n.find_frame();
+        assert_eq!(n.frame, 7, "the lunge row");
+        // The walk: the |vx|*1.1 accumulator's 6/12/18/24 bands.
+        n.ai[0] = 0.0;
+        n.vx = 6.0;
+        n.vy = 0.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 1, "6*1.1 = 6.6 → row 1");
+        n.frame_counter = 12.0;
+        n.find_frame();
+        assert_eq!(n.frame, 3, "12 + 6.6 = 18.6 → row 3");
+        n.frame_counter = 24.0;
+        n.find_frame();
+        assert_eq!(n.frame_counter, 0.0, "the 24 lap resets the counter");
+        assert_eq!(n.frame, 3, "the lap leaves the row");
+    }
+
+    /// The AI routing: the crawdads ride the aiStyle-3 walker (the
+    /// charge ladder fires through `run_ai3_ladder`), the shellies the
+    /// style-39 machine. Each kind steps without panicking, stays inside
+    /// its own strip, and keeps its `SetDefaults` HP.
+    #[test]
+    fn w4_d41_the_cavern_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::Crawdad,
+            NpcKind::Crawdad2,
+            NpcKind::GiantShelly,
+            NpcKind::GiantShelly2,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
+    }
+
+    /// The salamanders' `SetDefaults` rows (`NPC.cs:14691-14703`'s
+    /// `type >= 498 && <= 506` group): 24x44, aiStyle 3, dmg 18, def 10,
+    /// 65 HP, kb 0.45, value 120, NPCHit50/NPCDeath53 — identical across
+    /// the nine colours.
+    #[test]
+    fn w4_d41_the_salamander_setdefaults_rows() {
+        let kinds = [
+            (NpcKind::Salamander, 498u16),
+            (NpcKind::Salamander2, 499),
+            (NpcKind::Salamander3, 500),
+            (NpcKind::Salamander4, 501),
+            (NpcKind::Salamander5, 502),
+            (NpcKind::Salamander6, 503),
+            (NpcKind::Salamander7, 504),
+            (NpcKind::Salamander8, 505),
+            (NpcKind::Salamander9, 506),
+        ];
+        for (kind, vanilla) in kinds {
+            assert_eq!(kind.size(), (24.0, 44.0), "{kind:?} size");
+            assert_eq!(kind.ai_style(), 3, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), 65, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), 18, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), 10, "{kind:?} defense");
+            assert_eq!(n.value(), 120.0, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), 0.45, "{kind:?} knockBackResist");
+            assert!(!kind.no_gravity(), "{kind:?} noGravity");
+            assert!(!kind.behind_tiles(), "{kind:?} behindTiles");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_50"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_53"), "{kind:?} death");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            // The null immunity rows (`NPCID.cs:8944-8952`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+            // cs_id: 498 keeps its hand row; 499-506 fold onto 499's
+            // bestiary net id (the L-B cs_id==net_id invariant).
+            let cs = if vanilla == 498 { 498 } else { 499 };
+            assert_eq!(kind.cs_id(), cs, "{kind:?} cs_id");
+        }
+    }
+
+    /// The bestiary rows: ONE entry for the nine colours — the 499
+    /// `Salamander2` row (the redigit dictionary hides 498/500-506;
+    /// `ContentSamples.cs:1021-1025` folds ALL of 498-506 onto the 499
+    /// credit). The draw sheets stay the colours' own.
+    #[test]
+    fn w4_d41_the_salamanders_fold_onto_the_499_credit() {
+        let e = crate::bestiary::entry_for_npc(NpcKind::Salamander2, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 499);
+        assert_eq!(e.credit_id, "Salamander2");
+        assert_eq!(e.name, "Salamander");
+        for kind in [
+            NpcKind::Salamander,
+            NpcKind::Salamander3,
+            NpcKind::Salamander4,
+            NpcKind::Salamander5,
+            NpcKind::Salamander6,
+            NpcKind::Salamander7,
+            NpcKind::Salamander8,
+            NpcKind::Salamander9,
+        ] {
+            assert_eq!(
+                crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id,
+                499,
+                "{kind:?} folds onto 499"
+            );
+        }
+        // The DRAW sheets keep the colours' own ids; the row count is 11
+        // (`Main.npcFrameCount[498..506]`, `Main.cs:67082`).
+        for (kind, net) in [
+            (NpcKind::Salamander, 498u16),
+            (NpcKind::Salamander2, 499),
+            (NpcKind::Salamander3, 500),
+            (NpcKind::Salamander4, 501),
+            (NpcKind::Salamander5, 502),
+            (NpcKind::Salamander6, 503),
+            (NpcKind::Salamander7, 504),
+            (NpcKind::Salamander8, 505),
+            (NpcKind::Salamander9, 506),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), 11, "{kind:?} rows");
+        }
+    }
+
+    /// The salamanders' `FindFrame` case (`NPC.cs:69849-69907`): the
+    /// grounded walk cycles rows 0..7 at the >4 |vx| step, the stop's
+    /// ai[1] bands pin 8/9/8, the idle row 0, the air row 10.
+    #[test]
+    fn w4_d41_the_salamanders_find_frame_bands() {
+        let mut n = bare(NpcKind::Salamander);
+        // The stop bands.
+        n.ai[2] = 1.0;
+        for (ai1, want) in [(0.0, 8), (11.9, 8), (12.0, 9), (33.9, 9), (34.0, 8)] {
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!(n.frame, want, "the stop band at ai[1] {ai1}");
+        }
+        n.ai[2] = 0.0;
+        // The idle.
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.frame = 5;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the idle row");
+        // The air.
+        n.vy = 1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 10, "the air row");
+        n.vy = 0.0;
+        // The walk: 5 px/tick steps a row every tick (5 > 4), wrapping
+        // at 8 back to 0.
+        n.vx = 5.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..9 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(&rows[..], &[1, 2, 3, 4, 5, 6, 7, 0, 1], "the 0..7 cycle");
+    }
+
+    /// The salamanders' shooter routing: the kind steps without
+    /// panicking, stays inside its 11-row strip, and keeps its
+    /// `SetDefaults` HP. The spit's data row pins the C# literals.
+    #[test]
+    fn w4_d41_the_salamanders_step_their_shooter() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::Salamander, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        let hp = n.hp;
+        for _ in 0..120 {
+            n.update(&w, &mut player, 1.0 / 60.0);
+            assert!(n.frame < 11, "row {} of 11", n.frame);
+            assert!(n.hp <= hp, "hp grew");
+        }
+        // The spit's `SetDefaults` row (`Projectile.cs:6248-6257`).
+        let d = crate::projectile::proj_data(crate::projectile::SALAMANDER_SPIT)
+            .expect("the spit is registered");
+        assert_eq!((d.w, d.h), (10.0, 10.0));
+        assert_eq!(d.ai_style, 1);
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.alpha, 255);
+        assert!(d.tile_collide);
+        assert_eq!(d.time_left, 3600);
+    }
+
+    /// The antlions' + the Dune Splicer chain's `SetDefaults` rows
+    /// (`NPC.cs:14828-14840` for 508, `:14841-14853` for 509,
+    /// `:14773-14827` for 510-512).
+    #[test]
+    fn w4_d41_the_antlion_splicer_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::GiantWalkingAntlion, 508u16, 50.0, 31.0, 3u8, 110, 38, 16, 175.0, 0.4f32),
+            (NpcKind::GiantFlyingAntlion, 509, 40.0, 31.0, 44, 90, 34, 12, 195.0, 0.3),
+            (NpcKind::DuneSplicerHead, 510, 34.0, 34.0, 6, 500, 58, 18, 700.0, 0.0),
+            (NpcKind::DuneSplicerBody, 511, 34.0, 34.0, 6, 500, 54, 28, 700.0, 0.0),
+            (NpcKind::DuneSplicerTail, 512, 34.0, 34.0, 6, 500, 50, 34, 700.0, 0.0),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The sound rows.
+        assert_eq!(NpcKind::GiantWalkingAntlion.hit_sound(), Some("NPC_Hit_31"));
+        assert_eq!(NpcKind::GiantWalkingAntlion.death_sound(), Some("NPC_Killed_34"));
+        assert_eq!(NpcKind::GiantFlyingAntlion.hit_sound(), Some("NPC_Hit_32"));
+        assert_eq!(NpcKind::GiantFlyingAntlion.death_sound(), Some("NPC_Killed_35"));
+        for kind in [NpcKind::DuneSplicerHead, NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        // The gravity/behind-tiles flags: the charger is a grounded
+        // walker, the swarmer + the chain are gravity-free; the chain
+        // draws behind tiles.
+        assert!(!NpcKind::GiantWalkingAntlion.no_gravity());
+        assert!(!NpcKind::GiantWalkingAntlion.behind_tiles());
+        assert!(NpcKind::GiantFlyingAntlion.no_gravity());
+        assert!(!NpcKind::GiantFlyingAntlion.behind_tiles());
+        for kind in [NpcKind::DuneSplicerHead, NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            assert!(kind.behind_tiles(), "{kind:?} behindTiles");
+        }
+        // The immunity rows: the antlions null (`NPCID.cs:8960-8961`),
+        // the chain Confused [31] (`:8962-8983`).
+        for kind in [NpcKind::GiantWalkingAntlion, NpcKind::GiantFlyingAntlion] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+        for kind in [NpcKind::DuneSplicerHead, NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+    }
+
+    /// The bestiary rows: the antlions carry their own entries; the Dune
+    /// Splicer chain folds onto the head's 510 entry (the leinfors
+    /// dictionary's `Hide = true`). The draw sheets stay the segments'
+    /// own.
+    #[test]
+    fn w4_d41_the_antlion_splicer_bestiary_and_sheets() {
+        let charger = crate::bestiary::entry_for_npc(NpcKind::GiantWalkingAntlion, SlimeVariant::Blue);
+        assert_eq!(charger.net_id, 508);
+        assert_eq!(charger.credit_id, "GiantWalkingAntlion");
+        assert_eq!(charger.name, "Giant Antlion Charger");
+        let swarmer = crate::bestiary::entry_for_npc(NpcKind::GiantFlyingAntlion, SlimeVariant::Blue);
+        assert_eq!(swarmer.net_id, 509);
+        assert_eq!(swarmer.credit_id, "GiantFlyingAntlion");
+        assert_eq!(swarmer.name, "Giant Antlion Swarmer");
+        let head = crate::bestiary::entry_for_npc(NpcKind::DuneSplicerHead, SlimeVariant::Blue);
+        assert_eq!(head.net_id, 510);
+        assert_eq!(head.credit_id, "DuneSplicerHead");
+        assert_eq!(head.name, "Dune Splicer");
+        for kind in [NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            assert_eq!(
+                crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id,
+                510,
+                "{kind:?} folds onto the head"
+            );
+        }
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 508 six, 509 nine, 510-512 one).
+        for (kind, net, rows) in [
+            (NpcKind::GiantWalkingAntlion, 508u16, 6u32),
+            (NpcKind::GiantFlyingAntlion, 509, 9),
+            (NpcKind::DuneSplicerHead, 510, 1),
+            (NpcKind::DuneSplicerBody, 511, 1),
+            (NpcKind::DuneSplicerTail, 512, 1),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The antlion charger's `FindFrame` case (`NPC.cs:70067-70103`): the
+    /// grounded walk climbs from row 2 at the `1 + |vx|/2` >6 step, the
+    /// air holds row 1, the idle row 0. The swarmer's case
+    /// (`:70104-70119`): the 3-tick counter over the 9-row strip.
+    #[test]
+    fn w4_d41_the_antlions_find_frame_bands() {
+        let mut c = bare(NpcKind::GiantWalkingAntlion);
+        // The idle + air.
+        c.vx = 0.0;
+        c.vy = 0.0;
+        c.frame = 3;
+        c.find_frame();
+        assert_eq!(c.frame, 0, "the idle row");
+        c.vy = 1.0;
+        c.find_frame();
+        assert_eq!(c.frame, 1, "the air row");
+        c.vy = 0.0;
+        // The walk: 4 px/tick → 1 + 2 = 3/tick, a row every 3 ticks
+        // (>6), climbing from 2 and wrapping at 6 back to 2.
+        c.vx = 4.0;
+        c.facing = 1;
+        c.frame = 0;
+        c.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            c.find_frame();
+            rows.push(c.frame);
+        }
+        assert_eq!(&rows[..], &[2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 2], "the 2..5 cycle");
+        // The swarmer: the 3-tick counter.
+        let mut s = bare(NpcKind::GiantFlyingAntlion);
+        s.frame = 0;
+        s.frame_counter = 0.0;
+        for _ in 0..2 {
+            s.find_frame();
+        }
+        assert_eq!(s.frame, 0, "the stride holds for 2 ticks");
+        s.find_frame();
+        assert_eq!(s.frame, 1, "the third tick advances");
+        s.frame = 8;
+        s.frame_counter = 2.5;
+        s.find_frame();
+        assert_eq!(s.frame, 0, "the wrap at 9");
+    }
+
+    /// The Dune Splicer chain: the head's fixed-budget spawn
+    /// (`NPC.cs:51259`, Next(12,21)), the segments' single frame, the
+    /// shared life pool, and the sandstorm dig-tunable override.
+    #[test]
+    fn w4_d41_the_dune_splicer_chain_assembles() {
+        // The segments hold row 0 (no FindFrame case).
+        for kind in [NpcKind::DuneSplicerHead, NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            let mut s = bare(kind);
+            s.find_frame();
+            assert_eq!(s.frame, 0, "{kind:?} row 0");
+            s.find_frame();
+            assert_eq!(s.frame, 0, "{kind:?} never advances");
+        }
+        // The chain flags.
+        assert!(NpcKind::DuneSplicerHead.is_worm());
+        assert!(NpcKind::DuneSplicerHead.is_worm_head());
+        assert!(NpcKind::DuneSplicerBody.is_worm_mid());
+        assert_eq!(NpcKind::DuneSplicerHead.worm_next(), NpcKind::DuneSplicerBody);
+        assert_eq!(NpcKind::DuneSplicerBody.worm_next(), NpcKind::DuneSplicerTail);
+        assert!(NpcKind::DuneSplicerHead.shares_carrier_life());
+        assert!(NpcKind::DuneSplicerBody.shares_carrier_life());
+        // The dig tunables: the 10/0.25 base.
+        assert_eq!(NpcKind::DuneSplicerHead.worm_tunables(), (10.0, 0.25));
+        // The chain assembles through the worm pass: the head spawns
+        // Next(12,21) links, the last a tail, all sharing the head's life.
+        let w = ground();
+        let mut npcs = vec![Npc::new(NpcKind::DuneSplicerHead, 100.0, 100.0, 1, 0.0)];
+        npcs[0].hp = npcs[0].max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, Some((200.0, 200.0)), &mut npcs, &mut rng, &mut next_id);
+        let links = npcs.len();
+        assert!((13..=21).contains(&links), "the head + Next(12,21) links: {links}");
+        assert_eq!(npcs[links - 1].kind, NpcKind::DuneSplicerTail, "the last link is the tail");
+        for n in &npcs[1..links - 1] {
+            assert_eq!(n.kind, NpcKind::DuneSplicerBody, "the mid links are bodies");
+        }
+        // The shared life pool: every segment mirrors the head.
+        for n in &npcs[1..] {
+            assert_eq!(n.hp, npcs[0].hp, "the segment mirrors the head's life");
+        }
+    }
+
+    /// The Tomb Crawler chain's + the solar fragments' `SetDefaults` rows
+    /// (`NPC.cs:14718-14772` for 513-515, `:15394-15423` for 516/519).
+    #[test]
+    fn w4_d41_the_tomb_crawler_solar_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::TombCrawlerHead, 513u16, 22.0, 22.0, 6u8, 60, 18, 0, 130.0, 0.0f32),
+            (NpcKind::TombCrawlerBody, 514, 22.0, 22.0, 6, 60, 7, 12, 130.0, 0.0),
+            (NpcKind::TombCrawlerTail, 515, 22.0, 22.0, 6, 60, 7, 14, 130.0, 0.0),
+            (NpcKind::SolarGoop, 519, 26.0, 26.0, 99, 1, 120, 0, 0.0, 0.0),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+        }
+        // The chain draws behind tiles; the fragments do not.
+        for kind in [NpcKind::TombCrawlerHead, NpcKind::TombCrawlerBody, NpcKind::TombCrawlerTail] {
+            assert!(kind.behind_tiles(), "{kind:?} behindTiles");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        assert!(!NpcKind::SolarFlare.behind_tiles());
+        assert!(!NpcKind::SolarGoop.behind_tiles());
+        // The fragments' null sounds.
+        assert_eq!(NpcKind::SolarFlare.hit_sound(), None);
+        assert_eq!(NpcKind::SolarFlare.death_sound(), None);
+        assert_eq!(NpcKind::SolarGoop.hit_sound(), None);
+        assert_eq!(NpcKind::SolarGoop.death_sound(), None);
+        // The Confused [31] immunity rows (`NPCID.cs:8984-9031`).
+        for kind in [
+            NpcKind::TombCrawlerHead,
+            NpcKind::TombCrawlerBody,
+            NpcKind::TombCrawlerTail,
+            NpcKind::SolarGoop,
+        ] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+    }
+
+    /// The bestiary rows: the Tomb Crawler chain folds onto the head's
+    /// 513 entry; the solar fragments have NO entries (Hide=true). The
+    /// draw sheets stay the segments' own.
+    #[test]
+    fn w4_d41_the_tomb_crawler_solar_bestiary_and_sheets() {
+        let head = crate::bestiary::entry_for_npc(NpcKind::TombCrawlerHead, SlimeVariant::Blue);
+        assert_eq!(head.net_id, 513);
+        assert_eq!(head.credit_id, "TombCrawlerHead");
+        assert_eq!(head.name, "Tomb Crawler");
+        for kind in [NpcKind::TombCrawlerBody, NpcKind::TombCrawlerTail] {
+            assert_eq!(
+                crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id,
+                513,
+                "{kind:?} folds onto the head"
+            );
+        }
+        // The fragments are entry-less.
+        assert!(!crate::bestiary::has_entry(NpcKind::SolarFlare, SlimeVariant::Blue));
+        assert!(!crate::bestiary::has_entry(NpcKind::SolarGoop, SlimeVariant::Blue));
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 513-515 one, 516 four, 519 one).
+        for (kind, net, rows) in [
+            (NpcKind::TombCrawlerHead, 513u16, 1u32),
+            (NpcKind::TombCrawlerBody, 514, 1),
+            (NpcKind::TombCrawlerTail, 515, 1),
+            (NpcKind::SolarGoop, 519, 1),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The Tomb Crawler chain: the head's fixed-budget spawn
+    /// (`NPC.cs:51235`, Next(6,10)), the segments' single frame, the
+    /// shared life pool, the 7/0.1 dig tunables.
+    #[test]
+    fn w4_d41_the_tomb_crawler_chain_assembles() {
+        for kind in [NpcKind::TombCrawlerHead, NpcKind::TombCrawlerBody, NpcKind::TombCrawlerTail] {
+            let mut s = bare(kind);
+            s.find_frame();
+            assert_eq!(s.frame, 0, "{kind:?} row 0");
+        }
+        assert!(NpcKind::TombCrawlerHead.is_worm());
+        assert!(NpcKind::TombCrawlerHead.is_worm_head());
+        assert!(NpcKind::TombCrawlerBody.is_worm_mid());
+        assert_eq!(NpcKind::TombCrawlerHead.worm_next(), NpcKind::TombCrawlerBody);
+        assert_eq!(NpcKind::TombCrawlerBody.worm_next(), NpcKind::TombCrawlerTail);
+        assert_eq!(NpcKind::TombCrawlerHead.worm_tunables(), (7.0, 0.1));
+        let w = ground();
+        let mut npcs = vec![Npc::new(NpcKind::TombCrawlerHead, 100.0, 100.0, 1, 0.0)];
+        npcs[0].hp = npcs[0].max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, Some((200.0, 200.0)), &mut npcs, &mut rng, &mut next_id);
+        let links = npcs.len();
+        assert!((7..=10).contains(&links), "the head + Next(6,10) links: {links}");
+        assert_eq!(npcs[links - 1].kind, NpcKind::TombCrawlerTail, "the last link is the tail");
+        for n in &npcs[1..] {
+            assert_eq!(n.hp, npcs[0].hp, "the segment mirrors the head's life");
+        }
+    }
+
+    /// The Solar Flare's aiStyle-9 arm: the alpha ramp, the launch, the
+    /// homing steer, the collide/proximity self-strike. The Solar Goop's
+    /// aiStyle-99 arm: the gravity, the ground-strike 5-tick death.
+    #[test]
+    fn w4_d41_the_solar_fragments_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 100.0 * TILE_PX;
+        // The flare: the alpha ramps +40/tick to 220.
+        f.hp = f.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        f.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(f.alpha, 40, "the first alpha step");
+        assert_eq!(f.ai[0], 1.0, "the launch latch");
+        // The goop: the gravity + the ground-strike death.
+        let mut g = Npc::new(NpcKind::SolarGoop, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        g.hp = g.max_hp;
+        for _ in 0..200 {
+            g.update(&w, &mut player, 1.0 / 60.0);
+            if g.hp <= 0 {
+                break;
+            }
+        }
+        assert!(g.hp <= 0, "the goop dies on the ground strike");
+    }
+
+    /// The ancient orbs' + the desert ghouls' `SetDefaults` rows
+    /// (`NPC.cs:15780-15812` for 522/523, `:14882-14919` for 524-526).
+    #[test]
+    fn w4_d41_the_ancient_ghoul_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::AncientLight, 522u16, 26.0, 26.0, 100u8, 400, 120, 0, 0.0, 0.0f32),
+            (NpcKind::AncientDoom, 523, 42.0, 42.0, 101, 500, 30, 0, 0.0, 0.0),
+            (NpcKind::DesertGhoul, 524, 24.0, 44.0, 3, 180, 50, 26, 500.0, 0.6),
+            (NpcKind::DesertGhoulCorruption, 525, 24.0, 44.0, 3, 250, 60, 30, 650.0, 0.5),
+            (NpcKind::DesertGhoulCrimson, 526, 24.0, 44.0, 3, 220, 64, 32, 650.0, 0.5),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The orbs are gravity-free; the ghouls are grounded walkers.
+        assert!(NpcKind::AncientLight.no_gravity());
+        assert!(NpcKind::AncientDoom.no_gravity());
+        assert!(!NpcKind::DesertGhoul.no_gravity());
+        // The Ancient Doom's chaseable=false + alpha=255 rows.
+        let doom = bare(NpcKind::AncientDoom);
+        assert!(!doom.chaseable, "the doom is untargetable");
+        assert_eq!(doom.alpha, 255, "the doom's alpha row");
+        // The sound rows.
+        assert_eq!(NpcKind::AncientLight.hit_sound(), None);
+        assert_eq!(NpcKind::AncientLight.death_sound(), None);
+        assert_eq!(NpcKind::AncientDoom.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::AncientDoom.death_sound(), Some("NPC_Killed_6"));
+        for kind in [NpcKind::DesertGhoul, NpcKind::DesertGhoulCorruption, NpcKind::DesertGhoulCrimson] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_37"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_40"), "{kind:?} death");
+        }
+        // The immunity rows: the orbs Confused [31] (`NPCID.cs:9050-9063`),
+        // the ghouls null (`:9064-9067`).
+        for kind in [NpcKind::AncientLight, NpcKind::AncientDoom] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+        for kind in [NpcKind::DesertGhoul, NpcKind::DesertGhoulCorruption, NpcKind::DesertGhoulCrimson] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+    }
+
+    /// The bestiary rows: the ghouls carry their own entries; the orbs
+    /// are entry-less (Hide=true). The draw sheets + row counts.
+    #[test]
+    fn w4_d41_the_ancient_ghoul_bestiary_and_sheets() {
+        for (kind, net, credit, name) in [
+            (NpcKind::DesertGhoul, 524, "DesertGhoul", "Ghoul"),
+            (NpcKind::DesertGhoulCorruption, 525, "DesertGhoulCorruption", "Vile Ghoul"),
+            (NpcKind::DesertGhoulCrimson, 526, "DesertGhoulCrimson", "Tainted Ghoul"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} name");
+        }
+        assert!(!crate::bestiary::has_entry(NpcKind::AncientLight, SlimeVariant::Blue));
+        assert!(!crate::bestiary::has_entry(NpcKind::AncientDoom, SlimeVariant::Blue));
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 522 one, 523 five, 524-526 eight).
+        for (kind, net, rows) in [
+            (NpcKind::AncientLight, 522u16, 1u32),
+            (NpcKind::AncientDoom, 523, 5),
+            (NpcKind::DesertGhoul, 524, 8),
+            (NpcKind::DesertGhoulCorruption, 525, 8),
+            (NpcKind::DesertGhoulCrimson, 526, 8),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The desert ghouls' `FindFrame` case (`NPC.cs:69908-69945`): the
+    /// grounded walk climbs from row 2 at the `|vx| + 1` >9 step, the
+    /// idle row 0, the air row 1. The Ancient Doom's case
+    /// (`:72127-72137`): the 6-tick counter over the 5-row strip.
+    #[test]
+    fn w4_d41_the_ghoul_doom_find_frame_bands() {
+        let mut g = bare(NpcKind::DesertGhoul);
+        g.vx = 0.0;
+        g.vy = 0.0;
+        g.frame = 3;
+        g.find_frame();
+        assert_eq!(g.frame, 0, "the idle row");
+        g.vy = 1.0;
+        g.find_frame();
+        assert_eq!(g.frame, 1, "the air row");
+        g.vy = 0.0;
+        // The walk: 4 px/tick → 5/tick, a row every 2 ticks (>9).
+        g.vx = 4.0;
+        g.facing = 1;
+        g.frame = 0;
+        g.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..14 {
+            g.find_frame();
+            rows.push(g.frame);
+        }
+        assert_eq!(&rows[..], &[2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 2, 2], "the 2..7 cycle");
+        // The doom: the 6-tick counter.
+        let mut d = bare(NpcKind::AncientDoom);
+        d.frame = 0;
+        d.frame_counter = 0.0;
+        for _ in 0..5 {
+            d.find_frame();
+        }
+        assert_eq!(d.frame, 0, "the stride holds for 5 ticks");
+        d.find_frame();
+        assert_eq!(d.frame, 1, "the sixth tick advances");
+        d.frame = 4;
+        d.frame_counter = 5.5;
+        d.find_frame();
+        assert_eq!(d.frame, 0, "the wrap at 5");
+    }
+
+    /// The ancient orbs' + the ghouls' AI routing: each kind steps
+    /// without panicking, stays inside its own strip, and keeps its
+    /// `SetDefaults` HP.
+    #[test]
+    fn w4_d41_the_ancient_ghoul_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::AncientLight,
+            NpcKind::AncientDoom,
+            NpcKind::DesertGhoul,
+            NpcKind::DesertGhoulCorruption,
+            NpcKind::DesertGhoulCrimson,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
+    }
+
+    /// The hallowed ghoul's + the lamias' + the sand poachers'
+    /// `SetDefaults` rows (`NPC.cs:14911-14917` for 527, `:14920-14932`
+    /// for 528/529, `:14933-14959` for 530/531).
+    #[test]
+    fn w4_d41_the_lamia_scorpion_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::DesertGhoulHallow, 527u16, 24.0, 44.0, 3u8, 300, 54, 32, 750.0, 0.4f32),
+            (NpcKind::DesertLamiaLight, 528, 24.0, 44.0, 3, 350, 52, 28, 600.0, 0.35),
+            (NpcKind::DesertLamiaDark, 529, 24.0, 44.0, 3, 350, 52, 28, 600.0, 0.35),
+            (NpcKind::DesertScorpionWalk, 530, 50.0, 20.0, 3, 320, 66, 24, 600.0, 0.5),
+            (NpcKind::DesertScorpionWall, 531, 36.0, 36.0, 40, 320, 66, 24, 600.0, 0.5),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The wall form is gravity-free; the rest are grounded walkers.
+        assert!(NpcKind::DesertScorpionWall.no_gravity());
+        assert!(!NpcKind::DesertScorpionWalk.no_gravity());
+        assert!(!NpcKind::DesertLamiaLight.no_gravity());
+        // The sound rows.
+        assert_eq!(NpcKind::DesertGhoulHallow.hit_sound(), Some("NPC_Hit_37"));
+        assert_eq!(NpcKind::DesertGhoulHallow.death_sound(), Some("NPC_Killed_40"));
+        for kind in [NpcKind::DesertLamiaLight, NpcKind::DesertLamiaDark] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        for kind in [NpcKind::DesertScorpionWalk, NpcKind::DesertScorpionWall] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_13"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_19"), "{kind:?} death");
+        }
+        // The immunity rows: the ghoul/lamias null (`NPCID.cs:9064-9069`),
+        // the poachers [20] (`:9070-9083`).
+        for kind in [NpcKind::DesertGhoulHallow, NpcKind::DesertLamiaLight, NpcKind::DesertLamiaDark] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+        for kind in [NpcKind::DesertScorpionWalk, NpcKind::DesertScorpionWall] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} OnFire-immune");
+        }
+    }
+
+    /// The bestiary rows: the ghoul/lamias carry their own entries; the
+    /// sand poacher's wall form folds onto the walker's 530 entry
+    /// (`ContentSamples.cs:1038`). The draw sheets stay the wall's own.
+    #[test]
+    fn w4_d41_the_lamia_scorpion_bestiary_and_sheets() {
+        for (kind, net, credit, name) in [
+            (NpcKind::DesertGhoulHallow, 527, "DesertGhoulHallow", "Dreamer Ghoul"),
+            (NpcKind::DesertLamiaLight, 528, "DesertLamiaLight", "Lamia"),
+            (NpcKind::DesertLamiaDark, 529, "DesertLamiaDark", "Lamia"),
+            (NpcKind::DesertScorpionWalk, 530, "DesertScorpionWalk", "Sand Poacher"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} name");
+        }
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::DesertScorpionWall, SlimeVariant::Blue).net_id,
+            530,
+            "the wall folds onto the walker"
+        );
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 527 eight, 528/529 nine, 530 five, 531 four).
+        for (kind, net, rows) in [
+            (NpcKind::DesertGhoulHallow, 527u16, 8u32),
+            (NpcKind::DesertLamiaLight, 528, 9),
+            (NpcKind::DesertLamiaDark, 529, 9),
+            (NpcKind::DesertScorpionWalk, 530, 5),
+            (NpcKind::DesertScorpionWall, 531, 4),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The lamias' `FindFrame` case (`NPC.cs:69946-69977`): the grounded
+    /// walk climbs from row 1 at the `|vx| + 1` >9 step, the idle row 0,
+    /// the air row 8. The sand poacher walker's case (`:73086-73111`):
+    /// the |vx|*1.1 6-step over rows 0..3, the air row 4/0. The wall's
+    /// case (`:73116-73145`): the (|vx|+|vy|)*0.4 6/12/18/24 bands.
+    #[test]
+    fn w4_d41_the_lamia_scorpion_find_frame_bands() {
+        let mut l = bare(NpcKind::DesertLamiaLight);
+        l.vx = 0.0;
+        l.vy = 0.0;
+        l.frame = 3;
+        l.find_frame();
+        assert_eq!(l.frame, 0, "the idle row");
+        l.vy = 1.0;
+        l.find_frame();
+        assert_eq!(l.frame, 8, "the air row");
+        l.vy = 0.0;
+        l.vx = 4.0;
+        l.facing = 1;
+        l.frame = 0;
+        l.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..16 {
+            l.find_frame();
+            rows.push(l.frame);
+        }
+        assert_eq!(&rows[..], &[0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 1], "the 1..7 cycle");
+        // The walker: 6 px/tick → 6.6/tick, a row every tick (>=6).
+        let mut s = bare(NpcKind::DesertScorpionWalk);
+        s.vx = 6.0;
+        s.vy = 0.0;
+        s.facing = 1;
+        s.frame = 0;
+        s.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..5 {
+            s.find_frame();
+            rows.push(s.frame);
+        }
+        assert_eq!(&rows[..], &[1, 2, 3, 0, 1], "the 0..3 cycle");
+        s.vy = -1.0;
+        s.find_frame();
+        assert_eq!(s.frame, 4, "the rising air row");
+        // The wall: the (|vx|+|vy|)*0.4 bands.
+        let mut w = bare(NpcKind::DesertScorpionWall);
+        w.vx = 10.0;
+        w.vy = 0.0;
+        w.frame_counter = 0.0;
+        w.find_frame();
+        assert_eq!(w.frame, 0, "4 < 6 → row 0");
+        w.frame_counter = 6.0;
+        w.find_frame();
+        assert_eq!(w.frame, 1, "6 + 4 = 10 → row 1");
+        w.frame_counter = 24.0;
+        w.find_frame();
+        assert_eq!(w.frame_counter, 0.0, "the 24 lap resets");
+    }
+
+    /// The sand poacher's wall-stick transform: the 3x3 wall probe
+    /// (>4 wall tiles) gates the 530→531 transform; the no-wall probe
+    /// gates the 531→530 transform back.
+    #[test]
+    fn w4_d41_the_sand_poacher_wall_transform() {
+        // A world with a wall-backed alcove: the walker stands on the
+        // floor, the 3x3 probe around its centre finds >4 wall tiles.
+        let mut w = ground();
+        // Carve a 5x5 alcove at (30, 25) with walls behind.
+        for x in 28..33 {
+            for y in 23..28 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+                w.tiles[i].wall = 1;
+            }
+        }
+        w.compute_column_surface();
+        let mut player = Player::spawn(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 100.0 * TILE_PX;
+        // The walker at the alcove's centre.
+        let mut s = Npc::new(NpcKind::DesertScorpionWalk, 30.0 * TILE_PX, 25.0 * TILE_PX, 1, 0.0);
+        s.hp = s.max_hp;
+        s.vy = 0.0;
+        s.on_ground = true;
+        // The wall probe finds the alcove's walls.
+        assert!(s.can_stick_to_walls(&w, NpcKind::DesertScorpionWall), "the alcove's walls");
+        // The transform space fits (the 36x36 wall box in the 5x5 alcove).
+        assert!(s.transform_space(&w, NpcKind::DesertScorpionWall).is_some(), "the resize fits");
+        // The no-wall probe: a walker in the open air finds no walls.
+        let open = Npc::new(NpcKind::DesertScorpionWalk, 10.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        assert!(!open.can_stick_to_walls(&w, NpcKind::DesertScorpionWall), "the open air");
+    }
+
+    /// The basilisk's + the tortured soul's + the slimes' + the bride's
+    /// `SetDefaults` rows (`NPC.cs:14960-14973` for 532, `:15813-15872`
+    /// for 534-537).
+    #[test]
+    fn w4_d41_the_basilisk_soul_slime_bride_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::DesertBeast, 532u16, 32.0, 31.0, 3u8, 270, 65, 34, 800.0, 0.3f32),
+            (NpcKind::DemonTaxCollector, 534, 18.0, 40.0, 3, 400, 14, 20, 0.0, 0.3),
+            (NpcKind::SlimeSpiked, 535, 24.0, 18.0, 1, 50, 14, 5, 40.0, 1.0),
+            (NpcKind::TheBride, 536, 18.0, 40.0, 3, 200, 14, 8, 1000.0, 0.5),
+            (NpcKind::SandSlime, 537, 30.0, 24.0, 1, 50, 15, 5, 75.0, 0.7),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The spiked slime's 1.1 scale + the sand slime's alpha 50.
+        assert_eq!(bare(NpcKind::SlimeSpiked).scale, 1.1, "the spiked slime's scale");
+        assert_eq!(bare(NpcKind::SandSlime).alpha, 50, "the sand slime's alpha");
+        // The sound rows.
+        for kind in [NpcKind::DesertBeast, NpcKind::DemonTaxCollector, NpcKind::SlimeSpiked, NpcKind::SandSlime] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        assert_eq!(NpcKind::TheBride.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::TheBride.death_sound(), Some("NPC_Killed_2"));
+        // The immunity rows: the basilisk/soul/bride null
+        // (`NPCID.cs:9084`/`:9096`/`:9104`), the slimes [20]
+        // (`:9097-9103`/`:9105-9111`).
+        for kind in [NpcKind::DesertBeast, NpcKind::DemonTaxCollector, NpcKind::TheBride] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+        for kind in [NpcKind::SlimeSpiked, NpcKind::SandSlime] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} OnFire-immune");
+        }
+    }
+
+    /// The bestiary rows: the basilisk/soul/bride/sand slime carry their
+    /// own entries; the spiked slime is entry-less (Hide=true). The draw
+    /// sheets + row counts.
+    #[test]
+    fn w4_d41_the_basilisk_soul_slime_bride_bestiary_and_sheets() {
+        for (kind, net, credit, name) in [
+            (NpcKind::DesertBeast, 532, "DesertBeast", "Basilisk"),
+            (NpcKind::DemonTaxCollector, 534, "DemonTaxCollector", "Tortured Soul"),
+            (NpcKind::TheBride, 536, "TheBride", "The Bride"),
+            (NpcKind::SandSlime, 537, "SandSlime", "Sand Slime"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} name");
+        }
+        assert!(!crate::bestiary::has_entry(NpcKind::SlimeSpiked, SlimeVariant::Blue));
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 532 eight, 534 eight, 535 two, 536 three,
+        // 537 three).
+        for (kind, net, rows) in [
+            (NpcKind::DesertBeast, 532u16, 8u32),
+            (NpcKind::DemonTaxCollector, 534, 8),
+            (NpcKind::SlimeSpiked, 535, 2),
+            (NpcKind::TheBride, 536, 3),
+            (NpcKind::SandSlime, 537, 3),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The basilisk's `FindFrame` case (`NPC.cs:70067-70103`, shared
+    /// with 508): the grounded walk climbs from row 2 at the `1 + |vx|/2`
+    /// >6 step. The tortured soul's humanoid arm (`:68615`): the
+    /// num108 = 12 walk clock. The bride's walker arm (`:76344-76391`):
+    /// the 3-row strip. The slimes' hop arm (`:70818-70846`): the 8-tick
+    /// strip over the 2/3-row sheet.
+    #[test]
+    fn w4_d41_the_basilisk_soul_slime_bride_find_frame_bands() {
+        // The basilisk: 4 px/tick → 3/tick, a row every 3 ticks (>6).
+        let mut b = bare(NpcKind::DesertBeast);
+        b.vx = 4.0;
+        b.vy = 0.0;
+        b.facing = 1;
+        b.frame = 0;
+        b.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..18 {
+            b.find_frame();
+            rows.push(b.frame);
+        }
+        assert_eq!(&rows[..], &[2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 2], "the 2..7 cycle");
+        // The tortured soul: the 12-step walk clock over the |vx|*2 + 1
+        // counter — 4 px/tick → 9/tick, a row every 2 ticks (>12).
+        let mut t = bare(NpcKind::DemonTaxCollector);
+        t.vx = 4.0;
+        t.vy = 0.0;
+        t.facing = 1;
+        t.frame = 0;
+        t.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..9 {
+            t.find_frame();
+            rows.push(t.frame);
+        }
+        assert_eq!(&rows[..], &[2, 3, 3, 4, 4, 5, 5, 6, 6], "the 12-step cycle");
+        t.vx = 0.0;
+        t.find_frame();
+        assert_eq!(t.frame, 0, "the idle row 0 (:69515-69519)");
+        t.vy = 1.0;
+        t.find_frame();
+        assert_eq!(t.frame, 1, "the air row 1 (:69642-69646)");
+        // The bride: the 3-row walker strip.
+        let mut br = bare(NpcKind::TheBride);
+        br.vx = 4.0;
+        br.vy = 0.0;
+        br.facing = 1;
+        br.frame = 0;
+        br.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..7 {
+            br.find_frame();
+            rows.push(br.frame);
+        }
+        assert_eq!(&rows[..], &[0, 1, 1, 2, 2, 1, 1], "the four bands");
+        // The slimes: the 8-tick hop strip.
+        let mut s = bare(NpcKind::SlimeSpiked);
+        s.frame = 0;
+        s.frame_counter = 0.0;
+        for _ in 0..7 {
+            s.find_frame();
+        }
+        assert_eq!(s.frame, 0, "the stride holds for 7 ticks");
+        s.find_frame();
+        assert_eq!(s.frame, 1, "the eighth tick advances");
+        s.frame = 1;
+        s.frame_counter = 7.5;
+        s.find_frame();
+        assert_eq!(s.frame, 0, "the wrap at 2");
+        // The sand slime's 3-row strip.
+        let mut ss = bare(NpcKind::SandSlime);
+        ss.frame = 2;
+        ss.frame_counter = 7.5;
+        ss.find_frame();
+        assert_eq!(ss.frame, 0, "the wrap at 3");
+    }
+
+    /// The basilisk's + the soul's + the slimes' + the bride's AI
+    /// routing: each kind steps without panicking, stays inside its own
+    /// strip, and keeps its `SetDefaults` HP.
+    #[test]
+    fn w4_d41_the_basilisk_soul_slime_bride_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::DesertBeast,
+            NpcKind::DemonTaxCollector,
+            NpcKind::SlimeSpiked,
+            NpcKind::TheBride,
+            NpcKind::SandSlime,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
+    }
+
+    /// The critters' + the tumbler's `SetDefaults` rows
+    /// (`NPC.cs:15873-15897` for 538/539, `:9336-9347` for 540,
+    /// `:15972-15984` for 546).
+    #[test]
+    fn w4_d41_the_critter_tumbler_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::SquirrelRed, 538u16, 18.0, 20.0, 7u8, 5, 0, 0, 0.0, 1.0f32),
+            (NpcKind::SquirrelGold, 539, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0),
+            (NpcKind::Tumbleweed, 546, 30.0, 30.0, 26, 50, 30, 6, 100.0, 0.8),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The critters are catchable (the ctor's friendly arm).
+        for kind in [NpcKind::SquirrelRed, NpcKind::SquirrelGold, NpcKind::PartyBunny] {
+            let n = bare(kind);
+            assert!(n.friendly, "{kind:?} the catchable friendly window");
+            assert_eq!(n.catchable_immunity, 90, "{kind:?} the 90-tick window");
+        }
+        // The sound rows.
+        for kind in [NpcKind::SquirrelRed, NpcKind::SquirrelGold, NpcKind::PartyBunny] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        // The Confused [31] immunity rows (`NPCID.cs:9112-9132`/`:9168-9174`).
+        for kind in [NpcKind::SquirrelRed, NpcKind::SquirrelGold, NpcKind::PartyBunny, NpcKind::Tumbleweed] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+    }
+
+    /// The bestiary rows: the critters + the tumbler carry their own
+    /// entries. The draw sheets + row counts.
+    #[test]
+    fn w4_d41_the_critter_tumbler_bestiary_and_sheets() {
+        for (kind, net, credit, name) in [
+            (NpcKind::SquirrelRed, 538, "SquirrelRed", "Red Squirrel"),
+            (NpcKind::SquirrelGold, 539, "SquirrelGold", "Gold Squirrel"),
+            (NpcKind::Tumbleweed, 546, "Tumbleweed", "Angry Tumbler"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} name");
+        }
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 538/539 six, 540 seven, 546 one).
+        for (kind, net, rows) in [
+            (NpcKind::SquirrelRed, 538u16, 6u32),
+            (NpcKind::SquirrelGold, 539, 6),
+            (NpcKind::Tumbleweed, 546, 1),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The squirrels' `FindFrame` case (`NPC.cs:76459-76512`): the
+    /// grounded walk climbs from row 1 at the `|vx|*0.5 + 1` >6 step,
+    /// the rising air row 2, the falling air row 4. The party bunny's
+    /// case (`:76857-76904`): the `|vx| + 1` >6 step over the 7-row
+    /// strip, the rising air row 4, the falling air row 6.
+    #[test]
+    fn w4_d41_the_critter_find_frame_bands() {
+        let mut s = bare(NpcKind::SquirrelRed);
+        s.vx = 0.0;
+        s.vy = 0.0;
+        s.frame = 3;
+        s.find_frame();
+        assert_eq!(s.frame, 0, "the idle row");
+        s.vy = -1.0;
+        s.find_frame();
+        assert_eq!(s.frame, 2, "the rising air row");
+        s.vy = 1.0;
+        s.find_frame();
+        assert_eq!(s.frame, 4, "the falling air row");
+        s.vy = 0.0;
+        // The walk: 4 px/tick → 3/tick, a row every 3 ticks (>6).
+        s.vx = 4.0;
+        s.facing = 1;
+        s.frame = 0;
+        s.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            s.find_frame();
+            rows.push(s.frame);
+        }
+        assert_eq!(&rows[..], &[0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4], "the 1..4 cycle");
+        // The party bunny: 4 px/tick → 5/tick, a row every 2 ticks (>6).
+        let mut b = bare(NpcKind::PartyBunny);
+        b.vx = 4.0;
+        b.vy = 0.0;
+        b.facing = 1;
+        b.frame = 0;
+        b.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..14 {
+            b.find_frame();
+            rows.push(b.frame);
+        }
+        assert_eq!(&rows[..], &[0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 0], "the 0..6 cycle");
+        b.vy = -1.0;
+        b.find_frame();
+        assert_eq!(b.frame, 4, "the rising air row");
+        b.vy = 1.0;
+        b.find_frame();
+        assert_eq!(b.frame, 6, "the falling air row");
+    }
+
+    /// The critters' + the tumbler's AI routing: each kind steps without
+    /// panicking, stays inside its own strip, and keeps its `SetDefaults`
+    /// HP.
+    #[test]
+    fn w4_d41_the_critter_tumbler_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::SquirrelRed,
+            NpcKind::SquirrelGold,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -37138,7 +40483,7 @@ mod tests {
         // MERGE-SIDE re-pin (367 s1 step 6): the batch pins were
         // cumulative-on-branch; every batch test reads the SETTLED
         // roster (455 after d42 + d35's 33 = 488).
-        assert_eq!(ALL_KINDS.len(), 565);
+        assert_eq!(ALL_KINDS.len(), 603);
     }
     }
 
@@ -41463,6 +44808,7 @@ mod tests {
 }
 }
 }
+}
 
 mod shard_stat_tests {
     use super::*;
@@ -42013,7 +45359,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            565,
+            603,
             concat!(
                 "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate)",
                 " UNION ",
@@ -42039,6 +45385,8 @@ mod s1_f_3_tests {
             "every decodable kind resolves (the wire roster's size - 277 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d9's six dragon segments and the 521 squidhead, L-B gate)"
             277,
             "every decodable kind resolves (the wire roster's size - 277 after W4-d39's seven unclaimed kinds (research/125); 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            312,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five + the ancient orbs/ghouls five + the hallowed ghoul/lamias/sand poachers five + the basilisk/soul/slimes/bride five + the critters/tumbler four)"
         );
         assert!(
             covered > 43,
@@ -56167,5 +59515,144 @@ mod w4_d120_shop_button_witnesses {
         assert!(b.net_update, "the first tick nets");
         assert_eq!(b.sprite_dir, 1, "case 594's spriteDirection");
         assert_eq!(b.frame, b.ai[2] as u32, "the raw colour column");
+    }
+}
+
+/// W4-d41 (NPCID 491-560 roster wave, DD2 band): the DD2EterniaCrystal (548),
+/// DD2LanePortal (549), DD2Bartender (550), DD2Betsy (551), DD2GoblinT1 (552)
+/// `SetDefaults` rows pin against the C# through the port's piecewise tables
+/// (the d40 ArmedZombie witness's shape). The five kinds landed with wave-3's
+/// summon lane — this census completes their NPCID data rows (the
+/// `DebuffImmunitySets` 31/24-31-323 rows, the portal's `ImmuneToWhips`, the
+/// Tavernkeep's townNPC/friendly flags, the portal's behindTiles +
+/// dontTakeDamage) and pins every stat row. WRITTEN, NOT RUN (code-only).
+///
+/// Recorded deviation: the crystal's `friendly = true` (`NPC.cs:16008`) is
+/// NOT carried — the C#'s hostile-shot damage rides `this.hostile & flag2`
+/// (`Projectile.cs:12606-12611`), which the port does not model (the hostile
+/// shots' NPC damage rides `damage_pve`'s `refuses_friendly` gate instead);
+/// raising the flag would make the crystal unkillable by the army.
+#[cfg(test)]
+mod w4_d41_dd2_crystal_portal_tavernkeep_betsy_goblin_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d41_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        // `NPC.cs:15998-16032` (548), `:16033-16053` (549), `:16261-16274`
+        // (550), `:16517-16535` (551), `:16054-16070` (552). The crystal's
+        // hardmode/post-Golem lifeMax bumps and the expert/master multipliers
+        // are world-state rows — the classic base 1000 pins here.
+        let rows = [
+            (NpcKind::DD2EterniaCrystal, 548u16, 105u8, 40.0, 40.0, 0, 14, 1000, 0.0f32, 0.0),
+            (NpcKind::DD2LanePortal, 549u16, 106u8, 78.0, 130.0, 0, 20, 5, 0.0f32, 0.0),
+            (NpcKind::DD2Bartender, 550u16, 7u8, 18.0, 40.0, 10, 15, 250, 0.5f32, 0.0),
+            (NpcKind::DD2Betsy, 551u16, 110u8, 190.0, 90.0, 80, 38, 50000, 0.0f32, 0.0),
+            (NpcKind::DD2GoblinT1, 552u16, 107u8, 18.0, 40.0, 18, 14, 30, 0.2f32, 0.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            // `Main.npcFrameCount` (`Main.cs:67082`) through the port's
+            // verbatim table: 548 = 1, 549 = 8, 550 = 25, 551 = 11, 552 = 14.
+            let frames = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            let expect = match kind {
+                NpcKind::DD2EterniaCrystal => 1,
+                NpcKind::DD2LanePortal => 8,
+                NpcKind::DD2Bartender => 25,
+                NpcKind::DD2Betsy => 11,
+                _ => 14,
+            };
+            assert_eq!(frames, expect, "{kind:?} npcFrameCount");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::DD2EterniaCrystal.hit_sound(), Some("dd2_crystal_cart_impact_0"));
+        assert_eq!(NpcKind::DD2EterniaCrystal.death_sound(), Some("NPC_Killed_15"));
+        assert_eq!(NpcKind::DD2LanePortal.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::DD2LanePortal.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::DD2Bartender.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::DD2Bartender.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::DD2Betsy.hit_sound(), Some("dd2_betsy_hurt_0"));
+        assert_eq!(NpcKind::DD2Betsy.death_sound(), Some("dd2_betsy_death_0"));
+        assert_eq!(NpcKind::DD2GoblinT1.hit_sound(), Some("dd2_goblin_hurt_0"));
+        assert_eq!(NpcKind::DD2GoblinT1.death_sound(), Some("dd2_goblin_death_0"));
+        // The protocol ids keep their wave-3 port-local slots (the vanilla
+        // 548-552 slots are occupied by the bestiary net ids, not the wire).
+        for (kind, wire) in [
+            (NpcKind::DD2EterniaCrystal, 110u16),
+            (NpcKind::DD2LanePortal, 147u16),
+            (NpcKind::DD2Bartender, 109u16),
+            (NpcKind::DD2Betsy, 107u16),
+            (NpcKind::DD2GoblinT1, 95u16),
+        ] {
+            assert_eq!(kind.to_u16(), wire, "{kind:?} to_u16");
+            assert_eq!(NpcKind::from_u16(wire), Some(kind), "{kind:?} from_u16");
+        }
+        // The bestiary credits: all five carry their OWN entries (the
+        // populator registers 548/549/550/551/552; no Hide-fold — the
+        // crystal/portal `Hide = true` draw mods are UI-only).
+        for (kind, net) in [
+            (NpcKind::DD2EterniaCrystal, 548),
+            (NpcKind::DD2LanePortal, 549),
+            (NpcKind::DD2Bartender, 550),
+            (NpcKind::DD2Betsy, 551),
+            (NpcKind::DD2GoblinT1, 552),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.kind, kind, "{kind:?} own bestiary entry");
+            assert_eq!(e.net_id, net, "{kind:?} bestiary net id");
+        }
+        // Betsy's quickUnlock (`BestiaryDatabaseNPCsPopulator.cs:681`).
+        assert!(
+            crate::bestiary::entry_for_npc(NpcKind::DD2Betsy, SlimeVariant::Blue).quick_unlock,
+            "the boss unlocks on first sight"
+        );
+    }
+
+    #[test]
+    fn w4_d41_the_npcid_data_and_flag_rows() {
+        // The `DebuffImmunitySets` rows (`NPCID.cs:9182-9217`): the crystal
+        // 548 / Tavernkeep 550 / goblin 552 each carry Confused (31); Betsy
+        // 551 carries {24, 31, 323}; the portal 549's NotWhips mask is the
+        // documented unmodelled gap (its whip half rides `whip_immune`).
+        fn immune(kind: NpcKind, id: usize) -> bool {
+            crate::npc_buffs::NpcBuffs::for_kind(kind).buff_immune[id]
+        }
+        for kind in [NpcKind::DD2EterniaCrystal, NpcKind::DD2Bartender, NpcKind::DD2GoblinT1] {
+            assert!(immune(kind, 31), "{kind:?} Confused (`NPCID.cs:9186/9201/9215`)");
+            assert!(!immune(kind, 20) && !immune(kind, 24), "{kind:?} no extras");
+        }
+        assert!(immune(NpcKind::DD2Betsy, 24) && immune(NpcKind::DD2Betsy, 31) && immune(NpcKind::DD2Betsy, 323));
+        assert!(!immune(NpcKind::DD2LanePortal, 31), "the NotWhips mask is unmodelled (&[])");
+        assert!(crate::npc_buffs::whip_immune(NpcKind::DD2LanePortal), "NPCID.cs:9194");
+        assert!(!crate::npc_buffs::whip_immune(NpcKind::DD2Betsy));
+        // The Tavernkeep's town rows (`NPC.cs:16263-16264`, g58b verified):
+        // townNPC + friendly, aiStyle 7 — the housing/talk/melee gates admit
+        // him and his dmg 10 never contacts the player.
+        assert!(NpcKind::DD2Bartender.is_town_npc());
+        assert!(NpcKind::DD2Bartender.is_town_npc_like());
+        assert!(NpcKind::DD2Bartender.is_friendly());
+        assert!(Npc::new(NpcKind::DD2Bartender, 0.0, 0.0, 1, 0.0).friendly);
+        // The portal's SetDefaults flags (`NPC.cs:16048-16049`): behindTiles
+        // + the spawn-time dontTakeDamage (the fade's 550-tick end drops it).
+        let portal = Npc::new(NpcKind::DD2LanePortal, 0.0, 0.0, 1, 0.0);
+        assert!(portal.behind_tiles, "NPC.cs:16048");
+        assert!(portal.dont_take_damage, "NPC.cs:16049");
+        // The crystal/portal/goblin/Betsy keep the hostile default (the
+        // crystal's friendly row is the recorded deviation above).
+        assert!(!NpcKind::DD2EterniaCrystal.is_friendly());
+        assert!(!NpcKind::DD2GoblinT1.is_friendly());
+        assert!(!NpcKind::DD2Betsy.is_friendly());
     }
 }

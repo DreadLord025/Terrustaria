@@ -1259,6 +1259,63 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_592",
         "NPC_607",
         "NPC_615",
+        // W4-d41 — the cavern crawdads'/shellies' sheets
+        // (`render/entities.rs`'s CAVERN_SHEETS), keyed by the vanilla
+        // net id in `NpcAssets::npc_sheets`.
+        "NPC_494",
+        "NPC_495",
+        "NPC_496",
+        "NPC_497",
+        // W4-d41 — the nine salamander colours (CAVERN_SHEETS).
+        "NPC_498",
+        "NPC_499",
+        "NPC_500",
+        "NPC_501",
+        "NPC_502",
+        "NPC_503",
+        "NPC_504",
+        "NPC_505",
+        "NPC_506",
+        // W4-d41 — the desert antlions + the Dune Splicer chain
+        // (DESERT_SHEETS).
+        "NPC_508",
+        "NPC_509",
+        "NPC_510",
+        "NPC_511",
+        "NPC_512",
+        // W4-d41 — the Tomb Crawler chain + the solar fragments
+        // (TOMB_SOLAR_SHEETS).
+        "NPC_513",
+        "NPC_514",
+        "NPC_515",
+        "NPC_516",
+        "NPC_519",
+        // W4-d41 — the ancient orbs + the desert ghouls
+        // (ANCIENT_GHOUL_SHEETS).
+        "NPC_522",
+        "NPC_523",
+        "NPC_524",
+        "NPC_525",
+        "NPC_526",
+        // W4-d41 — the hallowed ghoul + the lamias + the sand poachers
+        // (LAMIA_SCORPION_SHEETS).
+        "NPC_527",
+        "NPC_528",
+        "NPC_529",
+        "NPC_530",
+        "NPC_531",
+        // W4-d41 — the basilisk + the tortured soul + the slimes + the
+        // bride (BASILISK_SOUL_SHEETS).
+        "NPC_532",
+        "NPC_534",
+        "NPC_535",
+        "NPC_536",
+        "NPC_537",
+        // W4-d41 — the critters + the tumbler (CRITTER_TUMBLER_SHEETS).
+        "NPC_538",
+        "NPC_539",
+        "NPC_540",
+        "NPC_546",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in

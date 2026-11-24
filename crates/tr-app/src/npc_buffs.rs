@@ -343,11 +343,20 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::DD2EterniaCrystal
         | NpcKind::DD2Bartender
         | NpcKind::DD2GoblinT1
+        NpcKind::FlyingDutchman
+        | NpcKind::FlyingDutchmanCannon
         | NpcKind::DD2GoblinT2
         | NpcKind::DD2GoblinT3
         | NpcKind::DD2GoblinBomberT1
         | NpcKind::DD2GoblinBomberT2
         | NpcKind::DD2GoblinBomberT3
+        | NpcKind::DD2JavelinT1
+        | NpcKind::DD2JavelinT2
+        | NpcKind::DD2JavelinT3
+        | NpcKind::DD2SkeletonT1
+        | NpcKind::DD2SkeletonT3
+        | NpcKind::DD2DarkMage
+        | NpcKind::DD2WitherBeast
         | NpcKind::DD2WyvernT1
         | NpcKind::DD2WyvernT2
         | NpcKind::DD2WyvernT3
@@ -396,6 +405,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // Dutchman pair 491/492 has no rows.
         NpcKind::FlyingDutchman
         | NpcKind::FlyingDutchmanCannon
+        | NpcKind::DD2OgreT3
         | NpcKind::AncientCultist
         | NpcKind::StardustTower
         | NpcKind::NebulaTower
@@ -417,6 +427,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SolarSroller
         | NpcKind::SolarSelenian
         | NpcKind::DD2LanePortal
+        | NpcKind::VortexTower
+        | NpcKind::StardustCellBig
+        | NpcKind::VortexTower
+        | NpcKind::StardustCellSmall
+        | NpcKind::StardustJellyfishBig
         | NpcKind::NebulaBeast
         | NpcKind::VortexRifleman
         | NpcKind::VortexSoldier => &[],
@@ -1014,6 +1029,73 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::ChatteringTeethBomb
         | NpcKind::CultistArcherBlue
         | NpcKind::CultistArcherWhite => &[31],
+        // W4-d41: the DD2 SetDefaults census — the crystal 548
+        // (`NPCID.cs:9182-9188`), the Tavernkeep 550 (`:9197-9203`) and
+        // the etherian goblin 552 (`:9211-9217`) each carry the Confused
+        // (31) row; Betsy 551 carries `{24, 31, 323}` (`:9204-9210`).
+        NpcKind::DD2EterniaCrystal | NpcKind::DD2Bartender | NpcKind::DD2GoblinT1 => &[31],
+        NpcKind::DD2Betsy => &[24, 31, 323],
+        // The lane portal 549 (`NPCID.cs:9189-9196`) is an
+        // `ImmuneToAllBuffsThatAreNotWhips` + `ImmuneToWhips` row — the
+        // NotWhips mask is the documented unmodelled gap (`&[]` above),
+        // the whip half rides `whip_immune`.
+        NpcKind::DD2LanePortal => &[],
+        // W4-d41 — the cavern crawdads/shellies: `{ 494..497,
+        // SpecificallyImmuneTo: [31] }` (`NPCID.cs:8916-8943`) — the
+        // Confused debuff, all four.
+        NpcKind::Crawdad | NpcKind::Crawdad2 | NpcKind::GiantShelly | NpcKind::GiantShelly2 => &[31],
+        // W4-d41 — the salamanders: `{ 498..506, null }`
+        // (`NPCID.cs:8944-8952`) — no immunity rows, the C# else-branch.
+        NpcKind::Salamander
+        | NpcKind::Salamander2
+        | NpcKind::Salamander3
+        | NpcKind::Salamander4
+        | NpcKind::Salamander5
+        | NpcKind::Salamander6
+        | NpcKind::Salamander7
+        | NpcKind::Salamander8
+        | NpcKind::Salamander9 => &[],
+        // W4-d41 — the antlions: `{ 508, null }` / `{ 509, null }`
+        // (`NPCID.cs:8960-8961`) — no immunity rows.
+        NpcKind::GiantWalkingAntlion | NpcKind::GiantFlyingAntlion => &[],
+        // W4-d41 — the Dune Splicer chain: `{ 510..512,
+        // SpecificallyImmuneTo: [31] }` (`NPCID.cs:8962-8983`) — the
+        // Confused debuff, all three.
+        NpcKind::DuneSplicerHead
+        | NpcKind::DuneSplicerBody
+        | NpcKind::DuneSplicerTail => &[31],
+        // W4-d41 — the Tomb Crawler chain: `{ 513..515,
+        // SpecificallyImmuneTo: [31] }` (`NPCID.cs:8984-9003`); the
+        // solar fragments: `{ 516, [31] }` / `{ 519, [31] }`
+        // (`:9004-9010`/`:9025-9031`).
+        NpcKind::TombCrawlerHead
+        | NpcKind::TombCrawlerBody
+        | NpcKind::TombCrawlerTail
+        | NpcKind::SolarFlare
+        | NpcKind::SolarGoop => &[31],
+        // W4-d41 — the ancient orbs: `{ 522, [31] }` / `{ 523, [31] }`
+        // (`NPCID.cs:9050-9063`); the desert ghouls: `{ 524..527, null }`
+        // (`:9064-9067`) — no immunity rows.
+        NpcKind::AncientLight | NpcKind::AncientDoom => &[31],
+        NpcKind::DesertGhoul
+        | NpcKind::DesertGhoulCorruption
+        | NpcKind::DesertGhoulCrimson => &[],
+        // W4-d41 — the hallowed ghoul + the lamias: `{ 527..529, null }`
+        // (`NPCID.cs:9064-9069`); the sand poachers: `{ 530, [20] }` /
+        // `{ 531, [20] }` (`:9070-9083`).
+        NpcKind::DesertGhoulHallow
+        | NpcKind::DesertLamiaLight
+        | NpcKind::DesertLamiaDark => &[],
+        NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => &[20],
+        // W4-d41 — the basilisk: `{ 532, null }` (`NPCID.cs:9084`); the
+        // tortured soul: `{ 534, null }` (`:9096`); the spiked slime:
+        // `{ 535, [20] }` (`:9097-9103`); the bride: `{ 536, null }`
+        // (`:9104`); the sand slime: `{ 537, [20] }` (`:9105-9111`).
+        NpcKind::DesertBeast | NpcKind::DemonTaxCollector | NpcKind::TheBride => &[],
+        NpcKind::SlimeSpiked | NpcKind::SandSlime => &[20],
+        // W4-d41 — the critters: `{ 538..540, [31] }`
+        // (`NPCID.cs:9112-9132`); the tumbler: `{ 546, [31] }`
+        // (`:9168-9174`).
     }
 }
 
@@ -1083,6 +1165,8 @@ fn shimmer_immune(cs_id: u16) -> bool {
 /// pirate ship and (W4-d33 wiring) the three fairy critters are on the
 /// ported roster — the whip tag gate
 /// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
+/// pirate ship and the lane portal (W4-d41) are on the ported roster — the
+/// whip tag gate (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
     matches!(
         kind,
@@ -1094,6 +1178,10 @@ pub fn whip_immune(kind: NpcKind) -> bool {
             | NpcKind::FairyCritterPink
             | NpcKind::FairyCritterGreen
             | NpcKind::FairyCritterBlue
+            | NpcKind::DD2LanePortal
+            // W4-d41 — the BlazingWheel 72's `ImmuneToWhips` row
+            // (`NPCID.cs:6524-6529`) — the wheel is on the ported roster.
+            | NpcKind::BlazingWheel
     )
 }
 

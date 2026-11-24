@@ -1194,6 +1194,10 @@ pub(crate) fn update_worms(app: &mut App) {
         dead: p.dead,
         zone_corrupt: app.scene_metrics.zone_corrupt,
         zone_crimson: app.scene_metrics.zone_crimson,
+        // W4-d41 — the Dune Splicer's sandstorm gate + the Tomb
+        // Crawler's underground-desert gate (`NPC.cs:51709`/`:51115`).
+        zone_sandstorm: app.scene_metrics.zone_sandstorm,
+        zone_underground_desert: app.scene_metrics.zone_underground_desert,
     });
     update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id);
     // S1-E-21g — the worm pass's queued plays (the leech entry burst,
@@ -1219,6 +1223,13 @@ pub(crate) struct WormHeadCtx {
     pub dead: bool,
     pub zone_corrupt: bool,
     pub zone_crimson: bool,
+    /// W4-d41 — `Main.player[target].ZoneSandstorm` (`NPC.cs:51709`): the
+    /// Dune Splicer head's 16/0.35 dig-tunable override. Stock false in
+    /// the centre-only seam; production feeds `scene_metrics`.
+    pub zone_sandstorm: bool,
+    /// W4-d41 — `Main.player[target].ZoneUndergroundDesert`
+    /// (`NPC.cs:51115`): the Tomb Crawler head's surface-gate flag.
+    pub zone_underground_desert: bool,
 }
 
 /// S1-E-21g — one drained [`crate::npc::NpcSoundRequest`]: the queue's
@@ -1393,6 +1404,8 @@ pub(crate) fn update_worms_in(
         dead: false,
         zone_corrupt: false,
         zone_crimson: false,
+        zone_sandstorm: false,
+        zone_underground_desert: false,
     });
     update_worms_ctx(world, ctx, npcs, rng, next_worm_id);
 }
@@ -1456,6 +1469,15 @@ fn update_worms_ctx(
                 // The crawltipede's fixed 30-link spawn (`:51369-51392`,
                 // `num34 = 30`) draws NOTHING — outside the budget list.
                 NpcKind::SolarCrawltipedeHead => 29,
+                // W4-d41 — the Dune Splicer head's own fixed-budget spawn
+                // (`NPC.cs:51259`, `num24 = Main.rand.Next(12, 21)`): ONE
+                // draw, outside the shared `:51301` budget list (the
+                // crawltipede precedent — no discarded Next(8,13)).
+                NpcKind::DuneSplicerHead => rng.next_range(12, 21) as u32,
+                // W4-d41 — the Tomb Crawler head's own fixed-budget spawn
+                // (`NPC.cs:51235`, `num19 = Main.rand.Next(6, 10)`): ONE
+                // draw, outside the shared `:51301` budget list.
+                NpcKind::TombCrawlerHead => rng.next_range(6, 10) as u32,
                 _ => {
                     // The budget roll (`NPC.cs:51303-51342`): EVERY head
                     // type in the `:51303` list rolls `ai[2] =
@@ -1902,9 +1924,11 @@ fn worm_head_step(
 ) -> bool {
     let (w, h) = npc.size();
     // The surface gate (`NPC.cs:51110-51148`): `flag = true` for types
-    // 10/39/95/117/510 — the ported kinds GiantWorm (10) and Leech (117).
+    // 10/39/95/117/510 — the ported kinds GiantWorm (10), Leech (117) and
+    // the Dune Splicer head (510). The Tomb Crawler head (513) carries
+    // `flag = !ZoneUndergroundDesert` with num10 = 0.1 (`:51114-51117`).
     // Target dead OR (flag && player above `worldSurface * 16`) →
-    // `EncourageDespawn(300)` and `velocity.Y += 0.2` while gated. The
+    // `EncourageDespawn(300)` and `velocity.Y += num10` while gated. The
     // `TargetClosest()` retarget has no seam in the single-player port
     // (the target IS the one player) — documented.
     // W4-d34: the Bone Serpent head (39) joins the surface-gate flag list
@@ -1913,10 +1937,16 @@ fn worm_head_step(
         npc.kind,
         NpcKind::GiantWormHead | NpcKind::LeechHead | NpcKind::BoneSerpentHead
     );
+    let tomb_crawler = npc.kind == NpcKind::TombCrawlerHead;
+    let surface_flag = matches!(
+        npc.kind,
+        NpcKind::GiantWormHead | NpcKind::LeechHead | NpcKind::DuneSplicerHead
+    ) || (tomb_crawler && !ctx.zone_underground_desert);
     if ctx.dead || (surface_flag && (ctx.py as f64) < world.world_surface * 16.0) {
         npc.encourage_despawn(300);
         if surface_flag {
-            npc.vy += 0.2; // `num10` (`:51111`; the 513's 0.1 is unported)
+            // `num10` (`:51111`): 0.2 default, the 513's 0.1.
+            npc.vy += if tomb_crawler { 0.1 } else { 0.2 };
         }
     }
     // `flag3`: the dig-mode scan (`:51525-51597`). The always-fly presets
@@ -1993,6 +2023,12 @@ fn worm_head_step(
                 | NpcKind::LeechHead
                 | NpcKind::BoneSerpentHead
                 | NpcKind::TruffleWormDigger
+                // W4-d41 — the Dune Splicer head (510) is on the
+                // `:51598` list.
+                | NpcKind::DuneSplicerHead
+                // W4-d41 — the Tomb Crawler head (513) is on the
+                // `:51598` list.
+                | NpcKind::TombCrawlerHead
         )
     {
         let (nx, ny) = (npc.x as i32, npc.y as i32);
@@ -2003,7 +2039,14 @@ fn worm_head_step(
             flag3 = true; // `flag5` stayed true (`:51611-51614`)
         }
     }
-    let (num45, num46) = npc.kind.worm_tunables();
+    let (mut num45, mut num46) = npc.kind.worm_tunables();
+    // W4-d41 — the Dune Splicer head's sandstorm override
+    // (`NPC.cs:51709-51718`): a live target in ZoneSandstorm digs at
+    // 16/0.35, else the 10/0.25 base.
+    if npc.kind == NpcKind::DuneSplicerHead && !ctx.dead && ctx.zone_sandstorm {
+        num45 = 16.0;
+        num46 = 0.35;
+    }
     let mut despawn_chain = false;
     // The tile-snapped aim (`NPC.cs:51855-51866`): BOTH the player centre
     // and the NPC centre floor to the 16-px grid before the delta; num48/
@@ -4763,7 +4806,41 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             n.player_zone_sandstorm = zone_sandstorm;
             n.player_zone_desert = zone_desert;
             n.tumbleweed_siblings = siblings;
+    // W4-d41 — the Tumbleweed's wind/zone pre-stamps (`NPC.cs:62709-62714`'s
+    // windSpeedTarget + `:62710`/`:62570`'s ZoneSandstorm/ZoneDesert): the
+    // AI's `&World` borrow cannot reach `app.wind`/`app.scene_metrics`.
+    // The sibling-spread scan's inputs (`:62382-62403`) ride the same
+    // pre-pass: every OTHER active 546's (x, y) in slot order (the
+    // twin_time_lefts carrier precedent).
+    {
+        let wind_target = app.wind.speed_target;
+        let sandstorm = app.scene_metrics.zone_sandstorm;
+        let desert = app.scene_metrics.zone_desert;
+        // The slot index rides the C#'s `i != base.whoAmI` exclusion —
+        // two tumblers at the SAME position still spread (the position
+        // compare would drop the twin).
+        let tumbler_positions: Vec<(usize, f32, f32)> = app
+            .npcs
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.kind == NpcKind::Tumbleweed && n.hp > 0)
+            .map(|(i, n)| (i, n.x, n.y))
+            .collect();
+        for (i, n) in app.npcs.iter_mut().enumerate() {
+            if n.kind == NpcKind::Tumbleweed {
+                n.wind_speed_target = wind_target;
+                n.zone_sandstorm = sandstorm;
+                n.zone_desert = desert;
+                n.tumbler_siblings.clear();
+                for &(j, sx, sy) in &tumbler_positions {
+                    if j != i {
+                        n.tumbler_siblings.push((sx, sy));
+                    }
+                }
+            }
         }
+        }
+    }
     }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
@@ -7668,6 +7745,50 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
         app.npcs.extend(new_blades);
+    // W4-d41 — the Solar Flare / Solar Goop spawn requests
+    // (`NPC.cs:39729`/`:56849`'s 516, `:39378`'s 519): the update pass
+    // set `wants_solar_flare`/`wants_solar_goop`; this pass spawns the
+    // fragment Bottom-anchored (`NPC.cs:80770`) with the launch velocity
+    // (the goop's `:39379` write).
+    {
+        let mut new_fragments: Vec<Npc> = Vec::new();
+        let mut next = app.next_npc_uid;
+        for n in app.npcs.iter_mut() {
+            if let Some((fx, fy)) = n.wants_solar_flare.take() {
+                let (fw, fh) = NpcKind::SolarFlare.size();
+                let mut f = Npc::new(
+                    NpcKind::SolarFlare,
+                    fx as i32 as f32 - fw * 0.5,
+                    fy as i32 as f32 - fh,
+                    1,
+                    0.0,
+                );
+                f.hp = f.max_hp;
+                f.uid = next;
+                next += 1;
+                f.net_update = true;
+                new_fragments.push(f);
+            }
+            if let Some((gx, gy, gvx, gvy)) = n.wants_solar_goop.take() {
+                let (gw, gh) = NpcKind::SolarGoop.size();
+                let mut g = Npc::new(
+                    NpcKind::SolarGoop,
+                    gx as i32 as f32 - gw * 0.5,
+                    gy as i32 as f32 - gh,
+                    1,
+                    0.0,
+                );
+                g.hp = g.max_hp;
+                g.vx = gvx;
+                g.vy = gvy;
+                g.uid = next;
+                next += 1;
+                g.net_update = true;
+                new_fragments.push(g);
+            }
+        }
+        app.next_npc_uid = next;
+        app.npcs.extend(new_fragments);
     }
     // The aiStyle-75 carrier-gone Transform requests (`NPC.cs:36056-36063`:
     // 390 → 382 RayGunner, 416 → 518 SolarSpearman) + the W4-c9 snail
@@ -8348,6 +8469,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.npcs.push(n);
     }
     app.npc_timer = 1.0 / 60.0;
+}
 }
 }
 

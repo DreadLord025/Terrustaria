@@ -206,6 +206,91 @@ pub fn solar_flare_steer(
 /// (see the module header for the exact rand order); the 516 launch's three
 /// draws and the 33 `Next(5)` dust gate are the only rand sites (the latter
 /// stays skipped with its dust).
+/// W4-d41 — the Solar Flare's aiStyle-9 arm (`NPC.cs:21380-21406` +
+/// `:21497-21515`). The alpha ramp (`:21382-21385`, +40 to 220), the
+/// one-shot RotatedByRandom launch (`:21386-21401`, the
+/// `solar_flare_launch_velocity` helper's exact 3-draw order), the
+/// collide/proximity self-strike (`:21402-21405`), the shared
+/// `EncourageDespawn(100)` (`:21496`) and the 15-blend homing steer
+/// (`:21497-21514`, the `solar_flare_steer` helper). The
+/// `noTileCollide = false` row means the flare collides — the
+/// integration is the axis-separated tile move (the blocked axes latch
+/// collideX/Y for the next tick's self-strike).
+fn solar_flare_step(npc: &mut Npc, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    // `:21382-21385` — the alpha ramp.
+    if npc.alpha < 220 {
+        npc.alpha = (npc.alpha as u16 + 40).min(255) as u8;
+    }
+    let (cx, cy) = npc.center();
+    let (pcx, pcy) = player.center();
+    // `:21386-21401` — the one-shot launch.
+    if npc.ai[0] == 0.0 {
+        npc.ai[0] = 1.0;
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        let d = (dx * dx + dy * dy).sqrt();
+        let dir = if d > 0.0 { (dx / d, dy / d) } else { (0.0, -1.0) };
+        let (vx, vy) = solar_flare_launch_velocity(dir, rng);
+        npc.vx = vx;
+        npc.vy = vy;
+    }
+    // `:21402-21405` — the collide/proximity self-strike
+    // (`StrikeNPCNoInteraction(9999)` — the port's hp = 0).
+    let dist = ((pcx - cx) * (pcx - cx) + (pcy - cy) * (pcy - cy)).sqrt();
+    if npc.collide_x || npc.collide_y || dist < 20.0 {
+        npc.hp = 0;
+        return;
+    }
+    // `:21407-21449` — the shared one-shot retarget (the flare's target
+    // is the spawner's, but the 255 sentinel re-picks).
+    if npc.target == 255 {
+        let cand = crate::npc_target::session_candidate(player);
+        target_closest(npc, world, &[cand], true, 9, 0);
+    }
+    // `:21496` — the shared despawn encouragement.
+    npc.encourage_despawn(100);
+    // `:21497-21514` — the homing steer.
+    let (dx, dy) = (pcx - cx, pcy - cy);
+    let d = (dx * dx + dy * dy).sqrt();
+    let aim = if d > 0.0 { (dx / d, dy / d) } else { (npc.facing as f32, 0.0) };
+    let ((vx, vy), rotation) = solar_flare_steer((npc.vx, npc.vy), aim, npc.facing, npc.rotation);
+    npc.vx = vx;
+    npc.vy = vy;
+    npc.rotation = rotation;
+    // The tile collision (`noTileCollide = false`): the blocked axes
+    // zero the velocity and latch collideX/Y.
+    let (w, h) = npc.size();
+    let nx = npc.x + npc.vx;
+    npc.collide_x = crate::player::collides_rect(world, nx, npc.y, w, h);
+    if npc.collide_x {
+        npc.vx = 0.0;
+    } else {
+        npc.x = nx;
+    }
+    let ny = npc.y + npc.vy;
+    npc.collide_y = crate::player::collides_rect(world, npc.x, ny, w, h);
+    if npc.collide_y {
+        if npc.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            npc.y = ty as f32 * TILE_PX - h;
+        } else if npc.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            npc.y = (ty + 1) as f32 * TILE_PX;
+        }
+        npc.vy = 0.0;
+    } else {
+        npc.y = ny;
+    }
+    // The port's world-edge stop.
+    if npc.y > world.height as f32 * TILE_PX + 200.0 {
+        npc.hp = 0;
+    }
+}
+
+/// One fixed step of the aiStyle-9 arm for the ported sphere kinds
+/// (25/30+665/33) — `NPC.cs:21377-21571` minus the unported per-type
+/// branches (516's homing `:21380-21406`/`:21497-21515`, the 112/666
+/// counter/damage `:21465-21495`) and the dust/light emissions (the
+/// documented skips — see the module header for the exact rand order).
 ///
 /// The seam: `TargetClosest` rides `npc_target::target_closest` (the
 /// `EverLastingTicker` is not plumbed into `Npc::update` yet — the 0
@@ -220,6 +305,16 @@ pub fn sphere_family_step(
     flags: Style9Flags,
     rng: &mut UnifiedRandom,
 ) {
+    // W4-d41 — the Solar Flare's 516 branches (`NPC.cs:21380-21406` +
+    // `:21497-21515`): the alpha ramp, the RotatedByRandom launch, the
+    // collide/proximity self-strike, the 15-blend homing steer. The
+    // flare's `noTileCollide = false` (`NPC.cs:15405`) means it collides
+    // — the integration is the axis-separated tile move, not the
+    // spheres' straight-through step.
+    if npc.kind == NpcKind::SolarFlare {
+        solar_flare_step(npc, world, player, rng);
+        return;
+    }
     // The C# arm keys on the VANILLA type (`this.type`, NPCID: BurningSphere
     // 25 / ChaosBall 30 / WaterSphere 33) - `net_id()` carries it; `to_u16`
     // is the port's INTERNAL protocol space (data.rs:1006-1009) and would

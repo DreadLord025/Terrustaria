@@ -2165,6 +2165,158 @@ fn portrait_data(
             (sheet_i, h, 30.0, h, white)
         }
         (NpcKind::CorruptGoldfish, _) => {
+        // W4-d41 — the cavern crawdads'/shellies' portraits: the sheet's
+        // own row height over `Main.npcFrameCount[type]` (494/495 eight
+        // frames, 496/497 twelve; `Main.cs:67082`), the frame width the
+        // sheet's own — the small-kinds wave's shape. The 2-variants
+        // fold onto the 1-variants' entries (`entry_for_npc`), so the
+        // catalog only ever shows the 1-variant rows; the arms exist
+        // for the match's exhaustiveness.
+        (NpcKind::Crawdad, _) | (NpcKind::Crawdad2, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::GiantShelly, _) | (NpcKind::GiantShelly2, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        // W4-d41 — the salamanders' portrait: the 11-row NPC_499 strip
+        // (the entry's own sheet; every colour folds onto it), the frame
+        // width the sheet's own. The other colours' arms exist for the
+        // match's exhaustiveness (the catalog only shows the 499 row).
+        (NpcKind::Salamander, _)
+        | (NpcKind::Salamander2, _)
+        | (NpcKind::Salamander3, _)
+        | (NpcKind::Salamander4, _)
+        | (NpcKind::Salamander5, _)
+        | (NpcKind::Salamander6, _)
+        | (NpcKind::Salamander7, _)
+        | (NpcKind::Salamander8, _)
+        | (NpcKind::Salamander9, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        // W4-d41 — the desert antlions' portraits: the sheet's own row
+        // height over `Main.npcFrameCount[type]` (508 six, 509 nine),
+        // the frame width the sheet's own.
+        (NpcKind::GiantWalkingAntlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(31.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(31.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        // W4-d41 — the Dune Splicer's portrait: the single-frame NPC_510
+        // sheet (the entry's own; the segments fold onto it). The
+        // segments' arms exist for the match's exhaustiveness.
+        (NpcKind::DuneSplicerHead, _)
+        | (NpcKind::DuneSplicerBody, _)
+        | (NpcKind::DuneSplicerTail, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(34.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        // W4-d41 — the Tomb Crawler's portrait: the single-frame NPC_513
+        // sheet (the entry's own; the segments fold onto it).
+        (NpcKind::TombCrawlerHead, _)
+        | (NpcKind::TombCrawlerBody, _)
+        | (NpcKind::TombCrawlerTail, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(22.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        // W4-d41 — the solar fragments have no bestiary entries (the
+        // catalog never shows them); the arms exist for the match's
+        // exhaustiveness — the SetDefaults box.
+        (NpcKind::SolarFlare, _) | (NpcKind::SolarGoop, _) => {
+            (sheet_i, 26.0, 26.0, 26.0, white)
+        }
+        // W4-d41 — the ancient orbs have no bestiary entries (the
+        // catalog never shows them); the arms exist for the match's
+        // exhaustiveness — the SetDefaults box.
+        (NpcKind::AncientLight, _) => (sheet_i, 26.0, 26.0, 26.0, white),
+        (NpcKind::AncientDoom, _) => (sheet_i, 42.0, 42.0, 42.0, white),
+        // W4-d41 — the desert ghouls' portraits: the 8-row strips over
+        // the 24x44 frames, the frame width the sheet's own.
+        (NpcKind::DesertGhoul, _)
+        | (NpcKind::DesertGhoulCorruption, _)
+        | (NpcKind::DesertGhoulCrimson, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        // W4-d41 — the hallowed ghoul's portrait: the 8-row strip.
+        (NpcKind::DesertGhoulHallow, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        // W4-d41 — the lamias' portraits: the 9-row strips.
+        (NpcKind::DesertLamiaLight, _) | (NpcKind::DesertLamiaDark, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        // W4-d41 — the sand poacher's portrait: the 5-row NPC_530 strip
+        // (the entry's own; the wall form folds onto it). The wall's arm
+        // exists for the match's exhaustiveness.
+        (NpcKind::DesertScorpionWalk, _) | (NpcKind::DesertScorpionWall, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        // W4-d41 — the basilisk's portrait: the 8-row strip.
+        (NpcKind::DesertBeast, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(31.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        // W4-d41 — the tortured soul's portrait: the 8-row humanoid
+        // strip.
+        (NpcKind::DemonTaxCollector, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d41 — the bride's portrait: the 3-row walker strip.
+        (NpcKind::TheBride, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d41 — the sand slime's portrait: the 3-row hop strip.
+        (NpcKind::SandSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(24.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        // W4-d41 — the spiked slime has no bestiary entry (the catalog
+        // never shows it); the arm exists for the match's
+        // exhaustiveness — the SetDefaults box.
+        (NpcKind::SlimeSpiked, _) => (sheet_i, 18.0, 24.0, 18.0, white),
+        // W4-d41 — the critters' portraits: the 6/7-row hop strips over
+        // the 18x20 frames, the frame width the sheet's own.
+        (NpcKind::SquirrelRed, _) | (NpcKind::SquirrelGold, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 6.0)
                 .unwrap_or(20.0);
@@ -2174,6 +2326,14 @@ fn portrait_data(
         // sheet's own row height over `Main.npcFrameCount[type]`
         // (`Main.cs:67082`: 546 one frame, 61 six, 69 five, the mummies
         // sixteen, 580 six, 581 nine); the frame width the sheet's own.
+        (NpcKind::PartyBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d41 — the tumbler's portrait: the single-frame NPC_546
+        // sheet.
         (NpcKind::Tumbleweed, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32)

@@ -1157,6 +1157,66 @@ impl NpcKind {
             NpcKind::ChatteringTeethBomb => 821,
             NpcKind::CultistArcherBlue => 822,
             NpcKind::CultistArcherWhite => 823,
+            // W4-d41 — the cavern crawdads/shellies keep their vanilla ids
+            // (494-497 are free in the wire space; the pumpkin/frost
+            // precedent). `NPCID.cs:11661-11667`.
+            NpcKind::Crawdad => 494,
+            NpcKind::Crawdad2 => 495,
+            NpcKind::GiantShelly => 496,
+            NpcKind::GiantShelly2 => 497,
+            // W4-d41 — the nine salamander colours keep their vanilla ids
+            // (498-506 free in the wire space). `NPCID.cs:11669-11685`.
+            NpcKind::Salamander => 498,
+            NpcKind::Salamander2 => 499,
+            NpcKind::Salamander3 => 500,
+            NpcKind::Salamander4 => 501,
+            NpcKind::Salamander5 => 502,
+            NpcKind::Salamander6 => 503,
+            NpcKind::Salamander7 => 504,
+            NpcKind::Salamander8 => 505,
+            NpcKind::Salamander9 => 506,
+            // W4-d41 — the antlions + the Dune Splicer chain keep their
+            // vanilla ids (508-512 free in the wire space).
+            // `NPCID.cs:11687-11695`.
+            NpcKind::GiantWalkingAntlion => 508,
+            NpcKind::DuneSplicerHead => 510,
+            NpcKind::DuneSplicerBody => 511,
+            NpcKind::DuneSplicerTail => 512,
+            // W4-d41 — the Tomb Crawler chain + the solar fragments keep
+            // their vanilla ids (513-516/519 free in the wire space).
+            // `NPCID.cs:11697-11709`.
+            NpcKind::TombCrawlerHead => 513,
+            NpcKind::TombCrawlerBody => 514,
+            NpcKind::TombCrawlerTail => 515,
+            NpcKind::SolarGoop => 519,
+            // W4-d41 — the ancient orbs + the desert ghouls keep their
+            // vanilla ids (522-526 free in the wire space).
+            // `NPCID.cs:11721-11729`.
+            NpcKind::AncientLight => 522,
+            NpcKind::AncientDoom => 523,
+            NpcKind::DesertGhoul => 524,
+            NpcKind::DesertGhoulCorruption => 525,
+            NpcKind::DesertGhoulCrimson => 526,
+            // W4-d41 — the hallowed ghoul + the lamias + the sand
+            // poachers keep their vanilla ids (527-531 free in the wire
+            // space). `NPCID.cs:11731-11739`.
+            NpcKind::DesertGhoulHallow => 527,
+            NpcKind::DesertLamiaLight => 528,
+            NpcKind::DesertLamiaDark => 529,
+            NpcKind::DesertScorpionWalk => 530,
+            NpcKind::DesertScorpionWall => 531,
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride keep their vanilla ids (532/534-537 free in the
+            // wire space). `NPCID.cs:11741-11751`.
+            NpcKind::DesertBeast => 532,
+            NpcKind::DemonTaxCollector => 534,
+            NpcKind::SlimeSpiked => 535,
+            NpcKind::TheBride => 536,
+            NpcKind::SandSlime => 537,
+            // W4-d41 — the critters + the tumbler keep their vanilla ids
+            // (538-540/546 free in the wire space). `NPCID.cs:11753-11769`.
+            NpcKind::SquirrelRed => 538,
+            NpcKind::SquirrelGold => 539,
         }
     
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
@@ -1884,6 +1944,53 @@ impl NpcKind {
             821 => NpcKind::ChatteringTeethBomb,
             822 => NpcKind::CultistArcherBlue,
             823 => NpcKind::CultistArcherWhite,
+            // W4-d41 — the cavern crawdads/shellies (`to_u16` above).
+            494 => NpcKind::Crawdad,
+            495 => NpcKind::Crawdad2,
+            496 => NpcKind::GiantShelly,
+            497 => NpcKind::GiantShelly2,
+            // W4-d41 — the nine salamander colours (`to_u16` above).
+            498 => NpcKind::Salamander,
+            499 => NpcKind::Salamander2,
+            500 => NpcKind::Salamander3,
+            501 => NpcKind::Salamander4,
+            502 => NpcKind::Salamander5,
+            503 => NpcKind::Salamander6,
+            504 => NpcKind::Salamander7,
+            505 => NpcKind::Salamander8,
+            506 => NpcKind::Salamander9,
+            // W4-d41 — the antlions + the Dune Splicer chain (`to_u16`).
+            508 => NpcKind::GiantWalkingAntlion,
+            510 => NpcKind::DuneSplicerHead,
+            511 => NpcKind::DuneSplicerBody,
+            512 => NpcKind::DuneSplicerTail,
+            // W4-d41 — the Tomb Crawler chain + the solar fragments.
+            513 => NpcKind::TombCrawlerHead,
+            514 => NpcKind::TombCrawlerBody,
+            515 => NpcKind::TombCrawlerTail,
+            519 => NpcKind::SolarGoop,
+            // W4-d41 — the ancient orbs + the desert ghouls.
+            522 => NpcKind::AncientLight,
+            523 => NpcKind::AncientDoom,
+            524 => NpcKind::DesertGhoul,
+            525 => NpcKind::DesertGhoulCorruption,
+            526 => NpcKind::DesertGhoulCrimson,
+            // W4-d41 — the hallowed ghoul + the lamias + the sand poachers.
+            527 => NpcKind::DesertGhoulHallow,
+            528 => NpcKind::DesertLamiaLight,
+            529 => NpcKind::DesertLamiaDark,
+            530 => NpcKind::DesertScorpionWalk,
+            531 => NpcKind::DesertScorpionWall,
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride.
+            532 => NpcKind::DesertBeast,
+            534 => NpcKind::DemonTaxCollector,
+            535 => NpcKind::SlimeSpiked,
+            536 => NpcKind::TheBride,
+            537 => NpcKind::SandSlime,
+            // W4-d41 — the critters + the tumbler.
+            538 => NpcKind::SquirrelRed,
+            539 => NpcKind::SquirrelGold,
             _ => return None,
         })
     
@@ -1934,6 +2041,10 @@ impl NpcKind {
                 | NpcKind::Truffle
                 | NpcKind::Steampunker
                 | NpcKind::Cyborg
+                // W4-d41: the Tavernkeep's `townNPC = true` + `friendly =
+                // true` rows (`NPC.cs:16263-16264`, g58b) — the ctor's
+                // friendly seed and the save filter admit him.
+                | NpcKind::DD2Bartender
         )
     }
 
@@ -1976,6 +2087,18 @@ impl NpcKind {
                 // sits outside the `:51301`/`:51436` lists;
                 // `is_worm_head`/`is_worm_mid` stay false).
                 | NpcKind::TruffleWormDigger
+                // W4-d41 — the Dune Splicer chain (510-512): the head's
+                // own fixed-budget spawn (`NPC.cs:51253-51276`, the
+                // Next(12,21) roll) + the shared follower trail.
+                | NpcKind::DuneSplicerHead
+                | NpcKind::DuneSplicerBody
+                | NpcKind::DuneSplicerTail
+                // W4-d41 — the Tomb Crawler chain (513-515): the head's
+                // own fixed-budget spawn (`NPC.cs:51229-51252`, the
+                // Next(6,10) roll) + the shared follower trail.
+                | NpcKind::TombCrawlerHead
+                | NpcKind::TombCrawlerBody
+                | NpcKind::TombCrawlerTail
         )
     }
 
@@ -2031,6 +2154,17 @@ impl NpcKind {
                 | NpcKind::BoneSerpentHead
                 | NpcKind::BoneSerpentBody
                 | NpcKind::BoneSerpentTail
+                // W4-d41 — the Dune Splicer chain shares the head's life
+                // pool (`NPC.cs:51255-51256`/`:51268-51269`: `ai[3] =
+                // whoAmI`, `realLife = whoAmI` on the head and every link).
+                | NpcKind::DuneSplicerHead
+                | NpcKind::DuneSplicerBody
+                | NpcKind::DuneSplicerTail
+                // W4-d41 — the Tomb Crawler chain shares the head's life
+                // pool (`NPC.cs:51231-51232`/`:51244-51245`).
+                | NpcKind::TombCrawlerHead
+                | NpcKind::TombCrawlerBody
+                | NpcKind::TombCrawlerTail
         )
     }
 
@@ -2058,6 +2192,15 @@ impl NpcKind {
                 | NpcKind::LeechHead
                 | NpcKind::SolarCrawltipedeHead
                 | NpcKind::BoneSerpentHead
+                // W4-d41 — the Dune Splicer head (510): its own
+                // fixed-budget chain (`NPC.cs:51253-51276`), NOT the
+                // shared `:51301` budget list — the init's budget match
+                // rolls Next(12,21) for it directly.
+                | NpcKind::DuneSplicerHead
+                // W4-d41 — the Tomb Crawler head (513): its own
+                // fixed-budget chain (`NPC.cs:51229-51252`), NOT the
+                // shared `:51301` budget list.
+                | NpcKind::TombCrawlerHead
         )
     }
 
@@ -2073,6 +2216,15 @@ impl NpcKind {
                 | NpcKind::LeechBody
                 | NpcKind::SolarCrawltipedeBody
                 | NpcKind::BoneSerpentBody
+                // W4-d41 — the Dune Splicer body (511): the head's chain
+                // spawns it directly (the budget loop), so the mid-body
+                // self-chain flag is NOT used for the spawn — but the
+                // followerless-link death gate (`:51419-51433`) reads it.
+                | NpcKind::DuneSplicerBody
+                // W4-d41 — the Tomb Crawler body (514): the head's chain
+                // spawns it directly; the followerless-link death gate
+                // (`:51421-51433`) reads it.
+                | NpcKind::TombCrawlerBody
         )
     }
 
@@ -2099,6 +2251,14 @@ impl NpcKind {
             NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail => {
                 NpcKind::SolarCrawltipedeTail
             }
+            // W4-d41 — the Dune Splicer chain (`NPC.cs:51262-51266`):
+            // the head spawns the body, the body self-chains while the
+            // budget holds, the last link is the tail.
+            NpcKind::DuneSplicerHead => NpcKind::DuneSplicerBody,
+            NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerTail,
+            // W4-d41 — the Tomb Crawler chain (`NPC.cs:51238-51242`).
+            NpcKind::TombCrawlerHead => NpcKind::TombCrawlerBody,
+            NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerTail,
             _ => NpcKind::EaterOfWorldsTail,
         }
     }
@@ -2120,6 +2280,14 @@ impl NpcKind {
             NpcKind::BoneSerpentHead => (9.0, 0.1),
 
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
+            // W4-d41 — the Dune Splicer head's 10/0.25 base
+            // (`NPC.cs:51716-51717`); the sandstorm 16/0.35 override
+            // (`:51711-51712`) reads the target's ZoneSandstorm — the
+            // worm pass's ctx carries it (`worm_head_step`).
+            NpcKind::DuneSplicerHead => (10.0, 0.25),
+            // W4-d41 — the Tomb Crawler head's 7/0.1
+            // (`NPC.cs:51682-51686`).
+            NpcKind::TombCrawlerHead => (7.0, 0.1),
             // The wyvern head's 11/0.25 (`:51720-51724`). The kind stays
             // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
             // precedent): the shared pass's budget chain + dig head are
@@ -2152,6 +2320,9 @@ impl NpcKind {
                 | NpcKind::GoblinTinkerer
                 | NpcKind::Painter
                 | NpcKind::WitchDoctor
+                // W4-d41: the Tavernkeep IS a town NPC (`NPC.cs:16263`'s
+                // `townNPC = true`, g58b's census — no separate event twin).
+                | NpcKind::DD2Bartender
         )
     }
 
@@ -3050,6 +3221,62 @@ impl NpcKind {
             // 579 NPCHit1 (`:16563`).
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => "NPC_Hit_1",
             NpcKind::Cyborg => "NPC_Hit_4",
+            // W4-d41 — the cavern crawdads' `SoundID.NPCHit33`
+            // (`NPC.cs:14674`) and the shellies' `NPCHit38` (`:14686`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => "NPC_Hit_33",
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => "NPC_Hit_38",
+            // W4-d41 — the salamanders' `SoundID.NPCHit50`
+            // (`NPC.cs:14699`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => "NPC_Hit_50",
+            // W4-d41 — the antlion charger's `SoundID.NPCHit31`
+            // (`NPC.cs:14836`) and the swarmer's `NPCHit32` (`:14850`).
+            NpcKind::GiantWalkingAntlion => "NPC_Hit_31",
+            NpcKind::GiantFlyingAntlion => "NPC_Hit_32",
+            // W4-d41 — the Dune Splicer chain's `SoundID.NPCHit1`
+            // (`NPC.cs:14782`/`:14799`/`:14816`).
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => "NPC_Hit_1",
+            // W4-d41 — the Tomb Crawler chain's `SoundID.NPCHit1`
+            // (`NPC.cs:14727`/`:14744`/`:14761`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => "NPC_Hit_1",
+            // W4-d41 — the solar fragments write `HitSound = null`
+            // (`NPC.cs:15402`/`:15417`) — no hit sound (the null guard).
+            // W4-d41 — the Ancient Light's `HitSound = null`
+            // (`NPC.cs:15788`); the Ancient Doom's `NPCHit1` (`:15803`).
+            NpcKind::AncientDoom => "NPC_Hit_1",
+            // W4-d41 — the desert ghouls' `SoundID.NPCHit37`
+            // (`NPC.cs:14890`).
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => "NPC_Hit_37",
+            // W4-d41 — the hallowed ghoul's `NPCHit37` (`NPC.cs:14890`),
+            // the lamias' `NPCHit1` (`:14928`), the sand poachers'
+            // `NPCHit13` (`:14941`/`:14955`).
+            NpcKind::DesertGhoulHallow => "NPC_Hit_37",
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => "NPC_Hit_1",
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => "NPC_Hit_13",
+            // W4-d41 — the basilisk's + the tortured soul's + the
+            // slimes' + the bride's `NPCHit1` (`NPC.cs:14968`/`:15821`/
+            // `:15838`/`:15851`/`:15866`).
+            NpcKind::DesertBeast
+            | NpcKind::DemonTaxCollector
+            | NpcKind::SlimeSpiked
+            | NpcKind::TheBride
+            | NpcKind::SandSlime => "NPC_Hit_1",
+            // W4-d41 — the critters' `NPCHit1` (`NPC.cs:15881`/`:15893`/
+            // `:9344`), the tumbler's `NPCHit11` (`:15980`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -3792,6 +4019,62 @@ impl NpcKind {
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
                 "NPC_Killed_1"
             }
+            // W4-d41 — the cavern crawdads' `SoundID.NPCDeath36`
+            // (`NPC.cs:14675`) and the shellies' `NPCDeath41` (`:14687`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => "NPC_Killed_36",
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => "NPC_Killed_41",
+            // W4-d41 — the salamanders' `SoundID.NPCDeath53`
+            // (`NPC.cs:14700`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => "NPC_Killed_53",
+            // W4-d41 — the antlion charger's `SoundID.NPCDeath34`
+            // (`NPC.cs:14837`) and the swarmer's `NPCDeath35` (`:14851`).
+            NpcKind::GiantWalkingAntlion => "NPC_Killed_34",
+            NpcKind::GiantFlyingAntlion => "NPC_Killed_35",
+            // W4-d41 — the Dune Splicer chain's `SoundID.NPCDeath1`
+            // (`NPC.cs:14783`/`:14800`/`:14817`).
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => "NPC_Killed_1",
+            // W4-d41 — the Tomb Crawler chain's `SoundID.NPCDeath1`
+            // (`NPC.cs:14728`/`:14745`/`:14762`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => "NPC_Killed_1",
+            // W4-d41 — the solar fragments write `DeathSound = null`
+            // (`NPC.cs:15403`/`:15418`) — no death sound (the null guard).
+            // W4-d41 — the Ancient Light's `DeathSound = null`
+            // (`NPC.cs:15789`); the Ancient Doom's `NPCDeath6` (`:15804`).
+            NpcKind::AncientDoom => "NPC_Killed_6",
+            // W4-d41 — the desert ghouls' `SoundID.NPCDeath40`
+            // (`NPC.cs:14891`).
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => "NPC_Killed_40",
+            // W4-d41 — the hallowed ghoul's `NPCDeath40` (`NPC.cs:14891`),
+            // the lamias' `NPCDeath1` (`:14929`), the sand poachers'
+            // `NPCDeath19` (`:14942`/`:14956`).
+            NpcKind::DesertGhoulHallow => "NPC_Killed_40",
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => "NPC_Killed_1",
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => "NPC_Killed_19",
+            // W4-d41 — the basilisk's + the tortured soul's + the
+            // slimes' `NPCDeath1` (`NPC.cs:14969`/`:15822`/`:15839`/
+            // `:15867`), the bride's `NPCDeath2` (`:15852`).
+            NpcKind::DesertBeast
+            | NpcKind::DemonTaxCollector
+            | NpcKind::SlimeSpiked
+            | NpcKind::SandSlime => "NPC_Killed_1",
+            NpcKind::TheBride => "NPC_Killed_2",
+            // W4-d41 — the critters' `NPCDeath1` (`NPC.cs:15882`/`:15894`/
+            // `:9345`), the tumbler's `NPCDeath15` (`:15981`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -4120,6 +4403,28 @@ impl NpcKind {
             | NpcKind::PumpkingBlade
             | NpcKind::Piranha
             | NpcKind::Shark => true,
+            // W4-d41 — the antlion swarmer (509, `NPC.cs:14841-14853`
+            // writes no noGravity row, but the aiStyle-44 head sets it
+            // every tick, `:30863`; kb 0.3 `:14849`) and the Dune Splicer
+            // chain (510-512, `:14784`/`:14801`/`:14820`; kb 0 — the
+            // knockback gate refuses them, the row kept for the census).
+            | NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => true,
+            // W4-d41 — the Tomb Crawler chain (513-515,
+            // `NPC.cs:14729`/`:14746`/`:14765`; kb 0) and the solar
+            // fragments (516/519, `:15404`/`:15419`; kb 0).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail
+            | NpcKind::SolarFlare
+            | NpcKind::SolarGoop => true,
+            // W4-d41 — the ancient orbs (522/523,
+            // `NPC.cs:15790`/`:15805`; kb 0).
+            NpcKind::AncientLight | NpcKind::AncientDoom => true,
+            // W4-d41 — the sand poacher's wall form (531,
+            // `NPC.cs:14948`; kb 0.5).
+            NpcKind::DesertScorpionWall => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
             // noGravity matters to the knockback (the leeches are resist 0).
             NpcKind::Hungry => true,
@@ -5065,6 +5370,62 @@ impl NpcKind {
             // archer pair 3 (`:13843`).
             NpcKind::ChatteringTeethBomb => 41,
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 3,
+            // W4-d41 — aiStyle 3, the crawdad pair (`NPC.cs:14670`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 3,
+            // W4-d41 — aiStyle 3, the nine salamanders (`NPC.cs:14695`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 3,
+            // W4-d41 — aiStyle 3, the antlion charger (`NPC.cs:14832`).
+            NpcKind::GiantWalkingAntlion => 3,
+            // W4-d41 — aiStyle 44, the antlion swarmer (`NPC.cs:14845`).
+            // W4-d41 — aiStyle 6, the Dune Splicer chain
+            // (`NPC.cs:14778`/`:14794`/`:14813`).
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => 6,
+            // W4-d41 — aiStyle 6, the Tomb Crawler chain
+            // (`NPC.cs:14723`/`:14739`/`:14758`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => 6,
+            // W4-d41 — aiStyle 9, the Solar Flare (`NPC.cs:15398`).
+            NpcKind::SolarFlare => 9,
+            // W4-d41 — aiStyle 99, the Solar Goop (`NPC.cs:15413`).
+            NpcKind::SolarGoop => 99,
+            // W4-d41 — aiStyle 100, the Ancient Light (`NPC.cs:15784`).
+            NpcKind::AncientLight => 100,
+            // W4-d41 — aiStyle 101, the Ancient Doom (`NPC.cs:15799`).
+            NpcKind::AncientDoom => 101,
+            // W4-d41 — aiStyle 3, the desert ghouls (`NPC.cs:14886`).
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => 3,
+            // W4-d41 — aiStyle 3, the hallowed ghoul + the lamias
+            // (`NPC.cs:14886`/`:14924`).
+            NpcKind::DesertGhoulHallow
+            | NpcKind::DesertLamiaLight
+            | NpcKind::DesertLamiaDark => 3,
+            // W4-d41 — aiStyle 3, the sand poacher's walker form
+            // (`NPC.cs:14937`); aiStyle 40, the wall form (`:14951`).
+            NpcKind::DesertScorpionWalk => 3,
+            NpcKind::DesertScorpionWall => 40,
+            // W4-d41 — aiStyle 3, the basilisk + the tortured soul + the
+            // bride (`NPC.cs:14964`/`:15817`/`:15847`); aiStyle 1, the
+            // slimes (`:15833`/`:15862`).
+            NpcKind::DesertBeast | NpcKind::DemonTaxCollector | NpcKind::TheBride => 3,
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => 1,
+            // W4-d41 — aiStyle 7, the critters (`NPC.cs:15877`/`:15889`/
+            // `:9340`); aiStyle 26, the tumbler (`:15976`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 7,
+            // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
     }
 
@@ -5249,6 +5610,41 @@ impl NpcKind {
             // spin arm (`NPC.cs:57403-57440`, ±6f, accel 0.07, the 0.95
             // turn brake — `npc_ai3_speeds.rs`'s 159 row).
             NpcKind::Vampire => 6.0,
+            // W4-d41 — the cavern crawdads' charge-family cap
+            // (`NPC.cs:58267`: `num = 1f * (1f + (1f - scale))` — 1f at
+            // the 1f default scale). The ladder's charge arm owns the
+            // live walk; this row feeds the walker fallback + the pin.
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 1.0,
+            // W4-d41 — the antlion charger's lerp-machine base cap
+            // (`NPC.cs:58141`: `num98 = 2.5f` — the speed-tiered bumps
+            // ride the ladder's own arm; this row feeds the walker
+            // fallback + the pin).
+            NpcKind::GiantWalkingAntlion => 2.5,
+            // W4-d41 — the desert ghouls' cap-2 group
+            // (`NPC.cs:57554-57579`: the 524-527 range).
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => 2.0,
+            // W4-d41 — the hallowed ghoul's cap-2 group
+            // (`NPC.cs:57554-57579`), the lamias' cap-3 group
+            // (`:57520-57553`), the sand poacher walker's cap-2 group.
+            NpcKind::DesertGhoulHallow => 2.0,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 3.0,
+            NpcKind::DesertScorpionWalk => 2.0,
+            // W4-d41 — the basilisk's carrier-group cap
+            // (`NPC.cs:58232-58237`: the 5/0.15/0.98 row), the tortured
+            // soul's + the bride's num107 default 1f (`:58322`).
+            NpcKind::DesertBeast => 5.0,
+            NpcKind::DemonTaxCollector | NpcKind::TheBride => 1.0,
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 1.0,
             _ => return None,
         })
     }
@@ -6103,6 +6499,64 @@ impl NpcKind {
             // `size_override`), the archer pair 18x40 (`:13841-13842`).
             NpcKind::ChatteringTeethBomb => (20.0, 26.0),
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => (18.0, 40.0),
+            // W4-d41 — the cavern crawdads'/shellies' 28x22 boxes
+            // (`NPC.cs:14668-14669`/`:14680-14681`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => (28.0, 22.0),
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => (28.0, 22.0),
+            // W4-d41 — the salamanders' 24x44 box (`NPC.cs:14693-14694`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => (24.0, 44.0),
+            // W4-d41 — the antlion charger's 50x31 box
+            // (`NPC.cs:14830-14831`), the swarmer's 40x31
+            // (`:14843-14844`), the Dune Splicer chain's 34x34
+            // (`:14776-14777`/`:14792-14793`/`:14811-14812`).
+            NpcKind::GiantWalkingAntlion => (50.0, 31.0),
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => (34.0, 34.0),
+            // W4-d41 — the Tomb Crawler chain's 22x22 box
+            // (`NPC.cs:14721-14722`/`:14737-14738`/`:14756-14757`), the
+            // solar fragments' 26x26 (`:15396-15397`/`:15411-15412`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => (22.0, 22.0),
+            // W4-d41 — the Ancient Light's 26x26 box
+            // (`NPC.cs:15782-15783`), the Ancient Doom's 42x42
+            // (`:15797-15798`), the desert ghouls' 24x44
+            // (`:14884-14885`).
+            NpcKind::AncientLight => (26.0, 26.0),
+            NpcKind::AncientDoom => (42.0, 42.0),
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => (24.0, 44.0),
+            // W4-d41 — the hallowed ghoul's + the lamias' 24x44 box
+            // (`NPC.cs:14884-14885`/`:14922-14923`), the sand poacher
+            // walker's 50x20 (`:14935-14936`), the wall's 36x36
+            // (`:14949-14950`).
+            NpcKind::DesertGhoulHallow
+            | NpcKind::DesertLamiaLight
+            | NpcKind::DesertLamiaDark => (24.0, 44.0),
+            NpcKind::DesertScorpionWalk => (50.0, 20.0),
+            NpcKind::DesertScorpionWall => (36.0, 36.0),
+            // W4-d41 — the basilisk's 32x31 box (`NPC.cs:14962-14963`),
+            // the tortured soul's + the bride's 18x40
+            // (`:15815-15816`/`:15845-15846`), the spiked slime's 24x18
+            // (`:15831-15832`), the sand slime's 30x24
+            // (`:15860-15861`).
+            NpcKind::DesertBeast => (32.0, 31.0),
+            NpcKind::DemonTaxCollector | NpcKind::TheBride => (18.0, 40.0),
+            NpcKind::SlimeSpiked => (24.0, 18.0),
+            NpcKind::SandSlime => (30.0, 24.0),
+            // W4-d41 — the critters' 18x20 box (`NPC.cs:15875-15876`/
+            // `:15887-15888`/`:9338-9339`), the tumbler's 30x30
+            // (`:15974-15975`).
         }
     }
 
@@ -6278,6 +6732,74 @@ impl NpcKind {
             // W4-d40: hand rows for the kinds with no bestiary entry
             // (the Hide=true exclusions with no credit-fold).
             NpcKind::TargetDummy => 488,
+            // W4-d41 — the cavern crawdads/shellies' vanilla types
+            // (`NPCID.cs:11661-11667`). The 1-variants keep hand rows; the
+            // 2-variants have NO hand row — like every folded segment
+            // family (the Destroyer body/tail precedent, the L-B gate fix)
+            // they fall through to the folded bestiary net id (494/496),
+            // keeping s1_f_3's cs_id==net_id invariant. The C# type gates
+            // still work: the ladder's charge family matches 494|495
+            // identically, and the shelly AI reads `Style39Type`, not
+            // cs_id. The REAL draw types ride render_key/texture_net_id.
+            NpcKind::Crawdad => 494,
+            NpcKind::GiantShelly => 496,
+            // W4-d41 — the salamanders: 498 keeps its hand row; 499-506
+            // have NO hand row — they fold onto 499's bestiary net id
+            // (`ContentSamples.cs:1021-1025` maps ALL of 498-506 to the
+            // 499 credit), keeping s1_f_3's cs_id==net_id invariant.
+            // The shooter block's type gates read the 498..=506 RANGE,
+            // which 499 satisfies identically; the REAL draw types ride
+            // render_key/texture_net_id.
+            NpcKind::Salamander => 498,
+            // W4-d41 — the antlions keep their vanilla types
+            // (`NPCID.cs:11687-11689`); the Dune Splicer head keeps its
+            // own (510). The body/tail have NO hand row — they fold onto
+            // the head's bestiary net id (the worm-family precedent,
+            // s1_f_3's cs_id==net_id invariant); the chain's type gates
+            // read the KIND, and the REAL draw types ride
+            // render_key/texture_net_id.
+            NpcKind::GiantWalkingAntlion => 508,
+            NpcKind::DuneSplicerHead => 510,
+            // W4-d41 — the Tomb Crawler head keeps its own (513); the
+            // body/tail fold onto the head's bestiary net id (the
+            // worm-family precedent). The solar fragments keep their
+            // own (516/519 — Hide=true, no bestiary entry, so cs_id
+            // falls through to the sentinel unless hand-rowed; the
+            // hand rows keep the C# type gates readable).
+            NpcKind::TombCrawlerHead => 513,
+            NpcKind::SolarGoop => 519,
+            // W4-d41 — the ancient orbs + the desert ghouls keep their
+            // vanilla types (`NPCID.cs:11721-11729`). The orbs are
+            // Hide=true (no bestiary entry), so the hand rows keep the
+            // C# type gates readable; the ghouls carry their own entries.
+            NpcKind::AncientLight => 522,
+            NpcKind::AncientDoom => 523,
+            NpcKind::DesertGhoul => 524,
+            NpcKind::DesertGhoulCorruption => 525,
+            NpcKind::DesertGhoulCrimson => 526,
+            // W4-d41 — the hallowed ghoul + the lamias keep their vanilla
+            // types (`NPCID.cs:11731-11735`); the sand poacher walker
+            // keeps its own (530). The wall form (531) folds onto the
+            // walker's bestiary net id (`ContentSamples.cs:1038`) — NO
+            // hand row (the worm-family precedent, s1_f_3's
+            // cs_id==net_id invariant); the wall-crawler's type gates
+            // read the KIND, and the REAL draw type rides
+            // render_key/texture_net_id.
+            NpcKind::DesertGhoulHallow => 527,
+            NpcKind::DesertLamiaLight => 528,
+            NpcKind::DesertLamiaDark => 529,
+            NpcKind::DesertScorpionWalk => 530,
+            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // the bride keep their vanilla types (`NPCID.cs:11741-11751`).
+            NpcKind::DesertBeast => 532,
+            NpcKind::DemonTaxCollector => 534,
+            NpcKind::SlimeSpiked => 535,
+            NpcKind::TheBride => 536,
+            NpcKind::SandSlime => 537,
+            // W4-d41 — the critters + the tumbler keep their vanilla
+            // types (`NPCID.cs:11753-11769`).
+            NpcKind::SquirrelRed => 538,
+            NpcKind::SquirrelGold => 539,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -6684,6 +7206,19 @@ impl NpcKind {
                 // W4-f42 — the Antlion's `behindTiles = true` row
                 // (`NPC.cs:9678`).
                 | NpcKind::Antlion
+                // W4-d41: the lane portal's `behindTiles = true` row
+                // (`NPC.cs:16048`).
+                | NpcKind::DD2LanePortal
+                // W4-d41 — the Dune Splicer chain's `behindTiles = true`
+                // rows (`NPC.cs:14787`/`:14804`/`:14823`).
+                | NpcKind::DuneSplicerHead
+                | NpcKind::DuneSplicerBody
+                | NpcKind::DuneSplicerTail
+                // W4-d41 — the Tomb Crawler chain's `behindTiles = true`
+                // rows (`NPC.cs:14732`/`:14749`/`:14768`).
+                | NpcKind::TombCrawlerHead
+                | NpcKind::TombCrawlerBody
+                | NpcKind::TombCrawlerTail
         )
     }
 
@@ -7491,6 +8026,58 @@ impl NpcKind {
             // archer pair 210 (`:13846`).
             NpcKind::ChatteringTeethBomb => 200,
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 210,
+            // W4-d41 — the cavern crawdads'/shellies' lifeMax 50
+            // (`NPC.cs:14673`/`:14685`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 50,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 50,
+            // W4-d41 — the salamanders' lifeMax 65 (`NPC.cs:14698`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 65,
+            // W4-d41 — the antlion charger's lifeMax 110
+            // (`NPC.cs:14835`), the swarmer's 90 (`:14848`), the Dune
+            // Splicer chain's 500 (`:14781`/`:14798`/`:14815`).
+            NpcKind::GiantWalkingAntlion => 110,
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => 500,
+            // W4-d41 — the Tomb Crawler chain's lifeMax 60
+            // (`NPC.cs:14726`/`:14743`/`:14760`), the solar fragments'
+            // 1 (`:15401`/`:15416`).
+            NpcKind::TombCrawlerHead
+            | NpcKind::TombCrawlerBody
+            | NpcKind::TombCrawlerTail => 60,
+            NpcKind::SolarFlare | NpcKind::SolarGoop => 1,
+            // W4-d41 — the Ancient Light's lifeMax 400 (`NPC.cs:15787`),
+            // the Ancient Doom's 500 (`:15802`); the desert ghouls'
+            // 180/250/220 (`:14889` + the `:14898`/`:14905` adds).
+            NpcKind::AncientLight => 400,
+            NpcKind::AncientDoom => 500,
+            NpcKind::DesertGhoul => 180,
+            NpcKind::DesertGhoulCorruption => 250,
+            NpcKind::DesertGhoulCrimson => 220,
+            // W4-d41 — the hallowed ghoul's 300 (`NPC.cs:14889` + the
+            // `:14912` +120), the lamias' 350 (`:14927`), the sand
+            // poachers' 320 (`:14940`/`:14954`).
+            NpcKind::DesertGhoulHallow => 300,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 350,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 320,
+            // W4-d41 — the basilisk's lifeMax 270 (`NPC.cs:14967`), the
+            // tortured soul's 400 (`:15820`), the slimes' 50
+            // (`:15836`/`:15865`), the bride's 200 (`:15850`).
+            NpcKind::DesertBeast => 270,
+            NpcKind::DemonTaxCollector => 400,
+            NpcKind::SlimeSpiked | NpcKind::SandSlime => 50,
+            NpcKind::TheBride => 200,
+            // W4-d41 — the critters' lifeMax 5 (`NPC.cs:15880`/`:15892`/
+            // `:9343`), the tumbler's 50 (`:15979`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 5,
         }
     }
 
@@ -8249,6 +8836,59 @@ impl NpcKind {
             // archer pair 45 (`:13844`).
             NpcKind::ChatteringTeethBomb => 120,
             NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 45,
+            // W4-d41 — the cavern crawdads' damage 28 (`NPC.cs:14671`)
+            // and the shellies' 16 (`:14683`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 28,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 16,
+            // W4-d41 — the salamanders' damage 18 (`NPC.cs:14696`).
+            NpcKind::Salamander
+            | NpcKind::Salamander2
+            | NpcKind::Salamander3
+            | NpcKind::Salamander4
+            | NpcKind::Salamander5
+            | NpcKind::Salamander6
+            | NpcKind::Salamander7
+            | NpcKind::Salamander8
+            | NpcKind::Salamander9 => 18,
+            // W4-d41 — the antlion charger's damage 38 (`NPC.cs:14833`),
+            // the swarmer's 34 (`:14846`), the Dune Splicer head's 58
+            // (`:14779`), body's 54 (`:14796`), tail's 50 (`:14814`).
+            NpcKind::GiantWalkingAntlion => 38,
+            NpcKind::DuneSplicerHead => 58,
+            NpcKind::DuneSplicerBody => 54,
+            NpcKind::DuneSplicerTail => 50,
+            // W4-d41 — the Tomb Crawler head's damage 18
+            // (`NPC.cs:14724`), body/tail's 7 (`:14741`/`:14759`); the
+            // Solar Flare's 100 (`:15399`), the Solar Goop's 120
+            // (`:15414`).
+            NpcKind::TombCrawlerHead => 18,
+            NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => 7,
+            NpcKind::SolarGoop => 120,
+            // W4-d41 — the Ancient Light's damage 120 (`NPC.cs:15785`),
+            // the Ancient Doom's 30 (`:15800`); the desert ghouls'
+            // 50/60/64 (`:14887` + the `:14900`/`:14907` adds).
+            NpcKind::AncientLight => 120,
+            NpcKind::AncientDoom => 30,
+            NpcKind::DesertGhoul => 50,
+            NpcKind::DesertGhoulCorruption => 60,
+            NpcKind::DesertGhoulCrimson => 64,
+            // W4-d41 — the hallowed ghoul's 54 (`NPC.cs:14887` + the
+            // `:14914` +4), the lamias' 52 (`:14925`), the sand
+            // poachers' 66 (`:14938`/`:14952`).
+            NpcKind::DesertGhoulHallow => 54,
+            NpcKind::DesertLamiaLight | NpcKind::DesertLamiaDark => 52,
+            NpcKind::DesertScorpionWalk | NpcKind::DesertScorpionWall => 66,
+            // W4-d41 — the basilisk's damage 65 (`NPC.cs:14965`), the
+            // tortured soul's + the bride's 14 (`:15818`/`:15848`), the
+            // spiked slime's 14 (`:15834`), the sand slime's 15
+            // (`:15863`).
+            NpcKind::DesertBeast => 65,
+            NpcKind::DemonTaxCollector | NpcKind::TheBride => 14,
+            NpcKind::SlimeSpiked => 14,
+            NpcKind::SandSlime => 15,
+            // W4-d41 — the critters' damage 0 (`NPC.cs:15878`/`:15890`/
+            // `:9341`), the tumbler's 30 (`:15977`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 0,
         }
     }
 }

@@ -274,6 +274,10 @@ pub const BIRD_DROPPINGS: u16 = 1080;
 /// aiStyle 1, penetrate −1, tileCollide; the `flag3 = false` flight list
 /// `:55954` keeps the counter at rest — dead-straight, no gravity).
 pub const HORNET_STINGER: u16 = 55;
+/// `ProjectileID.SalamanderSpit` (572, `ProjectileID.cs`'s 572) — the
+/// salamanders' shooter-block shot (`NPC.cs:59454`'s `num170 = 572`,
+/// dmg 14 `:59455`, speed 7 `:59277`). W4-d41.
+pub const SALAMANDER_SPIT: u16 = 572;
 /// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
 /// (`NPC.cs:26628`'s `num412`).
 pub const EYE_LASER: u16 = 83;
@@ -1786,6 +1790,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             FLAMING_ARROW_HOSTILE => {
                 (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
+            // `Projectile.cs:6248-6257` — the SalamanderSpit (572): the
+            // 10x10 box, aiStyle 1, `alpha = 255`, `penetrate = -1`,
+            // hostile; the stock `tileCollide = true` (`:775`) and
+            // `timeLeft = 3600` (`:787`) stand. The salamanders' shot
+            // (W4-d41, `NPC.cs:59454`); the OnFire-on-hit roll
+            // (`:12189`, `Next(3)` then `Next(120, 240)`) is a HIT-time
+            // draw on the projectile's own tick — the player-debuff
+            // layer is unported (ANALYSIS, the flaming arrow's note).
+            SALAMANDER_SPIT => (
+                10.0,
+                10.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:828-836` — the shuriken (3): the 22x22 box, aiStyle 2,
             // `penetrate = 4`, the stock 3600 life and the stock `tileCollide`.
             SHURIKEN => (22.0, 22.0, 2, 4, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),

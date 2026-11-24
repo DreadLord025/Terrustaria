@@ -229,6 +229,9 @@ pub(crate) fn npc_catchable(npc_type: i32) -> bool {
             | 377
             | 539
             | 538
+            // W4-d41 — the party bunny (540): `NPC.cs:9346`'s
+            // `catchItem = 2019` (the bunny cage).
+            | 540
             | 671
             | 672
             | 673

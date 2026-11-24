@@ -1,11 +1,16 @@
 //! `AI_026_Unicorns` (`NPC.cs:62366-62924`) — the aiStyle-26 machine for the
 //! Pumpkin Moon's Headless Horseman (315) and Hellhound (329), S1-F-13b2
-//! slice A. The C# machine also serves the Unicorn (155), the lunar
-//! pillar mobs (410's kamikaze, 423's NebulaBeast charge) and the Sand
-//! Elemental (546). 155/410/546 are not in the port's roster and 423
-//! rides its own ported machine (`npc.rs::update_nebula_beast`,
-//! M4-EVENT-9), so only the 315/329 arms are ported here — the shared
-//! core is verbatim, the other types' branches are cited and skipped.
+//! slice A, plus W4-d41's Tumbleweed (546, the angry tumbler). The C#
+//! machine also serves the Unicorn (155) and the lunar pillar mobs
+//! (410's kamikaze, 423's NebulaBeast charge); 155/410 are not in the
+//! port's roster and 423 rides its own ported machine
+//! (`npc.rs::update_nebula_beast`, M4-EVENT-9), so the 315/329/546 arms
+//! are ported here — the shared core is verbatim, the other types'
+//! branches are cited and skipped. The 546 arms: the sibling-spread +
+//! `num2 = 4` (`:62378-62408`), the hop-over + desert despawn gate
+//! (`:62565-62580`), the wind-driven walk cap (`:62703-62716`), the
+//! step-up `spriteDirection` inversion (`:62864-62868`) and the
+//! rotation tail (`:62919-62923`).
 //!
 //! RNG (`Main.rand` rides the `UpdateNPCs` stream —
 //! `Main.cs:17767-17769`'s `SwapRandom("UpdateNPCs")` around
@@ -43,6 +48,18 @@ const HORSEMAN_PUMPKIN: u16 = 1001;
 /// gate, a different call site).
 fn nactive(t: &Tile) -> bool {
     t.active() && t.flags & tr_core::tile::FLAG_INACTIVE == 0
+}
+
+/// `Math.Sign(float)` — 0 at zero (Rust's `signum` returns 1 for +0.0);
+/// the 546 turnaround gate (`NPC.cs:62705`) and the wind sign (`:62709`).
+fn math_sign(x: f32) -> i32 {
+    if x > 0.0 {
+        1
+    } else if x < 0.0 {
+        -1
+    } else {
+        0
+    }
 }
 
 /// `Main.tileSolid[t.type]` — the generated table (the 192 leaf-block
@@ -115,6 +132,14 @@ pub(crate) fn unicorn_step(
     // Tumbleweed's num2 = 4 (`:62380`).
     let num = 30.0f32;
     let num2 = if tumbleweed { 4.0f32 } else { 10.0f32 };
+    let tumbler = npc.kind == NpcKind::Tumbleweed;
+    let (w, h) = npc.size();
+    // `int num = 30; int num2 = 10;` (`NPC.cs:62368-62369`) — the 30-tick
+    // stuck window and its 10x wander bound (the 546 row's `num2 = 4`,
+    // `:62380`). `flag` (`:62370`) is only set by the unported 423 charge
+    // arm; it stays false.
+    let num = 30.0f32;
+    let mut num2 = 10.0f32;
     let flag = false;
     // `:62373-62377` — walking against the facing while grounded arms the
     // stuck counter.
@@ -129,6 +154,17 @@ pub(crate) fn unicorn_step(
     if tumbleweed {
         let flag4 = npc.vy == 0.0;
         for &(sx, sy) in &npc.tumbleweed_siblings {
+    // `:62378-62408` — the 546 head: num2 = 4, the sibling-spread scan
+    // (every OTHER active 546 inside one width of Manhattan distance
+    // nudges ±0.05 on both axes, slot order), then the grounded vy = 0
+    // snap. The scan needs the sibling slots — the sim's pre-pass stamps
+    // `tumbler_siblings` (the twin_time_lefts carrier precedent); outside
+    // the sim the slice is empty and only the snap runs (documented
+    // seam, ANALYSIS).
+    if tumbler {
+        num2 = 4.0;
+        let flag4 = npc.vy == 0.0;
+        for &(sx, sy) in &npc.tumbler_siblings {
             if (npc.x - sx).abs() + (npc.y - sy).abs() < w {
                 if npc.x < sx {
                     npc.vx -= 0.05;
@@ -142,9 +178,11 @@ pub(crate) fn unicorn_step(
                 }
             }
         }
+        }
         if flag4 {
             npc.vy = 0.0;
         }
+    }
     }
     // `:62409-62440` — the Horseman's own block: the 480-tick pumpkin lob,
     // the light (deferred, module docs) and the gallop dust (deferred with
@@ -275,6 +313,7 @@ pub(crate) fn unicorn_step(
     // The centres use INTEGER half-widths (`width / 2`, `:62560`).
     if !horseman
         && !tumbleweed
+        && !tumbler
         && npc.vy == 0.0
         && num8 < 100.0
         && npc.vx.abs() > 3.0
@@ -310,21 +349,63 @@ pub(crate) fn unicorn_step(
         let num9 = npc.facing;
         target_closest(npc, world, &[cand_of(p)], true, 26, 0);
         if !npc.player_zone_desert {
+    // `:62565-62569` — the 546 hop-over: the SAME -4 hop WITHOUT the
+    // 100-px gate, on the FLOAT centres (`base.Center`, `:62565`), plus
+    // the `SoundEngine.PlaySound(3, base.Center, 11)` hop cue.
+    if tumbler && npc.vy == 0.0 && npc.vx.abs() > 3.0 {
+        let hit = { (cx < pcx && npc.vx > 0.0) || (cx > pcx && npc.vx < 0.0) };
+        if hit {
+            npc.vy -= 4.0;
+            npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                cue: crate::npc::NpcSoundCue::NpcHit(11),
+                x: cx,
+                y: cy,
+            });
+        }
+        }
+    }
+    }
+    // `:62570-62580` — the 546 desert despawn gate: outside the target's
+    // ZoneDesert, retarget; if STILL outside, encourage despawn 10, pin
+    // ai[3] to the stuck window (the wander tail below runs) and restore
+    // the pre-retarget direction. The single-player seam: the port's
+    // session player IS the target (the `zone_desert` pre-stamp), so the
+    // TargetClosest re-pick is the identity (the sand-poacher transform
+    // precedent).
+    if tumbler && !npc.zone_desert {
+        let num9 = npc.facing;
+        let cand = TargetCandidate {
+            active: true,
+            dead: player.dead,
+            ghost: false,
+            x: player.x,
+            y: player.y,
+            width: crate::player::WIDTH as i32,
+            height: crate::player::HEIGHT as i32,
+            aggro: 0,
+            item_animation: player.frame_inputs.swing_anim as i32,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        };
+        target_closest(npc, world, &[cand], true, 26, 0);
+        if !npc.zone_desert {
             npc.encourage_despawn(10);
             npc.ai[3] = num;
             npc.facing = num9;
         }
     }
     // `:62581-62616` — the chase vs wander split. Outside the pumpkin
-    // moon both kinds encourage despawn instead of retargeting
-    // (`:62583-62586`); inside it, `TargetClosest()` runs while the
-    // stuck window is open. Past the window the NPC wanders: a grounded
-    // standstill flips the facing every 2 ticks (`ai[0]`), `directionY`
-    // arms the jump probe below.
+    // moon the 315/329 encourage despawn instead of retargeting
+    // (`:62583-62586`'s type gate — the 546 keeps TargetClosest, W4-d41);
+    // inside it, `TargetClosest()` runs while the stuck window is open.
+    // Past the window the NPC wanders: a grounded standstill flips the
+    // facing every 2 ticks (`ai[0]`), `directionY` arms the jump probe
+    // below.
     if npc.ai[3] < num {
         // W4-f42 — the Tumbleweed (546) is not 315/329, so the C#'s
         // `:62583` despawn gate never fires for it — it always retargets.
         if !world.pumpkin_moon && !tumbleweed {
+        if !tumbler && !world.pumpkin_moon {
             npc.encourage_despawn(10);
         } else {
             target_closest(npc, world, &[cand_of(player)], true, 26, 0);
@@ -348,8 +429,11 @@ pub(crate) fn unicorn_step(
             npc.facing = 1;
         }
     }
+    }
     // `:62617-62740` — the walk core. num10 = 6 cap, num11 = 0.07 accel
     // (the 410 row is an unported kind; 423 rides its own machine).
+    // (the 410 row is an unported kind; 423 rides its own machine; the
+    // 546 row is W4-d41's wind-driven cap below).
     // The gate: grounded, wet, or already rolling with the facing.
     let mut num10 = 6.0f32;
     let mut num11 = 0.07f32;
@@ -402,6 +486,24 @@ pub(crate) fn unicorn_step(
                 }
             }
         } else if !tumbleweed {
+        } else if tumbler {
+            // `:62703-62716` — the 546 arm: the 0.92 turnaround damping,
+            // the wind-driven cap `4 + lerp(0.6, 1, |windSpeedTarget|) *
+            // sign(windSpeedTarget) * direction * 3` (zero outside the
+            // target's sandstorm zone), the 0.05 accel.
+            if math_sign(npc.vx) != npc.facing {
+                npc.vx *= 0.92;
+            }
+            let wind = npc.wind_speed_target;
+            // `MathHelper.Lerp(0.6f, 1f, |wind|) * sign(wind)` — the
+            // scalar lerp `a + (b - a) * t` (the fishron convention).
+            let mut num12 = (0.6 + (1.0 - 0.6) * wind.abs()) * math_sign(wind) as f32;
+            if !npc.zone_sandstorm {
+                num12 = 0.0;
+            }
+            num10 = 4.0 + num12 * npc.facing as f32 * 3.0;
+            num11 = 0.05;
+        } else {
             // `:62632-62650` — the 329 arm: the 0.9 turnaround damping
             // and the ±3 soft band's ±0.1 nudge (the shared block below
             // still accelerates to the 6 cap). W4-f42: the 546 arm above
@@ -529,6 +631,13 @@ pub(crate) fn unicorn_step(
             // `:62864-62868` — num23 = spriteDirection (the 423/410/546
             // inversion; W4-f42 wires the 546).
             let num23 = if tumbleweed { -npc.sprite_dir } else { npc.sprite_dir };
+            // `:62864-62868` — num23 = spriteDirection, inverted for
+            // 423/410/546 (the tumbler's step-up probe looks BEHIND the
+            // display flip — W4-d41).
+            let mut num23 = npc.sprite_dir;
+            if tumbler {
+                num23 *= -1;
+            }
             if (npc.vx < 0.0 && num23 == -1) || (npc.vx > 0.0 && num23 == 1) {
                 // `flag7` (the 410/423 platform exemption, `:62871`) is
                 // false for 315/329 — the below-1 conjunct `(!flag7 || …)`
@@ -566,6 +675,11 @@ pub(crate) fn unicorn_step(
     // rotation tail (`:62919-62923`) — rotation += vx * 0.05,
     // spriteDirection = -direction.
     if tumbleweed {
+    // `:62904-62918` — the 423 dust tail is an unported kind (423 rides
+    // its own machine). `:62919-62923` — the 546 rotation tail: the roll
+    // accumulates `velocity.X * 0.05` and the display direction inverts
+    // (W4-d41).
+    if tumbler {
         npc.rotation += npc.vx * 0.05;
         npc.sprite_dir = -npc.facing;
     }
@@ -600,6 +714,7 @@ pub(crate) fn unicorn_step(
     // `base.oldPosition = base.position` (`NPC.cs:92605`, the movement
     // tail's latch — the stuck block above reads it next tick).
     npc.unicorn_stuck_x = npc.x;
+}
 }
 
 #[cfg(test)]
@@ -1110,5 +1225,156 @@ mod tests {
             }
             assert!(p.x - n.x < dx0, "{kind:?} never closed the gap");
         }
+    }
+
+    /// W4-d41 — the 546 head (`NPC.cs:62378-62408`): the num2 = 4 stuck
+    /// cap (the >120 wrap instead of the >300), the sibling-spread ±0.05
+    /// nudges inside one width of Manhattan distance, and the grounded
+    /// vy = 0 snap.
+    #[test]
+    fn w4_d41_the_tumbler_head_spreads_and_wraps_at_120() {
+        let w = ground();
+        // The player far right and BELOW the tumbler's centre — the
+        // jump probe's `directionY < 0` arm stays shut (the stuck-counter
+        // test's placement convention).
+        let p = player_at(&w, 150.0, 99.0);
+        let mut rng = UnifiedRandom::new(0);
+        let mut n = grounded(NpcKind::Tumbleweed, &w, 60.0, 1);
+        n.zone_desert = true; // the despawn gate stays shut
+        n.old_target = 0;
+        n.old_direction = 1;
+        n.old_direction_y = 1;
+        // The sibling 10 px right: inside the 30-px width → vx -0.05;
+        // the sibling 40 px right: outside → no nudge from it.
+        n.tumbler_siblings = vec![(n.x + 10.0, n.y), (n.x + 40.0, n.y)];
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.unicorn_stuck_x = n.x - 5.0; // moving: no frozen-x increment
+        unicorn_step(&mut n, &w, &p, &mut rng);
+        // The spread's -0.05, the 546 arm's 0.92 turnaround damping
+        // (sign(-0.05) = -1 != facing 1), then the shared +0.05 accel:
+        // -0.05 * 0.92 + 0.05 = 0.004.
+        assert!(
+            (n.vx - 0.004).abs() < 1e-5,
+            "the spread -0.05, the 0.92 damping, the +0.05 accel, got {}",
+            n.vx
+        );
+        assert_eq!(n.vy, 0.0, "the grounded snap");
+        // The num2 = 4 cap: ai[3] = 120 → the frozen-x tick 121 wraps.
+        n.ai[3] = 120.0;
+        n.vx = 0.0;
+        n.tumbler_siblings.clear();
+        n.unicorn_stuck_x = n.x;
+        unicorn_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.ai[3], 0.0, "121 > 30*4 wraps to 0");
+    }
+
+    /// W4-d41 — the 546 walk cap (`NPC.cs:62703-62716`): the 0.92
+    /// turnaround damping, the wind-driven `4 + lerp(0.6,1,|wind|) *
+    /// sign(wind) * direction * 3` cap (zero outside the sandstorm), the
+    /// 0.05 accel, and the rotation tail (`:62919-62923`).
+    #[test]
+    fn w4_d41_the_tumbler_walk_cap_rides_the_wind() {
+        let w = ground();
+        let p = player_at(&w, 150.0, 99.0);
+        let mut rng = UnifiedRandom::new(0);
+        // No sandstorm: num12 = 0, the cap is 4 both ways, the accel 0.05.
+        let mut n = grounded(NpcKind::Tumbleweed, &w, 60.0, 1);
+        n.zone_desert = true;
+        n.old_target = 0;
+        n.old_direction = 1;
+        n.old_direction_y = 1;
+        n.unicorn_stuck_x = n.x - 5.0;
+        unicorn_step(&mut n, &w, &p, &mut rng);
+        assert!((n.vx - 0.05).abs() < 1e-5, "the 0.05 accel, got {}", n.vx);
+        // The calm cap 4: 100 ticks reach it (80 accel ticks) without
+        // walking past the far player (the hop-over bounces the body but
+        // never touches vx).
+        for _ in 0..100 {
+            n.unicorn_stuck_x = n.x - 5.0;
+            unicorn_step(&mut n, &w, &p, &mut rng);
+            assert!(n.vx <= 4.0 + 1e-3, "the calm cap 4, got {}", n.vx);
+        }
+        assert!((n.vx - 4.0).abs() < 1e-3, "the calm cap reached, got {}", n.vx);
+        // The sandstorm's +1 wind: the cap 4 + 1*1*3 = 7 with the wind.
+        n.zone_sandstorm = true;
+        n.wind_speed_target = 1.0;
+        for _ in 0..80 {
+            n.unicorn_stuck_x = n.x - 5.0;
+            unicorn_step(&mut n, &w, &p, &mut rng);
+            assert!(n.vx <= 7.0 + 1e-3, "the wind cap 7, got {}", n.vx);
+        }
+        assert!((n.vx - 7.0).abs() < 1e-3, "the wind cap reached, got {}", n.vx);
+        // The turnaround damping: rolling right at 2 px/tick (below the
+        // hop's |vx| > 3 gate) while facing left, INSIDE the wander
+        // window (ai[3] >= 30 — the chase arm's TargetClosest would
+        // re-face the player otherwise). The 546 arm damps 0.92
+        // (sign(vx) = 1 != -1), the shared block accelerates -0.05.
+        n.ai[3] = 30.0;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.facing = -1;
+        n.sprite_dir = -1;
+        n.zone_sandstorm = false;
+        n.wind_speed_target = 0.0;
+        let before = n.vx;
+        let rot_before = n.rotation;
+        n.unicorn_stuck_x = n.x - 5.0;
+        unicorn_step(&mut n, &w, &p, &mut rng);
+        assert!(
+            (n.vx - (before * 0.92 - 0.05)).abs() < 1e-3,
+            "the 0.92 damping + the -0.05 accel, got {}",
+            n.vx
+        );
+        // The rotation tail: rotation += vx * 0.05, sprite_dir = -facing.
+        assert!(
+            (n.rotation - (rot_before + n.vx * 0.05)).abs() < 1e-5,
+            "the roll accumulates vx * 0.05"
+        );
+        assert_eq!(n.sprite_dir, 1, "the display inversion");
+    }
+
+    /// W4-d41 — the 546 hop-over (`NPC.cs:62565-62569`): grounded,
+    /// |vx| > 3, rolling toward the player's FLOAT centre → the -4 hop
+    /// + the PlaySound(3, Center, 11) cue. The desert despawn gate
+    /// (`:62570-62580`): outside the desert, ai[3] pins to 30 and the
+    /// despawn timer arms.
+    #[test]
+    fn w4_d41_the_tumbler_hops_and_despawns_outside_the_desert() {
+        let w = ground();
+        // The player RIGHT of the tumbler and BELOW its centre (the hop
+        // reads only the centre X; the low placement keeps the jump
+        // probe's directionY arm shut).
+        let p = player_at(&w, 65.0, 99.0);
+        let mut rng = UnifiedRandom::new(0);
+        let mut n = grounded(NpcKind::Tumbleweed, &w, 60.0, 1);
+        n.zone_desert = true;
+        n.old_target = 0;
+        n.old_direction = 1;
+        n.old_direction_y = 1;
+        n.vx = 4.0; // rolling right toward the player, |vx| > 3
+        n.unicorn_stuck_x = n.x - 4.0;
+        unicorn_step(&mut n, &w, &p, &mut rng);
+        // The hop fired: vy went -4 then the gravity tail added GRAVITY.
+        assert!(n.vy < 0.0, "the hop lifted, got {}", n.vy);
+        assert!(
+            n.wants_sound.iter().any(|r| matches!(
+                r.cue,
+                crate::npc::NpcSoundCue::NpcHit(11)
+            )),
+            "the hop queued the style-11 cue"
+        );
+        // The desert gate: zone_desert false → ai[3] = 30 + despawn 10.
+        let mut m = grounded(NpcKind::Tumbleweed, &w, 60.0, 1);
+        m.zone_desert = false;
+        m.despawn_timer = 600;
+        m.old_target = 0;
+        m.old_direction = 1;
+        m.old_direction_y = 1;
+        m.unicorn_stuck_x = m.x - 5.0;
+        unicorn_step(&mut m, &w, &p, &mut rng);
+        assert_eq!(m.ai[3], 30.0, "the gate pins ai[3] to the window");
+        assert_eq!(m.despawn_timer, 10, "the gate arms despawn 10");
+        assert_eq!(m.facing, 1, "the gate restores the direction");
     }
 }
