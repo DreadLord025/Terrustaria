@@ -110,10 +110,14 @@ mod npc_ai_style68;
 mod npc_ai_unicorn_b;
 mod npc_ai_style27;
 mod npc_ai_fishron;
-// S1-D-3 empress: UNWIRED Empress of Light machine (aiStyle 120, kind
-// 636) - the NpcKind row + dispatch arm are the wiring follow-up (see
-// the module doc + docs/ANALYSIS.md "Empress of Light's machine").
+// S1-D-3 empress: the Empress of Light machine (aiStyle 120, kind 636).
+// WIRED by W4-d125: the NpcKind row + the aiStyle-120 axis arm +
+// the request drains (see the module doc + docs/ANALYSIS.md "Empress of
+// Light's machine" / "The empress wiring (W4-d125)").
 mod npc_ai_empress;
+// W4-d125: the Prismatic Lacewing (661) — AI_065's 661 branch, the
+// release gate + the death-spawn chain (docs/ANALYSIS.md, same entry).
+mod npc_ai_lacewing;
 mod npc_ai_plantera;
 // S1-D-3-plantera-minions (rescoped): the hook-centroid anchor seam
 // (NPC.cs:31743-31762), UNWIRED - the merge union feeds it into

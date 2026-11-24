@@ -2271,6 +2271,24 @@ pub enum NpcKind {
     /// draw modifier Hide=true (`NPCID.cs:5178-5184`) folds it onto the
     /// Tavernkeep's entry. The talk transforms 579 → 550
     /// (`NPC.cs:19857-19860`) — the wiring lane's arm.
+    /// `NPCID.HallowBoss` (636, `NPCID.cs:11949`) — the Empress of Light
+    /// (`NPC.cs:17188-17206`): 100x100, aiStyle 120, dmg 80, def 50,
+    /// 70000 HP, kb 0, noGravity + noTileCollide, boss, Opacity 0
+    /// (alpha 255), dontTakeDamage, npcSlots 16, value 25 gold.
+    /// W4-d125 wiring: the faithful pure core
+    /// (`npc_ai_empress::empress_ai_step`, `AI_120_HallowBoss`,
+    /// `NPC.cs:45953-46942`) claims the aiStyle-120 axis arm; the
+    /// day-enrage one-shot rides `damage_override` 9999 + the
+    /// `IsDamageDodgeable` 636 arm (`:78752-78753`).
+    EmpressOfLight,
+    /// `NPCID.EmpressButterfly` (661, `NPCID.cs:11999`) — the Prismatic
+    /// Lacewing (`NPC.cs:17351-17365`): 10x10, aiStyle 65, dmg 0, def 0,
+    /// 5 HP, noGravity, lavaImmune, catchItem 4961, rarity 4, npcSlots
+    /// 0.25. W4-d125: the 661 branch of `AI_065_Butterflies`
+    /// (`NPC.cs:44896-45110`) rides `npc_ai_lacewing::lacewing_step`;
+    /// its death with player interaction spawns the Empress
+    /// (`DoDeathEvents` case 661, `NPC.cs:79493-79502`).
+    PrismaticLacewing,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2933,6 +2951,19 @@ pub struct Npc {
     /// ride the generic flight and the 372/373 sharks spawn only through
     /// that arm's future drain (documented remainder, ANALYSIS).
     pub wants_fishron_bolts: Vec<(f32, f32, f32, f32, f32, f32, f32)>,
+    /// W4-d125 — the Empress adapter's `NPC.empressRageMode` write-back
+    /// mirror (`NPC.cs:45944-45947`): the adapter holds `&World`, so the
+    /// sim's tick-tail pass stamps this onto `world.empress_rage_mode`
+    /// (the WoF statics write-through convention). `None` = the adapter
+    /// did not run this tick (the mirror must not clobber the latch).
+    pub empress_rage_mode_out: Option<bool>,
+    /// W4-d125 — `IsDamageDodgeable`'s 636 arm stamp
+    /// (`NPC.cs:78752-78753`: `!ShouldEmpressBeEnraged()`): the gate
+    /// needs the World's day/remix state the `&self` accessor cannot
+    /// reach, so the adapter stamps the verdict each tick (the contact
+    /// pass runs at the update's tail, after the AI — the C#'s own
+    /// read order). `None` = no stamp yet: dodgeable (the default arm).
+    pub empress_dodgeable: Option<bool>,
     /// `Main.windSpeedCurrent` pre-stamped by the sim before the update
     /// (the `plantera_hook_anchor` pre-pass convention) — the Detonating
     /// Bubble's wind blend reads it (`NPC.cs:34903`). The AI's `&World`
@@ -4364,8 +4395,9 @@ impl Npc {
             net_update: false,
             // S1-D-3 W-9: Duke Fishron's `boss = true` row
             // (`NPC.cs:13716`) — the target-facing inheritance gate
-            // (`npc_target.rs`'s `!npc.boss` term) reads it.
-            boss: kind == NpcKind::DukeFishron,
+            // (`npc_target.rs`'s `!npc.boss` term) reads it. W4-d125:
+            // the Empress's own row (`NPC.cs:17202`).
+            boss: matches!(kind, NpcKind::DukeFishron | NpcKind::EmpressOfLight),
             collide_x: false,
             collide_y: false,
             old_vx: 0.0,
@@ -4433,6 +4465,10 @@ impl Npc {
                 NpcKind::TruffleWorm | NpcKind::TruffleWormDigger
                 // W4-c6 style-59 wiring: the blade's `dontTakeDamage = true`
                 // row (`NPC.cs:13171`) — only the carrier-gone despawn ends it.
+                    // W4-d125: the Empress's `dontTakeDamage = true` row
+                    // (`NPC.cs:17204`) — AI_120's tail rewrites it per
+                    // tick (`:46919`, the materialize/invuln windows).
+                    | NpcKind::EmpressOfLight
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -4519,6 +4555,8 @@ impl Npc {
             wants_fishron_bubbles: Vec::new(),
             wants_fishron_trail: Vec::new(),
             wants_fishron_bolts: Vec::new(),
+            empress_rage_mode_out: None,
+            empress_dodgeable: None,
             wind_speed_current: 0.0,
             player_is_cenx: false,
             ess_scale: 1.0,
@@ -4643,6 +4681,9 @@ impl Npc {
                             // The Slimer's `alpha = 55` row (`NPC.cs:10475`,
                             // W4-d23) — the family's only alpha write.
                             NpcKind::Slimer => 55,
+                            // W4-d125: the Empress's `Opacity = 0f` row
+                            // (`NPC.cs:17203`) — the materialize fades in.
+                            NpcKind::EmpressOfLight => 255,
                             _ => 0,
                         }
                     }),
@@ -5385,6 +5426,10 @@ impl Npc {
             // (`:11693`).
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 0.5,
             NpcKind::Cyborg => 0.25,
+            // W4-d125: 636 kb 0 (`NPC.cs:17198`); 661 writes no kb row —
+            // the class default 1f (`:8533`).
+            NpcKind::EmpressOfLight => 0.0,
+            NpcKind::PrismaticLacewing => 1.0,
             _ => 0.4,
         }
     }
@@ -6087,6 +6132,11 @@ impl Npc {
             // (`:11691` region).
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 15,
             NpcKind::Cyborg => 30,
+            // W4-d125: 636 def 50 (`NPC.cs:17195` — the AI's ×1.2
+            // phase-2 rewrite rides `defense_override`), 661 def 0
+            // (`:17356`).
+            NpcKind::EmpressOfLight => 50,
+            NpcKind::PrismaticLacewing => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6794,6 +6844,10 @@ impl Npc {
             | NpcKind::Steampunker
             | NpcKind::Cyborg
             | NpcKind::BartenderUnconscious => 0.0,
+            // W4-d125: 636 value 25 gold (`NPC.cs:17199`); 661 writes no
+            // value row (the head's 0f, `:8544`).
+            NpcKind::EmpressOfLight => 250000.0,
+            NpcKind::PrismaticLacewing => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6826,14 +6880,17 @@ impl Npc {
     /// `NPCID.SkeletronHead`, `case 127` `NPCID.SkeletronPrime`; the Dungeon
     /// Guardian, `case 68`, rides the same arm — W4-d34 ported it).
     /// Both machines maintain `ai[1]` (`update_prime`/`update_skeletron`);
-    /// everything else defaults true; the Empress of Light's
-    /// `case 636` arm (`!ShouldEmpressBeEnraged()`) is out with its unported
-    /// kind (docs/ANALYSIS.md, "The dodge family").
+    /// everything else defaults true. W4-d125: the Empress's `case 636`
+    /// arm (`!ShouldEmpressBeEnraged()`) rides the adapter's per-tick
+    /// stamp (`ai_120_empress` — the gate needs the World state this
+    /// `&self` accessor cannot reach); no stamp yet = the true default.
     pub fn is_damage_dodgeable(&self) -> bool {
         match self.kind {
             NpcKind::SkeletronHead | NpcKind::SkeletronPrime | NpcKind::DungeonGuardian => {
                 self.ai[1] != 2.0
             }
+            NpcKind::SkeletronHead | NpcKind::SkeletronPrime => self.ai[1] != 2.0,
+            NpcKind::EmpressOfLight => self.empress_dodgeable.unwrap_or(true),
             _ => true,
         }
     }
@@ -7819,6 +7876,32 @@ impl Npc {
             // `ess_scale`, queues the 484 flicker light and owns the
             // gravity + tile-collision tail (no kind sets noGravity).
             66 => self.ai_066_crawler(world, player, rng),
+            // `else if (this.aiStyle == 120) { this.AI_120_HallowBoss(); }`
+            // (`NPC.cs:41100-41103`; the machine `:45953-46942`). The
+            // Empress 636 is the style's only user; W4-d125 wires the
+            // faithful pure core (`npc_ai_empress`, ebdf83e3). EVERY
+            // Main.rand draw the boss's tick makes rides the caller's
+            // UpdateNPCs stream in the module's documented order (the
+            // dust trails, the fan/spiral draws, the discarded case-7
+            // NextFloat).
+            120 => self.ai_120_empress(world, player, rng),
+            // `else if (this.aiStyle == 65)` (`NPC.cs:34249-34252`,
+            // `AI_065_Butterflies` `:44896-45110`) — the port claims the
+            // 661 branch ONLY (the Prismatic Lacewing, W4-d125); the
+            // other butterfly kinds have no port rows. The 661 machine
+            // is noGravity but NOT noTileCollide — the UpdateCollision
+            // integration (`:90489`) is the flyer-collision tail.
+            65 if self.kind == NpcKind::PrismaticLacewing => {
+                let out = crate::npc_ai_lacewing::lacewing_step(
+                    self, world, player, &[], rng,
+                );
+                if out.deactivate {
+                    // `:44921` — active = false, NO death events.
+                    self.encourage_despawn(0);
+                } else {
+                    self.integrate_flyer_collision(world);
+                }
+            }
             // `else if (this.aiStyle == 70)` (`NPC.cs:34884-34957`) —
             // the Detonating Bubble 371, the style's only user. The
             // faithful `npc_ai_style70::ai_style70` arm (456a2366).
@@ -9568,6 +9651,171 @@ impl Npc {
         // there, a cited no-op).
         self.x += self.vx;
         self.y += self.vy;
+    /// W4-d125 empress wiring — the aiStyle-120 adapter: the live `Npc`
+    /// fields ride into the faithful pure core
+    /// (`npc_ai_empress::empress_ai_step`, `AI_120_HallowBoss`,
+    /// `NPC.cs:45953-46942`) and back. The fishron adapter's shape
+    /// (`ai_069_fishron`): RNG on the caller's `UpdateNPCs` stream (the
+    /// module consumes EVERY draw in C# order — the dust trails, the
+    /// bolt fans, the discarded case-7 `NextFloat`); the `TargetClosest`
+    /// requests resolve AHEAD of the step (the fishron pre-resolution
+    /// precedent — the pick is RNG-free and writes target/facing only,
+    /// so with the one session player the pre-pass is behaviour-
+    /// identical), the request itself drains to a no-op. The projectile
+    /// spawns ride `wants_hostile_shot_ai` (the C# `Owner: Main.myPlayer`
+    /// + the ai0/ai1 payload); the despawn (`out.active == false`, the
+    /// case-13 alpha-255 tail-skip `:46904-46911`) maps to
+    /// `EncourageDespawn(0)` — the creeper precedent, NO death events.
+    /// The remix `empressRageMode` static rides the World latch; the
+    /// sim's tick-head pass owns the `Main.cs:17922-17924` clear.
+    fn ai_120_empress(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        use crate::npc_ai_empress::{
+            empress_ai_step, EmpressEnv, EmpressExtraPlayer, EmpressRequest, EmpressState,
+            EMPRESS_DEF_DAMAGE, EMPRESS_DEF_DEFENSE,
+        };
+        let cand = crate::npc_target::session_candidate(player);
+        let (pcx, pcy) = player.center();
+        // `NPC.HasValidTarget` (`NPC.cs:6657-6671`): target in 0..254,
+        // the player active + not dead (+ not ghost — the port has none).
+        let target_invalid = !(self.target >= 0 && self.target < 255) || player.dead;
+        // `GetTargetData().Center` — the RAW (0,0) default when invalid
+        // (the module's :6901-6912 note). The single-player fold: any
+        // valid target IS the session player (slot 0).
+        // The mid-tick `TargetClosest` calls (`:46087`/`:46233`/`:46853`
+        // + the materialize end `:46073`) re-read the target INSIDE the
+        // tick; the port resolves them AHEAD of the step (the fishron
+        // adapter's pre-resolution precedent): the pick is RNG-free and
+        // writes target/facing only, so with the one session player the
+        // pre-pass is behaviour-identical (the request drains no-op).
+        if target_invalid {
+            crate::npc_target::target_closest(self, world, &[cand], true, 120, 0);
+        }
+        let target_invalid = !(self.target >= 0 && self.target < 255) || player.dead;
+        let (tcx, tcy) = if target_invalid { (0.0, 0.0) } else { (pcx, pcy) };
+        let env = EmpressEnv {
+            // `this.difficulty` (latched at SetDefaults, `:18150`): the
+            // port is single-difficulty classic; the expert flag rides
+            // the player buff mirror (the fishron convention).
+            difficulty: if player.buffs.expert_mode { 2.0 } else { 1.0 },
+            day_time: world.day_time,
+            time: world.time,
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            empress_rage_mode: world.empress_rage_mode,
+            world_surface: world.world_surface,
+            get_good_world: world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            target_cx: tcx,
+            target_cy: tcy,
+            target_vx: if target_invalid { 0.0 } else { player.vx },
+            target_vy: if target_invalid { 0.0 } else { player.vy },
+            target_invalid,
+        };
+        let mut s = EmpressState {
+            ai0: self.ai[0],
+            ai1: self.ai[1],
+            ai2: self.ai[2],
+            ai3: self.ai[3],
+            local_ai0: self.local_ai[0],
+            x: self.x,
+            y: self.y,
+            vx: self.vx,
+            vy: self.vy,
+            alpha: self.alpha as i32,
+            damage: self.damage_override.unwrap_or(EMPRESS_DEF_DAMAGE),
+            defense: self.defense(),
+            life: self.hp,
+            life_max: self.max_hp,
+            def_damage: EMPRESS_DEF_DAMAGE,
+            def_defense: EMPRESS_DEF_DEFENSE,
+            target: self.target,
+            // `base.whoAmI` — the port's compacting list rides the
+            // sim-stamped slot (the saucer deathray's convention).
+            who_am_i: self.slot as i32,
+        };
+        // The extra-shot scan slice (`Boss_CanShootExtraAt`,
+        // `:46962-46982`): the single session player as slot 0 — the
+        // scan's `index == target` skip refuses it while targeted
+        // (single-player: the extra volleys never fire, exactly the
+        // C#'s one-player result).
+        let extra = [EmpressExtraPlayer {
+            index: 0,
+            cx: pcx,
+            cy: pcy,
+            vx: player.vx,
+            vy: player.vy,
+            active: true,
+            dead: player.dead,
+            interaction: self.player_interaction[0],
+        }];
+        let out = empress_ai_step(&mut s, &env, rng, &extra);
+        // The state writes back (the C#'s field writes).
+        self.ai = [s.ai0, s.ai1, s.ai2, s.ai3];
+        self.local_ai[0] = s.local_ai0;
+        self.vx = s.vx;
+        self.vy = s.vy;
+        self.alpha = s.alpha.clamp(0, 255) as u8;
+        self.damage_override = Some(s.damage);
+        self.defense_override = Some(s.defense);
+        self.dont_take_damage = out.dont_take_damage;
+        if out.net_update {
+            self.net_update = true;
+        }
+        // `NPC.empressRageMode` — the adapter holds &World (immutable);
+        // the updated latch rides the NPC mirror the sim's tick-tail
+        // write-back stamps onto the World (the WoF statics convention).
+        self.empress_rage_mode_out = Some(out.empress_rage_mode);
+        if !out.active {
+            // The case-13 despawn (`:46904-46911`): active = false,
+            // the tail SKIPPED — no damage/defense rewrite this tick
+            // (the module returned early; the writes above landed the
+            // pre-tail values, which the C# also keeps).
+            self.encourage_despawn(0);
+            return;
+        }
+        // `NPC.UpdateNPC`'s noTileCollide integration (`:90490-90498`):
+        // the machine writes velocity; the position add is the tail's.
+        self.x = s.x + s.vx;
+        self.y = s.y + s.vy;
+        // `IsDamageDodgeable`'s 636 arm (`NPC.cs:78752-78753`):
+        // `!ShouldEmpressBeEnraged()` — recomputed on the POST-
+        // integration position (the remix scan reads Center.Y; the
+        // contact pass runs after this update, the C#'s read order).
+        // The recomputation reproduces the step's own gate answer: the
+        // sticky latch early-return reads env's pre-step value, which
+        // the scan only ever raises (the Main-head clear ran pre-AI).
+        s.x = self.x;
+        s.y = self.y;
+        let (dodge_gate, _) = crate::npc_ai_empress::should_empress_be_enraged(&s, &env);
+        self.empress_dodgeable = Some(!dodge_gate);
+        for req in out.requests {
+            match req {
+                EmpressRequest::Projectile { kind, x, y, vx, vy, damage, ai0, ai1 } => {
+                    // The C#'s NewProjectile takes the CENTRE; the
+                    // port's spawn takes the top-left (the fishron-bolt
+                    // precedent). The five kinds' boxes come from
+                    // `proj_data` (30x30 for 872/873/874/923, 8x8 919).
+                    let (pw, ph) = crate::projectile::proj_data(kind as u16)
+                        .map(|d| (d.w, d.h))
+                        .unwrap_or((30.0, 30.0));
+                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: kind as u16,
+                        x: x - pw * 0.5,
+                        y: y - ph * 0.5,
+                        vx,
+                        vy,
+                        damage,
+                        ai0,
+                        ai1,
+                        scale: None,
+                    });
+                }
+                // Resolved AHEAD of the step (the pre-pass above — the
+                // fishron adapter's documented fold).
+                EmpressRequest::TargetClosest => {}
+            }
+        }
+                }
     }
 
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
@@ -10913,6 +11161,19 @@ impl Npc {
             NpcKind::GoldMouse => crate::npc_ai_critter::critter_ai(self, world, player, rng),
             NpcKind::GoldBunny | NpcKind::GoldFrog => {
                 crate::npc_ai_critter::critter_ai(self, world, player, rng)
+            // W4-d125 empress wiring: 636 is claimed by the aiStyle-120
+            // axis above (the fishron precedent — this arm routes the
+            // direct-kind callers to the same machine); 661 rides the
+            // aiStyle-65 axis' `lacewing_step`.
+            NpcKind::EmpressOfLight => self.ai_120_empress(world, player, rng),
+            NpcKind::PrismaticLacewing => {
+                let out = crate::npc_ai_lacewing::lacewing_step(self, world, player, &[], rng);
+                if out.deactivate {
+                    self.encourage_despawn(0);
+                } else {
+                    self.integrate_flyer_collision(world);
+                }
+                }
             }
         }
     }
@@ -16275,6 +16536,34 @@ impl Npc {
                 } else {
                     self.frame = 1;
                     if self.frame_counter >= num143 * 4.0 - 1.0 {
+            // W4-d125 — `case 636` (`NPC.cs:67022-67024`): `frame.Y =
+            // IsInPhase2() ? num : 0` — row 1 in phase 2, row 0 otherwise
+            // (`Main.npcFrameCount[636]` = 2, `Main.cs:67147`'s row).
+            NpcKind::EmpressOfLight => {
+                self.frame = if self.ai[3] == 1.0 || self.ai[3] == 3.0 { 1 } else { 0 };
+            }
+            // W4-d125 — `case 661` (`NPC.cs:72742-72771`, shared with
+            // 356/444/653): the rotation `vx * 0.3`, spriteDirection =
+            // direction, the frameCounter accumulator `+1 + (|vx|+|vy|)/2`
+            // over the 7-tick bands (rows 0/1/2/1, wrap at 27); the
+            // `ai[2]-1` colour-row offset EXCLUDES 661 (`:72768`).
+            NpcKind::PrismaticLacewing => {
+                self.rotation = self.vx * 0.3;
+                self.sprite_dir = self.facing;
+                self.frame_counter +=
+                    1.0 + (self.vx.abs() + self.vy.abs()) / 2.0;
+                if self.frame_counter < 7.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 14.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 21.0 {
+                    self.frame = 2;
+                } else {
+                    self.frame = 1;
+                    if self.frame_counter >= 27.0 {
+                    }
+                    }
+                    }
                         self.frame_counter = 0.0;
                     }
                 }
@@ -17870,6 +18159,14 @@ impl Npc {
     pub(crate) fn integrate_no_tile_collide(&mut self) {
         self.x += self.vx;
         self.y += self.vy;
+    }
+
+    /// W4-d125 — the `UpdateCollision` flyer integration for the sim's
+    /// Lacewing pre-pass (`NPC.cs:90489`: 661 is noGravity but NOT
+    /// noTileCollide). The private `integrate_flyer_collision`'s
+    /// pub(crate) shell — the plantera-minion pass's precedent.
+    pub(crate) fn integrate_flyer_collision_pub(&mut self, world: &World) {
+        self.integrate_flyer_collision(world);
     }
 
     /// `AI_005_EaterOfSouls`'s type-5 branch (`NPC.cs:50379-50383` — the
@@ -26493,6 +26790,25 @@ impl Npc {
         if player.creative_god_mode {
             return;
         }
+        // W4-d125: `Update_NPCCollision`'s `specialHitSetter` switch
+        // (`Player.cs:31332-31349`): the Moon Lord parts (396/397/398/400/
+        // 401) + the Empress (636) ride the BossNoCheese counter; the 636
+        // arm ALSO skips contact entirely while `ai[0]` is 0 (materialize)
+        // or 10 (transform) — `:31344-31347`'s `continue`. The kind match
+        // IS the membership (the port's `cs_id` is the render-key space,
+        // not the vanilla type — the Moon Lord arms ride 396..401 there).
+        let boss_no_cheese = matches!(
+            self.kind,
+            NpcKind::MoonLordHead
+                | NpcKind::MoonLordHand
+                | NpcKind::MoonLordCore
+                | NpcKind::MoonLordFreeEye
+                | NpcKind::MoonLordLeechBlob
+                | NpcKind::EmpressOfLight
+        );
+        if self.kind == NpcKind::EmpressOfLight && (self.ai[0] == 0.0 || self.ai[0] == 10.0) {
+            return;
+        }
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -26602,6 +26918,18 @@ impl Npc {
                 // reflects. The port's `hurt_cd <= 0` is the `!immune`
                 // stand-in (the collapsed General cooldown, M4-HAZARD-1).
                 let pre_hit_not_immune = player.hurt_cd <= 0.0;
+                // `Player.cs:31392-31396` — `flag4 = !this.immune`, or
+                // `hurtCooldowns[specialHitSetter] == 0` on the BossNoCheese
+                // lane (W4-d125). The PRE-hit immunity gates the thorns arms
+                // (`:31397-31418`), so a contact that dodges (`Hurt` runs
+                // after, `:31423`) still reflects. The port's `hurt_cd <= 0`
+                // is the `!immune` stand-in (the collapsed General cooldown,
+                // M4-HAZARD-1).
+                let pre_hit_not_immune = if boss_no_cheese {
+                    player.hurt_cooldowns[crate::player::COOLDOWN_BOSS_NO_CHEESE as usize] == 0
+                } else {
+                    player.hurt_cd <= 0.0
+                };
                 // `Player.cs:31397-31410`: the contact bounces the thorns
                 // back — `thorns` scales the NPC's own damage (2x on the
                 // Turtle set), the Cactus set adds its flat 15.
@@ -26624,12 +26952,22 @@ impl Npc {
                     }
                 }
                 // `Player.cs:31423` — `Hurt(damageSource: ByNPC(i), Damage:
-                // num3, hitDirection: num2, .., dodgeable:
+                // num3, hitDirection: num2, .., cooldownCounter:
+                // specialHitSetter, dodgeable:
                 // Main.npc[i].IsDamageDodgeable())`; the `> 0 && !dead` tail
                 // gates `StatusFromNPC`, whose debuff body the port carries
-                // elsewhere (unchanged).
+                // elsewhere (unchanged). W4-d125: the BossNoCheese group
+                // rides its own counter (the `hurt_inner_cooldown` seam).
                 if dmg > 0 {
-                    player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
+                    if boss_no_cheese {
+                        player.hurt_inner_cooldown(
+                            dmg, cx, true, rng, self.is_damage_dodgeable(),
+                            false, None, true,
+                            crate::player::COOLDOWN_BOSS_NO_CHEESE,
+                        );
+                    } else {
+                        player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
+                    }
                 }
             }
         }
@@ -27355,6 +27693,10 @@ impl Npc {
             NpcKind::Truffle => 242,
             NpcKind::Steampunker => 243,
             NpcKind::Cyborg => 244,
+            // W4-d125: the vanilla types 636/661 — unused by every arm
+            // above (the G6 key stays injective).
+            NpcKind::EmpressOfLight => 636,
+            NpcKind::PrismaticLacewing => 661,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -32791,7 +33133,7 @@ mod tests {
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
     
-    pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 529] = [
+    pub(super) pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 531] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -33321,6 +33663,8 @@ mod tests {
         NpcKind::Truffle,
         NpcKind::Steampunker,
         NpcKind::Cyborg,
+        NpcKind::EmpressOfLight,
+        NpcKind::PrismaticLacewing,
     ];;
 
     #[test]
@@ -33703,7 +34047,7 @@ mod tests {
         // MERGE-SIDE re-pin (367 s1 step 6): the batch pins were
         // cumulative-on-branch; every batch test reads the SETTLED
         // roster (455 after d42 + d35's 33 = 488).
-        assert_eq!(ALL_KINDS.len(), 529);
+        assert_eq!(ALL_KINDS.len(), 531);
     }
 
     /// W4-c10 — the waterfowl family's `SetDefaults` rows pin against the
@@ -38473,7 +38817,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            529,
+            531,
             concat!(
                 "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate)",
                 " UNION ",

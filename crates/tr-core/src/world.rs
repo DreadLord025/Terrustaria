@@ -232,6 +232,16 @@ pub struct World {
     /// event flag 7, `NPC.cs:79349`'s case 370). S1-D-3 W-9 fishron
     /// wiring.
     pub downed_fishron: bool,
+    /// `NPC.downedEmpressOfLight` (`NPC.cs:6393`; `WorldFile.cs:1395`'s
+    /// flags byte) — the Empress's defeat (the event flag 23,
+    /// `NPC.cs:79351-79353`'s case 636). W4-d125 empress wiring; the
+    /// .wld flags block owns it.
+    pub downed_empress_of_light: bool,
+    /// `NPC.empressRageMode` (`NPC.cs:6599`'s static) — the sticky remix
+    /// enrage latch (`ShouldEmpressBeEnraged`, `:45929-45947`); cleared
+    /// when no 636 lives (`Main.cs:17922-17924`). Runtime-only, not
+    /// saved (the C# static is session state).
+    pub empress_rage_mode: bool,
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
@@ -662,6 +672,8 @@ impl World {
             brain_y: 0.0,
             downed_golem: false,
             downed_fishron: false,
+            downed_empress_of_light: false,
+            empress_rage_mode: false,
             downed_deerclops: false,
             golem_present: false,
             golem_hp_ratio: 1.0,

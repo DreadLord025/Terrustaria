@@ -827,7 +827,9 @@ pub(crate) fn catch_npc(app: &mut App, i: usize, who: u8) -> bool {
 }
 
 /// `Main.netMode` as the port's role enum: 0 SP, 1 client, 2 host.
-fn app_net_mode(app: &App) -> u8 {
+/// `pub(crate)` since W4-d125: the Lacewing death gate's
+/// `AnyInteractions` SP/host split reads it (`NPC.cs:78722-78742`).
+pub(crate) fn app_net_mode(app: &App) -> u8 {
     match app.net {
         crate::app::NetRole::Host(_) => 2,
         crate::app::NetRole::Client(_) => 1,

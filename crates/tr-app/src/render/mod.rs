@@ -8,6 +8,7 @@
 pub(crate) mod bg;
 pub(crate) mod debug;
 pub(crate) mod entities;
+pub(crate) mod empress_draw;
 pub(crate) mod foliage;
 pub(crate) mod gore;
 pub(crate) mod liquids;

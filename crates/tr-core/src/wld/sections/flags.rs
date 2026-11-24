@@ -215,6 +215,12 @@ pub fn write(w: &mut Writer, world: &World) {
     // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedQueenSlime` and
     // `downedDeerclops` are owned, the Empress has no port state.
     w.boolean(false); // downedEmpressOfLight — unowned
+    w.boolean(false); // boughtCat
+    w.boolean(false); // boughtDog
+    w.boolean(false); // boughtBunny
+    // WorldFile.cs:1392-1397: the three post-1.4 bosses; all owned since
+    // W4-d125 (the Empress's case-636 death flag, `NPC.cs:79351-79353`).
+    w.boolean(world.downed_empress_of_light); // downedEmpressOfLight
     w.boolean(world.downed_queen_slime); // downedQueenSlime
     w.boolean(world.downed_deerclops);
     // WorldFile.cs:1398-1410: the unlocked town-NPC spawns — set on the NPC's
@@ -611,7 +617,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.bought_bunny = r.bool()?; // boughtBunny
     }
     if version >= 223 {
-        r.skip(1)?; // downedEmpressOfLight — unowned
+        world.downed_empress_of_light = r.bool()?; // downedEmpressOfLight (W4-d125)
         world.downed_queen_slime = r.bool()?; // downedQueenSlime
     }
     if version >= 240 {

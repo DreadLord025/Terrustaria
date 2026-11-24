@@ -84,7 +84,7 @@
 //! * `Vector2.Normalize` of an exactly-zero vector yields NaN in XNA; the
 //!   port guards to zero (the Fishron/R7 precedent) — only differs on exact
 //!   overlap;
-//! * the damage-side slices stay with the wiring: the telegraph invuln
+//! * the damage-side slices: the telegraph invuln
 //!   (`Damage_CanDealDamage` `:12448` — 919/923 deal no damage while
 //!   `localAI[0] <= 60`) is CLOSED by W4-d18's full-switch census
 //!   (`projectile.rs::damage_kind_gate_refuses`); the BossNoCheese
@@ -95,14 +95,23 @@
 //!   872's oldPos-ring hitbox (`:15675-15694`, every 2nd of 50 entries —
 //!   needs the 120-entry `TrailCacheLength` ring, `ProjectileID.cs:522`,
 //!   vs the port's fixed 10);
+//!   `localAI[0] <= 60`) landed with W4-d125's wiring; the BossNoCheese
+//!   immunity group (`Damage_EVP` `:14788-14796`) is the W4-d125 remainder
+//!   4; 919's line hitbox (`Colliding` `:15625-15641`, ±40 px along the
+//!   rotation, width 8), 923's three-segment beam hitbox
+//!   (`:15642-15668`, 510/660/800 × scale at widths 100/60/10 × 0.7 scale)
+//!   and 872's oldPos-ring hitbox (`:15675-15694`, every 2nd of 50 entries)
+//!   landed with W4-d125's remainder 3 — the 872's 120-entry
+//!   `TrailCacheLength` ring (`ProjectileID.cs:522`) rides the pool's
+//!   `trail_extra` extension (the fixed 10-entry base + 110);
 //! * the render-side slices stay with the draw work: 872/873's trail rings
 //!   (`TrailingMode` 2, cache 120/60, `ProjectileID.cs:521-522`), the
 //!   `GetAlpha`/`AI_173_GetColor` tints (`:45442-45449`, `:78999-79002`),
 //!   923's `drawLayer = 2` (`:8769`) and beam draw (`Main.cs:28268`);
-//! * `npc_ref` maps the port's liveness (`hp > 0`) to `NPC.active` and
-//!   `is_empress` is FALSE until R7's `NpcKind::HallowBoss` (636) row lands
-//!   — main has no 636 kind, so the sun-dance centre snap cannot fire
-//!   pre-wiring (the core itself is faithful and witness-tested through
+//! * `npc_ref` maps the port's liveness (`hp > 0`) to `NPC.active`;
+//!   W4-d125 landed `NpcKind::EmpressOfLight` (636), so `is_empress`
+//!   reads the live kind and the sun-dance centre snap fires
+//!   (the core itself is faithful and witness-tested through
 //!   [`EmpressNpcRef`]).
 //!
 //! Witness tests are WRITTEN, NOT RUN (code-only mode — no compiler invoked):
@@ -165,12 +174,13 @@ pub(crate) struct EmpressNpcRef {
     pub center: (f32, f32),
 }
 
-/// The wiring-side mapping from the port's `Npc`. `is_empress` is false
-/// until R7's kind row lands (main has no 636) — the documented remainder.
+/// The wiring-side mapping from the port's `Npc`. W4-d125 landed the
+/// `NpcKind::EmpressOfLight` (636) row — the sun-dance snap gate
+/// (`:45008-45014`) now fires on the live boss.
 pub(crate) fn npc_ref(n: &Npc) -> EmpressNpcRef {
     EmpressNpcRef {
         active: n.hp > 0,
-        is_empress: false, // NpcKind::HallowBoss (636) lands with R7's merge
+        is_empress: n.kind == crate::npc::NpcKind::EmpressOfLight,
         center: n.center(),
     }
 }

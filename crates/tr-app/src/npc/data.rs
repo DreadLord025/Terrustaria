@@ -1061,6 +1061,14 @@ impl NpcKind {
             NpcKind::Truffle => 242,
             NpcKind::Steampunker => 243,
             NpcKind::Cyborg => 244,
+            // W4-d125 empress wiring — research/108 R4/E8 renumber EXECUTED
+            // (the d37 roster-master reconcile): 229/237 were reserved-cs
+            // hole squats (229 Pirate — d37-owned; 237 JungleCreeperWall).
+            // EmpressOfLight 229→636 RESTORES protocol==cs (its OWN vanilla
+            // id, `NPCID.cs:11949`); PrismaticLacewing 237→742 keeps the
+            // small-lane block contiguous (cs 661 rides `cs_id`/ENTRIES).
+            NpcKind::EmpressOfLight => 636,
+            NpcKind::PrismaticLacewing => 742,
         }
     
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
@@ -1730,6 +1738,10 @@ impl NpcKind {
             242 => NpcKind::Truffle,
             243 => NpcKind::Steampunker,
             244 => NpcKind::Cyborg,
+            // W4-d125 empress wiring (`to_u16` above — the 108 R4/E8
+            // renumber: 636 protocol==cs, 742 the small-lane block).
+            636 => NpcKind::EmpressOfLight,
+            742 => NpcKind::PrismaticLacewing,
             _ => return None,
         })
     
@@ -3034,6 +3046,9 @@ impl NpcKind {
             // Unicorn row mirrors d35 (C).
             NpcKind::Wolf => "NPC_Hit_1",
             NpcKind::Tumbleweed => "NPC_Hit_11",
+            // W4-d125: 636 `SoundID.NPCHit1` (`NPC.cs:17196`), 661
+            // `NPCHit1` (`:17358`).
+            NpcKind::EmpressOfLight | NpcKind::PrismaticLacewing => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -3693,6 +3708,10 @@ impl NpcKind {
             // Unicorn row mirrors d35 (C).
             NpcKind::Wolf => "NPC_Killed_1",
             NpcKind::Tumbleweed => "NPC_Killed_15",
+            // W4-d125: 636 `SoundID.NPCDeath65` (`NPC.cs:17197`), 661
+            // `NPCDeath1` (`:17359`).
+            NpcKind::EmpressOfLight => "NPC_Killed_65",
+            NpcKind::PrismaticLacewing => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -3974,6 +3993,12 @@ impl NpcKind {
             // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
             // write `noGravity = true` (`NPC.cs:10336`/`:17428`/`:15404`).
             NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => true,
+            // W4-d125: the Prismatic Lacewing (661, `NPC.cs:17361`) —
+            // noGravity, no kb row → the class default 1f (`:8533`), so
+            // the Y-pop selector reaches it. The Empress (636) is
+            // noGravity too (`:17190`) but kb 0 (`:17198`) — the
+            // knockback gate refuses resist 0, so no row is needed.
+            NpcKind::PrismaticLacewing => true,
             _ => false,
         }
     }
@@ -4612,6 +4637,11 @@ impl NpcKind {
             // `:11009`/`:11258`/`:11688`); the bound Tavernkeep's aiStyle 0
             // (`:16560`).
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => 7,
+            // W4-d125: 636 aiStyle 120 (`NPC.cs:17193`,
+            // `AI_120_HallowBoss`), 661 aiStyle 65 (`:17354`,
+            // `AI_065_Butterflies`' 661 branch).
+            NpcKind::EmpressOfLight => 120,
+            NpcKind::PrismaticLacewing => 65,
         }
     }
 
@@ -5561,6 +5591,10 @@ impl NpcKind {
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
                 (18.0, 40.0)
             }
+            // W4-d125: 636 100x100 (`NPC.cs:17191-17192`), 661 10x10
+            // (`:17352-17353`).
+            NpcKind::EmpressOfLight => (100.0, 100.0),
+            NpcKind::PrismaticLacewing => (10.0, 10.0),
         }
     }
 
@@ -6834,6 +6868,11 @@ impl NpcKind {
             // (`:11691`).
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 250,
             NpcKind::Cyborg => 500,
+            // W4-d125: 636 lifeMax 70000 (`NPC.cs:17195`), 661 lifeMax 5
+            // (`:17357`). The expert/master `ScaleStats` halves
+            // (`:18400-18404`) ride the difficulty system's seam.
+            NpcKind::EmpressOfLight => 70000,
+            NpcKind::PrismaticLacewing => 5,
         }
     }
 
@@ -7533,6 +7572,11 @@ impl NpcKind {
             | NpcKind::Steampunker
             | NpcKind::Cyborg
             | NpcKind::BartenderUnconscious => 10,
+            // W4-d125: 636 damage 80 (`NPC.cs:17194` — AI_120's tail
+            // rewrites it per tick from defDamage, 9999 enraged), 661
+            // damage 0 (`:17355`).
+            NpcKind::EmpressOfLight => 80,
+            NpcKind::PrismaticLacewing => 0,
         }
     }
 }

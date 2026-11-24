@@ -1667,6 +1667,7 @@ mod tests {
         world.saved_golfer = true;
         world.downed_ancient_cultist = true;
         world.downed_moon_lord = true;
+        world.downed_empress_of_light = true; // W4-d125
         world.downed_queen_slime = true;
         world.downed_tower_solar = true;
         world.downed_tower_vortex = true;
@@ -1856,6 +1857,10 @@ mod tests {
         assert_eq!(
             got.downed_moon_lord, want.downed_moon_lord,
             "{context}: downedMoonlord"
+        );
+        assert_eq!(
+            got.downed_empress_of_light, want.downed_empress_of_light,
+            "{context}: downedEmpressOfLight"
         );
         assert_eq!(
             got.downed_queen_slime, want.downed_queen_slime,
@@ -2057,6 +2062,7 @@ mod tests {
         tail[1905] = u8::from(world.tower_active_stardust); // (`:1359`)
         tail[1906] = u8::from(world.lunar_apocalypse_is_up); // (`:1360`)
         // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
+        tail[2024] = u8::from(world.downed_empress_of_light); // (`:1395`, W4-d125)
         tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
         // W4-g87: the three town-pet license flags (`WorldFile.cs:1392-1394`)
         // sit right after the pre-hardmode quartet (2005..2020, 16 bytes):
@@ -3512,6 +3518,7 @@ mod tests {
             patch(&mut data, off, 1); // TowerActive{Solar,Vortex,Nebula,Stardust} (`:1356-1359`)
         }
         patch(&mut data, 1906, 1); // LunarApocalypseIsUp (`:1360`)
+        patch(&mut data, 2024, 1); // downedEmpressOfLight (`:1395`, W4-d125)
         patch(&mut data, 2025, 1); // downedQueenSlime (`:1396`)
         patch(&mut data, 2030, 1); // unlockedPartyGirlSpawn (`:1401`)
         patch(&mut data, 2035, 1); // unlockedPrincessSpawn (`:1406`)
@@ -3530,6 +3537,7 @@ mod tests {
         assert!(w.tower_active_solar && w.tower_active_vortex);
         assert!(w.tower_active_nebula && w.tower_active_stardust);
         assert!(w.lunar_apocalypse_is_up, "LunarApocalypseIsUp at tail 1906");
+        assert!(w.downed_empress_of_light, "downedEmpressOfLight at tail 2024");
         assert!(w.downed_queen_slime, "downedQueenSlime at tail 2025");
         assert!(w.unlocked_party_girl, "unlockedPartyGirlSpawn at tail 2030");
         assert!(w.unlocked_princess, "unlockedPrincessSpawn at tail 2035");

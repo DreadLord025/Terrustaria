@@ -4175,6 +4175,13 @@ fn npc_seed(
         crate::npc::NpcKind::Unicorn
         | crate::npc::NpcKind::Wolf
         | crate::npc::NpcKind::Tumbleweed => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d125 empress wiring — the boss + the Lacewing both fly
+        // (noGravity/noTileCollide); the `23` body overwrites the
+        // position below (the hover arm's shape).
+        crate::npc::NpcKind::EmpressOfLight | crate::npc::NpcKind::PrismaticLacewing => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

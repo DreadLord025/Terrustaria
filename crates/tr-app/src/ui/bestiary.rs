@@ -2574,6 +2574,25 @@ fn portrait_data(
             (sheet_i, 48.0, 38.0, 48.0, white)
         }
         (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
+        // W4-d125 empress wiring — the portraits ride the sheets' own
+        // row heights over `Main.npcFrameCount` (636 two frames, 661
+        // three; `Main.cs:67147`/`:67150`) and the sheets' own widths
+        // (`SetFrameSize`'s `frame.Width = tex.Width()`, the d35 shape).
+        // The sheets are PACKED (the sheets phase, `D125_SHEETS`); the
+        // `unwrap_or` fallbacks rest the `SetDefaults` boxes
+        // (`NPC.cs:17188`/`:17351`) for a content-less build.
+        (NpcKind::EmpressOfLight, _) => {
+            let s = entry_sheet(lookups, entry);
+            let h = s.map(|s| s.height as f32 / 2.0).unwrap_or(100.0);
+            let w = s.map(|s| s.width as f32).unwrap_or(100.0);
+            (sheet_i, h, w, h, white)
+        }
+        (NpcKind::PrismaticLacewing, _) => {
+            let s = entry_sheet(lookups, entry);
+            let h = s.map(|s| s.height as f32 / 3.0).unwrap_or(10.0);
+            let w = s.map(|s| s.width as f32).unwrap_or(10.0);
+            (sheet_i, h, w, h, white)
+        }
     }
 }
 
@@ -3195,6 +3214,41 @@ mod tests {
                 256.0 / 8192.0
             ]
         );
+    }
+
+    /// W4-d125 sheets phase: the Empress + Lacewing portraits ride the
+    /// sheets' REAL dims (NPC_636 166x352 → 2 rows of 176; NPC_661 24x72 →
+    /// 3 rows of 24 — `Main.cs:67147`/`:67150`), frame width = sheet width
+    /// (`SetFrameSize`'s `frame.Width = tex.Width()`).
+    #[test]
+    fn the_d125_portraits_ride_the_real_sheet_dims() {
+        let mut lk = Lookups::default();
+        lk.atlas_size = (8192, 8192);
+        lk.bestiary_npc_sheets = crate::assets::BESTIARY_NPC_SHEET_IDS
+            .iter()
+            .map(|&id| {
+                let (w, h) = match id {
+                    636 => (166, 352),
+                    661 => (24, 72),
+                    _ => (22, 8 * 56),
+                };
+                Some(tr_render::SheetRect {
+                    x: 0,
+                    y: 0,
+                    width: w,
+                    height: h,
+                    plain_frame: (0, 0),
+                })
+            })
+            .collect();
+        for (net, frame_h, w) in [(636, 176.0, 166.0), (661, 24.0, 24.0)] {
+            let entry = crate::bestiary::ENTRIES
+                .iter()
+                .find(|e| e.net_id == net)
+                .unwrap_or_else(|| panic!("the {net} bestiary entry"));
+            let (_sheet_i, fh, pw, ph, _tint) = portrait_data(entry, &lk);
+            assert_eq!((fh, pw, ph), (frame_h, w, frame_h), "net {net} portrait");
+        }
     }
 
     #[test]

@@ -300,6 +300,11 @@ pub(crate) struct NpcAssets {
     /// net id: `TextureAssets.Npc[type]` is one sheet PER KIND, and the v1
     /// shared one sheet across a whole family (see [`Self::npc_sheet`]).
     pub(crate) npc_sheets: std::collections::HashMap<u16, BgTex>,
+    /// W4-d125 draw phase: the HallowBoss arm's halo ring (`Extra_188`,
+    /// `Main.cs:26635-26639`) — the four phase-2 glow copies. The five
+    /// tall overlay strips (Extra_157/158/159/160/187) stay deferred
+    /// (the atlas headroom, research/309 §2); their draws skip.
+    pub(crate) empress_halo: Option<BgTex>,
     /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
     /// the Scutlix carrier (6 frames of 60x40).
     pub(crate) scutlix_rider: Option<BgTex>,
@@ -846,10 +851,12 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(SPIT_FLARE_SHEETS)
             .chain(FLYER14_SHEETS)
             .chain(PUMPKING_BLADE_SHEET)
+            .chain(D125_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
             .collect(),
+        empress_halo: npc_tex(atlas, "Extra_188"),
         prime_eyes: npc_tex(atlas, "Bone_Eyes"),
         bone_laser: npc_tex(atlas, "Bone_Laser"),
         pumpking_arm: npc_tex(atlas, "PumpkingArm"),
@@ -1435,6 +1442,138 @@ fn npc_anchor_nudge_x(n: &Npc) -> f32 {
         num45 += (4.0 * num48) as i32 as f32;
     }
     num45
+/// W4-d125 draw phase: `Main.DrawNPCDirect_HallowBoss`
+/// (`Main.cs:26471-26652`) — the Empress's dedicated draw. The Centre
+/// anchor (`vector = Center - screenPos`, `:26474`), the GetAlpha 636
+/// tint (`NPC.cs:93501-93505`), the state white-lerp/fade factors, the
+/// phase-2 halo ring (Extra_188, four copies at the pulsing radius) and
+/// the body draw. The five tall overlay strips (the arms Extra_158/160,
+/// the wings Extra_159/187, the shader body copy Extra_157) and the
+/// state-8/9/10 ghost rings are DEFERRED with their sheets (the atlas
+/// headroom, research/309 §2 — the pure geometry lives in
+/// `empress_draw.rs` for the repack wave's wiring).
+fn draw_empress(
+    r: &mut SpriteRenderer,
+    assets: &NpcAssets,
+    n: &Npc,
+    c: &[f32; 3],
+    anim_time: f32,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    ctx: Option<EmpressDrawCtx>,
+) -> u32 {
+    use crate::render::empress_draw as ed;
+    let Some(tex) = assets.npc_sheet(636) else {
+        return 0;
+    };
+    let rows = npc_rows(636);
+    let frame_h = vanilla_row_h(tex, rows);
+    let (cx, cy) = n.center();
+    let vector = [cx, cy];
+    // `Main.GlobalTimeWrappedHourly` = TotalGameTime.TotalSeconds % 3600
+    // (`Main.cs:16836`); the port's anim_time is the same seconds clock.
+    let global_time = anim_time % 3600.0;
+    let opacity = 1.0 - n.alpha as f32 / 255.0;
+    // The enrage gate (`NPC.ShouldEmpressBeEnraged`, the sim's own fn):
+    // the state carries the position the remix scan reads.
+    let enraged = if let Some(ctx) = ctx {
+        let s = crate::npc_ai_empress::EmpressState {
+            x: n.x,
+            y: n.y,
+            ..Default::default()
+        };
+        let env = crate::npc_ai_empress::EmpressEnv {
+            day_time: ctx.day_time,
+            remix_world: ctx.remix_world,
+            empress_rage_mode: ctx.empress_rage_mode,
+            world_surface: ctx.world_surface,
+            ..Default::default()
+        };
+        crate::npc_ai_empress::should_empress_be_enraged(&s, &env).0
+    } else {
+        false
+    };
+    // The light colour → bytes (the GetAlpha arm's `new Color(int)` shape).
+    let light = [
+        (c[0].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[1].clamp(0.0, 1.0) * 255.0) as u8,
+        (c[2].clamp(0.0, 1.0) * 255.0) as u8,
+    ];
+    let alpha_color = ed::empress_get_alpha(light, opacity);
+    let (num4, num7, _num8, _num9, _num5, _num6) =
+        ed::hallow_boss_state_factors(n.ai[0], n.ai[1]);
+    let body = ed::hallow_boss_body_color(alpha_color, num7);
+    let body_tint = [
+        body[0] as f32 / 255.0,
+        body[1] as f32 / 255.0,
+        body[2] as f32 / 255.0,
+        body[3] as f32 / 255.0,
+    ];
+    // The body draw (`:26632`): the frame at Centre with origin =
+    // halfSize, rotation = npc.rotation, the spriteDirection flip
+    // (`Main.cs:23124-23128`). The port's push_sprite_rot pivots the
+    // top-left; the centre-origin form shifts by origin − R·origin.
+    let size = [tex.w, frame_h];
+    let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.sprite_dir > 0);
+    let origin = [size[0] * 0.5, size[1] * 0.5];
+    let top_left = [vector[0] - origin[0], vector[1] - origin[1]];
+    let rot = n.rotation;
+    let (s, co) = rot.sin_cos();
+    let rotated_tl = [
+        top_left[0] + origin[0] - (origin[0] * co - origin[1] * s),
+        top_left[1] + origin[1] - (origin[0] * s + origin[1] * co),
+    ];
+    // The phase-2 halo ring (`:26633-26640`): Extra_188 drawn FOUR times
+    // at the pulsing radius BEFORE the body's own overlays — the C#
+    // draws the body first (`:26632`) then the ring; the port keeps that
+    // order (the ring is additive, A=0, so the order is pixel-neutral
+    // against the body but kept for the ledger).
+    r.push_sprite_rot(
+        snap_to_screen(rotated_tl, camera, zoom, screen),
+        size,
+        uv,
+        body_tint,
+        rot,
+    );
+    let phase2 = n.ai[3] == 1.0 || n.ai[3] == 3.0;
+    if phase2 {
+        if let Some(halo) = assets.empress_halo.as_ref() {
+            let glow = ed::empress_glow_color(global_time, enraged, num4, opacity);
+            let glow_tint = [
+                glow[0] as f32 / 255.0,
+                glow[1] as f32 / 255.0,
+                glow[2] as f32 / 255.0,
+                glow[3] as f32 / 255.0,
+            ];
+            let pulse = ed::empress_glow_pulse(global_time);
+            // Extra_188 is a single 166x174 frame (`value10`, no Frame()
+            // call — the whole sheet, `:26638`'s null source rect).
+            let hsize = [halo.w, halo.h];
+            let horigin = [hsize[0] * 0.5, hsize[1] * 0.5];
+            let mut num16 = 0.0f32;
+            while num16 < 1.0 {
+                let off = ed::empress_halo_offset(rot, num16, pulse);
+                let pos = [vector[0] + off[0], vector[1] + off[1]];
+                let tl = [pos[0] - horigin[0], pos[1] - horigin[1]];
+                let rtl = [
+                    tl[0] + horigin[0] - (horigin[0] * co - horigin[1] * s),
+                    tl[1] + horigin[1] - (horigin[0] * s + horigin[1] * co),
+                ];
+                r.push_sprite_rot(
+                    snap_to_screen(rtl, camera, zoom, screen),
+                    hsize,
+                    flip_uv(halo.uv, n.sprite_dir > 0),
+                    glow_tint,
+                    rot,
+                );
+                num16 += 0.25;
+            }
+        }
+    }
+    // The body quad + up to four halo copies (the phase-2 ring).
+    1 + if phase2 && assets.empress_halo.is_some() { 4 } else { 0 }
+    }
 }
 
 /// The generic NPC anchor (`Main.cs:25453-25514`) for a sheet-only draw:
@@ -2127,6 +2266,14 @@ pub(crate) const FLYER14_SHEETS: &[u32] = &[
 /// [`NpcAssets::npc_sheet`] — the bestiary credit folds onto the Pumpking
 /// (Hide=true) but the DRAW sheet is its own (the fishron-hazard precedent).
 pub(crate) const PUMPKING_BLADE_SHEET: &[u32] = &[328];
+/// W4-d125 sheets phase: the Empress of Light's + the Prismatic Lacewing's
+/// own sheets, keyed by the vanilla net id in [`NpcAssets::npc_sheet`] like
+/// the families. REAL .xnb dims: NPC_636 166x352 (2 rows of 176), NPC_661
+/// 24x72 (3 rows of 24) — measured + packed by `tools/_d125_sheets_measure.js`
+/// (skyline 8116 px main / 8117 px boot-font on this branch's base, 76/75 px
+/// under the strict-GPU bound; the sibling-union reconciliation is the
+/// atlas-repack wave's, research/113).
+pub(crate) const D125_SHEETS: &[u32] = &[636, 661];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -2352,6 +2499,7 @@ fn uses_generic_anchor(kind: NpcKind) -> bool {
             | NpcKind::MartianSaucerCannon
             | NpcKind::MartianSaucerCore
             | NpcKind::Deerclops
+            | NpcKind::EmpressOfLight
             | NpcKind::MoonLordHead
             | NpcKind::MoonLordHand
             | NpcKind::MoonLordFreeEye
@@ -3028,6 +3176,21 @@ fn npc_health_bar_scale(kind: NpcKind) -> f32 {
     }
 }
 
+/// W4-d125 draw phase: the world inputs the HallowBoss draw arm reads
+/// (`Main.DrawNPCDirect_HallowBoss`'s `NPC.ShouldEmpressBeEnraged()` at
+/// `Main.cs:26615` + the arm-frame picker's `Main.expertMode` at
+/// `:26722`). The enrage gate itself rides `npc_ai_empress::
+/// should_empress_be_enraged` (the sim's own fn — one source of truth).
+#[derive(Clone, Copy)]
+pub(crate) struct EmpressDrawCtx {
+    pub day_time: bool,
+    pub remix_world: bool,
+    pub empress_rage_mode: bool,
+    /// `Main.worldSurface` in TILES (the gate multiplies by 16).
+    pub world_surface: f64,
+    pub expert: bool,
+}
+
 pub(crate) fn draw_npcs(
     r: &mut SpriteRenderer,
     assets: &NpcAssets,
@@ -3039,6 +3202,12 @@ pub(crate) fn draw_npcs(
     zoom: f32,
     screen: Vec2,
     behind_tiles: bool,
+    // W4-d125 draw phase: the HallowBoss arm's `NPC.ShouldEmpressBeEnraged`
+    // inputs (`Main.dayTime`/`remixWorld`/`empressRageMode`/`worldSurface`)
+    // + the arm-frame picker's `Main.expertMode` (the player-buff mirror,
+    // the npc.rs adapter's convention). `None` = no world context (the
+    // test/UI callers): the enrage gate rests false, expert false.
+    empress_ctx: Option<EmpressDrawCtx>,
 ) -> u32 {
     let mut quads = 0;
     for npc in npcs {
@@ -4822,6 +4991,25 @@ pub(crate) fn draw_npcs(
                 [34.0, 8.0],
                 [n.x, n.y],
             ),
+            // W4-d125 empress wiring — the boss's dedicated draw
+            // (`DrawNPCDirect_HallowBoss`, `Main.cs:26471-26652`) runs
+            // below as its own pass (the Deerclops precedent: the arm
+            // computes its own Centre anchor and skips the generic
+            // shift). The body sheet is PACKED (the sheets phase,
+            // `D125_SHEETS` — the real 166x352 strip, 2 whole 176-px
+            // rows, `Main.npcFrameCount[636]` = 2, `Main.cs:67147`).
+            NpcKind::EmpressOfLight => {
+                quads += draw_empress(r, assets, n, &c, anim_time, camera, zoom, screen, empress_ctx);
+                continue;
+            }
+            // The Prismatic Lacewing — the butterfly group's generic draw
+            // at `Main.npcFrameCount[661]` = 3 rows (`Main.cs:67150`),
+            // the `vx * 0.3` tilt rides the rotation whitelist below
+            // (`FindFrame` case 661, `NPC.cs:72747`). Sheet PACKED (the
+            // sheets phase — the real 24x72 strip, 3 whole 24-px rows).
+            NpcKind::PrismaticLacewing => {
+                pumpkin_moon_draw(assets.npc_sheet(661), npc_rows(661), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -5068,6 +5256,9 @@ pub(crate) fn draw_npcs(
                     // (`AI_026_Unicorns`' rotation tail, `NPC.cs:62919-62923`:
                     // `rotation += vx * 0.05`).
                     | NpcKind::Tumbleweed
+                    // W4-d125: the Lacewing's `rotation = vx * 0.3`
+                    // (`FindFrame` case 661, `NPC.cs:72747`).
+                    | NpcKind::PrismaticLacewing
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
@@ -5463,6 +5654,33 @@ mod anchor_tests {
         }
     }
 
+    /// W4-d125 draw phase: the dedicated HallowBoss arm is wired — the
+    /// Empress draws through `draw_empress` (the Centre anchor, the
+    /// GetAlpha 636 tint, the phase-2 halo ring), NOT the generic
+    /// pumpkin anchor; the halo sheet is packed; the kind skips the
+    /// generic anchor shift (its arm computes its own position).
+    #[test]
+    fn the_empress_draw_arm_is_wired_with_its_halo() {
+        // The halo sheet is in the packing list + the asset field exists.
+        assert!(
+            crate::assets::STATIC_SHEET_NAMES.contains(&"Extra_188"),
+            "Extra_188 (the halo ring) must be packed"
+        );
+        let assets = NpcAssets::default();
+        assert!(assets.empress_halo.is_none(), "the empty set guards None");
+        // The kind is OUT of the generic-anchor set (the dedicated arm
+        // computes its own Centre position, the Deerclops precedent).
+        assert!(!uses_generic_anchor(NpcKind::EmpressOfLight));
+        // The Lacewing keeps the generic anchor (its afterimage ring is
+        // the draw-side remainder, research/309).
+        assert!(uses_generic_anchor(NpcKind::PrismaticLacewing));
+        // The draw arm's source carries the dedicated call (the wiring
+        // canary — a lossy merge that drops it fails here).
+        let src = include_str!("entities.rs");
+        assert!(src.contains("draw_empress(r, assets, n, &c"), "the arm call");
+        assert!(src.contains("empress_halo: npc_tex(atlas, \"Extra_188\")"));
+    }
+
     /// The nine 🟡 M4-NPC display rows' arithmetic: every one of these
     /// strips must divide into `Main.npcFrameCount[type]` whole rows, which
     /// is how each arm's row count was chosen. The sizes are the real
@@ -5539,6 +5757,20 @@ mod anchor_tests {
             (NpcKind::TheHungryII, 110.0, 300.0, 6),   // NPC_116
             (NpcKind::Slimer, 90.0, 168.0, 4),         // NPC_121
             (NpcKind::IlluminantBat, 44.0, 128.0, 4),  // NPC_137
+    /// W4-d125 sheets phase: the Empress + Lacewing strips divide into
+    /// their vanilla rows over the REAL .xnb dims (the pinned LZX harness,
+    /// `tools/_d125_sheets_measure.js`: NPC_636 166x352, NPC_661 24x72),
+    /// both sheets are packed (`D125_SHEETS` + `STATIC_SHEET_NAMES`), the
+    /// bestiary order table carries both slots, and the draw arms' generic
+    /// anchor keeps the sheet width (the d35 packing-audit shape).
+    #[test]
+    fn the_d125_strips_divide_into_their_vanilla_rows() {
+        // (kind, sheet w, sheet h, npcFrameCount[type]) — Main.cs:67147
+        // (636 = 2) / :67150 (661 = 3).
+        let cases: &[(NpcKind, f32, f32, u32)] = &[
+            (NpcKind::EmpressOfLight, 166.0, 352.0, 2),   // NPC_636
+            (NpcKind::PrismaticLacewing, 24.0, 72.0, 3),  // NPC_661
+    }
         ];
         for &(kind, w, h, rows) in cases {
             let net = texture_net_id(kind);
@@ -5547,6 +5779,18 @@ mod anchor_tests {
             let t = sheet(w, h);
             let npc = bare(kind);
             let (tex, fh, size, _) = generic_anchor(Some(&t), rows, &npc, 20.0, 40.0);
+            assert!(D125_SHEETS.contains(&(net as u32)), "{kind:?} packed");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&format!("NPC_{net}").as_str()),
+                "NPC_{net} is asked for by npc_sheet but never packed"
+            );
+            assert!(
+                crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&net),
+                "NPC_{net} has no bestiary sheet slot"
+            );
+            let t = sheet(w, h);
+            let npc = bare(kind);
+            let (tex, fh, size, _) = pumpkin_moon_draw(Some(&t), rows, &npc, 100.0, 100.0);
             assert!(tex.is_some());
             assert_eq!(fh, h / rows as f32, "{kind:?}: whole rows");
             assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");

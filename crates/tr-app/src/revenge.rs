@@ -111,6 +111,10 @@ pub(crate) const BOSS_KINDS: &[NpcKind] = &[
     NpcKind::Retinazer,
     NpcKind::Spazmatism,
     NpcKind::SkeletronPrime,
+    // W4-d125: the Empress is a `boss = true` row (`NPC.cs:17202`) —
+    // `CacheEnemy`'s boss gate (`CoinLossRevengeSystem.cs:347-371`)
+    // refuses her coin marker.
+    NpcKind::EmpressOfLight,
 ];
 
 /// `CoinLossRevengeSystem.CacheEnemy`'s gates (`:347-371`): the bosses and

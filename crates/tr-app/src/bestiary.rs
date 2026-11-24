@@ -2063,6 +2063,27 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Sharkron",
     },
+    // W4-d125 empress wiring — the boss's entry (the vanilla
+    // `NPCID.Search.GetName(636)` = "HallowBoss", `NPCID.cs:11949`; the
+    // boss quick-unlock rule) + the Prismatic Lacewing's own entry
+    // (661 = "EmpressButterfly", `NPCID.cs:11999`; the populator
+    // attaches info at `BestiaryDatabaseNPCsPopulator.cs:1185`).
+    BestiaryEntryDef {
+        credit_id: "HallowBoss",
+        net_id: 636,
+        kind: NpcKind::EmpressOfLight,
+        variant: None,
+        quick_unlock: true,
+        name: "Empress of Light",
+    },
+    BestiaryEntryDef {
+        credit_id: "EmpressButterfly",
+        net_id: 661,
+        kind: NpcKind::PrismaticLacewing,
+        variant: None,
+        quick_unlock: false,
+        name: "Prismatic Lacewing",
+    },
     BestiaryEntryDef {
         credit_id: "PrimeCannon",
         net_id: 128,

@@ -282,6 +282,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_47", 4),
     ("NPC_Killed_48", 4),
     ("NPC_Killed_51", 4),
+    // W4-d125 RETIRE dedupe fold (research/319 §2): the Empress 636's
+    // death cue (`NPC.cs:17197` `SoundID.NPCDeath65`) — d43's batch-1
+    // row kept verbatim; the d125 roster's `death_sound` arm reads it.
+    ("NPC_Killed_65", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),

@@ -565,6 +565,15 @@ pub(crate) fn draw_tiles(
     // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
     // so they appear inside/behind solid tiles (worms, WoF segments).
     draw_phase("npcs_behind_tiles");
+    // W4-d125: the HallowBoss draw's enrage/expert inputs (the world
+    // statics + the player-buff expert mirror, the npc.rs convention).
+    let empress_ctx = Some(crate::render::entities::EmpressDrawCtx {
+        day_time: world.day_time,
+        remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+        empress_rage_mode: world.empress_rage_mode,
+        world_surface: world.world_surface,
+        expert: player.map_or(false, |p| p.buffs.expert_mode),
+    });
     stats.quads += draw_npcs(
         r,
         npc_assets,
@@ -576,6 +585,7 @@ pub(crate) fn draw_tiles(
         zoom,
         screen,
         true,
+        empress_ctx,
     );
 
     scratch.open.clear();
@@ -1197,6 +1207,7 @@ pub(crate) fn draw_tiles(
         zoom,
         screen,
         false,
+        empress_ctx,
     );
     draw_phase("player");
     if let Some(p) = player {
