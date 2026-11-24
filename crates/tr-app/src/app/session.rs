@@ -398,18 +398,6 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // The per-player tail (loadouts / void vault / research): a fresh
         // character carries the vanilla defaults (`PlayerFileWrite::default`).
         ..Default::default()
-        // A fresh character has used no permanent upgrade (`Player.cs:56079`).
-        used_aegis_fruit: false,
-        used_gummy_worm: false, // `Player.cs:56082`
-        used_ambrosia: false,   // `Player.cs:56083`
-        used_aegis_crystal: false, // `Player.cs:56078`
-        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — `Serialize`
-        // stamps the save-time clock on every write, `CreateAndSave`
-        // included (`PlayerFileData.cs:58` → `SavePlayer`). W4-c43.
-        last_saved_binary: tr_core::clock::utc_now_binary(),
-        // `CreateAndSave`'s fresh `FromCurrentSettings` metadata
-        // (`PlayerFileData.cs:53`): revision 0.
-        revision: 0,
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {
