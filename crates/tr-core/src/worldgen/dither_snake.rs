@@ -27,6 +27,9 @@
 #![allow(dead_code)]
 
 use super::dungeon::DungeonColor;
+// Restored from 37c0cdc82:21 — lost when 59ae0d914 rebuilt this file from the
+// land-P parent; circle_test_points (kept as a train-only extra) needs it.
+use super::snake_math::Vec2;
 use super::Rng;
 use crate::tile::{Tile, FLAG_ACTIVE};
 use crate::world::World;
@@ -40,6 +43,19 @@ pub(crate) const BAYER_DITHER: [[f64; 4]; 4] = [
     [0.1875, 0.6875, 0.0625, 0.5625],
     [0.9375, 0.4375, 0.8125, 0.3125],
 ];
+
+/// The per-dungeon inputs `ApplyPass` reads from
+/// `GenVars.CurrentDungeonGenVars` (`DitherSnakePass.cs:25-30`): the outer
+/// potential bounds, the side, the location and the style-list count.
+/// Restored from the introducing commit `fd8166659:511-520` — the 59ae0d914
+/// rebuild dropped this seam while dungeon_genvars.rs:24/255/261 still uses it.
+#[derive(Clone, Debug)]
+pub(crate) struct DitherSnakeDungeon {
+    pub outer: super::dungeon_bounds::DungeonBounds,
+    pub dungeon_side: i32,
+    pub dungeon_location: i32,
+    pub style_count: usize,
+}
 
 /// `DualDungeonUnbreakableWallTiers` (`DualDungeonUnbreakableWallTiers.cs:17-25`).
 pub(crate) mod wall_tiers {

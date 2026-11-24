@@ -1170,10 +1170,6 @@ fn try_kill_invalid_tree_above(
 // initializeHardMode (d103's verbatim rewrite, pushed) and ConvertSkyIslands
 // (unported) — keep their own copies; the ChlorophyteBolt death is unported.
 
-/// `TileID.Sets.Conversion.Thorn` (`TileID.cs:95`). (d1's powder port carries
-/// the same constant on its branch; the merger dedupes.)
-const CONV_THORN: [u16; 4] = [32, 352, 69, 655];
-
 /// `TileID.Sets.Conversion.Torch(tile, conversionType)`'s default arm
 /// (`TileID.cs:63-77`): the styles every non-0/non-11 conversion type accepts.
 fn torch_convertible_default(style: i32) -> bool {

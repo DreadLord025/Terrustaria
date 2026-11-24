@@ -4078,6 +4078,12 @@ mod tests {
 }
 
 
+/// `TileID.Hellforge` (`TileID.cs`: 77) — the 3×2 forge the hell houses
+/// host (`WorldGen.cs:60079-60083` routes it through `Place3x2`).
+/// Restored from the coherent parent `f1f03a45e^2:691-693` (the constant
+/// was lost in the union although all call sites survived).
+pub(crate) const TILE_HELLFORGE: u16 = 77;
+
 /// `WorldGen.PlaceTile(i, j, 77)` (`WorldGen.cs:59342-60295`), the slice
 /// the Hellforge pass runs — the g37 B7 PlaceTile route grafted onto this
 /// lane's correctly-ordered pass (research/86 §6.2; g37 research/75 §2.7

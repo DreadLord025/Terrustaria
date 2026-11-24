@@ -2148,6 +2148,11 @@ fn place_statue(
     style: i32,
     gen_rng: &mut crate::UnifiedRandom,
 ) -> bool {
+    // Restored from d4be8289d^2:2130-2132 — the land-K signature (with the
+    // gen_rng seam) was spliced over this body's frame-decode setup.
+    let (mut kind, mut style) = (105u16, style);
+    let mut num = style * 36;
+    let mut num2 = 0;
     let num3 = 3;
     if kind == 105 && style == 34 {
         kind = 349;
