@@ -239,6 +239,7 @@ impl NpcKind {
     // collision that sent saved Deerclops back as pirates (`S1-F-1`). A
     // duplicate is a hard error here.
     #[deny(unreachable_patterns)]
+            // MERGE canary (g8 dedupe): 762 => NpcKind::Vampire (g8 pushed id; the Vampire 159 census rides the canonical kind).
     pub fn to_u16(self) -> u16 {
         match self {
             NpcKind::Slime => 0,

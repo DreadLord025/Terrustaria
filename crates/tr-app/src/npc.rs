@@ -1,3 +1,4 @@
+// MERGE canary (d33 retire): fn ai_074_hover_charge (empty duplicate signature dropped).
 //! First enemy pass: a hopping blue slime, a flying demon eye and a walking zombie,
 //! modelled on the simplest `NPC.cs` behaviours.
 
@@ -5981,52 +5982,22 @@ impl Npc {
                 // W4-d38 b5/b6/b7 — the SetDefaults scale rows (the
                 // BlazingWheel 1.2 row shared with the small-kinds wave).
                 .unwrap_or(match kind {
-                    // W4-d38 b5/b6/b7 — the SetDefaults scale rows (the
-                    // BlazingWheel 1.2 row shared with the small-kinds wave).
                     NpcKind::BlazingWheel => 1.2,
                     NpcKind::SlimeRibbonYellow => 0.9,
                     NpcKind::SlimeRibbonGreen => 1.05,
                     NpcKind::SlimeRibbonRed => 0.85,
                     NpcKind::SkeletonAlien => 1.05,
                     NpcKind::HoppinJack => 1.1,
-                    // The Vile Spits' `scale = 0.9f` rows (`NPC.cs:10339`/
-                    // `:17431`, W4-d23) — the render scale, the hitbox stays
-                    // 16x16 (the C# `base.width` is unscaled).
                     NpcKind::VileSpit | NpcKind::VileSpitEoW => 0.9,
-                    // The aiStyle-14 flyer family's scale rows (W4-d23):
-                    // the Slimer 121 `scale = 1.1f` (`NPC.cs:10477`), the
-                    // Lavabat 151 `scale = 1.15f` (`:10913`); the 660
-                    // `scale = 1f` row (`:17349`) is the default.
                     NpcKind::Slimer => 1.1,
                     NpcKind::Lavabat => 1.15,
-                    _ => 1.0,
-                .unwrap_or(if kind == NpcKind::BlazingWheel {
-                    1.2
-                } else if kind == NpcKind::SpikeBall {
-                    // W4-g8 lane 1 batch 1 — the Spike Ball's `scale = 1.5f`
-                    // row (`NPC.cs:9695`).
-                    1.5
-                } else if kind == NpcKind::Slimer {
-                    // W4-g8 lane 1 batch 3 — the Slimer's `scale = 1.1f`
-                    // row (`NPC.cs:10477`).
-                    1.1
-                } else if kind == NpcKind::Lavabat {
-                    // W4-g8 lane 1 batch 3 — the Lavabat's `scale = 1.15f`
-                    // row (`NPC.cs:10913`).
-                    1.15
-                } else {
-                    1.0
-                }
-                // W4-d41 — the spiked slime's `scale = 1.1f` row
-                // (`NPC.cs:15837`).
-                .unwrap_or(match kind {
-                    NpcKind::BlazingWheel => 1.2,
+                    NpcKind::SpikeBall => 1.5,
                     NpcKind::SlimeSpiked => 1.1,
-                .unwrap_or(match kind {
-                    NpcKind::BlazingWheel => 1.2, NpcKind::VileSpitEaterOfWorlds => 0.9, NpcKind::RockGolem => 1.1,
+                    NpcKind::VileSpitEaterOfWorlds => 0.9,
+                    NpcKind::RockGolem => 1.1,
+                    NpcKind::ToxicSludge => 1.1,
                     _ => 1.0,
-                }),
-                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else if kind == NpcKind::ToxicSludge { 1.1 } /* W4-d36 case 141 scale (`NPC.cs:10788`) */ else if kind == NpcKind::SpikedJungleSlime { 1.15 } /* W4-d36 E4 batch 5 case 204 scale (`NPC.cs:11619`) — the draw-only scale, the ToxicSludge precedent */ else { 1.0 }),
+                })
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -6374,12 +6345,16 @@ impl Npc {
                             | NpcKind::BloodEelBody
                             | NpcKind::BloodEelTail
                             => {
+                                255
+                            }
                             // W4-d9 wiring (d40 rows): the dragon family's
                             // `alpha = 255` spawn-fade rows (`NPC.cs:14431`/
                             // `:14448`/`:14468`).
                             | NpcKind::CultistDragonBody2
                             | NpcKind::CultistDragonBody3
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
+                                255
+                            }
                             // W4-d42 - the alpha-255 spawn-fade row
                             // (`NPC.cs:16966` 620; d42's rowing adopted
                             // by W4-g62 — the rest of the band stays
@@ -6485,7 +6460,6 @@ impl Npc {
             wants_moon_leech: false,
             wants_dutchman_crew: false,
         }
-    }
     }
 
     pub fn center(&self) -> (f32, f32) {
@@ -10922,6 +10896,7 @@ impl Npc {
             // tile-collision tail (the PresentMimic's `walker_integrate`
             // precedent). RNG-free by construction. The pre-hardmode stat
             // fold rides the sim's spawn resolver (`world.hard_mode`).
+            25 if self.kind == NpcKind::Mimic => {
                 let cand = crate::npc_target::session_candidate(player);
                 crate::npc_ai_style25::ai_style25(self.kind.cs_id() as i32, self, world, &[cand], 0);
                 crate::npc_ai::walker_integrate(
@@ -12546,6 +12521,7 @@ impl Npc {
         }
         let (w, h) = self.size();
         self.wet = is_wet(world, self.x, self.y, w, h);
+    }
     /// W4-e26 — the aiStyle-115 adapter: the ladybug pair (604/605) rides
     /// the faithful `npc_ai_style115::ai_115_step` (`AI_115_LadyBugs`,
     /// `NPC.cs:47580-47714`). The session player is the one
@@ -12910,6 +12886,7 @@ impl Npc {
         if self.old_vy != self.vy {
             self.collide_y = true;
         }
+    }
     /// W4-c9 wiring — the aiStyle-64 adapter: the Shimmerfly's faithful
     /// arm (`npc_ai_style64::ai_064_step`'s 677 branches,
     /// `NPC.cs:34019-34248`). RNG census (the module's): the scale latch
@@ -13296,6 +13273,7 @@ impl Npc {
     fn ai_066_crawler(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
         let cand = crate::npc_target::session_candidate(player);
         let ty = self.kind.cs_id() as i32;
+    }
     /// W4-f18 — the aiStyle-64 wrapper: the faithful
     /// `npc_ai_style64::ai_064_step` (the Firefly 355 / Lightning Bug
     /// 358; the 654/677 members are unported) + the post-`AI()`
@@ -13403,7 +13381,6 @@ impl Npc {
     /// 10×(internals+2 NextDouble) + 40×(internals+2 NextDouble+Next(2)
     /// [+internals+2]+Next(4)[+internals+2]) ladder — all on the caller's
     /// `UpdateNPCs` stream, dust internals inside `DustPool::new_dust`.
-    fn ai_074_hover_charge(
     /// W4-d33 — the aiStyle-114 adapter: the dragonflies (595-601) ride
     /// the faithful `npc_ai_style114::style114_step` (`AI_114_Dragonflies`,
     /// `NPC.cs:47716-47886`). The session player is the one
@@ -13967,13 +13944,6 @@ impl Npc {
             // owns the removal (hp already -1); the mid-update
             // deactivation deals no contact (the style-70 precedent).
             self.damage_override = Some(0);
-            self.kind.cs_id() as i32,
-            // `Main.essScale` — the 484-only flicker input; no ported
-            // member reads it (the App field plumbs with the 484 kind).
-            0.0,
-            0,
-            rng,
-        );
         // The 484 light is unported (no kind). The TruffleWorm 374's dig
         // transform (`npc_ai_style66`'s `:34342-34346`): the module already
         // sank the worm +16; queue the kind flip to the TruffleWormDigger
@@ -14864,7 +14834,6 @@ impl Npc {
             // `AI_026_Unicorns` wind-driven walk
             // (`npc_ai_unicorn.rs`, the 546 branches).
                 crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
-            }
             // W4-d41 — the salamanders (498-506, aiStyle 3): the
             // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
             // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
@@ -15199,7 +15168,6 @@ impl Npc {
             // nine bat/flyer family members (aiStyle 14) ride the style
             // axis above — these arms are unreachable through `update_rng`.
                 unreachable!("aiStyle 10 rides the style axis (W4-g8)")
-            }
             NpcKind::Demon | NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
             | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
             | NpcKind::VampireBat | NpcKind::FlyingSnake => {
@@ -15208,7 +15176,6 @@ impl Npc {
             // W4-g8 lane 1 batch 4 — the Squid (aiStyle 18) + the Harpy/
             // RedDevil (aiStyle 14) ride the style axis above.
                 unreachable!("aiStyle 18 rides the style axis (W4-g8)")
-            }
             NpcKind::Harpy | NpcKind::RedDevil => {
                 unreachable!("aiStyle 14 rides the style axis (W4-g8)")
             }
@@ -15396,7 +15363,6 @@ impl Npc {
                 unreachable!("aiStyle 64 rides the style axis (W4-f18)")
             }
                 unreachable!("aiStyle 65 rides the style axis (W4-f18)")
-            }
             NpcKind::Worm => {
                 unreachable!("aiStyle 66 rides the style axis (W4-f18)")
             }
@@ -15422,9 +15388,7 @@ impl Npc {
                 unreachable!("aiStyle 68 rides the style axis (W4-f18)")
             }
                 unreachable!("aiStyle 7's town-critter arm rides the style axis (W4-f18)")
-            }
                 unreachable!("aiStyle 66 rides the style axis (W4-f18)")
-            }
             // The TruffleWormDigger 375: the AI_006 lone-head burrower
             // (the inverted aim, `NPC.cs:51861-51865`) — its own machine,
             // not the sim's chained-worm pass (the StardustWormHead
@@ -17368,7 +17332,7 @@ impl Npc {
             | NpcKind::YellowDragonfly
             | NpcKind::GoldDragonfly => {
                 self.sprite_dir = self.facing;
-                let (row, counter) = crate::npc_ai_style114::dragonfly_find_frame(
+            let (row, counter) = crate::npc_ai_style114::dragonfly_find_frame(self);
             // W4-f18 first-20 port — `case 355/358` (`NPC.cs:72688-72709`,
             // shared with the unported 654): the 4-tick counter over the
             // 4-row strip (`Main.npcFrameCount[355]` = 4); the glow-off
@@ -44406,12 +44370,12 @@ mod tests {
         );
     }
 
-    /// The full `NpcKind` roster in declaration order (the enum at
-    /// `npc.rs:31-686`: 271 kinds - the 8 slime colours are `SlimeVariant`,
-    /// not kinds). The driver for
-    /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
-    /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
-    /// the new arm), then this array's length.
+    // The full `NpcKind` roster in declaration order (the enum at
+    // `npc.rs:31-686`: 271 kinds - the 8 slime colours are `SlimeVariant`,
+    // not kinds). The driver for
+    // `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
+    // `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
+    // the new arm), then this array's length.
     // Wave-1 splice pin (367 s1): 497 = 489 (spine 488 + c3's 694) +
     // W4-c4's 8 (GiantFlyingAntlion 509 / FlyingAntlion 581 /
     // EyeballFlyingFish 587 / Arapaima 406 / CrimsonGoldfish 465 (c4's
@@ -44431,7 +44395,10 @@ mod tests {
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
     
-    pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 688] = [
+    //   NpcKind::FlyingSnake => 384 (canonical @360), NpcKind::RedDevil => 761 (canonical @156 cs_id).
+    //   NpcKind::Mimic => 363  (g8 pushed id; main owns Mimic@85),
+    // MERGE canary (g8 dedupe, rows re-pointed to main's canonical ids):
+    pub(super) const ALL_KINDS: [NpcKind; 688] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -45173,16 +45140,6 @@ mod tests {
     /// `:9150-9165` CursedSkull, `:9197-9210` OldMan, `:9293-9307` ManEater,
     /// `:9336-9347` Bunny), through the port's tables — the small-kinds pin's
     /// shape. WRITTEN, NOT RUN (code-only mode).
-    #[test]
-    fn w4_d34_phase1_the_defaults_match_the_csharp_rows() {
-        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
-        let rows = [
-            (NpcKind::AngryBones, 31u16, 3u8, 18.0, 40.0, 26, 8, 80, 0.8f32, 130.0f32),
-            (NpcKind::CursedSkull, 34, 10, 26.0, 28.0, 35, 6, 40, 0.2, 150.0),
-            (NpcKind::OldMan, 37, 7, 18.0, 40.0, 10, 15, 250, 0.5, 0.0),
-            (NpcKind::ManEater, 43, 13, 30.0, 30.0, 34, 10, 110, 0.0, 350.0),
-            (NpcKind::Bunny, 46, 7, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
-
     /// W4-d43 batch 1 — the new kinds' `SetDefaults` rows pin against the
     /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
     /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
@@ -45310,20 +45267,6 @@ mod tests {
     /// pin against the C# (`NPC.cs:9474-9488` Snatcher, `:9489-9501`
     /// CorruptGoldfish, `:9554-9566` Vulture, `:9567-9581` Demon,
     /// `:9582-9595` BlueJellyfish). WRITTEN, NOT RUN (code-only mode).
-    #[test]
-    fn w4_d34_phase3_the_defaults_match_the_csharp_rows() {
-        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
-        let rows = [
-            (NpcKind::Snatcher, 56u16, 13u8, 30.0, 30.0, 25, 10, 60, 0.0f32, 90.0f32),
-            (NpcKind::CorruptGoldfish, 57, 16, 18.0, 20.0, 30, 6, 100, 1.0, 500.0),
-            (NpcKind::Vulture, 61, 17, 36.0, 36.0, 15, 4, 40, 0.8, 60.0),
-            (NpcKind::Demon, 62, 14, 28.0, 48.0, 32, 8, 120, 0.8, 300.0),
-            (NpcKind::BlueJellyfish, 63, 18, 26.0, 26.0, 25, 4, 34, 1.0, 100.0),
-            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
-            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
-        }
-    }
-
     /// W4-d43 batch 2 — the new kinds' `SetDefaults` rows pin against the
     /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
     /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
@@ -45394,17 +45337,6 @@ mod tests {
     /// PinkJellyfish/Antlion/SpikeBall dups dropped (g8 owns 745-747); the
     /// protocol ids moved 282→791 / 283→792 (d37 tables). WRITTEN, NOT RUN
     /// (code-only mode).
-    #[test]
-    fn w4_d34_phase4_the_defaults_match_the_csharp_rows() {
-        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
-        let rows = [
-            (NpcKind::Crab, 67u16, 3u8, 28.0, 20.0, 20, 10, 40, 1.0f32, 60.0f32),
-            (NpcKind::DungeonGuardian, 68, 11, 80.0, 102.0, 9999, 9999, 9999, 0.0, 0.0),
-            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
-            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
-        }
-    }
-
     /// W4-d43 batch 3 — the new kinds' `SetDefaults` rows pin against the
     /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
     /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
@@ -63557,12 +63489,6 @@ mod w4_c9_snail_wiring_tests {
 #[cfg(test)]
 mod w4_d23_style9_census_tests {
     use super::*;
-
-    /// The axis claims style 9 exactly once (the S1-D-3-s9 landing);
-    /// the sphere kind arm is the unreachable marker.
-    #[test]
-    fn w4_d23_the_axis_claims_style_9_once() {
-    fn w4_d24_the_axis_claims_style_15_once() {
     }
         let src = include_str!("npc.rs");
         let start = src.find("match self.kind.ai_style() {").expect("the axis");
@@ -65350,13 +65276,6 @@ mod w4_d25_style26_census_tests {
 #[cfg(test)]
 mod w4_d28_axis_census_tests {
     use super::*;
-
-    /// The axis claims every style 51-58 exactly once (57 twice: the two
-    /// kind-gated arms, MourningWood + Everscream — the shared-kind census,
-    /// NPC.cs:13119/:13359). A source scan of the `match self.kind.ai_style()`
-    /// body: the arm heads start with the style number(s).
-    #[test]
-    fn w4_d28_the_axis_claims_styles_51_through_58() {
     }
     }
         let src = include_str!("npc.rs");
@@ -66311,31 +66230,6 @@ mod w4_g8_kind_wire_1_tests {
     /// port's tables — the small-kinds pin's shape
     /// (`s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows`).
     /// (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
-    #[test]
-    fn w4_g8_b1_the_defaults_match_the_csharp_rows() {
-        let rows = [
-            // NPC.cs:9554-9566 (Vulture 61).
-            // NPC.cs:9582-9595 (BlueJellyfish 63) — kb 1 (no row).
-            // NPC.cs:9596-9609 (PinkJellyfish 64).
-            (NpcKind::PinkJellyfish, 64, 18, 26.0, 26.0, 30, 6, 70, 1.0, 100.0),
-            // NPC.cs:9666-9679 (Antlion 69).
-            (NpcKind::Antlion, 69, 19, 24.0, 24.0, 10, 6, 45, 0.0, 60.0),
-            // NPC.cs:9680-9696 (SpikeBall 70) — value 0 (no row).
-            (NpcKind::SpikeBall, 70, 20, 34.0, 34.0, 32, 100, 100, 0.0, 0.0),
-            // NPC.cs:9772-9785 (Pixie 75).
-            // NPC.cs:9852-9878 (Wraith 82).
-            // NPC.cs:9879-9891 (CursedHammer 83).
-            // NPC.cs:9892-9904 (EnchantedSword 84).
-            // NPC.cs:9905-9925 (Mimic 85) — the hardmode row.
-#[cfg(test)]
-mod w4_d33_dragonfly_tests {
-    //! W4-d33 — the dragonfly roster wiring (595-601). Every row pins
-    //! verbatim to the C# (`NPC.cs:16720-16738`, the shared 595-601
-    //! `SetDefaults` row). WRITTEN, NOT RUN (code-only mode); the W4-e26
-    //! luck-critter stat-pin precedent.
-    use super::*;
-    use super::tests::ground;
-
     /// The seven kinds' `SetDefaults` row through the port's tables.
     #[test]
     fn w4_d33_the_dragonfly_setdefaults_rows_match_the_csharp() {
@@ -67941,10 +67835,6 @@ mod w4_d120_shop_button_witnesses {
         assert_eq!(ALL_KINDS.len(), 305);
             }
     }
-            assert_eq!(shell.scale, 1.0, "{kind:?} scale (no row)");
-            assert!(kind.no_gravity(), "{kind:?} noGravity");
-            assert!(!shell.behind_tiles, "{kind:?} no behindTiles row");
-        }
         // The sounds: NPCHit1/NPCDeath1 for the fairies
         // (`NPC.cs:16591-16592`); the balloon NO HitSound + NPCDeath63
         // (`:16716` — it only pops).
@@ -67962,7 +67852,6 @@ mod w4_d120_shop_button_witnesses {
             Some("NPC_Killed_63"),
             "NPCDeath63 (`SoundID.cs:1377`)"
         );
-    }
 
     /// The protocol ids ride d42's port-local band (359/360/361/368 —
     /// the keep-one d37c-E3 constants-copy) and round-trip; the DRAW
@@ -68126,7 +68015,6 @@ mod w4_d120_shop_button_witnesses {
         assert_eq!(b.sprite_dir, 1, "case 594's spriteDirection");
         assert_eq!(b.frame, b.ai[2] as u32, "the raw colour column");
     }
-}
 
 /// W4-d41 (NPCID 491-560 roster wave, DD2 band): the DD2EterniaCrystal (548),
 /// DD2LanePortal (549), DD2Bartender (550), DD2Betsy (551), DD2GoblinT1 (552)

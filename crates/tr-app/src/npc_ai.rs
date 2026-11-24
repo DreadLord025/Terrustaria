@@ -1084,6 +1084,8 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
         }
     }
 }
+}
+}
 
 /// W4-d22: `AI_005`'s dust gate + wet lift (`NPC.cs:50690-50753`) — the
 /// first half of the post-bounce tail. Split from the flee/netUpdate half
@@ -2056,4 +2058,5 @@ impl TownWeaponParams {
         width: 32,
         height: 32,
     };
+}
 }

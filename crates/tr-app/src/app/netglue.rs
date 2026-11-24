@@ -600,9 +600,6 @@ impl App {
                 entry.body_frame = ps.body_frame;
                 entry.hp = ps.hp;
                 entry.max_hp = ps.max_hp;
-                // W4-g10 FINAL — `MessageBuffer.cs:1043-1044`.
-                entry.petting = ps.flags_c.get(4);
-                entry.pet_small = ps.flags_c.get(5);
                 let mut relay = ps.clone();
                 relay.player_id = id as u8;
                 // The C# never echoes a snapshot back to its sender
@@ -1985,9 +1982,6 @@ impl App {
                 entry.body_frame = ps.body_frame;
                 entry.hp = ps.hp;
                 entry.max_hp = ps.max_hp;
-                // W4-g10 FINAL — `MessageBuffer.cs:1043-1044`.
-                entry.petting = ps.flags_c.get(4);
-                entry.pet_small = ps.flags_c.get(5);
             }
             S2c::Time { time, day } => {
                 self.world.time = time;
@@ -3592,8 +3586,6 @@ impl App {
             on_ground: p.on_ground,
             leg_frame: p.leg_frame,
             body_frame: p.body_frame,
-            petting: p.petting.is_petting,
-            pet_small: p.petting.is_pet_small,
             ..Default::default()
         };
         // The ambience spawn relay (`AmbienceServer.SpawnForPlayer`): the
@@ -3883,16 +3875,11 @@ impl App {
         flags_a.set(6, p.facing > 0);
         let mut flags_b = net::BitsByte::new();
         flags_b.set(2, p.vx != 0.0 || p.vy != 0.0);
-        // W4-g10 FINAL — bitsByte23[4]/[5]: petting/petSmall
-        // (`NetMessage.cs:475-476`).
-        let mut flags_c = net::BitsByte::new();
-        flags_c.set(4, p.petting);
-        flags_c.set(5, p.pet_small);
         net::PlayerState {
             player_id: p.id as u8,
             flags_a,
             flags_b,
-            flags_c,
+            flags_c: net::BitsByte::new(),
             flags_d: net::BitsByte::new(),
             selected_item: p.selected as u8,
             x: p.x,
@@ -4188,9 +4175,6 @@ fn npc_seed(
         | crate::npc::NpcKind::IceSlime
         | crate::npc::NpcKind::Crimslime
         | crate::npc::NpcKind::SpikedIceSlime
-        // W4-d36 E4 batch 5 — the Spiked Jungle Slime (aiStyle 1) plants
-        // its feet on the column surface like the wave-A slimes.
-        | crate::npc::NpcKind::SpikedJungleSlime
         | crate::npc::NpcKind::UmbrellaSlime
         | crate::npc::NpcKind::DoctorBones
         | crate::npc::NpcKind::TheGroom
@@ -4265,27 +4249,7 @@ fn npc_seed(
         | crate::npc::NpcKind::Princess
         | crate::npc::NpcKind::DyeTrader
         | crate::npc::NpcKind::PartyGirl
-        | crate::npc::NpcKind::GoblinTinkerer
-        // W4-d120 — the four town kinds seed like the town roster.
-        | crate::npc::NpcKind::SantaClaus
-        | crate::npc::NpcKind::Truffle
-        | crate::npc::NpcKind::Steampunker
-        | crate::npc::NpcKind::Cyborg => crate::npc::Npc::spawn_guide(world, tx)?,
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
-        // W4-g10 lane 3 — the town pets seed on the column surface like the
-        // town residents (the generic ground ctor; the pet-aware aiStyle-7
-        // machine takes over on the first tick).
-        crate::npc::NpcKind::TownCat
-        | crate::npc::NpcKind::TownDog
-        | crate::npc::NpcKind::TownBunny
-        | crate::npc::NpcKind::TownSlimeBlue
-        | crate::npc::NpcKind::TownSlimeGreen
-        | crate::npc::NpcKind::TownSlimeOld
-        | crate::npc::NpcKind::TownSlimePurple
-        | crate::npc::NpcKind::TownSlimeRainbow
-        | crate::npc::NpcKind::TownSlimeRed
-        | crate::npc::NpcKind::TownSlimeYellow
-        | crate::npc::NpcKind::TownSlimeCopper => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
@@ -4330,9 +4294,7 @@ fn npc_seed(
         | crate::npc::NpcKind::BoundWizard
         | crate::npc::NpcKind::BoundMechanic
         | crate::npc::NpcKind::WebbedStylist
-        | crate::npc::NpcKind::SleepingGolfer
-        // W4-d120 — the bound Tavernkeep seeds like the bound forms.
-        | crate::npc::NpcKind::BartenderUnconscious => {
+        | crate::npc::NpcKind::SleepingGolfer => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::EaterOfSouls
@@ -4360,12 +4322,6 @@ fn npc_seed(
         | crate::npc::NpcKind::GoldGoldfish
         | crate::npc::NpcKind::Pupfish
         | crate::npc::NpcKind::Dolphin => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
-        | crate::npc::NpcKind::Shark => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
-        // W4-e21 — the bunny pair (46/540): the surface critter plants its
-        // feet on the column surface like the swimmers' seed (the net state
-        // overwrites the position below).
-        crate::npc::NpcKind::Bunny
-        | crate::npc::NpcKind::PartyBunny => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // The worm segments: the net spawns each link standalone (the chain
         // links rebuild through the init — the head; a lone body/tail dies
         // finding no leader — the net-chain sync lands with the netglue
@@ -4513,29 +4469,11 @@ fn npc_seed(
         crate::npc::NpcKind::CaveBat
         | crate::npc::NpcKind::JungleBat
         | crate::npc::NpcKind::Hellbat
-        | crate::npc::NpcKind::VoodooDemon
-        // The W4-d23 aiStyle-14 flyer family: the same cave-air hang
-        // (the aiStyle-14 machine takes over on the first tick).
-        | crate::npc::NpcKind::Harpy
-        | crate::npc::NpcKind::Demon
-        | crate::npc::NpcKind::GiantBat
-        | crate::npc::NpcKind::Slimer
-        | crate::npc::NpcKind::IlluminantBat
-        | crate::npc::NpcKind::IceBat
-        | crate::npc::NpcKind::Lavabat
-        | crate::npc::NpcKind::GiantFlyingFox
-        | crate::npc::NpcKind::RedDevil
-        | crate::npc::NpcKind::VampireBat
-        | crate::npc::NpcKind::FlyingSnake
-        | crate::npc::NpcKind::SporeBat
-        | crate::npc::NpcKind::QueenSlimeMinionPurple => {
+        | crate::npc::NpcKind::VoodooDemon => {
             // The net spawn hangs the bat at the net Y (the cave air).
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
         }
-        // The Vampire (159, W4-d23): the aiStyle-3 walker plants its
-        // feet on the column surface (the scarecrow band's shape).
-        crate::npc::NpcKind::Vampire => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
         // The hungry/leeches: the ctor seeds the stats — the net state
         // overwrites the position below (the hover arm's shape).
@@ -4580,10 +4518,6 @@ fn npc_seed(
         crate::npc::NpcKind::MourningWood
         | crate::npc::NpcKind::Pumpking
         | crate::npc::NpcKind::Poltergeist
-        // W4-c6 style-59 wiring: the blade (328, noGravity/noTileCollide)
-        // rides the hover ctor like its carrier — the net state overwrites
-        // the position below; the carrier link rebuilds through the sim's
-        // pre-pass (the wyvern segments' net shape).
         // S1-D-3z — the Drippler (490, noGravity aiStyle 22) rides the
         // hover ctor like the Poltergeist.
         // W4-d38 b1 — the flyers ride the hover ctor.
@@ -4924,15 +4858,6 @@ fn npc_seed(
         | crate::npc::NpcKind::BloodEelHead
         | crate::npc::NpcKind::BloodEelBody
         | crate::npc::NpcKind::BloodEelTail
-        // The Shimmerfly (W4-c9): the noTileCollide/noGravity flyer's
-        // net seed rides the hover ctor (the fishron-hazard shape; the
-        // net state overwrites the position below).
-        crate::npc::NpcKind::Shimmerfly => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d42 - the roster's flyers seed in the open air (the net
-        // state overwrites the position below).
         => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
@@ -5030,22 +4955,6 @@ fn npc_seed(
         // W4-d35 (B): the 82/83/84 flyers ride the hover ctor
         // (the net state overwrites the position below).
         crate::npc::NpcKind::Wraith
-        // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds. The grounded
-        // walkers (the Antlion 69, the Mimic 85) plant their feet on the
-        // column surface (the cave-walker ctor); the noGravity flyers
-        // (Vulture 61, the jellies 63/64, the Spike Ball 70, the Pixie 75,
-        // the Wraith 82, the possessed weapons 83/84) ride the hover ctor
-        // (the Poltergeist/Drippler precedent — the machine takes over on
-        // the first tick).
-        crate::npc::NpcKind::Antlion | crate::npc::NpcKind::Mimic => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        crate::npc::NpcKind::Vulture
-        | crate::npc::NpcKind::BlueJellyfish
-        | crate::npc::NpcKind::PinkJellyfish
-        | crate::npc::NpcKind::SpikeBall
-        | crate::npc::NpcKind::Pixie
-        | crate::npc::NpcKind::Wraith
         | crate::npc::NpcKind::CursedHammer
         | crate::npc::NpcKind::EnchantedSword => {
             let y = (y / TILE_PX) as i32;
@@ -5141,528 +5050,7 @@ fn npc_seed(
         | crate::npc::NpcKind::DuckWhite
         | crate::npc::NpcKind::DuckWhite2 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
         // E8 merge: the c10 12-critter seed tail dropped (d40/c8's seeds above).
-        // The man-eater family (W4-d23): the anchored flyers fly through
-        // tiles (the noTileCollide/noGravity rows); the hover ctor's
-        // open-air seed is the join shape (the aiStyle-13 machine takes
-        // over on the first tick — the fishron precedent).
-        crate::npc::NpcKind::ManEater
-        | crate::npc::NpcKind::Snatcher
-        | crate::npc::NpcKind::Clinger
-        | crate::npc::NpcKind::AngryTrapper
-        | crate::npc::NpcKind::FungiBulb
-        | crate::npc::NpcKind::GiantFungiBulb => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // The aiStyle-9 spit/flare family (W4-d23): the spits fly through
-        // tiles (noTileCollide/noGravity); the flare collides but the hover
-        // ctor's open-air seed is the join shape (the aiStyle-9 machine
-        // takes over on the first tick — the fishron precedent).
-        crate::npc::NpcKind::VileSpit
-        | crate::npc::NpcKind::VileSpitEoW
-        | crate::npc::NpcKind::SolarFlare => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d25 STYLE-26 wiring: the gallopers plant feet on the column
-        // surface (the generic surface ctor; the style26 machine takes
-        // over on the first tick). The Unicorn arm mirrors d35 (C)'s
-        // 85/86 walker arm (the Mimic stays d35's). The Tumbleweed is a
-        // gravity + tile-collide walker too (no noGravity/noTileCollide
-        // rows, `NPC.cs:15972-15984`).
-        crate::npc::NpcKind::Unicorn
-        | crate::npc::NpcKind::Wolf
-        | crate::npc::NpcKind::Tumbleweed => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
-        // W4-d125 empress wiring — the boss + the Lacewing both fly
-        // (noGravity/noTileCollide); the `23` body overwrites the
-        // position below (the hover arm's shape).
-        crate::npc::NpcKind::EmpressOfLight | crate::npc::NpcKind::PrismaticLacewing => {
-        // W4-g5 — the two casters ride the hover ctor like the other
-        // casters (`spawn_hover`; aiStyle 8, the d38 precedent).
-        crate::npc::NpcKind::RuneWizard | crate::npc::NpcKind::LibrarianSkeleton => {
-        }
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-g8 lane 1 batch 2 — the grounded walkers (the WallCreeper 164,
-        // the Nymph 196, the LostGirl 195) plant their feet on the column
-        // surface; the noGravity flyers (the GreenJellyfish 103, the
-        // Gastropod 122, the WallCreeperWall 165, the IceElemental 169, the
-        // Herpling 174 / Derpling 177 hoppers, the CrimsonAxe 179, the
-        // FloatyGross 182) ride the hover ctor.
-        crate::npc::NpcKind::WallCreeper
-        | crate::npc::NpcKind::Nymph
-        | crate::npc::NpcKind::LostGirl => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        crate::npc::NpcKind::GreenJellyfish
-        | crate::npc::NpcKind::Gastropod
-        | crate::npc::NpcKind::WallCreeperWall
-        | crate::npc::NpcKind::IceElemental
-        | crate::npc::NpcKind::Herpling
-        | crate::npc::NpcKind::Derpling
-        | crate::npc::NpcKind::CrimsonAxe
-        | crate::npc::NpcKind::FloatyGross => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-g8 lane 1 batch 3 — the CursedSkull 34 + the nine aiStyle-14
-        // bat/flyer family members ride the hover ctor (the noGravity
-        // flyers — the bat family's cave-flier shape).
-        crate::npc::NpcKind::CursedSkull
-        | crate::npc::NpcKind::FlyingSnake => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-g8 lane 1 batch 4 — the Squid 221 (noGravity swimmer) + the
-        // Harpy 48 / RedDevil 156 (noGravity flyers) ride the hover ctor.
-        | crate::npc::NpcKind::RedDevil => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-g8 machine round 3 — the Vampire 159 (the aiStyle-3 fighter)
-        // plants its feet on the column surface (the cave-walker ctor).
-        crate::npc::NpcKind::Vampire => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // The dragonflies (W4-d33): the noGravity flyers' net seed rides
-        // the hover ctor (the net state overwrites the position below;
-        // the aiStyle-114 machine takes over on the first tick).
-        crate::npc::NpcKind::BlackDragonfly
-        | crate::npc::NpcKind::BlueDragonfly
-        | crate::npc::NpcKind::GreenDragonfly
-        | crate::npc::NpcKind::OrangeDragonfly
-        | crate::npc::NpcKind::RedDragonfly
-        | crate::npc::NpcKind::YellowDragonfly
-        | crate::npc::NpcKind::GoldDragonfly => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // The fairy critters + the windy balloon (W4-d33 wiring): the
-        // noGravity flyers' net seed rides the hover ctor (the net state
-        // overwrites the position below; the aiStyle-112/113 machines
-        // take over on the first tick). d42 batch-2/3's seed arms,
-        // constants-copy (keep-one d37c-E3).
-        crate::npc::NpcKind::FairyCritterPink
-        | crate::npc::NpcKind::FairyCritterGreen
-        | crate::npc::NpcKind::FairyCritterBlue
-        | crate::npc::NpcKind::WindyBalloon => {
-        // W4-f42 — the sandstorm debris + desert family: the walkers (the
-        // mummies, the WalkingAntlion, the Tumbleweed's aiStyle-26 ground
-        // roll) plant the feet on the column surface; the flyers (the
-        // Vulture, the Antlion's emergence, the FlyingAntlion) ride the
-        // hover ctor (the machine takes over on the first tick).
-        crate::npc::NpcKind::Mummy
-        | crate::npc::NpcKind::DarkMummy
-        | crate::npc::NpcKind::BloodMummy
-        | crate::npc::NpcKind::LightMummy
-        | crate::npc::NpcKind::Antlion
-        | crate::npc::NpcKind::FlyingAntlion => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        // W4-d9 wiring (d40 rows): the dragon chain + the 521 squidhead's
-        // net seeds (the bare stats seed; the net state overwrites the
-        // position below — the wyvern family's shape).
-        crate::npc::NpcKind::CultistDragonHead
-        | crate::npc::NpcKind::CultistDragonBody2
-        | crate::npc::NpcKind::CultistDragonBody3
-        | crate::npc::NpcKind::AncientCultistSquidhead => {
-            crate::npc::Npc::new(kind, _x, y, 1, 0.0)
-        }
-        // W4-d39 (research/125) — the Butterfly's net seed: the flyer
-        // rides the hover ctor's open-air seed (the fishron hazards'
-        // precedent — the noGravity machine takes over on the first
-        // tick). The scorpion pair + the grasshopper plant their feet
-        // on the column surface (the wave-A walkers' shape).
-        crate::npc::NpcKind::Butterfly => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        crate::npc::NpcKind::ScorpionBlack
-        | crate::npc::NpcKind::Scorpion
-        | crate::npc::NpcKind::Grasshopper => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d39 batch 3 — the teeth bomb + the archer pair plant their
-        // feet on the column surface (the wave-A walkers' shape).
-        crate::npc::NpcKind::ChatteringTeethBomb
-        | crate::npc::NpcKind::CultistArcherBlue
-        | crate::npc::NpcKind::CultistArcherWhite => {
-        // W4-d41 — the cavern crawdads/shellies (aiStyle 3/39): the
-        // ground walkers plant their feet on the column surface (the
-        // scarecrow band's shape; `NPC.cs:14666-14690` writes no
-        // noGravity/noTileCollide).
-        crate::npc::NpcKind::Crawdad
-        | crate::npc::NpcKind::Crawdad2
-        | crate::npc::NpcKind::GiantShelly
-        | crate::npc::NpcKind::GiantShelly2 => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d41 — the salamanders (aiStyle 3's shooter block): the
-        // ground walkers plant their feet (`NPC.cs:14691-14703` writes
-        // no noGravity/noTileCollide).
-        crate::npc::NpcKind::Salamander
-        | crate::npc::NpcKind::Salamander2
-        | crate::npc::NpcKind::Salamander3
-        | crate::npc::NpcKind::Salamander4
-        | crate::npc::NpcKind::Salamander5
-        | crate::npc::NpcKind::Salamander6
-        | crate::npc::NpcKind::Salamander7
-        | crate::npc::NpcKind::Salamander8
-        | crate::npc::NpcKind::Salamander9 => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d41 — the antlion charger (aiStyle 3): the ground walker
-        // plants its feet (`NPC.cs:14828-14840` writes no
-        // noGravity/noTileCollide).
-        crate::npc::NpcKind::GiantWalkingAntlion => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d41 — the antlion swarmer (aiStyle 44) + the Dune Splicer
-        // chain (aiStyle 6, noGravity/noTileCollide): the flyers ride the
-        // hover ctor (the net state overwrites the position below); the
-        // chain links rebuild through the worm pass — a lone segment
-        // dies finding no leader (the worm families' net shape).
-        crate::npc::NpcKind::GiantFlyingAntlion
-        | crate::npc::NpcKind::DuneSplicerHead
-        | crate::npc::NpcKind::DuneSplicerBody
-        | crate::npc::NpcKind::DuneSplicerTail => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d41 — the Tomb Crawler chain (aiStyle 6, noGravity/
-        // noTileCollide) + the solar fragments (516/519, noGravity): the
-        // flyers ride the hover ctor; the chain links rebuild through
-        // the worm pass.
-        crate::npc::NpcKind::TombCrawlerHead
-        | crate::npc::NpcKind::TombCrawlerBody
-        | crate::npc::NpcKind::TombCrawlerTail
-        | crate::npc::NpcKind::SolarFlare
-        | crate::npc::NpcKind::SolarGoop => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d41 — the ancient orbs (aiStyle 100/101, noGravity/
-        // noTileCollide): the flyers ride the hover ctor.
-        crate::npc::NpcKind::AncientLight | crate::npc::NpcKind::AncientDoom => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d41 — the desert ghouls (aiStyle 3): the ground walkers
-        // plant their feet (`NPC.cs:14882-14919` writes no
-        // noGravity/noTileCollide).
-        crate::npc::NpcKind::DesertGhoul
-        | crate::npc::NpcKind::DesertGhoulCorruption
-        | crate::npc::NpcKind::DesertGhoulCrimson => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d41 — the hallowed ghoul + the lamias + the sand poacher
-        // walker (aiStyle 3): the ground walkers plant their feet.
-        crate::npc::NpcKind::DesertGhoulHallow
-        | crate::npc::NpcKind::DesertLamiaLight
-        | crate::npc::NpcKind::DesertLamiaDark
-        | crate::npc::NpcKind::DesertScorpionWalk => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d41 — the sand poacher's wall form (aiStyle 40, noGravity):
-        // the flyer rides the hover ctor.
-        crate::npc::NpcKind::DesertScorpionWall => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d41 — the basilisk + the tortured soul + the bride (aiStyle
-        // 3) + the slimes (aiStyle 1): the ground walkers plant their
-        // feet.
-        crate::npc::NpcKind::DesertBeast
-        | crate::npc::NpcKind::DemonTaxCollector
-        | crate::npc::NpcKind::TheBride
-        | crate::npc::NpcKind::SlimeSpiked
-        | crate::npc::NpcKind::SandSlime => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d41 — the critters (aiStyle 7) + the tumbler (aiStyle 26):
-        // the ground walkers plant their feet.
-        crate::npc::NpcKind::SquirrelRed
-        | crate::npc::NpcKind::SquirrelGold
-        | crate::npc::NpcKind::PartyBunny
-        | crate::npc::NpcKind::Tumbleweed => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // The Frog walker (W4-e26, E8 keep-one): plants its feet on the
-        // column surface (the generic surface ctor; the aiStyle-7 machine
-        // takes over on the first tick — DATA-ONLY until then). The Duck
-        // dropped to c10 (the waterfowl owner, SEAL S1).
-        crate::npc::NpcKind::Frog => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // The luck critters (W4-e26): the noGravity flyers' net seed rides
-        // the hover ctor (the net state overwrites the position below;
-        // the aiStyle-115 machine takes over on the first tick).
-        crate::npc::NpcKind::LadyBug | crate::npc::NpcKind::GoldLadyBug => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // Doc-sweep lane 36 — the ShimmerSlime plants its feet on the
-        // column surface (the wave-A slime seed; the aiStyle-1 machine
-        // takes over on the first tick).
-        crate::npc::NpcKind::ShimmerSlime => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
-        // W4-f18 first-20 port — batch 1's critters: the flyers (355/356/
-        // 358, noGravity) ride the hover ctor; the grounded crawler 357
-        // and the wall-crawler 359 plant their feet on the column surface
-        // (the machines take over on the first tick; the net state
-        // overwrites the position below).
-        | crate::npc::NpcKind::Butterfly
-        | crate::npc::NpcKind::LightningBug => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        crate::npc::NpcKind::Worm | crate::npc::NpcKind::Snail => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-f18 batch 2 — the GlowingSnail 360 (noGravity) rides the
-        // hover ctor; the Frog/Duck/DuckWhite (grounded town critters) and
-        // the Duck2 (the swimming waterfowl) plant their feet on the
-        // column surface (the machines take over on the first tick).
-        crate::npc::NpcKind::GlowingSnail => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        crate::npc::NpcKind::Frog
-        | crate::npc::NpcKind::Duck
-        | crate::npc::NpcKind::DuckWhite => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-f18 batch 3 — the DuckWhite2 (swimming waterfowl) and the
-        // scorpion pair / TruffleWorm (grounded critters) plant their feet
-        // on the column surface; the TruffleWormDigger 375 (noTileCollide
-        // burrower) rides the hover ctor (the net state overwrites the
-        // position below).
-        crate::npc::NpcKind::DuckWhite2
-        | crate::npc::NpcKind::ScorpionBlack
-        | crate::npc::NpcKind::TruffleWorm => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        crate::npc::NpcKind::TruffleWormDigger => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-f18 batch 4 — the Grasshopper (grounded critter), the
-        // ChatteringTeethBomb / cultist archers / ArmedZombie (grounded
-        // fighters) plant their feet on the column surface (the machines
-        // take over on the first tick; the net state overwrites the
-        // position below).
-        crate::npc::NpcKind::Grasshopper
-        | crate::npc::NpcKind::ChatteringTeethBomb
-        | crate::npc::NpcKind::CultistArcherWhite
-        | crate::npc::NpcKind::ArmedZombie => {
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::WaterBoltMimic
-        | crate::npc::NpcKind::PalworldCattivaDistressed
-        | crate::npc::NpcKind::PalworldFoxsparksDistressed => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::StatueMimic
-        | crate::npc::NpcKind::Orca => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::OwlMimic
-        | crate::npc::NpcKind::MossZombie
-        | crate::npc::NpcKind::LibrarianSkeleton => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::BoundTownSlimePurple
-        | crate::npc::NpcKind::Pufferfish => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::TownSlimeCopper
-        | crate::npc::NpcKind::BoundTownSlimeOld
-        | crate::npc::NpcKind::BoundTownSlimeYellow => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::TownSlimeOld
-        | crate::npc::NpcKind::TownSlimeYellow => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::YellowCockatiel
-        | crate::npc::NpcKind::GrayCockatiel
-        | crate::npc::NpcKind::Shimmerfly => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::ShimmerSlime
-        | crate::npc::NpcKind::TownSlimeGreen => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::ScarletMacaw
-        | crate::npc::NpcKind::BlueMacaw
-        | crate::npc::NpcKind::Toucan => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::Stinkbug
-        | crate::npc::NpcKind::TownSlimeBlue => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::PirateGhost
-        | crate::npc::NpcKind::TorchGod
-        | crate::npc::NpcKind::ChaosBallTim
-        | crate::npc::NpcKind::VileSpitEaterOfWorlds => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::GoldenSlime => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::QueenSlimeBoss
-        | crate::npc::NpcKind::QueenSlimeMinionPurple
-        | crate::npc::NpcKind::EmpressButterfly => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::QueenSlimeMinionBlue
-        | crate::npc::NpcKind::QueenSlimeMinionPink => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::HellButterfly
-        | crate::npc::NpcKind::Lavafly => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::GemBunnyAmber
-        | crate::npc::NpcKind::MagmaSnail
-        | crate::npc::NpcKind::TownBunny => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::GemBunnyTopaz
-        | crate::npc::NpcKind::GemBunnySapphire
-        | crate::npc::NpcKind::GemBunnyEmerald
-        | crate::npc::NpcKind::GemBunnyRuby
-        | crate::npc::NpcKind::GemBunnyDiamond => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::GemSquirrelEmerald
-        | crate::npc::NpcKind::GemSquirrelRuby
-        | crate::npc::NpcKind::GemSquirrelDiamond
-        | crate::npc::NpcKind::GemSquirrelAmber
-        | crate::npc::NpcKind::GemBunnyAmethyst => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        | crate::npc::NpcKind::GemSquirrelAmethyst
-        | crate::npc::NpcKind::GemSquirrelTopaz
-        | crate::npc::NpcKind::GemSquirrelSapphire => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
-        // (the hover ctor; the net state overwrites the position below).
-        crate::npc::NpcKind::SporeBat
-        | crate::npc::NpcKind::HallowBoss => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d43: the grounded kinds plant their feet on the column surface
-        // (the walker ctor; the family machine takes over on the first tick).
-        crate::npc::NpcKind::RockGolem
-        | crate::npc::NpcKind::MaggotZombie
-        | crate::npc::NpcKind::SporeSkeleton => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        // W4-d36 census batch 0 net seeds — the ground walkers ride the
-        // cave-walker ctor, the critters the guide ctor (the net state
-        // overwrites the position below).
-        crate::npc::NpcKind::ToxicSludge
-        | crate::npc::NpcKind::GiantTortoise
-        | crate::npc::NpcKind::IceTortoise
-        // W4-d36 E4 — the Wolf (aiStyle 26) plants its feet like the
-        // Horseman/Hellhound seeds above.
-        // W4-d36 E4b - Frankenstein (aiStyle 3) plants its feet like the
-        // wave-A zombie walkers above.
-        | crate::npc::NpcKind::Frankenstein
-        // W4-d36 E4 batch 2 — the remaining aiStyle-3 fighters plant their
-        // feet on the column surface (the net state overwrites below).
-        | crate::npc::NpcKind::BlackRecluse
-        | crate::npc::NpcKind::SwampThing
-        | crate::npc::NpcKind::UndeadViking
-        // W4-d36 E4 batch 3 — the Corrupt Penguin / Face Monster
-        // (aiStyle 3) plant their feet like the fighters above.
-        | crate::npc::NpcKind::CorruptPenguin
-        | crate::npc::NpcKind::FaceMonster
-        // W4-d36 E4 batch 4 — the Snow Flinx / Armored Viking / Lihzahrd /
-        // Lihzahrd Crawler (aiStyle 3) plant their feet like the fighters
-        // above (the net state overwrites below).
-        | crate::npc::NpcKind::SnowFlinx
-        | crate::npc::NpcKind::ArmoredViking
-        | crate::npc::NpcKind::Lihzahrd
-        | crate::npc::NpcKind::LihzahrdCrawler
-        // W4-d36 E4 batch 5 — the bone trio / Icy Merman (aiStyle 3)
-        // plant their feet like the fighters above (the net state
-        // overwrites below).
-        | crate::npc::NpcKind::HeadacheSkeleton
-        | crate::npc::NpcKind::MisassembledSkeleton
-        | crate::npc::NpcKind::PantlessSkeleton
-        | crate::npc::NpcKind::IcyMerman => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
-        crate::npc::NpcKind::Penguin
-        | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
-        // W4-d36 E4 batch 3 — the pigron trio (aiStyle 2, the phase flyer)
-        // rides the hover placement (the net state overwrites below).
-        crate::npc::NpcKind::PigronCorruption
-        | crate::npc::NpcKind::PigronHallow
-        | crate::npc::NpcKind::PigronCrimson => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
-        // W4-d36 hover batch — the aiStyle-5 trio rides the hover
-        // placement (the net state overwrites the position below).
-        crate::npc::NpcKind::Crimera
-        | crate::npc::NpcKind::MossHornet
-        | crate::npc::NpcKind::Moth => {
-            let y = (y / TILE_PX) as i32;
-            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
-        }
     })
-}
-}
-}
-}
 }
 
 fn npc_from_net(world: &World, n: &net::NpcInfo) -> Option<crate::npc::Npc> {

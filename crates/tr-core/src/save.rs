@@ -853,6 +853,7 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.bought_cat = r.u8()? != 0;
         world.bought_dog = r.u8()? != 0;
         world.bought_bunny = r.u8()? != 0;
+    }
     // v18: the Empress's downed flag (W4-d125, see the writer's citation).
     if version >= 18 {
         world.downed_empress_of_light = r.u8()? != 0;
