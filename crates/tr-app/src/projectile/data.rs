@@ -791,6 +791,13 @@ pub const CASCADE_EXPLOSION: u16 = 1125;
 pub const CRYSTAL_SHARD_MELEE: u16 = 1134;
 pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
+/// The Snapping Stone trio's strike effect projectiles (W4-e7 lane 23,
+/// `ProjectileID.cs:2796`/`:2816`/`:2818`) — `TryMakingSnappingStoneStrike`
+/// (`Projectile.cs:14318`/`:14322`/`:14327`) spawns them at the extra
+/// targets; `snapping_stone.rs` owns the strike machine.
+pub const SNAPPING_STONE_EFFECT: u16 = 1121;
+pub const SNAPPING_STONE_MELEE_EFFECT: u16 = 1131;
+pub const SNAPPING_STONE_SUMMON_EFFECT: u16 = 1132;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
 /// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
@@ -1680,6 +1687,62 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         987..=993 => 1.0,
         _ => 0.0,
     }
+}
+
+/// `Projectile.hostile`'s `SetDefaults` slice (W4-c19, the `:17341`
+/// enchantment gate census): the reset false (`Projectile.cs:764`) and the
+/// per-type `this.hostile = true` writes — the FULL 179-kind list, frozen
+/// verbatim from the `SetDefaults` ladder (the multi-type arms' every kind
+/// included: the 99/727/1013/1014/1053-1055/1057 boulder family `:1833`,
+/// the 578/579/813 ritual trio `:6282`, the 673/674 pair `:7207`).
+///
+/// The only RUNTIME writes are the two bomb-death flips — aiStyle 49's
+/// `ai[0] == -2` (`:28247`) and the 281's `ai[0] == -2` (`:75798`) — and
+/// both kinds are classless bombs (`melee`/`ranged` false), so they can
+/// never reach the `(melee || ranged)`-gated mount light this census
+/// serves; the kind-derived flag is exact for every consumer.
+pub(crate) fn set_defaults_hostile(kind: u16) -> bool {
+    matches!(
+        kind,
+        12 | 31 | 38 | 39 | 40 | 43 | 44 | 55 | 56 | 67 | 71 | 75 | 81 | 82 | 83 | 84
+            | 96 | 98 | 99 | 100 | 101 | 102 | 108 | 109 | 110 | 115 | 128 | 129 | 164
+            | 174 | 176 | 177 | 179 | 180 | 184 | 185 | 186 | 188 | 201 | 202 | 203
+            | 204 | 205 | 240 | 241 | 257 | 258 | 259 | 264 | 270 | 275 | 276 | 277
+            | 288 | 290 | 291 | 292 | 293 | 299 | 300 | 302 | 303 | 325 | 327 | 329
+            | 345 | 346 | 347 | 348 | 349 | 350 | 351 | 352 | 384 | 385 | 386 | 435
+            | 436 | 437 | 438 | 447 | 448 | 449 | 450 | 452 | 454 | 455 | 456 | 462
+            | 464 | 465 | 466 | 467 | 468 | 471 | 472 | 490 | 498 | 501 | 508 | 526
+            | 537 | 538 | 539 | 540 | 572 | 573 | 574 | 575 | 576 | 577 | 578 | 579
+            | 580 | 581 | 592 | 593 | 596 | 605 | 629 | 654 | 655 | 657 | 658 | 662
+            | 670 | 671 | 672 | 673 | 674 | 675 | 676 | 681 | 682 | 683 | 685 | 686
+            | 687 | 713 | 719 | 727 | 763 | 811 | 812 | 813 | 814 | 836 | 871 | 872
+            | 873 | 874 | 909 | 919 | 920 | 921 | 922 | 923 | 926 | 961 | 962 | 965
+            | 980 | 1001 | 1002 | 1005 | 1007 | 1013 | 1014 | 1021 | 1048 | 1049
+            | 1053 | 1054 | 1055 | 1057 | 1073 | 1078 | 1091 | 1092
+    )
+}
+
+/// `Projectile.noEnchantments`'s `SetDefaults` slice (W4-c19): the reset
+/// false (`Projectile.cs:794`) and the four `this.noEnchantments = true`
+/// writes — the 480 dart (`:5559`), the 1121/1131/1132 Dead Cells flint
+/// helpers (`:10501`/`:10621`/`:10633`). NO runtime writes anywhere in
+/// `Projectile.cs`; the kind-derived flag is exact.
+pub(crate) fn set_defaults_no_enchantments(kind: u16) -> bool {
+    matches!(kind, 480 | 1121 | 1131 | 1132)
+}
+
+/// `Projectile.noEnchantmentVisuals`'s `SetDefaults` slice (W4-c19): the
+/// reset false (`Projectile.cs:795`) and the 21 `this.noEnchantmentVisuals
+/// = true` writes — the outer `Update` gate (`:16700`) that skips
+/// `UpdateEnchantmentVisuals` wholesale. The 1128 arm writes it twice
+/// (`:10575`/`:10578`, a verbatim source quirk); the set is the same.
+/// NO runtime writes; the kind-derived flag is exact.
+pub(crate) fn set_defaults_no_enchantment_visuals(kind: u16) -> bool {
+    matches!(
+        kind,
+        181 | 228 | 229 | 344 | 399 | 401 | 504 | 566 | 611 | 669 | 697 | 698 | 709
+            | 732 | 933 | 954 | 979 | 1100 | 1108 | 1128 | 1129
+    )
 }
 
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
@@ -3037,6 +3100,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `TheEyeOfCthulhuDash` (`:10596-10608`): 100×100, aiStyle 210,
             // `timeLeft = 600`, `penetrate = -1`, local-immunity −1.
             EYE_OF_CTHULHU_DASH => (100.0, 100.0, 210, -1, 600, 0, false, false, false, RESET_STATE),
+            // W4-e7 lane 23 — the Snapping Stone strike effects
+            // (`Projectile.cs:10491-10503` / `:10611-10623` /
+            // `:10624-10635`): 10×10, aiStyle 0 (the `:778` reset — no AI
+            // arm), the stock `penetrate = 1` (`:774`), `tileCollide =
+            // false`, `timeLeft = 2`, local-immunity 60. The class flags
+            // ride the census below (1121 ranged, 1131 melee, 1132 none);
+            // `noEnchantments`/`hide` have no port field (draw/enchant-
+            // only, the `hide` convention). The strike spawns them at the
+            // extra targets (`snapping_stone.rs`, `:14339-14345` — the
+            // melee arm flips 1131's class by the owner's crit comparison).
+            SNAPPING_STONE_EFFECT | SNAPPING_STONE_MELEE_EFFECT | SNAPPING_STONE_SUMMON_EFFECT => {
+                (10.0, 10.0, 0, 1, 2, 0, false, false, false, (true, 60, false, -1, 0, 1.0))
+            }
             // `CrystalShardMelee` (`:10636-10650`): 6×6, aiStyle 24,
             // `penetrate = 1`, `timeLeft = 600`, idStatic-20.
             CRYSTAL_SHARD_MELEE => (6.0, 6.0, 24, 1, 600, 0, false, false, false, RESET_STATE),
@@ -4610,6 +4686,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // PROJ-171 retire: the 978 Volcano's `melee = true`
                     // term (`Projectile.cs:9267`) is DROPPED with its row
                     // (keep-d12c — d12c's 9e668d0f0 owns the 978 melee flag).
+                    // W4-e7 lane 23 — the Snapping Stone melee effect
+                    // (1131, `:10620`); the strike's crit-comparison flip
+                    // (`:14343-14345`) overwrites the slot flags at spawn.
+                    | SNAPPING_STONE_MELEE_EFFECT
             ),
         ranged: matches!(
             kind,
@@ -4639,6 +4719,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-e7 lane 23 — the Snapping Stone ranged effect (1121,
+            // `:10500`); the summon effect 1132 sets NO class (`:10624-10635`).
+                | SNAPPING_STONE_EFFECT
         ),
         magic: matches!(
             kind,
@@ -5211,6 +5294,31 @@ mod tests {
         for k in (146..=149u16).chain(1015..=1017) {
             assert!(spawnable.contains(&k), "kind {k} packs");
         }
+    /// W4-e7 lane 23 — the Snapping Stone strike effect rows
+    /// (`Projectile.cs:10491-10503`/`:10611-10635`): 10×10, aiStyle 0,
+    /// stock penetrate 1, tileCollide false, timeLeft 2, local-immunity 60;
+    /// 1121 ranged, 1131 melee, 1132 no class. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_e7_the_snapping_stone_effect_rows_match_set_defaults() {
+        for k in [SNAPPING_STONE_EFFECT, SNAPPING_STONE_MELEE_EFFECT, SNAPPING_STONE_SUMMON_EFFECT] {
+            let d = proj_data(k).expect("the strike effect row");
+            assert_eq!((d.w, d.h), (10.0, 10.0), "kind {k} (:10493-10494)");
+            assert_eq!(d.ai_style, 0, "kind {k} — the :778 reset, no AI arm");
+            assert_eq!(d.penetrate, 1, "kind {k} — the stock :774");
+            assert_eq!(d.time_left, 2, "kind {k} (:10499)");
+            assert!(!d.tile_collide, "kind {k} (:10495)");
+            assert!(d.uses_local_immunity, "kind {k} (:10497)");
+            assert_eq!(d.local_hit_cooldown, 60, "kind {k} (:10498)");
+            assert!(!d.uses_id_static_immunity, "kind {k}");
+            assert_eq!(d.alpha, 0, "kind {k} — the stock :779");
+            assert_eq!(d.scale, 1.0, "kind {k} — the stock :785");
+        }
+        assert_eq!(proj_data(SNAPPING_STONE_EFFECT).unwrap().ranged, true, "(:10500)");
+        assert_eq!(proj_data(SNAPPING_STONE_EFFECT).unwrap().melee, false);
+        assert_eq!(proj_data(SNAPPING_STONE_MELEE_EFFECT).unwrap().melee, true, "(:10620)");
+        assert_eq!(proj_data(SNAPPING_STONE_MELEE_EFFECT).unwrap().ranged, false);
+        let summon = proj_data(SNAPPING_STONE_SUMMON_EFFECT).unwrap();
+        assert!(!summon.melee && !summon.ranged && !summon.magic, "(:10624-10635) sets none");
     }
 
     #[test]

@@ -2085,6 +2085,31 @@ pub struct Player {
     /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
     /// +1 ammo damage on arrows (`:53548`).
     pub acc_sharp_barb: bool,
+    // W4-e7 DOC-SWEEP lane 23 — the Snapping Stone accessory trio
+    // (`Player.cs:1226-1232`): the three flags + the shared strike cooldown.
+    // The ready lights (`:24571-24585`, `player_lights_b::snapping_stone_lights`)
+    // read `accSnappingStoneLightUp` = `cooldown == 0`. The strike machine
+    // (`Projectile.TryMakingSnappingStoneStrike`, `Projectile.cs:14283-14395`,
+    // the 360-tick cooldown setter `:14316`) lives in `snapping_stone.rs` —
+    // the flags/cooldown/lights land here, the strike arms the cooldown.
+    /// `Player.accSnappingStone` (`Player.cs:1226`): 6167 Snapping Stone
+    /// (`:14494-14496`) — the ranged strike (`Projectile.cs:13401-13404`).
+    /// `ResetEffects` clears it (`:18476`).
+    pub acc_snapping_stone: bool,
+    /// `Player.accPyroclast` (`Player.cs:1228`): 6178 Pyroclast
+    /// (`:14580-14583`, alongside `magmaStone`) — the melee strike
+    /// (`Player.cs:44338-44341`, `Projectile.cs:13397-13400`).
+    /// `ResetEffects` clears it (`:18477`).
+    pub acc_pyroclast: bool,
+    /// `Player.accArmletOfRuin` (`Player.cs:1230`): 6179 Armlet of Ruin
+    /// (`:14584-14587`, alongside `accWickedArmlet`) — the summon strike
+    /// (`Projectile.cs:13405-13408`). `ResetEffects` clears it (`:18478`).
+    pub acc_armlet_of_ruin: bool,
+    /// `Player.accSnappingStoneCooldown` (`Player.cs:1232`, int default 0):
+    /// the shared 360-tick strike lockout (`Projectile.cs:14316`), decremented
+    /// by `Update_SnappingStone` (`Player.cs:28385-28410`). NOT cleared by
+    /// `ResetEffects` — a countdown (the `accSentryBackpackGrabCooldown` shape).
+    pub acc_snapping_stone_cooldown: i32,
     // S1-P-i35 — the fishing family (`Player.cs:1088-1102` region).
     /// `Player.fishingSkill` (`Player.cs:1092`): the +15 Fishing potion
     /// (buff 121, `UpdateBuffs` `:10146-10149`), the Angler armor pieces
@@ -2918,6 +2943,12 @@ impl Player {
             vampire_burning_in_sunlight: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
+            // W4-e7 lane 23 — the Snapping Stone trio's spawn defaults
+            // (`Player.cs:1226-1232`: bools false, the int cooldown 0).
+            acc_snapping_stone: false,
+            acc_pyroclast: false,
+            acc_armlet_of_ruin: false,
+            acc_snapping_stone_cooldown: 0,
             // S1-P-i35 — the fishing family's spawn defaults.
             fishing_skill: 0,
             crate_potion: false,
@@ -4677,6 +4708,47 @@ impl Player {
         }
     }
 
+    /// `Player.accSnappingStoneLightUp` (`Player.cs:3391-3400`): the getter
+    /// is `accSnappingStoneCooldown == 0` — the ready lights
+    /// (`:24571-24585`) gate on it. (The setter's `!value ? 60 : 0` arm has
+    /// no port caller — the strike machine arms the cooldown to 360 directly,
+    /// `snapping_stone.rs`, `Projectile.cs:14316`.)
+    pub fn acc_snapping_stone_light_up(&self) -> bool {
+        self.acc_snapping_stone_cooldown == 0
+    }
+
+    /// `Player.Update_SnappingStone` (`Player.cs:28385-28410`): the shared
+    /// strike cooldown counts down one per tick; at 0 the recharge cue fires
+    /// (the first worn trio member wins — `accSnappingStone` → Item30,
+    /// `accPyroclast` → Item20, `accArmletOfRuin` → Item28, each with its
+    /// `ParticleOrchestrator` recharge burst). Called from the world-sim
+    /// player pass at the `:24564` position (before `Update_HarpyCharm`
+    /// `:24565` / `Update_AmmoCycler` `:24566`).
+    ///
+    /// W4-e7 lane 23: the countdown lands verbatim. The strike machine
+    /// (`snapping_stone.rs::try_making_snapping_stone_strike`) now arms the
+    /// 360-tick cooldown, so the countdown runs in play; the recharge SOUND +
+    /// particle burst at the zero-crossing are wired at the world-sim call
+    /// site (`world_sim/player.rs`, `snapping_stone::snapping_stone_recharge`
+    /// replays the burst's draws + returns the cue). The C# plays at
+    /// `MountedCenter` with the style façade's pitch/volume arguments
+    /// (`:28396` Item30 `-0.9f, 0.08f`; `:28401` Item20 default; `:28406`
+    /// Item28 `-0.9f, 0.08f`). This method keeps the countdown alone — the
+    /// zero-crossing cue is the caller's (it needs the audio + RNG borrows).
+    pub fn update_snapping_stone(&mut self) {
+        if self.acc_snapping_stone_cooldown <= 0 {
+            return;
+        }
+        self.acc_snapping_stone_cooldown -= 1;
+        if self.acc_snapping_stone_cooldown == 0 {
+            // `:28394-28408`: the recharge cue + particle burst (the first
+            // worn member wins). The world-sim caller fires it at this
+            // zero-crossing (`snapping_stone::snapping_stone_recharge`); this
+            // method keeps the countdown alone (the audio/RNG borrows live
+            // at the call site).
+        }
+    }
+
     /// `Player.MountedCenter` (`Player.cs:3335-3343`):
     /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
     /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount
@@ -5474,7 +5546,13 @@ impl Player {
                 self.acc_wicked_armlet = true;
             }
             6157 => self.acc_snake_band = true,
-            6179 => self.acc_wicked_armlet = true,
+            // Armlet of Ruin 6179 (`:14584-14587`): accWickedArmlet +
+            // accArmletOfRuin (W4-e7 lane 23 — the summon-strike flag; the
+            // strike `Projectile.cs:13405-13408` is `snapping_stone.rs`).
+            6179 => {
+                self.acc_wicked_armlet = true;
+                self.acc_armlet_of_ruin = true;
+            }
             // (Resync keep-one: the 6182 Wicked Claws arm lives in the i12
             // Titan-Glove block above — armlet + autoReuseGlove + meleeSpeed,
             // the C#-complete `:14600-14604` set. This block's old copy
@@ -5495,9 +5573,17 @@ impl Player {
             // the OnFire3 infliction is `melee_on_hit.rs` (`:6552-6566`).
             1322 => self.magma_stone = true,
             // Pyroclast 6178 (`:14580-14583`): magmaStone + accPyroclast
-            // (the snapping-stone strike `:44338-44341` is an unported
-            // projectile family — only the flag half lands here).
-            6178 => self.magma_stone = true,
+            // (W4-e7 lane 23 — the melee-strike flag; the strike
+            // `Player.cs:44338-44341` / `Projectile.cs:13397-13400` is
+            // `snapping_stone.rs`, wired at the melee hit + the PVE walk).
+            6178 => {
+                self.magma_stone = true;
+                self.acc_pyroclast = true;
+            }
+            // Snapping Stone 6167 (`:14494-14496`, W4-e7 lane 23): the bare
+            // ranged-strike flag (the strike `Projectile.cs:13401-13404` is
+            // `snapping_stone.rs`, wired at the PVE walk).
+            6167 => self.acc_snapping_stone = true,
             // Catalyst Band 6185 (`:14615-14619`): catalystBand + pStone +
             // accPoisonBarb (the AcceleratePoisons infliction is
             // `melee_on_hit.rs`, `:6536-6539`; the Stone family's third
@@ -6008,6 +6094,13 @@ impl Player {
         // them per tick from the worn slots.
         self.magma_stone = false;
         self.catalyst_band = false;
+        // W4-e7 lane 23 — `ResetEffects`' Snapping Stone trio clears
+        // (`Player.cs:18476-18478`): the three flags re-grant per tick from
+        // the worn slots (`apply_equip_functional` 6167/6178/6179). The
+        // cooldown is NOT cleared — a countdown (`Update_SnappingStone`).
+        self.acc_snapping_stone = false;
+        self.acc_pyroclast = false;
+        self.acc_armlet_of_ruin = false;
         self.crimson_regen = false;
         self.vampire_burning_in_sunlight = false;
         self.gills = false;
@@ -8379,8 +8472,9 @@ impl Player {
     /// (the Water Strider's buff-265 grant, `:9897`, or the flippers/merman)
     /// while not holding down; mounted, only the Water Strider's mount (37)
     /// floats. The buff arm now grants `can_float_in_water`, so the pose arm
-    /// is reachable.
-    fn should_float_in_water(&self) -> bool {
+    /// is reachable. `pub(crate)` so the Kazzymodus wing light's
+    /// `ShouldDrawWingsThatAreAlwaysAnimated` gate reads it (`player_lights_b`).
+    pub(crate) fn should_float_in_water(&self) -> bool {
         if self.can_float_in_water && !self.control_down {
             if self.mount.is_active() {
                 return self.mount.kind() == 37;
@@ -21724,5 +21818,76 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    // W4-e7 DOC-SWEEP lane 23 — the Snapping Stone accessory trio
+    // (`Player.cs:1226-1232`, `:14494-14496`/`:14580-14587`, `:18476-18478`,
+    // `:24564`/`:28385-28410`, `:3391-3396`). WRITTEN NOT RUN (code-only).
+
+    /// The three grant rows: 6167 → accSnappingStone, 6178 → magmaStone +
+    /// accPyroclast, 6179 → accWickedArmlet + accArmletOfRuin.
+    #[test]
+    fn w4_e7_the_snapping_stone_trio_grants_its_flags() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.acc_snapping_stone && !p.acc_pyroclast && !p.acc_armlet_of_ruin);
+        // Snapping Stone 6167 (`:14494-14496`): the bare flag.
+        p.equipped[3] = 6167;
+        p.update(&w, PlayerInput::default());
+        assert!(p.acc_snapping_stone, "6167 grants accSnappingStone (:14495)");
+        assert!(!p.acc_pyroclast && !p.acc_armlet_of_ruin);
+        // Pyroclast 6178 (`:14580-14583`): magmaStone + accPyroclast.
+        p.equipped[3] = 6178;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magma_stone && p.acc_pyroclast, "6178 grants both (:14581-14582)");
+        assert!(!p.acc_snapping_stone, "the old flag clears (:18476)");
+        // Armlet of Ruin 6179 (`:14584-14587`): accWickedArmlet + accArmletOfRuin.
+        p.equipped[3] = 6179;
+        p.update(&w, PlayerInput::default());
+        assert!(p.acc_wicked_armlet && p.acc_armlet_of_ruin, "6179 grants both (:14585-14586)");
+        assert!(!p.acc_pyroclast, "the old flag clears (:18477)");
+    }
+
+    /// `ResetEffects` clears all three flags (`:18476-18478`) — taking the
+    /// accessory off drops them; the cooldown is NOT cleared (a countdown,
+    /// the `accSentryBackpackGrabCooldown` shape — `Player::update` never
+    /// touches it; the world-sim pass ticks it via `update_snapping_stone`).
+    #[test]
+    fn w4_e7_the_snapping_stone_flags_clear_but_the_cooldown_persists() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 6167;
+        p.update(&w, PlayerInput::default());
+        assert!(p.acc_snapping_stone);
+        p.acc_snapping_stone_cooldown = 200;
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.acc_snapping_stone, "the flag clears (:18476)");
+        // The cooldown is NOT reset by ResetEffects nor ticked by
+        // `Player::update` (the countdown rides the world-sim pass).
+        assert_eq!(p.acc_snapping_stone_cooldown, 200, "the countdown persists");
+    }
+
+    /// `Update_SnappingStone` (`:28385-28410`): the cooldown decrements one
+    /// per tick and stops at 0 (the `<= 0` early return); the light-up getter
+    /// (`:3391-3396`) is `cooldown == 0`.
+    #[test]
+    fn w4_e7_the_snapping_stone_cooldown_counts_down_to_the_light_up() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.acc_snapping_stone_cooldown = 3;
+        assert!(!p.acc_snapping_stone_light_up(), "cooling");
+        p.update_snapping_stone();
+        assert_eq!(p.acc_snapping_stone_cooldown, 2);
+        p.update_snapping_stone();
+        assert_eq!(p.acc_snapping_stone_cooldown, 1);
+        assert!(!p.acc_snapping_stone_light_up());
+        p.update_snapping_stone();
+        assert_eq!(p.acc_snapping_stone_cooldown, 0);
+        assert!(p.acc_snapping_stone_light_up(), "recharged (:3395)");
+        // The `<= 0` early return: a further tick never goes negative.
+        p.update_snapping_stone();
+        assert_eq!(p.acc_snapping_stone_cooldown, 0, "the early return (:28387)");
     }
 }

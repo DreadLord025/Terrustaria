@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -86,6 +86,8 @@ per `docs/superpowers` agreements).
 | 363 | W4-d31 aiStyle-83 wiring + RETIRE FINAL (the cultist-ritual family declaration: 76-83 axis census, the d10 437 activation contract discharged, 0-link guards, death-volley side channel, 526 owner re-pin; code-only; registry §9 rename 352→363) | `363-d31-style83-wiring-retire-final.md` | ✅ |
 | 348 | W4-d32 RETIRE/SEAL: the NPC aiStyle band 85-93 FINAL census + declaration (85/93 axis-claimed, 86-92 UNWIRED verbatim, the d40 kinds-rowed census + the G2 467→85 panic-hazard merge fix, the d30/d31/g65-Kill-309 keep-one receipts; registry-150 §8.7 d32-284→348, g52 keeps 284) | `348-band-85-93-retire.md` | ✅ SEALED |
 | 350 | W4-c7 SEAL: the critter-family FINAL census + bible (registry-number adjudicated — chain 283→350 per registry-150 §8.7 FROZEN table, the post-§8 283 self-pick contested, 283=f26-reservation; the style-65 keep-one receipts, the SIGHT-gate auto-cover, the d37 E8 roster receipts, the gold peer table; code-only) | `350-c7-critter-family-final.md` | ✅ SEALED |
+| 366 | THE ADDLIGHT-FAMILY BIBLE (W4-g18 SEAL): the git-log census (every S1-E-5 wave-4 lane at its pushed tip), the d54-bible reconcile (Dust 94/94 + proj-107 86-covered/21-absent-rand-gated + NPC 80 + Main 5), the c29 gems-NEVER-emit-light premise REFUTED (no tileLighted write / dust-43 sparkle / no scanner case / g18-negative-census-agrees), the e6-addlight-proj-2 compose mutual receipt, the family declaration; number 366 per registry-150 §9 UNIFIED FINAL row 366 (chain 304→338→341→344→360→366; g10-360 KEEPS first-add, g18 fourth claimant); 6 family-census witnesses WRITTEN NOT RUN | `366-addlight-family-bible.md` | ✅ SEAL |
+| 102 | DOC-SWEEP lane 23: the lights gaps (W4-e7: Snapping-Stone trio lights + global-flicker oscillators landed; wing-27 f3-owned, modern UpdateLightDecay cited; code-only) | `102-doc-sweep-lights.md` | 🟡 |
 
 ## Wave 4 - fish lane contracts (W4-c4, retire phase)
 | # | Module | File | Status |

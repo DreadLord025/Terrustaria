@@ -23567,6 +23567,526 @@ colours, the laser/hook arm colours, the negative-coordinate truncation and the
 even-side anchor invariant; `projectile.rs`'s `proj_light_spawn_tests` pin the
 spawn copy, the crystal-storm scale-driven rewrite across the fade gate, the
 dark WaterBolt and the stream-neutrality witness.
+### The projectile AI-arm lights, second wave (S1-E-5, W4-e6, 2026-11-20, code-only mode)
+
+`crates/tr-app/src/proj_ai_lights.rs::proj_ai_lights` ports the **second 40**
+of `Projectile.cs`'s 107 `Lighting.AddLight` call sites (sites 68-107 in line
+order, `:54173`…`:78556`) — the AI-arm lights OUTSIDE `ProjLight`
+(`:16153-16661`, the first wave's chain tail; the first 67 sites are W4-c19's
+slice). The feed is ONE loop in `app/frame/draw.rs` beside the `proj_light`
+feed, after the step, in `Main.projectile` slot order, into the **same**
+`EntityLights` pair. Like the `ProjLight` chain, an arm whose kind has no
+`proj_data` row is absent wholesale (no slot can carry it), and no ported arm
+draws `Main.rand` — the feed is pure, so its placement cannot move any stream.
+
+**Ported (20 sites / 23 lights):**
+
+* `AI_001`'s per-type arms: 436 BrainScramblerBolt (`:54173`,
+  `(int)Center/16`, (0.3, 1.1, 0.5)); 634/635 NebulaBlaze1/2 (`:54571`,
+  `AddLight(Center, rgb2)` — the per-kind head colours (0.7, 0.1, 0.5) /
+  (0.4, 0.6, 0.9), `:54470`/`:54481`); 459 ChargedBlasterOrb (`:54674`,
+  (0.4, 0.85, 0.9) — the `:54670-54673` box rewrite keeps the centre
+  invariant); 442 ElectrosphereMissile (`:54755`, (0.3, 0.45, 0.8), inside
+  `if (alpha == 0)` after the `localAI[1] >= 120` kill the sim already runs);
+  449 SaucerLaser (`:54788`, (0.7, 0.65, 0.3)); 438 RayGunnerLaser (`:54831`,
+  (0.4, 0.1, 0.2)); 350 Missile (`:55137`) + 325 FlamingWood (`:55171`), the
+  twin (0.9, 0.6, 0.2) arms; 819 BloodArrow (`:56421`, (0.3, 0.05, 0.05)).
+* `AI_026`'s foxsparks pair: 1094/1113 (`:58213`/`:58226`,
+  `AddLight(Center, 0.5, 0.3, 0.1)`, unconditional inside each type block).
+* `AI_062`'s StardustCell 613 (`:65120`, (0.2, 0.6, 0.7)).
+* `AI_075`'s LaserDrill 445 (`:66272`): the `localAI[0]/60` triangle-wave
+  `Vector3.Lerp((0,1,0.7),(0,0.7,1), 1-num12*2) * 0.5` colour (unclamped
+  Lerp), gated on `Distance(hand, Center) >= 5f` (`:66256`), `hand` = the
+  owner's `RotatedRelativePoint(MountedCenter)` (`:66135`; the feed resolves
+  `owner == 0` to the local player, the `ai_drill`/`map_layers` precedent).
+* `AI_130`'s FlameBurst tower pairs: 663 T1 (`:68124-68125`), 665 T2
+  (`:68172-68173`, ×1.2), 667 T3 (`:68224-68225`, ×1.5) — each appends the
+  `Center` light then the `Bottom + (0,-10)` light at (0.4, 0.2, 0.1)×mult.
+* `AI_138`'s ExplosiveTrap shared tail (`:69332`): 691/692/693 all light
+  `Center` (0.6, 0.5, 0.3).
+
+**The LaserDrill deviation (recorded).** The 445 arm is ported but **dark in
+the current port**, the WaterBolt dead-arm precedent (`proj_lights.rs`): the
+port's `ai_drill` stand-in pins the slot's centre to the hand every tick
+(`projectile.rs::ai_drill`), so the `>= 5f` distance gate reads 0, and the
+`localAI[0]++`/wrap-60 cycle (`:66251-66255`) is an AI-side writer that lands
+with the full `AI_075` 445 arm — until then the colour reads the stock 0. The
+C# pins the drill to the hand at `AI_075`'s TAIL (`:67329`), AFTER this light,
+so the vanilla gate reads the pre-pin (moved) centre and the light is live
+there. The `>= 30f` `PlotTileLine` flood half (`:66264-66271`) is the
+light-map write with no port — skipped, the 870 `FloodFillTile` precedent.
+
+**Absent (20 sites), exactly:**
+
+* The 18 unrowed kinds: 467 CultistBossFireBall (`:54262`), 468
+  CultistBossFireBallClone (`:54406`), 709 MonkStaffT3_AltShot (`:54714`),
+  440 LaserMachinegunLaser (`:54784`), 606 ScutlixLaser (`:54792`), 593
+  AncientDoomProjectile (`:54835`), 592 MartianWalkerLaser (`:54858`), 435
+  MartianTurretBolt (`:54932`), 682 DD2LightningBugZap (`:54968`), 684
+  DD2SquireSonicBoom (`:54992`), 585 ClothiersCurse (`:56126`, the colour
+  rides `NPCID.Sets.MagicAuraColor[54]` = (100, 4, 227)/255,
+  `NPCID.cs:10475`), 577 VortexLaser (`:56294`), 576 NebulaLaser (`:56298`),
+  312 JackOLantern (`:57185`), 324 CursedSapling (`:61228`), 595 Arkhalis
+  (`:66683`) + 735 Terragrim (`:66736`) (the `Center + velocity*3` lead
+  anchor), 707 MonkStaffT3 (`:69507`) + 708 MonkStaffT3_Alt (`:69885`) (the
+  OWNER-centre anchor, 708 behind `!player.frozen`). Each lands with its
+  kind's `proj_data` row.
+* The lightning-liquid electrification scan (`:78556`,
+  `SpawnLightningLiquidElectrificationParticles(int, int)`): the
+  `Main.rand.Next(4) == 0` gate (`:78549`) draws on the projectile stream and
+  the `ParticleOrchestrator` request has no port — absent wholesale (the
+  S1-E-5 RNG rule).
+
+**The anchor vocabulary.** `(int)Center.X / 16` (the 436/459/442/449/438/
+350/325/445 arms) truncates the centre coordinate BEFORE the divide
+(`XAnchor::CenterTruncated`); the `AddLight(Vector2, …)` overload
+(`Lighting.cs:140-143`, the 634/635/819/foxsparks/613/tower/trap arms)
+truncates the QUOTIENT (`XAnchor::Center`). Truncation commutes with division
+by a positive integer, so the two agree for every real coordinate —
+`the_two_anchor_forms_agree_for_every_position` pins that across a sweep.
+
+Tests (written, **not run** — code-only mode): 15 witnesses in
+`proj_ai_lights.rs` — the per-arm colours/anchors, the 442 alpha gate, the
+445 hand-distance gate + triangle-wave colour (0/30/60), the tower
+Centre+Bottom pair order + tier multipliers, the trap shared tail, the
+anchor-agreement sweep and the every-ported-kind-has-a-row invariant.
+
+### The projectile AI-arm lights, second wave — SEAL (S1-E-5, W4-e6, 2026-11-21, code-only mode)
+
+This is the e6-side FINAL record — the per-file authority the g18
+addlight-family bible (`origin/task/W4-g18-addlight-main-1` `d460345f4`,
+`docs/research/366-addlight-family-bible.md` §5) names for the proj second
+wave. Registry-150 §9.4 closed the number race ("new docs ≥369 require a
+Lead assignment; NO self-picks"), so this seal rides ANALYSIS, not a new
+research number; the cross-lane authorities are g18 research/366 (the
+family bible), c19 research/189 (the first-wave SEAL, `5400e0374`) and the
+f7 census freeze (`67110ccfb`, `tests/proj_addlight_census.rs`).
+
+**§1 — the git-log census (what landed on this branch).** Base `a725acb04`
+(main at claim), four port commits + the record + this seal:
+
+| Commit | Scope |
+| --- | --- |
+| `3ece05254` | sites 68-82 (`AI_001`'s 436/634/635/459/442/449/438 arms) |
+| `66d75adbd` | sites 83-97 (350/325/819, the foxsparks pair, 613, the 445 LaserDrill) |
+| `fceb64db3` | sites 98-107 (the FlameBurst tower pairs, the ExplosiveTrap tail) — SLICE COMPLETE |
+| `c8b072b69` | the record: this ANALYSIS section's first-wave text, ROADMAP S1-E-5, the anchors canary |
+| `79d259c14` | the seal round's four activations (below) |
+
+**§2 — the row-absence re-probe + the four activations (`79d259c14`).** The
+g18 bible §2 lists SIX of e6's 19 unrowed kinds NOW ROWED on pushed lanes.
+Re-derived here independently (whole-tip `data.rs` greps over every pushed
+`task/W4-*` ref, numeric AND named-const forms; each row re-read against
+its `SetDefaults` C# window):
+
+| Kind | Rowing lane (tip) | Row cite | C# defaults | e6 site | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| 435 MartianTurretBolt | c11 `9a9c2625e` | `data.rs:1924` | `:5056-5063` (10×10, style 1, hostile, ignoreWater) | `:54932` | **ACTIVATED** — `(int)Center/16`, (0.3, 0.8, 1.1), unconditional after the latch/fade/frame machine (the f20 slice-E overlay owns those writes). The c11 research/284 §2 four-owner table names this the ONE lights-family gap — discharged here |
+| 576 NebulaLaser | d11 `7820a9466` | `data.rs:2517` | `:6258-6269` (4×4, style 1, pen −1, alpha 255, extraUpdates 2, scale 1.2, life 600) | `:56298` | **ACTIVATED** — `AddLight(Center, 0.4, 0.2, 0.4)`, quotient truncation; the 5-dust trail below is the dust lane's |
+| 606 ScutlixLaser | d8 `c3edc9771` / c14 `ea25492cc` | `data.rs:1772` / `:1987` | `:6530-6541` (5×5, style 1, friendly, alpha 255, extraUpdates 2, life 600) | `:54792` | **ACTIVATED** — the shared 440/449/606 arm's 606 sub-if, `AddLight(Center, 0.7, 0.3, 0.3)`, QUOTIENT truncation (the d8 research/226 §5 contract verbatim; the 449's coordinate-first form stays distinct) |
+| 709 MonkStaffT3_AltShot | d15 `869ac7edd` | `data.rs:4081` | `:7508-7520` (12×12, style 1, melee, alpha 255, extraUpdates 1, scale 0.6) | `:54714` | **ACTIVATED** — `(int)Center/16`, (0.4, 0.85, 0.9), the 459 twin colour, unconditional |
+| 707 MonkStaffT3 | d14 `1b9c6b930` / d15 | `data.rs:2664` / `:4066` | `:7474-7490` (16×16, style 140, pen −1) | `:69507` | **ABSENT — owner-centre task seed**: the light rides `player.Center` (`Main.player[this.owner]`, AI_140), NOT the projectile centre; the feed carries no player slice beyond the 445 hand |
+| 708 MonkStaffT3_Alt | d15 | `data.rs:4072` | `:7491-7507` (24×24, style 142, pen −1) | `:69885` | **ABSENT — same seed**, behind `!player.frozen` (`:69829`); the frozen flag rides the owner snapshot when the seam lands |
+
+The four activations are new sub-ifs in the `proj_ai_lights` if-chain (e6's
+chain does NOT auto-activate like c19's row-gated collector — the g18 §4
+activation obligation). Each is an unconditional self-centre `AddLight`,
+RNG-free: the feed stays pure, its signature unchanged, no stream moves.
+The rows stay the lanes' to merge (keep-one — this branch copies NONE);
+the arms match `kind` directly and are inert until a slot can carry the
+kind (the spawn gate), live with no further edit once the row lands.
+
+**§3 — the accounting, reconciled at site granularity.** e6 FINAL:
+**24 ported sites / 27 light contributions, 16 absent** (13 still-unrowed
+kinds — 467/468/440/593/592/585/577/682/684/312/324/595/735 — plus the 2
+owner-centre seeds 707/708 and the `:78556` rand-gated electrification
+scan). The family headline **86 covered / 21 absent of 107** (the g18
+bible §2, the brief's target) is verified here at strict AddLight-LINE
+granularity:
+
+* **c19: 62 covered / 5 absent of 67.** 56 ported feed lines + 4 sim
+  lines (409/590/849/912) + 2 audit-landed (`:16655`/`:16659`) = 62;
+  absent = 465 (`:31998`), 731 (`:37821`), the phaseblade PAIR
+  (`:39020`/`:39021`, two lines), 756 (`:51492`) = 5. The `:34487` trio
+  line is COVERED (it fires for the rowed 612/953; the 978 third term is
+  unreachable — a style mismatch — but that is a kind-level note, not an
+  absent line).
+* **e6: 24 covered / 16 absent of 40** (above).
+* **62 + 24 = 86 covered; 5 + 16 = 21 absent; 86 + 21 = 107.** ✓
+
+The g18 §2 / c19 register HEADLINE figures use a register-entry
+convention that differs from line granularity by three offsets, which
+cancel in the total: (a) c19's "63 covered" counts the `:34487` trio as
+TWO sites (612/953) — one phantom line vs the 62 above; (b) the g18 "+6
+activations" includes 707/708, which stay ABSENT here pending the
+owner-centre seam (−2 covered, +2 absent vs a naive +6); (c) the
+phaseblade pair is ONE absent register entry but TWO absent lines (+1
+absent). Net: g18's 63+20+6 = 89 → 89 −1 (trio) −2 (707/708) = **86**;
+its 4+13+1 = 18 → 18 +2 (707/708) +1 (phaseblade) = **21**. The headline
+is correct; the 707/708 owner-centre seeds are the delta between "rowed"
+and "covered-at-runtime" — recorded here, not silent.
+
+**§4 — the compose receipts (all tips re-fetched at this seal).**
+
+* **c19 (`5400e0374`, research/189 SEALED) — DISJOINT, keep-both.** The
+  f7 freeze splits at `:54071`/`:54173`; zero shared kind arms. The merge
+  unions: `main.rs` (e6 `mod proj_ai_lights;` before `mod proj_lights;`,
+  c19 `mod proj_lights_a;` after — adjacent-line, alphabetical);
+  `app/frame/draw.rs` (BOTH feed loops after the ProjLight feed at the
+  same `@@ -569` seam — keep both, e6's first; the ONE EntityLights pair
+  max-merges, loop order is pixel-neutral); `anchors.txt` (one row each).
+  e6 touches NO `projectile.rs`/`world_sim/projectiles.rs`/`data.rs` —
+  c19's sim arms (`pending_ai_lights`/`drain_ai_lights`/
+  `set_mouse_text_color` + the typhoon/spore/whip machines) are
+  c19-exclusive. The `craft.rs` 340-line "deletion" in both branches'
+  `origin/main..` diffs is NOT a deletion — main's LATER S1-L-11g
+  addition (`03711f456`) absent from both fork trees; neither branch
+  touches craft.rs (true diffs verified empty). No keep-one owed there.
+* **g18 (`d460345f4`, research/366) — DISJOINT.** g18 is Main.cs batch 1
+  (the 332-chain distrust-verbatim audit + the f32 oracle
+  `tests/main_addlight_batch1.rs`, 5 witnesses; the port copy stays e8's
+  `tile_lights.rs::christmas_hook_chain_lights` — g18 ports nothing).
+  Main.cs's 5 sites (`:29016/29020/29024/29028/:29186`) are OUTSIDE
+  Projectile.cs's 107 — no kind/site overlap with e6. File sets share
+  only the doc ledgers (ANALYSIS/ROADMAP/anchors append-union). g19
+  (`9733c82a7`, the Main whole-file census freeze) likewise disjoint.
+  The g18 §4 e6-compose mutual receipt is confirmed from this side.
+* **d13 (`6850a19e5`, research/336 ex-243 PET-LIGHT FINAL) — the
+  67-site-PET census CONSUMED.** The seven aiStyle-124 pets
+  (650/882/888/895/896/898/957) contribute ZERO sites to the 107-family:
+  no `AddLight` anywhere in the arm (`:34970-35696` — re-grepped: 0 hits,
+  12 `PlotTileLine` casts), no `this.light` in any of the seven
+  `SetDefaults` rows (re-grepped: 0). Their light is the
+  `PlotTileLine`/`CastLightOpen` light-map WRITE layer (`:35008-35043`:
+  the 650 `(0.5,0.9,1)·2` self-20/owner-40 casts, the 895 `(1,0.6,1)·1.5`
+  + `!NotRetro` ×0.8 ladder, the 896 `(1,0.7,0.05)·1.5` same ladder;
+  882/888/898/957 cast NOTHING — dark in C# too). That is the SAME
+  standing light-map-write deferral as e6's 445 `>=30f` flood half
+  (`:66264-66271`) and c19's hooks' rope spreads — ONE task consumes all
+  the registers together (the g18 §5 deferral list). d13's 658 row
+  activated c19's site 28 at round 2; no e6 site rides a pet kind. The
+  d13 code-side overlap is the `world_sim/projectiles.rs` seam (its
+  kite/screen-width setters vs c19's mouse-text snapshot — adjacent-line
+  union, c19's drain first); e6 touches none of it.
+* **d54 (`041ffcd68`, research/131 + the 150 registry) — the bible
+  reconcile.** The 131 master's AddLight rows: Dust.cs **94/94 CLOSED**
+  (42 main FIRST-ladder + 52 g13 second-chain `a234107ac`, the `:2275`
+  customData light LIVE-in-C# per G5 `c5a0e646` — a cited
+  reconstruct-from-`d.color` gap, not an uncounted site). The proj-107
+  86/21 headline is the g18 §2 derivation this seal reconciles (§3).
+  The 150 registry §9.4 CLOSED the number race — this seal rides
+  ANALYSIS per the no-self-pick rule.
+
+**§5 — the witnesses.** 6 new seal-round witnesses in `proj_ai_lights.rs`
+(21 total, all WRITTEN NOT RUN — code-only mode, no compiler invoked):
+the 435 blue truncated-centre light, the 576 violet quotient light + the
+577-stays-dark twin, the 606 red quotient light + the 449 colour split +
+the 440-stays-dark, the 709/459 teal twin, the 707/708 owner-centre seeds
+stay dark, and the conditional row invariant for the four activated
+kinds (the c19 round-2 keep-one precedent — `proj_data` reads None here
+until the lanes' rows merge). The first-wave 15 witnesses stand unchanged.
+
+**SEAL**: no further census/arm/row work is owed on sites 68-107 by this
+lane. The 13 unrowed kinds + the 2 owner-centre seeds + the rand gate are
+task seeds for the row-owning / seam-owning lanes; the light-map-write
+layer is its own task. The family authorities: g18 research/366 (the
+bible), c19 research/189 (first wave), f7 `proj_addlight_census.rs` (the
+107 freeze), this section (second wave).
+### The projectile AI-arm lights, first wave (S1-E-5, W4-c19, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/proj_lights_a.rs::proj_lights_a` ports the **first 67** of
+`Projectile.cs`'s 107 `Lighting.AddLight` call sites (sites 1-67 in line order,
+`:16655`…`:54071`) — the AI-arm lights OUTSIDE `ProjLight`, the slice the W4-f7
+census freeze (`crates/tr-app/tests/proj_addlight_census.rs`, `67110ccf`) pins
+verbatim. Sites 68-107 are W4-e6's landed second wave (`proj_ai_lights.rs`);
+**67 + 40 = 107 — the Projectile.cs AddLight family is now CLOSED**. The feed is
+ONE loop in `app/frame/draw.rs` beside the `proj_light` feed, after the step, in
+`Main.projectile` slot order, into the **same** `EntityLights` pair. Like the
+`ProjLight` chain and the e6 wave, an arm whose kind has no `proj_data` row is
+absent wholesale (no slot can carry it), a light gated on a `Main.rand` draw is
+absent wholesale (the e6 RNG rule), and no ported arm draws `Main.rand` — the
+feed is pure, so its placement cannot move any stream.
+
+**Accounting (first wave): 23 ported sites / 32 lights, 2 audit-landed, 42
+absent.** Round 2 re-censused the 42 absent and activated 21 of them — see the
+round-2 note below the register (44 ported / 53 lights / 21 absent).
+
+* Sites 1-2 (`:16655`/`:16659`) are the `ProjLight` chain tail, already live in
+  `proj_lights.rs` (the 870 centre `AddLight` rides the common tail; the
+  `FloodFillTile` spread is the documented skip). RE-AUDITED against the census,
+  no new code.
+* **Ported (23 sites):** 346 OrnamentHostile's frame pair (`:24877`/`:24881`,
+  `frame = (int)ai[1]`); 732 ThunderSpearShot (`:27920`, (0.3, 0.6, 0.8)); 533
+  DeadlySphere's `(int)ai[0] % 3` warm/cool pair (`:29674`/`:29678`); 580
+  VortexLightning (`:32155`, (0.3, 0.45, 0.5)); 644 RainbowCrystalExplosion's
+  `hslToRgb(ai[0],1,0.5)·0.5` at `alpha == 0` (`:34265`); 604 TerrarianBeam
+  (`:34416`, (0.075, 0.3, 0.15)); 617 NebulaArcanum's `alpha < 150` gate
+  (`:34802`); 641 MoonlordTurret's `Opacity` scale (`:37070`); the gem bolts'
+  per-kind switch tail (`:38000` — 121 (0.9,0,0.9), 122 (0.9,0.9,0), 123
+  (0,0.1,1.3), 124 (0,1,0.1), 125 (1,0.1,0.1), 126 (1.3,1.3,1.3), 597 amber
+  (0.9,0.6,0.2), the `num24 = type−120` switch with amber remapped to 262); 623
+  StardustGuardian (`:44662`); 342 NorthPole (`:46037`); 856 SparkleGuitar's
+  `HotPink·0.3` (`:46588`); the Storm Tigers 833/834/835 (`:49283`/`:49287`/
+  `:49291`, gated `ai[0] != 4`); 500 CrimsonHeart (`:49464`); 446 AntiGravityHook's
+  mounted-centre light (`:52606`); the lunar hooks 646-649's mounted+centre pair
+  (`:52641`/`:52642`); the Celebration rockets 715-718's `GetCeleb2Color` palette
+  (`:52890`); 601 PortalGunBolt's `Center + velocity·3` lead anchor in the
+  `GetPortalColor` hue (`:54071`).
+* **Absent (42 sites), exactly:** the unrowed kinds — 502 Meowmere (`:24307`),
+  1092 book (`:25394`), 451 InfluxWaver (`:31212`), 464/465/466 cultist orbs
+  (`:31864`/`:31893`/`:31998`/`:32049`), 490 ritual (`:32384`), 492 lantern
+  (`:32410`), 518 coin portal (`:32962`), 575 nebula sphere (`:33580`), 590
+  truffle spore (`:34226`), 602 portal gate (`:34402`), the 612/953/978 trio
+  (`:34487`), 658 sandnado mark (`:36150`), 1115 glacier fang (`:37022`), 731
+  thunder staff (`:37821`), 1105 RC car (`:38458`), 1098 digtoise (`:38707`), the
+  phaseblades (`:39020`/`:39021`), 1091/1117 storm lightning (`:39783`), 1078
+  meteor ore (`:40038`), 567/568 spore traps (`:40046`), the AI_196 petals
+  (`:40507` — the rowed 248 is aiStyle 1 and never reaches AI_196; 1038/1116
+  unrowed), 1116 petalstorm (`:40513`), 614 cell shot (`:40892`), 636 daybreak
+  (`:40896`), 1020 drone (`:41031`), 973/972/984 sword beams (`:41775`/`:42181`/
+  `:42206`), 933/1100 fractals (`:43172`/`:43173`), 535 medusa head (`:44612`),
+  855 release lantern (`:47569`), 1127 saber stab (`:47649`), 756 sharp tears
+  (`:51492`); the mount light (`:17343` — the Chillet `MountData` rows 62-65 DO
+  exist in `mount.rs`, but the arm's `!hostile && !noEnchantments` gate reads two
+  slot fields the port does not carry, so it lands with the enchantment-visuals
+  fields); and the rand-gated 409 Typhoon (`:30378`, inside `Next(3)==0`),
+  849 ScytheWhip (`:47846`) and 912 CoolWhip (`:48011`).
+
+**The two state-driven deviations (recorded).** The Storm Tigers 833-835 and the
+601 PortalGunBolt are ported but read their spawn `ai[0]`: the tiger AI arm is
+deferred (the dispatch gates 833-835 out of `ai_freaking_pirates`) and the portal
+teleport AI is unported, so `ai[0]` keeps its spawn value. A default tiger spawn
+reads 0 (≠ 4) and the light is live; a spawn into the attack state reads 4 and
+stays dark. The 601 reads the `netMode == 0` portal hue by `ai[0] != 0`
+(`PortalHelper.cs:381-384`). Both are the e6 LaserDrill ported-but-dark precedent
+— the colour/gate are faithful to the slot state and land fully when their AI
+arms do. The hooks' `PlotTileLine` rope spread (`:52613`/`:52644`) is the
+light-map write with no port — skipped, the 870 `FloodFillTile` precedent.
+
+**The anchor vocabulary.** The `AddLight(Vector2, …)` overload
+(`Lighting.cs:140-143`) truncates the QUOTIENT (`(int)(v/16f)`,
+`XAnchor::Center`); the raw-vector anchors (the hooks' `mountedCenter`, the 601
+`Center + velocity·3` lead) use the same quotient truncation on the computed
+vector. The `(int)Center/16` form (the absent 409/451 arms) truncates first —
+kept distinct in the register, but the two agree for every real coordinate (the
+e6 anchor-agreement invariant). The 835 tiger's `Color.Lerp(OurFavoriteColor
+(255,231,69), White, 0.8)` uses XNA's per-byte truncation (`(byte)MathHelper.Lerp`
+→ (255,250,217)), the `color.rs::mul` precedent.
+
+Tests (written, **not run** — code-only mode): 18 witnesses in `proj_lights_a.rs`
+— the per-arm colours/anchors/gates (the ornament frame pair, the DeadlySphere
+`ai[0]%3`, the 644 hsl + alpha gate, the 617 alpha gate, the 641 Opacity scale,
+the gem per-kind tints, the tiger tiers + `ai[0]!=4` gate, the hooks'
+mounted-centre-only / mounted+centre pair order, the celeb2 palette, the 601 lead
+anchor + portal hue), the every-ported-kind-has-a-row invariant (32 kinds) and
+the every-unrowed-kind-contributes-nothing sweep (44 kinds).
+
+**Round 2 — the 42-absent re-census (2026-11-21, `1b85dfec` / `88ee3165`).** The
+four blockers re-censused against the pushed d-lanes; the accounting moves to
+**44 ported sites / 53 lights, 2 audit-landed, 21 absent** (30 witnesses).
+
+* **Blocker 1 — the gate fields (site 3, `:17343`).** The `SetDefaults` census:
+  `hostile = true` **179 kinds**, `noEnchantments` **4** (480/1121/1131/1132),
+  `noEnchantmentVisuals` **21** (the outer `:16700` gate). The only runtime
+  `hostile` writes are the two classless bomb-death flips (`:28247` / `:75798`),
+  which the `(melee || ranged)` gate already excludes — so the flags are exact
+  kind-derived facts. They land as `data.rs::set_defaults_hostile /
+  _no_enchantments / _no_enchantment_visuals`; `chillet_mount_light` feeds site 3
+  ahead of the AI arms (`:16702` order), the aiStyle-190/191 swords emitting the
+  two rotated swing rects (`:17299-17305`). The feed resolves the owner's active
+  mount type (`owner == 0` → the local player, the e6 single-player fold).
+* **Blocker 2 — the rand-gated 409/849/912 stay absent.** All three lights sit
+  INSIDE a `Main.rand` gate (409 `Next(3)==0` `:30358`, 849 `Next(9)!=0`
+  `:47829`, 912 `NextFloat()<num28/2` `:47983`); the e6 RNG rule does not allow
+  arming them. The 590 truffle spore (`:34226`) is the same case — its colour
+  rides `Next(28,42)`; the d12 row landed but the rand gate keeps it absent.
+* **Blocker 3 — ~20 kinds activated** (the d-lanes rowed them): d12
+  602/612/953/614/636, d13 658, d17 855/1127, d19 984/1126/933/1100, d20
+  1078/1038/1116/1020/985, d21 1115/1105/1098/1123/1091/1117. The collector
+  matches `p.kind` directly, so an arm is live as soon as its lane's row lets a
+  slot carry the kind; the row stays the lane's to merge (keep-one-dedupe — this
+  branch copies no rows; the row invariant is conditional, the d12 precedent).
+  **Two first-wave misattributions corrected:** site 45 (`:41775`) is the
+  `type == 985` arm (after the `type != 985` return `:41726`), NOT the 973; site
+  46 (`:42181`) the `type == 1126` arm, NOT the 972 (which has no light arm).
+  The 602 gate reads `GetPortalColor(owner, ai[1])` (ai[1], not ai[0]). The
+  1091's `moreLightning && noLightning` seed-green (`:39871`) folds to the teal
+  default — the feed carries no micro-seed flags (faithful for every classic
+  world; a deliberate fold).
+* **Blocker 4 — the tiger/601 deviations unchanged.** W4-d7 still gates 833-835
+  out of `ai_freaking_pirates`; no lane ported the 601 teleport AI (`ai001_b`
+  runs only the fade/frame). Both keep their spawn `ai[0]`.
+
+The 21 still-absent sites: 502 (`:24307`), 1092 (`:25394`), 451 (`:31212`),
+464/465/466 (`:31864`/`:31893`/`:31998`/`:32049`), 490 (`:32384`), 492
+(`:32410`), 518 (`:32962`), 575 (`:33580`), 978 (the `:34487` trio's third
+term), 731 (`:37821`), the phaseblades (`:39020`/`:39021`), 567/568 (`:40046`),
+535 (`:44612`), 756 (`:51492`) — all still unrowed; plus the rand-gated 409
+(`:30378`), 590 (`:34226`), 849 (`:47846`), 912 (`:48011`).
+
+**Round 3 — lights-final (2026-11-21, `0f8c1c077`…`fb58e88aa`).** The four
+rand-gated sites arm IN THE SIM — the `item_lights.rs` named-stream precedent,
+the e6 pure-feed rule's documented exception. The AI arms take their gate
+draws on the pass's `UpdateProjectiles` stream and queue `(tile x, tile y,
+rgb)` intents into `ProjectilePool::pending_ai_lights`; the world-sim pass
+drains them into the ONE `EntityLights` pair (`drain_ai_lights`, after the
+step, in slot + sub-step order). The draw-pass feed stays pure.
+
+* **409 Typhoon (`:30378`).** `ai_typhoon` takes the `localAI[1] > 10 &&
+  Next(3) == 0` gate (`:30358`); the taken branch runs the fade/spin/frame +
+  the light and censuses the ring's 6 × (`NextDouble`, `Next(3,8)`) draws
+  (`:30364`; the `NewDust` internal rolls go with the dust pool). The
+  unconditional-fade deviation is RETIRED — the fade/frame now advance only
+  on taken gates, the C#'s cadence. The DW-6.1 frame witness re-derived on an
+  always-0 gate twin.
+* **590 TruffleSpore (`:34226`).** New `ai_truffle_spore` (`:34194-34233`):
+  the 4-tick frame machine (the `ai[2]==1` grown strip reads 3-5), the
+  15/tick fade, the `Next(28,42)` flicker (`n = draw·0.005 +
+  (270−mouseTextColor)/500`, the 0.35-scaled (0.1, 0.3+n/2, 0.6+n) teal), the
+  `(0, sin(2π·ai[0]/180)·0.15)` hover with the 180 wrap (the C# casts the f32
+  phase to double for `Math.Sin`, back to f32, THEN ×0.15f).
+  `Main.mouseTextColor` rides a pool snapshot (`set_mouse_text_color`, the
+  `set_disco` precedent — the step reads what the last draw left). The 590
+  row is W4-d12's (keep-one-dedupe; the dispatch + seam witness conditional).
+* **849/912 whips (`:47846`/`:48011`).** New `whip_dust_lights` (the AI_165
+  dust-switch tail, after the swing state; a killed swing skips it): the
+  849's `t > 0.4 && Next(9) != 0` gate + the `Next(2)` BlackLightning particle
+  draw; the 912's `num28 > 0.1 && NextFloat() < num28/2` gate + the three
+  `Next(2)` dust-261 draws. The anchor: the curve tip's
+  `Utils.CenteredRectangle(p, 30).Center` (`Utils.cs:947-950` — truncate
+  `p−15` per axis, add 15 back) through the `AddLight(Vector2, Vector3)`
+  quotient truncation. The curve is `fill_whip_control_points` with the
+  slot's `ai[1]` spin seed — the dust cases call the DEFAULT overload
+  (`:47832`/`:47988`), not the collision sweep's forced 1f.
+  `whipRangeMultiplier` folds 1f (the arm carries no player; the golf-context
+  seam is the follow-up). **The inter-case stream deviation:** every OTHER
+  whip type's dust case (848/847/915/914/952/1034/1035/1028/913/1033/1029/
+  1030/1031/1032/1104) stays draw-skipped wholesale — their explicit rolls
+  belong to the dust pass's lane; until it lands, a mixed whip field's
+  stream interleaving differs from the C#'s (the same recorded shape as the
+  S1-E-21c sound-tail batch).
+* **The d9/d10/d11 activations (10 sites / 11 contributions).** d9 rowed
+  451/464/490/492, d10 518/535, d11 567/568/575 — their arms activate in
+  `proj_lights_a` (the rows stay the lanes' to merge). The state-driven
+  folds, each the tiger/601 precedent: the 451 reads its spawn alpha 255
+  (full-bright); the 464's spawn `ai[1]==0` reads the 6-point ring (the
+  `RotatedBy` doubles kept); the 490's `flag43` NPC-active/type gate folds to
+  the `ai[1] >= 0` slot-state half (the feed carries no NPC slice); the 535's
+  local-owner channel-Kill gate folds live; the 567/568 head reads
+  `(1−alpha/255)·scale` — dark at the alpha-255 spawn until the AI arm's
+  fade runs (the e6 ported-but-dark precedent). The 978 Volcano's d12 row is
+  aiStyle 189, NOT the `:34487` trio's 117 — the third term stays unreachable
+  (a style mismatch, not a missing row).
+
+**Round-3 accounting: 58 ported sites (54 feed + 4 sim) / 64 light
+contributions, 2 audit-landed, 7 absent** — 502 (`:24307`), 1092 (`:25394`),
+465/466 (`:31998`/`:32049`), 731 (`:37821`), the phaseblades
+(`:39020`/`:39021`), 756 (`:51492`), all still unrowed on every pushed lane.
+12 new witnesses written not run (42 total).
+
+**Round 4 — the 7-absent re-probe + SEAL (2026-11-21, `538369d63`).**
+Three of the seven are NOW ROWED on pushed lanes and their arms activate
+in `proj_lights_a` (the rows stay the lanes' to merge, keep-one): the
+**502 Meowmere** (site 4, `:24307` — W4-d75 `b59e3a874`/`d328fad8c`, the
+`:5732-5742` row; d75 records the disco AddLight as ITS skipped effect,
+this feed owns it), the **1092 LibrarianSkeletonBook** (site 7, `:25394`
+— W4-g5 `96f074959`, row + `ai_librarian_book` wired; the light precedes
+the ai[0] rand frame pick, unconditional), the **466
+CultistBossLightningOrbArc** (site 16, `:32049` — W4-d53 `c0dc7d37f` tip,
+row `6d09fe617`, `:5392-5403`; the 466 AI branch stays unported there —
+the light is unconditional after `frameCounter++`, reads none of the
+machine, the alpha-255 spawn does not gate it). The feed gains a `disco:
+[u8; 3]` parameter — the draw-pass `App::disco` snapshot the 502's
+`(0.5 + Disco/255)/2` tail reads (the 79 ProjLight `LightParams::disco`
+precedent; still pure, no stream moves). **The 4 still-absent are task
+seeds with row citations** (research/189's round-4 table): 465 (d75's
+`:31943` Item121 latch ARMED but the `:5382-5390` row rows-only owed),
+731 (`:7694-7704`), the 19-kind phaseblade set (`:10006-10058`; the
+colour census `Item.cs:49053-49168` — the 1101/1102 MultiLerp cycle needs
+the `UpdateMiscCounter` 300-wrap, unported; the 1074 lights NOTHING),
+756 (`:7793-7806`). **Round-4 accounting: 61 ported sites (57 feed + 4
+sim) / 67 light contributions, 2 audit-landed, 4 absent.** 3 new
+witnesses written not run (45 total). The compose receipts (e6 disjoint
+keep-one, d13's PET-light-67 zero-site census consumed, g18 disjoint) +
+the addlight-proj-family bible close the lane — research/189
+(ex-65, renumbered per registry-150) SEALED.
+### The Projectile.cs AddLight census close, third batch (S1-E-5, W4-f7, 2026-11-21, code-only mode)
+
+The directive's THIRD projectile batch (after W4-c19's claimed sites 1-67 and
+W4-e6's landed sites 68-107) closes the census: the unclaimed remainder is
+**EMPTY**. An independent full-file census of `Projectile.cs` (79 791 lines,
+read through the gitignored `decompiled/` junction, direct file path — no
+junction recursion) finds EXACTLY **107** `Lighting.AddLight` call sites, and
+every `AddLight` token in the file is one of them (107/107 — no bare,
+engine-direct or comment forms). The claim map:
+
+* **Sites 1-67 (`:16655`…`:54071`)** — W4-c19's slice (`task/W4-c19-addlight-projectiles`).
+  The in-flight probe found c19 clean at main `a725acb0` with nothing pushed
+  (branch-name claim only); its register covers the `ProjLight` chain
+  (`:16153-16661`, sites 1-2 — the 870 `FloodFillTile` arm `:16655` and the
+  integer-halved centre tail `:16659`, already landed on main in
+  `proj_lights.rs`) plus the AI-arm lights through `:54071`.
+* **Sites 68-107 (`:54173`…`:78556`)** — W4-e6's LANDED second wave
+  (`origin/task/W4-e6-addlight-proj-2` `c8b072b6`; port commits `3ece0525`
+  sites 68-82, `66d75adb` sites 83-97, `fceb64db` sites 98-107 "SLICE
+  COMPLETE"; record commit `c8b072b6`). 20 ported / 23 lights, 20 absent.
+
+67 + 40 = 107: nothing is left for a fourth batch (the W4-f9 `c2740784`
+Main.cs third-tile-batch precedent — remainder empty, docs + witness round).
+
+**The e6 verbatim audit (this round).** Every ported arm was re-read against
+its C# window (≤100-line windows, direct-path reads): the AI_001 arms
+(436 `:54173`, 634/635 rgb2 heads `:54470`/`:54481` → `:54571`, 459 `:54674`
+behind the centre-invariant box rewrite `:54670-54673`, 442 `:54755` inside
+`alpha == 0` after the `localAI[1] >= 120` kill `:54750`, 449 `:54788` in the
+440/449/606 shared arm, 438 `:54831`, the 350/325 twin orange `:55137`/
+`:55171` with the rand dust halves correctly skipped, 819 `:56421`), the
+foxsparks pair (`:58213`/`:58226`, unconditional inside each type block),
+StardustCell 613 (`:65120`), the LaserDrill 445 (`:66272` — hand anchor
+`:66135`, `localAI[0]` cycle `:66251-66255`, `>= 5f` gate `:66256`, triangle
+wave `:66258-66263`, the `>= 30f` `PlotTileLine` flood half `:66264-66271`
+skipped, the TAIL hand-pin `:67329` AFTER the light — the ported-but-dark
+deviation e6 recorded is confirmed), the tower Centre+Bottom pairs
+(`:68124-68125` ×1, `:68172-68173` ×1.2, `:68224-68225` ×1.5) and the trap
+shared tail (`:69332`, after the sentry-backpack reposition `:69330`). All
+verbatim — colours, anchor forms, gates, pair order. The `Entity.cs` halves
+were cross-checked: `Center` (`:54`) and `Bottom` (`:126`) use FLOAT halves
+(`(float)width / 2f`), so the feed's `w * 0.5` centre and `pos.y + h` bottom
+are exact (the `:16659` ProjLight tail's INTEGER `width / 2` is the distinct
+form `proj_lights.rs` already keeps).
+
+**The absent-kind claims re-derived mechanically.** All 19 unrowed kinds
+(467/468/709/440/606/593/592/435/682/684/585/577/576/312/324/595/735/707/708)
+resolve NO arm in `projectile/data.rs::proj_data` (`:1594`, the
+`#[deny(unreachable_patterns)]` match) — searched by numeric id AND named
+const. All 20 ported kinds resolve (442/819 through the numeric arms
+`data.rs:3148`/`:3275`; 436/438 through the `BRAIN_SCRAMBLER`/`MARTIAN_RAY`
+same-id alias arms). The `:78556` electrification scan stays absent wholesale
+(the `Main.rand.Next(4) == 0` gate `:78549` draws on the projectile stream;
+the `ParticleOrchestrator` request has no port).
+
+**The witness half (the W4-g19 `8005116f` precedent).**
+`crates/tr-app/tests/proj_addlight_census.rs` freezes the census against the
+decompilation: (1) the 107-site table — line numbers AND verbatim argument
+text, in line order (the site numbering both slices use); (2) the negative
+census — zero `_activeEngine`/`perFrameLights`/`LightingEngine`/`DynamicLight`
+forms, and the light-MAP delegate skip lane frozen by count
+(`FloodFillTile` 2 — `:16654` + `:70535`; `PlotTileLine` 44; `CastLight` 40 =
+31 `CastLightOpen` + 9 `CastLight`; `SpreadLight` 1 — these are the documented
+skip lanes, NOT zero, unlike Main.cs); (3) the slice-boundary pins (sites
+1/67/68/107 at `:16655`/`:54071`/`:54173`/`:78556`, the `ProjLight` method at
+`:16153` containing exactly sites 1-2); (4) the second wave's arm-structure
+pins (the gates/anchors/colours above, plus `Entity.cs:54`/`:126`); (5) the
+`Lighting.cs` funnel (`:135-137` Vector3 overload + `:140-143` float overload
+— both QUOTIENT truncation; `:157-163` the int form behind
+`!gamePaused && netMode != 2`). Reads the junction at test time, hard-fails
+when absent (the S1-L-12d precedent). Every pinned string mechanically
+diffed against the C# before commit: 107/107 table rows exact, 51/51
+structure pins exact, token counts 107/2/44/40/1/0/0/0/0 re-counted.
+
+5 witnesses WRITTEN NOT RUN — code-only mode, no cargo/rustc/tests/graphify
+invoked. No production code changed: the ports live on c19's (in-flight) and
+e6's (pushed) branches; this branch adds the freeze + records only.
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
@@ -23785,6 +24305,37 @@ Tests: `item_lights.rs` pins the one-draw-per-arm witness for all 20 flicker
 ids, the draw-free skips, the fragment products + negative-coordinate
 truncation, the essScale dimming and the 0.7/1.0 bounce; the integration
 witness above pins the slot order and stream isolation.
+
+### The shimmered-drop glow (W4-g20, 2026-11-20)
+
+The item family's **last RNG-free `AddLight` site**: `WorldItem.UpdateShimmer`'s
+`Lighting.AddLight(base.Center, (1f - shimmerTime) * 0.8f, …)`
+(`WorldItem.cs:482`) — a white glow only while `shimmered`, fading linearly as
+the 1.0 ramp dries back to 0 over 100 ticks (`:538-545`). Ported as
+`entity_lights.rs::shimmer_light`, fed from the frame pass **ahead of**
+`item_light` per drop (the C# calls `UpdateShimmer` at `:403`, before
+`UpdateItem_VisualEffects` at `:436`; list order is the frame feed's only
+ordering constraint). The anchor is the `AddLight(Vector2, …)` overload's
+per-axis quotient truncation (`Lighting.cs:140-143`, `XAnchor::Center`), NOT
+the torch arm's `(int)Center.X / 16`. RNG-free by the established skip
+convention: the `Main.rand.Next(30) == 0` dust branch ahead of the light line
+(`:459-481`, `NewDust` 309 + two `Next(-8, 5)` jitters + a `Next(6)` colour
+roll) stays skipped wholesale with the item shimmer dust pass, so the feed
+draws nothing.
+
+**Census (why this task lands one site, not ~25).** `Item.cs` contains **zero**
+`Lighting.AddLight` calls (its rarity rows are `ItemRarityColor` shop values;
+the glow is `glowMask` sprite data, drawn additively — no light-map source).
+`WorldItem.cs` has **69** call sites: 68 sit inside
+`UpdateItem_VisualEffects` (`:1204-1649`) and were landed by S1-E-5 (65-arm
+RNG-free table + the rand/essScale head; the 116 arm stays a draw-free skip,
+the 75/BossBag `% 12` dust halves with the dust pass). `:482` was the only
+remaining RNG-free site. The "rarity glow/shimmer" arms of the task seed map
+to `Main.DrawItem`'s `ItemSlot.GetItemLight`/glowmask draws
+(`Main.cs:38602-38788`) — sprite-side, no `AddLight`, out of this lane's scope.
+Tests (written NOT run, code-only): `entity_lights.rs::w4_g20_the_shimmered_glow_fades_with_the_ramp`
+(the gate, the 1.0→0 fade endpoints, the mid-ramp product) and
+`w4_g20_the_shimmered_glow_floors_negative_centres` (quotient truncation).
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
@@ -39627,9 +40178,10 @@ the stream while storing nothing).
   ichor stream 524, confetti 289, Volcano eruption) are OTHER workers'
   lanes; only the direct-swing debuffs land here.
 - 6178's `accPyroclast` half (`:14582`, the snapping-stone strike
-  `:44338-44341`) and 6185's `accPoisonBarb`/`pStone` halves
+  `:44338-44341`) landed in W4-e7 lane 23's strike half (`snapping_stone.rs`,
+  wired at this melee site); 6185's `accPoisonBarb`/`pStone` halves
   (`:14616-14617`) stay unported families — only the on-hit flag halves
-  land.
+  land here.
 - The C# evaluates the per-weapon switch for ANY item type — including
   tools swung as melee; the port matches on `held.kind` at the same
   site, so the Molten Pickaxe/Hamaxe rows fire on their mining-tool
@@ -42173,6 +42725,730 @@ Docs-only: every claim re-read against the cited C# windows
 `Tile.cs:240-247`) and the actual Rust (`npc.rs:6113-6115`/`:10716-10725`,
 `npc_ai_bat.rs` whole, `npc_ai_caster.rs` whole). No code touched, no
 cargo/rustc/tests invoked.
+## The Main.cs AddLight census, batch 1 (W4-g18, S1-E-5 wave 4, 2026-11-20, code-only)
+
+**Claim (pushed early per the lane rules).** `task/W4-g18-addlight-main-1`
+is Main batch 1 of 2; `task/W4-g19-addlight-main-2` is batch 2 in line
+order. The e8/f9 tile/ambient co-lanes were probed BEFORE work
+(2026-11-20, `git fetch --prune` + worktree reads):
+
+* Pushed branches: W4-f9 `c2740784` (the Main.cs census CLOSED empty,
+  third tile batch) and W4-c20 `9555e586` (the claim map: NPC.cs sites
+  1-40 c20, 41-80 e7, the Main.cs tile sites e8). No g18/g19/e8 branch
+  is pushed yet.
+* W4-e8 worktree: in-flight untracked `crates/tr-app/src/tile_lights.rs`
+  (445 lines) porting ALL FIVE Main.cs sites
+  (`christmas_hook_chain_lights` / `illuminant_hook_chain_lights`) plus
+  the TileDrawing mushroom flicker and the five
+  `DelegateMethods.CastLight*`/`SpreadLight` delegates.
+* W4-g19 worktree: in-flight untracked
+  `crates/tr-app/tests/main_addlight_census.rs` - the whole-file census
+  freeze (the five sites' line numbers + argument text), the negative
+  light-write-form census, the 332/488 arm-structure pins and the
+  `Lighting.cs` funnel/gate pins.
+* W4-f9 worktree: clean at `c2740784`; W4-e7: in-flight
+  `npc_lights_b.rs` (NPC second half, no Main.cs claim).
+
+**Independent census (re-derived here, not trusted from the siblings).**
+Full-file greps over `decompiled/Terraria/Main.cs`: exactly **five**
+`Lighting.AddLight` call sites; the bare `AddLight` token count is 5 (no
+comment/alternate spelling), `.AddLight(` is 5 (no
+`LegacyLighting.AddLight`/engine-direct write), and
+`PlotTileLine|CastLight|SpreadLight|DynamicLight|_activeEngine|
+perFrameLights|LightingEngine|tileLight[` all count 0 - the same verdict
+as f9's `c2740784`, reached independently. The verbatim register (colors
+and anchors kept as the C# literals):
+
+| # | Site | Arm | Colour (verbatim) | Anchor |
+| - | ---- | --- | ----------------- | ------ |
+| 1 | `Main.cs:29016` | `DrawProj` type-332 Christmas-hook chain, `num112 == 0` | `(0f, 0.2f, 0.2f)` | `(int)vector19.X / 16` (`:29012-29013`, truncate FIRST) |
+| 2 | `Main.cs:29020` | same walk, `num112 == 1` | `(0.1f, 0.2f, 0f)` | same |
+| 3 | `Main.cs:29024` | same walk, `num112 == 2` | `(0.2f, 0.1f, 0f)` | same |
+| 4 | `Main.cs:29028` | same walk, `num112 == 3` | `(0.2f, 0f, 0.2f)` | same |
+| 5 | `Main.cs:29186` | `DrawProj` type-488 Illuminant-hook chain, per stepped link | `(0.2f, 0f, 0.175f)` | `AddLight(Vector2, ...)` QUOTIENT `(int)(v / 16f)` (`Lighting.cs:140-143`) |
+
+**Batch split (line order).** Sites 1-4 (`:29016`-`:29028`, the 332
+chain's four rotating colour rows) are batch 1 - this lane's audit
+scope; site 5 (`:29186`, the 488 chain) is batch 2 (g19). g19's in-flight
+freeze test covers the WHOLE file - the merger keeps it as the single
+census pin; this lane adds no duplicate test or module (e8's
+`tile_lights.rs` stays the single port copy, f9's merge note).
+
+**Negative census (the "ambient" half).** Main.cs has NO update-side or
+ambient `AddLight`: tile ambience (torches/lava/glowing blocks) is
+scanner-seeded (`TileLightScanner`, ported in `tr-core/tile_light`), not
+entity-list fed; the laser/hook tile-cast delegates live in
+`DelegateMethods.cs`/`Utils.cs` (e8 scope), and the mushroom-tree flicker
+is `TileDrawing.cs`'s (also e8).
+
+**Verdict: the batch-1 remainder is EMPTY.** All four first-half sites
+are already ported by e8's in-flight `christmas_hook_chain_lights`, so
+this round is the claim + independent census + distrust-verbatim audit
+(below) - the f9 `c2740784` / S1-D-3-aistyle61 docs-only precedent.
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked;
+the siblings' witnesses stay written-not-run.**
+
+### The distrust-verbatim audit of the 332 chain (sites 1-4)
+
+Re-read against the C# window `Main.cs:28991-29045` + `Entity.cs:50-54`
++ `Lighting.cs:157-163`, statement by statement, against e8's
+in-flight `christmas_hook_chain_lights` (audited as-is, uncommitted):
+
+* **Init.** C# `:28994` builds `vector19` as
+  `position + width*0.5f / height*0.5f`; `Entity.Center` (`Entity.cs:53`)
+  is `position + width/2f` - the same IEEE product (`x*0.5 == x/2`
+  exactly for every f32), so e8's `center: Vec2` parameter fed
+  `proj.Center` is the exact anchor. The aim deltas `:28995-28996` and
+  the colour index `num112 = 0` (`:28993`) match.
+* **Exits.** `< 30f` (`:29002-29006`) then `float.IsNaN` (`:29007-29011`),
+  BOTH before the anchor/light, in that order; the C#
+  `flag21 = false; continue` maps to `break` exactly (the flag is only
+  read at the `while` head). e8: same order, same breaks. **Faithful.**
+* **Anchor.** `:29012-29013` `(int)vector19.X / 16` - truncate the
+  coordinate FIRST, then integer-divide. NOT the Vector2 overload's
+  quotient form (`Lighting.cs:142`) and NOT `>> 4`; the three agree for
+  non-negative coordinates but the source form is pinned (g19's
+  structure test freezes the line text). e8: `vector19.x as i32 / 16`.
+  **Faithful.**
+* **Colour rows.** Four SEPARATE `if`s (`:29014/29018/29022/29026`), not
+  else-if; literals verbatim `(0f,0.2f,0.2f)` / `(0.1f,0.2f,0f)` /
+  `(0.2f,0.1f,0f)` / `(0.2f,0f,0.2f)`; no torch-id indirection, no
+  scaling. e8: four separate `if`s, same literals. **Faithful.**
+* **Step.** `:29030-29036` - `num115 = 16f/num115`, scale both deltas,
+  add to `vector19`, re-aim from `mountedCenter`; the light is sampled
+  at the PRE-step position (the anchor precedes the step in source
+  order). e8: same statement order. **Faithful.**
+* **Wrap.** `:29039-29043` - `num112++` then `if (> 3) num112 = 0`, AFTER
+  the two chain sprite draws (`:29037-29038`, draw-only, dropped with
+  the chain-rendering drop e8 documents). e8: same. **Faithful.**
+* **RNG.** The walk draws nothing - the two `EntitySpriteDraw` calls are
+  draw-only; stream-neutral by construction.
+
+**Behavioural oracle (this lane's code contribution).**
+`crates/tr-app/tests/main_addlight_batch1.rs` - a self-contained
+statement-for-statement f32 mirror of the walk's light half (the
+reference, NOT a second port copy) pinned against hand-derived f32-exact
+fixtures: the straight 160 px drop (9 links, tiles 10..18, colours wrap
+0..3,0..3,0 - agrees with f9's hand-replay), the 150 px drop (8 links),
+the < 30 px dark hook, the negative-x truncate-first anchor (-165 ->
+-10, not -11), the NaN dark hook, the pre-step first light, and the
+(0,0)->(300,400) diagonal's 30-link tile sequence carrying the f32
+rounding at the near-boundary links (link 10 x=95.99999 -> tile 5, link
+15 y=192.00003 -> tile 12). `Math.Sqrt` computes in double then casts to
+float, which equals the correctly-rounded f32 sqrt, so the mirror's
+`f32::sqrt` is bit-exact with the C#. **Merger obligation:** replay e8's
+`christmas_hook_chain_lights` against the file's `ORACLE_FIXTURES`
+(same inputs, same `(tile_x, tile_y, [r,g,b])` sequence). 5 witnesses
+WRITTEN NOT RUN. g19's in-flight `main_addlight_census.rs` keeps the
+whole-file structural freeze - no duplicate census test here.
+
+### Verification
+
+Code-only: the census is independent full-file greps (site count, bare
+token count, `.AddLight(` count, seven negative-form counts - all
+re-derived, not copied from f9); the audit re-read the cited C# windows
+line by line; the oracle fixtures were derived by an exact-f32
+statement mirror (scratch computation, no compiler/test run). **No
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
+
+## The AddLight-family SEAL (W4-g18, S1-E-5 wave 4, 2026-11-21, code-only)
+
+The g18 lane's SEAL round: the batch-1 claim/audit/oracle above is
+unchanged; this section records the family-wide census + the four
+cross-lane receipts + the bible. The full record is
+`docs/research/366-addlight-family-bible.md` (number 366 per registry-150
+§9 UNIFIED FINAL row 366 — chain 304→338→341→344→360→366, the mid-task
+supersession chain; g10-360 KEEPS first-add, g18 the fourth 360 claimant.
+The seal-time pick 360 followed the then-current §8.7 "new docs take ≥360"
++ a fresh 362-tip ls-tree sweep — no docs ≥352, no 360-numbered research
+ref at that scan; §9 superseded it and assigned 366). The family-census
+witness `crates/tr-app/tests/addlight_family_census.rs` (6 tests, WRITTEN
+NOT RUN) freezes the per-file counts + the Lighting.cs funnel + the
+gems-NEVER-emit-light boundary (the g19/f7 freeze precedent).
+
+**The git-log census (what landed).** The S1-E-5 wave-4 AddLight lanes, at
+their pushed tips: c19 `5400e0374` (proj 1-67, round-4 SEAL **61 ported /
+67 contributions / 2 audit-landed / 4 absent**, 45 witnesses), e6
+`c8b072b69` (proj 68-107, **20 ported / 23 contributions / 20 absent**, 15),
+f7 `67110ccfb` (the 107-site freeze, 5), c20 `7f68a69d1` (NPC 1-40, all 40
+landed FED/TWIN/DEDUP, 27), e7 `c59d68bf6` (NPC 41-80: 34 ported +
+Horseman-67 audit + 6 cited; Player 46: 32 landed + 10 gap + 3
+Snapping-Stone = 45 covered, wing-27 cited; 17+18+7+3 witnesses), f8
+`8ce3395b8` (the 2 NPC indirect PlotTileLine casts, `npc_lights_c.rs`, 8),
+e8 `58606f3a4` (Main.cs 5 + TileDrawing 6 + the 5 CastLight*/SpreadLight
+delegates, `tile_lights.rs`, 11), f9 `c27407842` (Main remainder EMPTY),
+g18 `22d529c5c` (the 332-chain audit + oracle, 5), g19 `9733c82a7` (the
+Main 5 freeze, 5), g20 `b43297746` (WorldItem `:482` shimmer, 2), d50
+`e84e6bd76` (the dust chain physics), g13 `3fe509158` (the 52 second-chain
+lights WIRED, 23+1). The pre-wave base on main `a725acb04`:
+entity_lights/proj_lights/npc_lights/player_lights/item_lights/dust_lights.
+
+**The d54-bible reconcile (research/131, tip `1c462c4fe`).** Dust.cs
+**94/94** (G1 CLOSED g13 `a234107ac`; 42 FIRST-ladder main + 52
+second-chain g13; g13 research/308 §3 re-counts FRESH 94 exactly; the
+`:2275` customData-Color light LIVE in C# per d54 G5 `c5a0e646`, a cited
+reconstruct-from-`d.color` gap). **Projectile.cs 107 = 86 covered / 21
+absent (rand-gated)** at the merge-state: c19 round-4 63 covered (61+2) /
+4 absent + e6 20 ported / 20 absent + **6 of e6's 19 unrowed kinds NOW
+ROWED** on pushed lanes (435→c11 `data.rs:1924`, 576→d11 `:2517`,
+606→d8 `:1772`, 707→d14 `:2664`/d15 `:4066`, 708→d15 `:4072`, 709→d15
+`:4081`) = 86 covered; 21 absent = 4 c19 task-seeds (465/731/phaseblade/
+756) + 13 e6 still-unrowed (467/468/440/593/592/585/577/682/684/312/324/
+595/735) + 1 e6 `:78556` rand-gated. The c19 round-4 activations
+(502→d75, 1092→g5, 466→d53) are already in c19's 63, not double-counted.
+**The e6 activation obligation:** e6's `proj_ai_lights` is an if-chain over
+the 20 ported consts ONLY — the 6 now-rowed kinds need their sub-ifs ADDED
+at the merge (the d8-606 contract research/97 §5 is the template), the f7
+census "absent" assertions flip to "present". NPC.cs 80 (74 covered + 1
+audit + 6 cited; the 3 CastLights flicker arms `:92382/:92395/:92404` draw
+`Next(28,42)` unconditionally — cited until a sim feed). Main.cs 5 (e8
+ports, g18 audits, g19 freezes, f9 closes; NO ambient/update-side AddLight).
+
+**The c29 gems-NEVER-emit-light premise — REFUTED (re-confirmed).** The c29
+SEAL (`f0643602d`, research/260 Item 1 + the gem-family bible) refutes the
+"gem tiles 63-68 emit light" premise; re-derived independently here: (1) a
+whole-tree grep for `Main.tileLighted[63..68/178/566/211]` returns ZERO
+writes; (2) the gem sparkle is DUST-43 (`TileDrawing.cs:7479`
+`Dust.NewDust(..., 43, ..., 0.5f)` + `velocity *= 0`, the 178 style-colour
+match `:7453-7482`), the `tileShine[178]=500`/`[63..68]=900`/`[566]=900`
+table (Main.cs:7516/7523-7529) is a sparkle CADENCE not a light; (3)
+`TileLightScanner.ApplyTileLight`'s top-level `switch (tile.type)` (`:347`)
+has NO gem case (the case-63-68 hits are NESTED frame-index sub-switches —
+chandelier/lantern styles; the outer gate `if (Main.tileLighted[tile.type])`
+`:345` never admits gems); (4) the generated `TILE_LIGHTED` bitset
+(sets.rs) decodes false for every gem id, `EMISSIVE` rows 63-68/178/566 all
+`[0,0,0]`. **The g18 negative census AGREES** — Main.cs has no ambient
+AddLight (the batch-1 seven-form negative census), so the gem sparkle
+cannot be an entity-list light either. The gem "glow" is d60's
+`tile_draw_particles.rs` dust (UNWIRED pending the wiring wave) + the
+tileShine cadence — NEVER a light-map source.
+
+**The e6-addlight-proj-2 compose (mutual receipt).** c19's research/189
+SEAL already publishes the e6-disjoint + g18-disjoint verdicts; re-verified
+at the current tips (both fork `a725acb04`): site-disjoint by the f7 freeze
+split (`:54071`/`:54173`), ZERO shared kind arms; the merge hunks are
+keep-both unions (main.rs adjacent mod lines, draw.rs both feed loops after
+the ProjLight feed at `@@ -569` — e6's first, anchors one row each); e6
+touches NONE of projectile.rs/world_sim/data.rs (c19's sim arms are
+c19-exclusive). **The craft.rs 340-line "deletion" in both branches'
+`origin/main..` diffs is NOT a deletion** — it is main's LATER S1-L-11g
+addition (`03711f456`, the craft freeze guards) absent from both fork
+trees; the merge keeps main's copy, neither branch touches craft.rs (the
+true diffs `git diff a725acb04..<tip>` list no craft.rs). g18 × e6/c19 are
+file-disjoint except the three append-union doc ledgers; Main.cs's 5 sites
+are outside Projectile.cs's 107.
+
+**The addlight-family bible (SEAL declaration).** ONE family — the
+per-frame `EntityLights` list pair (≈ `LightingEngine._perFrameLights`),
+fed by the C# `Lighting.AddLight` sites through the `Lighting.cs:157-163`
+funnel (`!gamePaused && netMode != 2`), max-merged one frame late. The core
+family: Projectile 107 (c19/e6/f7), NPC 80+2 (c20/e7/f8), Dust 94
+(main/g13/d50), Player 46 (main/e7), WorldItem 69 (main/g20), Main 5 +
+TileDrawing 6 (e8/g18/g19/f9); Item/TileObject/Wiring/NetMessage/WorldGen
+EMPTY. The two feed rules (no-row absent wholesale; rand-gated absent from
+the pure feed, the c19-round-3 sim-arm exception). The standing
+light-map-WRITE deferral (the 870 FloodFillTile / hooks' PlotTileLine /
+d13 pet casts / Player delegate lane / LaserDrill flood half — ONE task).
+The peripheral files (Mount 14, WaterfallManager 11, Gore 4,
+DelegateMethods 5, the particle/LeashedEntities/helper files) are censused
+in research/366 §5, owned by their own lanes. The gems-NEVER-emit-light
+verdict is a FAMILY boundary (the scanner-seeded ambience is the
+`tr-core/tile_light` lane, not this family). **SEAL**: no further
+census/arm/row work owed on the Main.cs batch-1 sites by g18 (e8 keeps the
+single port copy); the per-file authorities are c19 research/189, e6
+ANALYSIS, f7 proj_addlight_census.rs, g13 research/308, c29 research/260,
+g19 main_addlight_census.rs. The four proj task-seeds belong to the
+row-owning lanes; the light-map-write layer is its own task.
+
+**Verification (code-only).** Every lane tip re-fetched; the accountings
+quoted from each lane's final record; the witness counts machine-counted
+(`#[test]` grep); the proj 86/21 derived from the final registers + the 6
+row-activations (each `git grep '<CONST> =>'` verified); the gems refutation
+re-derived from the C# + the generated tables; the e6 compose re-verified
+(the true diffs, the craft.rs S1-L-11g provenance); the registry number 366
+per §9 UNIFIED FINAL row 366 (chain 304→338→341→344→360→366; the seal-time
+360 pick followed §8.7 + a fresh 362-tip sweep, §9 superseded it). **No cargo/rustc/rustfmt/tests/dotnet/
+graphify invoked.** The 6 family-census witnesses + g18's 5 oracle tests
+are WRITTEN, NOT RUN.
+## The NPC lights, first half (W4-c20, S1-E-5 wave 4, 2026-11-20, code-only)
+
+**Claim map (probed in-flight before work, 2026-11-20).** NPC.cs carries
+exactly 80 `Lighting.AddLight` call sites (full-file grep). This lane
+(`task/W4-c20-addlight-npcs-tiles`) owns the **FIRST 40**
+(`:21307`-`:48641`); the SECOND 40 (`:49929`-`:92412`) are claimed by
+W4-e7's in-flight `npc_lights_b.rs` (its header names this branch as the
+first-half owner). The Main.cs tile sites (5: `:29016`/`:29020`/
+`:29024`/`:29028`/`:29186`) are ALL claimed by W4-e8's in-flight
+`tile_lights.rs` (W4-f9's census `c2740784`); the TileDrawing
+mushroom-flicker + CastLight delegates ride the same e8 module. W4-g18/g19
+probed clean; W4-c19/e6/g20 are the projectile/item families. No overlap.
+
+Port: `crates/tr-app/src/npc_lights_a.rs` (the first-half module; the
+landed `npc_lights.rs` keeps the aiStyle-8 533/else tail, deduped at the
+feed). Status: LANDED (code-only) — all 40 sites ported, the per-site
+table below. **Code-only mode: no cargo/rustc/rustfmt/tests/graphify
+invoked; witnesses written-not-run.**
+
+**Per-site port table (all 40 sites landed, commits b610c020 /
+69f310cb / 15168064 / the batch-4 commit on this branch).** Dispositions: **FED** =
+`npc_light_a` returns it and `app/frame/draw.rs` appends it in
+`Main.npc` slot order after the step (no arm draws `Main.rand`);
+**DEDUP** = already ported AND fed elsewhere, this module records it
+only; **TWIN** = verbatim pure fn + witnesses, dispatcher returns
+`None` until the kind/machine wave (the `npc_lights.rs` aiStyle-23
+precedent).
+
+| # | Site | Kind(s) | Disposition |
+|---|------|---------|-------------|
+| 1 | :21307 | 693 LibrarianSkeleton | TWIN `librarian_skeleton_light` (Remap² gate) |
+| 2 | :21360 | 533 DesertDjinn | DEDUP `npc_lights.rs::npc_light` (live) |
+| 3 | :21365 | else (24 FireImp) | DEDUP `npc_lights.rs::npc_light` (live) |
+| 4 | :21561 | 25 BurningSphere (else arm) | FED ×2 (the `:21517` 2-iteration dust loop appends twice; `npc_light_a_emits` carries the count — the list key hashes every entry) |
+| 5 | :23764 | 102 AnglerFish | TWIN `angler_fish_light` (direction·(width+8) ahead anchor) |
+| 6-8 | :24211/:24215/:24219 | 63/103/else (not 221/242) | TWIN `jellyfish_light` (the HEIGHT-half-on-X quirk kept; wet-shield num263=1.5) |
+| 9 | :24664 | 72 BlazingWheel | DEDUP `npc_ai_style21::blazing_wheel_light` (live) |
+| 10 | :24801 | 122 Gastropod | TWIN `gastropod_light` (CenterTruncated, netOffset bracket) |
+| 11 | :24862 | 169 IceElemental | TWIN `ice_elemental_light` (netOffset bracket) |
+| 12-14 | :25241/:25245/:25249 | 83/179/else (84) | TWIN `cursed_weapon_light` (the aiStyle-23 chain the npc_lights.rs docs park) |
+| 15 | :26403 | 115 Hungry | FED (wall-gone deactivation = hp 0, the feed's dead skip) |
+| 16/17 | :32781/:32785 | 344 Everscream / 325 MourningWood | FED `moon_boss_bottom_light` (Bottom+(0,-30), float halves) |
+| 18 | :33059 | 327 Pumpking | FED `pumpking_light` |
+| 19 | :33709 | 346 SantaNK1 | FED `santa_nk1_light` (InWorld+!SolidTile probe on `(int)>>4` tiles; the light itself quotient-truncates; shares `npc_ai_frost_boss_b::worldgen_solid_tile`) |
+| 20-22 | :34162/:34166/:34170 | 358/654/else fireflies | DEDUP-TWIN `npc_ai_style64.rs::Ai64Effects::light` (UNWIRED; feeds once at its wiring) |
+| 23 | :34258 | 484 EnchantedNightcrawler | TWIN `nightcrawler_light` (takes the ROLLED Next(90,111) factor — the draw rides the future aiStyle-66 machine on UpdateNPCs, the item_lights rand-head precedent) |
+| 24/25 | :34387/:34391 | 360/655 snails | DEDUP-TWIN `npc_ai_style67.rs::SnailEvents::light` (UNWIRED) |
+| 26 | :35092 | 384 ForceBubble | DEDUP the draw feed's small-kinds inline arm (live) |
+| 27/28 | :35167/:35175 | 387 MartianTurret | DEDUP-TWIN `npc_ai_style73.rs::Style73Outcome::light` (UNWIRED — the turret's update_kind_ai arm is `{}`; the fade factor rides the machine's ai[1] cadence) |
+| 29 | :35462 | 388 MartianDrone / 418 SolarCorite | FED `implosion_light` at ai[0]==3 (the C#'s 192-box re-centre keeps Center invariant; the death-tick light is the documented dead-skip) |
+| 30 | :36623 | 399 MartianProbe | FED `martian_probe_light` (SkyBlue·0.65 / state-2 Red·0.65; the state-0 dead-player gate folds the :36575 return) |
+| 31 | :36923 | 437 CultistTablet | TWIN `cultist_tablet_light` |
+| 32 | :40732 | 548 DD2EterniaCrystal | FED `eternia_crystal_light` (alpha==0 gate; the loss fade :40899 is ported) |
+| 33 | :40975 | 549 DD2LanePortal | FED `lane_portal_light` (alpha==0; neither side writes alpha) |
+| 34 | :43017 | 696 PalFoxsparks | TWIN `pal_foxsparks_light` |
+| 35 | :44904 | 661 EmpressButterfly | TWIN `empress_butterfly_light` (hslToRgb via tr_core's byte-quantised port, ×0.3+0.1) |
+| 36 | :45111 | 653 HellButterfly | TWIN `hell_butterfly_light` (CenterTruncated, netOffset bracket) |
+| 37 | :45217 | 657 QueenSlimeBoss | TWIN `queen_slime_light` |
+| 38 | :46941 | 636 HallowBoss | DEDUP-TWIN `npc_ai_empress.rs` (UNWIRED; `hallow_boss_light` pure twin for its wiring — One·Opacity) |
+| 39 | :47434 | 618 BloodNautilus | TWIN `blood_nautilus_light` (state-3 ai[1]<180 window, UNCLAMPED GetLerpValue pair, netOffset bracket) |
+| 40 | :48641 | 583/584/585 FairyCritters | TWIN `fairy_critter_light` (HotPink/LimeGreen/RoyalBlue ·0.7) |
+
+Deviations recorded: the FED feeds run draw-side after the step (the
+`npc_lights.rs` precedent — vanilla runs them inside `NPC.AI`; the
+one-frame-late `EntityLights` pair makes the placement pixel-exact and
+no FED arm draws RNG, so the streams are untouched). The death-tick
+lights (the implosion's `:35492-35498` kill-after-light, the probe's
+state-2 escape death) are skipped by the feed's `hp <= 0` gate — the
+shared NPC-feed dead-skip convention. The TWIN sites' lights are dark
+until their kind/machine waves land (the roster census above); their
+pure fns + witnesses pin the exact colours/anchors/gates for those
+waves. 27 witness tests written NOT run (code-only mode).
+## The NPC lights, second half (W4-e7, S1-E-5 wave 4, 2026-11-21, code-only)
+
+**Claim map (probed in-flight before work).** NPC.cs carries exactly 80
+`Lighting.AddLight` call sites (full-file grep). W4-c20's pushed claim
+(`9555e586`) owns the FIRST 40 (`:21307`-`:48641`, `npc_lights_a.rs`);
+this lane (`task/W4-e7-addlight-npc-2`) owns the SECOND 40
+(`:49929`-`:92412`). The in-flight `npc_lights_b.rs` draft (dirty=1) was
+continued, verified site-by-site against the C#, and landed in five
+~10-site commits. No overlap with c20 (first half) or e8/f9 (Main.cs
+tile sites).
+
+Port: `crates/tr-app/src/npc_lights_b.rs` (1014 lines), declared in
+`main.rs`, fed per live NPC in `app/frame/draw.rs` after the aiStyle-8
+tail (`npc_lights.rs`) and before the Horseman (W-10). One
+`EntityLights` pair, `Main.npc` slot order, draw-side. The feed runs
+`UpdateNPC`'s call order: CastLights (`:90320`) -> BuffApplyVFX
+(`:90378`) -> AI (`:90423`) -> UpdateTrails (`:90512`).
+
+**The 40 sites.** Ported: destroyer airborne 41, probe 42, town
+shimmer/magic/arrival/slime 44-48, Medusa 49-50, torch zombies 51-54,
+fighter tail 55-59, slime lantern/rainbow/golden/shimmer/lava 60/63-66,
+trail mode-4 68, buff-VFX 69-75, cast 79-80. Cited skips: Hungry II 116
+(43, no kind), ore/herb slime content (61/62, deferred init + NPC.color),
+the three CastLights flicker arms (76/77/78, `Next(28,42)` per tick).
+Already landed: Horseman (67, `npc_ai_unicorn_b::horseman_light`) -
+census-only, no double-feed.
+
+**Fixes vs the in-flight draft (all re-derived from the C#):**
+1. `cs_type` no longer maps `Hungry => 116`. The roster's `Hungry` is
+   TheHungry 115 (aiStyle 29, `data.rs:2326`; bestiary net_id 115;
+   `world_sim/npcs.rs:6017`). The 116 arm (`:52425-52428`) is a separate
+   30x32/80 HP/aiStyle-2 kind with no port kind - lighting it via the 115
+   roster would light the wrong NPC. Now a cited skip; the `Hungry`
+   fallback resolves to 115, which the `type == 116` gate never matches.
+2. `torch_zombie_light`'s neighbour liquid check now PASSES out of
+   world: `Framing.GetTileSafely` (`Framing.cs:426-438`) returns a fresh
+   `Tile` (liquid 0) there, not a failed read. The draft's `is_some_and`
+   wrongly darkened torches at the world edge.
+3. `town_shimmer_light` emits for EVERY reached state-25 tick, not only
+   `ai[1] >= 30`: the `AddLight` line (`:53232`) sits after the
+   `ai[2] > 0` countdown return (`:53206-53214`) but outside the
+   `>= 30` block; below 30 the `Utils.Remap` clamps to a zero amount
+   (the source still enters the C#'s list). The `ai[2] > 0` early-return
+   is now gated.
+4. The town magic/arrival aura arms carry the aiStyle-7 dispatch gate
+   (`NPC.cs:20812-20816`): `ai[0]` states are per-machine, so a non-town
+   machine's state 14/24 must never light.
+5. `can_display_buffs` justification corrected: the flag IS read at
+   `:91145` (the draft claimed "no other reader"). The Golem 245-248
+   clears (`:18010/18015/18020`) live inside `getGoodAdjustments`, gated
+   by `Main.getGoodWorld` (`:17843`); the port's machines run stock
+   (`get_good_world: false`), so the fold to TRUE is correct for the
+   shipped config. The gate is kept explicit as the FTW seam.
+
+**RNG / determinism.** Every ported `AddLight` line is RNG-free; the
+rand-bearing dust halves are skipped wholesale (the `npc_lights.rs`
+precedent), so the feed cannot move any `Main.rand` stream. The three
+CastLights flicker arms draw `Next(28,42)` unconditionally per tick and
+stay cited skips until a sim-side feed lands. netOffset is added only
+where the C# wraps it (Medusa, torch zombies, LavaSlime 59, BuffApplyVFX
+head); every other arm reads the raw position.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked;
+the 17 witness tests are WRITTEN, NOT RUN.**
+
+## The remaining-files AddLight census (W4-e7 close, S1-E-5, 2026-11-21, code-only)
+
+**Scope.** The AddLight family's file census was closed for NPC.cs (c20/e7/f8,
+80 sites), Projectile.cs (c19/e6/f7, 107 sites), Main.cs (e8/f9, 5 tile sites)
+and Item.cs/WorldItem.cs (g20, the item family). This round censuses the five
+files the dispatch named as REMAINING — `Player.cs`, `TileObject.cs`,
+`Wiring.cs`, `WorldGen.cs`, `NetMessage.cs` — against the landed feeds, ports
+the gaps, and closes the census (the W4-f9 `c2740784` precedent).
+
+**Full-file census (direct paths, no junction recursion).** Case-sensitive
+`Lighting.AddLight` grep plus the `PlotTileLine|CastLight|SpreadLight|
+FloodFillTile` delegate cross-check:
+
+| File | `AddLight` | light-delegate forms | verdict |
+| ---- | ---------- | -------------------- | ------- |
+| `TileObject.cs` | 0 | 0 | EMPTY |
+| `Wiring.cs` | 0 | 0 | EMPTY |
+| `NetMessage.cs` | 0 | 0 | EMPTY |
+| `WorldGen.cs` | 0 | 1 `PlotTileLine` (`:72966`) | EMPTY of lights — the one `PlotTileLine` uses `DelegateMethods.CheckStopForSolids` (a solid-probe walk, NOT a light delegate) |
+| `Player.cs` | 46 | 4 `CastLightOpen` PlotTileLine (`:12555/:12559/:14561/:14562`) + 1 `FloodFillTile` (`:50135`) | 32 landed + 10 ported here + 4 cited |
+
+The Player delegate lane is the **light-map-direct** family (the f7
+`proj_addlight_census.rs` skip lane): `CastLightOpen`/`SpreadLight` write the
+light map through `Utils.PlotTileLine`/`FloodFillTile`, not the `EntityLights`
+per-frame list. The yoraiz0r-eye trail (`:12555/:12559`) and the
+Magiluminescence accessory (`:14561/:14562`) are `CastLightOpen` walks; 4776's
+fairy-glowstick spread (`:50135`) is `FloodFillTile` — its `AddLight(pos2, rgb)`
+line (`:50136`) already lands in `player_lights.rs::held_item_lights`. None is
+an `EntityLights` site; all stay in the documented delegate skip lane.
+
+**The Player gap batch.** `player_lights.rs` (S1-E-5, 2026-11-18) landed 32 of
+the 46 sites and listed 14 as dropped ("each needs a mount/armor/stealth system
+the port does not carry yet"). Re-censusing those 14 against the CURRENT port:
+the mount roster (`mount.rs`, Rudolph 0 + the Chillet 62-65), the armor-slot
+registry resolution (`ItemDef.head_slot/body_slot/leg_slot`, the draw's
+`render/entities.rs:1616` convention), `melee_swing.rs`'s hitbox/placement, the
+wing-slot table (`Player::wing_slot`) and `Item.GetPhaseColor`'s inputs
+(`ItemDef.projectile` + `misc_counter`) have ALL since landed. **10 of the 14
+are now unblocked** and ported verbatim in `crates/tr-app/src/player_lights_b.rs`
+(740 lines), declared in `main.rs`, fed in `app/frame/draw.rs` after the
+held-light family into the ONE `EntityLights` pair:
+
+| Site | Arm | Colour | Anchor / gate |
+| ---- | --- | ------ | ------------- |
+| `:24495-24497` | Rudolph's three-tile trail (`Update`, mount 0) | `(0.5, 0.2, 0.05)` ×3 | int-division centre `num`, `num+dir`, `num+2dir`; live mounted height (62) |
+| `:31279` | armor HEAD light (`UpdateArmorLights`) | head triplet ×(1+0.5/match) | `(w/2+8dir, 2)` spun by fullRotation |
+| `:31297` | armor BODY light | body triplet ×bonus | `(w/2+8, h/2)` spun |
+| `:31315` | armor LEGS light | legs triplet ×bonus | `(w/2+8dir, h*0.75)` spun |
+| `:21354` | Chillet dash light (`DashMovement` dash-6) | Ignis 63/65 `(0.6,0.3,0.1)` else `(0.5,0.1,0.6)` | `base.Center`, quotient-truncating |
+| `:29547` | Kazzymodus wing (`WingFrame` wings 28) | `(0.3, 0.1, 0.4)` | `base.Bottom`, airborne + ShouldDrawWingsThatAreAlwaysAnimated |
+| `:44916` | phase-blade held light (`ItemCheck_EmitUseVisuals`) | `GetPhaseColor(shoot)*0.5f` bytes | `(itemLocation.X+6+vx, itemLocation.Y-14)` |
+| `:45032` | Chillet melee-swing light (same fn tail) | dash colour ×0.5 (Vector3 float) | `itemRectangle.Center` (melee_hitbox) |
+
+(10 sites: the Rudolph trail is 3 `AddLight` lines, the armor block 3, the
+other four arms 1 each.)
+
+**Kept C# quirks (re-derived from the source windows):**
+1. `UpdateArmorLights` body case 190 (`:31226-31230`) and legs case 130
+   (`:31257-31261`) write the HEAD triplet (`num`/`num2`/`num3`), NOT their own
+   — the Stardust breastplate/leggings light the head colour. Both kept.
+2. The +0.5 match bonus is per-triplet-equality (`num10 += 0.5` for body match
+   AND legs match, `:31266-31273`), so a full matching set lights ×2.
+3. The phase-blade `Color * 0.5f` is the truncating BYTE operator (25→12,
+   127→63, 255→127), then `(float)(int)R / 255f`; the Chillet swing's
+   `Vector3 * 0.5f` is FLOAT (0.5→0.25), NOT byte — the two halves differ.
+4. The rainbow 1101/1102 `GetPhaseColor` arm rides `Utils.MultiLerp`
+   (`Utils.cs:292-303`) over the 9-entry palette at `miscCounterNormalized`;
+   the port's `misc_counter` wraps without the C# 300 reset, so `% 300`
+   recovers the C# value (both tick once per update).
+5. The swing `itemLocation`'s `mountOffset` IS carried
+   (`HeightOffsetHitboxCenter` = `mount.PlayerOffsetHitbox`, `:42846` →
+   `:3253-3267`) — the Chillet swing light runs mounted. This is distinct from
+   the held-light family's `ApplyItemPositionOffsetFromMount` `+ pos` (not
+   present on these two sites).
+
+**Deliberate folds:** `vortexStealthActive` (`:31151`) has no port field —
+folds false (the Vortex stealth toggle is unported), so the armor lights are
+never suppressed. `isDisplayDollOrInanimate` folds false. `wings`/`wingsLogic`
+are the SAME port field (`player.rs:5156-5161`), so `WingFrame`'s
+`flag = wingsLogic != wings` (`:29470`) folds false and the wing-28 `!flag`
+gate is always open; the merman `wings = 0` clear (`:25581`) is an unported
+swim-visual sibling. `noMelee`/`noUseGraphic` have no `ItemDef` fields — the
+phase-blade gate reduces to the 18-kind list (all 18 verified
+`noMelee = noUseGraphic = false` per-case in `Item.cs`) and the Chillet swing
+gate reads the `melee` class flag + useStyle 1. `gravDir` is 1.
+`should_float_in_water` widened `pub(crate)` for the wing gate.
+
+**What stays dropped (the other 4 of the 14):** the wing-27 Shroomite light
+(`:36026`, `0.4f * stealth` — the port's `stealth` has NO producer, it is only
+ever set in a knockback witness `player.rs:20160`) and the Snapping Stone trio
+(`:24575-24583`, gated on `accSnappingStoneLightUp` = `cooldown == 0` with
+`accSnappingStone`/`accPyroclast`/`accArmletOfRuin` — none of those flags, the
+360-tick cooldown setter `Projectile.cs:14316`, nor
+`TryMakingSnappingStoneStrike` `:14283` is ported). The light pets are
+Projectile.AI sites (projectile family); NightOwl sets `nightVision` only.
+
+**RNG argument.** No ported arm draws `Main.rand`: the Chillet dash's 8-dust
+loop (`:21355-21371`), the phase-blade region's dust branches and the
+use-visual dust are all skipped wholesale (the `player_lights.rs` precedent),
+so the UpdatePlayers stream is untouched. The feed collects after the fixed
+step like the item/NPC/player feeds; the `EntityLights` max-merge is
+commutative, so the intra-family order only documents the C# layout.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the
+14 witness tests in `player_lights_b.rs` are WRITTEN, NOT RUN.** The first
+build after the merge must run `cargo test -p tr-app player_lights_b` plus the
+catalog command.
+
+## DOC-SWEEP lane 23: the lights gaps (W4-e7, 2026-11-21, code-only)
+
+The four cited gaps from the census close above, re-probed against the
+in-flight branch claims (research/102). Two landed here, two stay cited
+(one owned by an unmerged branch, one a determinism-affecting deferred port).
+
+**The Snapping Stone trio — LANDED (`5ae32127`).** The three ready lights
+(`Player.cs:24571-24585`) now port: `accSnappingStone` 6167 / `accPyroclast`
+6178 / `accArmletOfRuin` 6179 grants (`ApplyEquipFunctional`
+`:14494-14496`/`:14580-14587`), `ResetEffects` clears (`:18476-18478`), the
+shared `accSnappingStoneCooldown` countdown (`Update_SnappingStone`
+`:28385-28410`, wired at the `:24564` world-sim position before
+`Update_AmmoCycler`), the light-up getter (`:3391-3396` = `cooldown == 0`),
+and `snapping_stone_lights` in the ONE `EntityLights` batch (10 → 13 of the
+14). The strike machine (`TryMakingSnappingStoneStrike`,
+`Projectile.cs:14283-14395`, the 360-tick setter `:14316`) LANDED in the strike
+half (`snapping_stone.rs` + the 1121/1131/1132 `proj_data` rows + the
+melee/PVE/recharge wiring, research/102 §1): the cooldown now arms to 360 on a
+strike, so the lights dim while cooling and relight at the recharge — the C#
+behaviour for a struck accessory (the never-struck case still lights whenever
+worn). The recharge cue at the cooldown's zero crossing (`:28394-28408`,
+Item30/Item20/Item28 at `MountedCenter`) fires at the world-sim countdown site
+(`snapping_stone_recharge` replays the burst's draws + returns the cue). The
+particle VISUALS are the cite-skip WITH draws kept (the `prefix.rs` convention,
+the per-arm census in research/102 §1); the strike sounds queue on the pool and
+drain on the hitting lane's stream (the S1-E-21c queue→drain convention — the
+case-2 sound draws defer to the drain, the dust draws stay inline). 7 lantern
+witnesses + 7 strike-half witnesses WRITTEN NOT RUN.
+
+**wing-27 Shroomite light — cited skip (f3 owns the producer).** The producer
+(`update_stealth`, `Player.cs:25733-25899`, `stealth` default 1f, the Shroomite
+set grant `ArmorSetBonuses.cs:370-373`/`:392-394`) LANDED on the in-flight
+`task/W4-f3-dust-player-3` branch but is NOT merged here (verified
+`git merge-base --is-ancestor` exit 1). On this base `stealth` has no producer,
+so the light would be a constant `0.4f` — wrong. Wiring recipe once f3 merges:
+`shroomite_wing_light(p)` gated `wings_logic == 27 && has_wings` (the port's
+`wings`/`wingsLogic` are one field, so `wingsLogic == wings` folds true),
+`0.4 * stealth` at the quotient-truncated centre, rgb `[n, n*0.9, n*0.2]` —
+the `kazzymodus_wing_light` shape. NOT stacked on the unmerged branch.
+
+**The global-flicker oscillators — LANDED (`999b292af`).** `masterColor`
+(`DoUpdate_AnimateCursorColors`, `Main.cs:18225-18235`, ±0.05) and
+`martianLight` (`DoUpdate_AnimateTileGlows`, `:18251-18261`, ±0.015) ride a
+shared `bounce_oscillator` helper (the `demon_torch` precedent), init 1f/dir 1
+(`:66831-66834`), RNG-free. The per-tile torch flicker itself is landed
+(d56/e8, `scanner.rs::torch_lights`); these are the global state half. The
+readers stay cited: `martianLight` → `TileDrawing.cs:498`'s `_martianGlow`
+(fed 0 until the glow pass + Martian event), `masterColor` → the rarity -13
+master text colour (`Main.cs:20249`/`:20562`). 3 witnesses WRITTEN NOT RUN.
+
+**The modern `UpdateLightDecay` table — cited (deferred).** The new engine's
+per-medium decay (`LightingEngine.cs:141-206`) varies water decay per
+`Main.waterStyle` (13 arms) and applies nightVision ×1.03 / blind ×0.95 /
+blackout+headcovered ×0.85 + the `SceneState.airLightDecay`/`solidLightDecay`
+factors; the port hardcodes style-0 water (`blur.rs:36`) and drops the buff/
+SceneState terms (the `scene.rs:1520-1521` fields have no blur consumer). The
+legacy engine's equivalent IS ported (`legacy.rs:1004-1048`); the WoF `gross`
+block is d65's (S1-E-19d), the modern mask residuals are d66's. The fix adds
+fields to `LightParams`/`LightKey` and changes the cached light output — a
+determinism-affecting change to the frozen G6 path needing a byte-equality
+A/B, in `blur.rs`/`mod.rs` which d66 is actively editing. Deferred to the
+10-lighting.md "[M] Water-style decay + buff/debuff decay" seed (research/102
+§4). The water jitter (S1-A-6) and fixed-18 padding (S1-G-10) are already
+exact — 10-lighting.md deviations 4/5 are stale.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the
+10 new witnesses (7 Snapping Stone + 3 oscillator) are WRITTEN, NOT RUN.**
+
+## The tile-draw light family (W4-e8, second tile batch, 2026-11-20, code-only)
+
+`crates/tr-app/src/tile_lights.rs` ports the tile-anchored draw-side
+`Lighting.AddLight` sources that the item/NPC/proj/dust/player families
+(S1-E-5) left: **all five Main.cs sites** (the file's complete census, f9
+`c2740784` + g18's oracle + g19's freeze concur), the TileDrawing
+mushroom-tree flicker and the five `DelegateMethods` tile-cast delegates
+the `Utils.PlotTileLine` laser/hook lights ride.
+
+**The five Main.cs sites** (verified line-for-line against
+`Main.cs:28990-29199` + `Lighting.cs:135-163`):
+* `christmas_hook_chain_lights` - the type-332 walk (`:28993-29044`):
+  centre init, the `< 30f` / NaN exits BEFORE the light, the
+  truncate-then-divide anchor `(int)vector19.X / 16` (`:29012-29013`,
+  NOT the Vector2 quotient form), the four colour rows in source order
+  (`:29016/29020/29024/29028`), the `16f / num115` step + mounted-centre
+  re-aim, the `num112` wrap after 3; the light samples the PRE-step link.
+* `illuminant_hook_chain_lights` - the type-488 arm of the shared chain
+  walk (`:29046-29199`): `num116 = Chains[488-486].Height`, NO `num117`
+  offset (the switch `:29097-29111` lists 383/446/489/487 only) and no
+  383-style bend, the NaN double-gates (`:29123-29130`), the
+  `Length() < num116 + 1f` exit checked BEFORE the step, normalize - step
+  - re-aim, the light at the STEPPED `center2` via the Vector2 quotient
+  overload (`Lighting.cs:140-143`). `normalize_or_zero` matches XNA
+  `Normalize` (a zero aim cannot reach the step: the length gate exits).
+
+**The mushroom flicker** (`TileDrawing.cs:8122-8134` top /
+`:8167-8179` frameX-44 / `:8215-8227` frameX-66 - three IDENTICAL arms,
+one port): `treeStyle == 14` (the glowing-mushroom ground,
+`WorldGen.cs:62924`) draws ONE `_rand.Next(28, 42)` then
+`num = draw * 0.005f + (270 - Main.mouseTextColor) / 1000f`; unpainted
+`(0.1, 0.2 + num/2, 0.7 + num)`, painted `WorldGen.paintColor` bytes
+`/ 255f` (the `tile_light::paint_color` table). **RNG rule:** `_rand`
+is the DRAW-pass foliage stream (the `tiles.rs:332` pinned per-frame
+`FastRandom`), not `Main.rand` - no fixed-step stream moves;
+non-mushroom markers consume nothing (the draw sits inside the style gate).
+The draw happens even for painted tiles (the C# computes `num` before
+the paint branch) - pinned by the twin-stream witness.
+
+**The five casts** (`DelegateMethods.cs:712-816`, statics `v3_1`/
+`v2_1`/`f_1` at `:417-421` carried as the explicit `CastLightEnv`):
+* `cast_light` `:712-724` - bounds/null gate then UNCONDITIONAL light
+  (solids light too).
+* `cast_light_open` `:726-741` - the open-test
+  (`!active() || inActive() || tileSolidTop || !tileSolid`) gates the
+  LIGHT, not the return: in bounds always true.
+* `cast_light_open_stop_for_solids` `:781-799` - open lights + true,
+  solid false (the walk stops); the dead `new Vector2(x, y)` (`:794`)
+  dropped.
+* `cast_light_open_stop_scale` `:761-779` - the open-stop cast scaled
+  by `MathHelper.Lerp(0.65f, 1f, Distance / f_1)`: **unclamped** (past the
+  range the scale exceeds 1), f32 op order `0.65 + (1 - 0.65) * t`.
+* `spread_light_open_stop` `:801-816` - THREE kept C# quirks: NO bounds
+  check (an out-of-array tile within the radius is `tile == null` ->
+  lit), the condition's `tile.active()` term is POSITIVE (an active solid
+  stone LIGHTS, unlike every CastLightOpen* arm), and a plain absent
+  solid-kind tile is the one in-bounds false case.
+
+**Anchors:** `vector_tile` = the `Lighting.AddLight(Vector2, ...)`
+quotient truncation `(int)(v / 16f)` (`Lighting.cs:140-143`);
+`shift_tile` = `Utils.ToTileCoordinates`' `(int)v >> 4`
+(`Utils.cs:1807-1810`, arithmetic shift = floor below zero). The two
+differ below zero - pinned by the anchor witness.
+
+**Deliberate unwired scope (code-only mode):** the module is pure with
+`#![allow(dead_code)]` (the npc_ai_* precedent). The chain lights ride
+the grapple-chain DRAW, which is unported (`grapple.rs` documents the
+chain-rendering drop) - the light halves take the walk inputs (centre,
+mounted centre, sheet height) as parameters. The flicker rides
+`foliage.rs`'s leaf pass wiring (the pinned `_rand` stream is already
+there); the casts ride the laser/hook `Utils.PlotTileLine` wiring wave.
+No `EntityLights` feed is added here - the wiring wave connects the
+outputs to the ONE list pair like every other family.
+
+### Verification
+
+Code-only: the port was re-read line-for-line against the cited C#
+windows (`Main.cs:28985-29199`, `TileDrawing.cs:8115-8234`,
+`DelegateMethods.cs:58-87`/`:412-421`/`:712-822`,
+`Lighting.cs:133-164`, `Utils.cs:1805-1812`, `WorldGen.cs:62920-62927`)
+and the tr-core API surface checked by read/grep (`FastRandom::new`/
+`next_range`, `paint_color`, `World::tile`/`tile_mut`/`width`/
+`height`, `Tile::active`/`inactive`/`kind`, `TILE_SOLID`/
+`TILE_SOLID_TOP.has`). 11 witness tests (6 pre-existing walk/flicker/
+anchor + 5 new cast witnesses) are WRITTEN, NOT RUN - **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The cast witnesses pin
+their fixture kinds against the generated tables so a regen that moves a
+membership fails loudly. The merger keeps THIS tile_lights.rs as the
+single port copy of the five Main.cs sites (f9/g18/g19 census+oracle+
+freeze landed docs-only).
+## The NPC lights, third batch (W4-f8, S1-E-5 wave 4, 2026-11-21, code-only)
+
+**Claim map (probed in-flight before work, 2026-11-20/21).** NPC.cs carries
+exactly 80 DIRECT `Lighting.AddLight` call sites (full-file grep,
+case-insensitive `addlight` cross-check: same 80). W4-c20's pushed claim
+(`9555e586`) owns the FIRST 40 (`:21307`-`:48641`, `npc_lights_a.rs`);
+W4-e7's in-flight untracked `npc_lights_b.rs` owns the SECOND 40
+(`:49929`-`:92412`) - its header table was read site-by-site. W4-e8's
+in-flight `tile_lights.rs` owns the `DelegateMethods.CastLight*` delegates
+and the Main.cs/TileDrawing tile sites (f9's census `c2740784`); its header
+explicitly leaves the NPC update-side call sites to the NPC modules.
+g18/g19 are Main.cs batches (clean, nothing NPC-side); c19/e6/f7 are the
+projectile family; g20 the item family. No overlap.
+
+**The unclaimed remainder: the two INDIRECT light writes.** NPC.cs's only
+other light-bearing forms are `Utils.PlotTileLine(base.Top, base.Bottom,
+base.width, DelegateMethods.CastLightOpen)` at `:63543`
+(`AI_107_ImprovedWalkers`' case 566/567 head, the DD2 etherian skeletons)
+and `:65829` (`AI_109_DarkMage`'s `type == 564 || type == 565` per-kind
+block), each preceded by `DelegateMethods.v3_1 = new Vector3(0.3f, 0.05f,
+0.45f) * 1.5f` (`:63542`/`:65828`). Neither c20's claim nor e7's 80-site
+table names them. Negative census: `Lighting.` outside `AddLight` is only
+`:92348`'s `GetColor` READ (e7's gold-critter citation); the other two
+`PlotTileLine` sites (`:55401`/`:55680`) pass `SearchAvoidedByNPCs` - a
+collision probe, no light, already ported in
+`npc_ai_town.rs::body_line_avoids`; zero
+`TileLightScanner`/`LightingEngine`/`lightValue`/`SpreadLight`/other
+`CastLight*` forms.
+
+Port: `crates/tr-app/src/npc_lights_c.rs::dd2_body_cast_light` - one shared
+fn for both arms (same colour, same walk), feeding the SAME
+`EntityLights` pair from the frame pass (`app/frame/draw.rs`, beside the
+aiStyle-8/horseman feeds, `Main.npc` slot order). The walk is the verbatim
+`Utils.PlotTileLine` (`Utils.cs:2337-2350`) + `PlotLine`
+(`:2238-2292`, the `npc_ai_town.rs::plot_line` twin) + `CastLightOpen`
+(`DelegateMethods.cs:726-741`, the NPC-side call-site copy of e8's
+delegate - the merger keeps ONE copy). Verbatim quirks kept:
+
+* **The C# offset signs**: `perp = (-dir.Y, dir.X) * w/2 = (-w/2, 0)` for
+  the vertical Top->Bottom line, so `point = start - perp` is the RIGHT
+  edge (`lineMinOffset`) and `point2 = start + perp` the LEFT edge - the
+  inner span walks RIGHT->LEFT. The light list's order is part of the C#
+  per-frame list, so the port keeps right-first (the
+  `npc_ai_town.rs::body_line_avoids` twin swaps the edges - harmless for
+  its boolean probe's common case, NOT corrected here, out of scope).
+* **`PlotLine` never plots its end point** (`for (i = x0; i != x1; ...)`,
+  `Utils.cs:2256`; only the lone-tile head plots): the span's leftmost
+  column is dropped (the 18 px skeleton's 2-column span lights only its
+  right column; the 34 px mage's 3-column span lights its right two) and
+  the body's last tile row is unploted.
+* **`ToTileCoordinates` = truncate-then-ARITHMETIC-shift**
+  (`Utils.cs:1807-1810`, `(int)v >> 4`), not the quotient form - they
+  differ below zero.
+* **`CastLightOpen` gates only the light, never the in-bounds walk**
+  (returns true even on a solid tile); the bounds/null gate aborts.
+  The open-test is `:736` verbatim (`!active || inActive || solidTop ||
+  !solid`).
+
+netOffset: both casts read the RAW position (AI_107's only wrap is the
+Drakin 620 arm's `:63655`/`:63690`, after the case; AI_109's wraps are the
+tail blocks `:66224`/`:66256`). RNG: both casts are draw-free (the
+skeleton case's `Main.rand` dust/gore halves sit at `:63573-63610`, after
+the cast) - the draw-side feed cannot move any stream. The four kinds'
+boxes: 566/567 18x40 (`NPC.cs:16348-16349`/`:16365-16366`), 564/565 34x62
+(`:16450-16451`/`:16468-16469`) - the port's `npc/data.rs` rows match.
+
+### Verification
+
+Code-only: 8 witness tests WRITTEN NOT RUN in `npc_lights_c.rs` (the
+colour product, the skeleton/mage span fixtures hand-replayed through
+`PlotLine` step-by-step, the solid/actuated open-test, the out-of-world
+abort, the shift-anchor negative case, the other-kinds negative, and the
+full-file census freeze - 80 direct + exactly 2 casts + the negative
+forms, the `main_addlight_census.rs` precedent). Every cited C# line was
+re-read line-by-line in <=100-line windows. **No
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
 ## The Main.cs AddLight census (W4-f9, third tile batch, 2026-11-20, code-only)
 
 **Verdict: the Main.cs tile/ambient `Lighting.AddLight` remainder is EMPTY.**
@@ -43991,3 +45267,77 @@ strike-restart block (`NPC.cs:81311-81346` — the ai[0] 450/400/390/181
 resets + the 693 localAI[1]/[2] seeds + the two strike-tick rand
 draws) and the 172/693 natural-spawn rolls (`NPC.cs:5009-5013`/
 `:2745-2763`) — both follow-up-lane items, not new kinds (322 §9).
+## The Main.cs AddLight census freeze (W4-g19, Main batch 2, 2026-11-20, code-only)
+
+**Verdict: batch 2's unclaimed port remainder is EMPTY; the round lands the
+census's missing WITNESS half.** W4-g19 (`task/W4-g19-addlight-main-2`, the
+second Main.cs batch after g18) probed in-flight first, per dispatch:
+
+* Full-file census re-derived independently (not trusted from the sibling):
+  `decompiled/Terraria/Main.cs` (65 265 lines) carries **exactly five**
+  `Lighting.AddLight` call sites — `:29016/29020/29024/29028` (the `DrawProj`
+  type-332 Christmas-hook chain's four rotating colour rows) and `:29186`
+  (the type-488 Illuminant-hook chain's per-stepped-link light). The
+  case-insensitive `AddLight` token count equals the site count (5); the
+  negative census is zero for `PlotTileLine`, `CastLight`, `SpreadLight`,
+  `_activeEngine`, `perFrameLights`, `DynamicLight`, `LightingEngine` —
+  Main.cs has NO ambient/update-side light writes (tile ambience is
+  scanner-seeded, `tr-core/tile_light`) and no engine-internal feeds.
+* Claim map: **W4-e8**'s in-flight untracked `crates/tr-app/src/tile_lights.rs`
+  (18 138 bytes, read as-is) ports ALL FIVE verbatim
+  (`christmas_hook_chain_lights` / `illuminant_hook_chain_lights`) plus the
+  TileDrawing mushroom flicker and the five `CastLight*`/`SpreadLight`
+  delegates — its header claims the exact lines. **W4-f9** pushed
+  `c2740784` (docs-only): the same census + a distrust-verbatim audit of
+  e8's two chain functions (both faithful). **W4-g18 / W4-c20**: worktrees
+  clean at `a725acb0`, nothing pushed, no in-flight files. Porting any
+  Main.cs site here would duplicate e8's claimed copy — the AGENTS
+  no-duplicate rule wins over the batch label.
+* **Deliverable (the unclaimed half): `crates/tr-app/tests/main_addlight_census.rs`**
+  — an always-on `cargo test` freeze of the census, the
+  `doc_claims.rs`/`main_anchors.rs` precedent (a one-shot grep census is not
+  a regression gate; f9's round left no executable witness). Five tests:
+  1. `the_main_cs_addlight_census_is_exactly_five_sites` — the five sites'
+     1-based line numbers AND verbatim trimmed argument text pinned as a
+     tuple vector; the whole-file `AddLight` token count pinned at 5 (a
+     sixth form, even in a comment, trips it).
+  2. `main_cs_has_no_other_light_write_forms` — the seven negative-census
+     tokens pinned at 0 occurrences.
+  3. `the_christmas_hook_arm_structure_is_pinned` — the 332 arm gate
+     (`:28991`), the `< 30f`/NaN exits (`:29002/:29007`), the
+     truncate-then-divide anchor (`:29012-29013`, NOT the quotient form),
+     the four colour-row gates (`:29014/29018/29022/29026`), the
+     `16f / num115` step (`:29030`) and the wrap-after-3
+     (`:29040/:29042`) — the pre-step light order is pinned by the line
+     numbers themselves (anchor < colours < step).
+  4. `the_illuminant_hook_arm_structure_is_pinned` — the shared chain gate
+     (`:29046`), `Chains[type - 486]` = `Chains[2]` (`:29071/:29073`),
+     `num116 = value11.Height` (`:29088`), the num117 switch listing
+     383/446/489/487 only (`:29099-29108`, 488 absent), the
+     `Length() < num116 + 1f` exit BEFORE the step (`:29146` vs `:29173`),
+     the 488 light gate (`:29184`).
+  5. `the_lighting_cs_funnel_and_gate_are_pinned` — `Lighting.cs:140-143`
+     the Vector2 quotient overload `(int)(position.X / 16f)`, `:154` the
+     torch overload's THIRD anchor shape `(int)position.X / 16`, and
+     `:157-163` the int funnel behind `!Main.gamePaused && Main.netMode != 2`.
+  The tests read the gitignored `decompiled/` junction at test time and
+  HARD-FAIL when it is absent (the S1-L-12d localization precedent,
+  `tr-core/localization/mod.rs:573-607` — a silent skip once let a
+  zero-coverage suite pass green). This also protects e8's port: its
+  citation lines are now frozen, so a decomp refresh that moves them
+  fails the suite instead of silently invalidating the port.
+
+### Verification
+
+Code-only: **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**; the 5
+witnesses are WRITTEN NOT RUN. Mechanical check performed instead: all 33
+pinned line strings (27 Main.cs + 6 Lighting.cs) diffed case-sensitively
+against the decompilation via PowerShell — **0 mismatches**; the `:29046`
+contains-check True; token counts re-counted by regex (AddLight 5, all
+seven negative tokens 0). The two chain walks' arithmetic was hand-replayed
+by W4-f9's audit (9 links / 6 links) and e8's own written-not-run witnesses
+cover the behaviour; this freeze covers the SOURCE side so the two halves
+meet at the merge. Merger note: keep e8's `tile_lights.rs` as the single
+port copy; this test file is disjoint (new `tests/` file, no src edits).
+One `anchors.txt` row protects the freeze itself from a lossy merge (the
+canary's purpose); the ROADMAP S1-E-5 row carries the census-freeze note.

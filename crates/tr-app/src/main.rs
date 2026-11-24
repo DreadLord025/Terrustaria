@@ -38,8 +38,15 @@ mod env;
 mod entity_lights;
 mod item_lights;
 mod npc_lights;
+mod npc_lights_a;
+mod npc_lights_b;
+mod npc_lights_c;
 mod player_lights;
+mod player_lights_b;
+mod proj_ai_lights;
 mod proj_lights;
+mod proj_lights_a;
+mod tile_lights;
 mod eoc_fight;
 mod input_map;
 mod inv;
@@ -264,6 +271,12 @@ mod projectile;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
 mod projectile_ai_moonlord;
+// W4-e7 lane 23: the Snapping Stone trio's strike machine
+// (Projectile.TryMakingSnappingStoneStrike, Projectile.cs:14283-14395) +
+// the ParticleOrchestrator draw census — wired at the melee hit
+// (world_sim/editing.rs), the PVE walk (projectile.rs::damage_pve) and the
+// Update_SnappingStone zero-crossing (world_sim/player.rs).
+mod snapping_stone;
 
 
 mod projectile_ai001_a;

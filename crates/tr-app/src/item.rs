@@ -985,7 +985,9 @@ impl ItemDrop {
 
     /// `WorldItem.UpdateShimmer` (`WorldItem.cs:455-546`): the shimmered
     /// physics (no gravity, the 0.05 rise over shimmer), the ramp ±0.01 and the
-    /// 0.9 trigger check. The dust/light arms are render-layer notes.
+    /// 0.9 trigger check. The `:482` light arm feeds from the frame pass
+    /// (`entity_lights::shimmer_light`, W4-g20); the dust arm is a render-layer
+    /// note.
     fn update_shimmer(&mut self, world: &World, dt: f32) {
         if self.shimmered {
             // `:457-508` — gravity is zero for the transformed item; the rise

@@ -35,6 +35,26 @@ use crate::ui::text::{border_string, hud_text, hud_text_width};
 
 use super::draw_phase;
 
+/// `Main.DoUpdate_AnimateCursorColors`' masterColor / `DoUpdate_AnimateTileGlows`'
+/// martianLight + demonTorch bounce (`Main.cs:18225-18235`/`:18240-18261`):
+/// `value += dir * step`, clamped to `[0, 1]` with the direction flipping at
+/// each rail. W4-e7 lane 23 — the shared oscillator the three global-flicker
+/// pulses ride (the per-tile torch flicker itself is the scanner's, d56/e8).
+/// RNG-free. Returns the new `(value, dir)`.
+fn bounce_oscillator(value: f32, dir: f32, step: f32) -> (f32, f32) {
+    let mut value = value + dir * step;
+    let mut dir = dir;
+    if value > 1.0 {
+        value = 1.0;
+        dir = -1.0;
+    }
+    if value < 0.0 {
+        value = 0.0;
+        dir = 1.0;
+    }
+    (value, dir)
+}
+
 impl App {
     /// The buff bar's cancel gate — `Main.mouseRight && Main.mouseRightRelease`
     /// (`Main.cs:43333`) with the vanilla's end-of-draw latch recompute
@@ -336,6 +356,13 @@ impl App {
                     if self.mouse_text_color <= 190 {
                         self.mouse_text_color_dir = 1;
                     }
+                    // `Main.DoUpdate_AnimateCursorColors`' masterColor pulse
+                    // (`Main.cs:18225-18235`): 0..1 by 0.05 per frame, the
+                    // master-mode text colour. W4-e7 lane 23 — the oscillator
+                    // lands (the demon_torch precedent); its readers (rarity
+                    // -13) stay unported (research/102). RNG-free.
+                    (self.master_color, self.master_color_dir) =
+                        bounce_oscillator(self.master_color, self.master_color_dir, 0.05);
                     // `Main.mouseColor = Main.selColor` runs every frame the colour
                     // screen is open (`Main.cs:50324`), and `CursorColor`
                     // (`Main.cs:52490`) reads that static, so the tint follows the
@@ -357,6 +384,14 @@ impl App {
                         self.demon_torch = 0.0;
                         self.demon_torch_dir = 1.0;
                     }
+                    // `Main.DoUpdate_AnimateTileGlows`' martianLight pulse
+                    // (`Main.cs:18251-18261`): 0..1 by 0.015 per frame, the
+                    // Martian Madness glow. W4-e7 lane 23 — the oscillator
+                    // lands; its reader (`TileDrawing.cs:498`'s `_martianGlow`)
+                    // stays fed 0 until the glow pass + event land
+                    // (research/102). RNG-free.
+                    (self.martian_light, self.martian_light_dir) =
+                        bounce_oscillator(self.martian_light, self.martian_light_dir, 0.015);
                     // `TileLightScanner.Update()`: one `NextSeed()` per frame, then
                     // `WithModifier(x, y)` per tile (done inside the scanner).
                     let mut light_rng = tr_core::tile_light::FastRandom::new(self.light_rng_seed);
@@ -418,6 +453,19 @@ impl App {
                     // step instead, `item_lights.rs`), so the placement relative
                     // to the sim leaves the stream untouched.
                     for drop in items.iter() {
+                        // `WorldItem.UpdateShimmer`'s shimmered glow
+                        // (`WorldItem.cs:482`, W4-g20) — RNG-free (the
+                        // `Next(30)` dust branch `:459-481` stays skipped
+                        // wholesale), fed ahead of the visual-effects light
+                        // like the C#'s `:403` before `:436` call order.
+                        if let Some((x, y, rgb)) = crate::entity_lights::shimmer_light(
+                            drop.shimmered,
+                            drop.shimmer_time,
+                            drop.pos,
+                            crate::item::SIZE,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                         let Some(def) = crate::registry::get(drop.kind) else {
                             continue;
                         };
@@ -441,6 +489,10 @@ impl App {
                     // No arm draws `Main.rand` (the dust halves are skipped,
                     // `npc_lights.rs`), so the placement relative to the sim
                     // leaves the stream untouched.
+                    // W4-c20: the probe light's `FindClosestPlayer` gate
+                    // (`NPC.cs:36572-36576`) — no live player reads as
+                    // -1/dead in the C#'s single-player slot.
+                    let player_dead = player.as_ref().map_or(true, |p| p.dead);
                     for n in npcs.iter() {
                         if n.hp <= 0 {
                             continue;
@@ -456,6 +508,35 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // W4-c20: the FIRST-half NPC AddLight sites
+                        // (`NPC.cs:21307-:48641`, `npc_lights_a.rs`).
+                        // The kind sets are disjoint from the aiStyle-8
+                        // tail above, so no site double-feeds. The
+                        // BurningSphere's else arm sits inside the C#'s
+                        // 2-iteration dust loop (`:21517`) — the count
+                        // is part of the port (the list pair's key
+                        // hashes every entry). No arm draws RNG.
+                        if let Some((x, y, rgb)) =
+                            crate::npc_lights_a::npc_light_a(n, world, player_dead)
+                        {
+                            for _ in 0..crate::npc_lights_a::npc_light_a_emits(n.kind) {
+                                self.entity_lights.add(x, y, rgb);
+                            }
+                        }
+                        // The NPC lights SECOND half (W4-e7, S1-E-5):
+                        // `NPC.cs:49929-92412`'s 40 sites — the destroyer
+                        // airborne / probe / town / Medusa / torch-zombie /
+                        // fighter-tail / slime AI arms, the buff-VFX fire
+                        // lights, the trail mode-4 duplicates and the
+                        // cast-light arms (`npc_lights_b.rs`). Same slot
+                        // order, same one-list-pair feed; no arm draws
+                        // `Main.rand` (the rand halves are cited skips),
+                        // so the placement leaves the streams untouched.
+                        // The Horseman `:62420` is fed below (W-10) — the
+                        // module records it as a census-only no-double-feed.
+                        for (x, y, rgb) in crate::npc_lights_b::npc_lights_b(n, world, &params) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                         // S1-D-4 W-10: the Horseman's unconditional
                         // `Lighting.AddLight(Center, 0.4, 0.36, 0.2)`
                         // (`NPC.cs:62420`) — slice B's pure fn, no RNG
@@ -466,6 +547,17 @@ impl App {
                             w,
                             h,
                         ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                        // W4-f8 (S1-E-5 third NPC batch): the DD2 body
+                        // casts — `Utils.PlotTileLine(Top, Bottom, width,
+                        // CastLightOpen)` for the etherian skeletons
+                        // 566/567 (`NPC.cs:63542-63543`, AI_107's case
+                        // head) and the Dark Mages 564/565 (`:65828-
+                        // 65829`, AI_109's per-kind block). RAW position
+                        // (neither arm wraps netOffset), RNG-free — the
+                        // same draw-side feed precedent as above.
+                        for (x, y, rgb) in crate::npc_lights_c::dd2_body_cast_light(n, world) {
                             self.entity_lights.add(x, y, rgb);
                         }
                         // The small-kinds wiring wave (S1-D-3-wire-smallkinds):
@@ -606,6 +698,26 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // The Player GAP batch (S1-E-5 W4-e7 census close,
+                        // `player_lights_b.rs`): the 10 dropped sites whose
+                        // mount/armor/wing/melee/phase-color dependencies have
+                        // since landed — Rudolph's trail, the three armor-set
+                        // lights, the Chillet dash + melee-swing lights, the
+                        // Kazzymodus wing and the phase-blade held light. Same
+                        // ONE `EntityLights` pair, no RNG (every rand-bearing
+                        // dust branch skipped wholesale). The held frame's
+                        // height rides the swing lights' hitbox.
+                        let held_frame_h = lookups
+                            .item_icon(held_kind)
+                            .map_or(0.0, |(_, _, h)| h);
+                        for (x, y, rgb) in crate::player_lights_b::player_lights_b(
+                            p,
+                            held_kind,
+                            held_frame_w,
+                            held_frame_h,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                     }
                     // `Projectile.ProjLight` (S1-E-5, `Projectile.cs:
                     // 16153-16661`): `Update` calls it once per movement
@@ -636,6 +748,91 @@ impl App {
                             let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
                             let cy = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
                             self.entity_lights.add(cx, cy, [0.3, 0.25, 0.1]);
+                        }
+                    }
+                    // The projectile AI-arm lights, second wave (S1-E-5,
+                    // W4-e6, `proj_ai_lights.rs`): the `AddLight` sites
+                    // OUTSIDE `ProjLight` — `AI_001`'s per-type arms
+                    // (`Projectile.cs:54173`…`:55171`), `AI_026`'s foxsparks
+                    // pair (`:58213`/`:58226`), `AI_062`'s StardustCell
+                    // (`:65120`), `AI_075`'s LaserDrill (`:66272`),
+                    // `AI_130`'s FlameBurst tower pairs (`:68124-68225`) and
+                    // `AI_138`'s ExplosiveTrap tail (`:69332`). Like the
+                    // `ProjLight` feed above, the port collects the sources
+                    // here after the step in `Main.projectile` slot order;
+                    // an arm whose kind has no `proj_data` row is absent
+                    // wholesale. No ported arm draws `Main.rand`, so the
+                    // placement leaves the UpdateProjectiles stream
+                    // untouched.
+                    for p in projectiles.slots().iter().filter(|p| p.active) {
+                        // The 445 LaserDrill's distance gate reads the
+                        // owner's `RotatedRelativePoint(MountedCenter)`
+                        // (`AI_075`'s `vector`, `Projectile.cs:66135`).
+                        // The port is single-player: `owner == 0` resolves
+                        // the local player (the `map_layers.rs` /
+                        // `ai_drill` precedent); every other owner has no
+                        // player slot, so the hand stays `None` and the
+                        // arm skips (the C# reads `Main.player[owner]`
+                        // unconditionally — the no-owner kill precedent).
+                        let hand = player.as_ref().filter(|_| p.owner == 0).map(|pl| {
+                            let (mx, my) = pl.mounted_center();
+                            pl.rotated_relative_point(Vec2::new(mx, my), 0)
+                        });
+                        for (x, y, rgb) in crate::proj_ai_lights::proj_ai_lights(
+                            p.kind,
+                            p.pos,
+                            p.w,
+                            p.h,
+                            p.alpha,
+                            p.local_ai[0],
+                            hand,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
+                    // The projectile AI-arm lights, FIRST wave (S1-E-5,
+                    // W4-c19, `proj_lights_a.rs`): sites 1-67 of the 107
+                    // (`Projectile.cs:16655`…`:54071`) — sites 1-2 are the
+                    // `ProjLight` tail above (audit-landed), the rest are
+                    // the AI-arm lights outside it. Like the `ProjLight`
+                    // feed above and the e6 second wave, the port collects
+                    // the sources here after the step in `Main.projectile`
+                    // slot order; an arm whose kind has no `proj_data` row
+                    // is absent wholesale, and a rand-gated light is absent
+                    // wholesale (the e6 RNG rule). No ported arm draws
+                    // `Main.rand`, so the placement leaves the
+                    // UpdateProjectiles stream untouched.
+                    for p in projectiles.slots().iter().filter(|p| p.active) {
+                        // The hooks' anchor is the owner's `MountedCenter`
+                        // (`AI_007`, `Projectile.cs:52572`). Single-player
+                        // fold: `owner == 0` resolves the local player (the
+                        // e6 `ai_drill` hand precedent); every other owner
+                        // has no player slot, so the anchor stays `None`
+                        // and the arm skips.
+                        let mounted_center =
+                            player.as_ref().filter(|_| p.owner == 0).map(|pl| {
+                                let (mx, my) = pl.mounted_center();
+                                Vec2::new(mx, my)
+                            });
+                        // Site 3 (`:17343`) — the Chillet-mount enchantment
+                        // light runs in `Update` BEFORE the AI arms
+                        // (`:16702`), so it feeds first. The owner's active
+                        // mount type resolves for `owner == 0` (the same
+                        // single-player fold); `None` otherwise.
+                        let owner_mount = player
+                            .as_ref()
+                            .filter(|_| p.owner == 0)
+                            .filter(|pl| pl.mount.is_active())
+                            .map(|pl| pl.mount.kind());
+                        for (x, y, rgb) in
+                            crate::proj_lights_a::chillet_mount_light(p, owner_mount)
+                        {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                        for (x, y, rgb) in
+                            crate::proj_lights_a::proj_lights_a(p, mounted_center, self.disco)
+                        {
+                            self.entity_lights.add(x, y, rgb);
                         }
                     }
                     // The Dust `UpdateDust` lights (S1-E-5, dust family):
@@ -2311,5 +2508,58 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+}
+
+#[cfg(test)]
+mod w4_e7_global_flicker_tests {
+    use super::bounce_oscillator;
+
+    /// W4-e7 lane 23 — the masterColor pulse (`Main.cs:18225-18235`): +0.05
+    /// per frame from the 1f init, flipping at the rails. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e7_master_color_bounces_at_the_rails() {
+        // Init 1f / dir 1 (Main.cs:66833-66834): the first step clamps to 1
+        // and flips dir to -1.
+        let (v, d) = bounce_oscillator(1.0, 1.0, 0.05);
+        assert_eq!((v, d), (1.0, -1.0), "the top rail flips");
+        // Then it descends by 0.05.
+        let (v, d) = bounce_oscillator(v, d, 0.05);
+        assert!((v - 0.95).abs() < 1e-6 && d == -1.0);
+        // The bottom rail: 0.02 - 0.05 < 0 → clamp 0, flip +1.
+        let (v, d) = bounce_oscillator(0.02, -1.0, 0.05);
+        assert_eq!((v, d), (0.0, 1.0), "the bottom rail flips");
+    }
+
+    /// The martianLight pulse (`Main.cs:18251-18261`): +0.015 per frame.
+    #[test]
+    fn w4_e7_martian_light_bounces_at_the_rails() {
+        let (v, d) = bounce_oscillator(1.0, 1.0, 0.015);
+        assert_eq!((v, d), (1.0, -1.0));
+        let (v, d) = bounce_oscillator(v, d, 0.015);
+        assert!((v - 0.985).abs() < 1e-6 && d == -1.0);
+        let (v, d) = bounce_oscillator(0.01, -1.0, 0.015);
+        assert_eq!((v, d), (0.0, 1.0));
+    }
+
+    /// The oscillator stays bounded in [0, 1] and reverses at the rails (the
+    /// demon_torch 0.01 shape): deterministic and RNG-free, so the flicker
+    /// phase is a pure function of the frame count. The C# clamp holds one
+    /// frame at each rail before descending (the `> 1` / `< 0` flip fires on
+    /// the overshoot step), so the value never leaves the unit interval.
+    #[test]
+    fn w4_e7_the_oscillator_stays_bounded_and_rng_free() {
+        let (mut v, mut d) = (1.0f32, 1.0f32);
+        let mut saw_bottom = false;
+        for _ in 0..200 {
+            (v, d) = bounce_oscillator(v, d, 0.05);
+            assert!((0.0..=1.0).contains(&v), "bounded: {v}");
+            if v == 0.0 {
+                saw_bottom = true;
+            }
+        }
+        assert!(saw_bottom, "the pulse reaches the bottom rail");
+        // After reaching 0 it climbs back toward 1 (the dir flipped +1).
+        assert!(d == 1.0 || v > 0.0, "the reversal climbs back");
     }
 }
