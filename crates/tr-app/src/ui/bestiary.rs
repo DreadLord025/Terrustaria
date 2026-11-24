@@ -2890,6 +2890,19 @@ fn portrait_data(
         // (`Main.cs:67082`), the frame width the sheet's own. The 24-row
         // sheet is 8 colour bands × 3 flap rows — the portrait shows
         // band 0's flap.
+        // W4-f18 first-20 port — batch 1's critters: the sheet's own row
+        // height over `Main.npcFrameCount[type]` (355/358 four frames,
+        // 356 twenty-four, 357 two, 359 six; `Main.cs:67082-67153`), the
+        // frame width the sheet's own (the small-kinds wiring wave's
+        // portrait shape). The portrait reads row 0 — the butterfly's
+        // first colour style's first flap row (the vanilla's bestiary
+        // preview draws the sheet's first frame the same way).
+        (NpcKind::Firefly | NpcKind::LightningBug, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
         (NpcKind::Butterfly, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 24.0)
@@ -2899,12 +2912,79 @@ fn portrait_data(
         // W4-d39 — the scorpion pair's 4-row strips + the grasshopper's
         // 2-row strip (`Main.npcFrameCount[366/367]` = 4, `[377]` = 2;
         // `Main.cs:67082`), the frame width the sheet's own.
+        (NpcKind::Worm, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(4.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        (NpcKind::Snail, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(12.0);
+            (sheet_i, h, 12.0, h, white)
+        }
+        // W4-f18 batch 2 — the GlowingSnail (6 frames), the Frog (13), the
+        // walker ducks (15; the Duck2 363 folds onto the Duck 362's entry,
+        // so its portrait reads the Duck's sheet — the Hide=true fold).
+        (NpcKind::GlowingSnail, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 12.0, h, white)
+        }
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        // The Duck2 363 folds onto the Duck 362's entry (Hide=true), so
+        // `entry.kind` is never Duck2 here — the arm keeps the exhaustive
+        // match whole (the DetonatingBubble/Sharkron2 fold precedent).
+        (NpcKind::Duck2, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        // W4-f18 batch 3 — the scorpion pair (4 frames) and the TruffleWorm
+        // (4). The DuckWhite2 365 folds onto the DuckWhite 364's entry and
+        // the TruffleWormDigger 375 onto the TruffleWorm 374's — their arms
+        // keep the exhaustive match whole (the fold precedent).
         (NpcKind::ScorpionBlack | NpcKind::Scorpion, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(18.0);
             (sheet_i, h, 26.0, h, white)
         }
+        (NpcKind::TruffleWorm, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::DuckWhite2, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::TruffleWormDigger, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        // W4-f18 batch 4 — the Grasshopper (2 frames), the ChatteringTeethBomb
+        // (4), the CultistArcherBlue (12), the ArmedZombie (7). The
+        // CultistArcherWhite 380 folds onto the CultistArcherBlue 379's
+        // entry — its arm keeps the exhaustive match whole (the fold
+        // precedent).
         (NpcKind::Grasshopper, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 2.0)
@@ -2922,6 +3002,7 @@ fn portrait_data(
             (sheet_i, h, 20.0, h, white)
         }
         (NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite, _) => {
+        (NpcKind::CultistArcherBlue, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 12.0)
                 .unwrap_or(40.0);
@@ -2935,6 +3016,17 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 2.0)
                 .unwrap_or(26.0);
             (sheet_i, h, 32.0, h, white)
+        (NpcKind::CultistArcherWhite, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::ArmedZombie, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
         }
     }
 

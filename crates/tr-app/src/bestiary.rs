@@ -3090,6 +3090,38 @@ BestiaryEntryDef {
     // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
     // `CountsAsACritter` set — plus the `FindEntryByNPCID(359)`/`(677)`
     // cavern-spawn info rows).
+    // W4-f18 first-20 port — batch 1's five critters. The credit ids are
+    // the vanilla `NPCID` names (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `ContentSamples.NpcBestiaryCreditIdsByNpcNetIds` rows); the display
+    // names ride `en-US.NPCs.json`'s NPCName rows.
+    BestiaryEntryDef {
+        credit_id: "Firefly",
+        net_id: 355,
+        variant: None,
+        quick_unlock: false,
+        name: "Firefly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Butterfly",
+        net_id: 356,
+        variant: None,
+        quick_unlock: false,
+        name: "Butterfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Worm",
+        net_id: 357,
+        variant: None,
+        quick_unlock: false,
+        name: "Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightningBug",
+        net_id: 358,
+        variant: None,
+        quick_unlock: false,
+        name: "Lightning Bug",
+    },
     BestiaryEntryDef {
         credit_id: "Snail",
         net_id: 359,
@@ -3098,6 +3130,10 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Snail",
     },
+    // W4-f18 batch 2 — the GlowingSnail, the Frog and the two walker
+    // ducks. The Duck2 363 is Hide=true (`NPCID.cs:3617-3622`) — it folds
+    // onto the Duck 362's entry (no row of its own, the DetonatingBubble
+    // precedent); the credit ids ride the vanilla NPCID names.
     BestiaryEntryDef {
         credit_id: "GlowingSnail",
         net_id: 360,
@@ -3154,6 +3190,12 @@ BestiaryEntryDef {
     // localization rows: Duck2/DuckWhite/DuckWhite2 all read "Duck",
     // Seagull2 "Seagull", Grebe2 "Grebe"
     // (`Terraria.Localization.Content.en-US.NPCs.json`).
+        credit_id: "Frog",
+        net_id: 361,
+        variant: None,
+        quick_unlock: false,
+        name: "Frog",
+    },
     BestiaryEntryDef {
         credit_id: "Duck",
         net_id: 362,
@@ -3191,15 +3233,7 @@ BestiaryEntryDef {
     // 484-487).Info`, `BestiaryDatabaseNPCsPopulator.cs:890-1886`;
     // `NPCID.Search.GetName` credits). The display names ride the
     // en-US NPCs.json rows ("Gold Bird" … "Enchanted Nightcrawler").
-    BestiaryEntryDef {
-        credit_id: "Worm",
-        net_id: 357,
-        kind: NpcKind::Worm,
-        variant: None,
-        quick_unlock: false,
-        name: "Worm",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "TruffleWorm",
         net_id: 374,
         kind: NpcKind::TruffleWorm,
@@ -3794,7 +3828,6 @@ BestiaryEntryDef {
     }
     }
     }
-    },
     BestiaryEntryDef {
         credit_id: "Pixie",
         net_id: 75,
@@ -4096,23 +4129,7 @@ BestiaryEntryDef {
     // kinds (d43 rows them later - research/148's TRIGGERED conditional).
     // W4-c7 — the firefly family's own entries (the populator registers
     // all four; `NPCID.Search.GetName` credits).
-    BestiaryEntryDef {
-        credit_id: "Firefly",
-        net_id: 355,
-        kind: NpcKind::Firefly,
-        variant: None,
-        quick_unlock: false,
-        name: "Firefly",
-    },
-    BestiaryEntryDef {
-        credit_id: "LightningBug",
-        net_id: 358,
-        kind: NpcKind::LightningBug,
-        variant: None,
-        quick_unlock: false,
-        name: "Lightning Bug",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "Lavafly",
         net_id: 654,
         kind: NpcKind::Lavafly,
@@ -4403,18 +4420,15 @@ BestiaryEntryDef {
     // (`GetBestiaryCreditId`'s IdDictionary reflection) and the name rides
     // `Lang.GetNPCName` (en-US NPCs.json:316). The info row is
     // `BestiaryDatabaseNPCsPopulator.cs:1028`.
-    BestiaryEntryDef {
-        credit_id: "Butterfly",
-        net_id: 356,
-        kind: NpcKind::Butterfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Butterfly",
-    },
-    // W4-d39 — the scorpion pair (366/367) + the grasshopper (377), the
+// W4-d39 — the scorpion pair (366/367) + the grasshopper (377), the
     // same automated Critter registration; the info rows are
     // `BestiaryDatabaseNPCsPopulator.cs:1100`/`:1071`/`:902`. Both
     // scorpions display "Scorpion" (en-US NPCs.json:327-328).
+    // W4-f18 batch 3 — the scorpion pair and the TruffleWorm. The
+    // DuckWhite2 365 (Hide=true, `NPCID.cs:3633-3638`) folds onto the
+    // DuckWhite 364; the TruffleWormDigger 375 (Hide=true,
+    // `NPCID.cs:3713-3718`) folds onto the TruffleWorm 374 — neither has
+    // a row of its own (the DetonatingBubble precedent).
     BestiaryEntryDef {
         credit_id: "ScorpionBlack",
         net_id: 366,
@@ -4431,6 +4445,10 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Scorpion",
     },
+// W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb, the
+    // CultistArcherBlue and the ArmedZombie. The CultistArcherWhite 380
+    // (Hide=true, `NPCID.cs:3734-3739`) folds onto the CultistArcherBlue
+    // 379 — no row of its own (the DetonatingBubble precedent).
     BestiaryEntryDef {
         credit_id: "Grasshopper",
         net_id: 377,
@@ -4466,14 +4484,6 @@ BestiaryEntryDef {
     // 605 "Gold Ladybug"). The Duck entry dropped to c10 (the waterfowl
     // family's canonical owner, research/108 SEAL S1); the c8 generic
     // sight gate auto-covers these rows at merge (research/238 §1).
-    BestiaryEntryDef {
-        credit_id: "Frog",
-        net_id: 361,
-        kind: NpcKind::Frog,
-        variant: None,
-        quick_unlock: false,
-        name: "Frog",
-    },
     BestiaryEntryDef {
         credit_id: "LadyBug",
         net_id: 604,
@@ -4586,6 +4596,14 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Squire Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "ArmedZombie",
+        net_id: 430,
+        kind: NpcKind::ArmedZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
     },
 ];
 
@@ -5066,6 +5084,16 @@ pub fn try_entry_for_npc(
         // entry (`ContentSamples.cs:1038`: {531→530}; the leinfors
         // dictionary's `Hide = true`).
         NpcKind::DesertScorpionWall => NpcKind::DesertScorpionWalk,
+        // W4-f18 batch 2 — the Duck2 363 is Hide=true (`NPCID.cs:3617-
+        // 3622`): the swimming form folds onto the walker Duck 362's
+        // entry (one credit per waterfowl, the DetonatingBubble precedent).
+        NpcKind::Duck2 => NpcKind::Duck,
+        // W4-f18 batch 3 — the DuckWhite2 365 folds onto the DuckWhite 364
+        // (Hide=true, `NPCID.cs:3633-3638`); the TruffleWormDigger 375
+        // folds onto the TruffleWorm 374 (Hide=true, `NPCID.cs:3713-3718`).
+        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
+        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
+        // CultistArcherBlue 379 (Hide=true, `NPCID.cs:3734-3739`).
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -5271,6 +5299,14 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-d41 — the sand poacher's wall form rides the walker's row
         // (`ContentSamples.cs:1038`'s credit fold).
         NpcKind::DesertScorpionWall => NpcKind::DesertScorpionWalk,
+        // W4-f18 batch 2 — the Duck2 363 folds onto the Duck 362's row
+        // (Hide=true, `NPCID.cs:3617-3622`; the try_entry twin above).
+        NpcKind::Duck2 => NpcKind::Duck,
+        // W4-f18 batch 3 — the DuckWhite2 365 / TruffleWormDigger 375 fold
+        // onto their walker rows (the try_entry twin above).
+        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
+        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
+        // CultistArcherBlue 379 (the try_entry twin above).
         other => other,
     };
     ENTRIES

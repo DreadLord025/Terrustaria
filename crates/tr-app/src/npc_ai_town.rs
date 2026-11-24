@@ -827,27 +827,27 @@ fn in_world_fluff(world: &World, x: i32, y: i32, fluff: i32) -> bool {
     x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
 }
 
-fn tile_at(world: &World, x: i32, y: i32) -> Option<&Tile> {
+pub(crate) fn tile_at(world: &World, x: i32, y: i32) -> Option<&Tile> {
     world.tile(x, y)
 }
 
 /// `Main.tileSolid[type]` — the raw table read (the C#'s walk gates use
 /// the RAW table, not `Collision`'s leaf-block exception).
-fn raw_solid(kind: u16) -> bool {
+pub(crate) fn raw_solid(kind: u16) -> bool {
     (kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(kind)
 }
 
-fn raw_solid_top(kind: u16) -> bool {
+pub(crate) fn raw_solid_top(kind: u16) -> bool {
     (kind as usize) < td::TILE_COUNT && td::TILE_SOLID_TOP.has(kind)
 }
 
 /// `tile.nactive()` — active and not actuated.
-fn nactive(t: &Tile) -> bool {
+pub(crate) fn nactive(t: &Tile) -> bool {
     t.active() && !t.inactive()
 }
 
 /// `tile.topSlope()` — slope 1 or 2.
-fn top_slope(t: &Tile) -> bool {
+pub(crate) fn top_slope(t: &Tile) -> bool {
     let s = t.slope();
     s == 1 || s == 2
 }
@@ -856,7 +856,7 @@ fn top_slope(t: &Tile) -> bool {
 /// (`Collision.cs:3455-3488`): out-of-bounds counts as SOLID, a null
 /// tile returns false, the per-tile test is
 /// `active && !inActive && tileSolid && !tileSolidTop`.
-fn solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
+pub(crate) fn solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
     if x0 < 0 || x1 >= world.width || y0 < 0 || y1 >= world.height - 40 {
         return true;
     }
@@ -875,7 +875,7 @@ fn solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
 
 /// `Collision.SolidTilesVersatile` (`Collision.cs:3437-3448`): swap the
 /// reversed bounds, then `SolidTiles`.
-fn solid_tiles_versatile(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
+pub(crate) fn solid_tiles_versatile(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
     let (x0, x1) = if x0 > x1 { (x1, x0) } else { (x0, x1) };
     let (y0, y1) = if y0 > y1 { (y1, y0) } else { (y0, y1) };
     solid_tiles(world, x0, x1, y0, y1)
@@ -998,12 +998,12 @@ fn can_hit_line_centers(world: &World, ax: f32, ay: f32, bx: f32, by: f32) -> bo
 
 /// `Collision.DrownCollision(position, width, height, 1f, true)` — the
 /// shared collision port (`collision.rs::drown_collision`).
-fn drown_collision(world: &World, x: f32, y: f32, w: f32, h: f32, include_slopes: bool) -> bool {
+pub(crate) fn drown_collision(world: &World, x: f32, y: f32, w: f32, h: f32, include_slopes: bool) -> bool {
     crate::collision::drown_collision(world, x, y, w as i32, h as i32, 1.0, include_slopes)
 }
 
 /// `Collision.StepDown` — the shared port.
-fn step_down(world: &World, npc: &mut Npc) {
+pub(crate) fn step_down(world: &World, npc: &mut Npc) {
     let (w, h) = npc.size();
     let mut pos = [npc.x, npc.y];
     let mut vel = [npc.vx, npc.vy];
@@ -1028,7 +1028,7 @@ fn step_down(world: &World, npc: &mut Npc) {
 /// C# refuses and so does this wrapper. Tile 380 (the planter box) is
 /// not in `SET_PLATFORMS` — the shared port's holds set omits it, a
 /// recorded residual (ANALYSIS "The town-NPC aiStyle-7 re-port").
-fn town_step_up(world: &World, npc: &mut Npc, holds_matching: bool) {
+pub(crate) fn town_step_up(world: &World, npc: &mut Npc, holds_matching: bool) {
     let (w, h) = npc.size();
     // The support tile the shared StepUp probes (`Collision.cs:3640-3650`).
     let num = if npc.vx < 0.0 { -1 } else if npc.vx > 0.0 { 1 } else { 0 };
