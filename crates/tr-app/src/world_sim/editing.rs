@@ -21,6 +21,10 @@ use super::items::spawn_item_drop;
 
 mod wiring;
 pub(crate) use wiring::use_wiring_tool;
+// W4-g17 — the tree-shake loot ladder (WorldGen.cs:53230-53257 / :29600-29672):
+// `shake_loot::shake_tree_loot` → `tree::shake_tree_fx_at` → the gore/shake
+// arms; the batch-G lane lands the module and this wiring (group5 batch-G).
+mod shake_loot;
 pub(crate) mod doors;
 mod buckets;
 pub(crate) use buckets::use_buckets;

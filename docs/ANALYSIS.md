@@ -62587,6 +62587,176 @@ buff-VFX + draw-pass LightningSmall callers, Shimmerfly 677's NPC death
 emitters stay reachable via `spawn_orchestra`/the module, no call site
 invented. Witnesses WRITTEN NOT RUN — **no cargo/rustc/rustfmt/tests/
 graphify invoked**; the merge-verify wave compiles and runs them.
+# The NPC HitEffect gore table (W4-e5, wave B, code-only)
+Wave B (`crates/tr-app/src/npc_hit_effect_b.rs`) continues wave A
+(`npc_hit_effect_a.rs`, ec78d152) with the 40-site `NPC.cs:81942-82205`
+window (the f5 seal's e5 claim, research/111 §5.2), appended to wave
+A's dispatch (`hit_effect_b` runs after wave A's last arm):
+- the 636 Empress 8-gore tail (`:81942-81949`, sites 31-38) -
+  `npc_hit_effect_a::empress_tail_gores`, types 1263-1268 (+the 1267/
+  1268 twins), velocity x0.6, kicks only;
+- the 657 Queen Slime death (`:81956-81958`, sites 39-41): 2x1259 at
+  scale 0.8 (the second at `position + Size*0.5`) + 1258 at
+  `this.scale`, BEFORE the 150-dust type-4 burst; per dust the
+  `AI_121_QueenSlime_GetDustColor` pair (`NPC.cs:45121-45124`, ported
+  as `queen_slime_dust_color` - the INNER lerp amount draws first, C#
+  argument order; `Color.Lerp` through `tr_core::dust_table::
+  lerp_color`, now pub), then `8*NextFloatDirection` /
+  `-2+6*NextFloatDirection` / `1+NextFloat*0.5`, the pool rolls, the
+  x0.65/+velocity x0.5 writes and the `Next(5)==0` noGravity gate;
+- the 658-660 crystal family (`:81991-82024`, sites 42-43): only the
+  660 death spawns gores (2x1260), BEFORE the shared dust loop (7 hit /
+  40 death; type 4/243; colours (78,136,255,150)/default/(150,100,200,
+  150); alpha 80; `Next(3)!=0` noGravity). The hit half's dust loop
+  runs here (no gore sites, but its draws precede later arms);
+- the 667 death (`:82035-82039`, sites 44-51): 8x1218 at
+  `(position.X, Center.Y-10)`, velocity Zero, then the slot velocity
+  OVERWRITE (`Next(1,10)*0.3*2.5*hitDirection`, `-(3+Next(4)*0.3)`)
+  - the NewGore kicks draw first and are discarded; the 40-dust type-10
+  loop runs after. The hit arm's 3-gore twin (`:82045-82046`) is the
+  g62 emit-at-wiring hand-off (research/351 §4), NOT wave C;
+- the DD2 goblin/javeliner/kobold deaths (`:82079-82171`, sites 52-66):
+  the shared 20-dust type-5 death preamble (`dd2_death_dust`) then the
+  per-family gore rows - goblin 552-554 base 983/1067/1071 (+3/+2 at
+  Y+20, +1 twins at Y+34), javeliner 561-563 base 987/1055/1061 (the +3
+  LEADS, 4 rows at Y+20, +1 twins at Y+34), kobold 555-557 base
+  1031/1034/1037 (the 3-gore staircase);
+- the 551 DD2Betsy (`:82172-82218`, sites 67-76): the
+  `DD2Event.CheckProgress` percent-crossing gate on the hit path
+  (`dd2_crystal_crossed_percent`, returned) and the 10-gore body on
+  death - the `spriteDirection != -1` arm ONLY (sites 67-76),
+  types 1079/1080x2/1081/1082/1083/1084/1085x2/1086 at the cited
+  offsets. The `-1` mirrored twin (`:82206-82215`, the old sites 77-86)
+  is DROPPED - KEEP-ONE, see below. NPCID 551 = DD2Betsy; the
+  `dd2_crystal_*` names are an internal misnomer for the same kind f10
+  calls "Betsy" (the Eternia Crystal is 548/522).
+KEEP-ONE (research/351, the e5-vs-f10 HitEffect overlap): e5's module
+originally ported BOTH spriteDirection arms of the 551 death (sites
+67-86, `:82193-82215`), but the f5 seal's window census (research/111
+§5.2) assigns e5 `:81942-82205` (40 sites) and f10 `:82206-85559` (the
+legit 385). The flipped twin `:82206-82215` is f10's `betsy_flipped_death`
+(its sites 71-80), explicitly KEPT by the seal §8 and f10's own
+overrun-delete `afea4c0fc`. So e5 DROPS its flipped else-arm: the dispatch
+now gates the whole `dd2_crystal_death` body (the shared 20-dust preamble
++ the 10 gores) on `sprite_dir != -1`, the exact complement of f10's
+`sprite_dir == -1` gate - the preamble runs exactly ONCE per death
+(e5 owns it for != -1, f10's own copy for == -1). Dropping f10's instead
+would cut its legit 385 to 375 and break the 1578 reconciliation; dropping
+e5's keeps both windows exact. The flipped-twin witness is replaced by
+`w4_e5_the_flipped_crystal_death_is_f10s_claim` (the -1 death draws NOTHING
+in e5 - no gores, no dust - while the != -1 body keeps its full census).
+CENSUS CORRECTION (research/351 §3): the seal's death/hit split
+(1300 death + 4 hit) walked only f5's window; the full-window brace-walk
+finds a FIFTH hit-half site, `:82045` (the 667 GoldenSlime hit arm's
+3-gore twin, `else` of `:82031 life <= 0`), inside e5's window. The
+NPC HitEffect split is 1299 death + 5 hit = 1304; e5's 40 = 39 death +
+1 hit. The `:82045` body is UNPORTED (g62 draws the 3x(Next(1,10)+Next(4))
+overwrite pairs only, NOT the NewGore kicks) - a g62 EMIT-AT-WIRING
+hand-off, the seal §7 pattern extended (research/351 §4): the emit must
+insert the 3x2 kicks BEFORE each overwrite pair (+6 draws to g62's
+discard census). The 1578 total and the zero-unowned verdict are
+unchanged - only the death/hit partition moves by one site.
+Deviations / stand-ins (cited at their sites): `hitDirection`/`dmg`
+ride explicit parameters (wave A's `hit_effect` gained them, the C#
+defaults 0/10.0); the hit-half dmg-scaled dust loops stay with the wiring
+wave's dust pass (wave A's convention) EXCEPT the 658-660 shared loop and
+the 551 `DD2Event.CheckProgress` gate (the pure
+`dd2_crystal_crossed_percent` predicate - the float-100 before cast,
+the double/(float)lifeMax after cast - RETURNED as
+`HitEffectOutcome::dd2_crystal_check_progress`; the caller runs the
+ported walk, `world_sim/npcs.rs:2561`); the 636 dust loop keeps wave
+A's draw-census skip.
+RNG: the strike's stream, wave A's contract; the witnesses replay the
+cited draws on twin streams (WRITTEN, NOT RUN - code-only mode).
+## The NPC HitEffect gore table (W4-f10, wave C, task/W4-f10-gore-sites-3, 2026-11-21, code-only mode)
+The THIRD batch of `NPC.HitEffect`'s per-NPC gore/dust death arms
+(`NPC.cs:81654+`). **OVERRUN-DELETE LANDED (f5 research/111 §8 / g60
+§12.8 drop-hunks):** the waves' later `:85560-89832` port (sites 562-1441,
+the b138-170 appends) duplicated f5's claimed window and was DELETED at
+the live tip `012bdcec3` — re-censused with g60's committed scripts
+(`g60_f10_overrun.py` + `g60_f10_gates.py` @ `30fea0fe1`). The delete at
+this tip: **band A `:3692-8872` (152 fn bodies incl. the cite-less
+`five_gore_ladder`/`smoke_99_trio`/`mech_explosion_tail`/
+`red_hat_skeletron_adjustments_enabled` helpers + the straddling
+`town_pet_death`, 597 gore literals), band B `:9296-9966` (147 dispatch
+gates incl. the 5 comment-less), band C `:12314-15633` (157 witnesses),
+the header scope rows `:136-270` (sites 562-1441) and the
+`king_slime_babies`/`maggot_zombie_spawns`/`destroyer_probe_drop` outcome
+fields** — 9 328 lines, a pure delete (byte-verified against the pre-image
+minus exactly those ranges). The b157→live drift: +21 fns / +19 gates /
++19 witnesses (the Skeletron-RedHat through RedDevil tail, b158-170) and
+the third seam field. What KEEPS: sites 1-561 (`:82206-85559`), the legit
+385 sites — the DD2 band (incl. the 558/559/560 `wyvern_death` NAME-TWIN,
+the overrun 87-92 twin dropped), the 3 substring-collision witnesses
+(`blood_squid`/`desert_scorpion`/`martian_probe`, all min-cite < 85560),
+the Slimer 561 tail + `slimer_spawn` seam, the flipped-Betsy dispatch
+witness — 94 legit witnesses + 1 new delete-receipt witness
+(`w4_f10_the_overrun_delete_leaves_the_f5_window_unclaimed`, WRITTEN NOT
+RUN). f5's 853-canonical (`npc_hit_effect_d.rs`) owns `:85560+`; the
+`:86532` WanderingEye latch replacement is f5 §7.3's wiring-caller (the
+merger's). Post-delete module: ~6 370 lines, 95 witnesses.
+### The original wave-C record (pre-delete, historical)
+The port covered `NPC.cs:82206-89831` — from the 551 Betsy
+flipped branch to the terminal 156 RedDevil `else` where the C# chain
+closes (`:89832-89834`): 1441 numbered gore sites across 170 commits (first
+`215bcd2d5`, tip `1fb60ae39`; base `a725acb0`), ported into the
+self-contained `crates/tr-app/src/npc_hit_effect_c.rs` (~15 660 lines,
+251 witness tests). Wave A (d55, sites 1-30, `:81660-81941`) and wave B
+(e5/g16/g17) claims were probed clean at start and left untouched; the
+non-flipped Betsy branch stays wave B's.
+### Shape
+- `pub fn hit_effect_c(npc: &mut Npc, npc_type, hit_direction, dmg, gore,
+  dust, dust_ctx, rng, world) -> HitEffectOutcomeC` — a pure dispatcher;
+  `&mut Npc` only for the WanderingEye `local_ai[0]` latch. Every arm is
+  life-gated (`hp <= 0`) unless the C# fires on every hit (the snails
+  359/360/655, the party-slime `ai[1]==1345`, the WanderingEye 133, the
+  426/9999-dmg Cultist Tablet dmg gate).
+- The strike-stream RNG contract: every `NewDust`/`NewGore` draw rides
+  the caller's `UnifiedRandom` in exact C# order — the 6 default-block
+  dust draws (Next(w-4), Next(h-4), Next(-20,21)x2, Next(3),
+  Next(-20,21)), the type-6/242 tweak's extra Next(-10,6), the post-spawn
+  gates (472's Next(3) noGravity), the count draws (Wyvern Next(1,4)
+  FIRST), the per-gore type draws (Next(61,64)/Next(11,14) BEFORE the
+  kicks), and the NewGore kicks (Y Next(10,31) subtracted, X Next(-20,21)
+  added). The twin-stream witnesses replay the census and pin
+  `rng.peek()` equality.
+- Shared helpers: `death_dust_loop`, `five_gore_type5_death`,
+  `five_gore_ladder`, `blood_zombie_ladder`, `smoke_99_trio` (the
+  -10/h2-15/h-20 ladder), `mech_explosion_tail` (the type-31 + paired
+  type-6 + quadrant-gore explosion shared by the Destroyer/ElfCopter/
+  SantaNK1/SkeletronPrime/Prime-limb deaths),
+  `red_hat_skeletron_adjustments_enabled` (`NPC.cs:66671-66682`), plus
+  the rotation/select/anchor helpers.
+### Documented stand-ins (deliberate deviations)
+- `this.color` -> `Color::default()` — the ported kinds set no
+  SetDefaults color; the tinted arms (hornet 18, ManEater 40) pass
+  `this.alpha`/`this.scale` through but the color stays the stand-in.
+- `altTexture` -> treated as 0 (no port field): every `altTexture == 0`
+  head gate fires; the `altTexture == 2` variants never fire (documented
+  per arm).
+- `IsShimmerVariant` -> `variation_index == 1 &&
+  npc_ai_town::shimmer_town_transform(type)` (the ported shimmer set).
+- `NPCID.Sets.IsTownPet` -> the existing `npc_ai_town::is_town_pet`
+  (637/638/656/670/678-684, `ID/NPCID.cs:10118`).
+- The 265 Plantera branch inside the 262/263/264 gate is dead code (the
+  gate excludes 265) — documented, not ported.
+- The 590/591 wet-gate dust detail is deferred to the wiring wave.
+### Roster/projectile seams (`HitEffectOutcomeC`)
+The spawns this module cannot reach are returned as anchors for the
+wiring wave: `nebula_brain_spawn`, `nebula_predictor_shot`,
+`dutchman_death_shots`, `slimer_spawn`, `king_slime_babies`,
+`maggot_zombie_spawns`, and (wave C) `destroyer_probe_drop` — the 135
+DestroyerBody's non-fatal `ai[2]` probe latch (`:89268-89284`): the
+`IsMechQueenUp` read, the Next(25/50) draw, the latch and the NPC-139
+spawn are the wiring wave's; the anchor `(pos.X + width/2, pos.Y +
+height)` is returned.
+Code-only: every arm re-read against the cited <=100-line C# windows; the
+pool APIs (`GorePool::new_gore` kicks/sticky/ChildSafety, `DustPool::
+new_dust` default block + tweak chain, `slot_mut` post-writes) checked
+by read against `tr-core/src/gore.rs`/`particles.rs`. The 251 witness
+tests are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
+graphify invoked**. The `:91340` loveStruck heart gore is in a different
+function (not HitEffect) and stays out of scope.
 ## The dust physics chain (W4-d50, task/W4-d50-dust-type-table, 2026-11-20, code-only mode)
 
 
@@ -67493,6 +67663,645 @@ Witnesses: 1 new row-shape pin
 `projectile/data.rs`) WRITTEN NOT RUN; the band's ~40 witnesses stay
 written-not-run — the merge gate owns the run. Code-only: no
 cargo/tests/rustfmt/graphify invoked.
+## The projectile dust sites, third batch (W4-f5, task/W4-f5-dust-proj-3, 2026-11-21, code-only mode)
+The `Projectile.cs` `Dust.NewDust*` census is **1196 sites** (891 plain
+`NewDust(` + 112 `NewDustPerfect(` + 193 `NewDustDirect(`; the earlier "1220"
+was a stale over-count — re-grepped at the final phase, research/111 §4.2).
+The co-lane split:
+W4-d53 owns sites 1-40 (unpushed), W4-e3 owns sites 41-82 (`:22230-24336`, the
+aiStyle-2/4/5/6/8/152 chains, in-flight in its worktree) AND the
+`ProjectilePool::update` -> `update_dust` plumbing + the `particles.rs`
+generic-RNG widening. **This lane takes sites 83-125 (`:24406-26501`), 43
+sites** — the aiStyle-11/12/14/18/20/21/22/23/24/25/27 set, disjoint from e3's
+2/4/5/6/8/152. The g63/g64/g65 trail/death lanes are reserved (no pushed
+claims) and untouched.
+`crates/tr-app/src/projectile_dust3.rs` ports the 30 LIVE sites (rowed kind +
+host arm) as emitters over a `ProjDust3` bundle (the live `DustPool` + the
+frame's `SpawnCtx` + the pass's `UpdateProjectiles` stream, the e3 `ProjDust`
+shape). The 13 LATENT sites (unrowed kinds: 18/72/86/87 fairy-orb, 196 Smoke
+Bomb, 261 Boulder Staff, 538 Twinkle, 1092 Librarian Book, 288 hostile Golden
+Shower, 1048/1053 boulders, 1114 Daybloom Staff) are recorded at their arm and
+stay dormant until the kind row lands (the d51 ungrantered-arm precedent).
+**The plumbing is reproduced byte-compatibly with e3** (the `update` scratch
+entry + the `update_dust` live entry + the `world_sim/projectiles.rs`
+`dust_spawn_ctx` capture + the `particles.rs` `new_dust_direct<R: DustRng>`
+widening) so the merge is a keep-one, not a conflict (the d51/e2 co-lane
+precedent). Only the disjoint dispatch arms are wired here.
+**RNG.** Every roll (the gates, the `NewDust` internals, the post-arms) rides
+the pass's `UpdateProjectiles` stream in the C#'s order (`Main.cs:17775-17777`'s
+`SwapRandom` wraps the walk, dust included). Argument draws evaluate BEFORE
+the `NewDust` call; the post-arms read the returned slot (the sentinel
+included). The `NewDust` default block is 6 draws (pos.x, pos.y, vel.x, vel.y,
+frame, scale); the per-type tweak chain adds a 7th for types 6/75/228/64
+(velocity.y override, x0.3 vel.x, x0.7 scale) — the emitters' post-arms run
+AFTER `NewDust` returns, so the tweak is already applied. The aiStyle-27 sites
+read `base.oldVelocity` (the sub-step start velocity, threaded from the
+`old_velocity` latch at `projectile.rs:16868`).
+**Deliberate deviations / drops (each cited at its arm):**
+* **Kill falls through.** The C# `Kill()` sets `active = false` (`:77262`) but
+  does NOT return from `AI()` — the dust trails still run on the dying
+  sub-step. The Golden Shower (`:24511-24514`), the fire overlay's wet kill
+  (`:25273-25276`) and the Ice Rod standing probe (`:25660`) keep their draws
+  on the death tick; the port marks the slot dead and falls through (the
+  pre-existing `ai_aqua_scepter` convention).
+* **Gore siblings.** The `Gore.NewGore` calls interleaved with these dust
+  blocks (the Aqua Scepter lava bounce `:24581-24587`) stay the d55/e5 lane's
+  skip — their gate + type rolls (`Next(3)`, `Next(61,64)`) stay on the stream
+  (the gore-type-roll convention), the bodies unported.
+* **Lights / shader.** The `Lighting.AddLight` arms (the light lane c19/e6)
+  and the `shader` write (`:24408`, dropped field) are not ported.
+* **The 445 Laser Drill** (aiStyle 75) reuses `ai_drill` as a channel stand-in
+  but its C# `AI_075` arm (`:66244-66358`) has no dust/jitter — the aiStyle-20
+  tail is gated to `proj_data(kind).ai_style == 20` so the 445 keeps its
+  no-draw behaviour.
+* **The 450/326-328 per-type heads** (Saucer Scrap frame machine, Greek Fire
+  wet kill + sound latch) are ported alongside their dust at the dispatch,
+  ahead of the shared `ai_spear` tail (the C# runs them after the generic
+  gravity/rotation, before the tile-kill scan).
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
+invoked** (user directive). The 21 draw-mirror witnesses are owed a compile
+window before merge.
+## The NPC HitEffect classic-mob chain (W4-f5 phase 2, wave D, task/W4-f5-dust-proj-3, 2026-11-21, code-only mode)
+**Claim.** `npc_hit_effect_d.rs` ports the giant classic-mob else-if tail of `NPC.HitEffect` (`NPC.cs:85560-89835`): 853 `Gore.NewGore` sites in source order, from the 50 King Slime death (`:85684`) to the 156 arm's 184/185/185 (`:89829-89831`). Boundary: f10 wave C (`npc_hit_effect_c.rs`, tip `7d94a465`) owns everything BELOW `:85560` including its in-flight `:83562-85559` continuation; d55 wave A owns `:81660-81941`; e5 wave B owns `:81942-82202`. The dust halves stay the dust lanes': g62 owns the HIT (`life > 0`) halves (its `npc_hit_dust.rs` replay already covers this window's bat/demon-eye/zombie/skeleton/goblin/EoS/hornet hit loops), g59/g60 the death feeds; this module ports the death-half dust loops ONLY as the gore bodies' draw census (the f10 `death_dust_loop` precedent, keep-one at merge).
+**RNG contract.** The strike caller's `Main.rand` (`StrikeNPC_Inner` `:81488`, NOT the NPC pass stream). Per site, in C# order: (1) the death dust loop through `DustPool::new_dust` — 6 default-block draws + per-type tweaks pool-owned, culls consume the C#'s draws; (2) ARGUMENT draws BEFORE the `NewGore` (named args evaluate in source-written order — `:87405`'s Velocity/Position/Type draws Next(-80,81), Next(-60,21), Next(140,143)); (3) the two `NewGore` kicks, Y then X (`Gore.cs:1327-1328`, pool-side). Sentinel writes kept (`Main.gore[600]`).
+**Documented drops.** The 59/60/151 lava arm (`:85562-85669`) has NO gore sites — dust census the dust lanes', expert/skyblock/remix lava writes a World seam (wiring wave). Roster/World seams ride `HitEffectOutcomeD` (the 50 King Slime's `Next(4)+4` blue-slime spawns first). `netMode` SP fold; sounds c13; the type axis rides an explicit `npc_type` parameter (unrowed kinds, f10 precedent).
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked** (user directive). Batches land <=10 sites per commit, witnesses owed a compile window before merge.
+**Completion (batch 103, tip `fa3c526d5`).** All 853 gore sites of `NPC.cs:85560-89835` are ported (source count re-verified: 853 `Gore.NewGore(` lines in the window; 685 `gore.new_gore` call sites in the module — the difference is the shared `mech_smoke_burst`/`mech_quadrant_smoke`/ladder helpers fanning out to the mech rows). **FINAL verification (research/111): the 853 split 849 DEATH-half (f5's, all citation-covered, 0 missed) + 4 HIT-half (`:86532/86947/86951/88648`, g62's lane — f5 references none; their gore BODIES are a wiring hand-off, the one residual, see 111 §1.2).** The NO-gore arms are recorded in dispatcher comments, not ported: 59/60/151 lava, 687/685, 265 Spore, 663 (`:88411` unreachable), 277-280, 169, 316/330, 662, 34, 289, 23 Meteor Head, 25 Burning Sphere, 33 Water Sphere, 30/665. The else-arm's `type != 156` early-return is the dispatcher fallthrough (unmatched types draw nothing; witness-pinned). Witness fix `086827426`: the dust-6 per-type tweak draws a SEVENTH `Next(-10,6)` (`Dust.cs:214-218`) — `twin_dust6` replays it in the 7 mech/twins witnesses. Stand-ins unchanged: no `Npc.altTexture` (default-0 keeps head gores), no `Npc.color` (`Color::default()` for dye rows), `netMode` SP fold, sounds c13. **The gore-family total census (1578 sites, 5 files) + the f10-overrun merger-delete hunks (f10 tip `05f40324e`, b137) are published in research/111.**
+**SEAL (research/111 §§7-10, over receipt tip `d1d507461`).** The lane's one residual is CLOSED to a wiring checklist: the 4 hit-half gore bodies have an exact assignment (111 §7) — g62 EMIT-AT-WIRING for `:86947` (186 `Next(5)`→242), `:86951` (632 `Next(5)`→1217) and `:88648` (694 clamped-count × 2 `NextFloat`→1008 at `this.scale`; the gate draws ALREADY ride g62's arms in-stream, only the `let _ =` discards become emits) + the WIRING CALLER for `:86532` (the 133 `localAI[0]` latch writes live-NPC state g62's immutable snapshot cannot; a 5-line draw-free arm after g62's dust replay, landing in the SAME merge as the f10 delete that removes its sole current port). d55 does NOT extend (wave A `:81660-81941` only). The f10-overrun delete is RE-CENSUSED at f10 LIVE tip `d197124d1` (b157, still advancing): three contiguous bands — fns `:3672-8180` (131 bodies incl. the `five_gore_ladder`/`smoke_99_trio` helpers + the straddling `town_pet_death`), gates `:8604-9179` (128), witnesses `:11527-14415` (138) — plus the header rows `:136-257` and the `king_slime_babies`/`maggot_zombie_spawns` outcome fields; the b157 `wyvern_death` NAME TWIN (DD2 `:563` keeps / overrun `:7844` drops) and 3 substring-collision legit witnesses are pinned; the merger MUST re-run g60's census scripts at the merge-time tip (111 §8). The g60f death-bible compose (111 §9): g60 `30fea0fe1` §12.8 consumed, the f5↔g60-DeathFx keep-one receipt is DISJOINTNESS (g60's feed has zero gore refs, f5 zero ring refs — both merge whole; the 32-kind g60∩f5 + 93-kind g59∩f5 strips ride wiring), and g60's compile flag is FIXED here: `HitEffectOutcomeD` now declares `pub king_slime_spawns: Option<(f32, f32)>` (the field the `:221` write + two witnesses read). The GORE-FAMILY bible FINAL (111 §10): 1578 sites / 5 files / zero unowned / zero unassigned bodies, one-paragraph declaration + the re-runnable gate-command (expected 1345/165/36/32/0 = 1578; f5 window 853).
+## The Projectile gore sites (W4-g16)
+Code-only wave port of every `Gore.NewGore*` call site in `Projectile.cs`
+(165 sites, censused 2026-11-21 by direct grep of the decompiled file —
+the junction is never recursed). The NPC-file gore table is W4-d55/e5/f10
+(`npc_hit_effect_a.rs`); the `Main.cs`/`Player.cs` world+player sites are
+W4-g17. This lane owns ONLY the projectile-file sites, landed in 10-site
+commits, source order, one module per wave (`projectile_gore_a.rs`, ...).
+Contract (the `npc_hit_effect_a.rs` precedent): each site fn takes the
+slot's `Projectile`, the `GorePool`, the caller's `UnifiedRandom` (the
+`Main.UpdateProjectiles` stream — NOT a new stream) and the `World`; the
+explicit argument draws evaluate before the pool call, the `NewGore`
+kicks (`Gore.cs:1327-1328`) roll inside `GorePool::new_gore`, and the
+post-spawn writes land on the returned slot, sentinel included. The dust
+bodies interleaved with the gore rows are the dust lanes' documented
+skip; a dust GATE roll that precedes a gore gate on the same stream IS
+consumed (enchant-7's `Next(20)`, `:17441`). Screen-gated trails resolve
+the padded-screen hitbox test through `TrailCtx.on_screen` (the caller's
+screen seam); the C# `&&` short-circuit means an off-screen trail draws
+NOTHING. The anniversary 12/955 arm draws BOTH SelectRandom picks
+(`:23975-23978`), the second value wins. The `:23990` inner gate lists
+726 twice and omits 724 — the wiring dispatch must reproduce that quirk.
+Wave A (sites 1-11): `projectile_gore_a.rs`, 5 witnesses written not run.
+The `:24037` type-9 trail was missed by the first wave-A pass and filled
+in the gap commit — the grep census (165 sites) is authoritative over the
+wave tables; the later waves' site numbers shift by one accordingly.
+Wave B (sites 11-20): `projectile_gore_b.rs`, 5 witnesses written not run.
+`NextVector2Square`/`RotatedByRandom` draw TWO `NextDouble` each
+(`Utils.cs:1251-1254`/`:1697-1700`) — NOT `NextFloat`; the witnesses replay
+`next_double`. The lava-bounce gores upgrade the landed census arms
+(`projectile.rs::ai_aqua_scepter` + the type-27 twin) at wiring: the census
+line is REPLACED by the pool fn (gate + type + kicks + post-writes). The
+volcano's shared `num7 = Next(3,7)` (`:42311`) rides `volcano_gores` as an
+input — the caller draws it between the two dust loops.
+Wave C (sites 21-30): `projectile_gore_c.rs`, 5 witnesses written not run.
+The `AI_147` firework gore row is IDENTICAL at all seven state sites — one
+keep-one `celeb2_gore` fn consuming the landed census's same 7 range draws
+(`projectile_ai_misc.rs:490-498`); the wiring swaps each census call. The
+idle gate's `Next(900,1200)` ALWAYS draws (`:51157`); the rope gate is
+`Next(4) != 0` (3-in-4 TAKEN, `:52134`).
+Wave D (sites 31-40): `projectile_gore_d.rs`, 5 witnesses written not run.
+`NextVector2CircularEdge` draws ONE `NextFloat` (the unit only,
+`Utils.cs:1271-1274`). The pool-internal type arms are part of the site
+contract: 1225 draws `Next(6)` (`Gore.cs:1382`), the SpecialAI==3 types
+(910-925, 1007/1008, 1113-1121, 1248-1255, 1257, 1278 — `GoreID.cs:20`)
+draw two `NextFloat` + `Next(8)` + `Next(8)` (`Gore.cs:1391-1402`); the
+witnesses replay them after the kicks. The wave-B drill witness was
+corrected for the 1007/1008 SpecialAI four.
+Wave E (sites 41-51): `projectile_gore_e.rs`, 5 witnesses written not run.
+The 1085 mirror's four consecutive lines are ONE keep-one group (11 sites
+in the wave — a C# statement block is never split across waves). The
+ogre-stomp tile gore is the SAME row as the ground explosion (keep-one
+onto `ground_explosion_tile_gore`). `Utils.RandomVector2` draws TWO
+`NextDouble` (`Utils.cs:2431-2434`); the Betsy type roll evaluates AFTER
+the position argument (C# left-to-right).
+Wave F (sites 52-63): `projectile_gore_f.rs`, 5 witnesses written not run.
+The goblin-bomb four and the 590 triple are consecutive blocks kept intact
+(12 sites). `SelectRandom` over a ONE-element list still draws `Next(1)`
+(the 856 pick). The DD2 loop's count/box-resize ride the caller
+(`setApprenticeT3`, `:71832-71846`); its row adds the `Next(2)` Y-drop gate
+to the fire-explosion shape. The 590 scale float is drawn ONCE before the
+triple; the 375-377 alpha=100 is the pool's sticky arm.
+Wave G (sites 64-74): `projectile_gore_g.rs`, 4 witnesses written not run.
+The coin pile's four loops are intact (50 gores, two floats each). The
+cursed-flame position rolls are `Next(width)`/`Next(height)` on the GROWN
+box (NOT the ×Next(100)/100 shape); its 5th gore takes the switch default
+(-,-). The 483 kicks are INTEGER `Next(-1,2)`. The 459/709 count is 0
+below scale 1 (the delegation draws nothing at count 0).
+Wave H (sites 75-84): `projectile_gore_h.rs`, 5 witnesses written not run.
+The 408 triple divides timeLeft by 10 post-spawn (sticky 600 → 60). The
+nebula gores add a `Circular(25,25)` reposition (two floats) to the celeb2
+argument row — the 1078 twin (`:75030`) shares it. The confetti postlude
+ADDS before MULTIPLYING (`:74581-74587`), the opposite order of enchant-7
+(`:17453-17457`); seven rolls either way.
+Wave I (sites 86-96): `projectile_gore_i.rs`, 5 witnesses written not run.
+The tombstone/lava-boulder offsets use INTEGER `width / 2` (the int
+division truncates before the float cast). The 723 `NewGoreDirect(...).
+velocity *= 2` doubles the KICKED velocity. The :75204/:75221 row is one
+keep-one fn with the 907 halving flag.
+Wave J (sites 97-109): `projectile_gore_j.rs`, 4 witnesses written not run.
+The 503 type override keeps the `Next(16,18)` draw (`:75729-75733`). The
+281 head gores draw TWO `Next(-20,21)` velocity rolls each; their corner
+four comes AFTER the dust loops (the wiring keeps that stream order). The
+281/162 corner rows are one magnitude-parameter keep-one (±1 / ±1.5, both
+after ×0.4 — distinct from the 1053 boulder row, which has no ×0.4).
+Wave K (sites 110-119): `projectile_gore_k.rs`, 5 witnesses written not
+run. The confetti row gained a velocity parameter (`confetti_gores_vel`)
+for the 284 `-vel*0.3` twin. The 286 gore has NO `Next(100)` position pair
+(fixed pos−10). The 183 bee four applies signs FIRST then ×0.3 — the
+opposite order of the corner rows, a distinct fn. The 1023 barrel
+overwrites the velocity with the spoke direction × `NextFloat` × 8.
+Wave L (sites 120-131): `projectile_gore_l.rs`, 4 witnesses written not
+run. The 312 block is two passes (scale 0.4 then 0.8) × four corners,
+scale BEFORE signs. The 246 gore is the 483 row verbatim (keep-one). The
+370/371 duck gores normalize a `Next(-10,11)` pair (no draw for the
+normalize), the 371 scales the vector ×0.4 before both uses and draws its
+type `Next(435,438)` after the speed; both set `sticky = false`.
+Waves M/N/O (sites 132-165): `projectile_gore_m.rs` / `_n.rs` / `_o.rs`,
+the `Kill_Bombs_DoUsualKillCode` family — 9 witnesses written not run.
+The bomb gore blocks are all `NewGore(Direct)(pos, Zero, Next(61,64))`
+with a scale-then-sign postlude; they collapse to a few keep-one rows:
+the 4-corner ×0.4 (wave-J `corner_gores`), the 8-gore two-pass 0.4/0.8
+(wave-L `kill312_gores`), the gated rocket corner (wave-E), the offset
+scale-1.5 boulder (wave-I). The distinct shapes: the bundle's three-pass
+fractional scale (`num38/3`), the cluster's single-pass ×0.8 (`num49 =
+2..=2`, the `== 1` arm dead), the sticky's offset three-pass 0.33/0.66/1.0,
+the scarab's dig-direction push (`velocity*0.5 + digDir*3 + sign*0.2`),
+and the 588 confetti bomb's four INDEPENDENT `Next(2)` gates with the
+confetti type range 276-283 (not 61-64).
+**CENSUS COMPLETE**: all 165 `Gore.NewGore*` sites in `Projectile.cs` are
+ported across waves A-O (15 modules, `projectile_gore_a.rs` .. `_o.rs`),
+verified by the coverage check against the direct grep of the decompiled
+file (the junction never recursed). Two gaps found and filled mid-run
+(`:24037` type-9 trail, `:36331` crystal burst + `:75871-75883` 240
+corners).
+**WIRING (the `UpdateProjectiles` dispatch)** — landed in five batches on
+`task/W4-g16-gore-projectile-sites`, code-only (witnesses written not run):
+* Batch 1 (`1deeb8ca`): the GorePool seam — `DropRng` gained stream-exact
+  `next_max`/`next_float_direction` defaults, `GoreRng for dyn DropRng` +
+  `?Sized` pool ctors (tr-core); the 15 site modules generalized
+  `&mut UnifiedRandom` → `&mut dyn DropRng`; `ProjectilePool` gained
+  `gore_pool: Option<GorePool>` (set/take, the `golf_ctx` precedent),
+  `trail_screen` + `anniversary`, and the `trail_on_screen`/`trail_ctx`
+  helpers (the int-truncated `CenteredRectangle`, pad 400, `Utils.cs:947-950`);
+  `world_sim/projectiles.rs` moves `app.gore` in/out around the step and feeds
+  the padded screen + the anniversary flag. The lava/firework census→pool
+  upgrades: `ai_aqua_scepter` :24581 + the WaterBolt twin :24265 →
+  `lava_bounce_gore`; `celeb2_explosion`'s 7 rows → `celeb2_gore` (+ the
+  `gore_census_one` None-path helper); `create_ground_explosion`'s taken
+  branch → `ground_explosion_tile_gore`; `rocket_kill_census`'s 6 families →
+  the wave-M/N keep-ones; the 284/286/41/91-92/183 kill rows → wave-K/I/J
+  spawns. Census paths kept as draw-count pins when `gore=None`.
+* Batch 2 (`36e03444`): the AI-side landing/trail/burst sites at their C#
+  call positions — `ai_style2` 162/281 + `ai_dutchman_shell` 240 `ai[0]==3`
+  landings (`tombstone_landing_gore` 1.5/1.25), `ai_falling_star` 9/955 trails
+  (site 7 + site 10, `TrailCtx` screen gate) + the 92 `ai_style2_gore` site 11
+  at the dispatch, `ai_volcano` `ai[0]==1` caller-draw `num7=Next(3,7)` +
+  `volcano_gores`, `ai_freaking_pirates` jump `Next(4)` branch + idle
+  `Next(900,1200)`.
+* Batch 3 (`69eaf77f`): the Kill-side gore death arms (`gore_death_arms`,
+  kind-gated once-per-death, below the gem arm :75425 / above the
+  floating-turret arms :72068) — 856 stellar (screen-gated, 128 resize + pen
+  −1 + Damage), 664/666/668 DD2 (`setApprenticeT3` count 4/8 + 16·num129
+  resize + Damage BEFORE the loop), 681 goblin bomb (22 → corners → 80 +
+  Damage, the type-arm chain), 645 Lunar Flare (NO resize/Damage — reads the
+  current 140/10 box; the wave-F doc's "Resize(144)" error corrected against
+  :72094-72125), 617 Nebula (176 resize + pen −1 + Damage → pair → owner-gated
+  618 key sweep; the 620 burst deferred no-row), 452/454 phantasmal (144→gore
+  →Resize(30)+Damage / 208→×3+Damage), 459 blaster orb (scale≥1 gate), 448
+  saucer missile (112→gore+Damage).
+* Batch 4 (`a05959ec`): the wave-H/J Kill rows — 178 confetti ×40 (ADD-then-
+  MULTIPLY postlude), 955 star ×7 screen-gated, 9 star ×3, 240 Dutchman
+  corners ×4 + 96 resize + Damage.
+* Batch 5 (`43a99ff1`): the 1025 barnacle tile-collision burst
+  (`AI_197_HandleTileCollision` rides INSIDE `sentry_turret_step` at the
+  blocked-move latch — the C# handler runs only from the blocked arm
+  `:18637-18643`, so the burst gates on the same `vel != before && ai[0]==0`
+  condition the latch reads + the type==1025 gate, 9 gores) + the wave-O bomb
+  family — `explode_bomb` threads the pass's rng + gore pool and adds ONLY the
+  `Kill_Bombs_DoUsualKillCode` gore rows on the PASS stream (bomb-corner
+  family 22 recentre + ×4; dynamite 200 recentre + ×8 boulders) AFTER the
+  frozen zero-rng `Damage()` walk (KEPT untouched — the M4-PROJ-9 deviation,
+  no double-feed) and BEFORE `Kill_ExplodeTiles`.
+**The bomb-family stream decision (batch 5)**: the C# `Kill()` runs
+`PrepareBombToBlow` → `Damage()` → `Kill_Bombs_DoUsualKillCode` (the gore
+rows) → `Kill_ExplodeTiles`, all on `Main.rand`. The port's `explode_bomb`
+`Damage()` walk is the frozen zero-rng `FastRandom::new(0)` (the documented
+M4-PROJ-9 deviation). The gore rows are a SEPARATE stream consumer: they ride
+the pass's `UpdateProjectiles` rng (the C# `Main.rand` the `Kill_Bombs` draws
+on), threaded into `explode_bomb` alongside the gore pool. The frozen damage
+walk is NOT changed — the gore draws do not feed it (the module RNG contract:
+no double-feed). `None` pool spawns nothing (the bomb family had no landed
+census, so there is no draw pin to keep).
+**Cited deferrals (unrowed hosts)**: the wiring rides a host's `proj_data`
+row — a kind with no row never spawns, so its arm cannot fire. The site fns
+stay landed; the wiring rides the host's row/path when it lands (the
+`npc_hit_effect_a.rs` precedent). Deferred Kill hosts: 1020/1105 rocket
+corners (:70888), 1085 mirror (:70912), 608 Solar Counter (:72219), 590
+Truffle Spore (:72634), 676 Ogre Spit coin pile (:72758), 501 cursed flame
+(:72890), 467/468/483 (:73086/:73133/:73242), 709 Sky Dragon's Fury
+(:73367's twin), 616/424-426 (:73668/:73843), 510 Star Cannon (:73691), 408
+phoenix (:73754), 1037/1049 nebula bolts (:73895), 289 confetti (:74605),
+191-194 tombstones (:74812), 1053 lava boulder (:74898), 1078 (:75030), 728
+star (:75145), 723 shadow (:75172), 724/725/726/907/1133 falling stars
+(:75204), 12 star (:75709/:75744), 503 (:75734), 281/162 Kill corners
+(:75754/:75831 — the AI landing gores ARE wired in `ai_style2`), 712
+(:76116), 1023 barrel (:76881), 312 (:76919), 246/249 (:76960/:77003),
+370/371 ducks (:77172/:77189), the 617's 620 burst (:72336-72371), and the
+bomb-family 102/75/588/773/108/164 (not in `explode_bomb`'s
+`PrepareBombToBlow` set / no rows). Deferred AI hosts (unported arms):
+enchant-7 melee swing (:17452, the melee-lane seam), super_star_trail
+(:22155, AI_151), ai503_trail (:23965), shadowflare/ai723 trails
+(:23995/:24018, kinds 723-726/1133 — the dispatch's :23990 inner gate lists
+726 twice and omits 724, reproduced when those kinds get rows), drill_unit
+(:25438, 1092), ai49 tombstone landing (:28306, style 49), crystal
+destruction (:36331, style 132), chum (:53560-53583, style 163), the ai026_c
+ground machine 881/934/854/875/860 (:60816-62889, census-only
+`ground_machine_census`), betsy_breath (:68828, AI_136), book_storm
+(:70444-70466, AI_145), ogre_stomp (:68780, AI_135). The d78 magic-death-
+blasts lane (`5fe6d940`, kinds 79/16/34/634/635/661) is a co-lane — read-only,
+no overlap with these gore rows, no double-feed.
+**SEAL (research/364 — sealed as 360, renumbered per registry §9 row 364, 2026-11-21, code-only)**: the family gate re-run
+matches the f5 seal (111 §10.2) exactly — NPC 1345 / Projectile 165 /
+WorldGen 36 / Player 32 / Main 0 = Σ1578, the f5 window 853; the 165-line
+coverage cross-check finds every grep line cited by a `projectile_gore_*`
+module (159 exact + 6 range-cited — the `gore_j` 240-corner doc-comment
+line break + the `gore_m` frost table row), zero uncited. The g65 compose
+(research/364 §3): the death-dust drain (241 arms → **316** distinct kinds
+— the owed-pool "309" was the stale batch-28 census, 26i's "317" a +1
+miscount; the roster matches g65's 346 bible kind-for-kind) carries ZERO
+gore bodies and these modules ZERO dust refs — the bodies are DISJOINT,
+both lanes merge whole; the overlap is g65's draw-only gore census stubs
+(`gore_census` :4756 + the inline `let _` loops), retired for every WIRED
+kind by the §3.2 drop-table (12 drop hunks at g65 tip `37ec2f3aa`, the
+KEEP list for the deferred hosts pinned) — the stubs and the bodies draw
+the identical stream values (6 compose witnesses `w4_g16_seal_*` in
+`projectile_gore_o.rs` pin the six stub shapes, WRITTEN NOT RUN). Two
+caveats published: the **706** DD2 twin (g65's drain arm covers
+664|666|668|706, `gore_death_arms` only the three rowed kinds — re-check
+706's row status at merge before dropping the `:269` census whole) and
+the **503** stub draw-gate (g65 `:3697` skips the `Next(16,18)` for 503;
+the C# `:75729-75733` ALWAYS draws then overrides — g65 owes the one-line
+fix before the 503 row lands; g16's `kill9_503_gores` keeps the draw).
+The 87 g16 witnesses (73 module + 14 wiring) stay WRITTEN NOT RUN, owed
+one compile window before merge.
+## The world gore sites (W4-g17, wave A)
+`Gore.NewGore*` census for the world/player lane: **Main.cs carries ZERO
+sites** (verified by direct grep — only `Gore.goreTime` `:17075` and the
+TimeLogger rows `:17993`/`:21906`); WorldGen.cs has 36, Player.cs 32.
+The NPC death sites are W4-d55/e5/f10 (`npc_hit_effect_a.rs` wave A
+landed), the projectile sites W4-g16. This lane ports the world/player
+remainder, code-only (module + witnesses; dispatch claims deferred).
+Wave A (`world_gore_a.rs`): `WorldGen.TreeGrowFX` (`WorldGen.cs:29600-
+29637`) — the 3-trunk-gore column + the top-row leaf burst (20 grown /
+5 axe-hit), the paint column read from the trunk cell (`Tile.color()`
+is the paint), the `treeGore == 1278` ash delegation;
+`TreeGrowFX_AshShake` (`:29639-29672`) — the two dust shakes (type 31
+upper-half, type 6 lower-70%, the `Next(3)` row gates short-circuit)
+and the `!hitTree` 61+Next(3) leaf gore; `Check3x3` `case 231`
+(`:53230-53257`) — the larva 300/301/302 burst + the nearest-live-player
+Manhattan probe returning the `NPC.SpawnOnPlayer(plr, 222)` claim.
+RNG contract: `Utils.RandomVector2` (`Utils.cs:2431-2434`) draws TWO
+`NextDouble`s X-then-Y with the float cast BEFORE the multiply; the
+argument draws ride before the `NewGore`/`NewDust` internals (C#
+left-to-right evaluation); the `NewGore` kicks are Y `Next(10,31)` then
+X `Next(-20,21)` (`Gore.cs:1327-1328`, pool-side). The ash-shake row
+gates: `-height / 2` is C# int division (truncation toward zero), the
+second gate is float (`(float)num >= (float)(-height) * 0.7f`).
+Documented drops: the `TreeGrowFXCheck` height/style scan + `GetTreeLeaf`
+table, the axe-hit `:63416` and `MessageBuffer.cs:3828` callers, the
+`Check3x3` validation/KillTile/TileFrame tail (the edit lane's), and the
+Queen Bee spawn itself (returned as the player-index claim) are the
+wiring wave. netMode: single-player (the `== 0` arm runs, `== 2` drops).
+7 witnesses written, NOT run (code-only mode).
+## The world gore sites (W4-g17, wave B)
+`world_gore_b.rs`: `WorldGen.CheckPot`'s gore switch
+(`WorldGen.cs:56878-56954`) — COMPLETE: the 51/52/53,
+166/167/168, 169/170/171, 172/173/174 rows + the 2-gore bands
+(4-6 → 197/198, 7-9 → 199/200, 10-12 → 201/202, 13-15 → 203/204),
+the no-gore band 16-24, the genRand pairs (25-27 → 2× Next(217,220),
+28-30 → 2× Next(315,317)), the count roll (31-33 → Next(2,5) gores of
+698+Next(6)) and the 34-36 → 1122/1123/1124 trio. The fixed rows draw NOTHING but the
+`NewGore` kicks; the spawn point is the TRIGGER cell `(i*16, j*16)`,
+not the pot's 2x2 origin. The style is `frameY / 36` (`:56810-56816`).
+The validation/KillTile/loot tail stay in the edit lane
+(`tr_core::edit::kill::check_pot` → `PotEvent`); the wiring wave feeds
+the event here. The `genRand` rows (25-36) draw their type picks on a
+SEPARATE stream from the kicks' `Main.rand` — the port has no runtime
+genRand (`edit.rs:900`), the caller hands it in. 7 witnesses written,
+NOT run (code-only mode).
+## The player gore sites (W4-g17, wave A)
+`player_gore_a.rs`: `Player.JumpMovement`'s extra-jump visual tails
+(`Player.cs:20531-21032`) — the Fart arm's 10 type-188 puffs + 3
+`Next(435,438)` gores (`:20849-20863`), the Santank arm's 15×2 dust
+pairs (type 4 + type 6 with the even-iteration fadeIn roll) + the
+3-gore `Next(61,63)` loop at `Bottom.Y - 22` with the Circular(1,1)
+velocity add (`:20960-20994`), the Cloud fall-through's 10 type-16
+puffs + 3 `Next(11,14)` gores (`:21007-21021`).
+The state snapshot carries the POST-jump velocity (the arms run after
+the `:20847-20848` writes) and `gravDir` (the port's Player has only
+`grav_control`); the `num9`/`num20`/`num25` height pick is `height` or
+0 under reversed gravity — but the Santank gore row reads `Bottom.Y`
+FULL height regardless (the C# does not use num20 there).
+`(float)(base.width / 2)` keeps the C# INT division. The dust draws
+ride `DustPool::new_dust` (type 6 hits the `Dust.cs:214` tweak: +1
+`Next(-10,6)`); the post-spawn writes land on the sentinel included.
+The arm gates / isPerformingJump latch / sound / velocity writes are
+the movement lane's. 4 witnesses written, NOT run (code-only mode).
+## The player gore sites (W4-g17, wave B)
+`player_gore_b.rs`: `DashMovement`'s dash==1 visual tail
+(`Player.cs:21419-21434`) — 20 type-31 jitter dusts (the position
+`Next(-5,6)` ×2 + scale `Next(20)` post-rolls) then 2 `Next(61,64)`
+gores at centre-(24,34)/(24,14) whose velocity is OVERWRITTEN by
+`Next(-50,51)*0.01` per axis then ×0.4 (the kicks are discarded);
+`DoubleJumpVisuals`' sandstorm arm (`:21905-21926`) — 3 type-124 dusts
+scaled by `num4 = (jump/75 + 1)/2`, the `miscCounter % 3` gate (no
+draw) then ONE `Next(220,223)` gore with the velocity OVERWRITE
+`playerVel * 0.3 * num4` + alpha 100 (the reversed-gravity height pick
+is -6, and `num3 / 2` keeps C# int division); `UpdateHairDyeDust`
+(`:24268-24294`) — the `Next(45)` dust gate and the `Next(225)` gore
+gate ALWAYS draw (both ifs run unconditionally), the gore arm's
+argument order is Type → Position.X `Next(width)` → Position.Y
+`Next(8)`, then the six post rolls (X/Y multipliers, scale, X/Y adds)
++ the Y decrement + `vel*0.2`. The team-dye shader id resolves from
+item 1984 (`ID/ContentSamples.cs:19`); the gate itself is the
+caller's. 3 witnesses written, NOT run (code-only mode).
+## The player gore sites (W4-g17, wave C)
+`player_gore_c.rs`: the dodge bursts — `DoMysticSashDodge`
+(`Player.cs:38060-38112`) and `NinjaDodge` (`:38122-38160`). Both end
+in the SAME 5-gore velocity fan at centre-(24,24): offsets (0,0),
+(+1.5,+1.5), (-1.5,+1.5), (+1.5,-1.5), (-1.5,-1.5), each axis its own
+`Next(-50,51)*0.01` roll (the negative arms SUBTRACT the roll), the
+kicks OVERWRITTEN, then ×0.4. The sash fan writes scale 1.5 + alpha
+100 and types `Next(11,14)`; the ninja fan writes scale 1.5, NO alpha,
+types `Next(61,64)`.
+The sash dust loop (50 iterations) draws the scale argument
+`Next(10,26)*0.1` BEFORE the type-267 `NewDustDirect` internals, then
+3 `NextFloat`s (fadeIn/scale/colour-lerp) and the `CloneDust` — a
+fresh 0×0 `NewDust` (6 draws; the pool's sentinel early return is the
+C#'s own). The ninja loop (100 type-31 dusts) draws the `Next(-20,21)`
+jitter ×2, `Next(40)` scale, the `Next(2)` gate ALWAYS, and a second
+`Next(40)` when it hits. The immunity grant / buff 321 / SendData(62)
+dodge syncs are the caller's / the net lane's. `Color.Lerp` mirrors
+the `dust_table.rs` per-channel truncating helper. 3 witnesses
+written, NOT run (code-only mode).
+## The player gore sites (W4-g17, wave D)
+`player_gore_d.rs`: `KillMe`'s tenth-anniversary confetti
+(`Player.cs:38869-38893`) — 85 type-`Next(139,143)` dusts (7 post
+rolls each) then 40 `Next(276,283)` gores at the death spot, velocity
+`(0,-10)`, 7 post rolls each (X/Y adds → X/Y multipliers → scale →
+X/Y `*0.05` adds). `ItemCheck_EmitUseVisuals`' type-65 arm
+(`:44796-44806`, the `Next(5)`/`Next(10)` gates ALWAYS draw, type
+`Next(16,18)`), type-3065 arm (`:44807-44817`, one dust + the
+`Next(8)` gate, gore 16 at the rect centre, velocity ×0.5 +
+`(direction,0)`), meleeEnchant-7 arm (`:44988-45008`, the
+`Next(20)`/`Next(40)` gates ALWAYS draw, type `Next(276,283)`, 5 post
+rolls) and the item-1304 ChildSafety arm (`:45024-45027`, the
+`Next(60)` gate ALWAYS draws, the velocity's two `NextFloat`s ride
+BEFORE the `Next(3,6)` type — C# Position/Velocity/Type argument
+order). The KillMe drop pipeline is `death.rs`'s; the item-type /
+melee-flag gates are the caller's. 3 witnesses written, NOT run
+(code-only mode).
+## The player gore sites (W4-g17, wave E — census complete)
+`player_gore_e.rs`: `ItemCheck_GetMeleeHitboxParticles`' item-1450
+sparkle ladder (`Player.cs:45050-45080`) — the `Next(3)` outer gate,
+the position rolls `Next(rect.Width)`/`Next(rect.Height)`, then the
+500/250/80/10/3 if-else-if CHAIN spawning ONE of 415/414/413/412/411
+at scale `Next(51,101)*0.01` (each gate draws only when every earlier
+gate missed), the `num >= 0` post-write `+direction*2` X / ×0.3 Y.
+The 411-430 `NewGore` arm (`Gore.cs:1407-1421`) is asset-gated — the
+pool draws NOTHING for it (`gore.rs:506-508` documented drop); the
+witness mirrors the pool's stream. `ItemCheck_ApplyUseStyle`'s
+useStyle-5 item-4262 lantern mote (`:51109-51125`) — the `Next(20)`
+gate, type `Next(570,573)` FIRST, then the wind velocity's two
+`Next(-50,51)` multipliers, scale 0.8; the 570-572 arm RESTORES the
+passed velocity pool-side (`Gore.cs:1367-1370`, kicks discarded); the
+-8/-4 position nudges are data. The `DontHoldItems` mount gate
+(`MountID.cs:46`: 55/56/61) and the `itemLocation`/`MountedCenter`
+writes are the caller's.
+**Census complete**: Main.cs 0 sites (verified), WorldGen.cs 36
+(`world_gore_a`/`world_gore_b`), Player.cs 32 (`player_gore_a`..`e`).
+68 `Gore.NewGore*` sites ported across 9 commits, ≤10 sites each.
+3 witnesses written, NOT run (code-only mode).
+## The gore wiring wave (W4-g17, wiring)
+The pure gore modules' dispatch claims landed as live call sites. The
+wiring keeps every module's RNG contract: the bursts draw on the
+caller's stage stream in the C# order, the gates ALWAYS draw, and the
+POST-write snapshots ride the state structs.
+**The dispatch seams (5 commits):**
+1. `pot_gore_drain` (`world_sim/editing.rs`) — `break_tile` drains the
+   edit lane's `PotEvent`s through `pot_break_gores` between the break
+   sound and `SpawnThingsFromPot` (the `CheckPot` order,
+   `WorldGen.cs:56856-57014`). The genRand stand-in is the edit lane's
+   `FastRandom` seeded by ONE `UpdatePlayers` throw per event, drawn
+   BEFORE the loot's own seed throw. `pot_break_gores` takes the
+   `FastRandom` directly (the `spawn_things_from_pot` convention).
+2. The player-tick queues (`player.rs` + `world_sim/player.rs`) —
+   `pending_jump_gores` (the extra-jump chain, after the velocity/jump
+   writes), `pending_dash_gores` (the dash==1 start), and
+   `pending_dodge_gores` (the Hurt dodge handlers) queue at the C#
+   write points; the tick-tail drain runs `player_gore_a`/`b`/`c` on
+   `UpdatePlayers` with the POST-write snapshots (the
+   `pending_sticky_dust` convention — the Player carries no pools).
+3. The death seam (`world_sim/npcs.rs`) — the KillMe confetti runs
+   after `on_player_death` (the PlayDeathSound half) and before
+   `start_death`, gated on `SeedFlags::TENTH_ANNIVERSARY`. The larva
+   break's claim spawns the Queen Bee through
+   `spawn_queen_bee_on_player` — the `NPC.SpawnOnPlayer` 500×50 scan
+   (`NPC.cs:80475-80628`) with the C# flag-persistence shape (`flag`
+   survives the spawn-space refusal; the round-end
+   `CheckNotSpawningOnScreen` gate; the stale-position break), the
+   `HasAwoken` broadcast. `check_3x3_bottom` covers kind 231 (no item
+   drop — the C# case 231 has no `Item.NewItem`).
+4. The tree-FX dispatches (`tr-core/src/tree.rs` +
+   `world_sim/growth.rs` + `axe_tile_hit`) — `GetTreeLeaf` (both hallow
+   tables + the height+5), `TreeGrowFXCheck`'s scan, `PlayerLOS`,
+   `IsTileALeafyTreeTop`, `Collision.SolidTiles` and `ShakeTree`'s
+   dedupe/walk/FX-tail slice ported. The growth pass threads
+   `GrowthFxCtx`/`TreeFxRequests` through
+   `update_world`/overground/underground/grass-growth (the sapling
+   arms + the kind-70 `Next(250)` arm record the check cells);
+   `world_sim::growth` drains them on `UpdateWorldGen`. The axe fail
+   tick runs `shake_tree_fx` → `tree_grow_fx(hitTree: true)` on
+   `UpdatePlayers`. `World.tree_shakes` carries the per-day dedupe
+   bookkeeping; the dawn `ResetTreeShakes` clears it
+   (`UpdateTime_StartDay`'s first call).
+5. `item_use_visuals_tick` (`world_sim/editing.rs`) — the ItemCheck
+   per-tick visual arms (`Player.cs:43644-43653`): the 1450 sparkle
+   ladder, the 65/3065/enchant-7/1304 use arms and the 4262 lantern
+   mote, every animation tick. The melee rect resolves through the
+   shared `melee_swing`/`thrust` ports (useStyle 1/3).
+**Documented remainders (the wiring's scope):**
+* The sandstorm hold (`sandstorm_jump_gore`) and the hair-dye arms
+  stay unwired: the port has no `DoubleJumpVisuals` dispatch and no
+  team-dye state (`Player.hairDye` unported — the dye cache's recorded
+* The `MessageBuffer.cs:3828` net arm drops (single-player port).
+* The `ShakeTree` loot ladder (`WorldGen.cs:63163-63403`) is WIRED (wiring
+  wave 2, `world_sim/editing/shake_loot.rs`): the axe fail tick resolves the
+  shake site once (`tree::shake_tree_resolve`), runs the full genRand else-if
+  chain (the per-shake `FastRandom` stand-in seeded by ONE `UpdatePlayers`
+  throw, the `Main.rand` item/NPC/projectile rolls on the same stream), then
+  the FX tail (`tree::shake_tree_fx_at`). The i30 axe-chop lane owns the
+  chop/damage book + the per-cell BREAK drops; this is the per-shake loot.
+  Stand-ins: `Item.NewItem`'s `prefix: 0` natural-roll deviation
+  (`items.rs:767`), `Main.halloween`/`xMas` constants-off (the gates draw,
+  fall through), unported NPC kinds consume their rolls then spawn nothing
+  (`kind_from_net_id`), the `npcProj`/`CanBeReplacedByOtherNPCs` flags
+  unported. The `MessageBuffer.cs:3828` net arm is g50's (see below).
+* The `ItemCheck_EmitUseVisuals` dust-only item arms
+  (989/2880/44-46/273/723/190/213/…) and the other meleeEnchant rows
+  are WIRED in wiring wave 2 (`player_dust_use.rs`, see "The gore wiring
+  wave 2"); the other use styles' rect resolutions park with the item
+  lane.
+* The `noMelee`/`noUseGraphic` item fields are unported — every
+  registered row stands noMelee-false (the itemdata stand-in), so the
+  EmitUseVisuals gate folds to `damage >= 0` plus the bug-net trio.
+* The Queen Bee scan's `wallHouse` refusal is unmodelled (the port has
+  no house-wall table — the `try_spawn_an_npc` convention); the
+  skyblock midair arm and the type-50 clearance special never fire
+  for 222.
+**Witnesses**: 21 wiring witnesses written, NOT run (code-only mode) —
+the per-site spawn assertions plus the 500-tick/500-event
+stream-parity ledgers (the pot drain's all-37-styles replay, the
+player/growth/ItemCheck idle draw-neutrality twins, the confetti
+gate's classic-seed twin). The witness rigs put the camera on the
+player (the `Dust.NewDust` cull reads `SpawnCtx.screen_position`).
+## The gore wiring wave 2 (W4-g17, the unwired remainders)
+The wiring wave's documented remainders, censused against the co-lane
+branch tips and resolved:
+**1. The ShakeTree loot ladder — WIRED** (`world_sim/editing/shake_loot.rs`,
+`WorldGen.cs:63163-63403`). The i30 axe-chop lane (merged `0c888e891`) owns
+the chop/damage book and the per-cell BREAK drops (`KillTile_GetItemDrops`
+via `break_tile`); the per-shake loot ladder was UNCLAIMED. The port splits
+`tree.rs`'s `shake_tree_fx` into `shake_tree_resolve` (the dedupe/walk,
+`:63133-63162`, returns a `ShakeTreeSite`) and `shake_tree_fx_at` (the FX
+tail, `:63404-63417`); the axe fail tick runs resolve → loot → FX in the C#
+order. The ladder is the full genRand else-if chain: the tenth+notTheBees
+honey grenade (1130), the getGood bomb projectile (28/75, `npcProj`), the
+forest/jungle rare items (832/933/3360/3361/5517/4366), the 5629 + acorn 27,
+the mushroom 194, the halloween pumpkin 1809 (constants-off), the per-cell
+`KillTile_GetItemDrops` wood (the `:63219` arm discards `dropItemStack`/
+`secondaryItem` — the resolver's rolls draw, the spawn always uses
+`genRand.Next(1,4)`), the coin arm (71/73/72), the bird/squirrel critter
+(the `goldCritterChance` 400 `RollLuck`), the hallowed night fairy, the
+forest night owl, the jungle day macaw, the 5-bird/5-bee bursts, the palm
+seagull, the crimson Crimera (-22→173) / corrupt Eater (-11→6), the jungle
+night bat + hive projectile (655), the butterfly, the ash underworld
+critter, the remix obsidian 965, and the per-biome fruit/seed band. The
+genRand stand-in is ONE `UpdatePlayers` throw per shake (the
+`spawn_things_from_pot` convention); `Main.rand` rides the same stream.
+`is_palm_oasis_tree` (`WorldGen.cs:27205-27212`, `beachDistance` 380) gates
+the palm arms. Stand-ins: the `Item.NewItem` `prefix: 0` natural-roll
+deviation, `Main.halloween`/`xMas` false (the gates draw then fall through),
+unported NPC kinds consume their rolls then spawn nothing
+(`kind_from_net_id`), `NPC.NewNPC`'s getGood `Next(3)` draw kept, the
+`Bottom` anchor → top-left `(X-w/2, Y-h)`, `timeLeft` 937 → `despawn_timer`,
+the `npcProj`/`CanBeReplacedByOtherNPCs` flags unported. 3 witnesses
+(the 400-seed ladder replay, the acorn-arm pin, the re-pinned axe-shake
+8-gore witness — the ladder spawns no gores, so the FX count is seed-robust).
+**2. The sandstorm hold — CONTRACT (f42's).** `Player.DoubleJumpVisuals`'
+sandstorm arm (`Player.cs:21905-21926`) is fully wired on
+`origin/task/W4-f42-sandstorm-2` (`4bf7b2e88`: `pending_sandstorm_jump` +
+the `world_sim/player.rs` drain, the 3 type-124 dusts + the %3 220-222 gore
+on `UpdatePlayers`). c40 (`bdd039802`) deferred the visuals to f42 with the
+RNG slot recorded. This lane's `player_gore_b::sandstorm_jump_gore` is the
+UNWIRED twin — keep-one at merge: f42's live drain survives, this module's
+arm retires (the `npc_ai_style73` unwired-module precedent). No double-feed.
+**3. The hair-dye arm — WIRED** (`Player.hair_dye` + the use arm + the
+tick-tail drain). `Player.hairDye` (`Player.cs:2546`, a `byte`) was unported
+(the dye cache's recorded deviation, ANALYSIS "The dye plumbing"). The port
+adds the field (0 = no dye, the fresh default), the use arm
+(`Player.cs:42856-42866`: `ItemTimeIsZero && itemAnimation > 0 &&
+item.hairDye >= 0` → `ApplyItemTime` + `hairDye = (byte)item.hairDye`, in
+`world_sim/editing.rs` after the potion block — the hair dyes are useStyle 9
+consumables with no heal/buff, so the potion/food arms skip them), and the
+per-tick `UpdateHairDyeDust` drain (`Player.cs:24268-24294`, called from
+`Player.Update` `:24593`) in `world_sim/player.rs`'s tick-tail: the
+`!gamePaused && !dead && !ghost && !stoned && !frozen && hairDye ==
+TeamDyeShaderIndex` gate (stoned = buff 156, frozen = `p.frozen`, ghost
+false), then `player_gore_b::hair_dye_dust_arm` + `hair_dye_gore_arm` on
+`UpdatePlayers` (both gates ALWAYS draw, the dust arm first). The team-dye
+shader id resolves from item 1984's `ItemDef.hair_dye` (8,
+`ID/ContentSamples.cs:19`). The `NetMessage.SendData(4)` sync is MP-only.
+The hair-dye DRAW tint (the legacy CPU `GameShaders.Hair.GetColor` →
+`colorHair` channel) stays the dye lane's — this is the sparkle visual +
+the state field only. 2 witnesses (the 600-tick team-dye sparkle, the
+non-team draw-neutrality twin).
+**4. The MessageBuffer net arm — CONTRACT (g50's).** `MessageBuffer.cs:3828`
+is msg **112 SpecialFX** kind 1 (`WorldGen.TreeGrowFX`, the shake variant on
+`b6 == 1`). `origin/task/W4-g50-net-apply-arms-3` owns the apply arm
+(`netglue.rs:3000` `S2c::SpecialFx` → `tree_grow_fx` + `tree_grow_fx_ash_shake`
++ kind 2 `fairy_effects`, the bare-`Main.rand` message-time replay). g51 is
+ids 121-163 (112 out of range). This lane's `world_gore_a::tree_grow_fx` is
+the single-player twin — keep-one at merge: g50's net apply + this lane's
+growth/axe dispatches share the one burst fn. The `ShakeTree` `netMode == 2`
+`SendData(112)` (`:63410-63413`) is the server send (single-player port
+drops it, the pool convention).
+**5. The dust-only ItemCheck arms — WIRED** (`player_dust_use.rs`,
+`Player.cs:44756-45023`). g66/e3/d51/e1/f3/g15 do NOT claim them (only the
+`bug_net.rs` zero-draw comment + `buff_effects_accessory.rs`'s "not ported
+yet" note). The port adds the full dust-only arm set: the 989 (Next(5)
+type-15/57/58), 2880 (Next(2) SelectRandom 226/229), 44/45/103/104/46
+(Next(15) type-14), 273/675 (Next(5) type-14 + always type-27), 723
+(Next(2) type-64), 190/213/5295 (always type-40/3), 121 (2× swung-path
+type-6 perfect), 122/217 (always type-6), 155 (always type-172), 676
+(Next(3) type-67), 3063 (always type-66 + hslToRgb colour), 3823 (always
+type-6 direct), 724 (Next(5) type-67), 795-802 (2× swung-path type-5 +
+Next(20) type-115), 367 (Next(3) type-57 + Next(4) type-43) arms + the
+frostBurn (Next(2) type-135), meleeEnchant 1-6/8 rows, and magmaStone
+(Next(3)!=0 type-6) tails. `item_use_visuals_tick` runs them in three
+halves (`item_use_dust_pre`/`_post`/`_tail`) interleaved with the gore
+lane's 65/3065/enchant-7/1304 arms in the exact C# order, all gates ALWAYS
+draw on `UpdatePlayers`. The swung-path arms read
+`melee_swing::point_on_swung_item_path` (the placement's loc/rotation now
+captured). The 3063 colour uses the byte-exact `ui::color::hsl_to_rgb`.
+Stand-ins: the `noUseGraphic`/`noMelee` fields fold to `sItem.melee` (the
+`player_gore_d` convention); the `:44913-44917` phase-color AddLight +
+`:45028-45045` mount-62-65 AddLight/type-306 are the light/mount lanes'
+(skipped). 2 witnesses (the Terra Blade type-64 + the Night's Edge
+always-type-27, written not run).
+## The gore-world seal (W4-g17, research FINAL — research/339)
+The lane's research FINAL + the GORE-WORLD-family bible landed as
+`docs/research/339-g17-gore-world-final.md` (registry 339 per §9.2 —
+renamed from 304, §8.6: the 304 self-pick was post-§7.4-contested, d50
+KEEPS 304; chain 304→339; originally verified free
+against registry-150 §7 + a fresh all-tip sweep). Three verifications
+closed this round (code-only, witnesses WRITTEN NOT RUN):
+1. **The census is FINAL**: Main 0 / WorldGen 36 / Player 32 = **68**
+   sites, re-counted per file and re-read line-by-line. There is NO
+   `World.cs` in this decompilation (the `Terraria.World` statics live
+   in `Main.cs`); the world-side census reads WorldGen + Main. The
+   full-family table (1627 distinct sites: 1565 bare / 16 Perfect /
+   46 Direct across 13 files + Main's zero) carries the per-file owner
+   lanes; research/15's 1643 baseline double-counted the Perfect sites
+   (the prefix match already included them). The 10 UNCLAIMED residue
+   sites (Mount 3, PlayerDrawSet 3, AmbientWindSystem 2, WorldItem's
+   star-burn gore 1, Utils.PoofOfSmoke 1) are task-seeds for the
+   merger, NOT this lane's.
+2. **The i30-compose ONE-throw contract**: `axe_tile_hit`'s fail tick
+   draws EXACTLY ONE `UpdatePlayers` throw to seed the genRand
+   FastRandom stand-in before the ladder + FX (the C# order). New
+   witness `w4_g17_the_axe_fail_tick_compose_draws_one_seed_throw`
+   (the live path vs the manual resolve→throw→ladder→FX twin, stream +
+   pool equality). Witness total 60.
+3. **DrawNPCChatButtons is DEAD** (`Main.cs:40474-40673`, ZERO callers
+   in the whole decompilation — the NPCChatPanel.DrawButtons path
+   replaced it; g58 research/240 row 8 concurs). The 6 unported chat
+   buttons are pinned (StardewValleyBit/DryadPurification/GuideTip/
+   RequestHome/PartyGirlMusicSwap/TavernkeepAdvice,
+   `NPCInteractions.cs:486-531` minus the landed roster) — they stay
+   with their lanes; no code change.
+The keep-one contracts hold at the co-lane tips: the sandstorm arm is
+f42's (`4bf7b2e88`), the msg-112 net arm g50's; this lane's twins retire
+at merge. The family bible (research/339 §4) is the merger's one-paragraph
+read: one owner lane per family file, no double-feed, the 68 SEALED.
 ## The NPC hit-dust lane (W4-g62)
 
 (2026-11-21, code-only mode, branch `task/W4-g62-npc-hit-dust`.)
@@ -81919,3 +82728,1360 @@ arithmetic slip, corrected `08a4c3bb0`; +1 the dead-player pin).
 Drop-hunk count: **13 DROP / 10 UNIQUE-KEEP groups / 5 splices**. No
 code changes this round — docs-only adjudication; the splices execute
 at the merge, g10's file untouched here.
+## The projectile death dust (W4-g65, task/W4-g65-proj-death-dust, code-only)
+The per-kind dust bursts inside `Projectile.Kill()`
+(`Projectile.cs:70642-77262`) — the dust that fires ONCE when a slot dies,
+distinct from the per-tick TRAIL dust (the g63/g64 lanes) and from the i17/i18
+special-arrow/bullet deaths (which stay with their main-landed modules). Only
+UNCLAIMED arms are ported, in ~10-kind commits.
+### The seam (the gallop-dust queue→drain convention)
+`crates/tr-app/src/projectile_death_dust.rs` owns the per-kind arms. The pool
+cannot borrow the App's `DustPool` or hold the live `UpdateProjectiles` stream
+alongside its `rng: &mut dyn DropRng` parameter (the pool-only tests pass a
+`FastRandom`), so the wiring splits exactly like the Horseman gallop dust
+(`world_sim/npcs.rs`, "W-10 unicorn tails"):
+* **Death hook** (`projectile.rs`, the `!active` block, inside the
+  `!died_out_of_world` gate beside the channel cancel): SNAPSHOTS the dying
+  corpse (`DeathSnapshot::of` — kind/pos/box/velocity/scale) into
+  `ProjectilePool::death_dust`. NO draws there; the snapshot is taken before
+  any other death hook (gem/turret resize) mutates the slot, matching the C#
+  `Kill()` reading the live slot throughout its body. The out-of-world guard's
+  direct deactivate (`:16696`, no `Kill()`) never snapshots — same gate as the
+  channel cancel.
+* **Pass-tail drain** (`world_sim/projectiles.rs`, after the golf writeback):
+  `drain_death_dust()` hands the snapshots to `projectile_death_dust::drain`,
+  which resolves each C# arm onto the real `DustPool::new_dust` on the LIVE
+  `UpdateProjectiles` stream (`app.rngs.stream`), with the App's `spawn_ctx`
+  (the `Dust.cs:77-101` guards/cull). Every explicit `Main.rand` draw the arm
+  takes AND the `new_dust` internals run there, in C# order, per death in slot
+  order.
+### Deviations (recorded)
+* **Pass-tail draw placement.** The C# rolls the death dust mid-`Kill()`; the
+  port defers ALL death-dust draws (explicit + internals) to the pass tail —
+  the same recorded deviation as the gallop dust and the golf/celeb2 sound
+  drains. Stream-neutral for the port's per-consumer streams; the
+  `UpdateProjectiles` stream advances by the same total draw count, just at the
+  tail rather than mid-walk.
+* **The DustPool contract** (`origin/task/W4-d50-dust-type-table`): the bodies
+  ride the verbatim `new_dust` family (guards, cull, pressure bands, default
+  block, ChildSafety re-type, per-type tweak chain). The module only resolves
+  the arm's arguments + post-spawn writes (`noGravity`, `velocity *=`,
+  `scale *=`, `fadeIn`); the drain applies them to whatever slot `new_dust`
+  returned — the sentinel 6000 included (the C# writes `Main.dust[6000]` too).
+* **Sounds/gore skipped.** The `SoundEngine.PlaySound` cues and `Gore.NewGore`
+  bodies in the death arms are the sound/gore lanes' (the pool-wide skip); only
+  the dust is ported here. Where a gore draw sits BETWEEN dust draws in the C#
+  body, the arm is deferred to a later commit that ports the gore census too
+  (none in batch 1 — every batch-1 arm is dust-only).
+### Batch 1 (10 kinds, the plain `:76170-76297` bursts)
+17 (5× dust-0), 31/42 (5× dust-32 vel×0.6), 39 (5× dust-38 vel×0.6), 71 (5×
+dust-53 vel×0.6), 179 (5× dust-149 vel×0.6), 40 (5× dust-36 vel×0.6), 109 (5×
+dust-51 scale 0.6 vel×0.6), 21/471/532/1111 (10× dust-26 scale 0.8), 24 (10×
+dust-1 speed vel×0.1 scale 0.75), 38 (10× dust-42 speed vel×0.1). Every arm is
+dust-only with NO explicit `Main.rand` draw — the randomness is entirely the
+`new_dust` internals, so the death hook is stream-neutral and the drain spends
+the stream inside `new_dust`. Witnesses: `projectile_death_dust.rs::tests`
+(the burst counts/types/velocity writes, the unclaimed-kind inertness, the
+determinism pair) — WRITTEN NOT RUN (code-only mode).
+### Batch 2 (10 kinds, the explicit-draw `:74236-75680` bursts)
+103 (20× dust-75 alpha 100, `Next(2)` gate → scale×2.5/noGravity/vel×5), 278
+(20× dust-169 alpha 100, `Next(2)` gate → scale×1.5/noGravity/vel×5), 5 (60×
+dust, `Next(3)` type pick {15,57,58}, speed vel×0.5 alpha 150 scale 1.5), 93
+(10× dust-57 alpha 100, noGravity/fadeIn 1/vel×2 then `NextFloat()*1.5` Y kick),
+318 (10× dust-30, `Next(2)` gate → noGravity), 378 (10× dust-30, same gate),
+346 (20× dust, type 10 or 4 when ai[1]==1, noGravity), 335 (20× dust, type
+90−(int)ai[1], noLight/scale 0.8), 76/77/78 (5× dust-27 alpha 80 scale 1.5
+noGravity), 55/719 (5× dust-18 scale 1.5 noGravity). The gate/pick/kick draws
+ride the drain's `rng` AFTER each `new_dust` (the C# rolls them after the
+spawn); the 5's type pick rides BEFORE its spawn. The `DeathSnapshot` gains
+`old_vel`/`ai1` for the ai[1]-driven picks (the 346/335). Witnesses: the
+gated-burst stream census (internals + 20 gates), the Jesters type-pick set,
+the 93 Y kick, the ai[1] picks + noGravity bursts — WRITTEN NOT RUN.
+### Batch 3 (10 kinds, the velocity-subtract + plain `:74752-75667` bursts)
+158/159/160/161 (10× dust-9/11/19/11, noGravity + velocity −= vel×0.5), 1124
+(5× dust-26), 2/82 (10× dust-6 alpha 100), 51/267 (5× dust-0 scale 0.7),
+3/48/54/599/909 (10× dust-1 speed vel×0.1 scale 0.75), 330 (10× dust-0 speed
+vel×0.4 scale 0.75), 4 (10× dust-14 alpha 150 scale 1.1). All dust-only, no
+explicit draw (the velocity-subtract family's randomness is the internals).
+Witnesses: the velocity-subtract witness-pool comparison + stream-neutrality,
+the batch-3 plain-burst counts/types — WRITTEN NOT RUN.
+### Batch 4 (10 kinds, the multi-loop dust pairs `:73583-76307`)
+15/321 (20× dust-6 pair: scale 2 noGravity vel×2 + scale 1 vel×2, speed
+−vel×0.2 alpha 100), 253 (the pair, dust-135), 95/96 (the pair, dust-75, scales
+2×scale/1×scale), 27 (30× dust-172 pair: noGravity + scale 0.5, speed vel×0.1),
+44/45 (30× dust-27 pair: scale 1.7 noGravity + scale 1, speed vel full), 495
+(15× dust-27 at Center 10×10, noGravity −= oldVel×0.3), 497 (the same + vel×2 +
+`Next(150)*0.001` scale), 729 (10× dust-279 Direct, noGravity + vel.X×2), 731
+(15× dust-226 Direct, `Next(3)` gate ≠0 → noGravity/scale×1.5/vel×0.5), 337
+(10× dust-197 noGravity). The 497/731 explicit draws ride the drain rng after
+each spawn. Witnesses: the pair counts/noGravity alternation, the 495/497
+centre bursts, the 729/731/337 bursts — WRITTEN NOT RUN.
+### Batch 5 (10 kinds, the SelectRandom + crystal-spark `:72374-73337` bursts)
+581 (30× SelectRandom{229,229,161}, noGravity/scale 1.25+NextFloat/fadeIn
+0.25/vel×2/noLight), 671 (30× SelectRandom{27,27,62}, same), 811/814 (30×
+dust-5, scale 1.25+NextFloat/vel×2), 819 (20× dust-5, scale 1+NextFloat×0.5/
+vel×1.5), 675 (40× SelectRandom{27,242,73,72,71,255,255,255}, noGravity/scale/
+fadeIn/vel×3/noLight), 572 (15× dust-40 alpha 100, vel×3/noGravity/scale 1.25/
+position=(Center+pos)/2), 658 (10× dust-269, `Next(3)` gate → fadeIn/scale/
+type++ else scale; noGravity/vel×1.25 −= oldVel/10), 522 (the 658 shape,
+dust-254), 520 (10× dust-252 scale 0.75, noGravity −= oldVel/3). The
+SelectRandom pick rides BEFORE the spawn; the crystal-spark gate + branch
+range draws ride AFTER. Witnesses: the SelectRandom choice-set membership, the
+crystal-spark type++ branch, the 811/819/572 bursts — WRITTEN NOT RUN.
+### Batch 6 (10 kinds, the walking-position + plain `:73952-74333` bursts)
+384/386 (20× dust-212 speed direction×2 alpha 100 scale 1.4,
+Lerp(CornflowerBlue,White,0.3) colour, noGravity), 507/508 (20× dust-81 walking
+from pos+norm(oldVel)×16 back ×8, position=(dustPos+Center)/2, vel += oldVel×0.4
+then ×0.5, noGravity), 598 (the walk, dir=(rot−π/2), vel += dir×2), 971 (6×
+dust-4 walking ×8/×4, colour (10,10,10,150), vel += dir then ×0.5), 1/81/98/
+980/1073 (10× dust-7), 336/345 (6× dust-196 noGravity scale=proj.scale), 344
+(8× dust-197 alpha 50 noGravity vel×0.75 −= vel×0.025), 349 (3× dust-76
+noGravity/noLight/scale 0.7), 184/195 (5× dust-7), 275/276 (5× dust-7). All
+dust-only, no explicit draw. The `DeathSnapshot` gains `rot`/`direction`; the
+module gains `lerp_color`/`safe_normalize`/`rotation_vector` helpers. Witnesses:
+the walking-position counts/noGravity, the 384 lerp colour, the 336/344/349 +
+plain-7 bursts — WRITTEN NOT RUN.
+### Batch 7 (10 kinds, the old-velocity-kick + bee `:74384-74564` bursts)
+265 (15× dust-163 alpha 100 scale 1.2, noGravity/vel×1.2 −= oldVel×0.3), 355
+(the shape, dust-205), 304 (3× dust-182 scale 0.8, same writes), 263 (15×
+dust-92 speed vel, alpha Next(0,101) + scale 1+Next(40)*0.01 BEFORE the spawn,
+noGravity/vel×2), 261 (15× dust-148 Direct vel×2/Y−=0.4 + 3× dust-228 Direct
+vel×2/noLight/scale×0.8/Y−=0.3), 928 (25× dust-5 speed vel White scale 1.3),
+227 (15× dust-157 noGravity + vel += oldVel×NextFloat + scale 1.5), 120 (10×
+dust-67 at pos−vel speed vel alpha 100, first 5 noGravity, all vel×0.2),
+181/189/566 (6× dust-150 speed vel alpha 50 noGravity scale 1), 206/225 (5×
+dust-40, gated `type != 206 || alpha < 255`). The `DeathSnapshot` gains `alpha`;
+the 263 alpha/scale draws ride BEFORE the spawn, the 227 NextFloat AFTER.
+Witnesses: the old-vel-kick counts, the 263 draws, the 206 alpha gate, the
+261/928/227/120/181 bursts — WRITTEN NOT RUN.
+### Batch 8 (10 kinds, the center-lerp + count-draw `:72543-73572` bursts)
+444 (Next(5,9) dust-171 at Center, vel×0.8 + Lerp→Center 0.5 + noGravity; the
+i14 bullet release stays with i14), 435 (Next(5,10) dust-226, vel×1.6/Y−−/
+Lerp/noGravity), 436 (the shape, dust-220), 462 (the shape, dust-229, position
+−= One×4 before Lerp), 732 (Next(5,10) dust-226, vel = vel×0.5 + baseVel×(i/
+count)×0.7), 631 (Next(5,10) dust-229, −= One×4 + Lerp), 684 (Next(15,25)
+dust-60 colour (255,255,255,0), vel×8×(0.3+0.7×NextFloat) + fadeIn 1.3+NextFloat
+×0.2 + noLight/noGravity + position += vel×4), 625-628 (6× dust-135 alpha 100
+scale 2 noGravity/noLight), 472 (20× dust-30 noGravity vel×0.45 += baseVel×0.9),
+440/606 (Next(3,7) dust-135/182 at Center−vel/2, vel×2/×1.5 noGravity). The
+module gains `lerp_vec`/`center_lerp_burst` helpers; the count draws ride BEFORE
+the spawns, the 684 NextFloats AFTER. Witnesses: the center-lerp count ranges +
+noGravity, the 684 noLight, the 625/472/440/606 bursts — WRITTEN NOT RUN.
+### Batch 9 (10 kinds, the gated + circular-velocity `:74475-76392` bursts)
+177 (20× dust-137, alpha Next(0,101) + scale 1+Next(-20,40)*0.01 BEFORE spawn,
+vel −= oldVel×0.2, Next(3) gate → scale×0.8/vel×0.5 else noGravity), 119/118/
+128/359 (dust-92, count 20 for 119/359 else 10, Next(3) gate ≠0 → vel×2/
+noGravity/scale×1.75 else scale×0.5), 309 (10× dust-185, Next(2) gate → vel×2/
+noGravity/scale×1.75), 308 (80× dust-185 at pos+(0,16) box h−16, vel×2/
+noGravity/scale×1.15), 967 (20× dust-219 speed vel, scale 0.5+Next(-20,40)*0.01
+BEFORE, noGravity + vel = NextVector2Circular(6,6)), 1026 (20× dust-2, scale
+1.2+Next(-20,40)*0.01 BEFORE, alpha 50/fadeIn 0.5/noGravity + vel =
+NextVector2Circular(5,5)), 239/245/264 (gated vel.Y>0, 1 dust-154/114/54 at
+pos+(0,h−2) 2×2, position.X−=2/alpha 38/vel×0.1 += −oldVel×0.25/scale 0.95,
+245/264 noGravity), 306 (20× dust-184 scale×1.1/noGravity + 30× dust-184
+vel×2.5/scale×0.8/noGravity). The module gains `next_vector2_circular`/
+`bottom_dust` helpers. Witnesses: the 177/119/309 counts, the 967/1026 circular
+bursts, the bottom-edge vel.Y gate, the 308/306 counts — WRITTEN NOT RUN.
+### Batch 10 (10 kinds, the trail-position + ring `:73745-77160` bursts)
+115 (27× dust-27 pair at pos−oldVel×(30/i) box 8×8, scale 1.4 noGravity vel×0.5
++ scale 0.9 vel×0.5), 114 (the pair, gated per-i Next(128) >= alpha), 116 (27×
+dust-64 pair, scale 1.8/1.4 both noGravity), 173 (20× dust Next(3){15,57,58} at
+pos−oldVel×(30/i) speed oldVel×0.2 scale 1.8 vel×1.5 noGravity), 132 (27×
+dust-107 pair at oldPos−oldVel×(30/i), scale 1.8 noGravity vel×0.5 + scale 1.4
+vel×0.05), 156 (27× dust-73 pair at oldPos alpha 255, scale 1.8 noGravity vel×0.5
++ scale 1.4 vel×0.05 noGravity), 157 (27× dust-107 at pos speed oldVel scale 1.8
+noGravity vel×0.5), 343 (27× dust-197 at oldPos−oldVel×(30/i) scale 1.2 noGravity
+vel×0.5), 408 (15× dust-5 at Center−One×10 box 50×50 speed (0,−2) vel/=2), 385
+(36× dust-172 ring at Center+rotated(norm(vel)×(w/2,h)×0.75), speed offset×2
+scale 1.4 noGravity/noLight vel=offset). The `DeathSnapshot` gains `old_pos`; the
+module gains `trail_pair`/`trail_pair_oldpos`/`rotate_vec` helpers. The 114 gate
++ 173 type pick draw per iteration; the rest are internals-only. Witnesses: the
+trail pair counts (27×2), the 114 alpha-0 gate, the 173 pick set, the 157/343
+single trails, the 408/385 bursts — WRITTEN NOT RUN.
+### Batch 11 (10 kinds, the firework/star RINGS `:71490-76855` + `:74817`)
+The deferred big circular bursts. 167 (400× dust-130 ring kicks, speed
+4/8/12/16 by band, damp 0.5, scale 1.3/noGravity), 168 (400× dust-131, speed
+2×(i/100)→10→13, >200 kicks ×1.25/×0.75, i>100 scale/noGravity), 169 (the
+star: NextDouble heading + Next(5,9) spokes + Next(12,17)/Next(3,7) speeds,
+TWO 2-side×20-step Lerp spoke passes (second at half speed) of dust-133 +
+100 dust-132 ring-kick tail), 170 (400× dust-133/134 by band, per-dust
+Next(3) gate → scale 1.3/noGravity), 415 (NextDouble + Next(5,9) spokes +
+Next(10,15)×0.66/Next(4,7)/2, heading rotates every 30th particle INCLUDING
+i=0, 30×spokes dust-130 + 100 ring kicks), 416 (the spiral: Next(3,6)×2
+spokes + Next(2) sign, base rotates every 20th, working vector by
+τ/(20×spokes)×sign×3 otherwise, scale-flag alternates), 417 (TWO NextDouble
+angles + TWO NextDouble radii, 150× dust-132/133 by band, own-velocity
+Normalize×speed with the >50/>100 axis-squash + rotate), 418 (Next(5,12)
+spokes, 2-side×15-step SmoothStep spoke passes of dust-134 + 120 ring kicks
+damp 0.2), 1024 (12× dust-306 Direct, scale 0.8+NextFloat×1.7 BEFORE, vel =
+SafeNormalize(vel).RotatedBy(τ×i/12)×8×(0.1+NextFloat×1.2) AFTER, colour
+Lerp(White,(140,234,180),i/10)), 873 (20× dust-267 NewDustPerfect ring,
+heading = vel.ToRotation() + i×τ/20, i%4/i%2 speed/scale bands, colour
+Lerp(AI_171_GetColor,White,NextFloat×0.4)). The module gains
+`rotated_by`/`to_rotation`/`lerp_f32`/`smooth_step_f32`/`smooth_step_vec`/
+`ring_kick` helpers. **The i16 firework draw census is DEDUPED onto this
+batch** (`projectile.rs::dart_electro_firework_kill`'s 169 four draws + 170
+400 gates removed — the drain runs the real bodies + the same draws on the
+same stream; the 192×192 resize + Damage `:76857-76864` stay unported
+state, recorded). The 873 enrage gate reads `ShouldEmpressBeEnraged`
+(`NPC.cs:45925-45951`): non-remix = `world.day_time`; the remix arm scans
+for a live 636 and the port has NO live Empress (the `npc_ai_empress`
+wiring remainder), so the scan finds none → not enraged (recorded).
+Witnesses: the 167/168/170 counts/bands, the 169 spoke-count formula, the
+415/416/418 counts, the 417 150-count/bands + determinism, the 1024 colour,
+the 873 centre/scale bands — WRITTEN NOT RUN.
+### Batch 12 (10 kinds, the spoke/queen-slime/sparkle/terraspark RINGS)
+659 (the Spirit Flame ring, gated ai[0]>=0: resize 80×80 centred, 30×
+dust-27 scale 2+NextFloat×0.5 noGravity — first 15 the RING at Centre vel =
+UnitY.RotatedBy((i+1)/15×τ)×(5+NextFloat×1.5) fadeIn 1.5+NextFloat×0.5,
+last 15 scatter UnitY.RotatedByRandom(π)×NextFloat×w/3 fadeIn 0.5+NextFloat
+×0.5 vel×2; + 10× dust-31 scatter UnitX.RotatedByRandom(π).RotatedBy(vel
+rot)×w/3 fadeIn 0.5+NextFloat×0.5 noGravity vel×1.5), 1012 (the First
+Fractal: 40× UnitY.RotatedBy(i×τ)×(2+NextFloat×0.5)+vel×NextFloat spoke,
+Next(3) gate 0 → dust-284 Direct colour Next(3) 3-way scale NextFloat+1
+position−=vel fadeIn 1, else spoke×0.3 → dust-138 Direct scale NextFloat×
+0.3+0.6 position−=vel), 920 (6× dust-4 box 4×4 pos+Size×NextVector2Square
+spoke UnitY.RotatedBy(i×τ+NextFloat×τ×0.5)×(2+NextFloat×0.5) alpha 80
+(78,136,255,150) scale 1.5 noGravity), 921 (12× dust-243 box 6×6 the 920
+shape speed 3+NextFloat×0.5), 926 (22× dust-31 pos−(8,8) box (w+16)×(h+16)
+the 921 spoke alpha 40 QueenSlime_GetDustColor scale 1.5 noGravity), 937
+(12× the 926 shape), 818 (the Stellar Tune: TWO f32-step rings num+=0.34,
+dust-278 Perfect pos+Size×NextVector2Square spoke UnitY.RotatedBy(num×τ+
+NextFloat×τ×0.5)×(2+NextFloat×0.5)/(1+NextFloat×0.5) alpha 150 Lerp(White,
+Gold/OurFavoriteColor,NextFloat) scale 0.4/0.7 noGravity), 856 (the Sparkle
+Guitar: 6× dust-58 alpha 150 scale 0.8 + TWO num+=0.34 rings dust-278
+Perfect at Centre spoke×(4+NextFloat×2)/(2+NextFloat×1) alpha 150 Lerp
+(White,HotPink/Orange,NextFloat×0.5+0.5) noGravity), 728 (the Star Veil: 7×
+dust-58 speed vel×0.1 alpha 150 scale 0.8 + num+=0.125 ring dust-278 Perfect
+spoke×(4+NextFloat×4) CornflowerBlue + num+=0.25 ring spoke×(2+NextFloat×3)
+Gold alpha 150 noGravity), 985 (the Terraspark fan, gated localAI[1]!=1:
+THREE passes 20/10/10 dust-107 Perfect, NextFloatDirection → 1−|dir|, angle
+= rot+dir×(π/2)×0.9, pos = Center+angle vec×Remap(NextFloat,0,1,rmin,rmax)×
+scale − rot vec×pull×70×scale, DISCARDED colour NextFloat, vel = baseVel.
+RotatedBy(dir×π/4)×0.2×NextFloat alpha 100 scale 1.4×(1−|dir|), position−=
+vel×NextFloat×3, scale×=1−pull; pass pulls NextFloat / 0.2+NextFloat×0.25 /
+0.5+NextFloat×0.25, radii 60/85, 70/85, 60/75). The `DeathSnapshot` gains
+`ai0` (the 659 gate) + `local_ai1` (the 985 gate); the module gains
+`next_vector2_square`/`rotated_by_random`/`queen_slime_dust_color`/`remap_f32`
+helpers. The 659/856 resize + Damage stay unported state; the 856/728 gore
+stays the gore lane's. Witnesses: the 659 gate + ring/scatter split, the
+1012 40-count, the queen-slime counts/types, the sparkle f32-step counts,
+the 985 gate + 40-count — WRITTEN NOT RUN.
+### Batch 13 (10 kinds, the DD2 explosion bursts `:71652-72154`)
+710 (the ballista: resize 40×40 centred — position=Center OLD box then
+Center=position NEW box, the centre stays; 2× dust-31 alpha 100 scale 1.5
+scatter UnitY.RotatedByRandom(π)×NextDouble×w/2 GRAVITY ON, 10× dust-6
+alpha 0 scale 2.5 same scatter noGravity vel×2, 5× dust-31 alpha 0 scale
+1.5 UnitX.RotatedByRandom(π).RotatedBy(vel rot)×w/2 noGravity vel×2; the
+ai[1]=-1 + Damage stay unported state), 662/685 (the flame trail: dir =
+oldVelocity.SafeNormalize(Zero), walk from pos+dir×16, 16 steps each a
+Next(2) coin — 0 skips but STILL steps back 8 — else dust-11 Direct
+position=(own+Center)/2 vel+=oldVel×0.4 then ×0.5 noGravity), 680 (the
+662 trail + one dust-11 Direct Red scale 1.6 noGravity), 664/666/668/706
+(the apprentice explosion: the T3 flag doubles the burst — base 4/20/20/
+10/20 dust + 4 gore vs T3 8/40/50/5/30 + 8 gore, box 96 vs 208, mid dust 6
+vs 270, fadeIn 1.5 vs 2.0; the resize centred on the OLD centre; five dust
+loops 31-scatter/6-jet(Y>−2→×−0.4)/mid/6-X/31-X then the trailing gore loop
+consumed as a DRAWS-ONLY census in C# order — the Next(100) X/Y pair, the
+Next(61,64) TYPE argument BEFORE the NewGore kicks Next(10,31) Y then
+Next(-20,21) X (`Gore.cs:1327-1328`), the RotatedByRandom+NextDouble
+scatter, the Next(2) lift gate, the two Next(-10,11) nudges — the beenade
+precedent, bodies stay the gore lane's), 669 (12× dust-4 Direct alpha 100
+(255,255,255,110) scale 1.1 vel×1.5 + 80 PAIRS dust-4 alpha 50
+(245,200,30,155): scale 1.2 noGravity vel×=Next(10,71)×0.1 then scale 0.8
+gravity vel×=Next(10,41)×0.1, all at Center−(15,15) box 30×30; the 144
+resize + buffs + Damage AFTER the dust stay unported state), 614 (10×
+dust-229 defaults noGravity vel×3). The `DeathSnapshot` gains
+`apprentice_t3`, populated at the death hook from the local player (the
+pool only dispatches locally-owned slots, owner==myPlayer folds — the
+beenade precedent; no player → false). The module gains the shared
+`dd2_explosion_dust` helper (the four kinds share the C# arm). The 711
+oldPos-ring trail stays deferred (needs the oldPos[10] ring in the
+snapshot). Witnesses: the 710 17-count/gravity split, the 662/685/680
+trail caps + Red + determinism, the 664-family 74/133 counts + type splits
++ determinism (gore census included), the 669 172-count/pair bands, the
+614 10-count — WRITTEN NOT RUN.
+### Batch 14 (10 kinds, the lunar/nebula/portal bursts `:71995-72502`)
+634/635 (the lunar flare: resize 50×50 centred; kick = (rot−π/2).
+ToRotationVector2()×|vel|×MaxUpdates, 635 ×0.5; the head SelectRandom
+rolls the 5-set for BOTH kinds then the 635 RE-rolls the 3-set — two head
+draws for the 635, same per pair; 40 pairs of big dust alpha 200 scale
+1.7/3.7 Y-scatter noGravity vel×3+kick×NextFloat + mid dust 255/88 alpha
+100 scale 0.8/1.5 vel×2 fadeIn 1 Crimson×0.5+kick×NextFloat; 20 tail mid
+type alpha 0 scale 2/2.2 X-scatter÷3 vel×0.5+kick×(0.6+0.6×NextFloat)),
+645 (flag8 = SolidTile(pos/16); 4× dust-31 alpha 100 + 4 pairs dust-229
+(alpha 0 scale 2.5 vel×3 / alpha 100 scale 1.5 vel×2) noGravity, flag8 →
+noLight; ONE gore draws-only census), 661 (the nebula blaze: resize
+160×160 centred but the spawn box stays Center−(20,20) 40×40, scatter
+radius 20; 4× dust-240 gravity + 20 pairs dust-62 (3.7 noLight vel×3 +
+DirectionTo×(2+NextFloat×4) / 1.5 fadeIn 1 Crimson×0.5 noLight +
+DirectionTo×8) + 20 dust-62 X vel×3+DirectionTo×2 + 70 dust-240 X vel×3+
+DirectionTo×3, all noGravity; DirectionTo = Normalize(dest−Center),
+`Entity.cs:207`), 617 (the nebula arcanum: resize 176×176 centred; 4×
+dust-240 gravity + 30 pairs 62/90 (Crimson×0.5 fadeIn 1) + 10 dust-62 X +
+10 dust-240 X, 2 gores scatter-no-lift; the owner-gated 618 chain-kill +
+620 spawn burst `:72327-72372` stay unported state — their draws NOT
+consumed here, the spawn lane owns them), 620/618 (the nebula spark: the
+crystal-spark shape at (int)ai[0] — the 618's ai[0]=86 write precedes the
+dust so the arm folds 86, the snapshot ai0 is pre-write), 619 (20× the
+spark shape fadeIn 1.1/scale 0.35/big 1.2/vel×2.5; the owner-gated 620
+spawn burst `:72438-72452` stays the spawn lane's), 601 (the portal:
+GetPortalColor(owner,(int)ai[0]) A=255 — single-player portal!=0 →
+hsl(0.52,1,0.6) else hsl(0.12,1,0.5), `PortalHelper.cs:378-392`; 6×
+dust-263 at Center 0×0, kick UnitY.RotatedByRandom(τ)×(3×NextFloat)
+BEFORE the spawn, vel=kick+vel/5 scale 2 noLight noGravity), 596 (resize
+60×60 centred; 4× dust-31 gravity + 20× dust-27 noGravity vel×2 + 10×
+dust-31 X noGravity vel×2; the expert damage 22/30 + Damage stay unported
+state). The `DeathSnapshot` gains `max_updates` (extra_updates+1). The
+module gains `scatter_y_dust`/`scatter_x_dust` (the resize-explosion
+scatter shapes), `gore_census` (the shared draws-only gore loop — the DD2
+helper refactored onto it), `crimson_half` (XNA Crimson×0.5 truncation =
+(110,10,30,127)) and `portal_color`. Witnesses: the 634/635 100-count/set
+membership/Crimson mids, the 645 12-count, the 661 134-count/type split,
+the 617 84-count/90-mids, the nebula spark counts/types (618 folds 86),
+the 601 centre/colour arms, the 596 34-count — WRITTEN NOT RUN.
+### Batch 15 (10 kinds, the mid-Kill bursts `:72565-73045`)
+539 (resize 80×80 centred; 4× dust-31 gravity + 20× dust-176 alpha 200
+scale 3.7 Y + 20× dust-180 X + 10× dust-31 X, all noGravity vel×3), 585
+(20 pairs dust-26 alpha 100 noGravity vel×1.2 scale 1.3 −= oldVel×0.3 +
+dust-27 at pos+(4,4) box (w−8)×(h−8) scale 2 noGravity vel×3), 590 (10×
+dust-165/31 by ai[2]==1 alpha 50 scale 1.5 vel×2 noGravity; ONE shared
+NextFloat gore scale then THREE gores 375-377/61-63 draws-only — the two
+kick draws each), 587 (hslToRgb(ai[1],1,0.5) A=200; the NPC slime-tint
+scan unported state no draws; 10 pairs dust-76 colour scale 0.9/1.1),
+676 (120× SelectRandom(4,256) alpha 100 scale 0.8+NextFloat×0.6 fadeIn
+0.5 vel×4.5 noLight, Y>0 → ×−0.5, type 4 → (80,170,40,120); 50
+gore-Direct rows 10×1024/1025/1026 + 20×1026 — NewGoreDirect wraps
+NewGore (`Gore.cs:1281-1284`) so the two kick draws per gore stay, plus
+the two velocity NextFloats), 405/410 (the chlorophyte ring: 20/10×
+dust-212 at Center−(r,r) box 2r, r=10 / (int)(10×ai[1]); dir =
+Normalize(own−Center), position = Center+dir×r×scale, vel = dir×|own
+vel| (the <30 branch always taken), colour Lerp(hsl((float)(0.4+
+NextDouble×0.2),0.9,0.5),White,0.3) — the hue sum stays FULL double
+before the f32 cast — noGravity scale 0.7; shared `chlorophyte_ring`
+helper), 501 (the box inflates +20/side BEFORE the dust; 20× dust-188
+alpha 100 scale 1.5 vel×0.5 gravity ON; 5 gores at pos+(Next(w),Next(h))
+Next(435,438) draws-only; the second +40 inflate + Damage unported), 452
+(Resize(144,144) centred — `Projectile.cs:22353-22359` the same
+centre-preserving shape; 4× dust-31 NO scatter gravity + 40 pairs
+dust-229; one gore; the Resize(30,30)+Damage AFTER unported), 454
+(resize 208×208 centred; 7× dust-31 gravity + 60 pairs dust-229 vel×1,
+each position = Center + (w/2,0).RotatedBy(τ×NextDouble)×NextDouble —
+the FULL double angle into cos/sin, radius draw AFTER the angle; 3
+gores). The `DeathSnapshot` gains `ai2` (the 590 gate). Witnesses: the
+539 54-count, the 585/587 pair splits, the 590 ai2 gate, the 676
+120-count/Y-flip invariant, the 405/410 radius (zero-normalize edge
+tolerated), the 501 20-count, the 452/454 84/127 counts — WRITTEN NOT
+RUN.
+### Batch 16 (10 kinds, the late-mid Kill bursts `:73046-73441`)
+467/468 (resize 176×176 centred; 4× dust-31 gravity Y-scatter + 30/20
+pairs dust-6/27 (mid fadeIn 2.5) + 10 dust-6/27 X + 10 dust-31 X, 2 gores
+scatter-no-lift), 485 (15× dust-6 noGravity vel −= oldVel×Next(20,60)×
+0.01), 484 (5× dust-78 noGravity vel −= oldVel/5 scale 0.85), 483 (the
+owner-gated 484 homing-spawn burst `:73162-73221` stays the spawn lane's
+draws; 20× dust-78 noGravity vel×4 + 7× dust-31 vel×0.9 scale 0.9 gravity
++ 3 pairs dust-6 (second keeps GRAVITY) + ONE gore at pos with the
+Next(-1,2) X/Y nudges instead of the ×0.05 ones; the owner-gated +100
+inflate + Damage unported), 523 (25× dust-256 noGravity position=(own+
+pos)/2 vel=Normalize(Next(−100,101) pair)×Next(1,30)×0.1 alpha=corpse
+alpha), 521 (20× the crystal-spark shape at 254 fadeIn 1.1/0.35/1.2/
+vel×2.5; the owner-gated 522 spawn burst stays the spawn lane's), 459/709
+(scale>=1 → resize 144×144 + 7/30 counts + 2 gores, else 3/10/0 on the
+original box; dust-31 gravity + dust-226 noGravity vel×1, position =
+Center + (w/2,0).RotatedBy(τ×NextDouble)×NextDouble — the shared
+`double_angle_ring_pos` helper, the 454 refactored onto it, INTEGER w/2;
+the 709's owner-gated 1110 pull unported state no draws), 639 (the
+moonlord arrow dust RECLAIMED from the moonlord module's census skip —
+the hook never consumed the draw; Next(5,10)× dust-220 at Center 0×0
+alpha 100 scale 0.5 vel×1.6 Y−− position=Lerp(own,Center,0.5) noGravity;
+the 640 ghost spawn stays `moonlord_arrow_kill`'s; the module doc note
+updated). Witnesses: the 467/468 84/64 counts + fadeIn mids, the 485/484
+counts, the 483 33-count/gravity split, the 523 alpha/speed cap, the 521
+20-count, the 459/709 scale-gate 13/37 counts, the 639/640 Next(5,10)
+count — WRITTEN NOT RUN.
+### Batch 17 (10 kinds, the small bursts + the 424-family `:73431-73861`)
+640 (the moonlord ghost — the same dust arm as the 639, split into its
+own match arm), 682 (22× dust-272 at Center 0×0 scale 0.5 vel×1.6 Y−−
+position=Lerp(own,Center,0.5) — GRAVITY ON, unlike the 639), 449
+(Next(3,7)× dust-228 at Center−vel/2 alpha 100 scale 2.1 vel×2
+noGravity), 448 (resize 112×112 centred; 4× dust-31 gravity NO scatter +
+40 pairs dust-228; one gore), 616 (resize 80×80 centred; 4× dust-31
+gravity + 40 pairs dust-229 BOTH alpha 200 (vel×2 / ×1.2); one gore),
+836 (3× dust-31 alpha 50 White scale 0.8 vel×0.5 noGravity), 1092 (6×
+dust-269 Direct at base.Left box w×4 White scale 1.2 noLight), 424/425/
+426 (the box recentres at (int)(128×scale); 8× dust-31 gravity + 32 pairs
+dust-6 alpha 100 + 2 gores; the owner-gated localAI[1]=−1 + Damage
+unported state no draws; THEN 5× SelectRandom(6,259,158) speed
+(2.5×direction,−2.5) alpha 200 vel×2.4 scale+=NextFloat — the type
+argument draws BEFORE the spawn internals). The 868/869/996 arms stay
+DEFERRED: their WorldGen.RandomizeTreeStyle/Background/MoonState draws
+are state-bearing and unported (no port of the randomizers exists).
+Witnesses: the 682 gravity-on 22-count, the 449 Next(3,7) count, the
+448/616 84-counts + the 616 alpha-200 pairs, the 836/1092 colours, the
+424-family 77-count/segment split — WRITTEN NOT RUN.
+### Batch 18 (10 kinds, the smoke/cursed-flame/gem-adjacent bursts `:73862-74302`)
+1037/1049 (the cursed-flame death: the box inflates to (int)(192×scale)
+centred then Resize(64/112) recentres AGAIN — the final box 64/112 at the
+old centre; 6× dust-31 gravity + 3 gores with the NextVector2Circular
+(25,25) scatter (two NextFloat AFTER the kicks) + the `!wet`-gated 24
+pairs dust-6 + 4 SelectRandom(6,259,158) alpha 200 fan; shared
+`cursed_flame_death` helper; the owner-gated localAI[1]=−1 + Damage
+unported state), 399 (5× dust-12 Red + 10× dust-31 vel×1.4 + 20 pairs
+dust-6 (vel×5 noGravity / vel×3 GRAVITY) at Center−(10,10) box 20×20;
+the owner-gated 6-shard spawn burst stays the spawn lane's), 358/406/
+1042 (the smoke puff: velocity REWRITTEN to oldVel×0.2 first; 50/40/50×
+dust-211/4/324 alpha 75/175/75 scale 1.2/1.6/1.25; THREE Next(2) alpha+25
+gates + a Next(2) scale-0.6/0.6/0.8 ELSE noGravity gate; vel×0.3 +=
+newVel×1/1/0.8, ×=1+Next(−100,101)×0.01, X/Y += Next(−50,51)×0.015;
+position=Center; the 1042 adds the trailing Next(6) 4-way colour pick;
+shared `smoke_puff` helper), 323 (20× dust-7, Next(2) gate → noGravity
+scale 1.3 vel×1.5−=oldVel×0.5×1.5 else vel×0.75−=oldVel×0.25 scale 0.8),
+589 (the ai1 EXACT-equality colour ladder Red/Green/Purple/Gold/White
+A=100; 30× dust-11 vel×=1+NextFloat, first 10 noGravity vel×0.5), 311/
+316 (5× dust-189/195 scale 0.85 noGravity vel+=baseVel×0.5). The
+`DeathSnapshot` gains `wet` (the pool's centre-cell probe stand-in).
+Witnesses: the 1037/1049 dry 58/wet 6 + determinism, the 399 55-count,
+the smoke-puff centre/alpha-ladder/scale-or-gravity invariants, the 323
+gate split, the 589 colour ladder + exact-equality edge, the 311/316
+5-counts — WRITTEN NOT RUN.
+### Batch 19 (10 kinds, the confetti/trail-walk bursts `:74311-74733`)
+1097 (6× dust-6; the owner-gated ai[1]==1 eight-child spawn burst stays
+the spawn lane's), 270/837 (the 585 pair shape — 20 pairs dust-26 +
+dust-5 scale 1.5 (270) / dust-6 scale 2 (837) at pos+(4,4) box (w−8);
+the 837 penetrate sound gate draws nothing), 229 (the owner-gated
+32-shard spawn burst stays the spawn lane's; 25× dust-157 noGravity
+vel×1.5 scale 1.5), 178/289 (the confetti: 85/30× Next(139,143) type
+argument BEFORE the spawn, speed baseVel scale 1.2, the X/Y nudge ladder
+(+= ×0.01, ×= 1+×0.01, += ×0.05) + scale ×= 1+Next(−30,31)×0.01; then
+40/15 gore rows draws-only — Next(276,283) type, the kicks, the same
+ladder with scale ×= 1+Next(−20,21)×0.01 BEFORE the final nudges; shared
+`confetti_burst` helper), 475/505/506/171 (the trail walk: gated ai[1]<
+10, count = (int)(30×min(1,ai[0]/17)), the gravity ramp 0.4×min(1,ai[0]/
+30) accumulates per step, dir rescaled to 5.6 with the |x|+|y|<1 damp,
+step > ai[1] → FOUR dust of 3/239/30/129 at the walk point noGravity
+vel×0.3; the discarded Math.Atan2 draws nothing; shared `trail_walk_burst`
+helper). Witnesses: the 1097/229 counts, the 270/837 pair splits, the
+178/289 confetti counts + determinism (gore census included), the trail
+walks' 116-count + ai1>=10 gate — WRITTEN NOT RUN.
+### Batch 20 (10 kinds, the 99-family default + small bursts `:74734-74937`)
+117 (10× dust-26; the owner-gated 2-shard spawn burst stays the spawn
+lane's), 166 (10× dust-76 noGravity vel −= oldVel×0.25), 99/1013/727/
+1014/1021/1048 (the 99-family DEFAULT arm: the dust type is the kind
+switch 1013→243/727→40/1014→12/1021→323/1048→322/else 1; 30× that dust,
+a Next(2) gate → scale×1.4; the per-dust `base.velocity *= 1.9` is a
+dead-corpse mutation feeding nothing observable — the dust spawns at
+speed 0 — recorded; the 1014 item drop + the 1048 dirt delegate draw
+nothing here, the delegate is unported state), 1054 (20× dust-30 speed
+(0,−1)), 1055 (50× dust-192 at pos+(4,4) box (w−8) speed vel×0.5 alpha
+100 (100,100,100,100) scale×1.5 vel×2 noGravity). The 1053 lava-boulder
+arm stays DEFERRED to a later batch (its 64-resize burst + 4-gore census
++ the 31-resize; `LavaBoulderExplosion` draws nothing — PlaceLiquid only,
+`Projectile.cs:70538-70552`). The 1124 was found ALREADY landed (the
+plain_burst row) — the duplicate arm was removed before commit.
+Witnesses: the 117/166 counts, the 99-family type switch + scale range
+(the spawn's default scale is randomized, so a range not an equality),
+the 1054/1055 counts/colour — WRITTEN NOT RUN.
+### Batch 21 (10 kinds, the geode/boulder/star bursts `:74877-75210`)
+1005 (10× dust-1, Next(2) scale×1.1 gate, the dead base.velocity×1.6
+mutation), 772 (the geode: 6× dust-1 + 20+7 dust-NextFromList(86-90)
+Direct scale 0.7 noGravity vel×2.9 Y×0.8 fadeIn 1.1, last 7 noLight; the
+owner-gated DropGeodeGems loot `:78561-78572` draws FOUR — Next(7)/
+Next(3,7)/Next(6)/Next(3,7) — consumed as the loot census, bodies the
+loot lane's), 763 (4× dust-40, Next(2) scale×0.8 gate, noGravity), 723
+(10× dust-88 Direct alpha 150 scale 1.2 noGravity X×2 + 3 gore-Direct
+SelectRandom(16,17,17) census rows; the ai[2]==1 item request draws
+nothing), 724/725/726/907/1133 (10× dust-58/57 alpha 150 scale 1.2, 907
+vel×0.75; 3 gore Next(16,18) census rows, 907 vel×0.5 body skipped),
+1053 (the lava boulder: resize 64×64 centred; 25× dust-31 alpha 100
+scale 2 vel×1.4 gravity + 40 pairs dust-6 (scale 3 noGravity vel×5 /
+scale 2 vel×3 GRAVITY) + 4 gores at Center−(24,24) census; the 31-resize
++ LavaBoulderExplosion PlaceLiquid-only unported). The 655/91/92 arms
+stay DEFERRED (state-bearing NPC-spawn / falling-star draws). Witnesses:
+the 1005/763 counts, the 772 33-count + gem split + loot determinism, the
+723-family counts + gore determinism, the 1053 105-count/gravity split —
+### Batch 22 (10 kinds, the head-block sparkle/Perfect rings `:70749-71098`)
+1098/1123 (50× dust-306 Direct (100,210,255,127) vel×2 X×0.5), 1020/1105
+(15× dust-31 Direct Transparent scale 0.8 fadeIn 0 vel×0.5 + 5 pairs
+dust-228 + 3× dust-226, all Transparent; the 2×2 corner Next(5)==0 gore-
+Direct census; the 1020 achievement/sound-stop draw nothing), 1085 (the
+broken mirror: oldVel×0.2 THEN position −= oldVel — the dust reads the
+shifted box; 10× dust-330 vel −= oldVel + 4 fixed-type gores 1394-1397
+kicks census; the bad-luck buff unported), 1080 (30× dust-329 at Center
+box 1×1 vel×0.8 Y×0.2 Y−=NextFloat×3, the Next(2) scale gate; the buff +
+active=false/return unported), 1038 (4× dust-166 Perfect at Center+
+Circular(10,10)×scale vel Zero scale 1.5+NextFloat×0.25 noGravity), 1036
+(3× dust-5 Perfect Circular(4,4) scale 1.5 noGravity), 756/961 (the
+f32-step trail rings num+=0.025/0.25 → 40/4 iters, dust-5/16 Perfect at
+Center+Circular(16,16)×scale+vel.SafeNormalize(UnitY)×num×200×scale, vel
+=Circular(3,3) Y−=0.3 +=baseVel×0.2 scale 1 alpha 100; the SafeNormalize
+UnitY fallback on zero). The 1116 (CloneDust) + 962 + 1084/949 (the
+TorchID.Dust table + Main.DiscoR/G/B App-frame colour, not in the drain's
+World/SpawnCtx) stay DEFERRED. Witnesses: the 1098/1123 colour, the
+1020/1105 28-count/Transparent/gravity split + determinism, the 1085/
+1080 counts, the Perfect-ring counts/flags — WRITTEN NOT RUN.
+### Batch 23 (10 kinds, the gem bolts + sparkle bursts `:75425-75532`)
+121-126/597 (the gem bolts: dust type kind−121+86, 597 → 262; dir =
+vel.SafeNormalize(Zero) zeroed when |vel|<1; 15× that dust speed dir
+alpha 50 scale 1.2 noGravity scale×1.25 vel×2.2 += dir×1.5 vel×=NextFloat;
+the AoeExplosion feature (ai[0] bit 3, `GemStaffFeatures::from_ai`) adds
+30× more — noGravity=Next(5)!=0, scale×=1+NextFloat, vel×4.2, the gravity
+ones scale×0.6 fadeIn 0 noLight, vel×=NextFloat. The AoE DAMAGE half —
+the 160/22 resizes + Damage — is `gem_bolt_aoe`'s (projectile.rs), the
+dust here reads the ORIGINAL box since the C# dust precedes the resize;
+the gem module's dust-skip is RECLAIMED here), 1115 (count = 10+(int)(20×
+Remap(ai0,0,60,0,1)); count× dust-197 vel×=1+t×2 += baseVel×NextFloat×t
+noGravity), 379/377 (5× dust-171 alpha 100 scale Next(1,10)×0.1 noGravity
+fadeIn 1.5 vel×0.75). Witnesses: the gem 15/45 counts + type ladder + AoE
+gate, the 1115 ai0 count ladder, the 379/377 scale range — WRITTEN NOT
+RUN.
+### Batch 24 (10 kinds, the bomb/sparkle bursts `:75749-76204`)
+281 (the bomb/dynamite: gated ai[0]!=−3; TWO leading gores 76/77 each a
+Next(−20,21) X/Y velocity pair + kicks; 20× dust-31 vel×1.4 + 10 pairs
+dust-6 (vel×5 noGravity / vel×3 GRAVITY) + 4 corner gores Next(61,64);
+the damage>0 128-resize + Damage unported), 162 (resize 64×64 centred
+BEFORE the dust; 20× dust-31 vel×2.5 + 50× dust-6 noGravity vel×=
+Next(50,151)×0.1 + 10× dust-6 vel×3 Y−− GRAVITY + 4 corner gores; the
+144-resize + Damage AFTER unported), 240 (the 281 dust shape on the
+ORIGINAL box + 4 corner gores; the 96-resize + Damage AFTER unported),
+282 (10× dust-171 scale Next(1,10)×0.1 noGravity fadeIn 1.5 vel×0.75),
+660 (Next(4,10)× dust-180 at Center 0×0 vel×1.6 Y−− += −baseVel×
+(NextFloat×2−1)×0.5 scale 2 fadeIn 0.5 noGravity), 638 (the moonlord
+bullet RECLAIMED from the moonlord module's census skip — Next(2,5)×
+dust-229 at Center 0×0 vel×1.6 Y−− position−=(4,4) then Lerp(own,Center,
+0.5) noGravity; the module doc note updated), 411-414 (dust type 9 /
+412,414→11 / 413→19; 5× speed (0,vel.Y/2) noGravity vel −= baseVel×0.5).
+The 712 (the gore-scale NextFloatDirection census) stays deferred to a
+later batch. Witnesses: the 281/240 40-count + ai0 gate, the 162
+80-count, the 282 10-count, the 660/638 Next-count probes, the 411-414
+type ladder — WRITTEN NOT RUN.
+### Batch 25 (10 kinds, the flower/sparkle/gore bursts `:76096-77192`)
+583/584 (10× dust-4 alpha 100 scale 0.8, green (20,250,20,240) / pink
+(250,20,120,240)), 514 (10× dust-31 vel×1.4 + 6 iterations of dust-6
+(scale 2.1 noGravity vel×4.6 / scale 1.3 vel×3.3 GRAVITY / a Next(2)==0
+third dust-6 scale 1.1 vel×2.7); the owner-gated 112-resize + ai[0]=2 +
+Damage unported), 69/70/621 (5× dust-13 + 30× dust-33/52/266 speed (0,−2)
+scale 1.1 alpha 100 X×1.5 vel×3), 712 (Next(6,12)× dust-15 at Center 0×0
+vel×1.6 Y−− += −baseVel×(NextFloat×2−1)×0.5 scale 1 fadeIn 1.5 noGravity
+colour (255,255,255,0)×0.3 vel×0.7 position+=vel×5; 3 gore-Direct 1008
+rows — the NextFloatDirection scale + kicks census), 962 (20× dust-16
+Perfect at Center+Circular(16,16)×scale vel=Circular(2,2)+=baseVel×0.1
+scale 1 alpha 100), 370/371 (5× dust-13 + 30 gore rows draws-only — the
+Next(−10,11) X/Y direction pair, Next(4,9) speed, Next(40,141)/
+Next(20,100) scale, the 371's Next(435,438) type, the kicks; the 370's
+type 331 fixed). Witnesses: the 583/584 colours, the 514 12-18 sixes
+range, the 69/70/621 35-counts, the 712 Next-count + determinism, the
+962 20-count, the 370/371 5-count + gore determinism — WRITTEN NOT RUN.
+### Batch 26 (10 kinds, the barrel/meteor/sparkle bursts `:74983-77208`)
+1023 (the Dead Cells barrel: resize 192×192 centred; 8 gore-Direct rows
+— the Circular(192,192)×0.125 position two NextFloat, the 61+Next(3)
+type, the kicks, the NextFloat velocity scale; 40× dust-31 Direct vel =
+DirectionTo(own).SafeNormalize(Zero)×NextFloat×8; the ParticleOrchestrator
++ Damage unported), 312 (resize 22×22 centred BEFORE the dust; 30×
+dust-31 vel×1.4 + 20 pairs dust-6 (vel×7 noGravity / vel×3 GRAVITY) +
+2×4 corner gores; the 128-resize + Damage AFTER unported), 936 (20 pairs
+dust-4 alpha 150, each a hslToRgb(0.7+0.2×NextFloat,1,0.7/0.5) colour
+A/=2; first vel×1.5 gravity, second scale 1.8 vel×3 noGravity), 1078
+(the meteor: a Next(16)==0 loot gate → Next(2,7) stack; a Next(1,4)
+sound-count no draws; the double resize 192×scale→64 centred; 6× dust-31
++ the !wet-gated 24 pairs dust-6 + 4 SelectRandom fan; THEN 3 circular-
+scatter gores — the gore loop AFTER the dust, unlike the 1037; the
+owner-gated Damage unported), 80 (gated ai[0]>=0, 10× dust-67; the
+KillTile(127) unported no draws), 474/172 (20× dust-26 scale 0.9 /
+dust-135 alpha 100), 9/503 (the else-branch: 10/40× dust-58 speed vel×0.1
+alpha 150 scale 1.2, 503 vel/=2; 3/2 gore rows Next(16,18), 503 fixed 16
+no draw), 12 (the sparkle ring: 7× dust-58 + num+=0.125 ring 8 dust-278
+CornflowerBlue (tenth-anniversary seed → HotPink A/=2) + num+=0.25 ring
+4 Gold; the screen-gated 7-gore loop folds on-screen for the local pool
+— recorded; the damage<100 extra burst 10 dust-57 + 3 gores). The
+`DeathSnapshot` gains `damage` (the 12 gate). The 955 (the 12 shape
+without the extra burst) + 246/249 (the owner-gated 249 spawn burst) stay
+deferred. Witnesses: the 1023/312 counts + determinism, the 936 40-count,
+the 1078 dry 58/wet 6 + determinism, the 80 gate, the 9/503/12 counts +
+the 12 damage gate — WRITTEN NOT RUN.
+### Batch 27 (8 kinds, the reclaimed special-bullet/arrow + molotov dust)
+283 (the VenomBullet: THREE 10-dust-171 loops alpha 100 scale Next(1,10)×
+0.1 noGravity fadeIn 1.5 — loop 1 vel×0.75, loop 2 += oldVel×0.5×
+NextFloat, loop 3 vel×1.5 += oldVel×1.5×NextFloat; the debuff-spread
+Damage is `venom_burst_spread`'s, the dust reclaimed from the i18
+module's documented skip), 284 (the PartyBullet confetti: 10×
+Next(139,143) speed −vel×0.3 scale 1.2 + the nudge ladder + 5 gore rows
+Next(276,283) + the ladder; the whole arm was a no-state documented skip
+— reclaimed), 286 (the ExplodingBullet: 7× dust-31 + 3 pairs dust-6 +
+ONE gore at pos−(10,10) with the Next(−10,11)×0.05 nudges; the AoE Damage
+is `exploding_bullet_burst`'s), 41 (the Hellfire: 10× dust-31 + 5 pairs
+dust-6 + 2 gores with the Next(−10,11)×0.1 nudges; the resize + Damage is
+`hellfire_kill_resize`'s, the dust/gore reclaimed from the i17 module's
+skip), 955 (the 12 sparkle ring WITHOUT the damage<100 extra burst),
+1116 (4× dust-306 Perfect at Center+Circular(10,10)×scale scale 1.5+
+NextFloat×0.25 noGravity (50,170,255) vel=baseVel×0.4 scale×=Remap(alpha,
+0,255,1,0) + a CloneDust White scale×0.3 — the first `clone_dust` use),
+246/249 (the molotov/greek-fire: 10/7× dust-31 vel×0.9/0.8 + 5/2 pairs
+dust-6 + ONE gore with the Next(−1,2) nudges; the 150/100-resize + Damage
++ the 246's owner-gated 249 spawn burst stay unported / the spawn lane's).
+The 337/731/76/77/78/55/719/51/267 were found ALREADY landed — the
+duplicate arms removed before commit. The 89/91/92 (state-bearing
+split/star draws inline in the i17/i18 hooks), 183 (the beenade gore+bee
+census already in `beenade_death`), 655 (NPC-spawn draws), 1084/949 (the
+TorchID.Dust + Main.DiscoR/G/B App-frame colour) stay DEFERRED.
+Witnesses: the 283 30-count, the 284 confetti, the 286 13-count, the 41
+20-count, the 955 19-count, the 1116 8-count + clones, the 246/249
+counts + determinism — WRITTEN NOT RUN.
+### Batch 28 (6 kinds, the oldPos trail-ring family `:71149-71488`)
+The `DeathSnapshot` gains `old_pos_ring: [Vec2; 10]` (the C# `oldPos`
+`Projectile.cs:388` is a `[10]` ring; the pool arms it via
+`shift_trailing_history` for `trailing_mode >= 0` kinds — an un trailed
+kind's ring stays ZERO so its trail loop breaks immediately, the C#'s own
+"no entry" shape). 931/1039 (the fairy-queen/constellation trail: colour
+hsl((ai1+0.5)%1,1,0.5)×Opacity — the default non-dev-name path of
+GetFairyQueenWeaponsColor/GetConstellationColor; one head NextFloat; walk
+the ring break-on-ZERO, count Next(1,3) with the 0.3/0.75 decrements,
+ramp Lerp(0.3,1,GetLerpValue(10,0,i)); per dust a dust-267 colour
+vel×=NextFloat×0.8 noGravity scale 0.9+NextFloat×1.2 fadeIn NextFloat×1.2×
+ramp scale×=ramp + a CloneDust scale/2 fadeIn×0.85 White; the discarded
+DirectionTo draws nothing), 1047/79 (the rainbow trail-ring — shared
+`rainbow_trail_ring` helper: one head NextFloat hue base, per entry
+hsl((base+lerp)%1,1,0.65), count Next(1,4) with the 0.3/0.65/0.85
+decrements −1/−2/−3, per dust dust-267 vel+=dir×6 position=Lerp(ring+
+Size/2,own,lerp) + CloneDust fadeIn×0.85; then 14× dust-66 hsl(NextFloat,
+1,0.5) scale 1.7 noGravity vel×3; the 79's 128-resize+Damage+restore
+precedes the dust, the ParticleOrchestrator draws nothing), 16 (the
+128-resize trail: per entry hsl(4/9+NextFloat×2/9,1,0.65), count Next(1,4)
+0.3/0.75; per iteration Next(3)==0 → dust-267 scale NextFloat×0.8 +
+CloneDust fadeIn/2 ELSE dust-15 Direct speed −vel×0.2 alpha 100 with a
+DISCARDED Next(2), noGravity vel×2+=dir×9 fadeIn (0.6+NextFloat×0.4)×ramp
+noLight; then 20 pairs dust-15 Direct), 34 (the 96-resize trail: per entry
+hsl(NextFloat×1/9,1,0.5), count Next(1,5) 0.3/0.75; Next(3)==0 → dust-267
+scale NextFloat fadeIn NextFloat×2 vel+=dir×8 + CloneDust fadeIn/2 ELSE
+dust-6 Direct speed −vel×0.2 alpha 100 Next(2)==0 → noGravity scale×2.5,
+vel×2+=dir×6 noLight; then 20 pairs dust-6 Direct). The 932 stays
+`fairy_queen_death_draws`' census (porting its body needs that census
+deduped — deferred). The 711/636/686/502 oldPos arms (different shapes)
+stay deferred. Witnesses: the ZERO-ring emptiness + filled-ring dust-267
++ determinism for all six, the 1047 14-dust-66 tail, the 16/34 40-dust
+tails — WRITTEN NOT RUN.
+### Batch 29 (4 kinds, the remaining oldPos trail arms `:71680-73687`)
+711 (the DD2 dark-mage flame: loop 1 over oldPos[0,2,4] 2 dust each
+SelectRandom(6,55,158) speed (direction,−2.5) alpha 200 vel×2.4 scale+=
+NextFloat−0.5, type 55 → Lerp((128,0,180,128),Gold,NextFloat) noLight;
+loop 2 (i=10 step 2 < 10) NEVER runs on the [10] ring; loop 3 over
+oldPos[5..10] a Next(3)!=0 gate → dust-55 alpha 80 vel×0.3+=vel×0.5
+Lerp(Purple,Black) noLight; then 20× Next(3)!=0 dust-228 + 20× Next(3)!=0
+dust-55 (0,0,220,128) noGravity scale 1.25+NextFloat fadeIn 1.5 vel×6
+noLight; the owner-gated 140-resize + Damage unported; NO break-on-ZERO —
+a ZERO entry spawns at (0,0)), 636 (loop over oldPos[0,3] 5 dust each
+SelectRandom(6,259,158) speed (2.5×direction,−2.5) alpha 200 vel×2.4
+scale+=NextFloat; the owner-gated 953 spawn stays the spawn lane's), 686
+(the 711 shape but loop 1 = 3 dust, type 55 → Lerp(Red,Gold), loop 3 NO
+Next(3) gate, the tail 30× dust-228 ungated), 502 (walk the ring skip-
+ZERO no-break, per entry a dust-66 at ring+Size/2 box 0×0 alpha 150
+Transparent scale 0.7 colour hsl(NextFloat,1,0.5) noGravity). The
+`SelectRandom(&[55])` single-element pick still draws one Next(1) (the
+C# `Next(choices.Length)` shape). Witnesses: the 636 10-count, the 502
+10-count + ZERO-ring emptiness, the 711/686 tail counts + determinism —
+### Batch 30 (1 kind, the 932 fairy-queen weapon — the census dedupe)
+932 (the fairy-queen weapon death: colour GetFairyQueenWeaponsColor =
+hsl((ai1+0.5)%1,1,0.5)×Opacity on the default non-dev-name path; one head
+NextFloat; a 10-step trail at pos − vel×step — NOT the oldPos ring, so it
+spawns even with a ZERO ring; count Next(1,3) with the 0.3/0.75
+decrements, ramp Lerp(0.3,1,GetLerpValue(10,0,step)); per dust a dust-267
+colour vel×=NextFloat×0.8 noGravity scale 0.9+NextFloat×1.2 fadeIn
+NextFloat×1.2×ramp scale×=ramp + a CloneDust scale/2 fadeIn×0.85 White).
+**The i16 `fairy_queen_death_draws` census is DEDUPED onto this arm** —
+the production hook (`projectile.rs:20027`) no longer rolls those draws
+(the keep-one rule, the firework precedent); the census fn stays
+`#[cfg(test)]` as the shape witness. This was the LAST reclaimable dust
+arm with a consumed census. Witness: the 932 dust-267 + White clones +
+determinism — WRITTEN NOT RUN.
+### Batch 31 (2 kinds, the last free dust arms `:71902` / `:75374`)
+681 (the DD2 goblin bomb: resize 22×22 centred BEFORE the dust; 10
+iterations of dust-31 vel×1.4 gravity + dust-6 vel×1.4 noGravity fadeIn
+2; 10 pairs dust-6 (vel×5 noGravity / vel×3 GRAVITY); 4 corner gores; the
+80-resize + Damage AFTER unported), 1120 (the gem-bolt shape at dust-170
+— the num669=87 then =170 overwrite; dir SafeNormalize zeroed |vel|<1;
+15× scale×1.15 vel×1.8 += dir×1.5 vel×=NextFloat + 30× noGravity=
+Next(12)!=0 scale×=1+0.6×NextFloat vel×4.2 gravity ones scale×0.4 fadeIn
+0 noLight; the 112/22 resizes + Damage AFTER the dust unported — the dust
+reads the ORIGINAL box). A full Kill-body type-condition sweep confirmed
+these were the last two FREE dust arms. Witnesses: the 681 40-count +
+fadeIn-2 split, the 1120 45-count — WRITTEN NOT RUN.
+### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
+A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
+cross-referenced against the 104 landed arms, the d12 explosion family
+(`9152b259`: the aiStyle-117 tick-1 census `:34502-34636` + the 608 Solar
+Counter Kill `:72177-72225`), the i17/i18 main-landed special-arrow/bullet
+deaths (`special_arrows.rs`/`projectile_special_bullets.rs`), the g16 gore
+census (165 sites, gore-only — the dust beside a gore site is NOT g16's),
+and the in-tree draw-census hooks (`celeb2_death`/`celeb2_explosion` for
+715-718, `fairy_queen_death_draws` for 932, `rainbow_crystal_explosion_draws`
+for 644, `gem_bolt_aoe` for the gem bolts, `dart_electro_firework_kill` for
+442/478/167-170). The remaining UNCLAIMED dust arms (the exact list, by
+C# line): the head-block 1098/1123 (`:70749`), 1020/1105 (`:70855`), 1085
+(`:70902`), 1080 (`:70926`), 1084 (`:70956`), 949 (`:70976`), 985 (`:70996`),
+1038 (`:71043`), 1116 (`:71052`), 1036 (`:71068`), 756 (`:71077`), 961
+(`:71088`), 962 (`:71099`); the fairy-queen/rainbow trails 931/1039
+(`:71149`), 1047 (`:71192`), 79 (`:71257`), 16 (`:71329`), 34 (`:71409`);
+the queen-slime/sparkle 1012 (`:71524`), 920 (`:71551`), 921 (`:71560`), 926
+(`:71569`), 937 (`:71578`), 818 (`:71587`), 856 (`:71598`); the DD2 710
+(`:71652`), 711 (`:71680`), 662/685 (`:71780`), 680 (`:71800`), 664/666/668/
+706 (`:71821`), 681 (`:71902`), 669 (`:71952`), 634/635 (`:71995`), 645
+(`:72094`), 636 (`:72126`), 614 (`:72146`), 661 (`:72226`), 617 (`:72278`);
+the nebula 620/618 (`:72394`), 619 (`:72418`); 601 (`:72454`), 596
+(`:72470`), 659 (`:72503`), 539 (`:72565`), 585 (`:72599`), 590 (`:72614`),
+587 (`:72641`), 676 (`:72737`), 686 (`:72781`), 405 (`:72849`), 501
+(`:72874`), 410 (`:72919`), 452 (`:72987`), 454 (`:73014`), 467 (`:73046`),
+468 (`:73093`), 485 (`:73140`), 484 (`:73149`), 483 (`:73159`), 523
+(`:73257`), 521 (`:73292`), 459/709 (`:73338`), 639/640 (`:73431`), 682
+(`:73492`), 449 (`:73573`), 448 (`:73603`), 616 (`:73646`), 502 (`:73675`),
+868/869/996 (`:73705`), 836 (`:73729`), 1092 (`:73738`), 424-426 (`:73819`),
+1037/1049 (`:73862`), 399 (`:73921`), 358 (`:74029`), 406 (`:74063`), 1042
+(`:74099`), 323 (`:74182`), 589 (`:74204`), 311 (`:74283`), 316 (`:74293`),
+1097 (`:74311`), 270/837 (`:74348`), 229 (`:74450`), 178 (`:74565`), 289
+(`:74590`), 475/505/506 (`:74615`), 171 (`:74679`), 117 (`:74734`), 166
+(`:74760`), 99/1013/727/1014/1021/1048/1053/1054/1055/1057 (`:74841`), 1005
+(`:74970`), 1078 (`:74983`), 772 (`:75037`), 763 (`:75067`), 655 (`:75080`),
+728 (`:75125`), 723/724/725/726/907/1133 (`:75159`), 91/92 (`:75212`), 89
+(`:75250`), 969 (`:75298`), 1120 (`:75374`), 121-126/597 (`:75425`), 1115
+(`:75500`), 379/377 (`:75522`), 80 (`:75533`), 477/479 (`:75585`), 474
+(`:75600`), 172 (`:75608`), 9/12/503/955 (`:75681`), 281 (`:75749`), 162
+(`:75804`), 240 (`:75855`), 282 (`:75899`), 660 (`:76067`), 712 (`:76096`),
+638 (`:76119`), 411-414 (`:76187`), 583 (`:76258`), 584 (`:76266`), 41
+(`:76308`), 514 (`:76343`), 183 (`:76431`), 1023 (`:76866`), 312 (`:76890`),
+246 (`:76944`), 249 (`:76987`), 69 (`:77016`), 70 (`:77031`), 621
+(`:77046`), 370 (`:77161`), 371 (`:77176`), 936 (`:77193`). The
+gore-adjacent arms (a gore draw sits BETWEEN dust draws) stay deferred to
+the gore-census companion; the pure-dust arms port in the batches below.
+### Census completeness (batches 11-31 landed — the final accounting)
+A dust-line → owning-arm mapping over the whole Kill body
+(`Projectile.cs:70642-77262`, 406 `Dust.NewDust*`/`CloneDust` sites)
+cross-referenced against the drain's 309 distinct kind arms confirms
+every dust arm is now PORTED or explicitly accounted for:
+**Ported in batches 11-31** (the re-census list above, minus the deferred
+set below): the firework/star rings 167-170/415-418/1024/873 (b11), the
+spoke/queen-slime/sparkle/terraspark rings 659/1012/920/921/926/937/818/
+856/728/985 (b12), the DD2 explosions 710/662/685/680/664/666/668/706/
+669/614 (b13), the lunar/nebula/portal 634/635/645/661/617/620/618/619/
+601/596 (b14), the mid-Kill 539/585/590/587/676/405/501/410/452/454
+(b15), the late-mid 467/468/485/484/483/523/521/459/709/639 (b16), the
+small + 424-family 640/682/449/448/616/836/1092/424/425/426 (b17), the
+smoke/cursed-flame 1037/1049/399/358/406/1042/323/589/311/316 (b18), the
+confetti/trail-walk 1097/270/837/229/178/289/475/505/506/171 (b19), the
+99-family 117/166/99/1013/727/1014/1021/1048/1054/1055 (b20), the
+geode/boulder/star 1005/772/763/723/724/725/726/907/1133/1053 (b21), the
+head-block sparkle 1098/1123/1020/1105/1085/1080/1038/1036/756/961
+(b22), the gem bolts 121-126/597/1115/379/377 (b23), the bomb/sparkle
+281/162/240/282/660/638/411-414 (b24), the flower/gore 583/584/514/69/
+70/621/712/962/370/371 (b25), the barrel/meteor 1023/312/936/1078/80/
+474/172/9/503/12 (b26), the reclaimed special-bullet/arrow 283/284/286/
+41/955/1116/246/249 (b27), the oldPos trail-ring 931/1039/1047/79/16/34
+(b28), the remaining oldPos 711/636/686/502 (b29), the 932 census dedupe
+(b30), the last free 681/1120 (b31).
+**Claimed by other lanes (NOT ported here, by design):**
+- d12 (`origin/task/W4-d12-proj-ai-111-120`, `projectile_ai_explosions.rs`):
+  the aiStyle-117 tick-1 dust censuses incl. 624's 200-ring (`:34459-
+  34637`) + the 608 Solar Counter Kill burst (`:72177-72225`).
+- i16 (`dart_electro_firework_kill`): the 442 electrosphere (`:73528-
+  73552`) + 478 flame (`:75578`) death spawns (the 167-170 firework dust
+  was DEDUPED onto b11).
+- celeb2 (`celeb2_death`/`celeb2_explosion`): the 715-718 Celebration
+  rockets' Kill resize + Damage + explosion census.
+- floating-turret (`floating_turret_kill`/`rainbow_crystal_explosion_draws`):
+  the 644/641/643 turret/crystal/shard arms.
+- g16 (`origin/task/W4-g16-gore-projectile-sites`): the gore BODIES/draws
+  (165 sites) — the dust beside a gore site is NOT g16's; this lane took
+  the gore DRAWS as census where they interleave with dust.
+**Deferred — state-bearing draws consumed inline by other hooks (porting
+the dust needs a cross-seam dedupe of those spawn/split draws):**
+- 89 CrystalBullet (`:75250`): the 5 dust-68 precede the 2-shard split
+  whose 8 draws ride `special_bullet_kill` inline.
+- 91/92 Holy/Falling star (`:75212`): the 10 dust-58 + 3 gores precede
+  the star spawn whose draws ride `special_arrow_kill` inline.
+- 183 Beenade (`:76431`): the 20 dust-31 sit BETWEEN the 4 gore rows and
+  the bee burst whose draws ride `beenade_death` (the G3 census).
+- 655 (`:75080`): the 30 dust-147 precede the wet-item / NPC-spawn draws.
+- 246's owner-gated 249 spawn burst (`:76973`): the dust ported (b27),
+  the spawn draws stay the spawn lane's.
+**Deferred — App-frame state not in the drain's World/SpawnCtx:**
+- 1084/949 (`:70956`/`:70976`): the TorchID.Dust table pick + the
+  `Main.DiscoR/G/B` rainbow-torch colour (the App's frame-cycle state).
+- 868/869/996 (`:73705`): the 15 dust-13 precede the
+  WorldGen.RandomizeTreeStyle/Background/MoonState draws (unported
+  state-bearing randomizers).
+**No dust to port (particle-orchestrator-only / sound-only / state-only /
+empty-loop arms):** 1122/1091/1117/981/1006/1057 (ParticleOrchestrator
+only), 969/704/651/761/762 (sound-stop / item-drop only), 291/295/237/
+243/441/629/567/568/453/290/14/191-194/510 (state/spawn/gore-only — the
+510/191-194 gore draws are g16's), 1134/477/479 (empty loops).
+The `DeathSnapshot` grew `ai0`/`ai2`/`local_ai1`/`apprentice_t3`/
+`max_updates`/`wet`/`damage`/`old_pos_ring` across the batches; the module
+gained the `rotated_by`/`to_rotation`/`smooth_step`/`ring_kick`/
+`next_vector2_square`/`rotated_by_random`/`queen_slime_dust_color`/
+`remap_f32`/`scatter_y_dust`/`scatter_x_dust`/`gore_census`/`crimson_half`/
+`portal_color`/`double_angle_ring_pos`/`chlorophyte_ring`/`smoke_puff`/
+`cursed_flame_death`/`confetti_burst`/`trail_walk_burst`/`dd2_explosion_dust`/
+`rainbow_trail_ring` helpers. Every witness WRITTEN NOT RUN (code-only).
+### The FINAL seal (research/346, 2026-11-21)
+The lane is SEALED: `Kill-remainder-309-distinct-kinds-ALL-406-Dust.
+NewDust-sites-ported-or-accounted` landed (22 commits
+`7f0dc8649..b0842907c`, batches 11-31 + the accounting; the module
++6200/−656). **Number correction**: the FINAL drain carries **241 match
+arms → 316 distinct kinds** (mechanical scan, ranges expanded, zero
+duplicates) — the accounting's "309" was the batch-28 (`4dc2df3d9`)
+census, 26i's "317" a +1 miscount; batches 29-31 added the last 7 kinds
+(711/636/686/502/932/681/1120). The 406-site closure re-verified by
+independent scan at the seal: 393 drain-covered + 6 other-lane (442-i16,
+608-d12) + 7 documented-deferred = 406, **0 unclaimed**.
+The keep-one adjudication re-verified at CURRENT tips (research/346 §2):
+d78 moved `fd59c51a`→`7ea64ff75` (docs-only SEAL; the dust-free
+`damage_evp_boxed`/`hostile_death_blast` unchanged — g65's 452/454/448
+bodies KEEP); g1 moved `e43c62879`→`ef671cf2b` and EXECUTED the d78 fold
+itself (the three hostile hooks + `death_burst_player_hit` already
+dropped — the 26i g1-drop hunks CONSUMED); d77 `5f10560b` + g3 `8568ef37`
+unchanged, every pinned census call re-read line-exact. The FINAL merger
+drop-hunk table (14 census hunks incl. the NEW g1 census drops: the 932
+fairy census `projectile.rs:20047`, the 522/521/459|709/80 censuses) lives
+in research/346 §2a; the swept-618 INLINE census KEEPS until the sweep
+rewire (26i §3 hunk 4). **PLUS the gun smoke-dup verdict** (g63-298 §3.3,
+research/346 §2b / 26i §5): d6-SURVIVES-g65-DROPS — g65's 358/406/1042
+arms `:2786-2794`, the `smoke_puff` helper `:4834-4885` and the witness
+`:6616-6634` DROP at the d6+g65 merge (d6's hook has the true
+old_velocity latch + the scale-death ×5 base + the corpse p.vel write);
+post-drop drain 313 kinds, closure 390+9+7=406. 17 drop-hunks total.
+**The g16 gore compose** (research/346 §2c, g16 tip `72e4cae20`): g16 wired
+its 165 gore sites into real `GorePool` spawns — `gore_death_arms`
+(`projectile.rs:21482`) + the 41/91-92/284/286/183 gore rows inside
+`special_arrow_kill`/`special_bullet_kill`/`thrown_consumable_death`, ALL
+Kill-side once-per-death on the same `!active` seam g65 snapshots. The
+POOLS are disjoint (GorePool vs DustPool, no kind's dust duplicated) but
+the STREAM is shared (`RngKey::UpdateProjectiles`): g65's `gore_census` +
+inline gore loops are draws-only stand-ins that DOUBLE-FEED once g16's
+bodies are live. Draw-equivalence verified per row (every overlapping gore
+type 61-63/16-17/276-282 is SAFE_GORE + special_ai 0 + non-drip, so
+`new_gore`'s only draws are the kick pair the census replicates). 12 more
+drop-hunks (18-29, **29 total**): the 645/617/452/454/448/240/284/286/41/
+955/681/178 censuses DROP whole; the shared arms drop PER-KIND (the DD2
+census gates to the 706, the 459|709 to the 709, the 9|503 to the 503, the
+confetti helper's 178 caller passes gores=0) — g16's unrowed-host deferral
+list matches the KEEP set kind-for-kind (the 12's two loops KEEP,
+`kill12_low_damage_gores` unwired). The bomb family needs NO drop:
+`explode_bomb`'s gore rows ride the pass stream, the frozen zero-rng
+`FastRandom::new(0)` Damage walk stays (M4-PROJ-9, no double-feed), and no
+bomb kind (28/29/30/37/397/516/517/519) has a drain arm. **The 503 stream
+fix**: the `9|503` arm gated the gore type draw on `kind != 503` — the C#
+`:75729-75733` rolls `Next(16,18)` UNCONDITIONALLY and only overrides the
+result to 16 (g16's `kill9_503_gores` rolls-then-overrides); the 503's two
+rows were 2 draws behind. Fixed + witnessed
+(`w4_g65_the_503_gore_census_draws_the_type_it_overrides`) — 117 witnesses.
+The 7 deferred sites are task-seeded to owner lanes (research/346 §4):
+S1-P-i58 (1084/949 — the TorchID.Dust table + App disco feed), S1-P-i59
+(868/869/996 — the WorldGen randomizer lane), S1-P-i60 (655 — the
+NPC-spawn/item-drop seam); 89/91+92/183 fold as prefixes into the
+main-landed `special_bullet_kill`/`special_arrow_kill`/`beenade_death`
+(no new lane). The family declaration (g63/g64 trail ≤400/≥401, g65
+death CANONICAL for its 316-kind roster minus the d6 gun trio,
+d53→e3→f5 per-tick batches, i16/i17/i18/celeb2/floating-turret/d12
+special hosts, g16 gore, the cue/state lanes) is research/346 §5. New
+seal witness `w4_g65_seal_the_deferred_kinds_are_inert` (the 10 deferred
+kinds draw nothing through the drain) — WRITTEN NOT RUN with the other
+115.
+## The NPC death dust lane 2 (W4-g60, code-only)
+NPC.HitEffect's per-kind DEATH halves for the vanilla types 231-697
+(the g59 lane carries 1-230) are drawn by
+crates/tr-app/src/npc_death_dust.rs::death_dust_feed, called from
+world_sim/npcs.rs's death retain BEFORE the death cue (the C# runs
+HitEffect at `NPC.cs:81488`, ahead of checkDead's DeathSound
+`:81559` -> `:78186`). 121 ported kinds qualify under the g59 census
+convention (every top-level arm dust-bearing, dust-first, side-free);
+the 388/418 arms stay W4-c12's in-flight `style74_death_feed` (the
+merge reconciles the two feeds and the shared `Npc.last_hit_dir`
+field - both branches add the same shape).
+Recorded deviations:
+* **Stream**: the C# draws on the striking stage's stream; the port
+  batches deaths into UpdateNPCs (the S1-E-21c death-cue precedent).
+* **Carrier guard**: the feed rides the death events' carrier guard
+  (`NPC.cs:78040-78042`); the C# HitEffect itself runs per struck
+  segment - the batch model folds the segment draws onto the carrier's
+  death (the death-cue convention).
+* **Gore split**: the gore BODIES stay the d55/e5/f10 lane's; the gore
+  ARGUMENT draws (conditional-gore gates, type/velocity/count picks)
+  ARE consumed by this feed in C# order so the stream stays faithful -
+  the gore lane must NOT re-draw them (each site comment cites the
+  consumed arguments).
+* **663 Princess**: the `:88411` second arm is dead code - the
+  else-if chain's town arm (`:88046`) matches 663 first; only the
+  25-dust smoke burst + four tombstone picks fire.
+* **402 oldPos trail**: RESOLVED by the wiring wave - `Npc.old_pos`/
+  `old_rot` (`NPC.cs:6119-6121`) now carry the live rings and
+  `Npc::update_trails` ports `UpdateNPC_UpdateTrails`'s mode-7 shift
+  (`NPC.cs:90863-90872`, called at `:90512` after `FindFrame`;
+  `NPCID.cs:10430` maps 402 -> 7). The feed's trail loop reads the
+  live ring: a `== 0` gate on a filled slot spawns TWO gated pairs AT
+  THE SLOT (`:83621-83630`); only a never-updated corpse still reads
+  all-zero (the gates draw until the first `== 0` breaks - the C#'s
+  fresh-NPC shape). TRAILCACHE WIDENING EXECUTED (`19431e385`, g62's
+  `32af98b44` 6-hunk contract CONSUMED byte-identically): the rings
+  are `[Vec2; 60]`/`[f32; 60]` max-size storage + `trail_len` logical
+  length (`NpcKind::trail_cache_length`, 402->36, default 10; the
+  full census `NPCID.cs:10450`), the shift walks `..trail_len`, the
+  gate widened to 402+574/575 (g62's 945a6ea28), Transform re-zeroes;
+  `DeathFx.old_pos` widens the same + `trail_len` captured at strike,
+  the `:83611` death loop bounds `..fx.trail_len` (up to 36 Next(4)
+  gates), the fresh-ring witness's gate loop `0..36`. The merge
+  dedupes the byte-identical hunks (ONE copy); g62's pooled-path tail
+  call + `HitDustSnapshot` fields stay g62's. The other kinds'
+  TrailingMode arms stay unwired (their rings stay zero; no reader
+  yet).
+* **Keep-one census vs the d55/e5/f10 gore dispatchers** (the wiring
+  wave's overlap audit): the gore lanes re-run death DUST loops for
+  kinds this feed covers - d55's 668 (`deerclops_death`), e5's
+  551/552-554/555-557/561-563 (`dd2_death_dust`), f10's
+  558-560/564-577 DD2 band + 412-417/419/518/416 solar arms
+  (`death_dust_loop` + the pair loops). When those dispatchers claim
+  the strike/death slot the wiring MUST strip their dust loops for
+  exactly these kinds (keep g60's feed, keep the gore bodies); the
+  566/567 six `Next(2)` gates + the 576/577 `Next(5)` head pick are
+  ALREADY consumed by g60 - f10 re-draws them today, strip at wiring.
+  636/657/660/667 are NOT in g60's lane (gore-first / census-
+  ineligible): the e5 dispatch owns them whole (its 636
+  `empress_hit_dust_draws` count-plan must become a pool feed at its
+  wiring, not a second census). The e5 551 mirrored twin vs the f10
+  551 flipped arm ALSO overlap each other (the same
+  `spriteDirection == -1` branch) - keep one there too. 418 stays
+  c12's feed. The census table rides the feed call site
+  (`world_sim/npcs.rs`) + the module header.
+* **373 Sharkron2**: the wrapper maps the kind to 373 explicitly (the
+  style71 adapter precedent - `cs_id`'s bestiary fallback folds it
+  onto the Sharkron 372 row; the shared arm covers both).
+Verification: code-only - 17 stream-replay witnesses WRITTEN NOT RUN
+(each replays the cited draws on a pre-call RNG clone and asserts
+stream equality + the slot writes); no cargo/tests invoked. The
+wiring wave adds 5 more (also written not run): the mode-7 trail
+shift + the other-kinds no-shift (`npc.rs`), the live-ring trail
+spawn (`npc_death_dust.rs`), and the twin-app stream-parity pair
+through the LIVE `update_npcs` retain (the 552 burst delta + the
+Spore hp==0 edge, `world_sim/npcs.rs`).
+Gore-remainder phase (research/110 §11): the playbook's 66 blanket
+`GORE-UNIMPL` rows were probe-time-stale. Re-read against f10's pushed
+tip `67c51ec7` (wave-C now covers `NPC.cs:82206-85334`) and f5's wave-D
+claim `97c70c97` (tip `b33ba0a9`, the WHOLE `:85560-89835` classic-mob
+chain, 853 gore sites - the claim covers the gore BODIES too, not just
+the dust census): 24 kinds are f10-owned (gore pushed), 32 f5-owned
+(11 pushed + 21 claimed), 10 have NO gore sites at all (261/265/288/
+326/330/352/384/402/410/533 - dust-only arms, g60's feed is their whole
+death-effects port). ZERO gore bodies are unclaimed, so g60 ports NO
+gore bodies - the feed's ARG draws were already complete and unchanged.
+The strip surface grows at wiring: f10 +24 dust loops, f5 +32 (the one
+ARG hand-off is the 490's two `Next(3)` wing picks - f5 batch 25
+re-draws them today; the 262-264 position pairs / 266 velocity pairs /
+369+376+663 tombstone picks are claimed-not-pushed and must read the
+g60-consumed stream position). Five sweep witnesses added (written not
+run): every one of the 66 kinds now carries a per-kind draw-count row
+(`w4_g60_gore_tail_*` - the f5/f10/no-gore sweeps + the Plantera trio +
+the Angler pair); the g60 witness count is 27.
+FINAL STATUS (research/110 §12, the death-family final-status phase): the
+lane tips re-probed at g59 `dd336ef8` (88 kinds / 90 cs_ids / 42 witnesses,
+the 24 d35 row-gated activations landed; g59c activating), f10 `f7a9dd78`
+(batch 92), f5 `d908a4fd` (batch 85), g62 `53fdbf07`, c12 `5778e596`. Two
+NEW overlaps the playbook phase did not have: (1) **f10 OVERRAN its
+`:85560` claim boundary** - batches 62-92 (sites 562-816, `NPC.cs:85684-
+86784`) double-port f5's classic-mob chain (~38 same-arm fns, both live-
+dispatched; f10's header shows no f5 awareness). Resolution: f5 claimed
+first (03:43 vs f10's 05:28 overrun) and both headers agree f10 stops at
+`:85559` - the merge keeps f5's `npc_hit_effect_d.rs` and DELETES f10's
+overrun surface wholesale (fns + gates + witnesses), not a dust-strip.
+(2) **g59∩f5 = 57 pushed kinds** (all ≤230 - f5 re-draws the g59-owned
+death dust, e.g. `demon_eye_variant_death` cites g59's exact `:86459-
+86462` kind-2 burst) + 18 conditional in f5's remaining window; plus
+g59∩f10 = {225} (`umbrella_slime_death` re-draws g59's 50×4 burst).
+Strip-row total: 110 (g60 baseline) + 57 + 1 = 168 actionable, 186
+eventual. f5 is ALIVE (advanced b33→b85, `:86986`→`:88816`, during the
+probe); its remaining window `:88817-89835` (~1019 lines, ~120 sites) is
+censused in §12.1 as the f5-followup hand-off artifact - only 250/315/471
+of the 32 f5-owned g60 kinds remain unpushed. The three shared-surface
+contracts are FINAL: the `npc_death_dust.rs` union (§12.5 - the ONE
+semantic collision is the test `air()` world height, g59 200×200 vs g60
+200×120, keep both renamed); the `last_hit_dir` ONE-declaration (§12.6 -
+c12/g60/g59 field+ctor+3 strike records byte-identical, dedupe to one;
+KEEP BOTH fuse resets, g59's `ai_070_bubble` + c12's
+`ai_074_hover_charge` - different sites); the `update_trails` ONE-fn
+(§12.7 - g62b `2370316ce` adopted g60's ring VERBATIM, verified
+byte-identical; keep g62's pooled-path tail call + `HitDustSnapshot.
+old_pos`; the 402 HIT `:83579` (g62) vs DEATH `:83611` (g60) sites are
+disjoint; the TrailCacheLength under-carry 402→36/519→20 vs the 10-slot
+shape is the recorded deviation - ONE widening at merge). Code-only: no
+BIBLE PHASE / FINAL-FINAL (research/110 §12.8, `19431e385` + this commit):
+three movements. (1) **The widening EXECUTED** - g62's `32af98b44` published
+the EXACT 6-hunk contract; g60 consumed it byte-identically (fields/init/
+table/stride+gate/Transform/witnesses verified line-for-line equal by
+`g60_verify_widen.ps1`) plus its own DeathFx half (`old_pos[60]`+`trail_len`,
+the `:83611` death loop `..fx.trail_len`, the fresh-ring witness `0..36`).
+The §12.7 "ONE widening at merge" item is CLOSED pre-merge; the merge dedupes.
+(2) **f5 CHAIN COMPLETE** (`d0619d8e9` docs / `fa3c526d5` b103): all 853 gore
+sites of `:85560-89835` ported, remaining window 0, no takeover needed. The
+NO-gore arms (incl. 23 Meteor Head) are recorded-not-ported - no strip row.
+All 32 f5-owned g60 kinds pushed (250/315/471 closed). f5 compile-window flag:
+`HitEffectOutcomeD` is missing the `king_slime_spawns` field its `:221` write
++ 2 witnesses read (recorded in §12.8.2, f5's lane to fix). (3) **f10 kept
+overrunning** (b92→b134 during the phase): the drop surface is now 88 fns +
+the cite-less `five_gore_ladder`, 85 gates, 97 witnesses at `91b082e3c` -
+THREE CONTIGUOUS BANDS (fns `:3648-6698`, gates `:7122-7514`, witnesses
+`:9862-11834`) + the header rows `:136-233` + the two outcome fields; the
+EXACT per-fn line-ranges + the re-census scripts (`g60_f10_overrun.py`/
+`g60_f10_gates.py`) are §12.8.3 - f10 is ALIVE, re-census at the merge tip.
+The ONE non-mechanical bit: the 133 WanderingEye hit-half eye-pop latch
+(`:86529-86533`) is unowned after the delete (f5 defers to g62, g62 defers to
+d55, d55 has no body) - hand it to g62's hit-dust wiring. Strip totals
+refreshed: g59∩f5 = **93 kinds** (g59 b11-13 `29c13d103` activated the
+town/skeleton/beetle/sea-snail/pirate families f5 re-drew; 17 of the 18
+conditional materialized, 23 never) → **204 actionable rows, 0 conditional**.
+The union-8-step re-pinned (g59 2481 lines/53 module witnesses × g60 1998/23;
+the ONE `air()` height collision unchanged). Witness union 404 distinct after
+the byte-identical dedupe. Code-only: no cargo/tests/rustfmt/graphify invoked.
+## The NPC spawn / teleport-in dust lane (W4-g61, code-only)
+**2026-11-21, `task/W4-g61-npc-spawn-dust`, commits `0a4af190` +
+`6345f7b7` + `8d23e298`.** `crates/tr-app/src/npc_spawn_visuals.rs`
+(2 092 lines) ports the SPAWN-time visual family as an UNWIRED pure
+module over the d50 `DustPool` contract + the S1-E-4 `GorePool` (the
+style56 Env convention, widened with the gore pool and an inline
+`play_sound` callback so the pitch draws land at the C# call position
+between the dust draws). The death dust (g59/g60) and the per-hit dust
+(g62) are separate lanes — untouched.
+**The census (29 sites, all cited):**
+* `Utils.PoofOfSmoke` (`Utils.cs:1078-1093`): `Next(3,7)` gores 11-13
+  (the velocity `NextFloat` BEFORE the type `Next(11,14)` — argument
+  order), scale 0.7 / velocity ×0.5 post-writes; ten type-16 dust
+  (14×14, alpha 100, scale 1.5) with the +5 position nudge and the
+  two-`NextFloat` velocity overwrite. Callers: the statue arms
+  (`Wiring.cs:825/:2275/:2329/:2397` — `wiring.rs:980`'s documented
+  gap), the caught-frog/statue-critter poofs (`NPC.cs:79884/:79913` —
+  `bug_net.rs:56-61`'s documented skip), the party-hat-off transition
+  (`:90247`).
+* `NPC.BigMimicSpawnSmoke` (`NPC.cs:77494-77515`): 20× type-54 (alpha
+  50, scale 1.5, velocity ×2, noGravity) + the 3×2 gore-99 grid (the
+  INTEGER products `(width*j)*0.45−20` / `(height*k)*0.5+10`, scale
+  1.1, velocity ×0.3). The `netMode==2` `SendData(51,..,4)` relay
+  dropped (single-player).
+* `NPC.TransformVisuals` (`NPC.cs:80963-81033`, the `Transform` tail
+  `:81136`): the netOffset round trip kept verbatim; the 158↔159
+  gore-only arm (Item8 + three gore-99 at the top / INTEGER-half /
+  bottom −10 seats); the 478→479 flutterfly (30× type-238 SpeedY−2
+  with per-dust `Next(2)` noGravity gates, then gores 684/685/686 +
+  `684+Next(3)` — the type draw BEFORE that gore's allocator pair;
+  684-686 are NOT SafeGore, the armed blood gate re-types inside the
+  allocator); the 406→405 ring (`Next(10,21)` count + one phase
+  `NextFloat`, per-dust the 0×0 type-229 spawn at the FLOAT-half
+  Centre, the `UnitY.RotatedBy(num5*2πf/num3+num4)` seat, position
+  centre+v2×(22,22)/2, scale 0.6+NextFloat×1.8 BEFORE fadeIn
+  NextFloat×2, velocity ×scale); the 428→427 / 427→426 fairy ladders
+  (SEPARATE `if`s in the C# — `SelectRandom(229,240)` = one `Next(2)`
+  vs `(229,240,240)` = one `Next(3)`, drawn BEFORE the allocator;
+  fadeIn 0.25; velocity ×scale/2 vs ×scale×0.75).
+* `Main.TeleportEffect` (`Main.cs:13233-13464`), all eleven arms:
+  0/1 the wizard/rod `W*H/5` INTEGER count with the `Next(20,70)*0.01`
+  scale ASSIGNMENT + j<10/j<5 bumps (Item6/Item8 first); 2 the
+  chaos-state 50×mult type-58 GhostWhite puff (no sound); 3 the
+  50×mult type-180 chain — five `Next(3)` ×0.75 rolls, two `Next(3)`
+  ×2/×1.2 bumps, one `Next(2)` gate whose body draws
+  `Next(75,100)`/`Next(25,75)`, the unconditional ×0.8 tail; 4 the
+  portal burst (`GetPortalColor` parity hsl 0.12/0.52 alpha 66 → the
+  `:13330` alpha-255 overwrite, scale 1.2 / fadeIn 0.4); 5/7 the
+  water/lava columns (`dustWater()`/35, height+24 box, NewDustDirect,
+  Y×0−3.5 / X×1.5, alpha 130, fadeIn 1.2 — the sound AFTER the loop);
+  9 the pylon hop (Inflate(15,15) FIRST, 100×mult
+  `SpawnInWorldDust` — `TeleportPylonsSystem.cs:327-393`'s colour
+  table, type 43 alpha 254 scale 0.5, velocity ×0.1 / Y−0.2); 10 the
+  harmony shimmer (Inflate, 60×mult, the fadeIn/scale/hue `NextFloat`
+  triple BEFORE the allocator, the OVERWRITTEN `Next(20,70)` roll
+  still drawn, the n<80% lerp gate + its `NextFloat`, the
+  `dustIndex!=6000` CloneDust pair ×0.65 + white); 11 the frog hop
+  (50, no mult, `Next(4)` colour pick + the
+  `NextVector2FromRectangle` float pair inside NewDustPerfect, ×2
+  velocity, no sound); 13 the sparkle (Item8, 21× 2×2 type-27 alpha
+  100, the `Next(1,3)` SCALE argument, ×1.75 + i%3 ×1.5,
+  noLightEmittance). Styles 6/8 have no C# arm.
+* `NPC.Teleport` (`NPC.cs:81035-81058`): the PRE-move `teleportTime>0`
+  0.3 mult, Entry at the old rect / Exit at the new (the `side`
+  parameter is unread in the C# body — dropped), the style-4
+  lastPortalColorIndex latch BETWEEN the calls, time=1/style written
+  last; the `SendData(65)` server relay dropped.
+* `NPC.UpdateNPC_TeleportVisuals` (`NPC.cs:92194-92241`, called at
+  `:90322` after the AI + cast lights): style 0's `Next(100)` gate
+  against 100×time×2 with NO in-arm decrement (the dust box origin is
+  the INTEGER-cast getRect position); 4/12 decrement −0.02 BEFORE the
+  gate (portal colour keeps alpha 66 / the
+  `(float)(timeForVisualEffects/60.0)%1f` clock hue at l=0.75 alpha
+  0); 13 instant clear; the shared `max(0, time−0.005)` tail; the
+  time<=0 head gate draws nothing.
+* `NPC.MakeTransitionEffectsForTextureChanges`
+  (`NPC.cs:90236-90263`): 0→1 20× `139+Next(4)` (type draw per dust,
+  the height/4 INTEGER box, SpeedY−2); 1→0 the poof delegation; the
+  633-only 0↔2 20× NewDustDirect type-262 (noGravity, scale 2).
+**`NewNPC` itself draws no spawn dust** — `NPC.cs:80750-80795`'s only
+draw is the getGoodWorld `Next(3)` bunny/squirrel swap (`:80752`,
+already carried constants-off in the sim's spawn seams) and `OnSpawn`
+(`:8402-8424`) stamps only the boss presence statics. The per-kind
+spawn smoke lives in the callers above.
+**The d50 seam widening (commit `6345f7b7`):**
+`DustPool::new_dust_perfect` / `new_dust_direct` / `clone_dust`
+(`particles.rs`) generalised from `&mut UnifiedRandom` to the
+`DustRng` trait — behaviour identical (`UnifiedRandom` implements it;
+the existing callers compile unchanged), so the teleport arms roll a
+recording witness stream through the same internals.
+**Drops (cited at the sites):** the `netMode==2` server relays, the
+`SoundEngine` pitch draws (the `play_sound` callback carries the cue
+request AND the caller's stream at the C# position — the wiring round
+resolves it through `Audio::play_teleport_cue`/`play_npc_item_cue`, the
+case-2 pitch joining the same stream), the `TeleportationSide` parameter
+(unread in the C# body). The teleport fields ride a caller-owned
+`(teleportTime, teleportStyle, lastPortalColorIndex)` triple — the wiring
+round copies them in/out of the `Npc` fields (`teleport_time`,
+`teleport_style`, `last_portal_color_index`, `NPC.cs:6041`/`:6039`/`:6581`).
+**Verification:** code-only — every block re-read against the cited
+C# windows (≤100-line reads, direct file paths, no junction
+recursion); 18 `w4_g61_*` witnesses with a `RecordingRng` that logs
+every `Next`/`NextFloat` call shape and pins the exact slot sequence
+per site (the argument-before-allocator order, the gate chains, the
+sentinel writes, the clone pairs, the overwrite-still-drawn rolls).
+WRITTEN NOT RUN — no cargo/rustc/tests per the lane directive.
+## The NPC spawn / teleport-in dust WIRING (W4-g61, code-only)
+**2026-11-21, `task/W4-g61-npc-spawn-dust`, commits `1eedb9a3` →
+`8f545007` (six seams).** The pure module's callers are now live:
+* **Seam 1 (`1eedb9a3`) — the module seam:** the `play_sound` callback
+  gains the caller's stream (`&mut R`) so the pitch draws land at the C#
+  call position (a disjoint-field reborrow of `SpawnVisualsEnv::rng`);
+  the `Npc` teleport fields + ctor zero-init; the fade-order doc
+  corrected (`UpdateNPC_TeleportVisuals` `:90322` runs AFTER the cast
+  lights and BEFORE `AI()` `:90423`, not "after the AI").
+* **Seam 2 (`b4e40449`) — the bug-net poof:** `catch_npc`'s
+  `MysticFrog | StatuePoof` arm drains `poof_of_smoke` at
+  `Center - (20,20)` (`NPC.cs:79883`/`:79912`) on the `UpdatePlayers`
+  stream (the catch runs inside `ItemCheck`, `Main.cs:17754`). The
+  standing gore/dust skip notes retired. The frog's
+  `AI_AttemptToFindTeleportSpot` stays unported (kind 687 roster gap) —
+  both arms poof.
+* **Seam 3 (`31baa315`) — the statue/lamp poofs:** `StatueSpawn::Poof`
+  (the body-gated styles 64/71 first-table, 16/50 second-table — the
+  `CheckMech` cooldown consumed, the `NPC.MechSpawn` cap re-checked
+  app-side in queue order, the poof at `(x-14, y-32)` =
+  `(num140-4, num141-22)-(10,10)`); the lamp burn-out poof queue
+  (`Wiring.cs:824-826`, `(lampX,i)*16-(10,10)`, the `_GatesDone` re-poke).
+  Both drain through `poof_of_smoke` on the wiring stream. The core
+  tests updated (blocked spawns now emit `Poof`).
+* **Seam 4 (`c289d64f`) — the NPC.Teleport call sites + fade:** the
+  statue styles 40/41 ride `npc_teleport` style 14 (NO `TeleportEffect`
+  arm — zero dust, the fields latch); the pad NPC loop
+  (`Wiring.cs:3162-3173`) rides style 0 (the two-sided W*H/5 type-159
+  burst + Item6 on the wiring stream). `Audio::play_teleport_cue` (the
+  Item façade + the style-5 splash int overload). The pre-AI
+  `UpdateNPC_TeleportVisuals` drain in the sim preamble (the copy-in/out
+  triple, `time_for_visuals = anim_time*60 % 216000`, the head gate
+  `time <= 0` draws nothing). The caster's INLINE teleport bursts
+  (`NPC.cs:20867-20987`) are d52 batch3's claimed lane — NOT touched;
+  the town shimmer-state-25 teleport (`NPC.cs:53266`) is b3's cited skip
+  (the state is unported); the net-apply style-4 teleports
+  (`MessageBuffer.cs:3550`/`:3606`) are g48-g52's lanes.
+* **Seam 5 (`5852697a`) — the Transform tail:** `wants_transform_visuals`
+  stamped at the three live in-place swaps (406→405 cell, 428→427
+  headcrab, 427→426 alien — C# NPC-id space, NOT the port's net ids);
+  the gore pool threaded through `update_rng_dust` (the S1-F-13c
+  precedent, all callers updated); the drain after the AI before
+  `find_frame`/`contact` (`NPC.cs:81136` call position); the
+  `transform_to_kind` parity drain (390→382 / 416→518, zero-draw — no
+  arm matches). The 158/159 vampire + 478/479 mothron arms are
+  roster-gapped (the d35/d40 kind lanes) — their swaps never stamp yet.
+  The shimmer DECISION logic (`NPC.GetShimmered`, the e19/f47 co-lanes)
+  is unmerged — NOT duplicated; the visuals wire at the live transform
+  sites only.
+* **Seam 6 (`8f545007`) — the key-summon:** `Player.last_chest` +
+  `ChestChangeEvents` (`Player.cs:28760-28775` at `:25384`, the close
+  edge) at the player-tick tail; `chest.rs::big_mimic_summon_check`
+  (`NPC.cs:77517-77605`: the hardmode + `BasicChest{21,467}` gold-5-6-
+  excluded scan, the one-key gate `num4==0 && num2+num3==1`, the slot
+  clear + `DestroyChest` + `ClearTile` 2×2, the kind 475/473/474 by
+  `WorldGen.crimson` — constants-off false AT THIS COMMIT, retired by
+  the final phase below; `NewNPC` at the bottom-center anchor
+  `(x*16+16, y*16+32)` + `BigMimicSpawnSmoke` on the `UpdatePlayers`
+  stream). The big-mimic kinds 473-476 are roster-gapped AT THIS
+  COMMIT (the d40 kind lane — landed since, see the activation census
+  below). `GasTrapCheck` (the gas-trap item 5346, `Projectile.cs:41242`)
+  is a cited skip (no gas-trap family).
+**KEEP-ONE (ADJUDICATED + EXECUTED on the g11 branch — this note's
+earlier direction is RETIRED):** the `1eedb9a3` note claimed this
+module's `teleport_effect` supersedes g11's `main_dust` styles 0-5/7 at
+the merge. That was the INVERSE direction of the agreed keep-one and
+g11 has since EXECUTED the fold on ITS branch (g11 research/116
+§3/§4/§5, `origin/task/W4-g11-dust-main-sites-1` tip `98283df0`,
+union-exec `56afc0c0` + `8540a8ad`, final-phase folds `cc8c767b`):
+* **The surviving BODY is g11's `crates/tr-app/src/teleport_dust.rs`** —
+  this module's widest-eleven `teleport_effect` adapted per-hunk from
+  `a9628928` (`TeleportDustEnv` = `SpawnVisualsEnv` minus the gore pool;
+  no teleport arm spawns gores). Both branches always agreed the g61
+  BODY survives; g11's file is the adapted copy.
+* **The surviving SEAMS are g11's** (`main_dust.rs`): the App-level
+  `teleport_effect` dispatcher (builds the env, resolves the Audio
+  façade, calls the body for ALL styles) + the Entry-OLD→Exit-NEW
+  `PlayerTeleportReq`/`NpcTeleportReq` replays (`other_position` both
+  legs — gap 2; the style-9 pylon latch — gap 3; the stored
+  `App.water_style` — gap 4; the style-8 double cue + the replay-owned
+  camera transition — gap 5; the grant dedupe — gap 6).
+* **RETIRED from THIS branch at the merge (fold-source, already
+  consumed — marked DEPRECATED in-code):** `npc_spawn_visuals.rs`'s
+  `teleport_effect` / `npc_teleport` env-level driver /
+  `update_npc_teleport_visuals` triple shape / `portal_color` /
+  `pylon_spawn_in_world_dust` + the 9 teleport witnesses (g11 adapted 8
+  as `w4_g11u_*` in `teleport_dust.rs` + the driver witness as
+  `w4_g11_npc_teleport_style4_two_sided_burst_and_latch` in
+  `main_dust.rs`); the `world_sim/wiring.rs::npc_teleport_wiring`
+  immediate helper (the §5 DUP RISK — the merger keeps the g11 QUEUE
+  replay: the pad loop already rides it, the statue style 14 queues
+  through the SAME drain with the `:81052-81053` grants latched, §5
+  Fold B); the `world_sim/npcs.rs` copy-in/out fade drain (g11's
+  surviving `update_npc_teleport_visuals` takes `&mut Npc` on the g11
+  fields — `teleport_style_id` naming, ONE field set — at the SAME
+  pre-AI slot, fed `tfv = anim_time*60 % 216000`, §5 Fold A of this
+  branch's seam-4 order).
+* **STAYS g61's:** the poof/mimic/transform/alt-texture halves + their
+  8 pure witnesses + ALL the wiring-seam witnesses (the §5 dup census:
+  seams 2/3/5 NO-DUP — the bug-net poof, the statue/lamp poofs, the
+  Transform tail are g61's lane; the frog's style-13 `NPC.Teleport` at
+  `NPC.cs:79880`, when its lane lands, must ride
+  `main_dust::npc_teleport` on the caller's pass, not a g61 driver).
+  `Audio::play_teleport_cue` survives (the §5 audio note: the merger
+  may hoist the g11 dispatcher's inline resolution into this named
+  helper, zero behaviour change). `make_transition_effects_for_texture_changes`
+  stays (the town alt-texture seam is outside the union).
+* The g11 `snowing` site is separately adjudicated (g11 research/83 —
+  d130-canonical, marked DEPRECATED on the g11 branch).
+**Stream-parity witnesses (WRITTEN NOT RUN):** the bug-net poof
+(scratch-pool replay ends where the live `UpdatePlayers` stream ends),
+the statue poof (the wiring-stream replay + the cap-blocked no-poof),
+the lamp burn-out (the queue draws nothing), the pad style-0 burst (the
+type-159 dust + the field latch), the headcrab fairy burst (the 20×
+SelectRandom step), the key-summon (the chest-clear half + the five
+refusal gates). The 18 pure-module `w4_g61_*` witnesses stay.
+**Deviations (cited; the final phase retired the first two — see the
+FINAL section below):** the `WorldGen.crimson` constants-off (RETIRED —
+the pick reads the live g69 `World.crimson`); the roster-gapped kinds
+(the big mimics 473-476 + the mothron 478/479 LANDED on d40, the vampire
+158 on g8 — the activation census below; the vampire 159 + the frog 687
+still gapped); the town shimmer-state-25 teleport (b3's cited skip);
+the caster inline bursts (d52 batch3's claimed lane); the net-apply
+teleports (g48-g52); the `GasTrapCheck` (no gas-trap family); the
+`time_for_visuals` stand-in (`anim_time*60 % 216000`, the draw.rs:374
+convention — the C# `Main.timeForVisualEffects` is a double
+ticks-since-start).
+## The NPC spawn / teleport-in dust FINAL (W4-g61, code-only)
+**2026-11-21, `task/W4-g61-npc-spawn-dust`, the final-phase commits
+(keep-one fix `e6fcb643`, crimson + census `df15960a`, then this
+section's commits + the seal commit). The full record: `docs/research/273-g61-spawn-
+family-final.md` (FINAL + SEALED; renumber chain 237→238→273 per the research/150
+registry §6.3 round-2 refresh `72226e500` — 237=e23's earlier push, 238=d42's
+earlier push, first-pushed-wins).**
+Three closures + the spawn-family declaration:
+### 1. The NightKey crimson pick — LIVE (`World.crimson`, the g69 field)
+`chest.rs::big_mimic_summon_check`'s `let crimson = false` constants-off
+stand-in is RETIRED: the pick reads `app.world.crimson`
+(`NPC.cs:77597` — `num7 = ((!WorldGen.crimson) ? 473 : 474)`, re-read
+`:77517-77605`). The field is **g69's** (`origin/task/W4-g69-weather-
+clouds-parallax` tip `20d0380f`): `World.crimson: bool`
+(`WorldGen.cs:4158`, the world evil type — true crimson, false
+corruption), declared after `mushroom_bg_style`, ctor `false`, written
+`world.crimson = opts.crimson` at BOTH worldgen entries
+(`generate_with_progress` + `generate_with_chest_stock` — the UI pick /
+`roll_crimson(seed)` feeds `GenOptions.crimson`, already live on main).
+This branch carries g69's field/ctor/worldgen hunks VERBATIM (the
+merge dedupes to one — identical text, no semantic conflict). The
+`.trwld` v18 tail + the `.wld` flags-byte read (`WorldFile.cs:1281`)
+stay **g69's lane** — NOT duplicated here; until g69's save layer
+merges, a loaded world keeps the ctor `false` (corruption), the same
+standing default the constants-off had, and a GENERATED crimson world
+now picks 474 correctly. The shop.rs/loot.rs `crimson_world` folds keep
+their own lanes' rows (g69's consumer census, research/117 §2). New
+witness `w4_g61_the_crimson_night_key_clears_and_reads_the_world_evil`
+(the crimson flag plumbs through, the refusal draws zero, the Light
+Key ignores the evil flag). WRITTEN NOT RUN.
+### 2. The roster-gap activation census (re-derived from the pushed tips)
+The seam-6/seam-5 "roster-gapped" notes were true at `8f545007`; the
+kind lanes have since LANDED rows on their pushed branches:
+| C# id | kind | landed where | status at THIS branch | activation |
+| 473/474/475/476 | the big mimics | d40 `4860cd88b` (batch 9, own bestiary entries `bestiary.rs:2376-2400`) | gapped (main has no rows) | **AUTO** — `kind_from_net_id` reads the bestiary ENTRIES (`npc/data.rs:3996`); at the d40 merge the chest seam's gate resolves and the `NewNPC` + `BigMimicSpawnSmoke` arms fire with NO g61 edit. The aiStyle-87 machine is d32's (UNWIRED row-0 FindFrame, the d40 note) — the spawn + smoke are live regardless |
+| 478/479 | MothronEgg / MothronSpawn | d40 `cfed253d0` (batch 10; the egg Hide=true folds onto Mothron for credit — the fold table `bestiary.rs:2634`, the 479 own row `:2417`) | gapped | **SEMI-AUTO + A GAP FOUND** — the egg's `Transform(479)` timer is the aiStyle-89 machine (`NPC.cs:38380`, d32's `npc_ai_style89.rs`, g8 carries the dispatch claim with `out.transform = Some(479)`); the sim's `wants_transform` drain (`world_sim/npcs.rs:6195`) matches ONLY `382/518` today — the merger must add the `479 => NpcKind::MothronSpawn` arm there (the c10 research/149 §2.4 activation contract — renumbered from 145 at the c10 seal `5fcc68ae6` — names this the d40 wiring step). The g61 `transform_visuals(478, 479)` arm is module-ready and fires from the SAME drain's parity call once the arm lands. **The 478 RESOLUTION GAP:** `kind_from_net_id` scans the bestiary ENTRIES for `net_id == 478` — the egg has NO own entry (Hide=true, only the credit fold), so a `.wld`/net 478 record resolves `None` even after d40 merges; the fix is the d40 lane's (a resolution row or a fold-aware lookup — the g8 VampireBat precedent adds an own row for exactly this reason, `bestiary.rs:2353-2354`). Declared here, NOT fixed here (the roster is not g61's) |
+| 158 | VampireBat | g8 `0f31e10e3` (batch 3, `bestiary.rs:2421` own row — Hide=true folds onto Vampire 159 for credit) | gapped | **GATED** — the flip callers (`NPC.cs:23353` aiStyle-14 / `:58850` aiStyle-3) are cited machine skips on BOTH branches (g8's `npc_ai_style14.rs:122` still says "VampireBat unported" — the row landed but the Transform branch did not); the 158↔159 arm needs BOTH rows + the flip callers (the c10 research/149 §2.3 contract: d36 ports 159 at proto 762+, the callers ride their style lanes) |
+| 159 | Vampire | d36 CLAIMED (research/109 census; `bcf4ac551` supersede-note — 108-E `bdd59afb` authoritative, the 762-789 port-local band) | NOT landed (d36/d36x tips are census-only) | as above — no auto-activation |
+| 687 | MysticFrog | NOWHERE — d43's tip is bare main (`a725acb04`, no kind commits); e26's Frog is **361** (the luck critter, `bestiary.rs:2182` on e26 — a DIFFERENT kind); d127's bird gates cite `SpawnFrog` = 361 too | gapped, UNCLAIMED row | the bug-net `CatchOutcome::MysticFrog` arm stays coded-for-parity (the poof fires when a 687 record arrives; `AI_AttemptToFindTeleportSpot` unported — the teleport-spot search is the d43 kind lane's). The frog's style-13 `NPC.Teleport` (`NPC.cs:79880`) must ride `main_dust::npc_teleport` on the caller's pass when it lands (the g11 §5 census note) |
+| 361 | Frog (the critter) | e26 `048cca6cf` (phase 4, data-only aiStyle-7 walker) | gapped on main | NOT a g61 consumer — the catch CONVERTS (`catch_item(361) = 2121`, `NPC.cs:13611` — the same Frog item the 687 row uses, `:17651`), no poof arm |
+**The `kind_from_net_id` auto-activation verdict:** YES for the
+key-summon seam (the gate is a table read — the d40 rows activate the
+NPC + smoke arms at merge with zero g61 edits); NO for the transform
+seams (the `wants_transform` drain's kind match is a hardcoded
+`382/518` — the 479 arm is the d40/c10 merge step, and the 158↔159
+flips need their machine branches first). The g61 witnesses that pin
+"no NPC spawns yet" (`w4_g61_the_light_key_summon_clears_the_chest`'s
+`app.npcs.is_empty()`) are TRUE on this branch and INVERT at the d40
+merge — the merge-verify wave re-pins them (the roster rows are not
+this lane's to add).
+### 3. The spawn-family declaration (the lane's complete census)
+The g61 lane owns the SPAWN-time visual family, now fully adjudicated:
+* **STAYS g61 (this branch, wired):** `poof_of_smoke`
+  (`Utils.cs:1078-1093` — the bug-net catch, the statue body-gate, the
+  lamp burn-out), `big_mimic_spawn_smoke` (`NPC.cs:77494-77515` — the
+  key-summon), `transform_visuals` (`NPC.cs:80963-81033` — the three
+  live pillar flips + the carrier-gone parity drain),
+  `make_transition_effects_for_texture_changes` (`NPC.cs:90236-90263`
+  — module-ready, the town alt-texture seam is b3/e19's), the
+  `Npc` teleport fields (ONE set at merge, g11 names),
+  `wants_transform_visuals`, `Player.last_chest` +
+  `chest_change_events` + `big_mimic_summon_check` (the crimson pick
+  now LIVE), `Audio::play_teleport_cue`.
+* **FOLD-SOURCE (DEPRECATED in-code, the merger drops):** the
+  `teleport_effect`/`npc_teleport`/`update_npc_teleport_visuals`/
+  `portal_color`/`pylon_spawn_in_world_dust` bodies + the 9 teleport
+  witnesses + `npc_teleport_wiring` + the copy-in/out fade drain —
+  g11's `teleport_dust.rs` + `main_dust.rs` seams are the surviving
+  copies (research/116 EXECUTED, the keep-one section above).
+* **CO-LANE DUP DECLARED (c10):** `task/W4-c10-style68-waterfowl`
+  carries `npc_transform_visuals.rs` (`67191299b` + `1e336ee93`) — a
+  DRAW-CENSUS port of the SAME `NPC.TransformVisuals` body (the five
+  arms, the Item8 cue as an INTENT, dust/gore bodies unmodelled) with
+  the SAME three pillar flip sites wired. g61's `transform_visuals`
+  is the FULL pool-writing port (the d50/S1-E-4 contracts, the gores
+  land). At the c10×g61 merge keep ONE: **g61's full body** (the
+  pools write; c10's census draws nothing — a strict subset), c10's
+  flip-site call shape re-points at the g61 module (or retires —
+  the g61 `wants_transform_visuals` stamp already covers the three
+  sites), c10's waterfowl-silence witness transfers (the eight
+  takeoff/landing pairs match no arm — zero draws, both ports agree).
+  The merger adjudicates; neither branch edits the other's module.
+* **CITED SKIPS (unchanged):** the town shimmer-state-25 teleport
+  (b3), the caster inline bursts (d52 batch3), the net-apply
+  teleports (g48-g52), `GasTrapCheck` (no gas-trap family), the
+  `NewNPC` getGoodWorld bunny/squirrel swap (constants-off at the
+  sim's spawn seams), the death dust (g59/g60) + the per-hit dust
+  (g62) — separate lanes, untouched.
+**Verification:** code-only — the C# re-read (`NPC.cs:77517-77605`,
+`:77494-77515`, `:79860-79924`, `:80963-80992`), the g69 field hunks
+diffed against `20d0380f` (verbatim), the d40/g8/d36/e26/d43/c10 tips
+re-read from origin. The new/updated witnesses are WRITTEN NOT RUN
+(no cargo/tests/rustfmt/graphify per the lane directive).
+**SEAL (2026-11-21, research/273):** the lane is CLOSED — the record
+renumbered 237→238→273 (the registry-150 first-pushed-wins rule: e23's
+`237-bestiary-ui-final.md` first-add `7a7779690` 10:53:03 beats this
+lane's `fd406ecba` 12:12:59; g48's `237-f11-tail-fix.md` 12:15:09 loses
+later still — the 361-ref seal scan finds exactly these three 237+
+claimants; the round-2 refresh `72226e500` then found the seal's
+238 self-rename `6e922fc60` 12:55:22 landed after d42's 238
+`9eadc3043` 12:15:55 and c8's 238 `2a0b5c701` 12:24:19 → 273).
+Seal-phase receipts folded into research/273: the **g11
+mutual receipt** (its dust-retire tip `2e978b279` cross-verifies the
+g61 seam-6 key-summon NO-DUP + records the seam-4/statue-latch folds —
+both directions agree g11 `teleport_dust.rs` canonical); the **d40
+seal re-read** (tip `8fe1d6d31`, the band complete at ALL_KINDS 326 —
+the 473-476 AUTO verdict holds, the **478 Hide-no-ENTRIES-row fix
+published for d40** with the g8 VampireBat precedent
+`bestiary.rs:2353-2354`/`:2420-2426`, the 479 drain arm stays the
+c10-research/149 §2.4 d40 wiring step); **687 nowhere re-confirmed**
+(d43 tip `a725acb04` = bare main, no kind commits); the **c10 census-dup
+contract** stands mutual against its SEALED research/149
+(`5fcc68ae6` — keep g61's full pool-writing body, c10's five census
+witnesses transfer/re-point, its anchors row repointed not deleted).
+The §6 merge checklist in research/273 is the lane's complete
+hand-off; no further g61 commits are planned.

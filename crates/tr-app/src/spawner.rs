@@ -863,7 +863,7 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
 
 /// `Spawner.HasTileSpawnSpace` + `CanSpawnInTile` (NPC.cs:5398-5434): the
 /// 2×3-tile rect above the ground tile must be free of solid tiles and lava.
-fn has_tile_spawn_space(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn has_tile_spawn_space(world: &World, x: i32, y: i32) -> bool {
     let left = x - SPAWN_SPACE_X / 2;
     let top = y - SPAWN_SPACE_Y;
     for i in left..left + SPAWN_SPACE_X {

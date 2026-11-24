@@ -54,11 +54,11 @@
 //! `KillTile` draws (the port's `break_tile` seam, its own pinned order).
 //! The release's 148 penguin variant roll (`NPC.cs:80133`, `Next(2)`) draws
 //! on the same stream. The statue-poof/frog `Utils.PoofOfSmoke` draws
-//! (`Utils.cs:1078-1093`) are skipped with the standing gore/dust gap.
+//! (`Utils.cs:1078-1093`) join it through the g61 module's
+//! `poof_of_smoke` at `Center - (20,20)` (`:79883`/`:79912`) — the
+//! gore/dust pools + the `UpdatePlayers` stream, W4-g61 wiring.
 //!
-//! Deviations (docs/ANALYSIS.md "The bug net (S1-P-i36)"): the gore/dust
-//! `Utils.PoofOfSmoke` visuals are skipped (the standing gore/dust gap, the
-//! statue-poof and frog arms lose their draws with it); the mystic frog's
+//! Deviations (docs/ANALYSIS.md "The bug net (S1-P-i36)"): the mystic frog's
 //! `AI_AttemptToFindTeleportSpot` is unported (kind 687 has no roster row);
 //! the `WrongBugNet` immunity counter collapses onto the port's single
 //! damage lane (the M4-HAZARD-1 admission); `gravDir` is the normal 1f;
@@ -767,6 +767,10 @@ pub(crate) fn catch_npc(app: &mut App, i: usize, who: u8) -> bool {
     };
     let ty = n.kind.cs_id() as i32;
     let ci = catch_item(ty, n.ai[2]);
+    // W4-g61 wiring: copy the poof anchor out before the match — the `n`
+    // borrow (app.npcs) must end before the poof arm's whole-app
+    // `spawn_ctx()` / field borrows (the NLL last-use is the center read).
+    let (cx, cy) = n.center();
     let net_mode = app_net_mode(app);
     let outcome = catch_outcome(net_mode, n.hp > 0, ci, ty, n.spawned_from_statue);
     match outcome {
@@ -780,10 +784,27 @@ pub(crate) fn catch_npc(app: &mut App, i: usize, who: u8) -> bool {
             // `NPC.cs:79906-79917`: the frog teleports when a spot is
             // found (`AI_AttemptToFindTeleportSpot` is unported — kind
             // 687 has no roster row), else both arms poof + deactivate
-            // with NO item. The `Utils.PoofOfSmoke` visuals are the
-            // standing gore/dust gap (ANALYSIS); the `23` despawn rides
-            // the net cadence's gone-diff, the `106` smoke broadcast has
-            // no port message.
+            // with NO item. W4-g61 wiring: the `Utils.PoofOfSmoke`
+            // visuals (`Utils.cs:1078-1093`) drain through the g61
+            // module at `Center - (20,20)` (`:79883`/`:79912`) on the
+            // `UpdatePlayers` stream — the catch runs inside
+            // `Player.ItemCheck` under the `Main.cs:17754` swap (the
+            // Convert arm's item spawn rides the same stream). The
+            // `23` despawn rides the net cadence's gone-diff, the
+            // `106` smoke broadcast has no port message.
+            let poof_at = Vec2::new(cx - 20.0, cy - 20.0);
+            let ctx = app.spawn_ctx();
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+                world: &app.world,
+                dust: &mut app.dust,
+                dust_ctx: &ctx,
+                gore: &mut app.gore,
+                rng,
+                // The poof plays no sound (`Utils.cs:1078-1093`).
+                play_sound: &mut |_, _, _, _, _| {},
+            };
+            crate::npc_spawn_visuals::poof_of_smoke(&mut env, poof_at);
             true
         }
         CatchOutcome::Convert => {
@@ -1626,5 +1647,66 @@ mod tests {
         let was = z.friendly;
         tick_catchable_immunity(&mut z);
         assert_eq!(z.friendly, was);
+    }
+
+    // ---- W4-g61 wiring: the statue-poof / frog-poof visuals ----
+
+    /// `NPC.cs:79910-79917` — the statue-spawned critter catch poofs at
+    /// `Center - (20,20)` through the g61 module on the `UpdatePlayers`
+    /// stream (the catch runs inside `Player.ItemCheck`, `Main.cs:17754`),
+    /// deactivates with NO item. Stream parity: the live catch's
+    /// `UpdatePlayers` stream ends exactly where a scratch-pool replay of
+    /// `poof_of_smoke` at the same anchor ends (the gore/dust allocator
+    /// draws ride the same stream), and the ten type-16 dust land.
+    #[test]
+    fn w4_g61_the_statue_catch_poofs_on_the_update_players_stream() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut app = flow_app(None, vec![], vec![]);
+        // A world big enough that the poof's gores stay in-world (the
+        // gore allocator deactivates out-of-world spawns, Gore.cs:1457).
+        app.world = tr_core::World::new("poof".into(), 40, 40);
+        app.world.compute_column_surface();
+        // A statue-spawned goldfish (the one ported catchable kind) at a
+        // known box; the catch anchor is its centre minus (20,20).
+        let mut n = Npc::new(crate::npc::NpcKind::Goldfish, 100.0, 100.0, 1, 0.0);
+        n.spawned_from_statue = true;
+        n.hp = n.max_hp;
+        let (cx, cy) = n.center();
+        let anchor = Vec2::new(cx - 20.0, cy - 20.0);
+        app.npcs.push(n);
+        let before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(catch_npc(&mut app, 0, 0), "the statue arm deactivates");
+        assert!(app.items.is_empty(), "the statue poof spawns NO item");
+        let after = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        // The replay: a scratch pool + the same ctx, the pre-catch stream.
+        let ctx = app.spawn_ctx();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
+        let mut replay = before;
+        let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+            world: &app.world,
+            dust: &mut dust,
+            dust_ctx: &ctx,
+            gore: &mut gore,
+            rng: &mut replay,
+            play_sound: &mut |_, _, _, _, _| {},
+        };
+        crate::npc_spawn_visuals::poof_of_smoke(&mut env, anchor);
+        assert_eq!(after, replay, "the poof's draws ride UpdatePlayers");
+        // The ten type-16 smoke dust landed (alpha 100, scale 1.5).
+        let live: Vec<_> = app.dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10, "ten type-16 dust");
+        for d in live {
+            assert_eq!(d.dust_type, 16);
+            assert_eq!(d.alpha, 100);
+            assert_eq!(d.scale, 1.5);
+        }
+        // The 3-6 smoke gores (11-13) at scale 0.7.
+        let gores: Vec<_> = app.gore.slots().iter().filter(|g| g.active).collect();
+        assert!((3..=6).contains(&gores.len()));
+        for g in gores {
+            assert!((11..14).contains(&g.gore_type));
+            assert_eq!(g.scale, 0.7);
+        }
     }
 }

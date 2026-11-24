@@ -2917,6 +2917,35 @@ impl Audio {
         self.play_use_sound(idx as u16, x, y, 0.0, rng)
     }
 
+    /// W4-g61 wiring — one `Main.TeleportEffect` cue play. The C# sites pass
+    /// `SoundID.ItemN` (a `LegacySoundStyle`, `SoundID.cs:426`/`:430`), so
+    /// `SoundEngine.PlaySound` resolves the façade (`SoundEngine.cs:93-99`):
+    /// the audio-only `GetRandomPitch` NextFloat, the attenuation gate, then
+    /// case 2's one `Main.rand` pitch draw on the caller's stream — exactly
+    /// [`Audio::play_npc_item_cue`]. The style-5 water column's
+    /// `PlaySound(19, .., 0)` (`Main.cs:13349`) is the INT overload
+    /// (`SoundEngine.cs:102-108`, no NextFloat) → [`Audio::play_splash_sound`].
+    /// `sound_id` 2 → the item-use façade, 19 → the splash. Returns the cue
+    /// played; `None` when the gate refused or the style has no row.
+    /// KEEP-ONE (g11 research/116 §5 audio note): the g11 dispatcher closure
+    /// carries the SAME resolution inline — the merger may hoist it into
+    /// this named helper (this shape) with zero behaviour change; one call
+    /// path either way, no dup risk. This helper SURVIVES the merge.
+    pub fn play_teleport_cue(
+        &mut self,
+        sound_id: i32,
+        style: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        match sound_id {
+            2 => self.play_npc_item_cue(style, x, y, rng),
+            19 => self.play_splash_sound(style, x, y, rng),
+            _ => None,
+        }
+    }
+
     /// S1-E-21g — the EoW head's dig rumble (`NPC.cs:51990`,
     /// `SoundID.EOWDiggin` — the `CreateTrackable("eow_dig")` style,
     /// `SoundID.cs:1763`, case 42 `LegacySoundPlayer.cs:1376-1381`): the

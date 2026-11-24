@@ -1,0 +1,3577 @@
+{
+ "fns": [
+  {
+   "name": "center",
+   "sig": 283,
+   "doc_start": 282,
+   "end": 286,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "right_x",
+   "sig": 289,
+   "doc_start": 288,
+   "end": 292,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "top",
+   "sig": 295,
+   "doc_start": 294,
+   "end": 298,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "select_random",
+   "sig": 301,
+   "doc_start": 300,
+   "end": 303,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "random_vector2",
+   "sig": 307,
+   "doc_start": 305,
+   "end": 311,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "rotated_by",
+   "sig": 360,
+   "doc_start": 358,
+   "end": 364,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "rotated_by_random",
+   "sig": 369,
+   "doc_start": 366,
+   "end": 373,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "death_dust_loop",
+   "sig": 379,
+   "doc_start": 375,
+   "end": 397,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "betsy_flipped_death",
+   "sig": 403,
+   "doc_start": 399,
+   "end": 430,
+   "min_cite": 82187,
+   "max_cite": 82215
+  },
+  {
+   "name": "kobold_walker_death",
+   "sig": 437,
+   "doc_start": 432,
+   "end": 456,
+   "min_cite": 82230,
+   "max_cite": 82241
+  },
+  {
+   "name": "kobold_flyer_death",
+   "sig": 462,
+   "doc_start": 458,
+   "end": 481,
+   "min_cite": 82255,
+   "max_cite": 82266
+  },
+  {
+   "name": "drakin_death",
+   "sig": 487,
+   "doc_start": 483,
+   "end": 508,
+   "min_cite": 82280,
+   "max_cite": 82289
+  },
+  {
+   "name": "wither_beast_death",
+   "sig": 514,
+   "doc_start": 510,
+   "end": 532,
+   "min_cite": 82302,
+   "max_cite": 82311
+  },
+  {
+   "name": "wyvern_death",
+   "sig": 539,
+   "doc_start": 534,
+   "end": 568,
+   "min_cite": 82325,
+   "max_cite": 82344
+  },
+  {
+   "name": "skeleton_death",
+   "sig": 575,
+   "doc_start": 570,
+   "end": 614,
+   "min_cite": 82358,
+   "max_cite": 82385
+  },
+  {
+   "name": "ogre_flipped_death",
+   "sig": 622,
+   "doc_start": 616,
+   "end": 648,
+   "min_cite": 82400,
+   "max_cite": 82417
+  },
+  {
+   "name": "ogre_death",
+   "sig": 654,
+   "doc_start": 650,
+   "end": 675,
+   "min_cite": 82417,
+   "max_cite": 82422
+  },
+  {
+   "name": "dark_mage_death",
+   "sig": 683,
+   "doc_start": 677,
+   "end": 709,
+   "min_cite": 82437,
+   "max_cite": 82452
+  },
+  {
+   "name": "lightning_bug_death",
+   "sig": 714,
+   "doc_start": 711,
+   "end": 731,
+   "min_cite": 82466,
+   "max_cite": 82473
+  },
+  {
+   "name": "goblin_shark_death",
+   "sig": 739,
+   "doc_start": 733,
+   "end": 768,
+   "min_cite": 82489,
+   "max_cite": 82499
+  },
+  {
+   "name": "blood_squid_death",
+   "sig": 776,
+   "doc_start": 770,
+   "end": 805,
+   "min_cite": 82515,
+   "max_cite": 82525
+  },
+  {
+   "name": "blood_nautilus_death",
+   "sig": 813,
+   "doc_start": 807,
+   "end": 851,
+   "min_cite": 82536,
+   "max_cite": 82559
+  },
+  {
+   "name": "sand_elemental_death",
+   "sig": 860,
+   "doc_start": 853,
+   "end": 896,
+   "min_cite": 82564,
+   "max_cite": 82603
+  },
+  {
+   "name": "tumbleweed_death",
+   "sig": 904,
+   "doc_start": 898,
+   "end": 948,
+   "min_cite": 82608,
+   "max_cite": 82652
+  },
+  {
+   "name": "cultist_tablet_burst",
+   "sig": 956,
+   "doc_start": 950,
+   "end": 968,
+   "min_cite": 82672,
+   "max_cite": 82676
+  },
+  {
+   "name": "tomb_crawler_death",
+   "sig": 980,
+   "doc_start": 970,
+   "end": 1004,
+   "min_cite": 82739,
+   "max_cite": 82743
+  },
+  {
+   "name": "dune_splicer_death",
+   "sig": 1011,
+   "doc_start": 1006,
+   "end": 1035,
+   "min_cite": 82758,
+   "max_cite": 82762
+  },
+  {
+   "name": "blood_eel_death",
+   "sig": 1043,
+   "doc_start": 1037,
+   "end": 1067,
+   "min_cite": 16985,
+   "max_cite": 82781
+  },
+  {
+   "name": "solar_spearman_death",
+   "sig": 1075,
+   "doc_start": 1069,
+   "end": 1112,
+   "min_cite": 82792,
+   "max_cite": 82820
+  },
+  {
+   "name": "solar_solenian_death",
+   "sig": 1118,
+   "doc_start": 1114,
+   "end": 1155,
+   "min_cite": 82842,
+   "max_cite": 82859
+  },
+  {
+   "name": "solar_crawltipede_death",
+   "sig": 1162,
+   "doc_start": 1157,
+   "end": 1191,
+   "min_cite": 82873,
+   "max_cite": 82881
+  },
+  {
+   "name": "solar_flare_death",
+   "sig": 1198,
+   "doc_start": 1193,
+   "end": 1231,
+   "min_cite": 82903,
+   "max_cite": 82915
+  },
+  {
+   "name": "solar_sroller_death",
+   "sig": 1237,
+   "doc_start": 1233,
+   "end": 1276,
+   "min_cite": 82937,
+   "max_cite": 82956
+  },
+  {
+   "name": "solar_corite_death",
+   "sig": 1283,
+   "doc_start": 1278,
+   "end": 1317,
+   "min_cite": 82978,
+   "max_cite": 82991
+  },
+  {
+   "name": "nebula_floater_death",
+   "sig": 1326,
+   "doc_start": 1319,
+   "end": 1362,
+   "min_cite": 83058,
+   "max_cite": 83075
+  },
+  {
+   "name": "nebula_soldier_death",
+   "sig": 1369,
+   "doc_start": 1364,
+   "end": 1402,
+   "min_cite": 83105,
+   "max_cite": 83122
+  },
+  {
+   "name": "nebula_predictor_death",
+   "sig": 1411,
+   "doc_start": 1404,
+   "end": 1452,
+   "min_cite": 83144,
+   "max_cite": 83161
+  },
+  {
+   "name": "nebula_beast_death",
+   "sig": 1459,
+   "doc_start": 1454,
+   "end": 1497,
+   "min_cite": 83226,
+   "max_cite": 83244
+  },
+  {
+   "name": "nebula_brain_death",
+   "sig": 1503,
+   "doc_start": 1499,
+   "end": 1530,
+   "min_cite": 83258,
+   "max_cite": 83271
+  },
+  {
+   "name": "vortex_death_dust",
+   "sig": 1538,
+   "doc_start": 1532,
+   "end": 1571,
+   "min_cite": 83293,
+   "max_cite": 83293
+  },
+  {
+   "name": "vortex_soldier_death",
+   "sig": 1576,
+   "doc_start": 1573,
+   "end": 1594,
+   "min_cite": 83293,
+   "max_cite": 83309
+  },
+  {
+   "name": "vortex_hornet_death",
+   "sig": 1599,
+   "doc_start": 1596,
+   "end": 1614,
+   "min_cite": 83331,
+   "max_cite": 83342
+  },
+  {
+   "name": "vortex_larva_death",
+   "sig": 1620,
+   "doc_start": 1616,
+   "end": 1635,
+   "min_cite": 83364,
+   "max_cite": 83375
+  },
+  {
+   "name": "vortex_rider_death",
+   "sig": 1641,
+   "doc_start": 1637,
+   "end": 1656,
+   "min_cite": 83397,
+   "max_cite": 83408
+  },
+  {
+   "name": "stardust_spider_death",
+   "sig": 1662,
+   "doc_start": 1658,
+   "end": 1692,
+   "min_cite": 83496,
+   "max_cite": 83505
+  },
+  {
+   "name": "stardust_cell_death",
+   "sig": 1699,
+   "doc_start": 1694,
+   "end": 1736,
+   "min_cite": 83547,
+   "max_cite": 83562
+  },
+  {
+   "name": "stardust_dragon_body_death",
+   "sig": 1742,
+   "doc_start": 1738,
+   "end": 1774,
+   "min_cite": 83649,
+   "max_cite": 83661
+  },
+  {
+   "name": "dutchman_death_head",
+   "sig": 1787,
+   "doc_start": 1776,
+   "end": 1813,
+   "min_cite": 83668,
+   "max_cite": 83676
+  },
+  {
+   "name": "dutchman_death_fan",
+   "sig": 1822,
+   "doc_start": 1815,
+   "end": 1858,
+   "min_cite": 83678,
+   "max_cite": 83684
+  },
+  {
+   "name": "dutchman_death_855",
+   "sig": 1863,
+   "doc_start": 1860,
+   "end": 1881,
+   "min_cite": 83686,
+   "max_cite": 83689
+  },
+  {
+   "name": "dutchman_death_854",
+   "sig": 1888,
+   "doc_start": 1883,
+   "end": 1908,
+   "min_cite": 83691,
+   "max_cite": 83695
+  },
+  {
+   "name": "dutchman_death_scatter",
+   "sig": 1924,
+   "doc_start": 1910,
+   "end": 1949,
+   "min_cite": 83697,
+   "max_cite": 83702
+  },
+  {
+   "name": "dutchman_death_tail",
+   "sig": 1959,
+   "doc_start": 1951,
+   "end": 1990,
+   "min_cite": 83704,
+   "max_cite": 83713
+  },
+  {
+   "name": "dutchman_cannon_death",
+   "sig": 2001,
+   "doc_start": 1992,
+   "end": 2029,
+   "min_cite": 83727,
+   "max_cite": 83732
+  },
+  {
+   "name": "desert_ghoul_death",
+   "sig": 2040,
+   "doc_start": 2031,
+   "end": 2087,
+   "min_cite": 83742,
+   "max_cite": 83794
+  },
+  {
+   "name": "desert_lamia_death",
+   "sig": 2093,
+   "doc_start": 2089,
+   "end": 2113,
+   "min_cite": 83799,
+   "max_cite": 83821
+  },
+  {
+   "name": "desert_scorpion_death",
+   "sig": 2119,
+   "doc_start": 2115,
+   "end": 2143,
+   "min_cite": 83835,
+   "max_cite": 83843
+  },
+  {
+   "name": "desert_beast_death",
+   "sig": 2148,
+   "doc_start": 2145,
+   "end": 2171,
+   "min_cite": 83857,
+   "max_cite": 83864
+  },
+  {
+   "name": "butcher_death",
+   "sig": 2177,
+   "doc_start": 2173,
+   "end": 2202,
+   "min_cite": 83900,
+   "max_cite": 83908
+  },
+  {
+   "name": "mothron_death",
+   "sig": 2207,
+   "doc_start": 2204,
+   "end": 2232,
+   "min_cite": 83922,
+   "max_cite": 83930
+  },
+  {
+   "name": "mothron_spawn_death",
+   "sig": 2237,
+   "doc_start": 2234,
+   "end": 2260,
+   "min_cite": 83944,
+   "max_cite": 83950
+  },
+  {
+   "name": "mothron_egg_death",
+   "sig": 2266,
+   "doc_start": 2262,
+   "end": 2293,
+   "min_cite": 83965,
+   "max_cite": 83972
+  },
+  {
+   "name": "five_gore_type5_death",
+   "sig": 2301,
+   "doc_start": 2295,
+   "end": 2329,
+   "min_cite": 83986,
+   "max_cite": 83986
+  },
+  {
+   "name": "psycho_death",
+   "sig": 2336,
+   "doc_start": 2331,
+   "end": 2360,
+   "min_cite": 83986,
+   "max_cite": 83994
+  },
+  {
+   "name": "dr_man_fly_death",
+   "sig": 2364,
+   "doc_start": 2362,
+   "end": 2374,
+   "min_cite": 84008,
+   "max_cite": 84008
+  },
+  {
+   "name": "the_possessed_death",
+   "sig": 2378,
+   "doc_start": 2376,
+   "end": 2388,
+   "min_cite": 84030,
+   "max_cite": 84030
+  },
+  {
+   "name": "nailhead_death",
+   "sig": 2392,
+   "doc_start": 2390,
+   "end": 2402,
+   "min_cite": 84052,
+   "max_cite": 84052
+  },
+  {
+   "name": "creature_from_the_deep_death",
+   "sig": 2406,
+   "doc_start": 2404,
+   "end": 2416,
+   "min_cite": 84074,
+   "max_cite": 84074
+  },
+  {
+   "name": "fritz_death",
+   "sig": 2420,
+   "doc_start": 2418,
+   "end": 2430,
+   "min_cite": 84096,
+   "max_cite": 84096
+  },
+  {
+   "name": "cultist_archer_death",
+   "sig": 2436,
+   "doc_start": 2432,
+   "end": 2459,
+   "min_cite": 84118,
+   "max_cite": 84124
+  },
+  {
+   "name": "cultist_bone_spatter",
+   "sig": 2467,
+   "doc_start": 2461,
+   "end": 2483,
+   "min_cite": 84150,
+   "max_cite": 84150
+  },
+  {
+   "name": "cultist_boss_death",
+   "sig": 2492,
+   "doc_start": 2485,
+   "end": 2529,
+   "min_cite": 84140,
+   "max_cite": 84159
+  },
+  {
+   "name": "cultist_type16_dust",
+   "sig": 2534,
+   "doc_start": 2531,
+   "end": 2553,
+   "min_cite": 84166,
+   "max_cite": 84193
+  },
+  {
+   "name": "cultist_clone_death",
+   "sig": 2558,
+   "doc_start": 2555,
+   "end": 2569,
+   "min_cite": 84166,
+   "max_cite": 84166
+  },
+  {
+   "name": "cultist_dragon_death",
+   "sig": 2575,
+   "doc_start": 2571,
+   "end": 2586,
+   "min_cite": 84193,
+   "max_cite": 84193
+  },
+  {
+   "name": "sharkron_death",
+   "sig": 2593,
+   "doc_start": 2588,
+   "end": 2617,
+   "min_cite": 84218,
+   "max_cite": 84226
+  },
+  {
+   "name": "duke_fishron_death",
+   "sig": 2625,
+   "doc_start": 2619,
+   "end": 2653,
+   "min_cite": 84269,
+   "max_cite": 84278
+  },
+  {
+   "name": "brain_scrambler_death",
+   "sig": 2659,
+   "doc_start": 2655,
+   "end": 2683,
+   "min_cite": 84292,
+   "max_cite": 84299
+  },
+  {
+   "name": "ray_gunner_death",
+   "sig": 2688,
+   "doc_start": 2685,
+   "end": 2710,
+   "min_cite": 84313,
+   "max_cite": 84319
+  },
+  {
+   "name": "martian_officer_death",
+   "sig": 2715,
+   "doc_start": 2712,
+   "end": 2737,
+   "min_cite": 84333,
+   "max_cite": 84339
+  },
+  {
+   "name": "gray_grunt_death",
+   "sig": 2742,
+   "doc_start": 2739,
+   "end": 2764,
+   "min_cite": 84373,
+   "max_cite": 84379
+  },
+  {
+   "name": "martian_engineer_death",
+   "sig": 2769,
+   "doc_start": 2766,
+   "end": 2791,
+   "min_cite": 84393,
+   "max_cite": 84399
+  },
+  {
+   "name": "martian_turret_death",
+   "sig": 2797,
+   "doc_start": 2793,
+   "end": 2821,
+   "min_cite": 84415,
+   "max_cite": 84422
+  },
+  {
+   "name": "martian_walker_death",
+   "sig": 2827,
+   "doc_start": 2823,
+   "end": 2853,
+   "min_cite": 84438,
+   "max_cite": 84447
+  },
+  {
+   "name": "giga_zapper_death",
+   "sig": 2858,
+   "doc_start": 2855,
+   "end": 2880,
+   "min_cite": 84461,
+   "max_cite": 84467
+  },
+  {
+   "name": "to_rotation_vector2",
+   "sig": 2884,
+   "doc_start": 2882,
+   "end": 2886,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "martian_drone_velocity",
+   "sig": 2892,
+   "doc_start": 2888,
+   "end": 2902,
+   "min_cite": 84488,
+   "max_cite": 84520
+  },
+  {
+   "name": "martian_drone_death",
+   "sig": 2908,
+   "doc_start": 2904,
+   "end": 2932,
+   "min_cite": 84483,
+   "max_cite": 84499
+  },
+  {
+   "name": "martian_probe_death",
+   "sig": 2937,
+   "doc_start": 2934,
+   "end": 2960,
+   "min_cite": 84515,
+   "max_cite": 84531
+  },
+  {
+   "name": "scutlix_death",
+   "sig": 2965,
+   "doc_start": 2962,
+   "end": 2988,
+   "min_cite": 84545,
+   "max_cite": 84551
+  },
+  {
+   "name": "martian_saucer_death",
+   "sig": 2996,
+   "doc_start": 2990,
+   "end": 3036,
+   "min_cite": 84567,
+   "max_cite": 84588
+  },
+  {
+   "name": "granite_golem_death",
+   "sig": 3043,
+   "doc_start": 3038,
+   "end": 3071,
+   "min_cite": 84603,
+   "max_cite": 84612
+  },
+  {
+   "name": "rock_golem_death",
+   "sig": 3077,
+   "doc_start": 3073,
+   "end": 3101,
+   "min_cite": 84627,
+   "max_cite": 84634
+  },
+  {
+   "name": "party_slime_confetti",
+   "sig": 3114,
+   "doc_start": 3103,
+   "end": 3148,
+   "min_cite": 84723,
+   "max_cite": 84736
+  },
+  {
+   "name": "scarecrow_death",
+   "sig": 3153,
+   "doc_start": 3150,
+   "end": 3178,
+   "min_cite": 84806,
+   "max_cite": 84814
+  },
+  {
+   "name": "pumpking_death",
+   "sig": 3183,
+   "doc_start": 3180,
+   "end": 3206,
+   "min_cite": 84828,
+   "max_cite": 84832
+  },
+  {
+   "name": "ice_queen_death",
+   "sig": 3211,
+   "doc_start": 3208,
+   "end": 3224,
+   "min_cite": 84861,
+   "max_cite": 84865
+  },
+  {
+   "name": "mourning_wood_death",
+   "sig": 3229,
+   "doc_start": 3226,
+   "end": 3252,
+   "min_cite": 84849,
+   "max_cite": 84853
+  },
+  {
+   "name": "everscream_death",
+   "sig": 3258,
+   "doc_start": 3254,
+   "end": 3285,
+   "min_cite": 84878,
+   "max_cite": 84886
+  },
+  {
+   "name": "slime_masked_death",
+   "sig": 3290,
+   "doc_start": 3287,
+   "end": 3309,
+   "min_cite": 84937,
+   "max_cite": 84941
+  },
+  {
+   "name": "golem_body_random_gores",
+   "sig": 3318,
+   "doc_start": 3311,
+   "end": 3355,
+   "min_cite": 84962,
+   "max_cite": 84980
+  },
+  {
+   "name": "golem_head_free_death",
+   "sig": 3361,
+   "doc_start": 3357,
+   "end": 3394,
+   "min_cite": 84962,
+   "max_cite": 84990
+  },
+  {
+   "name": "golem_fist_death",
+   "sig": 3400,
+   "doc_start": 3396,
+   "end": 3422,
+   "min_cite": 84994,
+   "max_cite": 84996
+  },
+  {
+   "name": "ice_golem_death",
+   "sig": 3427,
+   "doc_start": 3424,
+   "end": 3446,
+   "min_cite": 85056,
+   "max_cite": 85060
+  },
+  {
+   "name": "umbrella_slime_death",
+   "sig": 3451,
+   "doc_start": 3448,
+   "end": 3470,
+   "min_cite": 85038,
+   "max_cite": 85042
+  },
+  {
+   "name": "critter_gated_dust",
+   "sig": 3478,
+   "doc_start": 3472,
+   "end": 3504,
+   "min_cite": 85118,
+   "max_cite": 85257
+  },
+  {
+   "name": "ladybug_death",
+   "sig": 3510,
+   "doc_start": 3506,
+   "end": 3528,
+   "min_cite": 85118,
+   "max_cite": 85137
+  },
+  {
+   "name": "stinkbug_death",
+   "sig": 3533,
+   "doc_start": 3530,
+   "end": 3551,
+   "min_cite": 85142,
+   "max_cite": 85161
+  },
+  {
+   "name": "snail_hit",
+   "sig": 3559,
+   "doc_start": 3553,
+   "end": 3580,
+   "min_cite": 85253,
+   "max_cite": 85253
+  },
+  {
+   "name": "ice_tortoise_death",
+   "sig": 3586,
+   "doc_start": 3582,
+   "end": 3607,
+   "min_cite": 85328,
+   "max_cite": 85334
+  },
+  {
+   "name": "slimer_death",
+   "sig": 3619,
+   "doc_start": 3609,
+   "end": 3646,
+   "min_cite": 10466,
+   "max_cite": 85451
+  },
+  {
+   "name": "king_slime_death",
+   "sig": 3654,
+   "doc_start": 3648,
+   "end": 3679,
+   "min_cite": 85680,
+   "max_cite": 85689
+  },
+  {
+   "name": "giant_tortoise_death",
+   "sig": 3684,
+   "doc_start": 3681,
+   "end": 3706,
+   "min_cite": 85714,
+   "max_cite": 85721
+  },
+  {
+   "name": "derpling_death",
+   "sig": 3711,
+   "doc_start": 3708,
+   "end": 3733,
+   "min_cite": 85733,
+   "max_cite": 85740
+  },
+  {
+   "name": "crawdad_death",
+   "sig": 3739,
+   "doc_start": 3735,
+   "end": 3762,
+   "min_cite": 85752,
+   "max_cite": 85758
+  },
+  {
+   "name": "giant_shelly_death",
+   "sig": 3767,
+   "doc_start": 3764,
+   "end": 3787,
+   "min_cite": 85771,
+   "max_cite": 85775
+  },
+  {
+   "name": "salamander_death",
+   "sig": 3794,
+   "doc_start": 3789,
+   "end": 3818,
+   "min_cite": 85788,
+   "max_cite": 85795
+  },
+  {
+   "name": "bat_family_death",
+   "sig": 3826,
+   "doc_start": 3820,
+   "end": 3858,
+   "min_cite": 85807,
+   "max_cite": 85811
+  },
+  {
+   "name": "owl_death",
+   "sig": 3863,
+   "doc_start": 3860,
+   "end": 3884,
+   "min_cite": 85852,
+   "max_cite": 85858
+  },
+  {
+   "name": "gnome_death",
+   "sig": 3889,
+   "doc_start": 3886,
+   "end": 3911,
+   "min_cite": 85870,
+   "max_cite": 85877
+  },
+  {
+   "name": "dandelion_death",
+   "sig": 3916,
+   "doc_start": 3913,
+   "end": 3939,
+   "min_cite": 85889,
+   "max_cite": 85896
+  },
+  {
+   "name": "gem_bunny_death",
+   "sig": 3945,
+   "doc_start": 3941,
+   "end": 3970,
+   "min_cite": 85900,
+   "max_cite": 85919
+  },
+  {
+   "name": "gem_squirrel_death",
+   "sig": 3976,
+   "doc_start": 3972,
+   "end": 3998,
+   "min_cite": 85923,
+   "max_cite": 85940
+  },
+  {
+   "name": "critter_family_death",
+   "sig": 4008,
+   "doc_start": 4000,
+   "end": 4174,
+   "min_cite": 85942,
+   "max_cite": 86089
+  },
+  {
+   "name": "penguin_family_death",
+   "sig": 4181,
+   "doc_start": 4176,
+   "end": 4211,
+   "min_cite": 86102,
+   "max_cite": 86106
+  },
+  {
+   "name": "frog_death",
+   "sig": 4215,
+   "doc_start": 4213,
+   "end": 4235,
+   "min_cite": 86138,
+   "max_cite": 86143
+  },
+  {
+   "name": "pupfish_death",
+   "sig": 4240,
+   "doc_start": 4237,
+   "end": 4260,
+   "min_cite": 86183,
+   "max_cite": 86188
+  },
+  {
+   "name": "pufferfish_death",
+   "sig": 4265,
+   "doc_start": 4262,
+   "end": 4293,
+   "min_cite": 86200,
+   "max_cite": 86214
+  },
+  {
+   "name": "seagull_death",
+   "sig": 4298,
+   "doc_start": 4295,
+   "end": 4318,
+   "min_cite": 86281,
+   "max_cite": 86288
+  },
+  {
+   "name": "scorpion_death",
+   "sig": 4324,
+   "doc_start": 4320,
+   "end": 4349,
+   "min_cite": 86227,
+   "max_cite": 86231
+  },
+  {
+   "name": "grebe_death",
+   "sig": 4354,
+   "doc_start": 4351,
+   "end": 4375,
+   "min_cite": 86301,
+   "max_cite": 86309
+  },
+  {
+   "name": "duck_family_death",
+   "sig": 4380,
+   "doc_start": 4377,
+   "end": 4408,
+   "min_cite": 86254,
+   "max_cite": 86258
+  },
+  {
+   "name": "nutcracker_death",
+   "sig": 4413,
+   "doc_start": 4410,
+   "end": 4436,
+   "min_cite": 86322,
+   "max_cite": 86330
+  },
+  {
+   "name": "krampus_death",
+   "sig": 4441,
+   "doc_start": 4438,
+   "end": 4464,
+   "min_cite": 86342,
+   "max_cite": 86350
+  },
+  {
+   "name": "elf_archer_death",
+   "sig": 4469,
+   "doc_start": 4466,
+   "end": 4491,
+   "min_cite": 86362,
+   "max_cite": 86369
+  },
+  {
+   "name": "corrupt_critter_death",
+   "sig": 4498,
+   "doc_start": 4493,
+   "end": 4528,
+   "min_cite": 86381,
+   "max_cite": 86385
+  },
+  {
+   "name": "crimson_monster_death",
+   "sig": 4535,
+   "doc_start": 4530,
+   "end": 4567,
+   "min_cite": 86419,
+   "max_cite": 86423
+  },
+  {
+   "name": "demon_eye_death",
+   "sig": 4576,
+   "doc_start": 4569,
+   "end": 4610,
+   "min_cite": 86459,
+   "max_cite": 86463
+  },
+  {
+   "name": "arapaima_death",
+   "sig": 4615,
+   "doc_start": 4612,
+   "end": 4635,
+   "min_cite": 86514,
+   "max_cite": 86519
+  },
+  {
+   "name": "wandering_eye_hit",
+   "sig": 4643,
+   "doc_start": 4637,
+   "end": 4672,
+   "min_cite": 86523,
+   "max_cite": 86542
+  },
+  {
+   "name": "antlion_death",
+   "sig": 4681,
+   "doc_start": 4674,
+   "end": 4714,
+   "min_cite": 86545,
+   "max_cite": 86566
+  },
+  {
+   "name": "vulture_death",
+   "sig": 4719,
+   "doc_start": 4716,
+   "end": 4740,
+   "min_cite": 86617,
+   "max_cite": 86623
+  },
+  {
+   "name": "raven_death",
+   "sig": 4745,
+   "doc_start": 4742,
+   "end": 4765,
+   "min_cite": 86635,
+   "max_cite": 86640
+  },
+  {
+   "name": "parrot_death",
+   "sig": 4769,
+   "doc_start": 4767,
+   "end": 4789,
+   "min_cite": 86652,
+   "max_cite": 86657
+  },
+  {
+   "name": "blood_zombie_ladder",
+   "sig": 4797,
+   "doc_start": 4791,
+   "end": 4825,
+   "min_cite": 86669,
+   "max_cite": 86669
+  },
+  {
+   "name": "blood_zombie_death",
+   "sig": 4829,
+   "doc_start": 4827,
+   "end": 4839,
+   "min_cite": 86675,
+   "max_cite": 86675
+  },
+  {
+   "name": "zombie_merman_death",
+   "sig": 4843,
+   "doc_start": 4841,
+   "end": 4853,
+   "min_cite": 86683,
+   "max_cite": 86683
+  },
+  {
+   "name": "demon_tax_collector_death",
+   "sig": 4857,
+   "doc_start": 4855,
+   "end": 4867,
+   "min_cite": 86704,
+   "max_cite": 86704
+  },
+  {
+   "name": "drippler_death",
+   "sig": 4873,
+   "doc_start": 4869,
+   "end": 4901,
+   "min_cite": 86720,
+   "max_cite": 86727
+  },
+  {
+   "name": "shark_family_death",
+   "sig": 4911,
+   "doc_start": 4903,
+   "end": 4944,
+   "min_cite": 86730,
+   "max_cite": 86744
+  },
+  {
+   "name": "five_gore_ladder",
+   "sig": 4951,
+   "doc_start": 4946,
+   "end": 4982,
+   "min_cite": 0,
+   "max_cite": 0
+  },
+  {
+   "name": "nymph_death",
+   "sig": 4987,
+   "doc_start": 4984,
+   "end": 4997,
+   "min_cite": 86797,
+   "max_cite": 86797
+  },
+  {
+   "name": "icy_merman_death",
+   "sig": 5002,
+   "doc_start": 4999,
+   "end": 5012,
+   "min_cite": 86838,
+   "max_cite": 86838
+  },
+  {
+   "name": "lihzahrd_death",
+   "sig": 5018,
+   "doc_start": 5014,
+   "end": 5044,
+   "min_cite": 86817,
+   "max_cite": 86826
+  },
+  {
+   "name": "gingerbread_man_death",
+   "sig": 5049,
+   "doc_start": 5046,
+   "end": 5059,
+   "min_cite": 86858,
+   "max_cite": 86858
+  },
+  {
+   "name": "zombie_elf_death",
+   "sig": 5065,
+   "doc_start": 5061,
+   "end": 5095,
+   "min_cite": 86878,
+   "max_cite": 86896
+  },
+  {
+   "name": "yeti_death",
+   "sig": 5101,
+   "doc_start": 5097,
+   "end": 5124,
+   "min_cite": 86908,
+   "max_cite": 86915
+  },
+  {
+   "name": "moss_zombie_death",
+   "sig": 5129,
+   "doc_start": 5126,
+   "end": 5139,
+   "min_cite": 86927,
+   "max_cite": 86927
+  },
+  {
+   "name": "zombie_block_death",
+   "sig": 5166,
+   "doc_start": 5141,
+   "end": 5361,
+   "min_cite": 86937,
+   "max_cite": 87138
+  },
+  {
+   "name": "cursed_weapon_death",
+   "sig": 5369,
+   "doc_start": 5363,
+   "end": 5398,
+   "min_cite": 87152,
+   "max_cite": 87158
+  },
+  {
+   "name": "plantera_death",
+   "sig": 5406,
+   "doc_start": 5400,
+   "end": 5435,
+   "min_cite": 87186,
+   "max_cite": 87199
+  },
+  {
+   "name": "plantera_part_death",
+   "sig": 5441,
+   "doc_start": 5437,
+   "end": 5470,
+   "min_cite": 87209,
+   "max_cite": 87209
+  },
+  {
+   "name": "brain_of_cthulhu_death",
+   "sig": 5477,
+   "doc_start": 5472,
+   "end": 5501,
+   "min_cite": 87248,
+   "max_cite": 87252
+  },
+  {
+   "name": "creeper_death",
+   "sig": 5506,
+   "doc_start": 5503,
+   "end": 5524,
+   "min_cite": 87269,
+   "max_cite": 87273
+  },
+  {
+   "name": "servant_of_cthulhu_death",
+   "sig": 5529,
+   "doc_start": 5526,
+   "end": 5549,
+   "min_cite": 87351,
+   "max_cite": 87356
+  },
+  {
+   "name": "wall_of_flesh_death",
+   "sig": 5557,
+   "doc_start": 5551,
+   "end": 5586,
+   "min_cite": 87368,
+   "max_cite": 87372
+  },
+  {
+   "name": "the_hungry_death",
+   "sig": 5593,
+   "doc_start": 5588,
+   "end": 5614,
+   "min_cite": 87429,
+   "max_cite": 87434
+  },
+  {
+   "name": "leech_death",
+   "sig": 5620,
+   "doc_start": 5616,
+   "end": 5640,
+   "min_cite": 87446,
+   "max_cite": 87450
+  },
+  {
+   "name": "beetle_death",
+   "sig": 5650,
+   "doc_start": 5642,
+   "end": 5680,
+   "min_cite": 87462,
+   "max_cite": 87466
+  },
+  {
+   "name": "queen_bee_death",
+   "sig": 5689,
+   "doc_start": 5682,
+   "end": 5717,
+   "min_cite": 87491,
+   "max_cite": 87495
+  },
+  {
+   "name": "eater_of_souls_death",
+   "sig": 5728,
+   "doc_start": 5719,
+   "end": 5767,
+   "min_cite": 87512,
+   "max_cite": 87531
+  },
+  {
+   "name": "clinger_death",
+   "sig": 5773,
+   "doc_start": 5769,
+   "end": 5797,
+   "min_cite": 87547,
+   "max_cite": 87554
+  },
+  {
+   "name": "devourer_death",
+   "sig": 5803,
+   "doc_start": 5799,
+   "end": 5824,
+   "min_cite": 87566,
+   "max_cite": 87570
+  },
+  {
+   "name": "seeker_death",
+   "sig": 5829,
+   "doc_start": 5826,
+   "end": 5849,
+   "min_cite": 87583,
+   "max_cite": 87587
+  },
+  {
+   "name": "giant_worm_death",
+   "sig": 5855,
+   "doc_start": 5851,
+   "end": 5875,
+   "min_cite": 87600,
+   "max_cite": 87604
+  },
+  {
+   "name": "digger_death",
+   "sig": 5881,
+   "doc_start": 5877,
+   "end": 5901,
+   "min_cite": 87616,
+   "max_cite": 87620
+  },
+  {
+   "name": "eater_of_worlds_death",
+   "sig": 5908,
+   "doc_start": 5903,
+   "end": 5936,
+   "min_cite": 87632,
+   "max_cite": 87636
+  },
+  {
+   "name": "town_npc_death",
+   "sig": 5951,
+   "doc_start": 5938,
+   "end": 5989,
+   "min_cite": 87662,
+   "max_cite": 87689
+  },
+  {
+   "name": "unicorn_death",
+   "sig": 5994,
+   "doc_start": 5991,
+   "end": 6015,
+   "min_cite": 87705,
+   "max_cite": 87705
+  },
+  {
+   "name": "wolf_death",
+   "sig": 6020,
+   "doc_start": 6017,
+   "end": 6041,
+   "min_cite": 87727,
+   "max_cite": 87733
+  },
+  {
+   "name": "hellhound_death",
+   "sig": 6046,
+   "doc_start": 6043,
+   "end": 6067,
+   "min_cite": 87745,
+   "max_cite": 87751
+  },
+  {
+   "name": "black_recluse_death",
+   "sig": 6072,
+   "doc_start": 6069,
+   "end": 6095,
+   "min_cite": 87763,
+   "max_cite": 87771
+  },
+  {
+   "name": "wall_creeper_death",
+   "sig": 6100,
+   "doc_start": 6097,
+   "end": 6123,
+   "min_cite": 87783,
+   "max_cite": 87791
+  },
+  {
+   "name": "blood_crawler_death",
+   "sig": 6128,
+   "doc_start": 6125,
+   "end": 6149,
+   "min_cite": 87803,
+   "max_cite": 87803
+  },
+  {
+   "name": "jungle_creeper_death",
+   "sig": 6155,
+   "doc_start": 6151,
+   "end": 6176,
+   "min_cite": 87823,
+   "max_cite": 87823
+  },
+  {
+   "name": "blood_feeder_death",
+   "sig": 6181,
+   "doc_start": 6178,
+   "end": 6201,
+   "min_cite": 87843,
+   "max_cite": 87848
+  },
+  {
+   "name": "blood_jelly_death",
+   "sig": 6206,
+   "doc_start": 6203,
+   "end": 6227,
+   "min_cite": 87860,
+   "max_cite": 87860
+  },
+  {
+   "name": "bound_npc_death",
+   "sig": 6239,
+   "doc_start": 6229,
+   "end": 6277,
+   "min_cite": 87880,
+   "max_cite": 87893
+  },
+  {
+   "name": "mechanic_death",
+   "sig": 6283,
+   "doc_start": 6279,
+   "end": 6309,
+   "min_cite": 87912,
+   "max_cite": 87912
+  },
+  {
+   "name": "guide_death",
+   "sig": 6315,
+   "doc_start": 6311,
+   "end": 6341,
+   "min_cite": 87932,
+   "max_cite": 87932
+  },
+  {
+   "name": "bartender_death",
+   "sig": 6348,
+   "doc_start": 6343,
+   "end": 6372,
+   "min_cite": 87952,
+   "max_cite": 87960
+  },
+  {
+   "name": "golfer_death",
+   "sig": 6380,
+   "doc_start": 6374,
+   "end": 6405,
+   "min_cite": 87972,
+   "max_cite": 87983
+  },
+  {
+   "name": "bestiary_girl_death",
+   "sig": 6418,
+   "doc_start": 6407,
+   "end": 6446,
+   "min_cite": 87995,
+   "max_cite": 88021
+  },
+  {
+   "name": "travelling_merchant_death",
+   "sig": 6453,
+   "doc_start": 6448,
+   "end": 6480,
+   "min_cite": 88033,
+   "max_cite": 88037
+  },
+  {
+   "name": "painter_death",
+   "sig": 6487,
+   "doc_start": 6482,
+   "end": 6514,
+   "min_cite": 88086,
+   "max_cite": 88097
+  },
+  {
+   "name": "witch_doctor_death",
+   "sig": 6521,
+   "doc_start": 6516,
+   "end": 6547,
+   "min_cite": 88109,
+   "max_cite": 88117
+  },
+  {
+   "name": "pirate_death",
+   "sig": 6555,
+   "doc_start": 6549,
+   "end": 6597,
+   "min_cite": 88129,
+   "max_cite": 88151
+  },
+  {
+   "name": "santa_claus_death",
+   "sig": 6604,
+   "doc_start": 6599,
+   "end": 6631,
+   "min_cite": 88163,
+   "max_cite": 88167
+  },
+  {
+   "name": "steampunker_death",
+   "sig": 6637,
+   "doc_start": 6633,
+   "end": 6663,
+   "min_cite": 88186,
+   "max_cite": 88196
+  },
+  {
+   "name": "stylist_death",
+   "sig": 6670,
+   "doc_start": 6665,
+   "end": 6698,
+   "min_cite": 88208,
+   "max_cite": 88220
+  },
+  {
+   "name": "hit_effect_c",
+   "sig": 6711,
+   "doc_start": 6700,
+   "end": 7516,
+   "min_cite": 81488,
+   "max_cite": 88198
+  }
+ ],
+ "tests": [
+  {
+   "name": "w4_f10_the_betsy_flipped_death_spawns_the_ten_gores",
+   "start": 7551,
+   "end": 7576,
+   "min_cite": 82206,
+   "max_cite": 82206,
+   "body_fns": [
+    "betsy_flipped_death",
+    "w4_f10_the_betsy_flipped_death_spawns_the_ten_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_betsy_flipped_death_draws_only_the_kicks",
+   "start": 7578,
+   "end": 7606,
+   "min_cite": 82206,
+   "max_cite": 82206,
+   "body_fns": [
+    "betsy_flipped_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_kobold_walker_death_spawns_the_five_gores",
+   "start": 7608,
+   "end": 7628,
+   "min_cite": 82237,
+   "max_cite": 82237,
+   "body_fns": [
+    "kobold_walker_death",
+    "w4_f10_the_kobold_walker_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_kobold_flyer_death_spawns_the_five_gores",
+   "start": 7630,
+   "end": 7649,
+   "min_cite": 82262,
+   "max_cite": 82262,
+   "body_fns": [
+    "kobold_flyer_death",
+    "w4_f10_the_kobold_flyer_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_kobold_deaths_mirror_the_csharp_draws",
+   "start": 7651,
+   "end": 7675,
+   "min_cite": 82219,
+   "max_cite": 82219,
+   "body_fns": [
+    "kobold_walker_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_drakin_death_uses_the_per_tier_base",
+   "start": 7677,
+   "end": 7697,
+   "min_cite": 82284,
+   "max_cite": 82284,
+   "body_fns": [
+    "drakin_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wither_beast_death_keeps_the_fixed_type_order",
+   "start": 7699,
+   "end": 7714,
+   "min_cite": 82307,
+   "max_cite": 82307,
+   "body_fns": [
+    "wither_beast_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wyvern_death_uses_the_per_tier_base",
+   "start": 7716,
+   "end": 7737,
+   "min_cite": 82329,
+   "max_cite": 82329,
+   "body_fns": [
+    "wyvern_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_skeleton_death_gates_draw_before_the_spawn",
+   "start": 7739,
+   "end": 7778,
+   "min_cite": 82362,
+   "max_cite": 82362,
+   "body_fns": [
+    "skeleton_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_ogre_flipped_death_rotates_the_two_gores",
+   "start": 7780,
+   "end": 7817,
+   "min_cite": 82406,
+   "max_cite": 82406,
+   "body_fns": [
+    "ogre_flipped_death",
+    "w4_f10_the_ogre_flipped_death_rotates_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_ogre_non_flipped_death_has_no_rotation",
+   "start": 7819,
+   "end": 7837,
+   "min_cite": 82417,
+   "max_cite": 82417,
+   "body_fns": [
+    "ogre_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dark_mage_death_spawns_the_eleven_gores",
+   "start": 7839,
+   "end": 7862,
+   "min_cite": 82442,
+   "max_cite": 82442,
+   "body_fns": [
+    "dark_mage_death",
+    "w4_f10_the_dark_mage_death_spawns_the_eleven_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_lightning_bug_death_spawns_the_four_gores",
+   "start": 7864,
+   "end": 7879,
+   "min_cite": 82470,
+   "max_cite": 82470,
+   "body_fns": [
+    "lightning_bug_death",
+    "w4_f10_the_lightning_bug_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_goblin_shark_death_spawns_the_four_gores",
+   "start": 7881,
+   "end": 7901,
+   "min_cite": 82496,
+   "max_cite": 82496,
+   "body_fns": [
+    "goblin_shark_death",
+    "w4_f10_the_goblin_shark_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_squid_death_uses_fade_in_not_scale",
+   "start": 7903,
+   "end": 7923,
+   "min_cite": 82522,
+   "max_cite": 82522,
+   "body_fns": [
+    "blood_squid_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_nautilus_death_spawns_the_twelve_gores",
+   "start": 7925,
+   "end": 7956,
+   "min_cite": 82548,
+   "max_cite": 82548,
+   "body_fns": [
+    "blood_nautilus_death",
+    "w4_f10_the_blood_nautilus_death_spawns_the_twelve_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_sand_elemental_death_tints_the_burst",
+   "start": 7958,
+   "end": 7981,
+   "min_cite": 82600,
+   "max_cite": 82600,
+   "body_fns": [
+    "sand_elemental_death",
+    "w4_f10_the_sand_elemental_death_tints_the_burst"
+   ]
+  },
+  {
+   "name": "w4_f10_the_tumbleweed_death_spawns_the_three_gores",
+   "start": 7983,
+   "end": 8008,
+   "min_cite": 82650,
+   "max_cite": 82650,
+   "body_fns": [
+    "tumbleweed_death",
+    "w4_f10_the_tumbleweed_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_cultist_tablet_burst_rotates_the_velocity",
+   "start": 8010,
+   "end": 8036,
+   "min_cite": 82676,
+   "max_cite": 82676,
+   "body_fns": [
+    "cultist_tablet_burst"
+   ]
+  },
+  {
+   "name": "w4_f10_the_tomb_crawler_death_maps_the_segments",
+   "start": 8038,
+   "end": 8059,
+   "min_cite": 82743,
+   "max_cite": 82743,
+   "body_fns": [
+    "tomb_crawler_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dune_splicer_death_maps_the_segments",
+   "start": 8061,
+   "end": 8076,
+   "min_cite": 82762,
+   "max_cite": 82762,
+   "body_fns": [
+    "dune_splicer_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_eel_death_maps_the_segments",
+   "start": 8078,
+   "end": 8097,
+   "min_cite": 82781,
+   "max_cite": 82781,
+   "body_fns": [
+    "blood_eel_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_solar_spearman_death_gates_the_type_six_dust",
+   "start": 8099,
+   "end": 8137,
+   "min_cite": 82816,
+   "max_cite": 82816,
+   "body_fns": [
+    "solar_spearman_death",
+    "w4_f10_the_solar_spearman_death_gates_the_type_six_dust"
+   ]
+  },
+  {
+   "name": "w4_f10_the_solar_solenian_death_spawns_the_six_gores",
+   "start": 8139,
+   "end": 8155,
+   "min_cite": 82854,
+   "max_cite": 82854,
+   "body_fns": [
+    "solar_solenian_death",
+    "w4_f10_the_solar_solenian_death_spawns_the_six_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_solar_crawltipede_death_maps_the_segments",
+   "start": 8157,
+   "end": 8176,
+   "min_cite": 82881,
+   "max_cite": 82881,
+   "body_fns": [
+    "solar_crawltipede_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_solar_flare_death_scales_the_velocity",
+   "start": 8178,
+   "end": 8201,
+   "min_cite": 82912,
+   "max_cite": 82912,
+   "body_fns": [
+    "solar_flare_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_solar_sroller_death_spawns_the_eight_gores",
+   "start": 8203,
+   "end": 8223,
+   "min_cite": 82949,
+   "max_cite": 82949,
+   "body_fns": [
+    "solar_sroller_death",
+    "w4_f10_the_solar_sroller_death_spawns_the_eight_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_solar_corite_death_spawns_the_five_gores",
+   "start": 8225,
+   "end": 8247,
+   "min_cite": 82987,
+   "max_cite": 82987,
+   "body_fns": [
+    "solar_corite_death",
+    "w4_f10_the_solar_corite_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nebula_floater_death_returns_the_brain_seam",
+   "start": 8249,
+   "end": 8296,
+   "min_cite": 83072,
+   "max_cite": 83072,
+   "body_fns": [
+    "nebula_floater_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nebula_soldier_death_spawns_the_four_gores",
+   "start": 8298,
+   "end": 8315,
+   "min_cite": 83119,
+   "max_cite": 83119,
+   "body_fns": [
+    "nebula_soldier_death",
+    "w4_f10_the_nebula_soldier_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nebula_predictor_death_returns_the_shot_seam",
+   "start": 8317,
+   "end": 8336,
+   "min_cite": 83156,
+   "max_cite": 83156,
+   "body_fns": [
+    "nebula_predictor_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nebula_beast_death_spawns_the_seven_gores",
+   "start": 8338,
+   "end": 8356,
+   "min_cite": 83238,
+   "max_cite": 83238,
+   "body_fns": [
+    "nebula_beast_death",
+    "w4_f10_the_nebula_beast_death_spawns_the_seven_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nebula_brain_death_picks_the_dust_type",
+   "start": 8358,
+   "end": 8398,
+   "min_cite": 83270,
+   "max_cite": 83270,
+   "body_fns": [
+    "nebula_brain_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_vortex_soldier_death_spawns_the_five_gores",
+   "start": 8400,
+   "end": 8416,
+   "min_cite": 83305,
+   "max_cite": 83305,
+   "body_fns": [
+    "vortex_soldier_death",
+    "w4_f10_the_vortex_soldier_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_vortex_hornet_death_is_ungated",
+   "start": 8418,
+   "end": 8459,
+   "min_cite": 83340,
+   "max_cite": 83340,
+   "body_fns": [
+    "vortex_hornet_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_vortex_larva_and_rider_deaths_spawn_their_gores",
+   "start": 8461,
+   "end": 8483,
+   "min_cite": 83373,
+   "max_cite": 83406,
+   "body_fns": [
+    "w4_f10_the_vortex_larva_and_rider_deaths_spawn_their_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_stardust_spider_death_spawns_the_three_gores",
+   "start": 8485,
+   "end": 8502,
+   "min_cite": 83503,
+   "max_cite": 83503,
+   "body_fns": [
+    "stardust_spider_death",
+    "w4_f10_the_stardust_spider_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_stardust_cell_death_uses_the_inverse_gate",
+   "start": 8504,
+   "end": 8544,
+   "min_cite": 83557,
+   "max_cite": 83557,
+   "body_fns": [
+    "stardust_cell_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_stardust_dragon_body_death_spawns_the_five_gores",
+   "start": 8546,
+   "end": 8562,
+   "min_cite": 83657,
+   "max_cite": 83657,
+   "body_fns": [
+    "stardust_dragon_body_death",
+    "w4_f10_the_stardust_dragon_body_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dutchman_death_head_spawns_the_eleven_gores",
+   "start": 8564,
+   "end": 8587,
+   "min_cite": 83670,
+   "max_cite": 83670,
+   "body_fns": [
+    "w4_f10_the_dutchman_death_head_spawns_the_eleven_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dutchman_death_head_flips_on_sprite_direction",
+   "start": 8589,
+   "end": 8603,
+   "min_cite": 83669,
+   "max_cite": 83669,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_dutchman_fan_draws_position_then_type",
+   "start": 8605,
+   "end": 8635,
+   "min_cite": 83680,
+   "max_cite": 83680,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_dutchman_855_loop_spawns_the_four_gores",
+   "start": 8637,
+   "end": 8656,
+   "min_cite": 83688,
+   "max_cite": 83688,
+   "body_fns": [
+    "w4_f10_the_dutchman_855_loop_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dutchman_854_loop_spawns_the_nine_gores",
+   "start": 8658,
+   "end": 8680,
+   "min_cite": 83693,
+   "max_cite": 83693,
+   "body_fns": [
+    "w4_f10_the_dutchman_854_loop_spawns_the_nine_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dutchman_scatter_draws_type_kicks_then_post",
+   "start": 8682,
+   "end": 8715,
+   "min_cite": 83699,
+   "max_cite": 83699,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_dutchman_tail_runs_the_dust_burst_and_returns_the_seam",
+   "start": 8717,
+   "end": 8743,
+   "min_cite": 83704,
+   "max_cite": 83704,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_dutchman_cannon_death_scatters_the_ten_gores",
+   "start": 8745,
+   "end": 8783,
+   "min_cite": 83734,
+   "max_cite": 83734,
+   "body_fns": [
+    "dutchman_cannon_death",
+    "w4_f10_the_dutchman_cannon_death_scatters_the_ten_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_desert_ghoul_death_uses_the_per_tier_base",
+   "start": 8785,
+   "end": 8807,
+   "min_cite": 83789,
+   "max_cite": 83789,
+   "body_fns": [
+    "desert_ghoul_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_desert_ghoul_gate_draws_even_when_accent_is_zero",
+   "start": 8809,
+   "end": 8842,
+   "min_cite": 83780,
+   "max_cite": 83780,
+   "body_fns": [
+    "desert_ghoul_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_desert_lamia_death_uses_the_per_tier_head",
+   "start": 8844,
+   "end": 8859,
+   "min_cite": 83818,
+   "max_cite": 83818,
+   "body_fns": [
+    "desert_lamia_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_desert_scorpion_death_spawns_the_five_gores",
+   "start": 8861,
+   "end": 8879,
+   "min_cite": 83839,
+   "max_cite": 83839,
+   "body_fns": [
+    "desert_scorpion_death",
+    "w4_f10_the_desert_scorpion_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_desert_beast_death_spawns_the_four_gores",
+   "start": 8881,
+   "end": 8896,
+   "min_cite": 83861,
+   "max_cite": 83861,
+   "body_fns": [
+    "desert_beast_death",
+    "w4_f10_the_desert_beast_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_butcher_death_spawns_the_five_gores",
+   "start": 8898,
+   "end": 8913,
+   "min_cite": 83904,
+   "max_cite": 83904,
+   "body_fns": [
+    "butcher_death",
+    "w4_f10_the_butcher_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_mothron_death_spawns_the_five_gores",
+   "start": 8915,
+   "end": 8930,
+   "min_cite": 83926,
+   "max_cite": 83926,
+   "body_fns": [
+    "mothron_death",
+    "w4_f10_the_mothron_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_mothron_spawn_death_spawns_the_three_gores",
+   "start": 8932,
+   "end": 8947,
+   "min_cite": 83948,
+   "max_cite": 83948,
+   "body_fns": [
+    "mothron_spawn_death",
+    "w4_f10_the_mothron_spawn_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_mothron_egg_death_draws_the_dust_and_gore_types",
+   "start": 8949,
+   "end": 8985,
+   "min_cite": 83967,
+   "max_cite": 83967,
+   "body_fns": [
+    "mothron_egg_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_psycho_death_spawns_the_five_gores",
+   "start": 8987,
+   "end": 9002,
+   "min_cite": 83990,
+   "max_cite": 83990,
+   "body_fns": [
+    "psycho_death",
+    "w4_f10_the_psycho_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dr_man_fly_death_uses_the_shared_shape",
+   "start": 9004,
+   "end": 9016,
+   "min_cite": 84012,
+   "max_cite": 84012,
+   "body_fns": [
+    "dr_man_fly_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_possessed_and_nailhead_deaths_use_the_shared_shape",
+   "start": 9018,
+   "end": 9039,
+   "min_cite": 84034,
+   "max_cite": 84056,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_creature_and_fritz_deaths_use_the_shared_shape",
+   "start": 9041,
+   "end": 9059,
+   "min_cite": 84078,
+   "max_cite": 84100,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_cultist_archer_death_spawns_the_three_gores",
+   "start": 9061,
+   "end": 9075,
+   "min_cite": 84122,
+   "max_cite": 84122,
+   "body_fns": [
+    "cultist_archer_death",
+    "w4_f10_the_cultist_archer_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_cultist_boss_death_runs_the_bone_loop_then_the_fixed_gores",
+   "start": 9077,
+   "end": 9126,
+   "min_cite": 84150,
+   "max_cite": 84150,
+   "body_fns": [
+    "cultist_boss_death",
+    "w4_f10_the_cultist_boss_death_runs_the_bone_loop_then_the_fixed_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_cultist_clone_and_dragon_deaths_run_the_bone_loop",
+   "start": 9128,
+   "end": 9165,
+   "min_cite": 84175,
+   "max_cite": 84202,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_sharkron_death_spawns_the_four_gores",
+   "start": 9167,
+   "end": 9190,
+   "min_cite": 84223,
+   "max_cite": 84223,
+   "body_fns": [
+    "sharkron_death",
+    "w4_f10_the_sharkron_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_duke_fishron_death_spreads_the_six_gores",
+   "start": 9192,
+   "end": 9213,
+   "min_cite": 84273,
+   "max_cite": 84273,
+   "body_fns": [
+    "duke_fishron_death",
+    "w4_f10_the_duke_fishron_death_spreads_the_six_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_brain_scrambler_death_spawns_the_four_gores",
+   "start": 9215,
+   "end": 9231,
+   "min_cite": 84296,
+   "max_cite": 84296,
+   "body_fns": [
+    "brain_scrambler_death",
+    "w4_f10_the_brain_scrambler_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_ray_gunner_and_officer_deaths_spawn_the_ladders",
+   "start": 9233,
+   "end": 9254,
+   "min_cite": 84317,
+   "max_cite": 84337,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_gray_grunt_and_engineer_deaths_spawn_the_ladders",
+   "start": 9256,
+   "end": 9274,
+   "min_cite": 84377,
+   "max_cite": 84397,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_martian_turret_death_repeats_the_603",
+   "start": 9276,
+   "end": 9295,
+   "min_cite": 84420,
+   "max_cite": 84420,
+   "body_fns": [
+    "martian_turret_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_martian_walker_death_spawns_the_five_gores",
+   "start": 9297,
+   "end": 9313,
+   "min_cite": 84443,
+   "max_cite": 84443,
+   "body_fns": [
+    "martian_walker_death",
+    "w4_f10_the_martian_walker_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_giga_zapper_death_spawns_the_ladder",
+   "start": 9315,
+   "end": 9328,
+   "min_cite": 84465,
+   "max_cite": 84465,
+   "body_fns": [
+    "giga_zapper_death",
+    "w4_f10_the_giga_zapper_death_spawns_the_ladder"
+   ]
+  },
+  {
+   "name": "w4_f10_the_martian_drone_death_uses_the_rotation_velocity",
+   "start": 9330,
+   "end": 9371,
+   "min_cite": 84488,
+   "max_cite": 84488,
+   "body_fns": [
+    "martian_drone_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_martian_probe_death_spawns_the_two_gores",
+   "start": 9373,
+   "end": 9388,
+   "min_cite": 84530,
+   "max_cite": 84530,
+   "body_fns": [
+    "martian_probe_death",
+    "w4_f10_the_martian_probe_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_scutlix_death_offsets_by_half_width",
+   "start": 9390,
+   "end": 9406,
+   "min_cite": 84549,
+   "max_cite": 84549,
+   "body_fns": [
+    "scutlix_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_martian_saucer_family_death_per_type",
+   "start": 9408,
+   "end": 9444,
+   "min_cite": 84575,
+   "max_cite": 84575,
+   "body_fns": [
+    "martian_saucer_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_granite_golem_death_spawns_the_four_gores",
+   "start": 9446,
+   "end": 9468,
+   "min_cite": 84609,
+   "max_cite": 84609,
+   "body_fns": [
+    "granite_golem_death",
+    "w4_f10_the_granite_golem_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_rock_golem_death_spawns_the_four_gores",
+   "start": 9470,
+   "end": 9485,
+   "min_cite": 84631,
+   "max_cite": 84631,
+   "body_fns": [
+    "rock_golem_death",
+    "w4_f10_the_rock_golem_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_party_slime_confetti_draws_the_full_sequence",
+   "start": 9487,
+   "end": 9530,
+   "min_cite": 84738,
+   "max_cite": 84738,
+   "body_fns": [
+    "party_slime_confetti"
+   ]
+  },
+  {
+   "name": "w4_f10_the_scarecrow_death_spawns_the_five_gores",
+   "start": 9532,
+   "end": 9548,
+   "min_cite": 84810,
+   "max_cite": 84810,
+   "body_fns": [
+    "scarecrow_death",
+    "w4_f10_the_scarecrow_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_pumpking_death_spawns_the_nine_gore_loop",
+   "start": 9550,
+   "end": 9566,
+   "min_cite": 84834,
+   "max_cite": 84834,
+   "body_fns": [
+    "pumpking_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_ice_queen_death_spawns_the_five_gores",
+   "start": 9568,
+   "end": 9582,
+   "min_cite": 84861,
+   "max_cite": 84861,
+   "body_fns": [
+    "ice_queen_death",
+    "w4_f10_the_ice_queen_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_mourning_wood_death_spawns_the_seven_gore_loop",
+   "start": 9584,
+   "end": 9600,
+   "min_cite": 84855,
+   "max_cite": 84855,
+   "body_fns": [
+    "mourning_wood_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_everscream_death_spawns_both_loops",
+   "start": 9602,
+   "end": 9618,
+   "min_cite": 84884,
+   "max_cite": 84884,
+   "body_fns": [
+    "everscream_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_slime_masked_death_spawns_the_single_gore",
+   "start": 9620,
+   "end": 9635,
+   "min_cite": 84941,
+   "max_cite": 84941,
+   "body_fns": [
+    "slime_masked_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_golem_body_random_gores_draw_position_first",
+   "start": 9637,
+   "end": 9680,
+   "min_cite": 84968,
+   "max_cite": 84968,
+   "body_fns": [
+    "golem_body_random_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_golem_head_free_death_spawns_the_seven_gores",
+   "start": 9682,
+   "end": 9697,
+   "min_cite": 84984,
+   "max_cite": 84984,
+   "body_fns": [
+    "golem_head_free_death",
+    "w4_f10_the_golem_head_free_death_spawns_the_seven_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_golem_fist_death_spawns_the_three_gores",
+   "start": 9699,
+   "end": 9714,
+   "min_cite": 84994,
+   "max_cite": 84994,
+   "body_fns": [
+    "golem_fist_death",
+    "w4_f10_the_golem_fist_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_ice_golem_death_spawns_the_single_gore",
+   "start": 9716,
+   "end": 9728,
+   "min_cite": 85060,
+   "max_cite": 85060,
+   "body_fns": [
+    "ice_golem_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_umbrella_slime_death_spawns_the_single_gore",
+   "start": 9730,
+   "end": 9743,
+   "min_cite": 85042,
+   "max_cite": 85042,
+   "body_fns": [
+    "umbrella_slime_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_ladybug_and_stinkbug_deaths_gate_the_gores",
+   "start": 9745,
+   "end": 9785,
+   "min_cite": 85133,
+   "max_cite": 85157,
+   "body_fns": [
+    "w4_f10_the_ladybug_and_stinkbug_deaths_gate_the_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_snail_hit_spawns_gores_even_when_living",
+   "start": 9787,
+   "end": 9821,
+   "min_cite": 85271,
+   "max_cite": 85313,
+   "body_fns": [
+    "snail_hit"
+   ]
+  },
+  {
+   "name": "w4_f10_the_ice_tortoise_death_spawns_the_single_gore",
+   "start": 9823,
+   "end": 9840,
+   "min_cite": 85334,
+   "max_cite": 85334,
+   "body_fns": [
+    "ice_tortoise_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_slimer_death_spawns_the_gore_and_returns_the_seam",
+   "start": 9842,
+   "end": 9860,
+   "min_cite": 85451,
+   "max_cite": 85451,
+   "body_fns": [
+    "slimer_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_king_slime_death_spawns_the_gore_and_returns_the_seam",
+   "start": 9862,
+   "end": 9878,
+   "min_cite": 85684,
+   "max_cite": 85684,
+   "body_fns": [
+    "king_slime_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_tortoise_and_derpling_deaths_spawn_the_four_gores",
+   "start": 9880,
+   "end": 9901,
+   "min_cite": 85718,
+   "max_cite": 85737,
+   "body_fns": [
+    "w4_f10_the_tortoise_and_derpling_deaths_spawn_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_crawdad_death_uses_the_per_type_offset",
+   "start": 9903,
+   "end": 9917,
+   "min_cite": 85757,
+   "max_cite": 85757,
+   "body_fns": [
+    "crawdad_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_giant_shelly_death_uses_the_per_type_offset",
+   "start": 9919,
+   "end": 9932,
+   "min_cite": 85775,
+   "max_cite": 85775,
+   "body_fns": [
+    "giant_shelly_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_salamander_death_uses_the_per_type_offset",
+   "start": 9934,
+   "end": 9952,
+   "min_cite": 85793,
+   "max_cite": 85793,
+   "body_fns": [
+    "salamander_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_bat_family_death_uses_the_per_type_list",
+   "start": 9954,
+   "end": 9980,
+   "min_cite": 85813,
+   "max_cite": 85813,
+   "body_fns": [
+    "bat_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_owl_death_spawns_the_three_gores",
+   "start": 9982,
+   "end": 9994,
+   "min_cite": 85856,
+   "max_cite": 85856,
+   "body_fns": [
+    "owl_death",
+    "w4_f10_the_owl_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_gnome_death_spawns_the_four_gores",
+   "start": 9996,
+   "end": 10007,
+   "min_cite": 85874,
+   "max_cite": 85874,
+   "body_fns": [
+    "gnome_death",
+    "w4_f10_the_gnome_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dandelion_death_spawns_the_four_gores",
+   "start": 10009,
+   "end": 10021,
+   "min_cite": 85893,
+   "max_cite": 85893,
+   "body_fns": [
+    "dandelion_death",
+    "w4_f10_the_dandelion_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_gem_bunny_death_uses_the_per_type_offset",
+   "start": 10023,
+   "end": 10038,
+   "min_cite": 85918,
+   "max_cite": 85918,
+   "body_fns": [
+    "gem_bunny_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_gem_squirrel_death_uses_the_per_type_offset",
+   "start": 10040,
+   "end": 10053,
+   "min_cite": 85940,
+   "max_cite": 85940,
+   "body_fns": [
+    "gem_squirrel_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_bunny_crab_goldfish",
+   "start": 10055,
+   "end": 10090,
+   "min_cite": 85958,
+   "max_cite": 85958,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_dolphin_birds_macaw",
+   "start": 10092,
+   "end": 10122,
+   "min_cite": 85985,
+   "max_cite": 85985,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_macaw_toucan_cockatiel",
+   "start": 10124,
+   "end": 10143,
+   "min_cite": 86010,
+   "max_cite": 86010,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_cockatiel_and_single_gores",
+   "start": 10145,
+   "end": 10168,
+   "min_cite": 86028,
+   "max_cite": 86028,
+   "body_fns": [
+    "critter_family_death",
+    "w4_f10_the_critter_family_cockatiel_and_single_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_flying_fish_turtle",
+   "start": 10170,
+   "end": 10201,
+   "min_cite": 86058,
+   "max_cite": 86058,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_jungle_sea_turtle",
+   "start": 10203,
+   "end": 10217,
+   "min_cite": 86079,
+   "max_cite": 86079,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_penguin_family_death_uses_the_per_type_list",
+   "start": 10219,
+   "end": 10239,
+   "min_cite": 86108,
+   "max_cite": 86108,
+   "body_fns": [
+    "penguin_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_frog_death_spawns_the_two_gores",
+   "start": 10241,
+   "end": 10253,
+   "min_cite": 86142,
+   "max_cite": 86142,
+   "body_fns": [
+    "frog_death",
+    "w4_f10_the_frog_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_pupfish_death_spawns_the_two_gores",
+   "start": 10255,
+   "end": 10266,
+   "min_cite": 86187,
+   "max_cite": 86187,
+   "body_fns": [
+    "pupfish_death",
+    "w4_f10_the_pupfish_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_pufferfish_death_branches_on_ai2",
+   "start": 10268,
+   "end": 10291,
+   "min_cite": 86206,
+   "max_cite": 86206,
+   "body_fns": [
+    "pufferfish_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_seagull_death_spawns_the_two_gores",
+   "start": 10293,
+   "end": 10304,
+   "min_cite": 86287,
+   "max_cite": 86287,
+   "body_fns": [
+    "seagull_death",
+    "w4_f10_the_seagull_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_scorpion_death_uses_the_per_type_list",
+   "start": 10306,
+   "end": 10320,
+   "min_cite": 86233,
+   "max_cite": 86233,
+   "body_fns": [
+    "scorpion_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_grebe_death_spawns_the_three_gores",
+   "start": 10322,
+   "end": 10333,
+   "min_cite": 86307,
+   "max_cite": 86307,
+   "body_fns": [
+    "grebe_death",
+    "w4_f10_the_grebe_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_duck_family_death_uses_the_per_type_list",
+   "start": 10335,
+   "end": 10349,
+   "min_cite": 86260,
+   "max_cite": 86260,
+   "body_fns": [
+    "duck_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nutcracker_death_spawns_the_five_gores",
+   "start": 10351,
+   "end": 10363,
+   "min_cite": 86326,
+   "max_cite": 86326,
+   "body_fns": [
+    "nutcracker_death",
+    "w4_f10_the_nutcracker_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_krampus_death_spawns_the_five_gores",
+   "start": 10365,
+   "end": 10376,
+   "min_cite": 86346,
+   "max_cite": 86346,
+   "body_fns": [
+    "krampus_death",
+    "w4_f10_the_krampus_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_elf_archer_death_spawns_the_four_gores",
+   "start": 10378,
+   "end": 10389,
+   "min_cite": 86366,
+   "max_cite": 86366,
+   "body_fns": [
+    "elf_archer_death",
+    "w4_f10_the_elf_archer_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_corrupt_critter_death_uses_the_per_type_list",
+   "start": 10391,
+   "end": 10412,
+   "min_cite": 86387,
+   "max_cite": 86387,
+   "body_fns": [
+    "corrupt_critter_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_crimson_monster_death_uses_the_per_type_list",
+   "start": 10414,
+   "end": 10437,
+   "min_cite": 86425,
+   "max_cite": 86425,
+   "body_fns": [
+    "crimson_monster_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_demon_eye_death_uses_the_per_type_pair",
+   "start": 10439,
+   "end": 10469,
+   "min_cite": 86465,
+   "max_cite": 86465,
+   "body_fns": [
+    "demon_eye_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_arapaima_death_spawns_the_two_gores",
+   "start": 10471,
+   "end": 10484,
+   "min_cite": 86518,
+   "max_cite": 86518,
+   "body_fns": [
+    "arapaima_death",
+    "w4_f10_the_arapaima_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wandering_eye_hit_latches_and_death_spawns",
+   "start": 10486,
+   "end": 10517,
+   "min_cite": 86529,
+   "max_cite": 86529,
+   "body_fns": [
+    "wandering_eye_hit"
+   ]
+  },
+  {
+   "name": "w4_f10_the_antlion_death_uses_the_per_type_list",
+   "start": 10519,
+   "end": 10543,
+   "min_cite": 86568,
+   "max_cite": 86568,
+   "body_fns": [
+    "antlion_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_vulture_death_spawns_the_three_gores",
+   "start": 10545,
+   "end": 10560,
+   "min_cite": 86621,
+   "max_cite": 86621,
+   "body_fns": [
+    "vulture_death",
+    "w4_f10_the_vulture_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_raven_death_spawns_the_two_gores",
+   "start": 10562,
+   "end": 10575,
+   "min_cite": 86639,
+   "max_cite": 86639,
+   "body_fns": [
+    "raven_death",
+    "w4_f10_the_raven_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_parrot_death_spawns_the_two_gores",
+   "start": 10577,
+   "end": 10588,
+   "min_cite": 86656,
+   "max_cite": 86656,
+   "body_fns": [
+    "parrot_death",
+    "w4_f10_the_parrot_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_zombie_ladder_uses_the_per_type_triple",
+   "start": 10590,
+   "end": 10615,
+   "min_cite": 86675,
+   "max_cite": 86675,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_drippler_death_draws_the_two_random_types",
+   "start": 10617,
+   "end": 10655,
+   "min_cite": 86724,
+   "max_cite": 86724,
+   "body_fns": [
+    "drippler_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_shark_family_death_uses_the_per_type_quad",
+   "start": 10657,
+   "end": 10689,
+   "min_cite": 86746,
+   "max_cite": 86746,
+   "body_fns": [
+    "shark_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nymph_and_icy_merman_deaths_use_the_ladder",
+   "start": 10691,
+   "end": 10713,
+   "min_cite": 86801,
+   "max_cite": 86842,
+   "body_fns": [
+    "w4_f10_the_nymph_and_icy_merman_deaths_use_the_ladder"
+   ]
+  },
+  {
+   "name": "w4_f10_the_lihzahrd_death_spawns_the_six_gores",
+   "start": 10715,
+   "end": 10731,
+   "min_cite": 86821,
+   "max_cite": 86821,
+   "body_fns": [
+    "lihzahrd_death",
+    "w4_f10_the_lihzahrd_death_spawns_the_six_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_gingerbread_man_death_spawns_the_ladder",
+   "start": 10733,
+   "end": 10745,
+   "min_cite": 86862,
+   "max_cite": 86862,
+   "body_fns": [
+    "gingerbread_man_death",
+    "w4_f10_the_gingerbread_man_death_spawns_the_ladder"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_elf_death_uses_the_per_type_head",
+   "start": 10747,
+   "end": 10764,
+   "min_cite": 86884,
+   "max_cite": 86884,
+   "body_fns": [
+    "zombie_elf_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_yeti_death_spawns_the_four_gores",
+   "start": 10766,
+   "end": 10781,
+   "min_cite": 86912,
+   "max_cite": 86912,
+   "body_fns": [
+    "w4_f10_the_yeti_death_spawns_the_four_gores",
+    "yeti_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_moss_zombie_death_spawns_the_ladder",
+   "start": 10783,
+   "end": 10795,
+   "min_cite": 86931,
+   "max_cite": 86931,
+   "body_fns": [
+    "moss_zombie_death",
+    "w4_f10_the_moss_zombie_death_spawns_the_ladder"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_werewolf_and_maggot",
+   "start": 10797,
+   "end": 10826,
+   "min_cite": 86982,
+   "max_cite": 86982,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_clown_spawns_the_extra_gore",
+   "start": 10828,
+   "end": 10842,
+   "min_cite": 87029,
+   "max_cite": 87029,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_eskimo_and_frankenstein",
+   "start": 10844,
+   "end": 10859,
+   "min_cite": 87039,
+   "max_cite": 87039,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_swamp_and_female",
+   "start": 10861,
+   "end": 10876,
+   "min_cite": 87057,
+   "max_cite": 87057,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_doctor_and_superman",
+   "start": 10878,
+   "end": 10903,
+   "min_cite": 87075,
+   "max_cite": 87075,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_pixie_and_raincoat",
+   "start": 10905,
+   "end": 10920,
+   "min_cite": 87092,
+   "max_cite": 87092,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_fallthrough_bald_and_twiggy",
+   "start": 10922,
+   "end": 10941,
+   "min_cite": 87110,
+   "max_cite": 87110,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_fallthrough_eyezor_and_generic",
+   "start": 10943,
+   "end": 10959,
+   "min_cite": 87122,
+   "max_cite": 87122,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_fallthrough_pincushion",
+   "start": 10961,
+   "end": 10998,
+   "min_cite": 87114,
+   "max_cite": 87114,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_fallthrough_slimed",
+   "start": 11000,
+   "end": 11020,
+   "min_cite": 87128,
+   "max_cite": 87128,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_cursed_weapon_death_draws_the_velocity",
+   "start": 11022,
+   "end": 11056,
+   "min_cite": 87158,
+   "max_cite": 87158,
+   "body_fns": [
+    "cursed_weapon_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_plantera_death_draws_the_positions",
+   "start": 11058,
+   "end": 11089,
+   "min_cite": 87199,
+   "max_cite": 87199,
+   "body_fns": [
+    "plantera_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_plantera_part_death_uses_the_per_type_pair",
+   "start": 11091,
+   "end": 11105,
+   "min_cite": 87211,
+   "max_cite": 87211,
+   "body_fns": [
+    "plantera_part_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_brain_of_cthulhu_death_draws_the_velocity",
+   "start": 11107,
+   "end": 11137,
+   "min_cite": 87252,
+   "max_cite": 87252,
+   "body_fns": [
+    "brain_of_cthulhu_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_creeper_death_spawns_the_single_gore",
+   "start": 11139,
+   "end": 11149,
+   "min_cite": 87273,
+   "max_cite": 87273,
+   "body_fns": [
+    "creeper_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_servant_death_spawns_the_two_gores",
+   "start": 11151,
+   "end": 11163,
+   "min_cite": 87355,
+   "max_cite": 87355,
+   "body_fns": [
+    "servant_of_cthulhu_death",
+    "w4_f10_the_servant_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wall_of_flesh_death_spawns_the_quadrants",
+   "start": 11165,
+   "end": 11185,
+   "min_cite": 87374,
+   "max_cite": 87374,
+   "body_fns": [
+    "wall_of_flesh_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_hungry_death_spawns_the_two_gores",
+   "start": 11187,
+   "end": 11198,
+   "min_cite": 87433,
+   "max_cite": 87433,
+   "body_fns": [
+    "the_hungry_death",
+    "w4_f10_the_hungry_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_leech_death_uses_the_per_type_offset",
+   "start": 11200,
+   "end": 11212,
+   "min_cite": 87450,
+   "max_cite": 87450,
+   "body_fns": [
+    "leech_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_beetle_death_uses_the_per_type_list",
+   "start": 11214,
+   "end": 11229,
+   "min_cite": 87468,
+   "max_cite": 87468,
+   "body_fns": [
+    "beetle_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_queen_bee_death_spawns_the_spread_gores",
+   "start": 11231,
+   "end": 11249,
+   "min_cite": 87495,
+   "max_cite": 87495,
+   "body_fns": [
+    "queen_bee_death",
+    "w4_f10_the_queen_bee_death_spawns_the_spread_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_eater_of_souls_death_uses_the_per_type_list",
+   "start": 11251,
+   "end": 11282,
+   "min_cite": 87518,
+   "max_cite": 87518,
+   "body_fns": [
+    "eater_of_souls_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_clinger_death_spawns_the_four_gores",
+   "start": 11284,
+   "end": 11296,
+   "min_cite": 87551,
+   "max_cite": 87551,
+   "body_fns": [
+    "clinger_death",
+    "w4_f10_the_clinger_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_devourer_death_uses_the_per_type_offset",
+   "start": 11298,
+   "end": 11311,
+   "min_cite": 87570,
+   "max_cite": 87570,
+   "body_fns": [
+    "devourer_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_seeker_death_spawns_the_single_gore",
+   "start": 11313,
+   "end": 11323,
+   "min_cite": 87587,
+   "max_cite": 87587,
+   "body_fns": [
+    "seeker_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_giant_worm_death_uses_the_per_type_offset",
+   "start": 11325,
+   "end": 11338,
+   "min_cite": 87604,
+   "max_cite": 87604,
+   "body_fns": [
+    "giant_worm_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_digger_death_uses_the_per_type_offset",
+   "start": 11340,
+   "end": 11353,
+   "min_cite": 87620,
+   "max_cite": 87620,
+   "body_fns": [
+    "digger_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_eater_of_worlds_death_uses_the_per_type_pair",
+   "start": 11355,
+   "end": 11369,
+   "min_cite": 87638,
+   "max_cite": 87638,
+   "body_fns": [
+    "eater_of_worlds_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_town_npc_death_uses_the_shimmer_variants",
+   "start": 11371,
+   "end": 11404,
+   "min_cite": 87668,
+   "max_cite": 87668,
+   "body_fns": [
+    "town_npc_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_unicorn_death_spawns_the_seven_gores",
+   "start": 11406,
+   "end": 11418,
+   "min_cite": 87709,
+   "max_cite": 87709,
+   "body_fns": [
+    "unicorn_death",
+    "w4_f10_the_unicorn_death_spawns_the_seven_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wolf_death_spawns_the_three_gores",
+   "start": 11420,
+   "end": 11431,
+   "min_cite": 87731,
+   "max_cite": 87731,
+   "body_fns": [
+    "w4_f10_the_wolf_death_spawns_the_three_gores",
+    "wolf_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_hellhound_death_spawns_the_three_gores",
+   "start": 11433,
+   "end": 11444,
+   "min_cite": 87749,
+   "max_cite": 87749,
+   "body_fns": [
+    "hellhound_death",
+    "w4_f10_the_hellhound_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_black_recluse_death_spawns_the_five_gores",
+   "start": 11446,
+   "end": 11458,
+   "min_cite": 87767,
+   "max_cite": 87767,
+   "body_fns": [
+    "black_recluse_death",
+    "w4_f10_the_black_recluse_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wall_creeper_death_spawns_the_five_gores",
+   "start": 11460,
+   "end": 11472,
+   "min_cite": 87787,
+   "max_cite": 87787,
+   "body_fns": [
+    "w4_f10_the_wall_creeper_death_spawns_the_five_gores",
+    "wall_creeper_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_crawler_death_spawns_the_five_gores",
+   "start": 11474,
+   "end": 11486,
+   "min_cite": 87807,
+   "max_cite": 87807,
+   "body_fns": [
+    "blood_crawler_death",
+    "w4_f10_the_blood_crawler_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_jungle_creeper_death_spawns_the_five_gores",
+   "start": 11488,
+   "end": 11500,
+   "min_cite": 87827,
+   "max_cite": 87827,
+   "body_fns": [
+    "jungle_creeper_death",
+    "w4_f10_the_jungle_creeper_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_feeder_death_spawns_the_two_gores",
+   "start": 11502,
+   "end": 11513,
+   "min_cite": 87847,
+   "max_cite": 87847,
+   "body_fns": [
+    "blood_feeder_death",
+    "w4_f10_the_blood_feeder_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_jelly_death_spawns_the_five_gores",
+   "start": 11515,
+   "end": 11527,
+   "min_cite": 87864,
+   "max_cite": 87864,
+   "body_fns": [
+    "blood_jelly_death",
+    "w4_f10_the_blood_jelly_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_bound_npc_death_uses_the_shimmer_variants",
+   "start": 11529,
+   "end": 11560,
+   "min_cite": 87886,
+   "max_cite": 87886,
+   "body_fns": [
+    "bound_npc_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_mechanic_death_uses_the_shimmer_variants",
+   "start": 11562,
+   "end": 11583,
+   "min_cite": 87916,
+   "max_cite": 87916,
+   "body_fns": [
+    "mechanic_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_guide_death_uses_the_shimmer_variants",
+   "start": 11585,
+   "end": 11606,
+   "min_cite": 87936,
+   "max_cite": 87936,
+   "body_fns": [
+    "guide_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_bartender_death_spawns_the_offset_gores",
+   "start": 11608,
+   "end": 11626,
+   "min_cite": 87956,
+   "max_cite": 87956,
+   "body_fns": [
+    "bartender_death",
+    "w4_f10_the_bartender_death_spawns_the_offset_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_golfer_death_spawns_the_offset_gores",
+   "start": 11628,
+   "end": 11643,
+   "min_cite": 87978,
+   "max_cite": 87978,
+   "body_fns": [
+    "golfer_death",
+    "w4_f10_the_golfer_death_spawns_the_offset_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_bestiary_girl_death_uses_the_shimmer_variants",
+   "start": 11645,
+   "end": 11669,
+   "min_cite": 88016,
+   "max_cite": 88016,
+   "body_fns": [
+    "bestiary_girl_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_travelling_merchant_death_uses_the_shimmer_variants",
+   "start": 11671,
+   "end": 11692,
+   "min_cite": 88039,
+   "max_cite": 88039,
+   "body_fns": [
+    "travelling_merchant_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_painter_death_uses_the_shimmer_variants",
+   "start": 11694,
+   "end": 11716,
+   "min_cite": 88092,
+   "max_cite": 88092,
+   "body_fns": [
+    "painter_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_witch_doctor_death_uses_the_shimmer_variants",
+   "start": 11718,
+   "end": 11740,
+   "min_cite": 88113,
+   "max_cite": 88113,
+   "body_fns": [
+    "witch_doctor_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_pirate_death_shimmer_is_dust_only",
+   "start": 11742,
+   "end": 11764,
+   "min_cite": 88146,
+   "max_cite": 88146,
+   "body_fns": [
+    "pirate_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_santa_claus_death_uses_the_shimmer_variants",
+   "start": 11766,
+   "end": 11787,
+   "min_cite": 88169,
+   "max_cite": 88169,
+   "body_fns": [
+    "santa_claus_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_steampunker_death_uses_the_shimmer_variants",
+   "start": 11789,
+   "end": 11810,
+   "min_cite": 88192,
+   "max_cite": 88192,
+   "body_fns": [
+    "steampunker_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_stylist_death_uses_the_shimmer_variants",
+   "start": 11812,
+   "end": 11834,
+   "min_cite": 88214,
+   "max_cite": 88214,
+   "body_fns": [
+    "stylist_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dispatch_gates_the_flipped_betsy_branch",
+   "start": 11836,
+   "end": 11863,
+   "min_cite": 0,
+   "max_cite": 0,
+   "body_fns": []
+  }
+ ],
+ "total_lines": 11865
+}

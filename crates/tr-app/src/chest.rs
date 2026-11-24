@@ -1807,6 +1807,215 @@ fn force_close(app: &mut App) -> u32 {
     11
 }
 
+/// W4-g61 wiring — `Player.ChestChangeEvents` (`Player.cs:28760-28775`, called
+/// from `Player.Update` `:25384`): the close edge (`chest == -1 && lastChest >=
+/// 0`) runs `NPC.BigMimicSummonCheck` on the just-closed chest (the key-summon);
+/// the open edge (`lastChest != chest && chest >= 0`) runs `Projectile.GasTrapCheck`
+/// (the gas-trap item 5346 — unported, a cited skip) + the glow clear. `lastChest`
+/// latches to `chest` at the end. The `netMode != 1` gate folds to the SP/host
+/// path (the client never runs it). The port runs this at the player-tick tail
+/// beside `tick_open` (the C# call sits inside `Player.Update`, after the
+/// movement/hurt block — the per-tick container probe).
+pub(crate) fn chest_change_events(app: &mut App) {
+    if matches!(app.net, crate::app::NetRole::Client(_)) {
+        return; // `Main.netMode != 1` (`:28762`)
+    }
+    let (chest, last_chest) = app
+        .player
+        .as_ref()
+        .map_or((-1, -1), |p| (p.chest, p.last_chest));
+    // `:28764-28767`: the close edge — the just-closed chest's coords. The
+    // coords copy out before the summon (the `world_chests` borrow must end
+    // before `big_mimic_summon_check`'s whole-app `&mut`).
+    let close_coords = if chest == -1 && last_chest >= 0 {
+        app.world_chests
+            .get(last_chest as usize)
+            .filter(|c| !is_removed(c))
+            .map(|c| c.tile)
+    } else {
+        None
+    };
+    if let Some((x, y)) = close_coords {
+        big_mimic_summon_check(app, x, y);
+    }
+    // `:28768-28772`: the open edge — `GasTrapCheck` (the gas-trap item 5346,
+    // `Projectile.cs:41242-41290`) is unported (no gas-trap projectile family);
+    // `ItemSlot.forceClearGlowsOnChest` is a render flag with no port target.
+    // Both are cited skips (ANALYSIS "The key-summon (W4-g61)").
+    if let Some(p) = app.player.as_mut() {
+        p.last_chest = p.chest; // `:28773`
+    }
+}
+
+/// W4-g61 wiring — `NPC.BigMimicSummonCheck` (`NPC.cs:77517-77605`): a chest
+/// holding EXACTLY one key (3092 Light / 3091 Night) and nothing else, closed
+/// in hardmode, summons the biome mimic. The scan (`:77534-77551`) counts the
+/// key stacks vs the other-item count over the `BasicChest` tile (21/467, the
+/// gold styles 5-6 excluded); `num4 == 0 && num2 + num3 == 1` (`:77552`) fires:
+/// clear the slots, `Chest.DestroyChest` (empty now → removes), `ClearTile` the
+/// 2×2, then `NewNPC` at `(x*16+16, y*16+32)` (the bottom-center anchor) with
+/// kind 475 (Light) / 473 corrupt / 474 crimson (`WorldGen.crimson` — LIVE,
+/// the g69 `World.crimson` field), and `BigMimicSpawnSmoke` (`:77602`). The
+/// `SendData(34/23)` + `SendTileSquare` relays are the server arms — dropped.
+/// ROSTER ACTIVATION (W4-g61 final): the big-mimic kinds 473-476 LANDED on
+/// `task/W4-d40-npc-kinds-421-490` (`4860cd88b`, batch 9 — own bestiary
+/// entries 473/474/475/476), so `kind_from_net_id` resolves them at the
+/// d40 merge and the NPC + smoke arms AUTO-ACTIVATE (the gate below reads
+/// the bestiary ENTRIES table — no g61 edit needed then). Until d40 lands
+/// the chest still clears and the gate refuses (the standing parity).
+/// Returns whether the summon fired (the C# always returns false — the
+/// port's bool is the test seam).
+pub(crate) fn big_mimic_summon_check(app: &mut App, x: i32, y: i32) -> bool {
+    // `:77519-77522`: `netMode == 1 || !hardMode` refuses.
+    if matches!(app.net, crate::app::NetRole::Client(_)) || !app.world.hard_mode {
+        return false;
+    }
+    // `:77523-77527`: `Chest.FindChest(x, y)`.
+    let Some(idx) = find_chest(&app.world_chests, x, y) else {
+        return false;
+    };
+    // `:77531-77533`: the chest's tile kind + the gold style band.
+    let (cx, cy) = app.world_chests[idx].tile;
+    let Some(tile) = app.world.tile(cx, cy) else {
+        return false;
+    };
+    let tile_kind = tile.kind;
+    let style = tile.frame_x / 36;
+    // `:77536`: `BasicChest[num5] && (num5 != 21 || num6 < 5 || num6 > 6)`.
+    if !is_basic_chest(tile_kind) || (tile_kind == 21 && (5..=6).contains(&style)) {
+        return false;
+    }
+    // `:77534-77551`: the scan — the key stacks vs the other-item count.
+    let mut light = 0u32; // num2: the 3092 Light Key stacks
+    let mut night = 0u32; // num3: the 3091 Night Key stacks
+    let mut other = 0u32; // num4: the other-item count
+    let max_items = app.world_chests[idx].max_items;
+    for i in 0..max_items {
+        let slot = app.world_chests[idx]
+            .slots
+            .get(i)
+            .copied()
+            .unwrap_or(EMPTY_SLOT);
+        if slot.kind > 0 {
+            if slot.kind == 3092 {
+                light += slot.count;
+            } else if slot.kind == 3091 {
+                night += slot.count;
+            } else {
+                other += 1;
+            }
+        }
+    }
+    // `:77552`: exactly one key, nothing else.
+    if other != 0 || light + night != 1 {
+        return false;
+    }
+    // `:77558-77593`: the BasicChest body — the 2×2 top-left decode, the slot
+    // clear, `DestroyChest` (empty now → removes the store entry), `ClearTile`
+    // the 2×2. The `SendData(34)` + `SendTileSquare` relays are server arms.
+    let mut bx = x;
+    let mut by = y;
+    // The frame values copy out before the second probe (the `t` borrow of
+    // app.world must end before the re-read at the shifted cell).
+    let anchor_frame = app
+        .world
+        .tile(bx, by)
+        .filter(|t| is_basic_chest(t.kind))
+        .map(|t| (t.frame_x, t.frame_y));
+    if let Some((fx, _fy)) = anchor_frame {
+        if fx % 36 != 0 {
+            bx -= 1;
+        }
+        // `:77564`: the frameY probe reads the (possibly x-shifted) cell.
+        if app.world.tile(bx, by).is_some_and(|t| t.frame_y % 36 != 0) {
+            by -= 1;
+        }
+    }
+    // `:77569-77574`: clear the ORIGINAL chest's slots (`Main.chest[num]`).
+    if let Some(c) = app.world_chests.get_mut(idx) {
+        for s in c.slots.iter_mut() {
+            *s = EMPTY_SLOT;
+        }
+    }
+    // `:77575`: `Chest.DestroyChest(bx, by)` — the chest is empty now, so it
+    // removes the store entry at the decoded coords (the same chest).
+    if let Some(destroy_idx) = find_chest(&app.world_chests, bx, by) {
+        remove_chest(&mut app.world_chests, destroy_idx);
+        // `Chest.cs:640-643`: the open player's chest index closes.
+        if let Some(p) = app.player.as_mut() {
+            if p.chest == destroy_idx as i32 {
+                p.chest = -1;
+            }
+        }
+    }
+    // `:77576-77585`: `ClearTile` the 2×2 BasicChest body.
+    for k in bx..=bx + 1 {
+        for l in by..=by + 1 {
+            if let Some(t) = app.world.tile_mut(k, l) {
+                if is_basic_chest(t.kind) {
+                    // `Tile.ClearTile` (`Tile.cs:123-128`): ClearSlope (slope 0,
+                    // halfBrick false) + active(false) + inActive(false).
+                    t.set_slope(0);
+                    t.flags &= !(tr_core::tile::FLAG_ACTIVE
+                        | tr_core::tile::FLAG_HALF_BRICK
+                        | tr_core::tile::FLAG_INACTIVE);
+                }
+            }
+        }
+    }
+    // `:77594-77598`: the kind — `num7 = 475` (Light Key); the Night Key
+    // (`num3 == 1`) picks `!WorldGen.crimson ? 473 : 474`. W4-g61 final:
+    // the constants-off stand-in RETIRED — `World.crimson` is LIVE (the
+    // g69 field, `WorldGen.cs:4158`, set at generation from
+    // `GenOptions.crimson`; the field/ctor/worldgen hunks are g69's
+    // verbatim shape at `20d0380f` — the merger dedupes to ONE). The
+    // shop.rs/loot.rs `crimson_world` folds keep their own lanes' rows.
+    let crimson = app.world.crimson; // `WorldGen.crimson` (`:77597`)
+    let kind_id: i32 = if light == 1 {
+        475
+    } else if crimson {
+        474
+    } else {
+        473
+    };
+    // `:77599-77602`: `NewNPC` at the bottom-center anchor `(x*16+16, y*16+32)`,
+    // then `BigMimicSpawnSmoke`. The d40 kind rows (473-476, `4860cd88b`)
+    // auto-activate this gate at their merge — `kind_from_net_id` reads the
+    // bestiary ENTRIES, no edit here needed.
+    let Some((kind, _slime)) = crate::npc::kind_from_net_id(kind_id) else {
+        return true; // the chest cleared; the kind row hasn't merged yet
+    };
+    let (w, h) = kind.size();
+    let spawn_x = (bx * 16 + 16) as f32 - w * 0.5;
+    let spawn_y = (by * 16 + 32) as f32 - h;
+    let mut npc = crate::npc::Npc::new(kind, spawn_x, spawn_y, 1, 0.0);
+    npc.hp = npc.max_hp;
+    // `NewNPC`'s `timeLeft = (int)(activeTime * 1.25)` (`NPC.cs:80772`).
+    npc.despawn_timer = (750.0 * 1.25) as i32;
+    npc.net_update = true;
+    app.npcs.push(npc);
+    // `:77602`: `BigMimicSpawnSmoke` — the 20× type-54 smoke + the 3×2 gore-99
+    // grid, on the `UpdatePlayers` stream (the summon runs inside
+    // `Player.Update`'s `ChestChangeEvents`, `Main.cs:17754`).
+    let ctx = app.spawn_ctx();
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+        world: &app.world,
+        dust: &mut app.dust,
+        dust_ctx: &ctx,
+        gore: &mut app.gore,
+        rng,
+        play_sound: &mut |_, _, _, _, _| {},
+    };
+    crate::npc_spawn_visuals::big_mimic_spawn_smoke(
+        &mut env,
+        Vec2::new(spawn_x, spawn_y),
+        w as i32,
+        h as i32,
+    );
+    true
+}
+
 /// The per-tile hitbox rect (`Player.cs:31101-31118`), in world px, at the
 /// container origin: the 463/491 row (3×4 at −1/−2 tiles), the
 /// `BasicChest`/97 row (2×2), the 88 dresser row (3×2) and the 29 piggy row
@@ -4919,5 +5128,147 @@ mod tests {
         assert_eq!(app.player.as_ref().unwrap().chest, -1, "the re-click closes");
         // The BOTTOM row (frameY 18) is the clothes window — falls through.
         assert!(!try_open_dresser_at_cursor(&mut app, click(11, 19)));
+    }
+
+    // ---- W4-g61 wiring — the key-summon (NPC.BigMimicSummonCheck) ----
+
+    /// A hardmode app with a 2×2 BasicChest at (10, 18) holding `slots`, the
+    /// player's `last_chest` pointed at it and `chest == -1` (the close edge).
+    fn summon_app(slots: Vec<ItemSlot>) -> App {
+        let mut w = world();
+        w.hard_mode = true;
+        // The 2×2 chest body: frameX 0/36 (col 0/1), frameY 0/36 (row 0/1).
+        for dx in 0..2 {
+            for dy in 0..2 {
+                set_tile(&mut w, 10 + dx, 18 + dy, 21, (dx * 36) as i16);
+                let i = w.index(10 + dx, 18 + dy);
+                w.tiles[i].frame_y = (dy * 36) as i16;
+            }
+        }
+        let mut app = interact_app(w);
+        app.world_chests.push(WorldChest {
+            tile: (10, 18),
+            slots,
+            name: String::new(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        });
+        let p = app.player.as_mut().unwrap();
+        p.chest = -1;
+        p.last_chest = 0;
+        app
+    }
+
+    /// `NPC.cs:77552` — exactly one Light Key (3092) and nothing else fires the
+    /// summon: the chest clears + the 2×2 body clears, the store entry removes.
+    /// The big-mimic kind 475 is roster-gapped (the d40 kind lane), so no NPC
+    /// spawns yet — the chest-clear half is the live observable.
+    #[test]
+    fn w4_g61_the_light_key_summon_clears_the_chest() {
+        let mut app = summon_app(vec![slot(3092, 1)]);
+        chest_change_events(&mut app);
+        // The store entry removed (`Chest.DestroyChest`, empty now).
+        assert!(
+            find_chest(&app.world_chests, 10, 18).is_none(),
+            "the chest removed"
+        );
+        // The 2×2 body cleared (`Tile.ClearTile`).
+        for dx in 0..2 {
+            for dy in 0..2 {
+                assert!(
+                    !app.world.tile(10 + dx, 18 + dy).unwrap().active(),
+                    "the body cell ({dx},{dy}) cleared"
+                );
+            }
+        }
+        // The kind 475 is unported — no NPC (the roster gap).
+        assert!(app.npcs.is_empty(), "the big mimic is roster-gapped");
+        // `lastChest` latched to the closed chest (-1).
+        assert_eq!(app.player.as_ref().unwrap().last_chest, -1);
+    }
+
+    /// `NPC.cs:77552` — a key PLUS another item refuses (num4 != 0): the chest
+    /// stays, nothing clears.
+    #[test]
+    fn w4_g61_the_key_plus_other_item_refuses() {
+        let mut app = summon_app(vec![slot(3092, 1), slot(2, 5)]);
+        chest_change_events(&mut app);
+        assert!(
+            find_chest(&app.world_chests, 10, 18).is_some(),
+            "the chest stays"
+        );
+        assert!(app.world.tile(10, 18).unwrap().active(), "the body stays");
+    }
+
+    /// `NPC.cs:77552` — two keys refuse (num2 + num3 == 2 != 1).
+    #[test]
+    fn w4_g61_the_two_keys_refuse() {
+        let mut app = summon_app(vec![slot(3092, 1), slot(3091, 1)]);
+        chest_change_events(&mut app);
+        assert!(find_chest(&app.world_chests, 10, 18).is_some());
+    }
+
+    /// `NPC.cs:77519` — pre-hardmode refuses.
+    #[test]
+    fn w4_g61_the_pre_hardmode_refuses() {
+        let mut app = summon_app(vec![slot(3092, 1)]);
+        app.world.hard_mode = false;
+        chest_change_events(&mut app);
+        assert!(find_chest(&app.world_chests, 10, 18).is_some());
+    }
+
+    /// `NPC.cs:77536` — the gold chest styles 5-6 are excluded from BasicChest.
+    #[test]
+    fn w4_g61_the_gold_chest_style_refuses() {
+        let mut app = summon_app(vec![slot(3092, 1)]);
+        // Style 5: frameX = 5 * 36 = 180 on the anchor cell.
+        let i = app.world.index(10, 18);
+        app.world.tiles[i].frame_x = 180;
+        chest_change_events(&mut app);
+        assert!(find_chest(&app.world_chests, 10, 18).is_some());
+    }
+
+    /// `NPC.cs:77594-77598` — the Night Key (3091) on a CORRUPTION world
+    /// (`World.crimson == false`, the ctor default) picks the corrupt kind
+    /// 473. The chest clears the same way; the kind row rides d40
+    /// (`4860cd88b`) — until it merges, the gate refuses and no NPC spawns.
+    #[test]
+    fn w4_g61_the_night_key_summon_clears_the_chest() {
+        let mut app = summon_app(vec![slot(3091, 1)]);
+        chest_change_events(&mut app);
+        assert!(find_chest(&app.world_chests, 10, 18).is_none());
+        assert!(!app.world.tile(10, 18).unwrap().active());
+    }
+
+    /// `NPC.cs:77597` — `num7 = !WorldGen.crimson ? 473 : 474`: on a CRIMSON
+    /// world the Night Key picks 474. W4-g61 final: the constants-off
+    /// stand-in retired — the pick reads the LIVE `World.crimson` (the g69
+    /// field, `20d0380f` shape). Both arms clear the chest identically (the
+    /// kind decision is AFTER the clear); the kind-row gate is the d40
+    /// merge's. The witness pins the world-flag read: flipping `crimson`
+    /// flips the resolved kind id once the rows land — today both arms
+    /// refuse at `kind_from_net_id`, so the observable is the chest-clear
+    /// parity plus the flag plumbing (no panic, no stream draw on refusal).
+    #[test]
+    fn w4_g61_the_crimson_night_key_clears_and_reads_the_world_evil() {
+        let mut app = summon_app(vec![slot(3091, 1)]);
+        app.world.crimson = true; // the g69 field (GenOptions.crimson)
+        let before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        chest_change_events(&mut app);
+        assert!(find_chest(&app.world_chests, 10, 18).is_none());
+        assert!(!app.world.tile(10, 18).unwrap().active());
+        // The 474 row is d40's (not merged here) — the gate refuses with
+        // ZERO draws (the smoke only fires after a resolved kind).
+        assert!(app.npcs.is_empty(), "the crimson mimic row rides d40");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            before,
+            "the refusal draws nothing"
+        );
+        // The Light Key ignores the evil flag (`num7 = 475` first).
+        let mut hallow = summon_app(vec![slot(3092, 1)]);
+        hallow.world.crimson = true;
+        chest_change_events(&mut hallow);
+        assert!(find_chest(&hallow.world_chests, 10, 18).is_none());
     }
 }

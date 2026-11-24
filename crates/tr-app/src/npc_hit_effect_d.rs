@@ -1,0 +1,11072 @@
+//! `NPC.HitEffect` — the CLASSIC-MOB else-if chain (W4-f5 phase 2, wave D):
+//! the giant `else { if (this.type == 59 || ...) ... }` tail of the per-NPC
+//! gore/dust table, `NPC.cs:85560-89835` — 853 `Gore.NewGore*` sites in
+//! source order, from the King Slime's 734 (`:85684`) to the 156 arm's
+//! 184/185/185 (`:89829-89831`).
+//!
+//! The pool itself is already ported (`tr_core::gore::GorePool::new_gore`,
+//! S1-E-4; the `GoreID.Sets` tables in `tr_core::gore_id`); this module is
+//! the per-NPC spawn table the pool feeds. Code-only mode (the f10
+//! precedent): the module + witnesses land first; the dispatch claim (the
+//! `StrikeNPC_Inner` `:81482`/`:81488` pair and the AI-arm `HitEffect()`
+//! calls) is the wiring wave.
+//!
+//! ## Claim boundary (the pushed-claims probe, 2026-11-21)
+//!
+//! * wave A (`W4-d55`, `ec78d152`): sites 1-30, `NPC.cs:81660-81941`.
+//! * wave B (`W4-e5-gore-sites-2`): sites 31-70 nominal, `:81942-82202`.
+//! * wave C (`W4-f10-gore-sites-3`, tip `7d94a465`): sites 71-258,
+//!   `:82206-83562` — f10 owns EVERYTHING below `:85560` (its in-flight
+//!   continuation covers `:83562-85559`).
+//! * wave D (THIS module, `task/W4-f5-dust-proj-3` phase 2): the
+//!   classic-mob chain `:85560-89835` ONLY. Disjoint from f10's writer.
+//! * The dust lanes stay theirs: `W4-g62` owns the HIT (`life > 0`) halves
+//!   (its `npc_hit_dust.rs` live-arm replay already covers the bat/demon
+//!   eye/zombie/skeleton/goblin/EoS/hornet hit loops INSIDE this window);
+//!   `W4-g59`/`W4-g60` own the death-dust feeds. This module ports the
+//!   death-half dust loops ONLY as the gore bodies' draw census (the f10
+//!   `death_dust_loop` precedent — keep-one at merge); the hit halves are
+//!   NOT ported here.
+//! * `W4-g16` (projectile) / `W4-g17` (world) own the non-NPC files.
+//!
+//! ## Scope — the chain (source order, death halves + gore bodies)
+//!
+//! Sites are numbered 1-853 in `Gore.NewGore` source order within
+//! `:85560-89835` (the claim census). Batches land ≤10 sites per commit:
+//!
+//! | sites | C# lines | arm |
+//! | --- | --- | --- |
+//! | 1 | `:85684` | the 50 King Slime death (200x tinted dust-4 + gore 734 + the blue-slime spawn seam) |
+//! | 2-5 | `:85718-85721` | the 153 Giant Tortoise death (177/178/179/179) |
+//! | 6-9 | `:85737-85740` | the 177 Derpling death (234/235/236/236) |
+//!
+//! Later commits extend the table through `:89831`. The per-arm census
+//! grows in this header as the batches land.
+//!
+//! ## RNG contract (the strike's stream)
+//!
+//! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), under the
+//! strike caller's `Main.rand` swap (the projectile/melee update's stage),
+//! NOT the NPC pass's — the `npc_ai_style37.rs::probe_launch_on_hit` note.
+//! The caller hands that stream in; every draw hits it in C# order:
+//!
+//! * the death dust loops run through `DustPool::new_dust` (S1-E-1) on the
+//!   SAME stream — the 6 default-block draws (`Dust.cs:153-193`) plus the
+//!   per-type tweak draws, pool-owned; a cull refusal or a pressure-band
+//!   gate consumes exactly the C#'s draws;
+//! * ARGUMENT draws evaluate BEFORE the `NewGore` call, in the C#
+//!   argument-evaluation order (named arguments evaluate in SOURCE order —
+//!   the `:87405` Velocity/Position/Type triple draws Next(-80,81),
+//!   Next(-60,21), Next(140,143) in that written order);
+//! * each `NewGore` then draws ONLY its two kicks, Y then X
+//!   (`Gore.cs:1327-1328`, pool-side: `velocity.y -= Next(10,31)*0.1` then
+//!   `velocity.x += Next(-20,21)*0.1`); the types/anchors are data.
+//!
+//! The post-spawn writes land on the returned slot, the sentinel included
+//! — the C# writes `Main.gore[600]` too (the `npc_ai_style56.rs` precedent).
+//!
+//! ## Documented drops / stand-ins (this wave)
+//!
+//! * `!this.active` gate (`:81656`): the caller's — the fn runs on an
+//!   active NPC (the strike/death path's own check).
+//! * The `this.type` axis rides an explicit `npc_type` parameter (the
+//!   wave-A `HitEffectInputs` / f10 precedent — most classic kinds have no
+//!   `NpcKind` rows yet; witnesses ride `size_override` stand-ins).
+//! * The HIT (`life > 0`) halves: g62's lane (see the claim boundary); the
+//!   dispatcher gates every arm on `npc.hp <= 0`.
+//! * `netMode` guards: single-player port (the `netMode != 1` arms run,
+//!   the `== 1` early-returns drop, the `== 2` sends drop).
+//! * The 59/60/151 lava arm (`:85562-85669`) has NO gore sites — its dust
+//!   census is the dust lanes', its expert/skyblock/remix lava writes are
+//!   a World seam (the wiring wave); recorded here, not ported.
+//! * Sounds ride `W4-c13`; `Lighting.AddLight` rides the light lane.
+//!
+//! See docs/ANALYSIS.md "The NPC HitEffect classic-mob chain (W4-f5, wave D)".
+#![allow(dead_code)] // wiring deferred (code-only mode) — the strike-path claim is the follow-up round
+
+use crate::npc::Npc;
+use glam::Vec2;
+use tr_core::gore::GorePool;
+use tr_core::particles::{Color, DustPool, SpawnCtx};
+use tr_core::{UnifiedRandom, World};
+
+/// `Entity.Center` (`Entity.cs:50-60`) — `(pos.X + width/2f, pos.Y + height/2f)`.
+fn center(npc: &Npc) -> Vec2 {
+    let (w, h) = npc.size();
+    Vec2::new(npc.x + w / 2.0, npc.y + h / 2.0)
+}
+
+/// The side-effects the wiring caller owes (the roster/World seams this
+/// module cannot reach — the wave-A `HitEffectOutcome` / f10
+/// `HitEffectOutcomeC` precedent).
+#[derive(Default)]
+pub struct HitEffectOutcomeD {
+    /// The 50 King Slime's blue-slime spawn seam (`NPC.cs:85689-85702`):
+    /// `num445 = Next(4) + 4` spawns of NPC-1 at
+    /// `(pos.X + Next(width-32), pos.Y + Next(height-32))`, each with
+    /// `velocity = (Next(-15,16)*0.1, Next(-30,1)*0.1)`,
+    /// `ai[0] = -1000*Next(3)`, `ai[1] = -1`. `Some((x,y))` = the NPC
+    /// position the spawns anchor on; the count draw, the per-spawn
+    /// position/velocity/ai draws and the `Start: whoAmI+1` scan ride the
+    /// wiring wave's roster pass (the f10 `nebula_brain_spawn` precedent).
+    /// The C# `netMode == 1` early-return (`:85685-85688`) drops in SP.
+    pub king_slime_spawns: Option<(f32, f32)>,
+    /// The 632 Maggot Zombie's maggot-spawn seam (`NPC.cs:86996-87006`):
+    /// `num550 = Next(2) + 2` spawns of NPC-606 at
+    /// `(pos.X + width/2, pos.Y + Next(height/2) + 10)`, each with
+    /// velocity `(Next(-10,10)*0.2, -3.5 - Next(5,10)*0.3 - i*0.5)`.
+    /// `Some((x,y))` = the NPC position the spawns anchor on; the count
+    /// draw + the per-spawn draws ride the wiring wave's roster pass
+    /// (the king_slime_spawns precedent). The `netMode == 1` guard drops
+    /// in SP.
+    pub maggot_zombie_spawns: Option<(f32, f32)>,
+    /// The 113 Wall of Flesh's underworld screen-sweep seam
+    /// (`NPC.cs:87384-87408`): when the local player is below
+    /// `maxTilesY - 250` tiles, a 50-step screen grid (X from
+    /// `pos.X - (direction > 0 ? 80 : 0)` over 140px in 46px steps, Y
+    /// from `screenPosition.Y` over `screenWidth` in 50px steps) spawns
+    /// 5x dust-5 (`Next(-60,61)*0.1` X/Y args) + ONE
+    /// `Next(140,143)` gore per cell (Velocity
+    /// `(Next(-80,81)*0.1, Next(-60,21)*0.1)` args drawn in the
+    /// source-written Velocity/Position/Type order). `Some((x,y))` =
+    /// the NPC position; the player-depth gate, the screen reads and
+    /// the per-cell draws ride the wiring wave (the f10
+    /// `nebula_predictor_shot` precedent).
+    pub wof_screen_sweep: Option<(f32, f32)>,
+    /// The 115 Hungry's death-spawn seam (`NPC.cs:87420-87422`): spawn
+    /// ONE NPC-116 (The Hungry II) at `(pos.X + width/2, pos.Y +
+    /// height)`. `Some((x,y))` = the spawn anchor; the roster pass is
+    /// the wiring wave's (no draw here). The `netMode == 1` guard drops
+    /// in SP.
+    pub hungry_spawn: Option<(f32, f32)>,
+}
+
+/// The death-half dust loop shared by the classic rows (`NPC.cs` per-arm
+/// `for (… < N; …) Dust.NewDust(position, width, height, Type, 2*hd, -2f)`).
+/// `count` is the flat death count; the hit (`life > 0`) half's dmg-scaled
+/// bound is g62's lane. The pool owns every draw. The f10
+/// `death_dust_loop` shape, widened with the alpha/color/scale arguments
+/// the King Slime's tinted burst needs.
+#[allow(clippy::too_many_arguments)]
+fn death_dust_loop(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    dust_type: i32,
+    hit_direction: f32,
+    count: i32,
+    alpha: i32,
+    color: Color,
+    scale: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..count {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            dust_type,
+            2.0 * hit_direction,
+            -2.0,
+            alpha,
+            color,
+            scale,
+        );
+    }
+}
+
+/// The 50 King Slime death (`NPC.cs:85670-85703`, site 1): the 200x tinted
+/// dust-4 burst (`2*hd, -2`, alpha 175, `Color(0,80,255,100)`), then ONE
+/// gore 734 at `Center + (-40, -height/2)` — scale defaults to 1f (the C#
+/// passes no `this.scale`). The `netMode == 1` early-return (`:85685`)
+/// drops in SP; the `Next(4)+4` blue-slime spawn loop (`:85689-85702`) is
+/// the roster seam — its count draw + per-spawn draws ride the wiring
+/// wave (the f10 `nebula_brain_spawn` precedent), returned as
+/// `king_slime_spawns`.
+fn king_slime_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeD,
+) {
+    // `:85680-85683` — the 200x tinted dust-4 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        4,
+        hit_direction,
+        200,
+        175,
+        Color::new(0, 80, 255, 100),
+        1.0,
+    );
+    // `:85684` — the crown gore at Center + (-40, -height/2), scale 1f.
+    let (_, h) = npc.size();
+    let pos = center(npc) + Vec2::new(-40.0, -h / 2.0);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 734, 1.0);
+    // `:85689-85702` — the blue-slime spawn seam (the wiring wave's).
+    outcome.king_slime_spawns = Some((npc.x, npc.y));
+}
+
+/// The 153 Giant Tortoise death (`NPC.cs:85704-85722`, sites 2-5): the
+/// 15x dust-5 burst (`2*hd, -2`, default alpha/color/scale), then 4 gores
+/// 177/178/179/179 at position — scale defaults to 1f (no `this.scale`
+/// argument).
+fn tortoise_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85714-85717` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 177, 1.0); // :85718
+    gore.new_gore(rng, world, pos, vel, 178, 1.0); // :85719
+    gore.new_gore(rng, world, pos, vel, 179, 1.0); // :85720
+    gore.new_gore(rng, world, pos, vel, 179, 1.0); // :85721
+}
+
+/// The 177 Derpling death (`NPC.cs:85723-85741`, sites 6-9): the same
+/// shape as the tortoise — the 15x dust-5 burst, then 4 gores
+/// 234/235/236/236 at position, scale 1f.
+fn derpling_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85733-85736` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 234, 1.0); // :85737
+    gore.new_gore(rng, world, pos, vel, 235, 1.0); // :85738
+    gore.new_gore(rng, world, pos, vel, 236, 1.0); // :85739
+    gore.new_gore(rng, world, pos, vel, 236, 1.0); // :85740
+}
+
+/// The 494/495 Crawdad death (`NPC.cs:85742-85759`, sites 10-11): the
+/// 15x dust-5 burst, then `num454 = (type - 494) * 2` picks the pair —
+/// `736 + num454` then `735 + num454` (the HIGHER type first, 495→738/737),
+/// at position, scale 1f.
+fn crawdad_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85752-85755` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    // `:85756` — the per-variant offset.
+    let num454 = (npc_type - 494) * 2;
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 736 + num454, 1.0); // :85757
+    gore.new_gore(rng, world, pos, vel, 735 + num454, 1.0); // :85758
+}
+
+/// The 496/497 Giant Shelly death (`NPC.cs:85760-85777`, site 12): the
+/// 15x dust-5 burst, then ONE gore `739 + (type - 496)`. NOTE the C# hit
+/// half here has NO `return` (`:85762-85768` — the if/else shape, not the
+/// early-return shape); the dispatcher's `hp <= 0` gate covers the death
+/// half either way, the hit half stays g62's.
+fn shelly_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85771-85774` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 739 + (npc_type - 496), 1.0); // :85775
+}
+
+/// The 498-506 Salamander death (`NPC.cs:85778-85796`, sites 13-15 per
+/// variant, 27 across the nine): the 15x dust-5 burst, then
+/// `num459 = type - 498` picks the triple — `750 + num459` at position,
+/// `741 + num459` at +16 Y, `759 + num459` at +18 Y, scale 1f.
+fn salamander_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85788-85791` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    // `:85792` — the per-variant offset.
+    let num459 = npc_type - 498;
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 750 + num459, 1.0); // :85793
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 16.0), vel, 741 + num459, 1.0); // :85794
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 18.0), vel, 759 + num459, 1.0); // :85795
+}
+
+/// The bat family death (`NPC.cs:85797-85841`, sites 16-27): the 15x
+/// dust-5 burst, then the per-kind gore(s) at position, scale 1f. The
+/// arm's sub-branches in source order: 51 Jungle Bat → 83 (`:85813`),
+/// 93 Giant Bat → 107 (`:85817`), 150 Ice Bat → 164/165 (`:85821-85822`),
+/// 152 Giant Flying Fox → 175/176/176 (`:85826-85828`), 226 Flying Snake
+/// → 317/318/318/319 (`:85832-85835`), the 49 Cave Bat fallthrough → 82
+/// (`:85839`).
+fn bat_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85807-85810` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 51 {
+        gore.new_gore(rng, world, pos, vel, 83, 1.0); // :85813
+    } else if npc_type == 93 {
+        gore.new_gore(rng, world, pos, vel, 107, 1.0); // :85817
+    } else if npc_type == 150 {
+        gore.new_gore(rng, world, pos, vel, 164, 1.0); // :85821
+        gore.new_gore(rng, world, pos, vel, 165, 1.0); // :85822
+    } else if npc_type == 152 {
+        gore.new_gore(rng, world, pos, vel, 175, 1.0); // :85826
+        gore.new_gore(rng, world, pos, vel, 176, 1.0); // :85827
+        gore.new_gore(rng, world, pos, vel, 176, 1.0); // :85828
+    } else if npc_type == 226 {
+        gore.new_gore(rng, world, pos, vel, 317, 1.0); // :85832
+        gore.new_gore(rng, world, pos, vel, 318, 1.0); // :85833
+        gore.new_gore(rng, world, pos, vel, 318, 1.0); // :85834
+        gore.new_gore(rng, world, pos, vel, 319, 1.0); // :85835
+    } else {
+        // `:85837-85840` — the 49 Cave Bat fallthrough.
+        gore.new_gore(rng, world, pos, vel, 82, 1.0); // :85839
+    }
+}
+
+/// The 611/689 Owl death (`NPC.cs:85842-85859`, sites 28-30): the 15x
+/// dust-5 burst, then 1164/1164/1165 at position, scale 1f. The 689 is
+/// the Owl Mimic (`NPCID.cs:12055`) — same gore row.
+fn owl_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85852-85855` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1164, 1.0); // :85856
+    gore.new_gore(rng, world, pos, vel, 1164, 1.0); // :85857
+    gore.new_gore(rng, world, pos, vel, 1165, 1.0); // :85858
+}
+
+/// The 624 Gnome death (`NPC.cs:85860-85878`, sites 31-34): the 10x dust-5
+/// burst (the count drops to 10 here), then 1190/1191/1192/1193 at
+/// position, scale 1f.
+fn gnome_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85870-85873` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1190, 1.0); // :85874
+    gore.new_gore(rng, world, pos, vel, 1191, 1.0); // :85875
+    gore.new_gore(rng, world, pos, vel, 1192, 1.0); // :85876
+    gore.new_gore(rng, world, pos, vel, 1193, 1.0); // :85877
+}
+
+/// The 628 Dandelion death (`NPC.cs:85879-85897`, sites 35-38): the 10x
+/// dust-3 burst (type 3, the leaf puff — NOT 5), then
+/// 1205/1206/1206/1207 at position, scale 1f.
+fn dandelion_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85889-85892` — the 10x dust-3 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        3,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1205, 1.0); // :85893
+    gore.new_gore(rng, world, pos, vel, 1206, 1.0); // :85894
+    gore.new_gore(rng, world, pos, vel, 1206, 1.0); // :85895
+    gore.new_gore(rng, world, pos, vel, 1207, 1.0); // :85896
+}
+
+/// The 646-652 Gem Bunny death (`NPC.cs:85898-85920`, sites 39-40): the
+/// dust type is the gem's own (`num468 = 86 + (type - 646)`, except the
+/// 652 Amber Topaz variant's 138 — `:85900-85904`), 10x burst, then
+/// `num471 = (type - 646) * 2` picks the pair 1234+n/1235+n at position,
+/// scale 1f.
+fn gem_bunny_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85900-85904` — the gem dust type.
+    let num468 = if npc_type < 652 { 86 + (npc_type - 646) } else { 138 };
+    // `:85913-85916` — the 10x gem-dust burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        num468,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    // `:85917` — the per-variant offset.
+    let num471 = (npc_type - 646) * 2;
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1234 + num471, 1.0); // :85918
+    gore.new_gore(rng, world, pos, vel, 1235 + num471, 1.0); // :85919
+}
+
+/// The 639-645 Gem Squirrel death (`NPC.cs:85921-85941`, site 41): the
+/// same gem-dust shape (`num472 = 86 + (type - 639)`, the 645's 138), 10x
+/// burst, then ONE gore `1227 + (type - 639)` at position, scale 1f.
+fn gem_squirrel_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85923-85927` — the gem dust type.
+    let num472 = if npc_type < 645 { 86 + (npc_type - 639) } else { 138 };
+    // `:85936-85939` — the 10x gem-dust burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        num472,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1227 + (npc_type - 639), 1.0); // :85940
+}
+
+/// The 29-type critter arm's death (`NPC.cs:85942-86091`): the 10x dust-5
+/// burst, then the per-kind sub-branch. The branches land in source order
+/// — the live sub-branches: 46/303/337/540 → 76/77 (+ the 303's extra 10x
+/// dust-193 AFTER the two gores, + the 540's extra gore 926,
+/// `:85956-85971`), 67 → 95/95/96 (`:85972-85977`), 55/230 → 553/554
+/// (`:85978-85982`), 615 Dolphin → 1198/1199/1200/1200 (`:85983-85989`),
+/// 74 Bird → 100 (`:85992`), 297 Blue Bird → 431 (`:85996`), 298 Red Bird
+/// → 432 (`:86000`), the 671/672/673 macaw/toucan triples — head at
+/// position + wing pair at Center ±(4,0) (`:86002-86019`), the 674/675
+/// cockatiel triples (same shape, `:86020-86031`), the 299 Squirrel → 433
+/// (`:86034`), 538 Red Squirrel → 897 (`:86038`), 300 Mouse → 434
+/// (`:86042`), 610 Rat → 1163 (`:86046`), 626 Seahorse → 1197 (`:86050`),
+/// 102 Angler Fish → 116 (`:86054`), 224 Flying Fish → 312/313
+/// (`:86058-86059`), 587 Eyeball Flying Fish → extra 50x dust-5 at
+/// (2.5·hd, −2.5) then 1104/1105 (`:86061-86069`), 616 Turtle →
+/// 1166/1167/1168/1168 (`:86070-86076`), 617 Jungle Turtle →
+/// 1169/1170/1171/1171 (`:86077-86083`), 625 Sea Turtle →
+/// 1194/1195/1196/1196 (`:86084-86090`). The arm's remaining kinds
+/// (614/627 — no gore sub-branch in the C#) spawn the dust burst only.
+fn critter_arm_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85952-85955` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if matches!(npc_type, 46 | 303 | 337 | 540) {
+        gore.new_gore(rng, world, pos, vel, 76, 1.0); // :85958
+        gore.new_gore(rng, world, pos, vel, 77, 1.0); // :85959
+        if npc_type == 303 {
+            // `:85960-85966` — the 303 Bunny's extra 10x dust-193 burst,
+            // AFTER the two gores (the C# order).
+            let (w, h) = npc.size();
+            for _ in 0..10 {
+                dust.new_dust(
+                    rng,
+                    dust_ctx,
+                    world,
+                    pos,
+                    w as i32,
+                    h as i32,
+                    193,
+                    2.0 * hit_direction,
+                    -2.0,
+                    0,
+                    Color::default(),
+                    1.0,
+                );
+            }
+        }
+        if npc_type == 540 {
+            gore.new_gore(rng, world, pos, vel, 926, 1.0); // :85969
+        }
+    } else if npc_type == 67 {
+        gore.new_gore(rng, world, pos, vel, 95, 1.0); // :85974
+        gore.new_gore(rng, world, pos, vel, 95, 1.0); // :85975
+        gore.new_gore(rng, world, pos, vel, 96, 1.0); // :85976
+    } else if npc_type == 55 || npc_type == 230 {
+        gore.new_gore(rng, world, pos, vel, 553, 1.0); // :85980
+        gore.new_gore(rng, world, pos, vel, 554, 1.0); // :85981
+    } else if npc_type == 615 {
+        gore.new_gore(rng, world, pos, vel, 1198, 1.0); // :85985
+        gore.new_gore(rng, world, pos, vel, 1199, 1.0); // :85986
+        gore.new_gore(rng, world, pos, vel, 1200, 1.0); // :85987
+        gore.new_gore(rng, world, pos, vel, 1200, 1.0); // :85988
+    } else if npc_type == 74 {
+        gore.new_gore(rng, world, pos, vel, 100, 1.0); // :85992
+    } else if npc_type == 297 {
+        gore.new_gore(rng, world, pos, vel, 431, 1.0); // :85996
+    } else if npc_type == 298 {
+        gore.new_gore(rng, world, pos, vel, 432, 1.0); // :86000
+    } else if npc_type == 671 {
+        // `:86002-86007` — the Scarlet Macaw: head at position, the wing
+        // pair at Center ±(4,0).
+        gore.new_gore(rng, world, pos, vel, 1277, 1.0); // :86004
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1279, 1.0); // :86005
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1279, 1.0); // :86006
+    } else if npc_type == 672 {
+        gore.new_gore(rng, world, pos, vel, 1280, 1.0); // :86010
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1281, 1.0); // :86011
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1281, 1.0); // :86012
+    } else if npc_type == 673 {
+        gore.new_gore(rng, world, pos, vel, 1282, 1.0); // :86016
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1283, 1.0); // :86017
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1283, 1.0); // :86018
+    } else if npc_type == 674 {
+        gore.new_gore(rng, world, pos, vel, 1284, 1.0); // :86022
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1285, 1.0); // :86023
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1285, 1.0); // :86024
+    } else if npc_type == 675 {
+        gore.new_gore(rng, world, pos, vel, 1286, 1.0); // :86028
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1287, 1.0); // :86029
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1287, 1.0); // :86030
+    } else if npc_type == 299 {
+        gore.new_gore(rng, world, pos, vel, 433, 1.0); // :86034
+    } else if npc_type == 538 {
+        gore.new_gore(rng, world, pos, vel, 897, 1.0); // :86038
+    } else if npc_type == 300 {
+        gore.new_gore(rng, world, pos, vel, 434, 1.0); // :86042
+    } else if npc_type == 610 {
+        gore.new_gore(rng, world, pos, vel, 1163, 1.0); // :86046
+    } else if npc_type == 626 {
+        gore.new_gore(rng, world, pos, vel, 1197, 1.0); // :86050
+    } else if npc_type == 102 {
+        gore.new_gore(rng, world, pos, vel, 116, 1.0); // :86054
+    } else if npc_type == 224 {
+        gore.new_gore(rng, world, pos, vel, 312, 1.0); // :86058
+        gore.new_gore(rng, world, pos, vel, 313, 1.0); // :86059
+    } else if npc_type == 587 {
+        // `:86061-86069` — the 587 Eyeball Flying Fish: an EXTRA 50x
+        // dust-5 burst at (2.5*hd, -2.5) runs AFTER the shared 10x burst
+        // and BEFORE the two gores (the C# order).
+        let (w, h) = npc.size();
+        for _ in 0..50 {
+            dust.new_dust(
+                rng,
+                dust_ctx,
+                world,
+                pos,
+                w as i32,
+                h as i32,
+                5,
+                2.5 * hit_direction,
+                -2.5,
+                0,
+                Color::default(),
+                1.0,
+            );
+        }
+        gore.new_gore(rng, world, pos, vel, 1104, 1.0); // :86067
+        gore.new_gore(rng, world, pos, vel, 1105, 1.0); // :86068
+    } else if npc_type == 616 {
+        gore.new_gore(rng, world, pos, vel, 1166, 1.0); // :86072
+        gore.new_gore(rng, world, pos, vel, 1167, 1.0); // :86073
+        gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86074
+        gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86075
+    } else if npc_type == 617 {
+        gore.new_gore(rng, world, pos, vel, 1169, 1.0); // :86079
+        gore.new_gore(rng, world, pos, vel, 1170, 1.0); // :86080
+        gore.new_gore(rng, world, pos, vel, 1171, 1.0); // :86081
+        gore.new_gore(rng, world, pos, vel, 1171, 1.0); // :86082
+    } else if npc_type == 625 {
+        gore.new_gore(rng, world, pos, vel, 1194, 1.0); // :86086
+        gore.new_gore(rng, world, pos, vel, 1195, 1.0); // :86087
+        gore.new_gore(rng, world, pos, vel, 1196, 1.0); // :86088
+        gore.new_gore(rng, world, pos, vel, 1196, 1.0); // :86089
+    }
+}
+
+/// The 148/149/168/470 penguin arm (`NPC.cs:86092-86127`, sites
+/// 94-102): the 10x dust-5 burst, then the per-kind pair/triple at
+/// position, scale 1f. The 148 Penguin → 160/161 (`:86108-86109`), the
+/// 149 Black Penguin → 162/163 (`:86113-86114`), the 168 Corrupt Penguin
+/// → 215/216 (`:86118-86119`), the 470 Crimson Penguin → the triple
+/// 673/672/674 (`:86123-86125`; NOTE 673 precedes 672, not a ladder).
+fn penguin_frog_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86102-86105` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 148 {
+        gore.new_gore(rng, world, pos, vel, 160, 1.0); // :86108
+        gore.new_gore(rng, world, pos, vel, 161, 1.0); // :86109
+    } else if npc_type == 149 {
+        gore.new_gore(rng, world, pos, vel, 162, 1.0); // :86113
+        gore.new_gore(rng, world, pos, vel, 163, 1.0); // :86114
+    } else if npc_type == 168 {
+        gore.new_gore(rng, world, pos, vel, 215, 1.0); // :86118
+        gore.new_gore(rng, world, pos, vel, 216, 1.0); // :86119
+    } else if npc_type == 470 {
+        gore.new_gore(rng, world, pos, vel, 673, 1.0); // :86123
+        gore.new_gore(rng, world, pos, vel, 672, 1.0); // :86124
+        gore.new_gore(rng, world, pos, vel, 674, 1.0); // :86125
+    }
+}
+
+/// The 361 Frog death (`NPC.cs:86128-86144`, sites 103-104):
+/// the 10x dust-5 burst, then 551/552 at position, scale 1f.
+fn frog_361_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86138-86141` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 551, 1.0); // :86142
+    gore.new_gore(rng, world, pos, vel, 552, 1.0); // :86143
+}
+
+/// The 688 Pufferfish death (`NPC.cs:86190-86216`, sites 107-112): the
+/// 10x dust-5 burst, then the `ai[2] == 1f` puffed branch spawns
+/// 1388/1388/1389/1390, else the deflated pair 1386/1387 — all at
+/// position, scale 1f. The `ai[2]` axis rides the NPC's own ai array.
+fn pufferfish_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86200-86203` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc.ai[2] == 1.0 {
+        gore.new_gore(rng, world, pos, vel, 1388, 1.0); // :86206
+        gore.new_gore(rng, world, pos, vel, 1388, 1.0); // :86207
+        gore.new_gore(rng, world, pos, vel, 1389, 1.0); // :86208
+        gore.new_gore(rng, world, pos, vel, 1390, 1.0); // :86209
+    } else {
+        gore.new_gore(rng, world, pos, vel, 1386, 1.0); // :86213
+        gore.new_gore(rng, world, pos, vel, 1387, 1.0); // :86214
+    }
+}
+
+/// The 366/367 scorpion death (`NPC.cs:86217-86243`, sites 113-118): the
+/// 10x dust-203 burst (the golden dust, NOT 5), then the per-kind triple
+/// — 366 Black Scorpion → 561/562/563 (`:86233-86235`), 367 Scorpion →
+/// 564/565/566 (`:86239-86241`). All at position, scale 1f.
+fn scorpion_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86227-86230` — the 10x dust-203 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        203,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 366 {
+        gore.new_gore(rng, world, pos, vel, 561, 1.0); // :86233
+        gore.new_gore(rng, world, pos, vel, 562, 1.0); // :86234
+        gore.new_gore(rng, world, pos, vel, 563, 1.0); // :86235
+    } else {
+        gore.new_gore(rng, world, pos, vel, 564, 1.0); // :86239
+        gore.new_gore(rng, world, pos, vel, 565, 1.0); // :86240
+        gore.new_gore(rng, world, pos, vel, 566, 1.0); // :86241
+    }
+}
+
+/// The 362-365 duck death (`NPC.cs:86244-86270`, sites 119-121 per pair):
+/// the 10x dust-5 burst, then the pair split — 362/363 → 555/556/557
+/// (`:86260-86262`), 364/365 white → 558/559/560 (`:86266-86268`). All at
+/// position, scale 1f.
+fn duck_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86254-86257` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 362 || npc_type == 363 {
+        gore.new_gore(rng, world, pos, vel, 555, 1.0); // :86260
+        gore.new_gore(rng, world, pos, vel, 556, 1.0); // :86261
+        gore.new_gore(rng, world, pos, vel, 557, 1.0); // :86262
+    } else {
+        gore.new_gore(rng, world, pos, vel, 558, 1.0); // :86266
+        gore.new_gore(rng, world, pos, vel, 559, 1.0); // :86267
+        gore.new_gore(rng, world, pos, vel, 560, 1.0); // :86268
+    }
+}
+
+/// The 602/603 seagull death (`NPC.cs:86271-86290`, sites 122-123): the
+/// 10x dust-5 burst, then 1150/1151 at position, scale 1f. The C#
+/// re-checks `type == 602 || type == 603` inside the arm (`:86285`) —
+/// always true here, ported flat.
+fn seagull_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86281-86284` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1150, 1.0); // :86287
+    gore.new_gore(rng, world, pos, vel, 1151, 1.0); // :86288
+}
+
+/// The 607 Pupfish death (`NPC.cs:86173-86189`, sites 105-106): the hit
+/// half puffs dust-45 (g62's), the death half the 10x dust-5 burst then
+/// 1152/1153 at position, scale 1f.
+fn pupfish_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86183-86186` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1152, 1.0); // :86187
+    gore.new_gore(rng, world, pos, vel, 1153, 1.0); // :86188
+}
+
+/// The 608/609 grebe death (`NPC.cs:86291-86311`, sites 124-126): the
+/// 10x dust-5 burst, then 1154/1155/1156 at position, scale 1f (the
+/// inner type re-check always true, ported flat).
+fn grebe_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86301-86304` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1154, 1.0); // :86307
+    gore.new_gore(rng, world, pos, vel, 1155, 1.0); // :86308
+    gore.new_gore(rng, world, pos, vel, 1156, 1.0); // :86309
+}
+
+/// The 348/349 Nutcracker death (`NPC.cs:86312-86331`, sites 127-131):
+/// the 10x dust-5 burst, then the five gores 528/529/530/531/532 at
+/// position, scale 1f.
+fn nutcracker_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86322-86325` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 528, 1.0); // :86326
+    gore.new_gore(rng, world, pos, vel, 529, 1.0); // :86327
+    gore.new_gore(rng, world, pos, vel, 530, 1.0); // :86328
+    gore.new_gore(rng, world, pos, vel, 531, 1.0); // :86329
+    gore.new_gore(rng, world, pos, vel, 532, 1.0); // :86330
+}
+
+/// The 351 Krampus death (`NPC.cs:86332-86351`, sites 132-136): the 10x
+/// dust-5 burst, then the five gores 538/539/540/541/542 at position,
+/// scale 1f.
+fn krampus_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86342-86345` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 538, 1.0); // :86346
+    gore.new_gore(rng, world, pos, vel, 539, 1.0); // :86347
+    gore.new_gore(rng, world, pos, vel, 540, 1.0); // :86348
+    gore.new_gore(rng, world, pos, vel, 541, 1.0); // :86349
+    gore.new_gore(rng, world, pos, vel, 542, 1.0); // :86350
+}
+
+/// The 350 Elf Archer death (`NPC.cs:86352-86370`, sites 137-140): the
+/// 10x dust-5 burst, then the four gores 533/534/535/536 at position,
+/// scale 1f.
+fn elf_archer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86362-86365` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 533, 1.0); // :86366
+    gore.new_gore(rng, world, pos, vel, 534, 1.0); // :86367
+    gore.new_gore(rng, world, pos, vel, 535, 1.0); // :86368
+    gore.new_gore(rng, world, pos, vel, 536, 1.0); // :86369
+}
+
+/// The 47/57/58/464/465 corrupt/crimson critter arm
+/// (`NPC.cs:86371-86408`, sites 141-148): the 10x dust-5 burst, then the
+/// per-kind sub-branch — 57 Corrupt Goldfish → 84 (`:86387`), 58 Piranha
+/// → 85 (`:86391`), 464 Crimson Bunny → 668/669 (`:86395-86396`), 465
+/// Crimson Goldfish → 670/671 (`:86400-86401`), the 47 Corrupt Bunny
+/// fallthrough → 78/79 (`:86405-86406`). All at position, scale 1f.
+fn corrupt_critter_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86381-86384` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 57 {
+        gore.new_gore(rng, world, pos, vel, 84, 1.0); // :86387
+    } else if npc_type == 58 {
+        gore.new_gore(rng, world, pos, vel, 85, 1.0); // :86391
+    } else if npc_type == 464 {
+        gore.new_gore(rng, world, pos, vel, 668, 1.0); // :86395
+        gore.new_gore(rng, world, pos, vel, 669, 1.0); // :86396
+    } else if npc_type == 465 {
+        gore.new_gore(rng, world, pos, vel, 670, 1.0); // :86400
+        gore.new_gore(rng, world, pos, vel, 671, 1.0); // :86401
+    } else {
+        // `:86403-86407` — the 47 Corrupt Bunny fallthrough.
+        gore.new_gore(rng, world, pos, vel, 78, 1.0); // :86405
+        gore.new_gore(rng, world, pos, vel, 79, 1.0); // :86406
+    }
+}
+
+/// The 173/174/181/182/268 crimson mob arm (`NPC.cs:86409-86448`, sites
+/// 149-158): the 50x dust-5 burst carries `this.alpha` (the fade-in
+/// mobs), then the per-kind sub-branch — 173 Crimera → 223/224
+/// (`:86425-86426`), 174 Herpling → 225/226 (`:86430-86431`), 181 Face
+/// Monster → 237 (`:86435`), 182 Floaty Gross → 238/239
+/// (`:86439-86440`), 268 Ichor Sticker → 403/404/405 (`:86444-86446`).
+/// All at position, scale 1f.
+fn crimson_mob_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86419-86422` — the 50x dust-5 burst, alpha = this.alpha.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 173 {
+        gore.new_gore(rng, world, pos, vel, 223, 1.0); // :86425
+        gore.new_gore(rng, world, pos, vel, 224, 1.0); // :86426
+    } else if npc_type == 174 {
+        gore.new_gore(rng, world, pos, vel, 225, 1.0); // :86430
+        gore.new_gore(rng, world, pos, vel, 226, 1.0); // :86431
+    } else if npc_type == 181 {
+        gore.new_gore(rng, world, pos, vel, 237, 1.0); // :86435
+    } else if npc_type == 182 {
+        gore.new_gore(rng, world, pos, vel, 238, 1.0); // :86439
+        gore.new_gore(rng, world, pos, vel, 239, 1.0); // :86440
+    } else if npc_type == 268 {
+        gore.new_gore(rng, world, pos, vel, 403, 1.0); // :86444
+        gore.new_gore(rng, world, pos, vel, 404, 1.0); // :86445
+        gore.new_gore(rng, world, pos, vel, 405, 1.0); // :86446
+    }
+}
+
+/// The demon-eye variant arm (`NPC.cs:86449-86503`, sites 159-174): the
+/// 50x dust-5 burst, then the per-kind pair — head gore at position + the
+/// second at `position.X + 14`, BOTH carrying `this.scale` (unlike the
+/// critter rows). The sub-branches: 190 Cataract Eye → 249/2
+/// (`:86465-86466`), 191 Sleepy Eye → 248/2 (`:86470-86471`), 192 Dilated
+/// Eye → 247/2 (`:86475-86476`), 193 Green Eye → 252/253
+/// (`:86480-86481`), 194 Purple Eye → 250/251 (`:86485-86486`), 317 Owl
+/// Demon Eye → 447/448 (`:86490-86491`), 318 Spaceship Demon Eye →
+/// 449/450 (`:86495-86496`), the 2 Demon Eye fallthrough → 1/2
+/// (`:86500-86501`).
+fn demon_eye_variant_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86459-86462` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let pos14 = Vec2::new(npc.x + 14.0, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 190 {
+        gore.new_gore(rng, world, pos, vel, 249, s); // :86465
+        gore.new_gore(rng, world, pos14, vel, 2, s); // :86466
+    } else if npc_type == 191 {
+        gore.new_gore(rng, world, pos, vel, 248, s); // :86470
+        gore.new_gore(rng, world, pos14, vel, 2, s); // :86471
+    } else if npc_type == 192 {
+        gore.new_gore(rng, world, pos, vel, 247, s); // :86475
+        gore.new_gore(rng, world, pos14, vel, 2, s); // :86476
+    } else if npc_type == 193 {
+        gore.new_gore(rng, world, pos, vel, 252, s); // :86480
+        gore.new_gore(rng, world, pos14, vel, 253, s); // :86481
+    } else if npc_type == 194 {
+        gore.new_gore(rng, world, pos, vel, 250, s); // :86485
+        gore.new_gore(rng, world, pos14, vel, 251, s); // :86486
+    } else if npc_type == 317 {
+        gore.new_gore(rng, world, pos, vel, 447, s); // :86490
+        gore.new_gore(rng, world, pos14, vel, 448, s); // :86491
+    } else if npc_type == 318 {
+        gore.new_gore(rng, world, pos, vel, 449, s); // :86495
+        gore.new_gore(rng, world, pos14, vel, 450, s); // :86496
+    } else {
+        // `:86498-86502` — the 2 Demon Eye fallthrough.
+        gore.new_gore(rng, world, pos, vel, 1, s); // :86500
+        gore.new_gore(rng, world, pos14, vel, 2, s); // :86501
+    }
+}
+
+/// The 157 Arapaima death (`NPC.cs:86504-86520`, sites 175-176): the 50x
+/// dust-5 burst, then 186 at position + 187 at +14 X — scale defaults to
+/// 1f (no this.scale argument here).
+fn arapaima_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86514-86517` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 186, 1.0); // :86518
+    gore.new_gore(rng, world, Vec2::new(pos.x + 14.0, pos.y), vel, 187, 1.0); // :86519
+}
+
+/// The 133 Wandering Eye death (`NPC.cs:86521-86544`, sites 177-178):
+/// the death half's 50x dust-5 burst, then 155 at position + 155 at
+/// +14 Y, scale 1f. The HIT half's `life < lifeMax*0.5 && localAI[0] == 0`
+/// one-shot gore 1 (`:86529-86533`) is a hit-half seam — g62's lane, not
+/// ported here (the dispatcher's hp gate skips it).
+fn wandering_eye_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86537-86540` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 155, 1.0); // :86541
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 14.0), vel, 155, 1.0); // :86542
+}
+
+/// The 61 Vulture death (`NPC.cs:86607-86624`, sites 179-181): the 50x
+/// dust-5 burst, then 86 at position + 87/88 at +14 X, scale 1f.
+fn vulture_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86617-86620` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let pos14 = Vec2::new(npc.x + 14.0, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 86, 1.0); // :86621
+    gore.new_gore(rng, world, pos14, vel, 87, 1.0); // :86622
+    gore.new_gore(rng, world, pos14, vel, 88, 1.0); // :86623
+}
+
+/// The antlion arm (`NPC.cs:86545-86606`, sites 182-203): the dust-250
+/// census — `num513 = 100` hit / `num514 = 50` death (the 582 Larvae's
+/// 30/10, `:86549-86553`), then the per-kind sub-branch: 69 Antlion →
+/// 97/98 (`:86568-86569`), 580 Walking Antlion → 1094/1095/1096/1097
+/// (`:86573-86576`), 581 Flying Antlion → 1098/1099/1100/1101/1101
+/// (`:86580-86584`), 508 Giant Walking Antlion → 811/812/813/814
+/// (`:86588-86591`), 509 Giant Flying Antlion → 815/816/817/818/818
+/// (`:86595-86599`), 582 Larvae Antlion → 1102/1103 (`:86603-86604`,
+/// the 10-dust count). All at position, scale 1f.
+fn antlion_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86547-86553` — the death count (the 582's 10, else 50).
+    let num514 = if npc_type == 582 { 10 } else { 50 };
+    // `:86562-86565` — the dust-250 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        250,
+        hit_direction,
+        num514,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 69 {
+        gore.new_gore(rng, world, pos, vel, 97, 1.0); // :86568
+        gore.new_gore(rng, world, pos, vel, 98, 1.0); // :86569
+    } else if npc_type == 580 {
+        gore.new_gore(rng, world, pos, vel, 1094, 1.0); // :86573
+        gore.new_gore(rng, world, pos, vel, 1095, 1.0); // :86574
+        gore.new_gore(rng, world, pos, vel, 1096, 1.0); // :86575
+        gore.new_gore(rng, world, pos, vel, 1097, 1.0); // :86576
+    } else if npc_type == 581 {
+        gore.new_gore(rng, world, pos, vel, 1098, 1.0); // :86580
+        gore.new_gore(rng, world, pos, vel, 1099, 1.0); // :86581
+        gore.new_gore(rng, world, pos, vel, 1100, 1.0); // :86582
+        gore.new_gore(rng, world, pos, vel, 1101, 1.0); // :86583
+        gore.new_gore(rng, world, pos, vel, 1101, 1.0); // :86584
+    } else if npc_type == 508 {
+        gore.new_gore(rng, world, pos, vel, 811, 1.0); // :86588
+        gore.new_gore(rng, world, pos, vel, 812, 1.0); // :86589
+        gore.new_gore(rng, world, pos, vel, 813, 1.0); // :86590
+        gore.new_gore(rng, world, pos, vel, 814, 1.0); // :86591
+    } else if npc_type == 509 {
+        gore.new_gore(rng, world, pos, vel, 815, 1.0); // :86595
+        gore.new_gore(rng, world, pos, vel, 816, 1.0); // :86596
+        gore.new_gore(rng, world, pos, vel, 817, 1.0); // :86597
+        gore.new_gore(rng, world, pos, vel, 818, 1.0); // :86598
+        gore.new_gore(rng, world, pos, vel, 818, 1.0); // :86599
+    } else if npc_type == 582 {
+        gore.new_gore(rng, world, pos, vel, 1102, 1.0); // :86603
+        gore.new_gore(rng, world, pos, vel, 1103, 1.0); // :86604
+    }
+}
+
+/// The 301 Raven death (`NPC.cs:86625-86641`, sites 204-205): the 50x
+/// dust-5 burst, then 438 at position + 439 at +14 X, scale 1f.
+fn raven_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86635-86638` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 438, 1.0); // :86639
+    gore.new_gore(rng, world, Vec2::new(pos.x + 14.0, pos.y), vel, 439, 1.0); // :86640
+}
+
+/// The 252 Parrot death (`NPC.cs:86642-86658`, sites 206-207): the 50x
+/// dust-5 burst, then 373/374 at position, scale 1f.
+fn parrot_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86652-86655` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 373, 1.0); // :86656
+    gore.new_gore(rng, world, pos, vel, 374, 1.0); // :86657
+}
+
+/// The 489/586 blood zombie arm (`NPC.cs:86659-86689`, sites 208-217):
+/// the 50x dust-5 burst at (2.5·hd, −2.5) — the WIDER velocity of the
+/// blood-moon rows — then the per-kind ladder carrying `this.scale`:
+/// 489 Blood Zombie → 722/723/723/724/724 (`:86675-86679`), 586 Zombie
+/// Merman → 1106/1107/1107/1108/1108 (`:86683-86687`), at the
+/// +0/+20/+20/+34/+34 Y ladder. NOTE the C# uses two independent ifs
+/// (`:86673`, `:86681`), not else-if — mutually exclusive on type, so
+/// the port's else-if is equivalent.
+fn blood_zombie_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86669-86672` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let (head, mid, legs) = if npc_type == 489 {
+        (722, 723, 724) // :86675-86679
+    } else {
+        (1106, 1107, 1108) // :86683-86687
+    };
+    gore.new_gore(rng, world, pos, vel, head, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s);
+}
+
+/// The 534 Demon Tax Collector death (`NPC.cs:86690-86709`, sites
+/// 218-222): the 50x dust-5 burst at (2.5·hd, −2.5), then the ladder
+/// 894/895/895/896/896 at +0/+20/+20/+34/+34 Y, `this.scale` carried.
+fn tax_collector_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86700-86703` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 894, s); // :86704
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 895, s); // :86705
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 895, s); // :86706
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 896, s); // :86707
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 896, s); // :86708
+}
+
+/// The 490 Drippler death (`NPC.cs:86710-86729`, sites 223-227): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 725/726/727 at position, then
+/// TWO `725 + Next(3)` random picks — the argument draws evaluate BEFORE
+/// each NewGore (one Next(3) per gore, in source order), `this.scale`
+/// carried.
+fn drippler_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86720-86723` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 725, s); // :86724
+    gore.new_gore(rng, world, pos, vel, 726, s); // :86725
+    gore.new_gore(rng, world, pos, vel, 727, s); // :86726
+    // `:86727` — the first random pick: Next(3) BEFORE the NewGore.
+    let pick1 = 725 + rng.next_max(3);
+    gore.new_gore(rng, world, pos, vel, pick1, s);
+    // `:86728` — the second random pick.
+    let pick2 = 725 + rng.next_max(3);
+    gore.new_gore(rng, world, pos, vel, pick2, s);
+}
+
+/// The shark arm (`NPC.cs:86730-86786`, sites 228-251): the 75x dust-5
+/// burst, then the per-kind quad — head at position + three at +14 X,
+/// ALL at `velocity * 0.8` (the dampened kick base), scale 1f. The
+/// branches: 65 Shark → 89/90/91/92 (`:86746-86749`), 692 Orca →
+/// 1403/1404/1405/1406 (`:86753-86756`), the 542-545 sand sharks →
+/// 944+n ladder (`:86758-86785`, base 944/948/952/956 + the 0/1/2/3
+/// tail). The C# uses independent ifs — mutually exclusive on type, the
+/// port's else-if is equivalent.
+fn shark_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86740-86743` — the 75x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        75,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let pos14 = Vec2::new(npc.x + 14.0, npc.y);
+    // `:86746` — the dampened velocity base.
+    let vel = Vec2::new(npc.vx, npc.vy) * 0.8;
+    if npc_type == 65 {
+        gore.new_gore(rng, world, pos, vel, 89, 1.0); // :86746
+        gore.new_gore(rng, world, pos14, vel, 90, 1.0); // :86747
+        gore.new_gore(rng, world, pos14, vel, 91, 1.0); // :86748
+        gore.new_gore(rng, world, pos14, vel, 92, 1.0); // :86749
+    } else if npc_type == 692 {
+        gore.new_gore(rng, world, pos, vel, 1403, 1.0); // :86753
+        gore.new_gore(rng, world, pos14, vel, 1404, 1.0); // :86754
+        gore.new_gore(rng, world, pos14, vel, 1405, 1.0); // :86755
+        gore.new_gore(rng, world, pos14, vel, 1406, 1.0); // :86756
+    } else if npc_type == 542 {
+        gore.new_gore(rng, world, pos, vel, 944, 1.0); // :86760
+        gore.new_gore(rng, world, pos14, vel, 945, 1.0); // :86761
+        gore.new_gore(rng, world, pos14, vel, 946, 1.0); // :86762
+        gore.new_gore(rng, world, pos14, vel, 947, 1.0); // :86763
+    } else if npc_type == 543 {
+        gore.new_gore(rng, world, pos, vel, 948, 1.0); // :86767
+        gore.new_gore(rng, world, pos14, vel, 949, 1.0); // :86768
+        gore.new_gore(rng, world, pos14, vel, 950, 1.0); // :86769
+        gore.new_gore(rng, world, pos14, vel, 951, 1.0); // :86770
+    } else if npc_type == 544 {
+        gore.new_gore(rng, world, pos, vel, 952, 1.0); // :86774
+        gore.new_gore(rng, world, pos14, vel, 953, 1.0); // :86775
+        gore.new_gore(rng, world, pos14, vel, 954, 1.0); // :86776
+        gore.new_gore(rng, world, pos14, vel, 955, 1.0); // :86777
+    } else if npc_type == 545 {
+        gore.new_gore(rng, world, pos, vel, 956, 1.0); // :86781
+        gore.new_gore(rng, world, pos14, vel, 957, 1.0); // :86782
+        gore.new_gore(rng, world, pos14, vel, 958, 1.0); // :86783
+        gore.new_gore(rng, world, pos14, vel, 959, 1.0); // :86784
+    }
+}
+
+/// The 195/196 Lost Girl/Nymph death (`NPC.cs:86787-86806`, sites
+/// 252-256): the 75x dust-5 burst, then the ladder 254/255/255/256/256
+/// at +0/+20/+20/+34/+34 Y, `this.scale` carried (the full velocity, no
+/// dampening).
+fn nymph_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86797-86800` — the 75x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        75,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 254, s); // :86801
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 255, s); // :86802
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 255, s); // :86803
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 256, s); // :86804
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 256, s); // :86805
+}
+
+/// The 198/199 Lihzahrd death (`NPC.cs:86807-86827`, sites 257-262): the
+/// 75x dust-5 burst, then SIX gores — 258 at position, 259/259/260/260/
+/// 261 ALL at +20 Y (no +34 row), `this.scale` carried.
+fn lihzahrd_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86817-86820` — the 75x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        75,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let pos20 = Vec2::new(npc.x, npc.y + 20.0);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 258, s); // :86821
+    gore.new_gore(rng, world, pos20, vel, 259, s); // :86822
+    gore.new_gore(rng, world, pos20, vel, 259, s); // :86823
+    gore.new_gore(rng, world, pos20, vel, 260, s); // :86824
+    gore.new_gore(rng, world, pos20, vel, 260, s); // :86825
+    gore.new_gore(rng, world, pos20, vel, 261, s); // :86826
+}
+
+/// The 206 Icy Merman death (`NPC.cs:86828-86847`, sites 263-267): the
+/// 75x dust-137 burst (the ice mist, NOT 5), then the ladder
+/// 273/274/274/275/275 at +0/+20/+20/+34/+34 Y, `this.scale` carried.
+fn icy_merman_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86838-86841` — the 75x dust-137 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        137,
+        hit_direction,
+        75,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 273, s); // :86842
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 274, s); // :86843
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 274, s); // :86844
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 275, s); // :86845
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 275, s); // :86846
+}
+
+/// The 342 Gingerbread Man death (`NPC.cs:86848-86867`, sites 268-272):
+/// the 50x dust-0 burst at (2.5·hd, −2.5) — the crumbs, NOT dust-5 —
+/// then the ladder 500/501/501/502/502 at +0/+20/+20/+34/+34 Y,
+/// `this.scale` carried.
+fn gingerbread_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86858-86861` — the 50x dust-0 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            0,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 500, s); // :86862
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 501, s); // :86863
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 501, s); // :86864
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 502, s); // :86865
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 502, s); // :86866
+}
+
+/// The 338-340 Zombie Elf death (`NPC.cs:86868-86897`, sites 273-276):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then the per-variant head
+/// (338 → 494 `:86884`, 339 → 495 `:86888`, 340 → 496 `:86892` — three
+/// independent ifs, one fires) + the SHARED tail 497/498 at +20 Y and
+/// 499 at +34 Y (`:86894-86896`), `this.scale` carried.
+fn zombie_elf_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86878-86881` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:86882-86893` — the per-variant head.
+    let head = match npc_type {
+        338 => 494, // :86884
+        339 => 495, // :86888
+        _ => 496,   // :86892
+    };
+    gore.new_gore(rng, world, pos, vel, head, s);
+    // `:86894-86896` — the shared tail.
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 497, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 498, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 499, s);
+}
+
+/// The 343 Yeti death (`NPC.cs:86898-86916`, sites 277-280): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 503 at position, 504/505 at
+/// +20 Y, 506 at +34 Y, `this.scale` carried.
+fn yeti_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86908-86911` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 503, s); // :86912
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 504, s); // :86913
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 505, s); // :86914
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 506, s); // :86915
+}
+
+/// The 691 Moss Zombie death (`NPC.cs:86917-86936`, sites 281-285): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the ladder
+/// 1391/1392/1392/1393/1393 at +0/+20/+20/+34/+34 Y, `this.scale`
+/// carried.
+fn moss_zombie_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86927-86930` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 1391, s); // :86931
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1392, s); // :86932
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1392, s); // :86933
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1393, s); // :86934
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1393, s); // :86935
+}
+
+/// The giant zombie arm's death (`NPC.cs:86937-...`): the 50x dust-5
+/// burst at (2.5·hd, −2.5), the 187/433 slimed extra 25x tinted dust-4
+/// burst (height pinned to 24, alpha 125, `Color(0,80,255,100)`,
+/// `:86973-86979`), then the per-kind ladder + early return. The live
+/// branches: 104 Werewolf → 117/118x2/119x2 (`:86982-86986`, sites
+/// 286-290), 632 Maggot Zombie → 1214/1215x2/1216x2 + the Next(2)+2
+/// maggot-spawn seam (`:86991-87006`, sites 291-295), 331 Xmas Zombie →
+/// 488/489x2/490x2 (`:87011-87015`, sites 296-300), 332 Sweater Zombie →
+/// 491/492x2/493x2 (`:87020-87024`, sites 301-305), 109 Clown →
+/// 121/122x2/123x2 + the extra 120 at +46 Y (`:87029-87034`, sites
+/// 306-311), 161/431 Eskimo Zombie → 191/192x2/193x2 (`:87039-87043`,
+/// sites 312-316; the 431 slimed variant shares the row though the arm's
+/// type list omits it — ported as written), 162 Frankenstein →
+/// 194/195x2/196x2 (`:87048-87052`, sites 317-321), 188/434 Swamp Zombie
+/// → 243/244x2/245x2 (`:87057-87061`, sites 322-326), 200/436 Female
+/// Zombie → 262/263x2/264x2 (`:87066-87070`, sites 327-331), 319 Doctor
+/// Zombie → 451/453x2/452x2 (`:87075-87079`, sites 332-336; mid 453 NOT
+/// 452), 320 Superman Zombie → 454/455/456x2 (`:87084-87087`, sites
+/// 337-340, the FOUR shape), 321 Pixie Zombie → 457/458x2/459x2
+/// (`:87092-87096`, sites 341-345), 223 Raincoat Zombie →
+/// 309/310x2/311x2 (`:87101-87105`, sites 346-350); the head switch
+/// (132→154, 186/432→241, 189/435→246, 251→372, generic→3, the slimed
+/// 187/433 NO head) + the SHARED 4/4/5/5 tail (`:87108-87131`, sites
+/// 351-359, scale 1f — no this.scale); the 186/432 extras — the ungated
+/// 242 + the 1-in-2 second 242 (`:87132-87139`, sites 360-361, the
+/// Next(2) gate draws ONLY for the 186/432 kinds). The hit-half 186/632
+/// Next(5) gore gates (`:86945-86952`) are g62's lane.
+fn zombie_arm_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeD,
+) {
+    // `:86969-86972` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    // `:86973-86979` — the 187/433 slimed extra burst: height pinned to
+    // 24 (NOT the NPC's), speed (hd, -1), alpha 125, tinted.
+    if npc_type == 187 || npc_type == 433 {
+        for _ in 0..25 {
+            dust.new_dust(
+                rng,
+                dust_ctx,
+                world,
+                pos,
+                w as i32,
+                24,
+                4,
+                hit_direction,
+                -1.0,
+                125,
+                Color::new(0, 80, 255, 100),
+                1.0,
+            );
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 104 {
+        // `:86980-86988` — the Werewolf ladder + return.
+        gore.new_gore(rng, world, pos, vel, 117, s); // :86982
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 118, s); // :86983
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 118, s); // :86984
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 119, s); // :86985
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 119, s); // :86986
+        return;
+    }
+    if npc_type == 632 {
+        // `:86989-87008` — the Maggot Zombie ladder + the spawn seam +
+        // return.
+        gore.new_gore(rng, world, pos, vel, 1214, s); // :86991
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1215, s); // :86992
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1215, s); // :86993
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1216, s); // :86994
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1216, s); // :86995
+        // `:86996-87006` — the Next(2)+2 maggot spawns (the wiring
+        // wave's roster pass; the netMode==1 guard drops in SP).
+        outcome.maggot_zombie_spawns = Some((npc.x, npc.y));
+        return;
+    }
+    if npc_type == 331 {
+        // `:87009-87017` — the Xmas Zombie ladder + return.
+        gore.new_gore(rng, world, pos, vel, 488, s); // :87011
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 489, s); // :87012
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 489, s); // :87013
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 490, s); // :87014
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 490, s); // :87015
+        return;
+    }
+    if npc_type == 332 {
+        // `:87018-87026` — the Sweater Zombie ladder + return.
+        gore.new_gore(rng, world, pos, vel, 491, s); // :87020
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 492, s); // :87021
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 492, s); // :87022
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 493, s); // :87023
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 493, s); // :87024
+        return;
+    }
+    if npc_type == 109 {
+        // `:87027-87036` — the Clown SIX: the ladder + the extra 120 at
+        // +46 Y (the balloon hand), then return.
+        gore.new_gore(rng, world, pos, vel, 121, s); // :87029
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 122, s); // :87030
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 122, s); // :87031
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 123, s); // :87032
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 123, s); // :87033
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 46.0), vel, 120, s); // :87034
+        return;
+    }
+    if npc_type == 161 || npc_type == 431 {
+        // `:87037-87045` — the Eskimo Zombie ladder + return (the 431
+        // slimed variant shares the row — the C# gate includes it though
+        // the arm's type list does not; ported as written).
+        gore.new_gore(rng, world, pos, vel, 191, s); // :87039
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 192, s); // :87040
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 192, s); // :87041
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 193, s); // :87042
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 193, s); // :87043
+        return;
+    }
+    if npc_type == 162 {
+        // `:87046-87054` — the Frankenstein ladder + return.
+        gore.new_gore(rng, world, pos, vel, 194, s); // :87048
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 195, s); // :87049
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 195, s); // :87050
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 196, s); // :87051
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 196, s); // :87052
+        return;
+    }
+    if npc_type == 188 || npc_type == 434 {
+        // `:87055-87063` — the Swamp Zombie ladder + return (the 434
+        // slimed variant shares the row, ported as written).
+        gore.new_gore(rng, world, pos, vel, 243, s); // :87057
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 244, s); // :87058
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 244, s); // :87059
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 245, s); // :87060
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 245, s); // :87061
+        return;
+    }
+    if npc_type == 200 || npc_type == 436 {
+        // `:87064-87072` — the Female Zombie ladder + return (the 436
+        // slimed variant shares the row, ported as written).
+        gore.new_gore(rng, world, pos, vel, 262, s); // :87066
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 263, s); // :87067
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 263, s); // :87068
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 264, s); // :87069
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 264, s); // :87070
+        return;
+    }
+    if npc_type == 319 {
+        // `:87073-87081` — the Doctor Zombie ladder + return: NOTE the
+        // mid type is 453 (NOT 452 — the legs are 452).
+        gore.new_gore(rng, world, pos, vel, 451, s); // :87075
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 453, s); // :87076
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 453, s); // :87077
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 452, s); // :87078
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 452, s); // :87079
+        return;
+    }
+    if npc_type == 320 {
+        // `:87082-87089` — the Superman Zombie FOUR + return: 454 head,
+        // 455 at +20 Y (single), 456x2 at +34 Y.
+        gore.new_gore(rng, world, pos, vel, 454, s); // :87084
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 455, s); // :87085
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 456, s); // :87086
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 456, s); // :87087
+        return;
+    }
+    if npc_type == 321 {
+        // `:87090-87098` — the Pixie Zombie ladder + return.
+        gore.new_gore(rng, world, pos, vel, 457, s); // :87092
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 458, s); // :87093
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 458, s); // :87094
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 459, s); // :87095
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 459, s); // :87096
+        return;
+    }
+    if npc_type == 223 {
+        // `:87099-87107` — the Raincoat Zombie ladder + return.
+        gore.new_gore(rng, world, pos, vel, 309, s); // :87101
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 310, s); // :87102
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 310, s); // :87103
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 311, s); // :87104
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 311, s); // :87105
+        return;
+    }
+    // `:87108-87131` — the head switch + the SHARED 4/4/5/5 tail (no
+    // early return; the 186 extras follow in the next batch's window).
+    // NOTE these gores take NO this.scale (default 1f).
+    if npc_type == 132 {
+        gore.new_gore(rng, world, pos, vel, 154, 1.0); // :87110
+    } else if npc_type == 186 || npc_type == 432 {
+        gore.new_gore(rng, world, pos, vel, 241, 1.0); // :87114
+    } else if npc_type == 189 || npc_type == 435 {
+        gore.new_gore(rng, world, pos, vel, 246, 1.0); // :87118
+    } else if npc_type == 251 {
+        gore.new_gore(rng, world, pos, vel, 372, 1.0); // :87122
+    } else if npc_type != 187 && npc_type != 433 {
+        // `:87124-87127` — the generic head; the slimed zombies have NO
+        // head gore (their census is the tinted burst only).
+        gore.new_gore(rng, world, pos, vel, 3, 1.0); // :87126
+    }
+    // `:87128-87131` — the shared tail, scale 1f.
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 4, 1.0); // :87128
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 4, 1.0); // :87129
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 5, 1.0); // :87130
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 5, 1.0); // :87131
+    // `:87132-87135` — the 186/432 Bald Zombie's extra 242 (ungated).
+    if npc_type == 186 || npc_type == 432 {
+        gore.new_gore(rng, world, pos, vel, 242, 1.0); // :87134
+    }
+    // `:87136-87139` — the 186/432's 1-in-2 second 242: the Next(2) gate
+    // draws ONLY for the 186/432 kinds (the C# short-circuit), BEFORE
+    // the gore.
+    if (npc_type == 186 || npc_type == 432) && rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, pos, vel, 242, 1.0); // :87138
+    }
+}
+
+/// The 83/84/179 cursed weapon death (`NPC.cs:87141-87164`, sites
+/// 362-364): the 20x dust-31 burst (velocity ×2, noGravity — the post
+/// writes on the returned slot), then THREE gore-61 spawns at
+/// `(pos.X, pos.Y + height/2 - 10)` with velocity
+/// `(Next(-2,3), Next(-2,3))` — the argument draws X then Y BEFORE each
+/// NewGore — then the pool's kicks, then the post `velocity *= 0.5`
+/// (the sentinel included), `this.scale` carried.
+fn cursed_weapon_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:87152-87157` — the 20x dust-31 burst: speed (0,0), alpha 0,
+    // scale 1.5, then velocity ×2 + noGravity on the returned slot.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            31,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:87158-87163` — the three gore-61 sparks.
+    let anchor = Vec2::new(npc.x, npc.y + h / 2.0 - 10.0);
+    let s = npc.scale;
+    for _ in 0..3 {
+        // The velocity argument: Next(-2,3) X then Next(-2,3) Y, BEFORE
+        // the NewGore's own kicks.
+        let vx = rng.next_range(-2, 3) as f32;
+        let vy = rng.next_range(-2, 3) as f32;
+        let idx = gore.new_gore(rng, world, anchor, Vec2::new(vx, vy), 61, s);
+        gore.slot_mut(idx).velocity *= 0.5;
+    }
+}
+
+/// The 262/263/264 Plantera family death (`NPC.cs:87165-87219`, sites
+/// 365-377): the 150x dust-167 burst — the C# death loop's `type == 265`
+/// gate (`:87188`) is always false in this arm (265 has its own arm), so
+/// the Next(3) short-circuits and every puff is 167 — then the per-kind
+/// scatter gores at `pos + (Next(width), Next(height))` (the argument
+/// draws X then Y BEFORE each NewGore), `this.scale` carried: 262
+/// Plantera → the nine 381-385/386x2/387x2 (`:87199-87207`), 263 Hook →
+/// 390/391 (`:87211-87212`), 264 Tentacle → 388/389 (`:87216-87217`).
+fn plantera_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87186-87196` — the 150x dust-167 burst (the 265 gate never fires
+    // here; no arm-level draw).
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        167,
+        hit_direction,
+        150,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let (w, h) = npc.size();
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // The scatter anchor: pos + (Next(width), Next(height)), drawn
+    // BEFORE each NewGore.
+    let scatter = |rng: &mut UnifiedRandom| {
+        Vec2::new(
+            npc.x + rng.next_max(w as i32) as f32,
+            npc.y + rng.next_max(h as i32) as f32,
+        )
+    };
+    if npc_type == 262 {
+        for t in [381, 382, 383, 384, 385, 386, 386, 387, 387] {
+            let pos = scatter(rng);
+            gore.new_gore(rng, world, pos, vel, t, s); // :87199-87207
+        }
+    }
+    if npc_type == 263 {
+        // `:87209-87213` — the Hook pair 390/391 (independent if in C#,
+        // mutually exclusive on type).
+        let pos = scatter(rng);
+        gore.new_gore(rng, world, pos, vel, 390, s); // :87211
+        let pos = scatter(rng);
+        gore.new_gore(rng, world, pos, vel, 391, s); // :87212
+    }
+    if npc_type == 264 {
+        // `:87214-87218` — the Tentacle pair 388/389.
+        let pos = scatter(rng);
+        gore.new_gore(rng, world, pos, vel, 388, s); // :87216
+        let pos = scatter(rng);
+        gore.new_gore(rng, world, pos, vel, 389, s); // :87217
+    }
+}
+
+/// The 266 Brain of Cthulhu death (`NPC.cs:87238-87258`, sites 378-383):
+/// the 150x dust-5 burst, then SIX gores 396-401 at position with
+/// velocity `(Next(-30,31)*0.2, Next(-30,31)*0.2)` — the argument draws
+/// X then Y BEFORE each NewGore — scale 1f (no this.scale argument).
+fn brain_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87248-87251` — the 150x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        150,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    for t in [396, 397, 398, 399, 400, 401] {
+        // `:87252-87257` — the scatter velocity argument, X then Y.
+        let vx = rng.next_range(-30, 31) as f32 * 0.2;
+        let vy = rng.next_range(-30, 31) as f32 * 0.2;
+        gore.new_gore(rng, world, pos, Vec2::new(vx, vy), t, 1.0);
+    }
+}
+
+/// The 267 Creeper death (`NPC.cs:87259-87274`, site 384): the 20x
+/// dust-5 burst, then ONE gore 402 at position, scale 1f.
+fn creeper_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87269-87272` — the 20x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        20,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 402, 1.0); // :87273
+}
+
+/// The 4/125/126 Eye of Cthulhu family death (`NPC.cs:87275-87340`,
+/// sites 385-398): the 150x dust-5 burst, then the TWO-iteration loop —
+/// each iteration spawns 2/7/9 with the scatter velocity
+/// `(Next(-30,31)*0.2, Next(-30,31)*0.2)` (X then Y BEFORE each
+/// NewGore), then the per-kind fourth: 4 EoC → 10 (+ the SoundID.Item15
+/// cue, c13's lane), 125 Retinazer → 146, 126 Spazmatism → 145
+/// (`:87289-87306`). The twins' sparkle tail (`:87308-87338`): the 10x
+/// dust-31 (×1.4) + the 5x paired dust-6 bursts (×5 noGravity + ×3),
+/// then the FOUR `Next(61,64)` smoke gores (type argument BEFORE the
+/// NewGore, zero velocity base) with the post ×0.4 + the ±1 quadrant
+/// nudges. Scale 1f throughout.
+fn eye_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87285-87288` — the 150x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        150,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:87289-87307` — the two-iteration loop.
+    for _ in 0..2 {
+        for t in [2, 7, 9] {
+            let vx = rng.next_range(-30, 31) as f32 * 0.2;
+            let vy = rng.next_range(-30, 31) as f32 * 0.2;
+            gore.new_gore(rng, world, pos, Vec2::new(vx, vy), t, 1.0); // :87291-87293
+        }
+        if npc_type == 4 {
+            let vx = rng.next_range(-30, 31) as f32 * 0.2;
+            let vy = rng.next_range(-30, 31) as f32 * 0.2;
+            gore.new_gore(rng, world, pos, Vec2::new(vx, vy), 10, 1.0); // :87296
+            // `:87297` — the SoundID.Item15 cue (c13's lane, no draw).
+        } else if npc_type == 125 {
+            let vx = rng.next_range(-30, 31) as f32 * 0.2;
+            let vy = rng.next_range(-30, 31) as f32 * 0.2;
+            gore.new_gore(rng, world, pos, Vec2::new(vx, vy), 146, 1.0); // :87301
+        } else if npc_type == 126 {
+            let vx = rng.next_range(-30, 31) as f32 * 0.2;
+            let vy = rng.next_range(-30, 31) as f32 * 0.2;
+            gore.new_gore(rng, world, pos, Vec2::new(vx, vy), 145, 1.0); // :87305
+        }
+    }
+    if npc_type == 125 || npc_type == 126 {
+        // `:87308-87322` — the twins' sparkle tail: the 10x dust-31
+        // (velocity ×1.4) then the 5x paired dust-6 bursts (the ×5
+        // noGravity + the ×3 second), all alpha 100.
+        let (w, h) = npc.size();
+        for _ in 0..10 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+                Color::default(), 1.5,
+            );
+            dust.slot_mut(idx).velocity *= 1.4;
+        }
+        for _ in 0..5 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+                Color::default(), 2.5,
+            );
+            {
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 5.0;
+            }
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+                Color::default(), 1.5,
+            );
+            dust.slot_mut(idx).velocity *= 3.0;
+        }
+        // `:87323-87338` — the four Next(61,64) smoke gores: the type
+        // argument draws BEFORE each NewGore (velocity default = zero),
+        // then the post ×0.4 + the ±1 quadrant nudges.
+        let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+        for (dx, dy) in nudges {
+            let t = rng.next_range(61, 64);
+            let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, t, 1.0);
+            let g = gore.slot_mut(idx);
+            g.velocity *= 0.4;
+            g.velocity.x += dx;
+            g.velocity.y += dy;
+        }
+    }
+}
+
+/// The 5 Servant of Cthulhu death (`NPC.cs:87341-87357`, sites 399-400):
+/// the 20x dust-5 burst, then 6/7 at position, scale 1f.
+fn servant_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87351-87354` — the 20x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        20,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 6, 1.0); // :87355
+    gore.new_gore(rng, world, pos, vel, 7, 1.0); // :87356
+}
+
+/// The 113/114 Wall of Flesh death (`NPC.cs:87358-...`): the 50x dust-5
+/// burst at (2·hd, −1) — NOTE the −1 speedY, not −2 — then the quadrant
+/// gores carrying `this.scale`: the 114 Eye → 137 at top-left, 139 at
+/// bottom-left, 139 at top-right, 137 at bottom-right + return
+/// (`:87374-87378`, sites 401-404); the 113 Wall → 137/138/138/137
+/// (`:87380-87383`, sites 405-408) + the underworld screen-sweep seam
+/// (the `player.Y/16 > maxTilesY-250` gate + the 50-step grid of 5x
+/// dust-5 + Next(140,143) gores, `:87384-87408`) — the sweep is the
+/// wiring wave's screen/player seam, returned as `wof_screen_sweep`.
+fn wall_of_flesh_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeD,
+) {
+    // `:87368-87371` — the 50x dust-5 burst at (2*hd, -1).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.0 * hit_direction,
+            -1.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let bl = Vec2::new(npc.x, npc.y + h / 2.0);
+    let tr = Vec2::new(npc.x + w / 2.0, npc.y);
+    let br = Vec2::new(npc.x + w / 2.0, npc.y + h / 2.0);
+    if npc_type == 114 {
+        gore.new_gore(rng, world, pos, vel, 137, s); // :87374
+        gore.new_gore(rng, world, bl, vel, 139, s); // :87375
+        gore.new_gore(rng, world, tr, vel, 139, s); // :87376
+        gore.new_gore(rng, world, br, vel, 137, s); // :87377
+        return;
+    }
+    gore.new_gore(rng, world, pos, vel, 137, s); // :87380
+    gore.new_gore(rng, world, bl, vel, 138, s); // :87381
+    gore.new_gore(rng, world, tr, vel, 138, s); // :87382
+    gore.new_gore(rng, world, br, vel, 137, s); // :87383
+    // `:87384-87408` — the underworld screen sweep: the player-depth
+    // gate, the screen-position read and the per-cell draws are the
+    // wiring wave's seam (the f10 nebula_predictor_shot precedent).
+    outcome.wof_screen_sweep = Some((npc.x, npc.y));
+}
+
+/// The 115/116 Hungry death (`NPC.cs:87410-87435`, sites 409-410): the
+/// 115's death spawns NPC-116 at `(pos.X + width/2, pos.Y + height)` +
+/// the 10x dust-5 burst at (hd, −1) + return (the roster seam,
+/// `hungry_spawn`); the 116's death runs the 20x dust-5 burst at
+/// (hd, −1) then 132/133 at position, `this.scale` carried.
+fn hungry_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeD,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    if npc_type == 115 {
+        // `:87420-87428` — the 116 spawn (the wiring wave's roster pass,
+        // no draw here) + the 10x dust-5 burst + return.
+        outcome.hungry_spawn = Some((npc.x + w / 2.0, npc.y + h));
+        for _ in 0..10 {
+            dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+                Color::default(), 1.0,
+            );
+        }
+        return;
+    }
+    // `:87429-87432` — the 116's 20x dust-5 burst.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 132, s); // :87433
+    gore.new_gore(rng, world, pos, vel, 133, s); // :87434
+}
+
+/// The 117-119 Leech death (`NPC.cs:87436-87451`, site 411): the 10x
+/// dust-5 burst at (hd, −1), then ONE gore `134 + (type - 117)` at
+/// position, `this.scale` carried.
+fn leech_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87446-87449` — the 10x dust-5 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 134 + npc_type - 117, npc.scale); // :87450
+}
+
+/// The 217/218/219 beetle death (`NPC.cs:87452-87480`, sites 412-416):
+/// the 50x dust-18 burst carrying `this.alpha`/`this.color`/`this.scale`
+/// (the dye beetles — the port's Npc has no `color` field, so the
+/// default Color stands in; the color is render-only, no draw), speed
+/// (hd, −2) — NOTE the 1× hitDirection, not 2× — then the per-kind
+/// pair/single: 217 Cochineal → 292/293 (`:87468-87469`), 218 Cyan →
+/// 295/296 (`:87473-87474`), 219 Lac → 294 (`:87478`), `this.scale`
+/// carried.
+fn beetle_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87462-87465` — the 50x dust-18 burst, alpha/scale carried, the
+    // color default stand-in (render-only).
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0, // death_dust_loop doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 217 {
+        gore.new_gore(rng, world, pos, vel, 292, s); // :87468
+        gore.new_gore(rng, world, pos, vel, 293, s); // :87469
+    }
+    if npc_type == 218 {
+        gore.new_gore(rng, world, pos, vel, 295, s); // :87473
+        gore.new_gore(rng, world, pos, vel, 296, s); // :87474
+    }
+    if npc_type == 219 {
+        gore.new_gore(rng, world, pos, vel, 294, s); // :87478
+    }
+}
+
+/// The 222 Queen Bee death (`NPC.cs:87481-87501`, sites 417-422): the
+/// 50x dust-18 burst carrying `this.alpha`/`this.color`/`this.scale`
+/// (the color default stand-in, render-only), speed (hd, −2) — the 1×
+/// hitDirection — then SIX gores at the Y offsets −35/−45/+0/+20/+10/
+/// −10 (NOT a ladder — the source order), types 303/304/305/306/307/308,
+/// `this.scale` carried.
+fn queen_bee_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87491-87494` — the 50x dust-18 burst, alpha/scale carried.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:87495-87500` — the six offsets in SOURCE order.
+    for (dy, t) in [
+        (-35.0, 303), // :87495
+        (-45.0, 304), // :87496
+        (0.0, 305),   // :87497
+        (20.0, 306),  // :87498
+        (10.0, 307),  // :87499
+        (-10.0, 308), // :87500
+    ] {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, t, s);
+    }
+}
+
+/// The 6/94/166 Eater family death (`NPC.cs:87502-87536`, sites
+/// 423-432): the 50x dust-18 burst carrying
+/// `this.alpha`/`this.color`/`this.scale` (color default stand-in),
+/// speed (hd, −2) — the 1× hitDirection — then the per-kind sub-branch:
+/// 94 Corruptor → 108/108/109/110 (`:87518-87521`), 166 Clinger-adjacent
+/// Swamp Thing → 209/210/211 (`:87525-87527`), the 6 Eater of Souls
+/// fallthrough → 14/15 with the post `alpha = this.alpha` writes
+/// (`:87531-87534`, the sentinel included). All `this.scale` carried.
+fn eater_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87512-87515` — the 50x dust-18 burst, alpha/scale carried.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 94 {
+        gore.new_gore(rng, world, pos, vel, 108, s); // :87518
+        gore.new_gore(rng, world, pos, vel, 108, s); // :87519
+        gore.new_gore(rng, world, pos, vel, 109, s); // :87520
+        gore.new_gore(rng, world, pos, vel, 110, s); // :87521
+    } else if npc_type == 166 {
+        gore.new_gore(rng, world, pos, vel, 209, s); // :87525
+        gore.new_gore(rng, world, pos, vel, 210, s); // :87526
+        gore.new_gore(rng, world, pos, vel, 211, s); // :87527
+    } else {
+        // `:87529-87535` — the 6 Eater of Souls: the alpha post writes.
+        let idx = gore.new_gore(rng, world, pos, vel, 14, s); // :87531
+        gore.slot_mut(idx).alpha = npc.alpha as i32; // :87532
+        let idx = gore.new_gore(rng, world, pos, vel, 15, s); // :87533
+        gore.slot_mut(idx).alpha = npc.alpha as i32; // :87534
+    }
+}
+
+/// The 101 Clinger death (`NPC.cs:87537-87555`, sites 432-435): the 50x
+/// dust-18 dye burst (same contract), then 110/114/114/115 at position,
+/// `this.scale` carried.
+fn clinger_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87547-87550` — the 50x dust-18 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 110, s); // :87551
+    gore.new_gore(rng, world, pos, vel, 114, s); // :87552
+    gore.new_gore(rng, world, pos, vel, 114, s); // :87553
+    gore.new_gore(rng, world, pos, vel, 115, s); // :87554
+}
+
+/// The 7/8/9 Devourer death (`NPC.cs:87556-87572`, site 436): the 50x
+/// dust-18 dye burst, then ONE gore `type - 7 + 18` (18/19/20) with the
+/// post `alpha = this.alpha` write, scale 1f (no this.scale argument).
+fn devourer_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87566-87569` — the 50x dust-18 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let idx = gore.new_gore(rng, world, pos, vel, npc_type - 7 + 18, 1.0); // :87570
+    gore.slot_mut(idx).alpha = npc.alpha as i32; // :87571
+}
+
+/// The 98/99/100 Bone Serpent death (`NPC.cs:87573-87589`, site 437):
+/// the 50x dust-18 dye burst, then ONE gore 110 with the post
+/// `alpha = this.alpha` write, scale 1f.
+fn bone_serpent_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87583-87586` — the 50x dust-18 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let idx = gore.new_gore(rng, world, pos, vel, 110, 1.0); // :87587
+    gore.slot_mut(idx).alpha = npc.alpha as i32; // :87588
+}
+
+/// The 10/11/12 Giant Worm death (`NPC.cs:87590-87605`, site 438): the
+/// 10x dust-5 burst at (2.5·hd, −2.5), then ONE gore `type - 7 + 18`
+/// (21/22/23 — the SAME arithmetic as the Devourer, different base
+/// types), scale 1f.
+fn giant_worm_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87600-87603` — the 10x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 7 + 18, 1.0); // :87604
+}
+
+/// The 95/96/97 Digger death (`NPC.cs:87606-87621`, site 439): the 10x
+/// dust-5 burst at (2.5·hd, −2.5), then ONE gore `type - 95 + 111`
+/// (111/112/113), scale 1f.
+fn digger_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87616-87619` — the 10x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 95 + 111, 1.0); // :87620
+}
+
+/// The 13/14/15 Eater of Worlds death (`NPC.cs:87622-87651`, sites
+/// 440-445): the 50x dust-18 dye burst (alpha/color/scale carried, 1×
+/// hd), then the per-segment pair — 13 Head → 24/25 (`:87638-87639`),
+/// 14 Body → 26/27 (`:87643-87644`), 15 Tail → 28/29 (`:87648-87649`),
+/// scale 1f.
+fn eater_of_worlds_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87632-87635` — the 50x dust-18 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (a, b) = match npc_type {
+        13 => (24, 25), // :87638-87639
+        14 => (26, 27), // :87643-87644
+        _ => (28, 29),  // :87648-87649
+    };
+    gore.new_gore(rng, world, pos, vel, a, 1.0);
+    gore.new_gore(rng, world, pos, vel, b, 1.0);
+}
+
+/// The 17 Guide death (`NPC.cs:87652-87674`, sites 445-449): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then the shimmer ladder — the head
+/// 30 (shimmer 1320) gated on `altTexture == 0` (the port's Npc has no
+/// altTexture field; the default-0 stand-in keeps the head — documented
+/// drop), then 31x2 (1322) at +20 Y + 32x2 (1323) at +34 Y, scale 1f.
+/// `IsShimmerVariant` rides `variation_index == 1 && ShimmerTownTransform`
+/// (`NPC.cs:6713-6723`, the d55 `is_shimmer_variant` precedent).
+fn guide_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87662-87665` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:87666-87669` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1320 } else { 30 }, 1.0); // :87668
+    // `:87670-87673` — the shimmer ladder.
+    let mid = if shimmer { 1322 } else { 31 };
+    let legs = if shimmer { 1323 } else { 32 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87670
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87671
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87672
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87673
+}
+
+/// The 441 Tax Collector death (`NPC.cs:87675-87694`, sites 450-454):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then the five gores at the
+/// +0/+20/+20/+34/+34 Y ladder, scale 1f, with the shimmer split —
+/// normal 768/769/770/771x2 vs shimmer 1358/1359/1361/1360x2 (NOTE the
+/// shimmer mid/legs swap: 1361 at +20, 1360 at +34, `:87691-87693`).
+fn tax_collector_town_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87685-87688` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // The five types in source order (:87689-87693).
+    let (head, second, mid, legs) = if shimmer {
+        (1358, 1359, 1361, 1360)
+    } else {
+        (768, 769, 770, 771)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :87689
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, second, 1.0); // :87690
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87691
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87692
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87693
+}
+
+/// The 86 Unicorn death (`NPC.cs:87695-87716`, sites 455-461): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then SEVEN gores ALL at position —
+/// 101/102/103/103/104/104/105, scale 1f.
+fn unicorn_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87705-87708` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for t in [101, 102, 103, 103, 104, 104, 105] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0); // :87709-87715
+    }
+}
+
+/// The 155 Wolf death (`NPC.cs:87717-87734`, sites 462-464): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 181/182/183 at position, scale
+/// 1f.
+fn wolf_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87727-87730` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 181, 1.0); // :87731
+    gore.new_gore(rng, world, pos, vel, 182, 1.0); // :87732
+    gore.new_gore(rng, world, pos, vel, 183, 1.0); // :87733
+}
+
+/// The spider death shape shared by the 163/238, 164/165, 239/240,
+/// 236/237 rows: the 50x burst at (2.5·hd, −2.5), then five gores all at
+/// position, scale 1f. The 163/238 Black Recluse → dust-18 + 205/206x4
+/// (`:87767-87771`, sites 465-469); the 164/165 Wall Creeper → dust-18 +
+/// 207/208x4 (`:87787-87791`, sites 470-474); the 239/240 Blood Crawler
+/// → dust-5 + 351/352x2/353x2 (`:87807-87811`, sites 475-479); the
+/// 236/237 Jungle Creeper → dust-18 + 332/333/334/335x2
+/// (`:87827-87831`, sites 480-484).
+fn spider_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87763-87766`/`:87783-87786`/`:87803-87806`/`:87823-87826` — the
+    // 50x burst at the wider velocity; the 239/240 row puffs dust-5, the
+    // rest dust-18.
+    let dust_type = if npc_type == 239 || npc_type == 240 { 5 } else { 18 };
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, dust_type, 2.5 * hit_direction, -2.5,
+            0, Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let types: [i32; 5] = if npc_type == 163 || npc_type == 238 {
+        [205, 206, 206, 206, 206] // :87767-87771
+    } else if npc_type == 164 || npc_type == 165 {
+        [207, 208, 208, 208, 208] // :87787-87791
+    } else if npc_type == 239 || npc_type == 240 {
+        [351, 352, 352, 353, 353] // :87807-87811
+    } else {
+        [332, 333, 334, 335, 335] // :87827-87831
+    };
+    for t in types {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+}
+
+/// The 329 Hellhound death (`NPC.cs:87735-87752`, sites 485-487): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then 485/486/487 at position,
+/// scale 1f.
+fn hellhound_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87745-87748` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 485, 1.0); // :87749
+    gore.new_gore(rng, world, pos, vel, 486, 1.0); // :87750
+    gore.new_gore(rng, world, pos, vel, 487, 1.0); // :87751
+}
+
+/// The 241 Blood Feeder death (`NPC.cs:87833-87849`, sites 488-489):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then 354/355 at position,
+/// scale 1f.
+fn blood_feeder_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87843-87846` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 354, 1.0); // :87847
+    gore.new_gore(rng, world, pos, vel, 355, 1.0); // :87848
+}
+
+/// The 242 Blood Jelly death (`NPC.cs:87850-87869`, sites 490-494): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then 356/357/357/358/358 at
+/// position, scale 1f.
+fn blood_jelly_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87860-87863` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for t in [356, 357, 357, 358, 358] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0); // :87864-87868
+    }
+}
+
+/// The 105-108 bound-town arm (`NPC.cs:87870-87901`, sites 495-504): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the shimmer ladder. The
+/// 105/107 Bound Goblin/Goblin Tinkerer → 124/125x2/126x2 (shimmer
+/// 1308/1309x2/1310x2) + return (`:87886-87890`); the 106/108 Wizard →
+/// the altTexture-gated head 127 (1373) + the mid split 128/128 (shimmer
+/// 1374/1375 — the two +20 slots DIFFER) + 129x2 (1376x2)
+/// (`:87895-87900`; the altTexture==0 stand-in keeps the head).
+fn bound_town_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87880-87883` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 105 || npc_type == 107 {
+        // `:87884-87892` — the goblin ladder + return.
+        let (head, mid, legs) = if shimmer { (1308, 1309, 1310) } else { (124, 125, 126) };
+        gore.new_gore(rng, world, pos, vel, head, 1.0); // :87886
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87887
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87888
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87889
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87890
+        return;
+    }
+    // `:87893-87900` — the 106/108 Wizard branch: the head gated on
+    // `altTexture == 0 || type == 106` (the default-0 stand-in keeps the
+    // head — documented drop), then the mid split — normal 128/128 vs
+    // shimmer 1374/1375 (the two +20 slots DIFFER in shimmer).
+    let head = if shimmer { 1373 } else { 127 };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :87895
+    let mid1 = if shimmer { 1374 } else { 128 };
+    let mid2 = if shimmer { 1375 } else { 128 };
+    let legs = if shimmer { 1376 } else { 129 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid1, 1.0); // :87897
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid2, 1.0); // :87898
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87899
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87900
+}
+
+/// The town shimmer-ladder death shape (`NPC.cs` per-arm): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then head/mid×2/legs×2 at the
+/// +0/+20/+20/+34/+34 Y ladder, scale 1f, the types split on
+/// `IsShimmerVariant`. The 123/124 Mechanic → 151/152x2/153x2 (shimmer
+/// 1317/1318x2/1319x2, `:87916-87920`, sites 505-509); the 22 Guide
+/// (town) → 73/74x2/75x2 (shimmer 1314/1315x2/1316x2, `:87936-87940`,
+/// sites 510-514).
+fn town_ladder_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // The 50x dust-5 burst at the wider velocity (:87912-87915 /
+    // :87932-87935).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if npc_type == 123 || npc_type == 124 {
+        if shimmer { (1317, 1318, 1319) } else { (151, 152, 153) }
+    } else if shimmer {
+        (1314, 1315, 1316)
+    } else {
+        (73, 74, 75)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
+/// The town five-ladder death shape with the per-kind dust type + the
+/// altTexture head gate: the 37 Old Man → dust-5 + 58/59x2/60x2
+/// (shimmer 1328/1329x2/1330x2, `:88236-88240`, sites 570-574, NO head
+/// gate); the 54 Clothier → dust-5 + 58/59x2/60x2 (shimmer
+/// 1291/1292x2/1293x2, `:88256-88260`, sites 575-579, NO head gate —
+/// the SAME normal types as the Old Man, different shimmer).
+fn old_man_clothier_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // The 50x dust-5 burst at the wider velocity (:88232-88235 /
+    // :88252-88255).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if npc_type == 37 {
+        if shimmer { (1328, 1329, 1330) } else { (58, 59, 60) }
+    } else if shimmer {
+        (1291, 1292, 1293)
+    } else {
+        (58, 59, 60)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
+/// The 550 DD2 Bartender death (`NPC.cs:87942-87961`, sites 515-519):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then the shimmer ladder with
+/// the +8 X second-column offsets — 967 at +0, 968 at (+0,+20) and
+/// (+8,+20), 969 at (+0,+34) and (+8,+34) (shimmer 1355/1356/1357),
+/// scale 1f.
+fn bartender_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87952-87955` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if shimmer { (1355, 1356, 1357) } else { (967, 968, 969) };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :87956
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87957
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, mid, 1.0); // :87958
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87959
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, legs, 1.0); // :87960
+}
+
+/// The 588/589 Golfer death (`NPC.cs:87962-87984`, sites 520-524): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head
+/// 1109 (shimmer 1311, default-0 stand-in keeps it) + the +8 X column
+/// ladder 1110x2 at +20 Y, 1111x2 at +34 Y (shimmer 1312/1313), scale
+/// 1f.
+fn golfer_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87972-87975` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:87976-87979` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1311 } else { 1109 }, 1.0); // :87978
+    let mid = if shimmer { 1312 } else { 1110 };
+    let legs = if shimmer { 1313 } else { 1111 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87980
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, mid, 1.0); // :87981
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87982
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, legs, 1.0); // :87983
+}
+
+/// The 633 Zoologist death (`NPC.cs:87985-88022`, sites 525-530): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the SIX-gore ladder with the
+/// altTexture/shimmer type matrix (`:87999-88015`): normal 1219/1220
+/// (altTexture==2 → 1223/1224), shimmer 1377/1379 (altTexture==2 →
+/// 1378/1380); the head at +0, the mid pair at (+0,+20)/(+8,+20), the
+/// legs 1221 (shimmer 1382) at (+0,+34) + 1222x2 (shimmer 1381x2) at
+/// (+0,+34)/(+8,+34) — NOTE the legs' first slot differs from the pair.
+/// The port's altTexture default-0 stand-in keeps the base matrix
+/// (documented drop). Scale 1f.
+fn zoologist_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87995-87998` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:87999-88015` — the type matrix (altTexture==0 stand-in).
+    let (num646, num647) = if shimmer { (1377, 1379) } else { (1219, 1220) };
+    gore.new_gore(rng, world, pos, vel, num646, 1.0); // :88016
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num647, 1.0); // :88017
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, num647, 1.0); // :88018
+    // `:88019-88021` — the legs: the first slot 1221/1382, the pair
+    // 1222/1381.
+    let leg1 = if shimmer { 1382 } else { 1221 };
+    let leg2 = if shimmer { 1381 } else { 1222 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg1, 1.0); // :88019
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg2, 1.0); // :88020
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, leg2, 1.0); // :88021
+}
+
+/// The 368 Travelling Merchant death (`NPC.cs:88023-88045`, sites
+/// 531-535): the 50x dust-5 burst at (2.5·hd, −2.5), then the
+/// altTexture-gated head 567 (shimmer 1362, default-0 stand-in) +
+/// 568x2 at +20 Y + 569x2 at +34 Y (shimmer 1364/1365), scale 1f.
+fn travelling_merchant_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88033-88036` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88037-88040` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1362 } else { 567 }, 1.0); // :88039
+    let mid = if shimmer { 1364 } else { 568 };
+    let legs = if shimmer { 1365 } else { 569 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88041
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88042
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88043
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88044
+}
+
+/// The town-pet smoke death (`NPC.cs:88046-88075`, sites 536-539): the
+/// 369/376/663/IsTownPet/695/696 arm — the 25x dust-31 burst (×1.4,
+/// noLight, noGravity, alpha 100, scale 2), then FOUR `Next(61,64)`
+/// smoke gores at `Center - (24,24)` with zero velocity base, the post
+/// `scale = 1` + the ±1 quadrant nudges (+/+ then -/+ then +/- then
+/// -/-). The type argument draws BEFORE each NewGore.
+fn town_pet_smoke_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:88050-88056` — the 25x dust-31 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..25 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 1.4;
+        d.no_light = true;
+        d.no_gravity = true;
+    }
+    // `:88058-88073` — the four smoke gores.
+    let anchor = Vec2::new(npc.x + w / 2.0 - 24.0, npc.y + h / 2.0 - 24.0);
+    let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+    for (dx, dy) in nudges {
+        let t = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, anchor, Vec2::ZERO, t, 1.0);
+        let g = gore.slot_mut(idx);
+        g.scale = 1.0;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
+/// The 227 Painter death (`NPC.cs:88076-88098`, sites 540-544): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head 320
+/// (shimmer 1331, default-0 stand-in) + the mid split 321/322 (shimmer
+/// 1334/1333 — the two +20 slots DIFFER) + 323x2 at +34 Y (shimmer
+/// 1332x2), scale 1f.
+fn painter_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88086-88089` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88090-88093` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1331 } else { 320 }, 1.0); // :88092
+    let mid1 = if shimmer { 1334 } else { 321 };
+    let mid2 = if shimmer { 1333 } else { 322 };
+    let legs = if shimmer { 1332 } else { 323 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid1, 1.0); // :88094
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid2, 1.0); // :88095
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88096
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88097
+}
+
+/// The 228 Witch Doctor death (`NPC.cs:88099-88118`, sites 545-549): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then 324 head + the mid split
+/// 325/326 (shimmer 1370/1372 — the two +20 slots DIFFER) + 327x2 at
+/// +34 Y (shimmer 1371x2), scale 1f. NO altTexture gate here.
+fn witch_doctor_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88109-88112` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid1, mid2, legs) = if shimmer {
+        (1369, 1370, 1372, 1371)
+    } else {
+        (324, 325, 326, 327)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :88113
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid1, 1.0); // :88114
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid2, 1.0); // :88115
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88116
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88117
+}
+
+/// The 229 Pirate death (`NPC.cs:88119-88152`, sites 550-554): the
+/// SHIMMER branch returns early with the 50x dust-180 burst (velocity
+/// args = base.velocity, post ×2 + noGravity + scale pinned 1.4,
+/// `:88129-88138`) and NO gores; the normal branch runs the 50x dust-5
+/// burst at (2.5·hd, −2.5), then the altTexture-gated head 328
+/// (default-0 stand-in) + 329x2 at +20 Y + 330x2 at +34 Y, scale 1f.
+fn pirate_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    if shimmer {
+        // `:88131-88137` — the dust-180 sparkle burst + return (no gores).
+        for _ in 0..50 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 180, npc.vx, npc.vy, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity *= 2.0;
+            d.no_gravity = true;
+            d.scale = 1.4;
+        }
+        return;
+    }
+    // `:88140-88143` — the 50x dust-5 burst at the wider velocity.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88144-88147` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, 328, 1.0); // :88146
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 329, 1.0); // :88148
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 329, 1.0); // :88149
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 330, 1.0); // :88150
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 330, 1.0); // :88151
+}
+
+/// The 142 Santa Claus death (`NPC.cs:88153-88175`, sites 555-559): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head
+/// 157 (shimmer 1338, default-0 stand-in) + 158x2 at +20 Y + 159x2 at
+/// +34 Y (shimmer 1340/1341), scale 1f.
+fn santa_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88163-88166` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88167-88170` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1338 } else { 157 }, 1.0); // :88169
+    let mid = if shimmer { 1340 } else { 158 };
+    let legs = if shimmer { 1341 } else { 159 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88171
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88172
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88173
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88174
+}
+
+/// The 178 Steampunker death (`NPC.cs:88176-88197`, sites 560-563): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head
+/// 231 (shimmer 1348, default-0 stand-in) + 232x2 at +20 Y + ONE 233 at
+/// +34 Y (shimmer 1349/1350 — the FOUR shape, single legs slot), scale
+/// 1f.
+fn steampunker_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88186-88189` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88190-88193` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1348 } else { 231 }, 1.0); // :88192
+    let mid = if shimmer { 1349 } else { 232 };
+    let legs = if shimmer { 1350 } else { 233 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88194
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88195
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88196
+}
+
+/// The 353/354 Stylist death (`NPC.cs:88198-88221`, sites 564-569): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head
+/// 544 (shimmer 1351, default-0 stand-in) + the SECOND head-slot 543
+/// (shimmer 1352) at position + 546x2 at +20 Y + 545x2 at +34 Y
+/// (shimmer 1353/1354 — NOTE the normal types are NOT a ladder:
+/// 544/543/546/545), scale 1f.
+fn stylist_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88208-88211` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88212-88215` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1351 } else { 544 }, 1.0); // :88214
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1352 } else { 543 }, 1.0); // :88216
+    let mid = if shimmer { 1353 } else { 546 };
+    let legs = if shimmer { 1354 } else { 545 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88217
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88218
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88219
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88220
+}
+
+/// The 160 Truffle death (`NPC.cs:88262-88281`, sites 580-584): the 50x
+/// dust-26 burst at (2.5·hd, −2.5) — the mushroom spores, NOT dust-5 —
+/// then 188/189x2/190x2 (shimmer 1366/1367x2/1368x2), scale 1f.
+fn truffle_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88272-88275` — the 50x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if shimmer { (1366, 1367, 1368) } else { (188, 189, 190) };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :88276
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88277
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88278
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88279
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88280
+}
+
+/// The 18 Nurse death (`NPC.cs:88282-88304`, sites 585-589): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head 33
+/// (shimmer 1324, default-0 stand-in) + 34x2 at +20 Y + 35x2 at +34 Y
+/// (shimmer 1326/1327), scale 1f.
+fn nurse_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88292-88295` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88296-88299` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1324 } else { 33 }, 1.0); // :88298
+    let mid = if shimmer { 1326 } else { 34 };
+    let legs = if shimmer { 1327 } else { 35 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88300
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88301
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88302
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88303
+}
+
+/// The town five-ladder death shape, the second group: the 19 Arms
+/// Dealer → 36/37x2/38x2 (shimmer 1288/1289x2/1290x2, `:88319-88323`,
+/// sites 590-594, NO head gate); the 38 Demolitionist → 64/65x2/66x2
+/// (shimmer 1297/1299x2/1300x2, `:88341-88346`, sites 595-599,
+/// altTexture head gate default-0 stand-in).
+fn arms_dealer_demolitionist_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // The 50x dust-5 burst at the wider velocity (:88315-88318 /
+    // :88335-88338).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if npc_type == 19 {
+        if shimmer { (1288, 1289, 1290) } else { (36, 37, 38) }
+    } else if shimmer {
+        (1297, 1299, 1300)
+    } else {
+        (64, 65, 66)
+    };
+    // The 38's head is altTexture-gated (:88339-88342); the default-0
+    // stand-in keeps it. The 19's head is ungated.
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
+/// The town five-ladder death shape, the third group: the 20 Dryad →
+/// 39/40x2/41x2 (shimmer 1301/1302x2/1303x2, `:88362-88366`, sites
+/// 600-604, NO head gate); the 207 Dye Trader → 283/284x2/285x2
+/// (shimmer 1304/1306x2/1307x2, `:88384-88389`, sites 605-609,
+/// altTexture head gate default-0 stand-in).
+fn dryad_dye_trader_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // The 50x dust-5 burst at the wider velocity (:88358-88361 /
+    // :88378-88381).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if npc_type == 20 {
+        if shimmer { (1301, 1302, 1303) } else { (39, 40, 41) }
+    } else if shimmer {
+        (1304, 1306, 1307)
+    } else {
+        (283, 284, 285)
+    };
+    // The 207's head is altTexture-gated (:88382-88385); the default-0
+    // stand-in keeps it. The 20's head is ungated.
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
+/// The 208 Party Girl death (`NPC.cs:88391-88410`, sites 610-614): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then 286/287x2/288x2 (shimmer
+/// 1335/1336x2/1337x2), scale 1f, NO head gate.
+fn party_girl_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88401-88404` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if shimmer { (1335, 1336, 1337) } else { (286, 287, 288) };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :88405
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88406
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88407
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88408
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88409
+}
+
+/// The 209 Cyborg death (`NPC.cs:88428-88447`, sites 615-619): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 289/290x2/291x2 (shimmer
+/// 1294/1295x2/1296x2), scale 1f, NO head gate.
+fn cyborg_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88438-88441` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if shimmer { (1294, 1295, 1296) } else { (289, 290, 291) };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :88442
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88443
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88444
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88445
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88446
+}
+
+/// The 212-216 pirate crew death (`NPC.cs:88448-88502`, sites 620-644):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then the per-kind ladder,
+/// scale 1f, NO shimmer (the invasion pirates have no town variants):
+/// 212 Deckhand → 336/337x2/338x2, 213 Corsair → 339/340x2/341x2, 214
+/// Deadeye → 342/343x2/344x2, 215 Crossbower → 345/346x2/347x2, 216
+/// Captain → 348/349x2/350x2.
+fn pirate_crew_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88458-88461` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = match npc_type {
+        212 => (336, 337, 338), // :88464-88468
+        213 => (339, 340, 341), // :88472-88476
+        214 => (342, 343, 344), // :88480-88484
+        215 => (345, 346, 347), // :88488-88492
+        _ => (348, 349, 350),   // :88496-88500 (the 216 Captain)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
+/// The 220/221 sea snail/squid death (`NPC.cs:88503-88526`, sites
+/// 645-647): the 20x dust-151 burst at (2.5·hd, −2.5), scale 0.7 (the
+/// ink), then the per-kind — 221 Squid → 298/299 (`:88519-88520`), the
+/// 220 Sea Snail fallthrough → 297 (`:88524`), `this.scale` carried.
+fn squid_snail_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88513-88516` — the 20x dust-151 burst at the wider velocity,
+    // scale 0.7.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 151, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 0.7,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 221 {
+        gore.new_gore(rng, world, pos, vel, 298, s); // :88519
+        gore.new_gore(rng, world, pos, vel, 299, s); // :88520
+    } else {
+        gore.new_gore(rng, world, pos, vel, 297, s); // :88524
+    }
+}
+
+/// The skeleton-family arm's death (`NPC.cs:88527-88640`): the 20x
+/// dust-26 burst at (2.5·hd, −2.5), then the per-kind sub-branch +
+/// early return, `this.scale` carried throughout. The live branches:
+/// 167 Undead Viking → 213/214 + 43x2 at +20 Y + 212x2 at +34 Y
+/// (`:88543-88548`, sites 648-653), 197 Armored Viking → 257 + 43x2 +
+/// 212x2 (`:88553-88557`, sites 654-658), 481 Greek Skeleton →
+/// 695/696x2/697x2 (`:88562-88566`, sites 659-663), 201/450 Headache
+/// Skeleton → 265/267 + 43x2 + 44x2 (`:88571-88576`, sites 664-669),
+/// 202/451 Misassembled Skeleton → 268 + 43x2 + 44x2 (`:88581-88585`,
+/// sites 670-674), 203/452 Pantless Skeleton → 269 + 43x2 + 266x2
+/// (`:88590-88594`, sites 675-679, legs 266 NOT 44), 322 Top Hat
+/// Skeleton → 460 + the interleaved 461/462/461/462 (`:88599-88603`,
+/// sites 680-684), 323 Astronaut Skeleton → 463/465/464x2
+/// (`:88608-88611`, sites 685-688, the FOUR shape), 324 Alien Skeleton
+/// → 466/467x2/468x2 (`:88616-88620`, sites 689-693); the generic tail
+/// (`:88623-88639`, sites 694-701): 42 head + the 77 Armored Skeleton's
+/// 106 extra (`:88626`, site 699) + the 110 Skeleton Archer's 130 extra
+/// (`:88630`, site 700) + 43x2 mid + the 110's 131 legs slot
+/// (`:88636`, site 701) + 44x2 legs — the extras interleave with the
+/// tail in SOURCE order.
+fn skeleton_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88537-88540` — the 20x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let p20 = Vec2::new(pos.x, pos.y + 20.0);
+    let p34 = Vec2::new(pos.x, pos.y + 34.0);
+    if npc_type == 167 {
+        // `:88541-88550` — the Undead Viking six + return.
+        gore.new_gore(rng, world, pos, vel, 213, s); // :88543
+        gore.new_gore(rng, world, pos, vel, 214, s); // :88544
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88545
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88546
+        gore.new_gore(rng, world, p34, vel, 212, s); // :88547
+        gore.new_gore(rng, world, p34, vel, 212, s); // :88548
+        return;
+    }
+    if npc_type == 197 {
+        // `:88551-88559` — the Armored Viking five + return.
+        gore.new_gore(rng, world, pos, vel, 257, s); // :88553
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88554
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88555
+        gore.new_gore(rng, world, p34, vel, 212, s); // :88556
+        gore.new_gore(rng, world, p34, vel, 212, s); // :88557
+        return;
+    }
+    if npc_type == 481 {
+        // `:88560-88568` — the Greek Skeleton five + return.
+        gore.new_gore(rng, world, pos, vel, 695, s); // :88562
+        gore.new_gore(rng, world, p20, vel, 696, s); // :88563
+        gore.new_gore(rng, world, p20, vel, 696, s); // :88564
+        gore.new_gore(rng, world, p34, vel, 697, s); // :88565
+        gore.new_gore(rng, world, p34, vel, 697, s); // :88566
+        return;
+    }
+    if npc_type == 201 || npc_type == 450 {
+        // `:88569-88578` — the Headache Skeleton six + return (the 450
+        // slimed variant shares the row, ported as written).
+        gore.new_gore(rng, world, pos, vel, 265, s); // :88571
+        gore.new_gore(rng, world, pos, vel, 267, s); // :88572
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88573
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88574
+        gore.new_gore(rng, world, p34, vel, 44, s); // :88575
+        gore.new_gore(rng, world, p34, vel, 44, s); // :88576
+        return;
+    }
+    if npc_type == 202 || npc_type == 451 {
+        // `:88579-88587` — the Misassembled Skeleton five + return.
+        gore.new_gore(rng, world, pos, vel, 268, s); // :88581
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88582
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88583
+        gore.new_gore(rng, world, p34, vel, 44, s); // :88584
+        gore.new_gore(rng, world, p34, vel, 44, s); // :88585
+        return;
+    }
+    if npc_type == 203 || npc_type == 452 {
+        // `:88588-88596` — the Pantless Skeleton five + return (the legs
+        // are 266, NOT 44).
+        gore.new_gore(rng, world, pos, vel, 269, s); // :88590
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88591
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88592
+        gore.new_gore(rng, world, p34, vel, 266, s); // :88593
+        gore.new_gore(rng, world, p34, vel, 266, s); // :88594
+        return;
+    }
+    if npc_type == 322 {
+        // `:88597-88605` — the Top Hat Skeleton five + return: NOTE the
+        // interleaved 461/462 pattern (461 at +20 first, 462 at +20
+        // second, 461 at +34 first, 462 at +34 second).
+        gore.new_gore(rng, world, pos, vel, 460, s); // :88599
+        gore.new_gore(rng, world, p20, vel, 461, s); // :88600
+        gore.new_gore(rng, world, p20, vel, 462, s); // :88601
+        gore.new_gore(rng, world, p34, vel, 461, s); // :88602
+        gore.new_gore(rng, world, p34, vel, 462, s); // :88603
+        return;
+    }
+    if npc_type == 323 {
+        // `:88606-88613` — the Astronaut Skeleton FOUR + return: 463
+        // head, 465 at +20 (single), 464x2 at +34.
+        gore.new_gore(rng, world, pos, vel, 463, s); // :88608
+        gore.new_gore(rng, world, p20, vel, 465, s); // :88609
+        gore.new_gore(rng, world, p34, vel, 464, s); // :88610
+        gore.new_gore(rng, world, p34, vel, 464, s); // :88611
+        return;
+    }
+    if npc_type == 324 {
+        // `:88614-88622` — the Alien Skeleton five + return.
+        gore.new_gore(rng, world, pos, vel, 466, s); // :88616
+        gore.new_gore(rng, world, p20, vel, 467, s); // :88617
+        gore.new_gore(rng, world, p20, vel, 467, s); // :88618
+        gore.new_gore(rng, world, p34, vel, 468, s); // :88619
+        gore.new_gore(rng, world, p34, vel, 468, s); // :88620
+        return;
+    }
+    // `:88623-88639` — the generic skeleton tail: the 42 head, the
+    // 77/110 extras, the 43x2 mid, the 110's 131 legs slot, the 44x2
+    // legs — all in SOURCE order (the extras interleave with the tail).
+    gore.new_gore(rng, world, pos, vel, 42, s); // :88623
+    if npc_type == 77 {
+        gore.new_gore(rng, world, pos, vel, 106, s); // :88626
+    }
+    if npc_type == 110 {
+        gore.new_gore(rng, world, pos, vel, 130, s); // :88630
+    }
+    gore.new_gore(rng, world, p20, vel, 43, s); // :88632
+    gore.new_gore(rng, world, p20, vel, 43, s); // :88633
+    if npc_type == 110 {
+        gore.new_gore(rng, world, p34, vel, 131, s); // :88636
+    }
+    gore.new_gore(rng, world, p34, vel, 44, s); // :88638
+    gore.new_gore(rng, world, p34, vel, 44, s); // :88639
+}
+
+/// The 694 Water Bolt Mimic death (`NPC.cs:88641-88660`, sites 702-709):
+/// NO dust — the death half's 5-iteration loop spawns 1008 each round +
+/// 1007 on the first three rounds (`num697 < 3`), each at
+/// `Center + ((-width + (int)(width*NextFloat))*0.5, (-height +
+/// (int)(height*NextFloat))*0.5)` — TWO NextFloat argument draws (X
+/// then Y, the int truncation BEFORE the ×0.5) BEFORE each NewGore,
+/// `this.scale` carried.
+fn water_bolt_mimic_death(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:88652-88659` — the five-round loop.
+    for i in 0..5 {
+        // The 1008 anchor: NextFloat X then Y, int-truncated, ×0.5.
+        let ox = (-w + (w * rng.next_float()) as i32 as f32) * 0.5;
+        let oy = (-h + (h * rng.next_float()) as i32 as f32) * 0.5;
+        gore.new_gore(rng, world, c + Vec2::new(ox, oy), vel, 1008, s); // :88654
+        if i < 3 {
+            let ox = (-w + (w * rng.next_float()) as i32 as f32) * 0.5;
+            let oy = (-h + (h * rng.next_float()) as i32 as f32) * 0.5;
+            gore.new_gore(rng, world, c + Vec2::new(ox, oy), vel, 1007, s); // :88657
+        }
+    }
+}
+
+/// The 453 Skeleton Merchant death (`NPC.cs:88661-88683`, sites
+/// 710-714): the 20x dust-26 burst at (2.5·hd, −2.5), then the
+/// altTexture-gated head 638 (shimmer 1342, default-0 stand-in) + the
+/// mid split 639/640 (shimmer 1346/1345 — the two +20 slots DIFFER) +
+/// the legs split 641/642 (shimmer 1344/1347 — the two +34 slots
+/// DIFFER too), `this.scale` carried.
+fn skeleton_merchant_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88671-88674` — the 20x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:88675-88678` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1342 } else { 638 }, s); // :88677
+    let (mid1, mid2, leg1, leg2) = if shimmer {
+        (1346, 1345, 1344, 1347)
+    } else {
+        (639, 640, 641, 642)
+    };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid1, s); // :88679
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid2, s); // :88680
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg1, s); // :88681
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg2, s); // :88682
+}
+
+/// The 269-276/281-286 armored bones death (`NPC.cs:88684-88723`): the
+/// 20x dust-26 burst at (2.5·hd, −2.5), then the base five 42/43x2/44x2
+/// (`:88698-88702`, sites 715-719), then the per-kind weapon extra at
+/// +20 Y: 269 → 406 (`:88705`, site 720), 270 → 407 (`:88709`, site
+/// 721), 271/272 → 408 (`:88713`, site 722), 274 → 409 (`:88717`, site
+/// 723), 276 → 410 (`:88721`, site 724). `this.scale` carried.
+fn armored_bones_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88694-88697` — the 20x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let p20 = Vec2::new(pos.x, pos.y + 20.0);
+    let p34 = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88698-88702` — the base five.
+    gore.new_gore(rng, world, pos, vel, 42, s); // :88698
+    gore.new_gore(rng, world, p20, vel, 43, s); // :88699
+    gore.new_gore(rng, world, p20, vel, 43, s); // :88700
+    gore.new_gore(rng, world, p34, vel, 44, s); // :88701
+    gore.new_gore(rng, world, p34, vel, 44, s); // :88702
+    // `:88703-88722` — the per-kind weapon extra.
+    let extra = match npc_type {
+        269 => Some(406),        // :88705
+        270 => Some(407),        // :88709
+        271 | 272 => Some(408),  // :88713
+        274 => Some(409),        // :88717
+        276 => Some(410),        // :88721
+        _ => None,
+    };
+    if let Some(t) = extra {
+        gore.new_gore(rng, world, p20, vel, t, s);
+    }
+}
+
+/// The 341 Present Mimic death (`NPC.cs:88744-88765`, sites 725-727):
+/// the 20x dust-196 burst (the DEFAULT NewDust args — speed (0,0),
+/// alpha 0, scale 1), then the three smoke gores 61/62/63 at the
+/// −10/+h/2−10/+h−10 Y offsets with velocity `(hitDirection, 0)`, the
+/// post `velocity *= 0.3` (the sentinel included), `this.scale`
+/// carried.
+fn present_mimic_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88755-88758` — the 20x dust-196 burst, default args.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 196, 0.0, 0.0, 0, Color::default(),
+            1.0,
+        );
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:88759-88764` — the three smoke gores + the ×0.3 post.
+    for (dy, t) in [(-10.0, 61), (h / 2.0 - 10.0, 62), (h - 10.0, 63)] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 85/629 Mimic death (`NPC.cs:88766-88795`, sites 728-730): the
+/// dust type rides `ai[3]` (7 default, 10 at ai[3]==2, 37 at ai[3]==3,
+/// `:88768-88776`), the 20x burst with default args, then the same
+/// three smoke gores 61/62/63 at the −10/+h/2−10/+h−10 Y offsets with
+/// velocity `(hitDirection, 0)` + the ×0.3 post, `this.scale` carried.
+fn mimic_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88768-88776` — the ai[3] dust type.
+    let mut num710 = 7;
+    if npc.ai[3] == 2.0 {
+        num710 = 10;
+    }
+    if npc.ai[3] == 3.0 {
+        num710 = 37;
+    }
+    // `:88785-88788` — the 20x burst, default args.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, num710, 0.0, 0.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:88789-88794` — the three smoke gores + the ×0.3 post.
+    for (dy, t) in [(-10.0, 61), (h / 2.0 - 10.0, 62), (h - 10.0, 63)] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 473-476 big mimic death (`NPC.cs:88796-88817`, sites 731-733):
+/// the 20x dust-31 burst (default args), then the three smoke gores
+/// 61/62/63 ALL at Center with velocity `(hitDirection, 0)` + the ×0.3
+/// post, `this.scale` carried.
+fn big_mimic_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88807-88810` — the 20x dust-31 burst, default args.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 0, Color::default(),
+            1.0,
+        );
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    let c = center(npc);
+    // `:88811-88816` — the three smoke gores at Center + the ×0.3 post.
+    for t in [61, 62, 63] {
+        let idx = gore.new_gore(rng, world, c, vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 170/180 Pigron death (`NPC.cs:88838-88861`, sites 734-737): the
+/// 10x dust-54 burst (×2, noGravity, scale 1.5 arg), then FOUR gore-99
+/// at `(pos.X, pos.Y + height/2 - 10)` with velocity `(hitDirection,
+/// 0)` + the ×0.3 post, `this.scale` carried.
+fn pigron_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88850-88855` — the 10x dust-54 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    let anchor = Vec2::new(pos.x, pos.y + h / 2.0 - 10.0);
+    // `:88856-88860` — the four gore-99 + the ×0.3 post.
+    for _ in 0..4 {
+        let idx = gore.new_gore(rng, world, anchor, vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 171 Hallowed Pigron death (`NPC.cs:88862-88890`, sites 738-741):
+/// the 10x dust-16 burst (×2, noGravity), then FOUR gores — the type
+/// `11 + i` for i in 0..4, but the FOURTH (14 > 13) re-rolls
+/// `Next(11,14)` (the argument draw BEFORE the NewGore, only on the
+/// fourth iteration), at the same anchor + velocity + ×0.3 post,
+/// `this.scale` carried.
+fn pigron_hallow_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88874-88879` — the 10x dust-16 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    let anchor = Vec2::new(pos.x, pos.y + h / 2.0 - 10.0);
+    // `:88880-88889` — the four gores, the fourth re-rolled.
+    for i in 0..4 {
+        let mut num733 = 11 + i;
+        if num733 > 13 {
+            num733 = rng.next_range(11, 14); // :88885
+        }
+        let idx = gore.new_gore(rng, world, anchor, vel, num733, s); // :88887
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 290 arm (`NPC.cs:88891-88908`, sites 742-744): the 10x dust-16
+/// burst (×2, noGravity), then THREE `Next(11,14)` smoke gores at
+/// +0/+20/+40 Y with ZERO velocity base (the type argument draws
+/// BEFORE each NewGore) + the ×0.5 post, `this.scale` carried. The
+/// `life <= 0` gate wraps the whole body (no hit half).
+fn paladin_smoke_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:88895-88900` — the 10x dust-16 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    // `:88901-88906` — the three smoke gores + the ×0.5 post.
+    for dy in [0.0, 20.0, 40.0] {
+        let t = rng.next_range(11, 14);
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), Vec2::ZERO, t, s);
+        gore.slot_mut(idx).velocity *= 0.5;
+    }
+}
+
+/// The 87-92 Wyvern death (`NPC.cs:88909-88933`, site 745): the 10x
+/// dust-16 burst (×2, noGravity), then `Next(1,4)` (1-3) smoke gores —
+/// the COUNT draw first, then per-gore the `Next(11,14)` type argument
+/// BEFORE the NewGore — at `pos + h/2 - 10` with velocity
+/// `(hitDirection, 0)` + the ×0.8 post, `this.scale` carried.
+fn wyvern_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88921-88926` — the 10x dust-16 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:88927` — the count draw.
+    let num742 = rng.next_range(1, 4);
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    let anchor = Vec2::new(pos.x, pos.y + h / 2.0 - 10.0);
+    // `:88928-88932` — the smoke gores + the ×0.8 post.
+    for _ in 0..num742 {
+        let t = rng.next_range(11, 14); // :88930
+        let idx = gore.new_gore(rng, world, anchor, vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.8;
+    }
+}
+
+/// The 78/79/80/630 mummy death (`NPC.cs:88934-88958`, sites 746-748):
+/// the 20x dust-31 burst (×2, noGravity), then the three smoke gores
+/// 61/62/63 at the −10/+h/2−10/+h−10 Y offsets with velocity
+/// `(hitDirection, 0)` + the ×0.3 post, `this.scale` carried.
+fn mummy_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88946-88951` — the 20x dust-31 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:88952-88957` — the three smoke gores + the ×0.3 post.
+    for (dy, t) in [(-10.0, 61), (h / 2.0 - 10.0, 62), (h - 10.0, 63)] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 82/158/159/250/253 arm (`NPC.cs:88959-88983`, sites 749-751):
+/// the 20x dust-54 burst (alpha 50, ×2, noGravity), then THREE gore-99
+/// at the −10/+h/2−15/+h−20 Y offsets (NOTE the −15/−20, not −10) with
+/// velocity `(hitDirection, 0)` + the ×0.3 post, `this.scale` carried.
+fn ice_tortoise_smoke_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88971-88976` — the 20x dust-54 burst, alpha 50.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:88977-88982` — the three gore-99 + the ×0.3 post.
+    for dy in [-10.0, h / 2.0 - 15.0, h - 20.0] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 315 Headless Horseman death (`NPC.cs:89026-89052`, sites
+/// 752-755): the 20x dust-54 burst (alpha 50, ×2, noGravity), then the
+/// three gore-99 at the −10/+h/2−15/+h−20 Y offsets + the ×0.3 post,
+/// then the FOURTH gore 446 (the pumpkin) at position with the ×0.1
+/// post (NOT 0.3), `this.scale` carried.
+fn headless_horseman_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89038-89043` — the 20x dust-54 burst, alpha 50.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:89044-89049` — the three gore-99 + the ×0.3 post.
+    for dy in [-10.0, h / 2.0 - 15.0, h - 20.0] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+    // `:89050-89051` — the pumpkin 446 + the ×0.1 post.
+    let idx = gore.new_gore(rng, world, pos, vel, 446, s);
+    gore.slot_mut(idx).velocity *= 0.1;
+}
+
+/// The 254-261/634/635 mushroom zombie death (`NPC.cs:89053-89080`,
+/// sites 756-758): the 20x dust-165 burst (alpha 50, ×2, noGravity),
+/// then — UNLESS the type is 261 (the Fungi Spore, dust-only) — the
+/// three gores 375/376/377 at the −10/+h/2−15/+h−20 Y offsets + the
+/// ×0.3 post, `this.scale` carried.
+fn mushroom_zombie_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89065-89070` — the 20x dust-165 burst, alpha 50.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 165, 0.0, 0.0, 50, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    if npc_type == 261 {
+        return; // :89071 — the Fungi Spore is dust-only.
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:89073-89078` — the three gores + the ×0.3 post.
+    for (dy, t) in [(-10.0, 375), (h / 2.0 - 15.0, 376), (h - 20.0, 377)] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 140 Possessed Armor death (`NPC.cs:89081-89098`, sites 759-761):
+/// the 20x dust-54 burst (alpha 50, ×2, noGravity), then the three
+/// gore-99 at the −10/+h/2−15/+h−20 Y offsets + the ×0.3 post,
+/// `this.scale` carried. The `life <= 0` gate wraps the whole body.
+fn possessed_armor_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89085-89090` — the 20x dust-54 burst, alpha 50.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:89091-89096` — the three gore-99 + the ×0.3 post.
+    for dy in [-10.0, h / 2.0 - 15.0, h - 20.0] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 39/40/41 Bone Serpent segment death (`NPC.cs:89099-89114`, site
+/// 762): the 20x dust-26 burst at (2.5·hd, −2.5), then ONE gore
+/// `type - 39 + 67` (67/68/69), scale 1f.
+fn bone_serpent_segment_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89109-89112` — the 20x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 39 + 67, 1.0); // :89113
+}
+
+/// `NPC.RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:6470-6481`): true
+/// when (35 && ai[3]==1) || (36 && localAI[3]==1) || (32 &&
+/// localAI[3]==1) || (33 && ai[3]==1). The 68 Dungeon Guardian never
+/// qualifies (the port's caller passes the npc's own fields).
+fn red_hat_skeletron_adjustments(npc: &Npc, npc_type: i32) -> bool {
+    (npc_type == 35 && npc.ai[3] == 1.0)
+        || (npc_type == 36 && npc.local_ai[3] == 1.0)
+        || (npc_type == 32 && npc.local_ai[3] == 1.0)
+        || (npc_type == 33 && npc.ai[3] == 1.0)
+}
+
+/// The 35/36/68 Skeletron death (`NPC.cs:89167-89209`): the 150x
+/// dust-26 burst at (2.5·hd, −2.5), then the RedHat split — the 35/68
+/// head: RedHat → 1398/1399/1400 (`:89185-89187`, sites 763-765), else
+/// 54/55 (`:89191-89192`, sites 766-767); the 36 hand: RedHat →
+/// 1401/1402x3 (`:89197-89200`, sites 768-771), else 56/57x3
+/// (`:89204-89207`, sites 772-775). Scale 1f. NOTE the 68 takes the
+/// head branch but RedHat never enables for it (the fn's type gates).
+fn skeletron_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89177-89180` — the 150x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..150 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let red_hat = red_hat_skeletron_adjustments(npc, npc_type);
+    if npc_type == 35 || npc_type == 68 {
+        if red_hat {
+            gore.new_gore(rng, world, pos, vel, 1398, 1.0); // :89185
+            gore.new_gore(rng, world, pos, vel, 1399, 1.0); // :89186
+            gore.new_gore(rng, world, pos, vel, 1400, 1.0); // :89187
+        } else {
+            gore.new_gore(rng, world, pos, vel, 54, 1.0); // :89191
+            gore.new_gore(rng, world, pos, vel, 55, 1.0); // :89192
+        }
+    } else if red_hat {
+        gore.new_gore(rng, world, pos, vel, 1401, 1.0); // :89197
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0); // :89198
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0); // :89199
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0); // :89200
+    } else {
+        gore.new_gore(rng, world, pos, vel, 56, 1.0); // :89204
+        gore.new_gore(rng, world, pos, vel, 57, 1.0); // :89205
+        gore.new_gore(rng, world, pos, vel, 57, 1.0); // :89206
+        gore.new_gore(rng, world, pos, vel, 57, 1.0); // :89207
+    }
+}
+
+/// The mech smoke-burst census shared by the 139/134-136/347/346/127/
+/// 128-131 rows: `spark_count`x dust-31 (×1.4, alpha 100, scale 1.5)
+/// then `pair_count`x paired dust-6 bursts (the ×5 noGravity scale-2.5
+/// first + the ×3 scale-1.5 second). The post writes draw nothing.
+fn mech_smoke_burst(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    spark_count: i32,
+    pair_count: i32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..spark_count {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx).velocity *= 1.4;
+    }
+    for _ in 0..pair_count {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 2.5,
+        );
+        {
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 5.0;
+        }
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx).velocity *= 3.0;
+    }
+}
+
+/// The mech quadrant-smoke gores shared by the same rows: FOUR
+/// `Next(61,64)` smoke gores at position with zero velocity base, the
+/// post ×0.4 + the ±1 quadrant nudges (+/+ then -/+ then +/- then -/-).
+/// The type argument draws BEFORE each NewGore.
+fn mech_quadrant_smoke(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    // The C# passes `default` (zero) velocity — the kicks are the only
+    // base before the ×0.4 + the nudges.
+    let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+    for (dx, dy) in nudges {
+        let t = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, t, 1.0);
+        let g = gore.slot_mut(idx);
+        g.velocity *= 0.4;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
+/// The 139 Probe death (`NPC.cs:89210-89244`, sites 776-779): the
+/// 10x/5x mech smoke burst, then the four quadrant smoke gores. The
+/// `life <= 0` gate wraps the whole body.
+fn probe_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:89214-89226` — the 10x dust-31 + 5x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+    // `:89227-89242` — the four quadrant smoke gores.
+    mech_quadrant_smoke(npc, gore, rng, world);
+}
+
+/// The 467 Deadly Sphere death (`NPC.cs:89245-89265`, sites 780-781):
+/// the 7x/3x mech smoke burst, then TWO gore-660 at position, scale
+/// 1f. The `life <= 0` gate wraps the whole body.
+fn deadly_sphere_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:89249-89261` — the 7x dust-31 + 3x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 7, 3);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 660, 1.0); // :89262
+    gore.new_gore(rng, world, pos, vel, 660, 1.0); // :89263
+}
+
+/// The 134-136 Destroyer death (`NPC.cs:89266-89323`, sites 782-786):
+/// ONE gore 156 at position (ungated), then the 1-in-2 gate
+/// (`Next(2) == 0`) wraps the 10x/5x mech smoke burst + the four
+/// quadrant smoke gores. The 135's hit-half probe-launch seam
+/// (`:89268-89285`, the ai[2] latch + Next(25/50) + NPC.NewNPC(139))
+/// is a HIT-half seam — g62's/wiring's, not ported here (the
+/// dispatcher's hp gate skips it; the `npc_ai_style37.rs`
+/// probe_launch_on_hit precedent owns the launch).
+fn destroyer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 156, 1.0); // :89290
+    // `:89291` — the 1-in-2 gate.
+    if rng.next_max(2) == 0 {
+        // `:89293-89305` — the 10x dust-31 + 5x paired dust-6 census.
+        mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+        // `:89306-89321` — the four quadrant smoke gores.
+        mech_quadrant_smoke(npc, gore, rng, world);
+    }
+}
+
+/// The 347 Elf Copter death (`NPC.cs:89324-89354`, sites 787-792): the
+/// FOUR gores 524/525/526/527 at position FIRST (before the dust), then
+/// the 7x/4x mech smoke burst, then only TWO quadrant smoke gores —
+/// the +/+ and the -/- (NOT the full four), scale 1f.
+fn elf_copter_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89328-89331` — the four gores BEFORE the dust.
+    for t in [524, 525, 526, 527] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+    // `:89332-89344` — the 7x dust-31 + 4x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 7, 4);
+    // `:89345-89352` — the TWO quadrant smoke gores (+/+ then -/-).
+    for (dx, dy) in [(1.0, 1.0), (-1.0, -1.0)] {
+        let t = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, t, 1.0);
+        let g = gore.slot_mut(idx);
+        g.velocity *= 0.4;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
+/// The 346 Santa-NK1 death (`NPC.cs:89355-89395`, sites 793-802): the
+/// SIX gores 518-523 at position FIRST, then the 10x/5x mech smoke
+/// burst, then the four quadrant smoke gores, scale 1f.
+fn santa_nk1_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89359-89364` — the six gores BEFORE the dust.
+    for t in [518, 519, 520, 521, 522, 523] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+    // `:89365-89377` — the 10x dust-31 + 5x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+    // `:89378-89393` — the four quadrant smoke gores.
+    mech_quadrant_smoke(npc, gore, rng, world);
+}
+
+/// The 127 Skeletron Prime death (`NPC.cs:89396-89431`, sites 803-808):
+/// the two gores 149/150 at position FIRST, then the 10x/5x mech smoke
+/// burst, then the four quadrant smoke gores, scale 1f.
+fn skeletron_prime_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89400-89401` — the two gores BEFORE the dust.
+    for t in [149, 150] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+    // `:89402-89414` — the 10x dust-31 + 5x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+    // `:89415-89430` — the four quadrant smoke gores.
+    mech_quadrant_smoke(npc, gore, rng, world);
+}
+
+/// The 128-131 Skeletron Prime limbs death (`NPC.cs:89433-89469`,
+/// sites 809-814): the two gores 147/148 at position FIRST, then the
+/// 10x/5x mech smoke burst, then the four quadrant smoke gores, scale 1f.
+fn skeletron_prime_limb_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89437-89438` — the two gores BEFORE the dust.
+    for t in [147, 148] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+    // `:89439-89451` — the 10x dust-31 + 5x paired dust-6 census.
+    mech_smoke_burst(npc, dust, dust_ctx, rng, world, 10, 5);
+    // `:89452-89467` — the four quadrant smoke gores.
+    mech_quadrant_smoke(npc, gore, rng, world);
+}
+
+/// The 24 Fire Imp death (`NPC.cs:89503-89525`, sites 815-819): the 50x
+/// dust-6 census (velocity args = base.velocity, alpha 100, scale 2.5,
+/// post noGravity + ×2), then 45 at position, TWO 46 at Y+20, TWO 47 at
+/// Y+34 — scale 1f (the C# passes no `this.scale`).
+fn fire_imp_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:89514-89519` — the 50x dust-6 census.
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, vel.x, vel.y, 100,
+            Color::default(), 2.5,
+        );
+        {
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity *= 2.0;
+        }
+    }
+    // `:89520-89524` — the head/torso/legs ladder, scale 1f.
+    gore.new_gore(rng, world, pos, vel, 45, 1.0); // :89520
+    gore.new_gore(rng, world, pos + Vec2::new(0.0, 20.0), vel, 46, 1.0); // :89521
+    gore.new_gore(rng, world, pos + Vec2::new(0.0, 20.0), vel, 46, 1.0); // :89522
+    gore.new_gore(rng, world, pos + Vec2::new(0.0, 34.0), vel, 47, 1.0); // :89523
+    gore.new_gore(rng, world, pos + Vec2::new(0.0, 34.0), vel, 47, 1.0); // :89524
+}
+
+/// The 26/27/28/29/73/111 goblin family death (`NPC.cs:89550-89606`,
+/// sites 820-825): the 50x dust-5 burst at (2.5·hd, −2.5), then the
+/// head/torso×2/legs×2 ladder at +0/+20/+20/+34/+34 Y, `this.scale`
+/// carried. The gore triple is per-type (the 29 Goblin Sorcerer keeps
+/// the default 48/49/50); the 111 Goblin Archer inserts a FOURTH gore
+/// 131 at Y+34 BEFORE its legs pair.
+fn goblin_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89560-89563` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    // `:89564-89596` — the per-type gore triple (the 29 keeps 48/49/50).
+    let (head, mid, legs) = match npc_type {
+        111 => (623, 624, 625), // :89567-89572
+        26 => (626, 627, 628),  // :89573-89578
+        73 => (629, 630, 631),  // :89579-89584
+        27 => (632, 633, 634),  // :89585-89590
+        28 => (635, 636, 637),  // :89591-89596
+        _ => (48, 49, 50),      // :89564-89566 — the 29 Goblin Sorcerer
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, head, s); // :89597
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, s); // :89598
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, s); // :89599
+    if npc_type == 111 {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 131, s); // :89602
+    }
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s); // :89604
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s); // :89605
+}
+
+/// The 471 Goblin Summoner death (`NPC.cs:89607-89626`, sites 826-830):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then 675 at position, 676/677
+/// at Y+20, TWO 678 at Y+34 — `this.scale` carried.
+fn goblin_summoner_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89617-89620` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 675, s); // :89621
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 676, s); // :89622
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 677, s); // :89623
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 678, s); // :89624
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 678, s); // :89625
+}
+
+/// The 472 Shadowflame Apparition death (`NPC.cs:89627-89653`, sites
+/// 831-832): the 50x dust-5 burst at (2.5·hd, −2.5) with a per-dust
+/// `Next(3)` gate (2-in-3 noGravity) + alpha 100 post-write, then 679/680
+/// at position — `this.scale` carried.
+fn shadowflame_apparition_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89642-89650` — the 50x gated dust-5 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+        if rng.next_range(0, 3) != 0 {
+            dust.slot_mut(idx).no_gravity = true;
+        }
+        dust.slot_mut(idx).alpha = 100;
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 679, s); // :89651
+    gore.new_gore(rng, world, pos, vel, 680, s); // :89652
+}
+
+/// The 480 Medusa death (`NPC.cs:89654-89673`, sites 833-837): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 692 at position, TWO 693 at Y+20,
+/// TWO 694 at Y+34 — `this.scale` carried.
+fn medusa_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89664-89667` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 692, s); // :89668
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 693, s); // :89669
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 693, s); // :89670
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 694, s); // :89671
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 694, s); // :89672
+}
+
+/// The 185 Snow Flinx death (`NPC.cs:89674-89689`, site 838): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then ONE gore 240 at position —
+/// `this.scale` carried.
+fn snow_flinx_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89684-89687` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    // `:89688` — the single gore, scale carried.
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 240, npc.scale);
+}
+
+/// The 42/176/205/231-235 hornet/moth family death (`NPC.cs:89702-89741`,
+/// sites 839-842): the 50x dust-18 burst carrying
+/// `this.alpha`/`this.color`/`this.scale` (color default stand-in), speed
+/// (hd, −2) — the 1× hitDirection — then the per-kind sub-branch: the 205
+/// Moth → 270/271/271/272 (`:89718-89721`), the 176 Moss Hornet → 229/230
+/// (`:89726-89727`), the rest → num857/71 where num857 = 70 except the 232
+/// Hornet Honey → 1384 and the 234 Hornet Spikey → 1385 (`:89730-89740`).
+/// All `this.scale` carried.
+fn hornet_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89712-89715` — the 50x dust-18 burst, alpha/scale carried.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 205 {
+        // `:89718-89721` — the Moth quartet.
+        for t in [270, 271, 271, 272] {
+            gore.new_gore(rng, world, pos, vel, t, s);
+        }
+        return;
+    }
+    if npc_type == 176 {
+        // `:89726-89727` — the Moss Hornet pair.
+        gore.new_gore(rng, world, pos, vel, 229, s);
+        gore.new_gore(rng, world, pos, vel, 230, s);
+        return;
+    }
+    // `:89730-89738` — the hornet head pick (the 29-analogue default 70).
+    let head = match npc_type {
+        232 => 1384, // :89733
+        234 => 1385, // :89737
+        _ => 70,     // :89730
+    };
+    gore.new_gore(rng, world, pos, vel, head, s); // :89739
+    gore.new_gore(rng, world, pos, vel, 71, s); // :89740
+}
+
+/// The 43/56 Man Eater/Snatcher death (`NPC.cs:89742-89758`, sites
+/// 843-844): the 50x dust-40 burst carrying `this.alpha`/`this.color`
+/// (color default stand-in) at scale 1.2f, speed (hd, −2) — the 1×
+/// hitDirection — then TWO gores 72 at position, scale 1f (the C# passes
+/// no `this.scale`).
+fn man_eater_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89752-89755` — the 50x dust-40 burst, alpha carried, scale 1.2f.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        40,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        1.2,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 72, 1.0); // :89756
+    gore.new_gore(rng, world, pos, vel, 72, 1.0); // :89757
+}
+
+/// The 175 Angry Trapper death (`NPC.cs:89759-89775`, sites 845-846):
+/// the same 50x dust-40 census, then 227/228 at position, scale 1f.
+fn angry_trapper_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89769-89772` — the 50x dust-40 burst, alpha carried, scale 1.2f.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        40,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        1.2,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 227, 1.0); // :89773
+    gore.new_gore(rng, world, pos, vel, 228, 1.0); // :89774
+}
+
+/// The 48 Harpy death (`NPC.cs:89776-89792`, sites 847-848): the 50x
+/// dust-5 burst at (2·hd, −2), then 80/81 at position, scale 1f.
+fn harpy_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89786-89789` — the 50x dust-5 burst.
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 50, 0, Color::default(), 1.0);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 80, 1.0); // :89790
+    gore.new_gore(rng, world, pos, vel, 81, 1.0); // :89791
+}
+
+/// The 62/66 Demon/Voodoo Demon death (`NPC.cs:89793-89810`, sites
+/// 849-851): the 50x dust-5 burst at (2·hd, −2), then 93/94/94 at
+/// position, scale 1f.
+fn demon_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89803-89806` — the 50x dust-5 burst.
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 50, 0, Color::default(), 1.0);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 93, 1.0); // :89807
+    gore.new_gore(rng, world, pos, vel, 94, 1.0); // :89808
+    gore.new_gore(rng, world, pos, vel, 94, 1.0); // :89809
+}
+
+/// The 156 tail (`NPC.cs:89811-89832`, sites 851-853): the else-arm's
+/// else-arm's `type != 156` early-return is the dispatcher's fallthrough
+/// (every other type already matched an arm); the 50x dust-5 burst at
+/// (2·hd, −2), then 184/185/185 at position, scale 1f.
+fn type_156_tail_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89825-89828` — the 50x dust-5 burst.
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 50, 0, Color::default(), 1.0);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 184, 1.0); // :89829
+    gore.new_gore(rng, world, pos, vel, 185, 1.0); // :89830
+    gore.new_gore(rng, world, pos, vel, 185, 1.0); // :89831
+}
+
+/// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
+/// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
+/// arm runs (the arms are mutually exclusive on `this.type`). Every arm
+/// gates on `npc.hp <= 0` — the hit (`life > 0`) halves are g62's lane.
+pub fn hit_effect_d(
+    npc: &Npc,
+    npc_type: i32,
+    hit_direction: f32,
+    _dmg: f64,
+    gore: &mut GorePool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) -> HitEffectOutcomeD {
+    let mut outcome = HitEffectOutcomeD::default();
+    // `:85562-85669` — the 59/60/151 lava arm: NO gore sites (the claim's
+    // documented drop; the dust census is the dust lanes', the lava
+    // writes are the wiring wave's World seam).
+    if npc.hp > 0 {
+        return outcome;
+    }
+    // `:85670-85703` — the 50 King Slime arm (site 1).
+    if npc_type == 50 {
+        king_slime_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
+    }
+    // `:85704-85722` — the 153 Giant Tortoise arm (sites 2-5).
+    else if npc_type == 153 {
+        tortoise_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85723-85741` — the 177 Derpling arm (sites 6-9).
+    else if npc_type == 177 {
+        derpling_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85742-85759` — the 494/495 Crawdad arm (sites 10-11).
+    else if (494..=495).contains(&npc_type) {
+        crawdad_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85760-85777` — the 496/497 Giant Shelly arm (site 12).
+    else if (496..=497).contains(&npc_type) {
+        shelly_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85778-85796` — the 498-506 Salamander arm (sites 13-15 per variant).
+    else if (498..=506).contains(&npc_type) {
+        salamander_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85797-85841` — the bat family arm (49/51/93/150/152/226, sites
+    // 16-27, all six sub-branches).
+    else if matches!(npc_type, 49 | 51 | 93 | 150 | 152 | 226) {
+        bat_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85842-85859` — the 611/689 Owl arm (sites 28-30).
+    else if npc_type == 611 || npc_type == 689 {
+        owl_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85860-85878` — the 624 Gnome arm (sites 31-34).
+    else if npc_type == 624 {
+        gnome_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85879-85897` — the 628 Dandelion arm (sites 35-38).
+    else if npc_type == 628 {
+        dandelion_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85898-85920` — the 646-652 Gem Bunny arm (sites 39-40).
+    else if (646..=652).contains(&npc_type) {
+        gem_bunny_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85921-85941` — the 639-645 Gem Squirrel arm (site 41).
+    else if (639..=645).contains(&npc_type) {
+        gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85942-86091` — the 29-type critter arm, COMPLETE (sites 42-93):
+    // every gore sub-branch landed; the 614/627 kinds have no gore
+    // sub-branch in the C# (dust burst only).
+    else if matches!(
+        npc_type,
+        46 | 55
+            | 67
+            | 74
+            | 102
+            | 224
+            | 230
+            | 297
+            | 298
+            | 299
+            | 300
+            | 303
+            | 337
+            | 538
+            | 540
+            | 587
+            | 610
+            | 614
+            | 616
+            | 617
+            | 625
+            | 626
+            | 627
+            | 615
+            | 671
+            | 672
+            | 673
+            | 674
+            | 675
+    ) {
+        critter_arm_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86092-86127` — the 148/149/168/470 penguin arm, COMPLETE (sites
+    // 94-102).
+    else if matches!(npc_type, 148 | 149 | 168 | 470) {
+        penguin_frog_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86128-86144` — the 361 Frog arm (sites 103-104).
+    else if npc_type == 361 {
+        frog_361_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86145-86158` — the 687 bound-town-slime arm: NO gore sites (the
+    // hit half puffs dust-16, the death half PoofOfSmoke — the dust
+    // lanes'; recorded, not ported).
+    // `:86159-86172` — the 685 bound-town-slime arm: NO gore sites (the
+    // hit half dust-0, the death half PoofOfSmoke; same drop).
+    // `:86173-86189` — the 607 Pupfish arm (sites 105-106).
+    else if npc_type == 607 {
+        pupfish_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86190-86216` — the 688 Pufferfish arm (sites 107-112, the ai[2]
+    // puffed/deflated split).
+    else if npc_type == 688 {
+        pufferfish_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86217-86243` — the 366/367 scorpion arm, COMPLETE (sites
+    // 113-118).
+    else if npc_type == 366 || npc_type == 367 {
+        scorpion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86244-86270` — the 362-365 duck arm (sites 119-121 per pair).
+    else if (362..=365).contains(&npc_type) {
+        duck_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86271-86290` — the 602/603 seagull arm (sites 122-123).
+    else if npc_type == 602 || npc_type == 603 {
+        seagull_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86291-86311` — the 608/609 grebe arm (sites 124-126).
+    else if npc_type == 608 || npc_type == 609 {
+        grebe_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86312-86331` — the 348/349 Nutcracker arm (sites 127-131).
+    else if npc_type == 348 || npc_type == 349 {
+        nutcracker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86332-86351` — the 351 Krampus arm (sites 132-136).
+    else if npc_type == 351 {
+        krampus_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86352-86370` — the 350 Elf Archer arm (sites 137-140).
+    else if npc_type == 350 {
+        elf_archer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86371-86408` — the 47/57/58/464/465 corrupt/crimson critter arm
+    // (sites 141-148).
+    else if matches!(npc_type, 47 | 57 | 58 | 464 | 465) {
+        corrupt_critter_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86409-86448` — the 173/174/181/182/268 crimson mob arm (sites
+    // 149-158, the alpha-carrying 50x dust burst).
+    else if matches!(npc_type, 173 | 174 | 181 | 182 | 268) {
+        crimson_mob_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86449-86503` — the demon-eye variant arm, COMPLETE (sites
+    // 159-174).
+    else if matches!(npc_type, 2 | 190 | 191 | 192 | 193 | 194 | 317 | 318) {
+        demon_eye_variant_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86504-86520` — the 157 Arapaima arm (sites 175-176).
+    else if npc_type == 157 {
+        arapaima_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86521-86544` — the 133 Wandering Eye arm (sites 177-178; the hit
+    // half's half-life one-shot gore is g62's seam).
+    else if npc_type == 133 {
+        wandering_eye_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86545-86606` — the antlion arm, COMPLETE (sites 182-203).
+    else if matches!(npc_type, 69 | 580 | 581 | 508 | 509 | 582) {
+        antlion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86607-86624` — the 61 Vulture arm (sites 179-181).
+    else if npc_type == 61 {
+        vulture_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86625-86641` — the 301 Raven arm (sites 204-205).
+    else if npc_type == 301 {
+        raven_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86642-86658` — the 252 Parrot arm (sites 206-207).
+    else if npc_type == 252 {
+        parrot_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86659-86689` — the 489/586 blood zombie arm (sites 208-217).
+    else if npc_type == 489 || npc_type == 586 {
+        blood_zombie_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86690-86709` — the 534 Demon Tax Collector arm (sites 218-222).
+    else if npc_type == 534 {
+        tax_collector_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86710-86729` — the 490 Drippler arm (sites 223-227, the two
+    // Next(3) argument picks).
+    else if npc_type == 490 {
+        drippler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86730-86786` — the shark arm, COMPLETE (sites 228-251).
+    else if matches!(npc_type, 65 | 692 | 542 | 543 | 544 | 545) {
+        shark_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86787-86806` — the 195/196 Lost Girl/Nymph arm (sites 252-256).
+    else if npc_type == 195 || npc_type == 196 {
+        nymph_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86807-86827` — the 198/199 Lihzahrd arm (sites 257-262).
+    else if npc_type == 198 || npc_type == 199 {
+        lihzahrd_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86828-86847` — the 206 Icy Merman arm (sites 263-267).
+    else if npc_type == 206 {
+        icy_merman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86848-86867` — the 342 Gingerbread Man arm (sites 268-272).
+    else if npc_type == 342 {
+        gingerbread_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86868-86897` — the 338-340 Zombie Elf arm (sites 273-276).
+    else if (338..=340).contains(&npc_type) {
+        zombie_elf_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86898-86916` — the 343 Yeti arm (sites 277-280).
+    else if npc_type == 343 {
+        yeti_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86917-86936` — the 691 Moss Zombie arm (sites 281-285).
+    else if npc_type == 691 {
+        moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
+    // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
+    // 104/632/331/332/109/161/162/188/200/319/320/321/223 branches + the
+    // head-switch/shared-tail + the 186 extras are live (sites 286-361,
+    // the arm COMPLETE).
+    else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
+    {
+        zombie_arm_death(
+            npc,
+            npc_type,
+            dust,
+            dust_ctx,
+            gore,
+            rng,
+            world,
+            hit_direction,
+            &mut outcome,
+        );
+    }
+    // `:87141-87164` — the 83/84/179 cursed weapon arm (sites 362-364).
+    else if matches!(npc_type, 83 | 84 | 179) {
+        cursed_weapon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87165-87219` — the 262/263/264 Plantera family arm, COMPLETE
+    // (sites 365-377).
+    else if matches!(npc_type, 262 | 263 | 264) {
+        plantera_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87220-87237` — the 265 Spore arm: NO gore sites (the 15x
+    // Next(3)-gated dust-166/167 census is the dust lanes'; the
+    // life >= 0 gate — at exactly hp==0 the arm returns with NO dust,
+    // the g60 fix precedent). Recorded, not ported.
+    // `:87238-87258` — the 266 Brain of Cthulhu arm (sites 378-383).
+    else if npc_type == 266 {
+        brain_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87259-87274` — the 267 Creeper arm (site 384).
+    else if npc_type == 267 {
+        creeper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87275-87340` — the 4/125/126 Eye family arm, COMPLETE (sites
+    // 385-398).
+    else if matches!(npc_type, 4 | 125 | 126) {
+        eye_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87341-87357` — the 5 Servant of Cthulhu arm (sites 399-400).
+    else if npc_type == 5 {
+        servant_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87358-...` — the 113/114 Wall of Flesh arm (sites 401-408; the
+    // underworld screen sweep is the wiring seam).
+    else if npc_type == 113 || npc_type == 114 {
+        wall_of_flesh_death(
+            npc,
+            npc_type,
+            dust,
+            dust_ctx,
+            gore,
+            rng,
+            world,
+            hit_direction,
+            &mut outcome,
+        );
+    }
+    // `:87410-87435` — the 115/116 Hungry arm (sites 409-410).
+    else if npc_type == 115 || npc_type == 116 {
+        hungry_death(
+            npc,
+            npc_type,
+            dust,
+            dust_ctx,
+            gore,
+            rng,
+            world,
+            hit_direction,
+            &mut outcome,
+        );
+    }
+    // `:87436-87451` — the 117-119 Leech arm (site 411).
+    else if (117..=119).contains(&npc_type) {
+        leech_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87452-87480` — the 217/218/219 beetle arm (sites 412-416).
+    else if matches!(npc_type, 217 | 218 | 219) {
+        beetle_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87481-87501` — the 222 Queen Bee arm (sites 417-422).
+    else if npc_type == 222 {
+        queen_bee_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87502-87536` — the 6/94/166 Eater family arm (sites 423-431).
+    else if matches!(npc_type, 6 | 94 | 166) {
+        eater_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87537-87555` — the 101 Clinger arm (sites 432-435).
+    else if npc_type == 101 {
+        clinger_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87556-87572` — the 7/8/9 Devourer arm (site 436).
+    else if matches!(npc_type, 7 | 8 | 9) {
+        devourer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87573-87589` — the 98/99/100 Bone Serpent arm (site 437).
+    else if matches!(npc_type, 98 | 99 | 100) {
+        bone_serpent_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87590-87605` — the 10/11/12 Giant Worm arm (site 438).
+    else if matches!(npc_type, 10 | 11 | 12) {
+        giant_worm_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87606-87621` — the 95/96/97 Digger arm (site 439).
+    else if matches!(npc_type, 95 | 96 | 97) {
+        digger_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87622-87651` — the 13/14/15 Eater of Worlds arm (sites 440-445).
+    else if matches!(npc_type, 13 | 14 | 15) {
+        eater_of_worlds_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87652-87674` — the 17 Guide arm (sites 445-449, the shimmer
+    // ladder).
+    else if npc_type == 17 {
+        guide_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87675-87694` — the 441 Tax Collector arm (sites 450-454, the
+    // shimmer mid/legs swap).
+    else if npc_type == 441 {
+        tax_collector_town_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87695-87716` — the 86 Unicorn arm (sites 455-461).
+    else if npc_type == 86 {
+        unicorn_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87717-87734` — the 155 Wolf arm (sites 462-464).
+    else if npc_type == 155 {
+        wolf_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87753-87832` — the spider arms COMPLETE: 163/238 Black Recluse,
+    // 164/165 Wall Creeper, 239/240 Blood Crawler, 236/237 Jungle
+    // Creeper (sites 465-484).
+    else if matches!(npc_type, 163 | 238 | 164 | 165 | 239 | 240 | 236 | 237) {
+        spider_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87735-87752` — the 329 Hellhound arm (sites 485-487). NOTE the
+    // C# chain order: the 329 arm precedes the spider arms; the arms are
+    // mutually exclusive on type so the port's order is equivalent.
+    else if npc_type == 329 {
+        hellhound_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87833-87849` — the 241 Blood Feeder arm (sites 488-489).
+    else if npc_type == 241 {
+        blood_feeder_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87850-87869` — the 242 Blood Jelly arm (sites 490-494).
+    else if npc_type == 242 {
+        blood_jelly_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87870-87901` — the 105-108 bound-town arm, COMPLETE (sites
+    // 495-504).
+    else if (105..=108).contains(&npc_type) {
+        bound_town_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87902-87941` — the 123/124 Mechanic + 22 town Guide arms (sites
+    // 505-514, the shared shimmer ladder).
+    else if matches!(npc_type, 123 | 124 | 22) {
+        town_ladder_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87942-87961` — the 550 DD2 Bartender arm (sites 515-519).
+    else if npc_type == 550 {
+        bartender_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87962-87984` — the 588/589 Golfer arm (sites 520-524).
+    else if npc_type == 588 || npc_type == 589 {
+        golfer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87985-88022` — the 633 Zoologist arm (sites 525-530).
+    else if npc_type == 633 {
+        zoologist_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88023-88045` — the 368 Travelling Merchant arm (sites 531-535).
+    else if npc_type == 368 {
+        travelling_merchant_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88046-88075` — the town-pet smoke arm (369/376/663/IsTownPet/
+    // 695/696, sites 536-539).
+    else if matches!(npc_type, 369 | 376 | 663 | 695 | 696)
+        || crate::npc_ai_town::is_town_pet(npc_type)
+    {
+        town_pet_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88076-88098` — the 227 Painter arm (sites 540-544).
+    else if npc_type == 227 {
+        painter_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88099-88118` — the 228 Witch Doctor arm (sites 545-549).
+    else if npc_type == 228 {
+        witch_doctor_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88119-88152` — the 229 Pirate arm (sites 550-554; the shimmer
+    // branch is dust-only).
+    else if npc_type == 229 {
+        pirate_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88153-88175` — the 142 Santa Claus arm (sites 555-559).
+    else if npc_type == 142 {
+        santa_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88176-88197` — the 178 Steampunker arm (sites 560-563).
+    else if npc_type == 178 {
+        steampunker_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88198-88221` — the 353/354 Stylist arm (sites 564-569).
+    else if npc_type == 353 || npc_type == 354 {
+        stylist_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88222-88261` — the 37 Old Man + 54 Clothier arms (sites 570-579,
+    // the same normal types, different shimmer).
+    else if npc_type == 37 || npc_type == 54 {
+        old_man_clothier_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88262-88281` — the 160 Truffle arm (sites 580-584).
+    else if npc_type == 160 {
+        truffle_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88282-88304` — the 18 Nurse arm (sites 585-589).
+    else if npc_type == 18 {
+        nurse_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88305-88347` — the 19 Arms Dealer + 38 Demolitionist arms (sites
+    // 590-599).
+    else if npc_type == 19 || npc_type == 38 {
+        arms_dealer_demolitionist_death(
+            npc,
+            npc_type,
+            dust,
+            dust_ctx,
+            gore,
+            rng,
+            world,
+            hit_direction,
+        );
+    }
+    // `:88348-88390` — the 20 Dryad + 207 Dye Trader arms (sites
+    // 600-609).
+    else if npc_type == 20 || npc_type == 207 {
+        dryad_dye_trader_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88391-88410` — the 208 Party Girl arm (sites 610-614).
+    else if npc_type == 208 {
+        party_girl_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88411-88427` — the 663 Princess arm: NO gore sites (the death
+    // half is the 50x dust-5 census only; the town-pet smoke arm at
+    // :88046 catches 663 FIRST in the C# chain — the port's dispatcher
+    // order matches, so this arm is unreachable for 663; recorded).
+    // `:88428-88447` — the 209 Cyborg arm (sites 615-619).
+    else if npc_type == 209 {
+        cyborg_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88448-88502` — the 212-216 pirate crew arm, COMPLETE (sites
+    // 620-644).
+    else if (212..=216).contains(&npc_type) {
+        pirate_crew_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88503-88526` — the 220/221 sea snail/squid arm (sites 645-647).
+    else if npc_type == 220 || npc_type == 221 {
+        squid_snail_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88527-88640` — the skeleton-family arm (21/31/294-296/32/44/45/
+    // 77/110/167/197/201-203/287/291-293/322-324/481/449-452/693),
+    // COMPLETE (sites 648-701).
+    else if matches!(npc_type, 21 | 31 | 294 | 295 | 296 | 32 | 44 | 45 | 77 | 110 | 167 | 197 | 201 | 202 | 203 | 287 | 291 | 292 | 293 | 322 | 323 | 324 | 481 | 449 | 450 | 451 | 452 | 693)
+    {
+        skeleton_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88641-88660` — the 694 Water Bolt Mimic arm (sites 702-709, the
+    // NextFloat scatter anchors, no dust).
+    else if npc_type == 694 {
+        water_bolt_mimic_death(npc, gore, rng, world);
+    }
+    // `:88661-88683` — the 453 Skeleton Merchant arm (sites 710-714).
+    else if npc_type == 453 {
+        skeleton_merchant_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88684-88723` — the 269-276/281-286 armored bones arm (sites
+    // 715-724).
+    else if matches!(npc_type, 269..=276 | 281..=286) {
+        armored_bones_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88724-88743` — the 277-280 ragged caster arm: NO gore sites
+    // (the 75x dust-174 census is the dust lanes'; recorded, not
+    // ported).
+    // `:88744-88765` — the 341 Present Mimic arm (sites 725-727).
+    else if npc_type == 341 {
+        present_mimic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88766-88795` — the 85/629 Mimic arm (sites 728-730).
+    else if npc_type == 85 || npc_type == 629 {
+        mimic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88796-88817` — the 473-476 big mimic arm (sites 731-733).
+    else if (473..=476).contains(&npc_type) {
+        big_mimic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88818-88837` — the 169 Frost Legion snowman arm: NO gore sites
+    // (the 100x dust-92 census is the dust lanes'; recorded, not
+    // ported).
+    // `:88838-88861` — the 170/180 Pigron arm (sites 734-737).
+    else if npc_type == 170 || npc_type == 180 {
+        pigron_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88862-88890` — the 171 Hallowed Pigron arm (sites 738-741).
+    else if npc_type == 171 {
+        pigron_hallow_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88891-88908` — the 290 arm (sites 742-744).
+    else if npc_type == 290 {
+        paladin_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88909-88933` — the 87-92 Wyvern arm (site 745, the Next(1,4)
+    // count).
+    else if (87..=92).contains(&npc_type) {
+        wyvern_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88934-88958` — the 78/79/80/630 mummy arm (sites 746-748).
+    else if matches!(npc_type, 78 | 79 | 80 | 630) {
+        mummy_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88959-88983` — the 82/158/159/250/253 arm (sites 749-751).
+    else if matches!(npc_type, 82 | 158 | 159 | 250 | 253) {
+        ice_tortoise_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88984-89002` — the 316/330 arm: NO gore sites (the 50x tinted
+    // dust-192 census is the dust lanes'; recorded, not ported).
+    // `:89003-89025` — the 662 arm: NO gore sites (the 50x dust-180
+    // census; recorded, not ported).
+    // `:89026-89052` — the 315 Headless Horseman arm (sites 752-755).
+    else if npc_type == 315 {
+        headless_horseman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89053-89080` — the 254-261/634/635 mushroom zombie arm (sites
+    // 756-758; the 261 Fungi Spore is dust-only).
+    else if matches!(npc_type, 254..=261 | 634 | 635) {
+        mushroom_zombie_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89081-89098` — the 140 Possessed Armor arm (sites 759-761).
+    else if npc_type == 140 {
+        possessed_armor_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89099-89114` — the 39/40/41 Bone Serpent segment arm (site
+    // 762).
+    else if matches!(npc_type, 39 | 40 | 41) {
+        bone_serpent_segment_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89115-89143` — the 34 arm: NO gore sites (the paired dust-15/26
+    // census is the dust lanes'; recorded, not ported).
+    // `:89144-89166` — the 289 arm: NO gore sites (the dust-181 census;
+    // recorded, not ported).
+    // `:89167-89209` — the 35/36/68 Skeletron arm (sites 763-775, the
+    // RedHat split).
+    else if matches!(npc_type, 35 | 36 | 68) {
+        skeletron_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89210-89244` — the 139 Probe arm (sites 776-779).
+    else if npc_type == 139 {
+        probe_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89245-89265` — the 467 Deadly Sphere arm (sites 780-781).
+    else if npc_type == 467 {
+        deadly_sphere_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89266-89323` — the 134-136 Destroyer arm (sites 782-786; the
+    // 135 hit-half probe launch is the wiring seam).
+    else if (134..=136).contains(&npc_type) {
+        destroyer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89324-89354` — the 347 Elf Copter arm (sites 787-792).
+    else if npc_type == 347 {
+        elf_copter_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89355-89395` — the 346 Santa-NK1 arm (sites 793-802).
+    else if npc_type == 346 {
+        santa_nk1_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89396-89431` — the 127 Skeletron Prime arm (sites 803-808).
+    else if npc_type == 127 {
+        skeletron_prime_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89433-89469` — the 128-131 Skeletron Prime limbs arm (sites 809-814).
+    else if (128..=131).contains(&npc_type) {
+        skeletron_prime_limb_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89470-89502` — the 23 Meteor Head arm: NO gore sites (the 50x
+    // Next(2)-gated dust-25/6 census + the 50x dust-6 census are the dust
+    // lanes'; recorded, not ported).
+    // `:89503-89525` — the 24 Fire Imp arm (sites 815-819).
+    else if npc_type == 24 {
+        fire_imp_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89526-89537` — the 25 Burning Sphere arm: NO gore sites (the
+    // ungated 20x paired dust-6 census + the Item10 cue are the dust/c13
+    // lanes'; recorded, not ported).
+    // `:89538-89549` — the 33 Water Sphere arm: NO gore sites (the ungated
+    // 20x paired dust-172 census + the Item10 cue; recorded, not ported).
+    // `:89550-89606` — the 26/27/28/29/73/111 goblin family arm (sites
+    // 820-825).
+    else if matches!(npc_type, 26 | 27 | 28 | 29 | 73 | 111) {
+        goblin_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89607-89626` — the 471 Goblin Summoner arm (sites 826-830).
+    else if npc_type == 471 {
+        goblin_summoner_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89627-89653` — the 472 Shadowflame Apparition arm (sites 831-832).
+    else if npc_type == 472 {
+        shadowflame_apparition_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89654-89673` — the 480 Medusa arm (sites 833-837).
+    else if npc_type == 480 {
+        medusa_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89674-89689` — the 185 Snow Flinx arm (site 838).
+    else if npc_type == 185 {
+        snow_flinx_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89690-89701` — the 30/665 arm: NO gore sites (the ungated 20x
+    // paired dust-27 census + the Item10 cue are the dust/c13 lanes';
+    // recorded, not ported).
+    // `:89702-89741` — the 42/176/205/231-235 hornet/moth family arm
+    // (sites 839-842).
+    else if matches!(npc_type, 42 | 176 | 205 | 231..=235) {
+        hornet_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89742-89758` — the 43/56 Man Eater/Snatcher arm (sites 843-844).
+    else if npc_type == 43 || npc_type == 56 {
+        man_eater_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89759-89775` — the 175 Angry Trapper arm (sites 845-846).
+    else if npc_type == 175 {
+        angry_trapper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89776-89792` — the 48 Harpy arm (sites 847-848).
+    else if npc_type == 48 {
+        harpy_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89793-89810` — the 62/66 Demon/Voodoo Demon arm (sites 849-850).
+    else if npc_type == 62 || npc_type == 66 {
+        demon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89811-89832` — the 156 tail (sites 851-853); the else-arm's
+    // `type != 156` early-return is this fallthrough (every other type
+    // matched an arm above; the unmatched types draw nothing).
+    else if npc_type == 156 {
+        type_156_tail_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::npc::NpcKind;
+
+    fn air() -> World {
+        World::new("t".into(), 400, 400)
+    }
+
+    fn ctx() -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// A classic-mob stand-in: the unported kinds ride a placeholder kind
+    /// with the C# box through `size_override` (the f10 `boss` precedent).
+    fn mob(x: f32, y: f32, w: f32, h: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, x, y, 100, 0.0);
+        n.size_override = Some((w, h));
+        n.hp = 0;
+        n.scale = 1.0;
+        n
+    }
+
+    /// The 6 default-block draws of one `Dust.NewDust` (Dust.cs:153-193)
+    /// for a type with NO tweak (4/5) and ChildSafety off — the f10 twin
+    /// census.
+    fn twin_dust(twin: &mut UnifiedRandom, bw: i32, bh: i32) {
+        let _px = twin.next_max(bw - 4);
+        let _py = twin.next_max(bh - 4);
+        let _vx = twin.next_range(-20, 21);
+        let _vy = twin.next_range(-20, 21);
+        let _row = twin.next_max(3);
+        let _scale = twin.next_range(-20, 21);
+    }
+
+    /// The 7 draws of one `Dust.NewDust` for type 6: the 6 default-block
+    /// draws PLUS the type-6 tweak's `Next(-10,6)` Y rewrite
+    /// (`Dust.cs:214-218` — the smoke family re-rolls velocity.Y).
+    fn twin_dust6(twin: &mut UnifiedRandom, bw: i32, bh: i32) {
+        twin_dust(twin, bw, bh);
+        let _ty = twin.next_range(-10, 6);
+    }
+
+    /// `NPC.cs:85684` — the King Slime death spawns ONE gore 734 at
+    /// Center + (-40, -height/2), scale 1f (no this.scale argument), after
+    /// the 200x tinted dust-4 burst; the blue-slime spawn seam is returned.
+    #[test]
+    fn w4_f5d_the_king_slime_death_spawns_the_crown_gore() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 120.0, 100.0);
+        n.vx = 2.0;
+        n.vy = -1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        let out = hit_effect_d(&n, 50, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 734);
+        // Center = (160,150); the crown anchor = (120,100).
+        assert_eq!(gore.slot(0).position, Vec2::new(120.0, 100.0));
+        assert_eq!(gore.slot(0).scale, 1.0);
+        assert!(!gore.slot(1).active, "exactly one gore");
+        // The 200-dust tinted burst ran first (the pool holds the dust).
+        let dust_active = dust.slots().iter().filter(|d| d.active).count();
+        assert!(dust_active >= 150, "the death burst spawned: {dust_active}");
+        let tinted = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(tinted.dust_type, 4);
+        assert_eq!(tinted.alpha, 175);
+        assert_eq!(tinted.color, Color::new(0, 80, 255, 100));
+        // The roster seam is returned for the wiring wave.
+        assert_eq!(out.king_slime_spawns, Some((100.0, 100.0)));
+    }
+
+    /// `NPC.cs:85680-85684` — the King Slime death's draw census: 200
+    /// tinted dust-4 (6 default-block draws each, no type-4 tweak) then
+    /// ONE gore's two kicks (Y then X). The spawn seam draws NOTHING here
+    /// (its count/per-spawn draws are the wiring wave's).
+    #[test]
+    fn w4_f5d_the_king_slime_death_mirrors_the_csharp_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 120.0, 100.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(3);
+        let _ = hit_effect_d(&n, 50, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let mut twin = UnifiedRandom::new(3);
+        for _ in 0..200 {
+            twin_dust(&mut twin, 120, 100);
+        }
+        let _ky = twin.next_range(10, 31); // NewGore Y kick
+        let _kx = twin.next_range(-20, 21); // NewGore X kick
+        assert_eq!(rng.peek(), twin.peek(), "the king slime death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:85718-85721` — the Giant Tortoise death: 4 gores
+    /// 177/178/179/179 at position, scale 1f, after the 15x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_tortoise_death_spawns_the_four_gores() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 48.0, 36.0);
+        n.vx = 1.5;
+        n.vy = -0.5;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(9);
+        let out = hit_effect_d(&n, 153, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![177, 178, 179, 179]);
+        for i in 0..4 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(i).scale, 1.0);
+        }
+        assert!(!gore.slot(4).active, "exactly four gores");
+        assert_eq!(out.king_slime_spawns, None);
+    }
+
+    /// `NPC.cs:85737-85740` — the Derpling death: 4 gores 234/235/236/236
+    /// at position, scale 1f.
+    #[test]
+    fn w4_f5d_the_derpling_death_spawns_the_four_gores() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 40.0, 40.0);
+        n.vx = -2.0;
+        n.vy = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(13);
+        let _ = hit_effect_d(&n, 177, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![234, 235, 236, 236]);
+        assert!(!gore.slot(4).active, "exactly four gores");
+    }
+
+    /// `NPC.cs:85714-85721`/`:85733-85740` — both 15-dust deaths draw the
+    /// 15x6 dust census then only the 4 gores' two kicks each; the twin
+    /// replay pins the stream.
+    #[test]
+    fn w4_f5d_the_15_dust_deaths_mirror_the_csharp_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 48.0, 36.0);
+        for kind in [153, 177] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(5);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let mut twin = UnifiedRandom::new(5);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 48, 36);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85706-85712` — the hit (`life > 0`) half is g62's lane: the
+    /// dispatcher draws NOTHING and spawns NOTHING on a living NPC.
+    #[test]
+    fn w4_f5d_the_hit_halves_stay_g62s() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 48.0, 36.0);
+        n.hp = 20;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(11);
+        let _ = hit_effect_d(&n, 153, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert!(!gore.slot(0).active, "no gore on the hit half");
+        assert!(!dust.slots()[0].active, "no dust on the hit half");
+        assert_eq!(rng.peek(), UnifiedRandom::new(11).peek(), "no draws on the hit half");
+    }
+
+    /// `NPC.cs:85757-85758` — both Crawdad variants: the per-variant pair
+    /// with the HIGHER type first (494→736/735, 495→738/737).
+    #[test]
+    fn w4_f5d_the_crawdad_deaths_pick_the_variant_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 44.0, 30.0);
+        for (kind, want) in [(494, vec![736, 735]), (495, vec![738, 737])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(17);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "crawdad {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+        }
+    }
+
+    /// `NPC.cs:85775` — both Shelly variants: ONE gore 739/740.
+    #[test]
+    fn w4_f5d_the_shelly_deaths_spawn_one_gore() {
+        let w = air();
+        let n = mob(100.0, 100.0, 44.0, 30.0);
+        for (kind, want) in [(496, 739), (497, 740)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(19);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "shelly {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+        }
+    }
+
+    /// `NPC.cs:85793-85795` — the Salamander triple: 750+n at position,
+    /// 741+n at +16 Y, 759+n at +18 Y (n = type - 498); the 498 and 506
+    /// ends pinned.
+    #[test]
+    fn w4_f5d_the_salamander_deaths_spawn_the_variant_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 34.0);
+        for (kind, base) in [(498, 0), (506, 8)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(23);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![750 + base, 741 + base, 759 + base], "salamander {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 116.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(100.0, 118.0));
+            assert!(!gore.slot(3).active, "exactly three gores");
+        }
+    }
+
+    /// `NPC.cs:85742-85796` — the crawdad/shelly/salamander deaths all draw
+    /// the 15x6 dust census then only their gores' two kicks each; the twin
+    /// replay pins the stream (the named-argument :85775 draws no arm-level
+    /// randoms — Type is arithmetic, Position/Velocity are data).
+    #[test]
+    fn w4_f5d_the_underground_deaths_mirror_the_csharp_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 44.0, 30.0);
+        for (kind, gores) in [(494, 2), (497, 1), (502, 3)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(29);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let mut twin = UnifiedRandom::new(29);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 44, 30);
+            }
+            for _ in 0..gores {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85813-85828` — the bat family's per-kind gores: 51→83,
+    /// 93→107, 150→164/165, 152→175/176/176, all at position scale 1f.
+    #[test]
+    fn w4_f5d_the_bat_family_deaths_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, want) in [
+            (51, vec![83]),
+            (93, vec![107]),
+            (150, vec![164, 165]),
+            (152, vec![175, 176, 176]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(31);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "bat kind {kind}");
+            for (i, _) in want.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+            }
+        }
+    }
+
+    /// `NPC.cs:85807-85828` — the bat deaths draw the 15x6 dust census
+    /// then only their gores' two kicks each; the twin replay pins the
+    /// stream for every live sub-branch.
+    #[test]
+    fn w4_f5d_the_bat_deaths_mirror_the_csharp_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, gores) in [(51, 1), (93, 1), (150, 2), (152, 3)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(37);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let mut twin = UnifiedRandom::new(37);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..gores {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "bat kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85832-85839` — the bat tail: 226 Flying Snake
+    /// 317/318/318/319, the 49 Cave Bat fallthrough 82.
+    #[test]
+    fn w4_f5d_the_bat_tail_spawns_the_snake_and_cave_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, want) in [(226, vec![317, 318, 318, 319]), (49, vec![82])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(41);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "bat kind {kind}");
+            let mut twin = UnifiedRandom::new(41);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "bat kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85856-85858` — the Owl/Owl Mimic death: 1164/1164/1165
+    /// after the 15x dust-5 burst; both kinds share the row.
+    #[test]
+    fn w4_f5d_the_owl_deaths_spawn_the_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for kind in [611, 689] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(43);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![1164, 1164, 1165], "owl kind {kind}");
+            assert!(!gore.slot(3).active, "exactly three gores");
+            let mut twin = UnifiedRandom::new(43);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "owl kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85874-85877` — the Gnome death: the count drops to 10 dust
+    /// (not 15), then 1190/1191/1192/1193.
+    #[test]
+    fn w4_f5d_the_gnome_death_drops_the_dust_count_to_ten() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 32.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        let _ = hit_effect_d(&n, 624, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1190, 1191, 1192, 1193]);
+        assert!(!gore.slot(4).active, "exactly four gores");
+        let mut twin = UnifiedRandom::new(47);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 26, 32);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the gnome death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:85893-85896` — the Dandelion death: 10x dust-3 (the leaf
+    /// puff, NOT dust-5), then 1205/1206/1206/1207.
+    #[test]
+    fn w4_f5d_the_dandelion_death_puffs_dust_three() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 34.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        let _ = hit_effect_d(&n, 628, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1205, 1206, 1206, 1207]);
+        let leaf = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(leaf.dust_type, 3, "the dandelion puffs type 3");
+        let mut twin = UnifiedRandom::new(53);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 30, 34);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the dandelion death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:85918-85919` — the Gem Bunny pair: per-variant offset
+    /// (type-646)*2, the 652 variant's dust type is 138 (not 92).
+    #[test]
+    fn w4_f5d_the_gem_bunny_deaths_pick_the_variant_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 22.0, 20.0);
+        for (kind, want, dust_type) in [
+            (646, vec![1234, 1235], 86),
+            (649, vec![1240, 1241], 89),
+            (652, vec![1246, 1247], 138),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(59);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "gem bunny {kind}");
+            let gem = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(gem.dust_type, dust_type, "gem bunny {kind} dust");
+            let mut twin = UnifiedRandom::new(59);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 22, 20);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "gem bunny {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85940` — the Gem Squirrel single gore: 1227+(type-639),
+    /// the 645 variant's dust type is 138.
+    #[test]
+    fn w4_f5d_the_gem_squirrel_deaths_spawn_one_gore() {
+        let w = air();
+        let n = mob(100.0, 100.0, 22.0, 20.0);
+        for (kind, want, dust_type) in [(639, 1227, 86), (645, 1233, 138)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(61);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "gem squirrel {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+            let gem = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(gem.dust_type, dust_type, "gem squirrel {kind} dust");
+            let mut twin = UnifiedRandom::new(61);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 22, 20);
+            }
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(rng.peek(), twin.peek(), "gem squirrel {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85958-85969` — the critter arm's first branch: 46/337 →
+    /// 76/77; the 303 Bunny adds the 10x dust-193 burst AFTER the gores
+    /// (the stream order: 10 dust-5, 2 gores' kicks, 10 dust-193); the
+    /// 540 adds the extra gore 926.
+    #[test]
+    fn w4_f5d_the_bunny_branch_spawns_the_pair_plus_extras() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (46, vec![76, 77]),
+            (337, vec![76, 77]),
+            (303, vec![76, 77]),
+            (540, vec![76, 77, 926]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(67);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "critter {kind}");
+            let mut twin = UnifiedRandom::new(67);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            if kind == 303 {
+                // The extra dust-193 burst runs AFTER the two gores.
+                for _ in 0..10 {
+                    twin_dust(&mut twin, 24, 22);
+                }
+                let has193 = dust.slots().iter().any(|d| d.active && d.dust_type == 193);
+                assert!(has193, "the 303's extra dust-193 burst spawned");
+            }
+            if kind == 540 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85974-85976` — the 67 Goldfish branch: 95/95/96 after the
+    /// 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_goldfish_branch_spawns_the_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 22.0, 18.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(71);
+        let _ = hit_effect_d(&n, 67, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![95, 95, 96]);
+        assert!(!gore.slot(3).active, "exactly three gores");
+        let mut twin = UnifiedRandom::new(71);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 22, 18);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the goldfish branch mirrors the C# draws");
+    }
+
+    /// `NPC.cs:85980-86000` — the critter singles/pairs: 55/230 → 553/554,
+    /// 615 → 1198/1199/1200/1200, 74 → 100, 297 → 431, 298 → 432; all
+    /// after the shared 10x dust-5 burst, draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_critter_singles_and_pairs_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (55, vec![553, 554]),
+            (230, vec![553, 554]),
+            (615, vec![1198, 1199, 1200, 1200]),
+            (74, vec![100]),
+            (297, vec![431]),
+            (298, vec![432]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(73);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "critter {kind}");
+            let mut twin = UnifiedRandom::new(73);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86004-86018` — the macaw/toucan triples: head at position,
+    /// the wing pair at Center ±(4,0); Center = pos + size/2.
+    #[test]
+    fn w4_f5d_the_macaw_triples_anchor_the_wings_at_center() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, head, wing) in [(671, 1277, 1279), (672, 1280, 1281), (673, 1282, 1283)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(79);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, wing, wing], "macaw {kind}");
+            // Center = (112,111); the wings at (116,111)/(108,111).
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(116.0, 111.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(108.0, 111.0));
+            assert!(!gore.slot(3).active, "exactly three gores");
+            let mut twin = UnifiedRandom::new(79);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "macaw {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86022-86046` — the cockatiel triples (674→1284+1285x2,
+    /// 675→1286+1287x2) and the critter singles (299→433, 538→897,
+    /// 300→434, 610→1163); the draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_cockatiels_and_critter_singles_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (674, vec![1284, 1285, 1285]),
+            (675, vec![1286, 1287, 1287]),
+            (299, vec![433]),
+            (538, vec![897]),
+            (300, vec![434]),
+            (610, vec![1163]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(83);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "critter {kind}");
+            if want.len() == 3 {
+                assert_eq!(gore.slot(1).position, Vec2::new(116.0, 111.0));
+                assert_eq!(gore.slot(2).position, Vec2::new(108.0, 111.0));
+            }
+            let mut twin = UnifiedRandom::new(83);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86050-86075` — the water critters: 626 Seahorse 1197,
+    /// 102 Angler Fish 116, 224 Flying Fish 312/313, 616 Turtle
+    /// 1166/1167/1168/1168; the draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_water_critters_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (626, vec![1197]),
+            (102, vec![116]),
+            (224, vec![312, 313]),
+            (616, vec![1166, 1167, 1168, 1168]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(89);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "water critter {kind}");
+            let mut twin = UnifiedRandom::new(89);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "water critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86061-86068` — the 587 Eyeball Flying Fish: the extra 50x
+    /// dust-5 burst runs BETWEEN the shared 10x burst and the two gores
+    /// (the stream order: 10 dust, 50 dust, 2 gores' kicks).
+    #[test]
+    fn w4_f5d_the_eyeball_fish_inserts_the_fifty_dust_burst() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(97);
+        let _ = hit_effect_d(&n, 587, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1104, 1105]);
+        let mut twin = UnifiedRandom::new(97);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 30, 26);
+        }
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 26);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the eyeball fish mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86079-86089` — the turtle quartets: 617 Jungle Turtle
+    /// 1169/1170/1171/1171, 625 Sea Turtle 1194/1195/1196/1196; the 614/627
+    /// kinds have NO gore sub-branch (dust burst only).
+    #[test]
+    fn w4_f5d_the_turtle_quartets_and_the_goreless_kinds() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 24.0);
+        for (kind, want) in [
+            (617, vec![1169, 1170, 1171, 1171]),
+            (625, vec![1194, 1195, 1196, 1196]),
+            (614, vec![]),
+            (627, vec![]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(101);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "turtle {kind}");
+            let mut twin = UnifiedRandom::new(101);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 30, 24);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "turtle {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86108-86119` — the penguin/frog pairs: 148→160/161,
+    /// 149→162/163, 168→215/216, after the 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_penguin_frog_pairs_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 26.0);
+        for (kind, want) in [(148, vec![160, 161]), (149, vec![162, 163]), (168, vec![215, 216])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(103);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "penguin/frog {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(103);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 26);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "penguin/frog {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86123-86125` — the 470 Crimson Penguin triple: 673/672/674
+    /// (NOT a ladder — 673 precedes 672).
+    #[test]
+    fn w4_f5d_the_crimson_penguin_triple_is_not_a_ladder() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 26.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(107);
+        let _ = hit_effect_d(&n, 470, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![673, 672, 674]);
+        assert!(!gore.slot(3).active, "exactly three gores");
+        let mut twin = UnifiedRandom::new(107);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 24, 26);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the crimson penguin mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86142-86143`/`:86187-86188` — the 361 Frog pair 551/552 and
+    /// the 607 Pupfish pair 1152/1153, both after the 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_frog_and_pupfish_pairs_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [(361, vec![551, 552]), (607, vec![1152, 1153])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(109);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "kind {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(109);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86204-86214` — the Pufferfish split: ai[2]==1 puffs
+    /// 1388/1388/1389/1390, else the deflated pair 1386/1387; the draw
+    /// census pinned for both branches.
+    #[test]
+    fn w4_f5d_the_pufferfish_splits_on_ai_two() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 26.0, 24.0);
+        for (puffed, want) in [(true, vec![1388, 1388, 1389, 1390]), (false, vec![1386, 1387])] {
+            n.ai[2] = if puffed { 1.0 } else { 0.0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(113);
+            let _ = hit_effect_d(&n, 688, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "puffed={puffed}");
+            let mut twin = UnifiedRandom::new(113);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 26, 24);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "puffed={puffed} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86233-86235` — the 366 Black Scorpion triple 561/562/563
+    /// after the 10x dust-203 burst (the golden dust, NOT 5).
+    #[test]
+    fn w4_f5d_the_black_scorpion_puffs_golden_dust() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 20.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(127);
+        let _ = hit_effect_d(&n, 366, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![561, 562, 563]);
+        let golden = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(golden.dust_type, 203, "the scorpion puffs type 203");
+        let mut twin = UnifiedRandom::new(127);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 26, 20);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the black scorpion mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86239-86241` — the 367 Scorpion triple 564/565/566, same
+    /// dust-203 census.
+    #[test]
+    fn w4_f5d_the_scorpion_tail_spawns_the_second_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 20.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(131);
+        let _ = hit_effect_d(&n, 367, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![564, 565, 566]);
+        let mut twin = UnifiedRandom::new(131);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 26, 20);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the scorpion tail mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86260-86268` — the duck pair split: 362/363 → 555/556/557,
+    /// 364/365 white → 558/559/560; the draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_duck_deaths_split_on_the_white_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 24.0);
+        for (kind, want) in [
+            (362, vec![555, 556, 557]),
+            (363, vec![555, 556, 557]),
+            (364, vec![558, 559, 560]),
+            (365, vec![558, 559, 560]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(137);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "duck {kind}");
+            let mut twin = UnifiedRandom::new(137);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 26, 24);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "duck {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86287-86288` — the seagull pair 1150/1151 after the 10x
+    /// dust-5 burst (both kinds share the row).
+    #[test]
+    fn w4_f5d_the_seagull_deaths_spawn_the_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 22.0, 16.0);
+        for kind in [602, 603] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(139);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![1150, 1151], "seagull {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(139);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 22, 16);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "seagull {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86307-86309` — the grebe triple 1154/1155/1156 after the
+    /// 10x dust-5 burst (both kinds share the row).
+    #[test]
+    fn w4_f5d_the_grebe_deaths_spawn_the_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 22.0);
+        for kind in [608, 609] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(149);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![1154, 1155, 1156], "grebe {kind}");
+            assert!(!gore.slot(3).active, "exactly three gores");
+            let mut twin = UnifiedRandom::new(149);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 26, 22);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "grebe {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86326-86330` — the Nutcracker five: 528/529/530/531/532
+    /// after the 10x dust-5 burst (both kinds share the row).
+    #[test]
+    fn w4_f5d_the_nutcracker_deaths_spawn_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 40.0);
+        for kind in [348, 349] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(151);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![528, 529, 530, 531, 532], "nutcracker {kind}");
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(151);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 30, 40);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "nutcracker {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86346-86350` — the Krampus five 538-542; `:86366-86369` —
+    /// the Elf Archer four 533-536; both after the 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_krampus_and_elf_archer_spawn_the_frostmoon_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 40.0);
+        for (kind, want) in [
+            (351, vec![538, 539, 540, 541, 542]),
+            (350, vec![533, 534, 535, 536]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(157);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "frostmoon {kind}");
+            let mut twin = UnifiedRandom::new(157);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 30, 40);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "frostmoon {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86387-86406` — the corrupt/crimson critter sub-branches:
+    /// 57→84, 58→85, 464→668/669, 465→670/671, the 47 fallthrough→78/79;
+    /// the draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_corrupt_critters_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (57, vec![84]),
+            (58, vec![85]),
+            (464, vec![668, 669]),
+            (465, vec![670, 671]),
+            (47, vec![78, 79]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(163);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "corrupt critter {kind}");
+            let mut twin = UnifiedRandom::new(163);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "corrupt critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86425-86446` — the crimson mob sub-branches: 173→223/224,
+    /// 174→225/226, 181→237, 182→238/239, 268→403/404/405; the 50x dust
+    /// burst carries this.alpha (the fade-in mobs).
+    #[test]
+    fn w4_f5d_the_crimson_mobs_spawn_the_kind_gores_with_alpha_dust() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 28.0);
+        n.alpha = 120;
+        for (kind, want) in [
+            (173, vec![223, 224]),
+            (174, vec![225, 226]),
+            (181, vec![237]),
+            (182, vec![238, 239]),
+            (268, vec![403, 404, 405]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(167);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "crimson mob {kind}");
+            let faded = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(faded.alpha, 120, "the dust carries this.alpha");
+            let mut twin = UnifiedRandom::new(167);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 28);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "crimson mob {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86465-86486` — the demon-eye variant pairs: 190→249/2,
+    /// 191→248/2, 192→247/2, 193→252/253, 194→250/251; the second gore at
+    /// +14 X, BOTH carrying this.scale.
+    #[test]
+    fn w4_f5d_the_demon_eye_variants_carry_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 30.0);
+        n.scale = 1.25;
+        for (kind, want) in [
+            (190, vec![249, 2]),
+            (191, vec![248, 2]),
+            (192, vec![247, 2]),
+            (193, vec![252, 253]),
+            (194, vec![250, 251]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(173);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "demon eye {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+            assert_eq!(gore.slot(0).scale, 1.25, "the head carries this.scale");
+            assert_eq!(gore.slot(1).scale, 1.25, "the second carries this.scale");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(173);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "demon eye {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86490-86501` — the demon-eye tail: 317 Owl → 447/448,
+    /// 318 Spaceship → 449/450, the 2 fallthrough → 1/2; same +14 X /
+    /// this.scale contract.
+    #[test]
+    fn w4_f5d_the_demon_eye_tail_spawns_the_variant_pairs() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 30.0);
+        n.scale = 0.9;
+        for (kind, want) in [(317, vec![447, 448]), (318, vec![449, 450]), (2, vec![1, 2])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(179);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "demon eye {kind}");
+            assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+            assert_eq!(gore.slot(0).scale, 0.9);
+            let mut twin = UnifiedRandom::new(179);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "demon eye {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86518-86519`/`:86541-86542`/`:86621-86623` — the Arapaima
+    /// pair 186/187 (+14 X), the Wandering Eye pair 155/155 (+14 Y), the
+    /// Vulture triple 86/87/88 (+14 X); all scale 1f after the 50x dust-5
+    /// burst.
+    #[test]
+    fn w4_f5d_the_arapaima_wandering_eye_vulture_spawn_the_pairs() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for (kind, want) in [
+            (157, vec![186, 187]),
+            (133, vec![155, 155]),
+            (61, vec![86, 87, 88]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(181);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "kind {kind}");
+            match kind {
+                133 => assert_eq!(gore.slot(1).position, Vec2::new(100.0, 114.0)),
+                _ => assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0)),
+            }
+            for i in 0..want.len() {
+                assert_eq!(gore.slot(i).scale, 1.0);
+            }
+            let mut twin = UnifiedRandom::new(181);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86568-86591` — the antlion branches: 69→97/98,
+    /// 580→1094-1097, 508→811-814; the dust-250 census (50 death), Child
+    /// Safety OFF (the pool default) so the blood gate draws nothing.
+    #[test]
+    fn w4_f5d_the_antlion_branches_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, want) in [
+            (69, vec![97, 98]),
+            (580, vec![1094, 1095, 1096, 1097]),
+            (508, vec![811, 812, 813, 814]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(191);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "antlion {kind}");
+            let sandy = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(sandy.dust_type, 250, "the antlion puffs type 250");
+            let mut twin = UnifiedRandom::new(191);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "antlion {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86580-86599` — the antlion flying tails: 581 Flying →
+    /// 1098/1099/1100/1101/1101, 509 Giant Flying → 815/816/817/818/818
+    /// (50 dust each).
+    #[test]
+    fn w4_f5d_the_antlion_flying_tails_spawn_the_five_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, want) in [
+            (581, vec![1098, 1099, 1100, 1101, 1101]),
+            (509, vec![815, 816, 817, 818, 818]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(193);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "antlion {kind}");
+            let mut twin = UnifiedRandom::new(193);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "antlion {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86603-86604` — the 582 Larvae Antlion pair 1102/1103 with
+    /// the 10-dust count (num514 = 10, not 50).
+    #[test]
+    fn w4_f5d_the_larvae_antlion_drops_the_dust_count_to_ten() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 20.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(197);
+        let _ = hit_effect_d(&n, 582, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1102, 1103]);
+        assert!(!gore.slot(2).active, "exactly two gores");
+        let mut twin = UnifiedRandom::new(197);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 24, 20);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the larvae antlion mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86639-86640`/`:86656-86657` — the Raven pair 438/439
+    /// (+14 X) and the Parrot pair 373/374, both after the 50x dust-5
+    /// burst, scale 1f.
+    #[test]
+    fn w4_f5d_the_raven_and_parrot_pairs_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 28.0);
+        for (kind, want) in [(301, vec![438, 439]), (252, vec![373, 374])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(199);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "kind {kind}");
+            if kind == 301 {
+                assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+            }
+            let mut twin = UnifiedRandom::new(199);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 28);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86675-86687` — the blood zombie ladders: 489 →
+    /// 722/723/723/724/724, 586 → 1106/1107/1107/1108/1108 at the
+    /// +0/+20/+20/+34/+34 Y ladder, this.scale carried, the 50x dust
+    /// census at the wider 2.5 velocity.
+    #[test]
+    fn w4_f5d_the_blood_zombie_ladders_carry_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.1;
+        for (kind, want) in [
+            (489, vec![722, 723, 723, 724, 724]),
+            (586, vec![1106, 1107, 1107, 1108, 1108]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(211);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "blood zombie {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            for i in 0..5 {
+                assert_eq!(gore.slot(i).scale, 1.1);
+            }
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(211);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "blood zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86704-86708` — the Tax Collector ladder 894/895x2/896x2,
+    /// same +20/+34 Y / this.scale contract as the blood zombies.
+    #[test]
+    fn w4_f5d_the_tax_collector_ladder_carries_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.05;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(223);
+        let _ = hit_effect_d(&n, 534, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![894, 895, 895, 896, 896]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(0).scale, 1.05);
+        let mut twin = UnifiedRandom::new(223);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the tax collector mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86724-86728` — the Drippler: 725/726/727 then TWO
+    /// `725 + Next(3)` picks; the twin replay pins the argument draws
+    /// BETWEEN the third and fourth / fourth and fifth gores' kicks
+    /// (Next(3) before each NewGore, then the gore's Y/X kicks).
+    #[test]
+    fn w4_f5d_the_drippler_draws_the_two_type_picks() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(227);
+        let _ = hit_effect_d(&n, 490, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..3], &[725, 726, 727]);
+        assert!((725..=727).contains(&types[3]), "pick1 in range: {}", types[3]);
+        assert!((725..=727).contains(&types[4]), "pick2 in range: {}", types[4]);
+        let mut twin = UnifiedRandom::new(227);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        // The two picks: Next(3) then the gore's kicks, twice.
+        let p1 = 725 + twin.next_max(3);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        let p2 = 725 + twin.next_max(3);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(types[3], p1, "pick1 matches the twin");
+        assert_eq!(types[4], p2, "pick2 matches the twin");
+        assert_eq!(rng.peek(), twin.peek(), "the drippler mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86746-86756` — the Shark quad 89/90/91/92 and the Orca
+    /// quad 1403-1406: head at position + three at +14 X, ALL at
+    /// velocity*0.8 (the kicks land on the dampened base), scale 1f,
+    /// after the 75x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_shark_quads_dampen_the_velocity() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 50.0, 30.0);
+        n.vx = 2.0;
+        n.vy = 1.0;
+        for (kind, want) in [
+            (65, vec![89, 90, 91, 92]),
+            (692, vec![1403, 1404, 1405, 1406]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(229);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "shark {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(114.0, 100.0));
+            // The velocity base is dampened BEFORE the kicks: the X
+            // component starts at 2.0*0.8 = 1.6 (plus the pool's kick).
+            let kick_x = gore.slot(0).velocity.x - 1.6;
+            assert!((-2.0..=2.0).contains(&kick_x), "the X kick rides the 0.8 base: {kick_x}");
+            let mut twin = UnifiedRandom::new(229);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 50, 30);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "shark {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86760-86770` — the sand shark quads: 542 → 944-947,
+    /// 543 Corrupt → 948-951; same +14 X / velocity*0.8 contract.
+    #[test]
+    fn w4_f5d_the_sand_shark_quads_spawn_the_ladder() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 30.0);
+        for (kind, want) in [(542, vec![944, 945, 946, 947]), (543, vec![948, 949, 950, 951])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(233);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "sand shark {kind}");
+            assert!(!gore.slot(4).active, "exactly four gores");
+            let mut twin = UnifiedRandom::new(233);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 50, 30);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "sand shark {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86774-86784` — the sand shark tails: 544 Crimson →
+    /// 952-955, 545 Hallow → 956-959.
+    #[test]
+    fn w4_f5d_the_sand_shark_tails_spawn_the_ladder() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 30.0);
+        for (kind, want) in [(544, vec![952, 953, 954, 955]), (545, vec![956, 957, 958, 959])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(239);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "sand shark {kind}");
+            assert!(!gore.slot(4).active, "exactly four gores");
+            let mut twin = UnifiedRandom::new(239);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 50, 30);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "sand shark {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86801-86805` — the Nymph ladder 254/255x2/256x2 at the
+    /// +20/+34 Y ladder, this.scale carried, full velocity (no 0.8
+    /// dampening), after the 75x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_nymph_ladder_carries_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.0;
+        for kind in [195, 196] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(241);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![254, 255, 255, 256, 256], "nymph {kind}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(241);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "nymph {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86821-86826` — the Lihzahrd six: 258 at position, then
+    /// 259/259/260/260/261 ALL at +20 Y (no +34 row), this.scale carried,
+    /// after the 75x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_lihzahrd_six_all_ride_the_plus_twenty_row() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.0;
+        for kind in [198, 199] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(251);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![258, 259, 259, 260, 260, 261], "lihzahrd {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            for i in 1..6 {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 120.0));
+            }
+            assert!(!gore.slot(6).active, "exactly six gores");
+            let mut twin = UnifiedRandom::new(251);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..6 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "lihzahrd {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86842-86846` — the Icy Merman ladder 273/274x2/275x2 after
+    /// the 75x dust-137 ice-mist burst (NOT dust-5).
+    #[test]
+    fn w4_f5d_the_icy_merman_puffs_ice_mist() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(257);
+        let _ = hit_effect_d(&n, 206, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![273, 274, 274, 275, 275]);
+        let mist = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(mist.dust_type, 137, "the icy merman puffs type 137");
+        let mut twin = UnifiedRandom::new(257);
+        for _ in 0..75 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the icy merman mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86862-86866` — the Gingerbread Man ladder 500/501x2/502x2
+    /// after the 50x dust-0 crumb burst at the wider 2.5 velocity.
+    #[test]
+    fn w4_f5d_the_gingerbread_man_crumbles_dust_zero() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(263);
+        let _ = hit_effect_d(&n, 342, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![500, 501, 501, 502, 502]);
+        let crumb = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(crumb.dust_type, 0, "the gingerbread man crumbles type 0");
+        let mut twin = UnifiedRandom::new(263);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the gingerbread man mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86884-86896` — the Zombie Elf head+tail: 338→494, 339→495,
+    /// 340→496, then the SHARED 497/498 at +20 Y + 499 at +34 Y.
+    #[test]
+    fn w4_f5d_the_zombie_elf_heads_share_the_tail() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, head) in [(338, 494), (339, 495), (340, 496)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(269);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, 497, 498, 499], "zombie elf {kind}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            assert!(!gore.slot(4).active, "exactly four gores");
+            let mut twin = UnifiedRandom::new(269);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie elf {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86912-86915` — the Yeti four: 503 at pos, 504/505 at
+    /// +20 Y, 506 at +34 Y, this.scale carried.
+    #[test]
+    fn w4_f5d_the_yeti_spawns_the_four() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 40.0, 50.0);
+        n.scale = 1.15;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(271);
+        let _ = hit_effect_d(&n, 343, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![503, 504, 505, 506]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(0).scale, 1.15);
+        let mut twin = UnifiedRandom::new(271);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 40, 50);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the yeti mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86931-86935` — the Moss Zombie ladder 1391/1392x2/1393x2,
+    /// this.scale carried, 50x dust-5 at the wider velocity.
+    #[test]
+    fn w4_f5d_the_moss_zombie_ladder_carries_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(277);
+        let _ = hit_effect_d(&n, 691, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1391, 1392, 1392, 1393, 1393]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        let mut twin = UnifiedRandom::new(277);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the moss zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86982-86986` — the Werewolf ladder 117/118x2/119x2 in the
+    /// giant zombie arm; the 187 slimed extra 25x tinted dust-4 burst
+    /// (height 24, alpha 125) rides the census BEFORE any gores.
+    #[test]
+    fn w4_f5d_the_werewolf_ladder_and_the_slimed_extra_burst() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(281);
+        let _ = hit_effect_d(&n, 104, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![117, 118, 118, 119, 119]);
+        let mut twin = UnifiedRandom::new(281);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the werewolf mirrors the C# draws");
+        // The 187 slimed zombie: the extra 25x tinted burst runs between
+        // the 50x burst and the (unported) gores — the census pins it.
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(283);
+        let _ = hit_effect_d(&n, 187, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let slimed = dust.slots().iter().any(|d| d.active && d.dust_type == 4);
+        assert!(slimed, "the 187's tinted dust-4 burst spawned");
+        let mut twin = UnifiedRandom::new(283);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..25 {
+            twin_dust(&mut twin, 30, 24); // height pinned to 24
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the slimed zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86991-87006` — the Maggot Zombie ladder 1214/1215x2/1216x2
+    /// + the spawn seam returned (the count/per-spawn draws are the
+    /// wiring wave's, NOT drawn here).
+    #[test]
+    fn w4_f5d_the_maggot_zombie_returns_the_spawn_seam() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(293);
+        let out = hit_effect_d(&n, 632, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1214, 1215, 1215, 1216, 1216]);
+        assert_eq!(out.maggot_zombie_spawns, Some((100.0, 100.0)));
+        let mut twin = UnifiedRandom::new(293);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the maggot zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87011-87015` — the Xmas Zombie ladder 488/489x2/490x2.
+    #[test]
+    fn w4_f5d_the_xmas_zombie_ladder_spawns_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(307);
+        let _ = hit_effect_d(&n, 331, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![488, 489, 489, 490, 490]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        let mut twin = UnifiedRandom::new(307);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the xmas zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87020-87024` — the Sweater Zombie ladder 491/492x2/493x2.
+    #[test]
+    fn w4_f5d_the_sweater_zombie_ladder_spawns_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(311);
+        let _ = hit_effect_d(&n, 332, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![491, 492, 492, 493, 493]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        let mut twin = UnifiedRandom::new(311);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the sweater zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87029-87034` — the Clown SIX: 121/122x2/123x2 + the extra
+    /// 120 at +46 Y (the balloon hand row).
+    #[test]
+    fn w4_f5d_the_clown_six_includes_the_balloon_hand() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(313);
+        let _ = hit_effect_d(&n, 109, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![121, 122, 122, 123, 123, 120]);
+        assert_eq!(gore.slot(5).position, Vec2::new(100.0, 146.0));
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(313);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the clown mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87039-87052` — the Eskimo ladder 191/192x2/193x2 and the
+    /// Frankenstein ladder 194/195x2/196x2.
+    #[test]
+    fn w4_f5d_the_eskimo_and_frankenstein_ladders_spawn_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (161, vec![191, 192, 192, 193, 193]),
+            (162, vec![194, 195, 195, 196, 196]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(317);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "zombie {kind}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(317);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87057-87070` — the Swamp ladder 243/244x2/245x2 and the
+    /// Female Zombie ladder 262/263x2/264x2.
+    #[test]
+    fn w4_f5d_the_swamp_and_female_zombie_ladders_spawn_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (188, vec![243, 244, 244, 245, 245]),
+            (200, vec![262, 263, 263, 264, 264]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(331);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "zombie {kind}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(331);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87075-87087` — the Doctor ladder 451/453x2/452x2 (mid 453
+    /// NOT 452) and the Superman FOUR 454/455/456x2 (single +20 row).
+    #[test]
+    fn w4_f5d_the_doctor_and_superman_zombie_ladders() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (319, vec![451, 453, 453, 452, 452]),
+            (320, vec![454, 455, 456, 456]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(337);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "zombie {kind}");
+            if kind == 320 {
+                assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+                assert_eq!(gore.slot(2).position, Vec2::new(100.0, 134.0));
+            }
+            let mut twin = UnifiedRandom::new(337);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87092-87105` — the Pixie ladder 457/458x2/459x2 and the
+    /// Raincoat ladder 309/310x2/311x2.
+    #[test]
+    fn w4_f5d_the_pixie_and_raincoat_zombie_ladders() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (321, vec![457, 458, 458, 459, 459]),
+            (223, vec![309, 310, 310, 311, 311]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(347);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "zombie {kind}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(347);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87110-87131` — the head switch + shared tail: 132→154,
+    /// 186→241, 189→246, 251→372, generic 3→3, the slimed 187 NO head;
+    /// all followed by 4/4 at +20 Y + 5/5 at +34 Y, scale 1f.
+    #[test]
+    fn w4_f5d_the_zombie_head_switch_and_shared_tail() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (132, vec![154, 4, 4, 5, 5]),
+            (186, vec![241, 4, 4, 5, 5]),
+            (189, vec![246, 4, 4, 5, 5]),
+            (251, vec![372, 4, 4, 5, 5]),
+            (3, vec![3, 4, 4, 5, 5]),
+            (187, vec![4, 4, 5, 5]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(353);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "zombie {kind}");
+            for i in 0..want.len() {
+                assert_eq!(gore.slot(i).scale, 1.0, "the tail takes no this.scale");
+            }
+            let mut twin = UnifiedRandom::new(353);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            if kind == 187 {
+                for _ in 0..25 {
+                    twin_dust(&mut twin, 30, 24);
+                }
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87134-87138` — the Bald Zombie extras: the ungated 242
+    /// then the 1-in-2 second 242; the Next(2) gate draws ONLY for the
+    /// 186/432 kinds (the twin pins both the taken and refused paths via
+    /// the stream position).
+    #[test]
+    fn w4_f5d_the_bald_zombie_extras_draw_the_one_in_two_gate() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(359);
+        let _ = hit_effect_d(&n, 186, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore
+            .slots()
+            .iter()
+            .take_while(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        // Head 241 + tail 4/4/5/5 + the ungated 242 (+ maybe the gated).
+        assert_eq!(&types[..6], &[241, 4, 4, 5, 5, 242]);
+        assert!(types.len() == 6 || types.len() == 7, "the gated extra: {types:?}");
+        let mut twin = UnifiedRandom::new(359);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        let gate = twin.next_max(2);
+        if gate == 0 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(types.len(), 7, "the gate taken spawns the extra");
+        } else {
+            assert_eq!(types.len(), 6, "the gate refused spawns nothing");
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the bald zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87158-87163` — the cursed weapon's three gore-61 sparks:
+    /// the velocity argument draws Next(-2,3) X then Y BEFORE each
+    /// NewGore, the pool's kicks follow, then the post velocity ×0.5;
+    /// the 20x dust-31 census runs first (the ×2/noGravity post writes
+    /// draw nothing).
+    #[test]
+    fn w4_f5d_the_cursed_weapon_sparks_draw_the_velocity_arguments() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for kind in [83, 84, 179] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(367);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![61, 61, 61], "weapon {kind}");
+            // The anchor: pos.Y + height/2 - 10 = 105.
+            for i in 0..3 {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 105.0));
+            }
+            let mut twin = UnifiedRandom::new(367);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for i in 0..3 {
+                let vx = twin.next_range(-2, 3) as f32;
+                let vy = twin.next_range(-2, 3) as f32;
+                let ky = twin.next_range(10, 31) as f32 * 0.1;
+                let kx = twin.next_range(-20, 21) as f32 * 0.1;
+                // The post ×0.5 applies to the WHOLE velocity (argument
+                // + kicks).
+                assert_eq!(gore.slot(i).velocity.x, (vx + kx) * 0.5);
+                assert_eq!(gore.slot(i).velocity.y, (vy - ky) * 0.5);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "weapon {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87199-87207` — the Plantera nine: 381-385 then 386x2 then
+    /// 387x2, each at pos + (Next(width), Next(height)) drawn BEFORE the
+    /// NewGore; the 150x dust-167 census runs first (the 265 gate never
+    /// fires in this arm — no arm-level draw).
+    #[test]
+    fn w4_f5d_the_plantera_nine_scatter_the_anchor_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(373);
+        let _ = hit_effect_d(&n, 262, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..9].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![381, 382, 383, 384, 385, 386, 386, 387, 387]);
+        assert!(!gore.slot(9).active, "exactly nine gores");
+        let mut twin = UnifiedRandom::new(373);
+        for _ in 0..150 {
+            twin_dust(&mut twin, 50, 50);
+        }
+        for i in 0..9 {
+            let px = 100.0 + twin.next_max(50) as f32;
+            let py = 100.0 + twin.next_max(50) as f32;
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(gore.slot(i).position, Vec2::new(px, py), "gore {i} anchor");
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the plantera mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87211-87217` — the Hook pair 390/391 and the Tentacle
+    /// pair 388/389, same scatter-anchor contract.
+    #[test]
+    fn w4_f5d_the_hook_and_tentacle_pairs_scatter() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for (kind, want) in [(263, vec![390, 391]), (264, vec![388, 389])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(379);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "plantera part {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(379);
+            for _ in 0..150 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for i in 0..2 {
+                let px = 100.0 + twin.next_max(30) as f32;
+                let py = 100.0 + twin.next_max(30) as f32;
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+                assert_eq!(gore.slot(i).position, Vec2::new(px, py));
+            }
+            assert_eq!(rng.peek(), twin.peek(), "plantera part {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87252-87257` — the Brain six 396-401 at position with the
+    /// scatter velocity (Next(-30,31)*0.2 X then Y BEFORE each NewGore),
+    /// scale 1f; the 150x dust-5 census first.
+    #[test]
+    fn w4_f5d_the_brain_six_scatter_the_velocity_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(383);
+        let _ = hit_effect_d(&n, 266, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![396, 397, 398, 399, 400, 401]);
+        let mut twin = UnifiedRandom::new(383);
+        for _ in 0..150 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for i in 0..6 {
+            let vx = twin.next_range(-30, 31) as f32 * 0.2;
+            let vy = twin.next_range(-30, 31) as f32 * 0.2;
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).velocity.x, vx + kx);
+            assert_eq!(gore.slot(i).velocity.y, vy - ky);
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the brain mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87273` — the Creeper single 402 after the 20x dust-5
+    /// burst.
+    #[test]
+    fn w4_f5d_the_creeper_spawns_the_single() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(389);
+        let _ = hit_effect_d(&n, 267, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 402);
+        assert!(!gore.slot(1).active, "exactly one gore");
+        let mut twin = UnifiedRandom::new(389);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "the creeper mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87291-87305` — the twins' two-iteration loop: each round
+    /// 2/7/9 + the kind fourth (125→146, 126→145), all scatter-velocity;
+    /// the twin replay pins the interleaved argument draws.
+    #[test]
+    fn w4_f5d_the_twins_loop_the_two_rounds() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 50.0);
+        for (kind, fourth) in [(125, 146), (126, 145)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(397);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..8].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![2, 7, 9, fourth, 2, 7, 9, fourth], "twin {kind}");
+            assert!(!gore.slot(8).active, "exactly eight gores");
+            let mut twin = UnifiedRandom::new(397);
+            for _ in 0..150 {
+                twin_dust(&mut twin, 50, 50);
+            }
+            for _ in 0..8 {
+                let _vx = twin.next_range(-30, 31);
+                let _vy = twin.next_range(-30, 31);
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "twin {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87296` — the EoC's fourth is 10 (two rounds, no sparkle
+    /// tail); the sound cue draws nothing.
+    #[test]
+    fn w4_f5d_the_eye_of_cthulhu_fourth_is_ten() {
+        let w = air();
+        let n = mob(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(401);
+        let _ = hit_effect_d(&n, 4, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..8].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![2, 7, 9, 10, 2, 7, 9, 10]);
+        assert!(!gore.slot(8).active, "no sparkle tail for the EoC");
+        let mut twin = UnifiedRandom::new(401);
+        for _ in 0..150 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..8 {
+            let _vx = twin.next_range(-30, 31);
+            let _vy = twin.next_range(-30, 31);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the EoC mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87323-87338` — the twins' sparkle tail: after the two
+    /// rounds + the 10x dust-31 + the 5x paired dust-6 census, FOUR
+    /// Next(61,64) smoke gores with the post ×0.4 + the ±1 quadrant
+    /// nudges (+/+ then -/+ then +/- then -/-).
+    #[test]
+    fn w4_f5d_the_twins_sparkle_tail_nudges_the_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(409);
+        let _ = hit_effect_d(&n, 125, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let smoke: Vec<i32> = gore.slots()[8..12].iter().map(|g| g.gore_type).collect();
+        for t in &smoke {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(12).active, "exactly twelve gores");
+        let mut twin = UnifiedRandom::new(409);
+        for _ in 0..150 {
+            twin_dust(&mut twin, 50, 50);
+        }
+        for _ in 0..8 {
+            let _vx = twin.next_range(-30, 31);
+            let _vy = twin.next_range(-30, 31);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            twin_dust(&mut twin, 50, 50);
+        }
+        for _ in 0..5 {
+            twin_dust6(&mut twin, 50, 50);
+            twin_dust6(&mut twin, 50, 50);
+        }
+        let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+        for (i, (dx, dy)) in nudges.iter().enumerate() {
+            let t = twin.next_range(61, 64);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(8 + i).gore_type, t);
+            assert_eq!(gore.slot(8 + i).velocity.x, kx * 0.4 + dx);
+            assert_eq!(gore.slot(8 + i).velocity.y, -ky * 0.4 + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the sparkle tail mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87355-87356` — the Servant pair 6/7 after the 20x dust-5
+    /// burst.
+    #[test]
+    fn w4_f5d_the_servant_spawns_the_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 26.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(419);
+        let _ = hit_effect_d(&n, 5, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![6, 7]);
+        let mut twin = UnifiedRandom::new(419);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 26, 26);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the servant mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87374-87383` — the WoF quadrants: the 114 Eye
+    /// 137/139/139/137 vs the 113 Wall 137/138/138/137 at the four
+    /// half-box corners, this.scale carried; the 50x dust census at
+    /// (2hd, -1) — the -1 speedY, NOT -2; the 113 returns the sweep seam.
+    #[test]
+    fn w4_f5d_the_wall_of_flesh_quadrants_and_the_sweep_seam() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 60.0, 80.0);
+        n.scale = 1.0;
+        for (kind, want) in [(114, vec![137, 139, 139, 137]), (113, vec![137, 138, 138, 137])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(421);
+            let out = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "wof {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 140.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(130.0, 100.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(130.0, 140.0));
+            assert!(!gore.slot(4).active, "exactly four gores");
+            if kind == 113 {
+                assert_eq!(out.wof_screen_sweep, Some((100.0, 100.0)));
+            } else {
+                assert_eq!(out.wof_screen_sweep, None);
+            }
+            let mut twin = UnifiedRandom::new(421);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 60, 80);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "wof {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87420-87434` — the Hungry split: the 115 returns the
+    /// spawn seam + the 10x dust census (no gores), the 116 runs the 20x
+    /// census + 132/133.
+    #[test]
+    fn w4_f5d_the_hungry_split_spawns_the_seam_or_the_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(431);
+        let out = hit_effect_d(&n, 115, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(out.hungry_spawn, Some((115.0, 130.0)));
+        assert!(!gore.slot(0).active, "the 115 spawns no gore");
+        let mut twin = UnifiedRandom::new(431);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 115 mirrors the C# draws");
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(433);
+        let out = hit_effect_d(&n, 116, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(out.hungry_spawn, None);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![132, 133]);
+        let mut twin = UnifiedRandom::new(433);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 116 mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87450` — the Leech single: 134 + (type - 117), this.scale
+    /// carried, after the 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_leech_single_picks_the_segment_type() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 26.0);
+        for (kind, want) in [(117, 134), (118, 135), (119, 136)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(439);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "leech {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+            let mut twin = UnifiedRandom::new(439);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 26, 26);
+            }
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(rng.peek(), twin.peek(), "leech {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87468-87478` — the beetles: 217→292/293, 218→295/296,
+    /// 219→294; the 50x dust-18 census carries this.alpha/this.scale and
+    /// the 1x hitDirection (the helper's doubling compensated).
+    #[test]
+    fn w4_f5d_the_beetles_carry_the_dye_census() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 26.0, 22.0);
+        n.alpha = 90;
+        n.scale = 1.1;
+        for (kind, want) in [(217, vec![292, 293]), (218, vec![295, 296]), (219, vec![294])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(443);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "beetle {kind}");
+            let dyed = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(dyed.dust_type, 18);
+            assert_eq!(dyed.alpha, 90, "the dust carries this.alpha");
+            let mut twin = UnifiedRandom::new(443);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 26, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "beetle {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87495-87500` — the Queen Bee six: 303/304/305/306/307/308
+    /// at the −35/−45/+0/+20/+10/−10 Y offsets in SOURCE order (not a
+    /// ladder), this.scale carried, after the 50x dust-18 dye census.
+    #[test]
+    fn w4_f5d_the_queen_bee_six_ride_the_source_offsets() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 60.0, 60.0);
+        n.scale = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(449);
+        let _ = hit_effect_d(&n, 222, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![303, 304, 305, 306, 307, 308]);
+        let offsets = [-35.0, -45.0, 0.0, 20.0, 10.0, -10.0];
+        for (i, dy) in offsets.iter().enumerate() {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "gore {i}");
+        }
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(449);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the queen bee mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87518-87534` — the Eater family: 94 Corruptor
+    /// 108/108/109/110, 166 Swamp Thing 209/210/211, the 6 EoS
+    /// fallthrough 14/15 with the post alpha writes (this.alpha).
+    #[test]
+    fn w4_f5d_the_eater_family_and_the_alpha_post_writes() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 30.0);
+        n.alpha = 77;
+        for (kind, want) in [
+            (94, vec![108, 108, 109, 110]),
+            (166, vec![209, 210, 211]),
+            (6, vec![14, 15]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(457);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "eater family {kind}");
+            if kind == 6 {
+                assert_eq!(gore.slot(0).alpha, 77, "the EoS gore carries this.alpha");
+                assert_eq!(gore.slot(1).alpha, 77);
+            }
+            let mut twin = UnifiedRandom::new(457);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "eater family {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87551-87554` — the Clinger four 110/114/114/115.
+    #[test]
+    fn w4_f5d_the_clinger_spawns_the_four() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(461);
+        let _ = hit_effect_d(&n, 101, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![110, 114, 114, 115]);
+        let mut twin = UnifiedRandom::new(461);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 40);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the clinger mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87570-87620` — the worm singles: Devourer 18/19/20 (alpha
+    /// post write), Bone Serpent 110 (alpha post write), Giant Worm
+    /// 21/22/23, Digger 111/112/113 — the per-segment arithmetic pinned.
+    #[test]
+    fn w4_f5d_the_worm_singles_pick_the_segment_types() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 26.0, 26.0);
+        n.alpha = 60;
+        for (kind, want, dye) in [
+            (7, 18, true),
+            (8, 19, true),
+            (9, 20, true),
+            (98, 110, true),
+            (99, 110, true),
+            (100, 110, true),
+            (10, 21, false),
+            (11, 22, false),
+            (12, 23, false),
+            (95, 111, false),
+            (96, 112, false),
+            (97, 113, false),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(463);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "worm {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+            if dye {
+                assert_eq!(gore.slot(0).alpha, 60, "the dye worm carries this.alpha");
+            }
+            let mut twin = UnifiedRandom::new(463);
+            let count = if dye { 50 } else { 10 };
+            for _ in 0..count {
+                twin_dust(&mut twin, 26, 26);
+            }
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(rng.peek(), twin.peek(), "worm {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87638-87649` — the EoW segment pairs: 13→24/25, 14→26/27,
+    /// 15→28/29, scale 1f, after the 50x dust-18 dye census.
+    #[test]
+    fn w4_f5d_the_eater_of_worlds_segment_pairs() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for (kind, want) in [(13, vec![24, 25]), (14, vec![26, 27]), (15, vec![28, 29])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(467);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "eow {kind}");
+            let mut twin = UnifiedRandom::new(467);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "eow {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87668-87673` — the Guide ladder: normal 30/31x2/32x2,
+    /// shimmer 1320/1322x2/1323x2 (variation_index==1 + the town
+    /// transform set); the head's altTexture gate is the default-0
+    /// stand-in (always taken).
+    #[test]
+    fn w4_f5d_the_guide_ladder_splits_on_the_shimmer_variant() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![30, 31, 31, 32, 32]),
+            (true, vec![1320, 1322, 1322, 1323, 1323]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(479);
+            let _ = hit_effect_d(&n, 17, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "guide shimmer={shimmer}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(479);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "guide shimmer={shimmer} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87689-87693` — the Tax Collector ladder: normal
+    /// 768/769/770/771x2 vs shimmer 1358/1359/1361/1360x2 (the mid/legs
+    /// swap: 1361 at +20, 1360 at +34).
+    #[test]
+    fn w4_f5d_the_tax_collector_town_ladder_swaps_the_shimmer_mid_legs() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![768, 769, 770, 771, 771]),
+            (true, vec![1358, 1359, 1361, 1360, 1360]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(487);
+            let _ = hit_effect_d(&n, 441, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "tax collector shimmer={shimmer}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(487);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(
+                rng.peek(),
+                twin.peek(),
+                "tax collector shimmer={shimmer} mirrors the C# draws"
+            );
+        }
+    }
+
+    /// `NPC.cs:87709-87715` — the Unicorn SEVEN all at position;
+    /// `:87731-87733` — the Wolf triple 181/182/183.
+    #[test]
+    fn w4_f5d_the_unicorn_seven_and_the_wolf_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 36.0);
+        for (kind, want) in [
+            (86, vec![101, 102, 103, 103, 104, 104, 105]),
+            (155, vec![181, 182, 183]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(491);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "kind {kind}");
+            for i in 0..want.len() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+            }
+            let mut twin = UnifiedRandom::new(491);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 40, 36);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87767-87791` — the spider fives: 163/238 Black Recluse
+    /// 205/206x4, 164/165 Wall Creeper 207/208x4, all at position after
+    /// the 50x dust-18 burst.
+    #[test]
+    fn w4_f5d_the_spider_fives_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 22.0);
+        for (kind, want) in [
+            (163, vec![205, 206, 206, 206, 206]),
+            (238, vec![205, 206, 206, 206, 206]),
+            (164, vec![207, 208, 208, 208, 208]),
+            (165, vec![207, 208, 208, 208, 208]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(499);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "spider {kind}");
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let puff = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(puff.dust_type, 18);
+            let mut twin = UnifiedRandom::new(499);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 22);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "spider {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87807-87831` — the Blood Crawler five 351/352x2/353x2
+    /// (dust-5, NOT 18) and the Jungle Creeper five 332/333/334/335x2
+    /// (dust-18).
+    #[test]
+    fn w4_f5d_the_crawler_and_jungle_spider_fives() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 22.0);
+        for (kind, want, dt) in [
+            (239, vec![351, 352, 352, 353, 353], 5),
+            (240, vec![351, 352, 352, 353, 353], 5),
+            (236, vec![332, 333, 334, 335, 335], 18),
+            (237, vec![332, 333, 334, 335, 335], 18),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(503);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "spider {kind}");
+            let puff = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(puff.dust_type, dt, "spider {kind} dust");
+            let mut twin = UnifiedRandom::new(503);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 22);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "spider {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87749-87751`/`:87847-87848`/`:87864-87868` — the
+    /// Hellhound triple 485/486/487, the Blood Feeder pair 354/355, the
+    /// Blood Jelly five 356/357x2/358x2.
+    #[test]
+    fn w4_f5d_the_hellhound_feeder_jelly_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 36.0, 30.0);
+        for (kind, want) in [
+            (329, vec![485, 486, 487]),
+            (241, vec![354, 355]),
+            (242, vec![356, 357, 357, 358, 358]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(509);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "kind {kind}");
+            let mut twin = UnifiedRandom::new(509);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 36, 30);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87886-87890` — the goblin ladder: 105/107 normal
+    /// 124/125x2/126x2 vs shimmer 1308/1309x2/1310x2.
+    #[test]
+    fn w4_f5d_the_goblin_town_ladder_splits_on_shimmer() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (105, false, vec![124, 125, 125, 126, 126]),
+            (107, false, vec![124, 125, 125, 126, 126]),
+            (107, true, vec![1308, 1309, 1309, 1310, 1310]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(521);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "goblin {kind} shimmer={shimmer}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(521);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "goblin {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:87895-87900` — the wizard ladder: normal 127/128/128/
+    /// 129x2 vs shimmer 1373/1374/1375/1376x2 (the two +20 slots DIFFER
+    /// in shimmer).
+    #[test]
+    fn w4_f5d_the_wizard_ladder_splits_the_shimmer_mids() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (106, false, vec![127, 128, 128, 129, 129]),
+            (108, false, vec![127, 128, 128, 129, 129]),
+            (108, true, vec![1373, 1374, 1375, 1376, 1376]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(523);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "wizard {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(523);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "wizard {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:87916-87940` — the Mechanic ladder 151/152x2/153x2
+    /// (shimmer 1317/1318x2/1319x2) and the town Guide ladder
+    /// 73/74x2/75x2 (shimmer 1314/1315x2/1316x2).
+    #[test]
+    fn w4_f5d_the_mechanic_and_town_guide_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (123, false, vec![151, 152, 152, 153, 153]),
+            (124, false, vec![151, 152, 152, 153, 153]),
+            (124, true, vec![1317, 1318, 1318, 1319, 1319]),
+            (22, false, vec![73, 74, 74, 75, 75]),
+            (22, true, vec![1314, 1315, 1315, 1316, 1316]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(541);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(541);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:87956-87960`/`:87978-87983` — the Bartender ladder
+    /// 967/968x2/969x2 (shimmer 1355/1356/1357) and the Golfer ladder
+    /// 1109/1110x2/1111x2 (shimmer 1311/1312/1313), both with the +8 X
+    /// second-column offsets.
+    #[test]
+    fn w4_f5d_the_bartender_and_golfer_ladders_use_the_plus_eight_column() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (550, false, vec![967, 968, 968, 969, 969]),
+            (550, true, vec![1355, 1356, 1356, 1357, 1357]),
+            (588, false, vec![1109, 1110, 1110, 1111, 1111]),
+            (588, true, vec![1311, 1312, 1312, 1313, 1313]),
+            // The 589 GolferRescue is NOT in ShimmerTownTransform
+            // (NPCID.cs Sets.Factory) — variation 1 keeps the normal row.
+            (589, true, vec![1109, 1110, 1110, 1111, 1111]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(547);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            assert_eq!(gore.slot(2).position, Vec2::new(108.0, 120.0));
+            assert_eq!(gore.slot(4).position, Vec2::new(108.0, 134.0));
+            let mut twin = UnifiedRandom::new(547);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88016-88021` — the Zoologist SIX: normal
+    /// 1219/1220x2/1221/1222x2 vs shimmer 1377/1379x2/1382/1381x2 (the
+    /// legs' first slot differs from the pair).
+    #[test]
+    fn w4_f5d_the_zoologist_six_split_the_legs() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![1219, 1220, 1220, 1221, 1222, 1222]),
+            (true, vec![1377, 1379, 1379, 1382, 1381, 1381]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(557);
+            let _ = hit_effect_d(&n, 633, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "zoologist shimmer={shimmer}");
+            assert_eq!(gore.slot(2).position, Vec2::new(108.0, 120.0));
+            assert_eq!(gore.slot(5).position, Vec2::new(108.0, 134.0));
+            assert!(!gore.slot(6).active, "exactly six gores");
+            let mut twin = UnifiedRandom::new(557);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..6 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zoologist shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88039-88044` — the Travelling Merchant ladder
+    /// 567/568x2/569x2 (shimmer 1362/1364x2/1365x2).
+    #[test]
+    fn w4_f5d_the_travelling_merchant_ladder() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![567, 568, 568, 569, 569]),
+            (true, vec![1362, 1364, 1364, 1365, 1365]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(563);
+            let _ = hit_effect_d(&n, 368, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "merchant shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(563);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "merchant shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88058-88073` — the town-pet smoke: FOUR Next(61,64) gores
+    /// at Center-(24,24), zero velocity base + the pool kicks + the ±1
+    /// quadrant nudges, scale pinned to 1; the 25x dust-31 census first.
+    #[test]
+    fn w4_f5d_the_town_pet_smoke_nudges_the_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for kind in [369, 637, 695] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(569);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            for t in &types {
+                assert!((61..64).contains(t), "smoke type in range: {t}");
+            }
+            assert!(!gore.slot(4).active, "exactly four gores");
+            // Center-(24,24) = (91,91).
+            for i in 0..4 {
+                assert_eq!(gore.slot(i).position, Vec2::new(91.0, 91.0));
+                assert_eq!(gore.slot(i).scale, 1.0);
+            }
+            let mut twin = UnifiedRandom::new(569);
+            for _ in 0..25 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+            for (i, (dx, dy)) in nudges.iter().enumerate() {
+                let t = twin.next_range(61, 64);
+                let ky = twin.next_range(10, 31) as f32 * 0.1;
+                let kx = twin.next_range(-20, 21) as f32 * 0.1;
+                assert_eq!(gore.slot(i).gore_type, t);
+                assert_eq!(gore.slot(i).velocity.x, kx + dx);
+                assert_eq!(gore.slot(i).velocity.y, -ky + dy);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "pet {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88092-88097`/`:88113-88117` — the Painter ladder
+    /// 320/321/322/323x2 (shimmer 1331/1334/1333/1332x2) and the Witch
+    /// Doctor ladder 324/325/326/327x2 (shimmer 1369/1370/1372/1371x2) —
+    /// both split the two +20 slots.
+    #[test]
+    fn w4_f5d_the_painter_and_witch_doctor_split_the_mids() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (227, false, vec![320, 321, 322, 323, 323]),
+            (227, true, vec![1331, 1334, 1333, 1332, 1332]),
+            (228, false, vec![324, 325, 326, 327, 327]),
+            (228, true, vec![1369, 1370, 1372, 1371, 1371]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(571);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(571);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88129-88151` — the Pirate split: the shimmer branch is
+    /// dust-180-only (no gores, the velocity args = base.velocity), the
+    /// normal branch 328/329x2/330x2.
+    #[test]
+    fn w4_f5d_the_pirate_shimmer_branch_is_dust_only() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.vx = 1.5;
+        n.vy = -0.5;
+        n.variation_index = 1;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(577);
+        let _ = hit_effect_d(&n, 229, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert!(!gore.slot(0).active, "the shimmer pirate spawns no gore");
+        let sparkle = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(sparkle.dust_type, 180);
+        assert_eq!(sparkle.scale, 1.4, "the scale pinned to 1.4");
+        assert!(sparkle.no_gravity);
+        let mut twin = UnifiedRandom::new(577);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the shimmer pirate mirrors the C# draws");
+        // The normal branch.
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(577);
+        let _ = hit_effect_d(&n, 229, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![328, 329, 329, 330, 330]);
+        let mut twin = UnifiedRandom::new(577);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the normal pirate mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88169-88174` — the Santa ladder 157/158x2/159x2 (shimmer
+    /// 1338/1340x2/1341x2).
+    #[test]
+    fn w4_f5d_the_santa_ladder() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![157, 158, 158, 159, 159]),
+            (true, vec![1338, 1340, 1340, 1341, 1341]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(587);
+            let _ = hit_effect_d(&n, 142, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "santa shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(587);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "santa shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88192-88196` — the Steampunker FOUR (single legs slot);
+    /// `:88214-88220` — the Stylist SIX with the two head slots (normal
+    /// 544/543 NOT a ladder).
+    #[test]
+    fn w4_f5d_the_steampunker_four_and_the_stylist_six() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (178, false, vec![231, 232, 232, 233]),
+            (178, true, vec![1348, 1349, 1349, 1350]),
+            (353, false, vec![544, 543, 546, 546, 545, 545]),
+            (353, true, vec![1351, 1352, 1353, 1353, 1354, 1354]),
+            // The 354 WebbedStylist is NOT in ShimmerTownTransform
+            // (NPCID.cs Sets.Factory) — variation 1 keeps the normal row.
+            (354, true, vec![544, 543, 546, 546, 545, 545]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(593);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            if kind == 353 || kind == 354 {
+                assert_eq!(gore.slot(1).position, Vec2::new(100.0, 100.0));
+            }
+            let mut twin = UnifiedRandom::new(593);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88236-88240`/`:88256-88260` — the Old Man and Clothier
+    /// share the normal 58/59x2/60x2 row but split the shimmer
+    /// (1328/1329x2/1330x2 vs 1291/1292x2/1293x2).
+    #[test]
+    fn w4_f5d_the_old_man_and_clothier_share_normal_split_shimmer() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (37, false, vec![58, 59, 59, 60, 60]),
+            (37, true, vec![1328, 1329, 1329, 1330, 1330]),
+            (54, false, vec![58, 59, 59, 60, 60]),
+            (54, true, vec![1291, 1292, 1292, 1293, 1293]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(599);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(599);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88276-88280` — the Truffle ladder (dust-26 spores);
+    /// `:88298-88303` — the Nurse ladder (altTexture head gate).
+    #[test]
+    fn w4_f5d_the_truffle_and_nurse_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want, dt) in [
+            (160, false, vec![188, 189, 189, 190, 190], 26),
+            (160, true, vec![1366, 1367, 1367, 1368, 1368], 26),
+            (18, false, vec![33, 34, 34, 35, 35], 5),
+            (18, true, vec![1324, 1326, 1326, 1327, 1327], 5),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(601);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let puff = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(puff.dust_type, dt, "town {kind} dust");
+            let mut twin = UnifiedRandom::new(601);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88319-88323`/`:88341-88346` — the Arms Dealer ladder
+    /// 36/37x2/38x2 (shimmer 1288/1289x2/1290x2) and the Demolitionist
+    /// ladder 64/65x2/66x2 (shimmer 1297/1299x2/1300x2).
+    #[test]
+    fn w4_f5d_the_arms_dealer_and_demolitionist_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (19, false, vec![36, 37, 37, 38, 38]),
+            (19, true, vec![1288, 1289, 1289, 1290, 1290]),
+            (38, false, vec![64, 65, 65, 66, 66]),
+            (38, true, vec![1297, 1299, 1299, 1300, 1300]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(607);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(607);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88362-88366`/`:88384-88389` — the Dryad ladder
+    /// 39/40x2/41x2 (shimmer 1301/1302x2/1303x2) and the Dye Trader
+    /// ladder 283/284x2/285x2 (shimmer 1304/1306x2/1307x2).
+    #[test]
+    fn w4_f5d_the_dryad_and_dye_trader_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (20, false, vec![39, 40, 40, 41, 41]),
+            (20, true, vec![1301, 1302, 1302, 1303, 1303]),
+            (207, false, vec![283, 284, 284, 285, 285]),
+            (207, true, vec![1304, 1306, 1306, 1307, 1307]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(613);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(613);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88405-88409`/`:88442-88446` — the Party Girl ladder
+    /// 286/287x2/288x2 (shimmer 1335/1336x2/1337x2) and the Cyborg
+    /// ladder 289/290x2/291x2 (shimmer 1294/1295x2/1296x2).
+    #[test]
+    fn w4_f5d_the_party_girl_and_cyborg_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (208, false, vec![286, 287, 287, 288, 288]),
+            (208, true, vec![1335, 1336, 1336, 1337, 1337]),
+            (209, false, vec![289, 290, 290, 291, 291]),
+            (209, true, vec![1294, 1295, 1295, 1296, 1296]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(617);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(617);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88464-88476` — the pirate crew ladders: 212 Deckhand
+    /// 336/337x2/338x2, 213 Corsair 339/340x2/341x2 (no shimmer).
+    #[test]
+    fn w4_f5d_the_pirate_crew_ladders() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (212, vec![336, 337, 337, 338, 338]),
+            (213, vec![339, 340, 340, 341, 341]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(619);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "pirate {kind}");
+            let mut twin = UnifiedRandom::new(619);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "pirate {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88480-88492` — the pirate crew tails: 214 Deadeye
+    /// 342/343x2/344x2, 215 Crossbower 345/346x2/347x2.
+    #[test]
+    fn w4_f5d_the_pirate_crew_tails() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (214, vec![342, 343, 343, 344, 344]),
+            (215, vec![345, 346, 346, 347, 347]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(631);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "pirate {kind}");
+            let mut twin = UnifiedRandom::new(631);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "pirate {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88496-88500` — the 216 Captain ladder 348/349x2/350x2;
+    /// `:88519-88524` — the Squid pair 298/299 vs the Sea Snail single
+    /// 297 (20x dust-151 scale-0.7 ink census, this.scale carried).
+    #[test]
+    fn w4_f5d_the_captain_ladder_and_the_squid_snail_split() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(641);
+        let _ = hit_effect_d(&n, 216, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![348, 349, 349, 350, 350]);
+        let mut twin = UnifiedRandom::new(641);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the captain mirrors the C# draws");
+        for (kind, want) in [(221, vec![298, 299]), (220, vec![297])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(643);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "kind {kind}");
+            let ink = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(ink.dust_type, 151);
+            let mut twin = UnifiedRandom::new(643);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88543-88548` — the Undead Viking six: 213/214 at position
+    /// + 43x2 at +20 Y + 212x2 at +34 Y, this.scale carried, after the
+    /// 20x dust-26 burst.
+    #[test]
+    fn w4_f5d_the_undead_viking_six() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.05;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(647);
+        let _ = hit_effect_d(&n, 167, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![213, 214, 43, 43, 212, 212]);
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(0).scale, 1.05);
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(647);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the undead viking mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88553-88566` — the Armored Viking five 257/43x2/212x2 and
+    /// the Greek Skeleton five 695/696x2/697x2.
+    #[test]
+    fn w4_f5d_the_armored_viking_and_greek_skeleton_fives() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (197, vec![257, 43, 43, 212, 212]),
+            (481, vec![695, 696, 696, 697, 697]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(653);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(653);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88571-88576` — the Headache Skeleton six: 265/267 at
+    /// position + 43x2 at +20 Y + 44x2 at +34 Y.
+    #[test]
+    fn w4_f5d_the_headache_skeleton_six() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(659);
+        let _ = hit_effect_d(&n, 201, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![265, 267, 43, 43, 44, 44]);
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(659);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the headache skeleton mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88581-88594` — the Misassembled five 268/43x2/44x2 and
+    /// the Pantless five 269/43x2/266x2 (legs 266 NOT 44).
+    #[test]
+    fn w4_f5d_the_misassembled_and_pantless_skeleton_fives() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (202, vec![268, 43, 43, 44, 44]),
+            (203, vec![269, 43, 43, 266, 266]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(661);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(661);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88599-88611` — the Top Hat five with the interleaved
+    /// 461/462 pattern and the Astronaut FOUR 463/465/464x2.
+    #[test]
+    fn w4_f5d_the_top_hat_interleave_and_the_astronaut_four() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (322, vec![460, 461, 462, 461, 462]),
+            (323, vec![463, 465, 464, 464]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(673);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            if kind == 322 {
+                assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+                assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            }
+            let mut twin = UnifiedRandom::new(673);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88616-88620` — the Alien Skeleton five 466/467x2/468x2;
+    /// `:88623-88639` — the generic base tail 42/43x2/44x2 (the 21
+    /// Skeleton kind; the 77/110 extras land next batch).
+    #[test]
+    fn w4_f5d_the_alien_skeleton_and_the_generic_tail() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (324, vec![466, 467, 467, 468, 468]),
+            (21, vec![42, 43, 43, 44, 44]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(677);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            let mut twin = UnifiedRandom::new(677);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88626-88636` — the generic tail's extras: the 77 Armored
+    /// Skeleton inserts 106 after the head (42/106/43x2/44x2), the 110
+    /// Skeleton Archer inserts 130 after the head AND 131 before the
+    /// legs (42/130/43x2/131/44x2) — the SOURCE-order interleave.
+    #[test]
+    fn w4_f5d_the_armored_and_archer_skeleton_extras_interleave() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (77, vec![42, 106, 43, 43, 44, 44]),
+            (110, vec![42, 130, 43, 43, 131, 44, 44]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(683);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            if kind == 110 {
+                assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
+            }
+            let mut twin = UnifiedRandom::new(683);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88654-88657` — the Water Bolt Mimic: 5x 1008 + 3x 1007
+    /// interleaved (1008/1007/1008/1007/1008/1007/1008/1008), each with
+    /// TWO NextFloat anchor draws (int-truncated, ×0.5) before the
+    /// NewGore; no dust.
+    #[test]
+    fn w4_f5d_the_water_bolt_mimic_scatters_the_float_anchors() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(691);
+        let mut dust = DustPool::new();
+        let _ = hit_effect_d(&n, 694, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..8].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1008, 1007, 1008, 1007, 1008, 1007, 1008, 1008]);
+        assert!(!gore.slot(8).active, "exactly eight gores");
+        assert!(!dust.slots()[0].active, "no dust in this arm");
+        let mut twin = UnifiedRandom::new(691);
+        let c = Vec2::new(115.0, 115.0);
+        for i in 0..8 {
+            let ox = (-30.0 + (30.0 * twin.next_float()) as i32 as f32) * 0.5;
+            let oy = (-30.0 + (30.0 * twin.next_float()) as i32 as f32) * 0.5;
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(gore.slot(i).position, c + Vec2::new(ox, oy), "gore {i} anchor");
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the water bolt mimic mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88677-88682` — the Skeleton Merchant: normal
+    /// 638/639/640/641/642 vs shimmer 1342/1346/1345/1344/1347 (ALL
+    /// four tail slots differ).
+    #[test]
+    fn w4_f5d_the_skeleton_merchant_splits_all_four_tail_slots() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![638, 639, 640, 641, 642]),
+            (true, vec![1342, 1346, 1345, 1344, 1347]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(701);
+            let _ = hit_effect_d(&n, 453, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "merchant shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(701);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "merchant shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88698-88721` — the armored bones: the base five
+    /// 42/43x2/44x2 + the per-kind weapon extra at +20 Y (269→406,
+    /// 270→407, 271/272→408, 274→409, 276→410; the 281-286 kinds have
+    /// no extra).
+    #[test]
+    fn w4_f5d_the_armored_bones_base_five_and_weapon_extras() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (269, vec![42, 43, 43, 44, 44, 406]),
+            (270, vec![42, 43, 43, 44, 44, 407]),
+            (271, vec![42, 43, 43, 44, 44, 408]),
+            (272, vec![42, 43, 43, 44, 44, 408]),
+            (274, vec![42, 43, 43, 44, 44, 409]),
+            (276, vec![42, 43, 43, 44, 44, 410]),
+            (281, vec![42, 43, 43, 44, 44]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(709);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "bones {kind}");
+            if want.len() == 6 {
+                assert_eq!(gore.slot(5).position, Vec2::new(100.0, 120.0));
+            }
+            let mut twin = UnifiedRandom::new(709);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "bones {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88759-88764`/`:88789-88794`/`:88811-88816` — the mimic
+    /// smoke triples: the Present Mimic dust-196, the Mimic's ai[3]
+    /// dust type (7/10/37), the big mimics' dust-31 at Center; all with
+    /// velocity (hd, 0) + the ×0.3 post.
+    #[test]
+    fn w4_f5d_the_mimic_smoke_triples_and_the_dampened_velocity() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 40.0, 40.0);
+        for (kind, dt) in [(341, 196), (85, 7), (473, 31)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(719);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![61, 62, 63], "mimic {kind}");
+            let puff = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(puff.dust_type, dt, "mimic {kind} dust");
+            if kind == 473 {
+                for i in 0..3 {
+                    assert_eq!(gore.slot(i).position, Vec2::new(120.0, 120.0));
+                }
+            } else {
+                assert_eq!(gore.slot(0).position, Vec2::new(100.0, 90.0));
+                assert_eq!(gore.slot(1).position, Vec2::new(100.0, 110.0));
+                assert_eq!(gore.slot(2).position, Vec2::new(100.0, 130.0));
+            }
+            let mut twin = UnifiedRandom::new(719);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for i in 0..3 {
+                let ky = twin.next_range(10, 31) as f32 * 0.1;
+                let kx = twin.next_range(-20, 21) as f32 * 0.1;
+                assert_eq!(gore.slot(i).velocity.x, (1.0 + kx) * 0.3);
+                assert_eq!(gore.slot(i).velocity.y, -ky * 0.3);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "mimic {kind} mirrors the C# draws");
+        }
+        // The ai[3] dust-type split.
+        for (ai3, dt) in [(2.0, 10), (3.0, 37)] {
+            n.ai[3] = ai3;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(727);
+            let _ = hit_effect_d(&n, 85, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let puff = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(puff.dust_type, dt, "ai[3]={ai3}");
+        }
+    }
+
+    /// `NPC.cs:88858-88859` — the Pigron four gore-99; `:88882-88888` —
+    /// the Hallowed Pigron's 11/12/13 + the fourth Next(11,14) re-roll
+    /// (the argument draw only on the fourth iteration).
+    #[test]
+    fn w4_f5d_the_pigron_fours_and_the_hallow_reroll() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        for kind in [170, 180] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(733);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![99, 99, 99, 99], "pigron {kind}");
+            let mut twin = UnifiedRandom::new(733);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "pigron {kind} mirrors the C# draws");
+        }
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(739);
+        let _ = hit_effect_d(&n, 171, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..3], &[11, 12, 13]);
+        assert!((11..14).contains(&types[3]), "the fourth re-roll: {}", types[3]);
+        let mut twin = UnifiedRandom::new(739);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        let t = twin.next_range(11, 14);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(types[3], t, "the fourth matches the twin");
+        assert_eq!(rng.peek(), twin.peek(), "the hallow pigron mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88901-88906` — the 290 arm's three Next(11,14) smoke
+    /// gores at +0/+20/+40 Y, zero velocity base + the ×0.5 post.
+    #[test]
+    fn w4_f5d_the_290_smoke_triple_halves_the_velocity() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(743);
+        let _ = hit_effect_d(&n, 290, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        for t in &types {
+            assert!((11..14).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(3).active, "exactly three gores");
+        let mut twin = UnifiedRandom::new(743);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        for (i, dy) in [0.0, 20.0, 40.0].iter().enumerate() {
+            let t = twin.next_range(11, 14);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).gore_type, t);
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy));
+            assert_eq!(gore.slot(i).velocity.x, kx * 0.5);
+            assert_eq!(gore.slot(i).velocity.y, -ky * 0.5);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 290 arm mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88927-88931` — the Wyvern's Next(1,4) count + per-gore
+    /// Next(11,14) types with the ×0.8 post; `:88952-88957` — the mummy
+    /// smoke triple; `:88977-88982` — the 82-arm's three gore-99 at the
+    /// −10/−15/−20 offsets.
+    #[test]
+    fn w4_f5d_the_wyvern_count_the_mummy_and_the_82_smoke() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        // The Wyvern: the count draw then the per-gore type draws.
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(751);
+        let _ = hit_effect_d(&n, 87, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let mut twin = UnifiedRandom::new(751);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        let count = twin.next_range(1, 4);
+        let active = gore.slots().iter().take_while(|g| g.active).count();
+        assert_eq!(active, count as usize, "the wyvern count");
+        for _ in 0..count {
+            let t = twin.next_range(11, 14);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            let i = 0; // checked below via the stream position only
+            let _ = (t, ky, kx, i);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the wyvern mirrors the C# draws");
+        // The mummy + the 82-arm: three gores each, ×0.3 post.
+        for (kind, types, offsets) in [
+            (78, vec![61, 62, 63], vec![-10.0, 10.0, 30.0]),
+            (82, vec![99, 99, 99], vec![-10.0, 5.0, 20.0]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(757);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let got: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(got, types, "kind {kind}");
+            for (i, dy) in offsets.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy));
+            }
+            let mut twin = UnifiedRandom::new(757);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for i in 0..3 {
+                let ky = twin.next_range(10, 31) as f32 * 0.1;
+                let kx = twin.next_range(-20, 21) as f32 * 0.1;
+                assert_eq!(gore.slot(i).velocity.x, (1.0 + kx) * 0.3);
+                assert_eq!(gore.slot(i).velocity.y, -ky * 0.3);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89044-89051` — the Headless Horseman: three gore-99 +
+    /// the pumpkin 446 with the ×0.1 post (NOT 0.3); `:89073-89078` —
+    /// the mushroom zombie triple (the 261 spore dust-only);
+    /// `:89091-89096` — the Possessed Armor triple.
+    #[test]
+    fn w4_f5d_the_horseman_pumpkin_and_the_mushroom_spore_skip() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(761);
+        let _ = hit_effect_d(&n, 315, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![99, 99, 99, 446]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 100.0));
+        let mut twin = UnifiedRandom::new(761);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        for i in 0..4 {
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            let damp = if i == 3 { 0.1 } else { 0.3 };
+            assert_eq!(gore.slot(i).velocity.x, (1.0 + kx) * damp);
+            assert_eq!(gore.slot(i).velocity.y, -ky * damp);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the horseman mirrors the C# draws");
+        for (kind, want) in [(254, vec![375, 376, 377]), (261, vec![]), (140, vec![99, 99, 99])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(769);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let got: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(got, want, "kind {kind}");
+            let mut twin = UnifiedRandom::new(769);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89113` — the Bone Serpent segment single 67/68/69;
+    /// `:89185-89207` — the Skeletron RedHat split (35 head ai[3]==1 →
+    /// 1398/1399/1400, else 54/55; 36 hand localAI[3]==1 →
+    /// 1401/1402x3, else 56/57x3; the 68 never RedHats).
+    #[test]
+    fn w4_f5d_the_bone_serpent_segments_and_the_skeletron_red_hat_split() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 40.0, 40.0);
+        for (kind, want) in [(39, 67), (40, 68), (41, 69)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(773);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "serpent {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+            let mut twin = UnifiedRandom::new(773);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(rng.peek(), twin.peek(), "serpent {kind} mirrors the C# draws");
+        }
+        for (kind, red_hat, want) in [
+            (35, false, vec![54, 55]),
+            (35, true, vec![1398, 1399, 1400]),
+            (36, false, vec![56, 57, 57, 57]),
+            (36, true, vec![1401, 1402, 1402, 1402]),
+            (68, true, vec![54, 55]), // the 68 never RedHats
+        ] {
+            n.ai[3] = if red_hat && kind == 35 { 1.0 } else { 0.0 };
+            n.local_ai[3] = if red_hat && kind == 36 { 1.0 } else { 0.0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(787);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let got: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(got, want, "skeletron {kind} red_hat={red_hat}");
+            let mut twin = UnifiedRandom::new(787);
+            for _ in 0..150 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeletron {kind} red_hat={red_hat} mirrors");
+        }
+    }
+
+    /// `NPC.cs:89227-89242` — the Probe's four quadrant smoke gores
+    /// after the 10x/5x mech census; `:89262-89263` — the Deadly
+    /// Sphere's two 660 after the 7x/3x census.
+    #[test]
+    fn w4_f5d_the_probe_quadrants_and_the_deadly_sphere_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(797);
+        let _ = hit_effect_d(&n, 139, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        for t in &types {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        let mut twin = UnifiedRandom::new(797);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..5 {
+            twin_dust(&mut twin, 30, 30);
+            twin_dust(&mut twin, 30, 30);
+        }
+        let nudges = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+        for (i, (dx, dy)) in nudges.iter().enumerate() {
+            let t = twin.next_range(61, 64);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).gore_type, t);
+            assert_eq!(gore.slot(i).velocity.x, kx * 0.4 + dx);
+            assert_eq!(gore.slot(i).velocity.y, -ky * 0.4 + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the probe mirrors the C# draws");
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(809);
+        let _ = hit_effect_d(&n, 467, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![660, 660]);
+        assert!(!gore.slot(2).active, "exactly two gores");
+        let mut twin = UnifiedRandom::new(809);
+        for _ in 0..7 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..3 {
+            twin_dust6(&mut twin, 30, 30);
+            twin_dust6(&mut twin, 30, 30);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the deadly sphere mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89290-89321` — the Destroyer: the ungated 156 then the
+    /// 1-in-2 gate wrapping the mech census + quadrants; the twin
+    /// replay pins both the taken and refused paths.
+    #[test]
+    fn w4_f5d_the_destroyer_gates_the_smoke_on_one_in_two() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(811);
+        let _ = hit_effect_d(&n, 134, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 156);
+        let mut twin = UnifiedRandom::new(811);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        let gate = twin.next_max(2);
+        let active = gore.slots().iter().take_while(|g| g.active).count();
+        if gate == 0 {
+            assert_eq!(active, 5, "the gate taken spawns the quadrants");
+            for _ in 0..10 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..5 {
+                twin_dust6(&mut twin, 40, 40);
+                twin_dust6(&mut twin, 40, 40);
+            }
+            for _ in 0..4 {
+                let _t = twin.next_range(61, 64);
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+        } else {
+            assert_eq!(active, 1, "the gate refused spawns only the 156");
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the destroyer mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89328-89352` — the Elf Copter: the four 524-527 BEFORE
+    /// the 7x/4x census, then only TWO quadrants (+/+ and -/-).
+    #[test]
+    fn w4_f5d_the_elf_copter_four_then_two_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(821);
+        let _ = hit_effect_d(&n, 347, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..4], &[524, 525, 526, 527]);
+        for t in &types[4..] {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(821);
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..7 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        for _ in 0..4 {
+            twin_dust6(&mut twin, 40, 40);
+            twin_dust6(&mut twin, 40, 40);
+        }
+        for (i, (dx, dy)) in [(1.0, 1.0), (-1.0, -1.0)].iter().enumerate() {
+            let t = twin.next_range(61, 64);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(4 + i).gore_type, t);
+            assert_eq!(gore.slot(4 + i).velocity.x, kx * 0.4 + dx);
+            assert_eq!(gore.slot(4 + i).velocity.y, -ky * 0.4 + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the elf copter mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89359-89393` — the Santa-NK1: six 518-523 BEFORE the
+    /// 10x/5x census, then the four quadrants.
+    #[test]
+    fn w4_f5d_the_santa_nk1_six_then_four_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(823);
+        let _ = hit_effect_d(&n, 346, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..10].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..6], &[518, 519, 520, 521, 522, 523]);
+        for t in &types[6..] {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(10).active, "exactly ten gores");
+        let mut twin = UnifiedRandom::new(823);
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..5 {
+            twin_dust6(&mut twin, 60, 60);
+            twin_dust6(&mut twin, 60, 60);
+        }
+        for _ in 0..4 {
+            let _t = twin.next_range(61, 64);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the santa nk1 mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89400-89430` — the Skeletron Prime: two 149/150 BEFORE
+    /// the 10x/5x census, then the four quadrants.
+    #[test]
+    fn w4_f5d_the_skeletron_prime_two_then_four_quadrants() {
+        let w = air();
+        let n = mob(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(824);
+        let _ = hit_effect_d(&n, 127, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..2], &[149, 150]);
+        for t in &types[2..] {
+            assert!((61..64).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(824);
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            twin_dust(&mut twin, 60, 60);
+        }
+        for _ in 0..5 {
+            twin_dust6(&mut twin, 60, 60);
+            twin_dust6(&mut twin, 60, 60);
+        }
+        for _ in 0..4 {
+            let _t = twin.next_range(61, 64);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the skeletron prime mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89437-89467` — the 128-131 limbs: two 147/148 BEFORE
+    /// the 10x/5x census, then the four quadrants (one witness per limb).
+    #[test]
+    fn w4_f5d_the_skeletron_prime_limbs_two_then_four_quadrants() {
+        for kind in 128..=131 {
+            let w = air();
+            let n = mob(100.0, 100.0, 60.0, 60.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(825);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+            assert_eq!(&types[..2], &[147, 148], "limb {kind}");
+            for t in &types[2..] {
+                assert!((61..64).contains(t), "smoke type in range: {t}");
+            }
+            assert!(!gore.slot(6).active, "exactly six gores for limb {kind}");
+            let mut twin = UnifiedRandom::new(825);
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            for _ in 0..10 {
+                twin_dust(&mut twin, 60, 60);
+            }
+            for _ in 0..5 {
+                twin_dust6(&mut twin, 60, 60);
+                twin_dust6(&mut twin, 60, 60);
+            }
+            for _ in 0..4 {
+                let _t = twin.next_range(61, 64);
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "limb {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89514-89524` — the Fire Imp: the 50x dust-6 census (7 draws
+    /// each), then 45 / 46+46 at Y+20 / 47+47 at Y+34, scale 1f.
+    #[test]
+    fn w4_f5d_the_fire_imp_ladder_rides_the_offsets() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.vx = 1.5;
+        n.vy = -0.5;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(827);
+        let _ = hit_effect_d(&n, 24, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![45, 46, 46, 47, 47]);
+        let offsets = [0.0, 20.0, 20.0, 34.0, 34.0];
+        for (i, dy) in offsets.iter().enumerate() {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "gore {i}");
+        }
+        assert!(!gore.slot(5).active, "exactly five gores");
+        let mut twin = UnifiedRandom::new(827);
+        for _ in 0..50 {
+            twin_dust6(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the fire imp mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89597-89605` — the goblin family ladder: the per-type triple
+    /// at +0/+20/+20/+34/+34 Y, this.scale carried; the 111 inserts the 131
+    /// BEFORE its legs pair (six gores), the 29 keeps the default 48/49/50.
+    #[test]
+    fn w4_f5d_the_goblin_family_ladder_and_the_archer_extra() {
+        for (kind, want) in [
+            (26, vec![626, 627, 627, 628, 628]),
+            (27, vec![632, 633, 633, 634, 634]),
+            (28, vec![635, 636, 636, 637, 637]),
+            (29, vec![48, 49, 49, 50, 50]),
+            (73, vec![629, 630, 630, 631, 631]),
+            (111, vec![623, 624, 624, 131, 625, 625]),
+        ] {
+            let w = air();
+            let mut n = mob(100.0, 100.0, 30.0, 44.0);
+            n.scale = 1.25;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(829);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "goblin {kind}");
+            let offsets: Vec<f32> = if kind == 111 {
+                vec![0.0, 20.0, 20.0, 34.0, 34.0, 34.0]
+            } else {
+                vec![0.0, 20.0, 20.0, 34.0, 34.0]
+            };
+            for (i, dy) in offsets.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "goblin {kind} gore {i}");
+                assert_eq!(gore.slot(i).scale, 1.25, "goblin {kind} gore {i} scale");
+            }
+            let mut twin = UnifiedRandom::new(829);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "goblin {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89621-89625` — the Goblin Summoner ladder 675/676/677/678+678;
+    /// `:89642-89652` — the Shadowflame Apparition's gated dust census (a
+    /// Next(3) AFTER each dust) then 679/680 at position.
+    #[test]
+    fn w4_f5d_the_summoner_ladder_and_the_apparition_gate() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.25;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(839);
+        let _ = hit_effect_d(&n, 471, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![675, 676, 677, 678, 678]);
+        let offsets = [0.0, 20.0, 20.0, 34.0, 34.0];
+        for (i, dy) in offsets.iter().enumerate() {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "gore {i}");
+            assert_eq!(gore.slot(i).scale, 1.25, "gore {i} scale");
+        }
+        assert!(!gore.slot(5).active, "exactly five gores");
+        let mut twin = UnifiedRandom::new(839);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the summoner mirrors the C# draws");
+
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(853);
+        let _ = hit_effect_d(&n, 472, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![679, 680]);
+        for i in 0..2 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0), "gore {i}");
+            assert_eq!(gore.slot(i).scale, 1.25, "gore {i} scale");
+        }
+        assert!(!gore.slot(2).active, "exactly two gores");
+        let mut twin = UnifiedRandom::new(853);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+            let _gate = twin.next_max(3);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the apparition mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89668-89672` — the Medusa ladder 692/693+693/694+694;
+    /// `:89688` — the Snow Flinx single 240 after the same dust census.
+    #[test]
+    fn w4_f5d_the_medusa_ladder_and_the_flinx_single() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.25;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(857);
+        let _ = hit_effect_d(&n, 480, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![692, 693, 693, 694, 694]);
+        let offsets = [0.0, 20.0, 20.0, 34.0, 34.0];
+        for (i, dy) in offsets.iter().enumerate() {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "gore {i}");
+            assert_eq!(gore.slot(i).scale, 1.25, "gore {i} scale");
+        }
+        assert!(!gore.slot(5).active, "exactly five gores");
+        let mut twin = UnifiedRandom::new(857);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the medusa mirrors the C# draws");
+
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(859);
+        let _ = hit_effect_d(&n, 185, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 240);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(0).scale, 1.25);
+        assert!(!gore.slot(1).active, "exactly one gore");
+        let mut twin = UnifiedRandom::new(859);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "the flinx mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89718-89740` — the hornet/moth family: the 205 quartet
+    /// 270/271/271/272, the 176 pair 229/230, the hornet head pick
+    /// (232→1384, 234→1385, else 70) + 71; the 50x dust-18 dye census
+    /// (this.alpha) first.
+    #[test]
+    fn w4_f5d_the_hornet_family_head_picks() {
+        for (kind, want) in [
+            (42, vec![70, 71]),
+            (176, vec![229, 230]),
+            (205, vec![270, 271, 271, 272]),
+            (231, vec![70, 71]),
+            (232, vec![1384, 71]),
+            (233, vec![70, 71]),
+            (234, vec![1385, 71]),
+            (235, vec![70, 71]),
+        ] {
+            let w = air();
+            let mut n = mob(100.0, 100.0, 30.0, 30.0);
+            n.alpha = 77;
+            n.scale = 1.25;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(863);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "hornet {kind}");
+            for (i, _) in want.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0), "hornet {kind} gore {i}");
+                assert_eq!(gore.slot(i).scale, 1.25, "hornet {kind} gore {i} scale");
+            }
+            let dyed = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(dyed.dust_type, 18);
+            assert_eq!(dyed.alpha, 77, "the dust carries this.alpha");
+            let mut twin = UnifiedRandom::new(863);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "hornet {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89756-89757` / `:89773-89774` — the Man Eater/Snatcher
+    /// 72+72 and the Angry Trapper 227/228 after the 50x dust-40 census
+    /// (this.alpha, scale 1.2f); the gores ride scale 1f.
+    #[test]
+    fn w4_f5d_the_trapper_pairs_after_the_dust40_census() {
+        for (kind, want) in [(43, vec![72, 72]), (56, vec![72, 72]), (175, vec![227, 228])] {
+            let w = air();
+            let mut n = mob(100.0, 100.0, 30.0, 30.0);
+            n.alpha = 77;
+            n.scale = 1.25;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(877);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "trapper {kind}");
+            for i in 0..2 {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0), "trapper {kind} gore {i}");
+                assert_eq!(gore.slot(i).scale, 1.0, "trapper {kind} gore {i} scale 1f");
+            }
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let dyed = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(dyed.dust_type, 40);
+            assert_eq!(dyed.alpha, 77, "the dust carries this.alpha");
+            let mut twin = UnifiedRandom::new(877);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "trapper {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89790-89791` / `:89807-89809` / `:89829-89831` — the Harpy
+    /// 80/81, the Demon 93/94/94 and the 156 tail 184/185/185 after the
+    /// 50x dust-5 burst; an unmatched type draws nothing (the else-arm's
+    /// early-return).
+    #[test]
+    fn w4_f5d_the_harpy_demon_and_the_156_tail() {
+        for (kind, want) in [
+            (48, vec![80, 81]),
+            (62, vec![93, 94, 94]),
+            (66, vec![93, 94, 94]),
+            (156, vec![184, 185, 185]),
+        ] {
+            let w = air();
+            let n = mob(100.0, 100.0, 30.0, 44.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(881);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "tail {kind}");
+            for (i, _) in want.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0), "tail {kind} gore {i}");
+                assert_eq!(gore.slot(i).scale, 1.0, "tail {kind} gore {i} scale 1f");
+            }
+            let mut twin = UnifiedRandom::new(881);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "tail {kind} mirrors the C# draws");
+        }
+        // The else-arm's `type != 156` early-return: an unmatched type
+        // draws nothing at all.
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(883);
+        let _ = hit_effect_d(&n, 1, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert!(!gore.slot(0).active, "no gore for the unmatched type");
+        assert!(!dust.slots()[0].active, "no dust for the unmatched type");
+        let twin = UnifiedRandom::new(883);
+        assert_eq!(rng.peek(), twin.peek(), "the unmatched type draws nothing");
+    }
+}

@@ -759,6 +759,107 @@ mod world_dust;
 mod world_dust_main;
 mod world_dust_tile;
 mod world_dust_wall;
+
+mod npc_hit_effect_d;
+
+// W4-g61: UNWIRED NPC spawn/teleport-in dust (PoofOfSmoke, the
+// BigMimicSpawnSmoke, TransformVisuals, Main.TeleportEffect +
+// UpdateNPC_TeleportVisuals) - the wiring round drains them at the
+// bug-net/statue/transform/teleport seams (see the module doc).
+mod npc_spawn_visuals;
+
+// W4-e5 (gore table wave B): UNWIRED NPC.HitEffect tail — the next 40
+// death sites (NPC.cs:81942-82240); appended to wave A's dispatch.
+mod npc_hit_effect_b;
+
+// W4-f10 (gore table wave C): UNWIRED NPC.HitEffect per-NPC gore table,
+// the third batch of death sites (NPC.cs:82206 onward); the StrikeNPC_Inner
+// dispatch claim is the wiring wave (the wave-A npc_hit_effect_a precedent).
+mod npc_hit_effect_c;
+
+// W4-g60: the NPC death dust lane 2 (HitEffect death halves, types
+// 231-697) — the death retain's feed (see the module doc).
+mod npc_death_dust;
+
+mod projectile_dust3;
+
+// W4-g65: the per-kind DEATH dust bursts inside Projectile.Kill() (the trail
+// dust is g63/g64; the i17/i18 special-arrow/bullet deaths stay with their
+// modules). The death hook queues resolved bodies; the world-sim pass drains
+// them onto the DustPool on the UpdateProjectiles stream (gallop-dust shape).
+mod projectile_death_dust;
+
+mod projectile_gore_a;
+
+mod projectile_gore_b;
+
+mod projectile_gore_c;
+
+mod projectile_gore_d;
+
+mod projectile_gore_e;
+
+mod projectile_gore_f;
+
+mod projectile_gore_g;
+
+mod projectile_gore_h;
+
+mod projectile_gore_i;
+
+mod projectile_gore_j;
+
+mod projectile_gore_k;
+
+mod projectile_gore_l;
+
+mod projectile_gore_m;
+
+mod projectile_gore_n;
+
+mod projectile_gore_o;
+
+// W4-g17 player wave A (code-only): the extra-jump gore bursts —
+// Fart/Santank/Cloud (Player.cs:20838-21022); the extra-jump chain
+// dispatch is the wiring wave.
+mod player_gore_a;
+
+// W4-g17 player wave B (code-only): the dash launch + sandstorm hold
+// + team-hair-dye gore (Player.cs:21419-24293); the dash/sandstorm/
+// hair-dye dispatch claims are the wiring wave.
+mod player_gore_b;
+
+// W4-g17 player wave C (code-only): the dodge bursts — Mystic Sash +
+// Ninja (Player.cs:38057-38165); the dodge dispatch claims are the
+// wiring wave.
+mod player_gore_c;
+
+// W4-g17 player wave D (code-only): the death confetti + item-use
+// visuals (Player.cs:38869-45027); the KillMe/ItemCheck dispatch
+// claims are the wiring wave.
+mod player_gore_d;
+
+// W4-g17 player wave E (code-only, FINAL): the melee-hitbox sparkle
+// ladder + use-style-5 lantern mote (Player.cs:45048-51125); completes
+// the Player.cs census (32 sites). ItemCheck dispatch deferred.
+mod player_gore_e;
+
+// W4-g17 wiring wave 2 (code-only): the ItemCheck_EmitUseVisuals dust-only
+// item arms (Player.cs:44756-45023) — the 989/2880/44-46/273/723/190/213/
+// 121/122/155/676/3063/3823/724/795-802/367 arms + the frostBurn/magmaStone/
+// meleeEnchant-1-6/8 tails; the co-lane census confirmed them unclaimed.
+mod player_dust_use;
+
+// W4-g17 (code-only): the world-side Gore.NewGore sites, wave A — the
+// TreeGrowFX trunk/leaf column + ash shake (WorldGen.cs:29600-29672)
+// and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /
+// axe-hit / Check3x3 dispatch claims are the wiring wave.
+mod world_gore_a;
+
+// W4-g17 wave B (code-only): the CheckPot gore switch, styles 0-2
+// (WorldGen.cs:56878-56894); the PotEvent dispatch is the wiring wave.
+mod world_gore_b;
+
 mod world_sim;
 mod world_stepper;
 

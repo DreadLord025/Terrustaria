@@ -739,6 +739,16 @@ transport redesign (S2-4) starts.
 
 ## Stage 1P — Weapon-use parity (the code-only swarm)
 
+### W4-g65 deferred Kill death-dust seeds (research/346 §4, 2026-11-21)
+
+| Status | Task | Description | Size | Sev | Research | Deps | Verify |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ⬜ S1-P-i58 | The torch-god death dust: the 1084 TorchGodHelper / 949 TorchGod Kill arms (`Projectile.cs:70956-70995`) are the last 2 App-frame-deferred dust sites — the 40×/20× dust needs the UNPORTED `TorchID.Dust` 24-entry table (`TorchID.cs:179-184`; only `TorchColor` is ported) + the `Main.DiscoR/G/B` type-66 colour fed from `App.disco` (`app/mod.rs:840`, the `advance_disco` cycle exists but is not in the drain's `SpawnCtx`); port the table + the feed, then the two arms into `projectile_death_dust.rs` (the Next(3)≠0 noGravity gate, vel×2.5/×0.8) | S | B | `Projectile.cs:70956-70995`, `TorchID.cs:179-184`, research/346 §4 (R-346-1) | W4-g65's drain (landed `b0842907c`) | the two arms' count/gate/colour witnesses — **SEED 2026-11-21** (W4-g65 FINAL; the deferred kinds are drain-inert, pinned by `w4_g65_seal_the_deferred_kinds_are_inert`, WRITTEN NOT RUN) |
+| ⬜ S1-P-i59 | The globe death dust: the 868 TreeGlobe / 869 WorldGlobe / 996 MoonGlobe shared Kill arm (`Projectile.cs:73705-73728`) — the 15× dust-13 prefix (vel(0,−2) scale 1.5, no explicit draws) precedes the UNPORTED state-bearing `WorldGen.TreeTops.RandomizeTreeStyleBasedOnWorldPosition(Main.rand, Center)` / `RandomizeBackgroundBasedOnPlayer(Main.rand, player[owner])` / `RandomizeMoonState(Main.rand, true)` draws + `SendData(7)`; the dust ports WITH the randomizers (stream order: the dust internals BEFORE the randomizer draws), owner = the worldgen-randomizer lane | M | B | `Projectile.cs:73705-73728`, research/346 §4 (R-346-2) | the g70/g71/g72-adjacent WorldGen randomizer ports | the shared-arm dust count + the randomizer stream-order witness — **SEED 2026-11-21** (W4-g65 FINAL) |
+| ⬜ S1-P-i60 | The BeeHive death arm: the 655 Kill arm (`Projectile.cs:75080-75124`) — the 30× dust-147 prefix (Next(2)==0 → scale×1.4) with the PER-ITERATION `base.velocity *= 1.9` corpse ladder (×1.9³⁰ compounding, observable by later hooks), then the wet-gated `Item.NewItem(1124, Next(2,6))` drop OR the 2+3×Next(3)==0 NPC-count + `NPC.NewNPC(Next(210,212), Start:1)` burst with per-NPC `Next(-200,201)×0.002` velocity rolls; the dust + ladder + spawn draws port together at the NPC-spawn/item-drop seam | M | B | `Projectile.cs:75080-75124`, research/346 §4 (R-346-3) | the NPC-spawn/item-drop seam owner | the ladder + wet-branch + spawn-count witnesses — **SEED 2026-11-21** (W4-g65 FINAL) |
+
+The three cross-seam deferrals (89 CrystalBullet / 91+92 HolyArrow+HallowStar / 183 Beenade) need NO new lane: their owning hooks are main-landed (`special_bullet_kill` / `special_arrow_kill` / `beenade_death`) — the dust prefixes fold ahead of the existing state-bearing draws per research/346 §4's dedupe notes.
+
 The per-weapon-family census of `Player.ItemCheck` / `ItemCheck_Shoot` against
 the port: fix the WRONG arms, port the missing ones verbatim with C# cites,
 preserve the RNG draw order (multi-shot spreads), witnesses WRITTEN NOT RUN.

@@ -1,0 +1,1862 @@
+{
+ "gates": [
+  {
+   "start": 7122,
+   "end": 7125,
+   "calls": [
+    "king_slime_death"
+   ],
+   "min_cite": 85670,
+   "max_cite": 85670,
+   "first": "if npc_type == 50 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7126,
+   "end": 7129,
+   "calls": [
+    "giant_tortoise_death"
+   ],
+   "min_cite": 85704,
+   "max_cite": 85704,
+   "first": "if npc_type == 153 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7130,
+   "end": 7133,
+   "calls": [
+    "derpling_death"
+   ],
+   "min_cite": 85723,
+   "max_cite": 85723,
+   "first": "if npc_type == 177 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7134,
+   "end": 7137,
+   "calls": [
+    "crawdad_death"
+   ],
+   "min_cite": 85742,
+   "max_cite": 85742,
+   "first": "if (npc_type == 494 || npc_type == 495) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7138,
+   "end": 7141,
+   "calls": [
+    "giant_shelly_death"
+   ],
+   "min_cite": 85760,
+   "max_cite": 85760,
+   "first": "if (npc_type == 496 || npc_type == 497) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7142,
+   "end": 7145,
+   "calls": [
+    "salamander_death"
+   ],
+   "min_cite": 85778,
+   "max_cite": 85778,
+   "first": "if (498..=506).contains(&npc_type) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7146,
+   "end": 7152,
+   "calls": [
+    "bat_family_death"
+   ],
+   "min_cite": 85797,
+   "max_cite": 85797,
+   "first": "if (npc_type == 49 || npc_type == 51 || npc_type == 93 || npc_type == 150 || npc_type == 152"
+  },
+  {
+   "start": 7153,
+   "end": 7156,
+   "calls": [
+    "owl_death"
+   ],
+   "min_cite": 85842,
+   "max_cite": 85842,
+   "first": "if (npc_type == 611 || npc_type == 689) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7157,
+   "end": 7160,
+   "calls": [
+    "gnome_death"
+   ],
+   "min_cite": 85860,
+   "max_cite": 85860,
+   "first": "if npc_type == 624 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7161,
+   "end": 7164,
+   "calls": [
+    "dandelion_death"
+   ],
+   "min_cite": 85879,
+   "max_cite": 85879,
+   "first": "if npc_type == 628 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7165,
+   "end": 7168,
+   "calls": [
+    "gem_bunny_death"
+   ],
+   "min_cite": 85898,
+   "max_cite": 85898,
+   "first": "if (646..=652).contains(&npc_type) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7169,
+   "end": 7172,
+   "calls": [
+    "gem_squirrel_death"
+   ],
+   "min_cite": 85921,
+   "max_cite": 85921,
+   "first": "if (639..=645).contains(&npc_type) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7173,
+   "end": 7187,
+   "calls": [
+    "critter_family_death"
+   ],
+   "min_cite": 85942,
+   "max_cite": 85942,
+   "first": "if (npc_type == 46 || npc_type == 303 || npc_type == 337 || npc_type == 540 || npc_type == 67"
+  },
+  {
+   "start": 7188,
+   "end": 7191,
+   "calls": [
+    "penguin_family_death"
+   ],
+   "min_cite": 86092,
+   "max_cite": 86092,
+   "first": "if (npc_type == 148 || npc_type == 149 || npc_type == 168 || npc_type == 470) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7192,
+   "end": 7195,
+   "calls": [
+    "frog_death"
+   ],
+   "min_cite": 86128,
+   "max_cite": 86128,
+   "first": "if npc_type == 361 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7196,
+   "end": 7199,
+   "calls": [
+    "pupfish_death"
+   ],
+   "min_cite": 86173,
+   "max_cite": 86173,
+   "first": "if npc_type == 607 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7200,
+   "end": 7203,
+   "calls": [
+    "pufferfish_death"
+   ],
+   "min_cite": 86190,
+   "max_cite": 86190,
+   "first": "if npc_type == 688 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7204,
+   "end": 7207,
+   "calls": [
+    "seagull_death"
+   ],
+   "min_cite": 86271,
+   "max_cite": 86271,
+   "first": "if (npc_type == 602 || npc_type == 603) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7208,
+   "end": 7211,
+   "calls": [
+    "scorpion_death"
+   ],
+   "min_cite": 86217,
+   "max_cite": 86217,
+   "first": "if (npc_type == 366 || npc_type == 367) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7212,
+   "end": 7215,
+   "calls": [
+    "grebe_death"
+   ],
+   "min_cite": 86291,
+   "max_cite": 86291,
+   "first": "if (npc_type == 608 || npc_type == 609) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7216,
+   "end": 7219,
+   "calls": [
+    "duck_family_death"
+   ],
+   "min_cite": 86244,
+   "max_cite": 86244,
+   "first": "if (362..=365).contains(&npc_type) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7220,
+   "end": 7223,
+   "calls": [
+    "nutcracker_death"
+   ],
+   "min_cite": 86312,
+   "max_cite": 86312,
+   "first": "if (npc_type == 348 || npc_type == 349) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7224,
+   "end": 7227,
+   "calls": [
+    "krampus_death"
+   ],
+   "min_cite": 86332,
+   "max_cite": 86332,
+   "first": "if npc_type == 351 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7228,
+   "end": 7231,
+   "calls": [
+    "elf_archer_death"
+   ],
+   "min_cite": 86352,
+   "max_cite": 86352,
+   "first": "if npc_type == 350 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7232,
+   "end": 7238,
+   "calls": [
+    "corrupt_critter_death"
+   ],
+   "min_cite": 86371,
+   "max_cite": 86371,
+   "first": "if (npc_type == 47 || npc_type == 57 || npc_type == 58 || npc_type == 464 || npc_type == 465)"
+  },
+  {
+   "start": 7239,
+   "end": 7244,
+   "calls": [
+    "crimson_monster_death"
+   ],
+   "min_cite": 86409,
+   "max_cite": 86409,
+   "first": "if (npc_type == 173 || npc_type == 174 || npc_type == 181 || npc_type == 182 || npc_type == 268)"
+  },
+  {
+   "start": 7245,
+   "end": 7252,
+   "calls": [
+    "demon_eye_death"
+   ],
+   "min_cite": 86449,
+   "max_cite": 86449,
+   "first": "if (npc_type == 2 || npc_type == 190 || npc_type == 191 || npc_type == 192 || npc_type == 193"
+  },
+  {
+   "start": 7253,
+   "end": 7256,
+   "calls": [
+    "arapaima_death"
+   ],
+   "min_cite": 86504,
+   "max_cite": 86504,
+   "first": "if npc_type == 157 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7257,
+   "end": 7261,
+   "calls": [
+    "wandering_eye_hit"
+   ],
+   "min_cite": 86521,
+   "max_cite": 86521,
+   "first": "if npc_type == 133 {"
+  },
+  {
+   "start": 7262,
+   "end": 7269,
+   "calls": [
+    "antlion_death"
+   ],
+   "min_cite": 86545,
+   "max_cite": 86545,
+   "first": "if (npc_type == 69 || npc_type == 580 || npc_type == 581 || npc_type == 508"
+  },
+  {
+   "start": 7270,
+   "end": 7273,
+   "calls": [
+    "vulture_death"
+   ],
+   "min_cite": 86607,
+   "max_cite": 86607,
+   "first": "if npc_type == 61 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7274,
+   "end": 7277,
+   "calls": [
+    "raven_death"
+   ],
+   "min_cite": 86625,
+   "max_cite": 86625,
+   "first": "if npc_type == 301 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7278,
+   "end": 7281,
+   "calls": [
+    "parrot_death"
+   ],
+   "min_cite": 86642,
+   "max_cite": 86642,
+   "first": "if npc_type == 252 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7282,
+   "end": 7286,
+   "calls": [
+    "blood_zombie_death"
+   ],
+   "min_cite": 86659,
+   "max_cite": 86659,
+   "first": "if npc_type == 489 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7290,
+   "end": 7293,
+   "calls": [
+    "demon_tax_collector_death"
+   ],
+   "min_cite": 86690,
+   "max_cite": 86690,
+   "first": "if npc_type == 534 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7294,
+   "end": 7297,
+   "calls": [
+    "drippler_death"
+   ],
+   "min_cite": 86710,
+   "max_cite": 86710,
+   "first": "if npc_type == 490 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7298,
+   "end": 7305,
+   "calls": [
+    "shark_family_death"
+   ],
+   "min_cite": 86730,
+   "max_cite": 86730,
+   "first": "if (npc_type == 65 || npc_type == 692 || npc_type == 542 || npc_type == 543"
+  },
+  {
+   "start": 7306,
+   "end": 7309,
+   "calls": [
+    "nymph_death"
+   ],
+   "min_cite": 86787,
+   "max_cite": 86787,
+   "first": "if (npc_type == 195 || npc_type == 196) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7310,
+   "end": 7313,
+   "calls": [
+    "icy_merman_death"
+   ],
+   "min_cite": 86828,
+   "max_cite": 86828,
+   "first": "if npc_type == 206 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7314,
+   "end": 7317,
+   "calls": [
+    "lihzahrd_death"
+   ],
+   "min_cite": 86807,
+   "max_cite": 86807,
+   "first": "if (npc_type == 198 || npc_type == 199) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7318,
+   "end": 7321,
+   "calls": [
+    "gingerbread_man_death"
+   ],
+   "min_cite": 86848,
+   "max_cite": 86848,
+   "first": "if npc_type == 342 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7322,
+   "end": 7325,
+   "calls": [
+    "zombie_elf_death"
+   ],
+   "min_cite": 86868,
+   "max_cite": 86868,
+   "first": "if (338..=340).contains(&npc_type) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7326,
+   "end": 7329,
+   "calls": [
+    "yeti_death"
+   ],
+   "min_cite": 86898,
+   "max_cite": 86898,
+   "first": "if npc_type == 343 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7330,
+   "end": 7333,
+   "calls": [
+    "moss_zombie_death"
+   ],
+   "min_cite": 86917,
+   "max_cite": 86917,
+   "first": "if npc_type == 691 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7334,
+   "end": 7348,
+   "calls": [
+    "zombie_block_death"
+   ],
+   "min_cite": 86937,
+   "max_cite": 86937,
+   "first": "if (npc_type == 104 || npc_type == 632 || npc_type == 331 || npc_type == 332 || npc_type == 109"
+  },
+  {
+   "start": 7349,
+   "end": 7352,
+   "calls": [
+    "cursed_weapon_death"
+   ],
+   "min_cite": 87141,
+   "max_cite": 87141,
+   "first": "if (npc_type == 83 || npc_type == 84 || npc_type == 179) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7353,
+   "end": 7356,
+   "calls": [
+    "plantera_death"
+   ],
+   "min_cite": 87165,
+   "max_cite": 87165,
+   "first": "if npc_type == 262 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7360,
+   "end": 7363,
+   "calls": [
+    "brain_of_cthulhu_death"
+   ],
+   "min_cite": 87238,
+   "max_cite": 87238,
+   "first": "if npc_type == 266 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7364,
+   "end": 7367,
+   "calls": [
+    "creeper_death"
+   ],
+   "min_cite": 87259,
+   "max_cite": 87259,
+   "first": "if npc_type == 267 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7368,
+   "end": 7371,
+   "calls": [
+    "servant_of_cthulhu_death"
+   ],
+   "min_cite": 87341,
+   "max_cite": 87341,
+   "first": "if npc_type == 5 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7372,
+   "end": 7375,
+   "calls": [
+    "wall_of_flesh_death"
+   ],
+   "min_cite": 87358,
+   "max_cite": 87358,
+   "first": "if (npc_type == 113 || npc_type == 114) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7376,
+   "end": 7379,
+   "calls": [
+    "the_hungry_death"
+   ],
+   "min_cite": 87410,
+   "max_cite": 87410,
+   "first": "if (npc_type == 115 || npc_type == 116) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7380,
+   "end": 7383,
+   "calls": [
+    "leech_death"
+   ],
+   "min_cite": 87436,
+   "max_cite": 87436,
+   "first": "if (117..=119).contains(&npc_type) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7384,
+   "end": 7387,
+   "calls": [
+    "beetle_death"
+   ],
+   "min_cite": 87452,
+   "max_cite": 87452,
+   "first": "if (npc_type == 217 || npc_type == 218 || npc_type == 219) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7388,
+   "end": 7391,
+   "calls": [
+    "queen_bee_death"
+   ],
+   "min_cite": 87481,
+   "max_cite": 87481,
+   "first": "if npc_type == 222 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7392,
+   "end": 7396,
+   "calls": [
+    "eater_of_souls_death"
+   ],
+   "min_cite": 87502,
+   "max_cite": 87502,
+   "first": "if (npc_type == 6 || npc_type == 94 || npc_type == 166) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7397,
+   "end": 7400,
+   "calls": [
+    "clinger_death"
+   ],
+   "min_cite": 87537,
+   "max_cite": 87537,
+   "first": "if npc_type == 101 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7401,
+   "end": 7404,
+   "calls": [
+    "devourer_death"
+   ],
+   "min_cite": 87556,
+   "max_cite": 87556,
+   "first": "if (npc_type == 7 || npc_type == 8 || npc_type == 9) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7405,
+   "end": 7408,
+   "calls": [
+    "seeker_death"
+   ],
+   "min_cite": 87573,
+   "max_cite": 87573,
+   "first": "if (npc_type == 98 || npc_type == 99 || npc_type == 100) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7409,
+   "end": 7412,
+   "calls": [
+    "giant_worm_death"
+   ],
+   "min_cite": 87590,
+   "max_cite": 87590,
+   "first": "if (npc_type == 10 || npc_type == 11 || npc_type == 12) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7413,
+   "end": 7416,
+   "calls": [
+    "digger_death"
+   ],
+   "min_cite": 87606,
+   "max_cite": 87606,
+   "first": "if (npc_type == 95 || npc_type == 96 || npc_type == 97) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7417,
+   "end": 7420,
+   "calls": [
+    "eater_of_worlds_death"
+   ],
+   "min_cite": 87622,
+   "max_cite": 87622,
+   "first": "if (npc_type == 13 || npc_type == 14 || npc_type == 15) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7421,
+   "end": 7425,
+   "calls": [
+    "town_npc_death"
+   ],
+   "min_cite": 87652,
+   "max_cite": 87652,
+   "first": "if (npc_type == 17 || npc_type == 441) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7426,
+   "end": 7429,
+   "calls": [
+    "unicorn_death"
+   ],
+   "min_cite": 87695,
+   "max_cite": 87695,
+   "first": "if npc_type == 86 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7430,
+   "end": 7433,
+   "calls": [
+    "wolf_death"
+   ],
+   "min_cite": 87717,
+   "max_cite": 87717,
+   "first": "if npc_type == 155 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7434,
+   "end": 7437,
+   "calls": [
+    "hellhound_death"
+   ],
+   "min_cite": 87735,
+   "max_cite": 87735,
+   "first": "if npc_type == 329 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7438,
+   "end": 7441,
+   "calls": [
+    "black_recluse_death"
+   ],
+   "min_cite": 87753,
+   "max_cite": 87753,
+   "first": "if (npc_type == 163 || npc_type == 238) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7442,
+   "end": 7445,
+   "calls": [
+    "wall_creeper_death"
+   ],
+   "min_cite": 87773,
+   "max_cite": 87773,
+   "first": "if (npc_type == 164 || npc_type == 165) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7446,
+   "end": 7449,
+   "calls": [
+    "blood_crawler_death"
+   ],
+   "min_cite": 87793,
+   "max_cite": 87793,
+   "first": "if (npc_type == 239 || npc_type == 240) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7450,
+   "end": 7453,
+   "calls": [
+    "jungle_creeper_death"
+   ],
+   "min_cite": 87813,
+   "max_cite": 87813,
+   "first": "if (npc_type == 236 || npc_type == 237) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7454,
+   "end": 7457,
+   "calls": [
+    "blood_feeder_death"
+   ],
+   "min_cite": 87833,
+   "max_cite": 87833,
+   "first": "if npc_type == 241 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7458,
+   "end": 7461,
+   "calls": [
+    "blood_jelly_death"
+   ],
+   "min_cite": 87850,
+   "max_cite": 87850,
+   "first": "if npc_type == 242 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7462,
+   "end": 7466,
+   "calls": [
+    "bound_npc_death"
+   ],
+   "min_cite": 87870,
+   "max_cite": 87870,
+   "first": "if (npc_type == 105 || npc_type == 107 || npc_type == 106 || npc_type == 108) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7467,
+   "end": 7470,
+   "calls": [
+    "mechanic_death"
+   ],
+   "min_cite": 87902,
+   "max_cite": 87902,
+   "first": "if (npc_type == 123 || npc_type == 124) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7471,
+   "end": 7474,
+   "calls": [
+    "guide_death"
+   ],
+   "min_cite": 87922,
+   "max_cite": 87922,
+   "first": "if npc_type == 22 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7475,
+   "end": 7478,
+   "calls": [
+    "bartender_death"
+   ],
+   "min_cite": 87942,
+   "max_cite": 87942,
+   "first": "if npc_type == 550 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7479,
+   "end": 7482,
+   "calls": [
+    "golfer_death"
+   ],
+   "min_cite": 87962,
+   "max_cite": 87962,
+   "first": "if (npc_type == 588 || npc_type == 589) && npc.hp <= 0 {"
+  },
+  {
+   "start": 7483,
+   "end": 7486,
+   "calls": [
+    "bestiary_girl_death"
+   ],
+   "min_cite": 87985,
+   "max_cite": 87985,
+   "first": "if npc_type == 633 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7487,
+   "end": 7490,
+   "calls": [
+    "travelling_merchant_death"
+   ],
+   "min_cite": 88023,
+   "max_cite": 88023,
+   "first": "if npc_type == 368 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7491,
+   "end": 7494,
+   "calls": [
+    "painter_death"
+   ],
+   "min_cite": 88076,
+   "max_cite": 88076,
+   "first": "if npc_type == 227 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7495,
+   "end": 7498,
+   "calls": [
+    "witch_doctor_death"
+   ],
+   "min_cite": 88099,
+   "max_cite": 88099,
+   "first": "if npc_type == 228 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7499,
+   "end": 7502,
+   "calls": [
+    "pirate_death"
+   ],
+   "min_cite": 88119,
+   "max_cite": 88119,
+   "first": "if npc_type == 229 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7503,
+   "end": 7506,
+   "calls": [
+    "santa_claus_death"
+   ],
+   "min_cite": 88153,
+   "max_cite": 88153,
+   "first": "if npc_type == 142 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7507,
+   "end": 7510,
+   "calls": [
+    "steampunker_death"
+   ],
+   "min_cite": 88176,
+   "max_cite": 88176,
+   "first": "if npc_type == 178 && npc.hp <= 0 {"
+  },
+  {
+   "start": 7511,
+   "end": 7514,
+   "calls": [
+    "stylist_death"
+   ],
+   "min_cite": 88198,
+   "max_cite": 88198,
+   "first": "if (npc_type == 353 || npc_type == 354) && npc.hp <= 0 {"
+  }
+ ],
+ "tests": [
+  {
+   "name": "w4_f10_the_king_slime_death_spawns_the_gore_and_returns_the_seam",
+   "start": 9862,
+   "end": 9878,
+   "min_cite": 85684,
+   "max_cite": 85684,
+   "body_fns": [
+    "king_slime_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_tortoise_and_derpling_deaths_spawn_the_four_gores",
+   "start": 9880,
+   "end": 9901,
+   "min_cite": 85718,
+   "max_cite": 85737,
+   "body_fns": [
+    "w4_f10_the_tortoise_and_derpling_deaths_spawn_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_crawdad_death_uses_the_per_type_offset",
+   "start": 9903,
+   "end": 9917,
+   "min_cite": 85757,
+   "max_cite": 85757,
+   "body_fns": [
+    "crawdad_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_giant_shelly_death_uses_the_per_type_offset",
+   "start": 9919,
+   "end": 9932,
+   "min_cite": 85775,
+   "max_cite": 85775,
+   "body_fns": [
+    "giant_shelly_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_salamander_death_uses_the_per_type_offset",
+   "start": 9934,
+   "end": 9952,
+   "min_cite": 85793,
+   "max_cite": 85793,
+   "body_fns": [
+    "salamander_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_bat_family_death_uses_the_per_type_list",
+   "start": 9954,
+   "end": 9980,
+   "min_cite": 85813,
+   "max_cite": 85813,
+   "body_fns": [
+    "bat_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_owl_death_spawns_the_three_gores",
+   "start": 9982,
+   "end": 9994,
+   "min_cite": 85856,
+   "max_cite": 85856,
+   "body_fns": [
+    "owl_death",
+    "w4_f10_the_owl_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_gnome_death_spawns_the_four_gores",
+   "start": 9996,
+   "end": 10007,
+   "min_cite": 85874,
+   "max_cite": 85874,
+   "body_fns": [
+    "gnome_death",
+    "w4_f10_the_gnome_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_dandelion_death_spawns_the_four_gores",
+   "start": 10009,
+   "end": 10021,
+   "min_cite": 85893,
+   "max_cite": 85893,
+   "body_fns": [
+    "dandelion_death",
+    "w4_f10_the_dandelion_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_gem_bunny_death_uses_the_per_type_offset",
+   "start": 10023,
+   "end": 10038,
+   "min_cite": 85918,
+   "max_cite": 85918,
+   "body_fns": [
+    "gem_bunny_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_gem_squirrel_death_uses_the_per_type_offset",
+   "start": 10040,
+   "end": 10053,
+   "min_cite": 85940,
+   "max_cite": 85940,
+   "body_fns": [
+    "gem_squirrel_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_bunny_crab_goldfish",
+   "start": 10055,
+   "end": 10090,
+   "min_cite": 85958,
+   "max_cite": 85958,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_dolphin_birds_macaw",
+   "start": 10092,
+   "end": 10122,
+   "min_cite": 85985,
+   "max_cite": 85985,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_macaw_toucan_cockatiel",
+   "start": 10124,
+   "end": 10143,
+   "min_cite": 86010,
+   "max_cite": 86010,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_cockatiel_and_single_gores",
+   "start": 10145,
+   "end": 10168,
+   "min_cite": 86028,
+   "max_cite": 86028,
+   "body_fns": [
+    "critter_family_death",
+    "w4_f10_the_critter_family_cockatiel_and_single_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_flying_fish_turtle",
+   "start": 10170,
+   "end": 10201,
+   "min_cite": 86058,
+   "max_cite": 86058,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_critter_family_jungle_sea_turtle",
+   "start": 10203,
+   "end": 10217,
+   "min_cite": 86079,
+   "max_cite": 86079,
+   "body_fns": [
+    "critter_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_penguin_family_death_uses_the_per_type_list",
+   "start": 10219,
+   "end": 10239,
+   "min_cite": 86108,
+   "max_cite": 86108,
+   "body_fns": [
+    "penguin_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_frog_death_spawns_the_two_gores",
+   "start": 10241,
+   "end": 10253,
+   "min_cite": 86142,
+   "max_cite": 86142,
+   "body_fns": [
+    "frog_death",
+    "w4_f10_the_frog_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_pupfish_death_spawns_the_two_gores",
+   "start": 10255,
+   "end": 10266,
+   "min_cite": 86187,
+   "max_cite": 86187,
+   "body_fns": [
+    "pupfish_death",
+    "w4_f10_the_pupfish_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_pufferfish_death_branches_on_ai2",
+   "start": 10268,
+   "end": 10291,
+   "min_cite": 86206,
+   "max_cite": 86206,
+   "body_fns": [
+    "pufferfish_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_seagull_death_spawns_the_two_gores",
+   "start": 10293,
+   "end": 10304,
+   "min_cite": 86287,
+   "max_cite": 86287,
+   "body_fns": [
+    "seagull_death",
+    "w4_f10_the_seagull_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_scorpion_death_uses_the_per_type_list",
+   "start": 10306,
+   "end": 10320,
+   "min_cite": 86233,
+   "max_cite": 86233,
+   "body_fns": [
+    "scorpion_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_grebe_death_spawns_the_three_gores",
+   "start": 10322,
+   "end": 10333,
+   "min_cite": 86307,
+   "max_cite": 86307,
+   "body_fns": [
+    "grebe_death",
+    "w4_f10_the_grebe_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_duck_family_death_uses_the_per_type_list",
+   "start": 10335,
+   "end": 10349,
+   "min_cite": 86260,
+   "max_cite": 86260,
+   "body_fns": [
+    "duck_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nutcracker_death_spawns_the_five_gores",
+   "start": 10351,
+   "end": 10363,
+   "min_cite": 86326,
+   "max_cite": 86326,
+   "body_fns": [
+    "nutcracker_death",
+    "w4_f10_the_nutcracker_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_krampus_death_spawns_the_five_gores",
+   "start": 10365,
+   "end": 10376,
+   "min_cite": 86346,
+   "max_cite": 86346,
+   "body_fns": [
+    "krampus_death",
+    "w4_f10_the_krampus_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_elf_archer_death_spawns_the_four_gores",
+   "start": 10378,
+   "end": 10389,
+   "min_cite": 86366,
+   "max_cite": 86366,
+   "body_fns": [
+    "elf_archer_death",
+    "w4_f10_the_elf_archer_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_corrupt_critter_death_uses_the_per_type_list",
+   "start": 10391,
+   "end": 10412,
+   "min_cite": 86387,
+   "max_cite": 86387,
+   "body_fns": [
+    "corrupt_critter_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_crimson_monster_death_uses_the_per_type_list",
+   "start": 10414,
+   "end": 10437,
+   "min_cite": 86425,
+   "max_cite": 86425,
+   "body_fns": [
+    "crimson_monster_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_demon_eye_death_uses_the_per_type_pair",
+   "start": 10439,
+   "end": 10469,
+   "min_cite": 86465,
+   "max_cite": 86465,
+   "body_fns": [
+    "demon_eye_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_arapaima_death_spawns_the_two_gores",
+   "start": 10471,
+   "end": 10484,
+   "min_cite": 86518,
+   "max_cite": 86518,
+   "body_fns": [
+    "arapaima_death",
+    "w4_f10_the_arapaima_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wandering_eye_hit_latches_and_death_spawns",
+   "start": 10486,
+   "end": 10517,
+   "min_cite": 86529,
+   "max_cite": 86529,
+   "body_fns": [
+    "wandering_eye_hit"
+   ]
+  },
+  {
+   "name": "w4_f10_the_antlion_death_uses_the_per_type_list",
+   "start": 10519,
+   "end": 10543,
+   "min_cite": 86568,
+   "max_cite": 86568,
+   "body_fns": [
+    "antlion_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_vulture_death_spawns_the_three_gores",
+   "start": 10545,
+   "end": 10560,
+   "min_cite": 86621,
+   "max_cite": 86621,
+   "body_fns": [
+    "vulture_death",
+    "w4_f10_the_vulture_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_raven_death_spawns_the_two_gores",
+   "start": 10562,
+   "end": 10575,
+   "min_cite": 86639,
+   "max_cite": 86639,
+   "body_fns": [
+    "raven_death",
+    "w4_f10_the_raven_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_parrot_death_spawns_the_two_gores",
+   "start": 10577,
+   "end": 10588,
+   "min_cite": 86656,
+   "max_cite": 86656,
+   "body_fns": [
+    "parrot_death",
+    "w4_f10_the_parrot_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_zombie_ladder_uses_the_per_type_triple",
+   "start": 10590,
+   "end": 10615,
+   "min_cite": 86675,
+   "max_cite": 86675,
+   "body_fns": []
+  },
+  {
+   "name": "w4_f10_the_drippler_death_draws_the_two_random_types",
+   "start": 10617,
+   "end": 10655,
+   "min_cite": 86724,
+   "max_cite": 86724,
+   "body_fns": [
+    "drippler_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_shark_family_death_uses_the_per_type_quad",
+   "start": 10657,
+   "end": 10689,
+   "min_cite": 86746,
+   "max_cite": 86746,
+   "body_fns": [
+    "shark_family_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_nymph_and_icy_merman_deaths_use_the_ladder",
+   "start": 10691,
+   "end": 10713,
+   "min_cite": 86801,
+   "max_cite": 86842,
+   "body_fns": [
+    "w4_f10_the_nymph_and_icy_merman_deaths_use_the_ladder"
+   ]
+  },
+  {
+   "name": "w4_f10_the_lihzahrd_death_spawns_the_six_gores",
+   "start": 10715,
+   "end": 10731,
+   "min_cite": 86821,
+   "max_cite": 86821,
+   "body_fns": [
+    "lihzahrd_death",
+    "w4_f10_the_lihzahrd_death_spawns_the_six_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_gingerbread_man_death_spawns_the_ladder",
+   "start": 10733,
+   "end": 10745,
+   "min_cite": 86862,
+   "max_cite": 86862,
+   "body_fns": [
+    "gingerbread_man_death",
+    "w4_f10_the_gingerbread_man_death_spawns_the_ladder"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_elf_death_uses_the_per_type_head",
+   "start": 10747,
+   "end": 10764,
+   "min_cite": 86884,
+   "max_cite": 86884,
+   "body_fns": [
+    "zombie_elf_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_yeti_death_spawns_the_four_gores",
+   "start": 10766,
+   "end": 10781,
+   "min_cite": 86912,
+   "max_cite": 86912,
+   "body_fns": [
+    "w4_f10_the_yeti_death_spawns_the_four_gores",
+    "yeti_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_moss_zombie_death_spawns_the_ladder",
+   "start": 10783,
+   "end": 10795,
+   "min_cite": 86931,
+   "max_cite": 86931,
+   "body_fns": [
+    "moss_zombie_death",
+    "w4_f10_the_moss_zombie_death_spawns_the_ladder"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_werewolf_and_maggot",
+   "start": 10797,
+   "end": 10826,
+   "min_cite": 86982,
+   "max_cite": 86982,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_clown_spawns_the_extra_gore",
+   "start": 10828,
+   "end": 10842,
+   "min_cite": 87029,
+   "max_cite": 87029,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_eskimo_and_frankenstein",
+   "start": 10844,
+   "end": 10859,
+   "min_cite": 87039,
+   "max_cite": 87039,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_swamp_and_female",
+   "start": 10861,
+   "end": 10876,
+   "min_cite": 87057,
+   "max_cite": 87057,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_doctor_and_superman",
+   "start": 10878,
+   "end": 10903,
+   "min_cite": 87075,
+   "max_cite": 87075,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_block_pixie_and_raincoat",
+   "start": 10905,
+   "end": 10920,
+   "min_cite": 87092,
+   "max_cite": 87092,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_fallthrough_bald_and_twiggy",
+   "start": 10922,
+   "end": 10941,
+   "min_cite": 87110,
+   "max_cite": 87110,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_fallthrough_eyezor_and_generic",
+   "start": 10943,
+   "end": 10959,
+   "min_cite": 87122,
+   "max_cite": 87122,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_fallthrough_pincushion",
+   "start": 10961,
+   "end": 10998,
+   "min_cite": 87114,
+   "max_cite": 87114,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_zombie_fallthrough_slimed",
+   "start": 11000,
+   "end": 11020,
+   "min_cite": 87128,
+   "max_cite": 87128,
+   "body_fns": [
+    "zombie_block_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_cursed_weapon_death_draws_the_velocity",
+   "start": 11022,
+   "end": 11056,
+   "min_cite": 87158,
+   "max_cite": 87158,
+   "body_fns": [
+    "cursed_weapon_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_plantera_death_draws_the_positions",
+   "start": 11058,
+   "end": 11089,
+   "min_cite": 87199,
+   "max_cite": 87199,
+   "body_fns": [
+    "plantera_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_plantera_part_death_uses_the_per_type_pair",
+   "start": 11091,
+   "end": 11105,
+   "min_cite": 87211,
+   "max_cite": 87211,
+   "body_fns": [
+    "plantera_part_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_brain_of_cthulhu_death_draws_the_velocity",
+   "start": 11107,
+   "end": 11137,
+   "min_cite": 87252,
+   "max_cite": 87252,
+   "body_fns": [
+    "brain_of_cthulhu_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_creeper_death_spawns_the_single_gore",
+   "start": 11139,
+   "end": 11149,
+   "min_cite": 87273,
+   "max_cite": 87273,
+   "body_fns": [
+    "creeper_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_servant_death_spawns_the_two_gores",
+   "start": 11151,
+   "end": 11163,
+   "min_cite": 87355,
+   "max_cite": 87355,
+   "body_fns": [
+    "servant_of_cthulhu_death",
+    "w4_f10_the_servant_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wall_of_flesh_death_spawns_the_quadrants",
+   "start": 11165,
+   "end": 11185,
+   "min_cite": 87374,
+   "max_cite": 87374,
+   "body_fns": [
+    "wall_of_flesh_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_hungry_death_spawns_the_two_gores",
+   "start": 11187,
+   "end": 11198,
+   "min_cite": 87433,
+   "max_cite": 87433,
+   "body_fns": [
+    "the_hungry_death",
+    "w4_f10_the_hungry_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_leech_death_uses_the_per_type_offset",
+   "start": 11200,
+   "end": 11212,
+   "min_cite": 87450,
+   "max_cite": 87450,
+   "body_fns": [
+    "leech_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_beetle_death_uses_the_per_type_list",
+   "start": 11214,
+   "end": 11229,
+   "min_cite": 87468,
+   "max_cite": 87468,
+   "body_fns": [
+    "beetle_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_queen_bee_death_spawns_the_spread_gores",
+   "start": 11231,
+   "end": 11249,
+   "min_cite": 87495,
+   "max_cite": 87495,
+   "body_fns": [
+    "queen_bee_death",
+    "w4_f10_the_queen_bee_death_spawns_the_spread_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_eater_of_souls_death_uses_the_per_type_list",
+   "start": 11251,
+   "end": 11282,
+   "min_cite": 87518,
+   "max_cite": 87518,
+   "body_fns": [
+    "eater_of_souls_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_clinger_death_spawns_the_four_gores",
+   "start": 11284,
+   "end": 11296,
+   "min_cite": 87551,
+   "max_cite": 87551,
+   "body_fns": [
+    "clinger_death",
+    "w4_f10_the_clinger_death_spawns_the_four_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_devourer_death_uses_the_per_type_offset",
+   "start": 11298,
+   "end": 11311,
+   "min_cite": 87570,
+   "max_cite": 87570,
+   "body_fns": [
+    "devourer_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_seeker_death_spawns_the_single_gore",
+   "start": 11313,
+   "end": 11323,
+   "min_cite": 87587,
+   "max_cite": 87587,
+   "body_fns": [
+    "seeker_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_giant_worm_death_uses_the_per_type_offset",
+   "start": 11325,
+   "end": 11338,
+   "min_cite": 87604,
+   "max_cite": 87604,
+   "body_fns": [
+    "giant_worm_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_digger_death_uses_the_per_type_offset",
+   "start": 11340,
+   "end": 11353,
+   "min_cite": 87620,
+   "max_cite": 87620,
+   "body_fns": [
+    "digger_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_eater_of_worlds_death_uses_the_per_type_pair",
+   "start": 11355,
+   "end": 11369,
+   "min_cite": 87638,
+   "max_cite": 87638,
+   "body_fns": [
+    "eater_of_worlds_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_town_npc_death_uses_the_shimmer_variants",
+   "start": 11371,
+   "end": 11404,
+   "min_cite": 87668,
+   "max_cite": 87668,
+   "body_fns": [
+    "town_npc_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_unicorn_death_spawns_the_seven_gores",
+   "start": 11406,
+   "end": 11418,
+   "min_cite": 87709,
+   "max_cite": 87709,
+   "body_fns": [
+    "unicorn_death",
+    "w4_f10_the_unicorn_death_spawns_the_seven_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wolf_death_spawns_the_three_gores",
+   "start": 11420,
+   "end": 11431,
+   "min_cite": 87731,
+   "max_cite": 87731,
+   "body_fns": [
+    "w4_f10_the_wolf_death_spawns_the_three_gores",
+    "wolf_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_hellhound_death_spawns_the_three_gores",
+   "start": 11433,
+   "end": 11444,
+   "min_cite": 87749,
+   "max_cite": 87749,
+   "body_fns": [
+    "hellhound_death",
+    "w4_f10_the_hellhound_death_spawns_the_three_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_black_recluse_death_spawns_the_five_gores",
+   "start": 11446,
+   "end": 11458,
+   "min_cite": 87767,
+   "max_cite": 87767,
+   "body_fns": [
+    "black_recluse_death",
+    "w4_f10_the_black_recluse_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_wall_creeper_death_spawns_the_five_gores",
+   "start": 11460,
+   "end": 11472,
+   "min_cite": 87787,
+   "max_cite": 87787,
+   "body_fns": [
+    "w4_f10_the_wall_creeper_death_spawns_the_five_gores",
+    "wall_creeper_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_crawler_death_spawns_the_five_gores",
+   "start": 11474,
+   "end": 11486,
+   "min_cite": 87807,
+   "max_cite": 87807,
+   "body_fns": [
+    "blood_crawler_death",
+    "w4_f10_the_blood_crawler_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_jungle_creeper_death_spawns_the_five_gores",
+   "start": 11488,
+   "end": 11500,
+   "min_cite": 87827,
+   "max_cite": 87827,
+   "body_fns": [
+    "jungle_creeper_death",
+    "w4_f10_the_jungle_creeper_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_feeder_death_spawns_the_two_gores",
+   "start": 11502,
+   "end": 11513,
+   "min_cite": 87847,
+   "max_cite": 87847,
+   "body_fns": [
+    "blood_feeder_death",
+    "w4_f10_the_blood_feeder_death_spawns_the_two_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_blood_jelly_death_spawns_the_five_gores",
+   "start": 11515,
+   "end": 11527,
+   "min_cite": 87864,
+   "max_cite": 87864,
+   "body_fns": [
+    "blood_jelly_death",
+    "w4_f10_the_blood_jelly_death_spawns_the_five_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_bound_npc_death_uses_the_shimmer_variants",
+   "start": 11529,
+   "end": 11560,
+   "min_cite": 87886,
+   "max_cite": 87886,
+   "body_fns": [
+    "bound_npc_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_mechanic_death_uses_the_shimmer_variants",
+   "start": 11562,
+   "end": 11583,
+   "min_cite": 87916,
+   "max_cite": 87916,
+   "body_fns": [
+    "mechanic_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_guide_death_uses_the_shimmer_variants",
+   "start": 11585,
+   "end": 11606,
+   "min_cite": 87936,
+   "max_cite": 87936,
+   "body_fns": [
+    "guide_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_bartender_death_spawns_the_offset_gores",
+   "start": 11608,
+   "end": 11626,
+   "min_cite": 87956,
+   "max_cite": 87956,
+   "body_fns": [
+    "bartender_death",
+    "w4_f10_the_bartender_death_spawns_the_offset_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_golfer_death_spawns_the_offset_gores",
+   "start": 11628,
+   "end": 11643,
+   "min_cite": 87978,
+   "max_cite": 87978,
+   "body_fns": [
+    "golfer_death",
+    "w4_f10_the_golfer_death_spawns_the_offset_gores"
+   ]
+  },
+  {
+   "name": "w4_f10_the_bestiary_girl_death_uses_the_shimmer_variants",
+   "start": 11645,
+   "end": 11669,
+   "min_cite": 88016,
+   "max_cite": 88016,
+   "body_fns": [
+    "bestiary_girl_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_travelling_merchant_death_uses_the_shimmer_variants",
+   "start": 11671,
+   "end": 11692,
+   "min_cite": 88039,
+   "max_cite": 88039,
+   "body_fns": [
+    "travelling_merchant_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_painter_death_uses_the_shimmer_variants",
+   "start": 11694,
+   "end": 11716,
+   "min_cite": 88092,
+   "max_cite": 88092,
+   "body_fns": [
+    "painter_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_witch_doctor_death_uses_the_shimmer_variants",
+   "start": 11718,
+   "end": 11740,
+   "min_cite": 88113,
+   "max_cite": 88113,
+   "body_fns": [
+    "witch_doctor_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_pirate_death_shimmer_is_dust_only",
+   "start": 11742,
+   "end": 11764,
+   "min_cite": 88146,
+   "max_cite": 88146,
+   "body_fns": [
+    "pirate_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_santa_claus_death_uses_the_shimmer_variants",
+   "start": 11766,
+   "end": 11787,
+   "min_cite": 88169,
+   "max_cite": 88169,
+   "body_fns": [
+    "santa_claus_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_steampunker_death_uses_the_shimmer_variants",
+   "start": 11789,
+   "end": 11810,
+   "min_cite": 88192,
+   "max_cite": 88192,
+   "body_fns": [
+    "steampunker_death"
+   ]
+  },
+  {
+   "name": "w4_f10_the_stylist_death_uses_the_shimmer_variants",
+   "start": 11812,
+   "end": 11834,
+   "min_cite": 88214,
+   "max_cite": 88214,
+   "body_fns": [
+    "stylist_death"
+   ]
+  }
+ ],
+ "disp": [
+  6711,
+  7516
+ ]
+}
