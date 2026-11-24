@@ -283,6 +283,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_57", 4),
     ("NPC_Killed_59", 4),
     ("NPC_Killed_62", 4),
+    // W4-d33 — the Windy Balloon's pop cue (`NPC.cs:16716`'s
+    // NPCDeath63, `SoundID.cs:1377`). d42 batch-3's bank row,
+    // constants-copy (keep-one d37c-E3).
+    ("NPC_Killed_63", 4),
     ("NPC_Killed_66", 4),
     // W4-d37 — the NPCID 211-280 band's death cues (the `SetDefaults`
     // DeathSound rows): NPCDeath7 (ice golem), NPCDeath16 (beetles),

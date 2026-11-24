@@ -953,6 +953,28 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // W4-g8 machine round 3 — 159 has a null row (`NPCID.cs:7057`
         // `{ 159, null }`, the else-branch: no immunity).
         NpcKind::Vampire => &[],
+        // The dragonflies (W4-d33): all seven share the
+        // `SpecificallyImmuneTo = [31]` (Confused) rows
+        // (`NPCID.cs:9473-9521` — 595 through 601 each carry one; the
+        // c8 crawlers' same-band precedent).
+        NpcKind::BlackDragonfly
+        | NpcKind::BlueDragonfly
+        | NpcKind::GreenDragonfly
+        | NpcKind::OrangeDragonfly
+        | NpcKind::RedDragonfly
+        | NpcKind::YellowDragonfly
+        | NpcKind::GoldDragonfly => &[31],
+        // The fairy critters (W4-d33 wiring): `ImmuneToAllBuffsThatAre
+        // NotWhips = true` + `ImmuneToWhips = true` (`NPCID.cs:9410-
+        // 9433`, 583/584/585 each) — the mask loop is unmodelled, so
+        // they ride `&[]` (the ForceBubble documented gap); the whip
+        // tag gate reads `whip_immune` below. The windy balloon 594:
+        // `SpecificallyImmuneTo = [31]` (`NPCID.cs:9466-9472`).
+        // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+        NpcKind::FairyCritterPink
+        | NpcKind::FairyCritterGreen
+        | NpcKind::FairyCritterBlue => &[],
+        NpcKind::WindyBalloon => &[31],
     }
 }
 
@@ -1015,11 +1037,14 @@ fn shimmer_immune(cs_id: u16) -> bool {
 /// pirate ship and the Dungeon Guardian (W4-d34) are on the ported roster —
 /// the whip tag gate
 /// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
-pub fn whip_immune(kind: NpcKind) -> bool {
     // MERGE-SIDE (367 s1): the union keeps d34's DungeonGuardian row and
     // W4-g4/d22's BlazingWheel + DD2LanePortal rows; d42's fairy critters
     // 583-585 drop with the d33-owned dups (d33 re-adds their
     // `ImmuneToWhips` rows at the small-lanes splice, `NPCID.cs:9420+`).
+/// pirate ship and (W4-d33 wiring) the three fairy critters are on the
+/// ported roster — the whip tag gate
+/// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
+pub fn whip_immune(kind: NpcKind) -> bool {
     matches!(
         kind,
         NpcKind::MartianSaucer
@@ -1027,6 +1052,9 @@ pub fn whip_immune(kind: NpcKind) -> bool {
             | NpcKind::DungeonGuardian
             | NpcKind::BlazingWheel
             | NpcKind::DD2LanePortal
+            | NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
     )
 }
 

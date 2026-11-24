@@ -41,7 +41,10 @@ fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
 /// bound. Returns `(topY, bottomY)` — both INCLUSIVE of the blocking cell
 /// (the callers do `topY++`/`bottomY--` to get the free span). The
 /// `InWorld(x, y, 10)` gate (`:4376`) returns the unchanged start pair.
-fn expand_vertically(
+/// `pub` since W4-d33 style 102: the Sand Elemental's sandnado placement
+/// (`NPC.cs:40248`, `StrayMethods.CanSpawnSandstormHostile` `:47-63`)
+/// calls it directly.
+pub fn expand_vertically(
     world: &World,
     start_x: i32,
     start_y: i32,

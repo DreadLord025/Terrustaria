@@ -1610,6 +1610,21 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_156",
         // W4-g8 machine round 3 — the Vampire 159's own sheet.
         "NPC_159",
+        // W4-d33 — the dragonfly sheets (`DRAGONFLY_SHEETS`).
+        "NPC_595",
+        "NPC_596",
+        "NPC_597",
+        "NPC_598",
+        "NPC_599",
+        "NPC_600",
+        "NPC_601",
+        // W4-d33 wiring — the fairy critters' + the windy balloon's
+        // sheets (`FAIRY_BALLOON_SHEETS`). d42 batch-2/3's rows,
+        // constants-copy (keep-one d37c-E3).
+        "NPC_583",
+        "NPC_584",
+        "NPC_585",
+        "NPC_594",
 ];
 
 
@@ -2560,6 +2575,7 @@ pub const pub const BESTIARY_NPC_SHEET_IDS: [u16; 342] = [
 
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 216] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 186] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2591,7 +2607,7 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 216] = [
         210, 211,
         // The Tesla Turret (S1-F-13d) — appended last for the same reason.
         387,
-        // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
+        // The small-kinds wiring wave (S1-D-3-wire-smallkinds) - appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
         // W4-g5 — the two casters' bestiary sheets, appended last so the
@@ -2608,6 +2624,19 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 216] = [
         221, 48, 156,
         // W4-g8 machine round 3 — the Vampire 159 (appended last).
         159,
+        // W4-d33 — the dragonfly family's TWO visible bestiary cards: the
+        // Red 599 "Dragonfly" (the five Hide=true colours fold onto it,
+        // `ContentSamples.cs:1043-1047`) + the Gold 601 "Gold Dragonfly".
+        // Appended last for the same reason.
+        599, 601,
+        // W4-d33 wiring — the three fairy critters' OWN visible cards
+        // (583/584/585, no Hide rows — `NPCID.cs:5148-5169`). The windy
+        // balloon 594 takes NO sheet slot: its card draws the
+        // CustomTexturePath portrait (`bestiary_custom_portraits`,
+        // `NPCID.cs:5232-5239` — the 7/10/13 custom rows' precedent).
+        // Appended last for the same reason. d42 batch-2/3's rows,
+        // constants-copy (keep-one d37c-E3).
+        583, 584, 585,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -3610,6 +3639,21 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_156").copied(),
                 // W4-g8 machine round 3 — the Vampire 159's strip.
                 atlas.sheet("NPC_159").copied(),
+                // W4-d33 — the dragonfly family's TWO visible bestiary
+                // cards: the Red 599 + Gold 601 strips. The five Hide=true
+                // colours fold onto 599 (no grid card of their own — the
+                // c8 TruffleWormDigger precedent). Appended last so the
+                // earlier slots keep their indexes.
+                atlas.sheet("NPC_599").copied(),
+                atlas.sheet("NPC_601").copied(),
+                // W4-d33 wiring — the three fairy critters' OWN visible
+                // cards (the 583/584/585 strips). The windy balloon 594
+                // draws its CustomTexturePath portrait instead (no
+                // sheet slot — the 7/10/13 custom rows' precedent).
+                // Appended last so the earlier slots keep their indexes.
+                atlas.sheet("NPC_583").copied(),
+                atlas.sheet("NPC_584").copied(),
+                atlas.sheet("NPC_585").copied(),
             ],
 
 

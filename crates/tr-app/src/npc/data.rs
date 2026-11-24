@@ -1109,6 +1109,28 @@ impl NpcKind {
             // 766 (d37 SEAL fbb948172 line 1408-1411: only 762 + 788-789
             // were free in d36's old band; 788-790 are RESERVED for d39's
             // 3 unclaimed kinds — `_d37_seal_final.json` carries no 762).
+            // The dragonflies (W4-d33): the vanilla ids 595-601 are free
+            // protocol slots (the to_u16 scan: no arm above rides them),
+            // so they keep their vanilla ids — the W4-e26 ladybug
+            // precedent. The c10 swim-forms 603/609 stay clear.
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
+            // The fairy critters + the windy balloon (W4-d33 wiring): the
+            // constants-copy of d42 batch-2/3's wire rows (86182c57f /
+            // 44f007096 — the 359/360/361/368 port-local band). KEEP-ONE
+            // (d37c-E3): the union keeps d42's numbering verbatim; the
+            // vanilla types 583-585/594 ride cs_id/net_id below (the
+            // dragonfly wiring kept its free vanilla slots; these four
+            // ride d42's band instead so the merge dedupes to one row).
+            NpcKind::FairyCritterPink => 583,
+            NpcKind::FairyCritterGreen => 584,
+            NpcKind::FairyCritterBlue => 585,
+            NpcKind::WindyBalloon => 594,
         }
     
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
@@ -1806,6 +1828,21 @@ impl NpcKind {
             // W4-g8 machine round 3 — the Vampire 159 census row (E8
             // COLLISION FIX: 388 is d37's RustyArmoredBonesAxe; 762 —
             // 788-790 stay reserved for d39's 3 unclaimed kinds).
+            // The dragonflies (W4-d33): the vanilla ids kept (`to_u16`
+            // above).
+            595 => NpcKind::BlackDragonfly,
+            596 => NpcKind::BlueDragonfly,
+            597 => NpcKind::GreenDragonfly,
+            598 => NpcKind::OrangeDragonfly,
+            599 => NpcKind::RedDragonfly,
+            600 => NpcKind::YellowDragonfly,
+            601 => NpcKind::GoldDragonfly,
+            // The fairy critters + the windy balloon (W4-d33 wiring):
+            // d42 batch-2/3's wire rows, constants-copy (keep-one d37c-E3).
+            583 => NpcKind::FairyCritterPink,
+            584 => NpcKind::FairyCritterGreen,
+            585 => NpcKind::FairyCritterBlue,
+            594 => NpcKind::WindyBalloon,
             _ => return None,
         })
     
@@ -3152,6 +3189,23 @@ impl NpcKind {
             // W4-g8 machine round 3 — the Vampire 159's NPCHit1
             // (`NPC.cs:15489`).
             NpcKind::Vampire => "NPC_Hit_1",
+            // The dragonflies (W4-d33): NPCHit1 each (`NPC.cs:16729`,
+            // the shared 595-601 row).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => "NPC_Hit_1",
+            // The fairy critters (W4-d33 wiring): NPCHit1 each
+            // (`NPC.cs:16591`, the shared 583-585 row). d42 batch-2's
+            // rows, constants-copy (keep-one d37c-E3). The WindyBalloon
+            // 594 writes NO HitSound (`NPC.cs:16707-16719` — it only
+            // pops) and rides the None fall-through.
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -3856,6 +3910,24 @@ impl NpcKind {
             // W4-g8 machine round 3 — the Vampire 159's NPCDeath6
             // (`NPC.cs:15490`).
             NpcKind::Vampire => "NPC_Killed_6",
+            // The dragonflies (W4-d33): NPCDeath1 each (`NPC.cs:16730`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => "NPC_Killed_1",
+            // The fairy critters (W4-d33 wiring): NPCDeath1 each
+            // (`NPC.cs:16592`). d42 batch-2's rows, constants-copy
+            // (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => "NPC_Killed_1",
+            // The windy balloon (W4-d33 wiring): NPCDeath63
+            // (`NPC.cs:16716`, `SoundID.cs:1377`). d42 batch-3's row,
+            // constants-copy (keep-one d37c-E3).
+            NpcKind::WindyBalloon => "NPC_Killed_63",
             _ => return None,
         })
     }
@@ -4143,6 +4215,24 @@ impl NpcKind {
             // noGravity too (`:17190`) but kb 0 (`:17198`) — the
             // knockback gate refuses resist 0, so no row is needed.
             NpcKind::PrismaticLacewing => true,
+            // The dragonflies (W4-d33): the `SetDefaults` noGravity row
+            // (`NPC.cs:16732`). kb 1 (the head default — the row writes
+            // none), so a strike can push them; the aiStyle-114 arm owns
+            // the flight.
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => true,
+            // The fairy critters + the windy balloon (W4-d33 wiring): the
+            // `SetDefaults` noGravity rows (`NPC.cs:16605` / `:16718`).
+            // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::WindyBalloon => true,
             _ => false,
         }
     }
@@ -4804,6 +4894,25 @@ impl NpcKind {
             // W4-g8 machine round 3 — the Vampire 159's aiStyle 3
             // (`NPC.cs:15485`, the AI_003 fighter).
             NpcKind::Vampire => 3,
+            // The dragonflies (W4-d33) — aiStyle 114 (`NPC.cs:16725`, the
+            // shared 595-601 row): `AI_114_Dragonflies`
+            // (`NPC.cs:47716-47886`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 114,
+            // The fairy critters (W4-d33 wiring) — aiStyle 112
+            // (`NPC.cs:16587`, the shared 583-585 row): `AI_112_FairyCritter`
+            // (`NPC.cs:48088-48650`). The windy balloon — aiStyle 113
+            // (`NPC.cs:16711`): `AI_113_WindyBalloon` (`:47888-48065`).
+            // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => 112,
+            NpcKind::WindyBalloon => 113,
         }
     }
 
@@ -5797,6 +5906,24 @@ impl NpcKind {
             // (`:10977-10978`).
             // W4-g8 machine round 3 — the Vampire 159's 18x40 box
             // (`NPC.cs:15483-15484`).
+            // The dragonflies (W4-d33): 10x10 each (`NPC.cs:16723-16724`,
+            // the shared 595-601 row).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => (10.0, 10.0),
+            // The fairy critters (W4-d33 wiring): 18x20 each
+            // (`NPC.cs:16585-16586`, the shared 583-585 row); the windy
+            // balloon 20x20 (`:16709-16710` — the aiStyle-113 arm scales
+            // the box to the slave each tick). d42 batch-2/3's rows,
+            // constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => (18.0, 20.0),
+            NpcKind::WindyBalloon => (20.0, 20.0),
         }
     }
 
@@ -6146,6 +6273,33 @@ impl NpcKind {
             // W4-g8 lane 1 batch 4 — the vanilla `NPC.type` ids
             // (`NPCID.cs:11119`/`:10773`/`:10987`).
             // W4-g8 machine round 3 — the Vampire 159 (`NPCID.cs:10995`).
+            // The dragonflies (W4-d33): the vanilla `NPC.type` ids — the
+            // bug-net catch tables (`bug_net::catch_item`'s 595-601 row),
+            // the AI arms' type gates and the statue rosters read them
+            // (`NPCID.cs:11867-11875`). The four Hide=true colours fold
+            // their bestiary CREDIT onto 599 (`entry_for_npc`), but each
+            // keeps its own type here — the e26 ladybug / c8 crawler
+            // precedent.
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
+            // The fairy critters + the windy balloon (W4-d33 wiring): the
+            // TRUE vanilla types — the bug-net catch tables
+            // (`bug_net::catch_item`'s 583/584/585 rows), the AI arms' type
+            // gates and the release chain read them (`NPCID.cs:11843-11847`
+            // / `:11865`). None of the four folds (all three fairies are
+            // VISIBLE cards — the `NPCID.cs:5148-5169` draw modifiers carry
+            // Position/Direction, no Hide; the balloon has its own card
+            // with a CustomTexturePath, `:5232-5239`). d42 batch-2/3's
+            // hand rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink => 583,
+            NpcKind::FairyCritterGreen => 584,
+            NpcKind::FairyCritterBlue => 585,
+            NpcKind::WindyBalloon => 594,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -7111,6 +7265,21 @@ impl NpcKind {
             // (`NPC.cs:11848`), 48 100 (`:9367`), 156 600 (`:10982`).
             // W4-g8 machine round 3 — the Vampire 159's 750
             // (`NPC.cs:15488`).
+            // The dragonflies (W4-d33): lifeMax 5 each (`NPC.cs:16728`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 5,
+            // The fairy critters (W4-d33 wiring): lifeMax 5 each
+            // (`NPC.cs:16590`); the windy balloon lifeMax 1 (`:16715`).
+            // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => 5,
+            NpcKind::WindyBalloon => 1,
         }
     }
 
@@ -7830,6 +7999,21 @@ impl NpcKind {
             // (`NPC.cs:11846`), 48 25 (`:9365`), 156 50 (`:10980`).
             // W4-g8 machine round 3 — the Vampire 159's 80
             // (`NPC.cs:15486`).
+            // The dragonflies (W4-d33): damage 0 each (`NPC.cs:16726`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 0,
+            // The fairy critters (W4-d33 wiring): damage 0 each
+            // (`NPC.cs:16588`); the windy balloon damage 0 (`:16712`).
+            // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::WindyBalloon => 0,
         }
     }
 }
