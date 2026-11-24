@@ -46250,3 +46250,353 @@ petting + `:50174`/`:50204-50269` the hold/light gates,
 The d43/d37/d120/f43/a6 verdicts re-read at their live tips. The 26 FINAL
 witnesses (7 exchange + 10 petting + 1 colour + the 8 batch wiring) are
 WRITTEN NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+## The aiStyle-1..10 projectile census + the powder/fertilizer cloud (W4-d1, 2026-11-21, code-only mode)
+
+Census of the `match data.ai_style` dispatch (`ProjectilePool::update`,
+`projectile.rs`) for aiStyles 1-10, each C# arm read WHOLE before the
+verdict. The dispatch's coverage pin
+(`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) already guarantees
+every ROWED style has exactly one live arm; this round's census confirms
+which arms are kind-gated vs whole, and ports the one style with neither an
+arm nor rows.
+
+| style | C# arm (read whole) | Rust dispatch arm | verdict |
+| --- | --- | --- | --- |
+| 1 | `AI_001` `Projectile.cs:23201` -> `:54002-57798` | kind-match + slices A/B/C + riders + `ai_arrow` | PORTED (verify-only) — the per-type AI_001 slices are kind-disjoint; the generic `ai_arrow` serves the unrowed kinds. |
+| 2 | inline `:23205-23689` | `ai_style2` | PORTED (verify-only) — the wind head, the per-type rotation/counter ladder, the 968/304/909/162/281/240/497/861 hooks. |
+| 3 | `AI_003_Boomerang` `:23690` -> `:39464+` | `ai_boomerang` | PORTED (verify-only) — the meleeSpeed remap + the catch owner gate. |
+| 4 | inline `:23694-23828` | `vilethorn_step` / `ai_style4` | PORTED — the Vilethorn 7/8 + Nettle Burst 150/151/152 chains; W4-d1 wave 1 rowed the 493/494 Crystal Vile Shard pair (`95a104bc`) and extended the arm with the variant constants (the −100 fade-in, the +4 fade-out, the shaft chain's 7+Next(2) cap, the head's 1.25× damage/kb). |
+| 5 | inline `:23830-24099` | kind-gated 92/9/955 (`falling_star_step` / `ai_falling_star`) + `ai_falling_star_family` | PORTED — W4-d1 waves 2a/2b rowed 12/503/723-726/1037/1049/1133 (`d2244007`/`fccffbfb`); the new kinds ride `ai_falling_star_family` (the tileCollide latch ladder, the alpha floors, the velocity-pointing rotation, the 12 daytime-1000 kill), the 92/9/955 keep their frozen arms. |
+| **6** | inline `:24100-24228` | **none on main** | **MISSING -> PORTED this round** (`projectile_ai_powder`). |
+| 7 | `AI_007_GrapplingHooks` `:24229` -> `:52567+` | `ai_hook` | PORTED (verify-only) — the dead/CCed kill gate, the MountedCenter pull, the attach-cap recycle, the blacklist rebuild, the Queen Slime teleport. |
+| 8 | inline `:24233-24362` | `ai_ball_of_fire` | PORTED (verify-only) — the gravity timer + the per-type bounce budget; the WaterBolt lava bounce, the 96/258 sound latches. |
+| 9 | `AI_009_MagicMissiles` `:24363` -> `:43195-43425` | `ai_magic_missile` + the W4-d1 SEAL `kind == FLYING_KNIFE` head -> `ai_magic_missile_old` | PORTED — the channel aim, the Flamelash drag-lift, the release homing. W4-d1 SEAL: the type-491 head (`:43197-43201`) delegates to the LIVE `_Old` machine (`:43427-43653`) — the 491 FlyingKnife row + arm landed (the e3 RETIRE census's d1 task seed, research/125 → research/352 §6a). |
+| 10 | `AI_010` `:24367` -> `:57826-58100` | kind-gated 109/736-738 (`ai_snowball_hostile` / `ai_dungeon_debris`) + `projectile_ai_falling::step` | PORTED — W4-d1 wave 3 rowed the falling-block family 17/31/39/40/56/67/71/179/241/812/411-414/1081 (`a2dcdb15`/`e001d921`/`e4718179`) and armed the sandgun balls 42/65/68/354 through the same arm — the S1-D-5 "42-row gap" CLOSES (the rows existed but the dispatch no-op'd them; now the 60-tick straight flight + the 0.2 gravity + the death placement run). W4-d1 RETIRE (`dd7b6f32d`, research/352): the natural-fall spawner moved to the data path — the frozen-tail carve-out is RETIRED, every served kind rides the arm; the forced-PlaceTile bypass set + the tile-cut bodies ported. FAMILY COMPLETE. |
+
+**The missing style 6.** The powder/fertilizer cloud — five kinds, all
+unrowed on main: 10 PurificationPowder (`Projectile.cs:897-912`), 11
+VilePowder (`:913-923`), 463 ViciousPowder (`:5340-5350`), 1019 Fertilizer
+(`:9648-9658`), 1051 SuperFertilizer (`:9967-9977`). The arm
+(`:24100-24228`) is the 0.95 velocity decay + the `ai[0]` age counter + the
+180-tick kill, the one-shot `ai[1] == 0` dust burst, the owner-gated tile
+scan (`WorldGen.Convert` types 11/1/4 for the three powders, the
+CommonSapling growth for the fertilizer pair) and the fertilizer pair's
+`velocity.Length() < 0.5f` slow-kill.
+
+**Port shape.** `projectile_ai_powder::step` (the `ai_dungeon_debris`
+mutable-world carve-out — the dispatch reborrows `world` at the call site).
+The rows land in `projectile/data.rs` (the five `SetDefaults` arms verbatim:
+64x64, aiStyle 6, penetrate -1, alpha 255, tileCollide false, ignoreWater).
+The 10's infectedSeed box growth (`:907-911`, width/height += /3*2 INTEGER
+division -> 106x106) rides the data-carrying spawn through the
+`set_infected_seed` pool snapshot (the `set_disco` precedent), fed by the
+world-sim pass from `MicroSeedFlags::WORLD_IS_INFECTED`. The conversion is
+`tr_core::spread::convert_sized` (the new type-1/4/11 cells beside the
+type-0 cleanse port). The sapling growth draws `WorldGen.genRand`, so it
+DEFERS to the world-sim pass via `wants_sapling_grow` / `drain_sapling_grows`
+on the `UpdateWorldGen` stream (the `palm_frame_rolls` precedent,
+`world_sim/editing.rs`).
+
+**RNG argument (by construction).** The `UpdateProjectiles` stream
+(`Main.cs:17775-17777`) is untouched except where the C# arm draws:
+- 10/11/463/1019: ZERO `Main.rand` draws — the dust burst's non-flag loop
+  rolls nothing; the conversion / growth are rand-free at the arm layer
+  (the growth's genRand rides the deferred `UpdateWorldGen` pass).
+- 1051: 50 `Next(3)` draws on the first tick (`ai[1] == 0`), one per dust
+  iteration (`:24132`), in loop order; ZERO on every later tick. The dust
+  BODIES and their `NewDust` internals are SKIPPED (no dust layer), but the
+  EXPLICIT call-site `Next(3)` stays (the `projectile_ai_misc` convention).
+
+**Deliberate deviations.**
+- The dust/gore bodies are skipped (no dust layer in the pool); the 1051's
+  per-dust `Next(3)` type pick is an explicit call-site draw, so it stays.
+- The type-11 wall 69/70/81 surface roll draws `WorldGen.genRand.Next(10)`
+  (`WorldGen.cs:55783`) — the port has no runtime genRand stream, so the
+  shared `convert_wall_by_case(wall, 11, .., None)` takes the no-rng 64 (the
+  `convert_cleanse_cell` precedent).
+- The `RainbowSandAndBlackSandWalls` paint arms
+  (`WorldGen.cs:56302-56306`/`:56319-56323`/`:56335-56339`) gate on
+  `Main.onlyShimmerOceanWorlds`, a mode the port does not generate
+  (`worldgen/finish_seeds.rs`) — skipped.
+- The sapling growth's `treeHeightAddon` (the 1051's +15) and
+  `ignoreWalls: true` args park in the growth port today (`growth/trees.rs`,
+  M5-SEED-1) — the request carries them for when it lands them; the growth
+  itself runs with the parked 0/false.
+- The fertilizer pair's `flag3` override (`Main.netMode != 1`,
+  `:24153-24156`) folds to true (single-player netMode 0).
+
+**Code-only round.** The 12 `projectile_ai_powder` witnesses + the 6
+`spread` converter witnesses + the 1 row witness are WRITTEN, NOT RUN — no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked. Verified by re-reading the
+cited C# blocks and hand arithmetic.
+
+### The rowed follow-up waves (W4-d1 waves 1-3, same code-only mode)
+
+**Wave 1 (`95a104bc`) — the aiStyle-4 Crystal Vile Shard pair.** The 493/494
+rows (`Projectile.cs:5667-5680`: 32×32, st4, pen −1, alpha 255, tileCollide
+false, ignoreWater, light 0.2, magic) + the `ai_style4` variant extension:
+the −100 fade-in (`:23719-23721`), the +4 fade-out (`:23817-23820`), the
+shaft chain (`:23746-23760`, the `7 + Next(2)` depth cap, the head child's
+`(int)(damage·1.25)` / `kb·1.25`), the one-shot Item8/Item101 cue latch
+(`:23696-23705`). The spawn request widened to
+`(kind, x, y, ai1, damage, knock_back)`; both variants take `local_owner`
+(the C# `Main.myPlayer == owner` gates).
+
+**Waves 2a/2b (`d2244007`/`fccffbfb`) — the aiStyle-5 falling-star family.**
+The nine rows 12/503/723/724/725/726/1037/1049/1133 + the
+`ai_falling_star_family` arm (the tileCollide latch ladder `:23845-23880`
+incl. the 723 owner-top gate, the alpha floors 150/100/0
+`:23886-23927`, the velocity-pointing rotation `:23948`, the 12's
+daytime-1000 kill `:23841`). The 9/955 keep `ai_falling_star`, the 92 keeps
+`special_arrows::falling_star_step` — frozen behaviour, the new arm serves
+only the new kinds.
+
+**Wave 3 (`a2dcdb15`/`e001d921`/`e4718179`) — the aiStyle-10 falling-block
+family.** The fifteen rows 17/31/39/40/56 (3a), 67/71/179/241/812 (3b),
+411/412/413/414/1081 (3c) + `projectile_ai_falling` (`AI_010`
+`Projectile.cs:57826-58100`, `HandleMovement`'s style-10 block
+`:17592-17610` + the blocked arms `:19829-19853`, `Kill_ExplodeTiles`'s
+style-10 death placement `:77387-77570`). The machine: the per-kind dust
+gates (the `Next(2)`/`Next(3)`/`Next(20)` draws STAY on the
+`UpdateProjectiles` stream, the bodies skip), the per-tick
+`tileCollide = true; localAI[1] = 0` reset, the owner's first-tick latch
+(the channel aim-steer at speed 12, the 40 excluded; else `ai[0] = 1`), the
+gravity ladder (the sandgun balls' 60-tick `ai[1]` count before the 0.2
+fall, the natural falls' 0.41, the settle mode's 0.2 + ±0.04 X damp, the
+1081's own 20-tick delay + 0.3/0.98), the shared owner tile walk (extracted
+from `ai_dungeon_debris` — the second-copy helper rule), the +0.1 spin and
+the 10 px/tick cap. Movement: `flag6 = false` for
+`FallingBlockDoesNotFallThroughPlatforms` (`ProjectileID.cs:433`), the
+plain `TileCollision`, the coin piles' extra
+`AnyCollisionWithSpecificTiles(TileID.Sets.Falling, evenActuated: true)`
+pass (the new `collision.rs` port, `Collision.cs:2813-2913`); a blocked
+move draws the tile-cut `Next(3)` FIRST (`:17948`, the ai026_c precedent —
+the cut bodies skip with the unported layer), the 1081's Y-block-while-
+falling kill / other-block latch + Dig cue, every other kind the default
+step-and-kill. Death: the centre-cell place map (proj → (tile, item)), the
+1081 side-slide probe (`SolidTile3`), the half-brick up-shift, the
+below-tile 314/421/422 + `BlockBelowMakesSandFall` refusal, the forced
+`PlaceTile` + below-slope flatten, else the item drop — the drop rides the
+new `pending_block_drops` intent, drained by the pass on the `UpdateItems`
+stream (`spawn_item_drop_px`, the `drain_catches` seam).
+
+**The 42-row gap CLOSES.** The sandgun balls 42/65/68/354 were rowed on
+main but the dispatch's `10 =>` arm no-op'd them (the documented S1-D-5
+gap): they flew straight forever, never arced, never placed their tile.
+Wave 3's arm serves them through `FALLING_BLOCK_KINDS` — the 60-tick
+straight flight (`ai[1]` counts to 60, `:58010-58015`), then the 0.2
+gravity, the blocked-move kill and the death placement (42 → tile 53 /
+item 0, 65 → 112/0, 68 → 116/0, 354 → 234/0). Their rows already carried
+`extraUpdates = 1` (two sub-steps per tick), so the 60-tick count spends 30
+frames — the C#'s own cadence.
+
+**The frozen-tail carve-out (deliberate deviation — RETIRED, see the
+RETIRE round below).** The pool's pre-existing `spawn_falling` path (the
+`check_falling` tile-break trigger) hardcoded the slot fields (10×10,
+pen 1, `ai[0] = 1`, vel (0, 0.41), `falling_tile: Some(tile)`) and rode the
+custom falling-tile tail: gravity + integrate per sub-step, the post-loop
+`landed`/`can_place_back` placement. Wave 3 did NOT rewire it — the
+dispatch arm and the death hook both gated on `falling_tile.is_none()`,
+so those slots kept their frozen flight (no double gravity, no double
+placement) and the new arm served the data-carrying spawns
+(`spawn_with_data_ai*`). The two paths differed where the frozen tail was
+already approximate (the landing's bottom-edge probe vs the C#'s
+blocked-move kill + centre-cell place; the frozen tail's pen 1 vs the
+rows' pen −1). **The RETIRE round (`dd7b6f32d`) executed the wiring
+follow-up**: the spawner moved to the data path, the frozen tail removed,
+the carve-out retired — the deltas are the RETIRE section's own record.
+
+**Damage-flag handling (deliberate deviation, the row-shape gap).** The
+`ProjData` shape carries neither `friendly` nor `hostile`. The arm holds
+the C# `friendly` state explicitly (the coin piles' stock false — the
+`:4933-4941` arm touches neither flag; every other served kind true — the
+`ai_dungeon_debris` precedent). The PVE walk refuses the coin piles
+(`Damage_PVE_Inner`'s `!friendly` refusal `:12611`, the 644/266/443 gate
+shape); the player-damage proxy's `!friendly` test alone would skip the
+friendly+hostile natural falls, so `FALLING_HOSTILE_KINDS` (the nine kinds
+whose arms set `hostile = true`) drives the `Damage_EVP` pass for them
+(`:14775` — no owner exemption in the C#, a falling sand block CAN hurt
+its own owner). The frozen `spawn_falling` slots keep their
+no-player-damage tail (the carve-out). The sandgun balls are friendly +
+ranged (NOT hostile) — no player damage, verbatim.
+
+**Other deviations (wave 3).**
+- The dust bodies skip (no dust layer); every explicit gate draw stays on
+  the stream in the C#'s else-if order (the 31's settled-mode branch
+  `ai[0] == 2` rides the 42's `:57879` gate, the 17 the generic `Next(20)`
+  tail `:57938`).
+- The blocked-move default's death pixel: the port's single-step
+  `kill_step` stand-in vs the C#'s step + `UpdatePosition` second step
+  (`:19851` + `:20445`) — the recorded `kill_step` deviation (the kill
+  itself does not differ).
+- The tile-cut bodies (the 484 rolling-cactus block `:17910-17947`, the
+  cracked-brick block `:17948-17985`) skipped with the unported cutting
+  layer; the `Next(3)` draw stayed (the first `&&` operand). **RESOLVED by
+  the RETIRE round** — the bodies ported (`cut_tiles_in_flight_box`, the
+  falling-block slice; the wave-3 "vine" label was a misnomer,
+  `TileID.RollingCactus = 484`).
+- The `GetCollisionParams` resize (no served kind overrides it), the wet
+  branch (the liquid flags fold dry), the `SlopeCollision`
+  `correctSlopeCollision` pass (deferred layer), the `CanPoundTile` gate +
+  the fail-dust/sound/net tails of the tile walk's `SlopeTile`, the
+  `netUpdate` writes — all skipped, each noted at its point.
+- The death placement's `WorldGen.PlaceTile(forced: true)` rode the
+  port's `place_tile` (which kept its wall-unbreakable refusal — the
+  forced flag's exact bypass set was unported, a micro-deviation).
+  **RESOLVED by the RETIRE round** — the bypass set censused whole +
+  ported (`place_tile_forced`); the `mute: false` tail cue now queues on
+  the pool's sound intent (the Dig 0 / Coins 18 arms).
+- The 1081's Dig cue (`PlaySound(0)`, `:19845`) rides the `wants_sound`
+  id-0 drain (the pass's `play_place_sound` Dig arm).
+- The channel aim-steer's gravDir −1 mirror folds positive (no gravity
+  potion); a `None` aim folds to the block's own centre (the zero-delta
+  arm — the pass always supplies the mouse point when a player exists).
+
+**Code-only round.** The 15 wave-3 witnesses (`w4_d1_falling_block_tests`)
++ the wave-1/2 witnesses are WRITTEN, NOT RUN — verified by re-reading the
+cited C# blocks and hand arithmetic (the gravity ladders, the dust-gate
+draw sequences, the landing cells, the side-slide probe).
+
+### The RETIRE round (W4-d1, 2026-11-21, `dd7b6f32d` — research/352)
+
+The three documented open follow-ups censused WHOLE and ported; the
+frozen-tail carve-out RETIRED; the spray rows composed. The full census +
+the falling-block-family declaration live in
+`docs/research/352-d1-falling-block-final.md` (number per registry-150
+§9 UNIFIED FINAL: chain 246→352 — the first-add take of 246 lost to e23's
+published reservation, e23 KEEPS 246; §9 assigns 352). The deltas:
+
+**The natural-fall spawner move (the carve-out retired).** `spawn_falling`
+now delegates to `spawn_with_data_ai` (the rowed `SetDefaults` stats, the
+`ai0 = 1` argument landing the C#'s post-spawn `ai[0] = 1f` write,
+`WorldGen.cs:86063-86064`). The frozen tail is REMOVED: the pool's
+per-sub-step `falling_tile` gravity block + the post-loop
+`landed`/`can_place_back` bottom-edge placement; the dispatch/death-hook/
+player-damage gates drop their `falling_tile.is_none()` terms; the
+`tr-core/falling.rs` flight helpers (`TILE_FALL_GRAVITY`/
+`TIME_LEFT_DEFAULT`/`landed`/`can_place_back`) go with it (zero callers).
+The `falling_tile` field stays `None` on every slot (the save/net shape).
+The behaviour deltas over the frozen tail (each now the C#'s own shape):
+the pen −1 rows (the falls no longer die on first NPC contact), the
+blocked-move kill + centre-cell forced place (the half-brick up-shift,
+the 1081 side-slide, the below-tile refusals, the item-drop-on-refusal),
+the `FALLING_HOSTILE_KINDS` player-damage pass (the nine natural falls
+hurt the player — the frozen tail never did), the dust-gate draws on the
+`UpdateProjectiles` stream, the tile-cut chain, the +0.1 spin. The
+`netMode == 2` dedupe/2.5-velocity variant + the `ExploitDestroyQueue`
+tails stay MP-only folds.
+
+**The forced-PlaceTile bypass set (the micro-deviation resolved).**
+`tr_core::edit::place_tile_forced` — the `WorldGen.PlaceTile(forced: true)`
+route (`WorldGen.cs:59342-60295`) censused whole: the forced flag is the
+first disjunct of the `:59373` gate (bypasses `Collision.EmptyTile`'s
+occupant + player/NPC overlap scan AND the port's `CanKillTile`-derived
+wall-350 refusal the C# does not carry); the served kinds match NONE of
+the grass/moss rewrites, the drip gate, the liquid refusals, the
+per-kind placement arms (the full census in research/352 §1b). The free
+cell's `Clear(Tile | TilePaint | Slope)` keeps the wall + liquid; the 53's
+anniversary `color(7)` arm ports over `world.seeds` (the rainbow paint
+folds off — the shimmer-ocean mode the port does not generate). The
+occupied-cell paint-keep is a recorded micro-deviation for a path no
+caller reaches (`death_place` gates on `!active`). `death_place` rides the
+forced route + queues the `mute: false` tail cue (the `place_tile_sound`
+table: 330-333 → Coins 18, default → Dig 0) on the pool's sound intent;
+the drain routes id-18 → `play_place_sound` (the new arm).
+
+**The tile-cut bodies (the skip resolved, the falling-block slice).**
+`projectile_ai_falling::cut_tiles_in_flight_box` — `HandleMovement`'s two
+blocks in the C# order: the 484 rolling-cactus block (`:17910-17947`,
+every blocked move, no call-site rand — the wave-3 doc's "484 vine block"
+was a misnomer, `TileID.RollingCactus = 484`) FIRST, THEN the `Next(3)`
+(the first `&&` operand, the draw already stayed), THEN the cracked-brick
+block (`:17948-17985`) on the `== 0` roll. The gate folds: `CanCutTiles`
+passes every served kind, `friendly || hostile` excludes only the coin
+piles, `damage > 0` excludes the snow variants' zero-damage falls,
+`GetTileCutIgnorance` is `TileCutIgnore.None` (no `dontHurtNature`
+granter). The box is `position + velocity` pre-integration. The cutting
+layer's other slices keep their own lanes.
+
+**The spray compose (the f25/d18 DUP keep-one).** The seven solution
+sprays 146-149/1015-1017 rowed VERBATIM — the d18 `78ffe8e11` shape
+(alpha 255 + ignoreWater true) wins over the f25 `5e83d3ecb` copy (the
+145-precedent dropped pair); the merger keeps this branch's rows, drops
+the two duplicates (research/352 §2a). `ai_spray`'s types 1/4 ACTIVATED
+through d1's own `convert_sized` cells (the 147 Corrupt / 149 Red
+solutions); types 2/5/6/7 stay f25's, type 3 stays g42's — the merged
+match composes per research/352 §2b's table. The 145's own dropped
+alpha/ignoreWater stays its M3-ITEM-6 deviation.
+
+**The 502 Meowmere row (the d75 owed gate).** Census verdict: d1's band
+does NOT own it — d75 part 5 (`d328fad8c`) rowed the 502 itself (the only
+carrier across the pushed tips), the part-4 chime gate goes live on d75's
+tip; no d1 action, no duplicate row (research/352 §3).
+
+**Code-only round.** 12 new witnesses (the forced-place 3, the spray-row
+1, the spray-activation 1, the data-path-spawn 1, the tile-cut 3, the
+falling_tests re-derivations) WRITTEN, NOT RUN — verified by re-reading
+the cited C# blocks whole and hand arithmetic (the PlaceTile gate census,
+the cut-box spans, the conversion targets, the landing cells).
+
+### The SEAL round (W4-d1, 2026-11-21 — research/352 §6)
+
+The lane's last two e3 task seeds landed: the 491 FlyingKnife (the LIVE
+`AI_009_MagicMissiles_Old` machine) and the 981 SilverBullet (the
+special-bullets module's twelfth kind). The full census + receipts live
+in `docs/research/352-d1-falling-block-final.md` §6 — no new research
+number taken (registry-150 §9.3: NO self-picks; the falling-block-family
+bible stays §4). The 246→352 rename's two owed code-comment cites
+(`projectile/data.rs` + `projectile_ai_misc.rs` ×2) are PAID — stale-zero
+re-verified (`git grep 'research/246|246-d1-falling'` over crates/docs/
+anchors = empty).
+
+**The 491 FlyingKnife (`ai_magic_missile_old`).** The row
+(`Projectile.cs:5404-5412`: 26×26, aiStyle 9, friendly, melee, pen −1,
+the stock 3600/tileCollide/alpha-0/scale-1) + the style-9 dispatch's
+`kind == FLYING_KNIFE` head branch (the C#'s own `:43197-43201`
+delegate-and-return shape). The machine ports the `_Old` body in the C#
+order: the channel block (speed 20, the close <100 ×1.1 boost + the
+−10 latch, the far `(v*4+aim)/5` blend, the mid outright velocity, the
+release `ai[0] = 1` latch — the `type != 491` re-aim block skips), the
+491 block (the tick-16 fly-home `(v*5+toOwner·25)/6` + the <20 kill +
+tileCollide drop, the rotation ladder, the 2000-px kill, the `Next(2)`
++ `Next(3)` dust draws BOTH staying on the pass stream), the +16 clamp.
+The 16/34/79 branches are DEAD for the only reachable kind — kept as
+citations (the census-F2 convention). Movement: the 10×10 centre
+collision resize (`GetCollisionParams` `:19957-19960`), the blocked
+move runs the tile-cut chain FIRST (the shared
+`cut_tiles_in_flight_box`, now `pub(crate)` — the second-copy helper
+rule, the falling arm's walk shared not duplicated), THEN the 491
+bounce arm (`:18464-18478`, the OUTER per-type chain): the −10 latch +
+the FULL-strength per-axis reflect. **The style-9 kill (`:19325`,
+nested under `:18635`) never reaches the 491 — it bounces.**
+Deliberate folds: the `netUpdate` writes (no MP layer), the dust bodies
+(the e3 emitter pattern's dust follow-up), the wet branch (dry fold),
+the `LimitPointToPlayerReachableArea` clamp rides the `channel_target`
+seam (S1-P-i23); a `None` player folds the owner centre to the knife's
+own centre. 5 witnesses WRITTEN NOT RUN (`w4_d1_flying_knife_tests`).
+
+**The 981 SilverBullet (`projectile_special_bullets`, kind 12 of 12).**
+The row (`:9340-9353`: 4×4, aiStyle 1, pen 1, light 0.5, alpha 255,
+scale 1.2, timeLeft 600, ranged, extraUpdates 1) joins
+`SPECIAL_BULLET_KINDS`; `step` widened with the pass's rng for the
+`Next(6)` drip gate (`:56746`, the e3
+`ai001_silver_bullet_drip_981` emitter's staged fade-chain slot) — ONE
+explicit draw per sub-step on the `UpdateProjectiles` stream (the W4-d1
+explicit-draw convention; the other eleven kinds draw nothing, their
+witnesses keep a fresh-stream wrapper, byte-identical). The 981 rests
+(`flag3 = false`, `:56030` — no gravity); the dust-279 body skips with
+the dust layer; the tile contact kills (the module's probe stand-in).
+The Werewolf-bane ×3 (`:13385-13388`, NPC kind 104) lands in
+`damage_pve` BEFORE the yoyo doublings (the C# site order); the
+`proj_lights` 0.7/0.7 arm (`:16343-16347`) is its OWN arm (the
+14/110/180/242/302 sibling scales blue 0.1). Skips: the Kill arm's
+`HitTiles` + Item10 (`:76040-76043`, the module's death-hook sound
+convention) + the SilverBulletSparkle particle request
+(`:76044-76048`). 3 witnesses WRITTEN NOT RUN.
+
+**Code-only round.** 8 new witnesses (5 knife + 3 silver) WRITTEN, NOT
+RUN — hand-verified against the cited C# (the release pos (164,160),
+the close boost 11, the tick-16 kill gate, the bounce cell (11,10) +
+vel.x −4.4 with the `lastVelocity.Y == 0` guard, the draw orders
+`[(0,2)]` / `[(0,2),(0,3)]` / `[(0,6)]`). No cargo/tests/rustfmt/
+graphify invoked.

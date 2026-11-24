@@ -73,6 +73,17 @@ use crate::projectile::{
 /// wiring (its tip b004f4f1b dispatches `convert_sized_hallow` /
 /// `convert_sized_spray` here); until that merges, only the type-0 cleanse
 /// converts on this branch — the counter/cap/spin run for every kind.
+/// spray. All eight spray kinds carry `proj_data` rows now (W4-d1 retire
+/// rowed 146-149/1015-1017 beside the 145 — the d18/f25 DUP keep-one, the
+/// d18 shape); the per-kind ladder below is the whole arm. The conversion
+/// cells: type 0 the cleanse, types 1/4 (the 147 Corrupt / 149 Red
+/// solutions) ride d1's own `spread::convert_sized` (the powder port's
+/// cells — ACTIVATED here at the spray's size 2/3); types 2/5/6/7 are
+/// W4-f25's C3/C4 wiring (`convert_sized_hallow`/`convert_sized_spray`,
+/// its tip d587b128d), type 3 is W4-g42's mushroom cell
+/// (`convert_sized_mushroom`, its merger contract) — those arms land at
+/// the f25/g42 merges (research/352's compose table — registry-150 §9
+/// chain 246→352).
 ///
 /// The dust-scale ladder (`:26845-26879`: the 7/3 threshold, the
 /// 0.2/0.4/0.6/0.8 fade steps, the flag13 ×1.2 and the `(int)(12·scale)`
@@ -102,10 +113,23 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
     // f25's wiring (types 2/5/6/7) + d1/g42's (types 1/3/4) — a no-op on
     // this branch until those merge.
     if p.owner == local_owner && conversion == 0 {
+    // (the `(int)(X/16)` truncation), size 2 (3 for the solution). The
+    // ported cells dispatch here (W4-d1 retire compose): type 0 the
+    // cleanse (`spread::convert_cleanse`), types 1/4 the corrupt/crimson
+    // ladders (`spread::convert_sized` — d1's powder cells, the SAME
+    // `Convert(i, j, type, size)` entry the powders call at size 1).
+    // Types 2/5/6/7 (f25's C3/C4) and type 3 (g42's mushroom) stay no-ops
+    // on this branch until those merges — the counter/cap/spin run for
+    // every kind regardless.
+    if p.owner == local_owner {
         let tx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
         let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
         let size = if solution { 3 } else { 2 };
-        tr_core::spread::convert_cleanse(world, tx, ty, size);
+        match conversion {
+            0 => tr_core::spread::convert_cleanse(world, tx, ty, size),
+            1 | 4 => tr_core::spread::convert_sized(world, tx, ty, conversion, size),
+            _ => {}
+        }
     }
     // `:26836-26839` — the 133-tick life cap (per sub-step).
     if p.time_left > 133 {
@@ -824,6 +848,68 @@ mod tests {
         p3.ai[1] = 1.0;
         ai_spray(&mut p3, &mut w3, 0);
         assert_eq!(w3.tile(103, 52).unwrap().kind, 2, "the size-3 disc");
+    }
+
+    /// W4-d1 retire (the spray compose) — the 147 Corrupt / 149 Red
+    /// solutions ACTIVATED: their conversion types 1/4 (`:26797-26800`/
+    /// `:26809-26812`) dispatch through d1's own `spread::convert_sized`
+    /// cells (the powder port's corrupt/crimson ladders) at the spray's
+    /// size 2/3 — the grass 2 → 23/199, the stone 1 → 25/203, the sand 53
+    /// → 112/234. The 146/148/1015-1017 kinds stay no-ops on this branch
+    /// (types 2/5/6/7 = f25's C3/C4, type 3 = g42's mushroom — the merge
+    /// compose, research/352 — registry-150 §9 chain 246→352) but their
+    /// counter/cap/spin run. WRITTEN NOT
+    /// RUN (code-only retire round).
+    #[test]
+    fn w4_d1_retire_the_corrupt_and_red_sprays_convert_their_cells() {
+        // 147 — type 1 corruption (`:55299-55334`).
+        let mut w = world();
+        put(&mut w, 100, 50, 2);
+        put(&mut w, 101, 50, 1);
+        put(&mut w, 100, 51, 53);
+        let mut p = proj(147);
+        p.time_left = 3600;
+        ai_spray(&mut p, &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 23, "the grass corrupts");
+        assert_eq!(w.tile(101, 50).unwrap().kind, 25, "the stone → ebonstone");
+        assert_eq!(w.tile(100, 51).unwrap().kind, 112, "the sand → ebonsand");
+        assert_eq!(p.time_left, 133, "the cap runs for every kind");
+        assert_eq!(p.ai[0], 1.0, "the counter runs for every kind");
+        // 149 — type 4 crimson (`:55138-55173`).
+        let mut w = world();
+        put(&mut w, 100, 50, 2);
+        put(&mut w, 101, 50, 1);
+        put(&mut w, 100, 51, 53);
+        let mut p = proj(149);
+        ai_spray(&mut p, &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 199, "the grass crimson");
+        assert_eq!(w.tile(101, 50).unwrap().kind, 203, "the stone → crimstone");
+        assert_eq!(w.tile(100, 51).unwrap().kind, 234, "the sand → crimsand");
+        // The solution flag widens the disc to size 3 for the evil types
+        // too (`:26828-26832` — the size is conversion-independent).
+        let mut w = world();
+        put(&mut w, 103, 52, 2); // Manhattan 5, outside size 2
+        let mut p = proj(147);
+        p.ai[1] = 1.0;
+        ai_spray(&mut p, &mut w, 0);
+        assert_eq!(w.tile(103, 52).unwrap().kind, 23, "the size-3 evil disc");
+        // The non-owner refuses (`:26826`).
+        let mut w = world();
+        put(&mut w, 100, 50, 2);
+        let mut p = proj(149);
+        p.owner = 1;
+        ai_spray(&mut p, &mut w, 0);
+        assert_eq!(w.tile(100, 50).unwrap().kind, 2, "the owner gate");
+        // The f25/g42-owned kinds stay no-ops here (their cells land at
+        // those merges) — the grass keeps its kind, the machine runs.
+        for kind in [146u16, 148, 1015, 1016, 1017] {
+            let mut w = world();
+            put(&mut w, 100, 50, 2);
+            let mut p = proj(kind);
+            ai_spray(&mut p, &mut w, 0);
+            assert_eq!(w.tile(100, 50).unwrap().kind, 2, "kind {kind} waits for its cell");
+            assert_eq!(p.ai[0], 1.0, "kind {kind} counter");
+        }
     }
 
     /// Style 193 (`:41339-41348`, `:41372`, `:41391`): the counter, the

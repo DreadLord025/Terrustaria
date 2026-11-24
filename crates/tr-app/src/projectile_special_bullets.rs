@@ -125,7 +125,7 @@ use crate::npc::Npc;
 use crate::projectile::{
     can_hit, chaseable, chaseable_held, find_target_with_line_of_sight, npc_center, Projectile,
     CHLOROPHYTE_BULLET, CURSED_BULLET, GOLDEN_BULLET, HIGH_VELOCITY_BULLET, ICHOR_BULLET,
-    METEOR_SHOT, NANO_BULLET, SPECIAL_BULLET_KINDS, VENOM_BULLET,
+    METEOR_SHOT, NANO_BULLET, SILVER_BULLET, SPECIAL_BULLET_KINDS, VENOM_BULLET,
 };
 
 /// Whether this module owns the kind's aiStyle-1 arm. Disjoint from the
@@ -148,6 +148,11 @@ pub(crate) fn step(
     world: &World,
     npcs: &[Npc],
     local_immunity: &[i32],
+    // W4-d1 SEAL — the 981's `Next(6)` drip gate (`:56746`) is an EXPLICIT
+    // call-site draw: it STAYS on the pass's `UpdateProjectiles` stream
+    // (the W4-d1 falling/powder convention — the module's other kinds keep
+    // their zero-draw census, the parameter is unread for them).
+    rng: &mut dyn tr_core::loot::DropRng,
 ) {
     // ---- 1. The hook group above the counter ------------------------------
     // `:55660-55671` — the 242 HighVelocity fade (the 302/438/462/592
@@ -169,14 +174,25 @@ pub(crate) fn step(
     // ---- 2. The flight counter (`:55945-56041`) ---------------------------
     // The `flag3 = false` list carries 36 (`:55952`), 89 (`:55958`), 104
     // (`:55961`), 242 (`:55969`), 279 (`:55975`), 283-287
-    // (`:55976-55980`) — they rest. 207 is NOT on the list: it counts
-    // like an arrow (its homing block consumes the gravity chain, so the
-    // generic `ai[0] >= 15f` arm never fires for it either).
+    // (`:55976-55980`) and the 981 (`:56030`, W4-d1 SEAL) — they rest.
+    // 207 is NOT on the list: it counts like an arrow (its homing block
+    // consumes the gravity chain, so the generic `ai[0] >= 15f` arm never
+    // fires for it either).
     if p.kind == CHLOROPHYTE_BULLET {
         p.ai[0] += 1.0;
     }
 
     // ---- 3. The hook group below the counter ------------------------------
+    // W4-d1 SEAL — `:56746-56752`: the 981 SilverBullet drip. The gate
+    // `type == 981 && Main.rand.Next(6) == 0` sits in the fade chain
+    // BETWEEN the 265/355 arms (`:56728`) and the 357 trail (`:56753`) —
+    // the e3 `ai001_silver_bullet_drip_981` emitter's STAGED slot. The
+    // dust-279 body (noLightEmittance + noGravity ×0.2) SKIPS with the
+    // dust layer; the `Next(6)` draw STAYS (one per sub-step, on the pass
+    // stream — the falling/powder explicit-draw convention).
+    if p.kind == SILVER_BULLET {
+        let _ = rng.next_range(0, 6);
+    }
     // `:56778-56887` — the 207 Chlorophyte homing block (the 837 Book of
     // Skulls sibling is `ai_book_of_skulls`' kind). It sits in the C#'s
     // pre-gravity else-if chain (`:56753` `if (type == 357) … else if
@@ -543,6 +559,14 @@ mod tests {
         );
     }
 
+    /// The witness step wrapper — W4-d1 SEAL widened `step` with the
+    /// pass's rng (the 981 drip gate); the eleven S1-P-i18 kinds draw
+    /// nothing, so a fresh stream per call keeps every pre-existing
+    /// witness byte-identical.
+    fn step(p: &mut Projectile, w: &World, npcs: &[Npc], imm: &[i32]) {
+        super::step(p, w, npcs, imm, &mut FastRandom::new(7));
+    }
+
     /// A chaseable blue slime at the given centre (defense 0 so the
     /// damage witnesses read the raw strike).
     fn slime(cx: f32, cy: f32) -> Npc {
@@ -866,5 +890,78 @@ mod tests {
         }
         assert_eq!(musket.slots()[0].ai[0], 0.0, "slice A still owns 14");
         assert_eq!(musket.slots()[0].vel.y, 0.0);
+    }
+
+    // ---- W4-d1 SEAL: the 981 SilverBullet (the e3/d75-flagged row) --------
+
+    /// The scripted stream (the w4_d1_falling_block_tests shape): records
+    /// every `(min, max)` draw, replays the roll list.
+    struct Script {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() { max - 1 } else { self.rolls.remove(0) }
+        }
+        fn next_float(&mut self) -> f32 { 0.5 }
+    }
+
+    /// The 981 row (`Projectile.cs:9340-9353`): 4x4, aiStyle 1, friendly,
+    /// penetrate 1, light 0.5, alpha 255, scale 1.2, timeLeft 600, ranged,
+    /// extraUpdates 1; the stock tileCollide true stands. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_silver_bullet_row_matches_set_defaults() {
+        let d = proj_data(SILVER_BULLET).expect("the 981 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (4.0, 4.0, 1, 1));
+        assert_eq!((d.time_left, d.extra_updates), (600, 1));
+        assert!(d.tile_collide);
+        assert_eq!((d.alpha, d.scale), (255, 1.2));
+        assert!(d.ranged && !d.melee && !d.magic, ":9351 ranged only");
+        assert!(!d.ignore_water, "the arm writes no ignoreWater");
+        assert!(!d.uses_local_immunity && !d.uses_id_static_immunity);
+        assert_eq!(crate::projectile::set_defaults_light(SILVER_BULLET), 0.5, ":9347");
+        assert!(covers(SILVER_BULLET), "the module owns the 981 arm");
+    }
+
+    /// The resting counter (`:56030` — the 981 is on the `flag3 = false`
+    /// list) + the drip gate (`:56746`): ONE `Next(6)` per sub-step on the
+    /// pass stream, the dust-279 body skipped; the flight stays straight
+    /// (no gravity — the generic `ai[0] >= 15` arm never fires). WRITTEN
+    /// NOT RUN.
+    #[test]
+    fn w4_d1_the_silver_bullet_rests_and_draws_the_drip_gate() {
+        let w = world();
+        let mut p = proj(SILVER_BULLET, 2.0, 0.0);
+        let mut rng = Script { rolls: vec![0], draws: Vec::new() };
+        super::step(&mut p, &w, &[], &[0; 256], &mut rng);
+        assert_eq!(p.ai[0], 0.0, "the counter rests (:56030)");
+        assert_eq!(p.vel.y, 0.0, "no gravity");
+        assert_eq!(rng.draws, vec![(0, 6)], "the one Next(6) (:56746)");
+        // The rotation tail: Atan2(0, 2) + 1.57 (`:57748-57751`).
+        assert!((p.rot - 1.57).abs() < 1e-6);
+        // The movement: the free step integrates (2, 0).
+        assert_eq!(p.pos, Vec2::new(10.0 * TILE_PX + 2.0, 10.0 * TILE_PX));
+    }
+
+    /// The tile contact kills (the blocked-move default `:19849-19853`,
+    /// the module's probe stand-in). The Kill arm's `HitTiles` + Item10
+    /// (`:76040-76043`) skip with the module's death-hook sound convention
+    /// (the common bullet arm `:76035-76039` precedent); the
+    /// SilverBulletSparkle particle request (`:76044-76048`) skips with
+    /// the particle layer. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d1_the_silver_bullet_dies_on_tile_contact() {
+        let mut w = world();
+        // A solid cell directly ahead of the 4x4 box at (160, 160).
+        let i = w.index(10, 10);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = proj(SILVER_BULLET, 2.0, 0.0);
+        let mut rng = Script { rolls: Vec::new(), draws: Vec::new() };
+        super::step(&mut p, &w, &[], &[0; 256], &mut rng);
+        assert!(!p.active, "the blocked-move kill");
+        assert_eq!(p.time_left, 0);
     }
 }

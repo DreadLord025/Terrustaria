@@ -537,6 +537,205 @@ fn convert_cleanse_cell(world: &mut World, x: i32, y: i32) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the powder entry (W4-d1, the aiStyle-6 arm's
+// `WorldGen.Convert(x, y, 11/1/4, 1)` calls, `Projectile.cs:24193-24201`).
+// Conversion types 1 (corruption) / 4 (crimson) / 11 (purify) join the
+// type-0 cleanse port above; the cell arms are the C#'s own else-if ladders.
+
+/// `TileID.Sets.Conversion.Thorn` (`TileID.cs:95`).
+const CONV_THORN: [u16; 4] = [32, 352, 69, 655];
+
+/// `TileID.Sets.Conversion.Torch(tile, conversionType)` (`TileID.cs:42-79`)
+/// for the powder types: type 11 accepts the corrupt/crimson/hallow styles
+/// 18-20 only (`:57-62`); types 1/4 take the default arm's style set
+/// (`:63-77`). The type-0 arm lives in [`convert_cleanse_cell`].
+fn torch_convertible(style: i32, conversion_type: u8) -> bool {
+    match conversion_type {
+        11 => (18..=20).contains(&style),
+        _ => matches!(style, 0 | 9 | 16 | 18 | 19 | 20 | 21 | 22),
+    }
+}
+
+/// `WorldGen.Convert(i, j, conversionType, size)` (`WorldGen.cs:55067-55083`)
+/// for the powder types 1/4/11: the square walk with the Manhattan `< 6`
+/// gate, each cell through [`convert_powder_cell`]. The aiStyle-6 arm calls
+/// it with size 1 (`Projectile.cs:24193-24201`); size 0 isolates one cell.
+/// Only types 1/4/11 are ported here — type 0 rides [`convert_cleanse`],
+/// the other spray types have no ported callers yet (a no-op, not a
+/// mis-conversion).
+pub fn convert_sized(world: &mut World, i: i32, j: i32, conversion_type: u8, size: i32) {
+    if !matches!(conversion_type, 1 | 4 | 11) {
+        return;
+    }
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_powder_cell(world, k, l, conversion_type);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-1/4/11 cell arms (`WorldGen.cs:55085-55175` crimson,
+/// `:55261-55336` corruption, `:55764-55882` purify): the wall chain, then
+/// the torch / moss-stone / jungle-grass / grass / ice / sand / hardened-
+/// sand / sandstone / thorn tile ladder in source order.
+/// `Convert_ActuallyConvertTile`/`Wall`/`Torch` (`:56287-56343`) write only
+/// when the cell differs and re-frame through `SquareTileFrame` /
+/// `SquareWallFrame` — the port's [`crate::framing::reframe_area`] superset
+/// (the `convert_cleanse_cell` deviation).
+///
+/// Deviations (ANALYSIS "The powder/fertilizer cloud (W4-d1)"): the type-11
+/// wall 69/70/81 surface roll draws `WorldGen.genRand.Next(10)` (`:55783`)
+/// — the port has no runtime genRand stream, so the shared
+/// `convert_wall_by_case(wall, 11, .., None)` takes the no-rng 64 (the
+/// `convert_cleanse_cell` precedent). The `RainbowSandAndBlackSandWalls`
+/// paint arms (`:56302-56306`/`:56319-56323`/`:56335-56339`) gate on
+/// `Main.onlyShimmerOceanWorlds`, a mode the port does not generate
+/// (`worldgen/finish_seeds.rs`) — skipped.
+fn convert_powder_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `:55087-55097` — the InWorld gate rides `convert_sized`; the empty
+    // cell (no tile, no wall) converts nothing.
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half. Types 1/4 ride the shared flat ladder
+    // (`convert_wall_by_case`'s Grass/Stone/HardenedSand/Sandstone/NewWall
+    // chain, `:55101-55134`/`:55262-55295`). Type 11's switch no-op cases
+    // 61/185/204-207 (`:55836-55842`) break WITHOUT converting — the shared
+    // arm's Stone tail would otherwise catch 61/185, so they are gated out
+    // here (the `convert_cleanse_cell` precedent).
+    let new_wall = match conversion_type {
+        11 => {
+            if matches!(wall, 61 | 185 | 204 | 205 | 206 | 207) {
+                None
+            } else {
+                crate::growth::convert_wall_by_case(wall, 11, y, world.world_surface, None)
+            }
+        }
+        1 | 4 => {
+            crate::growth::convert_wall_by_case(wall, conversion_type, y, world.world_surface, None)
+        }
+        _ => None,
+    };
+    if let Some(new_wall) = new_wall {
+        // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
+        if wall != 0 && wall != new_wall {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.wall = new_wall;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+    // The tile half — the else-if ladder in source order. The torch arm
+    // short-circuits the ladder even when the style already matches
+    // (`Convert_ActuallyConvertTorch`'s `num != newStyle` gate, `:56298`).
+    let torch_style = if active && kind == 4 {
+        let num = world.tile(x, y).map_or(0, |t| t.frame_y as i32 / 22);
+        if torch_convertible(num, conversion_type) {
+            Some(match conversion_type {
+                11 => 0i16, // `:55848`
+                1 => 18,    // `:55301`
+                _ => 19,    // `:55140`
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(style) = torch_style {
+        let cur = world.tile(x, y).map_or(0, |t| t.frame_y as i32 / 22);
+        if cur != style as i32 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_y = style * 22;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    let new_kind: Option<u16> = match conversion_type {
+        // The purify ladder (`:55850-55881`): jungle grass → 60, golf grass
+        // → 477, grass → 2, stone → 1, ice → 161, sand → 53, hardened sand
+        // → 397, sandstone → 396. NO thorn/mushroom arm.
+        11 => {
+            if CONV_JUNGLE_GRASS.contains(&kind) && kind != 60 {
+                Some(60)
+            } else if crate::tiledata::SET_GOLF_GRASS.has(kind) && kind != 477 {
+                Some(477)
+            } else if CONV_GRASS.contains(&kind) && kind != 2 && kind != 477 {
+                Some(2)
+            } else if crate::tiledata::SET_CONVERSION_STONE.has(kind) && kind != 1 {
+                Some(1)
+            } else if crate::tiledata::SET_ICES.has(kind) && kind != 161 {
+                // `TileID.Sets.Ices` = {161, 200, 163, 164} (`TileID.cs:559`).
+                Some(161)
+            } else if crate::tiledata::SET_CONVERSION_SAND.has(kind) && kind != 53 {
+                Some(53)
+            } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind) && kind != 397 {
+                Some(397)
+            } else if crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind) && kind != 396 {
+                Some(396)
+            } else {
+                None
+            }
+        }
+        // The evil ladders (`:55138-55173` crimson / `:55299-55334`
+        // corruption): the moss OR stone arm first, then jungle grass,
+        // grass, ice, sand, hardened sand, sandstone, thorn.
+        1 | 4 => {
+            let corruption = conversion_type == 1;
+            if (crate::tiledata::SET_CONVERSION_MOSS.has(kind)
+                || crate::tiledata::SET_CONVERSION_STONE.has(kind))
+                && kind != if corruption { 25 } else { 203 }
+            {
+                Some(if corruption { 25 } else { 203 })
+            } else if CONV_JUNGLE_GRASS.contains(&kind) && kind != if corruption { 661 } else { 662 }
+            {
+                Some(if corruption { 661 } else { 662 })
+            } else if CONV_GRASS.contains(&kind) && kind != if corruption { 23 } else { 199 } {
+                Some(if corruption { 23 } else { 199 })
+            } else if crate::tiledata::SET_ICE.has(kind) && kind != if corruption { 163 } else { 200 }
+            {
+                Some(if corruption { 163 } else { 200 })
+            } else if crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                && kind != if corruption { 112 } else { 234 }
+            {
+                Some(if corruption { 112 } else { 234 })
+            } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind)
+                && kind != if corruption { 398 } else { 399 }
+            {
+                Some(if corruption { 398 } else { 399 })
+            } else if crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
+                && kind != if corruption { 400 } else { 401 }
+            {
+                Some(if corruption { 400 } else { 401 })
+            } else if CONV_THORN.contains(&kind) && kind != if corruption { 32 } else { 352 } {
+                Some(if corruption { 32 } else { 352 })
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    if let Some(new_kind) = new_kind {
+        // `Convert_ActuallyConvertTile` (`:56312-56327`): active, different,
+        // the tree-above validity check, then the write + re-frame.
+        if active && kind != new_kind {
+            try_kill_invalid_tree_above(world, x, y, new_kind);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = new_kind;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+}
+
 /// `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
 /// (`WorldGen.cs:54802-54899`): the tree trunk (or palm 323) directly above
 /// the converted cell dies when the new floor no longer fits its ground
@@ -1045,5 +1244,148 @@ mod tests {
             hard_update_world(&mut w, 200, 200, false, false, &mut rng);
         }
         assert_eq!(w.tile(201, 200).unwrap().kind, 2, "the spread frozen");
+    }
+
+    // W4-d1 — the powder Convert types (the aiStyle-6 arm's calls,
+    // `Projectile.cs:24193-24201`). WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_d1_the_purify_ladder_is_verbatim() {
+        // `WorldGen.cs:55850-55881` — the type-11 tile ladder.
+        let mut w = world();
+        let rows = [
+            (23, 2), (109, 2), (199, 2), (662, 60), (661, 60), (492, 477),
+            (25, 1), (117, 1), (203, 1), (200, 161), (163, 161), (164, 161),
+            (112, 53), (116, 53), (234, 53), (398, 397), (399, 397),
+            (402, 397), (400, 396), (401, 396), (403, 396),
+        ];
+        for (i, (src, _)) in rows.iter().enumerate() {
+            put(&mut w, 400 + i as i32, 200, *src);
+        }
+        // The already-pure cells stay (the `!= target` gates).
+        put(&mut w, 450, 200, 2);
+        put(&mut w, 451, 200, 477);
+        put(&mut w, 452, 200, 60);
+        for (i, _) in rows.iter().enumerate() {
+            convert_sized(&mut w, 400 + i as i32, 200, 11, 0);
+        }
+        convert_sized(&mut w, 450, 200, 11, 0);
+        convert_sized(&mut w, 451, 200, 11, 0);
+        convert_sized(&mut w, 452, 200, 11, 0);
+        for (i, (src, dst)) in rows.iter().enumerate() {
+            assert_eq!(w.tile(400 + i as i32, 200).unwrap().kind, *dst, "{src} purifies");
+        }
+        assert_eq!(w.tile(450, 200).unwrap().kind, 2);
+        assert_eq!(w.tile(451, 200).unwrap().kind, 477);
+        assert_eq!(w.tile(452, 200).unwrap().kind, 60);
+    }
+
+    #[test]
+    fn w4_d1_the_evil_ladders_are_verbatim() {
+        // `WorldGen.cs:55138-55173` (crimson) / `:55299-55334` (corruption):
+        // the moss-or-stone arm first, then the grass/ice/sand ladder.
+        let mut w = world();
+        let corrupt = [
+            (2, 23), (60, 661), (1, 25), (179, 25), (161, 163), (53, 112),
+            (397, 398), (396, 400), (352, 32),
+        ];
+        let crimson = [
+            (2, 199), (60, 662), (1, 203), (179, 203), (161, 200), (53, 234),
+            (397, 399), (396, 401), (32, 352),
+        ];
+        for (i, (src, _)) in corrupt.iter().enumerate() {
+            put(&mut w, 400 + i as i32, 200, *src);
+            put(&mut w, 400 + i as i32, 210, *src);
+        }
+        for (i, _) in corrupt.iter().enumerate() {
+            convert_sized(&mut w, 400 + i as i32, 200, 1, 0);
+            convert_sized(&mut w, 400 + i as i32, 210, 4, 0);
+        }
+        for (i, (_, dst)) in corrupt.iter().enumerate() {
+            assert_eq!(w.tile(400 + i as i32, 200).unwrap().kind, *dst, "corrupt");
+        }
+        for (i, (_, dst)) in crimson.iter().enumerate() {
+            assert_eq!(w.tile(400 + i as i32, 210).unwrap().kind, *dst, "crimson");
+        }
+    }
+
+    #[test]
+    fn w4_d1_the_powder_wall_chains() {
+        // Type 1/4 flat ladder (`:55262-55295`/`:55101-55134`); type 11's
+        // stone → 349 (`:55768`), the 262/274/292 switch (`:55788-55796`),
+        // the 69/70/81 no-rng 64 (`:55780-55784`, the genRand skip) and the
+        // 61/185/204-207 no-op cases (`:55836-55842`).
+        let mut w = world();
+        let cases: [(u16, u8, u16); 10] = [
+            (1, 1, 3), (63, 1, 69), (63, 4, 81), (3, 11, 349), (69, 11, 64),
+            (262, 11, 61), (274, 11, 185), (292, 11, 204), (61, 11, 61),
+            (204, 11, 204),
+        ];
+        for (i, (wall, _, _)) in cases.iter().enumerate() {
+            put(&mut w, 400 + i as i32, 200, 1);
+            w.tile_mut(400 + i as i32, 200).unwrap().wall = *wall;
+        }
+        for (i, (_, ty, _)) in cases.iter().enumerate() {
+            convert_sized(&mut w, 400 + i as i32, 200, *ty, 0);
+        }
+        for (i, (src, ty, dst)) in cases.iter().enumerate() {
+            assert_eq!(
+                w.tile(400 + i as i32, 200).unwrap().wall, *dst,
+                "wall {src} type {ty}"
+            );
+        }
+    }
+
+    #[test]
+    fn w4_d1_the_powder_torch_styles() {
+        // `TileID.cs:42-79` — type 11 takes styles 18-20 only → 0
+        // (`:55846-55848`); types 1/4 take the default set → 18/19
+        // (`:55299-55301`/`:55138-55140`).
+        let mut w = world();
+        for (i, (style, ty, want)) in [(18, 11u8, 0i16), (0, 1, 18), (9, 4, 19)]
+            .iter()
+            .enumerate()
+        {
+            put(&mut w, 400 + i as i32, 200, 4);
+            w.tile_mut(400 + i as i32, 200).unwrap().frame_y = style * 22;
+            convert_sized(&mut w, 400 + i as i32, 200, *ty, 0);
+            assert_eq!(
+                w.tile(400 + i as i32, 200).unwrap().frame_y,
+                want * 22,
+                "torch style {style} type {ty}"
+            );
+        }
+        // A non-convertible style stays (type 11's 18-20 gate).
+        put(&mut w, 410, 200, 4);
+        w.tile_mut(410, 200).unwrap().frame_y = 9 * 22;
+        convert_sized(&mut w, 410, 200, 11, 0);
+        assert_eq!(w.tile(410, 200).unwrap().frame_y, 9 * 22);
+    }
+
+    #[test]
+    fn w4_d1_the_sized_walk_carries_the_manhattan_gate() {
+        // `WorldGen.cs:55073-55082` — the (2·size+1)² square walk keeps
+        // only the cells with `|k-i| + |l-j| < 6`.
+        let mut w = world();
+        for x in 397..=403 {
+            for y in 197..=203 {
+                put(&mut w, x, y, 2);
+            }
+        }
+        convert_sized(&mut w, 400, 200, 1, 3);
+        assert_eq!(w.tile(400, 200).unwrap().kind, 23, "the centre");
+        assert_eq!(w.tile(400, 197).unwrap().kind, 23, "Manhattan 3");
+        assert_eq!(w.tile(397, 197).unwrap().kind, 2, "Manhattan 6 skips");
+        assert_eq!(w.tile(403, 203).unwrap().kind, 2, "the far corner skips");
+    }
+
+    #[test]
+    fn w4_d1_the_empty_cell_converts_nothing() {
+        // `:55094-55097` — `!active && wall <= 0` returns; the size-0 walk
+        // over open air writes no tile.
+        let mut w = world();
+        convert_sized(&mut w, 400, 200, 11, 0);
+        assert!(!w.tile(400, 200).unwrap().active());
+        assert_eq!(w.tile(400, 200).unwrap().wall, 0);
     }
 }

@@ -354,6 +354,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (the W4-d22 reconcile fold).
     app.projectiles
         .set_npc_banner_buff(app.scene_metrics.npc_banner_buff.clone());
+    // W4-d1 — `Main.infectedSeed` as the PurificationPowder 10's spawn-time
+    // box growth reads it (`Projectile.cs:907-911`): the world's
+    // `SecretSeed.worldIsInfected` micro-seed flag (`WorldGen.cs:559-562`).
+    app.projectiles.set_infected_seed(
+        app.world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+    );
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -489,6 +497,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // id-2 styles keep the wave-A façade.
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
+        } else if id == 18 {
+            // W4-d1 retire — the falling-block forced placement's coin-pile
+            // tail (`WorldGen.cs:60273-60278`: the legacy Coins 18, the int
+            // overload — no draws, no pitch, `LegacySoundPlayer.cs:865-869`;
+            // the `place_tile_sound` table's 330-333 arm).
+            app.audio.play_place_sound((18, 1), x, y, rng);
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }
@@ -599,6 +613,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.net_update = true;
         app.npcs.push(n);
     }
+    // W4-d1 — the aiStyle-6 fertilizer cloud's sapling growth
+    // (`Projectile.cs:24213-24220`'s `AttemptToGrowTreeFromSapling` calls):
+    // the growth draws `WorldGen.genRand`, so the pool arm parked the
+    // requests and the pass resolves them on the `UpdateWorldGen` stream
+    // (the `palm_frame_rolls` deferral precedent, `world_sim/editing.rs`).
+    // The `treeHeightAddon` / `ignoreWalls` args park in the growth port
+    // today (`growth/trees.rs`, M5-SEED-1) — the request carries them.
+    for (x, y, underground, _addon) in app.projectiles.drain_sapling_grows() {
+        let _ = tr_core::growth::attempt_grow_tree_from_sapling(
+            &mut app.world,
+            x,
+            y,
+            underground,
+            app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+        );
+    }
     // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
     // case 19's playing guard refuses BEFORE the one pitch draw, on the
     // `UpdateProjectiles` stream (the C# plays inline mid-`AI_061`; the port
@@ -645,6 +675,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 );
             }
         }
+    }
+    // W4-d1 — the falling-block death placement's item drops
+    // (`Kill_ExplodeTiles`'s aiStyle-10 arm, `Projectile.cs:77562-77569`'s
+    // `Item.RequestNewItem`): the refused placement / occupied cell drops
+    // the block item at the parked pixel point. The C# queues the request
+    // under the `UpdateProjectiles` swap and `Main.UpdateItems` resolves
+    // it (`Item.NewItem`'s velocity/prefix draws ride the `UpdateItems`
+    // stream — the `drain_catches` convention).
+    for (item, x, y) in app.projectiles.drain_block_drops() {
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateItems),
+            item,
+            1,
+            glam::Vec2::new(x, y),
+        );
     }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
