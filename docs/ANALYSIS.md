@@ -9813,6 +9813,23 @@ per layer) live in
 5. **Witnesses stay WRITTEN NOT RUN** — this SEAL is doc + comment-only
    (the module doc's sound/g65 notes refreshed); no cargo/tests/rustfmt/
    graphify invoked.
+**W4-d7 F1 (the movement-61 bounce, WIRED)**: `HandleMovement`'s aiStyle-61
+arm (`Projectile.cs:19615-19625`) replaces the dispatch's `kill_step`
+kill-on-tile stand-in with `bobber_movement` (`projectile.rs`) +
+`bobber_bounce` (`projectile_bobber.rs`): the dry `TileCollision` pass
+(`flag6 = true` — no bobber is `projPet`), the hoik step loop above the
+14-px clamp (the dry cast caps at 15.9 so it IS reachable), the blocked-move
+`Next(3)` tile-cut prologue draw (`:17948`, kept — the bobber's damage 0
+skips the cut body), then the 0.3-damped per-axis reflect (`vx = lastVx *
+-0.3` on an X-block; `vy = lastVy * -0.3` on a Y-block only when `lastVy >
+1`) — NO Kill. The bobbers reach `:19615` through the `:18398`
+`!correctSlopeCollision` branch + the `:18635` else (they match no type arm
+in either chain). The reel state (`tileCollide = false`, `:53714`) still
+integrates freely. Deviations: the wet-branch `wetVelocity` damping
+(`:17612-17699`, the 0.375/0.25/0.5 scales) folds to the plain velocity (the
+standing wet-velocity deviation); the slope passes + `SwitchTiles` plate
+presses + the tile-cut bodies skip (the `pirate_movement` precedent). 1
+witness WRITTEN NOT RUN (`w4_d7_f1_the_bobber_bounce_reflects_at_03`).
 
 ## Growth ticks (M7-GROWTH-1)
 
@@ -29167,18 +29184,66 @@ scan, no bite, no burst, no blink. Witness tests
 `miscCounter` gate census, the landing-burst 12-draw latch census, the
 1056's zero-draw census, the rows/frames, the home spots, the fall-through
 split, the keep-alive pins, the 200-px trigger and the landing clamp.
-**Deferred (still gated)**: the 653 Companion Cube and the 1090 Rainbow
-Boulder Pet вЂ” their draws steer observable state (the 653's scream
-`Next(10)` + the darkness `Next(30,120)`/`Next(5)`/`Next(30)` chain with the
-`Player.Hurt`, `:49494-49554`; the 1090's `NextVector2CircularEdge` particle
-+ `RotatedByRandom` velocity steering, `:49744-49818`), so they need the
-sound/lighting/particle layers or an explicit stream-fidelity decision
-first. The 8 minion types (the Tigers 833-835, Flinx 951, Mushroom Boi 1022,
-Cob Whip 1036, Cattiva 1093/1112, Clay Pot 1118) stay deferred per the first
-slice's list. Other deviations: the 500's `Lighting.AddLight` (`:49464`) has
-no port layer; `flag10` (petting) folds to false; `base.wet` folds to false;
-the blocked-move chain (`:17904-19854`) has no 500/1018/1056 type arm, so a
-blocked move only stops them.
+**Deferred (still gated)**: the Flinx 951, Mushroom Boi 1022, Cattiva
+1093/1112 and Clay Pot 1118 stay deferred per the first slice's list (the
+smart-cursor miners' intention-guesser is unported). Other deviations: the
+500's `Lighting.AddLight` (`:49464`) has no port layer; `flag10` (petting)
+folds to false; `base.wet` folds to false; the blocked-move chain
+(`:17904-19854`) has no 500/1018/1056 type arm, so a blocked move only stops
+them.
+
+## W4-d7 F3 — the deferred aiStyle-67 pets + minions (code-only)
+
+Branch `task/W4-d7-proj-ai-61-70`, **CODE-ONLY mode**: no cargo/rustc/rustfmt/
+test invocation ran; the witness tests are WRITTEN NOT RUN, verified by
+re-reading the cited C# blocks + hand arithmetic. This round landed the five
+kinds slice B deferred (research/26e F3): the **653 Companion Cube** and
+**1090 Rainbow Boulder Pet** (the pets, `projectile_ai067_b.rs`), the
+**833-835 Storm Tigers** and **1036 Cob Whip spider** (the minions,
+`ai_freaking_pirates`' `flag3`/`flag7` arms). The `proj_data` rows
+(`Projectile.cs:7012-7023`/`:10163-10174`/`:9767-9779`) + the Storm Tigers'
+`projFrames` (`Main.cs:8650-8652`) landed in `data.rs`; the dispatch's 67 gate
+widened to admit them. Ported verbatim: the cube's lava scream + darkness
+bite (`companion_cube_tick`, `:49494-49555`), the 1090's `RotatedByRandom`
+steering + shimmer + frame cycle/fade (`:49744-49818`/`:51172-51200`), the
+Tigers' keep-alive + dust gate + special-attack chain
+(`AI_067_TigerSpecialAttack`, `:49034-49119`) + state-4 cooldown + state-5
+pounce + walk/flight frames, the spider's keep-alive + 5-tick bites + walk
+frames. The `Damage_CanDealDamage` terms (`:12448`) gate the five pets (no NPC
+damage ever) and the Tigers in state 4; the Tigers' extended reach
+(`CanHitWithOwnBody` `:12420-12441`, `ProjectileID.cs:530-539`) lifts the
+sight line 48 px with a `Searches.Up(3)` solid-snap. The 1036's `Kill()` dust
+census (`:71068-71076`) rides `cob_whip_spider_kill_draws`.
+
+**Deviations recorded here:**
+- The cube's scream cooldown is the per-owner static
+  `_CompanionCubeScreamCooldown` (`:49500`); the port folds it to the slot's
+  `local_ai[2]` (one cube per owner, the pet-flag convention).
+- The cube's darkness read rides the pool's `cube_light` snapshot (the two
+  `Lighting.GetColor` lengths, `set_disco` precedent); `None` folds the bite
+  inert (the pool-only tests). The `GetColor` byte-quantization precomputes
+  `GlobalBrightness * 255f` once (`Lighting.cs:224`) — the multiply order is
+  kept for the truncation.
+- The cube's bite passes hitDirection 0 — `Hurt`'s knockback gate
+  (`Player.cs:38519`) takes NO pop; the port uses `hurt_inner` with
+  `knock_back: false` and clears the collapsed `hurt_cd` with the i-frames.
+- The Tigers' special attack spawns the 818 pounce chain; the 818 (aiStyle
+  162) is d17-claimed and rowless, so the request rides `wants_dart_spawns`
+  and no-ops until the row lands (the state-4 latch + cooldown still run —
+  the C# sets them regardless of the spawn).
+- The Tigers' `Lighting.AddLight` (`:49283-49291`) has no port layer; the
+  dust269 body is the render skip but its `Next(18)` call-site gate stays on
+  the stream (the frog-blink precedent). The 1090's shimmer/bounce particles
+  are render skips; their draws stay.
+- The pet buff-spawn seam (`buff_effects_accessory.rs`'s `spawn_pet_if_needed`)
+  still uses the plain 6×6 `pool.spawn` (a pre-existing deviation shared with
+  slice B's 500/1018/1056 and the rowless pets); the box rides the row once
+  that seam switches to the data-carrying spawn. Out of this round's scope.
+
+Witnesses (`w4_d7_f3_*`, written not run): the cube lava scream + darkness
+bite + no-pop bite, the 1090 flight steering + frame cycle/fade, the 1036
+kill census + keep-alive, the Tigers' dust gate + state-4 cooldown +
+special-attack chain + extended reach + no-damage gates, the deferred rows.
 
 
 ## aiStyle-1 per-type arms, slice B (S1-D-5)

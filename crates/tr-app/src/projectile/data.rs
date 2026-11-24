@@ -145,6 +145,11 @@ pub const BOUNCY_GRENADE: u16 = 517;
 /// bursts into the three greek fires on death (`Projectile.cs:4801-4811`,
 /// `:73921-73951`).
 pub const MOLOTOV_COCKTAIL: u16 = 399;
+/// `ProjectileID.Ale` (669) — the Ale Throwing Glove's (item 3821) thrown
+/// mug, aiStyle 68 (`Projectile.cs:7163-7173`), W4-d7 wiring (F4). Shares the
+/// molotov's spin/fade/gravity/prime flight; its own `flag35` dust branch,
+/// Tipsy debuff and death burst differ.
+pub const ALE: u16 = 669;
 /// `ProjectileID.MolotovFire` (400) — the molotov's first ground-fire child,
 /// aiStyle 14 (`Projectile.cs:4812-4835`).
 pub const MOLOTOV_FIRE_1: u16 = 400;
@@ -2389,6 +2394,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // W4-d7 wiring (F4) — `Projectile.cs:7163-7173` (669 Ale): 14x14,
+            // aiStyle 68, friendly, `alpha = 255`, melee (the overlay below),
+            // `noEnchantmentVisuals` (no port field — dropped), `penetrate =
+            // -1`. The stock `timeLeft = 3600` / tileCollide true.
+            ALE => (
+                14.0,
+                14.0,
+                68,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:4812-4835` — the three greek fires (400/401/402):
             // aiStyle 14, `penetrate = 3`, `timeLeft = 360`; the three sizes
             // 14x16 / 12x14 / 6x12.
@@ -3167,6 +3188,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 70,
                 1,
                 120,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d7 wiring — `Projectile.cs:4847-4856` (404 Flairon, the recall
+            // HEAD): 26x26, aiStyle 69, friendly, `penetrate = -1`,
+            // `alpha = 255`, melee (the overlay below). The stock
+            // `timeLeft = 3600` / tileCollide true; NOT the 1058 flail body.
+            FLAIRON_HEAD => (
+                26.0,
+                26.0,
+                69,
+                -1,
+                TIME_LEFT_DEFAULT,
                 0,
                 true,
                 false,
@@ -4311,6 +4348,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             CRIMSON_HEART => (20.0, 20.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
             DIRTIEST_BLOCK => (16.0, 16.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
             BOULDER_PET => (32.0, 32.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+            // W4-d7 F3 — the deferred aiStyle-67 pets' rows: the Companion
+            // Cube (`Projectile.cs:7012-7023`: 30x30, penetrate -1,
+            // netImportant, timeLeft *= 5, friendly, ignoreWater, scale 0.8)
+            // and the Rainbow Boulder Pet (`:10163-10174`: 32x32, the same
+            // slice but scale 0.5). Both re-pin friendly false per tick
+            // (`:49562`), no minion slice (the slice-B pets' convention).
+            COMPANION_CUBE => (30.0, 30.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
+            RAINBOW_BOULDER_PET => (32.0, 32.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.5)),
+            // W4-d7 F3 — the Cob Whip's spider (`Projectile.cs:9767-9779`):
+            // 18x10, aiStyle 67, friendly, penetrate -1, netImportant, the
+            // LOCAL immunity pair (20), armorPenetration 30 (dropped — no
+            // ProjData field, the spawn-source convention, the 864 precedent),
+            // decidesManualFallThrough. The stock timeLeft 3600 (NOT *5 — the
+            // row sets no timeLeft) / tileCollide true.
+            COB_WHIP_SPIDER => (18.0, 10.0, 67, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 20, false, -1, 0, 1.0)),
 
             // ===== W4-d3: the aiStyle-25 boulder family (census 26b) =====
             // `Projectile.cs:1833-1850` — the shared 31x31 trap block: 99
@@ -4515,6 +4567,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4625` - the Queen Spider's egg: 16x16, aiStyle 14,
             // `penetrate = -1`, `timeLeft = 60`.
             SPIDER_EGG => (16.0, 16.0, 14, -1, 60, 0, true, false, false, RESET_STATE),
+            // W4-d7 wiring — `Projectile.cs:4635-4644` (379 BabySpider): 14x10,
+            // aiStyle 63, friendly, `timeLeft = 300`, `penetrate = 1`,
+            // `decidesManualFallThrough` (the overlay below). The stock
+            // tileCollide true / no immunity pair / no minion slice (379 is a
+            // SentryShot, NOT `minion`/`sentry` — `SENTRY_SHOT` lists it).
+            BABY_SPIDER => (14.0, 10.0, 63, 1, 300, 0, true, false, false, RESET_STATE),
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9153` — the Houndius' fireball: 14x14, aiStyle 28.
             HOUNDIUS_SHOOTIUS_FIREBALL => (14.0, 14.0, 28, 1, 3600, 0, true, false, false, RESET_STATE),
@@ -5319,6 +5377,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d2 — the aiStyle-11 light pets set `netImportant = true`
             // (`Projectile.cs:995`/`:1524`/`:1676`/`:1690`).
             || matches!(kind, SHADOW_ORB | BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY)
+            // W4-d7 F3 — the deferred pets + the Cob Whip spider set
+            // `netImportant` themselves (`Projectile.cs:7018`/`:10169`/`:9774`).
+            || matches!(kind, COMPANION_CUBE | RAINBOW_BOULDER_PET | COB_WHIP_SPIDER)
             // S1-P-i42 — the glowstick/flare family sets `netImportant = true`
             // (`Projectile.cs:1328`/`:1356`/`:2517`/`:4024`/`:5487`/`:5853`/
             // `:8345`/`:9582`/`:9593`/`:9604`/`:9615`/`:10155`).
@@ -5390,6 +5451,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d3 — the 1047 RainbowBoulder sets `ignoreWater`
             // (`Projectile.cs:9926`).
             || kind == RAINBOW_BOULDER
+            // W4-d7 F3 — the Companion Cube + Rainbow Boulder Pet set
+            // `ignoreWater` themselves (`Projectile.cs:7021`/`:10173`); the
+            // Cob Whip spider keeps the stock false (`:9767-9779` sets none).
+            || matches!(kind, COMPANION_CUBE | RAINBOW_BOULDER_PET)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
@@ -5517,6 +5582,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             kind,
             ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
                 | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3
+                // W4-d7 wiring — the BabySpider's `decidesManualFallThrough`
+                // (`Projectile.cs:4643`); the aiStyle-63 arm drives
+                // `shouldFallThrough` (`:29345`/`:29349`).
+                | BABY_SPIDER
+                // W4-d7 F3 — the Cob Whip spider's `decidesManualFallThrough`
+                // (`Projectile.cs:9778`).
+                | COB_WHIP_SPIDER
                 // S1-P-i25: the new aiStyle-67 rows' `decidesManualFallThrough`
                 // — the flinx (`:8980`), the mushroom boi (`:9679`), the
                 // cattivas (`:10207`/`:10374`) and the clay pot (`:10462`).
@@ -5564,6 +5636,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d6 residual 5 — the VampireKnife's `melee = true`
                     // (`Projectile.cs:3960`).
                     | VAMPIRE_KNIFE
+                    // W4-d7 wiring — the Flairon recall head's `melee = true`
+                    // (`Projectile.cs:4855`).
+                    | FLAIRON_HEAD
+                    // W4-d7 wiring (F4) — the Ale's `melee = true`
+                    // (`Projectile.cs:7170`).
+                    | ALE
             ),
         ranged: matches!(
             kind,
@@ -5687,6 +5765,15 @@ pub const CRIMSON_HEART: u16 = 500;
 pub const DIRTIEST_BLOCK: u16 = 1018;
 /// `ProjectileID.BoulderPet` (`ProjectileID.cs:2666`).
 pub const BOULDER_PET: u16 = 1056;
+/// `ProjectileID.CompanionCube` (`ProjectileID.cs:1860`) — the aiStyle-67
+/// pet, W4-d7 F3 (`Projectile.cs:7012-7023`).
+pub const COMPANION_CUBE: u16 = 653;
+/// `ProjectileID.RainbowBoulderPet` (`ProjectileID.cs:2734`) — the aiStyle-67
+/// pet, W4-d7 F3 (`Projectile.cs:10163-10174`).
+pub const RAINBOW_BOULDER_PET: u16 = 1090;
+/// `ProjectileID.CobWhipSpider` (`ProjectileID.cs:2626`) — the Cob Whip's
+/// aiStyle-67 spider, W4-d7 F3 (`Projectile.cs:9767-9779`).
+pub const COB_WHIP_SPIDER: u16 = 1036;
 
 // ---- W4-d3: the aiStyle-25 boulder family (census 26b) -------------------
 // The 13 kinds the style's `SetDefaults` arms row (`Projectile.cs:1833-1870`,
@@ -5798,6 +5885,14 @@ pub const STORM_TIGER_3: u16 = 835;
 pub const ABIGAIL: u16 = 963;
 pub const QUEEN_SPIDER: u16 = 377;
 pub const SPIDER_EGG: u16 = 378;
+/// `ProjectileID.BabySpider` (`ProjectileID.cs:1312`) — the Queen Spider's
+/// aiStyle-63 minion shot (`Projectile.cs:4635-4644`), W4-d7 wiring.
+pub const BABY_SPIDER: u16 = 379;
+/// `ProjectileID.Flairon` (`ProjectileID.cs:1362`) — the Flairon's aiStyle-69
+/// recall HEAD (`Projectile.cs:4847-4856`), W4-d7 wiring. NOT [`FLAIRON`]
+/// (1058 = FlaironFlail, the aiStyle-15 flail BODY): item 2611 Flairon shoots
+/// 404 (`Item.cs:25528`), item 5526 FlaironFlail shoots 1058 (`Item.cs:43534`).
+pub const FLAIRON_HEAD: u16 = 404;
 pub const MOONLORD_TURRET: u16 = 641;
 /// `ProjectileID.MoonlordTurretLaser` (642) — the turret's beam
 /// (`Projectile.cs:6904-6915`: 18x18, aiStyle 84, `penetrate = -1`,
@@ -6019,6 +6114,18 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
         CRIMSON_HEART => 4,
+        // W4-d7 wiring — the BabySpider's 4-frame walk sheet (`Main.cs:8622`);
+        // the aiStyle-63 arm's frame machine (`Projectile.cs:29381-29407`)
+        // indexes it. The 404 Flairon head keeps the stock 1 (no override).
+        BABY_SPIDER => 4,
+        // W4-d7 F3 — the Cob Whip spider's 4-frame sheet (`Main.cs:8511`);
+        // the aiStyle-67 walk machine (`Projectile.cs:50768-50797`) indexes
+        // it. The Storm Tigers' sheets (`Main.cs:8650-8652`): the 833 walks
+        // 0-7 / flies 8, the 834/835 walk 0-9 / fly 10-11. The 653/1090 keep
+        // the stock 1 (no `projFrames` override in `Main.cs:8444-8727`).
+        COB_WHIP_SPIDER => 4,
+        STORM_TIGER_1 => 10,
+        STORM_TIGER_2 | STORM_TIGER_3 => 12,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
