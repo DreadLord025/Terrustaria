@@ -70,29 +70,6 @@ pub(crate) enum FrontScreen {
     /// micro-seed toggles. The payload carries the shared draft and the
     /// list's own `UIScrollbar.ViewPosition`.
     SecretSeedsList(Box<SecretSeedsState>),
-}
-
-/// The `UIWorldCreationAdvancedSecretSeedsList` payload — the shared
-/// draft plus the screen's scroll (`_scrollbar`, `:27`).
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct SecretSeedsState {
-    pub(crate) draft: ui::world_creation::NewWorldDraft,
-    pub(crate) scroll: f32,
-}
-
-/// The `UIReportsPage` payload — the screen's own state
-/// (`UIReportsPage.cs:18-34`).
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ReportsState {
-    /// The merged reporter log (`PopulateLogs`'s time-ordered rows).
-    pub(crate) reports: Vec<ui::reports::Report>,
-    /// `UIScrollbar.ViewPosition` — `GoToBottom` at the open.
-    pub(crate) scroll: f32,
-    /// `_previousUIState` — the front screen Back returns to.
-    pub(crate) back_front: Option<FrontScreen>,
-    /// `_menuIdToGoBackTo` — the legacy page Back returns to when the
-    /// reports opened over a menu page (`Main.menuMode` at the open).
-    pub(crate) back_page: Option<menu::Page>,
     /// W4-d84 row 6's `UIResourcePackInfoMenu` (`UIResourcePackInfoMenu.cs:15`)
     /// — the pack-info screen the selection menu's info button opens
     /// (`UIResourcePackSelectionMenu.Click_Info`, `:263-270`). The payload is
@@ -140,6 +117,29 @@ pub(crate) struct ReportsState {
     /// (`:15`) — null from the menu row, so Back closes to `menuMode = 0`
     /// (`HandleBackButtonUsage`, `:329-339`).
     WorkshopHub(Box<ui::workshop_hub::HubState>),
+}
+
+/// The `UIWorldCreationAdvancedSecretSeedsList` payload — the shared
+/// draft plus the screen's scroll (`_scrollbar`, `:27`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SecretSeedsState {
+    pub(crate) draft: ui::world_creation::NewWorldDraft,
+    pub(crate) scroll: f32,
+}
+
+/// The `UIReportsPage` payload — the screen's own state
+/// (`UIReportsPage.cs:18-34`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ReportsState {
+    /// The merged reporter log (`PopulateLogs`'s time-ordered rows).
+    pub(crate) reports: Vec<ui::reports::Report>,
+    /// `UIScrollbar.ViewPosition` — `GoToBottom` at the open.
+    pub(crate) scroll: f32,
+    /// `_previousUIState` — the front screen Back returns to.
+    pub(crate) back_front: Option<FrontScreen>,
+    /// `_menuIdToGoBackTo` — the legacy page Back returns to when the
+    /// reports opened over a menu page (`Main.menuMode` at the open).
+    pub(crate) back_page: Option<menu::Page>,
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -1642,15 +1642,20 @@ impl FrontScreenBehaviours for FrontScreen {
                 // handlers): the on-screen keys type, the toggles cycle the
                 // `KeyState`, Submit re-checks the validation, Cancel runs
                 // the `_cancelAction`.
-                let l = ui::keyboard::layout(screen, app.vk_grid);
-                // The click resolves against the live state first (the
-                // read borrow drops before the audio play).
-                let click = match app.front.as_ref() {
-                    Some(FrontScreen::Keyboard(session)) => {
-                        ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse)
-                    }
-                    _ => return None,
+                let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() else {
+                    return None;
                 };
+                let can_restore = session.request.context.editing_sign()
+                    && !app.sign_cancel_cache.is_empty();
+                let l = ui::keyboard::layout(screen, app.vk_grid, session.request.context);
+                let click = ui::keyboard::click_at(
+                    &session.state,
+                    &l,
+                    app.vk_grid,
+                    mouse,
+                    session.request.context,
+                    can_restore,
+                );
                 // W4-g22 DOC-SWEEP — the on-screen keys' own cues
                 // (`UIVirtualKeyboard.cs`): Shift/Symbol/letter keys/Space/
                 // Backspace play 12 BEFORE the edit (`:252`/`:286`/`:525`/
@@ -1667,21 +1672,7 @@ impl FrontScreenBehaviours for FrontScreen {
                     }
                     _ => {}
                 }
-                let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() else {
-                    return None;
-                };
                 match click {
-                let can_restore = session.request.context.editing_sign()
-                    && !app.sign_cancel_cache.is_empty();
-                let l = ui::keyboard::layout(screen, app.vk_grid, session.request.context);
-                match ui::keyboard::click_at(
-                    &session.state,
-                    &l,
-                    app.vk_grid,
-                    mouse,
-                    session.request.context,
-                    can_restore,
-                ) {
                     ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
                     // The shift button: `(keyState != Shift) ? Shift : Default`
                     // (`:250-254`).
@@ -1749,6 +1740,10 @@ impl FrontScreenBehaviours for FrontScreen {
             FrontScreen::Reports(_) => {
                 if ui::reports::back_hit(screen, mouse) {
                     Some(FlowClick::ReportsBack)
+                    } else {
+                        None
+                    }
+                }
             FrontScreen::ResourcePackInfo(_) => {
                 // `GoBackClick` (`UIResourcePackInfoMenu.cs:170-173`) — the
                 // one handler. The Back rect is wrap-independent, so the
@@ -1858,6 +1853,8 @@ impl FrontScreenBehaviours for FrontScreen {
                     // `GoBack` (`:386-391`): sound 11 + the Advanced tab.
                     ui::secret_seeds_list::Click::Apply => Some(FlowClick::SecretSeedsBack),
                     ui::secret_seeds_list::Click::None => None,
+                }
+            }
             FrontScreen::ResourcePackSelection(_) => {
                 // The selection menu's click table (`PopulatePackList`'s
                 // handlers + `GoBackClick`/`OpenFoldersClick`). The mutations
@@ -2905,6 +2902,7 @@ impl App {
             FrontScreen::Keyboard(_) => {
                 let l = ui::keyboard::layout(screen, self.vk_grid);
                 ui::keyboard::hover_element(&l, self.mouse_pos).map(|id| id + 3000)
+            }
             FrontScreen::WorkshopPublishPacks(state) => {
                 // The publish rows' double-click identity
                 // (`UIWorkshopPublishResourcePackListItem.cs:56/:82`).
@@ -4724,14 +4722,11 @@ pub(crate) mod front_flow_tests {
         let liquids = LiquidSystem::new(&world);
         let cloud_field = crate::cloud::CloudField::new(world.seed);
         let section_manager = crate::map_sections::MapSections::new(world.width, world.height);
-        App {
+        let mut app = App {
             // The `Main.cs:67229-67236` load reset (strength 0, x/y -1).
             ambient_waterfall: (0.0, -1.0, -1.0),
             ambient_lavafall: (0.0, -1.0, -1.0),
             ambient_lava: (0.0, -1.0, -1.0),
-        let mut app = App {
-            ambient_waterfall: (0.0, 0.0, 0.0),
-            ambient_lavafall: (0.0, 0.0, 0.0),
             ambient_counter: 0.0,
             craft_filter: None,
             craft_filters: crate::craft_filter::FilterBoard::default(),
@@ -4856,7 +4851,6 @@ pub(crate) mod front_flow_tests {
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
             game_mode_difficulty_override: None,
-            research: crate::research::ResearchTracker::default(),
             journey: ui::journey::JourneyMenu::default(),
             #[cfg(feature = "debug")]
             debug_panel: tr_debug::Panel::new(),
@@ -4990,7 +4984,6 @@ pub(crate) mod front_flow_tests {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
-            cursor_item_icon_id: 0,
             block_interaction_with_projectiles: 3,
             last_mouse_interface: false,
             void_lens_selection: Vec::new(),
@@ -5024,13 +5017,7 @@ pub(crate) mod front_flow_tests {
             item_icon_cache_pos: Vec2::ZERO,
             item_icon_cache_kind: 0,
             item_icon_cache_time: 0,
-            // S1-W4-g81 carry — the cursor-icon latch + cache triple start
-            // clear (`App::new`'s twin entries); `flow_app` is a full App
-            // literal, so the four fields need their rows here too.
             cursor_item_icon_enabled: false,
-            item_icon_cache_pos: Vec2::ZERO,
-            item_icon_cache_kind: 0,
-            item_icon_cache_time: 0,
             // W4-g86 research/244 phase 1 — the four cursorItemIcon fields
             // (`Player.cs:1852-1858`, the C# defaults 0/""/0/false).
             cursor_item_icon_id: 0,
@@ -5076,11 +5063,9 @@ pub(crate) mod front_flow_tests {
             zoom_pinned: false,
             debug: false,
             debug_overlay: false,
-            hide_ui: false,
             draw_diag: 0,
             net_diag: false,
             show_frame_rate: false,
-            release_ui: false,
             draw_release: false,
             net_release: false,
             frame_release: false,
@@ -5129,12 +5114,6 @@ pub(crate) mod front_flow_tests {
             mouse_text_color_dir: 1,
             eclipse_light: 0.0,
             mushroom_light_influence: 0.0,
-            demon_torch: 1.0,
-            demon_torch_dir: 1.0,
-            martian_light: 1.0,
-            martian_light_dir: 1.0,
-            master_color: 1.0,
-            master_color_dir: 1.0,
             // `Main.invAlpha = 1f; Main.invDir = 1f` (`Main.cs:66846-66847`).
             inv_pulse: crate::ui::inv_pulse::InvPulse::default(),
             hide_ui: false,
@@ -5149,8 +5128,6 @@ pub(crate) mod front_flow_tests {
             martian_light_dir: 1.0,
             disco: [255, 0, 0],
             disco_style: 0,
-            master_color: 1.0,
-            master_color_dir: 1,
             light_rng_seed: 1,
             anim_time: 0.0,
             has_liquids: false,
@@ -5163,7 +5140,6 @@ pub(crate) mod front_flow_tests {
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
             cage_anim: tr_core::critter_cage_anim::CritterCageAnimator::new(),
             critter_cage: false,
-            cage_anim: tr_core::drawdata_cages::CritterCageAnimator::new(1),
             wiring: tr_core::wiring::Wiring::new(),
             golf_state: tr_core::golf_state::GolfState::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
@@ -5239,12 +5215,6 @@ pub(crate) mod front_flow_tests {
         // seed; the live `rngs` stream stays untouched).
         app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(1));
         app
-            ug_back: crate::render::bg_styles::UgBackState {
-                style: 0,
-                old_style: 0,
-                transition: 0.0,
-            },
-        }
     }
 
     #[test]
