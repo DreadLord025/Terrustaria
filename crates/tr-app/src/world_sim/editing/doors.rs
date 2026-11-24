@@ -43,13 +43,21 @@ fn use_golem_altar(app: &mut App) -> bool {
         || !app.world.hard_mode
         || !app.world.downed_plant_boss;
     if !gated {
-        // The inventory scan: the first 1293 row decrements; a zero
-        // stack clears (`SetDefaults(0)`) exactly like the C#.
-        for slot in 0..app.inventory.len() {
-            if app.inventory[slot].kind == 1293 && app.inventory[slot].count > 0 {
-                app.inventory[slot].count -= 1;
-                if app.inventory[slot].count == 0 {
-                    app.inventory[slot].kind = 0;
+        // The inventory scan (`Player.cs:32766-32778`): the C# walks
+        // `inventory[0..58]` — the grid + the coin/ammo rows (the trash 58
+        // is OUTSIDE this loop, unlike the chest key's `<= 58`). The first
+        // 1293 row decrements; a zero stack clears (`SetDefaults(0)`).
+        // W4-g43 doc-sweep: the old grid-only scan missed the coin/ammo rows.
+        for slot in app
+            .inventory
+            .iter_mut()
+            .chain(app.equip.coins.iter_mut())
+            .chain(app.equip.ammo.iter_mut())
+        {
+            if slot.kind == 1293 && slot.count > 0 {
+                slot.count -= 1;
+                if slot.count == 0 {
+                    *slot = crate::item::EMPTY_SLOT;
                 }
                 // W4-e10 — `Player.cs:32782`: `PlaySound(15,
                 // (int)position.X, (int)position.Y, 0)` — case 15 slot 0
@@ -147,11 +155,23 @@ fn fire_unlock_door(app: &mut App, tx: i32, ty: i32) {
 /// ±20-tile scan around the player for the altar's origin cell
 /// (`type == 237 && frameX == 18 && frameY == 0`), the 50-tile solid
 /// scans up and down that column (`WorldGen.SolidTile`'s
-/// active/!solidTop/!halfBrick/slope-0 shape — an out-of-bounds cell
-/// reads solid, the C# `null` case), then the Golem lands at the
-/// column's `(up + down) / 3` pixel Y, targeting the player, with the
-/// "HasAwoken" announcement. Returns false when no altar is in range
-/// (the C#'s try/catch no-spawn path).
+/// active/!solidTop/!halfBrick/slope-0/!inActive shape — an out-of-bounds
+/// cell reads solid, the C# `null` case), then the Golem lands at the
+/// column's `(up + up + down) / 3` pixel Y, targeting the player, with the
+/// "HasAwoken" announcement (`ChatColors.BossOrEvent`). Returns false when
+/// no altar is in range (the C#'s try/catch no-spawn path).
+/// W4-g43 doc-sweep fidelity fixes vs the C#:
+/// - the scan bounds are EXCLUSIVE-upper (`j < num2 + 20`, `:80494/:80496`
+///   — the old `..=` included the +20 row/col);
+/// - the `num4 <= 0 || num5 <= 0` refusal (`:80505`) — no altar found keeps
+///   the 0/0 init and refuses, and an altar ON row/col 0 refuses too;
+/// - `NPC.NewNPC` takes the spawn point as the BOTTOM centre (`:80770`,
+///   `nPC.Bottom = (X, Y)` → `position = (X - w/2, Y - h)`): the old
+///   top-left write sat the body 140 px too high;
+/// - `target = plr` + `targetSetFrame` (`:80528-80529`);
+/// - the announcement is `Announcement.HasAwoken` formatted with the NPC
+///   name (`:80530`), `ChatColors.BossOrEvent` — not the server-message
+///   "The Golem has awoken!" literal.
 fn spawn_golem_on_altar(app: &mut App) -> bool {
     let Some(player) = app.player.as_ref() else {
         return false;
@@ -159,9 +179,11 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     let (pcx, pcy) = player.center();
     let cx_t = (pcx / TILE_PX) as i32;
     let cy_t = (pcy / TILE_PX) as i32;
+    // `:80492-80504` — the last-match scan (the C# keeps overwriting
+    // num4/num5, so the LAST matching cell in row-major order wins).
     let mut altar: Option<(i32, i32)> = None;
-    for j in (cx_t - 20)..=(cx_t + 20) {
-        for k in (cy_t - 20)..=(cy_t + 20) {
+    for j in (cx_t - 20)..(cx_t + 20) {
+        for k in (cy_t - 20)..(cy_t + 20) {
             if app
                 .world
                 .tile(j, k)
@@ -174,6 +196,12 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     let Some((ax, ay)) = altar else {
         return false;
     };
+    // `:80505-80508` — the zero-coordinate refusal.
+    if ax <= 0 || ay <= 0 {
+        return false;
+    }
+    // `WorldGen.SolidTile` (`WorldGen.cs:70111-70132`): the null arm reads
+    // TRUE; the active arm also refuses actuated tiles (`!inActive()`).
     let solid = |j: i32, k: i32| -> bool {
         match app.world.tile(j, k) {
             None => true,
@@ -183,9 +211,12 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
                     && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
                     && !t.half_brick()
                     && t.slope() == 0
+                    && !t.inactive()
             }
         }
     };
+    // `:80509-80526` — both scans start at the altar row; the up-scan's
+    // exclusive lower bound is `num5 - 50` (the C# `num8 > num5 - 50`).
     let mut up = ay - 15;
     for k in ((ay - 49).max(0)..=ay).rev() {
         if solid(ax, k) {
@@ -200,13 +231,26 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
             break;
         }
     }
+    // `:80527` — NewNPC(X: num4*16+8, Y: (num6+num6+num7)/3*16): the BOTTOM
+    // centre (`:80770`), so the top-left comes off half the box / the height.
     let spawn_x = ax as f32 * TILE_PX + 8.0;
     let spawn_y = ((up + up + down) / 3) as f32 * TILE_PX;
-    let mut golem = Npc::new(NpcKind::Golem, spawn_x, spawn_y, 1, 0.0);
+    let (gw, gh) = NpcKind::Golem.size();
+    let mut golem = Npc::new(NpcKind::Golem, spawn_x - gw * 0.5, spawn_y - gh, 1, 0.0);
     golem.hp = golem.max_hp;
+    // `:80528-80529` — the target latch (the solo player is slot 0; the
+    // EverLastingTicker stand-in is the port's frame counter convention).
+    golem.target = app.local_id as i32;
+    golem.target_set_frame = app.frame_count;
     app.npcs.push(golem);
-    app.chat
-        .new_text("The Golem has awoken!", crate::chat::COLOR_SERVER_MESSAGE);
+    // `:80530` — `Announcement.HasAwoken` with the NPC's net name,
+    // `ChatColors.BossOrEvent` (the WoF precedent's literal stand-in shape,
+    // but the correct colour + the localized template).
+    let text = crate::lang::text_args(
+        "Announcement.HasAwoken",
+        &[crate::lang::npc_name(245)],
+    );
+    crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_BOSS_OR_EVENT);
     true
 }
 
@@ -1418,6 +1462,18 @@ mod tests {
 
     use super::super::tests::{object_world, set_tile, slot};
 
+    /// W4-e28/f34 — the station rig: one active station tile at (10, 19) on
+    /// the object world, the player at spawn (in earshot of the tile).
+    fn station_app(kind: u16) -> App {
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, kind);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let player = Player::spawn(&app.world);
+        app.player = Some(player);
+        app
+    }
+
     /// The bed rig: a floor row at y 60 with a style-0 bed placed at
     /// (40, 59) — columns 39-42, rows 58-59 (`place_item_tile`'s y is the
     /// bottom row) — and the player parked near the sleep anchor.
@@ -2388,6 +2444,202 @@ mod tests {
         );
     }
 
+    /// W4-f41 — the party monolith's right-click (`Player.cs:32278-32284`):
+    /// the click is consumed, the mech cue plays (`PlaySound(28)`), and
+    /// `BirthdayParty.ToggleManualParty` flips the manual party — the
+    /// up-edge credits THROW_A_PARTY (25), the down-edge credits nothing
+    /// (`BirthdayParty.cs:202-217` + `:167-173`, the wiring drain's body).
+    #[test]
+    fn w4_f41_the_party_monolith_click_toggles_the_party() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        let i = app.world.index(10, 19);
+        app.world.tiles[i].kind = 455;
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        let cues0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
+        assert!(app.world_events.manual_party, "the toggle raised the party");
+        assert!(
+            app.audio.played_count() > cues0,
+            "the mech cue played (:32281)"
+        );
+        // The up-edge credit (the wiring lane's progression probe shape).
+        assert!(
+            app.achievements
+                .list
+                .iter()
+                .flat_map(|a| a.conditions.iter())
+                .any(|c| c.name == "PROGRESSION_EVENT_25" && c.completed),
+            "a party coming up credits THROW_A_PARTY"
+        );
+        // The mirror: a party already up, the re-click takes it down and
+        // the achievement stays as it was (no second credit row needed —
+        // the down edge runs no `CheckForAchievement` credit).
+        assert!(interact_tile(&mut app, 10, 19));
+        assert!(!app.world_events.manual_party, "the toggle lowered it");
+        // A genuine party up: the manual toggle still flips the manual
+        // flag, but `PartyIsUp` never falls, so no state edge fires.
+        app.world_events.genuine_party = true;
+        assert!(interact_tile(&mut app, 10, 19));
+        assert!(app.world_events.manual_party);
+        assert!(crate::world_events::party_is_up(&app.world_events));
+    }
+
+    // ---- W4-e28 + W4-f34: the station-buff app arms ------------------------
+
+    #[test]
+    fn w4_e28_the_crystal_ball_grants_clairvoyance_and_plays_item4() {
+        // `Player.cs:32594-32599`: the click on tile 125 grants buff 29 for
+        // 108000 ticks (30 min) and plays `SoundID.Item4` at the PLAYER's
+        // position. The click is consumed; the cell keeps its kind.
+        let mut app = station_app(125);
+        let played0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(29).expect("Clairvoyance granted");
+        assert_eq!(p.buffs.buff_time[slot], 108000);
+        assert_eq!(app.audio.played_count(), played0 + 1, "one cue played");
+        assert_eq!(app.world.tile(10, 19).unwrap().kind, 125, "no world write");
+    }
+
+    #[test]
+    fn w4_e28_the_ammo_box_grants_buff_93_and_plays_item149() {
+        // `Player.cs:32630-32635`: tile 287 grants buff 93 for 108000 ticks
+        // and plays `SoundID.Item149`. The buff's effect arm
+        // (`:10078-10081`) sets `ammoBox` — the 1/5 not-consume roll's flag.
+        let mut app = station_app(287);
+        let played0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19));
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(93).expect("Ammo Box granted");
+        assert_eq!(p.buffs.buff_time[slot], 108000);
+        assert_eq!(app.audio.played_count(), played0 + 1);
+    }
+
+    #[test]
+    fn w4_e28_the_station_grants_draw_no_rng() {
+        // RNG-free verify for the UNPITCHED rows: the plain `play_at` path
+        // draws no pitch roll — no stream moves. (The cake 621's faithful
+        // case-2 play DOES draw; its own witness pins that below.)
+        let mut app = station_app(125);
+        let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let global0 = app.rngs.global().clone();
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            players0,
+            "UpdatePlayers untouched"
+        );
+        assert_eq!(*app.rngs.global(), global0, "global untouched");
+        // The re-click refreshes the time, still no draws (the AddBuff
+        // update-in-place path, `Player.cs:5402-5426`).
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            players0
+        );
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(29).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 108000, "refreshed, not stacked");
+    }
+
+    #[test]
+    fn w4_f34_the_cake_war_table_and_dead_cells_station_grant_their_buffs() {
+        // `Player.cs:32600-32617`: tile 621 grants buff 192 (Sugar Rush) for
+        // 7200 ticks + Item2; tile 464 grants 348 (War Table) for 108000 +
+        // Item4; tile 699 grants 366 for 108000 + Item179. Each consumes the
+        // click, plays ONE cue at the player position and writes no world.
+        for (kind, buff, time) in [(621u16, 192, 7_200), (464, 348, 108_000), (699, 366, 108_000)]
+        {
+            let mut app = station_app(kind);
+            let played0 = app.audio.played_count();
+            assert!(interact_tile(&mut app, 10, 19), "tile {kind} consumed");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).expect("the grant");
+            assert_eq!(p.buffs.buff_time[slot], time, "tile {kind}'s duration");
+            assert_eq!(app.audio.played_count(), played0 + 1, "one cue");
+            assert_eq!(app.world.tile(10, 19).unwrap().kind, kind, "no world write");
+        }
+    }
+
+    #[test]
+    fn w4_f34_the_sharpening_and_bewitching_tables_grant_their_buffs() {
+        // `Player.cs:32618-32629`: tile 377 grants buff 159 (Sharpened) for
+        // 108000 ticks + Item37 (the case-2 ×0.5 volume rides the arm);
+        // tile 354 grants 150 (Bewitched) for 108000 + Item4.
+        for (kind, buff) in [(377u16, 159), (354u16, 150)] {
+            let mut app = station_app(kind);
+            let played0 = app.audio.played_count();
+            assert!(interact_tile(&mut app, 10, 19), "tile {kind} consumed");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).expect("the grant");
+            assert_eq!(p.buffs.buff_time[slot], 108000);
+            assert_eq!(app.audio.played_count(), played0 + 1, "one cue");
+        }
+    }
+
+    /// W4-f34's neighbour no-draw witness, RE-DERIVED for the pitched-cue
+    /// follow-up (research/70 §1f): the cake 621 left the RNG-free loop —
+    /// its faithful case-2 play draws one pitch roll per audible click (the
+    /// `w4_f41_the_cake_click_draws_the_pitched_case2_roll` witness pins
+    /// that). The unpitched rows keep the e28 contract: no stream moves,
+    /// the re-click refreshes in place, never stacks.
+    #[test]
+    fn w4_f34_the_neighbour_grants_draw_no_rng_and_refresh_not_stack() {
+        for (kind, buff, time) in [(699u16, 366, 108_000), (464, 348, 108_000)] {
+            let mut app = station_app(kind);
+            let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let global0 = app.rngs.global().clone();
+            assert!(interact_tile(&mut app, 10, 19));
+            assert!(interact_tile(&mut app, 10, 19), "the re-click");
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                players0,
+                "tile {kind}: UpdatePlayers untouched"
+            );
+            assert_eq!(*app.rngs.global(), global0, "tile {kind}: global untouched");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).unwrap();
+            assert_eq!(p.buffs.buff_time[slot], time, "refreshed, not stacked");
+        }
+    }
+
+    /// W4-f41 final sweep (research/70 §1f follow-up): the cake's faithful
+    /// pitched case-2 play — ONE `Next(-6, 7) * 0.01` draw on the
+    /// `UpdatePlayers` stream per audible click (`LegacySoundPlayer.cs:632`
+    /// via `play_npc_item_cue(2, …)`), the global stream untouched, and the
+    /// re-click refreshes 7200 in place (never stacks) while drawing again.
+    #[test]
+    fn w4_f41_the_cake_click_draws_the_pitched_case2_roll() {
+        let mut app = station_app(621);
+        let mut witness = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        let _ = witness.next_range(-6, 7); // the ONE case-2 pitch draw
+        let global0 = app.rngs.global().clone();
+        let played0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly one UpdatePlayers draw — the pitched case-2 roll"
+        );
+        assert_eq!(*app.rngs.global(), global0, "global untouched");
+        assert_eq!(app.audio.played_count(), played0 + 1, "the Item_2 cue");
+        // The re-click refreshes in place (`Player.cs:5402-5426`) and draws
+        // the pitch roll again — the faithful path is not draw-free.
+        let _ = witness.next_range(-6, 7);
+        assert!(interact_tile(&mut app, 10, 19), "the re-click");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek()
+        );
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(192).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 7_200, "refreshed, not stacked");
+    }
+
     #[test]
     fn the_golem_altar_consumes_a_cell_and_summons() {
         // `TileInteractionsUse`'s altar arm (`Player.cs:32755-32790`) +
@@ -2454,8 +2706,12 @@ mod tests {
             .iter()
             .find(|n| n.kind == NpcKind::Golem)
             .expect("the Golem spawns");
-        assert_eq!(golem.x, 30.0 * 16.0 + 8.0, "the altar column");
-        assert_eq!(golem.y, 25.0 * 16.0, "the (20+20+36)/3 row");
+        // W4-g43 doc-sweep: NewNPC's BOTTOM-centre anchor (`NPC.cs:80770`) —
+        // the body's top-left is (X - 140/2, Y - 140): the altar column's
+        // centre 488 minus 70, the (20+20+36)/3 row's 400 minus 140.
+        assert_eq!(golem.x, 30.0 * 16.0 + 8.0 - 70.0, "the altar column, bottom-centre");
+        assert_eq!(golem.y, 25.0 * 16.0 - 140.0, "the (20+20+36)/3 row, bottom-centre");
+        assert_eq!(golem.target, 0, "the summon targets the player (:80528)");
         // A living Golem refuses the re-summon; hardmode off refuses too.
         interact_tile(&mut app, 30, 30);
         assert_eq!(app.inventory[app.selected].count, 1, "the living-boss gate");

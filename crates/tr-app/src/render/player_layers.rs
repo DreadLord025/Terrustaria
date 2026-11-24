@@ -219,8 +219,12 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) mount: Option<MountDraw>,
     /// `Player.head` — the equipped helmet's armor slot (−1 = none); a set
     /// slot suppresses the hair (`Head.Sets.HidesHead`,
-    /// `PlayerDrawLayers.cs:2512`). Slot 0 is real (Familiar Wig).
+    /// `PlayerDrawLayers.cs:2512`). Slot 0 is real (Familiar Wig). Slot 195
+    /// (the Party Hat) draws the ALT hair under the hat instead (hatHair).
     pub(crate) head_armor: i16,
+    /// `Player.invis` (the Invisibility buff): the hatHair arm's `!invis`
+    /// gate (`PlayerDrawLayers.cs:2104`) — W4-f41.
+    pub(crate) invis: bool,
     /// `Player.body` — the chest armor's slot; the composite `Armor/Armor_{n}`
     /// sheet replaces the shirt torso and both arm stacks' sleeve pieces.
     pub(crate) body_armor: i16,
@@ -980,10 +984,22 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     // hair stays suppressed while a helmet covers it: the ported metal sets
     // are plain normal hats (neither `fullHair` nor `hatHair`), and that
     // branch draws no hair at all (`:2262-2380`).
+    //
+    // W4-f41 — the Party Hat (head 195) IS in `GetHairSettings`' `hatHair`
+    // set (`Player.cs:16880/16902`): the ALT hair strip draws first
+    // (`PlayerDrawLayers.cs:2104-2109`, `!invis`), then the hat's normal-hat
+    // 52-px crop over it (`:2254-2281`).
+    let hat_hair = s.head_armor == 195;
     push_part_h(
         &mut out,
         PlayerPart::Hair,
-        if s.head_armor >= 0 { None } else { a.hair },
+        if hat_hair {
+            if s.invis { None } else { a.hair_alt }
+        } else if s.head_armor >= 0 {
+            None
+        } else {
+            a.hair
+        },
         |t| flip_uv(hair_uv(t, s.body_frame), flip),
         part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
@@ -2571,6 +2587,7 @@ mod tests {
             item_scale: 1.0,
             light: [1.0, 1.0, 1.0],
             head_armor: -1,
+            invis: false,
             body_armor: -1,
             leg_armor: -1,
             neck: -1,
@@ -2666,6 +2683,49 @@ mod tests {
         assert!(parts(&plain).contains(&PlayerPart::Shirt));
         assert!(parts(&plain).contains(&PlayerPart::Hair));
         assert!(!parts(&plain).contains(&PlayerPart::Helmet));
+    }
+
+    /// W4-f41 final sweep — the player-worn Party Hat (head 195, item 3732
+    /// `headSlot = 195`, `Item.cs:33061-33067`): `GetHairSettings` puts 195
+    /// in the `hatHair` set (`Player.cs:16880/16902`), so the ALT hair strip
+    /// draws UNDER the hat (`PlayerDrawLayers.cs:2104-2109`) and the hat
+    /// takes the normal-hat 52-px crop over it (`:2254-2281`) — unlike the
+    /// metal helmets, the hair is NOT suppressed. The `!invis` gate drops
+    /// the hair (`:2104`), the hat itself stays. The dye rides cHead
+    /// (`:2280`).
+    #[test]
+    fn w4_f41_the_party_hat_draws_the_alt_hair_under_it() {
+        let a = fixture();
+        let mut s = state();
+        s.head_armor = 195;
+        let body = body_layers(&s, &a);
+        let hair = body.iter().position(|sp| sp.part == PlayerPart::Hair);
+        let helmet = body.iter().position(|sp| sp.part == PlayerPart::Helmet);
+        assert!(hair.is_some(), "hatHair draws the hair (the ALT strip)");
+        assert!(helmet.is_some(), "the hat draws over it");
+        assert!(hair.unwrap() < helmet.unwrap(), "hair under the hat");
+        // The hair keeps its 40x54 crop, the hat the 40x52 normal-hat crop.
+        assert_eq!(body[hair.unwrap()].size, [40.0, 54.0]);
+        assert_eq!(body[helmet.unwrap()].size, [40.0, 52.0]);
+        // The hat's UV comes from the party_hat sheet, not armor_head[195]
+        // (out of the 5-slot slice's bounds — the dedicated field).
+        assert!(a.armor_head.get(195).is_none());
+        // Invisibility drops the hair, keeps the hat (`:2104`'s !invis).
+        s.invis = true;
+        let invis = body_layers(&s, &a);
+        assert!(!parts(&invis).contains(&PlayerPart::Hair));
+        assert!(parts(&invis).contains(&PlayerPart::Helmet));
+        // The dye cache: the hat takes cHead like every helmet.
+        s.invis = false;
+        s.c_head = 7;
+        for l in assemble_layers(&s, &a) {
+            if l.part == PlayerPart::Helmet {
+                assert_eq!(l.dye, 7, "the hat rides cHead (:2280)");
+            }
+        }
+        // The metal helmet keeps the suppression contract (no hair).
+        let (a2, s2) = armored();
+        assert!(!parts(&body_layers(&s2, &a2)).contains(&PlayerPart::Hair));
     }
 
     #[test]
@@ -3602,6 +3662,7 @@ mod player_draw_tests {
             light: [1.0, 1.0, 1.0],
             mount: None,
             head_armor: -1,
+            invis: false,
             body_armor: -1,
             leg_armor: -1,
             neck: -1,

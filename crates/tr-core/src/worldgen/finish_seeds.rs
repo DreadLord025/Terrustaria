@@ -14,10 +14,12 @@
 //!   same palette re-roll with its `color() == 14` arm (`:25813-25852`),
 //!   the sweep at paint 17 (`:25854-25893`), the ash-lava arm (`:25898`),
 //!   the surface-grass conversion with the plant kills (`:25907-25961`).
-//! - [`finish_tenth_anniversary_world`] — the six `PaintThe*` sweeps
-//!   (dungeon 24/24, living trees 12/12, temple 10/5, clouds 12/12, sand
-//!   7/7, pyramids 12/12 — `:24245-24259`) and the 1-in-4 boulder
-//!   138 → 665 conversion (`:24261-24277`).
+//! - [`finish_tenth_anniversary_world`] — [`convert_sky_islands`]
+//!   (`ConvertSkyIslands(2, growTrees: true)`, `:24243` — the hallow
+//!   conversion of the island grass above the cloud line, W4-f25 closeout),
+//!   the six `PaintThe*` sweeps (dungeon 24/24, living trees 12/12, temple
+//!   10/5, clouds 12/12, sand 7/7, pyramids 12/12 — `:24245-24259`) and the
+//!   1-in-4 boulder 138 → 665 conversion (`:24261-24277`).
 //!
 //! Deviations from the C#, all deliberate and pinned here rather than at
 //! the call sites:
@@ -30,14 +32,14 @@
 //!   `ImproveAllChestContents` (`:24278-24281`, body `:24716-24725` —
 //!   `GiveItemGoodPrefixes`) is the same loot-side gap and is deferred for
 //!   the same reason.
-//! - **`ConvertSkyIslands(2, growTrees: true)` is not ported** (`:24243`).
-//!   It is a `WorldGen.Convert(k, l, 2)` Hallow conversion — the grass →
-//!   109 / sand → 116 / stone → 117 tile table and the wall table
-//!   (`:55098-55224`) — plus a `TryGrowingTreeByType(5, …)` roll and the
-//!   plant `KillTile`s, not one of the `PaintThe*` repaints: the port has
-//!   no `Convert` helper, and the M5-SEED-1 slice is the paint sweeps plus
-//!   the 138 → 665 conversion. The anniversary sweeps therefore repaint
-//!   whatever the earlier passes left, in the C#'s own order.
+//! - **`ConvertSkyIslands(2, growTrees: true)`** (`:24243`, body
+//!   `:24674-24714`) IS ported (W4-f25 closeout — the C3 hallow cell
+//!   `spread::convert_hallow_cell` landed): [`convert_sky_islands`]. Its
+//!   `genRand` stream takes a fresh world-seeded `UnifiedRandom` (the
+//!   `micro_surface.rs::start_in_hardmode` precedent — the port's per-pass
+//!   xorshift contract cannot feed `growth::grow_tree`'s `UnifiedRandom`
+//!   seam); the draw ORDER is faithful. Classic worlds never run the
+//!   anniversary pass, so both world-hash pins stay unchanged.
 //! - The vanilla guards the port has no state for read as false:
 //!   `Main.onlyShimmerOceanWorldsGeneration` (no shimmer-ocean mode) and
 //!   `SecretSeed.noSurface.Enabled` (no `noSurface` flag in `SeedFlags`) —
@@ -455,9 +457,17 @@ pub(crate) fn finish_tenth_anniversary_world(
         && !opts.flags.contains(SeedFlags::NOT_THE_BEES)
         && !opts.flags.contains(SeedFlags::DONT_STARVE)
     {
-        // `ConvertSkyIslands(2, growTrees: true)` (`:24241-24244`) is not
-        // ported — the module note records why (a `WorldGen.Convert` Hallow
-        // sweep, not one of the `PaintThe*` repaints).
+        // `:24241-24244` — the sky-island hallow conversion, gated on
+        // `!getGoodWorldGen && !drunkWorldGen` (the anniversary world is
+        // never drunk/getGood in vanilla; the port reads the flags the
+        // same way). The genRand stream is the module note's fresh
+        // world-seeded `UnifiedRandom` stand-in.
+        if !opts.flags.contains(SeedFlags::FOR_THE_WORTHY)
+            && !opts.flags.contains(SeedFlags::DRUNK)
+        {
+            let mut gen = crate::UnifiedRandom::new(opts.seed as i32);
+            convert_sky_islands(world, 2, true, &mut gen); // :24243
+        }
         paint_the_dungeon(world, 24, 24); // :24245
         paint_the_living_trees(world, 12, 12); // :24246-24249
         paint_the_temple(world, 10, 5, opts); // :24250
@@ -492,6 +502,78 @@ pub(crate) fn finish_tenth_anniversary_world(
     }
     // `ImproveAllChestContents` (`:24278-24281`) — deferred: loot-side, and
     // the port has no chest inventories to prefix.
+}
+
+/// `WorldGen.ConvertSkyIslands` (`WorldGen.cs:24674-24714`): the
+/// anniversary world's sky-island conversion — every grass tile ABOVE the
+/// deepest cloud row converts through `WorldGen.Convert(k, l, convertType)`
+/// (the single-cell overload — the C3 hallow cell at type 2), its vanity
+/// trees and surface plants die, and a 1-in-3 roll re-grows a forest tree
+/// (`TryGrowingTreeByType(5, …)` = `GrowTree`, the `growth::grow_tree`
+/// port). The caller passes `(2, growTrees: true)` (`:24243`).
+///
+/// The cloud-row scan (`:24676-24688`) keeps the LAST row holding a cloud
+/// (the inner `break` only leaves the column loop — the FTW twin's
+/// documented reading, `:25801-25810`); the conversion walk (`:24689-24713`)
+/// runs `k` INCLUSIVE to `maxTilesX - 20` and `l` strictly below that row.
+/// The above-cell kind is re-read AFTER the Convert (`:24702` — the C#
+/// re-reads `tile3.type`), and the plant kill set is the C#'s three unsigned
+/// ranges: 82-83 herbs, 185-187 piles, 227 dye plants (`:24703`).
+/// `KillTile`'s gen-time `noItem` (`:63546-63549`) rides `no_item: true`
+/// (the `finish_get_good_world` precedent).
+fn convert_sky_islands(
+    world: &mut World,
+    convert_type: u8,
+    grow_trees: bool,
+    rng: &mut crate::UnifiedRandom,
+) {
+    // The cloud-row scan (`:24676-24688`).
+    let mut num = 0i32;
+    let mut i = 20i32;
+    while (i as f64) < world.world_surface {
+        for j in 20..world.width - 20 {
+            if world
+                .tile(j, i)
+                .is_some_and(|t| t.active() && td::SET_CLOUDS.has(t.kind))
+            {
+                num = i;
+                break;
+            }
+        }
+        i += 1;
+    }
+    // The conversion walk (`:24689-24713`) — `k <= maxTilesX - 20`.
+    for k in 20..=world.width - 20 {
+        for l in 20..num {
+            let grass = world
+                .tile(k, l)
+                .is_some_and(|t| t.active() && t.kind == TILE_GRASS);
+            if !grass {
+                continue;
+            }
+            // `:24697-24700` — the vanity sakura/willow above dies first.
+            let above = world.tile(k, l - 1).map(|u| u.kind).unwrap_or(0);
+            if above == TILE_VANITY_SAKURA || above == TILE_VANITY_WILLOW {
+                kill_tile(world, k, l - 1, true);
+            }
+            // `:24701` — the single-cell Convert. The caller's type 2 is
+            // the C3 hallow cell; any other type is unported here (the
+            // only C# call site passes 2).
+            if convert_type == 2 {
+                crate::spread::convert_hallow_cell(world, k, l);
+            }
+            // `:24702-24706` — the plant kills, on the POST-Convert read.
+            let above = world.tile(k, l - 1).map(|u| u.kind).unwrap_or(0);
+            if matches!(above, 82 | 83 | 185 | 186 | 187 | 227) {
+                kill_tile(world, k, l - 1, true);
+            }
+            // `:24707-24710` — the 1-in-3 forest-tree roll
+            // (`TryGrowingTreeByType(5, …)`'s case-5 arm, `:30348-30350`).
+            if grow_trees && rng.next_max(3) == 0 {
+                crate::growth::grow_tree(world, k, l, rng);
+            }
+        }
+    }
 }
 
 // --- the PaintThe* sweeps ------------------------------------------------
@@ -962,5 +1044,109 @@ mod tests {
             }
         }
         assert!(converted > 0, "no boulder group took the 1-in-4 roll");
+    }
+
+    // --- ConvertSkyIslands (W4-f25 closeout, WRITTEN NOT RUN) --------------
+
+    /// The conversion walk: grass above the deepest cloud row becomes 109
+    /// (the C3 single-cell hallow), grass at/below the row stays 2, the
+    /// vanity tree and the herb above a converted cell die (`:24697-24706`),
+    /// and the grass wall 63 converts to 70 (`:55179-55182`,
+    /// `WallID.cs:37`'s Conversion.Grass). `grow_trees` is off so the
+    /// witness pins the conversion, not the growth roll.
+    #[test]
+    fn sky_islands_hallow_the_grass_above_the_cloud_row() {
+        let mut world = air(200, 140, 100.0);
+        put(&mut world, 100, 55, 189); // the cloud tile: `num` lands on 55
+        put(&mut world, 60, 40, TILE_GRASS);
+        wall(&mut world, 60, 40, 63); // the grass wall rides the grass cell
+        put(&mut world, 60, 39, TILE_VANITY_SAKURA);
+        put(&mut world, 70, 40, TILE_GRASS);
+        put(&mut world, 70, 39, TILE_IMMATURE_HERBS);
+        put(&mut world, 80, 40, TILE_GRASS);
+        put(&mut world, 80, 39, TILE_DYE_PLANTS);
+        put(&mut world, 90, 55, TILE_GRASS); // AT the cloud row: l < num skips it
+        let mut rng = crate::UnifiedRandom::new(3);
+        convert_sky_islands(&mut world, 2, false, &mut rng);
+
+        assert_eq!(world.tiles[world.index(60, 40)].kind, 109);
+        assert_eq!(world.tiles[world.index(60, 40)].wall, 70, "the wall half");
+        assert!(
+            !world.tiles[world.index(60, 39)].active(),
+            "the sakura above the converted grass dies first (:24697-24700)"
+        );
+        assert_eq!(world.tiles[world.index(70, 40)].kind, 109);
+        assert!(
+            !world.tiles[world.index(70, 39)].active(),
+            "the herb 82 dies on the post-Convert read (:24702-24706)"
+        );
+        assert_eq!(world.tiles[world.index(80, 40)].kind, 109);
+        assert!(
+            !world.tiles[world.index(80, 39)].active(),
+            "the dye plant 227 is the third kill-range member"
+        );
+        assert_eq!(
+            world.tiles[world.index(90, 55)].kind,
+            TILE_GRASS,
+            "grass AT the cloud row is outside l < num"
+        );
+    }
+
+    /// The growTrees arm: a wide grass field above the cloud row guarantees
+    /// 1-in-3 hits; a hit's `GrowTree` plants kind-5 trunk cells in the air
+    /// above the converted 109 ground (the flat stone row 41 is the ground
+    /// check's soil — `grow_tree` walks only saplings, so the grass row 40
+    /// itself is the ground `j`), and the field itself is fully hallowed.
+    #[test]
+    fn sky_islands_grow_trees_on_the_one_in_three_roll() {
+        let mut world = air(200, 140, 100.0);
+        put(&mut world, 100, 55, 189);
+        for x in 30..170 {
+            put(&mut world, x, 40, TILE_GRASS);
+            put(&mut world, x, 41, 1); // the flat stone soil row
+        }
+        let mut rng = crate::UnifiedRandom::new(7);
+        convert_sky_islands(&mut world, 2, true, &mut rng);
+
+        let mut trunks = 0usize;
+        for x in 30..170 {
+            assert_eq!(
+                world.tiles[world.index(x, 40)].kind,
+                109,
+                "the whole field hallow-converts"
+            );
+            for y in 20..40 {
+                if world.tiles[world.index(x, y)].kind == 5 {
+                    trunks += 1;
+                }
+            }
+        }
+        assert!(trunks > 0, "no 1-in-3 GrowTree roll fired over 140 columns");
+    }
+
+    /// The anniversary wrapper's gate: the plain anniversary world runs the
+    /// conversion (grass above the cloud row → 109 before the paint sweeps);
+    /// the anniversary+drunk and anniversary+getGood combos skip it
+    /// (`:24241`'s `!getGoodWorldGen && !drunkWorldGen`).
+    #[test]
+    fn anniversary_gate_runs_sky_islands_but_drunk_and_get_good_skip_it() {
+        for (extra, converts) in [
+            (0u16, true),
+            (SeedFlags::DRUNK, false),
+            (SeedFlags::FOR_THE_WORTHY, false),
+        ] {
+            let mut world = air(200, 140, 100.0);
+            put(&mut world, 100, 55, 189);
+            put(&mut world, 60, 40, TILE_GRASS);
+            let flags = opts(SeedFlags::TENTH_ANNIVERSARY | extra, false);
+            let streams = &mut streams(23);
+            finish_tenth_anniversary_world(&mut world, streams, &flags);
+            let kind = world.tiles[world.index(60, 40)].kind;
+            if converts {
+                assert_eq!(kind, 109, "the plain anniversary world converts");
+            } else {
+                assert_eq!(kind, TILE_GRASS, "the combo seeds skip :24243");
+            }
+        }
     }
 }

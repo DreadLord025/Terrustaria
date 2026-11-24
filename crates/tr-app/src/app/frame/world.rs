@@ -331,6 +331,9 @@ impl App {
             > self.scene_metrics.evil_tile_count,
         meteor: self.scene_metrics.zone_meteor,
         graveyard: self.scene_metrics.zone_graveyard,
+        // `Main.cs:12748-12751` — the UG-desert 61 arm ahead of the desert
+        // 21 (W4-c33: the S1-L-1 wall zone was never fed into the ladder).
+        underground_desert: self.scene_metrics.zone_underground_desert,
         desert: self.scene_metrics.zone_desert,
         jungle: self.scene_metrics.zone_jungle,
         snow: self.scene_metrics.zone_snow,

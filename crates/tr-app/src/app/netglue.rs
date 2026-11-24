@@ -8011,6 +8011,9 @@ impl App {
         );
         world.spawn_x = info.spawn_tile_x as i32;
         world.spawn_y = info.spawn_tile_y as i32;
+        // `Main.dungeonX/Y` (`MessageBuffer.cs:653-654`).
+        world.dungeon_x = info.dungeon_x as i32;
+        world.dungeon_y = info.dungeon_y as i32;
         world.time = info.time as f64;
         world.day_time = info.day_time;
         world.moon_phase = info.moon_phase;
@@ -8050,6 +8053,10 @@ impl App {
         if info.rock_layer > 0 {
             world.rock_layer = info.rock_layer as f64;
         }
+        // `Main.dungeonX/dungeonY` — the Plantera bulb event's rectangle
+        // reads it (W4-c31 jungle residuals).
+        world.dungeon_x = info.dungeon_x as i32;
+        world.dungeon_y = info.dungeon_y as i32;
         // The sections fill the world; the stream must cover the whole grid.
         let want = net::sections_x(world.width) * net::sections_y(world.height);
         let mut seen: std::collections::HashSet<(i32, i32)> = Default::default();
@@ -10753,7 +10760,10 @@ fn npc_seed(
         | crate::npc::NpcKind::Poltergeist
         // S1-D-3z — the Drippler (490, noGravity aiStyle 22) rides the
         // hover ctor like the Poltergeist.
-        | crate::npc::NpcKind::Drippler => {
+        | crate::npc::NpcKind::Drippler
+        // W4-d103 WG-POST RETIRE — the Wraith (82, noGravity aiStyle 22)
+        // rides the hover ctor too (the g8 constants-copy, `80f7e7486`).
+        | crate::npc::NpcKind::Wraith => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

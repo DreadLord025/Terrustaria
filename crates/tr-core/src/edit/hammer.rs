@@ -303,7 +303,8 @@ pub fn try_finding_wall_to_hammer(world: &World, tx: i32, ty: i32, mouse: (f32, 
     let wall = world.tile(wx, wy).map(|t| t.wall).unwrap_or(0);
     if wall > 0 {
         // `:45839` — `Main.wallHouse` is the FULL 279-wall table
-        // (`edit::wall_house`, S1-P-i33), not the housing room-check subset.
+        // (`edit::wall_house`, S1-P-i33) — the same table
+        // `housing::is_house_wall` now delegates to (the W4-g44 dedupe).
         if !super::wall_house(wall) {
             // `:45841-45851` — the same-wall 3×3 census.
             for i in wx - 1..wx + 2 {

@@ -1599,7 +1599,37 @@ impl App {
                                     0
                                 })
                         },
-                        player_key,
+                            // W4-f41: the EFFECTIVE head kind rides the G6
+                            // key — equipping/unequipping the vanity Party
+                            // Hat (or a real helmet) changes the drawn head
+                            // with no player/world motion (the brightness
+                            // key's S1-H-15 convention). Folded into
+                            // `player_key`'s slot, gated on any head being
+                            // worn so bare-headed frames keep the pre-wiring
+                            // cache behaviour bit-for-bit.
+                            player_key: {
+                                let kind_of = |i: usize| {
+                                    self.equip
+                                        .armor
+                                        .get(i)
+                                        .filter(|s| s.count > 0)
+                                        .map_or(0, |s| s.kind)
+                                };
+                                let real = kind_of(0);
+                                let vanity = kind_of(10);
+                                let effective = if crate::registry::get(vanity)
+                                    .is_some_and(|d| d.head_slot >= 0)
+                                {
+                                    vanity
+                                } else {
+                                    real
+                                };
+                                if effective != 0 {
+                                    player_key ^ (effective as u32).wrapping_mul(0x9E37_79B1)
+                                } else {
+                                    player_key
+                                }
+                            },
                         npc_key,
                         items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15, anim_time),
                         hand_key: {
@@ -1938,11 +1968,30 @@ impl App {
                             },
                             // `Player.armor[0..3]`'s item kinds — the armor draw
                             // input (head/body/legs, 0 = the empty slot).
+                            // W4-f41: `PlayerFrame`'s head resolution
+                            // (`Player.cs:35765`): the VANITY head (armor[10])
+                            // wins when its headSlot >= 0 — the Party Hat 3732
+                            // (headSlot 195) draws from the social row.
                             [
-                                self.equip
-                                    .armor
-                                    .first()
-                                    .map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                                {
+                                    let real = self
+                                        .equip
+                                        .armor
+                                        .first()
+                                        .map_or(0, |s| if s.count > 0 { s.kind } else { 0 });
+                                    let vanity = self
+                                        .equip
+                                        .armor
+                                        .get(10)
+                                        .map_or(0, |s| if s.count > 0 { s.kind } else { 0 });
+                                    if crate::registry::get(vanity)
+                                        .is_some_and(|d| d.head_slot >= 0)
+                                    {
+                                        vanity
+                                    } else {
+                                        real
+                                    }
+                                },
                                 self.equip
                                     .armor
                                     .get(1)

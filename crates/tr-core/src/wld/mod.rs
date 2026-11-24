@@ -1998,6 +1998,11 @@ mod tests {
         assert_eq!(got.eclipse, want.eclipse, "{context}: eclipse");
         assert_eq!(got.crimson, want.crimson, "{context}: WorldGen.crimson");
         assert_eq!(
+            (got.dungeon_x, got.dungeon_y),
+            (want.dungeon_x, want.dungeon_y),
+            "{context}: dungeon anchor"
+        );
+        assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
         );

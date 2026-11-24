@@ -41,6 +41,11 @@ pub struct SpawnFlags {
     pub eclipse: bool,
     /// `Main.pumpkinMoon || Main.snowMoon`.
     pub moon_event: bool,
+    /// `Main.dontStarveWorld` (`World.seeds` DONT_STARVE) — the spider
+    /// band's depth-gate override (`NPC.cs:1149-1152`) and the Stylist
+    /// arm's flag7 override (`:1663-1666`). W4-g41 spawn-pool port;
+    /// default false (the classic path).
+    pub dont_starve: bool,
     pub zone_dungeon: bool,
     /// `NPC.downedBoss3` (Skeletron defeated).
     pub downed_boss3: bool,
@@ -254,6 +259,9 @@ pub struct SpawnContext<'a> {
     pub any_danger: bool,
     /// `NPC.AnyNPCs(399)`: the probe is unique.
     pub probe_exists: bool,
+    /// `NPC.AnyNPCs(87)` (`NPC.cs:1407`): a live Wyvern head blocks the
+    /// skyMob dispatch's Wyvern roll (the short-circuit skips the draw).
+    pub wyvern_exists: bool,
     /// `Spawner.skyBehindPlayer` (`NPC.cs:412`): the wall behind the
     /// player's tile is light-passing (or wall 73) — the skyMob probe
     /// arm's open-sky gate.
@@ -961,6 +969,67 @@ fn post_check_chosen_spawn_tile(world: &World, x: i32, y: i32, ground_y: i32) ->
     true
 }
 
+/// `Spawner.SetSpawnFlagsForChosenTile`'s spider band (`NPC.cs:1148-1176`):
+/// the per-chosen-tile `spawnSpider` latch the `:1660` pool arm reads. The
+/// depth gate is `spawnTileY > rockLayer && spawnTileY < UnderworldLayer`
+/// (DST drops the rock floor, `:1149-1152`); behind `!ZoneDungeon &&
+/// !invaders` a `Next(3)` picks the scan arm (hit → `Next(5,15)` radius +
+/// the ±radius wall-62 box scan, x-bounds-guarded, NO break on a hit) vs
+/// the else arm (the PLAYER's own tile wall, `pX/pY` = the centre tile,
+/// `:367-368`). The marble/granite scans ahead of this block (`:1076-1141`)
+/// are unmodelled (research/24 — their draws are skipped, the pre-existing
+/// deviation); this is the first DRAW-bearing `SetSpawnFlagsForChosenTile`
+/// product to land, so it runs at the head of `spawn_npc_at` BEFORE the
+/// `GetZombieSettings` style draw (the C# call order). W4-g41 spawn pool.
+fn set_spawn_spider_flag(ctx: &SpawnContext, x: i32, y_tile: i32, rng: &mut UnifiedRandom) -> bool {
+    let underworld = UNDERWORLD_LAYER(ctx.world.height);
+    let mut depth_ok = (y_tile as f64) > ctx.world.rock_layer && y_tile < underworld;
+    if ctx.flags.dont_starve {
+        depth_ok = y_tile < underworld; // `:1151`
+    }
+    if !depth_ok || ctx.flags.zone_dungeon || ctx.invaders {
+        return false; // `:1153` — the whole block (and its Next(3)) is gated
+    }
+    if rng.next_max(3) == 0 {
+        // `:1155-1170` — the scan arm. The radius draw runs even when the
+        // x-bounds guard then skips the scan (the C# draws before checking).
+        let r = rng.next_range(5, 15);
+        if x - r >= 0 && x + r < ctx.world.width {
+            for m in (x - r)..(x + r) {
+                for n in (y_tile - r)..(y_tile + r) {
+                    if ctx.world.tile(m, n).is_some_and(|t| t.wall == 62) {
+                        return true; // a hit latches; the C# keeps scanning
+                        // but the flag is already true — same result, and
+                        // the scan draws NOTHING, so the early return is
+                        // stream-identical.
+                    }
+                }
+            }
+        }
+        false
+    } else {
+        // `:1172-1175` — the else arm reads the PLAYER's tile wall.
+        let px = (ctx.player_center.0 / 16.0) as i32;
+        let py = (ctx.player_center.1 / 16.0) as i32;
+        ctx.world.tile(px, py).is_some_and(|t| t.wall == 62)
+    }
+}
+
+/// `Spawner.CheckToSpawnSpider` (`NPC.cs:5777-5788`): the NTB+FTW
+/// (non-anniversary) underworld veto — at/below `UnderworldLayer` a
+/// `Next(5) == 0` gate, above it (and on every other seed) unconditional
+/// true. The draw rides the spawn stream exactly where the C# makes it.
+fn check_to_spawn_spider(ctx: &SpawnContext, y_tile: i32, rng: &mut UnifiedRandom) -> bool {
+    let seeds = ctx.world.seeds;
+    let combo = seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES)
+        && seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
+        && !seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    if combo && y_tile >= UNDERWORLD_LAYER(ctx.world.height) {
+        return rng.next_max(5) == 0; // `:5783`
+    }
+    true
+}
+
 /// One `Spawner.TrySpawnAnNPC` attempt (NPC.cs:308-342). Returns the spawned
 /// NPC, or `None` when any gate rejects the attempt.
 /// One `NPC.SpawnNPC` call (`NPC.cs:80170-80176`): the `noSpawnCycle` latch
@@ -1265,6 +1334,147 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<N
     None
 }
 
+/// `NPC.SpawnOnPlayer(plr, npcType)`'s generic scan
+/// (`NPC.cs:80565-80633`, W4-d103 WG-POST RETIRE — the SmashAltar wraith
+/// activation): the 500×50 candidate scan, the 200×30 band for the
+/// ghosts 316/82 (`:80570-80574`), the `GetSpawnArea` rects, the
+/// per-candidate solid/house-wall veto, the down-column ground walk, the
+/// safe-area + `HasTileSpawnSpace` + `CheckNotSpawningOnScreen` gates,
+/// the last-attempt (`flag2`) bypasses. Returns the spawn tile
+/// `(num10, num11)` — the caller feeds `SpawnBoss(num10*16+8, num11*16,
+/// …)` (`:80631`).
+///
+/// The boss cases 245/370/398 (`:80483-80564`) are the callers' own arms
+/// (the door/lunar seams carry theirs); this is the generic tail only.
+/// Deviations (documented): the type-50 King-Slime arms (`:80589`'s
+/// `Main.tile[num16, num16]` quirk kept verbatim, `:80604-80614`'s
+/// CanHit headroom probe) are IN — the C# runs them for every type
+/// check; the skyblock midair arm (`:80581-80584`) parks (82 is not in
+/// `NPCID.Sets.SpawnOnPlayerCanSpawnInMidairOnSkyblock`, `NPCID.cs:
+/// 10114`, so `flag3` is structurally false for the ported callers);
+/// the `netMode == 1` head folds out (the single-player port).
+pub fn spawn_on_player_tile(
+    world: &World,
+    player_pos: (f32, f32),
+    player_center: (f32, f32),
+    npc_type: i32,
+    rng: &mut UnifiedRandom,
+) -> Option<(i32, i32)> {
+    let mut flag = false;
+    let mut num10 = 0;
+    let mut num11 = 0;
+    let mut num12 = 500;
+    let mut num13 = 50;
+    // `:80570-80574` — the ghosts' tighter band.
+    if npc_type == 316 || npc_type == 82 {
+        num12 = 200;
+        num13 = 30;
+    }
+    let num14 = num12 / 2;
+    let (spawn_area, safe_area) = spawn_area_rects(world, player_pos);
+    for m in 0..num12 {
+        let flag2 = m == num12 - 1;
+        // `:80581-80584` — the skyblock midair arm: 82/316 are not in the
+        // set, so flag3 stays false (the parked arm, the doc above).
+        let flag3 = false;
+        for _ in 0..num13 {
+            // `:80587-80588` — `Main.rand.Next(Left, Right)` pairs. The
+            // degenerate-band guard keeps the fixture worlds alive (the
+            // growth.rs band-guard precedent); a clamped-flat band picks
+            // its single column/row.
+            let num15 = if spawn_area.left < spawn_area.right {
+                rng.next_range(spawn_area.left, spawn_area.right)
+            } else {
+                spawn_area.left
+            };
+            let num16 = if spawn_area.top < spawn_area.bottom {
+                rng.next_range(spawn_area.top, spawn_area.bottom)
+            } else {
+                spawn_area.top
+            };
+            // `:80589-80592` — the candidate veto: solid ground, a house
+            // wall before the last attempt, the King-Slime wall quirk
+            // (`Main.tile[num16, num16]` — the C#'s own index reuse).
+            let t = world.tile(num15, num16);
+            let solid =
+                t.is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+            let house_wall =
+                t.is_some_and(|t| tr_core::edit::wall_house(t.wall)) && m < num12 - 1;
+            let king_wall = npc_type == 50
+                && m < num14
+                && world.tile(num16, num16).is_some_and(|t| t.wall > 0);
+            if solid || house_wall || king_wall {
+                continue;
+            }
+            // `:80593-80603` — the down-column ground walk.
+            for num17 in num16..spawn_area.bottom {
+                let ground = world.tile(num15, num17).is_some_and(|t| {
+                    t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                });
+                if (flag3 || ground) && (flag2 || !safe_area.contains(num15, num16)) {
+                    num10 = num15;
+                    num11 = num17;
+                    flag = true;
+                    break;
+                }
+            }
+            // `:80604-80614` — the King-Slime headroom probe (the two
+            // CanHit lines, 20 tiles up + the player line-of-sight).
+            if flag && npc_type == 50 && m < num12 - 100 {
+                let num18 = 20;
+                let up = crate::projectile::can_hit(
+                    world,
+                    num10 as f32 * TILE_PX,
+                    (num11 - 1) as f32 * TILE_PX,
+                    TILE_PX,
+                    TILE_PX,
+                    num10 as f32 * TILE_PX,
+                    (num11 - 1 - num18) as f32 * TILE_PX,
+                    TILE_PX,
+                    TILE_PX,
+                );
+                let los = crate::projectile::can_hit(
+                    world,
+                    num10 as f32 * TILE_PX,
+                    (num11 - 1 - num18) as f32 * TILE_PX,
+                    TILE_PX,
+                    TILE_PX,
+                    player_center.0,
+                    player_center.1,
+                    0.0,
+                    0.0,
+                );
+                if !up || !los {
+                    num10 = 0;
+                    num11 = 0;
+                    flag = false;
+                    continue;
+                }
+            }
+            // `:80615-80618` — the free-space gate (the last attempt
+            // bypasses it).
+            if flag && !flag2 && !has_tile_spawn_space(world, num10, num11) {
+                flag = false;
+            }
+            if flag {
+                break;
+            }
+        }
+        // `:80624-80627` — accept a found tile when it is off-screen, or
+        // on the last attempt regardless.
+        if (!flag || flag2 || check_not_spawning_on_screen_at(player_center, num10, num11))
+            && flag
+        {
+            break;
+        }
+    }
+    if flag {
+        Some((num10, num11))
+    } else {
+        None
+    }
+}
+
 /// `Spawner.SpawnAnNPC`'s selection ladders (`NPC.cs:4348-4870`) for the
 /// port's enemy set. The roll ORDER is vanilla — every conditional roll the
 /// source makes consumes the stream exactly where it does, including the
@@ -1295,9 +1505,13 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<N
 ///   constants-off (M5-SEED-1);
 /// - the skyMob dispatch (`NPC.cs:1354-1412`): the Drone arm consumes the
 ///   dispatch position (the port's invasion path short-circuits the
-///   ladder), the probe arm is verbatim (`:1399-1402`), and the Wyvern arm
-///   (`:1407-1410`) consumes its `Next(10)` and returns no spawn — the
-///   kind lands with the flyer family.
+///   ladder), the probe arm is verbatim (`:1399-1402`), the Wyvern arm
+///   (`:1407-1410`) carries its `!AnyNPCs(87) && !noWorms` short-circuit
+///   gates and consumes its `Next(10)` (the spawn rides d126's assembly),
+///   the town-slime arm (`:1415-1417`) consumes its `RollLuck(25)` draw,
+///   and the Harpy default (`:1419-1422`) is terminal — the kind lands
+///   with d34's npc-kinds lane, until then a sky candidate spawns nothing
+///   and NEVER falls through to the ground ladders (W4-g44).
 fn spawn_npc_at(
     ctx: &SpawnContext,
     rng: &mut UnifiedRandom,
@@ -1310,6 +1524,11 @@ fn spawn_npc_at(
     no_worms: bool,
     spawn_friendly: bool,
 ) -> Option<Npc> {
+    // `SetSpawnFlagsForChosenTile`'s spider band (`NPC.cs:1148-1176`) runs
+    // BEFORE `SpawnAnNPC` (the caller order) — its draws precede the
+    // GetZombieSettings style draw below. W4-g41 spawn pool; the
+    // marble/granite scans ahead of it stay unmodelled (research/24).
+    let spawn_spider = set_spawn_spider_flag(ctx, x, y / 16, rng);
     // `GetZombieSettings` (`NPC.cs:5583-5612`) is `SpawnAnNPC`'s FIRST
     // statement (`NPC.cs:1284`) — the style roll happens for every spawn,
     // day or night, surface or underground.
@@ -1370,12 +1589,35 @@ fn spawn_npc_at(
         // The duplicated probe arm (`:1403-1406`, `&& this.ZoneWaterCandle`
         // appended) is dead in the source — its condition is a subset of
         // the arm above.
-        // The Wyvern arm (`:1407-1410`): the kind lands with the flyer
-        // family; the roll consumes (the vanilla's `Next(10)` here) and a
-        // hit returns no spawn.
-        if ctx.flags.hard_mode && rng.next_max(10) == 0 {
+        // The Wyvern arm (`:1407-1410`): `hardMode && !AnyNPCs(87) &&
+        // !noWorms && Next(10) == 0` — the two roster gates short-circuit
+        // BEFORE the draw (W4-g44: the old port drew unconditionally in
+        // hardmode). The spawn itself rides d126's `wyvern_family_step`
+        // assembly (the chain needs its segment pool); the dispatch
+        // consumes the roll and returns no spawn here — the recorded
+        // flyer-family deferral.
+        if ctx.flags.hard_mode && !ctx.wyvern_exists && !no_worms && rng.next_max(10) == 0 {
             return None;
         }
+        // The duplicated Wyvern arm (`:1411-1413`, `&& this.ZoneWaterCandle`
+        // appended) is dead in the source — a subset of the arm above.
+        // The town-slime-purple arm (`:1415-1417`): `!unlockedSlimePurpleSpawn
+        // && RollLuck(25) == 0 && !AnyNPCs(686)`. The unlock flag has no
+        // port source yet (reads false — the C#'s early-game state, the
+        // draw DOES run), the 686 kind lands with the town-slime family;
+        // `RollLuck` runs as the plain `Next(25)` (the luck-modifier
+        // deferral, the module note). A hit consumes and spawns nothing.
+        if rng.next_max(25) == 0 {
+            return None;
+        }
+        // The Harpy default (`:1419-1422`): `SpawnNPC(spawnTileX * 16 + 8,
+        // spawnTileY * 16, 48)` — the skyMob arm's TERMINAL else. The
+        // Harpy kind (48, aiStyle 14) lands with d34's npc-kinds-1-70
+        // lane (`4012a7f3a`, unmerged); until the merge the dispatch is
+        // terminal-None — a sky candidate NEVER falls through to the
+        // ground ladders (the old port spawned surface slimes in the
+        // sky on a dispatch miss — the C#'s else-if chain cannot).
+        return None;
     }
 
     // ---- the invasion ladder (`NPC.cs:1424-1541`, the zone chain's
@@ -1426,6 +1668,60 @@ fn spawn_npc_at(
             .tile(x, y / 16 + dy)
             .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Water)
     };
+    // ---- the spider-cave pool (`NPC.cs:1660-1678`) ---- the zone chain's
+    // `(tile.wall == 62 || spawnSpider) && CheckToSpawnSpider` arm. The C#
+    // position: after the wall-244 critter block (`:1584`, unmodelled —
+    // its rolls sit behind the marble-wall gate that never fires here)
+    // and the bartender arm (`:1656`, constants-off), BEFORE the hardmode
+    // water-jungle/crimson arms (`:1763-1773`, unmodelled) and the water
+    // ladder (`:1795`), the underground-desert arm (`:1680`, unmodelled)
+    // and the natural ladders. W4-g41 spawn pool.
+    let spider_wall = ctx.world.tile(x, y / 16).is_some_and(|t| t.wall == 62);
+    if (spider_wall || spawn_spider) && check_to_spawn_spider(ctx, y / 16, rng) {
+        // `:1662-1666` — flag7: the Stylist's depth band
+        // (`deeperThanRockLayer && spawnTileY < maxTilesY - 210`; DST
+        // drops the rock floor). `deeperThanRockLayer` is `spawnTileY >=
+        // rockLayer` (`:1203`); the remix override (`:1206-1215`) is
+        // unmodelled (the spawner's remix constants-off note).
+        let mut flag7 = (y as f64 / 16.0) >= ctx.world.rock_layer
+            && (y / 16) < ctx.world.height - 210;
+        if ctx.flags.dont_starve {
+            flag7 = (y / 16) < ctx.world.height - 210;
+        }
+        // `:1667-1670` — the webbed Stylist: the spawn tile's OWN wall 62
+        // (not the flag), `Next(8) == 0` (the draw runs whenever the wall
+        // gate passes — the C# `&` is NON-short-circuit on flag7 but the
+        // `&&` chain still gates the draw on the wall), no water, flag7,
+        // unsaved + none alive (`AnyNPCs(354)`). The roster list rides
+        // `to_u16` (the wire id — WebbedStylist's is 161, its vanilla
+        // type 354 rides `cs_id`), so the alive check reads the wire id.
+        // The waterTile read is the two-tiles-above WATER probe (`:1057`).
+        let water_tile = water_above(-1) && water_above(-2);
+        if spider_wall
+            && rng.next_max(8) == 0
+            && !water_tile
+            && flag7
+            && !ctx.world.saved_stylist
+            && !ctx.moon_npc_counts.contains(&NpcKind::WebbedStylist.to_u16())
+        {
+            // `SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, 354)` —
+            // the Bottom placement on the found tile (the caster ctor).
+            return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::WebbedStylist);
+        }
+        // `:1671-1678` — the pool pick: hardmode `Next(10) != 0` → the
+        // Black Recluse 163, else the Wall Creeper 164. BOTH kinds are
+        // d36's claimed band (141-210, the CLAIM commit 65e481f96 — zero
+        // code pushed at this port); the arm draws the pick and returns
+        // no spawn until the kinds land (the Wyvern-arm consume-and-None
+        // precedent, `:1407-1410`). The C# arm is TERMINAL either way —
+        // matching it never falls through to the water/natural ladders.
+        if ctx.flags.hard_mode && rng.next_max(10) != 0 {
+            // 163 — `NpcKind::BlackRecluse` lands with d36.
+            return None;
+        }
+        // 164 — `NpcKind::WallCreeper` lands with d36.
+        return None;
+    }
     if water_above(-1) && water_above(-2) {
         // The ocean arm (`:1795`): `isOcean` = the x-edge within
         // `WorldGen.oceanDistance` = 250 (`WorldGen.cs:86913`) on a sand
@@ -3205,6 +3501,7 @@ mod tests {
             invasion_progress_frac: 0.0,
             any_danger: false,
             probe_exists: false,
+            wyvern_exists: false,
             sky_behind_player: false,
             moon_boss_cap_count: 0.0,
             downed_boss1: false,
@@ -4319,6 +4616,7 @@ mod tests {
             invasion_progress_frac: 0.0,
             any_danger: false,
             probe_exists: false,
+            wyvern_exists: false,
             sky_behind_player: false,
             moon_boss_cap_count: 0.0,
             downed_boss1: false,
@@ -4615,6 +4913,7 @@ mod tests {
                     invasion_progress_frac: 0.0,
                     any_danger: false,
                     probe_exists: false,
+            wyvern_exists: false,
                     sky_behind_player: false,
                     moon_boss_cap_count: 0.0,
                     downed_boss1: false,
@@ -4880,6 +5179,7 @@ mod tests {
             invasion_progress_frac: 0.0,
             any_danger: false,
             probe_exists: false,
+            wyvern_exists: false,
             sky_behind_player: true,
             moon_boss_cap_count: 0.0,
             downed_boss1: false,
@@ -4912,6 +5212,165 @@ mod tests {
         assert_eq!(n.kind, NpcKind::MartianProbe);
         assert_eq!((n.x, n.y), (2.0 * TILE_PX + 8.0, 80.0));
         assert_eq!(n.facing, 0, "TargetClosest resolves on the first tick");
+    }
+
+    // ---- W4-g44 islands final 4/5: the skyMob dispatch's tail arms ----
+    // (`NPC.cs:1407-1422` — the Wyvern gates, the town-slime draw, the
+    // Harpy terminal default; the height-band latch itself is pinned by
+    // `try_spawn_an_npc`'s 0.35/0.45 arms, `:980-987`).
+
+    /// The Wyvern arm's short-circuit gates (`:1407`): `!AnyNPCs(87)` and
+    /// `!noWorms` skip the `Next(10)` draw entirely — the stream tail
+    /// after a refused arm is the town-slime `Next(25)` alone, not
+    /// `Next(10)` + `Next(25)`.
+    #[test]
+    fn the_wyvern_gates_short_circuit_the_draw() {
+        let w = ground();
+        let mut c = probe_ctx(&w);
+        c.probe_exists = true; // close the probe arm — isolate the tail
+        c.flags.hard_mode = true;
+        // The reference: hardmode, no wyvern, no worms-block → the C#
+        // draws Next(10) then (on a miss) Next(25). Replay the stream.
+        for seed in 1..80u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let mut reference = UnifiedRandom::new(seed as i32);
+            // zombie_style Next(7) + the probe short-circuit draws ride
+            // both streams identically (probe_exists closes the arm but
+            // the rolls still draw — `:1399`'s condition order).
+            let n = spawn_npc_at(&c, &mut rng, 2, 5 * 16, true, false, false);
+            // Replay: zombie 7, probe mv2/mv3 (downed_martians false →
+            // both draw on a miss), then the Wyvern Next(10), then the
+            // town-slime Next(25) on a Wyvern miss.
+            reference.next_max(7);
+            let probe_hit = reference.next_max(8) == 0;
+            if !probe_hit {
+                reference.next_max(30);
+            }
+            let wyvern_hit = reference.next_max(10) == 0;
+            if !wyvern_hit {
+                reference.next_max(25);
+            }
+            assert_eq!(rng, reference, "seed {seed}: the open-gate stream tail");
+            assert!(n.is_none(), "the tail arms spawn nothing yet");
+        }
+        // A live wyvern (or the noWorms block) SKIPS the Next(10): the
+        // tail is Next(25) directly after the probe rolls.
+        for block in ["wyvern", "worms"] {
+            let mut c2 = probe_ctx(&w);
+            c2.probe_exists = true;
+            c2.flags.hard_mode = true;
+            let no_worms = block == "worms";
+            if !no_worms {
+                c2.wyvern_exists = true;
+            }
+            for seed in 1..80u64 {
+                let mut rng = UnifiedRandom::new(seed as i32);
+                let mut reference = UnifiedRandom::new(seed as i32);
+                let _ = spawn_npc_at(&c2, &mut rng, 2, 5 * 16, true, no_worms, false);
+                reference.next_max(7);
+                let probe_hit = reference.next_max(8) == 0;
+                if !probe_hit {
+                    reference.next_max(30);
+                }
+                reference.next_max(25); // the town-slime draw, no Next(10)
+                assert_eq!(rng, reference, "{block} seed {seed}: the skipped draw");
+            }
+        }
+    }
+
+    /// The Harpy default is TERMINAL (`:1419-1422`): a skyMob candidate
+    /// that misses every dispatch arm spawns nothing — it NEVER falls
+    /// through to the surface/underground ladders (the C#'s else-if
+    /// chain; the old port dropped a forest slime into the sky here).
+    #[test]
+    fn the_sky_default_never_falls_through_to_the_ground_ladders() {
+        let w = ground();
+        let mut c = probe_ctx(&w);
+        c.probe_exists = true;
+        c.flags.hard_mode = false; // the Wyvern arm closed — every miss reaches the default
+        for seed in 0..400u64 {
+            let n = spawn_npc_at(
+                &c,
+                &mut UnifiedRandom::new(seed as i32),
+                2,
+                5 * 16,
+                true,
+                false,
+                false,
+            );
+            assert!(n.is_none(), "seed {seed}: the sky default spawns nothing yet");
+        }
+        // The same world WITHOUT the skyMob latch runs the ground ladder
+        // (the control — the fallthrough the old port took). Give the rig
+        // a real surface column so the day slime arm can land.
+        let mut wg = ground();
+        for x in 0..wg.width {
+            let i = wg.index(x, 30);
+            wg.tiles[i].kind = 1;
+            wg.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        wg.compute_column_surface();
+        let mut cg = probe_ctx(&wg);
+        cg.probe_exists = true;
+        cg.flags.hard_mode = false;
+        let mut saw_ground = false;
+        for seed in 0..200u64 {
+            if spawn_npc_at(
+                &cg,
+                &mut UnifiedRandom::new(seed as i32),
+                2,
+                5 * 16,
+                false,
+                false,
+                false,
+            )
+            .is_some()
+            {
+                saw_ground = true;
+                break;
+            }
+        }
+        assert!(saw_ground, "the unlatched candidate still runs the ground ladder");
+    }
+
+    /// The height-band latch (`FindSpawnTile` `:980-987`): a candidate
+    /// under `worldSurface * 0.35` outside the 45-55 % middle cut latches
+    /// skyMob (no ground descent — the spawn tile stays the air row);
+    /// the dispatch tail spawns nothing yet, so EVERY spawn that comes
+    /// out of this world must be a non-sky candidate riding the ground
+    /// descent (row ~400) — never an air-row spawn.
+    #[test]
+    fn the_sky_height_band_latches_without_the_ground_descent() {
+        let mut w = World::new("skyband".into(), 400, 800);
+        w.world_surface = 200.0; // 0.35 band: rows < 70; 0.45: rows < 90
+        w.rock_layer = 300.0;
+        // Ground at row 400 — far below the sky band.
+        for x in 0..400 {
+            for y in 400..800 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut c = ctx(&w, 30.0 * 16.0, true);
+        c.player_pos = (200.0 * 16.0, 30.0 * 16.0);
+        c.player_center = c.player_pos;
+        c.nearby_active_npcs = 0.0;
+        // The spawn area spans rows 0..~77 (the player at row 30) — every
+        // candidate is either a sky-band latch (j < 70 outside the middle
+        // cut) or a descender that never reaches the ground (row 400 is
+        // far below the area's bottom). The dispatch tail spawns nothing
+        // (probe closed: no golem; wyvern closed: no hardmode; the Harpy
+        // default is terminal) — so the sweep yields ZERO spawns. Before
+        // the terminal-default fix the sky candidates fell through to the
+        // day surface ladder and dropped slimes into the air.
+        for seed in 0..600u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            assert!(
+                try_spawn_an_npc(&c, &mut rng).is_none(),
+                "seed {seed}: no sky fallthrough, no ground in range"
+            );
+        }
     }
 
     #[test]

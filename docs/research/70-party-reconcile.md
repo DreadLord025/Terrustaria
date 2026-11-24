@@ -1,0 +1,938 @@
+# 70 — Birthday-party 3-way reconcile (merger assist)
+
+Code-only reconciliation of the four in-flight lanes that touch the
+birthday-party slice. **No code changes** — this note is the merge plan's
+per-function verdict sheet. Every C# claim below was re-read against the
+decompiled windows in ≤100-line reads (citations inline); every port claim
+was read from the lane's own diff (`git diff <base>..<tip>`), not memory.
+
+| Lane | Tip | Scope (party-relevant) |
+| --- | --- | --- |
+| **W4-f38** | `7f647fda` | town naming + move-in chatter; keyed party broadcasts; `FreeCakeDialogue` chain (`check_dialogue` helper, `Npc.next_dialogue`, `get_chat` head, talk-seam gift) |
+| **W4-d120** | `6381e43e` | `GetChat` re-pin (flag10..15 renames, real PartyGirl `Next(7)` ladder, mixed-chatter directions, event census, live feeds); FreeCake **collapsed to the talk**; dusk clear |
+| **W4-f34** | `43c44837` | SugarRush 192 effect row (+ Dead Cells 366, honey); the seven station-buff dispatch/app arms (incl. cake 621) |
+| **W4-f41** | `91f195fa` (this branch) | party monolith + cake right-click kind-literal arms; break records 455/621/457; SugarRush 192 effect row; freeCake gift chain (inline poll + talk arm) |
+
+The four branches are siblings off wave-3 (`a725acb0`); none contains any
+other's party work. Three of them (f38, d120, f41) each wrote a **complete,
+mutually incompatible FreeCake chain**; two (f34, f41) each wrote the same
+SugarRush effect arm; two (f34, f41) each wrote a cake-621 right-click
+route. Exactly ONE of each may survive.
+
+---
+
+## 1. Per-function 4-way table
+
+C# truth column first; then what each lane carries. "—" = lane does not
+touch the function. Verdicts in §2.
+
+### 1a. `NPC.freeCake` writers/clears (the world latch)
+
+C# truth: static `NPC.freeCake` (`NPC.cs:6093`). Writers, complete census:
+`BirthdayParty.NaturalAttempt` sets it (`BirthdayParty.cs:106`, after
+`PartyDaysOnCooldown = Next(5,11)`, before the celebrant pick);
+`UpdateTime_StartNight` clears it (`Main.cs:65222`, **before** the
+`BirthdayParty.CheckNight()`/`LanternNight.CheckNight()` pair at
+`:65225-65226`); `WorldGen.clearWorld` clears it (`WorldGen.cs:6945`).
+`CheckNight` itself (`BirthdayParty.cs:40-58`) never touches it.
+
+| Site | f38 | d120 | f34 | f41 |
+| --- | --- | --- | --- | --- |
+| field | `WorldEvents::free_cake` | same | — | same (field-placement deviation recorded: all writers are party-machine sites) |
+| `:106` arm | `ev.free_cake = true` in `check_morning_party` after cooldown set | identical | — | identical |
+| `:65222` dusk | `advance_time_with_events` StartNight, before event pair | identical | — | identical |
+| `:6945` clearWorld | `world_clear` | identical | — | identical |
+
+All three copies are line-for-line equivalent (comments differ only).
+**KEEP one copy of each site** — d120's wording is the most precise
+("EVERY dusk … the dawn keeps it"); the anchor rows
+(`clock.rs|app.world_events.free_cake = false`, d120) survive any copy.
+
+### 1b. The pending-dialogue field + registry stand-in
+
+C# truth: `NPC.nextDialogue` (`NPC.cs:6539`), a `ConditionalDialogue`
+object; `ConditionalDialogue.Init` (`ConditionalDialogue.cs:122-125`)
+registers exactly ONE row: `FreeCakeDialogue` on type 208, condition
+`(NPC _) => NPC.freeCake` (`:51-56`). Transient — never saved.
+
+| | f38 | d120 | f34 | f41 |
+| --- | --- | --- | --- | --- |
+| field | `Npc.next_dialogue: bool` (one-row registry stand-in, doc'd transient) | **none** (collapsed away) | — | `Npc.next_dialogue_free_cake: bool` (same stand-in, longer name) |
+| registry shape | `pending_dialogue(kind, free_cake)` + `conditions_met` fns in `npc_chat.rs` | — | — | inline `is_party_girl && free_cake` in the poll |
+
+**KEEP f38's `next_dialogue` + helper fns** (its anchor row
+`npc_chat.rs|pub fn check_dialogue` needs them). DROP f41's
+`next_dialogue_free_cake` name — see §5 anchor re-point.
+
+### 1c. `NPC.CheckDialogue` — the 10-tick poll
+
+C# truth (`NPC.cs:90519-90532`, called from `UpdateNPC` `:90510`):
+`netMode != 2` gate; on `(GameUpdateCount + whoAmI) % 10 == 0` the probe
+**REPLACES** `nextDialogue` via `TryGetPendingDialogue`
+(`ConditionalDialogue.cs:85-102` — null when no condition holds); on the
+other nine ticks a pending row whose `ConditionsMet` failed clears
+immediately. The predicate itself is ONLY `NPC.freeCake` — the "is alive"
+gate comes from the caller: `UpdateNPC` never runs for an inactive NPC.
+
+| | f38 | d120 | f34 | f41 |
+| --- | --- | --- | --- | --- |
+| shape | `pub fn check_dialogue(npc, count, who, free_cake)` in `npc_chat.rs`, called per-NPC from `update_npcs` phase head | **absent** — "collapses to the talk" (recorded deviation) | — | inline block in `update_npcs` phase head |
+| cadence | `(count.wrapping_add(who)) % 10`, who = stable `uid` (compaction deviation recorded) | — | — | identical (`count.wrapping_add(n.uid)`) |
+| replace-on-poll | yes (`= pending_dialogue(...)`) | — | — | yes (`= is_party_girl && free_cake`) |
+| between-poll fall clear | yes | — | — | yes |
+| alive gate | **missing** (polls corpses until the death retain) | — | — | `hp > 0` term inside both arms |
+
+**KEEP f38's helper + call loop, fold f41's alive gate in as a CALLER
+gate**: `for n in ... { if n.hp > 0 { check_dialogue(n, count, n.uid,
+free_cake) } }`. That matches the C# split (predicate = freeCake only;
+active gate = `UpdateNPC`'s caller). f41's in-predicate `hp > 0` is
+behaviourally the same for the one row but structurally misplaces the
+gate; f38's unguarded loop is the one real fidelity bug here (a girl who
+died this tick would still poll/clear before the death retain at
+`world_sim/npcs.rs` `retain(|n| n.hp > 0)`).
+
+### 1d. `GetChat`'s cake head + the talk seam's gift
+
+C# truth: `GetChat` (`NPC.cs:93766`) head `:93768-93771` —
+`if (nextDialogue != null) return nextDialogue.GetChatAndClearCondition(this);`
+**before** the Joja-cola/Dryad re-roll resets and the flags scan.
+`FreeCakeDialogue.GetChatAndClearCondition`
+(`ConditionalDialogue.cs:58-66`) in order:
+1. `NPC.freeCake = false` (`:60`)
+2. `NetMessage.SendData(51, …, 10f)` (`:61` — net lane's, all lanes record it unported)
+3. `new Item(); SetDefaults(3750)` (`:62-63` — **no prefix roll**; maxStack
+   = `CommonMaxStack` 9999, case 3750 writes none, `Item.cs:33214-33226` → `:49017`)
+4. `QuickSpawnItem(EntitySource_Gift, item, GiftRecieved)` (`:64` →
+   `Player.cs:7187-7191` → `GetOrDropItem` `:7193-7200`: `GetItem` fills
+   inventory, the remainder drops via `Item.RequestNewItem` at
+   `base.Center` keeping prefix)
+5. **then** `PartyGirlSpecialText.Cake{Main.rand.Next(1,4)}` (`:65`).
+
+`GetChat`'s only caller is `Main.cs:43082` (census: one hit repo-wide),
+outside every `SwapRandom` stage — both the gift's `NewItem` draws and the
+text draw ride the bare `Main.rand` (the port's `rngs.global()`, S1-A-10).
+The C# does NOT clear `nextDialogue` at talk time — the next
+`CheckDialogue` tick clears it (condition fell); the same-NPC re-talk
+decline (`Main.cs:43077`) makes the one-shot observable either way.
+
+| arm | f38 | d120 | f34 | f41 |
+| --- | --- | --- | --- | --- |
+| head placement | inside `get_chat` (structural 1:1), text via `cake_chat(ctx)` | in `talk_to_npc` before ctx build | — | in `talk_to_npc` before ctx build |
+| fire condition | `npc.next_dialogue` (the latched row) | **`kind == PartyGirl && free_cake` directly** (no latch) | — | `npc.next_dialogue_free_cake` (the latched row) |
+| gift-vs-text order | **text FIRST** (inside `get_chat`), side effects drained after | gift first, then `Next(1,4)` | — | gift first, then `Next(1,4)` |
+| inventory fill | multi-slot `while pending > 0` loop | single `slot_for_pickup` + `count += 1` | — | single `slot_for_pickup` + `.min(max_stack)` clamp |
+| overflow stream | **`RngKey::UpdateItems`** | `rngs.global()` | — | `rngs.global()` |
+| overflow site | player centre, `if let Some(p)` | player centre, `if let Some(p)` | — | player centre, `(0,0)` fallback when no player |
+| latch clear | after text | n/a (no latch) | — | before gift |
+| `freeCake` clear | after text | before gift | — | before gift |
+
+**KEEP: ONE chain = f38's structure with d120/f41's ordering.** Arm-by-arm
+faithfulness verdict in §3.
+
+### 1e. SugarRush 192 — the `UpdateBuffs` effect row
+
+C# truth (`Player.cs:9935-9939`): `buffType[j] == 192` →
+`pickSpeed -= 0.2f; moveSpeed += 0.2f`, rebased every tick by
+`ResetEffects`.
+
+| | f38 | d120 | f34 | f41 |
+| --- | --- | --- | --- | --- |
+| arm | — | — | `192 => { pick_speed_bonus += 0.2; move_speed += 0.2 }` in the buff match, beside its 366 row + the `ResetEffects` `dead_cells_potion_station` clear (`:18362`) | **byte-identical arm**, same match, same spot (after 159) |
+| witness | — | — | `w4_f34_the_sugar_rush_buff_arm_is_verbatim` (grant + the 7199 decrement; 192 NOT in `TimeLeftDoesNotDecrease`) | `w4_f41_sugar_rush_speeds_the_pick_and_the_run` (base-relative +0.2/−0.2, the rebase-never-doubles tick, the expiry drop) |
+
+**KEEP f34's arm** (identical code; f34's context carries 366 + the
+ResetEffects clear and its anchor row names the honey witness in the same
+file). DROP f41's duplicate arm — two `192 =>` arms in one match would not
+compile. **Witness union: keep BOTH** (disjoint aspects, distinct names).
+
+### 1f. Cake 621 right-click (dispatch + app arm)
+
+C# truth (`Player.cs:32600-32605`): `flag2 = true; AddBuff(192, 7200);
+PlaySound(SoundID.Item2, base.position)`. `SoundID.Item2 =
+LegacySoundStyle(2, 2)` (`SoundID.cs`), so the cue is the case-2 item-use
+path: the `GetRandomPitch` NextFloat (`SoundEngine.cs:99`), then the
+default-arm pitch `Main.rand.Next(-6,7)*0.01`
+(`LegacySoundPlayer.cs:632`), at the PLAYER's position (façade truncates).
+
+| | f38 | d120 | f34 | f41 |
+| --- | --- | --- | --- | --- |
+| dispatch | — | — | `StationBuff { buff_type, buff_time }` — the seven-row kind match (`125/621/464/699/377/354/287`), `621 => Some((192, 7_200))`, before the dials; supersedes the old station-tail craft-filter click | `CakeSlice` kind-literal variant + `if t.kind == 621` arm after the dials |
+| app arm | — | — | shared `StationBuff` arm: `add_buff` THEN `play_at(cue, p.x, p.y, volume)` — the **unpitched e28 stand-in** (recorded deviation), cue map `192 → Item_2` | dedicated arm: `add_buff(192,7200)` + `play_npc_item_cue(2, cx, cy, UpdatePlayers rng)` — the **faithful pitched case-2 play** |
+| anchors | — | — | `edit.rs\|621 => Some((192, 7_200))` | none for CakeSlice |
+
+**KEEP f34's `StationBuff` dispatch + app arm** (anchor-bearing, covers
+all seven C# arms in chain order; f41's route is a strict subset). DROP
+f41's `CakeSlice` variant, dispatch arm, `interaction_events` arm, app
+arm, `TR_TOGGLE` log arm and its two witnesses (§4). **Fidelity note for
+the merger**: f41's `play_npc_item_cue` is the faithful case-2 draw shape;
+f34's `play_at` keeps the e28-recorded unpitched stand-in for all seven
+rows. Folding the pitched seam into the `StationBuff` arm (at least the
+192 row) is a legitimate follow-up, but it changes f34's recorded
+deviation — do it as its own noted change, not silently in the merge.
+
+### 1g. Party monolith 455 right-click — f41 UNIQUE
+
+C# truth (`Player.cs:32278-32284`): `flag2 = true; PlaySound(28, myX*16,
+myY*16, 0); GamepadEnableGrappleCooldown(); ToggleManualParty()`. No other
+lane touches 455's interaction. **KEEP f41 wholesale**: the
+`PartyMonolithToggle` variant + dispatch, the app arm (mech case-28 cue on
+the UpdatePlayers stream, `manual_party` flip, THROW_A_PARTY up-edge),
+the `TR_TOGGLE` log arm, both witnesses, the anchor row. (The gamepad
+cooldown is the recorded input-census skip.)
+
+### 1h. Break records 455/621/457 — f41 UNIQUE
+
+No other lane touches `edit/kill.rs`. **KEEP f41 wholesale**: 455 in
+`check_3x3_bottom`'s support group (drop 3747, `WorldGen.cs:53224`); 621
+in `check_2x2` (drop 3750, `:48609`); 457's `check_2x2_style` verbatim
+(the `:52300-52314` style decode, the **frameX-ONLY** `:52323` integrity
+scan, `:52328` floor gate, drop 3749 `:52395`, the 4x4 tail ring); the
+census (457 has NO right-click arm; 3749 not in `OpenableBag`,
+`ItemID.cs:1384` — the present is place/break-only); all 6 witnesses; the
+anchor row.
+
+### 1i. Party broadcasts — f38 UNIQUE (and a stale-literal fix)
+
+C# truth: the dawn start rows `Game.BirthdayParty_{1,2,3}` over the
+celebrants' `GetGivenOrTypeNetName` (`BirthdayParty.cs:127-139`), colour
+`new Color(255,0,160)`, before the achievement tail; the dusk farewell
+`NetworkText.FromKey(Lang.misc[99].Key)` (`:56`) —
+`LegacyMisc.99 = "Party time's over!"` (verified in
+`Terraria.Localization.Content.en-US.Legacy.json`).
+
+| | f38 | d120 | f34 | f41 |
+| --- | --- | --- | --- | --- |
+| dawn | keyed `Game.BirthdayParty_{n}` via `npc_names::given_or_type_name` + `lang::text_args`, in the clock's dawn arm before `notify_progression_net(25)` | — (no broadcast work) | — | — (base shape) |
+| dusk | `lang::misc(99)` keyed farewell | **stale literal** `"Everyone has gone home!"` (base) | — | **stale literal** (base) |
+
+**KEEP f38's broadcasts + naming layer wholesale** (`give_town_unique_data`,
+`given_or_type_name`, the housing-hover FullName, the move-in/departure
+announcements — all f38-unique, anchor-bearing). The f41/d120 copies of
+`check_night_party` carry the pre-1.4.5 literal; f38's keyed row wins
+(the literal is a bug, not a variant).
+
+### 1j. `GetChat` body (the ladder itself) — d120 CANONICAL
+
+d120's re-pin is the audited body: flag10..15 renames (160 Truffle /
+229 Pirate / 208 PartyGirl / 353 Stylist), the real PartyGirl
+`Next(7)`-up-front ladder (`NPC.cs:94410-94456`), the FindAll-forward
+`mixed_chatter` vs SelectRandom-reverse picks, the event-text census
+(count draw paid even at 0, `HasNoPartyText` AFTER the party roll),
+`normalized_luck`, and the live feeds (rain latch, defense, head slot,
+male, cola HasItem, graveyard/storm/windy/party/lanterns/moonlord/dd2-t3).
+f38's diff sits on the OLD ladder (its `party_girl` fn is the mislabelled
+Truffle ladder with `next(6)`); f41 does not touch the ladder.
+**KEEP d120's `npc_chat.rs` body + `lang.rs` dialog helpers +
+`world_sim/npcs.rs` live-feed ctx wholesale**; graft f38's head +
+`check_dialogue` + `cake_chat` onto it (§3). f38's live-feed subset
+(party/lanterns/moonlord) is subsumed by d120's superset — drop the
+subset hunks, keep d120's.
+
+---
+
+## 2. KEEP sheet (per function, one winner)
+
+| Function | KEEP | Source |
+| --- | --- | --- |
+| `free_cake` field + `:106`/`:65222`/`:6945` writers | one copy (identical everywhere; d120 wording) | any of f38/d120/f41 |
+| pending-row field | `Npc.next_dialogue` | f38 |
+| registry stand-in + poll helper | `check_dialogue` / `pending_dialogue` / `conditions_met` | f38 |
+| poll call loop | f38's `update_npcs` loop **+ f41's `hp > 0` caller gate** | f38 ⊕ f41 |
+| `get_chat` cake head | f38's head + `cake_chat(ctx)` | f38 |
+| talk-seam gift | latch-gated, **side effects BEFORE the text draw**, single-slot fill, overflow + text on `rngs.global()` | d120/f41 ordering in f38's structure (§3) |
+| SugarRush 192 effect arm | the single `192 =>` arm | f34 |
+| cake 621 right-click | `StationBuff` dispatch + app arm (unpitched cue = f34's recorded deviation; f41's pitched seam noted as follow-up) | f34 |
+| monolith 455 right-click | `PartyMonolithToggle`全套 (dispatch/app/log/witnesses/anchor) | f41 |
+| break records 455/621/457 | `check_3x3_bottom`/`check_2x2`/`check_2x2_style` rows + census | f41 |
+| party broadcasts + naming | keyed dawn/dusk rows, `given_or_type_name`, naming layer | f38 |
+| `GetChat` ladder + live feeds | the re-pinned body | d120 |
+
+## 3. The ONE FreeCake chain — f41 vs f38 arm-by-arm
+
+Which arms of each are faithful to `ConditionalDialogue.cs:58-66` +
+`NPC.cs:90519-90532`/`:93768-93771` (all re-read):
+
+| Arm | Faithful winner | Why |
+| --- | --- | --- |
+| latch exists at all | **f38/f41 (tie)** | d120's collapse fires on `kind && free_cake` at talk time — the C# fires only on a row latched by a poll. Up to 9 ticks after the dawn party (and after a mid-day re-arm) d120 gifts where the C# answers chatter. d120 recorded the collapse; the un-collapsed shape exists now, so the deviation need not survive. |
+| poll cadence + replace + fall-clear | **tie** (identical modulo the field name) | both `(count + uid) % 10`, replace-on-poll, immediate fall-clear; uid-for-whoAmI is the shared recorded compaction deviation. |
+| alive gate | **f41** | the C# predicate is freeCake-only, but `UpdateNPC` (hence `CheckDialogue`) never runs for a dead NPC. f41's `hp > 0` models that; f38 polls corpses until the death retain. Fold as a caller gate (§1c). |
+| head placement | **f38** | `:93768-93771` is inside `GetChat`, before the re-roll resets + flags scan. f41/d120's talk-side placement is observationally equivalent (single caller, census'd) but f38 is the structural 1:1 — and f38's pure-`get_chat` witness needs it. |
+| gift-before-text order | **f41/d120** | the C# gifts (`:64`) THEN draws `Next(1,4)` (`:65`). f38 drains side effects AFTER `get_chat` returned the text — on the overflow path the drop's velocity/phase triplet and the Cake draw swap places, changing the pinned-stream outcome. d120's overflow witness pins the faithful order (triplet, then `Next(1,4)`, seed-0 global). |
+| overflow/text RNG stream | **f41/d120** | the talk runs outside every `SwapRandom` stage (`Main.cs:43082`, the S1-A-10 contract) — `Item.NewItem`'s draws ride the bare `Main.rand` = `rngs.global()`. f38's `RngKey::UpdateItems` models a swap that is not active here. |
+| inventory fill | **f41/d120 (single-slot)** | the gift is exactly ONE item: `GetItem` (`Player.cs:39330-39399`) merges into the first occupied slot with room, else the first empty hotbar slot (useStyle 1, `:39365-39374`), else reverse-empty — one `slot_for_pickup` call is exact (`count < max_stack` ⇒ `+1 ≤ max_stack`; f41's `.min()` clamp is vacuous, d120's bare `+= 1` is the clean form). f38's multi-slot while-loop is equivalent for stack 1 but over-general. |
+| overflow guard | **f38/d120** | `if let Some(p)` — the talk gate already requires a live player, so the no-player branch is unreachable; f41's `(0,0)` fallback invents a spawn site the C# never has. |
+| prefix | **tie** | all three: no prefix roll on the gift (`SetDefaults` + the Item-variant `QuickSpawnItem`); the port's `spawn_item_drop_px` → `roll_prefix(3750, -1)` draws nothing (not prefixable) — d120's witness pins prefix 0 + the triplet-only draws. |
+| latch clear timing | **tie (all slightly early)** | the C# leaves `nextDialogue` set until the next `CheckDialogue` tick; all three ports clear at talk. Unobservable: the same-NPC re-talk declines (`:43077`) and the poll clears next tick anyway. Keep the port form, note it. |
+| `SendData(51)` | **tie** | all record it unported (net lane). |
+| pickup sound 7 + PopupText | **none** | `GetItem_FillIntoOccupiedSlot`/`FillEmptyInventorySlot` (`Player.cs:39489-39500`/`:39557-39566`) play `SoundID 7` + popup text on the gift; the port's `slot_for_pickup` seam carries neither (the shared S1-C-9 pickup deviation). Census note, not a lane differentiator. |
+
+**The reconciled chain (merge recipe, no code here):**
+1. f38's `Npc.next_dialogue` field + `check_dialogue`/`pending_dialogue`/
+   `conditions_met` + `get_chat` head + `cake_chat` — verbatim.
+2. `update_npcs` poll loop: f38's call shape, body gated `if n.hp > 0`
+   (f41's gate, moved to the caller).
+3. `talk_to_npc`: after `app.talk_npc = Some(i)`,
+   `if app.npcs[i].next_dialogue { free_cake = false; gift ONE 3750 via
+   slot_for_pickup (d120 form) with the global-stream overflow drop at
+   the player centre }` — **then** the normal ctx build + `get_chat`
+   (whose head draws the Cake text on the same global stream) — **then**
+   `app.npcs[i].next_dialogue = false`. This keeps f38's structure and
+   d120/f41's draw order; the early-return shape of f41/d120 is dropped.
+4. d120's anchor marker `app.world_events.free_cake = false` still exists
+   in step 3; f38's `pub fn check_dialogue` in step 1.
+
+## 4. Witness union (all WRITTEN NOT RUN — code-only lanes)
+
+| Witness | Lane | Verdict |
+| --- | --- | --- |
+| `the_dialogue_probe_walks_the_ten_tick_cadence` | f38 | KEEP (helper-level cadence/replace/fall/other-kind) |
+| `w4_f41_the_dialogue_poll_latches_and_clears` | f41 | KEEP, rename field → `next_dialogue` (integration-level: uid phase, `update_npcs` wiring) |
+| `the_pending_cake_dialogue_wins_over_the_ladder` | f38 | KEEP (pure `get_chat` head; passes over d120's ladder) |
+| `the_talk_action_hands_over_the_cake_and_clears_the_condition` | f38 | KEEP (one-shot + clears; order-agnostic asserts) |
+| `w4_f41_the_party_girl_gifts_the_cake_once` | f41 | KEEP, rename field (count==1, prefix==0, no-second-gift total — stricter than f38's `any`) |
+| `the_party_girl_gifts_the_cake_then_draws_the_text` | d120 | **RE-DERIVE**: seed-0 pinned text assumes the collapse (no poll); under the kept chain the test must latch the row first (set `next_dialogue` or run a poll tick). Keep the pinned-draw asserts after the re-pin. |
+| `a_full_inventory_overflows_the_cake_to_a_world_drop` | d120 | **RE-DERIVE** likewise (latch first); the triplet-then-text pinned order is the canonical overflow witness — KEEP its draws/pos/prefix asserts |
+| `w4_f41_the_free_cake_flag_arms_on_the_fresh_party_only` | f41 | KEEP (gate-miss/cooldown/roll-miss arms + CheckNight-never-touches) |
+| `dusk_clears_the_free_cake_latch` | d120 | KEEP (dusk clear + dawn keeps) |
+| `w4_f41_the_dusk_boundary_clears_the_free_cake_gift` | f41 | KEEP (mid-day keeps — disjoint from d120's dawn arm) |
+| `s1_f_14_the_party_machine_follows_natural_attempt` (f38's extended form) | f38 | KEEP f38's version (adds the freeCake arm + keyed-farewell asserts; superset of the base test both other lanes carry) |
+| `the_party_broadcasts_name_the_celebrants_and_clear_the_cake_at_dusk` | f38 | KEEP (broadcasts unique) |
+| `w4_f34_the_sugar_rush_buff_arm_is_verbatim` | f34 | KEEP |
+| `w4_f41_sugar_rush_speeds_the_pick_and_the_run` | f41 | KEEP (rebase + expiry — disjoint) |
+| `w4_f34_the_cake_war_table_and_dead_cells_station_grant_their_buffs` / `…sharpening_and_bewitching…` / `…draw_no_rng_and_refresh_not_stack` | f34 | KEEP (the surviving StationBuff route) |
+| `w4_f41_the_cake_dispatches_the_slice` | f41 | DROP (expects `CakeSlice`; f34's edit.rs witnesses pin `621 → StationBuff{192,7200}`) |
+| `w4_f41_the_cake_click_grants_sugar_rush` | f41 | DROP (f34's grant + RNG-free refresh witnesses cover it on the surviving route) |
+| `w4_f41_the_party_monolith_click_toggles_the_party` / `…dispatches_the_toggle` | f41 | KEEP (unique) |
+| all 6 f41 break-record witnesses (`…monolith_survives…`, `…support_break_drops_3747/3750/3749`, `…cake_stands_on_a_table`, `…present_style_zero_and_the_frame_x_only_check`) | f41 | KEEP (unique) |
+| d120's 13 census witnesses + f38's naming witnesses + f34's honey/366/Item179 witnesses | resp. | KEEP (no overlap with the dropped arms) |
+
+## 5. DROP list (with anchor reconciliation)
+
+1. **f41 `Npc.next_dialogue_free_cake`** (field + init) → f38's
+   `next_dialogue`. ⚠ The f41 anchor row
+   `world_sim/npcs.rs|next_dialogue_free_cake` loses its marker —
+   **re-point the row** (same feature text) at a surviving marker, e.g.
+   `crate::npc_chat::check_dialogue` (the poll call in `update_npcs`).
+   Update the row, never delete it.
+2. **f41's inline poll block** in `update_npcs` → f38's helper loop +
+   the `hp > 0` caller gate.
+3. **d120's collapsed talk arm** (`kind == PartyGirl && free_cake`
+   direct-fire) → the latched chain (§3). Its ANALYSIS "collapses to the
+   talk" deviation paragraph is superseded — record the un-collapse.
+4. **f38's talk-seam side-effect block** as written (post-text ordering,
+   `RngKey::UpdateItems` overflow stream, multi-slot while-loop) → the
+   §3 recipe (pre-text side effects, global stream, single-slot fill).
+   f38's `get_chat` head/check_dialogue/field stay.
+5. **f41's duplicate `192 =>` SugarRush arm** in `player.rs` → f34's arm
+   (two identical arms in one match do not compile).
+6. **f41's `CakeSlice`**: the `TileInteraction` variant, the
+   `if t.kind == 621` dispatch arm, the `interaction_events` arm, the
+   `interact_tile` app arm, the `app/mod.rs` `TR_TOGGLE` log arm, and the
+   two witnesses named in §4 → f34's `StationBuff` route (anchor
+   `621 => Some((192, 7_200))`). No anchor names `CakeSlice` — safe drop.
+   The pitched-cue fidelity note (§1f) is a recorded follow-up, not part
+   of the merge.
+7. **f41/d120's stale `"Everyone has gone home!"` literal** in
+   `check_night_party` → f38's `lang::misc(99)` keyed farewell (the
+   literal is the pre-1.4.5 text; the C# keys `Lang.misc[99]`).
+8. **f38's live-feed hunks** in `talk_to_npc` (party/lanterns/moonlord
+   only) → d120's superset ctx (rain latch, defense, head, male, luck,
+   cola, graveyard/storm/windy, dd2-t3, angler).
+9. **Duplicate copies** of the three `free_cake` writer lines and the
+   `WorldEvents` field doc (three lanes, identical code) — keep one.
+
+Anchor survivors after the drops: f38 `npc_names.rs|pub fn
+give_town_unique_data` ✓, f38 `npc_chat.rs|pub fn check_dialogue` ✓,
+d120 `npc_chat.rs|fn mixed_chatter` ✓, d120 `npc_chat.rs|fn party_girl` ✓,
+d120 `world_sim/npcs.rs|app.world_events.free_cake = false` ✓ (§3 step 3),
+d120 `clock.rs|app.world_events.free_cake = false` ✓, d120
+`localization/mod.rs|pub fn select_random_from_dialog` ✓, f34
+`edit.rs|621 => Some((192, 7_200))` ✓, f34 `player.rs|w4_f34_honey_contact…` ✓,
+f41 `kill.rs|fn check_2x2_style` ✓, f41
+`doors.rs|edit::TileInteraction::PartyMonolithToggle` ✓, f41
+`npcs.rs|next_dialogue_free_cake` — **RE-POINT** (drop 1).
+
+## 6. Verification
+
+Code-only, per the lane contract: **no cargo/rustc/tests/graphify
+invoked**. Evidence: every C# window cited above re-read directly
+(`ConditionalDialogue.cs` full 141 lines; `NPC.cs:90495-90539`/`:93760-93794`;
+`Player.cs:7175-7204`/`:9930-9944`/`:32268-32292`/`:32580-32639`/
+`:39230-39274`/`:39310-39399`/`:39485-39574`; `Main.cs:65212-65231`;
+`WorldGen.cs:6940-6951`; `BirthdayParty.cs:40-139`;
+`LegacySoundPlayer.cs:510-674`; `Item.cs:33190-33229`/`:49012-49021`;
+`GetItemSettings.cs` GiftRecieved row; `SoundID.cs` Item2/Item179 rows;
+`LegacyMisc.99` + `PartyGirlSpecialText.Cake1..3` from the en-US JSON).
+Every port claim read from the lane diffs (`git diff <base>..<tip>`) and
+`git show <tip>:<file>` — no working-tree code was modified by this note.
+
+---
+
+## 7. EXECUTED — the f41 union-exec (branch `task/W4-f41-birthday-party-2`)
+
+The §3 recipe + the f41-scoped §5 drops are EXECUTED on this branch
+(commits `0ab54f5e` phase 1 chain, `1449fdd5` phase 2 drops). What landed:
+
+1. **§3 step 1** — f38's `Npc.next_dialogue` field (+ init),
+   `check_dialogue`/`pending_dialogue`/`conditions_met`, the `get_chat`
+   head + `cake_chat`, verbatim (one comment corrected: `cake_chat`'s
+   doc now states the side effects run BEFORE the text draw — f38's
+   "drains them after" wording described the dropped ordering).
+2. **§3 step 2** — the `update_npcs` poll loop is f38's call shape with
+   the body gated `if n.hp > 0` (f41's alive gate moved to the caller;
+   the predicate stays freeCake-only).
+3. **§3 step 3** — `talk_to_npc`: after `app.talk_npc = Some(i)`,
+   `if app.npcs[i].next_dialogue { app.world_events.free_cake = false;
+   ONE 3750 via single slot_for_pickup (d120's bare += 1 form), overflow
+   drop at the player centre on rngs.global() behind if let Some(p) }` —
+   then the normal ctx build + `get_chat` (the head draws the Cake text
+   on the same global stream) — then `app.npcs[i].next_dialogue = false`
+   (the recorded early-clear timing note). f41's early-return arm and
+   d120's collapse shape are gone.
+4. **§5 drops 1/2/5/6 executed** — the `next_dialogue_free_cake` field,
+   the inline poll block, the duplicate `192 =>` player.rs arm, and the
+   whole `CakeSlice` route (edit.rs variant + dispatch, doors.rs app +
+   interaction_events arms, app/mod.rs TR_TOGGLE arm) are removed; the
+   two CakeSlice witnesses dropped; the pitched-cue follow-up recorded
+   in-code at the doors.rs seam (§1f).
+5. **§5 anchor re-point executed** — `anchors.txt` row now reads
+   `crates/tr-app/src/world_sim/npcs.rs|crate::npc_chat::check_dialogue`
+   (same feature text, updated to the reconciled chain). Never deleted.
+6. **§4 witness union on this branch (18 WRITTEN NOT RUN)** — f38's 3
+   chain witnesses kept verbatim (`the_dialogue_probe_walks_the_ten_tick_cadence`,
+   `the_pending_cake_dialogue_wins_over_the_ladder`,
+   `the_talk_action_hands_over_the_cake_and_clears_the_condition`);
+   f41's 2 renamed to `next_dialogue`
+   (`w4_f41_the_party_girl_gifts_the_cake_once`,
+   `w4_f41_the_dialogue_poll_latches_and_clears` — doc updated to the
+   caller gate); d120's 2 **RE-DERIVED**
+   (`the_party_girl_gifts_the_cake_then_draws_the_text`,
+   `a_full_inventory_overflows_the_cake_to_a_world_drop` — each now
+   latches `pg.next_dialogue = true` before the talk; ALL pinned-draw
+   asserts kept: seed-0 `Next(1,4)` text, the triplet-then-text overflow
+   order, prefix 0, the centre+(1,0) spawn pos). The remaining 11 f41
+   witnesses (SugarRush rebase/expiry, flag-arm, dusk, monolith ×2,
+   break records ×6) untouched.
+
+**Merger's remaining scope** (NOT executable on this branch — the
+sibling lanes' code is not here): d120's canonical `GetChat` ladder body
++ live-feed ctx + lang helpers (§1j), f38's naming/broadcast layer +
+keyed dusk farewell (§1i, drops 7/8), f34's `StationBuff` route + the
+single 192 arm (§1e/§1f), one copy of the three `free_cake` writer sites
+(drop 9 — this branch's copies are line-equivalent to d120's; keep
+d120's wording). This branch KEEPS its monolith + break records
+wholesale (§1g/§1h). Post-union witness expectation: this branch's 18 +
+f38's naming/broadcast/extended-s1_f_14 witnesses + d120's 13 census
+witnesses + `dusk_clears_the_free_cake_latch` + f34's buff/station/honey
+witnesses.
+
+Verification (code-only): no cargo/rustc/tests/graphify invoked; the
+chain re-read against `ConditionalDialogue.cs:58-66` +
+`NPC.cs:90519-90532`/`:93768-93771` via the §6 evidence; every folded
+piece read from `git diff a725acb0..7f647fda` / `..6381e43e` and
+`git show <tip>:<file>` before the edit; `git grep` confirms zero
+remaining `next_dialogue_free_cake` / `CakeSlice` references in
+`crates/` and the re-pointed anchor marker present.
+
+---
+
+## 8. FINAL SWEEP (post-union, this branch — 2026-11-21)
+
+The six-item final sweep, executed after the f1f95be4 union. Every C#
+claim re-read in ≤100-line windows; every co-lane claim read from
+`git show origin/task/<lane>:<file>` at the fetched tips.
+
+### 8a. The pitched case-2 cue (§1f follow-up) — LANDED (b4ca66e9)
+
+f34's `StationBuff` keep-one landed on this branch (the seven-row
+dispatch + the anchor row `621 => Some((192, 7_200))`), with the cake
+row's cue upgraded to the faithful pitched play: `play_npc_item_cue(2,
+p.x, p.y, UpdatePlayers)` — the GetRandomPitch NextFloat audio-only, the
+attenuation gate, then ONE `Next(-6,7)*0.01` draw
+(`LegacySoundPlayer.cs:632`). The other six rows keep the e28-recorded
+unpitched stand-in (their own noted change if ever upgraded). The single
+`192 =>` SugarRush arm (§1e) landed with f34's verbatim witness beside
+f41's rebase/expiry one. f34's neighbour no-draw witness RE-DERIVED: 621
+left the RNG-free loop (its own new pitched-roll witness pins the draw);
+699/464 keep the contract. Item_149/Item_179 cue registrations + witnesses
+landed.
+
+### 8b. Party-gift shop census — LANDED (be4cb841)
+
+`Chest.SetupShop` keys on the SHOP INDEX; the Party Girl is index 13
+(`Chest.cs:2274-2359`). The `BirthdayParty.PartyIsUp` block
+(`:2345-2358`) adds ELEVEN rows in num order: 3749 PartyPresent (2000),
+3746 Pigronata (10000), 3739/3740/3741 SillyStreamers (50 each),
+3737/3738/3736 SillyBalloons (100 each), 3745/3744/3743 TiedBalloons
+(1000 each) — prices from `Item.cs:33089-33175` SetDefaults, no
+shopCustomPrice. The Merchant's party row (`:1435-1437`) is the Rainbow
+Glowstick 5643. Her Release Lantern 4702 row gates on
+`LanternNight.LanternsUp` (`:2309-2312`). The 1449/4552 pair is a C#
+if/else on `Main.dayTime` (`:2285-2294`) — the port's Always+Night
+double-stock was a bug, fixed via `StockWhen::Day`. Live feeds:
+`ShopFlags.party_up`/`lanterns_up` from `world_events` at the shop-open
+seam. **Census corrections**: PartyBullet is 1349 (NOT sold — Pigronata
+break `WorldGen.cs:52956` + craft `Recipe.cs:2240` only); the ConfettiGun
+is item **1000** (`ItemID.cs:3683`, already an Always row) — **5089 is
+GlommerPetItem** (`ItemID.cs:11861`), not a party gun. f37/g58 cross-read:
+both carry the same constants-off party comment, no party rows — no
+conflict with this landing.
+
+### 8c. Monolith 455 placement — ALREADY COMPLETE, witnesses added (eec344ce)
+
+Item 3747 `createTile = 455` (`Item.cs:33176-33188`, consumable,
+placeStyle 0) was already rowed; the D_455 registry def (Style3x3,
+origin (1,2), anchor 11 = SolidTile|SolidWithTop|Table|SolidSide,
+`TileObjectData.cs:3097-3105`/`:4099-4101`, UsesCustomCanPlace true, NO
+hook) already routes through `place_item_tile`. Nothing to wire — 2
+witnesses pin the loop end-to-end (core 3x3 write + floating refusal +
+per-cell toggle dispatch; app consumption + manual_party toggle).
+
+### 8d. Party hats on PLAYERS — LANDED (73f4f4d4)
+
+Census: C# `Player` has NO partyHat field — `UsesPartyHat`/
+`ForcePartyHatOn`/`GetPartyHatColor` are NPC-only (c39's party_hat.rs
+lane, `NPC.cs:66611-66659`). The player hat is the VANITY ITEM 3732
+(`headSlot = 195`, `Item.cs:33061-33067`; `ArmorIDs.Head.PartyHat = 195`).
+Head 195 is in `GetHairSettings`' hatHair set (`Player.cs:16880`/
+`:16902`): the Player_HairAlt strip draws UNDER the hat
+(`PlayerDrawLayers.cs:2104-2109`, !invis), the Armor_Head_195 sheet takes
+the normal-hat 52px crop over it (`:2254-2281`, cHead dye). Landed: the
+two sheets, the hatHair draw arm, `PlayerCompositeState.invis`, the
+vanity-head resolution at the draw feed (`Player.cs:35765` — armor[10]
+wins when headSlot >= 0) and the effective-head G6 key input (gated;
+hat-free frames bit-identical).
+
+### 8e. BirthdayParty natural-start census — gates CLAIMED, nothing unclaimed
+
+The base chain (party-girl presence, cooldown decrement, Next(10) roll,
+>=5 gather, Next(5,11) cooldown, 1/2/3 celebrant roll, OrderBy pick,
+freeCake :106 arm, dusk :65222 clear, clearWorld :6945) is landed on this
+branch (S1-F-14 + the union). The remaining C# arms are ALL claimed:
+- the `tenthAnniversaryWorld` Next(7) roll (`:84-88`) — **c39**
+  (`728b3d33`, the `tenth_anniversary` parameter +
+  `w4_c39_the_anniversary_party_roll_uses_seven`);
+- `CanNPCParty`'s aiStyle/pet gates as the `can_npc_party` helper —
+  **c39** (same commit; the port ships no town-pet kinds, so the base
+  `is_town_npc` + TaxCollector exclusion is behaviourally identical
+  today);
+- the `UpdateTime` roster prune + gone-home broadcast (`:183-219`, the
+  RemoveAt slide-in skip quirk) — **c39** (same commit, 2 witnesses);
+- the dawn `Game.BirthdayParty_{1,2,3}` broadcasts + the keyed dusk
+  farewell (`Lang.misc[99]` = "Party time's over!") — **f38**
+  (`b7a29e6a`; §1i keeps f38's rows wholesale — this branch's stale
+  literal stays for f38's merge to replace, census comment added).
+No unclaimed natural-trigger arm remains; nothing ported here.
+
+### 8f. c39 cross-read (research/114 does NOT exist) — keep-one verdicts
+
+> **Closeout correction (§8i)**: this probe pre-dated c39's push. c39's
+> tip `8ecb288a` (origin/task/W4-c39-lantern-birthday) DOES carry
+> `docs/research/114-lantern-party-master-reconcile.md` with its own §7
+> EXECUTED record — the "does NOT exist" claim below was true of the
+> then-fetched tip only. The verdicts below were re-checked against the
+> pushed 114 and all still hold (114 §1h/§7-verdict-4 dropped exactly the
+> pieces listed here); §8i records the receipt.
+
+c39's tip carries NO docs/research/114 (the branch's research tree is
+the base 01-92 set; the task's '114' likely means the sibling
+W4-d114-tileobjectdata-4 lane, whose scope is TileObjectData hooks, not
+party). c39's cake lane (`75922dcc`) wrote a THIRD cake-621 route:
+`TileInteraction::CakeEat` + an unpitched `play_at("Item_2")` app arm +
+a collapsed freeCake talk gift (drop-at-NPC-centre, no latch).
+**Keep-one verdicts for the eventual c39 merge** (extending §2/§4):
+- cake 621 right-click: KEEP this branch's `StationBuff` row with the
+  pitched case-2 cue (8a) — DROP c39's `CakeEat` variant + dispatch +
+  app arm + TR_TOGGLE arm + interaction_events arm (a strict subset,
+  unpitched);
+- the 192 effect arm: KEEP the single landed arm — DROP c39's duplicate
+  (byte-equivalent pickSpeed/moveSpeed rows);
+- the freeCake gift: KEEP the union's latched chain (f38 structure +
+  hp>0 caller gate + gift-THEN-text on the global stream, single
+  slot_for_pickup + player-centre overflow) — DROP c39's collapsed
+  live-flag talk arm (fires without a poll latch, gifts at the NPC
+  centre, no inventory fill);
+- c39's KEEP-ones: the anniversary roll, can_npc_party, the roster prune,
+  party_hat.rs (NPC side), event_skies.rs, the lantern lanes — all
+  disjoint from this branch's files except world_events.rs/clock.rs/
+  weather.rs/npcs.rs, where the merger folds c39's parameter/prune
+  extensions onto the union's chain (the §3 recipe unchanged).
+
+Verification (code-only): no cargo/tests/rustfmt/graphify invoked; all
+witnesses WRITTEN NOT RUN. Commits: b4ca66e9 (8a), be4cb841 (8b),
+eec344ce (8c), 73f4f4d4 (8d), + the 8e census commit.
+
+### 8g. Pigronata break loot — LANDED (97724ea7)
+
+Item 3746 (`Item.cs:33164-33175`: createTile 454, consumable, 10000) places
+the 4x3 Pigronata (`TileObjectData.cs:3161-3168`: Style3x3 widened to 4,
+origin (2,0), AnchorTop (SolidTile|SolidSide, 1, 1), LavaDeath — the D_454
+registry def already rowed). **Census**: the C# `TileFrameImportant`
+dispatch sends BOTH 34 and 454 to `CheckChand` (`WorldGen.cs:85510-85513`);
+the port's `check_object` only dispatched 34 (through a Check3x3-attribution
+stand-in), so the Pigronata had NO integrity check and NO break loot —
+unclaimed (no sibling branch touches kill.rs's chandelier arm; d111/d114's
+kill.rs diffs vs base are empty). Landed: `check_chandelier` parameterised
+by kind — the 4-wide style walk (`:52803-52807`), the 37-row second-block
+skip (`:52829-52837`), the ox+1 ceiling anchor (`:52857-52864` — one LEFT
+of the registry origin column ox+2, the check's own maths; `nactive` gate
+verbatim, the stand-in's liquid allowance dropped), the destroyObject-
+wrapped kill loop, and the FULL (width+2)x5 TileFrame tail ring
+(`:52969-52975`, outer-x/inner-y — both 34 and 454; the other tails keep
+the 8-point perimeter sample). The 454 break records ONE `PigronataEvent`
+at the checked cell; the app resolves the `Next(9)` loot table
+(`:52880-52963`) on the UpdatePlayers stream: 0/1 nothing; 2/3/4
+`Next(10,31)` silver in `Next(2,11)` stacks; 5/6 `Next(60,80)` silver in
+`Next(3,16)` stacks + Flask of Party 1358; 7 `Next(10,31)` silver in
+`Next(2,9)` stacks + one Gold Coin 73; 8 the jackpot — fixed 100 silver +
+`Next(30,91)` PartyBullet 1349 in `Next(7,14)` stacks + flask + gold (the
+clamp-to-budget loops verbatim, the singles AFTER both loops). Not
+`noItem`-gated (the pot/pile `Check*`-level convention). 34's own drop
+record unchanged (the chandelier style rows stay its lane's). The break
+dust is g14's claimed `KillTile_MakeTileDust` 454 => 139 confetti row
+(`WorldGen.cs:66946-66948`, a35efec2's worldgen_dust_tile.rs) — not
+re-ported. 5 witnesses (anchor-hold + the ox+1-not-origin quirk, the
+anchor-break event at the first framed cell, the 4-column style walk incl
+style 2, the mirrored-oracle Next(9) table over 400 seeds with the
+stream-position contract, the full app place->break->loot route).
+
+### 8h. Party-center-of-attention census — NO gathering behavior exists
+
+The task's "town NPCs cluster near the party-giver" hypothesis is FALSE in
+the C#: the full `BirthdayParty` reference census (13 files — Chest, Main,
+NPC, Player, WorldGen, Wiring, NetMessage, MessageBuffer, WorldFile,
+TileDrawing, PlayerDrawLayers, EmoteBubble, BirthdayParty itself) finds NO
+party-position term anywhere in `AI_007_TownEntities`
+(`NPC.cs:52965-55560`) — the position machine reads home tiles only
+(`floorX/floorY`, the ±25/±35/±50 bands, the resting-spot probes); there is
+no `partyCenterOfAttention` symbol in the decompile. The complete party-NPC
+behavior set, all CLAIMED:
+- the `:55289-55307` talk gate (208 always, others while PartyIsUp with
+  AttackType == AttackType[208] = 0) + the `:54298-54328` facing state
+  machine (states 6/7/18/19) — **S1-D-3 ported** in npc_ai_town.rs; the
+  aiStyle-7 axis wiring is **W4-b3** (96a5d88f0) and the live
+  `TownEnv.party_up` feed at the build site is b3 phase 2's declared
+  follow-up (b3's npc.rs:10160 still `party_up: false`);
+- the hats — **c39** draw (party_hat.rs) / **d55** gores (114 §1g);
+- `UpdateAltTexture` `:90210-90234` (altTexture 1 while PartyIsUp) —
+  NPC-texture lane (no port field; npc_ai_style42.rs:47 records the
+  `:81143` altTexture gap);
+- the `:94867` party chat text (HasNoPartyText gate) — **d120**
+  (c5e68a80, npc_chat.rs:339/:360);
+- the `:60460-60470` slime inside-items (GenuineParty above surface →
+  Next(2): balloon Next(3736,3739) else Confetti 1345) — **b1**
+  (f010b85b, npc_ai_slime.rs:111-112);
+- the `:1643`/`:2593`/`:4289` PartyBunny 540 critter-spawn arms
+  (PartyIsUp && Next(3) != 0) — spawner lane (the port's spawner.rs
+  critter ladders sit constants-off behind unmodelled tile/weather gates);
+- `EmoteBubble.ProbeEvents` `:401` (PartyIsUp && Next(3) == 0 → emotes
+  126-129) — UI lane (emotes.rs carries the bubble machinery, the probe
+  ladder unported);
+- `Wiring.cs:2304-2307` bunny-statue 540 swap — wiring lane (core
+  wiring.rs:1105 records the plain-bunny stand-in);
+- `Main.cs:65795`/`:65916`/`:66078` flag8 (GenuineParty ||
+  unlockedSlimeGreenSpawn) → TownSlimeGreen 678 spawn gate — town-spawn
+  lane (**d119** 04d7f9fd / f43 / c41; d119's town_arrival.rs models the
+  PartyGirl flag7 gate, the 678 arm is its lane's remaining tail);
+- `Main.cs:17926-17943` afterPartyOfDoom (the getfixedboi party-ends
+  massacre) — special-seed lane;
+- `WorldGen.cs:19728-19795` the starting-party CelebratingNPCs roster —
+  worldgen lane (spawner.rs:765 records the unported AddPasses town pass).
+Census comment added at the npc_ai_town.rs talk gate naming the owners
+(d118ff9d); nothing unclaimed to port.
+
+### 8i. The 114 receipt — c39 EXECUTED re-read + the f34-piece carry
+
+c39's pushed tip `8ecb288a` carries research/114 with §7 EXECUTED (7
+verdict commits b5ab90db/4d184569/912f0ae2/a493e8f1/bb19d79f/7aff2857/
+ce288dac). Re-read against this branch:
+- **114 §1h/§7-verdict-4 (a493e8f1)** dropped c39's cake-side third copies
+  (CakeEat variant/dispatch/app arm/TR_TOGGLE arm/interaction_events arm,
+  the 192 duplicate, the collapsed freeCake talk arm, the live-feed hunks)
+  naming **f41c f1f95be4 canonical** — exactly this branch's union chain.
+  §8f's keep-one verdicts and 114's drops AGREE; no reconciliation needed.
+  c39 keeps its full-tick sugar-rush witness in the union (tests the
+  surviving f34 arm — this branch's player.rs:6531).
+- **f34-StationBuff merge-scope receipt**: 114 §7's remaining-merge-scope
+  lists "f34's StationBuff dispatch + app arm + the single 192 => arm" as
+  a sibling KEEP piece landing at the merge. **This branch already carries
+  it** (b4ca66e9, the §8a landing): the seven-row dispatch
+  (edit.rs:322-328, the `621 => Some((192, 7_200))` anchor row), the app
+  arm with the cake row's faithful pitched case-2 play
+  (doors.rs:382-394, `play_npc_item_cue(2)`), the single `192 =>` SugarRush
+  arm (player.rs:6531) + f34's verbatim witness (player.rs:12720) beside
+  f41's rebase/expiry one (:12742), the Item_149/Item_179 cue registrations
+  (audio.rs:282-284) + witness (:3612), the TR_TOGGLE log arm
+  (app/mod.rs:4581), f34's 6 dispatch/app witnesses (the neighbour no-draw
+  one re-derived) + the pitched-roll witness (doors.rs:1266). **The merger
+  drops the f34-branch piece** (43c44837's dispatch/app/192-arm hunks) —
+  this branch's copy is the anchor-bearing superset (the pitched cue).
+  f34's NON-party scope stays f34's: the honey-contact grant
+  (AddBuff(48,1800), Player.cs:27744-27748), the 366 player-match arm +
+  ResetEffects clear (:10185-10188/:18362 — the base buff_effects.rs
+  accumulator row is NOT the live player-match arm), the honey +2 regen/
+  +2 ramp fold (:19134-19138) and their 3 witnesses + the DW-2.5
+  re-derivation — none are on this branch (verified: no add_buff(48,1800),
+  no 366 player arm, no holding(48) fold, no
+  w4_f34_honey_contact_refreshes_the_honey_buff_every_tick witness), all
+  land with f34's own merge. Anchor accounting: this branch's anchors.txt
+  carries the ONE shared row `edit.rs|621 => Some((192, 7_200))` (the
+  W4-f34/f41 final-sweep row, marker present at edit.rs:323) — the merger
+  keeps it and drops f34's duplicate 621 row; f34's OTHER rows
+  (`edit.rs|StationBuff`, `doors.rs|w4_e28_the_crystal_ball_…`,
+  `player.rs|w4_f34_honey_contact_…`) are NOT on this branch — the first
+  two markers DO exist in this branch's code (edit.rs:272, doors.rs:1144,
+  the e28 base the b4ca66e9 landing built on) so their rows survive the
+  merge harmlessly, the honey row rides f34's own piece.
+- c39's other §7 verdicts (triggers/LanternSky/hats/AI_166/anchors/luck)
+  are c39-side retirements onto f40/d17/d55 canonicals — disjoint from
+  this branch's files; the §3 recipe and the 8f KEEP-ones stand.
+
+Verification (code-only): no cargo/tests/rustfmt/graphify invoked; all
+witnesses WRITTEN NOT RUN. Closeout commits: 97724ea7 (8g), d118ff9d
+(8h), + this docs commit (8i).
+
+---
+
+## 9. SEALED — the party-family bible + the four co-lane receipts (2026-11-21)
+
+The §8 FINAL SWEEP is **SEALED** on this branch (closeout tip `9523763b`,
+this seal rides the next commit). Every co-lane claim below was re-read
+from `git show origin/task/<lane>:<file>` at the fetched tips — c39
+`7dd785dc5` (RETIRED), b3 `96a5d88f0` (phase 1), f34 `43c448372`, g14
+`a35efec26`, g58 `d0f6275a5` (SEALED), d120 `2408233da` (RETIRED), f40
+`c4c6b4f4f` (RETIRED), d122 `962084663`, d55 `ec78d1524`, b1 `f010b85b`;
+the C# windows re-read in ≤100-line reads (`WorldGen.cs:52857-52916`,
+`:66938-66957`, `:69145-69174`). No further f41 party port work remains;
+every obligation is landed here or published below as an exact
+evidence-cited receipt/hunk for the merger or the owning lane.
+
+### 9a. c39-lantern-birthday compose — the keep-one sheet stands, hats disjoint
+
+c39 is **RETIRED** (`7dd785dc5`, 114 §16 FINAL-FINAL): the retire phases
+are doc-only, code behaviour is exactly `4f72847e`'s; the §7 EXECUTED
+record (`8ecb288a`, 7 verdict commits) is the merger's entry point.
+Re-read against this branch:
+
+- **Cake side (114 §1h/§7-verdict-4, `a493e8f1`)** — c39's third copies
+  (CakeEat variant/dispatch/app/TR_TOGGLE/interaction_events arms, the
+  `192 =>` duplicate, the collapsed freeCake talk arm, the live-feed
+  hunks) are DROPPED on c39's own tip, naming **f41c `f1f95be4`
+  canonical** — this branch's union chain (§7 EXECUTED, an ancestor of
+  this tip, verified `git merge-base --is-ancestor`). §8f/§8i's verdicts
+  and 114's drops AGREE; nothing to reconcile. c39's full-tick sugar-rush
+  witness `w4_c39_sugar_rush_adds_pick_and_move_speed` (its
+  player.rs:13034) stays in the union — it tests the surviving single
+  `192 =>` arm (this branch player.rs:6531).
+- **Hats — DISJOINT, both keep.** This branch's hat is the PLAYER vanity
+  item 3732 / head 195 (`73f4f4d4`: `PlayerAssets.party_hat`/`hair_alt`
+  in render/entities.rs, the hatHair draw arm in player_layers.rs, the
+  vanity-head feed + gated G6 key in frame/draw.rs, assets.rs sheets) —
+  the normal head pipeline, NO `party_hat.rs` module on this branch
+  (`git ls-files` zero). c39's hat is the NPC draw layer
+  (`party_hat.rs::hat_draw` :235 + the `draw_npcs` caller in
+  entities.rs, `Main.DrawNPCExtras` `:26914-27188`); after `912f0ae2`
+  the `hp > 0` term sits at the DRAW caller, the predicate is
+  life-agnostic. Different structs, different draw fns, different
+  sheets — the merge keeps BOTH wholesale. c39's `party_death_gores` +
+  the `update_npcs` death-site block are DROPPED on its tip (d55's
+  `npc_hit_effect_a.rs::party_hat_block` :303 canonical, strike-stream
+  contract, `ec78d1524`); this branch never carried them — no action.
+- **Scheduler fold (114 §1f)** — c39's KEEP-ones graft onto this
+  branch's `world_events.rs`/`clock.rs` at the merge: the
+  `can_npc_party` helper, the 5-arg `check_morning_party` (its :223,
+  `tenth_anniversary` param + the `Next(7)` arm `BirthdayParty.cs:84-88`),
+  `update_time_party(ev, partyable, chat) -> Option<bool>` (its :301 —
+  the `:183-219` roster prune + RemoveAt no-decrement quirk + keyed
+  `misc[99]` + sky edge; this branch's :289 base shape is edge-only).
+  **Mechanical RE-DERIVE census**: this branch has EIGHT
+  `check_morning_party(` call sites — the clock feed (clock.rs:185,
+  gains `app.world.seeds.contains(SeedFlags::TENTH_ANNIVERSARY)`) + 7
+  witness sites (world_events.rs:409/:414/:426/:486/:489/:493/:498,
+  each gains a `false` arg; asserts stand, 114 §3). f38's
+  broadcast-before-achievement order grafts onto c39's clock arm
+  (114 §1f row 4; §1i keeps f38's naming layer).
+- **g58d/f40 shop cross-read — the case-13 superset survives all three
+  shop lanes.** f40's RETIRE (research/105 §9.2, `402561236`) pins
+  **KEEP f41's shop.rs case 13 wholesale** (the superset: the day/night
+  Bubble/Fog `StockWhen::Day` fix + the eleven gift rows + the 4702
+  row); f40's `StockWhen::LanternNight` variant renames mechanically to
+  `LanternsUp` (this branch shop.rs:231/:539/:1341), ONE `lanterns_up`
+  field + ONE feed line survive, its anchor row `shop.rs|LanternNight,`
+  re-points; both witness sets complementary (f41's tail-order witness
+  shop.rs:1838 covers 4702's position). g58's SEALED bible
+  (research/242 §3, `d0f6275a5`) delegates the STOCK rows to d122 —
+  and the census confirms NEITHER carries party rows: g58's shop.rs
+  keeps the constants-off party comment (:268-269, no `party_up` flag,
+  no gift rows), d122's shop.rs grep for `PartyUp|party_up|3746|
+  LanternsUp` returns ZERO. g58d's happiness-latch round is the PRICE
+  path (the `SetTalkNPC` talk-open latch), orthogonal to party stock.
+  **Verdict: f41's case-13 superset (be4cb841) is the ONE party-shop
+  landing; no g58/d122/f37 party hunks exist to drop.**
+
+### 9b. b3-town-wiring — phase-1 receipt + the party_up activation contract
+
+b3's tip `96a5d88f0` is **phase 1 ONLY**: the aiStyle axis claims
+`7 => self.ai_007_town_family(world, player, rng)` (npc.rs:4722), the
+adapter at npc.rs:10121 builds the solo-classic `TownEnv`, the
+`update_guide` stand-in is DELETED (this branch's npc.rs:5761/:10056
+still carry it — the merge takes b3's retirement wholesale). b3 OWNS:
+
+- the axis arm + adapter + door latch (`town_door_close/x/y`) + the
+  `integrate_town_collision` UpdateNPC tail + the 2 wiring witnesses
+  (`w4_b3_town_wiring_witnesses`, the 8-draw idle-day / 3-draw
+  night-go-home pinned ticks);
+- **phase 2's declared activation contract** (b3 ANALYSIS "Phase 2
+  remainder"): the `TownOutputs` drain (shots/strikes/partner
+  writes/home updates/saved states), the real `TownDoorOps` over
+  `tr_core::edit::{open_door, close_door}`, the live NPC list +
+  `App.talk_npc` threading, `HomeTileUpdate` through `TownRooms` +
+  message 60, the homeless/breath/shimmering latches — **and the live
+  `party_up` feed**: b3's npc.rs:10160 still `party_up: false` (its
+  "BirthdayParty unported" comment is STALE at the merge — the party
+  machine is this branch's world_events.rs; the comment re-cites it).
+  The adapter takes `(&World, &Player)` — no App — so the feed rides
+  phase 2's App-threading; the exact source expression is the shop-feed
+  precedent (this branch npcs.rs:987):
+  `party_up: crate::world_events::party_is_up(&app.world_events)`.
+
+**This branch's party-center-FALSE census (§8h) CONFIRMS the b3 wiring
+is the whole activation**: the `:55289-55307` talk gate (this branch
+npc_ai_town.rs:3038 — `net_id == 208 || (env.party_up &&
+attack_type(net_id) == attack_type(208))`) + the `:54298-54328` facing
+state machine (states 6/7/18/19) are the S1-D-3 port, and NO
+party-position term exists anywhere in `AI_007_TownEntities`. The ONLY
+observable party delta until phase 2 feeds the flag: non-PartyGirl town
+NPCs never enter the party-talk state (the PartyGirl's own
+`net_id == 208` arm is already live in phase 1). No gathering behavior
+to wire — the census comment at the talk gate now names b3's exact
+axis/adapter/feed line numbers (this seal's one code-comment edit).
+Contested pieces untouched by b3 (its own doc): `town.rs` housing,
+`npc_chat` selection (d120 canonical), the caster aiStyle-8 arm.
+
+### 9c. f34-StationBuff — the EXACT drop-hunks (merger input) + the non-party KEEP
+
+§8i's receipt re-verified hunk-by-hunk against f34's tip `43c448372`
+(`git diff a725acb04..origin/task/W4-f34-proximity-buffs-2`). This
+branch carries the anchor-bearing SUPERSET (`b4ca66e9`, §8a). **The
+merger DROPS these f34-branch hunks** (f34-tip line numbers; each is
+already present on this branch in the cited surviving form):
+
+| # | f34 file:lines | Piece | Surviving form on this branch |
+| --- | --- | --- | --- |
+| 1 | `tr-core/src/edit.rs:252-266` | the `StationBuff { buff_type, buff_time }` variant doc + def | edit.rs:261-275 (identical shape, def :272) |
+| 2 | `tr-core/src/edit.rs:301-327` | the seven-row dispatch comment + kind match + return (the `621 => Some((192, 7_200))` anchor row at :314) | edit.rs:310-336, anchor marker :323 (anchors.txt:902, the ONE shared row) |
+| 3 | `tr-core/src/edit.rs:1988-2067` | `w4_e28_the_station_buff_arms_dispatch_the_grants` + `w4_f34_the_five_neighbour_station_arms_dispatch_the_grants` | edit.rs:2075/:2108 (both present) |
+| 4 | `tr-app/.../editing/doors.rs:337-366` | the `StationBuff` app arm — ALL seven rows on the unpitched `play_at` e28 stand-in | doors.rs:366-410 — the SUPERSET: the 192 row plays the faithful pitched case-2 (`play_npc_item_cue(2, p.x, p.y, UpdatePlayers)`, :394), the other six keep the stand-in |
+| 5 | `doors.rs:465-468` | the `interaction_events` `StationBuff => (None, Vec::new())` arm + comment | doors.rs:511-514 (the shared comment covers both arms) |
+| 6 | `doors.rs:747-887` | the `station_app` helper + the 6 dispatch/app witnesses | doors.rs:1144-1263 — the neighbour no-draw witness RE-DERIVED (621 left the RNG-free loop; 699/464 keep the contract) + the pitched-roll witness :1266. **f34's `w4_f34_the_neighbour_grants_draw_no_rng_and_refresh_not_stack` (:865) must NOT survive as written** — it still sweeps 621 as RNG-free, which the pitched cue breaks |
+| 7 | `app/mod.rs:4579-4583` | the `TR_TOGGLE` StationBuff log arm | app/mod.rs:4579-4583 (byte-identical) |
+| 8 | `audio.rs:275-284` + `:3602-3621` | the Item_149/Item_179 cue registrations + the 2 cue witnesses | audio.rs:278/:284 + :3603/:3612 |
+| 9 | `player.rs:6543-6550` | the `192 =>` SugarRush arm (comment + body) — two arms in one match do not compile | player.rs:6531 (the single arm) |
+| 10 | `player.rs:13326-13344` | `w4_f34_the_sugar_rush_buff_arm_is_verbatim` | player.rs:12720 (beside f41's rebase/expiry :12742) |
+
+**f34's NON-party scope STAYS f34's own merge** (each verified ABSENT on
+this branch — no `add_buff(48, 1800)` grant, no `366 =>` player-match
+arm, no `dead_cells_potion_station = false` reset, no `holding(48)`
+regen fold, none of the named witnesses):
+
+- `player.rs:5789-5803` — the honey-contact grant `AddBuff(48, 1800)`
+  per honey tick (`Player.cs:27744-27748`, the shimmering guard vacuous
+  S1-E-16, the fold-ahead-of-splash observation note);
+- `player.rs:6077-6080` — the `ResetEffects`
+  `dead_cells_potion_station = false` clear (`:18362`);
+- `player.rs:6551-6555` — the `366 =>` live player-match arm
+  (`:10185-10188`; the base buff_effects.rs:170 accumulator row is NOT
+  this arm — both survive, different consumers);
+- `player.rs:11199-11212` — the honey +2 regen / +2 ramp-time fold
+  (`:19134-19138`) via `extra_regen`/`extra_time` (the engine slots sit
+  at the C# point, regen.rs:174-182);
+- the witnesses: `w4_e28_the_bast_aura_grants_the_defense_buff`
+  (:13238), `w4_e28_the_aura_grants_expire_when_the_player_leaves`
+  (:13254), `w4_e28_the_campfire_and_heart_auras_feed_the_regen`
+  (:13281), `w4_e28_the_clairvoyance_buff_arm_is_verbatim` (:13307) —
+  these four test BASE aura code (this branch player.rs:6994 carries
+  the grants) and ride f34's merge harmlessly —
+  `w4_f34_the_dead_cells_station_flag_rearms_per_tick_and_clears`
+  (:13346), `w4_f34_honey_contact_refreshes_the_honey_buff_every_tick`
+  (:13375), the DW-2.5 re-derivation onto the +2 rows, and
+  `scene_scan.rs:768-838`'s two e28 scan witnesses
+  (`w4_e28_the_bast_and_torch_campfire_scan_arms` :769,
+  `w4_e28_the_aura_proximity_window_gates_the_scan` :811 — the scan
+  arms themselves are base, this branch scene_scan.rs:235).
+
+**Anchor accounting** (f34's 4 rows): `edit.rs|StationBuff` — marker
+present here (:272), survives; `doors.rs|w4_e28_the_crystal_ball_…` —
+present (:1144), survives; `edit.rs|621 => Some((192, 7_200))` — the
+DUPLICATE of this branch's anchors.txt:902 row, the merger keeps ONE
+(this branch's, the superset wording); `player.rs|w4_f34_honey_contact_…`
+— rides f34's own piece. No row deleted, none re-pointed.
+
+### 9d. g14-Pigronata-dust — the loot-vs-dust DISJOINT receipt
+
+C# re-read (two windows): the break DUST is `KillTile_MakeTileDust`'s
+ladder row `case 454: num = 139` (`WorldGen.cs:66946-66948`) + the
+spawn-tail arm `if (num == 139) return Dust.NewDust(Type: num +
+Main.rand.Next(4), …)` (`:69156-69158`) — confetti types 139..=142, ONE
+`Main.rand.Next(4)` BEFORE the NewDust internals. g14's tip `a35efec26`
+carries it verbatim: `worldgen_dust_tile.rs:2070` (`454 => num = 139`),
+the `num == 139` early-return arm, the witness
+`w4_g14_tile_139_plus_rand4` (:1883 — type in 139..=142 + the
+mirrored-stream agreement), the anchor row
+`worldgen_dust_tile.rs|pub fn kill_tile_make_tile_dust`.
+
+This branch's Pigronata landing (`97724ea7`, §8g) is the `CheckChand`
+INTEGRITY-CHECK loot block (`:52880-52963`) — `Item.NewItem` drops
+ONLY: `kill.rs` carries ZERO dust references (grep census), the
+`PigronataEvent` drain (editing.rs:6047-6051) pushes item events only,
+and the app route witness (:12776) asserts item kinds {3, 72, 73, 1349,
+1358} — no particle assertions. **DISJOINT: dust = particles (g14's
+`KillTile_MakeTileDust`, called from KillTile `WorldGen.cs:62573`/
+`:63702`), loot = items (f41's CheckChand block).** g14's module is
+UNWIRED on its own lane (no callers outside the worldgen_dust modules —
+the wiring is its lane's declared scope); this branch adds no dust
+call, so the merge composes both without overlap. §8g's "not
+re-ported" note stands, now with the exact g14 line/witness citations.
+
+### 9e. The party-family bible — SEALED (one paragraph, the merger's map)
+
+**The birthday-party family is CLOSED for porting.** f41 (this branch)
+is canonical for: the party machine base + the ONE FreeCake chain (§3's
+recipe executed — f38 structure + hp>0 caller gate + gift-THEN-text on
+the global stream, `f1f95be4`), the monolith 455 toggle + break records
+455/621/457 + the Pigronata 454 CheckChand loot (`97724ea7`), the shop
+case-13 superset (eleven gift rows + 4702 + the day/night fix + the
+Merchant 5643, `be4cb841` — survives f40's rename per 105 §9.2 and the
+g58/d122 no-party-rows census), the player party-hat vanity 3732/head
+195 (`73f4f4d4`), and the StationBuff superset with the pitched cake cue
++ the single `192 =>` arm (`b4ca66e9` — f34's duplicate hunks drop per
+§9c). c39 (`7dd785dc5`, retired) keeps the anniversary Next(7) roll +
+`can_npc_party` + the `update_time_party` prune/RemoveAt quirk + the
+PartySky balloon sky + the NPC hat DRAW layer + the lantern
+gates/triggers/wind-rain (its cake-side third copies dropped naming f41c
+canonical; the scheduler fold's 8-call-site re-derive census in §9a).
+f38 keeps the keyed dawn/dusk broadcasts + the naming layer
+(broadcast-before-achievement). d120 (`2408233da`, retired) keeps the
+GetChat ladder re-pin + the superset live-feed ctx + the party chat text
+(`HasNoPartyText` after the roll). f34 (`43c448372`) keeps ONLY its
+non-party proximity scope (§9c's KEEP list — honey/366/regen + the
+witnesses). b3 (`96a5d88f0`, phase 1) owns the aiStyle-7 axis wiring +
+the talk-gate/facing-machine activation; its phase 2 owns the live
+`party_up` feed + `App.talk_npc` threading + the TownOutputs drain
+(§9b's contract — the party-center-FALSE census confirms nothing else
+exists to wire). g14 (`a35efec26`) owns the break dust 454=>139+Next(4)
+(§9d, disjoint from the loot). d55 (`ec78d1524`) owns the party-hat
+death-gore table (strike stream; c39's death block dropped). b1
+(`f010b85b`) owns the slime inside-items balloon/confetti. The remaining
+party-NPC sites stay their §8h census lanes (spawner PartyBunny, UI
+emotes, NPC-texture altTexture, wiring bunny-statue, town-spawn 678,
+special-seed afterPartyOfDoom, worldgen starting roster). No unclaimed
+party arm remains on any lane; the merger composes per §2 + §9a-9d.
+
+Verification (code-only): no cargo/rustc/tests/rustfmt/graphify invoked;
+all witnesses WRITTEN NOT RUN. The one code edit is the census comment
+at the npc_ai_town.rs talk gate (b3's axis/adapter/feed line numbers +
+the §8h/§9b cross-cite — comment-only, no behaviour change). Seal
+commits: this docs commit + the comment ride together on
+`task/W4-f41-birthday-party-2`.

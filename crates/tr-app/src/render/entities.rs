@@ -3290,6 +3290,7 @@ pub(crate) fn player_draw_layers(
         }),
         light: light_c,
         head_armor,
+        invis: player.invis,
         body_armor,
         leg_armor,
         // W4-d115 wiring round — the Acc_Neck layer's inputs: the sim's
@@ -6610,6 +6611,15 @@ pub(crate) fn draw_npcs(
             // anchor — the small-kinds shape.
             NpcKind::BloodSquid => {
                 pumpkin_moon_draw(assets.npc_sheet(619), npc_rows(619), n, w, h)
+            }
+            // W4-d103 WG-POST RETIRE — the Wraith draws its own NPC_82
+            // sheet at `SetFrameSize`'s integer-division row height over
+            // `Main.npcFrameCount[82]` = 4 (`Main.cs:67092`) with the
+            // generic centred anchor — the small-kinds wave's shape (the
+            // g8 constants-copy). The vx*0.1 tilt rides the rotation
+            // whitelist below.
+            NpcKind::Wraith => {
+                pumpkin_moon_draw(assets.npc_sheet(82), npc_rows(82), n, w, h)
             }
         };
         let Some(tex) = tex else {

@@ -95,6 +95,15 @@ pub struct World {
     pub extra_spawn_points: Vec<(i16, i16)>,
     /// Spawn point from the save header (tile coordinates).
     pub spawn_x: i32,
+    /// `Main.dungeonX`/`Main.dungeonY` (`Main.cs:1115-1117`) — the dungeon
+    /// entrance anchor. Written by the dungeon step (the `plan_spans`
+    /// `dungeon_x` + its surface row) and read from the `.wld` header; the
+    /// Plantera bulb event's jungle-half rectangle keys on it
+    /// (`WorldGen.cs:74129`, W4-c31 jungle residuals). 0 = unset.
+    pub dungeon_x: i32,
+    /// `Main.dungeonY` (`Main.cs:1117`) — the dungeon anchor row (the same
+    /// reset/discovery sites as [`Self::dungeon_x`]).
+    pub dungeon_y: i32,
     /// `Main.worldSurface`: below this row the sun does not reach the surface.
     pub world_surface: f64,
     /// `Main.rockLayer`: top of the underground rock layer.
@@ -912,6 +921,14 @@ pub struct World {
     /// the save can carry it (M6-SAVE-1f — the vanilla writes it in the
     /// world-flags block, `WorldFile.cs:1315-1321` + `:1444-1450`).
     pub ore_tiers: crate::ores::SavedOreTiers,
+    /// `GenVars.lavaLine` (`TerrainPass.cs:211-236`, drawn at the terrain
+    /// step `pipeline.rs`): the chest-stocking deep band's lava-charm gate
+    /// (`WorldGen.cs:36882/:36892`) reads it through the `ChestSiteEvent`.
+    /// Runtime-only like the other `GenVars` reads — the vanilla never
+    /// saves it; `World::new`'s stock is the no-terrain estimate
+    /// `(rockLayer + maxTilesY)/2 + 65` (the C# `Next(-100,20)`/`Next(50,80)`
+    /// draws' midpoints), overwritten by the terrain step at generation.
+    pub lava_line: i32,
     /// `Main.chest[]` as it exists at the end of generation — the vanilla
     /// stocks every chest's inventory **inline with its placement** inside
     /// `AddBuriedChest` (`WorldGen.cs:35871-37580`), and the records save
@@ -922,6 +939,20 @@ pub struct World {
     /// empty list simply means "no chest placed yet". The App's runtime
     /// store materialises from these at `enter_loaded_world`.
     pub chests: Vec<crate::save::ChestRecord>,
+    /// The gen-time starter town NPCs (`GenPassNameID.SpawnStarterNPCs`,
+    /// `WorldGen.cs:19685-19897`) — W4-g38 C5. The vanilla spawns the Guide
+    /// (or the seed's substitute) into `Main.npc` at the spawn point during
+    /// generation; the port records the roster here (the `NpcRecord` save
+    /// shape, the port's internal kind ids) so a freshly generated world
+    /// carries its starter NPC and the save persists it. A classic world
+    /// gets one homeless Guide at the spawn; the seed arms substitute the
+    /// Dryad / Zoologist / Tax Collector / Mechanic / Merchant /
+    /// Demolitionist / Party Girl, and the tenth-anniversary arm adds the
+    /// birthday party. The App materialises live NPCs from these at load
+    /// (the `sections.native.npcs` path), replacing the old hardcoded
+    /// Guide-spawn fallback. Empty = no starter placed (a `.wld` load's
+    /// roster comes from the file instead).
+    pub starter_npcs: Vec<crate::save::NpcRecord>,
 
     /// The gen-time starter-NPC ledger — the `Guide` pass
     /// (`GenPassNameID.SpawnStarterNPCs`, `WorldGen.cs:19685-19897`) spawns
@@ -1082,12 +1113,22 @@ impl World {
             pressure_plates: Vec::new(),
             frame_important: Vec::new(),
             ore_tiers: crate::ores::SavedOreTiers::new(),
+            // The no-terrain estimate (the field note): the terrain step
+            // overwrites it with the drawn `GenVars.lavaLine`.
+            lava_line: (height as f64 * 0.45 + height as f64) as i32 / 2 + 65,
             chests: Vec::new(),
             gen_npcs: Vec::new(),
+            // batch-B's starter-NPC ledger (the gen-time save records) starts
+            // empty; the worldgen job/clone paths fill it (W4-d105/g38 seam).
+            starter_npcs: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             extra_spawn_points: Vec::new(),
             spawn_x: width / 2,
+            // `WorldGen.Reset` (`WorldGen.cs:7047-7048`): both 0 until the
+            // dungeon pass publishes the anchor.
+            dungeon_x: 0,
+            dungeon_y: 0,
             world_surface: height as f64 * 0.25,
             rock_layer: height as f64 * 0.45,
             time: 0.0,

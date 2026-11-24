@@ -16,6 +16,8 @@
 //! S1-A-7).
 
 mod biome_detail;
+mod buried_chest;
+mod cave_walls;
 mod biomes;
 pub mod bg_rolls;
 pub mod cave_bg;
@@ -24,12 +26,25 @@ pub mod dungeon;
 pub mod dungeon_features;
 pub mod dungeon_styles;
 mod caves;
-pub mod cave_bg;
+mod cleanup;
 mod config;
+mod crystals;
 mod desert;
 mod desert_dunes;
 mod desert_entrances;
+// W4-f24 lane B — the gated Dual Dungeons Dither Snake pass's geometry
+// (the f64 Vector2D/Utils math + the clamped DungeonBounds rectangle).
+mod dungeon_bounds;
+mod dungeon_control_line;
+mod dungeon_genvars;
+// W4-f24 room-content slice — the unclaimed dual-dungeon furniture family
+// (cracked-brick patterns, the set clones, the Bookshelves pass). UNWIRED.
+#[allow(dead_code)] // consumed by the dual-content wiring round (d107 seam)
+mod dungeon_room_content;
+mod dither_snake;
+mod snake_math;
 pub mod evil;
+mod ice_biome;
 mod islands;
 mod island_houses;
 mod liquids;
@@ -40,20 +55,33 @@ mod micro_grass;
 mod micro_surface;
 mod mini_biomes;
 mod noise;
+mod not_the_bees;
 mod ocean;
+mod passes1;
 pub mod pipeline;
 pub mod progress;
+mod seed_tails;
+mod settle_liquids;
+mod passes2;
+mod shimmer;
+mod skyblock;
 mod spider_gem_moss;
 pub mod starter_npcs;
+mod statues;
 mod structures;
 mod surface;
 mod temple;
 mod terrain;
 mod tile_runner;
+mod wall_variety;
+mod water_chests;
 mod traps;
 mod wavy;
 mod world_hash;
 mod finish_seeds;
+mod finish_no_traps;
+mod finish_remix;
+mod hive;
 
 use self::noise::{Noise, Rng};
 use crate::tiledata as td;
@@ -1281,9 +1309,10 @@ mod tests {
 
     #[test]
     fn the_floating_islands_hang_in_the_sky() {
-        // The 4200-world carries 3-4 cloud islands (189) with the grass
+        // The 4200-world carries 3+1 cloud islands (189) with the grass
         // caps, the sky lake (the rain cloud 196 + the water) and the
-        // houses (the planks 9 + the cloud walls 73 + the chests).
+        // houses (the sunplate 202 + the disc walls 82 + the chests —
+        // W4-g44's verbatim IslandHouse; the lake island carries none).
         let w = generate(&GenOptions {
             seed: 55,
             ..Default::default()
@@ -1296,7 +1325,7 @@ mod tests {
         };
         assert!(count(189) > 1500, "the cloud blocks ({})", count(189));
         assert!(count(196) > 30, "the rain cloud rim ({})", count(196));
-        assert!(count(9) > 40, "the house planks ({})", count(9));
+        assert!(count(202) > 40, "the house sunplate ({})", count(202));
         // The islands sit above the surface line: every cloud tile's row is
         // above `world_surface` (the surface scan finds none below).
         let below = w
@@ -1312,8 +1341,9 @@ mod tests {
     #[test]
     fn the_structure_passes_place_the_contents() {
         // The 4200-world carries the shrine brick huts (119) with the torches,
-        // the chests (21), the demon altars (26), the pyramid brick (480) and
-        // the pots (28).
+        // the chests (21), the demon altars (26), the pyramid brick (151 —
+        // the faithful `Pyramid` hull, W4-c33; the shape-level 480 retired)
+        // and the pots (28).
         let w = generate(&GenOptions {
             seed: 91,
             ..Default::default()
@@ -1330,7 +1360,7 @@ mod tests {
         assert!(count(4) > 3, "the shrine torches ({})", count(4));
         assert!(count(21) >= 4, "the chests ({})", count(21) / 4);
         assert!(count(26) > 30, "the demon altars ({})", count(26) / 6);
-        assert!(count(480) > 300, "the pyramid brick ({})", count(480));
+        assert!(count(151) > 300, "the pyramid brick ({})", count(151));
         assert!(count(28) > 50, "the pots ({})", count(28));
         // The chest tiles come in intact 2x2 quads — every chest anchor
         // (frame_y 0, the style's base column `frame_x = 18 * style`) has

@@ -16,6 +16,25 @@ use crate::registry;
 use crate::spawner;
 use tr_core::UnifiedRandom;
 
+/// `NPC.OnGameEventClearedForTheFirstTime` case 16/17/18
+/// (`NPC.cs:78780-78788`): when a mech boss falls and ALL THREE are downed
+/// in hardmode, `WorldGen.GeneratePlanteraBulbOnAllMechsDefeated`
+/// (`WorldGen.cs:74127-74186`) forces a Plantera bulb into the jungle.
+/// The C# gates on `Main.netMode != 1` (the port runs the host path) and
+/// draws on `genRand` (the `UpdateNPCs` swap — `checkDead` runs inside
+/// `NPC.UpdateNPC`, `Main.cs:17767-17769`). W4-c31 jungle residuals.
+fn try_plantera_bulb_on_mech_clear(app: &mut App) {
+    let w = &app.world;
+    if w.hard_mode && w.downed_mech_boss1 && w.downed_mech_boss2 && w.downed_mech_boss3 {
+        let dungeon_x = w.dungeon_x;
+        tr_core::growth::generate_plantera_bulb_on_all_mechs_defeated(
+            &mut app.world,
+            dungeon_x,
+            app.rngs.stream(RngKey::UpdateNpcs),
+        );
+    }
+}
+
 /// The player's death message: a DoT drain death resolves its attribution's
 /// `DeathText.*` row family (`KillMe(PlayerDeathReason.ByOther(N))` with the
 /// `Lang.cs:1045-1127` variant roll — the C# rides `Main.rand`; the port
@@ -458,6 +477,11 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         golfer_score,
     };
     let text = crate::npc_chat::get_chat(&app.npcs[i], &mut ctx);
+    // The pending row clears at talk — the C# leaves `nextDialogue` set
+    // until the next `CheckDialogue` tick clears it (the condition fell);
+    // unobservable either way (the same-NPC re-talk declines `:43077`),
+    // the port's early clear is the recorded timing note (research/70 §3).
+    app.npcs[i].next_dialogue = false;
     app.npc_chat_text = text.clone(); // `:43082` — `Main.npcChatText = GetChat()`
     // `:43083` — `SoundEngine.PlaySound(24)` (`SoundID.Chat`) AFTER the
     // `GetChat` answer, inside the fresh-talk arm (`talkNPC != i`).
@@ -1231,10 +1255,9 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
 /// their own pass (the same player-tile scan, the same roll count).
 /// `NPC.cs:1660-1670`'s spider-wall arm: the webbed Stylist waits on a
 /// spider wall (`wall == 62`) in the rock layer — `Next(8) == 0`, no
-/// water, once per save (`!savedStylist && !AnyNPCs(354)`). The port has
-/// no spider-wall tile table, so the wall gate rides the world's wall id
-/// at the player's spawn tile (the same depth band as the C#'s
-/// `deeperThanRockLayer`).
+/// water, once per save (`!savedStylist && !AnyNPCs(354)`). W4-g41: the
+/// arm is ported faithfully in `spawner.rs::spawn_npc_at` (the old
+/// player-tile stand-in here is retired).
 /// `NPC.cs:1680-1695`'s underground-desert arm: the sleeping Golfer waits
 /// below the rock layer — `Next(20) == 0`, no water, once per save
 /// (`!savedGolfer && !AnyNPCs(589)`). The vanilla's arm is gated on the
@@ -1277,35 +1300,12 @@ pub(crate) fn try_spawn_sleeping_golfer(app: &mut App) -> bool {
     true
 }
 
-pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
-    if app.world.saved_stylist || app.npcs.iter().any(|n| n.kind == NpcKind::WebbedStylist) {
-        return false;
-    }
-    let Some(p) = app.player.as_ref() else {
-        return false;
-    };
-    let tx = (p.x / TILE_PX) as i32;
-    let ty = (p.y / TILE_PX) as i32;
-    if (ty as f64) <= app.world.rock_layer {
-        return false;
-    }
-    let water = app.world.tile(tx, ty).is_some_and(|t| t.has_any_liquid());
-    // `Next(8) == 0` (`NPC.cs:1670`'s spider-wall arm).
-    if water || app.rngs.stream(RngKey::UpdateTime).next_max(8) != 0 {
-        return false;
-    }
-    let mut m = Npc::new(
-        NpcKind::WebbedStylist,
-        tx as f32 * TILE_PX + 8.0 - 9.0,
-        ty as f32 * TILE_PX - 34.0,
-        1,
-        0.0,
-    );
-    m.hp = m.max_hp;
-    app.npcs.push(m);
-    true
-}
-
+/// RETIRED (W4-g41 spawn pool): the webbed Stylist's world spawn now rides
+/// the faithful `NPC.cs:1660-1670` arm in `spawner.rs::spawn_npc_at` (the
+/// wall-62 gate + the `spawnSpider` flag + flag7 + the SpawnNPC-stream
+/// `Next(8)`); the old stand-in (no wall check, the UpdateTime stream)
+/// would double-spawn against it. The rescue path (`rescue_webbed_stylist`)
+/// and the `saved_stylist` latch stay.
 pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
     if app.world.saved_angler || app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler) {
         return false;
@@ -1449,6 +1449,12 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .npcs
             .iter()
             .any(|n| n.hp > 0 && n.kind == NpcKind::PartyGirl),
+        // W4-f41 final sweep — the live scheduler gates: the Merchant's
+        // Rainbow Glowstick + the Party Girl's gift block
+        // (`BirthdayParty.PartyIsUp`, `Chest.cs:1435`/:2345) and her
+        // Release Lantern row (`LanternNight.LanternsUp`, `:2309`).
+        party_up: crate::world_events::party_is_up(&app.world_events),
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         downed_mech_any: app.world.downed_mech_boss1
             || app.world.downed_mech_boss2
             || app.world.downed_mech_boss3,
@@ -8457,11 +8463,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // unsaved — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
         // the port's `Next(20)` roll rides this cadence.
         try_spawn_sleeping_angler(app);
-        // The webbed Stylist's world spawn (`NPC.cs:1660-1670`'s
-        // spider-wall arm): a spider wall in the rock layer, `Next(8) == 0`,
-        // once per save — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
-        // the port's roll rides this cadence with the same gates.
-        try_spawn_webbed_stylist(app);
+        // The webbed Stylist's world spawn is NO LONGER a stand-in here:
+        // W4-g41's spawn-pool port wired the faithful `NPC.cs:1660-1670`
+        // arm into `spawner.rs::spawn_npc_at` (the wall-62 gate + the
+        // spawnSpider flag + flag7 + the SpawnNPC-stream Next(8)); the
+        // old `try_spawn_webbed_stylist` stand-in (no wall check, the
+        // UpdateTime stream) is retired — the ladder arm owns the spawn.
         // The sleeping Golfer's world spawn (`NPC.cs:1691`).
         try_spawn_sleeping_golfer(app);
         // The Merchant is NOT spawned here any more: he is ladder arm
@@ -11320,6 +11327,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     .npcs
                     .iter()
                     .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe),
+                // `NPC.AnyNPCs(87)` (`NPC.cs:1407`): a live Wyvern head
+                // blocks the skyMob Wyvern roll (d126's assembled chains
+                // count — the head kind is the roster probe).
+                wyvern_exists: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::WyvernHead),
                 // `SetSpawnFlags`' `skyBehindPlayer` (`NPC.cs:412`): the
                 // wall behind the player's tile is light-passing (`Main.
                 // wallLight`, the spawner's `LIGHT_WALLS`) or wall 73.
@@ -13495,6 +13509,7 @@ mod tests {
                     invasion_progress_frac: 0.0,
                     any_danger: false,
                     probe_exists: false,
+                    wyvern_exists: false,
                     sky_behind_player: false,
                     moon_boss_cap_count: 0.0,
                     downed_boss1: false,

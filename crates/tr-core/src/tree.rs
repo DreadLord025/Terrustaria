@@ -750,6 +750,262 @@ pub fn is_palm_oasis_tree(x: i32, max_tiles_x: i32) -> bool {
     false
 }
 
+/// `WorldGen.ConvertTreeAndGround_Branches(x, y, newType)`
+/// (`WorldGen.cs:55054-55065`, W4-f25 helper C7): the left neighbour that is
+/// a branch/root marker pointing RIGHT (+1, its trunk is this column) and
+/// the right neighbour pointing LEFT (-1) re-type to the new tree kind.
+fn convert_tree_and_ground_branches(world: &mut World, x: i32, y: i32, new_type: u16) {
+    // `:55057-55060` — the left cell's +1 markers.
+    if is_tile_a_tree_branch(world, x - 1, y) == Some(1)
+        || is_tile_a_tree_root(world, x - 1, y) == Some(1)
+    {
+        if let Some(t) = world.tile_mut(x - 1, y) {
+            t.kind = new_type;
+        }
+    }
+    // `:55061-55064` — the right cell's -1 markers.
+    if is_tile_a_tree_branch(world, x + 1, y) == Some(-1)
+        || is_tile_a_tree_root(world, x + 1, y) == Some(-1)
+    {
+        if let Some(t) = world.tile_mut(x + 1, y) {
+            t.kind = new_type;
+        }
+    }
+}
+
+/// `WorldGen.ConvertTreeAndGround(x, y, newFloorType, oldTreeType,
+/// newTreeType)` (`WorldGen.cs:54902-55052`, W4-f25 helper C7): the tree
+/// standing on the converted ground cell re-types to the new tree family
+/// (the 596/616 vanity → 5/323 and 5 ↔ 323 conversions of
+/// `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
+/// `:54855-54896`). `rng` is the caller's `WorldGen.genRand` stream (the
+/// g39 explicit-stream precedent) — the frame rolls draw in C# order.
+/// WIRED: `spread::try_kill_invalid_tree_above` (the Convert/clentaminator
+/// path) calls it on the runtime `frame_rng` stand-in; the growth-tick copy
+/// (`growth/trees.rs::kill_invalid_tree_above`) stays kill-only (g17's lane).
+/// The `NetMessage.SendTileSquare` tail (`:55051`) is MP-only.
+pub fn convert_tree_and_ground(
+    world: &mut World,
+    rng: &mut crate::UnifiedRandom,
+    x: i32,
+    y: i32,
+    new_floor_type: u16,
+    old_tree_type: u16,
+    new_tree_type: u16,
+) {
+    // `:54904-54907` — InWorld(5).
+    if x < 5 || y < 5 || x >= world.width - 5 || y >= world.height - 5 {
+        return;
+    }
+    // `:54908-54912` — the ground cell below must be active (the final
+    // `tile.type = newFloorType` write targets it).
+    if !world.tile(x, y + 1).is_some_and(|t| t.active()) {
+        return;
+    }
+    // `:54913-54929` — the trunk-height walk: num counts down from 100,
+    // num2 counts the trunk cells above. The C#'s branch test inside the
+    // loop reads the FIXED `y - 1` cell (`:54924`), not `y - 1 - num2` —
+    // the quirk kept verbatim.
+    let mut num = 100;
+    let mut num2 = 1;
+    while num > 0 {
+        num -= 1;
+        let py = y - 1 - num2;
+        if py < 5 || py >= world.height - 5 || x < 5 || x >= world.width - 5 {
+            break;
+        }
+        let Some(tile2) = world.tile(x, py) else {
+            break;
+        };
+        if !tile2.active()
+            || (tile2.kind != 323 && !is_tree_trunk(tile2.kind))
+            || is_tile_a_tree_branch(world, x, y - 1).is_some()
+        {
+            break;
+        }
+        num2 += 1;
+    }
+    // `:54930-54938` — a branch/root marker at the base dies instead.
+    if is_tile_a_tree_branch(world, x, y).is_some() || is_tile_a_tree_root(world, x, y).is_some() {
+        let _ = crate::edit::kill_tile(world, x, y, false, rng);
+        return;
+    }
+    // `:54939-54957` — converting INTO a palm: the side branch/root markers
+    // pointing at this column die along the whole height.
+    if new_tree_type == 323 {
+        for i in 0..=num2 {
+            if world.tile(x, y - i).is_some_and(|t| t.active()) {
+                if is_tile_a_tree_branch(world, x - 1, y - i) == Some(1)
+                    || is_tile_a_tree_root(world, x - 1, y - i) == Some(1)
+                {
+                    let _ = crate::edit::kill_tile(world, x - 1, y - i, false);
+                }
+                if is_tile_a_tree_branch(world, x + 1, y - i) == Some(-1)
+                    || is_tile_a_tree_root(world, x + 1, y - i) == Some(-1)
+                {
+                    let _ = crate::edit::kill_tile(world, x + 1, y - i, false);
+                }
+            }
+        }
+    }
+    // `:54958-55049` — the column re-type: the base (j == 0), the top
+    // (j == num2) and the middle cells each carry their own frame rolls.
+    for j in 0..=num2 {
+        if !world.tile(x, y - j).is_some_and(|t| t.active()) {
+            continue;
+        }
+        if let Some(t) = world.tile_mut(x, y - j) {
+            t.kind = new_tree_type;
+        }
+        if j == 0 {
+            // `:54968-54991` — the base cell.
+            match new_tree_type {
+                5 | 596 | 616 => {
+                    if old_tree_type == 323 {
+                        if let Some(t) = world.tile_mut(x, y - j) {
+                            t.frame_x = 0;
+                            t.frame_y = (22 * rng.next_range(0, 3)) as i16;
+                        }
+                    } else {
+                        convert_tree_and_ground_branches(world, x, y - j, new_tree_type);
+                    }
+                }
+                323 => {
+                    if let Some(t) = world.tile_mut(x, y - j) {
+                        t.frame_x = 66;
+                        t.frame_y = 0;
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+        if j == num2 {
+            // `:54992-55015` — the top cell.
+            match new_tree_type {
+                5 | 596 | 616 => {
+                    if old_tree_type == 323 {
+                        if let Some(t) = world.tile_mut(x, y - j) {
+                            t.frame_x = 22;
+                            t.frame_y = (22 * rng.next_range(9, 12)) as i16;
+                        }
+                    } else {
+                        convert_tree_and_ground_branches(world, x, y - j, new_tree_type);
+                    }
+                }
+                323 => {
+                    if let Some(t) = world.tile_mut(x, y - j) {
+                        t.frame_x = (22 * rng.next_range(4, 7)) as i16;
+                        t.frame_y = 0;
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+        // `:55016-55048` — the middle cells: the palm-origin branch lottery
+        // (Next(2) gate, then the second Next(2), then the frame row).
+        match new_tree_type {
+            5 | 596 | 616 => {
+                if old_tree_type == 323 {
+                    if rng.next_max(2) == 0 {
+                        let row = rng.next_range(3, 6);
+                        if let Some(t) = world.tile_mut(x, y - j) {
+                            t.frame_x = 44;
+                            t.frame_y = (22 * row) as i16;
+                        }
+                    } else if rng.next_max(2) == 0 {
+                        let row = rng.next_range(0, 6);
+                        if let Some(t) = world.tile_mut(x, y - j) {
+                            t.frame_x = 22;
+                            t.frame_y = (22 * row) as i16;
+                        }
+                    } else {
+                        let row = rng.next_range(0, 6);
+                        if let Some(t) = world.tile_mut(x, y - j) {
+                            t.frame_x = 0;
+                            t.frame_y = (22 * row) as i16;
+                        }
+                    }
+                } else {
+                    convert_tree_and_ground_branches(world, x, y - j, new_tree_type);
+                }
+            }
+            323 => {
+                let col = rng.next_range(0, 3);
+                if let Some(t) = world.tile_mut(x, y - j) {
+                    t.frame_x = (22 * col) as i16;
+                    t.frame_y = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+    // `:55050` — the ground cell takes the new floor type.
+    if let Some(t) = world.tile_mut(x, y + 1) {
+        t.kind = new_floor_type;
+    }
+}
+
+/// `WorldGen.IsTileATreeBranch(x, y, out offsetToTrunk)`
+/// (`WorldGen.cs:29717-29740`, W4-f25 helper C6): the cell is a trunk-kind
+/// tile (NOT the palm 323) whose marker frame is a BRANCH — frameX 44 at
+/// frameY 198/220/242 or frameX 66 at frameY 0/22/44 reads offset +1 (the
+/// trunk sits one column right); frameX 66 at frameY 198/220/242 or frameX
+/// 88 at frameY 66/88/110 reads offset -1. `None` = not a branch (the C#'s
+/// false + offset 0). WIRED through C7 `convert_tree_and_ground` (the
+/// trunk-height walk + the side-marker arms); ConsideredSolidTileForAnchor
+/// `:53903` (unported) is the other C# caller.
+pub fn is_tile_a_tree_branch(world: &World, x: i32, y: i32) -> Option<i32> {
+    // `:29720-29723` — InWorld(2).
+    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
+        return None;
+    }
+    // `:29724-29728` — null / inactive / palm / non-trunk refuse.
+    let t = world.tile(x, y)?;
+    if !t.active() || t.kind == 323 || !is_tree_trunk(t.kind) {
+        return None;
+    }
+    // `:29729-29733` — the +1 markers.
+    if (t.frame_x == 44 && matches!(t.frame_y, 198 | 220 | 242))
+        || (t.frame_x == 66 && matches!(t.frame_y, 0 | 22 | 44))
+    {
+        return Some(1);
+    }
+    // `:29734-29738` — the -1 markers.
+    if (t.frame_x == 66 && matches!(t.frame_y, 198 | 220 | 242))
+        || (t.frame_x == 88 && matches!(t.frame_y, 66 | 88 | 110))
+    {
+        return Some(-1);
+    }
+    None
+}
+
+/// `WorldGen.IsTileATreeRoot(x, y, out offsetToTrunk)`
+/// (`WorldGen.cs:29742-29765`, W4-f25 helper C6): the same trunk-kind gate,
+/// the ROOT markers — frameX 44 at frameY 132/154/176 reads offset +1,
+/// frameX 22 at the same rows reads offset -1. UNWIRED (C7's consumer).
+pub fn is_tile_a_tree_root(world: &World, x: i32, y: i32) -> Option<i32> {
+    // `:29745-29748` — InWorld(2).
+    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
+        return None;
+    }
+    // `:29749-29753`.
+    let t = world.tile(x, y)?;
+    if !t.active() || t.kind == 323 || !is_tree_trunk(t.kind) {
+        return None;
+    }
+    // `:29754-29758` — the +1 root markers.
+    if t.frame_x == 44 && matches!(t.frame_y, 132 | 154 | 176) {
+        return Some(1);
+    }
+    // `:29759-29763` — the -1 root markers.
+    if t.frame_x == 22 && matches!(t.frame_y, 132 | 154 | 176) {
+        return Some(-1);
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -970,5 +1226,173 @@ mod tests {
         let i = w.index(20, 11);
         w.tiles[i] = t; // inactive corruption
         assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 0, 0), 0);
+    }
+
+    // W4-f25 helper C6 — IsTileATreeBranch / IsTileATreeRoot
+    // (`WorldGen.cs:29717-29765`). WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c6_the_branch_markers_and_offsets() {
+        let mut w = World::new("t".into(), 64, 64);
+        // The +1 markers (`:29729-29733`).
+        for (fx, fy) in [(44i16, 198i16), (44, 220), (44, 242), (66, 0), (66, 22), (66, 44)] {
+            put(&mut w, 20, 10, 5);
+            let i = w.index(20, 10);
+            w.tiles[i].frame_x = fx;
+            w.tiles[i].frame_y = fy;
+            assert_eq!(is_tile_a_tree_branch(&w, 20, 10), Some(1), "{fx},{fy}");
+        }
+        // The -1 markers (`:29734-29738`).
+        for (fx, fy) in [(66i16, 198i16), (66, 220), (66, 242), (88, 66), (88, 88), (88, 110)] {
+            let i = w.index(20, 10);
+            w.tiles[i].frame_x = fx;
+            w.tiles[i].frame_y = fy;
+            assert_eq!(is_tile_a_tree_branch(&w, 20, 10), Some(-1), "{fx},{fy}");
+        }
+        // A plain trunk frame is not a branch; the palm 323 never is.
+        let i = w.index(20, 10);
+        w.tiles[i].frame_x = 0;
+        w.tiles[i].frame_y = 0;
+        assert_eq!(is_tile_a_tree_branch(&w, 20, 10), None);
+        put(&mut w, 21, 10, 323);
+        let i = w.index(21, 10);
+        w.tiles[i].frame_x = 66;
+        w.tiles[i].frame_y = 0;
+        assert_eq!(is_tile_a_tree_branch(&w, 21, 10), None, "the palm refuses");
+        // The variant trunk kinds count (IsATreeTrunk).
+        put(&mut w, 22, 10, 596);
+        let i = w.index(22, 10);
+        w.tiles[i].frame_x = 44;
+        w.tiles[i].frame_y = 198;
+        assert_eq!(is_tile_a_tree_branch(&w, 22, 10), Some(1));
+        // The InWorld(2) border band refuses.
+        put(&mut w, 1, 10, 5);
+        let i = w.index(1, 10);
+        w.tiles[i].frame_x = 44;
+        w.tiles[i].frame_y = 198;
+        assert_eq!(is_tile_a_tree_branch(&w, 1, 10), None);
+    }
+
+    #[test]
+    fn w4_f25_c6_the_root_markers_and_offsets() {
+        let mut w = World::new("t".into(), 64, 64);
+        for fy in [132i16, 154, 176] {
+            put(&mut w, 20, 10, 5);
+            let i = w.index(20, 10);
+            w.tiles[i].frame_x = 44;
+            w.tiles[i].frame_y = fy;
+            assert_eq!(is_tile_a_tree_root(&w, 20, 10), Some(1), "44,{fy}");
+            w.tiles[i].frame_x = 22;
+            assert_eq!(is_tile_a_tree_root(&w, 20, 10), Some(-1), "22,{fy}");
+            // A branch marker is not a root.
+            w.tiles[i].frame_x = 44;
+            w.tiles[i].frame_y = 198;
+            assert_eq!(is_tile_a_tree_root(&w, 20, 10), None);
+        }
+        // Inactive refuses.
+        put(&mut w, 21, 10, 5);
+        let i = w.index(21, 10);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        w.tiles[i].frame_x = 44;
+        w.tiles[i].frame_y = 132;
+        assert_eq!(is_tile_a_tree_root(&w, 21, 10), None);
+    }
+
+    // W4-f25 helper C7 — ConvertTreeAndGround (`WorldGen.cs:54902-55065`).
+    // WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c7_the_forest_to_palm_conversion() {
+        let mut w = World::new("t".into(), 64, 64);
+        // A 3-tall trunk column y=18..20 over grass ground y=21.
+        for y in 18..=20 {
+            put(&mut w, 30, y, 5);
+        }
+        put(&mut w, 30, 21, 2);
+        let mut rng = crate::UnifiedRandom::new(7);
+        convert_tree_and_ground(&mut w, &mut rng, 30, 20, 53, 5, 323);
+        // The walk: y-2=18 is a trunk (num2 → 2), y-3=17 inactive breaks.
+        // The base takes frameX 66 / frameY 0 (`:54985-54988`).
+        let base = w.tile(30, 20).unwrap();
+        assert_eq!(base.kind, 323);
+        assert_eq!((base.frame_x, base.frame_y), (66, 0));
+        // The middle cell's column roll Next(0,3) (`:55045`).
+        let mid = w.tile(30, 19).unwrap();
+        assert_eq!(mid.kind, 323);
+        assert!(matches!(mid.frame_x, 0 | 22 | 44) && mid.frame_y == 0);
+        // The top's Next(4,7) (`:55010`).
+        let top = w.tile(30, 18).unwrap();
+        assert_eq!(top.kind, 323);
+        assert!(matches!(top.frame_x, 88 | 110 | 132) && top.frame_y == 0);
+        // The ground cell takes the new floor (`:55050`).
+        assert_eq!(w.tile(30, 21).unwrap().kind, 53);
+    }
+
+    #[test]
+    fn w4_f25_c7_the_palm_to_forest_frame_lottery() {
+        let mut w = World::new("t".into(), 64, 64);
+        for y in 17..=20 {
+            put(&mut w, 30, y, 323);
+        }
+        put(&mut w, 30, 21, 53);
+        let mut rng = crate::UnifiedRandom::new(11);
+        convert_tree_and_ground(&mut w, &mut rng, 30, 20, 2, 323, 5);
+        // The base: frameX 0, frameY 22*Next(0,3) (`:54977-54978`).
+        let base = w.tile(30, 20).unwrap();
+        assert_eq!(base.kind, 5);
+        assert_eq!(base.frame_x, 0);
+        assert!(matches!(base.frame_y, 0 | 22 | 44));
+        // The top: frameX 22, frameY 22*Next(9,12) (`:55001-55002`).
+        let top = w.tile(30, 17).unwrap();
+        assert_eq!(top.kind, 5);
+        assert_eq!(top.frame_x, 22);
+        assert!(matches!(top.frame_y, 198 | 220 | 242));
+        // The middle cells: the branch lottery rows (`:55023-55037`).
+        for y in [18, 19] {
+            let t = w.tile(30, y).unwrap();
+            assert_eq!(t.kind, 5);
+            assert!(matches!(t.frame_x, 0 | 22 | 44));
+            assert!(t.frame_y % 22 == 0 && (0..6).contains(&(t.frame_y / 22)));
+        }
+        assert_eq!(w.tile(30, 21).unwrap().kind, 2);
+    }
+
+    #[test]
+    fn w4_f25_c7_the_vanity_branch_retype_and_the_base_marker_kill() {
+        let mut w = World::new("t".into(), 64, 64);
+        for y in 18..=20 {
+            put(&mut w, 30, y, 5);
+        }
+        put(&mut w, 30, 21, 2);
+        // Side markers pointing at the trunk column: left +1 (44@198),
+        // right -1 (88@66) at the middle row.
+        put(&mut w, 29, 19, 5);
+        let i = w.index(29, 19);
+        w.tiles[i].frame_x = 44;
+        w.tiles[i].frame_y = 198;
+        put(&mut w, 31, 19, 5);
+        let i = w.index(31, 19);
+        w.tiles[i].frame_x = 88;
+        w.tiles[i].frame_y = 66;
+        let mut rng = crate::UnifiedRandom::new(3);
+        // old != 323: the _Branches path, RNG-free.
+        convert_tree_and_ground(&mut w, &mut rng, 30, 20, 109, 5, 596);
+        assert_eq!(w.tile(29, 19).unwrap().kind, 596, "the left marker retypes");
+        assert_eq!(w.tile(31, 19).unwrap().kind, 596, "the right marker retypes");
+        assert_eq!(w.tile(30, 20).unwrap().kind, 596);
+        assert_eq!(w.tile(30, 21).unwrap().kind, 109);
+        // A base cell that IS a branch marker dies instead (`:54930-54938`).
+        let mut w2 = World::new("t".into(), 64, 64);
+        put(&mut w2, 30, 20, 5);
+        let i = w2.index(30, 20);
+        w2.tiles[i].frame_x = 44;
+        w2.tiles[i].frame_y = 198;
+        put(&mut w2, 30, 21, 2);
+        convert_tree_and_ground(&mut w2, &mut rng, 30, 20, 53, 5, 323);
+        assert!(
+            !w2.tile(30, 20).unwrap().active(),
+            "the marker base is killed"
+        );
+        assert_eq!(w2.tile(30, 21).unwrap().kind, 2, "no ground write on the kill arm");
     }
 }

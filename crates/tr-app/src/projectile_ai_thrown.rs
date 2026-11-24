@@ -784,19 +784,26 @@ pub(crate) fn ale_status_player(p: &Projectile, player: &mut crate::player::Play
 /// `WorldGen.Convert(centerTile, conversionType, 4)` (the size-4 overload
 /// `WorldGen.cs:55067-55083`, the Manhattan<6 diamond). The holy water
 /// hallow (type 2), the unholy water corruption (type 1), the blood water
-/// crimson (type 4). The port's `convert_cell_flavor` is the per-cell map
-/// (the `convert_cleanse` precedent); the reframe rides its documented
+/// crimson (type 4). W4-f25 wiring: the hallow arm rides the C3 cell
+/// (`spread::convert_sized_hallow`, the full type-2 ladder incl. the
+/// torch/golf/mud-adjacency rows); the two evil arms keep the
+/// `convert_cell_flavor` per-cell map until d1's type-1/4 cells land (the
+/// `convert_cleanse` precedent); the reframe rides its documented
 /// `reframe_area` superset.
 pub(crate) fn water_death(p: &Projectile, world: &mut World) {
+    // `:77631-77632` — the centre tile (`(position + width/2) / 16`).
+    let i = (p.pos.x + p.w * 0.5) as i32 / 16;
+    let j = (p.pos.y + p.h * 0.5) as i32 / 16;
+    if p.kind == HOLY_WATER {
+        // `:77635` — `WorldGen.Convert(i2, j, 2, 4)`: the C3 walk + cell.
+        tr_core::spread::convert_sized_hallow(world, i, j, 4);
+        return;
+    }
     let flavor = match p.kind {
-        HOLY_WATER => tr_core::spread::ConversionFlavor::Hallow,
         UNHOLY_WATER => tr_core::spread::ConversionFlavor::Corruption,
         BLOOD_WATER => tr_core::spread::ConversionFlavor::Crimson,
         _ => return,
     };
-    // `:77631-77632` — the centre tile (`(position + width/2) / 16`).
-    let i = (p.pos.x + p.w * 0.5) as i32 / 16;
-    let j = (p.pos.y + p.h * 0.5) as i32 / 16;
     // `WorldGen.Convert(i, j, type, 4)` (`:55073-55082`): the size-4 box with
     // the `|k-i| + |l-j| < 6` diamond and the `InWorld(k, l, 1)` guard.
     for k in (i - 4)..=(i + 4) {
@@ -1374,6 +1381,40 @@ mod tests {
         // The stone at the centre hallow-converts (1 → 117 pearlstone).
         let t = w.tile(30, 300).unwrap();
         assert_eq!(t.kind, 117, "the centre stone hallow-converts");
+    }
+
+    /// W4-f25 wiring: the holy-water arm rides the C3 type-2 cell — the
+    /// torch → style 20 and the golf grass → 492 rows the flavor map lacked
+    /// (`WorldGen.cs:55216-55227`), and the independent mud-59 arm with a
+    /// live 109 neighbour → dirt 0 (`:55256-55259`). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f25_holy_water_splash_rides_the_c3_ladder() {
+        let mut w = empty_world();
+        // The torch (4) at the centre, style 0 — the default-set row.
+        let i = w.index(30, 300);
+        w.tiles[i] = tr_core::tile::Tile { kind: 4, frame_y: 0, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        // The golf grass 477 one cell right (Manhattan 1 < 6).
+        let g = w.index(31, 300);
+        w.tiles[g] = tr_core::tile::Tile { kind: 477, ..Default::default() };
+        w.tiles[g].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = proj(HOLY_WATER);
+        p.pos = Vec2::new(30.0 * 16.0, 300.0 * 16.0);
+        water_death(&p, &mut w);
+        assert_eq!(w.tile(30, 300).unwrap().frame_y, 20 * 22, "the torch → style 20");
+        assert_eq!(w.tile(31, 300).unwrap().kind, 492, "the golf grass → 492");
+        // The mud arm: a mud 59 with a hallow-grass 109 neighbour → dirt 0.
+        let mut w2 = empty_world();
+        let m = w2.index(30, 300);
+        w2.tiles[m] = tr_core::tile::Tile { kind: 59, ..Default::default() };
+        w2.tiles[m].flags |= tr_core::tile::FLAG_ACTIVE;
+        let h = w2.index(31, 300);
+        w2.tiles[h] = tr_core::tile::Tile { kind: 109, ..Default::default() };
+        w2.tiles[h].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p2 = proj(HOLY_WATER);
+        p2.pos = Vec2::new(30.0 * 16.0, 300.0 * 16.0);
+        water_death(&p2, &mut w2);
+        assert_eq!(w2.tile(30, 300).unwrap().kind, 0, "the mud beside the 109 → dirt");
     }
 
     /// The data rows land with the C# SetDefaults values.

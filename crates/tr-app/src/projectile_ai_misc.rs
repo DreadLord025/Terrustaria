@@ -11,7 +11,9 @@
 //!   `WorldGen.Convert`, the 133 timeLeft cap, the ai[0] dust-scale ladder,
 //!   the 0.3┬╖direction spin). The tile conversion is
 //!   `tr_core::spread::convert_cleanse` (`WorldGen.cs:55067-55083` +
-//!   the type-0 cell `:55527-55664`).
+//!   the type-0 cell `:55527-55664`), `convert_sized_hallow` (type 2,
+//!   `:55176-55260`) and `convert_sized_spray` (types 5/6/7,
+//!   `:55363-55526`) — the W4-f25 C3/C4 cells wired at the per-kind dispatch.
 //! - aiStyle 147: `AI_147_Celeb2Rocket` `:52881-53092`, `AI_147_Explosion`
 //!   `:53130-53399`, `CreateGroundExplosion` `:53401-53464`, the `Kill()`
 //!   resize-and-Damage arm `:73632-73645`, `GetCeleb2Color` `:52550-52563`.
@@ -117,7 +119,7 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
     // `:26789-26825` тАФ the per-kind (dust type, conversion type) ladder.
     // The dust type feeds only the skipped dust; the conversion type is
     // the `WorldGen.Convert` argument.
-    let conversion = match p.kind {
+    let conversion: u8 = match p.kind {
         147 => 1,
         146 => 2,
         148 => 3,

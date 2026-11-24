@@ -1574,9 +1574,79 @@ fn hammer_tile_hit(
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 tr_core::ores::smash_altar(&mut app.world, &mut app.ore_tiers, altars, rng)
             };
+            // `WorldGen.SmashAltar`'s ore-blessing broadcast (`WorldGen.cs:
+            // 48969`/`:49002`/`:49034`): `ChatHelper.BroadcastChatMessage(
+            // NetworkText.FromKey(Lang.misc[num7].Key), ChatColors.World)`.
+            // The key rides the PLACED ore — 12/13/14 the classic trio
+            // (Cobalt/Mythril/Adamantite), +9 = 21/22/23 the alternates
+            // (Palladium/Orichalcum/Titanium, `:48964-48966`/`:48997-48999`/
+            // `:49029-49031`). The C# broadcasts inside SmashAltar before the
+            // OreRunner batches; the port's `smash_altar` returns the placed
+            // ore, so the line lands here (the chat-log order is unchanged).
+            let blessing = match ore {
+                107 => 12,
+                221 => 21,
+                108 => 13,
+                222 => 22,
+                111 => 14,
+                223 => 23,
+                _ => 12,
+            };
+            crate::chat::broadcast_death_text(
+                &mut app.chat,
+                &crate::lang::misc(blessing),
+                crate::chat::COLOR_WORLD,
+            );
+            // `WorldGen.SmashAltar`'s wraith spawn (`WorldGen.cs:49078-
+            // 49105`, W4-d103 WG-POST RETIRE — the g8-kind activation):
+            // `netMode != 1` folds true; the journey spawn-disable gate
+            // (`:49082-49093`) parks (the creative lane owns the
+            // per-player disable state); `Player.FindClosest` is the
+            // session player (single-player); `Main.rand.Next(2) + 1`
+            // wraiths ride `NPC.SpawnOnPlayer(plr, 82)` — the 200×30
+            // scan (`NPC.cs:80570-80574`) + `SpawnBoss(num10*16+8,
+            // num11*16, 82, plr)` (`:80631`/`:80676`). The draws ride
+            // the UpdatePlayers stream (the smash's own SwapRandom).
+            // `SpawnBoss`'s `timeLeft *= 20` (`:80686`) rides the
+            // despawn window; the 82 case skips the HasAwoken broadcast
+            // (`:80706`). The getGood `NewNPC` Next(3) transform draw
+            // (`:80752`) parks with the seed lane (no 82 arm anyway).
+            let wraith_count = {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                rng.next_max(2) + 1
+            };
+            for _ in 0..wraith_count {
+                let Some(p) = app.player.as_ref() else {
+                    break;
+                };
+                let (pos, center) = ((p.x, p.y), p.center());
+                let spot = {
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::spawner::spawn_on_player_tile(&app.world, pos, center, 82, rng)
+                };
+                if let Some((sx, sy)) = spot {
+                    // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`): the
+                    // feet at the ground tile's top edge, centred on the
+                    // column (+8).
+                    let (w, h) = NpcKind::Wraith.size();
+                    let mut n = Npc::new(
+                        NpcKind::Wraith,
+                        sx as f32 * TILE_PX + 8.0 - w * 0.5,
+                        sy as f32 * TILE_PX - h,
+                        1,
+                        0.0,
+                    );
+                    // `NewNPC`'s `timeLeft = (int)(750 * 1.25)`
+                    // (`:80772`) then `SpawnBoss`'s ×20 (`:80686`).
+                    n.despawn_timer = 937 * 20;
+                    // `SpawnBoss` passes `Target = plr` (`:80676`) — the
+                    // session player is slot 0.
+                    n.target = 0;
+                    app.npcs.push(n);
+                }
+            }
             app.world.altars_smashed = altars + 1;
             let _ = app.notify_progression_net(6);
-            let _ = ore;
             app.world_key = None;
         }
     }
@@ -7936,6 +8006,48 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             0.0,
         );
     }
+    // W4-c31: the larva 231's `Check3x3` case (`WorldGen.cs:53230-53257`)
+    // — the object-drop record with `item: None` (no item spawns; the
+    // `registry::tile_drop` fallback answers None for 231 too). The C#
+    // spawns three gore shards at the check's trigger cell, then the
+    // Queen Bee on the nearest living player within Manhattan 4800 px.
+    for drop in &kill.object_drops {
+        if drop.tile_kind != 231 || drop.item.is_some() {
+            continue;
+        }
+        // `:53232-53236`: Gore.NewGore at ((i+1)*16+8, j*16 + {0,8,16}),
+        // zero velocity, types 300/301/302. The rolls ride the break's
+        // `UpdatePlayers` swap (`Main.rand`, `Main.cs:17754`).
+        let gx = (drop.x + 1) as f32 * TILE_PX + 8.0;
+        let gy = drop.y as f32 * TILE_PX;
+        for (gore_type, dy) in [(300, 0.0), (301, 8.0), (302, 16.0)] {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            app.gore.new_gore(
+                rng,
+                &app.world,
+                Vec2::new(gx, gy + dy),
+                Vec2::ZERO,
+                gore_type,
+                1.0,
+            );
+        }
+        // `:53237-53256`: the nearest-player scan — |dx| + |dy| over the
+        // living players, the < 4800 gate, `NPC.SpawnOnPlayer(plr, 222)`.
+        // The port has one player; `Main.gameMenu` is always false here
+        // (the break runs in-game). SpawnOnPlayer's tile-scan spawn rides
+        // the Abeemination precedent (the at-the-player spawn, the
+        // `use_boss_summon_item` deviation note).
+        if let Some(p) = app.player.as_ref().filter(|p| !p.dead) {
+            let dist = (p.x - drop.x as f32 * TILE_PX).abs()
+                + (p.y - drop.y as f32 * TILE_PX).abs();
+            if dist < 4800.0 {
+                let (px, py) = p.center();
+                let mut queen = Npc::new(NpcKind::QueenBee, px, py, 1, 0.0);
+                queen.hp = queen.max_hp;
+                app.npcs.push(queen);
+            }
+        }
+    }
     app.request_edit(tx, ty, 0, 0);
     app.liquids.wake_around(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), tx, ty, 3);
     // `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`, case 428 of
@@ -8478,7 +8590,78 @@ pub(crate) fn break_drop_events(
             events.push((id, count.max(1) as u32, px, py));
         }
     }
+    // W4-f41 closeout: the broken Pigronata's loot block (`CheckChand`'s
+    // `type == 454` arm, `WorldGen.cs:52880-52963`) — `Main.rand` only, the
+    // break's stage stream, at the trigger cell. The C# spawns the coins in
+    // 32x32 / 52x52 rects around the cell; the port's drop spawn convention
+    // folds the rect into the cell-origin pop (recorded, like the pot/pile
+    // loot).
+    for pig in &kill.pigronata_events {
+        for (id, count) in pigronata_loot(main_rng) {
+            events.push((id, count, pig.x, pig.y));
+        }
+    }
     (events, portals)
+}
+
+/// `CheckChand`'s Pigronata loot block (`WorldGen.cs:52880-52963`), all
+/// `Main.rand`: `Next(9)` picks the outcome — 0/1 nothing; 2/3/4 a
+/// `Next(10,31)` silver budget split into `Next(2,11)` stacks; 5/6 a
+/// `Next(60,80)` silver budget in `Next(3,16)` stacks + one Flask of Party
+/// 1358; 7 a `Next(10,31)` silver budget in `Next(2,9)` stacks + one Gold
+/// Coin 73; 8 the jackpot — a fixed 100-silver budget in `Next(3,16)`
+/// stacks, then a `Next(30,91)` Party Bullet 1349 budget in `Next(7,14)`
+/// stacks, then ONE Flask of Party and ONE Gold Coin (the two singles AFTER
+/// both loops, `:52958-52959`). Each loop clamps the stack roll to the
+/// remaining budget (`if (num > budget) num = budget`) and subtracts it —
+/// the budget always drains to exactly 0.
+fn pigronata_loot(rng: &mut UnifiedRandom) -> Vec<(u16, u32)> {
+    let mut drops = Vec::new();
+    // The budget-split loop shared by every arm: `budget` silver/bullets,
+    // stacks drawn `Next(lo, hi)` clamped to the remainder.
+    fn split_budget(
+        drops: &mut Vec<(u16, u32)>,
+        id: u16,
+        mut budget: i32,
+        lo: i32,
+        hi: i32,
+        rng: &mut UnifiedRandom,
+    ) {
+        while budget > 0 {
+            let mut n = rng.next_range(lo, hi);
+            if n > budget {
+                n = budget;
+            }
+            budget -= n;
+            drops.push((id, n as u32));
+        }
+    }
+    match rng.next_max(9) {
+        // :52884-52899 — cases 2/3/4.
+        2 | 3 | 4 => {
+            split_budget(&mut drops, 72, rng.next_range(10, 31), 2, 11, rng);
+        }
+        // :52901-52916 — cases 5/6.
+        5 | 6 => {
+            split_budget(&mut drops, 72, rng.next_range(60, 80), 3, 16, rng);
+            drops.push((1358, 1));
+        }
+        // :52918-52932 — case 7.
+        7 => {
+            split_budget(&mut drops, 72, rng.next_range(10, 31), 2, 9, rng);
+            drops.push((73, 1));
+        }
+        // :52934-52960 — case 8, the jackpot.
+        8 => {
+            split_budget(&mut drops, 72, 100, 3, 16, rng);
+            split_budget(&mut drops, 1349, rng.next_range(30, 91), 7, 14, rng);
+            drops.push((1358, 1));
+            drops.push((73, 1));
+        }
+        // :52882 — cases 0/1 fall through the switch: nothing.
+        _ => {}
+    }
+    drops
 }
 
 /// `WorldGen.KillTile_GetTreeDrops` (`WorldGen.cs:66189-66261`) — the killed
@@ -13060,6 +13243,42 @@ mod tests {
         assert_eq!(drops, vec![(3, 1, 3, 4)]);
     }
 
+    /// W4-g42 tail D3: the dye plants 227 drop by `frameX/34` style
+    /// (`KillTile_GetItemDrops` `case 227`, `WorldGen.cs:65048-65055`):
+    /// `1107 + num`, styles 8-11 → the Strange Plants `3385 + num - 8`. The
+    /// teal mushroom (style 0 → 1107) grows in the glowing-mushroom biome; the
+    /// old `by_tile` fallback dropped 1107 for EVERY style.
+    #[test]
+    fn w4_g42_tail_dye_plants_drop_by_the_frame_style() {
+        let drop_for = |frame_x: i16| -> Vec<(u16, u32, i32, i32)> {
+            let kill = edit::TileKill { kind: 227, ..Default::default() };
+            let hit = Some(HitCell { x: 5, y: 9, kind: 227, frame_x, frame_y: 0 });
+            drop_events(&kill, hit).0
+        };
+        // Style 0 (the teal mushroom) → 1107; style 3 → 1110.
+        assert_eq!(drop_for(0), vec![(1107, 1, 5, 9)], "style 0 → teal mushroom");
+        assert_eq!(drop_for(3 * 34), vec![(1110, 1, 5, 9)], "style 3 → 1110");
+        // Styles 8-11 → the Strange Plants 3385-3388.
+        assert_eq!(drop_for(8 * 34), vec![(3385, 1, 5, 9)], "style 8 → Strange Plant1");
+        assert_eq!(drop_for(11 * 34), vec![(3388, 1, 5, 9)], "style 11 → Strange Plant4");
+    }
+
+    /// W4-g42 tail D2: the mushroom grass 70 (and the jungle grasses 60/661/662)
+    /// drop the Mud block 176 at the hit cell (`KillTile_GetItemDrops` `case 70`
+    /// `:64702-64704` / `case 59/60/661/662` `:64936-64941`), not the seed item.
+    #[test]
+    fn w4_g42_tail_mushroom_grass_drops_the_mud_block() {
+        for kind in [70u16, 60, 661, 662] {
+            let kill = edit::TileKill { kind, ..Default::default() };
+            let hit = Some(HitCell { x: 4, y: 8, kind, frame_x: 0, frame_y: 0 });
+            assert_eq!(
+                drop_events(&kill, hit).0,
+                vec![(176, 1, 4, 8)],
+                "tile {kind} drops mud 176"
+            );
+        }
+    }
+
     #[test]
     fn test_DW_3_2_break_drop_events_object_cascades_resolve_items() {
         // Registry kinds drop nothing per-cell (`KillTile_GetItemDrops`'s
@@ -15584,6 +15803,98 @@ mod tests {
         );
     }
 
+    /// W4-d103 POST FINAL item 2: the smash broadcasts the ore-blessing line
+    /// (`WorldGen.cs:48969`/`:49002`/`:49034` — `Lang.misc[12..14]` classic,
+    /// `[21..23]` the alternates) in the World color, exactly once per smash,
+    /// keyed on the PLACED ore (the drunk flips move the key with the ore).
+    #[test]
+    fn w4_d103_post_the_smash_broadcasts_the_ore_blessing() {
+        let mut w = World::new("t".into(), 420, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile {
+            kind: 26,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 367; // the Pwnhammer (hammer 80)
+        let chat_before = app.chat.messages.len();
+        mine_frames(&mut app, 30);
+        assert_eq!(app.world.altars_smashed, 1, "the smash ran");
+        assert_eq!(
+            app.chat.messages.len(),
+            chat_before + 1,
+            "exactly one blessing line per smash"
+        );
+        let line = app.chat.messages.last().unwrap();
+        // The first smash is tier 0: Cobalt 107 (misc 12) or Palladium 221
+        // (misc 21) — the 50/50 roll decides, the key rides the placed ore.
+        let key = match app.ore_tiers.cobalt {
+            107 => 12,
+            221 => 21,
+            other => panic!("tier 0 placed {other}, not 107/221"),
+        };
+        assert_eq!(line.text, crate::lang::misc(key));
+        assert_eq!(line.color, crate::chat::COLOR_WORLD);
+    }
+
+    /// W4-d103 WG-POST RETIRE (the g8-kind activation): the smash spawns
+    /// `Main.rand.Next(2) + 1` Wraiths (`WorldGen.cs:49100-49104`) through
+    /// `SpawnOnPlayer(82)`'s 200×30 scan — the count mirror rides the
+    /// UpdatePlayers stream, the spawned bodies carry the `SpawnBoss`
+    /// timeLeft ×20 (`NPC.cs:80686`) and target the session player.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d103_retire_the_smash_spawns_the_wraiths() {
+        let mut w = World::new("t".into(), 420, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile {
+            kind: 26,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // A ground row under the player: the scan's down-column walk
+        // (`NPC.cs:80593-80603`) needs a solid floor inside the spawn
+        // band (the all-air fixture would find none — the C# spawns
+        // nothing there either).
+        for x in 0..420 {
+            let g = w.index(x, 300);
+            w.tiles[g] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[g].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 367; // the Pwnhammer (hammer 80)
+        mine_frames(&mut app, 30);
+        assert_eq!(app.world.altars_smashed, 1, "the smash ran");
+        // The count draw (`:49100`) rides the same stream the smash's
+        // own draws consumed — mirror the whole prefix by replaying a
+        // twin smash on a cloned rig is the DW-1.4 shape; here the pin
+        // is the range + the roster: every spawned body is a Wraith
+        // with the ×20 despawn window and the slot-0 target.
+        let wraiths: Vec<_> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Wraith)
+            .collect();
+        assert!(
+            (1..=2).contains(&wraiths.len()),
+            "Next(2)+1 wraiths, got {}",
+            wraiths.len()
+        );
+        for n in wraiths {
+            assert_eq!(n.despawn_timer, 937 * 20, "SpawnBoss timeLeft ×20");
+            assert_eq!(n.target, 0, "SpawnBoss Target = plr");
+            assert_eq!(n.hp, 160, "the SetDefaults lifeMax (NPC.cs:9861)");
+        }
+    }
+
     // ---- S1-P-i31: the hammer interaction --------------------------------
     //
     // The C# chain: `ItemCheck_UseMiningTools` (`Player.cs:45584`) → the
@@ -16765,6 +17076,174 @@ mod tests {
         app2.inventory[app2.selected] = slot(3222, 1);
         assert!(use_tile_item(&mut app2, 12, 19));
         assert_eq!(app2.world.tile(12, 19).unwrap().frame_y, 126);
+    }
+
+    /// W4-f41 final sweep — the monolith item 3747 through the full app
+    /// route (`Item.cs:33176-33188`: createTile 455, consumable; the
+    /// Style3x3 registry route, `TileObjectData.cs:4099-4101`): one item
+    /// consumed, the 3x3 written at the bottom-centre click, and the
+    /// right-click on any cell answers the party toggle. A refused
+    /// (floating) placement keeps the item.
+    #[test]
+    fn w4_f41_the_monolith_item_places_through_the_app_route() {
+        assert_eq!(registry::place_tile(3747), Some(455));
+        assert_eq!(registry::place_style(3747), 0);
+        assert!(!legacy_precheck_applies(455, 0), "the registry route");
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.inventory[app.selected] = slot(3747, 2);
+        assert!(use_tile_item(&mut app, 11, 19));
+        assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
+        // The object spans x 10..=12, y 17..=19 (origin (1, 2)).
+        for dy in 0..3i32 {
+            for dx in 0..3i32 {
+                let t = app.world.tile(10 + dx, 17 + dy).unwrap();
+                assert!(t.active() && t.kind == 455, "cell ({dx},{dy})");
+            }
+        }
+        // The right-click seam: the placed monolith toggles the party.
+        assert!(crate::world_sim::editing::doors::interact_tile(&mut app, 11, 18));
+        assert!(app.world_events.manual_party, "the toggle armed");
+        // The floating placement refuses and keeps the item.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = object_world();
+        app2.inventory[app2.selected] = slot(3747, 1);
+        assert!(!use_tile_item(&mut app2, 11, 10));
+        assert_eq!(app2.inventory[app2.selected].count, 1, "kept");
+    }
+
+    // ---- W4-f41 closeout: the Pigronata loot rolls --------------------------
+
+    /// `CheckChand`'s `type == 454` arm (`WorldGen.cs:52880-52963`): the
+    /// `Next(9)` outcome table — 0/1 nothing, 2/3/4 silver rain, 5/6 silver
+    /// rain + Flask of Party, 7 silver rain + one gold, 8 the jackpot (100
+    /// silver + 30-90 Party Bullets + flask + gold). Mirrored-oracle: a twin
+    /// stream replays the EXACT C# draw sequence per arm (budget roll, then
+    /// the clamped stack loop, then the singles) and the expected drop list
+    /// is compared element-for-element; a third stream pins the position.
+    #[test]
+    fn w4_f41_the_pigronata_loot_arms_match_the_next9_table() {
+        // The C# budget-split loop, replayed on the oracle stream.
+        fn oracle_split(
+            expected: &mut Vec<(u16, u32)>,
+            id: u16,
+            mut budget: i32,
+            lo: i32,
+            hi: i32,
+            r: &mut tr_core::UnifiedRandom,
+        ) {
+            while budget > 0 {
+                let mut n = r.next_range(lo, hi);
+                if n > budget {
+                    n = budget;
+                }
+                budget -= n;
+                expected.push((id, n as u32));
+            }
+        }
+        let mut seen = [false; 9];
+        for seed in 0..400i32 {
+            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let mut oracle = tr_core::UnifiedRandom::new(seed);
+            let drops = pigronata_loot(&mut rng);
+            let outcome = oracle.next_max(9);
+            seen[outcome as usize] = true;
+            let mut expected: Vec<(u16, u32)> = Vec::new();
+            match outcome {
+                0 | 1 => {}
+                2 | 3 | 4 => {
+                    oracle_split(&mut expected, 72, oracle.next_range(10, 31), 2, 11, &mut oracle);
+                }
+                5 | 6 => {
+                    oracle_split(&mut expected, 72, oracle.next_range(60, 80), 3, 16, &mut oracle);
+                    expected.push((1358, 1));
+                }
+                7 => {
+                    oracle_split(&mut expected, 72, oracle.next_range(10, 31), 2, 9, &mut oracle);
+                    expected.push((73, 1));
+                }
+                8 => {
+                    oracle_split(&mut expected, 72, 100, 3, 16, &mut oracle);
+                    oracle_split(&mut expected, 1349, oracle.next_range(30, 91), 7, 14, &mut oracle);
+                    expected.push((1358, 1));
+                    expected.push((73, 1));
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(drops, expected, "seed {seed}: outcome {outcome}");
+            // The arm consumed exactly the oracle's draws — the next draw
+            // on both streams agrees (the position contract).
+            assert_eq!(
+                rng.next_max(1_000_000),
+                oracle.next_max(1_000_000),
+                "seed {seed}: the stream position matches"
+            );
+            if seen.iter().all(|s| *s) {
+                return;
+            }
+        }
+        panic!("400 seeds never reached every Next(9) outcome: {seen:?}");
+    }
+
+    /// W4-f41 — the full break path: the item 3746 places the 4x3 through
+    /// the registry route (`Item.cs:33164-33175`, `TileObjectData.cs:3161-
+    /// 3168` — origin (2,0), AnchorTop (SolidTile|SolidSide, 1, 1)); breaking
+    /// the anchor cell collapses it and the loot spawns at the break cell
+    /// through the `pigronata_events` channel.
+    #[test]
+    fn w4_f41_the_pigronata_break_spawns_the_loot_through_the_app() {
+        assert_eq!(registry::place_tile(3746), Some(454));
+        let mut w = object_world();
+        // The stone ceiling row 16 (the doorway fixture's row).
+        for x in 0..40 {
+            let i = w.index(x, 16);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.inventory[app.selected] = slot(3746, 2);
+        assert!(use_tile_item(&mut app, 12, 17), "hangs from the ceiling");
+        assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
+        // Origin (2, 0): the click (12, 17) writes x 10..=13, y 17..=19.
+        for dy in 0..3i32 {
+            for dx in 0..4i32 {
+                let t = app.world.tile(10 + dx, 17 + dy).unwrap();
+                assert!(t.active() && t.kind == 454, "cell ({dx},{dy})");
+            }
+        }
+        // Break the check's anchor ceiling cell (ox+1 = 11, row 16).
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) =
+            tr_core::UnifiedRandom::new(0x5EED);
+        break_tile(&mut app, 11, 16);
+        for dy in 0..3i32 {
+            for dx in 0..4i32 {
+                assert!(
+                    !app.world.tile(10 + dx, 17 + dy).unwrap().active(),
+                    "cell ({dx},{dy}) collapsed"
+                );
+            }
+        }
+        // The loot: the hit cell's stone + the Next(9) arm's rolls. The loot
+        // spawns at the CHECKED cell — the first framed Pigronata cell
+        // (10, 17) — while the stone drops at the hit cell (11, 16).
+        // Whatever the seed rolled, every spawned kind is in the C# set and
+        // no 3746/454 item ever spawns.
+        assert!(!app.items.is_empty(), "the stone drop at minimum");
+        for it in &app.items {
+            assert!(
+                matches!(it.kind, 3 | 72 | 73 | 1349 | 1358),
+                "unexpected loot kind {}",
+                it.kind
+            );
+            if it.kind == 3 {
+                assert_eq!((it.pos.x / 16.0) as i32, 11, "the stone at the hit");
+                assert_eq!((it.pos.y / 16.0) as i32, 16);
+            } else {
+                assert_eq!((it.pos.x / 16.0) as i32, 10, "the loot at the check");
+                assert_eq!((it.pos.y / 16.0) as i32, 17);
+            }
+        }
     }
 
     // ---- Phase 3 (M1.4-TO-4): drops + RNG streams ---------------------------
@@ -20775,12 +21254,13 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         return false;
     }
     // The biome gates (`:43775`'s ZoneCorrupt arm, `:43889`'s ZoneCrimson;
-    // 560/1133 run ungated). The mech trio swaps the biome for the clock:
+    // 560 runs ungated). The mech trio swaps the biome for the clock:
     // `!Main.IsItDay()` (`:43838`/`:43849`/`:43860`); the 1.4.5 item
     // variant's DisabledBossSummonVariant folds out (no variant system).
     // The Deer Thing 5120 gates on ZoneSnow (`:43906`).
     let zone_ok = match item {
         70 => app.scene_metrics.zone_corrupt,
+        1133 => app.scene_metrics.zone_jungle,
         1331 => app.scene_metrics.zone_crimson,
         544 | 556 | 557 => !app.world.day_time,
         5120 => app.scene_metrics.zone_snow,
@@ -21601,6 +22081,27 @@ mod loot_summon_tests {
             app.npcs
                 .iter()
                 .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+        );
+        // W4-g43 doc-sweep — the Abeemination 1133's ZoneJungle USE-START
+        // gate (`Player.cs:52253-52256`): outside the jungle the use refuses
+        // free; inside, the Queen Bee spawns.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1133,
+            name: "Abeemination".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(
+            !use_boss_summon_item(&mut app),
+            "the jungle gate holds (:52253)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        app.scene_metrics.zone_jungle = true;
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::QueenBee && n.hp > 0)
         );
     }
 
@@ -23592,6 +24093,55 @@ mod moon_item_tests {
         let mut app = night_app(1958);
         app.world.dd2_event_ongoing = true;
         assert!(!use_naughty_present(&mut app));
+    }
+
+    /// W4-g43 doc-sweep — the Solar Tablet 2767 (`Player.cs:43988-44008`):
+    /// by day, hardmode, no eclipse up: the use pays one, arms `Main.eclipse`
+    /// and re-arms the action cadence (`ApplyItemTime`, useTime 45 —
+    /// `Item.cs`'s 2767 row). No boss spawns — the eclipse flag alone.
+    #[test]
+    fn the_solar_tablet_by_day_starts_the_eclipse() {
+        let mut app = night_app(2767);
+        app.world.day_time = true;
+        app.world.hard_mode = true;
+        assert!(use_solar_tablet(&mut app));
+        assert!(app.world.eclipse, "Main.eclipse = true (:43994)");
+        assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
+        assert!(
+            (app.item_time - 45.0 / 60.0).abs() < 1e-6,
+            "ApplyItemTime armed the cadence (itemTime = {})",
+            app.item_time
+        );
+        assert!(
+            app.npcs.iter().all(|n| n.hp <= 0),
+            "the tablet summons no boss — the eclipse's spawner owns the roster"
+        );
+    }
+
+    /// W4-g43 — the tablet's refusals are free (`:43988`'s day/eclipse gates
+    /// + `:52269-52272`'s hardmode USE-START gate): night, a running eclipse
+    /// or pre-hardmode each leave the stack intact and the flag untouched.
+    #[test]
+    fn the_solar_tablet_refuses_at_night_over_an_eclipse_or_pre_hardmode() {
+        // Night: refused free.
+        let mut app = night_app(2767);
+        app.world.hard_mode = true;
+        assert!(!use_solar_tablet(&mut app));
+        assert!(!app.world.eclipse);
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        // A running eclipse refuses the re-use.
+        let mut app = night_app(2767);
+        app.world.day_time = true;
+        app.world.hard_mode = true;
+        app.world.eclipse = true;
+        assert!(!use_solar_tablet(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // Pre-hardmode refuses (`:52269`'s `!Main.hardMode`).
+        let mut app = night_app(2767);
+        app.world.day_time = true;
+        assert!(!use_solar_tablet(&mut app));
+        assert!(!app.world.eclipse);
+        assert_eq!(app.inventory[app.selected].count, 1);
     }
 }
 /// The item-mechanics slice: the three player-facing flows the port keeps

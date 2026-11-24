@@ -13,7 +13,7 @@ use crate::world::World;
 
 /// `WorldGen.catTailDistance` (`WorldGen.cs:4401`, seeded to 8 at `:86957`):
 /// the deepest a cattail stalk may stand above the water surface.
-const CAT_TAIL_DISTANCE: i32 = 8;
+pub(super) const CAT_TAIL_DISTANCE: i32 = 8;
 
 /// `Main.tile[x, y]` read as the C# `null` check plus the accessor: `None`
 /// stands for the out-of-world cell the source returns early on.

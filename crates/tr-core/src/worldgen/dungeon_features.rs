@@ -81,8 +81,10 @@ impl DungeonFootprint {
         })
     }
 
-    /// `DungeonData.CanGenerateFeatureAt`'s ported terms.
-    fn can_generate_at(&self, world: &World, x: i32, y: i32) -> bool {
+    /// `DungeonData.CanGenerateFeatureAt`'s ported terms. `pub(crate)`:
+    /// the room-content slice's Bookshelves pass reads the same gate
+    /// (`dungeon_room_content::bookshelves`).
+    pub(crate) fn can_generate_at(&self, world: &World, x: i32, y: i32) -> bool {
         if !in_world(world, x, y, 5) {
             return false;
         }
@@ -166,8 +168,19 @@ fn mark_important(world: &mut World, kind: u16) {
 /// vertical run).
 ///
 /// `good_world` is `WorldGen.getGoodWorldGen` (the fixed-boi seed), which
-/// triples the count (`:41-44`). `global_feature_scalar` is
+/// triples the count (`:32-35`). `global_feature_scalar` is
 /// `DungeonData.globalFeatureScalar`, 1.0 for a legacy dungeon (`:363`).
+///
+/// W4-f24 R3: `drunk`/`no_surface` are `WorldGen.drunkWorldGen` /
+/// `SecretSeed.noSurface.Enabled`; `gen_pos_y` is
+/// `data.genVars.generatingDungeonPositionY` (the port's proxy: the
+/// dungeon's start row — the C# moves it to the topmost room at
+/// `DungeonCrawler.cs:399-400`, the port has no room list). The scan-row
+/// arms are ASYMMETRIC in the C#: the floor half redrags under
+/// `drunk || noSurface` (`:41-44`), the ceiling half under `noSurface`
+/// ONLY (`:138-141`) — and both REDRAW (the first `Next` is consumed
+/// either way, the double-draw quirk kept verbatim). A classic world
+/// burns the same single draw per attempt as before.
 ///
 /// Returns the number of runs placed (the C#'s `num5`), for tests.
 pub fn place_spikes(
@@ -176,6 +189,9 @@ pub fn place_spikes(
     world_surface: f64,
     global_feature_scalar: f64,
     good_world: bool,
+    drunk: bool,
+    no_surface: bool,
+    gen_pos_y: i32,
     r: &mut HallSeed,
 ) -> usize {
     if fp.right <= fp.left || fp.bottom <= fp.top {
@@ -184,6 +200,10 @@ pub fn place_spikes(
     if (world_surface as i32) + 25 >= fp.bottom {
         return 0; // the C# would draw `Next(lo, hi)` with `lo >= hi`.
     }
+    // The redrawn range's own empty-range guard (the same convention).
+    if (drunk || no_surface) && gen_pos_y + 25 >= fp.bottom {
+        return 0;
+    }
     let num2 = world.width as f64 / 4200.0;
     // `(int)(42f * num2 * Math.Max(1.0, scalar * 0.25))` — the max is not
     // `mul_add` (that would floor to 0.25 and lose the `Max`).
@@ -191,17 +211,19 @@ pub fn place_spikes(
     if good_world {
         num6 *= 3;
     }
-    let mut total = spikes_floor(world, fp, world_surface, num6, r);
-    total += spikes_ceiling(world, fp, world_surface, num6, r);
+    let mut total = spikes_floor(world, fp, world_surface, num6, drunk || no_surface, gen_pos_y, r);
+    total += spikes_ceiling(world, fp, world_surface, num6, no_surface, gen_pos_y, r);
     total
 }
 
-/// The C#'s first `while (num5 < num6)` — floor spikes (`:46-127`).
+/// The C#'s first `while (num5 < num6)` — floor spikes (`:36-129`).
 fn spikes_floor(
     world: &mut World,
     fp: &DungeonFootprint,
     world_surface: f64,
     num6: i32,
+    redraw_from_gen_pos: bool,
+    gen_pos_y: i32,
     r: &mut HallSeed,
 ) -> usize {
     let mut num3 = 0;
@@ -211,6 +233,12 @@ fn spikes_floor(
         num3 += 1;
         let x0 = r.range(fp.left as u32, fp.right as u32) as i32;
         let mut y = r.range(world_surface as u32 + 25, fp.bottom as u32) as i32;
+        // `:41-44`: `if (drunkWorldGen || noSurface.Enabled)` REDRAWS the
+        // row from `generatingDungeonPositionY + 25` — the first draw above
+        // is consumed either way (the double-draw quirk).
+        if redraw_from_gen_pos {
+            y = r.range(gen_pos_y as u32 + 25, fp.bottom as u32) as i32;
+        }
         let start_x = x0;
         let mut kind = SPIKE;
         let mut flag = true;
@@ -295,13 +323,15 @@ fn spikes_floor(
     num5
 }
 
-/// The C#'s second `while (num5 < num6)` — ceiling spikes (`:131-239`): the
+/// The C#'s second `while (num5 < num6)` — ceiling spikes (`:133-244`): the
 /// scan tile walks *horizontally* to a wall and the run grows vertically.
 fn spikes_ceiling(
     world: &mut World,
     fp: &DungeonFootprint,
     world_surface: f64,
     num6: i32,
+    no_surface: bool,
+    gen_pos_y: i32,
     r: &mut HallSeed,
 ) -> usize {
     let mut num3 = 0;
@@ -311,6 +341,14 @@ fn spikes_ceiling(
         num3 += 1;
         let mut x = r.range(fp.left as u32, fp.right as u32) as i32;
         let y0 = r.range(world_surface as u32 + 25, fp.bottom as u32) as i32;
+        // `:138-141`: the ceiling redraw reads `noSurface` ONLY — the
+        // floor's `drunkWorldGen ||` conjunct (`:41`) is absent here, the
+        // C# asymmetry kept verbatim.
+        let y0 = if no_surface {
+            r.range(gen_pos_y as u32 + 25, fp.bottom as u32) as i32
+        } else {
+            y0
+        };
         let start_y = y0;
         let mut kind = SPIKE;
         let mut flag = true;
@@ -1410,7 +1448,7 @@ mod tests {
     fn the_floor_spike_run_stands_on_the_floor() {
         let (mut w, fp) = room(4200, 80);
         let mut r = HallSeed::new(0x5EED);
-        let placed = place_spikes(&mut w, &fp, 40.0, 1.0, false, &mut r);
+        let placed = place_spikes(&mut w, &fp, 40.0, 1.0, false, false, false, 40, &mut r);
         assert!(placed > 0, "the pass places runs");
         let mut on_floor = 0;
         let mut on_ceiling = 0;
@@ -1853,8 +1891,8 @@ mod tests {
         let (mut b, _) = room(120, 80);
         let mut ra = HallSeed::new(99);
         let mut rb = HallSeed::new(99);
-        let na = place_spikes(&mut a, &fp, 40.0, 1.0, false, &mut ra);
-        let nb = place_spikes(&mut b, &fp, 40.0, 1.0, false, &mut rb);
+        let na = place_spikes(&mut a, &fp, 40.0, 1.0, false, false, false, 40, &mut ra);
+        let nb = place_spikes(&mut b, &fp, 40.0, 1.0, false, false, false, 40, &mut rb);
         assert_eq!(na, nb);
         let pa: Vec<(u16, u16)> = a.tiles.iter().map(|t| (t.kind, t.wall)).collect();
         let pb: Vec<(u16, u16)> = b.tiles.iter().map(|t| (t.kind, t.wall)).collect();
@@ -1877,7 +1915,7 @@ mod tests {
         let mut r = HallSeed::new(7);
         // The C#'s `num5` counts timed-out attempts too (`:126`), so the
         // return value is not the signal here — the tiles are.
-        place_spikes(&mut w, &fp, 40.0, 1.0, false, &mut r);
+        place_spikes(&mut w, &fp, 40.0, 1.0, false, false, false, 40, &mut r);
         assert_eq!(spike_count(&w), 0);
     }
 
@@ -1887,7 +1925,7 @@ mod tests {
     fn a_box_above_the_surface_scan_places_nothing() {
         let (mut w, fp) = room(120, 80);
         let mut r = HallSeed::new(1);
-        assert_eq!(place_spikes(&mut w, &fp, 90.0, 1.0, false, &mut r), 0);
+        assert_eq!(place_spikes(&mut w, &fp, 90.0, 1.0, false, false, false, 90, &mut r), 0);
     }
 
     /// The run budget (`:37-44`): `42 * maxTilesX / 4200`, two halves, each
@@ -1896,11 +1934,89 @@ mod tests {
     fn the_run_budget_scales_with_the_world() {
         let (mut w, fp) = room(8400, 80);
         let mut r = HallSeed::new(3);
-        let placed = place_spikes(&mut w, &fp, 30.0, 1.0, false, &mut r);
+        let placed = place_spikes(&mut w, &fp, 30.0, 1.0, false, false, false, 30, &mut r);
         assert!(
             (40..=200).contains(&placed),
             "two passes of 84 runs each, with timeouts: {placed}"
         );
+    }
+
+    /// W4-f24 R3: the drunk/noSurface scan-row arms change the world
+    /// (`DungeonGlobalSpikes.cs:41-44` floor, `:138-141` ceiling — the
+    /// ceiling reads `noSurface` ONLY, the C# asymmetry), and each flag set
+    /// replays itself (the a == b halves). Written NOT run (code-only).
+    #[test]
+    fn w4_f24_r3_the_drunk_and_no_surface_scan_rows_diverge() {
+        let run = |drunk: bool, no_surface: bool| -> Vec<(u16, u16)> {
+            let (mut w, fp) = room(4200, 80);
+            let mut r = HallSeed::new(0xA3D);
+            place_spikes(&mut w, &fp, 40.0, 1.0, false, drunk, no_surface, 50, &mut r);
+            w.tiles.iter().map(|t| (t.kind, t.wall)).collect()
+        };
+        let classic = run(false, false);
+        let drunk = run(true, false);
+        let no_surface = run(false, true);
+        assert_eq!(classic, run(false, false), "classic a == b");
+        assert_eq!(drunk, run(true, false), "drunk a == b");
+        assert_eq!(no_surface, run(false, true), "noSurface a == b");
+        assert_ne!(classic, drunk, "the drunk floor redraw moves the runs");
+        assert_ne!(classic, no_surface, "the noSurface redraw moves both halves");
+        // The asymmetry: drunk redraws the FLOOR only, noSurface redraws
+        // both halves — the two flag sets cannot agree.
+        assert_ne!(drunk, no_surface, "the ceiling arm reads noSurface only");
+    }
+
+    /// W4-f24 R3: the redraw is a SECOND draw — the first `Next` is consumed
+    /// either way (the double-draw quirk). Mirrored-oracle witness: on a
+    /// wall-less fixture every attempt fails `flag2` before the step draw,
+    /// so the stream consumption is exactly `1001 attempts * (2 + redraw)`
+    /// per half (`num6 = 1` at width 120; the `num3 > 1000` timeout arm
+    /// counts one run per 1001 attempts). Written NOT run (code-only).
+    #[test]
+    fn w4_f24_r3_the_scan_redraw_consumes_a_second_draw() {
+        fn stripped() -> (World, DungeonFootprint) {
+            let (mut w, fp) = room(120, 80);
+            for t in w.tiles.iter_mut() {
+                t.wall = 0; // flag2 false everywhere: no step draw
+            }
+            (w, fp)
+        }
+        for (drunk, no_surface, floor_draws, ceil_draws) in
+            [(false, false, 2, 2), (true, false, 3, 2), (false, true, 3, 3)]
+        {
+            let (mut w, fp) = stripped();
+            let mut r = HallSeed::new(0xD12A);
+            place_spikes(&mut w, &fp, 40.0, 1.0, false, drunk, no_surface, 40, &mut r);
+            // The oracle: the same splitmix stream, the exact draw count.
+            let mut oracle = HallSeed::new(0xD12A);
+            for _ in 0..1001 * (floor_draws + ceil_draws) {
+                oracle.next(1);
+            }
+            for _ in 0..8 {
+                assert_eq!(
+                    r.next(1_000_000),
+                    oracle.next(1_000_000),
+                    "drunk={drunk} no_surface={no_surface}: stream position"
+                );
+            }
+        }
+    }
+
+    /// W4-f24 R3: the redrawn range's empty-range guard burns NO draw (the
+    /// port's `Next(lo, hi)` convention) — `gen_pos_y + 25 >= bottom`
+    /// returns 0 with the stream untouched. Written NOT run (code-only).
+    #[test]
+    fn w4_f24_r3_the_redraw_empty_range_guard_is_draw_free() {
+        let (mut w, fp) = room(4200, 80);
+        let mut r = HallSeed::new(0xB0B);
+        let mut untouched = r;
+        assert_eq!(
+            place_spikes(&mut w, &fp, 40.0, 1.0, false, true, false, 60, &mut r),
+            0
+        );
+        for _ in 0..8 {
+            assert_eq!(r.next(1_000_000), untouched.next(1_000_000));
+        }
     }
 
 }

@@ -11,7 +11,7 @@ use tr_core::{UnifiedRandom, World};
 
 /// The world state the stock gates read — `SetupShop`'s if-gates collapse
 /// into one struct the caller fills (the port's flags exist for all of
-/// these; the party/custom-seed gates sit constants-off).
+/// these; the custom-seed gates sit constants-off).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShopFlags {
     pub hard_mode: bool,
@@ -33,6 +33,13 @@ pub struct ShopFlags {
     pub mana_max_200: bool,
     pub coins_over_gold: bool,
     pub party_girl_present: bool,
+    /// `BirthdayParty.PartyIsUp` (`Chest.cs:1435`'s Merchant Rainbow
+    /// Glowstick row + `:2345-2358`'s Party Girl gift block) — the live
+    /// scheduler state (`world_events::party_is_up`), W4-f41 final sweep.
+    pub party_up: bool,
+    /// `LanternNight.LanternsUp` (`Chest.cs:2309-2312`'s Release Lantern
+    /// row) — the live scheduler state (`world_events::lanterns_up`).
+    pub lanterns_up: bool,
     pub downed_mech_any: bool,
     pub downed_mech_1: bool,
     pub downed_mech_2: bool,
@@ -100,6 +107,8 @@ impl Default for ShopFlags {
             mana_max_200: false,
             coins_over_gold: false,
             party_girl_present: false,
+            party_up: false,
+            lanterns_up: false,
             downed_mech_any: false,
             downed_mech_1: false,
             downed_mech_2: false,
@@ -201,6 +210,9 @@ pub enum StockWhen {
     Always,
     HardMode,
     Night,
+    /// `Main.dayTime` (`Chest.cs:2285-2289`) — the Party Girl's Bubble
+    /// Machine half of the day/night pair.
+    Day,
     BloodMoon,
     DownedBoss3,
     DownedBoss2Or3OrHard,
@@ -254,6 +266,14 @@ pub enum StockWhen {
     MoonPhaseDayParity,
     /// `NPC.AnyNPCs(208)` (`:2762`) — the Party Hair Dye row.
     PartyGirlPresent,
+    /// `BirthdayParty.PartyIsUp` (`Chest.cs:1435-1437` + `:2345-2358`) —
+    /// the Merchant's Rainbow Glowstick 5643 and the Party Girl's
+    /// eleven-item gift block (the present/pigronata/streamers/balloons/
+    /// tied balloons), W4-f41 final sweep.
+    PartyUp,
+    /// `LanternNight.LanternsUp` (`Chest.cs:2309-2312`) — the Party Girl's
+    /// Release Lantern 4702 row.
+    LanternsUp,
     /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
     DownedMechAll,
     /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
@@ -328,8 +348,10 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // `:1428-1430`'s happy-windy-day row rides the weather pass.
             row(279, StockWhen::BloodMoon),
             row(282, StockWhen::Night),
-            // `:1435-1437`'s party row sits constants-off (the BirthdayParty
-            // system lands with the party event).
+            // `:1435-1437` — `BirthdayParty.PartyIsUp` adds the Rainbow
+            // Glowstick (5643) between the night row and the downedBoss3
+            // row (W4-f41 final sweep — the live scheduler gate).
+            row(5643, StockWhen::PartyUp),
             row(346, StockWhen::DownedBoss3),
             row(488, StockWhen::HardMode),
             row(1786, StockWhen::Always),
@@ -584,17 +606,22 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(2872, StockWhen::MoonPhasePair(0)),
             row(4663, StockWhen::BloodMoonNight),
         ],
-        // The Party Girl's shop (index 13, `Chest.cs:case 13`): the
-        /// 18 always rows (the food/party set) + the graveyard goggles
-        /// and the lantern-night row (both constants-off) + the
-        /// golfer-score row + the Pirate's presence row (unported)
-        /// + the Golem's row + the hardmode dye set + the BirthdayParty
-        /// block (constants-off until the party event).
+        // The Party Girl's shop (index 13, `Chest.cs:2274-2359`): the
+        /// always rows (the food/party set), the day/night Bubble Machine
+        /// 1449 / Fog Machine 4552 pair, the lantern-night Release Lantern
+        /// row and the BirthdayParty gift block (both live scheduler
+        /// gates, W4-f41 final sweep); the golfer-score row (4743), the
+        /// graveyard goggles (4682), the HasItem(3548) row, the Pirate's
+        /// presence row (3369), the Golem's row (3546) and the hardmode
+        /// dye set (3214/2868/970-973) sit constants-off (unported gates).
         13 => vec![
             row(859, StockWhen::Always),
             row(1000, StockWhen::Always),
             row(1168, StockWhen::Always),
-            row(1449, StockWhen::Always), // `Main.dayTime` — the port has no day gate yet
+            // `:2285-2294` — the day/night pair: `Main.dayTime` stocks the
+            // Bubble Machine, else the Fog Machine (the same gate shape as
+            // the Merchant's night row, inverted).
+            row(1449, StockWhen::Day),
             row(4552, StockWhen::Night),
             row(1345, StockWhen::Always),
             row(1450, StockWhen::Always),
@@ -604,10 +631,29 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(2738, StockWhen::Always),
             row(4470, StockWhen::Always),
             row(4681, StockWhen::Always),
+            // `:2309-2312` — `LanternNight.LanternsUp` adds the Release
+            // Lantern (4702) ahead of the always tail.
+            row(4702, StockWhen::LanternsUp),
             row(4791, StockWhen::Always),
             row(3747, StockWhen::Always),
             row(3732, StockWhen::Always),
             row(3742, StockWhen::Always),
+            // `:2345-2358` — `BirthdayParty.PartyIsUp` closes the shop
+            // with the eleven gift rows, in the C#'s exact order: the
+            // Party Present 3749, the Pigronata 3746, the three Silly
+            // Streamers 3739/3740/3741, the three Silly Balloons
+            // 3737/3738/3736, the three Tied Balloons 3745/3744/3743.
+            row(3749, StockWhen::PartyUp),
+            row(3746, StockWhen::PartyUp),
+            row(3739, StockWhen::PartyUp),
+            row(3740, StockWhen::PartyUp),
+            row(3741, StockWhen::PartyUp),
+            row(3737, StockWhen::PartyUp),
+            row(3738, StockWhen::PartyUp),
+            row(3736, StockWhen::PartyUp),
+            row(3745, StockWhen::PartyUp),
+            row(3744, StockWhen::PartyUp),
+            row(3743, StockWhen::PartyUp),
         ],
         // The Zoologist's shop (index 23, `Chest.cs:3263-3340`): the
         // bestiary tools — the progress-gated rows ride
@@ -1381,6 +1427,7 @@ pub fn resolve_stock_entries_moon(
             StockWhen::Always => true,
             StockWhen::HardMode => flags.hard_mode,
             StockWhen::Night => flags.night,
+            StockWhen::Day => !flags.night,
             StockWhen::BloodMoon => flags.blood_moon,
             StockWhen::DownedBoss3 => flags.downed_boss3,
             StockWhen::DownedBoss2Or3OrHard => {
@@ -1411,6 +1458,8 @@ pub fn resolve_stock_entries_moon(
             StockWhen::CoinsOverGold => flags.coins_over_gold,
             StockWhen::MoonPhaseDayParity => (moon_phase % 2 == 0) == !flags.night,
             StockWhen::PartyGirlPresent => flags.party_girl_present,
+            StockWhen::PartyUp => flags.party_up,
+            StockWhen::LanternsUp => flags.lanterns_up,
             StockWhen::DownedMechAll => {
                 flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
             }
@@ -2162,6 +2211,79 @@ mod tests {
         // The PlayerHasItem rows need the scan hit.
         let without = resolve_stock(1, &flags, &[]);
         assert!(!without.contains(&931));
+    }
+
+    /// W4-f41 final sweep — the Merchant's party row (`Chest.cs:1435-1437`):
+    /// the Rainbow Glowstick 5643 stocks only while `BirthdayParty.PartyIsUp`,
+    /// between the night row and the downedBoss3 row.
+    #[test]
+    fn w4_f41_the_merchant_stocks_the_rainbow_glowstick_during_the_party() {
+        let base = resolve_stock(1, &ShopFlags::default(), &[]);
+        assert!(!base.contains(&5643), "no party, no glowstick");
+        let flags = ShopFlags {
+            party_up: true,
+            ..Default::default()
+        };
+        let stock = resolve_stock(1, &flags, &[]);
+        assert!(stock.contains(&5643), "the party row stocked");
+        // The C#'s row order: 5643 sits after the night row's slot and
+        // before the downedBoss3 row (346).
+        let flags2 = ShopFlags {
+            party_up: true,
+            night: true,
+            downed_boss3: true,
+            ..Default::default()
+        };
+        let stock2 = resolve_stock(1, &flags2, &[]);
+        let i282 = stock2.iter().position(|&id| id == 282).unwrap();
+        let i5643 = stock2.iter().position(|&id| id == 5643).unwrap();
+        let i346 = stock2.iter().position(|&id| id == 346).unwrap();
+        assert!(i282 < i5643 && i5643 < i346, "the C#'s num order");
+    }
+
+    /// W4-f41 final sweep — the Party Girl's gift block (`Chest.cs:2345-
+    /// 2358`): while the party is up her shop closes with the eleven gift
+    /// rows in the C#'s exact order (3749, 3746, 3739, 3740, 3741, 3737,
+    /// 3738, 3736, 3745, 3744, 3743); the lantern-night row (4702,
+    /// `:2309-2312`) stocks ahead of the always tail; the day/night pair
+    /// (`:2285-2294`) stocks exactly one of 1449/4552.
+    #[test]
+    fn w4_f41_the_party_girl_stocks_the_gift_block_during_the_party() {
+        let day = resolve_stock(13, &ShopFlags::default(), &[]);
+        for id in [3749, 3746, 3739, 3740, 3741, 3737, 3738, 3736, 3745, 3744, 3743] {
+            assert!(!day.contains(&id), "gift row {id} leaked without a party");
+        }
+        assert!(!day.contains(&4702), "no lantern night, no release lantern");
+        // The day/night pair: the Bubble Machine by day, the Fog Machine
+        // by night, never both.
+        assert!(day.contains(&1449) && !day.contains(&4552));
+        let night_flags = ShopFlags {
+            night: true,
+            ..Default::default()
+        };
+        let night = resolve_stock(13, &night_flags, &[]);
+        assert!(night.contains(&4552) && !night.contains(&1449));
+        // The party + lantern night: the full C# order.
+        let flags = ShopFlags {
+            party_up: true,
+            lanterns_up: true,
+            ..Default::default()
+        };
+        let stock = resolve_stock(13, &flags, &[]);
+        let tail = [4702u16, 4791, 3747, 3732, 3742, 3749, 3746, 3739, 3740, 3741, 3737, 3738, 3736, 3745, 3744, 3743];
+        let start = stock.iter().position(|&id| id == 4702).unwrap();
+        assert_eq!(&stock[start..], &tail[..], "the C#'s num order, gifts last");
+        // The gift prices ride the SetDefaults values (the party rows
+        // carry no shopCustomPrice): present 2000, pigronata 10000,
+        // streamers 50, balloons 100, tied balloons 1000 (`Item.cs:
+        // 33089-33175`).
+        let value = |id: u16| ITEMS.iter().find(|d| d.id == id).unwrap().value;
+        assert_eq!(value(3749), 2000);
+        assert_eq!(value(3746), 10000);
+        assert_eq!(value(3739), 50);
+        assert_eq!(value(3736), 100);
+        assert_eq!(value(3743), 1000);
+        assert_eq!(value(3747), 200000, "the monolith, 20 gold (:33186)");
     }
 
     #[test]

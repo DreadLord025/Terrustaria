@@ -207,19 +207,33 @@ pub fn convert_cell_flavor(world: &mut World, x: i32, y: i32, flavor: Conversion
     }
 }
 
+/// `CanChlorophyteGrow` (`:69464-69515`): the density gates — the
+/// chlorophyte count in the ±35 box ≤ 40 and in the ±85 box ≤ 130. The
+/// remix world widens both (`+5`, `×15`, `−4`, `−8`, `:69470-69476`);
+/// otherwise a cell ABOVE the rock layer halves BOTH caps and widens BOTH
+/// boxes ×1.5 (`:69477-69483`). The scans are half-open `[i−r, i+r)` with
+/// the `InWorld` guard.
 pub fn can_chlorophyte_grow(world: &World, x: i32, y: i32) -> bool {
-    let (mut r_small, mut cap_big) = (35i32, 130i32);
-    if (y as f64) < world.rock_layer {
-        r_small = (r_small as f64 * 1.5) as i32;
+    let (mut cap_small, mut cap_big, mut r_small, mut r_big) = (40i32, 130i32, 35i32, 85i32);
+    if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+        cap_small += 5;
+        cap_big *= 15;
+        r_small -= 4;
+        r_big -= 8;
+    } else if (y as f64) < world.rock_layer {
+        cap_small /= 2;
         cap_big /= 2;
+        r_small = (r_small as f64 * 1.5) as i32;
+        r_big = (r_big as f64 * 1.5) as i32;
     }
     let count = |r: i32| -> i32 {
         let mut n = 0;
         for k in (x - r)..(x + r) {
             for l in (y - r)..(y + r) {
-                if world
-                    .tile(k, l)
-                    .is_some_and(|t| t.active() && t.kind == 211)
+                if in_world(world, k, l, 0)
+                    && world
+                        .tile(k, l)
+                        .is_some_and(|t| t.active() && t.kind == 211)
                 {
                     n += 1;
                 }
@@ -227,48 +241,109 @@ pub fn can_chlorophyte_grow(world: &World, x: i32, y: i32) -> bool {
         }
         n
     };
-    if count(r_small) > 40 {
+    if count(r_small) > cap_small {
         return false;
     }
-    count(85) <= cap_big
+    count(r_big) <= cap_big
 }
 
-/// `nearbyChlorophyte` (`:69502+`): the chlorophyte within 5 tiles (the
-/// defence radius).
-fn nearby_chlorophyte(world: &World, x: i32, y: i32) -> bool {
-    for dx in -5..=5 {
-        for dy in -5..=5 {
+/// `nearbyChlorophyte` (`:69517-69558`): the defence radius — the ±5 box
+/// counts the 211 chlorophyte AND the 346 chlorophyte jungle grass; ≥3
+/// always defends, 1-2 roll `Next(-1, 4) < count` (the remix world
+/// `Next(-1, 3)`). The 10-tile border margin returns false without drawing.
+fn nearby_chlorophyte(world: &World, x: i32, y: i32, rng: &mut UnifiedRandom) -> bool {
+    let num2 = 5;
+    if x <= num2 + 5 || x >= world.width - num2 - 5 {
+        return false;
+    }
+    if y <= num2 + 5 || y >= world.height - num2 - 5 {
+        return false;
+    }
+    let mut num = 0.0f64;
+    for k in (x - num2)..=(x + num2) {
+        for l in (y - num2)..=(y + num2) {
             if world
-                .tile(x + dx, y + dy)
-                .is_some_and(|t| t.active() && t.kind == 211)
+                .tile(k, l)
+                .is_some_and(|t| t.active() && matches!(t.kind, 211 | 346))
             {
+                num += 1.0;
+                if num >= 3.0 {
+                    return true;
+                }
+            }
+        }
+    }
+    if num > 0.0 {
+        if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+            if (rng.next_range(-1, 3) as f64) < num {
                 return true;
             }
+        } else if (rng.next_range(-1, 4) as f64) < num {
+            return true;
         }
     }
     false
 }
 
-/// `CountNearBlocksTypes(i, j, 2, 1, 27)`: the sunflower (27) suppression
-/// within 2 tiles.
-fn sunflower_nearby(world: &World, x: i32, y: i32) -> bool {
-    for dx in -2..=2 {
-        for dy in -2..=2 {
-            if world
-                .tile(x + dx, y + dy)
-                .is_some_and(|t| t.active() && t.kind == 27)
-            {
-                return true;
+/// `ChlorophyteDefense` (`:69456-69462`): the remix worlds run the type-10
+/// purge conversion on the defended cell; the normal worlds do nothing.
+fn chlorophyte_defense(world: &mut World, x: i32, y: i32) {
+    if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+        convert_chlorophyte_cell(world, x, y, 10);
+    }
+}
+
+/// `CountNearBlocksTypes(i, j, radius, cap, tiletypes)` (`:69560-69598`):
+/// the clamped-box count of the active matching tiles; a positive cap
+/// returns early once the count reaches it.
+fn count_near_blocks_types(world: &World, i: i32, j: i32, radius: i32, cap: i32, kinds: &[u16]) -> i32 {
+    if kinds.is_empty() {
+        return 0;
+    }
+    let x0 = (i - radius).clamp(0, world.width - 1);
+    let x1 = (i + radius).clamp(0, world.width - 1);
+    let y0 = (j - radius).clamp(0, world.height - 1);
+    let y1 = (j + radius).clamp(0, world.height - 1);
+    let mut num = 0;
+    for k in x0..=x1 {
+        for l in y0..=y1 {
+            let Some(t) = world.tile(k, l) else {
+                continue;
+            };
+            if !t.active() {
+                continue;
+            }
+            if kinds.contains(&t.kind) {
+                num += 1;
+                if cap <= 0 || num < cap {
+                    continue;
+                }
+                return num;
             }
         }
     }
-    false
+    num
 }
 
-/// `hardUpdateWorld`'s spread arms (`:69645-69860`): the chlorophyte growth
-/// (the 211/346 sources) and the evil/crimson infection spread. `x`/`y` are
-/// the random picks the caller drew (the same `UpdateWorld` underground
-/// picks the crystal shards ride).
+/// `WorldGen.hardUpdateWorld` (`WorldGen.cs:69600-69955`), verbatim: the
+/// `hardModeWorldUpdates` gate (`:69602` — the caller passes the flag the
+/// `UpdateWorld` head derives, `:71501`), the actuated-cell skip, the
+/// crystal-shard arm, the chlorophyte arms (the 60-grass seeding
+/// `:69652-69660`, the 211/346 growth + the single type-9 purge pick
+/// `:69661-69701`), then the three infection loops (corruption `:69706`,
+/// crimson `:69795`, hallow `:69884`) with the `continue`-retry semantics
+/// (an out-of-world pick or a sunflower-blocked pick re-draws; a defended
+/// cell, an unconvertible target or a failed `Next(2)` re-roll ends the
+/// loop).
+///
+/// Deviations: the C#'s `Main.rand` purge-pick draws (`:69693-69694`) ride
+/// the same stream as `genRand` under the SwapRandom (the port's single
+/// per-phase stream, the `update_growth` convention); the shared
+/// `convert_cell_flavor` approximation parks the type-2 hallow Convert's
+/// torch/golf/mud-adjacency arms (the `micro_surface.rs` precedent) and the
+/// shared `convert_tile` map has no moss/477/69 rows — the loops' draws
+/// stay verbatim, those kinds convert as no-ops until the shared map grows
+/// the rows.
 pub fn hard_update_world(
     world: &mut World,
     x: i32,
@@ -277,51 +352,103 @@ pub fn hard_update_world(
     allowed_to_spread: bool,
     rng: &mut UnifiedRandom,
 ) {
+    hard_update_world_gated(world, x, y, true, downed_plant_boss, allowed_to_spread, rng);
+}
+
+/// The gated form — `hard_mode_world_updates` mirrors
+/// `WorldGen.hardModeWorldUpdates` (`:71501`: `hardMode || (remix &&
+/// getGood && !anniversary)`); the `UpdateWorld` callers pass the derived
+/// flag, the direct callers (the tests, the legacy seams) pass true.
+pub fn hard_update_world_gated(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    hard_mode_world_updates: bool,
+    downed_plant_boss: bool,
+    allowed_to_spread: bool,
+    rng: &mut UnifiedRandom,
+) {
+    // `:69602`: the gate + the actuated-cell skip.
+    if !hard_mode_world_updates {
+        return;
+    }
     let Some(t) = world.tile(x, y) else {
         return;
     };
-    if !t.active() {
+    if t.inactive() {
         return;
     }
     let kind = t.kind;
-    // `:69604-69644`: the crystal-shard arm runs FIRST in `hardUpdateWorld`
-    // (the shard stones below the rock layer, their own gates inside).
-    crate::growth::grow_crystal_shards(world, x, y, rng);
-    // `:69646-69685`: the chlorophyte arms (the 211 chlorophyte + the 346
-    // chlorophyte jungle-grass source).
-    if matches!(kind, 211 | 346) {
-        // `Next(3) != 0`: the 4-dir neighbour growth into the mud/the jungle
-        // grass, gated by `CanChlorophyteGrow`.
-        if rng.next_max(3) != 0 {
-            let (dx, dy) = match rng.next_max(4) {
-                0 => (1, 0),
-                1 => (-1, 0),
-                2 => (0, 1),
-                _ => (0, -1),
-            };
-            let (nx, ny) = (x + dx, y + dy);
-            if world
-                .tile(nx, ny)
-                .is_some_and(|t| t.active() && matches!(t.kind, 59 | 60))
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX);
+    // `:69607-69649`: the crystal-shard arm runs FIRST. The full condition
+    // (the shard-stone kind, the rock-layer/remix depth, the `Next(5)`
+    // roll) short-circuits here exactly like the C#'s `if`; the placement
+    // body (`:69609-69648`) lives in `grow_crystal_shards`.
+    if kind > 0
+        && crate::growth::CAN_GROW_CRYSTAL_SHARDS.contains(&kind)
+        && ((y as f64) > world.rock_layer || remix)
+        && rng.next_max(5) == 0
+    {
+        crate::growth::grow_crystal_shards(world, x, y, rng);
+    }
+    // `:69650-69701`: the chlorophyte arms below the surface/rock midpoint
+    // (or anywhere in the remix world).
+    if (y as f64) > (world.world_surface + world.rock_layer) / 2.0 || remix {
+        // The 60-grass seeding arm (`:69652-69660`): the 1/300 roll, the
+        // ±10 target, the mud cell with a free (or non-tree) top, gated by
+        // `CanChlorophyteGrow` — `Convert(…, 8)` grows the chlorophyte 211.
+        if kind == 60 && rng.next_max(300) == 0 {
+            let nx = x + rng.next_range(-10, 11);
+            let ny = y + rng.next_range(-10, 11);
+            let top_ok = !world.tile(nx, ny - 1).is_some_and(|t| {
+                t.active() && matches!(t.kind, 5 | 236 | 702 | 238)
+            });
+            if in_world(world, nx, ny, 2)
+                && world.tile(nx, ny).is_some_and(|t| t.active() && t.kind == 59)
+                && top_ok
                 && can_chlorophyte_grow(world, nx, ny)
             {
-                convert_cell(world, nx, ny, false, true);
+                convert_chlorophyte_cell(world, nx, ny, 8);
             }
         }
-        // The ±6 random re-scan (`Convert(..., 9)` — the mud/jungle cells
-        // near the source convert too).
-        let nx = x + (rng.next_max(13) as i32 - 6);
-        let ny = y + (rng.next_max(13) as i32 - 6);
-        if world
-            .tile(nx, ny)
-            .is_some_and(|t| t.active() && matches!(t.kind, 59 | 60))
-            && can_chlorophyte_grow(world, nx, ny)
-        {
-            convert_cell(world, nx, ny, false, true);
+        // The 211/346 source arms (`:69661-69701`).
+        if matches!(kind, 211 | 346) {
+            // `Next(3) != 0`: the 4-dir neighbour growth into the mud/the
+            // jungle grass, gated by `CanChlorophyteGrow`.
+            if rng.next_max(3) != 0 {
+                let (dx, dy) = match rng.next_max(4) {
+                    0 => (1, 0),
+                    1 => (-1, 0),
+                    2 => (0, 1),
+                    _ => (0, -1),
+                };
+                let (nx, ny) = (x + dx, y + dy);
+                if in_world(world, nx, ny, 2)
+                    && world
+                        .tile(nx, ny)
+                        .is_some_and(|t| t.active() && matches!(t.kind, 59 | 60))
+                    && can_chlorophyte_grow(world, nx, ny)
+                {
+                    convert_chlorophyte_cell(world, nx, ny, 8);
+                }
+            }
+            // The ±6 purge pick (`:69689-69700`): the C#'s `while (flag)`
+            // sets `flag = false` at the top and NEVER re-arms it (no
+            // `continue`, no `flag = true` in the body) — it runs EXACTLY
+            // ONE iteration: one `Main.rand.Next(-6, 7)` pair, then
+            // `Convert(…, 9)` on the pick iff it is an in-world ACTIVE cell
+            // (the grasses jungle-ify, the dirt mud-ifies, the evil
+            // stones/sands purify, the thorns die).
+            let nx = x + rng.next_range(-6, 7);
+            let ny = y + rng.next_range(-6, 7);
+            if in_world(world, nx, ny, 2)
+                && world.tile(nx, ny).is_some_and(|t| t.active())
+            {
+                convert_chlorophyte_cell(world, nx, ny, 9);
+            }
         }
-        return;
     }
-    // `:69688-69691`: the post-PlantBoss worlds halve the spread; the
+    // `:69702-69705`: the post-PlantBoss worlds halve the spread; the
     // creative spread-stop gate.
     if downed_plant_boss && rng.next_max(2) != 0 {
         return;
@@ -329,44 +456,114 @@ pub fn hard_update_world(
     if !allowed_to_spread {
         return;
     }
-    let corruption = SPREADS_CORRUPTION.contains(&kind);
-    let crimson = SPREADS_CRIMSON.contains(&kind);
-    if !corruption && !crimson {
-        return;
+    // The corruption loop (`:69706-69794`).
+    if SPREADS_CORRUPTION.contains(&kind) {
+        spread_loop(world, x, y, 1, rng);
     }
-    // The spread loop (`:69696-69860`): the ±3 target, the chlorophyte
-    // defence, the sunflower suppression, the conversions with the
-    // `Next(2) == 0` re-roll chain.
-    let mut tx = x + (rng.next_max(7) as i32 - 3);
-    let mut ty = y + (rng.next_max(7) as i32 - 3);
+    // The crimson loop (`:69795-69883`).
+    if SPREADS_CRIMSON.contains(&kind) {
+        spread_loop(world, x, y, 4, rng);
+    }
+    // The hallow loop (`:69884-69954`) — no chlorophyte defence, the
+    // sunflower check shares the InWorld gate. `TileID.Sets.SpreadsHallow`
+    // (`TileID.cs:584`) is the generated bitset.
+    if crate::tiledata::SET_SPREADS_HALLOW.has(kind) {
+        spread_loop_hallow(world, x, y, rng);
+    }
+}
+
+/// The evil infection loop (`WorldGen.cs:69706-69883`, the corruption and
+/// crimson bodies are identical bar the conversion type): the ±3 pick, the
+/// `InWorld(…, 10)` retry, the chlorophyte defence (the remix purge), the
+/// sunflower retry, then the per-kind ladder — each convertible kind rolls
+/// `Next(2) == 0` to re-draw and converts with `walls: false`. An
+/// unconvertible target ends the loop (the C#'s `flag2` stays false).
+fn spread_loop(world: &mut World, x: i32, y: i32, conversion_type: u8, rng: &mut UnifiedRandom) {
     loop {
-        if !(10..world.width - 10).contains(&tx) || !(10..world.height - 10).contains(&ty) {
+        let tx = x + rng.next_range(-3, 4);
+        let ty = y + rng.next_range(-3, 4);
+        if !in_world(world, tx, ty, 10) {
+            continue;
+        }
+        if nearby_chlorophyte(world, tx, ty, rng) {
+            chlorophyte_defense(world, tx, ty);
+            // The defended cell ends this iteration WITHOUT a re-roll
+            // (the C#'s else-arm never runs, `flag2` stays false).
             break;
         }
-        if nearby_chlorophyte(world, tx, ty) {
-            // `ChlorophyteDefense` (`:69456-69460`): the conversion runs in
-            // the remix worlds only — the normal worlds just break the
-            // spread loop here.
-            break;
+        if count_near_blocks_types(world, tx, ty, 2, 1, &[27]) > 0 {
+            continue;
         }
-        if sunflower_nearby(world, tx, ty) {
+        let Some(t) = world.tile(tx, ty) else {
             break;
-        }
-        let convertible = world.tile(tx, ty).is_some_and(|t| {
-            matches!(t.kind, 2 | 477 | 1 | 60 | 69 | 161 | 53 | 396 | 397)
-        });
+        };
+        let kind = t.kind;
+        // The ladder (`:69728-69791` / `:69817-69880`): the grass family,
+        // the stone + moss, the sand, the sandstone, the hardened sand, the
+        // jungle grass, the sandstone-69 arm, the ice.
+        let convertible = matches!(kind, 2 | 477 | 1 | 53 | 396 | 397 | 60 | 69 | 161)
+            || crate::tiledata::TILE_MOSS.has(kind);
         if !convertible {
             break;
         }
         let reroll = rng.next_max(2) == 0;
-        convert_cell(world, tx, ty, corruption, false);
+        convert_cell_flavor(
+            world,
+            tx,
+            ty,
+            if conversion_type == 1 {
+                ConversionFlavor::Corruption
+            } else {
+                ConversionFlavor::Crimson
+            },
+            false,
+        );
         if !reroll {
             break;
         }
-        tx += rng.next_max(7) as i32 - 3;
-        ty += rng.next_max(7) as i32 - 3;
     }
 }
+
+/// The hallow infection loop (`WorldGen.cs:69884-69954`): the same shape
+/// minus the chlorophyte defence; the ladder is the grass 2, the golf
+/// grass 477, the stone + moss, the sand 53, the sandstone 396, the
+/// hardened sand 397, the ice 161 — each converts with type 2.
+fn spread_loop_hallow(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) {
+    loop {
+        let tx = x + rng.next_range(-3, 4);
+        let ty = y + rng.next_range(-3, 4);
+        if !in_world(world, tx, ty, 10)
+            || count_near_blocks_types(world, tx, ty, 2, 1, &[27]) > 0
+        {
+            continue;
+        }
+        let Some(t) = world.tile(tx, ty) else {
+            break;
+        };
+        let kind = t.kind;
+        let convertible =
+            matches!(kind, 2 | 477 | 1 | 53 | 396 | 397 | 161) || crate::tiledata::TILE_MOSS.has(kind);
+        if !convertible {
+            break;
+        }
+        let reroll = rng.next_max(2) == 0;
+        convert_cell_flavor(world, tx, ty, ConversionFlavor::Hallow, false);
+        if !reroll {
+            break;
+        }
+    }
+}
+
+// W4-d103 POST FINAL PF-3 keep-one (research/12c, 12318e505): d103's
+// `convert_purge_cell` (the P8 tiles-only approximation) DROPPED at the
+// merge — f25 C5's `convert_chlorophyte_cell` is the survivor (the same
+// `WorldGen.cs:55665-55763` window, plus the `Convert_ActuallyConvertTile`
+// active+diff gate `:56314`, the `try_kill_invalid_tree_above` cross-kill
+// and the `reframe_area` superset). The three consumers rewired: the
+// `:69658`/`:69686` type-8 growth arms + the `:447` type-9 purge pick +
+// the `:292` type-10 ChlorophyteDefense. Draw-neutral: none of the three
+// arms draws caller RNG (the reframe rolls ride `world.frame_rng`), so
+// the P8 stream witnesses stay valid.
 
 /// `GERunner`'s hallow (good) map (`WorldGen.cs:76169-76290`): the hallowed
 /// grass 109, the pearlstone 117, the hallowed sand 116, the hallowed ice
@@ -405,6 +602,61 @@ const CONV_SNOW: [u16; 1] = [147];
 /// `WorldGen.InWorld(x, y, fluff)` (`WorldGen.cs:9688-9695`).
 fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
     x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
+/// `WorldGen.TileIsExposedToAir(x, y)` (`WorldGen.cs:54782-54800`, W4-f25
+/// helper C1): the 3x3 box around the cell holds an inactive tile, a
+/// non-solid tile or a platform — any of the three reads "exposed to air".
+/// The `InWorld(2)` gate refuses the border band. WIRED through the C4
+/// type-7 purify cell's sand-family dirt arm (`:55512`) and the closeout's
+/// Convert 15/18/19 cells (`:56031`/`:56171`/`:56222`); the c32
+/// biome-dungeon rooms (`BiomeDungeonRoom.cs:230/:246`) are the other C#
+/// callers (their bodies are c32's lane — the room port, not the cells).
+pub fn tile_is_exposed_to_air(world: &World, x: i32, y: i32) -> bool {
+    // `:54784-54787`.
+    if !in_world(world, x, y, 2) {
+        return false;
+    }
+    // `:54788-54798`: `tile != null && (!tile.active() ||
+    // !Main.tileSolid[tile.type] || TileID.Sets.Platforms[tile.type])`.
+    for i in (x - 1)..=(x + 1) {
+        for j in (y - 1)..=(y + 1) {
+            if let Some(t) = world.tile(i, j) {
+                if !t.active()
+                    || !crate::tiledata::TILE_SOLID.has(t.kind)
+                    || crate::tiledata::SET_PLATFORMS.has(t.kind)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.BlockBelowMakesSandConvertIntoHardenedSand(i, j)`
+/// (`WorldGen.cs:86562-86583`, W4-f25 helper C2): the cell BELOW is inactive
+/// or a non-solid kind — sand converting over such a floor hardens (397)
+/// instead of staying loose (53). The bottom row refuses (no cell below).
+/// WIRED through the C4 type-5 desertify cell's sand arm (`:55386`) and the
+/// closeout's Convert 16 sand arm (`:56064`); `BiomeDungeonRoom.cs:264/:280`
+/// (c32's lane — the room bodies) are the other C# callers.
+pub fn block_below_makes_sand_convert_into_hardened_sand(
+    world: &World,
+    i: i32,
+    j: i32,
+) -> bool {
+    // `:86565-86568`: `j >= Main.maxTilesY - 1` → false.
+    if j >= world.height - 1 {
+        return false;
+    }
+    // `:86569-86573`: the null tile → false.
+    let Some(tile) = world.tile(i, j + 1) else {
+        return false;
+    };
+    // `:86574-86581`: `!tile.nactive()` → true; else the in-range non-solid
+    // kind → true (the generated TILE_SOLID set carries the range gate).
+    !tile.active() || !crate::tiledata::TILE_SOLID.has(tile.kind)
 }
 
 /// `WorldGen.Convert(i, j, conversionType, size)` (`WorldGen.cs:55067-55083`):
@@ -747,6 +999,110 @@ fn convert_powder_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
     }
 }
 
+/// `Convert`'s type-3 cell (`WorldGen.cs:55336-55359`), the glowing-mushroom
+/// flavour (W4-g42 G7): the wall arm (`WallID.Sets.
+/// CanBeConvertedToGlowingMushroom` = {64, 67, 15, 247}, `WallID.cs:88`) →
+/// 80 through `Convert_ActuallyConvertWall`'s non-zero+different gate
+/// (`:56329-56343`), then the tile else-if ladder — the torch style-22 arm
+/// (`TileID.Sets.Conversion.Torch(tile, 3)`'s default switch {0, 9, 16, 18,
+/// 19, 20, 21, 22}, `TileID.cs:63-77`), the jungle grass 60 → 70
+/// (`Convert_ActuallyConvertTile`'s active+different + tree-above kill,
+/// `:56312-56327`) and the thorn kill (`Conversion.Thorn` = {32, 352, 69,
+/// 655}, `TileID.cs:95`). The type-3 arm draws NO RNG (the wall-80 depth
+/// rolls live in the type-0 cleanse arm only). The `SquareTileFrame` /
+/// `SquareWallFrame` calls ride the port's `reframe_area` superset (the
+/// `convert_cleanse_cell` precedent); the netMode sends are MP-only.
+pub fn convert_cell_mushroom(world: &mut World, x: i32, y: i32) {
+    // `!InWorld(i2, j2, 1)` (`:55087`) — the size-0 walk's only cell gate.
+    if !in_world(world, x, y, 1) {
+        return;
+    }
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `!theTile.active() && wall <= 0` (`:55092-55095`).
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half (`:55337-55340`): the shared type-3 ladder row.
+    if let Some(new_wall) = crate::growth::convert_wall_by_case(wall, 3, y, world.world_surface, None)
+    {
+        // `Convert_ActuallyConvertWall`: non-zero, different.
+        if wall != 0 && wall != new_wall {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.wall = new_wall;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+    // The tile half (`:55345-55358`) — the else-if ladder in source order.
+    if active && kind == 4 {
+        // `Conversion.Torch(tile, 3)` — the default-switch style set.
+        let num = world.tile(x, y).map_or(0, |t| t.frame_y as i32 / 22);
+        if matches!(num, 0 | 9 | 16 | 18 | 19 | 20 | 21 | 22) {
+            // `Convert_ActuallyConvertTorch` (`:56287-56310`): style 22, the
+            // type-0 mushroom quirk does not apply (conversionType 3).
+            if num != 22 {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.frame_y = 22 * 22;
+                }
+                crate::framing::reframe_area(world, x, y, 1, false);
+            }
+            return;
+        }
+        // A torch outside the set falls through the C# else-if chain to the
+        // 60/thorn tests (which a type-4 tile never matches) — a no-op.
+        return;
+    }
+    if kind == 60 {
+        // `Convert_ActuallyConvertTile`: active, different, the tree-above
+        // validity check, then the write + re-frame.
+        if active && kind != 70 {
+            try_kill_invalid_tree_above(world, x, y, 70);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = 70;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    if matches!(kind, 32 | 352 | 69 | 655) {
+        // `Conversion.Thorn[type]` → `KillTile` (`:55352-55357`; the netMode
+        // send is MP-only). The cleanse arm's kill precedent.
+        let _ = crate::edit::kill_tile(world, x, y, false);
+    }
+}
+
+/// `WorldGen.Convert(i, j, 3, size)` (`WorldGen.cs:55067-55083`) — the sized
+/// mushroom walk for the Clentaminator's DarkBlueSolution spray (W4-g42
+/// GROWTH SEAL: the FOURTH Convert(3) call site, `Projectile.cs:26834` —
+/// the aiStyle-31 ladder `:26805-26808` maps projectile 148 → type 3, the
+/// shoot math `Player.cs:53487-53490`: Clentaminator 779 shoot 145 +
+/// DarkBlueSolution 783 shoot 3 = 148). The SAME square walk + Manhattan
+/// `< 6` gate as [`convert_cleanse`] — only the per-cell arm differs
+/// ([`convert_cell_mushroom`], G7, RNG-free: the type-3 wall/torch/60→70/
+/// thorn ladder draws nothing).
+///
+/// MERGER CONTRACT (the projectile lane — d18 tip 8248a54b rowed the seven
+/// solution kinds 146-149/1015-1017; f25 tip d587b128d wired the `ai_spray`
+/// dispatch to `match conversion { 0 => convert_cleanse, 2 =>
+/// convert_sized_hallow, 5|6|7 => convert_sized_spray, _ => {} }`): the
+/// merger adds ONE arm — `3 => tr_core::spread::convert_sized_mushroom(
+/// world, tx, ty, size)` — into f25's match (types 1/4 stay d1's
+/// `convert_sized`). The 133 cap / `ai[0]++` / spin already run for every
+/// kind — this arm is the only missing piece. f25's 12g ledger already
+/// records "g42 owns 3".
+pub fn convert_sized_mushroom(world: &mut World, i: i32, j: i32, size: i32) {
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_cell_mushroom(world, k, l);
+            }
+        }
+    }
+}
+
 /// `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
 /// (`WorldGen.cs:54802-54899`): the tree trunk (or palm 323) directly above
 /// the converted cell dies when the new floor no longer fits its ground
@@ -778,10 +1134,11 @@ fn try_kill_invalid_tree_above(
         || CONV_JUNGLE_GRASS.contains(&new_floor)
         || CONV_SNOW.contains(&new_floor)
         || CONV_MUSHROOM_GRASS.contains(&new_floor);
+    let sand_side = crate::tiledata::SET_CONVERSION_SAND.has(new_floor);
     let mut fits = true;
     match tree {
         5 => fits = grass_side,
-        323 => fits = crate::tiledata::SET_CONVERSION_SAND.has(new_floor),
+        323 => fits = sand_side,
         _ => {}
     }
     // The profile override (`:54840-54843`): gem trees 583-589 take
@@ -802,85 +1159,901 @@ fn try_kill_invalid_tree_above(
     }
 }
 
-/// `GERunner`'s wall arms (`:76244-76260`): the sandstone wall 187 → the
-/// hallowed sandstone wall 222; the ebonstone/crimstone walls 3/83 → the
-/// hallowed stone wall 28.
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the hallow cell (W4-f25 helper C3, conversion type 2).
+// WIRING: the aiStyle-31 Clentaminator's 146 Blue Solution spray
+// (`projectile_ai_misc::ai_spray`), the holy-water death splash
+// (`projectile_ai_thrown::water_death`, `Projectile.cs:77635`) and
+// SpreadGrass's 109 dispatch (`growth/grass.rs`, `:75218`, tiles-only via
+// `convert_hallow_cell_halves`) call these cells. The gen-time consumers —
+// DoHallowOnSurface's map approximation (`micro_surface.rs`), GERunner /
+// initializeHardMode (d103's verbatim rewrite, pushed) and ConvertSkyIslands
+// (unported) — keep their own copies; the ChlorophyteBolt death is unported.
+
+/// `TileID.Sets.Conversion.Thorn` (`TileID.cs:95`). (d1's powder port carries
+/// the same constant on its branch; the merger dedupes.)
+const CONV_THORN: [u16; 4] = [32, 352, 69, 655];
+
+/// `TileID.Sets.Conversion.Torch(tile, conversionType)`'s default arm
+/// (`TileID.cs:63-77`): the styles every non-0/non-11 conversion type accepts.
+fn torch_convertible_default(style: i32) -> bool {
+    matches!(style, 0 | 9 | 16 | 18 | 19 | 20 | 21 | 22)
+}
+
+/// `WorldGen.Convert(i, j, 2, size)` (`WorldGen.cs:55067-55083` walk +
+/// `:55176-55260` cell): the square walk with the Manhattan `< 6` gate, each
+/// cell through [`convert_hallow_cell`] (both halves). The callers that pass
+/// `tiles: false`/`walls: false` ride [`convert_hallow_cell_halves`] directly.
+pub fn convert_sized_hallow(world: &mut World, i: i32, j: i32, size: i32) {
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_hallow_cell(world, k, l);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-2 cell arm, both halves (`WorldGen.cs:55176-55260`) —
+/// the single-cell overload's default `tiles: true, walls: true`.
+pub fn convert_hallow_cell(world: &mut World, x: i32, y: i32) {
+    convert_hallow_cell_halves(world, x, y, true, true);
+}
+
+/// `Convert`'s type-2 single-cell overload (`WorldGen.cs:55085-55097` +
+/// `:55176-55260`): the `InWorld(1)` gate, then the wall chain (the flat
+/// Grass/Stone/HardenedSand/Sandstone/NewWall ladder → 70/28/219/222/200-203,
+/// `:55179-55210`, gated on `walls`), then the torch → style 20 / moss-or-
+/// stone → 117 / golf grass → 492 / grass → 109 / ice → 164 / sand → 116 /
+/// hardened sand → 402 / sandstone → 403 / thorn-kill ladder in source order
+/// and the INDEPENDENT mud arm (`:55256-55259`: a mud 59 cell with a hallow-
+/// grass 109 4-neighbour → dirt 0), both gated on `tiles` (the C#'s
+/// `if (!tiles) break;` at `:55212` sits before them).
+/// `Convert_ActuallyConvertTile`/`Wall`/`Torch` (`:56287-56343`) write only
+/// when the cell differs and re-frame — the port's `reframe_area` superset
+/// (the `convert_cleanse_cell` deviation). The genRand-free wall ladder takes
+/// `None` (type 2 draws nothing); the `RainbowSandAndBlackSandWalls` paint
+/// arms are the d1-documented skip.
+pub fn convert_hallow_cell_halves(world: &mut World, x: i32, y: i32, tiles: bool, walls: bool) {
+    // `:55087` — the InWorld(1) gate + the both-halves-off refusal.
+    if !in_world(world, x, y, 1) || (!tiles && !walls) {
+        return;
+    }
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `:55094-55097` — the empty cell converts nothing.
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half (`:55177-55211`): the shared type-2 flat ladder.
+    if walls {
+        if let Some(new_wall) =
+            crate::growth::convert_wall_by_case(wall, 2, y, world.world_surface, None)
+        {
+            // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
+            if wall != 0 && wall != new_wall {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.wall = new_wall;
+                }
+                crate::framing::reframe_area(world, x, y, 1, false);
+            }
+        }
+    }
+    // `:55212-55215` — the tiles-off break skips the whole tile half.
+    if !tiles {
+        return;
+    }
+    // The tile half (`:55216-55255`) — the else-if ladder in source order.
+    if active && kind == 4 && torch_convertible_default(t.frame_y as i32 / 22) {
+        // `Convert_ActuallyConvertTorch(.., 20)` (`:55218`).
+        let cur = t.frame_y as i32 / 22;
+        if cur != 20 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_y = 20 * 22;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    } else {
+        // `Main.tileMoss[type] || Conversion.Stone[type]` (`:55220`) — the
+        // generated TILE_MOSS set is Main.cs:7007-7047's eleven ids.
+        let new_kind: Option<u16> = if (crate::tiledata::TILE_MOSS.has(kind)
+            || crate::tiledata::SET_CONVERSION_STONE.has(kind))
+            && kind != 117
+        {
+            Some(117)
+        } else if crate::tiledata::SET_GOLF_GRASS.has(kind) && kind != 492 {
+            Some(492)
+        } else if CONV_GRASS.contains(&kind) && kind != 109 && kind != 492 {
+            Some(109)
+        } else if crate::tiledata::SET_ICE.has(kind) && kind != 164 {
+            Some(164)
+        } else if crate::tiledata::SET_CONVERSION_SAND.has(kind) && kind != 116 {
+            Some(116)
+        } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind) && kind != 402 {
+            Some(402)
+        } else if crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind) && kind != 403 {
+            Some(403)
+        } else {
+            None
+        };
+        if let Some(new_kind) = new_kind {
+            // `Convert_ActuallyConvertTile` (`:56312-56327`).
+            if active && kind != new_kind {
+                try_kill_invalid_tree_above(world, x, y, new_kind);
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.kind = new_kind;
+                }
+                crate::framing::reframe_area(world, x, y, 1, false);
+            }
+        } else if CONV_THORN.contains(&kind) {
+            // `:55248-55255` — the thorn bushes die (the netMode arm is MP).
+            let _ = crate::edit::kill_tile(world, x, y, false);
+        }
+    }
+    // The independent mud arm (`:55256-55259`): the SNAPSHOT type 59 with a
+    // live 109 4-neighbour → dirt 0 through the same actually-convert shape.
+    if kind == 59
+        && [
+            world.tile(x - 1, y),
+            world.tile(x + 1, y),
+            world.tile(x, y - 1),
+            world.tile(x, y + 1),
+        ]
+        .iter()
+        .any(|t| t.is_some_and(|t| t.kind == 109))
+    {
+        if active && kind != 0 {
+            try_kill_invalid_tree_above(world, x, y, 0);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = 0;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the spray cells (W4-f25 helper C4, conversion types
+// 5/6/7: desertify / snow / purify). WIRING: the aiStyle-31 Clentaminator's
+// 1015 Sand / 1016 Snow / 1017 Purple Solution sprays
+// (`projectile_ai_misc::ai_spray`, `Projectile.cs:26813-26823`) call
+// `convert_sized_spray`. The C1 air-exposure + C2 hardening-floor tests ride
+// the type-7/5 dirt/sand arms inside the cell (their only ported consumers).
+
+/// `WorldGen.Convert(i, j, conversionType, size)` for the spray types 5/6/7
+/// (`WorldGen.cs:55067-55083` walk): the square walk with the Manhattan
+/// `< 6` gate, each cell through [`convert_spray_cell`].
+pub fn convert_sized_spray(world: &mut World, i: i32, j: i32, conversion_type: u8, size: i32) {
+    if !matches!(conversion_type, 5 | 6 | 7) {
+        return;
+    }
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_spray_cell(world, k, l, conversion_type);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-5/6/7 cell arms (`WorldGen.cs:55363-55408` desertify,
+/// `:55409-55445` snow, `:55446-55526` purify): the wall chain, then the
+/// torch / tile ladder in source order.
+///
+/// Deviations (the `convert_cleanse_cell` / d1 precedent): the wall halves
+/// ride the shared `convert_wall_by_case` (types 5/6 verbatim; type 7's
+/// `:55465` dirt arm there carries only the Dirt set — the HardenedSand/Snow
+/// union half is pre-gated here, order-equivalent: the union is disjoint from
+/// the natural Stone/Ice/Sandstone arm, the 262/274 switch and the NewWall
+/// sets). The `RainbowSandAndBlackSandWalls` paint arms are the documented
+/// skip; the re-frame is the `reframe_area` superset.
+pub fn convert_spray_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `:55087-55097` — the empty cell converts nothing.
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half. Type 7's `:55465` union pre-gate (see the fn doc).
+    let new_wall = if conversion_type == 7
+        && (crate::growth::conversion_hardened_sand_walls_contains(wall)
+            || crate::growth::conversion_snow_walls_contains(wall))
+        && wall != 2
+    {
+        Some(2u16)
+    } else {
+        crate::growth::convert_wall_by_case(wall, conversion_type, y, world.world_surface, None)
+    };
+    if let Some(new_wall) = new_wall {
+        // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
+        if wall != 0 && wall != new_wall {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.wall = new_wall;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+    // The torch arm (`:55379`/`:55425`/`:55493`): the default style set,
+    // styles 16 / 9 / 0 per type.
+    if active && kind == 4 && torch_convertible_default(t.frame_y as i32 / 22) {
+        let style = match conversion_type {
+            5 => 16i16,
+            6 => 9,
+            _ => 0,
+        };
+        let cur = t.frame_y as i32 / 22;
+        if cur != style as i32 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_y = style * 22;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    // The tile ladders in source order. `Conversion.Dirt` = {0}
+    // (`TileID.cs:88`), `Conversion.Snow` = {147} (`:89`).
+    let dirt = kind == 0;
+    let snow = CONV_SNOW.contains(&kind);
+    let moss_or = |k: u16| crate::tiledata::TILE_MOSS.has(k);
+    let new_kind: Option<u16> = match conversion_type {
+        // Desertify (`:55383-55399`): grass/sand/snow/dirt → 53 (397 over a
+        // hardening floor), hardened sand → 397, moss/stone/ice/sandstone →
+        // 396.
+        5 => {
+            if (CONV_GRASS.contains(&kind)
+                || crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                || snow
+                || dirt)
+                && kind != 53
+            {
+                Some(if block_below_makes_sand_convert_into_hardened_sand(world, x, y) {
+                    397
+                } else {
+                    53
+                })
+            } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind) && kind != 397 {
+                Some(397)
+            } else if (moss_or(kind)
+                || crate::tiledata::SET_CONVERSION_STONE.has(kind)
+                || crate::tiledata::SET_ICE.has(kind)
+                || crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind))
+                && kind != 396
+            {
+                Some(396)
+            } else {
+                None
+            }
+        }
+        // Snow (`:55429-55436`): grass/sand/hardened/snow/dirt → 147,
+        // moss/stone/ice/sandstone → 161.
+        6 => {
+            if (CONV_GRASS.contains(&kind)
+                || crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                || crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind)
+                || snow
+                || dirt)
+                && kind != 147
+            {
+                Some(147)
+            } else if (moss_or(kind)
+                || crate::tiledata::SET_CONVERSION_STONE.has(kind)
+                || crate::tiledata::SET_ICE.has(kind)
+                || crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind))
+                && kind != 161
+            {
+                Some(161)
+            } else {
+                None
+            }
+        }
+        // Purify (`:55497-55517`): stone/ice/sandstone → 1 (NO moss arm),
+        // golf grass → 477, grass → 2, sand/hardened/snow/dirt → 0 (2 when
+        // exposed to air).
+        _ => {
+            if (crate::tiledata::SET_CONVERSION_STONE.has(kind)
+                || crate::tiledata::SET_ICE.has(kind)
+                || crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind))
+                && kind != 1
+            {
+                Some(1)
+            } else if crate::tiledata::SET_GOLF_GRASS.has(kind) && kind != 477 {
+                Some(477)
+            } else if CONV_GRASS.contains(&kind) && kind != 2 && kind != 477 {
+                Some(2)
+            } else if (crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                || crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind)
+                || snow
+                || dirt)
+                && kind != 0
+            {
+                Some(if tile_is_exposed_to_air(world, x, y) { 2 } else { 0 })
+            } else {
+                None
+            }
+        }
+    };
+    if let Some(new_kind) = new_kind {
+        // `Convert_ActuallyConvertTile` (`:56312-56327`).
+        if active && kind != new_kind {
+            try_kill_invalid_tree_above(world, x, y, new_kind);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = new_kind;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    } else if CONV_THORN.contains(&kind) && kind != 69 {
+        // `:55400-55407`/`:55437-55444`/`:55518-55525` — the thorn kill
+        // (the 69 corrupt-thorn exemption is the C#'s own; the netMode arm
+        // is MP-only).
+        let _ = crate::edit::kill_tile(world, x, y, false);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the chlorophyte cells (W4-f25 helper C5, conversion
+// types 8/9/10). WIRED at the merge (W4-d103 POST FINAL PF-3 keep-one,
+// research/12c): hardUpdateWorld's chlorophyte arms (`:69658`/`:69686`
+// type 8, `:69697` type 9) and ChlorophyteDefense's remix-only type 10
+// (`:69460`) ride `convert_chlorophyte_cell` — d103's tiles-only
+// `convert_purge_cell` approximation dropped (the diff gate / the
+// tree cross-kill / the reframe superset are the survivor's).
+
+/// `WorldGen.Convert(i, j, conversionType, size)` for the chlorophyte types
+/// 8/9/10 (`WorldGen.cs:55067-55083` walk): the square walk with the
+/// Manhattan `< 6` gate, each cell through [`convert_chlorophyte_cell`].
+/// The C# call sites all use the single-cell overload (size 0).
+pub fn convert_sized_chlorophyte(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    conversion_type: u8,
+    size: i32,
+) {
+    if !matches!(conversion_type, 8 | 9 | 10) {
+        return;
+    }
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_chlorophyte_cell(world, k, l, conversion_type);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-8/9/10 cell arms (`WorldGen.cs:55665-55670` /
+/// `:55671-55720` / `:55721-55763`): tiles-only (no wall half in any of the
+/// three), no torch arm.
+/// - 8: the mud 59 / jungle grass 60 → the chlorophyte 211.
+/// - 9: the FULL grass set (2/23/109/199/477/492/661/662) → 60, dirt 0 → 59,
+///   the evil stone/sand/hardened/sandstone pairs → their pure kinds, the
+///   six thorn/evil kinds (24/32/201/205/352/636) die.
+/// - 10: the same WITHOUT the pure-grass/dirt rows (only the four infection
+///   grasses 23/199/661/662 → 60) — the ChlorophyteDefense remix conversion.
+/// `Convert_ActuallyConvertTile` (`:56312-56327`) writes only when the cell
+/// differs; the re-frame is the `reframe_area` superset (the cleanse/d1
+/// precedent).
+pub fn convert_chlorophyte_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `:55087-55097` — the empty cell converts nothing.
+    if !active && wall == 0 {
+        return;
+    }
+    // Type 8 (`:55665-55670`): `tiles && (type == 59 || type == 60)`.
+    if conversion_type == 8 {
+        if matches!(kind, 59 | 60) && active && kind != 211 {
+            try_kill_invalid_tree_above(world, x, y, 211);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = 211;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    // Types 9/10 (`:55676-55719` / `:55726-55762`): the switch on type.
+    let new_kind: Option<u16> = match kind {
+        // The type-9-only pure rows (`:55678-55690`): the plain/golf/hallow
+        // grasses and the dirt.
+        2 | 109 | 477 | 492 if conversion_type == 9 => Some(60),
+        0 if conversion_type == 9 => Some(59),
+        // The shared infection-grass row (`:55679`/`:55684-55685` vs
+        // `:55728-55731`).
+        23 | 199 | 661 | 662 => Some(60),
+        25 | 203 => Some(1),
+        112 | 234 => Some(53),
+        398 | 399 => Some(397),
+        400 | 401 => Some(396),
+        _ => None,
+    };
+    if let Some(new_kind) = new_kind {
+        if active && kind != new_kind {
+            try_kill_invalid_tree_above(world, x, y, new_kind);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = new_kind;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    } else if matches!(kind, 24 | 32 | 201 | 205 | 352 | 636) {
+        // `:55707-55718` / `:55750-55761` — the thorn/evil kinds die (the
+        // netMode arm is MP-only).
+        let _ = crate::edit::kill_tile(world, x, y, false);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the dungeon-biome cells (W4-f25 closeout, conversion
+// types 15/16/18/19: glowing-mushroom / desert / pure / jungle). The C#
+// switch arms (`:56008-56040` / `:56041-56086` / `:56124-56189` /
+// `:56190-56231`) exist but have ZERO call sites in the whole decompilation
+// (the biome-dungeon rooms use `DungeonUtils.ChangeTileType` directly,
+// `BiomeDungeonRoom.cs:232/:236/:248/:252/:266/:270/:282/:286` — c32's lane
+// owns those room bodies; the Convert-family cells land here). UNWIRED: no
+// executed step calls them, both world-hash pins unchanged. The C1/C2
+// helpers ride the 15/18/19 exposure arms and the 16 hardening floor.
+
+/// `WorldGen.Convert(i, j, conversionType, size)` for the dungeon-biome
+/// types 15/16/18/19 (`WorldGen.cs:55067-55083` walk): the square walk with
+/// the Manhattan `< 6` gate, each cell through [`convert_biome_cell`].
+pub fn convert_sized_biome(world: &mut World, i: i32, j: i32, conversion_type: u8, size: i32) {
+    if !matches!(conversion_type, 15 | 16 | 18 | 19) {
+        return;
+    }
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_biome_cell(world, k, l, conversion_type);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-15/16/18/19 cell arms (`WorldGen.cs:56008-56231`): the
+/// wall chain, the torch arm, the tile ladder, then — unlike the spray /
+/// hallow / chlorophyte cells — the INDEPENDENT `!tileFrameImportant[type]`
+/// catch-all (`:56029`/`:56082`/`:56185`/`:56220`): any non-frame-important
+/// tile converts to the biome's base kind (mushroom 70/59 by exposure,
+/// sandstone 396, stone 1, jungle 60/59 by exposure). The thorn arms differ
+/// per type: 15/18 KILL the thorn, 16 kills it with the 69 exemption, 19
+/// CONVERTS it to the jungle thorn 69.
+///
+/// Deviations (the `convert_cleanse_cell` / C3-C5 precedent): the wall
+/// halves ride the cell-local chains below (the shared
+/// `convert_wall_by_case` carries no 15/16/18/19 arm); the re-frame is the
+/// `reframe_area` superset; the `RainbowSandAndBlackSandWalls` paint arms
+/// (`:56302-56306` etc.) are the d1-documented skip; the `NetMessage` tails
+/// are MP-only. The type-19 wall switch's `case 15` no-op and the default
+/// 15 arm are verbatim (`:56193-56206`).
+pub fn convert_biome_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `:55087-55097` — the empty cell converts nothing.
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half — each type's own chain.
+    let new_wall: Option<u16> = match conversion_type {
+        // `:56009-56012` — any wall → the mushroom wall 80.
+        15 => Some(80),
+        // `:56042-56052` — the HardenedSand/Dirt/Snow union → 216, else 187.
+        16 => {
+            if (crate::growth::conversion_hardened_sand_walls_contains(wall)
+                || crate::growth::conversion_dirt_walls_contains(wall)
+                || crate::growth::conversion_snow_walls_contains(wall))
+                && wall != 216
+            {
+                Some(216)
+            } else if wall != 187 {
+                Some(187)
+            } else {
+                None
+            }
+        }
+        // `:56125-56151` — the HardenedSand/Snow/Dirt union → 2, the NewWall
+        // family → 212-215, else 349. The else-if fall-through is load-bearing:
+        // a wall already at its union/NewWall target (2 / 212-215) falls to
+        // the final `wall != 349` arm → 349 (the C# chain, verbatim).
+        18 => {
+            if (crate::growth::conversion_hardened_sand_walls_contains(wall)
+                || crate::growth::conversion_snow_walls_contains(wall)
+                || crate::growth::conversion_dirt_walls_contains(wall))
+                && wall != 2
+            {
+                Some(2)
+            } else if let Some(set) = crate::growth::conversion_new_wall_set(wall) {
+                let target = 212 + set as u16;
+                if wall != target {
+                    Some(target)
+                } else if wall != 349 {
+                    Some(349)
+                } else {
+                    None
+                }
+            } else if wall != 349 {
+                Some(349)
+            } else {
+                None
+            }
+        }
+        // `:56191-56207` — the wall>0 switch: the grass family 63/69/70/81
+        // → 64, the wall 15 no-op, the default → 15.
+        19 => {
+            if wall > 0 {
+                match wall {
+                    63 | 69 | 70 | 81 => Some(64),
+                    15 => None,
+                    _ => Some(15),
+                }
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    if let Some(new_wall) = new_wall {
+        // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
+        if wall != 0 && wall != new_wall {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.wall = new_wall;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+    // `:56013-56016` etc. — the tiles-off break skips the whole tile half.
+    // (The single-cell overload's `tiles` flag defaults true; the port's
+    // callers all pass tiles, so the half always runs here.)
+    // The torch arm (`:56017`/`:56057`/`:56156`/`:56212`): the default style
+    // set, styles 22 / 16 / 0 / 21 per type. The torch is frame-important,
+    // so the catch-all below never re-types it.
+    if active && kind == 4 && torch_convertible_default(t.frame_y as i32 / 22) {
+        let style = match conversion_type {
+            15 => 22i16,
+            16 => 16,
+            18 => 0,
+            _ => 21,
+        };
+        let cur = t.frame_y as i32 / 22;
+        if cur != style as i32 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_y = style * 22;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    // The tile ladder in source order. `Conversion.Dirt` = {0}
+    // (`TileID.cs:88`), `Conversion.Snow` = {147} (`:89`).
+    let dirt = kind == 0;
+    let snow = CONV_SNOW.contains(&kind);
+    let thorn = CONV_THORN.contains(&kind);
+    // The frame-important read (`Main.tileFrameImportant[type]`) — the
+    // catch-all's gate. The port's `frame_important` vec carries the boot
+    // statics; an out-of-range kind reads false (the C# array is
+    // `TileID.Count`-long, so every u16 kind is in range there).
+    let important = world
+        .frame_important
+        .get(kind as usize)
+        .copied()
+        .unwrap_or(false);
+    // The 15/19 catch-alls re-read the LIVE tile after the thorn arm: the
+    // C#'s `theTile` is a `ref Tile`, so a thorn `KillTile` deactivates it
+    // and `Convert_ActuallyConvertTile`'s `theTile.active()` gate then
+    // refuses the catch-all write. `live_convert` models that re-read.
+    let live_convert = |world: &mut World, new_kind: u16| {
+        if let Some(t) = world.tile(x, y) {
+            let (k, a) = (t.kind, t.active());
+            actually_convert_tile(world, x, y, k, a, new_kind);
+        }
+    };
+    match conversion_type {
+        // Type 15 (`:56021-56039`): the thorn kill, then the exposure
+        // catch-all → mushroom grass 70 (air) / mud 59 (sealed).
+        15 => {
+            if thorn {
+                let _ = crate::edit::kill_tile(world, x, y, false);
+            }
+            if !important {
+                let new_kind = if tile_is_exposed_to_air(world, x, y) { 70 } else { 59 };
+                live_convert(world, new_kind);
+            }
+        }
+        // Type 16 (`:56061-56085`): grass/sand/snow/dirt → 53 (397 over a
+        // hardening floor), hardened sand → 397, the thorn kill (69 exempt),
+        // then the non-396 catch-all → sandstone 396.
+        16 => {
+            if (CONV_GRASS.contains(&kind)
+                || crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                || snow
+                || dirt)
+                && kind != 53
+            {
+                let new_kind = if block_below_makes_sand_convert_into_hardened_sand(world, x, y) {
+                    397
+                } else {
+                    53
+                };
+                actually_convert_tile(world, x, y, kind, active, new_kind);
+            } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind) && kind != 397 {
+                actually_convert_tile(world, x, y, kind, active, 397);
+            } else if thorn && kind != 69 {
+                let _ = crate::edit::kill_tile(world, x, y, false);
+            } else if kind != 396 && !important {
+                actually_convert_tile(world, x, y, kind, active, 396);
+            }
+        }
+        // Type 18 (`:56160-56188`): golf grass → 477, grass → 2, the
+        // sand/hardened/snow/dirt union → 0 (2 when exposed), the thorn kill,
+        // then the non-1 catch-all → stone 1.
+        18 => {
+            if crate::tiledata::SET_GOLF_GRASS.has(kind) && kind != 477 {
+                actually_convert_tile(world, x, y, kind, active, 477);
+            } else if CONV_GRASS.contains(&kind) && kind != 2 && kind != 477 {
+                actually_convert_tile(world, x, y, kind, active, 2);
+            } else if (crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                || crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind)
+                || snow
+                || dirt)
+                && kind != 0
+            {
+                let new_kind = if tile_is_exposed_to_air(world, x, y) { 2 } else { 0 };
+                actually_convert_tile(world, x, y, kind, active, new_kind);
+            } else if thorn {
+                let _ = crate::edit::kill_tile(world, x, y, false);
+            } else if kind != 1 && !important {
+                actually_convert_tile(world, x, y, kind, active, 1);
+            }
+        }
+        // Type 19 (`:56216-56230`): the thorn CONVERTS to the jungle thorn
+        // 69 (not a kill), then the exposure catch-all → jungle grass 60
+        // (air) / mud 59 (sealed). The catch-all re-reads the LIVE tile: a
+        // thorn that just became 69 is still non-frame-important, so it
+        // converts AGAIN to 60/59 (the C# `theTile.type` re-read, verbatim).
+        19 => {
+            if thorn {
+                actually_convert_tile(world, x, y, kind, active, 69);
+            }
+            if !important {
+                let new_kind = if tile_is_exposed_to_air(world, x, y) { 60 } else { 59 };
+                live_convert(world, new_kind);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `Convert_ActuallyConvertTile` (`WorldGen.cs:56312-56327`): the active +
+/// different gate, the tree-invalidity kill, the kind write, the re-frame.
+/// The `RainbowSandAndBlackSandWalls` paint arm (`:56319-56323`) is the
+/// d1-documented skip; the `NetMessage` tail is MP-only.
+fn actually_convert_tile(world: &mut World, x: i32, y: i32, kind: u16, active: bool, new_kind: u16) {
+    if active && kind != new_kind {
+        try_kill_invalid_tree_above(world, x, y, new_kind);
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = new_kind;
+        }
+        crate::framing::reframe_area(world, x, y, 1, false);
+    }
+}
+
+/// `GERunner`'s wall arms (`:76237-76252`): the grass-wall family
+/// {63, 65, 66, 68, 69, 81} → the hallowed grass wall 70, the hardened-sand
+/// wall 216 → 219, the sandstone wall 187 → 222, the ebonstone/crimstone
+/// walls 3/83 → the hallowed stone wall 28. (The pre-tail port carried only
+/// the 187/3/83 slice; the family arms landed with the GERunner rewrite.)
 pub(crate) fn convert_wall_hallow(wall: u16) -> Option<u16> {
     Some(match wall {
+        63 | 65 | 66 | 68 | 69 | 81 => 70,
+        216 => 219,
         187 => 222,
         3 | 83 => 28,
         _ => return None,
     })
 }
 
-/// `WorldGen.GERunner` (`WorldGen.cs:76169-76330`): the V-shaped strip
-/// walker — the position starts at the sky `(i, 0)`, moves with the
-/// velocity `(speedX, 5f)` per step, converting the Manhattan disc of the
-/// radius `num2 · 0.5` (`num2 = Next(200, 250) · maxTilesX/4200`, the rim
-/// wobble `Next(-10, 11) · 0.015`) around it. `good` runs the hallow map,
-/// the evil side runs `Convert`'s map by the world's flavour.
+/// `WorldGen.GERunner` (`WorldGen.cs:76169-76441`): the V-shaped strip
+/// walker, verbatim. The shimmer pre-scan (`:76175-76190`) counts the
+/// active shimmer 225 tiles in the 20-margin box — over 200000 the `flag`
+/// arms convert the shimmer/honey family too. The disc radius
+/// `num2 = (int)(Next(200, 250) · maxTilesX/4200)` (`:76191`), the position
+/// starts at `(i, j)` and the velocity at the two `Next(-10, 11) · 0.1`
+/// draws UNLESS a speed was passed (`:76197-76203`). Each step converts the
+/// Manhattan disc (the per-cell `Next(-10, 11) · 0.015` rim wobble,
+/// `:76231`), then drifts `vx += Next(-10, 11) · 0.05` clamped to
+/// `speedX ± 1` (`:76427-76435`); the walk ends when the position leaves
+/// the `±num2` band around the world (`:76436-76439`).
+///
+/// Deviations: `Skyblock.lowTiles` (`:76171-76174`) has no ported runtime
+/// state on this branch (the f24 skyblock lane owns it) — a classic world
+/// always enters. The per-conversion `SquareTileFrame` rides the port's
+/// `framing::reframe_area` convention (the `grow_moss_arm` precedent).
 pub fn gerunner(
     world: &mut World,
-    x: i32,
+    i: i32,
+    j: i32,
     speed_x: f64,
+    speed_y: f64,
     good: bool,
     corruption: bool,
     rng: &mut UnifiedRandom,
 ) {
-    let scale = world.width as f64 / 4200.0;
-    let num2 = (rng.next_range(200, 250) as f64) * scale;
-    let mut px = x as f64;
-    let mut py = 0.0;
-    let mut vx = speed_x;
-    let vy = 5.0;
-    let bottom = world.height - 10;
-    let mut steps = 0;
-    while py < bottom as f64 && steps < world.height * 2 {
-        steps += 1;
-        let radius = num2 * 0.5;
-        for m in (px - radius) as i32..=(px + radius) as i32 {
-            for n in (py - radius) as i32..=(py + radius) as i32 {
-                if m < 2 || n < 2 || m >= world.width - 2 || n >= world.height - 5 {
+    // The shimmer pre-scan (`:76175-76190`).
+    let mut shimmer_count = 0;
+    for k in 20..world.width - 20 {
+        for l in 20..world.height - 20 {
+            if world.tile(k, l).is_some_and(|t| t.active() && t.kind == 225) {
+                shimmer_count += 1;
+            }
+        }
+    }
+    let flag = shimmer_count > 200000;
+    // `:76191-76203`.
+    let num2 = (rng.next_range(200, 250) as f64 * (world.width as f64 / 4200.0)) as i32;
+    let num3 = num2 as f64;
+    let (mut px, mut py) = (i as f64, j as f64);
+    let (mut vx, mut vy) = (
+        rng.next_range(-10, 11) as f64 * 0.1,
+        rng.next_range(-10, 11) as f64 * 0.1,
+    );
+    if speed_x != 0.0 || speed_y != 0.0 {
+        vx = speed_x;
+        vy = speed_y;
+    }
+    loop {
+        // The clamped box (`:76207-76226`).
+        let x0 = ((px - num3 * 0.5) as i32).max(0);
+        let x1 = ((px + num3 * 0.5) as i32).min(world.width);
+        let y0 = ((py - num3 * 0.5) as i32).max(0);
+        let y1 = ((py + num3 * 0.5) as i32).min(world.height - 5);
+        for m in x0..x1 {
+            for n in y0..y1 {
+                // The Manhattan gate with the per-cell wobble draw
+                // (`:76231`) — the draw happens for EVERY box cell.
+                let manhattan = (m as f64 - px).abs() + (n as f64 - py).abs();
+                let wobble = 1.0 + rng.next_range(-10, 11) as f64 * 0.015;
+                if manhattan >= num2 as f64 * 0.5 * wobble {
                     continue;
                 }
-                let manhattan = ((m as f64 - px).abs() + (n as f64 - py).abs()) as f64;
-                let wobble = 1.0 + (rng.next_range(-10, 11) as f64) * 0.015;
-                if manhattan >= radius * wobble {
+                let Some(t) = world.tile(m, n) else {
                     continue;
-                }
-                let (kind, wall) = match world.tile(m, n) {
-                    Some(t) => (t.kind, t.wall),
-                    None => continue,
                 };
+                let (kind, wall) = (t.kind, t.wall);
                 if good {
-                    if let Some(new_kind) = convert_tile_hallow(kind) {
+                    // The hallow wall ladder (`:76237-76252`).
+                    let new_wall = match wall {
+                        63 | 65 | 66 | 68 | 69 | 81 => Some(70),
+                        216 => Some(219),
+                        187 => Some(222),
+                        3 | 83 => Some(28),
+                        _ => None,
+                    };
+                    if let Some(w) = new_wall {
                         if let Some(t) = world.tile_mut(m, n) {
-                            t.kind = new_kind;
+                            t.wall = w;
                         }
                     }
-                    if let Some(new_wall) = convert_wall_hallow(wall) {
-                        if let Some(t) = world.tile_mut(m, n) {
-                            t.wall = new_wall;
+                    // The hallow tile ladder (`:76253-76302`).
+                    let new_kind = if flag && kind == 225 {
+                        Some(117)
+                    } else if flag && kind == 230 {
+                        Some(402)
+                    } else {
+                        match kind {
+                            2 => Some(109),
+                            1 | 25 | 203 => Some(117),
+                            53 | 123 | 112 | 234 => Some(116),
+                            661 | 662 => Some(60),
+                            23 | 199 => Some(109),
+                            161 | 163 | 200 => Some(164),
+                            396 => Some(403),
+                            397 => Some(402),
+                            _ => None,
                         }
+                    };
+                    if let Some(k) = new_kind {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.kind = k;
+                        }
+                        crate::framing::reframe_area(world, m, n, 1, true);
+                    }
+                } else if !corruption {
+                    // The crimson ladder (`:76304-76362`).
+                    let new_wall = match wall {
+                        63 | 65 | 66 | 68 => Some(81),
+                        216 => Some(218),
+                        187 => Some(221),
+                        _ => None,
+                    };
+                    if let Some(w) = new_wall {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.wall = w;
+                        }
+                    }
+                    let new_kind = if flag && kind == 225 {
+                        Some(203)
+                    } else if flag && kind == 230 {
+                        Some(399)
+                    } else {
+                        match kind {
+                            60 | 661 => Some(662),
+                            2 | 109 => Some(199),
+                            1 | 117 => Some(203),
+                            53 | 123 | 116 => Some(234),
+                            161 | 164 => Some(200),
+                            396 => Some(401),
+                            397 => Some(399),
+                            _ => None,
+                        }
+                    };
+                    if let Some(k) = new_kind {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.kind = k;
+                        }
+                        crate::framing::reframe_area(world, m, n, 1, true);
                     }
                 } else {
-                    if let Some(new_kind) = convert_tile(kind, corruption) {
+                    // The corruption ladder (`:76364-76423`).
+                    let new_wall = match wall {
+                        63 | 65 | 66 | 68 => Some(69),
+                        216 => Some(217),
+                        187 => Some(220),
+                        _ => None,
+                    };
+                    if let Some(w) = new_wall {
                         if let Some(t) = world.tile_mut(m, n) {
-                            t.kind = new_kind;
-                            t.frame_x = 0;
-                            t.frame_y = 0;
+                            t.wall = w;
                         }
                     }
-                    if let Some(new_wall) = convert_wall(wall, corruption) {
-                        if let Some(t) = world.tile_mut(m, n) {
-                            t.wall = new_wall;
+                    let new_kind = if flag && kind == 225 {
+                        Some(25)
+                    } else if flag && kind == 230 {
+                        Some(398)
+                    } else {
+                        match kind {
+                            60 | 662 => Some(661),
+                            2 | 109 => Some(23),
+                            1 | 117 => Some(25),
+                            53 | 123 | 116 => Some(112),
+                            161 | 164 => Some(163),
+                            396 => Some(400),
+                            397 => Some(398),
+                            _ => None,
                         }
+                    };
+                    if let Some(k) = new_kind {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.kind = k;
+                        }
+                        crate::framing::reframe_area(world, m, n, 1, true);
                     }
                 }
             }
         }
+        // The drift + clamp (`:76426-76435`).
         px += vx;
         py += vy;
+        vx += rng.next_range(-10, 11) as f64 * 0.05;
+        if vx > speed_x + 1.0 {
+            vx = speed_x + 1.0;
+        }
+        if vx < speed_x - 1.0 {
+            vx = speed_x - 1.0;
+        }
+        // The exit band (`:76436-76439`).
+        if px < -(num2 as f64)
+            || py < -(num2 as f64)
+            || px > (world.width + num2) as f64
+            || py > (world.height + num2) as f64
+        {
+            break;
+        }
     }
 }
 
@@ -959,7 +2132,12 @@ mod runner_tests {
         assert_eq!(convert_tile_hallow(661), Some(60), "the purify arm");
         assert_eq!(convert_tile_hallow(662), Some(60));
         assert_eq!(convert_tile_hallow(211), None);
-        // The walls: 187 → 222, 3/83 → 28.
+        // The walls (`:76237-76252`): the grass family → 70, 216 → 219,
+        // 187 → 222, 3/83 → 28.
+        assert_eq!(convert_wall_hallow(63), Some(70));
+        assert_eq!(convert_wall_hallow(69), Some(70));
+        assert_eq!(convert_wall_hallow(81), Some(70));
+        assert_eq!(convert_wall_hallow(216), Some(219));
         assert_eq!(convert_wall_hallow(187), Some(222));
         assert_eq!(convert_wall_hallow(3), Some(28));
         assert_eq!(convert_wall_hallow(83), Some(28));
@@ -969,7 +2147,7 @@ mod runner_tests {
     fn the_gerunner_carves_the_v_strip() {
         let mut w = world();
         let mut rng = UnifiedRandom::new(9);
-        gerunner(&mut w, 400, 2.0, true, false, &mut rng);
+        gerunner(&mut w, 400, 0, 2.0, 5.0, true, false, &mut rng);
         // The strip: the hallowed grass/pearlstone along the V from the
         // sky to the bottom.
         let hallowed = w
@@ -1002,7 +2180,7 @@ mod runner_tests {
         // grass 23, the stone → the ebonstone 25.
         let mut w = world();
         let mut rng = UnifiedRandom::new(10);
-        gerunner(&mut w, 400, -2.0, false, true, &mut rng);
+        gerunner(&mut w, 400, 0, -2.0, 5.0, false, true, &mut rng);
         let corrupt = w
             .tiles
             .iter()
@@ -1041,6 +2219,162 @@ mod runner_tests {
             .filter(|t| t.active() && matches!(t.kind, 199 | 203 | 234))
             .count();
         assert!(crimson > 200, "the crimson V ({crimson})");
+    }
+
+    /// W4-d103 tail (P2): `initializeHardMode`'s head draws
+    /// (`WorldGen.cs:31581-31591`) — `Next(300, 400)`, `Next(200, 300)`,
+    /// `Next(2)` — precede the runners' draws. The mirror consumes exactly
+    /// the three head draws, then a twin world runs ONLY the two GERunner
+    /// calls from that state: equal streams prove the head drew exactly
+    /// three words in the cited order (the runners are deterministic given
+    /// the same anchors, which the twin re-derives from the same draws).
+    #[test]
+    fn w4_d103_p2_the_hardmode_head_draws_three_before_the_runners() {
+        let mut w = World::new("t".into(), 60, 60);
+        w.dungeon_x = 45; // the right side: num6 = +1
+        let mut rng = UnifiedRandom::new(7);
+        initialize_hard_mode(&mut w, true, &mut rng);
+        // The three head draws, verbatim order, then the anchor maths.
+        let mut mirror = UnifiedRandom::new(7);
+        let num = mirror.next_range(300, 400) as f64 * 0.001;
+        let num2 = mirror.next_range(200, 300) as f64 * 0.001;
+        let width = 60.0;
+        let (mut num3, mut num4, mut num5) =
+            ((width * num) as i32, (width * (1.0 - num)) as i32, 1);
+        if mirror.next_max(2) == 0 {
+            num4 = (width * num) as i32;
+            num3 = (width * (1.0 - num)) as i32;
+            num5 = -1;
+        }
+        // num6 = +1 (dungeon right): the `else if num4 > num3` arm.
+        if num4 > num3 {
+            num4 = (width * (1.0 - num2)) as i32;
+        } else {
+            num3 = (width * (1.0 - num2)) as i32;
+        }
+        // The runners from the post-head state.
+        let mut twin = World::new("t".into(), 60, 60);
+        twin.dungeon_x = 45;
+        gerunner(&mut twin, num3, 0, 3.0 * num5 as f64, 5.0, true, true, &mut mirror);
+        gerunner(&mut twin, num4, 0, -3.0 * num5 as f64, 5.0, false, true, &mut mirror);
+        assert_eq!(rng, mirror, "exactly the three head draws + the runners");
+        assert_eq!(w.tiles, twin.tiles, "the same conversions landed");
+    }
+
+    /// W4-d103 tail (P2): the dungeon-side bias (`:31592-31615`) — a LEFT
+    /// dungeon pulls the dungeon-opposite anchor to the `num2` fraction.
+    /// The two worlds differ ONLY in `dungeon_x`; the head draws are the
+    /// same stream prefix, so the divergence proves the bias reads it.
+    #[test]
+    fn w4_d103_p2_the_dungeon_side_biases_the_anchors() {
+        let mut left = world();
+        left.dungeon_x = 100; // < 400: num6 = -1
+        let mut right = world();
+        right.dungeon_x = 700; // >= 400: num6 = +1
+        let mut rng_a = UnifiedRandom::new(21);
+        let mut rng_b = UnifiedRandom::new(21);
+        initialize_hard_mode(&mut left, true, &mut rng_a);
+        initialize_hard_mode(&mut right, true, &mut rng_b);
+        assert_ne!(
+            left.tiles, right.tiles,
+            "the dungeon side moves the V anchors"
+        );
+    }
+
+    /// W4-d103 tail (P3): the remix arm (`:31618-31656`) paints the hallow
+    /// band on the dungeon-opposite edge — a RIGHT dungeon puts the band
+    /// on the LEFT `width/7 + width/14` columns, each column's start
+    /// jittered by `Next(-1, 2)`.
+    #[test]
+    fn w4_d103_p3_the_remix_band_hallows_the_opposite_edge() {
+        let mut w = world();
+        w.seeds = crate::seeds::SeedFlags::none();
+        w.seeds.insert(crate::seeds::SeedFlags::REMIX);
+        w.dungeon_x = 700; // the right side: the band lands left
+        let mut rng = UnifiedRandom::new(5);
+        initialize_hard_mode(&mut w, true, &mut rng);
+        // The left band (0..width/7 = 0..114) carries hallowed stone.
+        let left_hallow = (0..114).any(|x| {
+            (300..590).any(|y| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && matches!(t.kind, 109 | 117))
+            })
+        });
+        assert!(left_hallow, "the remix hallow band on the left edge");
+        // The far right (past width - width/7 - width/14) stays untouched
+        // by the band arm (no evil tiles there to recruit).
+        let right_hallow = (700..800).any(|x| {
+            (300..590).any(|y| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && matches!(t.kind, 109 | 117))
+            })
+        });
+        assert!(!right_hallow, "the band stays on the dungeon-opposite edge");
+    }
+
+    /// W4-d103 tail (P2): the dual-dungeons seed skips the V runners
+    /// (`:31576-31580`) — the head still draws, the tiles stay untouched.
+    #[test]
+    fn w4_d103_p2_dual_dungeons_skips_the_runners() {
+        let mut w = world();
+        w.micro_seeds = crate::seeds::MicroSeedFlags::from(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS);
+        let before = w.tiles.clone();
+        let mut rng = UnifiedRandom::new(3);
+        let pristine = rng.clone();
+        initialize_hard_mode(&mut w, true, &mut rng);
+        assert_eq!(w.tiles, before, "no V conversions");
+        assert_ne!(rng, pristine, "the head still drew");
+    }
+
+    /// W4-d103 tail (P5): the moss-wall tail (`:31663-31698`) — a corrupt
+    /// floor tile with a drained wall-0 pocket above takes the 188-191
+    /// unsafe-wall ring (the outline lands one row lower than the pocket,
+    /// the floor-cell origin quirk). The fixture: a stone ceiling at row
+    /// 180, stone dividers every 10 columns, the corrupt floor at row 198 —
+    /// each 10x17 air pocket (>50 cells) drains within the 1000 budget, and
+    /// EVERY non-divider floor column qualifies, so the drawn point lands
+    /// one within the 15000-attempt burn budget.
+    #[test]
+    fn w4_d103_p5_the_moss_wall_ring_paints_the_pocket_rim() {
+        fn fixture() -> World {
+            let mut w = World::new("t".into(), 200, 400);
+            w.world_surface = 150.0;
+            // The stone ground from row 198 down + the ceiling at 180.
+            for x in 0..200 {
+                for y in 198..400 {
+                    put(&mut w, x, y, 1);
+                }
+                put(&mut w, x, 180, 1);
+            }
+            // The dividers every 10 columns (rows 181..197).
+            for x in (0..200).step_by(10) {
+                for y in 181..198 {
+                    put(&mut w, x, y, 1);
+                }
+            }
+            // The corrupt floor row.
+            for x in 0..200 {
+                put(&mut w, x, 198, 25);
+            }
+            w
+        }
+        let mut w = fixture();
+        let mut rng = UnifiedRandom::new(17);
+        hardmode_moss_walls(&mut w, &mut rng);
+        // Some ring cell took a 188-191 wall (the placement point is drawn,
+        // so the exact cell varies — the family is the assertion).
+        let painted = w
+            .tiles
+            .iter()
+            .filter(|t| (188..=191).contains(&t.wall))
+            .count();
+        assert!(painted > 0, "the corrupt unsafe-wall ring ({painted})");
+        // a == b: the same seed replays byte-identical.
+        let mut w2 = fixture();
+        let mut rng2 = UnifiedRandom::new(17);
+        hardmode_moss_walls(&mut w2, &mut rng2);
+        assert_eq!(w.tiles, w2.tiles, "a == b");
+        assert_eq!(rng, rng2, "a == b stream");
     }
 }
 
@@ -1182,6 +2516,114 @@ mod tests {
         crate::growth::convert_wall_by_case(wall, conversion_type, 0, 1.0e9, None)
     }
 
+    /// W4-g42 G7: the type-3 cell (`WorldGen.cs:55336-55359`) — the four
+    /// mushroom-safe walls → 80, the jungle grass 60 → 70, the torch
+    /// default-switch styles → 22, the thorn set dies, and the
+    /// inactive+wall-0 cell early-outs. RNG-free by construction.
+    #[test]
+    fn w4_g42_the_mushroom_conversion_cell_is_verbatim() {
+        let mut w = world();
+        // The wall set {64, 67, 15, 247} (`WallID.cs:88`) — each converts
+        // to 80 on an INACTIVE cell (the wall arm runs before the tile
+        // ladder, gated only by `!active && wall <= 0`).
+        for (x, wall) in [(10i32, 64u16), (12, 67), (14, 15), (16, 247)] {
+            let i = w.index(x, 100);
+            w.tiles[i] = Tile { wall, ..Default::default() };
+            convert_cell_mushroom(&mut w, x, 100);
+            assert_eq!(w.tile(x, 100).unwrap().wall, 80, "wall {wall} → 80");
+        }
+        // A non-set wall stands (the type-3 ladder has no other row).
+        let i = w.index(18, 100);
+        w.tiles[i] = Tile { wall: 2, ..Default::default() };
+        convert_cell_mushroom(&mut w, 18, 100);
+        assert_eq!(w.tile(18, 100).unwrap().wall, 2, "the dirt wall stands");
+        // The inactive + wall-0 cell early-outs (`:55092-55095`).
+        let i = w.index(20, 100);
+        w.tiles[i] = Tile { kind: 60, ..Default::default() }; // stored 60, inactive
+        convert_cell_mushroom(&mut w, 20, 100);
+        assert_eq!(w.tile(20, 100).unwrap().kind, 60, "the dead cell stands");
+        // The jungle grass 60 → 70 (`:55347-55350`).
+        put(&mut w, 22, 100, 60);
+        convert_cell_mushroom(&mut w, 22, 100);
+        assert_eq!(w.tile(22, 100).unwrap().kind, 70, "60 → 70");
+        // The torch default-switch set (`TileID.cs:63-77`): styles
+        // {0, 9, 16, 18, 19, 20, 21, 22} convert to 22; style 5 does not.
+        for (x, style) in [(24i32, 0i16), (26, 9), (28, 16), (30, 21)] {
+            put(&mut w, x, 100, 4);
+            let i = w.index(x, 100);
+            w.tiles[i].frame_y = style * 22;
+            convert_cell_mushroom(&mut w, x, 100);
+            assert_eq!(w.tile(x, 100).unwrap().frame_y, 22 * 22, "torch {style} → 22");
+        }
+        put(&mut w, 32, 100, 4);
+        let i = w.index(32, 100);
+        w.tiles[i].frame_y = 5 * 22;
+        convert_cell_mushroom(&mut w, 32, 100);
+        assert_eq!(w.tile(32, 100).unwrap().frame_y, 5 * 22, "style 5 stands");
+        // The thorn set {32, 352, 69, 655} (`TileID.cs:95`) dies.
+        for (x, kind) in [(34i32, 32u16), (36, 352), (38, 69), (40, 655)] {
+            put(&mut w, x, 100, kind);
+            convert_cell_mushroom(&mut w, x, 100);
+            assert!(!w.tile(x, 100).unwrap().active(), "thorn {kind} dies");
+        }
+    }
+
+    /// W4-g42 G7: the 60 → 70 write kills an invalid tree above
+    /// (`Convert_ActuallyConvertTile` → `TryConvertingOrKillingTreesAbove…`,
+    /// `:56316`): a palm 323 above a jungle-grass cell dies (the mushroom
+    /// grass 70 is not in `Conversion.Sand`), a tile-5 tree survives (70 is
+    /// in the grass-side union).
+    #[test]
+    fn w4_g42_the_mushroom_conversion_kills_the_invalid_tree_above() {
+        let mut w = world();
+        put(&mut w, 50, 100, 60);
+        put(&mut w, 50, 99, 323); // the palm trunk
+        convert_cell_mushroom(&mut w, 50, 100);
+        assert_eq!(w.tile(50, 100).unwrap().kind, 70);
+        assert!(!w.tile(50, 99).unwrap().active(), "the palm dies on 70");
+        let mut w2 = world();
+        put(&mut w2, 50, 100, 60);
+        put(&mut w2, 50, 99, 5); // the vanilla tree trunk
+        convert_cell_mushroom(&mut w2, 50, 100);
+        assert!(w2.tile(50, 99).unwrap().active(), "the tree survives on 70");
+    }
+
+    /// W4-g42 GROWTH SEAL: the sized type-3 walk (`WorldGen.cs:55067-55083`,
+    /// the Clentaminator DarkBlueSolution 148 site `Projectile.cs:26834`) —
+    /// the SAME square + Manhattan `< 6` gate as the cleanse walk: at
+    /// size 2 every (±2, ±2) cell sits inside (max Manhattan 4); the gate
+    /// only bites at size 3 (the solution spray), where the (±3, ±3)
+    /// corners (Manhattan 6) refuse. Every 60 in the diamond becomes 70;
+    /// the out-of-diamond 60 stands. RNG-free — the a == b halves compare
+    /// the full tile state.
+    #[test]
+    fn w4_g42_seal_the_sized_mushroom_walk_matches_the_convert_gate() {
+        let run = |size: i32| {
+            let mut w = world();
+            for dx in -3..=3i32 {
+                for dy in -3..=3i32 {
+                    put(&mut w, 100 + dx, 100 + dy, 60);
+                }
+            }
+            convert_sized_mushroom(&mut w, 100, 100, size);
+            w
+        };
+        let w2 = run(2);
+        for dx in -2..=2i32 {
+            for dy in -2..=2i32 {
+                assert_eq!(w2.tile(100 + dx, 100 + dy).unwrap().kind, 70,
+                    "size 2: ({dx},{dy}) inside the walk");
+            }
+        }
+        assert_eq!(w2.tile(103, 100).unwrap().kind, 60, "size 2: the ring outside stands");
+        let w3 = run(3);
+        assert_eq!(w3.tile(103, 103).unwrap().kind, 60,
+            "size 3: the Manhattan-6 corner refuses");
+        assert_eq!(w3.tile(103, 102).unwrap().kind, 70,
+            "size 3: Manhattan 5 converts");
+        assert_eq!(run(3).tiles, run(3).tiles, "a == b — the full tile state");
+    }
+
     #[test]
     fn the_spread_converts_the_neighbours() {
         // The ebonstone source: the grass neighbours convert to the corrupt
@@ -1192,8 +2634,9 @@ mod tests {
         put(&mut w, 199, 200, 1); // the stone
         put(&mut w, 200, 199, 53); // the sand
         put(&mut w, 200, 201, 161); // the ice
-        // The stone's wall set before the spread (the wall converts with
-        // the tile — the already-corrupt tiles leave the Convert map).
+        // The stone's wall set before the spread — the C#'s infection
+        // Convert calls are ALL `walls: false` (`:69734`, `:69742`, …), so
+        // the wall stays natural even as the tile corrupts.
         let i = w.index(199, 200);
         w.tiles[i].wall = 1;
         let mut rng = UnifiedRandom::new(1);
@@ -1204,39 +2647,65 @@ mod tests {
         assert_eq!(w.tile(199, 200).unwrap().kind, 25, "the stone corrupted");
         assert_eq!(w.tile(200, 199).unwrap().kind, 112, "the sand corrupted");
         assert_eq!(w.tile(200, 201).unwrap().kind, 163, "the ice corrupted");
-        assert_eq!(w.tile(199, 200).unwrap().wall, 3, "the wall corrupted");
+        assert_eq!(
+            w.tile(199, 200).unwrap().wall,
+            1,
+            "the wall stays — the spread Convert is walls: false"
+        );
     }
 
     #[test]
     fn the_sunflower_and_chlorophyte_defend() {
-        // The sunflower (27) within 2 tiles stops the spread.
-        let mut w = world();
-        put(&mut w, 200, 200, 25);
-        put(&mut w, 201, 200, 2);
-        put(&mut w, 204, 200, 27); // the sunflower two tiles out
-        put(&mut w, 203, 200, 2);
-        let mut rng = UnifiedRandom::new(3);
-        for _ in 0..100 {
-            hard_update_world(&mut w, 200, 200, false, true, &mut rng);
+        // The sunflower (27) within 2 tiles stops the spread. The C#'s
+        // `continue` re-draws a sunflower-blocked pick (`:69724-69727`), so
+        // the assertion is statistical: over many seeds the guarded cell
+        // converts far less often than the open one.
+        let mut guarded_hits = 0;
+        let mut open_hits = 0;
+        for seed in 1u64..60 {
+            let mut w = world();
+            put(&mut w, 200, 200, 25);
+            put(&mut w, 201, 200, 2);
+            put(&mut w, 204, 200, 27); // the sunflower two tiles out
+            put(&mut w, 203, 200, 2);
+            let mut rng = UnifiedRandom::new(seed as i32);
+            for _ in 0..100 {
+                hard_update_world(&mut w, 200, 200, false, true, &mut rng);
+            }
+            if w.tile(203, 200).unwrap().kind == 23 {
+                guarded_hits += 1;
+            }
+            if w.tile(201, 200).unwrap().kind == 23 {
+                open_hits += 1;
+            }
         }
-        assert_eq!(w.tile(203, 200).unwrap().kind, 2, "the sunflower blocks");
-        assert_eq!(w.tile(201, 200).unwrap().kind, 23, "the far side corrupts");
+        assert!(
+            guarded_hits < open_hits,
+            "the sunflower guards ({guarded_hits} vs {open_hits})"
+        );
         // The chlorophyte defence (`ChlorophyteDefense` is the remix-only
         // conversion — the normal worlds just stop the spread): the
-        // corrupt grass next to the chlorophyte stays put.
-        let mut w = world();
-        put(&mut w, 200, 200, 211); // the chlorophyte
-        put(&mut w, 202, 200, 23); // the corrupt grass next to it
-        put(&mut w, 205, 200, 2); // the grass beyond the defence radius
-        let mut rng = UnifiedRandom::new(4);
-        for _ in 0..100 {
-            hard_update_world(&mut w, 202, 200, false, true, &mut rng);
+        // corrupt grass next to THREE chlorophytes (the >=3 short-circuit)
+        // stays put across the seeds.
+        let mut defended_hits = 0;
+        for seed in 1u64..60 {
+            let mut w = world();
+            put(&mut w, 199, 199, 211);
+            put(&mut w, 200, 199, 211);
+            put(&mut w, 201, 199, 211);
+            put(&mut w, 202, 200, 23); // the corrupt grass in the defence box
+            put(&mut w, 203, 200, 2); // the grass beside it
+            let mut rng = UnifiedRandom::new(seed as i32);
+            for _ in 0..100 {
+                hard_update_world(&mut w, 202, 200, false, true, &mut rng);
+            }
+            if w.tile(203, 200).unwrap().kind == 23 {
+                defended_hits += 1;
+            }
         }
-        assert_eq!(w.tile(202, 200).unwrap().kind, 23, "the source intact");
-        assert_eq!(
-            w.tile(201, 200).unwrap().kind,
-            0,
-            "the defence radius holds the cells"
+        assert!(
+            defended_hits < 30,
+            "the >=3 defence holds most picks ({defended_hits}/60)"
         );
     }
 

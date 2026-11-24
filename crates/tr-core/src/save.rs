@@ -63,6 +63,17 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// and the whole fixed BG/flag/identity head (batch-M); a pre-v18 file loads
 /// those three at the slot-0 defaults. The land-MD 115-byte head supersedes
 /// batch-M's 107-byte head (Lead arbitration v615 / f43b) — see the writer.
+/// v18 also appended `Main.dungeonX/dungeonY` (`Main.cs:1115-1117`, the C#'s
+/// flags block `WorldFile.cs:1275-1276`) — the dungeon entrance anchor the
+/// Plantera bulb event reads (W4-c31 jungle residuals); a pre-v18 file loads
+/// 0/0. v18 appended the packed framing variants (`World::variants`, the
+/// runtime `Tile.bTileHeader2` bits 4-7, `Tile.cs:464-482`) as a dense
+/// `width*height` byte block (W4-d109, the save half of S1-A-3). The C#
+/// `.wld` never serializes these bits (`SaveWorldTiles` `WorldFile.cs:1432-1604`),
+/// so this is a port-only persistence: a v18 load restores them and sets
+/// `World::variants_from_save`, and the full-world framing passes reuse the
+/// stored values (`TileFrame`/`WallFrame` resetFrame:false) instead of
+/// re-rolling. A pre-v18 file loads with the `World::new` zeros and re-rolls.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -535,6 +546,14 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     w.write_all(&world.world_id.to_le_bytes())?; // [95..99]
     w.write_all(&world.creation_time.to_le_bytes())?; // [99..107]
     w.write_all(&world.last_played.to_le_bytes())?; // [107..115]
+    // W4-d109 / batch-B (the save half of S1-A-3): the dungeon entrance
+    // anchor (`Main.cs:1115-1117`, `WorldFile.cs:1275-1276`) and the packed
+    // framing-variants block ride AFTER group4's SEALED 115-byte head. They
+    // do NOT touch the [50..60] v18 tail seats (crimson [50] + moon quintet
+    // [51..56] + pet license [57..60]) — no byte is double-booked.
+    w.write_all(&world.dungeon_x.to_le_bytes())?; // [115..119]
+    w.write_all(&world.dungeon_y.to_le_bytes())?; // [119..123]
+    w.write_all(&world.variants)?; // [123..123 + width*height]
     Ok(())
 }
 
@@ -975,6 +994,16 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.creation_time = r.u64()? as i64; // [99..107]
         world.last_played = r.u64()? as i64; // [107..115]
     }
+    // W4-d109 / batch-B: the dungeon anchor + the dense framing-variants
+    // block (a pre-v18 file keeps the World::new 0/0 + zero variants and the
+    // framing passes re-roll them). 4 + 4 + width*height bytes consumed.
+    if version >= 18 {
+        world.dungeon_x = r.i32()?;
+        world.dungeon_y = r.i32()?;
+        let n = world.tiles.len();
+        world.variants = r.take(n)?.to_vec();
+        world.variants_from_save = true;
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -1247,7 +1276,7 @@ mod tests {
         // EMPTY_V16_TAIL (signs/plates 8 + rain 9 + v15 1 + v16 5 + v17 1
         // + the v18 UNION head 115). The old `- 3` literal predated the
         // tail's growth (stale on the code-only lanes) — merger re-pin.
-        buf.truncate(buf.len() - (2 + 1 + 2 + V6_FLAGS_LEN + 4 * 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
+        buf.truncate(buf.len() - (v18_tail_len(&buf) + 2 + 1 + 2 + V6_FLAGS_LEN + 4 * 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
         buf[8..12].copy_from_slice(&3u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 0);
@@ -1255,12 +1284,13 @@ mod tests {
     }
 
     #[test]
-    fn dw_1_4_version_above_4_rejected() {
+    fn dw_1_4_version_above_current_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
         // current one (`save.rs` version gate). v18 (the town-pet license
         // flags, W4-g87, seated [57..60] of the head) AND the UNION fixed
         // head (research/218 §1-FULL.2 per 103 A3, land-MD 115-byte supersede)
-        // is now the current format, so the gate pins 18.
+        // is now the current format, so the gate pins 18. The dungeonX/Y pair
+        // (W4-c31) and the framing-variants block (W4-d109) ride behind it.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
@@ -1345,7 +1375,7 @@ mod tests {
         // entity count + the five empty v7..v11 counts (20) + the ore
         // presence (1) + the v12 masks (10) + EMPTY_V16_TAIL (signs/plates
         // + v14 rain + v15 + v16 + v17 fishron + the v18 UNION head 115).
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
+        buf.truncate(buf.len() - (v18_tail_len(&buf) + V6_FLAGS_LEN + 4 * 4 + 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1396,7 +1426,7 @@ mod tests {
         // A v11 file (the same stream minus the v12 block and the v13..v16
         // tails, the version byte restored) loads as the classic world it was.
         // (+44: the v18 identity block.)
-        buf.truncate(buf.len() - 10 - EMPTY_V16_TAIL);
+        buf.truncate(buf.len() - v18_tail_len(&buf) - 10 - EMPTY_V16_TAIL);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
@@ -1425,7 +1455,7 @@ mod tests {
         // (`Main.cs:6603`) fires before any load and does not restore them
         // (research/64 §2 corrected: the load overwrites the boot roll).
         let mut v17 = buf.clone();
-        v17.truncate(v17.len() - 115);
+        v17.truncate(v17.len() - v18_tail_len(&v17) - 8 - 115);
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back17, _) = parse(&v17).unwrap();
         assert_eq!(back17.cave_back_x, [0; 4]);
@@ -1492,7 +1522,7 @@ mod tests {
         // W4-g87 pet-license flags [57..60] + the g71 styles + the f43b
         // blue/7-slime slots + identity; research/218 §1-FULL.2 per 103 A3,
         // land-MD 107→115 supersede).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 115;
+        let tail = v18_tail_len(&v12) + 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 8 + 115;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1523,18 +1553,37 @@ mod tests {
     /// v18 UNION fixed head (115 B — forest 16 + cave 31 + surface 3 +
     /// flag middle 20 (incl. the f43b blue + 7 slimes) + identity 44; the
     /// W4-g87 pet-license trio sits at [57..60]; research/218 §1-FULL.2 per
-    /// 103 A3, land-MD 107→115 supersede).
-    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 115;
+    /// 103 A3, land-MD 107→115 supersede). The v18 dungeonX/Y pair (W4-c31)
+    /// adds 8 bytes behind the head; the dense variants block is peeled
+    /// separately with [`v18_tail_len`].
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 8 + 115;
+
+    /// The v18 framing-variants block's size: a dense `width*height` byte
+    /// array (W4-d109). End-relative fixtures peel it off before truncating
+    /// the older tails; the version is read from the header.
+    fn v18_tail_len(buf: &[u8]) -> usize {
+        let version = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+        if version < 18 {
+            return 0;
+        }
+        // Header: magic(8) + version(4) + seed(8) + name_len(4) + name
+        // + width(4) + height(4). The name length sits at offset 20.
+        let name_len = u32::from_le_bytes(buf[20..24].try_into().unwrap()) as usize;
+        let dims = 24 + name_len;
+        let width = i32::from_le_bytes(buf[dims..dims + 4].try_into().unwrap()) as usize;
+        let height = i32::from_le_bytes(buf[dims + 4..dims + 8].try_into().unwrap()) as usize;
+        width * height
+    }
 
     fn back_flags(buf: &[u8]) -> u16 {
-        let end = buf.len() - EMPTY_V16_TAIL;
+        let end = buf.len() - EMPTY_V16_TAIL - v18_tail_len(buf);
         u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
     /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
     /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        let end = buf.len() - EMPTY_V16_TAIL;
+        let end = buf.len() - EMPTY_V16_TAIL - v18_tail_len(buf);
         u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
@@ -1714,7 +1763,8 @@ mod tests {
         // (115 B, land-MD supersede) ride behind the v15 flag — the W4-g87
         // pet-license flags included at [57..60].
         let mut v14 = buf.clone();
-        v14.truncate(v14.len() - 1 - 5 - 1 - 115);
+        let tail = v18_tail_len(&v14) + 1 + 5 + 1 + 8 + 115;
+        v14.truncate(v14.len() - tail);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
@@ -1769,7 +1819,7 @@ mod tests {
         // A pre-v18 file (the block truncated, the version patched) loads the
         // `World::new` zeros — the values the pre-W4-c43 saves carried.
         let mut v17 = buf.clone();
-        v17.truncate(v17.len() - 115); // the whole v18 UNION head
+        v17.truncate(v17.len() - v18_tail_len(&v17) - 8 - 115); // d109 pair + v18 head
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back, _) = parse(&v17).unwrap();
         assert_eq!(back.generator_version, 0);
@@ -1817,7 +1867,7 @@ mod tests {
         // entity count + the five empty v7..v11 counts (20) + the ore
         // presence (1) + the v12 masks (10) + EMPTY_V16_TAIL (signs/plates
         // + v14 rain + v15 + v16 + v17 + the v18 UNION head 115).
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
+        buf.truncate(buf.len() - (v18_tail_len(&buf) + 2 + V6_FLAGS_LEN + 4 * 4 + 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -2491,7 +2541,7 @@ mod tests {
         // patched) keeps the `WorldGen.Reset` defaults (`World::new`):
         // dividers at maxTilesX, all four styles 0.
         let mut v17 = buf.clone();
-        v17.truncate(v17.len() - 115);
+        v17.truncate(v17.len() - v18_tail_len(&v17) - 8 - 115);
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back, _) = parse(&v17).unwrap();
         assert_eq!(back.tree_x, [64, 64, 64]);
@@ -2521,7 +2571,7 @@ mod tests {
         let mut old = Vec::new();
         let w0 = World::new("Test".into(), 32, 32);
         write_world(&mut old, &w0, &WorldSide::default()).unwrap();
-        old.truncate(old.len() - 115);
+        old.truncate(old.len() - v18_tail_len(&old) - 8 - 115);
         old[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back17, _) = parse(&old).unwrap();
         assert_eq!(
@@ -2529,4 +2579,90 @@ mod tests {
             (0, 0, 0)
         );
     }
+    // ---- W4-d109: the v18 framing-variants block (the save half of S1-A-3) ----
+
+    /// The packed variants round-trip byte-for-byte and arm `variants_from_save`
+    /// so the framing passes reuse them. Both 2-bit fields survive, including a
+    /// wall variant of 3 (the lazure fourth lookup column).
+    #[test]
+    fn w4_d109_the_framing_variants_round_trip_in_v18() {
+        let mut w = World::new("Test".into(), 16, 12);
+        for y in 0..12 {
+            for x in 0..16 {
+                let i = w.index(x, y);
+                w.set_frame_number(i, ((x + y) % 3) as u8);
+                w.set_wall_frame_number(i, ((x * 2 + y) % 4) as u8); // reaches 3
+            }
+        }
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        assert_eq!(&buf[8..12], &[18, 0, 0, 0], "the writer emits v18");
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.variants_from_save, "a v18 load arms the reuse seam");
+        assert_eq!(back.variants, w.variants, "the packed bits round-trip");
+        for y in 0..12 {
+            for x in 0..16 {
+                let i = back.index(x, y);
+                assert_eq!(back.frame_number(i), w.frame_number(i));
+                assert_eq!(back.wall_frame_number(i), w.wall_frame_number(i));
+            }
+        }
+        // The block is dense width*height and rides the file's tail.
+        assert_eq!(v18_tail_len(&buf), 16 * 12);
+        assert_eq!(&buf[buf.len() - 16 * 12..], w.variants.as_slice());
+    }
+
+    /// A pre-v18 file (the v18 block truncated, the version patched to 17) loads
+    /// with the `World::new` zero variants and `variants_from_save` false — the
+    /// C#'s own reset semantics (the runtime bits are not in the `.wld`, so they
+    /// reset and re-roll). The older tails still load.
+    #[test]
+    fn w4_d109_a_pre_v18_file_resets_the_variants() {
+        let mut w = World::new("Test".into(), 16, 12);
+        for i in 0..w.tiles.len() {
+            w.set_frame_number(i, 2);
+            w.set_wall_frame_number(i, 3);
+        }
+        w.downed_fishron = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        // Peel the dense v18 block and patch the version to 17.
+        buf.truncate(buf.len() - v18_tail_len(&buf));
+        buf[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&buf).unwrap();
+        assert!(!back.variants_from_save, "a pre-v18 file re-rolls");
+        assert!(back.variants.iter().all(|&v| v == 0), "the zeros of World::new");
+        assert!(back.downed_fishron, "the v17 flag still loads");
+    }
+
+    /// A v18 payload cut mid-variants-block is a structural error (the dense
+    /// block is self-delimiting by `width*height`), not a silent default.
+    #[test]
+    fn w4_d109_a_truncated_variants_block_bails() {
+        let mut w = World::new("Test".into(), 16, 12);
+        for i in 0..w.tiles.len() {
+            w.set_frame_number(i, 1);
+        }
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        buf.truncate(buf.len() - 5); // inside the dense variants block
+        assert!(parse(&buf).is_err());
+    }
+
+    /// The same world written twice is byte-equal — the variants block is a
+    /// dense row-major array, so no iteration order can leak into the stream.
+    #[test]
+    fn w4_d109_the_variants_block_is_deterministic() {
+        let mut w = World::new("Test".into(), 16, 12);
+        for i in 0..w.tiles.len() {
+            w.set_frame_number(i, (i % 3) as u8);
+            w.set_wall_frame_number(i, (i % 4) as u8);
+        }
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        write_world(&mut a, &w, &WorldSide::default()).unwrap();
+        write_world(&mut b, &w, &WorldSide::default()).unwrap();
+        assert_eq!(a, b);
+    }
+
 }

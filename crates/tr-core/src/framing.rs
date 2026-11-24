@@ -1676,6 +1676,30 @@ pub fn section_tile_frame(
     }
 }
 
+/// `WorldGen.GetTileMossColor(tileType)` (`WorldGen.cs:81215-81255`, W4-f25
+/// helper C8): the moss tile / moss-brick pairs map to their colour index
+/// 0-10 (the loose-moss 184 frame column = `22 * colour`, `TileFrame` case
+/// 184 `:85176-85202`); every other kind reads -1 (`None`). WIRED: the
+/// case-184 arm lives in `edit/kill.rs::check_long_moss` (the port's
+/// `TileFrameImportant` dispatch), which calls this for the four-neighbour
+/// colour pick.
+pub fn get_tile_moss_color(tile_type: u16) -> Option<i32> {
+    Some(match tile_type {
+        179 | 512 => 0,
+        180 | 513 => 1,
+        181 | 514 => 2,
+        182 | 515 => 3,
+        183 | 516 => 4,
+        381 | 517 => 5,
+        534 | 535 => 6,
+        536 | 537 => 7,
+        539 | 540 => 8,
+        625 | 626 => 9,
+        627 | 628 => 10,
+        _ => return None,
+    })
+}
+
 /// Port of `Framing.WallFrame`: picks the 36 px cell for every wall.
 #[allow(clippy::needless_range_loop)] // `x` also indexes the world, not just `row`
 pub fn frame_walls(world: &mut World) -> usize {

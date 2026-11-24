@@ -3569,7 +3569,25 @@ fn town_social_ladder(
         && rng.next_max(1200) == 0
         && (net_id == 208 || (env.party_up && attack_type(net_id) == attack_type(208)))
     {
-        // `:55289-55307` — the Party Girl's party talk (state 6).
+        // `:55289-55307` — the Party Girl's party talk (state 6). W4-f41
+        // closeout census (research/70 §8h): there is NO C# party-gathering
+        // behavior — town NPCs do NOT cluster near the party-giver; the
+        // full `BirthdayParty` reference census (13 files) finds only this
+        // talk gate + the facing state machine (`:54298-54328`, ported
+        // below at the 6/7/18/19 arm), the hats (c39/d55), the chat text
+        // (d120), the slime inside-items (b1), the PartyBunny critter spawn
+        // (spawner lane), the emote probe (UI lane), the alt-texture
+        // (NPC-texture lane), the bunny-statue swap (wiring lane) and the
+        // NerdySlime spawn gate (town-spawn lane). This gate + state machine
+        // are the S1-D-3 port; the aiStyle-7 axis WIRING is W4-b3's
+        // (96a5d88f0: the axis arm npc.rs:4722 + the ai_007_town_family
+        // adapter :10121) and the live `party_up` feed at the TownEnv build
+        // is b3 phase 2's declared follow-up (its npc.rs:10160 still
+        // `party_up: false` — the solo adapter takes (&World, &Player), no
+        // App, so the feed rides the phase-2 live-list/talk threading) —
+        // co-lane, not ported here. The f41 party-center-FALSE census
+        // (research/70 §8h/§9b) confirms this gate + the facing machine are
+        // the ONLY party-position-adjacent town behavior the C# has.
         for (n, p) in env.players.iter().enumerate() {
             if p.candidate.active
                 && !p.candidate.dead

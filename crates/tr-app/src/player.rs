@@ -22084,6 +22084,62 @@ mod tests {
         assert_eq!(p.mana_max_base, 20);
     }
 
+    /// W4-f34 — the SugarRush arm verbatim (`Player.cs:9935-9939`): the
+    /// Slice of Cake's buff 192 draws `pickSpeed -= 0.2f; moveSpeed +=
+    /// 0.2f` (the positive pick_speed_bonus convention, the Mining-104
+    /// row's shape), and the grant expires normally — 192 is NOT in
+    /// `TimeLeftDoesNotDecrease` (`BuffID.cs:47`). Kept beside f41's
+    /// rebase/expiry witness (research/70 §1e: both stay, disjoint
+    /// aspects).
+    #[test]
+    fn w4_f34_the_sugar_rush_buff_arm_is_verbatim() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let (pick0, move0) = (p.pick_speed_bonus, p.move_speed);
+        p.buffs.add_buff(192, 7200);
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - (pick0 + 0.2)).abs() < 1e-5);
+        assert!((p.move_speed - (move0 + 0.2)).abs() < 1e-5);
+        // The grant expires normally (192 is NOT in
+        // `TimeLeftDoesNotDecrease`, `BuffID.cs:47`).
+        let slot = p.buffs.find_buff_index(192).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 7199, "one tick decremented");
+    }
+
+    /// W4-f41 — SugarRush (192, the cake slice's buff): `pickSpeed -= 0.2f;
+    /// moveSpeed += 0.2f` (`Player.cs:9935-9939`), rebased every tick like
+    /// every buff row (no accumulation), and gone when the buff expires.
+    /// The arm itself is W4-f34's byte-identical copy (research/70 §1e —
+    /// the merge keeps ONE `192 =>` arm); this witness covers the disjoint
+    /// rebase + expiry aspects and stays in the union (§4).
+    #[test]
+    fn w4_f41_sugar_rush_speeds_the_pick_and_the_run() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let base_move = p.move_speed;
+        let base_pick = p.pick_speed();
+        p.buffs.add_buff(192, 7200);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - (base_move + 0.2)).abs() < 1e-4, "+0.2 move");
+        assert!(
+            (p.pick_speed() - (base_pick - 0.2)).abs() < 1e-4,
+            "-0.2 pickSpeed (the bonus convention)"
+        );
+        // The rebase: a second tick holds the same values, never doubles.
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - (base_move + 0.2)).abs() < 1e-4);
+        assert!((p.pick_speed() - (base_pick - 0.2)).abs() < 1e-4);
+        // The buff's expiry drops both rows back to the base.
+        let bi = p.buffs.find_buff_index(192).unwrap();
+        p.buffs.buff_time[bi] = 0;
+        p.buffs.buff_type[bi] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - base_move).abs() < 1e-4);
+        assert!((p.pick_speed() - base_pick).abs() < 1e-4);
+    }
+
     /// S1-P-i19 — the `manaFlower` flag's ONE −0.08 row (`UpdateEquips`
     /// `Player.cs:12962-12965`): two flowers do not stack, and the Arcane
     /// Flower's own +5 crit / +5% damage rows (`:14405-14410`) ride along.

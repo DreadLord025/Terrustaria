@@ -1,21 +1,32 @@
 //! The Lihzahrd temple — the M5-BIOME phase-6 seam (the faithful
 //! `LihzahrdTemple` placement search, `WorldGen.cs:15834-15926`) plus the
-//! M5-TEMPLE phase-1 interior port: the room walk and the brick generation
-//! (`makeTemple`, `WorldGen.cs:33440-33548` + `:34238-34462`).
+//! M5-TEMPLE interior port: the room walk and the brick generation
+//! (`makeTemple`, `WorldGen.cs:33440-33548` + `:34238-34462`), the jitter
+//! carve, the corridors, the shaft + door, the cleaner/widen sweeps, the
+//! altar publication, the spikes, `templePart2` (`:34464`) and the
+//! `LihzahrdAltar` re-write (`:21943`).
 //!
 //! The C# temple (`makeTemple`, `WorldGen.cs:33435-34237`): the brick shell
 //! (the Lihzahrd brick 226, the walls 87 unsafe / 112 safe) buried in the
 //! jungle cavern below the rock layer, the interior rooms carved, the altar
-//! (237) in the main room, the dart traps (137) in the walls, the
-//! teleporter pads, the chests. Ported so far: the placement search
-//! (M5-BIOME), the room walk + the depth-unioned brick fills + the corner
-//! Line walkers (phase 1). Still to port (the M5-TEMPLE phases 2-3): the
-//! jitter carve sweeps (`:33550-33684`), the `templePather` corridors
-//! (`:33686-33787`), the `outerTempled` sweeps (`:33819-33850`), the
-//! entrance shaft + the style-11 door (`:33852-33857`), the `templeCleaner`
-//! sweeps (`:33954-33961`, `:33335`), the altar publication (`:33988-34068`),
-//! the spike loop (`:34069-34217`), `templePart2` (`:34464`) and the
-//! `LihzahrdAltar` re-write (`:21943`).
+//! (237) in the main room, the dart traps (137) in the walls, the chests.
+//!
+//! W4-g43 (the temple residuals round): the room-content/trap/altar
+//! placement fidelity re-verified against the C# — the painting rides
+//! `Place3x3Wall`'s 36-fold (`:44254-44292`, NOT `Place3x3`), the trap
+//! colour draw is unconditional with the wire overrides after
+//! (`:8518-8530`, `:8590-8602`), the trap/plate writes carry the PlaceTile
+//! pre-Clear + `SquareTileFrame` tails (`:59473-59476`, `:60255-60262`),
+//! the plate placement gates on `SolidTile2` + the boulder floor
+//! (`Place1x1`, `:45188-45234`), the pound gate is the full `CanPoundTile`
+//! (`:80695-80743`), the buried-chest scan refuses shimmer liquid / the
+//! remix deep band / boulders (`:35906-35959`, `:57816`), the altar
+//! re-write keeps the stored wall/liquid/paint and clears the base row's
+//! half-brick (`:21954-21962`), the fallback carve is active-only
+//! (`:34036`), and the actuallyNoTraps / dualDungeons trap arms land
+//! (`:8351-8354`, `:8442-8446`). The drunk/FTW/remix seed branches
+//! (room counts, spike budgets, placement search) are W4-d108's scope;
+//! the chest loot draws are M5-CHEST-gen's.
 //!
 //! What publishes state: the bounds `t_left/t_right/t_top/t_bottom` = the
 //! room-union ± 10 (the C# publishes the filled extent ± 10,
@@ -23,17 +34,13 @@
 //! count (`:34235`) and the altar anchor `l_altar_x/l_altar_y` = the 3×2
 //! altar's top-left (`:34000-34001`, hand-built fallback `:34038-34039`) —
 //! the fields `LihzahrdTemplePart2` (`:17701`) and `LihzahrdAltar`
-//! (`:21943`) consume (M5-TEMPLE's row owns the full interior). Until the
-//! phase-2 altar port lands, the pass still publishes the stub shell's
-//! bounds + anchor (kept adjacent to the faithful walk so the worldgen
-//! stays coherent mid-port).
+//! (`:21943`) consume.
 //!
-//! Deviations (ANALYSIS "Lihzahrd temple (M1.4-WGEN-6)"): the C#'s
-//! multi-room crawl with the doors and the teleporters is the shape-level
-//! approximation (the box + the 3 corridor rooms); the Plantera-gate (the
-//! altar needs the Plantera downed to interact) waits for M5-HARDFORCE;
-//! the trap wiring arms ride the wiring engine (the traps 137 are the
-//! case-137 variants the wiring trip fires).
+//! Deviations (ANALYSIS "Lihzahrd temple (M1.4-WGEN-6)" + "The temple
+//! residuals (W4-g43)"): the Plantera-gate (the altar needs the Plantera
+//! downed to interact) waits for M5-HARDFORCE; the trap wiring arms ride
+//! the wiring engine (the traps 137 are the case-137 variants the wiring
+//! trip fires).
 
 use super::pipeline::TempleBounds;
 use crate::tiledata as td;
@@ -67,14 +74,30 @@ const DUNGEON_SIDE_RIGHT: i32 = 1;
 /// smallest world is 4200×1200, where the band floor is 600) — every sample
 /// would miss and the C# loop would spin its full ~13M-attempt termination
 /// before falling through to the fallback below, so the port skips straight
-/// to it. The remix branch (`:15852-15876`) is seed-gated (`remixWorldGen`/
-/// `notTheBees`; M5-SEED scope) and never runs on the classic chain.
+/// to it. The valve applies to the remix branch too (W4-d108): a sub-vanilla
+/// remix world takes the remix fallback arm directly.
+///
+/// The remix branch (`:15853-15893`, W4-d108 / M5-SEED) is gated on
+/// `remixWorldGen && !SecretSeed.noSurface.Enabled` (the port's
+/// `MicroSeedFlags::NO_SURFACE` bit): the x draw re-rolls into the surface
+/// band (not-the-bees: the dungeon-opposite `[0.2·W, 0.4·W)` — the C#'s
+/// `dungeonSide < Right` ternary at `:15857` with the port's fixed-Right
+/// side; otherwise `[0.2·W, 0.8·W)` re-rolled out of the middle
+/// `(0.4·W, 0.6·W)`), the y sample walks UP out of any active/walled cell
+/// to the surface line (`:15867-15871`), and acceptance takes jungle grass
+/// 60 OR mud 59 with no living wood 191 / dungeon brick in the 21×21 box
+/// (`:15872-15892`), burying `10 + Next(10)` rows above the found cell.
 pub(crate) fn find_temple_site(
     world: &World,
     dungeon_x: i32,
     rock_layer: f64,
     rng: &mut super::Rng,
 ) -> (i32, i32) {
+    // `:15853`: `remixWorldGen && !SecretSeed.noSurface.Enabled`.
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+        && !world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
     let mut found = false;
     let mut site = (0, 0);
     // The sub-vanilla valve (see the doc comment): `num5 <= 0` means the
@@ -94,20 +117,70 @@ pub(crate) fn find_temple_site(
             if num4 > num5 - 1 {
                 num4 = num5 - 1;
             }
-            // `:15848`: the y draw first, then the x fraction.
-            let num6 = rng.range(num4, num5);
-            // `:15848`: the x formula — `NextDouble()` then the
+            // `:15851`: the y draw first, then the x fraction.
+            let mut num6 = rng.range(num4, num5);
+            // `:15852`: the x formula — `NextDouble()` then the
             // dungeon-opposite reach; the C# `(int)` cast truncates toward
             // zero like `as i32` (the value is positive: the reach is
             // [0.05·maxTilesX, 0.4·maxTilesX] for `dungeonSide == Right`).
-            let num7 = (((rng.next_f64() * num3 + 0.1) * -(DUNGEON_SIDE_RIGHT as f64) + 0.5)
+            let mut num7 = (((rng.next_f64() * num3 + 0.1) * -(DUNGEON_SIDE_RIGHT as f64) + 0.5)
                 * world.width as f64) as i32;
-            // `:15877-15882` (the remix branch is above): accept the first
-            // active jungle-grass tile.
-            if world
+            if remix {
+                // `:15855-15866`: the remix x re-roll. The not-the-bees arm
+                // picks the dungeon-opposite band (the C#'s
+                // `dungeonSide < Right` ternary — fixed-Right here); the
+                // plain remix arm re-rolls out of the middle fifth-band.
+                let w = world.width as f64;
+                if world.seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES) {
+                    num7 = rng.range((w * 0.2) as i32, (w * 0.4) as i32);
+                } else {
+                    num7 = rng.range((w * 0.2) as i32, (w * 0.8) as i32);
+                    while (num7 as f64) > w * 0.4 && (num7 as f64) < w * 0.6 {
+                        num7 = rng.range((w * 0.2) as i32, (w * 0.8) as i32);
+                    }
+                }
+                // `:15867-15871`: walk UP out of any active/walled cell (or
+                // below the surface line), then step one row back down. The
+                // C# indexes raw `Main.tile` here; the port's out-of-world
+                // read is air (the walk terminates at the map edge).
+                while world.tile(num7, num6).is_some_and(|t| {
+                    t.active() || t.wall > 0 || (num6 as f64) > world.world_surface - 5.0
+                }) {
+                    num6 -= 1;
+                }
+                num6 += 1;
+                // `:15872-15892`: accept jungle grass 60 OR mud 59, provided
+                // the ±10 box holds no living wood 191 and no dungeon brick.
+                // A refusal falls through to the widening valve below (the
+                // C# has no `continue` — the attempt counter still advances).
+                if world
+                    .tile(num7, num6)
+                    .is_some_and(|t| t.active() && (t.kind == 60 || t.kind == 59))
+                {
+                    let mut flag2 = false;
+                    for i in (num7 - 10)..=(num7 + 10) {
+                        for j in (num6 - 10)..=(num6 + 10) {
+                            // The C# reads `.type` without the active gate.
+                            let Some(u) = world.tile(i, j) else {
+                                continue;
+                            };
+                            if u.kind == 191 || TEMPLE_SEARCH_DUNGEON_BRICKS.contains(&u.kind) {
+                                flag2 = true;
+                            }
+                        }
+                    }
+                    if !flag2 {
+                        found = true;
+                        // `:15889`: bury `10 + Next(10)` rows above the cell.
+                        site = (num7, num6 - (10 + rng.range(0, 10)));
+                        break;
+                    }
+                }
+            } else if world
                 .tile(num7, num6)
                 .is_some_and(|t| t.active() && t.kind == 60)
             {
+                // `:15894-15899`: accept the first active jungle-grass tile.
                 found = true;
                 site = (num7, num6);
                 break;
@@ -130,14 +203,38 @@ pub(crate) fn find_temple_site(
         }
     }
     if !found {
-        // `:15914-15923`: the fallback — the dungeon-mirrored x
+        // `:15916-15917`: the fallback — the dungeon-mirrored x
         // (`generatingDungeonPositionX` is the dungeon entrance x,
         // `DungeonCrawler.cs:352/:399`; the port's stand-in is
         // `BiomeSpans.dungeon_x`) and 100 rows below the rock layer.
-        site = (world.width - dungeon_x, rock_layer as i32 + 100);
+        let mut x = world.width - dungeon_x;
+        let mut y = rock_layer as i32 + 100;
+        if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+            // `:15920`: BOTH arms of the C#'s notTheBees ternary compute the
+            // same value (a dead copy) — `dungeonSide >= Right` picks
+            // `0.3·maxTilesX`, else `0.7·maxTilesX`. Fixed-Right here.
+            x = if DUNGEON_SIDE_RIGHT >= 1 {
+                (world.width as f64 * 0.3) as i32
+            } else {
+                (world.width as f64 * 0.7) as i32
+            };
+            // `:15921`: the surface-100 row when the surface sits at 150+,
+            // else a `Next(200, (int)rockLayer)` draw.
+            y = if !(world.world_surface < 150.0) {
+                world.world_surface as i32 - 100
+            } else {
+                rng.range(200, rock_layer as i32)
+            };
+        }
+        site = (x, y);
     }
     site
 }
+
+/// The `Main.tileDungeon` set the remix search's 21×21 rejection box reads
+/// (`Main.cs:7992-7997`): the blue/green/pink 41/43/44 and the ancient
+/// 677/678/679 (the same six `finish_seeds::TILE_DUNGEON` carries).
+const TEMPLE_SEARCH_DUNGEON_BRICKS: [u16; 6] = [41, 43, 44, 677, 678, 679];
 
 /// `WorldGen.InWorld(i, j, fluff)` (`WorldGen.cs:9688-9701`): the cell
 /// plus `fluff` tiles of margin must sit inside the world.
@@ -205,17 +302,32 @@ pub(crate) struct Bounds {
 /// The C# shares one `genRand` across the whole world; the port's per-pass
 /// `pass_rng` stream is the recorded deviation — the draws inside follow the
 /// C# statement order 1:1.
+///
+/// The seed multipliers (`:33439-33450`, W4-d108 / M5-SEED): drunk ×3,
+/// else for-the-worthy ×3, else remix ×2 — the if/else-if chain order (a
+/// drunk+FTW world takes the FIRST ×3 once, not ×9). Draw-free: the
+/// multiplier lands between the count draw and the direction draw.
 pub(crate) fn make_temple_rooms(
     rng: &mut super::Rng,
     scale: f64,
     underworld_layer: i32,
     x: i32,
     y: i32,
+    seeds: crate::seeds::SeedFlags,
 ) -> TempleWalk {
-    // `:33440-33452`: the room count, the first direction and the flip
+    // `:33438-33452`: the room count, the first direction and the flip
     // period. `num3` is the current direction; `num4` the per-room copy the
     // stagger flips.
     let mut num2 = rng.range((scale * 10.0) as i32, (scale * 16.0) as i32);
+    // `:33439-33450`: the seed room-count multipliers, in the C#'s
+    // else-if order.
+    if seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        num2 *= 3;
+    } else if seeds.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY) {
+        num2 *= 3;
+    } else if seeds.contains(crate::seeds::SeedFlags::REMIX) {
+        num2 *= 2;
+    }
     let num3 = if rng.range(0, 2) == 0 { -1 } else { 1 };
     let mut num4 = num3;
     let (mut num7, mut num8) = (x, y);
@@ -1260,7 +1372,9 @@ fn temple_widen(world: &mut World, b: Bounds) {
 /// altar 237: the bounds guard, the 3×2 body must be empty, the floor solid
 /// under all three columns, then the frame write
 /// `frameX = 54 * style + col * 18`, `frameY = row * 18`. `false` when the
-/// C# would refuse (nothing written).
+/// C# would refuse (nothing written). The PlaceTile tail (`:60255-60262`)
+/// runs `SquareTileFrame` on success — the port's framer keeps the stored
+/// 237 frames (frame-important).
 fn place_altar(world: &mut World, x: i32, y: i32) -> bool {
     if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
         return false;
@@ -1284,12 +1398,16 @@ fn place_altar(world: &mut World, x: i32, y: i32) -> bool {
             brick_tile_at(world, x - 1 + dx, y - 1 + dy, frame_x, frame_y);
         }
     }
+    // `PlaceTile`'s active tail (`WorldGen.cs:60255-60262`): the 226-style
+    // wall truncation check is inert for the altar, then `SquareTileFrame`.
+    crate::edit::square_tile_frame_gen(world, x, y);
     true
 }
 
 /// The 3×2 frame write `frameX = num2 + dx * 18`, `frameY = dy * 18`
-/// (`WorldGen.cs:52168-52195`) — inactive cells only, the wall and liquid
-/// are kept.
+/// (`WorldGen.cs:52171-52194`) — inactive cells only, the wall and liquid
+/// are kept; the PlaceTile pre-Clear (`:59473-59476`) resets the paint and
+/// slope/half-brick on the empty cell before the write.
 fn brick_tile_at(world: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16) {
     if !in_world(world, x, y, 0) {
         return;
@@ -1301,6 +1419,11 @@ fn brick_tile_at(world: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16) 
         t.flags |= FLAG_ACTIVE;
         t.frame_x = frame_x;
         t.frame_y = frame_y;
+        t.set_paint(0);
+        t.flags &= !crate::tile::FLAG_FULLBRIGHT;
+        t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        world.set_invisible_block(x, y, false);
     }
 }
 
@@ -1330,9 +1453,10 @@ fn altar_spot(
         let num84 = rectangle3.x + num82 + 15 - rng.range(0, 30);
         let num85 = rectangle3.y + num83 + 15 - rng.range(0, 30);
         place_altar(world, num84, num85);
+        // `:33997`: the C# checks `type == 237` WITHOUT the active gate.
         if world
             .tile(num84, num85)
-            .is_some_and(|t| t.kind == TILE_ALTAR && t.active())
+            .is_some_and(|t| t.kind == TILE_ALTAR)
         {
             let t = world.tile(num84, num85).unwrap();
             let anchor = (num84 - (t.frame_x as i32) / 18, num85 - (t.frame_y as i32) / 18);
@@ -1369,9 +1493,15 @@ fn altar_spot(
         }
         num85 -= 2;
         num84 -= 1;
+        // `:34030-34038`: the 5×3 clear is `active(false)` ONLY — the C#
+        // does not write the wall here (unlike the makeTemple carve).
         for num86 in -1..=3 {
             for num87 in -1..=1 {
-                carve_cell(world, num84 + num86, num85 + num87);
+                let (px, py) = (num84 + num86, num85 + num87);
+                if in_world(world, px, py, 0) {
+                    let i = world.index(px, py);
+                    world.tiles[i].flags &= !FLAG_ACTIVE;
+                }
             }
         }
         for num88 in 0..=2 {
@@ -1398,24 +1528,30 @@ fn altar_spot(
     }
 }
 
-/// The C#'s six `SquareTileFrame` calls over the altar (`WorldGen.cs:34067-34068`
-/// and the `LihzahrdAltar` pass `:21969-21974`) — the framer keeps the
-/// stored 237 frames (frame-important, `Main.cs:10234`).
-fn square_frame_altar(_world: &mut World, _x: i32, _y: i32) {
-    // The altar 237 is a plain 3×2 frame tile: `TileFrame` finds the full
-    // object already framed and the stored frames stand; the call is a
-    // no-op on the port's tile storage (the next phase wires the shared
-    // `edit::square_tile_frame` seam).
+/// The C#'s six `SquareTileFrame` calls over the altar (`WorldGen.cs:34053-34061`
+/// and the `LihzahrdAltar` pass `:21964-21970`) — the port's worldgen seam
+/// runs the object support checks (`edit::square_tile_frame_gen`); the
+/// stored 237 frames stand (frame-important, `Main.cs:10234`) and the
+/// cosmetic re-frame rides the end-of-gen `frame_world` pass.
+fn square_frame_altar(world: &mut World, x: i32, y: i32) {
+    crate::edit::square_tile_frame_gen(world, x, y);
 }
 
 /// The spike loop (`WorldGen.cs:34069-34217`): `num2 * 1.1 * (1 +
 /// Next(-25, 26) * 0.01)` wooden spikes (232), placed on the room walls in
 /// `Next(3, 10)`-wide staircase runs — the vertical branch walks down to the
 /// floor, the horizontal one sideways, each run alternating the neighbour
-/// column and requiring solid neighbours on both sides.
+/// column and requiring solid neighbours on both sides. The drunk-world
+/// ×1.5 budget + second rows/columns (`:34065-34068`, `:34122-34207`) are
+/// W4-d108's claimed seed-branch scope — not re-landed here.
 fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut super::Rng) {
+    // `:34065-34068` (W4-d108 / M5-SEED): the drunk world's ×1.5 budget.
+    let drunk = world.seeds.contains(crate::seeds::SeedFlags::DRUNK);
     let num2 = rooms.len() as f64;
     let mut num92 = num2 * 1.1 * (1.0 + (rng.range(-25, 26) as f64) * 0.01);
+    if drunk {
+        num92 *= 1.5;
+    }
     let mut num94 = 0;
     while num92 > 0.0 {
         num94 += 1;
@@ -1472,8 +1608,16 @@ fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut s
                             flag6 = true;
                             if flip == 0 {
                                 spike_cell(world, num103, num104 - 1);
+                                // `:34122-34126`: the drunk second row.
+                                if drunk {
+                                    spike_cell(world, num103, num104 - 2);
+                                }
                             } else {
                                 spike_cell(world, num103, num104 + 1);
+                                // `:34132-34136`: the drunk second row.
+                                if drunk {
+                                    spike_cell(world, num103, num104 + 2);
+                                }
                             }
                             flip += 1;
                             if flip > 1 {
@@ -1526,8 +1670,19 @@ fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut s
                             flag6 = true;
                             if flip == 0 {
                                 spike_cell(world, num110 - 1, num111);
+                                // `:34193-34197`: the drunk second column.
+                                if drunk {
+                                    spike_cell(world, num110 - 2, num111);
+                                }
                             } else {
                                 spike_cell(world, num110 + 1, num111);
+                                // `:34203-34207`: the drunk second column —
+                                // the C# writes `num110 - 2` here, NOT
+                                // `num110 + 2` (the copy-paste quirk in the
+                                // source); ported verbatim.
+                                if drunk {
+                                    spike_cell(world, num110 - 2, num111);
+                                }
                             }
                             flip += 1;
                             if flip > 1 {
@@ -1551,8 +1706,13 @@ fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut s
 }
 
 /// The spike write — `type = 232` on the floor tile plus the alternating
-/// neighbour (`WorldGen.cs:34108-34119` / `:34191-34204`); the drunk-world
-/// second row is seed scope.
+/// neighbour (`WorldGen.cs:34116-34137` / `:34187-34208`): the floor cell
+/// keeps its stored frames (the C# writes only `type`), the neighbour gets
+/// `active(true)` alongside. The drunk-world second row is W4-d108's scope.
+/// The spike write — `type = 232; active(true)` on the floor tile plus the
+/// alternating neighbour (`WorldGen.cs:34116-34142` / `:34187-34213`); the
+/// drunk-world second row/column lands with the `drunk` gate at the four
+/// call sites (W4-d108 / M5-SEED).
 fn spike_cell(world: &mut World, x: i32, y: i32) {
     if !in_world(world, x, y, 0) {
         return;
@@ -1654,16 +1814,36 @@ fn solid_allow_bottom_slope_p2(world: &World, x: i32, y: i32, spike_solid: bool)
         && (t.flags & crate::tile::FLAG_INACTIVE) == 0
 }
 
-/// `WorldGen.SlopeTile(i, j, slope = 0)` (`WorldGen.cs:80768-80794`) — the
-/// generation slice: the `CanPoundTile` gate (the mechanism types, the
-/// boulders — the port's worldgen spawns none, `CanKillTile`), then
+/// `WorldGen.SlopeTile(i, j, slope = 0)` (`WorldGen.cs:80768-80803`) — the
+/// generation slice: the `CanPoundTile` gate (`:80695-80743` — the mechanism
+/// kinds, the raw-type `TileID.Sets.Boulders` check, the gen-time 190/30
+/// refusals, the active `ForbidsSloping` anchor above, `CanKillTile`), then
 /// `halfBrick(false); slope(0)`; the non-generation effects
-/// (`:80781-80793`) never fire.
+/// (`:80776-80797`) never fire.
 fn slope_tile_p2(world: &mut World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return false;
     };
     if matches!(t.kind, 10 | 48 | 137 | 232 | 380 | 387 | 388 | 476 | 484) {
+        return false;
+    }
+    if td::SET_BOULDERS.has(t.kind) {
+        return false;
+    }
+    // `:80726-80736`: the generation-only refusals (the planter box 30 and
+    // the grass 190 — raw type, no active gate).
+    if t.kind == 190 || t.kind == 30 {
+        return false;
+    }
+    // `:80737-80740` + `ForbidsSloping` (`:80745-80766`): an ACTIVE object
+    // above that forbids sloping refuses the pound.
+    if world.tile(x, y - 1).is_some_and(|a| {
+        a.active()
+            && matches!(
+                a.kind,
+                21 | 26 | 77 | 88 | 235 | 237 | 441 | 467 | 468 | 470 | 475 | 488 | 597
+            )
+    }) {
         return false;
     }
     if !crate::edit::can_kill_tile(world, x, y, |_, _| false) {
@@ -1676,7 +1856,7 @@ fn slope_tile_p2(world: &mut World, x: i32, y: i32) -> bool {
     true
 }
 
-/// `WorldGen.CanGeneratePressurePlateAt` (`WorldGen.cs:11029-11043`).
+/// `WorldGen.CanGeneratePressurePlateAt` (`WorldGen.cs:11029-11048`).
 fn can_pressure_plate_at_p2(world: &World, x: i32, y: i32, spike_solid: bool) -> bool {
     if !in_world(world, x, y, 3) {
         return false;
@@ -1684,9 +1864,14 @@ fn can_pressure_plate_at_p2(world: &World, x: i32, y: i32, spike_solid: bool) ->
     if !solid_allow_bottom_slope_p2(world, x, y + 1, spike_solid) {
         return false;
     }
-    // The `TileID.Sets.Boulders` / wall-350 guards: the port's worldgen
-    // spawns no boulders and no wall 350 (`evil.rs:1702`'s note), so the
-    // checks collapse away.
+    // `:11040-11043`: the RAW floor type against `TileID.Sets.Boulders`
+    // (no active gate), then the echo wall 350.
+    if world.tile(x, y + 1).is_some_and(|t| td::SET_BOULDERS.has(t.kind)) {
+        return false;
+    }
+    if world.tile(x, y + 1).is_some_and(|t| t.wall == 350) {
+        return false;
+    }
     true
 }
 
@@ -1749,43 +1934,95 @@ fn add_wire_from_point_to_point(world: &mut World, x: i32, y: i32, x2: i32, y2: 
 }
 
 /// The dart-trap write — `PlaceTile(x, y, 137, style)`'s branch
-/// (`WorldGen.cs:59750-59756`): `active(true); type = 137;
+/// (`WorldGen.cs:59750-59755`): `active(true); type = 137;
 /// frameY = 18 * style`. Frame-important (`Main.cs:7431`), so the stored
-/// frames stand.
+/// frames stand. The branch does NOT write frameX: the pre-branch Clear
+/// (`:59473-59476`) only runs on an INACTIVE cell, so an overwrite of an
+/// active frame-important tile keeps its old frameX (the C# quirk — the
+/// column runs' second write keeps the first style's +18 flip).
 fn place_trap_tile(world: &mut World, x: i32, y: i32, style: i32) {
     if !in_world(world, x, y, 0) {
         return;
     }
     let i = world.index(x, y);
+    if !world.tiles[i].active() {
+        // `Tile.Clear(Tile | TilePaint | Slope)` (`Tile.cs:744-777`): the
+        // frames reset, the paint/coating and the slope/half-brick clear
+        // (the wall, the liquid and the wiring stay).
+        let t = &mut world.tiles[i];
+        t.frame_x = 0;
+        t.frame_y = 0;
+        t.set_paint(0);
+        t.flags &= !crate::tile::FLAG_FULLBRIGHT;
+        t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        world.set_invisible_block(x, y, false);
+    }
     let t = &mut world.tiles[i];
     t.flags |= FLAG_ACTIVE;
     t.kind = 137;
     t.frame_y = (18 * style) as i16;
-    t.frame_x = 0;
+    // `PlaceTile`'s active tail (`:60255-60262`): 137 is not a wall-truncator,
+    // then `SquareTileFrame` — the framer keeps the stored 137 frames.
+    crate::edit::square_tile_frame_gen(world, x, y);
 }
 
-/// The pressure-plate write — `PlaceTile(x, y, 135, style)`'s `Place1x1`
-/// default branch (`WorldGen.cs:52183-52187`): `frameY = 18 * style`,
-/// `frameX` 0, on an empty cell with a solid floor.
-fn place_plate_tile(world: &mut World, x: i32, y: i32, style: i32) {
-    if !in_world(world, x, y, 2) {
-        return;
-    }
-    if world.tile(x, y).is_some_and(|t| t.active()) {
-        return;
-    }
-    if !solid_allow_bottom_slope_p2(world, x, y + 1, true) {
+/// The pressure-plate write — `PlaceTile(x, y, 135, forced: true, style)`
+/// → `Place1x1` (`WorldGen.cs:45188-45234`, the default arm `:45230-45232`):
+/// `InWorld(x, y, 2)`, `SolidTile2` floor, the target cell empty; then the
+/// pre-branch Clear (`:59473-59476`, the cell is empty here) and
+/// `frameY = 18 * style`, `frameX` 0. `forced: true` skips the outer
+/// EmptyTile gate but NOT Place1x1's own empty + floor checks. The
+/// mechanism-over-boulder guard (`:45214`) is ported verbatim — 135 is not
+/// in `IsAMechanism` (`TileID.cs:184`), so its boulder term never fires.
+fn place_plate_tile(world: &mut World, x: i32, y: i32, style: i32, spike_solid: bool) {
+    // `PlaceTile`'s outer bounds (`:59354`, fluff 0), then the pre-branch
+    // Clear on an inactive cell (`:59473-59476`) — it runs BEFORE Place1x1's
+    // own guards, so a refused placement still clears the stored frames.
+    if !in_world(world, x, y, 0) {
         return;
     }
     let i = world.index(x, y);
+    if !world.tiles[i].active() {
+        let t = &mut world.tiles[i];
+        t.frame_x = 0;
+        t.frame_y = 0;
+        t.set_paint(0);
+        t.flags &= !crate::tile::FLAG_FULLBRIGHT;
+        t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        world.set_invisible_block(x, y, false);
+    }
+    // `Place1x1`'s guards (`:45190-45214`). The mechanism-over-boulder
+    // guard (`:45214`) reads `(type < 0 || !IsAMechanism[type] || ...)` —
+    // 135 is NOT in `TileID.Sets.Wiring.IsAMechanism` (`TileID.cs:184`), so
+    // the disjunct short-circuits the boulder term away for the plate;
+    // ported verbatim (the trap caller's `CanGeneratePressurePlateAt` is
+    // what refuses boulder floors, `:11040`).
+    if !in_world(world, x, y, 2) {
+        return;
+    }
+    if world.tiles[i].active() {
+        return;
+    }
+    if td::SET_IS_A_MECHANISM.has(135)
+        && world.tile(x, y + 1).is_some_and(|t| td::SET_BOULDERS.has(t.kind))
+    {
+        return;
+    }
+    if !solid_tile2_p2(world, x, y + 1, spike_solid) {
+        return;
+    }
     let t = &mut world.tiles[i];
     t.flags |= FLAG_ACTIVE;
     t.kind = 135;
     t.frame_y = (18 * style) as i16;
-    t.frame_x = 0;
+    // `PlaceTile` case 135 (`:60129-60140`) + the active tail
+    // (`:60255-60262`): `SquareTileFrame`.
+    crate::edit::square_tile_frame_gen(world, x, y);
 }
 
-/// `WorldGen.Place2x1` (`WorldGen.cs:39624-39663`) for the temple workbench
+/// `WorldGen.Place2x1` (`WorldGen.cs:47368-47406`) for the temple workbench
 /// 18 style 10: both floor columns solid, both cells empty, then
 /// `frameX = 36 * style + col * 18`, `frameY = 0` + `SquareTileFrame`.
 /// `gen_rng` is the worldgen `genRand` stand-in (`world.frame_rng`) the
@@ -1866,13 +2103,17 @@ fn place_table(
             t.frame_y = (row * 18) as i16;
         }
     }
+    // `PlaceTile` case 14 (`:59987`/`:60001-60002`) + the active tail
+    // (`:60255-60262`): `SquareTileFrame`.
+    crate::edit::square_tile_frame_gen(world, x, y);
     true
 }
 
-/// `WorldGen.Place1x2` (`WorldGen.cs:46652-46680`) for the temple chair 15
+/// `WorldGen.Place1x2` (`WorldGen.cs:46652-46679`) for the temple chair 15
 /// style 12: the floor solid, the top cell empty, then
 /// `frameY = 40 * style + row * 18` (the chair sheet's 40-px stride),
-/// `frameX = 0` (the sapling swing roll never fires for chairs).
+/// `frameX = 0` (the sapling swing roll never fires for chairs), then
+/// `SquareTileFrame` (`:60027-60041`).
 fn place_chair(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     if !solid_tile2_p2(world, x, y + 1, false) {
         return false;
@@ -1891,6 +2132,7 @@ fn place_chair(world: &mut World, x: i32, y: i32, style: i32) -> bool {
         t.frame_x = 0;
         t.frame_y = (40 * style + row * 18) as i16;
     }
+    crate::edit::square_tile_frame_gen(world, x, y);
     true
 }
 
@@ -1907,6 +2149,16 @@ fn place_statue(
     gen_rng: &mut crate::UnifiedRandom,
 ) -> bool {
     let num3 = 3;
+    if kind == 105 && style == 34 {
+        kind = 349;
+        style = 0;
+        num = 0;
+    }
+    if kind == 105 {
+        let num4 = style / 55;
+        num -= 1980 * num4;
+        num2 += 54 * num4;
+    }
     let mut ok = true;
     for row in (y - num3 + 1)..(y + 1) {
         for col in x..(x + 2) {
@@ -1930,43 +2182,45 @@ fn place_statue(
             let i = world.index(px, py);
             let t = &mut world.tiles[i];
             t.flags |= FLAG_ACTIVE;
-            t.kind = 105;
-            t.frame_x = (36 * style + col * 18) as i16;
-            t.frame_y = (row * 18) as i16;
+            t.kind = kind;
+            t.frame_x = (num + col * 18) as i16;
+            t.frame_y = (num2 + row * 18) as i16;
         }
     }
     crate::edit::square_tile_frame_gen(world, x, y, gen_rng);
     true
 }
 
-/// `WorldGen.Place3x3`'s non-hanging branch (`WorldGen.cs:53560-53593`) for
-/// the temple painting 240 style 88: the 3×3 body empty and the solid
-/// non-top tile directly above the centre, then a 3×2 write with
-/// `frameX = 54 * style + col * 18`, `frameY = row * 18`.
+/// `WorldGen.Place3x3Wall` (`WorldGen.cs:44254-44292`) for the temple
+/// painting 240 style 88: the 3×3 body at `(x-1, y-1)` must be empty AND
+/// walled (`wall != 0` — the temple's unsafe wall 87 qualifies), then the
+/// style folds by 36 into sheet rows (`num3`), writing
+/// `frameX = 54 * (style % 36) + col * 18`,
+/// `frameY = 54 * (style / 36) + row * 18` over the FULL 3×3.
 fn place_painting(world: &mut World, x: i32, y: i32, style: i32) -> bool {
-    let mut flag = true;
-    for col in (x - 1)..(x + 2) {
-        for row in y..(y + 3) {
-            if world.tile(col, row).is_some_and(|t| t.active()) {
-                flag = false;
+    let (num, num2) = (x - 1, y - 1);
+    for i in num..(num + 3) {
+        for j in num2..(num2 + 3) {
+            let ok = world
+                .tile(i, j)
+                .is_some_and(|t| !t.active() && t.wall != 0);
+            if !ok {
+                return false;
             }
         }
     }
-    let anchored = world.tile(x, y - 1).is_some_and(|t| {
-        t.active()
-            && td::TILE_SOLID.has(t.kind)
-            && !td::TILE_SOLID_TOP.has(t.kind)
-            && t.kind != 162
-    });
-    if !anchored {
-        flag = false;
+    // `:44274-44281`: the style/row fold (style 88 → row 2, style 16).
+    let mut style = style;
+    let mut num3 = 0;
+    while style > 35 {
+        num3 += 1;
+        style -= 36;
     }
-    if !flag {
-        return false;
-    }
+    let num4 = style * 54;
+    let num5 = num3 * 54;
     for col in 0..3 {
-        for row in 0..2 {
-            let (px, py) = (x - 1 + col, y + row);
+        for row in 0..3 {
+            let (px, py) = (num + col, num2 + row);
             if !in_world(world, px, py, 0) {
                 continue;
             }
@@ -1974,10 +2228,13 @@ fn place_painting(world: &mut World, x: i32, y: i32, style: i32) -> bool {
             let t = &mut world.tiles[i];
             t.flags |= FLAG_ACTIVE;
             t.kind = 240;
-            t.frame_x = (54 * style + col * 18) as i16;
-            t.frame_y = (row * 18) as i16;
+            t.frame_x = (num4 + 18 * col) as i16;
+            t.frame_y = (num5 + 18 * row) as i16;
         }
     }
+    // `PlaceTile`'s active tail (`:60255-60262`): `SquareTileFrame` — the
+    // framer keeps the stored 240 frames (frame-important, `Main.cs:10207`).
+    crate::edit::square_tile_frame_gen(world, x, y);
     true
 }
 
@@ -1998,14 +2255,23 @@ fn near_other_chests(world: &World, x: i32, y: i32) -> bool {
     false
 }
 
-/// `WorldGen.PlaceChest(x, y, 21, notNearOtherChests, 16)`
-/// (`WorldGen.cs:57813-57841`): the `TileObject.CanPlace`/`Place` route for
-/// the 2×2 chest — the style-16 frames come from the same registry def the
-/// player-facing placement uses.
-fn place_buried_chest(world: &mut World, x: i32, y: i32, not_near: bool, style: i32) -> bool {
+/// `WorldGen.PlaceChest(x, y, 21, notNearOtherChests, style)`
+/// (`WorldGen.cs:57813-57845`): the boulder-floor refusal FIRST (`:57816`,
+/// the raw type of both floor cells), then the `TileObject.CanPlace`/`Place`
+/// route for the 2×2 chest — the frames come from the same registry
+/// def the player-facing placement uses. Shared with the `AddBuriedChest`
+/// placement half (`structures.rs`, W4-c33) — hence `pub(crate)`.
+pub(crate) fn place_buried_chest(world: &mut World, x: i32, y: i32, not_near: bool, style: i32) -> bool {
     let Some(def) = crate::tileobject::def_for_tile(21) else {
         return false;
     };
+    if world.tile(x, y + 1).is_some_and(|t| td::SET_BOULDERS.has(t.kind))
+        || world
+            .tile(x + 1, y + 1)
+            .is_some_and(|t| td::SET_BOULDERS.has(t.kind))
+    {
+        return false;
+    }
     if not_near && near_other_chests(world, x - 1, y - 1) {
         return false;
     }
@@ -2031,13 +2297,12 @@ fn place_buried_chest(world: &mut World, x: i32, y: i32, not_near: bool, style: 
     crate::tileobject::place(world, &instance)
 }
 
-/// `WorldGen.AddBuriedChest`'s placement half (`WorldGen.cs:35871-36210`)
-/// for the temple call (`mainItem 1293, style 16, trySlope false,
-/// chestTileType 21`): the downward scan for the floor, the rejections
-/// (larva 231 below, an altar 26 / altar 237 within ± 2), the 2×2 write one
-/// row above the floor. The loot tables (the item fills and the style/item
-/// rolls) are M5-CHEST-gen's — the placement draws no rng on the classic
-/// path, so the pass stream stays aligned with the C# until the loot lands.
+/// `WorldGen.AddBuriedChest`'s placement half for the temple call
+/// (`mainItem 1293, style 16, trySlope false, chestTileType 21`) — now a
+/// thin wrapper over the shared port (`structures.rs`, W4-c33): the
+/// temple-part-2 window keeps 162 non-solid (`ice_solid = false`) and the
+/// caller's spike bit rides through. The placement draws no rng on the
+/// classic path; the temple's stocking stays with M5-CHEST-gen (no hook).
 fn add_buried_chest(
     world: &mut World,
     x: i32,
@@ -2046,30 +2311,25 @@ fn add_buried_chest(
     chest_style: i32,
     spike_solid: bool,
 ) -> bool {
-    for k in y..(world.height - 10) {
-        if world.tile(x, k).is_some_and(|t| t.active() && t.kind == 231) {
-            return false;
-        }
-        for n in (x - 2)..=(x + 2) {
-            for m in (k - 2)..=(k + 2) {
-                if in_world(world, n, m, 100)
-                    && world
-                        .tile(n, m)
-                        .is_some_and(|t| t.active() && (t.kind == 26 || t.kind == 237))
-                {
-                    return false;
-                }
-            }
-        }
-        if !solid_p2(world, x, k, spike_solid) {
-            continue;
-        }
-        return place_buried_chest(world, x - 1, k - 1, not_near, chest_style);
-    }
-    false
+    // The wrapper draws nothing — a scratch stream keeps the signature
+    // (the shared half only draws through the stocking hook, absent here).
+    let mut rng = super::Rng(0);
+    super::structures::add_buried_chest(
+        world,
+        x,
+        y,
+        1293,
+        not_near,
+        chest_style,
+        false,
+        false,
+        spike_solid,
+        None,
+        &mut rng,
+    )
 }
 
-/// `WorldGen.mayanTrap` (`WorldGen.cs:8349-8895`) — the temple's dart-trap
+/// `WorldGen.mayanTrap` (`WorldGen.cs:8349-8680`) — the temple's dart-trap
 /// generator: the pressure plate with the dart column(s) and the wire run
 /// between them. Case 0 lays the trap along a wall (the horizontal
 /// staircase), case 1 down a wall (the vertical one). The 232/162 window
@@ -2086,6 +2346,27 @@ fn mayan_trap(
     rng: &mut super::Rng,
     gen_rng: &mut crate::UnifiedRandom,
 ) -> bool {
+    // `:8351-8354`: the actuallyNoTraps variation counts the attempt as a
+    // placed trap (draw-free) so the loop's budget still drains.
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS)
+    {
+        return true;
+    }
+    // `:8355-8359`: `num = maxTilesY - 300` (the caller's floor_abort), the
+    // dualDungeons seed moves it to `UnderworldLayer - 5`
+    // (`Main.cs:2790`: UnderworldLayer = maxTilesY - 200). The seed prunes
+    // the temple chain (`WorldGen.cs:22504`), so this arm only matters to
+    // the dual-dungeon trap pass's future reuse — ported verbatim.
+    let floor_abort = if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+    {
+        world.height - 200 - 5
+    } else {
+        floor_abort
+    };
     let num2 = if rng.range(0, 3) == 0 { 0 } else { 1 };
     let mut num3 = y2;
     while !solid_or_sloped_p2(world, x2, num3, spike_solid) {
@@ -2104,6 +2385,8 @@ fn mayan_trap(
     if world.tile(x2, num3).is_some_and(is_lava) {
         return false;
     }
+    // `:8383-8390`: the num2 == -1 arms are dead code (num2 ∈ {0, 1}) — the
+    // two extra draws never fire; kept as the citation, not ported.
     let nactive = |world: &World, x: i32, y: i32| {
         world
             .tile(x, y)
@@ -2134,7 +2417,7 @@ fn mayan_trap(
     }
 }
 
-/// `mayanTrap`'s case 0 (`WorldGen.cs:8407-8488`) — the wall-hugging
+/// `mayanTrap`'s case 0 (`WorldGen.cs:8409-8572`) — the wall-hugging
 /// horizontal trap.
 fn mayan_trap_horizontal(
     world: &mut World,
@@ -2165,8 +2448,13 @@ fn mayan_trap_horizontal(
     if flag2 && !solid_or_sloped_p2(world, num14, num12 + 1, spike_solid) {
         flag2 = false;
     }
-    // `num17 = 48` (the dualDungeons 232 variant is secret-seed scope).
-    let reject = |world: &World, x: i32, y: i32| world.tile(x, y).is_some_and(|t| matches!(t.kind, 10 | 48));
+    // `:8442-8446`: `num17 = 48`, the dualDungeons seed swaps it for 232.
+    let num17 = if world.micro_seeds.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS) {
+        232
+    } else {
+        48
+    };
+    let reject = |world: &World, x: i32, y: i32| world.tile(x, y).is_some_and(|t| t.kind == 10 || t.kind == num17);
     if flag && (reject(world, num13, num12) || reject(world, num13, num12 + 1)) {
         flag = false;
     }
@@ -2251,7 +2539,7 @@ fn mayan_trap_horizontal(
     true
 }
 
-/// `mayanTrap`'s case 1 (`WorldGen.cs:8588-8695`) — the vertical trap.
+/// `mayanTrap`'s case 1 (`WorldGen.cs:8573-8676`) — the vertical trap.
 #[allow(clippy::too_many_arguments)]
 fn mayan_trap_vertical(
     world: &mut World,
@@ -2273,15 +2561,18 @@ fn mayan_trap_vertical(
     if num6 < 3 {
         return false;
     }
-    let num7 = if has_wire(world, x2, num3, 0) {
-        0
-    } else if has_wire(world, x2, num3, 1) {
-        1
-    } else if has_wire(world, x2, num3, 2) {
-        2
-    } else {
-        rng.range(0, 3)
-    };
+    // `:8590-8602`: the colour draw first (unconditional), then the wire
+    // overrides — same stream shape as the horizontal arm.
+    let mut num7 = rng.range(0, 3);
+    if has_wire(world, x2, num3, 0) {
+        num7 = 0;
+    }
+    if has_wire(world, x2, num3, 1) {
+        num7 = 1;
+    }
+    if has_wire(world, x2, num3, 2) {
+        num7 = 2;
+    }
     let style = if num6 < 16 && rng.range(0, 3) != 0 { 4 } else { 3 };
     if world
         .tile(num4, num5)
@@ -2301,7 +2592,7 @@ fn mayan_trap_vertical(
     if !can_pressure_plate_at_p2(world, x2, num3, spike_solid) {
         return false;
     }
-    place_plate_tile(world, x2, num3, 6);
+    place_plate_tile(world, x2, num3, 6, spike_solid);
     place_trap_tile(world, num4, num5, style);
     for i in 0..2 {
         let mut num8 = rng.range(1, 5);
@@ -2509,10 +2800,13 @@ pub(crate) fn pass_temple_part2(
     }
 }
 
-/// The `LihzahrdAltar` pass (`WorldGen.cs:21943-21976`): the 3×2 altar
+/// The `LihzahrdAltar` pass (`WorldGen.cs:21943-21972`): the 3×2 altar
 /// re-write over the published anchor with the same frames, the 3-wide
 /// brick base row, then the six `SquareTileFrame` calls — the late anchor
-/// safety after the tile passes.
+/// safety after the tile passes. The C# writes `active/type/frameX/frameY`
+/// IN PLACE (`:21954-21957`) — the wall 87, the liquid and the paint under
+/// the altar stand; the base row clears `slope(0)` AND `halfBrick(false)`
+/// (`:21960-21961`).
 pub(crate) fn pass_lihzahrd_altar(world: &mut World, l_altar_x: i32, l_altar_y: i32) {
     // W4-g83 contract §2: the framing dispatch's genRand stand-in (the
     // `pass_temple_part2` note — the C# pass draws nothing of its own).
@@ -2525,13 +2819,11 @@ pub(crate) fn pass_lihzahrd_altar(world: &mut World, l_altar_x: i32, l_altar_y: 
                 return;
             }
             let idx = world.index(px, py);
-            world.tiles[idx] = Tile {
-                kind: TILE_ALTAR,
-                frame_x: (i * 18) as i16,
-                frame_y: (j * 18) as i16,
-                flags: FLAG_ACTIVE,
-                ..Default::default()
-            };
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = TILE_ALTAR;
+            t.frame_x = (i * 18) as i16;
+            t.frame_y = (j * 18) as i16;
         }
         let py = y + 2;
         if x + i < 2 || py >= world.height - 2 {
@@ -2539,9 +2831,10 @@ pub(crate) fn pass_lihzahrd_altar(world: &mut World, l_altar_x: i32, l_altar_y: 
         }
         let idx2 = world.index(x + i, py);
         let t = &mut world.tiles[idx2];
-        t.kind = TILE_TEMPLE_BRICK;
         t.flags |= FLAG_ACTIVE;
         t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        t.kind = TILE_TEMPLE_BRICK;
     }
     for k in 0..3 {
         for l in 0..2 {
@@ -2574,6 +2867,7 @@ pub(crate) fn pass_lihzahrd_temple(
         world.height - 200,
         cx,
         cy,
+        world.seeds,
     );
     make_temple_generate_bricks(world, &walk.rooms);
     carve_room_interiors(world, &walk.rooms, rng);
@@ -2603,6 +2897,7 @@ pub(crate) fn pass_lihzahrd_temple(
 mod tests {
     use super::*;
     use super::super::noise::Rng;
+    use crate::seeds::SeedFlags;
 
     /// An active solid-kind tile patch — the synthetic jungle-grass stand-in.
     fn paint(world: &mut World, x0: i32, x1: i32, y0: i32, y1: i32, kind: u16) {
@@ -2627,7 +2922,7 @@ mod tests {
     #[test]
     fn test_DW_1_1_room_walk_draw_ledger() {
         let mut rng = Rng(0xDEAD_BEEF);
-        let walk = make_temple_rooms(&mut rng, 1.0, 1000, 2000, 300);
+        let walk = make_temple_rooms(&mut rng, 1.0, 1000, 2000, 300, SeedFlags::none());
         let rooms = &walk.rooms;
         assert_eq!(rooms.len(), 15, "the walk's room count");
         assert_eq!(rng.0, 0xcd25_41e9_adf9_5601, "the draw ledger");
@@ -2676,7 +2971,7 @@ mod tests {
     fn test_DW_1_1_underworld_ceiling_collapses_the_walk() {
         // At (2000, 220) with layer 300: 220 + 70 = 290 >= 290 → flag2.
         let mut rng = Rng(0xDEAD_BEEF);
-        let walk = make_temple_rooms(&mut rng, 1.0, 300, 2000, 220);
+        let walk = make_temple_rooms(&mut rng, 1.0, 300, 2000, 220, SeedFlags::none());
         assert_eq!(walk.rooms.len(), 1, "the walk collapses to one room");
         let room = walk.rooms[0].rect;
         assert!((88..=104).contains(&room.w) && (60..=67).contains(&room.h));
@@ -2863,10 +3158,10 @@ mod tests {
     #[test]
     fn test_DW_1_4_last_room_trigger_uses_depth_minus_200() {
         let mut collapsed = Rng(0xDEAD_BEEF);
-        let walk = make_temple_rooms(&mut collapsed, 1.0, 300, 2000, 220);
+        let walk = make_temple_rooms(&mut collapsed, 1.0, 300, 2000, 220, SeedFlags::none());
         assert_eq!(walk.rooms.len(), 1, "220 + 70 >= 300 - 10");
         let mut normal = Rng(0xDEAD_BEEF);
-        let walk = make_temple_rooms(&mut normal, 1.0, 301, 2000, 220);
+        let walk = make_temple_rooms(&mut normal, 1.0, 301, 2000, 220, SeedFlags::none());
         assert!(walk.rooms.len() > 1, "220 + 70 < 301 - 10");
     }
 
@@ -3289,8 +3584,10 @@ mod tests {
     /// DW-3.3: the furniture family carries the faithful frames — the chair
     /// 15 style 12 (`frameY = 40 * 12 + row * 18` = 480/498, `frameX` 0),
     /// the statues 105 (`frameX = 36 * style + col * 18`, styles 43-45) and
-    /// the painting 240 style 88 (`frameX = 54 * 88 + col * 18`) when the
-    /// near-checks let one through.
+    /// the painting 240 style 88 through `Place3x3Wall`'s 36-fold
+    /// (W4-g43): style 88 → row 2 / style 16, so `frameX = 54 * 16 + col * 18`
+    /// = 864/882/900 and `frameY = 108 + row * 18` = 108/126/144 over the FULL
+    /// 3×3, when the near-checks let one through.
     #[test]
     fn test_DW_3_3_furniture_frames() {
         let mut world = World::new("t".into(), 512, 512);
@@ -3333,13 +3630,18 @@ mod tests {
             );
             assert!(row == 0 || row == 18 || row == 36, "the statue row ({})", row);
         }
-        // The painting's 3×2 block, if the near-checks let one through.
+        // The painting's 3×3 block, if the near-checks let one through.
         for t in world.tiles.iter().filter(|t| t.active() && t.kind == 240) {
             assert_eq!(t.frame_x % 54, ((t.frame_x % 54) / 18) * 18, "the painting column");
             assert!(
-                (4752..=4858).contains(&t.frame_x),
-                "the style-88 painting frameX ({}) — 54 * 88 + col * 18",
+                (864..=900).contains(&t.frame_x),
+                "the style-88 painting frameX ({}) — 54 * (88 - 2*36) + col * 18",
                 t.frame_x
+            );
+            assert!(
+                (108..=144).contains(&t.frame_y),
+                "the style-88 painting frameY ({}) — 54 * 2 + row * 18",
+                t.frame_y
             );
         }
     }
@@ -3402,4 +3704,662 @@ mod tests {
         assert_eq!(world.tiles.len(), 300 * 300);
     }
 
+    // --- W4-g43: the temple residuals witnesses (WRITTEN NOT RUN — no
+    // compiler on this branch; the gate runs them). Every witness replays
+    // a == b where a stream is involved.
+
+    /// A wall-87 air pocket with a brick floor — the trap/chest test rig.
+    /// The pocket spans `x0..x1` at rows `y0..y1` (air, wall 87); the floor
+    /// row `y1` is active Lihzahrd brick; the side columns `x0-1`/`x1` are
+    /// active brick with wall 87 from `y0-10` down to the floor.
+    fn pocket(world: &mut World, x0: i32, x1: i32, y0: i32, y1: i32) {
+        for x in x0..x1 {
+            for y in y0..y1 {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile {
+                    wall: WALL_TEMPLE_UNSAFE,
+                    ..Default::default()
+                };
+            }
+            let i = world.index(x, y1);
+            world.tiles[i] = Tile {
+                kind: TILE_TEMPLE_BRICK,
+                wall: WALL_TEMPLE_UNSAFE,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        for x in [x0 - 1, x1] {
+            for y in (y0 - 10)..=y1 {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile {
+                    kind: TILE_TEMPLE_BRICK,
+                    wall: WALL_TEMPLE_UNSAFE,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+    }
+
+    /// W4-g43: the painting rides `Place3x3Wall` (`WorldGen.cs:44254-44292`),
+    /// NOT `Place3x3`: style 88 folds to row 2 / style 16, the FULL 3×3 at
+    /// `(x-1, y-1)` is written, and every body cell must be empty AND walled.
+    #[test]
+    fn w4_g43_painting_place3x3wall_fold() {
+        let mut world = World::new("t".into(), 300, 300);
+        pocket(&mut world, 100, 140, 140, 150);
+        assert!(place_painting(&mut world, 120, 145, 88));
+        for col in 0..3i32 {
+            for row in 0..3i32 {
+                let t = world.tile(119 + col, 144 + row).unwrap();
+                assert!(t.active() && t.kind == 240, "the 3×3 body ({col},{row})");
+                assert_eq!(t.frame_x, (864 + col * 18) as i16, "54 * 16 + col * 18");
+                assert_eq!(t.frame_y, (108 + row * 18) as i16, "54 * 2 + row * 18");
+            }
+        }
+        // The wall gate: a wall-0 cell in the body refuses (the old
+        // Place3x3 port would have accepted it on a solid ceiling).
+        let mut bare = World::new("t".into(), 300, 300);
+        pocket(&mut bare, 100, 140, 140, 150);
+        let i = bare.index(120, 145);
+        bare.tiles[i].wall = 0;
+        assert!(!place_painting(&mut bare, 120, 145, 88), "the wall-0 refusal");
+        // The active gate: one occupied body cell refuses.
+        let mut occupied = World::new("t".into(), 300, 300);
+        pocket(&mut occupied, 100, 140, 140, 150);
+        let i = occupied.index(121, 146);
+        occupied.tiles[i].flags |= FLAG_ACTIVE;
+        assert!(!place_painting(&mut occupied, 120, 145, 88), "the active refusal");
+        // a == b: two identical runs write byte-identical tiles.
+        let mut a = World::new("t".into(), 300, 300);
+        let mut b = World::new("t".into(), 300, 300);
+        pocket(&mut a, 100, 140, 140, 150);
+        pocket(&mut b, 100, 140, 140, 150);
+        place_painting(&mut a, 120, 145, 88);
+        place_painting(&mut b, 120, 145, 88);
+        assert_eq!(a.tiles, b.tiles, "a == b");
+    }
+
+    /// W4-g43: the trap colour draw is UNCONDITIONAL (`WorldGen.cs:8518-8530`
+    /// horizontal, `:8590-8602` vertical) — a plate cell already carrying a
+    /// wire overrides the drawn colour but still SPENDS the draw. Two runs
+    /// (pre-wired plate vs clean plate) end on the same stream state; the
+    /// pre-wired run lays the override colour (red) on the dart column.
+    /// Seed 1's stream (derived by hand over the xorshift64 triple):
+    /// direction 0 (horizontal), offset 0 (row 149), side 1 (the left wall
+    /// x=100), colour 1, column length 3. The style roll is SKIPPED —
+    /// `num20 = 20 >= 10` short-circuits the `&&` (`:8533`), so no draw.
+    #[test]
+    fn w4_g43_trap_colour_draw_is_unconditional() {
+        let run = |pre_wire: bool| {
+            let mut world = World::new("t".into(), 300, 600);
+            pocket(&mut world, 101, 140, 140, 150);
+            if pre_wire {
+                // The plate lands at (120, 149) — one row above the floor.
+                world.wires.set(120, 149, crate::wiring::WireColor::Red, true);
+            }
+            let mut rng = Rng(1);
+            let placed = mayan_trap(&mut world, 120, 145, 300, 200.0, true, &mut rng);
+            (placed, rng.0, world)
+        };
+        let (pa, sa, wa) = run(true);
+        let (pb, sb, _wb) = run(false);
+        assert!(pa && pb, "both runs place the horizontal trap");
+        assert_eq!(sa, sb, "the colour draw is spent in BOTH runs");
+        // The override: the pre-wired plate's trap column carries red.
+        let darts: Vec<_> = wa
+            .tiles
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.active() && t.kind == 137)
+            .map(|(i, _)| (i as i32 % 300, i as i32 / 300))
+            .collect();
+        assert!(!darts.is_empty(), "the dart column");
+        for (x, y) in darts {
+            assert!(
+                wa.wires.get(x, y, crate::wiring::WireColor::Red),
+                "the override colour at ({x},{y})"
+            );
+        }
+    }
+
+    /// W4-g43: the actuallyNoTraps variation (`WorldGen.cs:8351-8354`)
+    /// returns true DRAW-FREE and WRITE-FREE — the loop budget drains
+    /// without a single trap. a == b on the stream and the tiles.
+    #[test]
+    fn w4_g43_actually_no_traps_is_draw_free() {
+        let mut world = World::new("t".into(), 300, 600);
+        pocket(&mut world, 101, 140, 140, 150);
+        world.micro_seeds = crate::seeds::MicroSeedFlags::from_sum(
+            crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS,
+        );
+        let before = world.tiles.clone();
+        let mut rng = Rng(0x5EED);
+        let state = rng.0;
+        assert!(mayan_trap(&mut world, 120, 145, 300, 200.0, true, &mut rng));
+        assert_eq!(rng.0, state, "no draw");
+        assert_eq!(world.tiles, before, "no write");
+        // The classic control spends the direction draw at least.
+        let mut classic = World::new("t".into(), 300, 600);
+        pocket(&mut classic, 101, 140, 140, 150);
+        let mut crng = Rng(0x5EED);
+        let _ = mayan_trap(&mut classic, 120, 145, 300, 200.0, true, &mut crng);
+        assert_ne!(crng.0, state, "the classic arm draws");
+    }
+
+    /// W4-g43: the dualDungeons trap arms (`WorldGen.cs:8356-8359`,
+    /// `:8442-8446`): the floor abort moves to `UnderworldLayer - 5`
+    /// (`Main.cs:2790`) and the wall-reject set swaps 48 → 232. A corridor
+    /// whose BOTH walls are wooden spikes refuses in both arms, but at
+    /// different stream positions: the classic arm's {10, 48} reject keeps
+    /// both flags, spends the side-pick draw, then refuses at the `:8496`
+    /// type-232 check (3 draws); the dual arm's {10, 232} reject drops both
+    /// flags and refuses before the side pick (2 draws). On a 300-tall
+    /// world the dual floor abort (95) refuses after the direction draw.
+    #[test]
+    fn w4_g43_dual_dungeons_trap_arms() {
+        let rig = || {
+            let mut world = World::new("t".into(), 300, 600);
+            pocket(&mut world, 101, 140, 140, 150);
+            // Both side columns become spikes (still solid in the trap
+            // window, wall 87 kept).
+            for x in [100, 140] {
+                for y in 130..=150 {
+                    let i = world.index(x, y);
+                    world.tiles[i].kind = 232;
+                }
+            }
+            world
+        };
+        let mut classic = rig();
+        let mut crng = Rng(1);
+        assert!(
+            !mayan_trap(&mut classic, 120, 145, 300, 200.0, true, &mut crng),
+            "the classic arm refuses at the :8496 spike check"
+        );
+        let mut dual = rig();
+        dual.micro_seeds = crate::seeds::MicroSeedFlags::from_sum(
+            crate::seeds::MicroSeedFlags::DUAL_DUNGEONS,
+        );
+        let mut drng = Rng(1);
+        assert!(
+            !mayan_trap(&mut dual, 120, 145, 300, 200.0, true, &mut drng),
+            "the dual arm rejects both spike walls (num17 = 232)"
+        );
+        // The stream-position difference: dual spent 2 draws, classic 3.
+        let mut probe = Rng(1);
+        probe.next_u32();
+        probe.next_u32();
+        assert_eq!(drng.0, probe.0, "the dual refusal stops before the side pick");
+        probe.next_u32();
+        assert_eq!(crng.0, probe.0, "the classic refusal spends the side pick");
+        // The floor-abort arm: on a 300-tall world the dual abort is 95 —
+        // the scan refuses at once (the direction draw still spent).
+        let mut short = World::new("t".into(), 300, 300);
+        pocket(&mut short, 101, 140, 140, 150);
+        short.micro_seeds = crate::seeds::MicroSeedFlags::from_sum(
+            crate::seeds::MicroSeedFlags::DUAL_DUNGEONS,
+        );
+        let mut srng = Rng(1);
+        let state = srng.0;
+        assert!(!mayan_trap(&mut short, 120, 145, 0, 200.0, true, &mut srng));
+        assert_ne!(srng.0, state, "the direction draw precedes the abort");
+        // a == b: the dual refusal replays byte-identically.
+        let mut dual2 = rig();
+        dual2.micro_seeds = crate::seeds::MicroSeedFlags::from_sum(
+            crate::seeds::MicroSeedFlags::DUAL_DUNGEONS,
+        );
+        let mut drng2 = Rng(1);
+        let _ = mayan_trap(&mut dual2, 120, 145, 300, 200.0, true, &mut drng2);
+        assert_eq!(dual.tiles, dual2.tiles, "a == b tiles");
+        assert_eq!(drng.0, drng2.0, "a == b stream");
+    }
+
+    /// W4-g43: the `LihzahrdAltar` re-write is IN PLACE
+    /// (`WorldGen.cs:21954-21962`): the wall 87, the liquid and the paint
+    /// under the altar stand; the base row clears slope AND halfBrick.
+    #[test]
+    fn w4_g43_altar_rewrite_keeps_stored_fields() {
+        let mut world = World::new("t".into(), 300, 300);
+        let (ax, ay) = (150, 150);
+        for i in 0..3 {
+            for j in 0..2 {
+                let idx = world.index(ax + i, ay + j);
+                world.tiles[idx] = Tile {
+                    kind: TILE_TEMPLE_BRICK,
+                    wall: WALL_TEMPLE_UNSAFE,
+                    liquid: 100,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+                world.tiles[idx].set_paint(16);
+            }
+            let idx = world.index(ax + i, ay + 2);
+            world.tiles[idx] = Tile {
+                kind: 0,
+                flags: FLAG_ACTIVE | crate::tile::FLAG_HALF_BRICK,
+                ..Default::default()
+            };
+            world.tiles[idx].set_slope(2);
+        }
+        pass_lihzahrd_altar(&mut world, ax, ay);
+        for i in 0..3 {
+            for j in 0..2 {
+                let t = world.tile(ax + i, ay + j).unwrap();
+                assert!(t.active() && t.kind == TILE_ALTAR);
+                assert_eq!(t.frame_x, (i * 18) as i16);
+                assert_eq!(t.frame_y, (j * 18) as i16);
+                assert_eq!(t.wall, WALL_TEMPLE_UNSAFE, "the wall stands");
+                assert_eq!(t.liquid, 100, "the liquid stands");
+                assert_eq!(t.paint(), 16, "the paint stands");
+            }
+            let base = world.tile(ax + i, ay + 2).unwrap();
+            assert!(base.active() && base.kind == TILE_TEMPLE_BRICK);
+            assert_eq!(base.slope(), 0, "the base slope cleared");
+            assert!(!base.half_brick(), "the base halfBrick cleared");
+        }
+        // a == b: the re-write is idempotent over its own output.
+        let snapshot = world.tiles.clone();
+        pass_lihzahrd_altar(&mut world, ax, ay);
+        assert_eq!(world.tiles, snapshot, "a == b idempotence");
+    }
+
+    /// W4-g43: the buried-chest placement gates (`WorldGen.cs:35906-35959`,
+    /// `:57816`): shimmer liquid in the scan column refuses, a boulder
+    /// within ±2 refuses, and `PlaceChest`'s boulder-floor refusal fires on
+    /// the RAW floor type. The classic control places.
+    #[test]
+    fn w4_g43_buried_chest_gates() {
+        // The clean control: a wall-87 pocket with a brick floor places.
+        let mut clean = World::new("t".into(), 300, 300);
+        pocket(&mut clean, 100, 140, 140, 150);
+        assert!(add_buried_chest(&mut clean, 120, 145, false, 16, false));
+        // Shimmer liquid in the scan column refuses before the floor.
+        let mut shimmer = World::new("t".into(), 300, 300);
+        pocket(&mut shimmer, 100, 140, 140, 150);
+        let i = shimmer.index(120, 147);
+        shimmer.tiles[i].liquid = 255;
+        shimmer.tiles[i].flags |= crate::tile::FLAG_LIQUID_SHIMMER;
+        assert!(!add_buried_chest(&mut shimmer, 120, 145, false, 16, false));
+        // A boulder (138) within the ±2 box refuses.
+        let mut boulder = World::new("t".into(), 300, 300);
+        pocket(&mut boulder, 100, 140, 140, 150);
+        let i = boulder.index(122, 149);
+        boulder.tiles[i] = Tile {
+            kind: 138,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        assert!(!add_buried_chest(&mut boulder, 120, 145, false, 16, false));
+        // PlaceChest's boulder-floor refusal: the floor under the chest's
+        // left column is an INACTIVE boulder — the raw-type read still
+        // refuses (`:57816` reads `.type` without the active gate).
+        let mut floor = World::new("t".into(), 300, 300);
+        pocket(&mut floor, 100, 140, 140, 150);
+        let i = floor.index(119, 150);
+        floor.tiles[i] = Tile {
+            kind: 138,
+            wall: WALL_TEMPLE_UNSAFE,
+            ..Default::default()
+        };
+        assert!(!place_buried_chest(&mut floor, 119, 149, false, 16));
+        // a == b: the clean placement replays byte-identically.
+        let mut clean2 = World::new("t".into(), 300, 300);
+        pocket(&mut clean2, 100, 140, 140, 150);
+        assert!(add_buried_chest(&mut clean2, 120, 145, false, 16, false));
+        assert_eq!(clean.tiles, clean2.tiles, "a == b");
+    }
+
+    /// W4-g43: the pound/plate gates — `CanPoundTile`'s gen-time 190/30
+    /// refusals and the active `ForbidsSloping` anchor above
+    /// (`WorldGen.cs:80726-80740`), `CanGeneratePressurePlateAt`'s raw-type
+    /// boulder floor + echo wall 350 (`:11040-11047`).
+    #[test]
+    fn w4_g43_pound_and_plate_gates() {
+        let mut world = World::new("t".into(), 300, 300);
+        // A sloped brick floor with an active altar 237 above refuses the
+        // pound (ForbidsSloping).
+        let i = world.index(150, 150);
+        world.tiles[i] = Tile {
+            kind: TILE_TEMPLE_BRICK,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        world.tiles[i].set_slope(1);
+        let i = world.index(150, 149);
+        world.tiles[i] = Tile {
+            kind: TILE_ALTAR,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        assert!(!slope_tile_p2(&mut world, 150, 150), "the altar above");
+        // The gen-time raw-type refusals: 190 and 30 (inactive still reads).
+        for kind in [190u16, 30] {
+            let i = world.index(160, 150);
+            world.tiles[i] = Tile {
+                kind,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+            assert!(!slope_tile_p2(&mut world, 160, 150), "kind {kind}");
+        }
+        // The plate gate: an INACTIVE boulder floor still refuses (raw
+        // type), and the echo wall 350 refuses.
+        let mut plate = World::new("t".into(), 300, 300);
+        let i = plate.index(150, 151);
+        plate.tiles[i] = Tile {
+            kind: 138,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        assert!(!can_pressure_plate_at_p2(&plate, 150, 150, true));
+        let i = plate.index(160, 151);
+        plate.tiles[i] = Tile {
+            kind: TILE_TEMPLE_BRICK,
+            wall: 350,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        assert!(!can_pressure_plate_at_p2(&plate, 160, 150, true));
+        // The clean brick floor accepts.
+        let i = plate.index(170, 151);
+        plate.tiles[i] = Tile {
+            kind: TILE_TEMPLE_BRICK,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        assert!(can_pressure_plate_at_p2(&plate, 170, 150, true));
+    }
+
+    /// W4-g43: the trap write keeps the stored frameX on an ACTIVE overwrite
+    /// (`WorldGen.cs:59750-59755` writes no frameX; the pre-Clear at
+    /// `:59473-59476` only fires on an inactive cell) — the column runs'
+    /// second write keeps the first style's +18 flip. The plate write's
+    /// pre-Clear fires even when Place1x1 then refuses.
+    #[test]
+    fn w4_g43_trap_write_frame_quirk_and_plate_preclear() {
+        let mut world = World::new("t".into(), 300, 300);
+        // An active 137 with the +18 flip: the overwrite keeps frameX.
+        let i = world.index(150, 150);
+        world.tiles[i] = Tile {
+            kind: 137,
+            frame_x: 18,
+            frame_y: 18,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        place_trap_tile(&mut world, 150, 150, 2);
+        let t = world.tile(150, 150).unwrap();
+        assert_eq!(t.frame_x, 18, "the active overwrite keeps frameX");
+        assert_eq!(t.frame_y, 36, "frameY = 18 * style");
+        // An inactive cell: the pre-Clear resets paint/slope, then the write.
+        let i = world.index(160, 150);
+        world.tiles[i] = Tile {
+            kind: 226,
+            frame_x: 99,
+            flags: 0,
+            ..Default::default()
+        };
+        world.tiles[i].set_paint(7);
+        world.tiles[i].set_slope(3);
+        place_trap_tile(&mut world, 160, 150, 1);
+        let t = world.tile(160, 150).unwrap();
+        assert!(t.active() && t.kind == 137);
+        assert_eq!(t.frame_x, 0, "the inactive pre-Clear resets frameX");
+        assert_eq!(t.paint(), 0, "the paint cleared");
+        assert_eq!(t.slope(), 0, "the slope cleared");
+        // The plate pre-Clear on refusal: an inactive cell with stored
+        // frames over a NON-solid floor — Place1x1 refuses, but the Clear
+        // already ran (the C# order, `:59473` before `:45190`).
+        let i = world.index(170, 150);
+        world.tiles[i] = Tile {
+            kind: 226,
+            frame_x: 54,
+            frame_y: 18,
+            flags: 0,
+            ..Default::default()
+        };
+        place_plate_tile(&mut world, 170, 150, 6, true);
+        let t = world.tile(170, 150).unwrap();
+        assert!(!t.active(), "Place1x1 refused (no floor)");
+        assert_eq!(t.frame_x, 0, "the pre-Clear ran before the refusal");
+        assert_eq!(t.frame_y, 0);
+    }
+
+    /// W4-g43: the whole-world determinism witness — the classic 512 world
+    /// and the two micro-seeds this round touches (actuallyNoTraps drains
+    /// the trap budget draw-free; dualDungeons prunes the temple chain,
+    /// `WorldGen.cs:22504`) regenerate byte-identically (a == b over the
+    /// full stored tile state). The actuallyNoTraps world DIFFERS from the
+    /// classic control (the traps are gone and the stream shifted). The
+    /// measured hashes ride the test log for the gate's pin re-derivation
+    /// (`world_hash.rs` — both classic pins move BY DESIGN this round: the
+    /// painting frames, the SquareTileFrame tails and the trap draw order).
+    #[test]
+    fn w4_g43_the_temple_worlds_are_deterministic() {
+        use crate::seeds::{MicroSeedFlags, SeedFlags};
+        let opts = |micro: MicroSeedFlags| super::super::GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            flags: SeedFlags::none(),
+            micro_flags: micro,
+            ..Default::default()
+        };
+        let no_micro = MicroSeedFlags::none();
+        let classic = super::super::world_hash::world_hash(&super::super::generate(&opts(no_micro)));
+        let cases: [(&str, MicroSeedFlags); 2] = [
+            (
+                "actuallyNoTraps",
+                MicroSeedFlags::from_sum(MicroSeedFlags::ACTUALLY_NO_TRAPS),
+            ),
+            (
+                "dualDungeons",
+                MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS),
+            ),
+        ];
+        let mut no_traps_hash = 0u32;
+        for (name, micro) in cases {
+            let o = opts(micro);
+            let a = super::super::generate(&o);
+            let b = super::super::generate(&o);
+            let ha = super::super::world_hash::world_hash(&a);
+            let hb = super::super::world_hash::world_hash(&b);
+            assert_eq!(ha, hb, "{name}: a == b determinism");
+            assert_eq!(a.tiles, b.tiles, "{name}: byte-identical tiles");
+            if name == "actuallyNoTraps" {
+                no_traps_hash = ha;
+            }
+            eprintln!("w4_g43 {name}: {ha}");
+        }
+        assert_ne!(no_traps_hash, classic, "the no-traps world must differ");
+        eprintln!("w4_g43 classic: {classic}");
+    }
+
+    // --- the M5-SEED temple branches (W4-d108, code-only — written not run) ---
+
+    /// The room-count multiplier chain (`WorldGen.cs:33439-33450`): drunk
+    /// ×3, else FTW ×3, else remix ×2 — with the underworld ceiling far
+    /// away the walk never collapses, so the seeded counts are exact
+    /// multiples of the classic count on the same stream. The drunk+FTW
+    /// combo takes the FIRST arm once (×3, not ×9). a == b: every seeded
+    /// walk replays byte-identical (rooms + stream state).
+    #[test]
+    fn test_M5_SEED_room_count_multipliers() {
+        let classic = {
+            let mut rng = Rng(0xDEAD_BEEF);
+            make_temple_rooms(&mut rng, 1.0, 100_000, 2000, 300, SeedFlags::none())
+        };
+        let n = classic.rooms.len();
+        assert!(n > 1, "the classic walk must not collapse ({n})");
+        for (flags, factor) in [
+            (SeedFlags::DRUNK, 3usize),
+            (SeedFlags::FOR_THE_WORTHY, 3),
+            (SeedFlags::REMIX, 2),
+            (SeedFlags::DRUNK | SeedFlags::FOR_THE_WORTHY, 3),
+            (SeedFlags::DRUNK | SeedFlags::REMIX, 3),
+        ] {
+            let mut rng = Rng(0xDEAD_BEEF);
+            let walk = make_temple_rooms(&mut rng, 1.0, 100_000, 2000, 300, SeedFlags::from(flags));
+            assert_eq!(walk.rooms.len(), n * factor, "flags {flags}");
+            // a == b: the same seed + flags replay the same walk + stream.
+            let mut rng2 = Rng(0xDEAD_BEEF);
+            let walk2 = make_temple_rooms(&mut rng2, 1.0, 100_000, 2000, 300, SeedFlags::from(flags));
+            assert_eq!(rng.0, rng2.0, "the stream replays (flags {flags})");
+            for (a, b) in walk.rooms.iter().zip(walk2.rooms.iter()) {
+                assert_eq!(a.rect, b.rect);
+                assert_eq!(a.depth, b.depth);
+            }
+        }
+        // The classic walk is untouched by the new parameter (the ledger
+        // pin of DW-1.1 still holds with `SeedFlags::none()`).
+        let mut rng = Rng(0xDEAD_BEEF);
+        let again = make_temple_rooms(&mut rng, 1.0, 100_000, 2000, 300, SeedFlags::none());
+        assert_eq!(again.rooms.len(), n);
+    }
+
+    /// A synthetic temple room for the spike witnesses: the brick border
+    /// (active 226, solid), the interior inactive with the unsafe wall 87 —
+    /// the spike loop's eligibility shape (`WorldGen.cs:34078`).
+    fn spike_room_world(seeds: u16) -> (World, Vec<TempleRoom>, Bounds) {
+        let mut world = World::new("t".into(), 200, 200);
+        world.seeds = SeedFlags::from(seeds);
+        let rect = Rect { x: 60, y: 60, w: 60, h: 60 };
+        for x in rect.x..rect.right() {
+            for y in rect.y..rect.bottom() {
+                let i = world.index(x, y);
+                let border = x == rect.x
+                    || x == rect.right() - 1
+                    || y == rect.y
+                    || y == rect.bottom() - 1;
+                world.tiles[i] = if border {
+                    Tile { kind: TILE_TEMPLE_BRICK, flags: FLAG_ACTIVE, ..Default::default() }
+                } else {
+                    Tile { wall: WALL_TEMPLE_UNSAFE, ..Default::default() }
+                };
+            }
+        }
+        let rooms = vec![TempleRoom { rect, depth: 0 }];
+        let b = Bounds { left: rect.x, top: rect.y, right: rect.right(), bottom: rect.bottom() };
+        (world, rooms, b)
+    }
+
+    /// The drunk spike arms (`WorldGen.cs:34065-34068`, `:34122-34136`,
+    /// `:34193-34207`): the ×1.5 budget plus the second rows/columns place
+    /// strictly more spikes than the classic run on the same stream, and
+    /// the classic run is byte-identical to a second classic run (a == b),
+    /// as is the drunk run. The second-row writes are gated on `drunk` at
+    /// all four call sites — the classic count is the unchanged baseline.
+    #[test]
+    fn test_M5_SEED_drunk_spikes_place_more_and_replay() {
+        let spike_count = |w: &World| w.tiles.iter().filter(|t| t.active() && t.kind == 232).count();
+        let (mut classic, rooms, b) = spike_room_world(0);
+        temple_spikes(&mut classic, &rooms, b, &mut Rng(0x5EED));
+        let (mut classic2, rooms2, b2) = spike_room_world(0);
+        temple_spikes(&mut classic2, &rooms2, b2, &mut Rng(0x5EED));
+        assert_eq!(classic.tiles, classic2.tiles, "a == b (classic)");
+        let (mut drunk, rooms3, b3) = spike_room_world(SeedFlags::DRUNK);
+        temple_spikes(&mut drunk, &rooms3, b3, &mut Rng(0x5EED));
+        let (mut drunk2, rooms4, b4) = spike_room_world(SeedFlags::DRUNK);
+        temple_spikes(&mut drunk2, &rooms4, b4, &mut Rng(0x5EED));
+        assert_eq!(drunk.tiles, drunk2.tiles, "a == b (drunk)");
+        assert!(
+            spike_count(&drunk) > spike_count(&classic),
+            "the drunk budget + second rows place more spikes ({} vs {})",
+            spike_count(&drunk),
+            spike_count(&classic)
+        );
+    }
+
+    /// The remix placement search (`WorldGen.cs:15853-15893`): the x
+    /// re-roll into `[0.2·W, 0.8·W)` (not-the-bees: `[0.2·W, 0.4·W)`), the
+    /// up-walk to the surface line and the `10 + Next(10)` bury offset.
+    /// The mud row sits exactly where the walk lands: with surface 100 the
+    /// loop stops at row 95 (`num6 > surface - 5` false, air) and steps
+    /// back to 96 — the painted mud row — so the bury point is
+    /// `96 - (10..19)` = rows 77..=86.
+    #[test]
+    fn test_M5_SEED_remix_search_buries_above_the_surface_mud() {
+        for (flags, lo, hi) in [
+            (SeedFlags::REMIX, 160, 640),
+            (SeedFlags::REMIX | SeedFlags::NOT_THE_BEES, 160, 320),
+        ] {
+            let mut world = World::new("t".into(), 800, 800);
+            world.seeds = SeedFlags::from(flags);
+            world.world_surface = 100.0;
+            paint(&mut world, 160, 640, 96, 97, 59); // the mud row
+            let mut rng = Rng(0xC0FFEE);
+            let site = find_temple_site(&world, 700, 400.0, &mut rng);
+            assert!(site.0 >= lo && site.0 < hi, "the remix x band ({})", site.0);
+            assert!((77..=86).contains(&site.1), "the bury offset ({})", site.1);
+            // a == b.
+            let mut rng2 = Rng(0xC0FFEE);
+            let site2 = find_temple_site(&world, 700, 400.0, &mut rng2);
+            assert_eq!(site, site2);
+            assert_eq!(rng.0, rng2.0);
+        }
+    }
+
+    /// The remix search's 21×21 rejection box (`WorldGen.cs:15876-15891`):
+    /// a living wood 191 inside the ±10 box refuses the sample — the
+    /// search keeps drawing (the widening valve still advances) instead
+    /// of burying there. The mud row is poisoned by a 191 every 20 tiles
+    /// up to x = 620, leaving one clean slot: any accepted box must avoid
+    /// every poison, so the bury x is ≥ 631 BY CONSTRUCTION (the last
+    /// poison at 620 sits in every box centred ≤ 630) — whichever attempt
+    /// accepts, the refusal path ran for all the poisoned candidates.
+    #[test]
+    fn test_M5_SEED_remix_search_refuses_the_living_wood_box() {
+        let mut world = World::new("t".into(), 800, 800);
+        world.seeds = SeedFlags::from(SeedFlags::REMIX);
+        world.world_surface = 100.0;
+        paint(&mut world, 160, 640, 96, 97, 59);
+        for x in (160..=620).step_by(20) {
+            let i = world.index(x, 96);
+            world.tiles[i] = Tile { kind: 191, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        let mut rng = Rng(0xC0FFEE);
+        let site = find_temple_site(&world, 700, 400.0, &mut rng);
+        assert!(site.0 >= 631 && site.0 < 640, "only the clean slot accepts ({})", site.0);
+        assert!((77..=86).contains(&site.1), "the bury offset ({})", site.1);
+        // a == b.
+        let mut rng2 = Rng(0xC0FFEE);
+        let site2 = find_temple_site(&world, 700, 400.0, &mut rng2);
+        assert_eq!(site, site2);
+        assert_eq!(rng.0, rng2.0);
+    }
+
+    /// The remix fallback (`WorldGen.cs:15918-15922`): x = `0.3·maxTilesX`
+    /// (the dead notTheBees ternary computes the same value in both arms),
+    /// y = `surface - 100` when the surface sits at 150+, else a
+    /// `Next(200, (int)rockLayer)` draw. The sub-vanilla valve reaches the
+    /// fallback without any search draws.
+    #[test]
+    fn test_M5_SEED_remix_fallback_positions() {
+        // surface >= 150: the fixed row, no draws.
+        let mut world = World::new("t".into(), 500, 500);
+        world.seeds = SeedFlags::from(SeedFlags::REMIX);
+        world.world_surface = 200.0;
+        let mut rng = Rng(999);
+        let site = find_temple_site(&world, 300, 400.0, &mut rng);
+        assert_eq!(site, (150, 100), "0.3·W, surface - 100");
+        assert_eq!(rng.0, 999, "no draws on the fixed-row arm");
+        // surface < 150: the y draw.
+        world.world_surface = 100.0;
+        let mut rng = Rng(999);
+        let site = find_temple_site(&world, 300, 400.0, &mut rng);
+        assert_eq!(site.0, 150);
+        assert!((200..400).contains(&site.1), "the Next(200, rockLayer) draw");
+        let mut fresh = Rng(999);
+        let want_y = fresh.range(200, 400);
+        assert_eq!(site.1, want_y, "exactly one draw");
+        assert_eq!(rng.0, fresh.0);
+        // The classic fallback is unchanged (DW-6.1's pin).
+        world.seeds = SeedFlags::none();
+        let mut rng = Rng(999);
+        let site = find_temple_site(&world, 300, 50.0, &mut rng);
+        assert_eq!(site, (200, 150), "the classic mirrored fallback");
+        assert_eq!(rng.0, 999);
+    }
 }

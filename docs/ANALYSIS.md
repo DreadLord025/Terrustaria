@@ -13672,6 +13672,12 @@ probes only, no draw site or order.
 
 ## Floating islands (M1.4-WGEN-4)
 
+> **Superseded by W4-g44** (ANALYSIS "Sky lakes / floating-island
+> residuals"): the pass mechanics (count, skyLakes, y-band, spacing,
+> gates, house split) and the classic `IslandHouse` are now verbatim;
+> the disc bodies below remain the compact shape. This entry is the
+> historical M1.4-WGEN-4 record.
+
 The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) вЂ” the classic sky
 islands over the 10-90 % band:
 
@@ -13716,7 +13722,10 @@ the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.
 
 Deviations: the HiveBiome/HoneyPatchBiome placement machinery is the
 port's blob dome (the shape-level port); the Queen Bee summon from the
-larva and the fort doors = the follow-ups.
+larva and the fort doors = the follow-ups. **SUPERSEDED by W4-c31
+(2026-11-21)**: the faithful `HiveBiome` rewrite landed — see "Hive
+rewrite (W4-c31)" below; the dome is retired (kept for its test history)
+and the larva-break Queen Bee summon is wired.
 
 ## Biome spread (M5-SPREAD-2)
 
@@ -13826,9 +13835,18 @@ Deviations:
 - **`PaintTheTemple`** (`:24529`) is celebrationmk10-only
   (`FinishTenthAnniversaryWorld` runs under `Main.tenthAnniversaryWorld`) вЂ”
   M5-SEED-1's scope, not a deviation here.
+- **The drunk/good/remix branches** (×3/×2 room counts, the drunk spike
+  second row, `placeTNTBarrel`'s twin) are M5-SEED-1/2's scope (the temple
+  seed branches landed W4-d108). The dualDungeons 232 variants: the trap
+  arms (`mayanTrap`'s `num17` swap + the `UnderworldLayer - 5` floor abort)
+  landed W4-g43 (below); the chest-side dualDungeons loot arms stay
+  M5-CHEST-gen's.
+  landed verbatim with M5-SEED-1 (`finish_seeds.rs::paint_the_temple`;
+  re-verified line-by-line at W4-d108), not a deviation here.
 - **The drunk/good/remix branches** (Г—3/Г—2 room counts, the drunk spike
-  second row, `placeTNTBarrel`'s twin) and the dualDungeons 232 variants are
-  M5-SEED-1/2's scope.
+  second row) landed with **W4-d108** (the section below); the dualDungeons
+  232 variants stay M5-SEED-2's scope (`placeTNTBarrel` is the
+  mining-explosives pass, S1-K-2 wave B, not temple scope).
 - **The Golem-summon altar interaction** (Plantera gate) is M5-HARDFORCE /
   Golem-BOSC-19's; the traps fire through the wiring engine's case-137
   variants (the frameY selects the variant, the trap column's wires are
@@ -13854,6 +13872,246 @@ Deviations:
   `B39E064184AFA48F0DCA290C5A14A65711AE121BF203422FB56DBBBE2F13AC2A`,
   zoom 2.0 `B8EE063DECBB4BBF25A7D2349428075A16AA3279EE44F2B29827980B9ED57376`.
   The committed `temple_altar_z{1,2}{,_repeat}.png` are these re-takes.
+
+## The temple residuals (W4-g43)
+
+Code-only wave 2026-11-21 (`task/W4-g43-biome-jungle-temple`): the
+room-content / trap / altar placement residuals of the M5-TEMPLE port,
+re-verified line-by-line against the C# and fixed; no compiler invoked,
+the 9 witness tests WRITTEN NOT RUN. The drunk/FTW/remix seed branches
+(room counts, spike budgets, the placement search) are W4-d108's claimed
+scope — NOT re-landed here; the chest loot draws are M5-CHEST-gen's.
+
+- **The painting** (`place_painting`, `WorldGen.cs:44254-44292`): the old
+  port used `Place3x3`'s non-hanging branch (a 3×2 write, a solid-ceiling
+  anchor, `frameX = 54 * 88`). The C# routes 240 through **`Place3x3Wall`**
+  (`:59938-59941`): the 3×3 body at `(x-1, y-1)` must be empty AND walled
+  (`wall != 0`), the style folds by 36 into sheet rows, and the FULL 3×3 is
+  written — style 88 → row 2 / style 16: `frameX = 864/882/900`,
+  `frameY = 108/126/144`. The DW-3.3 frame pins re-derived.
+- **The trap colour draw** (`mayan_trap_horizontal`/`_vertical`,
+  `:8518-8530` / `:8590-8602`): the old port drew the colour ONLY when the
+  plate cell carried no wire. The C# draws `Next(3)` UNCONDITIONALLY, then
+  the `wire()/wire2()/wire3()` reads override the value — a pre-wired plate
+  still spends the draw. Both arms fixed; the stream shifts on every world
+  whose traps re-use a plate cell (the witnessed a==b pair pins the count).
+- **The trap/plate writes** (`place_trap_tile`/`place_plate_tile`): the
+  PlaceTile pre-branch `Tile.Clear(Tile | TilePaint | Slope)`
+  (`:59473-59476`, `Tile.cs:744-777`) runs on an INACTIVE cell BEFORE the
+  placement guards — the frames/paint/coating/slope clear even on a refused
+  plate placement. The 137 branch (`:59750-59755`) writes NO frameX: an
+  active overwrite keeps the stored frameX (the column runs' second write
+  keeps the first style's +18 flip — the old port zeroed it). The plate
+  rides `Place1x1` (`:45188-45234`): `SolidTile2` floor (not
+  `SolidTileAllowBottomSlope`), the mechanism-over-boulder guard ported
+  verbatim (135 is NOT in `IsAMechanism`, `TileID.cs:184` — the boulder term
+  short-circuits away; the trap caller's `CanGeneratePressurePlateAt` is
+  what refuses boulder floors, `:11040`), `InWorld(x, y, 2)`. Every
+  successful write carries the PlaceTile active
+  tail's `SquareTileFrame` (`:60255-60262`) — the port's draw-free
+  `square_tile_frame_gen` seam (the object support checks; the cosmetic
+  re-frame rides the end-of-gen `frame_world`).
+- **The pound gate** (`slope_tile_p2`, `CanPoundTile` `:80695-80743`): the
+  raw-type `TileID.Sets.Boulders` check, the gen-time 190/30 refusals and
+  the active `ForbidsSloping` anchor above (`:80745-80766`) join the
+  mechanism-kind list + `CanKillTile`.
+- **The plate gate** (`can_pressure_plate_at_p2`, `:11029-11048`): the
+  raw-type boulder floor + the echo wall 350 refusals land (the old port
+  collapsed them away on a "no boulders spawn" note — the raw-type read
+  fires on INACTIVE boulders too).
+- **The buried-chest placement** (`add_buried_chest`/`place_buried_chest`):
+  the `anyShimmer()` scan refusal (`:35906-35909`), the remix deep-centre
+  band (`:35945-35948`), the boulder join in the ±2 altar box
+  (`:35949-35959`, `TileID.Sets.Boulders` = 138/484/664/665/711-716) and
+  `PlaceChest`'s boulder-floor refusal FIRST (`:57816`, raw type of both
+  floor cells). The loot draws stay M5-CHEST-gen's — the placement itself
+  is draw-free on the classic path.
+- **The altar family**: `place_altar` carries the PlaceTile
+  `SquareTileFrame` tail; `brick_tile_at` carries the pre-Clear;
+  `altar_spot`'s success check reads `type == 237` WITHOUT the active gate
+  (`:33997`); the fallback's 5×3 clear is `active(false)` ONLY (`:34036` —
+  the old port wrote wall 87 through `carve_cell`); `square_frame_altar`
+  wires the real framer seam (was a no-op stub). `pass_lihzahrd_altar`
+  (`:21943-21972`) writes IN PLACE — the wall 87 / liquid / paint under the
+  altar stand (the old port replaced the whole Tile), and the base row
+  clears `halfBrick(false)` alongside `slope(0)` (`:21960-21961`).
+- **The trap seed arms**: `mayanTrap`'s actuallyNoTraps variation
+  (`:8351-8354`, `MicroSeedFlags::ACTUALLY_NO_TRAPS`) returns true
+  draw-free/write-free so the loop budget drains; the dualDungeons floor
+  abort (`:8356-8359`, `UnderworldLayer - 5` = `maxTilesY - 205`,
+  `Main.cs:2790`) and the `num17` 48→232 wall-reject swap (`:8442-8446`,
+  `MicroSeedFlags::DUAL_DUNGEONS`) land. The seed prunes the temple chain
+  (`:22504`), so the dual arms only matter to the dual-dungeon trap pass's
+  future reuse — ported verbatim with the cite. The `num2 == -1` arms
+  (`:8383-8390`) are dead code in the C# (num2 ∈ {0,1}) — cited, not
+  ported.
+- **The statue** (`place_statue`, `Place2xX` `:39663-39722`): the
+  style-34→349 redirect and the style/55 sheet fold stand verbatim (both
+  inert for styles 43-45). The workbench/table/chair citations corrected
+  to the real C# line ranges (`Place2x1` `:47368`, `Place1x2` `:46652`).
+- **The hashes**: the classic `SEED42_512` / `DEFAULT_WORLD` pins move BY
+  DESIGN (the painting frames, the SquareTileFrame tails' support-check
+  kills, the unconditional colour draw, the plate pre-Clears). No compiler
+  on this branch — the re-pin is DEFERRED to the merge gate; the `a == b`
+  determinism asserts and the whole-world witness
+  (`w4_g43_the_temple_worlds_are_deterministic`, classic + actuallyNoTraps
+  + dualDungeons on the 512 seed-42 world) guard the streams, and the
+  measured values ride the test log for the gate's re-derivation
+  (`world_hash.rs` notes).
+- **Witnesses** (temple.rs tests, written not run): the painting 36-fold +
+  wall/active gates with a==b, the unconditional colour draw (seed 1's
+  hand-derived stream: direction 0 / offset 0 / side 1 / colour 1 / column
+  3, the style roll short-circuited at distance 20), the actuallyNoTraps
+  draw-free arm, the dualDungeons refusal stream positions (2 draws vs the
+  classic 3) + the 300-tall floor abort, the altar in-place field
+  preservation + idempotence, the chest shimmer/boulder/remix gates, the
+  pound/plate raw-type gates, the trap frameX quirk + plate pre-Clear on
+  refusal, and the whole-world a==b triple.
+
+## The temple doc-sweep (W4-g43, lane 22)
+
+Code-only wave 2026-11-21 (`task/W4-g43-biome-jungle-temple`, the DOC-SWEEP
+phase after the placement round 9420da89): the temple/jungle USE-side census
+— the altar summon, the door lock, the furniture place-conditions, the
+jungle shrines and the trap wiring coverage. No compiler invoked; the
+witness tests WRITTEN NOT RUN. The full census + citations ride
+`docs/research/101-doc-sweep-temple.md`.
+
+- **The Solar Tablet use** (`use_solar_tablet`, `world_sim/editing.rs`): the
+  brief's "solar tablet 2300" reconciles to item **2767** (2300 is a dye,
+  `ItemID.cs:7217` SolarTablet = 2767). The `ItemCheck_UseEventItems` arm
+  (`Player.cs:43988-44008`) was UNPORTED: the day && !eclipse action gate +
+  the hardMode USE-START gate (`:52269-52272`), the roar + `ApplyItemTime`
+  re-arm + one paid, `Main.eclipse = true` and the `Lang.misc[20]` row (the
+  remix `Lang.misc[106]` variant). No boss spawns — the eclipse's spawner
+  owns the roster. The 2767 joins the `is_summon` mid-swing gate list.
+- **The Abeemination jungle gate** (`use_boss_summon_item`): the 1133's
+  `ZoneJungle` USE-START gate (`Player.cs:52253-52256`) was missing from the
+  zone ladder (the old "1133 ungated" comment described the action arm
+  `:43861-43873`, not the start gate).
+- **The Temple Key door unlock** (`unlock_temple_door` + `edit::unlock_door`):
+  `IsLockedDoor` (`WorldGen.cs:69191-69197`) was ported but the USE side was
+  missing — a locked temple-door click fell into `open_door`'s refusal and
+  did nothing. The `Player.cs:32793-32838` arm now consumes the click
+  (`flag2 = true`), pays one Temple Key 1141 from the 58-slot inventory scan
+  (grid + coins + ammo, NOT the trash) and calls `WorldGen.UnlockDoor`
+  (`:37599-37628`: the up-walk to the frameY-594 anchor, the three-row +54
+  shift 594/612/630 → 648/666/684); the `!flag9 && useVoidBag` fallback walks
+  bank4. The `SoundID.Unlock` 22 cue at `(i*16, num*16+16)` +
+  `NotifyProgressionEvent(22)` (TEMPLE_RAIDER) fire per unlock. The door
+  NEVER opens on the locked click — the next click opens it. The Plantera
+  gate is the key's DROP (the loot_db 262 row), not a runtime check. The 12
+  dusts (`:37622-37625`) are the unported dust layer.
+- **The altar summon fidelity** (`spawn_golem_on_altar`, `NPC.SpawnOnPlayer`
+  case-245 `NPC.cs:80475-80531`): five deviations fixed — the ±20 scan is
+  EXCLUSIVE-upper (`:80494/:80496`), the `num4 <= 0 || num5 <= 0` refusal
+  (`:80505`), `NewNPC`'s BOTTOM-centre anchor (`:80770` — the old top-left
+  write sat the 140×140 body 140 px too high), `target = plr` +
+  `targetSetFrame` (`:80528-80529`), and the `Announcement.HasAwoken`
+  localized template in `ChatColors.BossOrEvent` (`:80530` — not the
+  server-message literal). `SolidTile`'s `!inActive()` conjunct
+  (`WorldGen.cs:70119`) joined the scan predicate; the Power Cell scan now
+  covers `inventory[0..58]` = grid + coins + ammo (`Player.cs:32766`).
+- **The flame trap's jet** (proj 187, aiStyle 38): the temple places styles
+  1/2 (horizontal: super-dart 184, flame 187) and 3/4 (vertical: spiky-ball
+  185, spear 186); all four emit wiring requests, but variant 2's flame jet
+  had NO data row and NO AI — `spawn_device_kind` dropped it silently. The
+  `FLAMETHROWER_TRAP` row (`Projectile.cs:2741-2751`: 6×6, aiStyle 38, alpha
+  255, tileCollide false, ignoreWater, timeLeft 60, trap) + the aiStyle-38
+  dispatch arm (`AI()` `:27500-27512`: the stationary 6-tick emitter of the
+  188 FlamesTrap children, `UpdatePosition`'s skip list `:20435` holds the
+  jet in place) land. The 188 child rides the existing aiStyle-23
+  `ai_eye_fire` flight. The spear 186 keeps its stand-in row (the aiStyle-37
+  port stays the M4-PROJ follow-up); the wall-trap `vy` fix is e20's lane.
+- **Census-only (no code)**: the Lihzahrd furniture has NO temple-only
+  placement gate in the C# (`PlaceThing_Tiles_PlaceIt` `:40108-40170` routes
+  on the registry def, no wall/biome check) — the temple's protection is the
+  wiring gate (`CanDoWireStuffHere` `:46920-46943`, ported), the rod's wall-87
+  refusal (`:45508`, ported) and the 210 pick-power gate (`:53942`, ported
+  `tool.rs:258`). The jungle shrines are ported (`structures.rs`
+  `pass_jungle_shrines` `:15977-16140` + `ChestsInJungleShrines` `:17211`);
+  the jungle residuals are c31's claimed scope — coordinated, not re-landed.
+- **Witnesses** (written not run): the tablet day-use pays/arms/flags + the
+  three free refusals; the Abeemination jungle gate; the Temple Key pay +
+  three-row shift + next-click open + no-key free refusal + the void-bag
+  bank4 fallback; the altar bottom-centre coords + target + the ammo-row
+  cell scan; the flame jet's stationary 6-tick emission of the 188 child.
+
+## The temple-family SEAL (W4-g43, research/246)
+
+SEALED 2026-11-21 at tip `fc5bdd806` (code-only). The FINAL trio landed on
+this branch: FINAL 1 `b67cb867f` (the 187 keep-one — the W4-d4 `a336f4aa7`
+`ai_flame_jet` machine wins, the g43 row + the d4 `509b9943` 188 launch-ramp
+gate stay), FINAL 2 `fda203872` (the 186 stand-in retires — the d4 `0f92565bf`
+`ai_trap_spear` arm + faithful row activated), FINAL 3 `fc5bdd806` (the
+temple-door keep-one — g43's `unlock_temple_door` supersedes the c36
+`ec832b440`/`5f4032d02` pair; both feed the same progression-22 →
+TEMPLE_RAIDER seam, the c36 pair drops at the merge). The dispatched-earlier
+"g43c-temple-final" IS this trio — no g43c ref exists, nothing left to
+execute. Co-lane disjointness proven by read-only `merge-tree` at the seal
+tips: g43 × f24 conflicts ONLY in `anchors.txt` (f24's dungeon-Temple STYLE
+is `DungeonGenerationStyles.cs:760-797`, not the Lihzahrd temple); g43 × c31
+conflicts only in the three ledgers (`anchors.txt`/`world_hash.rs` pin
+notes/`PORT_MAP.md`) — zero logic conflicts, c31 owns
+JungleShrines/Plantera-bulb, g43 owns `temple.rs` whole. Merger: keep BOTH
+sides of every ledger conflict; the classic hash re-pin stays deferred to
+the gate (all three lanes' stream shifts compose there). 2 seal witnesses
+WRITTEN NOT RUN (the 186/187/188 row trio vs `Projectile.cs:2728-2763`; the
+progression-22 registry singleton). The bible + gate command:
+research/246-temple-family-seal.md.
+## The temple seed branches (W4-d108 / M5-SEED)
+
+Code-only wave 2026-11-20 (`task/W4-d108-worldgen-temple-paint`): the
+`worldgen/temple.rs` seed branches the M5-TEMPLE row deferred, ported
+verbatim; no compiler invoked, the 5 witness tests WRITTEN NOT RUN.
+
+- **The room-count multipliers** (`makeTemple`, `WorldGen.cs:33439-33450`):
+  `make_temple_rooms` gained the `seeds` parameter — drunk ×3, else
+  for-the-worthy ×3, else remix ×2, in the C#'s else-if order (a drunk+FTW
+  world takes the FIRST ×3 once, not ×9). Draw-free: the multiplier lands
+  between the count draw and the direction draw, so the classic ledger
+  (DW-1.1) is untouched.
+- **The drunk spike arms** (`temple_spikes`, `:34064-34207`): the budget
+  `num92 *= 1.5` (`:34065-34068`) and the second rows/columns at all four
+  flip sites (`:34122-34126`, `:34132-34136`, `:34193-34197`,
+  `:34203-34207`) — including the C# quirk at `:34205` where the
+  horizontal `flip != 0` arm writes `num110 - 2` (NOT `+ 2`), ported
+  verbatim with the cite. Classic worlds draw and write nothing new.
+- **The remix placement search** (`find_temple_site`, `:15853-15893`):
+  gated `remixWorldGen && !SecretSeed.noSurface.Enabled` (the port's
+  `MicroSeedFlags::NO_SURFACE`); the x re-roll (notTheBees: the fixed-Right
+  dungeon-opposite `[0.2·W, 0.4·W)` band; plain remix: `[0.2·W, 0.8·W)`
+  re-rolled out of `(0.4·W, 0.6·W)`), the surface up-walk
+  (`active || wall > 0 || num6 > worldSurface - 5`, then `+1`), the 60/59
+  acceptance with the ±10 box refusing living wood 191 / the six
+  `Main.tileDungeon` bricks (read WITHOUT the active gate, like the C#),
+  and the `10 + Next(10)` bury offset. A refusal falls through to the
+  widening valve (no `continue` — the attempt counter advances).
+- **The remix fallback** (`:15918-15922`): x = `0.3·maxTilesX` — BOTH arms
+  of the C#'s notTheBees ternary compute the same value (a dead copy),
+  ported as the fixed-Right pick with the cite; y = `surface - 100` when
+  `worldSurface >= 150`, else one `Next(200, (int)rockLayer)` draw. The
+  sub-vanilla height valve reaches this arm without search draws.
+- **`PaintTheTemple`** (`:24529-24573`) was already verbatim in
+  `finish_seeds.rs::paint_the_temple` (M5-SEED-1) — re-verified against
+  the source at this wave (the 226 / plants-61-on-226 / trap-137-frames-1-4
+  arms, the notTheBees paint-0 branch, the wall-87 override outside the
+  active gate, the 10..W-10 bounds); an `anchors.txt` row now pins it.
+- **Deviations**: the remix up-walk reads out-of-world cells as air (the
+  C# indexes raw `Main.tile`; the walk terminates at the map edge — the
+  port's `in_world` guard family); the sub-vanilla valve skips the remix
+  search loop the same way it skips the classic one (a <600-tall world
+  cannot hold the vanilla y band).
+- **The hashes**: every arm is flag-gated — the classic `SEED42_512` /
+  `DEFAULT_WORLD` pins are UNCHANGED by this branch (documented in
+  `world_hash.rs`; the `a == b` determinism asserts guard the streams).
+  The seeded worlds' hashes are unpinned until the gate generates them.
+- **Witnesses** (temple.rs tests, written not run): the multiplier chain
+  + drunk/FTW/remix combos with a==b stream replay, the drunk spike
+  count > classic with byte-equal repeat runs, the remix surface bury
+  band, the 21×21 refusal box (the clean-slot construction: acceptance
+  only past the last poison), the remix fallback's fixed row / single
+  draw / classic-unchanged pins.
 
 ## Polish passes (M1.4-WGEN-7)
 
@@ -17883,6 +18141,35 @@ the `a == b` determinism halves stay green. 5 witnesses written NOT run
 `w4_c29_the_moss_arm_a_ledger_and_dungeon_exclusion`,
 `w4_c29_the_moss_arm_f_sweeps_the_rainbow_moss_live`).
 
+### The spider-cave egg-sac validator (W4-g41)
+Code-only census + gap-fill of the spider-cave biome gen against `WorldGen.cs`, scoped to web placement / egg sacs / wall coverage. Full census: `docs/research/93-spider-cave-census.md`. The landed M5-STRUCT-5 passes were audited verbatim; the gaps ported here:
+- **The egg-sac validator chain** — `CheckStalactite` (`:38996-39175`), `UpdateStalagtiteStyle` (`:38643-38718`), `GetStalagtiteStyle` (`:38823-38872`), `GetDesiredStalagtiteStyle` (`:38720-38821`) and `InvalidTileForPilesOrSpeleothems` (`:38979-38994`) — wired through `PlaceTight`'s tail (`:38320-38323`). The "egg sac" is the spider stalactite family (tile 165, frameX `108 + variation*18`, two tiles tall); the validator pops unsupported sacs and restyles mismatched ones. The chain's ONLY RNG draw is `UpdateStalagtiteStyle`'s `Next(3)*18` (`:38665`), fired only on a style mismatch; it rides the existing `pass_rng("Spider Caves")` / `("Webs And Honey")` slots. The `destroyObject` kills ride `edit::remove_tile` (the generation strip — the C#'s guarded `Check*` re-entries early-return while the flag is set, so no cascade); the C# `KillTile` keeps `tile.type`, so the pair's type comparisons read the original kind (captured before the kills). The spider override (`side == 3 && wall == 62` → style 11, `:38766-38769`) is the egg-sac's own arm.
+- **The missing `PlaceUncheckedStalactite` arms** — hanging granite (`:38448-38476`) / marble (`:38477-38505`), rising hive (`:38543-38552`, always small frameY 90) — and `Main.tileMoss[627]` (`Main.cs:7031`, the rainbow moss) in the moss-support test (now the generated `TILE_MOSS` set).
+- **`PlacePot`'s `halfBrick(false)` write** (`:54108`); **`PlaceSmallPile`'s boulder-seat veto** (`:46847-46850`) + the `anyLava` `liquid > 0` guard (`Tile.cs:410-415` — the old read tested the kind alone).
+- **The spider pass** — the `shroomCount > 1` retry veto (`:17407-17410`, zeroes the count INSIDE the loop so the acceptance re-fails), the `ILied` tail dispatch (`:17422-17425` → `micro_finish::no_spider_caves_i_lied`, previously unwired), and the remix y-band draws (`:17392-17405`, gated on `SeedFlags::REMIX`, classic unchanged).
+- **The webs pass** — the DST row-50 start (`:20003-20006`) and the `ILied` honey arm (`:20022-20028`, wall-62 liquid converts to honey instead of clearing).
+- **`SpiderWallRemover`** (`:77279-77344`) — the drifting diamond wall-62 eraser, ported as a tested pure fn; **WIRED by the W4-g41 follow-up** (the NOT-THE-BEES host below): its only callers are `FinishNotTheBees`' two search loops (`:25409-25434`), now ported in `not_the_bees.rs::spider_wall_search`.
+- **`frame_important[165]`** boot static (`Main.cs:7407`, `pipeline.rs::boot_statics`) so the framer keeps the validator's stored frames.
+Deviations: the validator's kills use the generation strip (no loot/cascade, the worldgen idiom); the `Spread.Gem` duplicate-visit redraw (`:3617`) is a real RNG deviation left for the gem-fidelity row (the Spider/Moss dedups are draw-faithful — the depth-gate draws run on every visit before the dedup). Both world-hash pins move BY DESIGN (the validator pops/restyles sacs, the new arms place tiles, the pile veto removes piles); the re-pin is DEFERRED to the merge gate (no compiler on this branch, the S1-K-2 wave B precedent). 14 witness tests written NOT run; the `a == b` determinism witnesses pin the pass's seed-reproducibility.
+### The NOT-THE-BEES host (W4-g41 follow-up)
+Code-only port of the not-the-bees world-conversion machinery that wires the egg-sac task's `spider_wall_remover`. Full census: `docs/research/94-not-the-bees-host-census.md`. Co-lane claim check FIRST: `origin/task/W4-c31-hive-rewrite` is identical to `origin/main` (a725acb0, zero pushed commits) — c31 owns nothing here, so the whole machinery was unclaimed and taken.
+- **`NotTheBees`** (`WorldGen.cs:25107-25360`) — the hive-cluster conversion: the ocean/dungeon-side honey + paint-14 arm, the drunk/anniversary/DST centre-strip mud arm, vines 52/382 → hive 62, the SolidOrSloped conversion cascade (living wood/leaf → mahogany, slush/beach-sand → honey block 229, grass → 60/70 by the lava line, dirt/mud → 59, the deep 230 / shallow 225 band at `(lavaLine + maxTilesY - 180)/2`), the exposed-hive grass skirts (225 → 60 / 230 → 70 + the 8×`Next(-2,3)`² mud pocks, carrying the C#'s own `(x+1, y-1)` duplicate-neighbour quirk verbatim), the wall conversion (63 → 64, the rest → 86 below the band) and the liquid honey arm.
+- **`FinishNotTheBees`** (`:25388-25797`) — the host: the cloud-row scan, **the FTW+NTB `SpiderWallRemover` search loops** (`:25407-25435`, `maxTilesX/4` deep + `maxTilesX/3` mid, each a ≤10000-draw wall-62 search then the remover — called even on a failed search), the main sweep (FTW altar 76 → 230, above-cloud honey block → water, DST/noTraps spikes 48 → 232, the evil-radius 661/662 conversions with the bee-hive kill + plant swap, the vines-on-hive-seat → 62, `SpreadGrass(59, 70/60)`, the beach-band ice/snow conversion, the deep ore demotion, the larva 231 rolls), the DST spider-web arm (`Spread.Wall2` seeds + the cobweb-51 placement), the surface strip (honey clear + drip 375 → 373, jungle grass → dirt + the vanity-tree roll, mud → dirt) and `OverGrownDungeon`.
+- **`Spread.Wall2`** (`:3416-3524`) and **`OverGrownDungeon`** (`:23971-24035`) — ported here (both were missing). The wall flood is a FIFO queue (the C#'s two-list wave order is write-identical); `maxWallOut2 = 5000`, wall 62 stops at air and spreads 8-way + the ±2 x arms.
+- **Wiring** — `pipeline.rs::step_seed_finish`'s NTB slot (`:22435-22439`, BETWEEN the drunk and for-the-worthy tails), each function flag-gated on `NOT_THE_BEES` (+ skyblock). The remover's `spider_gem_moss.rs` doc flips UNWIRED → WIRED.
+Deviations (all pinned in the module note + census): `SkipOnDualDungeons` reads false (no dual-bounds model, the `ocean.rs:620` precedent); `PlaceTile`-shaped writes use the single-tile idiom (the C# plant-arm RNG schedule is not modelled — no plant engine); the larva rides a verbatim draw-free `Place3x3`; `TileFrame`/`SquareTileFrame` ride the post-pipeline framer; the `tileSolid[379]` window is an explicit solid-test veto (the boot table is immutable); the tree-growth bridge feeds `growth::{grow_tree, try_growing_tree_by_type}` ONE `UnifiedRandom` seeded from the host stream (the `micro_surface.rs:419` precedent — the port's tree engine is `UnifiedRandom`-only); the dungeon side is fixed Right; sub-vanilla band guards skip inverted bands before any draw. **Both world-hash pins are UNCHANGED** (the host is flag-gated — a classic world never enters it); the egg-sac re-pin deferral stands. The host draws on fresh `pass_rng("NotTheBees")` / `("FinishNotTheBees")` streams. 17 witness tests written NOT run, incl. a full-pipeline NTB+FTW `a == b` determinism witness. The ILied-family census: every `micro_finish`/`micro_surface` arm is wired — no other micro-finish host is unwired; the remaining Finish-family gaps are `FinishNoTraps` (`:25986`) and `FinishRemixWorld` (`:26350`), both out of scope.
+### The FinishNoTraps + FinishRemixWorld hosts (W4-g41 finish gaps)
+Code-only ports closing the two gaps the NTB host census left. Full census: `docs/research/95-finish-no-traps-remix-census.md`. Co-lane claim check FIRST: d107's pushed ANALYSIS defers `FinishRemixWorld` verbatim ("the remix inverted-terrain family … `FinishRemixWorld`'s cloud/wall conversions) is deferred") and its no-traps coverage is the MICRO-seed side only (`actuallyNoTraps` + the `ExplosiveTrapCount` multiplier, both already in this branch) — the classic `noTrapsWorldGen` tail appears nowhere in its pushed claims or code. Both hosts UNCLAIMED, taken. The ~211-site remix inverted-terrain family stays deferred with d107's note; this port is the Finish tail only.
+- **`FinishNoTraps`** (`WorldGen.cs:25986-26224`, `finish_no_traps.rs`) — wired FIRST of the classic tails (`:22423-22426`, before anniversary): the boulder solidity window (`SetBoulderSolidity` `:11009-11020`, nine kinds — 665 excluded), the 50-border heart-12 → 2×2 life-crystal-boulder-665 sweep (the per-cell `Next(5)`/`Next(2)` FTW draw runs FIRST), the even-cell statue/plate-chest gate with the 3×3 wire veto + the 625-draw ±25 wire search + the L-shaped red-wire runs, the statue's 225-attempt ±15 pressure-plate placement (`PlaceTile(135, forced, Next(2,4))` — the style draw runs every attempt; the `Place1x1` slice carries the mechanism-on-boulder floor veto), the plate-chest's 64-attempt ±8 explosives-141 placement on `{0,1,Ore,59,151}` seats with a fully-solid 3×3, the **`else { j++; }`** row-skip (`:26180-26183`), and the 20-border unwired plate-chest → chest-21 sweep (frameX 36/54).
+- **`FinishRemixWorld`** (`:26350-26770`, `finish_remix.rs`) — wired LAST of the classic tails (`:22444-22447`, after FTW): the 25-border cloud/sunplate → flesh-195/lesion-474 + cloud-wall-73/82 → 77/233 conversions (the drunk `crimsonLeft` half-split `Next(-2,3)`, skipped under anniversary-&&!FTW), the inland above-surface band (wall-87 liquid → water; the FTW lava / NTB honey / drunk+anniversary shimmer drip arms with their `tileLavaDeath` kills and the 230/229/659/56 kills), the per-cell `Next(3)` surface conversion band (anniversary `Convert(2)` + the 661/662 → 109 replacement with the verbatim `PlaceTile(110)` flower schedule + the 7×7 mud kill; drunk half-split `Convert(1/4)`; else the world flavour), the per-cell `Next(19,22)` marble-178/granite-180 wall clear, the obsidian kill, the below-rock-layer dirt → grass fill with the 8-neighbour veto, the `randomSpawn`-vetoed spawn-box liquid clear (hellstone → ash, the 230/56/659 deactivates), `AddTrees(undergroundOnly: true)` (the two head `NextDouble` draws run; the remix underground loop's 1/7 vanity rolls), the `!tenth || ftw` dungeon repaint (colour 22 / drunk-half-split + crimson 13, wallColour 25, the platform-19 / living-wood / sandstone / 226 / trap-137 arms), the ash-plants-637 restyle (`maxTilesX/4200 × Next(2,5)` clusters, `Main.rand == genRand`), the NTB hive-wall strip and the full-map `CheckLilyPad` sweep (`:59203-59309` — the floor-kind frame rows, the up/down pad moves, the non-solid-floor kill).
+Deviations (all pinned in the module notes + census): `Liquid.QuickWater(-2)` ×3 is a no-op (no worldgen settle engine — the spawn-box loop runs once, the re-flood recheck reads the cleared box); the tree bridge feeds ONE `UnifiedRandom` seeded from the host stream (the NTB precedent); `TileFrame`/`SquareTileFrame` ride the post-pipeline framer; the `Convert` seam is `spread::convert_cell_flavor` with the **case-2 jungle-grass reconciliation** (the shared hallow map is GERunner's superset — it purifies 661/662 → 60 while `Convert(2)` has no JungleGrass arm, so the host restores a 661/662 cell after the shared call, keeping the C# state for the `:26524` replacement arm); the `FinishNoTraps` chest-5346 add-on iterates nothing (inventory-free chests); the boulder window is a local solid-test veto (immutable boot table); the explosives placement models the write + `TileFrame` validation as the `Place1x1` slice (a failed placement keeps the seat — the C# would pop the unsupported 141 to air; the framer-seam deviation). **Both world-hash pins are UNCHANGED** (both hosts flag-gated — a classic world enters neither and draws nothing); the egg-sac re-pin deferral stands. Fresh `pass_rng("FinishNoTraps")` / `("FinishRemixWorld")` streams. 7 + 11 witness tests written NOT run, incl. full-pipeline NO_TRAPS and REMIX `a == b` determinism witnesses.
+**QuickWater activation addendum (W4-g41 FINAL)** — read against g47 tip `fdeb897c` (research/70) + code base `d222af69`: the three no-op seams in `finish_remix.rs` ACTIVATE when the g47d settle drivers land. The C# `-2` is the **verbose** parameter (`Liquid.cs:104`), not a band — the activation call at each seam is `sys.quick_water(world, -1, -1)` (g47 `liquid.rs:1581`, the −1s take the method's `3..=height-3` defaults). The gen context arms ONCE at the driver head (`set_gen_settle_context(gv.water_line, gv.lava_line, true)` `:1536` + `set_gen_shimmer_position` `:1549` + `set_gen_dungeon_context` `:1560` — the f24/c30/g36 producers per research/70 steps 6-7); the noTraps boulder window is subsumed by g47's pass-scoped `tilesIgnoreWater(true)`. The spawn-box loop regains its `while flag` shape (the `spawn_x` column `spawn_y-14..=spawn_y+10` re-flood recheck, `:26624-26631`). REMIX pins re-derive at activation; classic pins stay UNCHANGED. The full contract + the three seam-comment locations: `docs/research/95-finish-no-traps-remix-census.md` §"QuickWater activation addendum".
+### The spider-cave ambience + spawn pool (W4-g41 FINAL)
+Full census: `docs/research/93-spider-cave-census.md` §§"AMBIENCE census" + "SPAWN pool".
+**Ambience — NOTHING TO PORT.** The 1.4.5.8 decompile has no spider-music gate: `MusicID.cs` (105 rows) carries no Spider track, `UpdateAudio_DecideOnNewMusic` (`Main.cs:12175-12930`) has no wall-62/spider arm (Main.cs holds zero case-insensitive "spider" mentions), `SceneMetrics.cs` has zero spider members, the ambient-cue switch (`Main.cs:11539-11605`) is rain-28/wind-45 only, the fighter-moan type sets (`NPC.cs:57340-57367`) exclude 163/164, and the four spider worldgen windows hold **0** PlaySound sites. The cave rides the generic ugMusic 4/31 alternation + the `BehindBackwall` fade — both already landed (`audio.rs:2814-2883`, `ambient_sound.rs:89`). The g24 sound-sweep co-lane has zero overlap (no spider row exists to claim). No code change.
+**Spawn pool — the wall-62 arm ported, the kinds cross-noted to d36.** Co-lane: g61 (`a96289284`) is spawn-DUST only (zero spawner changes); the 163/164 kinds are d36's claimed band (141-210, CLAIM `65e481f96`, zero code pushed). The ARM is taken: `spawner.rs::set_spawn_spider_flag` (the `NPC.cs:1148-1176` `spawnSpider` latch — the depth/zone gates, the `Next(3)` scan-vs-player-tile fork, the `Next(5,15)` radius + the ±r wall-62 box scan, the DST rock-floor override) runs at the head of `spawn_npc_at` BEFORE `GetZombieSettings` (the C# caller order); `check_to_spawn_spider` (the `:5777-5788` NTB+FTW underworld `Next(5)` veto); the pool arm at the C# chain position (before the water ladder) — the Stylist sub-arm SPAWNS (`WebbedStylist` exists, the caster Bottom placement, the wire-id roster check), the 163/164 pick DRAWS and returns None until d36 lands the kinds (the Wyvern consume-and-None precedent). `SpawnFlags.dont_starve` added, fed from `World.seeds`. **The `try_spawn_webbed_stylist` stand-in is RETIRED** (it spawned on the UpdateTime stream with no wall check — a double-spawn against the faithful arm; the rescue path + `saved_stylist` latch stay). Deviations: the marble/granite scans ahead of the band stay unmodelled (research/24), the remix `deeperThanRockLayer` override is constants-off. The deep-cavern spawn stream shifts BY DESIGN (the C# draws the flag there too); the surface + invasion streams are UNCHANGED (witnessed). Both world-hash pins UNCHANGED (no worldgen pass touched). 9 witnesses written NOT run (the draw literals replayed against the UnifiedRandom algorithm). The d36 hand-off recipe (swap the two None arms for the walker ctors + the SetDefaults/FindFrame/wall-stick/web-shot census) is in research/93 §"d36 cross-note".
+**Egg-sac re-pin deferral — FINAL status (W4-g41 closeout).** The standing deferral is unchanged in substance and now carries its final form + merger checklist (research/93 §"FINAL STATUS"): `SEED42_512 = 124297949` / `DEFAULT_WORLD = 3647283075` are stale-by-design and re-pin at the g41 merge gate (the egg-sac validator + decor arms + pile veto change classic worlds); the NTB host, the two Finish hosts, the PlacePot remix veto and the spawn pool move NEITHER pin (flag-gated or runtime-only). The all-landed check closed the last research/93 MISSING row (the PlacePot remix centre veto, `:54069-54072` — flag-gated, 1 witness). The gate checklist: keep-one the stalactite chain (g41 body + d106 generalisation, g36 research/88 §3.2), re-pin sequentially with the other world-changing lanes, run the 59 written-NOT-run witnesses, the QuickWater activation with g47d, the d36 kinds hand-off, the anchors canary. **BIOME RETIRE (research/96)**: the checklist's cross-lane items now carry receipts — the QuickWater contract re-verified at g47 `5c09a68b8` + the g46 RE-FOLD union `9bc722e5f` (g46d re-base DONE; activation targets the union + the f25 dedupe, not a separate g47d landing); d36 has ZERO kind code pushed (`bcf4ac551`, E4-band resume active, d37 R7 re-pin 767-816) — the pool-arm activation hunk is PUBLISHED id-agnostic in research/96 §2 (Bottom placement, correcting research/93's `spawn_cave_walker` recipe); the stalactite keep-one FINAL INSTRUCTION (d106 `e2c2609c5` half verified alive) is research/96 §3. The g41 lane declares ALL PASSES + HOSTS + POOLS LANDED — no unclaimed work remains; every residual is a named cross-lane obligation.
+
 ## The pillar shards (M4-EVENT-9)
 
 The celestial pillars spawn six mobs (`NPC.cs`'s tower region of
@@ -17917,26 +18204,326 @@ The three micro-biome passes are 1:1 ports; the deviations:
 - **`tile_is_ore` is a hardcoded kind list**, not the generated
   `TileID.Sets.Ore` bitset (`TileID.cs`): the port's `tiledata` carries no
   Ore set, so the slab map's ore preservation uses the vanilla's ore ids
-  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`).
-- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): the port has no pot
-  tile yet вЂ” the pots land with M5-STRUCT's pots step.
+  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`). W4-g40
+  (2026-11-21): the list is now the `TileID.cs:614` literal verbatim —
+  7/166/6/167/9/168/8/169/22/204/37/58/107/221/108/222/111/223/211 (the
+  pre-residual list carried eight non-ore kinds and missed eight ores).
+- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): RETIRED by W4-g40 —
+  the two `SolidTile`-gated `Next(4)` arms call the shared
+  `spider_gem_moss::place_tight` (the C#'s `PlaceTight` places stalactite
+  speleothems, not pots — the old note misnamed them). The post-place
+  `CheckStalactite` validation (`WorldGen.cs:38320-38323`) rides the
+  shared helper's existing deviation.
 - **No `structures.AddStructure(8)`**: the port has no `StructureMap`; the
   cave-house voters read the tiles directly, so the registration has no
   consumer yet.
-- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** вЂ” the port
-  has no worldgen `SmoothSlope`; the marble caves carry no slopes yet (the
-  slabs' corner states flatten to the active pattern).
-- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`): the
-  port's lava line is not tracked yet, so `PlaceGranite`'s lava arm rides off.
+- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** — RETIRED
+  by W4-g40: the slab grid carries the seven `SlabStates` delegates
+  (`MarbleBiome.cs:12-48`) with the `SmoothSlope` mask map (`:79-110`),
+  `PlaceSlab` writes the per-cell active pattern + `ResetToType` (`:142`,
+  the extent seeds 0/scale per `:121-124`), and the per-tile
+  `Tile.SmoothSlope` cascade (`Tile.cs:792-865`, neighbours-first, the
+  `CanPoundTile` gate on the shared `edit::can_pound_tile` with
+  `generating: true`, the flag2 no-write veto) runs per written cell. The
+  drunk 368/180 swap (`:116-120`) landed with it.
+- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`):
+  RETIRED by W4-g40 — `GenVars.lavaLine` is tracked since the terrain
+  step's `TerrainPass.cs:211-236` pair; the lava-line gate + the 100x100
+  ice-family scan run, and `PlaceGranite`'s `(liquid > 0) & flag` retype
+  (`:239-242`) lands. The resistance<0.01 `ClearTile` arm (`:234-238`),
+  the ore-arm `ResetToType` + wall repaint, the `SolidTile` cleanup
+  census (`:266-279`) and the drunk wall swaps landed too.
 - **`PlaceDecorations` (the FastRandom stalactite pass) is not ported**
-  (`GraniteBiome.cs:296-330`): the stalactites land with the spider/gem-cave
-  decor family.
-- **The granite step moved after the cave carve** вЂ” the vanilla order
-  (`WorldGen.cs:11100`-`12600` caves в†’ `:12757` Marble в†’ `:12839` Granite).
+  (`GraniteBiome.cs:296-330`): RETIRED by W4-g40 — the
+  `FastRandom(worldSeed).WithModifier(65440)` per-chamber stream with the
+  per-cell `WithModifier(x, y)` copies runs the `Next(8)` stalactite pair
+  (below first, then above) and the unconditional `Next(2)` smoothing
+  roll; the granite/marble hanging stalactite arms
+  (`WorldGen.cs:38448-38505`) and the hive rising arm (`:38543-38552`)
+  joined the shared frame table. No worldgen-stream draw (the FastRandom
+  is world-seed-keyed, the hive precedent).
+- **The granite step moved after the cave carve** — the vanilla order
+  (`WorldGen.cs:11100`-`12600` caves → `:12757` Marble → `:12839` Granite).
   The pass's own isolated stream keeps the move RNG-neutral for the other
-  steps; the world contract's per-step pins hold.
+  steps; the world contract's per-step pins hold. W4-g40 also fixed the
+  collection-phase quirks: the f32 fraction (`:12855`), the success arm's
+  missing attempts reset (`:12907-12911` — the marble pass resets, the
+  granite pass does not) and `Place`'s origin-only re-gate (`:64-67`).
 - The three passes draw from their own `pass_rng` streams; the shared
-  `streams.rng` is untouched by them.- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+  `streams.rng` is untouched by them. W4-g40 hash notes: DEFAULT_WORLD
+  moves by design (the chambers' shape/walls/decor + the Marble stream's
+  new PlaceTight tail), the re-pin deferred to the merge gate; SEED42_512
+  is unchanged by the residual (both Count draws truncate to 0 at 512
+  wide) - `world_hash.rs`'s notes carry the ledger.
+
+### The glowing mushroom biome lane (W4-g42, code-only)
+
+The five glowing-mushroom C# units re-derived and ported verbatim
+(`docs/research/12j-g42-biome-mushroom.md` is the census of record):
+
+- **`GlowingMushroomPatches`** (`WorldGen.cs:12544-12756`,
+  `biomes.rs::pass_mushroom`): the cluster bound is the DOUBLE comparison
+  `(double)k < num` (a fractional count runs its ceiling — width 6400 →
+  10 clusters, not the truncated 9); the cap-gate accept exits the while
+  without retry and records the position AFTER the six `ShroomPatch`
+  calls; the 100-box rejection scan gains the underground-desert rect veto
+  (`GenVars.UndergroundDesertLocation.Contains`, `:12630-12634`, threaded
+  from `gv.underground_desert`). The remix/errorWorld/dualDungeons cluster
+  arms stay flag-gated documented skips (no remix-mushroom-layer producer,
+  no potential-dungeon-bounds model).
+- **`ShroomPatch`** (`:79862-79982`, `biomes.rs::shroom_patch`): the vy
+  draw is `Next(-200, -100)` (exclusive hi — the old `-99` was a one-off);
+  the mud write activates ONLY the first ring's lower half
+  (`num2 == num4 && l > py`, `num2--` runs at the loop top so the guard
+  holds on the first iteration only — the old port activated every write);
+  the walk advances BOTH axes (`vector2D += vector2D2`) then X again (the
+  vanilla quirk — the old port never advanced py). The tidy sweep's
+  vertical re-mud reads the INNER column / OUTER row ±1
+  (`tile[num16, num15 ± 1]`, `:12731-12738` — the old port read the outer
+  column / inner row).
+- **The plants-pass mushroom arm** (`:20133-20147`,
+  `biome_detail.rs::pass_mushroom_and_jungle_plants`): verbatim — the
+  triple `TryGrowingTreeByType(5, i, j)` retry (each gated on the
+  above-cell still free) then `PlaceTile(i, j-1, 71)`. The old shape-level
+  arm collapsed the retry to a direct 71 write and never grew the giant
+  tile-5 trees. `PlaceTile(71)`'s cattail branch (`j > worldSurface` →
+  `PlaceCatTail`, `:59656`) is **c33's claimed helper** — documented out;
+  the plain arm (`active/type/frameX = Next(5)*18`) runs.
+- **`GrowTree`** (`:29767-29980`, `growth/trees.rs::grow_tree`): verbatim
+  rewrite generic over `WorldGenRand` (the worldgen xorshift `Rng` and the
+  runtime `UnifiedRandom` drive the same draw sequence) — the STREAMING
+  trunk loop (`num4 = Next(3)` BEFORE `num5 = Next(10)`, both drawn on the
+  forced-0 end rows, top→bottom), the branch else-arms with their second
+  `Next(3)` + the remix `flag3` variant, the tile-70 split-box clearance
+  (`:29803-29806`), the `DefaultTreeWallTest` wall arm OR'd with the
+  remix/bees/wall-0 disjunction, the `!notTheBees` liquid bypass, the
+  errorWorld/extraLivingTrees height arms, the `Next(13)` top canopy gate,
+  field-mutation writes (the wall/liquid behind the tree survive). The
+  tenthAnniversary paint roll parks (gated on `!isGeneratingOrLoadingWorld`,
+  no runtime genRand here). `TryGrowingTreeByType` gains the case-5 dispatch
+  (`:30348-30350`, was absent); `EmptyTileCheck` gains the full 11/71 +
+  plant-exemption arms (`:31453-31535`).
+- **`GrowShroom`** (`:31301-31362`, `growth/trees.rs::grow_shroom`):
+  verbatim, UNWIRED — the giant tile-72 mushroom tree on the 18 px grid.
+  Census fact: `GrowShroom` has ZERO callers in the whole decompile (a
+  dead-code vanilla helper in 1.4.5.8); the gen-time mushroom "trees" are
+  tile-5 trunks on grass 70 (`GrowTree`), tile 72 arises from the runtime
+  framer. The `i-1`-twice lava-gate typo is kept. Ported + witnessed, wired
+  into nothing (the faithful state).
+- **`DoSurfaceIsMushrooms`** (`:2087-2173`,
+  `micro_surface.rs::surface_is_mushrooms`): verbatim — the band draw is in
+  the inner `for` CONDITION (`l < worldSurface + Next(3)` re-evaluated
+  every iteration: one draw per visited row plus one failing draw per
+  column, NOT the old one global band); the two `Convert(k, l, 3, 0)` arms
+  ride the new mushroom conversion cell (60 → 70, wall-15 → 80 — the old
+  `set_kind(59)` stand-ins were wrong); the skyblock early-out; the
+  `FinalizeSecretSeeds` double-call dispatch (`:607-613`, one continuing
+  stream). The noSurface arm + the mid-pipeline third call
+  (`MudCavesToJungleGrass :12474`) stay documented follow-ups.
+- **`Convert` type-3 cell** (`:55336-55359`,
+  `spread.rs::convert_cell_mushroom`): the {64,67,15,247}→80 wall arm
+  (`WallID.cs:88`), the torch default-switch styles→22 (`TileID.cs:63-77`),
+  60→70 with the tree-above kill, the {32,352,69,655} thorn kill
+  (`TileID.cs:95`). RNG-free.
+
+**RNG / hash discipline**: every changed draw rides its own `pass_rng`
+stream (`GlowingMushroomPatches`, `Glowing Mushrooms and Jungle Plants`,
+`DoSurfaceIsMushrooms`) — no other step's ledger shifts. Both world-hash
+pins move BY DESIGN (the mushroom patches + the giant trees change every
+world with a patch); the re-pin values are DEFERRED to the merge gate
+(code-only mode), the `a == b` determinism halves stay untouched. The
+surfaceIsMushrooms seed world has its own a == b witness. Out of scope
+(owned elsewhere): the `Mushrooms` surface-decoration pass `:20599`
+(d105 lane 5), `PlaceCatTail`/`GrowCatTail` + the PlaceTile-71 cattail
+consumer (c33 pass 4).
+
+**The TAIL (W4-g42, code-only — `docs/research/12j-g42-biome-mushroom.md`
+phase 6 is the census of record)**: the G5 `GrowTree` rewrite is generic; the
+tail censuses every OTHER tree type riding `TryGrowingTreeByType`
+(`:30343-30386`) and the mushroom runtime/drop consumers. The dispatch table
+is COMPLETE (every C# case has a port arm); the deltas were in the bodies:
+
+- **`GrowTreeWithSettings`** (`:30388-30847`, `growth/trees.rs`): the profile
+  `WallTest` delegate (`GemTreeWallTest :30269-30302` for the seven gem
+  profiles — the old port ran `DefaultTreeWallTest` for all, refusing gem
+  saplings against the stone/dirt wall family {2,54-59,61,185,196-199,208-215});
+  the `nactive()` ground gate (`:30400`, was active-only); the INVERTED
+  side-ground flags (`:30688` `nactive()`, the old port read `!active()`); the
+  top-cap `Next(13)`-before-`Next(3)` draw order (`:30803`); the errorWorld
+  height arm (`:30420-30423`, `errorWorldAdjustment(2.0)`); the frame-important
+  boot bit. `profile_for_tree` (`TryGetFromTreeId :3890-3928`) now per-kind
+  (was all-RUBY).
+- **`AttemptToGrowTreeFromSapling`** (`:72810-72925`): the style-10 ash arm
+  returns the grow RESULT (`:72833`, was flat true); the default arm's
+  bees/remix underground exemption (`:72846`); the gem style ≥7 keeps the 587
+  ruby default (`:72891`, was amber 589). **`GrowPalmTree`** (`:27116-27202`):
+  the lean walk's `num5 != num4` gate (`:27185`, was missing — extra
+  Next(13)/Next(9)/Next(5) draws at the target lean).
+- **The glowing-mushroom drops** (`KillTile_GetItemDrops`; the dust half is
+  g14/d54's, the `KillTile` body `:63517-63921` carries ZERO gore calls): the
+  PLANT 71 records the same `Mushroom` drop as the tree 72 (`case 71/72
+  :65642-65652`, was 72-only and `by_tile(71)`=None so a broken plant dropped
+  nothing); the grass blocks drop the MUD 176 not the seed item (`case 70
+  :64702`, `case 59/60/661/662 :64936` — `tile_drop` 70/60/661/662→176); the
+  dye plants 227 drop by `frameX/34` style (`case 227 :65048-65055`, 1107+num,
+  styles 8-11→3385+num-8 — the ladder rides `cell_drops`, was `by_tile` 1107
+  flat).
+- **The mushroom runtime growth**: `Convert(3)` is GEN-ONLY (three call sites,
+  all `DoSurfaceIsMushrooms` — no runtime mushroom-spread Convert; the
+  MushroomSpray solution rides the type-0-only Clentaminator arm, S1-D-4). The
+  OVERWORLD `UpdateWorld_GrassGrowth` case-70 arm (`:74704-74750`) was missing
+  — the overground dispatcher routed kind 70 through the underground slice
+  (which returns at `:74508` before the overworld switch). Landed
+  (`growth.rs::overworld_mushroom_growth`): the `Next(10)` plant-71 roll +
+  `CopyPaintAndCoating`, the `Next(300)` giant-tree roll, the 3×3 mud→70 spread.
+  The underground case-70 (`:74497`, Next(250) + the c33 PlaceCatTail liquid
+  branch) and the other overworld case arms stay the shared dispatcher
+  follow-up.
+
+The TAIL changes are runtime-only (the tree-growth draw order, the drops, the
+overworld arm) — they touch NO worldgen pass stream, so both world-hash pins
+stay as G5 left them; 10 witnesses written not run.
+
+**The DISPATCHER follow-up (W4-g42, code-only — the shared-dispatcher census
+`docs/research/12j-g42-biome-mushroom.md` phase 7)**: the TAIL's case-70 find
+generalised — the overground dispatcher routed EVERY grass kind but 70
+through the UNDERGROUND slice (`update_world_grass_growth`, the `:74275-
+74508` body), so the whole overworld `switch (num10)` (`:74510-74866`) never
+ran on the surface, and the underground slice itself lacked its tail switch
+(`:74414-74507`). The full census (every case kind, overworld vs underground
+vs both) and the per-case fixes:
+
+- **D1 — the underground table** (`growth/grass.rs`): the kind-2 row the old
+  port carried is NOT in the C# table (`TileID.Sets.SpreadUnderground`,
+  `TileID.cs:622` = {23,661,109,199,662,60,70,633,226}) — removed (the
+  overworld kind 2 rides the overworld arm). The plant-above roll now routes
+  through the real `PlaceTile` per-kind arms (the flower ladder `:59507-
+  59581`, the jungle-plant 61 arm `:59582-59629`, the mushroom-71 arm
+  `:59651-59678` with the below-surface cattail climb) instead of the flat
+  tile write; the 226 `TooManyJunglePlantsNearby` veto (`:74359`, AFTER the
+  roll — the draw is spent even on the veto) and the `CopyPaintAndCoating`
+  (`:74367-74369`) landed.
+- **D2 — the overworld arms** (`growth/overworld.rs`, new): the shared
+  forest/evil/hallow/golf arm (`:74513-74702` — the plant rolls 2→3 Next(12),
+  23→24 / 199→201 / 661→24 / 662→201 / 109→110 Next(10), the thorn remap
+  32→23 / 352→199 with the frozen-spread early return, the golf remap 477→2 /
+  492→109, the full spread ladder incl. the infection grass-over-grass and
+  hallow arms), the jungle case-60 (`:74752-74813` — Next(7) plant-61 /
+  Next(500) tree / Next(25) rose if-else chain + the mud scan), the case-226
+  (`:74815-74828` — Next(7) + the density veto) and the ash case-633
+  (`:74829-74865` — Next(10) plant-637 + the ash-57 scan). The overground
+  dispatcher (`growth.rs`) routes per kind; the case-70 arm stays T-3's
+  `overworld_mushroom_growth`. The overground WALL arms (`:72499-72503`)
+  landed after the chain (the port lacked them entirely). The halloween
+  pumpkin arm (`:74524-74546`) folds off — `Main.halloween` has no port field
+  (the seasonal-constants-off precedent), the Next(75) never draws.
+- **D3 — the jungle helpers** (`growth/jungle.rs`, new): `PlaceJunglePlant`
+  (`:47779-47944`, the 2×2 / 3×2 arms, the jungle-family clearance set, the
+  solid-60 ground gate, the noItem kill sweep, the paint inheritance) and
+  `TooManyJunglePlantsNearby` (`:73164-73187`, the ±9×±5 clamped box, cap 2).
+- **D4 — the underground tail** (`growth/underground_tail.rs`, new): the
+  case-60 Plantera-bulb 238 (hardmode + all-three-mechs + Next(60), the ±150
+  step-2 scan) / life-fruit 236 (any-mech + Next(40), the ±60 scan, the
+  Next(3) style, the taken-arm BREAK) / jungle-rose 233 (Next(8) 3-wide,
+  Next(12) 2-wide fallback) arms, and the case-70 liquid-above cattail +
+  Next(250) tree arm. The runtime `PlaceCatTail` (`:58629-58742`) is a
+  runtime copy over `UnifiedRandom` (c33's worldgen copy rides the xorshift
+  `Rng`, fd7fae0e — the two streams never interleave); RNG-free at runtime
+  (the only draw, the gen-time slope flatten `:58724`, is behind
+  `isGeneratingOrLoadingWorld`). The underground dispatcher's else-if chain
+  no longer RETURNS at the grass arm — the walk continues to the sapling and
+  wall arms (the old `return` skipped them for every grass/lily/vine cell).
+- **D5 — the underground sapling arms** (`:73756-73780`): the 20/590/595/615
+  saplings at Next(5) → `AttemptToGrowTreeFromSapling(underground: true)` —
+  the GEMCORN 590's runtime growth the port lacked (the gem trees grew at
+  gen time only). The overground sapling arms (`:72431-72449`) no longer
+  return either (the C# arms fall through).
+- **The acorn PLANT side (item 27) and the gemcorn seeds (4851-4857, NOT the
+  4490-range — those are the gem ECHO walls)**: CENSUSED, already landed —
+  `Item.cs:1697-1710` (acorn createTile 20) / `:39599-39626` (the gemcorns
+  createTile 590 styles 0-6) ride the generated `itemdata.rs` rows through
+  the `TileObject.CanPlace`/`Place` registry route (`edit/place.rs::
+  place_item_tile`, the D_20/D_590 defs with the 10/0 alternates and the
+  stone-family anchors); the sunflower item 63 (tile 27, the d105 co-lane
+  boundary) rides the same route. No missing arm — no port needed.
+- **Co-lane boundaries**: g83's vine grow-tops (`:72506+`) and the
+  underground jungle-thorn kind-69 arm (`:73658`) stay g83's claimed lane
+  (fe5b5b8c, UNWIRED contested seam — the old overground kind-69 arm was
+  dead code, removed); c33's cattail/bamboo worldgen passes stay c33's
+  (fd7fae0e); d102/d106's growth.rs touches are re-export lines only (their
+  lanes are worldgen passes — no runtime dispatcher claim).
+
+Deviations: `PlayerLOS`/`TreeGrowFXCheck` unported (the T-3 precedent — the
+`&`/`&&` conjunctions evaluate the grow regardless); `SquareTileFrame`
+re-frames and netMode sends are the framer's/MP's job; expertMode folds to
+normal (the life-fruit Next(40)/radius-60); the `AllowedToSpreadInfections`
+flag rides a new runtime-only `World` field (the overground dispatcher has
+no flag parameter; `update_world` sets it per tick from the journey power).
+Deviation parked (ANALYSIS): the inactive/actuated cells' type-keyed head
+arms (`:72146-72215` — the vanity-kill/bamboo/lily/cattail/liquid chain runs
+on `.type` regardless of the active bit) stay out; the wall arms and the
+web arm now reach them (the D6 residual, GROWTH FINAL).
+The changes are runtime-only — no worldgen pass stream touched, both
+world-hash pins stay; 14 witnesses written not run (5 overworld, 4
+underground-tail, 3 underground-slice, 2 dispatcher/gemcorn).
+
+**GROWTH FINAL (W4-g42, code-only — the last-pass closes)**:
+
+- **The D6 residual landed**: the C# wall arms (`:72499-72503`/`:73809-73813`)
+  sit OUTSIDE the active/inactive if-else — an actuated or inactive cell
+  with an evil WALL still spreads it (the source test reads `tile.wall`
+  when `tile.active()` is off). Both dispatchers now run the wall arms on
+  the inactive path (with the tail-else web arm, `:72491`/`:73803`) and on
+  the ACTUATED path (the `nactive()` gate `:72216`/`:73252` skips the growth
+  chain — actuated grass grows NO grass, but its wall spreads). The
+  underground `nactive()` body split into `underground_nactive_arms` so the
+  alch arm falls through to the wall arms too (the C# alch arm does not
+  return). The overground alch/vanity-kill/cactus/sand/moss arms no longer
+  return either (the C# else-ifs walk on to the wall arms).
+- **The overground window clamps** (`:72032-72051`): the ±1 box clamps to
+  the 10-margin BEFORE any arm — at the pick j=10 the C# minJ is the SOURCE
+  cell itself (active → the plant rolls skip with no draw); the old
+  unclamped port read row 9 and spent the Next(12)/Next(7)/Next(10).
+- **The overworld entry guards** (`:74271` `InWorld(i,j,10)` sits before the
+  `if (underground)` split): the four overworld arms + T-3's mushroom arm
+  now carry it, plus the callers' `nactive()` gate folded in.
+- **The vanity-kill below-gate** (`:72146`): reads the TYPE only — the
+  port's extra `active()` check removed (an actuated evil grass still kills
+  the sapling).
+- **SpreadGrass's plain write** (`:75223`): a FIELD write (`tile.type =
+  grass`) — the converted cell's wall/liquid/frames survive (the old
+  whole-Tile replacement zeroed them; the vine-arm precedent).
+- **SpreadDesertWalls' gates** (`:74986`/`:74993-75001`/`:75088-75122`):
+  the entry gate is the Sandstone WALL / Sandstone TILE / HardenedSand
+  WALL (no HardenedSand-tile arm — the old extra check removed); the
+  flavour source reads the tile type WITHOUT an active check (unlike
+  SpreadGrassWalls); the conversion fires only when the neighbour wall is
+  in the Sandstone/HardenedSand family and differs from the target (the
+  num6 gate). All RNG-neutral (the gates sit after the ±2 draws).
+- **The mushroom-CONVERT census (runtime)**: `Convert(3)` has FOUR call
+  sites, not three — `WorldGen.cs:2101/:2125/:2129` (`DoSurfaceIsMushrooms`,
+  gen-only, G6/G7 landed) AND `Projectile.cs:26834` (the Clentaminator
+  aiStyle-31 spray, the DarkBlueSolution 148 → conversion type 3). The
+  port's `ai_spray` (`projectile_ai_misc.rs`) ports the per-kind ladder but
+  parks the non-cleanse conversions (the 146-149/1015-1017 solutions are
+  unrowed — `convert_cell_mushroom` stands ready for that lane). The
+  runtime grass-70→mushroom spread itself is the `SpreadGrass(59, 70)` mud
+  scan — covered: the overworld case-70 (T-3) + the underground slice's
+  soil scan (D1) + the tail (D4). No UpdateWorld-side Convert(3) arm exists.
+- **The tree-GROWTH chain verified complete**: the acorn item 27 / gemcorns
+  4851-4857 place through the TileObject registry (D_20/D_590) → the
+  overground Next(20) arm (`:72431`) / the underground Next(5) arms
+  (`:73756-73780`, D5) → `AttemptToGrowTreeFromSapling` (`:72810-72924`,
+  the style switch + the underground gates verbatim) →
+  `TryGrowingTreeByType` (`:30343`, case-5 → `GrowTree`, the gem/vanity/ash
+  profiles → `GrowTreeWithSettings` with the T1 WallTest delegates). The
+  d105/g17 tree-FX co-lanes (`PlayerLOS`/`TreeGrowFXCheck`) stay unported
+  (the conjunctions evaluate the grow regardless).
+- 5 witnesses written not run (the actuated/inactive wall-arm reach +
+  no-grass control, the margin clamp draw-skip, the acorn end-to-end grow,
+  the overworld entry guards, the plain-write wall/liquid survival).
+
+- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
   velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
   `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
   300 the vanilla `Transform(405)` вЂ” the port swaps `kind` in place (the
@@ -18314,9 +18901,18 @@ in its doc comment.
   is loot-side; the port places chests as tiles without inventories, so
   the chest arms of the three Finish passes (5001/678 drops) draw and write
   nothing.
-- `ConvertSkyIslands` (`:24243`) needs the C# `Convert` Hallow helper the
-  port does not have; the `PaintThe*` sweeps and the 138в†’665 conversion
-  run without it.
+- `ConvertSkyIslands` (`:24243`, body `:24674-24714`) IS ported (W4-f25
+  closeout): `finish_seeds.rs::convert_sky_islands` rides the C3 hallow cell
+  (`spread::convert_hallow_cell`, the single-cell overload), the vanity/
+  plant `KillTile`s (`no_item: true`, the gen-time `:63546-63549` flag) and
+  the 1-in-3 `GrowTree` roll on `growth::grow_tree`. The genRand stream is a
+  fresh `UnifiedRandom(opts.seed as i32)` (the
+  `micro_surface.rs::start_in_hardmode` precedent — the per-pass xorshift
+  contract cannot feed the `UnifiedRandom` growth seam); the draw ORDER is
+  faithful. Classic worlds never run the anniversary pass, so both
+  world-hash pins stay unchanged. Cross-note: g44's islands lane marks this
+  call "not ported" at its tip (32e478d34) — the Convert-family port lands
+  on f25.
 - The drunk `getGoodWorld`/`notTheBees` combo first branches (spider caves
   `:17369-17375`, moss `:17510-17516`'s re-roll) stay out: the port's
   classic arm draws once, so porting the C#'s extra re-roll would break
@@ -21947,6 +22543,58 @@ The `num10` (slot-0 main item) dispatcher of `AddBuriedChest`
   (832/4281, `:29303-29306`) вЂ” the port's living trees and pyramids place
   plain style-0 chests, so the style-gated arms have no anchor to read.
 
+### W4-c33d chest-gen FINAL (2026-11-21, code-only — research/154 + /120)
+
+The dispatch census (every `AddBuriedChest` caller) found **no unclaimed
+oasis-chest or underwater-chest arm**: the Oasis pass places no chest (its
+water is Desert-zone; the loot is the flag3 underground-desert chests +
+the 61 music arm), and the Water Chests stocking is complete (the flag5
+pair + all six mains). The only chest-loot arms outside the hook are the
+seed finish-sweeps (`ImproveAllChestContents` `:24716` — ported;
+`PutMonsterVanityInChests` `:24782`, `DoPortalGunInChests` `:2995`,
+`DoErrorWorldFinish` `:1297` — d107 seed scope). Four gate defects fixed:
+
+- **flag12 is STYLE/MAIN based** (`:36176-36178`: kind 21 && (num9 == 13 ||
+  num10 ∈ {159, 65, 158, 2219})), NOT the wall-73 `ctx.sky` probe. The
+  classic IslandHouse chest sits on sunplate walls (`IslandHouse :79222`
+  writes disc wall 82 / sunplate 144), so the old probe missed every
+  faithful house chest and fired on non-sky chests near cloud walls.
+  `stock_chest` computes flag12 and threads it through `stock_band`; the
+  SkyMill/pottery/Cloud/wings rows read it. The flag survives the remix
+  corrupt retype (`:36179-36194`, kind→467) — the main disjunct carries no
+  kind gate (the sky mains survive). `ctx.sky` stays a positional probe
+  (g44's disc-82 arm) but gates no loot row.
+- **The style-pottery rows sit OUTSIDE flag12** (`:37453-37456` kind-21
+  styles 23-27, `:37528-37531` kind-467 style 13 — plain `num9` tests): the
+  locked biome chests (flag10, never flag12) roll the 1/2
+  RemnantsofDevotion 5234 row on their own style; the old flag12 nest
+  dropped every locked-chest draw.
+- **The flag7 mushroom arms land** (`:36151-36153` kind 21 style 32): the
+  mid band's 1/2 ShroomMinecart 4450 + an INDEPENDENT 1/3 MushroomVanity
+  set 4779/4780/4781 (`:36653-36666`); the deep band's EITHER-OR
+  (`:36977-36993`). Both in the `num10 == 0` branch. The g42 mushroom-house
+  site is the future producer; the arm is ready.
+- **The flag5/flag6 extras carry the C# `num10 > 0` gates** (`:36505`/
+  `:36805`/`:36229`): a main-0 style-17 chest rolls no 4425/4460 pair; a
+  main-0 surface chest rolls no flag6 living-tree extras. The flag9 dungeon
+  ladder keeps its family gate (the `DungeonCycle` supplies the main
+  internally — `ev.main_item` is 0 for cycle chests). The deep-arm family
+  extras gate on the family probes (the band-first order stand-in,
+  research/120 §8 — frozen).
+
+Compose: the Water Chests (style 17, flag5) and the IslandHouse sky chests
+(style 13, flag12) are disjoint sites/flags/mains; the sky-LAKE
+(`CloudLake :78539-78912`) places zero chests and the houses pass gates
+`!GenVars.skyLake[i]` (`:17868`). f35's sky-CRATE tails
+(`fishing_crates.rs:610-622`) share the pottery/cloud/wings item family by
+C# design (`Player.cs:9117-9157` vs `WorldGen.cs:37418-37527`) — two
+landings, NOT a dedupe target (different streams/gates); c33 touches no
+fishing file, f35 no `chest_gen.rs`. Witnesses: 3 new + 6 re-derived
+(written not run, code-only lane). The keep-one (research/120 §9) is FINAL:
+KEEP d103 `water_chests.rs` + `buried_chest.rs`, DROP c33
+`pass_underwater_chests` + g37 B3; the stocking carry is c33's whole
+`chest_gen.rs` superset.
+
 ## The flail family (M4-PROJ-3b)
 
 `AI_015_Flails` (`Projectile.cs:43724-44169`) ports as `ai_flail` in
@@ -24557,6 +25205,66 @@ else-arm and lava the `CheckLavaDeath` arm.
   honey/shimmer water-arm ride, the open-cell/generation early returns,
   the promotion death check, the pre-loop `num8` pin + swap quirk, and
   the RNG-free census.
+
+## The Settle Liquids pass (W4-f25, 2026-11-20 — code-only mode)
+The orphan-adopted `Settle Liquids` pass (`WorldGen.cs:16132-16210`,
+`docs/research/12g-f25-settle-liquids.md`) is ported as
+`worldgen/settle_liquids.rs::settle_liquids` + the pipeline step
+`"settle liquids"` immediately before `remove water` — the first real
+liquid-simulation pass of the generator (the R-12-5 settlement the note above
+anticipated). It rides the port's `LiquidSystem`: the ocean retype sweep,
+`QuickWater(3)` (`Liquid.cs:104-148`) with `SettleWaterAt` (`:150-289`, the
+drop/fan + the water-line lava retype + the dungeon-wall water keep) and the
+`AttemptToMove*` family (`:291-433`), `WaterCheck` (`WorldGen.cs:80415-80494`),
+the 10-round `quickSettle` budget loop (`:16159-16204`) and
+`ClearPendingLiquid` (`:80496-80513`). `liquid.rs` gains the `quick_settle` /
+`gen_ignore_water` fields, the `UpdateLiquid` `quickFall` derivation
+(`Liquid.cs:1056-1068`), the down-transfer >250 bump (`:588-591`) and the
+254-from-255 tail (`:944-948`); `tileobject.rs` gains `resolve_tile_def`
+(`GetTileData(Tile)`, `:5196-5261`) + `check_water_death`/`check_lava_death`
+(the Tile overloads `:5083-5095`/`:5107-5119`).
+Documented deviations (none reachable from a classic world's runtime surface):
+- **The per-pass `LiquidSystem` instance stands in for the C# statics.**
+  `ClearPendingLiquid` + the `numLiquid == 0` exit invariant
+  (`WorldGenerator.cs:508`) make the instance boundary equivalent — the pass
+  leaves no active liquid behind, so the next pass's fresh instance starts
+  from the same empty state the C# statics carry.
+- **The special-seed arms are deferred** to their lanes: `Skyblock.denyAllGeneration`
+  (`:16134`), `SecretSeed.extraLiquid` (`:16147-16151`, the round-bump
+  `:16173-16176`), `notTheBees` (`:16152-16155`) and the `noTraps` boulder
+  arms (`Liquid.cs:109-112`/`:139-142`) — d107/c30 own those bodies; a classic
+  world never enters them.
+- **`GenVars.shimmerPosition` is d102's Shimmer-pass product** (unmerged at
+  this landing): `ShimmerRemoveWater` (`WorldGen.cs:34823-34851`) reads the
+  port's `GenVars.shimmer_position` seam (`None` until d102's step writes it —
+  the C# `Vector2D.Zero` reset `:7039` puts the 150-radius circle off-world, a
+  classic no-op either way). The field name matches d102's for a clean merge.
+- **`Main.tileSolid[484] = false`** (`:16208`, the Gems-pass sand-slide
+  exemption made permanent) is a load-order poke the port's static tile
+  tables do not model (the `desert.rs` precedent) — recorded, not applied.
+- **`resolve_tile_def`/`check_*_death` duplicate d112/d114's bodies** (the
+  same `GetTileData(Tile)` resolution + Tile-overload death checks those lanes
+  carry); identical names and semantics, the merge reconciles to one copy.
+No RNG draws in the whole pass (`QuickWater`/`SettleWaterAt`/`WaterCheck`/
+`UpdateLiquid` draw nothing; the `kill_tile` drops ride the port's
+deterministic position seeds), so the insertion is ledger-neutral for every
+other step's stream. Both world-hash pins (`SEED42_512`, `DEFAULT_WORLD`) move
+BY DESIGN (the liquid fields settle/retype); the re-pin is deferred to the
+merge gate (no compiler on this branch), the `a == b` determinism halves stay.
+**The g46 liquid-union addendum (W4-f25, 2026-11-21, code-only):** the
+`SettleWaterAt` dungeon re-type's wall read is fixed to the ORIGIN cell
+(`Liquid.cs:152` binds `tile` at the origin; `:188` reads `tile.wall` —
+the pre-fix copy read the landing cell's wall, research/70 step 6's
+flagged deviation; the g46-union copy already reads the origin, both
+copies now agree). The bounds test keeps the landing-cell arguments.
+At the liquid merge (g46 tip 9bc722e5f, research/70 FINAL) this driver
+dedupes onto the union `LiquidSystem` surfaces — the DELETE table + the
+producer arming live in `12g-f25-worldgen-helpers.md` ("g46 LIQUID-UNION");
+the gen-side `edit_kills` drain choice is **DISCARD** (the worldgen has
+no loot side channel — the `square_tile_frame_gen` precedent; the C#
+gen-time `noItem` gate `:63546-63549` spawns nothing either). The pins
+RE-DERIVE at the union gate (the real DelWater drain/tail + swap-remove
+buffer + this fix); 1 origin-wall witness written not run.
 
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
@@ -50360,6 +51068,207 @@ never consume.
   drone AI lands. `mouseInterface` folds to `!inventory_open` (the port's
   standing-in — the UI-hover flag has no field).
 
+## Hive rewrite (W4-c31, code-only, 2026-11-21)
+**The faithful `HiveBiome` port** (`crates/tr-core/src/worldgen/hive.rs`)
+replaces the shape-level dome (`structures::pass_beehives`, retired —
+kept for its test history). Three C# bodies ported 1:1:
+- **`HiveBiome.Place`** (`HiveBiome.cs:11-102`): the 100×100
+  `StructureMap.CanPlace` gate (the shared `can_place_general` —
+  `GeneralPlacementTiles` validity + the protected-rect list), the
+  `TooCloseToImportantLocations` 150-tile 10-step scan (`:258-285` — the
+  226 tile + the walls 83/3/87; NO underworld band, unlike the honey
+  patch's variant), the 15-disc scan (`Modifiers.IsSolid` = active +
+  `SolidOrSlopedTile`, the 75 % mud/hive ratio + the hive-60 count ≥ 2),
+  the `Next(2,5)` tunnel chains (drunk +`Next(7,10)`, remix +`Next(2,5)`),
+  each `Next(2,5)` linked `CreateHiveTunnel` steps, the honey-fall walk
+  per chain end (the ±1 direction roll, the `BadSpotForHoneyFall` 2×2
+  probe, the 50-tile drift cap, `CreateBlockedHoneyCube`'s 4×4 +
+  `CreateDentForHoneyFall`'s reversed pound walk), `CreateStandForLarva`
+  at the LAST chain's end, the drunk seed's 1000-try extra stand
+  (>10 away, inactive, wall 86), and the inflate-5 protected rect.
+- **`CreateHiveTunnel`** (`:127-256`): the radius-12..20 × budget-10..20
+  elliptical walk, the ±20 % per-step radius jitter, the ±10 wall-87
+  proximity vetoes, the surface wall-0 veto, the three dithered bands
+  (0.4 honey core with the 1-in-3 fill / 0.75 the 225 shell unless the
+  wall is 86/244 / 0.6 the 86 wall — NOT else-if, it overlays both),
+  the ±10·0.2 drift velocity with its ±10·0.05 walk, the double budget
+  burn per step. The drunk/remix radius branches are ported.
+- **The passes**: `Beehives` (`WorldGen.cs:15927-15976` — the
+  `1 + Next(5·s, 8·s)` count, drunk ×0.667, the 10000-attempt budget,
+  `RandomWorldPoint((surface+rock)>>1, 20, 300, 20)`, the drunk seed's
+  DISCARDED second point draw, the per-hive `Next(5)` honey-patch ring
+  through the existing `place_honey_patches_around`) and
+  `BeeLarvaInBeehives` (`:20868-20900` — the stand re-clear + the 231
+  `PlaceTile` → `Place3x3` `num=-2` shape, `:53534-53634`). The larva
+  anchors ride `GenVars.larva` (`LarvaAnchors`, the `larvaX/larvaY[100]`
+  + `numLarva` slice, the wrap-at-99 counter). The `larva` executed step
+  slots after `muds walls in jungle` (vanilla `:20813` → `:20868`),
+  66 → 67 steps.
+**The larva-break → Queen Bee seam** (`Check3x3`'s case 231,
+`WorldGen.cs:53230-53257`): the 231 joins `check_3x3_bottom`'s dispatch
+(the `:53114` support group, `TileFrameImportant` `:86000-86013`); the
+object-drop record carries `item: None` (the case spawns NO item) and
+`break_tile` resolves it app-side — three gore shards (300/301/302) at
+`((i+1)*16+8, j*16+{0,8,16})` on the `UpdatePlayers` stream, then the
+nearest-living-player Manhattan scan (<4800 px) → the Queen Bee 222 at
+the player (the Abeemination `SpawnOnPlayer` precedent — the tile-scan
+spawn fidelity is the recorded M4-BOSS deviation). The 231
+frame-important boot static (`Main.cs:7396`) keeps the `Place3x3` frames
+through the load-time framing.
+**Deviations (recorded):**
+1. `Shapes.Circle(15)`'s membership is the C# row-walk
+   (`Shapes.cs:33-49`: `±min(r, (int)sqrt((r+1)²−dy²))`), NOT the
+   Euclidean `dx²+dy² ≤ r²` the honey-patch port approximates — the
+   hive scan uses the exact rows (`circle_half_width`); the honey
+   patch's existing approximation is untouched (its own row).
+2. `FrameOutAllHiveContents` (`:104-125`) is a framing-only sweep — the
+   post-pipeline `frame_world`/`frame_walls` seam carries it (the
+   mahogany/temple precedent); it draws no RNG and writes no state.
+3. The `tileSolid[225]` window: vanilla's weight order runs Hives
+   (slot 50) BEFORE the Life Crystals tail's `225 = false` flip
+   (`:16850`, slot 60) and the Piles pass restores it (`:19454`, slot
+   80) before Larva (slot 99) — so BOTH C# slots read the boot table's
+   solid 225 (`Main.cs:10236`). The port reads the same boot table; no
+   window adjustment. The `tileSolid[229/232/162]` Larva-head pokes stay
+   the documented `solid_tile2` boot-table deferral.
+4. `CreateDentForHoneyFall`'s `PoundTile` rides the gated
+   `edit::pound_tile(generating: true)` (worldgen has no chest store —
+   the closure answers false); the non-generation effects never run.
+5. The pass keeps the shared `srng` stream (the port's stream contract)
+   but its draw schedule differs from the dome's — BOTH world-hash pins
+   are stale-by-design and re-pin at the merge gate (`world_hash.rs`'s
+   provenance block); the `a == b` determinism assertion stays green
+   (the pass is a pure function of world + stream).
+6. The sub-vanilla band guard: `maxY − 300 <= (surface+rock)>>1` skips
+   the attempt loop (the C# `Next` throws on the collapsed band; the
+   mahogany/thin-ice idiom).
+**Tests-as-code (written, not run — code-only mode):** 10 `hive.rs`
+witnesses (the Circle row-walk, the stand's clamp/clear/wrap, the Place
+gates' refusals, the tunnel carve + stand publish, the honey cube/dent
+shapes, the larva 3×3 frames + the blocked-body/floor refusals, the
+pass-level `a == b` full-tile determinism), 2 `kill.rs` witnesses (the
+231 break's no-item record + the supported-larva stay), 2 app witnesses
+(the gore + Queen Bee spawn, the far-player refusal). The pipeline
+step-count/order witnesses updated (67 steps, `larva` after `muds walls
+in jungle`).
+## Jungle residuals (W4-c31, code-only, 2026-11-21)
+The hive landed; this pass censuses the **rest of the C# `WorldGen` jungle
+family** against the port and ports the missing pieces verbatim (the census
+table: `docs/research/300-c31-jungle-residuals.md`, renumbered 12k→300 per
+the research/150 registry §7.3). Three gaps filled:
+1. **`JungleShrines` faithful rewrite** (`worldgen/structures.rs::
+   pass_jungle_shrines`, `WorldGen.cs:15977-16131`) — replaces the
+   shape-level hut ("the C#'s exact brick patterns are not 1:1"). The
+   `GenVars.jungleHut` material pick (`Reset` `:11167` `Next(5)` →
+   `:11317-11336` map to 119/120/158/175/45, drawn in the Reset stand-in
+   AFTER `crimson_left` — the order deviation keeps the existing Reset draw
+   byte-identical), the hut count `Next(7,12) * maxTilesX/4200`, the
+   dungeon-opposite-half origin search with the `num4 > maxTilesX*10` retry
+   valve, the 30-radius hive/temple proximity veto (the 225/229/226/119/120
+   tiles + the walls 86/87, stride-3), `structures.CanPlace(area, 1)` over
+   the pass-local protected rects, the brick shell + carved interior with
+   the hut-specific wall (23/24/42/45/10), the 100-try `PlaceTile(4, style
+   3)` torch, the floor carve, the mud pillars, the shrinking roof rows and
+   the `JChestX/Y` publication. Fresh `pass_rng("Jungle Chests")` slot (the
+   shape-level pass rode the shared `srng`).
+2. **Plantera bulb event placement** (`growth/plantera.rs`,
+   `WorldGen.cs:74127-74267`) — `GeneratePlanteraBulbOnAllMechsDefeated`
+   (the 2500-attempt jungle-half rectangle, the 500/200 force/any-tile
+   tiers, the ceiling walk) + `AttemptToGeneratePlanteraBulbAt` (the 4×4
+   mud/grass score ≥ 12 with the container/furniture/painting/boulder veto,
+   the `ClearTile` + grass ring, the 238 place). The
+   `NPC.OnGameEventClearedForTheFirstTime` case-16/17/18 hook
+   (`NPC.cs:78780-78788`) wires it at the mech-boss death path
+   (`world_sim/npcs.rs`, the `UpdateNpcs` stream). The event places through
+   the g42 keeper `growth/jungle.rs::place_jungle_plant` (`:47779-47944` —
+   the 2×2 236/238/702 + 3×2 233 shapes; the c31 `jungle_plants.rs` duplicate
+   DROPPED per the DUP-RECONCILE below). `World.dungeon_x/y` published by the
+   dungeon step + read/written in the `.wld` flags + TRWLD v18.
+3. **Life-fruit / bulb / 233 hardmode growth** — the case-60/70 tails
+   (`WorldGen.cs:74414-74506`) now ride the g42 keeper
+   `growth/underground_tail.rs::underground_grass_tail` (the `Next(25)` gate
+   + liquid veto, the all-mechs `Next(60)` bulb arm, the any-mech `Next(40)`
+   life-fruit arm, the 233 detritus fallback, the case-70 cattail +
+   `Next(250)` tree); the runtime `PlaceCatTail` (`:58629-58742`) rides the
+   same module (the `CopyPaintAndCoating` `:58738` superset). See the
+   DUP-RECONCILE below.
+### The DUP-RECONCILE EXECUTED (g42 GROWTH SEAL 910cc974)
+The g42 lane ported the SAME case-60/70 tails plus the full overworld
+switch, the tree-growth rewrite and the Convert family; its GROWTH SEAL
+(12j phase 9) byte-compared every fn and ruled the g42 copy the KEEPER. This
+lane EXECUTED the published drop-hunk set: the c31 `jungle_plants.rs`
+module, the `grass.rs` tail fns / kind-2 row / plain plant-write / 4 tail
+witnesses, and the `decorations.rs::place_cat_tail` copy are GONE; the g42
+keeper blobs (`jungle.rs` / `underground_tail.rs` / `overworld.rs` /
+`grass.rs` / `trees.rs` / `decorations.rs` / `growth.rs`) are adopted
+BYTE-IDENTICAL (`git hash-object` verified against the g42 tip). The
+`plantera.rs` event re-points its two calls at `jungle::place_jungle_plant`
+with the extra `inherit_paint: false` arg per the verdict (the C# passes
+`true` at `:74238`/`:74253` — the flip is the merger's one-arg decision, the
+keeper's paint-copy arm is ready). The ONE c31 witness shape the g42 stream
+pins do not cover (the direct-fn liquid veto) is ported as
+`underground_tail.rs::w4_c31_the_liquid_veto_blocks_the_tail`. The reconcile
+adds `World.allowed_to_spread_infections` (the g42 overworld dispatcher's
+flag field, stock true, `update_world` re-sets per tick). No worldgen pass
+stream is touched (the keeper tails are runtime-only); both world-hash pins
+stay stale-by-design from the JungleShrines/hive rewrites; `a == b` stays
+green. The full drop/keeper table + the compose note live in
+`docs/research/300-c31-jungle-residuals.md`.
+**Deviations (recorded):**
+1. The `JungleShrines` rewrite moves OFF the shared `srng` onto its own
+   `pass_rng("Jungle Chests")` slot, so every downstream `srng` consumer
+   re-rolls and the shrine tiles change; the Reset `jungle_hut` draw shifts
+   the Reset-stream tail. BOTH world-hash pins are stale-by-design and
+   re-pin at the merge gate (`world_hash.rs`'s provenance block); the
+   `a == b` determinism assertion stays green (the pass is a pure function
+   of world + stream).
+2. The port has no global `StructureMap`, so the cross-pass protected-rect
+   intersection is carried by a pass-local `protected` vec (the shrine
+   rects accumulate via `AddProtectedStructure`); the hive/temple avoidance
+   is the C#'s own 30-radius tile/wall proximity veto. The
+   `tileSolid[137] = false` window (`:16129`) has no mutable port table —
+   the dart-trap solidity is read by the temple/trap passes at their own
+   slots (the hive.rs window precedent).
+3. `PlaceJunglePlant`'s `KillTile` collapse + `CopyPaintAndCoating` no-op
+   followed the existing `biome_detail.rs::place_jungle_plant_detritus`
+   precedent in the c31 pass-2 slice — SUPERSEDED by the DUP-RECONCILE: the
+   g42 keeper runs the real `edit::kill_tile` sweep + the paint-inherit arm
+   (the bulb event still passes `inherit_paint: false` per the verdict; the
+   C# `true` flip is the merger's one-arg decision).
+4. The bulb event's `Main.dungeonX` reads `World.dungeon_x`;
+   `Main.UnderworldLayer` = `maxTilesY - 200` (`Main.cs:2790`).
+   `Main.expertMode` is constants-off (single-difficulty), so the
+   life-fruit `maxValue2` collapses to 40 and the density radius to 60 (the
+   classic arm); the expert branches are carried for the difficulty flip.
+5. The `NetMessage.SendTileSquare` sides are MP scope (the host path); the
+   `PlayerLOS` gate on the mushroom-tree arm gates the draw-side
+   `TreeGrowFXCheck` leaf FX only (the tree already grew) — the FX has no
+   growth-tick channel in the port.
+6. The sub-vanilla valve: a collapsed shrine y band
+   `[(surface+rock)/2, maxY-400)` skips the pass before any draw (the C#
+   `Next` throws on the empty range; the mahogany/thin-ice idiom).
+**Tests-as-code (written, not run — code-only mode):** 4 `structures.rs`
+shrine witnesses (the material/wall placement, the pass-level `a == b`
+full-tile determinism, the collapsed-band valve, the hive proximity veto),
+4 `plantera.rs` witnesses (the event placement, the `a == b` determinism,
+the force-arm grass ring, the container veto). The 6 `jungle_plants.rs`
+witnesses + the 4 `grass.rs` hardmode-tail witnesses DROPPED with their fns
+per the DUP-RECONCILE (the g42 D3/D4 stream pins cover the boxes/draws); the
+one uncovered shape — the direct-fn liquid veto — is ported as
+`underground_tail.rs::w4_c31_the_liquid_veto_blocks_the_tail`. The adopted
+g42 keeper modules carry their own witnesses (written not run on g42).
+**Verification.** Code-only: every C# site was re-read line-by-line
+(`WorldGen.cs:15977-16131`, `:74127-74267`, `:74414-74506`, `:47779-47944`,
+`:58629-58742`, `NPC.cs:78780-78788`); the port seams were checked by
+read/grep (the `GenVars.jungle_hut` field, the Reset draw order, the
+`World.dungeon_x/y` publication + the `.wld`/TRWLD v18 round trip, the
+mech-death hook, the `place_jungle_plant`/`place_cat_tail` seams). The
+DUP-RECONCILE adoption was verified by `git hash-object` (every keeper blob
+byte-identical to the g42 tip) + a zero-stale `git grep` for the dropped
+symbols (`jungle_plants::`, `jungle_grass_hardmode_tail`,
+`mushroom_grass_tail`, `no_nearby_kind`, `growth::place_cat_tail`). The
+witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
@@ -57599,6 +58508,609 @@ the `HalloweenWeapons` caps (`loot.rs:149-151`) stay caller-supplied.
 invoked.
 ## The special-seed worldgen branches (W4-d107)
 
+
+## The solutions census (W4-f25 closeout, 2026-11-21 - code-only mode)
+The Clentaminator family's full item -> projectile -> Convert chain,
+re-read against the decompilation (the ai_spray dispatch landed with the
+C3/C4 wiring; this round rows the missing sprays):
+- **The eight solution items** (AmmoID.Solution 780, `AmmoID.cs:168`):
+  Green 780 / Blue 781 / Purple 782 / Dark Blue 783 / Red 784 carry
+  `shoot` 0-4 (`Item.cs:10517-10561`); Sand 5392 / Snow 5393 / Dirt
+  5394 ride `DefaultToSolution` (`Item.cs:42772-42780` +
+  `:47799-47808`) = `shoot` 870/871/872 (1015/1016/1017 - 145). All
+  eight item rows were already in the registry.
+- **The two guns**: Clentaminator 779 (`Item.cs:10501-10516`, shoot
+  145, shootSpeed 7) and Clentaminator2 5134 (`:41174-41189`, shoot
+  145, shootSpeed 11) both useAmmo Solution; the additive resolution
+  arm (`Player.cs:53487-53490`, `ammo.rs::resolve_projectile`) lands
+  every pair on 145-149 / 1015-1017.
+- **The spray rows**: 145 was rowed; 146-149 are line-identical copies
+  of its SetDefaults arm (`Projectile.cs:2350-2397`) and 1015-1017
+  ride `DefaultToSpray` (`:9633-9636` -> `:10691-10702`) - the
+  closeout rows all seven beside 145 (6x6, aiStyle 31, pen -1,
+  extraUpdates 2, tileCollide false). Without the rows the ammo drained
+  and the spawn declined.
+- **The Convert dispatch** (`Projectile.cs:26791-26824`,
+  `ai_spray`): 145 -> 0 (cleanse), 146 -> 2 (C3 hallow), 147 -> 1 /
+  149 -> 4 (d1's powder cells, unmerged - no-op until they land),
+  148 -> 3 (g42's mushroom cell, unmerged - no-op), 1015/1016/1017 ->
+  5/6/7 (C4 desertify/snow/purify). The dispatch itself is verbatim and
+  complete; only the d1/g42 cells are pending.
+- **5495 is NOT a Clentaminator**: it is the Shimmer Gun
+  (`ItemID.cs:12673`, `Item.cs:43313-43325` - shoot 1042
+  ShimmerGunStream, aiStyle 60 `Projectile.cs:9848-9857`, no useAmmo).
+  Its `Player.cs:49124-49128` spawn arm passes ai1 = 1, but that is
+  the shimmer stream's own flag, not the spray's solution flag. No
+  solution arm belongs to it; the 1042 row is the shimmer lane's.
+Runtime-only (no worldgen step calls the sprays); both world-hash pins
+unchanged, a == b untouched. 2 witnesses written not run (the row-stats
+sweep + the eight-solution resolution on both guns); the earlier
+dispatch witness re-pointed at the rowed `proj` fixture.
+## Sky lakes / floating-island residuals (W4-g44, census + verbatim pass, code-only mode, 2026-11-21)
+**Census.** The landed port (`worldgen/islands.rs`, M1.4-WGEN-4 +
+M5-SEED-2) was a *compact stand-in* for the C# `FloatingIslands` pass
+(`WorldGen.cs:12927-13122`) — the island count, the y-band, the lake
+cadence, the spacing list and the house placement all diverged from
+the source. The line-by-line re-read (the whole pass `:12927-13122`,
+the `FloatingIslandHouses` pass `:17859-17874`, `IslandHouse`
+`:79203-79484`, the `Reset` skyLakes block `:11182-11190`, the
+`Variations` gates `:169-178`/`:233-255`/`:329-336`, the
+`Skyblock.denyFloatingIslands` gate `:3087-3096`, `GenVars.cs:210-226`
++ `:453-456`) found these residuals, ALL landed verbatim by this task
+unless marked deferred:
+1. **The count formula** (`:12934`): C# `num = (int)(maxTilesX *
+   0.0008)` (4200 → 3, 6400 → 5, 8400 → 6). The port had
+   `3 + width / 4200` (4200 → 4, 8400 → 5) — wrong on every width.
+   LANDED: the verbatim formula.
+2. **The skyLakes budget** (`:11182-11190`, `:12955`): C# resets
+   `GenVars.skyLakes = 1`, `++` above 8000 wide, `++` above 6000 wide,
+   and the loop runs `num4 = num + skyLakes` islands — the tail
+   `skyLakes` of them forced lakes (`num2 >= num`, `:13051-13053`).
+   The port had NO skyLakes: `count` stood in for the sum and every
+   third island (`i % 3 == 2`) was a lake. LANDED: `GenVars.sky_lakes`
+   reset in `reset_genvars` (the C# Reset spot), the `num + sky_lakes`
+   loop bound, the `num2 >= num` force.
+3. **The errorWorld triple** (`:12936-12939`): `errorWorld &&
+   errorWorldAdjustment(1.0) < 3` triples `num` BEFORE `num3 = num`
+   (so the house cap `num3 * 2` triples too). The port had no
+   errorWorld arm. LANDED: `error_world_adjustment` (`:329-336` —
+   `< 1` active seeds → 4, else `(int)(value * ((count + 3) / 4))`)
+   + the triple.
+4. **The lake cadence**: C# `flag3 = num2 >= num` — the FIRST `num`
+   placed islands are dry, the tail `skyLakes` are lakes. The port's
+   `i % 3 == 2` scattered lakes through the whole run and its
+   `lake_forced` latch modelled `flag` wrong (the C# `flag` only gates
+   the extraFloatingIslands `i > 4` re-roll, `:13055-13065`). LANDED:
+   the `num2 >= num` cadence; the `i > 4` arm keeps its
+   force-then-1-in-4 shape with the C# `flag` semantics (set on ANY
+   lake, `:13066-13068`).
+5. **The spawn exclusion** (`:12969-12979`): C# `num8 = 150`
+   (extraFloatingIslands → 100) with a RE-DRAW loop (`while` inside
+   the band), skipped entirely under errorWorld (`:12974`). The port
+   used 340 classic / 100 flagged with a `continue` (burning the
+   attempt budget instead of re-drawing). LANDED: 150/100, the
+   re-draw loop, the errorWorld skip.
+6. **The spacing list** (`:12981-12993`): C# checks `num7` against
+   `floatingIslandHouseX[0..numIslandHouses]` — the placed-island
+   anchors, strict `>` / `<` bounds. The port checked its own list
+   with `abs() < spacing` (inclusive). LANDED: the GenVars anchor list
+   (`floating_island_house_x`), the strict bounds.
+7. **The y-band** (`:12998-13048`): C# scans the column from row 200
+   for the first active tile (`num6`), rolls
+   `num11 = Next(90, num6 - 100)`, then clamps
+   `num11 = Min(num11, (int)worldSurfaceLow - 50)`; noSurface rolls
+   `Next(200, UnderworldLayer - 200)` instead; errorWorld re-rolls
+   `Next(worldSurface + 50, UnderworldLayer - 50)` on `Next(4) != 0`.
+   The port rolled `Next(90, world_surface - 100)` against the
+   DEEPEST surface and scanned a ±75 clear window on EVERY world
+   (the C# window is skyblock-only, `:13024`). LANDED: the column
+   scan, the verbatim roll + clamp, the noSurface/errorWorld arms;
+   the clear window gates on the port's SKYBLOCK bit (the recorded
+   skyblock-worldgen deviation stands — no skyblock terrain).
+8. **The attempt budget** (`:12959-12964`): C# `num5 = maxTilesX`
+   (`/= 42` skyblock), `while (--num5 > 0)`. The port capped at 200
+   attempts per island and RETURNED (dropping the tail islands).
+   LANDED: the width budget; an exhausted budget skips the island
+   and the loop continues (`num5 = -1` on success, `:13041`).
+9. **The pass gates** (`:12929`): `!Skyblock.denyFloatingIslands &&
+   !Variations.noSurfaceNoFloatingIslands` — noSurface WITHOUT
+   errorWorld and WITHOUT extraFloatingIslands skips the whole pass.
+   The port had no gate. LANDED: both gates (`denyFloatingIslands` =
+   skyblock && !extra, `:3087-3096`; the houses pass gates on the
+   deny half only, `:17861`).
+10. **The house pass split** (`:17859-17874`): C# places the discs in
+    `FloatingIslands`, stores x/y/style/skyLake per island
+    (`GenVars.cs:220-226`, the 300-slot arrays `:453-456`), and the
+    SEPARATE `FloatingIslandHouses` pass builds a house on every
+    non-lake island. The port built a planks-9 box inline on EVERY
+    island (lakes included). LANDED: the GenVars arrays
+    (`island_house_x/y/style`, `sky_lake`, `num_island_houses`), the
+    new `floating island houses` pipeline step immediately after
+    `floating islands` (the port's discs already place late in the
+    grouped chain — after the vegetation family — so the houses follow
+    their ledger directly; vanilla `:17859` runs before the vegetation
+    passes, but the house build reads only the disc, so the relative
+    islands→houses order is preserved and the living-tree anchor scan
+    still starts at the height-map row), the lake skip, the house cap
+    applied to
+    `numIslandHouses` AFTER the loop (`:13117-13120`).
+11. **The house itself** (`IslandHouse`, `:79203-79484`): C# builds a
+    SUNPLATE (202) box with the DISC WALL (82) interior — not planks
+    9 / cloud wall 73 — sized `Next(7,12)` × `Next(5,7)`, the
+    `Next(2)` door-side flip, the ground scan (`wall > 0 && active &&
+    SolidTile`, kinds 192/191/384 excluded, `:79238-79247`), the
+    5-wide door carve + the style-9 door (`PlaceDoor`'s three
+    `Next(3)` frame rolls, `:31781-31794`), the opposite wall column,
+    the chest at `(i, num13 - 3)` through `AddBuriedChest` (style 13,
+    getGood → 2, `:79369-79376`), the wall-21 window strips
+    (`:79395-79419`), the table 14 style 7 + two chairs 15 style 10
+    (the left chair's `frameX += 18` flip, `:79438-79443`), the three
+    banners 91 (`Next(7,10)` styles, `:79446-79460`), the
+    dungeon-wall abort (±30 scan, `:79207-79216`). LANDED: the whole
+    classic arm (the furniture draws in C# order). The drunk
+    snow/desert fountain (`:79377-79392`) and palm (`:79462-79483`)
+    arms, the remix furniture variants (`:79323-79332`,
+    `:79421-79435`) are DEFERRED (the seed-variant follow-up).
+12. **The chest item cycle** (`:79348-79368`, `:79394`): the landed
+    port already had the `skyIslandHouseCount` cycle + the `> 3 →
+    Next(4)` re-roll + the post-place increment — VERIFIED faithful,
+    kept (the counter now advances only on non-lake islands, the C#
+    house-pass order).
+13. **The disc bodies** (`CloudIsland` `:78132-78538`, `CloudLake`
+    `:78539-79202`): the port's ellipse + 2-row grass cap +
+    rain-cloud bowl remains the documented shape-level stand-in (the
+    shrinking-ring walk, the dirt underside and the lake's own ring
+    walk are the M1.4-WGEN-4 deviation, NOT re-litigated here). The
+    house ground-scan needs the wall-73 flood's *effect* (a wall
+    under the grass cap, `:78421-78442`): `build_island` now writes
+    wall 73 on the disc's interior cells whose 3×3 neighbourhood is
+    all active with no foreign wall (the verbatim `:78430` test) —
+    the one CloudIsland slice the house pass consumes.
+**The RNG world-pass slots.** Both passes move onto their own
+`Streams::pass_rng` streams — `pass_rng("Floating Islands")` (was the
+shared `drng`) and `pass_rng("Floating Island Houses")` (new) — the
+`WorldGenerator.cs:497` per-pass re-seed model every faithful pass
+uses. The shared `drng` loses the islands' draws: its remaining
+consumers (`fragile ice`, `exposed gems`, `vines`) are all EARLIER in
+the executed chain, so no other pass's stream shifts. The draw ORDER
+inside each pass follows the C# statement order 1:1 (the citation
+comments are the ledger). The world-hash pins move BY DESIGN (the
+discs relocate, the houses retype 9 → 202, the lakes re-cadence);
+`a == b` determinism is untouched (no new entropy source). Code-only
+mode: no compiler on this branch — the pins are STALE-BY-DESIGN and
+re-pin at the merge gate (the `world_hash.rs` note records it).
+**Deferred (recorded, not fixed here).** The drunk
+`SnowCloudIsland`/`DesertCloudIsland` variant islands (`:13075-13087`)
++ their fountain/palm house arms; the remix/tenthAnniversary/getGood
+style arms (`:13090-13103` — the port passes `get_good` for the chest
+style only, the num10 style table is the classic 0); the skyblock
+worldgen terrain (the SKYBLOCK bit gates the clear window and the
+deny gate, but no skyblock island chain runs — M5-SEED-1's recorded
+deviation); `SquareTileFrame`/`SquareWallFrame` after the house
+writes (the port's framing passes run later in the chain — the
+temple precedent); the `IslandHouse` crimson `flag` (`:79205`) is
+read but only the remix door arms consume it (deferred with them).
+**Witnesses (written, NOT run — code-only mode).**
+`islands.rs::tests`: the count formula widths (4200/6400/8400 →
+3/5/6 + skyLakes 1/2/3), the errorWorld triple + the num3 cap carry,
+the skyLakes tail-lake cadence, the spawn-exclusion re-draw + the
+errorWorld skip, the anchor spacing's strict bounds, the
+noSurface/errorWorld y-arms, the pass gates, the house cap
+(`num3 * 2` post-loop), the lake islands carry NO house, the
+sunplate/disc-wall house shape + the chest cycle order, the `a == b`
+determinism over the flagged seeds. `pipeline.rs::tests`: the new
+step's slot + the 67-step count.
+### W4-g44 deferred-arms follow-up (variants A/B/C, code-only mode, 2026-11-21)
+The census's deferred list is now landed except the skyblock TERRAIN
+(f24's lane) and the chain-framing deviation:
+1. **Variant A (`cb5985c9`): the drunk variant islands + the full style
+   switch.** `SnowCloudIsland` (`WorldGen.cs:77346-77737`) and
+   `DesertCloudIsland` (`:77739-78130`) are line-identical bar four
+   constants (the underside/satellite kind 460 snow-cloud vs 196
+   rain-cloud, the surface kind 147 snow vs 53 sand — verified by a
+   line-by-line diff of the two bodies). ONE shared verbatim port
+   (`variant_cloud_island` + the six walk helpers): the
+   `Next(100,150)` ring budget shrinking `Next(4)` per ring over
+   `Next(20,30)` rings, the ragged per-column surface line, the drift
+   clamps (the C# writes −0.2 on BOTH y-drift bounds — kept), the
+   underside blobs (the `for`-increment reads `num17` only after the
+   first body pass assigns it — no primed draw), the `Next(80,95)`
+   surface-retype ring, the surface pockets (the exhausted-scan
+   `continue` re-tests the outer `while` and exits — the port's
+   `break` is the same hop), the bbox wall-73 flood,
+   `WillWaterPlacedHereStayPut` (`:78530-78537`) + the per-column
+   water pools, the satellite puffs, the `surfaceIsInSpace`
+   cloud-clear strip (`:77405-77423`). The `:13075-13087`
+   `Next(2)` split gates on drunk && !remix; the `:13090-13103`
+   num10 style table lands verbatim (remix+drunk crimsonLeft halves
+   5/4/5; getGood/remix 4/5 by `WorldGen.crimson` — the port's
+   `opts.crimson`; anniversary 6; notTheBees 0). The variant ledger y
+   keeps `num11` (the bodies hang down from j like the C#); the
+   compact discs keep the `a6412835` disc-top convention.
+   `IslandHouse` gains ALL arms: the drunk crimson half-split
+   (`:79217-79220`), the remix door 5/38 (`:79323-79332`), the
+   fountain scatter + `Place2xX(207)` + `SwitchFountain`
+   (`:79377-79392`, `:39663-39722`, `:51150-51197` — the
+   `Wiring.running`/`NetMessage` tail is moot at gen time), the
+   window/banner anniversary gates (`:79395`/`:79444`), the remix
+   table 14/5 + chairs 8 or 469/2 + chairs 38 (`:79421-79435` — 469
+   rides `PlaceTile` case 469 → `Place3x2`, `:60000-60003`), the
+   style-1 palms via the shared `ocean::grow_palm_tree`
+   (`:79462-79483` → `:30343-30353` → `:27116-27203`).
+2. **Variant B (`2b041eaf`): the skyblock island-side arms witness.**
+   The `/42` budget, the fixed `worldSurface/2 + 100` y anchor and
+   the ±150/±75 clear window were already in the phase-2 pass; the
+   dedicated witness pins them (the blocked-sky world places zero
+   islands). Claim boundary: f24 owns `GenerateSkyBlockWorld` /
+   `SkyblockIsland` / the deny-gate census (`9cbbf9de`/`a9eb3fc3`/
+   `372a4ec7` on `origin/task/W4-f24-worldgen-passes-7`); g44's
+   island-side gate is the same two-flag predicate as f24's
+   `skyblock_gates::deny_floating_islands` — the merge gate keeps ONE
+   copy (f24's shared helper) and re-points g44's two call sites.
+3. **Variant C: the 4-way IslandHouses reconcile.**
+   `docs/research/87-island-houses-reconcile.md` — the arm-by-arm
+   sunplate fidelity table (23 house arms + 14 pass arms) across g44 /
+   d103 `eb018138` / d104 `93b1938e` / g37 `3d74564e`. KEEP: g44's
+   `islands.rs` (the only port with verbatim pass mechanics + the
+   complete style switch + the verbatim variant bodies); drop the three
+   peer house modules at the merge; the ONE salvage candidate is the
+   `AddBuriedChest` core (d103's full `buried_chest` / d104's
+   larva+altar vetoes vs g44's compact `place_chest` seam — inert on a
+   fresh sunplate floor, recorded; re-point when the chest lane's core
+   lands).
+**Deviation (unchanged):** the classic/lake disc bodies stay the compact
+M1.4-WGEN-4 shape; `SquareTileFrame`/`SquareWallFrame` ride the
+chain-framing passes (the temple precedent). The variant bodies' raw
+writes (active+type only, no liquid/slope reset) are kept 1:1 — they
+differ from the compact `put_cloud` deliberately.
+**Witnesses (written, NOT run — code-only mode):** the drunk snow/desert
+split + the variant surface/blob kinds, the num10 style-table arms
+(5 flag cases + the remix+anniversary 6), the fountain 2×4 body +
+SwitchFountain +72 + style-3 frameX, the style-1 palms over sand, the
+remix evil-flavour furniture both sides + the window/banner skip, the
+drunk half-split + the anniversary classic-furniture override, the
+skyblock fixed-anchor/clear-window arms, the drunk-variant `a == b`
+world-hash replay. The classic pins stay STALE-BY-DESIGN (the merge gate
+re-pins; `world_hash.rs`'s note stands).
+### W4-g44 islands-final phase (the four sibling mechanics + the FINAL adjudication, code-only mode, 2026-11-21)
+1. **The AddBuriedChest core graft (`e172bc76`).** The research/87
+   §KEEP-3 salvage is closed: d103's full placement core
+   (`WorldGen.cs:35877-36217`, unchanged `eb018138` → `339d9f6d`) lands
+   as `worldgen/buried_chest.rs` and `island_house`'s chest call
+   re-points at it. The core carries the shimmer/larva-231 column
+   aborts, the trySlope flatten/restore + the style-17 61×61 exclusion,
+   the remix centre-bottom abort, the ±2 boulder/altar-26/237 veto
+   (fluff 100), the flag15 default, the errorWorld style shuffle, the
+   family dispatch probes, the **flag12 remix evil retype**
+   (`:36176-36196` — the plain remix world's sky chest becomes
+   crimson-43 wood / corrupt-3 mahogany 467; the compact stand-in and
+   d104's sky slice both always placed 21/13), the noTraps swap and
+   `PlaceChest`'s boulder-under + `NearOtherChests` exclusions. The 467
+   place rides the new kind-aware `structures::place_chest_kind` (the
+   21 wrapper keeps its signature); `GenVars.hell_chest` is the core's
+   counter slot (the shuffled table stays with the tr-app driver, the
+   S1-A-4 seam). **Deviations:** the family MAIN-ITEM draws ride the
+   stocking hook (the pass-granularity stand-in, unchanged); the
+   `desertHiveHigh/Low` inputs read the Reset sentinels
+   (`maxTilesY`/0) until the hive bounds land — inert on the sky band;
+   the `dualDungeons`/`notTheBees` beach arms stay unported (d103's
+   recorded deferrals). Two chest_gen census fixes ride the graft: the
+   Cloud 751 stack rows fire in BOTH the 21 and 467 blocks
+   (`:37447`/`:37522-37527` — the old 21-only gate dropped the corrupt
+   sky chest's stack) and the style-13 5234 pottery row gates on 467
+   (`:37528` sits inside the `:37471` mahogany block, not the 21 block).
+2. **Sky-lake fishing (`4c170c02`).** Census-only: the sky-band catch
+   rows are landed (M7-FISH-2) — `FloatingIslandDrops`
+   (`GameContentFishDropPopulator.cs:73-81`: the six quest fish +
+   Damselfish 2304) and the sky crate pair (`:214`: 3206 early / 3985
+   hard, `Crate && Height0`). The height ladder
+   (`Projectile.cs:20712`) puts the islands-pass lakes in band 0. Three
+   witnesses pin the rows + the end-to-end bowl. f35/f36 claim no
+   fishing (cross-note in research/87's addendum).
+3. **Skyware chest loot (`0898f352`).** The flag12 tail verified landed;
+   two gaps fixed: the sky main's `Prefix(-1)` (`:36232`/`:36513` — the
+   accessories/Starfury are prefixable, the plain insert dropped the
+   roll) and the CreativeWings 4978 1/40 rider (`:36526-36531`).
+   **Deviation:** the wings row rides the sky-main arm in `stock_chest`
+   — the C# puts it in the mid-band `num10 > 0` block (`:36503`'s
+   `num7 < rockLayer` is true above the surface) while the port's band
+   model files the sky anchor under Surface; the family row follows the
+   main instead (the band-granularity stand-in, recorded).
+4. **Harpy spawn band (`c55cdc02`).** The 0.35/0.45 skyMob latch
+   (`NPC.cs:980-987`) was already verbatim; the dispatch tail
+   (`:1407-1422`) gains the Wyvern arm's `!AnyNPCs(87) && !noWorms`
+   short-circuit gates (the old port drew `Next(10)` unconditionally in
+   hardmode), the town-slime-purple `RollLuck(25)` draw (the unlock flag
+   reads false — no port source; the 686 kind deferred) and the
+   **terminal Harpy default** — a sky candidate never falls through to
+   the ground ladders (the old port spawned surface slimes in the sky
+   on a dispatch miss). **Deviations:** the Harpy spawn itself is
+   terminal-None until d34's kind (48) merges; the Wyvern spawn rides
+   d126's assembly (the dispatch consumes the roll); `RollLuck` runs as
+   the plain `Next` (the spawner's luck deferral). New
+   `SpawnContext.wyvern_exists` wired at both npcs.rs sites.
+5. **The FINAL adjudication (research/87 addendum).** The flagged
+   87-vs-86 conflict resolves: 86 §1 B5 compares d104 vs g37 ONLY (g44
+   appears nowhere in it) and its d104-wins verdict stands FOR THAT
+   PAIR; 87's four-way table (g44 after variant A) dominates d104 on
+   every house arm AND the pass mechanics. d104's house module is
+   unchanged since 87's read (empty diff `93b1938e` → `0c7a3483`).
+   With the #15 graft g44 is a superset of all three peers on every
+   arm — KEEP g44's islands.rs + buried_chest.rs; the merge dedupes the
+   two `add_buried_chest` cores onto the kind-aware survivor and keeps
+   d103's Surface Chests half. 86's other verdicts (Quick Cleanup /
+   Hellforge / Piles / Spawn Point / the Spreading Grass fix) untouched.
+**Witnesses (written, NOT run — code-only mode):** the core's floor /
+gold-style / shimmer / larva / boulder / altar / NearOtherChests /
+remix-retype arms (7), the house seam's retype events + larva refusal +
+errorWorld shuffle (3), the sky rows' conditions + the crate gates +
+the sky-lake bowl end-to-end (3), the skyware tail sweep + the 467
+Cloud row (1), the Wyvern gates' stream-tail replay + the terminal
+default + the band-latch sweep (3). The classic pins stay
+STALE-BY-DESIGN — the graft adds draws ONLY on the flagged seeds
+(errorWorld shuffle, noTraps swap) and the remix retype; the classic
+house stream is unchanged (the vetoes are inert on the sunplate floor,
+the flag12 swap gates on remix).
+### W4-g44 biome closeout (the desert boundary + sky-lake water + island-house housing, code-only mode, 2026-11-21)
+The lane's four closeout items, each a direct C# re-read + a witness
+(written, NOT run — code-only mode). The FINAL-KEEP instruction and the
+matrix-88/86 cross-receipts live in research/87's closeout addendum.
+1. **The desert boundary (`998b7a0c`).** The Lead's census name "g44 owns
+   desert" resolves to the lane SLUG (`biome-sky-lakes`), not a desert
+   pass: g44's `desert.rs`/`desert_entrances.rs` are UNTOUCHED base code
+   (empty diff vs origin/main). The desert family's owners: **Sand
+   Patches** (`WorldGen.cs:11689-11717`) is d101's (`d0042f85e`,
+   `passes1.rs::pass_sand_patches` — re-verified vs the C#: count
+   `0.013*width`, the spawn-middle rejection re-rolls the CLASSIC band
+   even in remix, strength-before-steps draw order); the **antlion-nest
+   entrance family** (`DesertBiome.cs:25-40` → the four Entrance classes)
+   is g40's (`7bb5332e5` + `a8150064b` — the 17-deviation residual closed
+   verbatim, incl. the anniversary short-circuit BEFORE the fraction draw
+   and the JSON 0.5 `ChanceOfEntrance` through `CreateBiome`); the hive
+   `PostPlacementEffect.Smooth` residual stays g40's next slice (its
+   census (c)). g44's ONLY `DesertBiome`-adjacent surface is the
+   buried-chest desert dispatch arm (`:36023-36048`), and it reads WORLD
+   STATE, not GenVars: `IsUndergroundDesert` (`:35755-35781`) is the
+   `y >= worldSurface` + 15%..85% x-band + the ±15 wall-187/216 probe —
+   the walls g40's hive paints. The g40 residual moves the wall geometry,
+   never the probe's shape. New witness
+   `w4_g44_desert_arm_retypes_on_the_hive_wall_probe` pins both wall arms
+   (187/216 → 467 style 10), the wall-free control (21 style 1) and the
+   above-surface refusal.
+2. **Sky-lake WATER physics (`582fa094`).** The lakes SURVIVE settle —
+   verified against the C# chain, not assumed. `WaterCheck`
+   (`WorldGen.cs:80415-80494`) zeroes liquid only INSIDE a solid tile
+   (`:80426-80432` — the bowl cells are inactive water) and wakes a cell
+   only when the cell below is open-and-not-full or a side cell is open
+   with a DIFFERENT level (`:80449-80470`); the compact bowl's rain-cloud
+   196 floor/sides are `tileSolid` true (`Main.cs:7118`, the generated
+   `TILE_SOLID` bit verified set) and the rows are uniformly 255, so no
+   wake arm fires. `SettleWaterAt`'s fall/spread walks
+   (`Liquid.cs:171-278`) have nowhere to go, and the waterLine lava
+   re-type (`:184-187`) needs the fall arm (`flag4`) — inert on an
+   enclosed lake (the load settle pins `waterLine = maxTilesY` anyway).
+   The g47 co-lane machinery (tip `5c09a68b8`) carries the verbatim
+   `gen_settle_loop` (`WorldGen.cs:16158-16206`) + `quick_water` /
+   `water_check` / `settle_water_at` on ONE `UpdateLiquid` engine shared
+   with the runtime — the gen settle does NOT drain island lakes. The
+   `WillWaterPlacedHereStayPut`-gated placement (`islands.rs:192`,
+   `WorldGen.cs:78530-78537`) is exactly the enclosed-bowl invariant the
+   settle preserves. Witness `w4_g44_the_sky_lake_water_survives_settle`
+   builds the lake disc, pins the 31×3×255 mass + the stay-put predicate
+   on every water cell, wakes every bowl cell through the landed
+   `LiquidSystem` and drains 600 updates — mass unchanged, zero leak.
+3. **Island-house NPC housing (`8e791809`).** THE FIX:
+   `housing::is_house_wall` now delegates to `edit::wall_house` (the FULL
+   279-entry `Main.wallHouse`, S1-P-i33, verified member-for-member vs
+   `Main.cs` incl. the `153..167` loop). `CheckRoom`'s ±2 scan reads
+   `Main.wallHouse` DIRECTLY (`WorldGen.cs:6204`/`:6212`); the old narrow
+   subset lacked wall **82** (`WallID.DiscWall`, `Main.cs:10384` true), so
+   every g44 sky-island house failed `TooManyUnsafeWalls`. The full-table
+   read admits the disc-wall room exactly as vanilla — the same
+   correction the hammer lane already made at the i31→i33 gate
+   (`hammer.rs:157-162`), now on the room-check side. **Census:** the
+   housing checker carries NO sky-band gate (`CheckRoom` reads only
+   edge/solid/wall/furniture conditions; the sole surface read is the
+   per-type Truffle condition `:4974`), so altitude never refuses a room.
+   The GENERATED house is not move-in-ready exactly as vanilla: the
+   5-wide door carve (`:79317-79322`) keeps open flanks (`PlaceTile(10)`
+   `:59843-59883` → `PlaceDoor` `:31773-31803` fills ONE column) and the
+   house ships NO torch (`RoomNeeds` incomplete until the player adds a
+   light). Two witnesses: the disc-wall sky room scans + RoomNeeds-
+   completes + scores a home spot (the wall-stripped control fails
+   `HoleInWallIsTooBig`), and the generated-house census pins the open
+   flanks + the missing torch + the table/chair/door flags.
+   **d118/d119 cross-note:** their tips (`91db266ea`/`04d7f9fd2`) keep the
+   narrow `is_house_wall` copy — the merge dedupes onto this full-table
+   read (research/87 closeout §3).
+**Deviation (new, deliberate):** none beyond the recorded ones — the
+housing fix RESTORES vanilla behaviour (the narrow subset was the
+deviation). The sky-lake witness uses the runtime `LiquidSystem` as the
+settle engine stand-in (the g47 gen driver wraps the same `update`); the
+gen-only `QuickWater` shimmer/boulder arms are inert on a classic world.
+**Witnesses (written, NOT run):** the desert-arm retype/control/gate (1),
+the sky-lake mass + stay-put + no-leak drain (1), the disc-wall room
+scan/score + the wall-stripped control (1), the generated-house
+open-flanks/no-torch census (1). No RNG stream moves — the housing fix is
+a pure predicate widening on the room-check path (no draws), the desert
+and sky-lake witnesses are read-only replays.
+## The desert entrance residual (W4-g40 continuation, code-only, 2026-11-21)
+**Census first** (research `222-w4g40-biome-residual-census.md`, renumbered
+from 94 per the d54 research/150 registry): after the
+marble/granite residual closed (79361f00), the remaining C# biome classes
+were censused against the landed port. Co-lane claims READ, not touched:
+g44 owns FloatingIslands/IslandHouse (local census d32816ce + phase-2 tip),
+d101/d107 own the Ice passes (the `GenPassNameID.IceBiome` = "Generate Ice
+Biome" name fix, `GenPassNameID.cs:239`, consistent on both), g37 B8 + d104
+own Spreading Grass, d106 R1 owns Grass Wall, c29 owns the dead-man's-chest
+biome, g43 owns the jungle temple. **Census correction:** the Lead's
+`ConvertGrassToDirt` does not exist in the 1.4.5.8 decompilation (0 hits
+tree-wide) — the real units are `Convert` (`WorldGen.cs:55085`) and
+`SpreadGrass` (`:75146`), both landed (M5-SPREAD-2 / S1-K-3b).
+**First unclaimed residual:** the `DesertBiome.Place` entrance family
+(`desert_entrances.rs`, no branch since ab6c11f7). The shape-level port
+(97a7db29) skipped the stochastic modifiers and approximated three chains.
+Seventeen deviations found and closed verbatim (the full line-by-line list
+is in research 222, renumbered from 94); the load-bearing ones:
+* `Shapes.Circle` (`Shapes.cs:33-49`) is a **y-major** row walk with the
+  `(hr+1)²` inflation — not a normalised ellipse, and not x-major. With
+  `Blotches` drawing per cell the visit order is part of the RNG ledger.
+* `Modifiers.Blotches` (`Modifiers.cs:126-146`) lands at all five sites
+  through the shared `mini_biomes::blotched_gen_shared` seam (the S1-K-2
+  wave-C body, exposed `pub(crate)` — no second copy).
+* `Actions.Smooth` (`Actions.cs:608-622`) runs the anthill tail
+  (single-cell) and the larva mouth (`Offset(0,1)+Expand(1)+IsSolid`,
+  neighbours-first) on the g40-P1 `biomes::tile_smooth_slope{,_one}` seams
+  (exposed `pub(crate)`).
+* `Actions.SetTile` (`Actions.cs:203-236`) is `Clear(~(Wiring|Actuator))`
+  (`Tile.cs:744-790`) — the **wall does not survive** (the old port used
+  `ResetToType`); `Actions.ClearTile` keeps kind/wall/liquid
+  (`Tile.cs:123-128`, the `clear_tile_keep` seam); `Modifiers.IsSolid` is
+  `SolidOrSlopedTile` (`Modifiers.cs:561-571`) — slopes/half-bricks pass.
+* The chambers' `OuterOutline` walks the RECORDED `ShapeData`'s 8-neighbour
+  exterior (`ModShapes.cs:28-71`), the tunnel `Rectangle(2,4)` sits at
+  `(0,0)` (not centred) and its chain order is load-bearing — the 397
+  `SetTile`'s Clear wipes the wall the `Expand(1)` just placed (no trailing
+  `PlaceWall`, unlike the outline chain); `NotInShape` filters the rect
+  cell only, not the expansion; the direction draw `Next(2) != 0 ? 1 : -1`
+  was INVERTED in the old port (`chance(2)` returned +1 on the zero draw).
+* The pit `SmootherStep` carries the C# f32-π literal
+  `3.1415927410125732` (`PitEntrance.cs:70`) — the old port dropped the
+  multiply (the taper closed far too early); the bowl depth is
+  `min(10, (hr-|k|)²)` (`:50`), not `min(num6, min(10, num6²))`.
+* `Shapes.Tail`'s `ToTileCoordinates` floors (`(int)v >> 4`,
+  `Utils.cs:1812-1815`) — the old truncation differed on negatives.
+**P2 — the entrance gate** (`DesertBiome.cs:23`): `!tenthAnniversaryWorld
+&& NextDouble() <= ChanceOfEntrance && !extraLiquid.Enabled`. The
+anniversary seed short-circuits BEFORE the fraction draw; extraLiquid
+draws it then skips (the && order kept). `ChanceOfEntrance` now reads the
+embedded `Biomes.DesertBiome` JSON 0.5 through the `CreateBiome` lookup
+(`WorldGenConfiguration.cs:27-34`) — the C# field default 0.3333 only
+applies when the entry is absent.
+**Kept deviations:** the `ShapeData` HashSet iteration order is
+.NET-unspecified — the port pins insertion order (the RNG-free outline
+chain is outcome-order-independent: a converted cell fails `OnlyTiles(53)`
+on any later visit; the larva Smooth chain is order-dependent in C#
+itself). The `SquareWallFrame`/`TileFrame` framing rides the post-pipeline
+seam. The hive carve's `PostPlacementEffect.Smooth`
+(`DesertHive.cs:197,216-218`) closed with the W4-g40 hive-smooth slice
+(research 248 §2 — the effect map + the post-carve walk on the
+`tile_smooth_slope_one` seam, RNG-free). `structures.AddStructure(area,
+10)` (`DesertBiome.cs:43-44`) is the NON-protected list no ported
+`CanPlace` reads (`StructureMap.cs:19-52`) — a documented no-op, the
+thin-ice precedent.
+**RNG/hash:** the entrance Blotches draws land on the `Full Desert`
+per-pass stream only — no other pass's ledger moves. Both `DEFAULT_WORLD`
+and `SEED42_512` may move BY DESIGN (the 512 world's 36-wide desert band
+can fire the entrance fraction); the re-pin is DEFERRED to the merge gate
+(no compiler on this branch). `a == b` stays green: 15 witnesses WRITTEN
+NOT RUN — the Blotches ledger replayed independently, the circle walk
+order/extents, the SetTile mask, the IsSolid slope arms, the π literal,
+the squared bowl, the shifted larva shape, the direction draw, the
+anniversary stream separation, and the per-kind end-to-end replay.
+## The desert/marble family FINAL (W4-g40 close-out, code-only, 2026-11-21)
+Research `248-w4g40-desert-marble-final.md` (renumbered 246-248 at the batch-B merge - g43 owns 246) is the lane-closing record
+(the census doc renumbered 94→222 per the d54 research/150 registry).
+Three census verdicts retire the dispatch's open questions: (1)
+**marble/granite MUSIC and runtime GROWTH do not exist in vanilla** —
+`MusicID.cs` has no marble/granite track, `UpdateAudio_DecideOnNewMusic`
+(`Main.cs:12175-12988`) and the `Convert`/`Grow*` families never read
+`ZoneMarble`/`ZoneGranite` or tiles 367/368 as a source; the zones' only
+runtime consumers are `Player.UpdateBiomes` and the out-of-scope RGB
+conditions. (2) The marble/granite SPAWN arms
+(`SetSpawnFlagsForChosenTile` `NPC.cs:1058-1141` + the cavern ladder
+`:5019-5042` — Medusa 480/Hoplite 481/GraniteGolem 482/GraniteFlyer 483)
+are UNCLAIMED at every tip but kind-gated on d40's roster merge —
+TASK-SEED with the prerequisite named, not ported (the
+consume-without-kind deviation). (3) The last unclaimed worldgen
+residual — the `DesertHive.PostPlacementEffect.Smooth` map
+(`DesertHive.cs:210-221`, the four mark sites `:284/:315/:331/:358`) —
+landed this round: `place_clusters_area` fills the hive-local effect
+grid, `full_desert` runs the post-carve x-major
+`Tile.SmoothSlope(applyToNeighbors:false)` walk on the
+`biomes::tile_smooth_slope_one` seam BEFORE `AddTileVariance` (the C#
+`Place` order). RNG-free; the shell edges gain slope/half-brick states,
+so both hash pins are stale-by-design where the hive fires (re-pin
+deferred); 3 witnesses WRITTEN NOT RUN. Compose maps measured hunk-by-hunk
+(research 248 §3): f42's sandstorm/mummy-tail vs g40's desert growth are
+disjoint (the only shared file `audio.rs` carries disjoint SFX-vs-MUSIC
+hunks); g17's ShakeTree/palm-ash hunks bracket g40's fossil-shatter and
+growth hunks without overlap in `editing.rs`/`kill.rs`/`growth.rs`; the
+BIOME-music ladder is g40's lane (P2) — g22/g23 own the MENU title-track
+ladder and cue plumbing only, keep-all-three with no duplicate arm.
+## W4-d106 worldgen lane 6 — retire-phase fidelity notes (2026-11-21, code-only)
+The full retire record is `docs/research/312-d106-worldgen-6-retire-final.md`
+(the overlap census, the keep-one drop-hunks, the pin schedule, the family
+declaration; RENUMBERED 240→281→312 per registry-150 §9 UNIFIED FINAL
+(d54 tip `b243c7086`), §9.2 row 312 — 240 belongs to g58's earlier executed
+push, the round-2 281 self-pick collided with f26's §7.3 assignment).
+The three behaviour-relevant facts:
+- **Gen-time `kill_tile(..., true)` is NOT a deviation.** The C#
+  `WorldGen.KillTile` forces `noItem = true` whenever
+  `isGeneratingOrLoadingWorld` (`WorldGen.cs:63546-63549`, the flag set at
+  `:6612` for the whole generation), so every gen call site's explicit
+  `true` encodes the vanilla override — the 2-arg C# calls' `false`
+  default never survives to the drop path at gen. Receipt for e20
+  research-148 §3a; covers all d106 R3/R4/R5/R6 kill sites.
+- **The `ClearBrokenTraps` two-list swap keeps leftovers** (e20
+  research-148 §3b, FIXED): `Utils.Swap` (`WorldGen.cs:26856`) does not
+  clear the swapped-in list; cells left by the 2000-pop inner cap are
+  processed in later outer waves. The port's `t2.clear()` dropped them;
+  removed. Only >2000-pop wired blobs are affected; draw-free.
+- **The Final Cleanup stream is ONE instance** (g36 matrix-88 §6.4):
+  the poo scatter and the ShimmerCleanUp ellipse jitter draw on the same
+  per-pass genRand in C#; the port now threads one
+  `pass_rng("Final Cleanup")` through both (a fresh stream at the cleanup
+  call replayed the scatter's draws). The flag-gated Finish* hosts keep
+  their own name-seeded streams (the M5-SEED-1 deviation, unchanged).
+  Also executed: the stalactite moss-support membership reads the
+  GENERATED `tiledata::TILE_MOSS` (627 was missing from the local union —
+  research-96 §3 point 5).
+Witnesses for all three are WRITTEN NOT RUN (code-only branch); both
+classic hash pins stay stale-by-design, the sequential re-pin schedule is
+research-312 §4.
+## Dungeon room-content RETIRE (W4-f24, code-only)
+The f24 room-content lane is CLOSED (research/337, renumbered 243→337 per
+registry-150 §9 — g58 WINS 243; the FINAL + the
+room-content-family declaration). The dispatch's "skyblock room-content"
+scope is adjudicated NONE: `Skyblock.denyAllGeneration =>
+WorldGen.skyblockWorldGen` (`WorldGen.cs:3131`) gates every dungeon
+registration (`:14753/:14759`), and `GenerateSkyBlockWorld` ends with
+`dungeonX/Y = -1` (`:22792-22793`, ported `skyblock.rs:1483`) — no
+skyblock-specific dungeon content exists to port.
+Two genuinely unclaimed drunk variants landed this round, both
+flag-gated (a classic world burns the identical ledger; both classic
+hash pins stay):
+- **R3 (9ee1477b)** — the drunk/noSurface spike scan-row arms
+  (`DungeonGlobalSpikes.cs:41-44` floor vs `:138-141` ceiling). The C#
+  pair is ASYMMETRIC: the floor redraws under `drunk || noSurface`, the
+  ceiling under `noSurface` ONLY — kept verbatim. Both redraws consume a
+  SECOND `Next` (the double-draw quirk); `gen_pos_y` is the start-row
+  proxy for `genVars.generatingDungeonPositionY` (the `:399-400`
+  topmost-room move needs the room list — cited skip).
+- **R3b (7e02e61e)** — the legacy-path drunk wall re-roll
+  (`DungeonCrawler.cs:94-108`): one extra `Next(3)` after the colour
+  switch overrides ONLY `brickWallType` to 7/8/9. B5 landed the twin in
+  the dual producer (`dungeon_genvars::roll_dungeon_color`); this is the
+  legacy `generate_dungeon` copy. The drunk shell-pin witness is
+  re-derived structurally (the exact drunk pin rides the merge gate).
+Deliberate deviations / cited skips (the wiring round's seams): the
+entrance-object arms (`LegacyDungeonEntrance.cs:67-70/:584-614` direction
+flip + drunk shell rewrite, `DungeonCrawler.cs:411-414`
+`createdDungeonEntranceOnSurface`) and the room-list arms (Doors/
+Platforms/BiomeChests/BasicChests/Early/Late + the GroundFurniture
+placement tail `:555-857`) need the `DungeonRoom`/`DungeonHall` object
+lists the port's shape-level crawler does not build. The
+`LegacyEntranceDungeonHall.cs:84-88` drunk flip is DEAD on the port's
+precalculated path (the `base.calculated` arm `:89-96` overwrites it).
+Keep-one receipts: the g43 temple lane is DISJOINT (the jungle temple
+`makeTemple` vs the dual-dungeon Temple STYLE — keep both); the c30
+dither-snake lane (8f5f10861, 00:45:18) duplicates f24's B1–B6 (claimed
+00:09:38, wired 00:42:59) — f24 is the keep-one survivor, c30 the
+fold-source (its `roll_dungeon_location` the one unique helper, superseded
+by the span planner's dungeon anchor); the merger must NOT double-register
+the `:14755` slot. Witnesses WRITTEN NOT RUN; no cargo/tests/rustfmt/
+graphify invoked.
 ## The special-seed worldgen branches (W4-d107)
 
 Task `task/W4-d107-worldgen-special-seeds` (2026-11-20, code-only mode - no
@@ -84085,3 +85597,172 @@ contract** stands mutual against its SEALED research/149
 witnesses transfer/re-point, its anchors row repointed not deleted).
 The §6 merge checklist in research/273 is the lane's complete
 hand-off; no further g61 commits are planned.
+
+## Birthday-party second half (W4-f41)
+The three unclaimed party-furniture slices land (c39 owns the event
+triggers/hats/bubbles; this lane took the items):
+- **The right-click arms** (`Player.cs:32278-32284`/`:32600-32605`):
+  `edit::interact_at` gains the `PartyMonolithToggle` (455) kind-literal
+  arm ahead of the registry lookup (the dials/banks shape — the def
+  carries `Interaction::None`). The app arm rides
+  `world_sim/editing/doors.rs::interact_tile`: the monolith plays the
+  case-28 mech cue on the UpdatePlayers stream (the switch-click path's
+  one `Next(-10,11)*0.01` behind the playing guard) then flips
+  `manual_party` with the THROW_A_PARTY up-edge (the wiring drain's
+  identical body). The cake's 621 right-click (SugarRush 192/7200 + the
+  Item2 cue) rides **W4-f34's `StationBuff` route** — the seven-row kind
+  match `621 => Some((192, 7_200))` + the shared `add_buff`-then-cue app
+  arm (the unpitched e28 stand-in is f34's recorded deviation). This
+  lane's `CakeSlice` variant/dispatch/app arms and their two witnesses
+  were DROPPED in the union-exec (research/70 §5 drop 6 — the f34 route
+  is the anchor-bearing superset); folding this lane's faithful pitched
+  case-2 play (`play_npc_item_cue(2, …)`, the `Next(-6,7)*0.01` draw)
+  into the `StationBuff` arm was the recorded follow-up (§1f) —
+  **LANDED in the final sweep** (b4ca66e9, research/70 §8a): the 192 row
+  now plays the faithful pitched cue on the UpdatePlayers stream; the
+  other six rows keep the e28 unpitched stand-in. **Census**: tile 457 (the
+  party present) has NO right-click arm in the C# chain, and item 3749 is
+  NOT in `ItemID.Sets.OpenableBag` (`ItemID.cs:1384`) — the present is
+  place/break-only; `OpenPresent` fires for 1869 alone
+  (`ItemSlot.cs:1852-1855`).
+- **SugarRush** (`Player.cs:9935-9939`): `pickSpeed -= 0.2` (the port's
+  positive-bonus convention, the Mining-104 precedent) +
+  `moveSpeed += 0.2` per live slot, rebased every tick. The union keeps
+  **W4-f34's byte-identical `192 =>` arm** (two arms in one match would
+  not compile — research/70 §5 drop 5); this lane's rebase/expiry
+  witness (`w4_f41_sugar_rush_speeds_the_pick_and_the_run`) stays in the
+  union beside f34's verbatim-arm witness (disjoint aspects, §4).
+- **The break records**: 455 joins `check_3x3_bottom`'s dispatch (the
+  `:53114` support group via the `:85526` gate; drop `case 455` → 3747
+  `:53224`); 621 joins the renamed `check_2x2` (the `:85796` group; drop
+  `case 621` → 3750 `:48609`); 457 gets `check_2x2_style` verbatim
+  (`Check2x2Style` `:52293-52436` via the `type != 457` gate `:85649` →
+  `goto case 254` `:85950`): the `:52300-52314` style decode, the
+  `:52323` **frameX-ONLY** integrity scan (frameY is never read), the
+  `:52328` floor gate, drop 3749 `:52395`, the 4x4 tail ring via
+  `region_ring`. The candelabra/sink slice keeps its deferred-pop
+  convention (ring: None) — recorded.
+- **The freeCake gift chain** (the reconciled union form, research/70 §3
+  — EXECUTED on this branch): `NPC.freeCake` rides `WorldEvents`
+  (field-placement deviation — its writers are all party-machine sites:
+  `NaturalAttempt` `:106` arms, StartNight `Main.cs:65222` and clearWorld
+  `WorldGen.cs:6945` clear). **f38's `Npc.next_dialogue`** stands in for
+  the one-row `ConditionalDialogue` registry (`Init` `:124` registers
+  FreeCakeDialogue(208) alone); the `check_dialogue`/`pending_dialogue`/
+  `conditions_met` helpers (`npc_chat.rs`) carry `CheckDialogue`'s
+  `(GameUpdateCount + whoAmI) % 10` replace-on-poll + between-poll
+  condition-fall clear (`NPC.cs:90519-90532`), called per-NPC from
+  `update_npcs` behind the **`hp > 0` CALLER gate** (f41's alive check
+  moved to the caller — `UpdateNPC` never runs for a corpse; the
+  predicate itself stays freeCake-only). The talk seam
+  (`talk_to_npc`) drains the gift's side effects **BEFORE** the text
+  draw (d120/f41 order — `ConditionalDialogue.cs:60-65` gifts at `:64`
+  THEN draws at `:65`): `free_cake = false`, ONE SliceOfCake 3750
+  prefix-free via a single `slot_for_pickup` (`count += 1`;
+  `SetDefaults(3750)` + `QuickSpawnItem(GiftRecieved)`), the
+  `GetOrDropItem` overflow dropping at the player centre on
+  `rngs.global()` behind `if let Some(p)` (no invented fallback site);
+  **then** `get_chat`'s head (`:93768-93771`, inside `get_chat` ahead of
+  the ladder) answers `PartyGirlSpecialText.Cake<Next(1,4)>` on the same
+  bare-Main.rand stand-in (the talk sits outside every SwapRandom stage,
+  S1-A-10); **then** the latch clears — the C# leaves `nextDialogue`
+  until the next poll tick; the early clear is unobservable (the
+  same-NPC re-talk declines `:43077`) and recorded (§3 latch-clear
+  note). The `NetMessage.SendData(51)` NPC-effect broadcast is the net
+  lane's. The merger grafts this chain onto d120's canonical `GetChat`
+  ladder body + f38's naming/broadcast layer + f34's `StationBuff`
+  route (research/70 §2 KEEP sheet).
+in ≤100-line reads; the union-exec witness set is 18 tests WRITTEN NOT
+RUN (the 15 original minus the 2 dropped CakeSlice witnesses, plus f38's
+3 kept chain witnesses and d120's 2 pinned-draw witnesses RE-DERIVED to
+latch the row first per research/70 §4) — no cargo/rustc/tests/graphify
+invoked.
+### Final sweep (2026-11-21, research/70 §8)
+Six commits on top of the union (b4ca66e9, be4cb841, eec344ce, 73f4f4d4,
+9bab93f3, 5ab4a25d):
+- **§8a** f34's `StationBuff` keep-one + the single `192 =>` arm landed
+  here, the cake row's cue upgraded to the pitched case-2 play (the §1f
+  follow-up, its own noted change); f34's neighbour no-draw witness
+  re-derived (621 → the new pitched-roll witness), Item_149/Item_179
+  registered.
+- **§8b** the party-gift shop rows: `StockWhen::PartyUp`/`LanternsUp`/
+  `Day`, the Merchant's 5643 + the Party Girl's eleven-row gift block in
+  the C# num order + the 4702 lantern row, live `party_is_up`/
+  `lanterns_up` feeds at the shop-open seam; the 1449/4552 Always+Night
+  double-stock bug fixed to the C# if/else. Census: PartyBullet 1349 is
+  break/craft-only; ConfettiGun is 1000 (5089 = GlommerPetItem).
+- **§8c** the monolith 455 placement was ALREADY complete (item row +
+  D_455 Style3x3 def + the registry route); 2 end-to-end witnesses added,
+  nothing wired.
+- **§8d** the player-worn Party Hat: item 3732 headSlot 195 is a VANITY
+  head (no C# Player.partyHat field exists — the NPC hat family is
+  c39's); the hatHair ALT-hair-under-hat draw + the vanity-head feed
+  resolution (`Player.cs:35765`) + the gated G6 key input landed.
+- **§8e/§8f** the natural-start gates are ALL claimed (c39: anniversary
+  Next(7), can_npc_party, roster prune; f38: dawn/dusk broadcasts) —
+  census comments only, nothing ported; c39's research/114 does not
+  exist, its cake lane cross-read instead with keep-one DROP verdicts
+  recorded for the eventual merge.
+All final-sweep witnesses WRITTEN NOT RUN (code-only).
+### Party closeout (2026-11-21, post-final-sweep)
+- **The Pigronata break loot** (research/70 §8g, 97724ea7): the C# sends
+  tile 454 to `CheckChand` alongside the chandelier 34
+  (`WorldGen.cs:85510-85513`); the port only dispatched 34, so the
+  Pigronata had no integrity check and no loot. `check_chandelier` is now
+  kind-parameterised (the 4-wide style walk, the 37-row second-block skip,
+  the ox+1 ceiling anchor — one LEFT of the registry origin column, the
+  `nactive` gate verbatim; the old stand-in's liquid allowance and
+  Check3x3 attribution were not the C#), the kill loop wraps
+  `destroyObject`, and the tail is the FULL (width+2)x5 `TileFrame` ring
+  (outer-x/inner-y) for BOTH 34 and 454 — the other checks keep the
+  8-point perimeter sample. The 454 break records one `PigronataEvent` at
+  the checked cell; the app resolves the `Next(9)` table
+  (`:52880-52963`) on the UpdatePlayers stream — silver rain (2/3/4),
+  silver + Flask of Party 1358 (5/6), silver + one Gold 73 (7), the
+  jackpot 100 silver + 30-90 PartyBullet 1349 + flask + gold (8), the
+  clamp-to-budget stack loops verbatim; not `noItem`-gated (the pot/pile
+  convention). Recorded deviation: the C# spawns the loot in 32x32/52x52
+  rects around the cell; the port's drop spawn folds the rect into the
+  cell-origin pop (the house convention). The break dust is g14's claimed
+  `KillTile_MakeTileDust` 454 => 139 confetti row — not re-ported. 34's
+  drop record unchanged (the chandelier style rows stay its lane's).
+  5 witnesses WRITTEN NOT RUN.
+- **The party-center-of-attention census** (research/70 §8h, d118ff9d):
+  NO C# gathering behavior exists — town NPCs do not cluster near the
+  party-giver; `AI_007_TownEntities` reads home tiles only. Every party-NPC
+  site is co-lane-claimed (b3 talk-gate wiring + party_up feed, c39/d55
+  hats, d120 chat, b1 slime insides, spawner PartyBunny, UI emotes, wiring
+  bunny-statue, town-spawn 678 gate, seed afterPartyOfDoom, worldgen
+  starting roster); census comment at the npc_ai_town.rs talk gate,
+  nothing ported.
+- **The 114 receipt** (research/70 §8i): c39's pushed tip 8ecb288a carries
+  research/114 §7 EXECUTED; its cake-side drops name f41c f1f95be4
+  canonical — §8f's verdicts agree. The f34-StationBuff merge-scope piece
+  is ALREADY carried by this branch (b4ca66e9: the seven-row dispatch, the
+  pitched-cue app arm, the single 192 arm, the cues/witnesses/TR_TOGGLE
+  arm) — the merger drops f34's duplicate dispatch/app/192 hunks and keeps
+  this branch's anchor-bearing superset; f34's non-party scope (the
+  honey-contact grant, the 366 player arm + reset, the +2/+2 regen fold
+  and their witnesses) stays f34's own merge.
+**SEALED (research/70 §9)** — the party-family bible + the four co-lane
+receipts close the lane: (9a) c39 retired `7dd785dc5` — its cake-side
+drops name f41c canonical (the §8f verdicts stand), the hats are
+DISJOINT (this branch's player vanity 3732/head 195 vs c39's NPC
+`party_hat.rs` draw layer — both keep), the scheduler fold's mechanical
+re-derive census (the clock feed + 7 witness sites gain the
+`tenth_anniversary` arg), and the shop case-13 superset survives f40's
+`LanternNight→LanternsUp` rename (105 §9.2) + the g58/d122
+no-party-rows census; (9b) b3 phase-1 receipt — the aiStyle-7 axis
+(npc.rs:4722) + adapter (:10121) are b3's, the live `party_up` feed is
+its phase-2 contract (npc.rs:10160 still false; the source expression
+is the shop-feed precedent `world_events::party_is_up`), the
+party-center-FALSE census confirms the talk gate + facing machine are
+the ONLY party town behavior — nothing else to wire; (9c) the EXACT
+f34-drop-hunks published (10 hunks with f34-tip line numbers + the
+surviving superset forms; the neighbour no-draw witness must not
+survive as written — 621 now draws the pitch roll) + the non-party KEEP
+list verified absent here; (9d) the g14 loot-vs-dust DISJOINT receipt —
+dust = `KillTile_MakeTileDust` 454=>139 + `Next(4)` confetti
+(WorldGen.cs:66946-66948/:69156-69158, g14's worldgen_dust_tile.rs:2070/
+:1721, witness :1883), loot = this branch's CheckChand `Item.NewItem`
+block (kill.rs carries zero dust references); no overlap at the merge.

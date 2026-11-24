@@ -224,6 +224,9 @@ impl WorldGenJob {
                     world.world_id = identity.next_max(i32::MAX);
                     let side = tr_core::save::WorldSide {
                         chests: world.chests.clone(),
+                        // W4-g38 C5: the gen-time starter town NPCs ride the
+                        // save's native section (the SpawnStarterNPCs pass).
+                        npcs: world.starter_npcs.clone(),
                         ..Default::default()
                     };
                     match tr_core::save::save(&path, &world, &side) {

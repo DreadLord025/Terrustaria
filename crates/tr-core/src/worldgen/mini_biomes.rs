@@ -60,7 +60,7 @@ use crate::world::World;
 /// `WorldGen.SolidTile` (`WorldGen.cs:70111-70131`) — the same fold the
 /// `evil` pass's copy carries (out-of-bounds reads as solid, no
 /// `tileSolidTop`, no half-brick, no slope).
-fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };
@@ -710,7 +710,7 @@ fn set_tile_clear(world: &mut World, x: i32, y: i32, kind: u16) {
 /// the kind, wall, frames and liquid survive (unlike the micro passes'
 /// whole-tile `clear`). The `frameNeighbors` re-framing rides the deferred
 /// framing seam.
-fn clear_tile_keep(world: &mut World, x: i32, y: i32) {
+pub(crate) fn clear_tile_keep(world: &mut World, x: i32, y: i32) {
     let Some(t) = world.tile_mut(x, y) else {
         return;
     };
@@ -1260,6 +1260,22 @@ fn blotched_gen(
     }
 }
 
+/// The shared `Modifiers.Blotches(scale = 2)` seam (W4-g40 entrance
+/// residual): the desert entrances' five Blotches sites
+/// (`AnthillEntrance.cs:26`, `LarvaHoleEntrance.cs:27`,
+/// `ChambersEntrance.cs:29,44,49`) draw on the same chain semantics —
+/// a thin `pub(crate)` wrapper over [`blotched_gen`], no behaviour change.
+pub(crate) fn blotched_gen_shared(
+    world: &mut World,
+    rng: &mut super::Rng,
+    cx: i32,
+    cy: i32,
+    scale: i32,
+    apply: &mut impl FnMut(&mut World, i32, i32),
+) {
+    blotched_gen(world, rng, cx, cy, scale, apply);
+}
+
 /// `Modifiers.OnlyTiles` (`Modifiers.cs:233-257`): the cell must be
 /// active AND of a listed kind (unlike `SkipTiles`, inactive cells FAIL).
 fn only_tiles(world: &World, x: i32, y: i32, kinds: &[u16]) -> bool {
@@ -1461,7 +1477,7 @@ pub(crate) fn place_honey_patches_around(
 // (3.6 KB) is the first small unported one. Wave C took `ThinIceBiome`.
 
 /// `WorldGen.InWorld(x, y, fluff)` — the padded bounds check.
-fn in_world_fluff(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+pub(crate) fn in_world_fluff(world: &World, x: i32, y: i32, fluff: i32) -> bool {
     x >= fluff && y >= fluff && x < world.width - fluff && y < world.height - fluff
 }
 
@@ -1478,7 +1494,7 @@ fn is_solid_condition(world: &World, x: i32, y: i32) -> bool {
 /// `WorldGen.SolidOrSlopedTile(Tile, includePlatforms: false)`
 /// (`WorldGen.cs:69985-70009`): active, `tileSolid`, not `tileSolidTop`,
 /// not wired-inactive — slopes and half-bricks pass.
-fn solid_or_sloped(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn solid_or_sloped(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).is_some_and(|t| {
         t.active()
             && crate::tiledata::TILE_SOLID.has(t.kind)
@@ -1621,7 +1637,7 @@ fn general_placement_tile(kind: u16) -> bool {
 /// scan against `GeneralPlacementTiles`. The port's `protected` rect list
 /// is the structure-map stand-in (the same idiom the other micro passes
 /// carry).
-fn can_place_general(
+pub(crate) fn can_place_general(
     world: &World,
     area: (i32, i32, i32, i32),
     protected: &[(i32, i32, i32, i32)],

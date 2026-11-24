@@ -1054,6 +1054,9 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
     // reads it as the store, nothing re-rolls.
     let side = tr_core::save::WorldSide {
         chests: world.chests.clone(),
+        // W4-g38 C5: the gen-time starter town NPCs ride the save's native
+        // section (the SpawnStarterNPCs pass).
+        npcs: world.starter_npcs.clone(),
         ..Default::default()
     };
     tr_core::save::save(&path, &world, &side)?;

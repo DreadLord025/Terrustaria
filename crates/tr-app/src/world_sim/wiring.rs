@@ -1153,6 +1153,9 @@ fn fountain_anchored(app: &App, ai0: f32, ai1: f32) -> bool {
 
 /// The shared spawn: the port's pool when the family has `ProjData`, a silent
 /// drop otherwise (the ANALYSIS note lists the missing aiStyle families).
+/// Returns the spawned slot so the caller can apply the C# `SetDefaults`
+/// flags the pool's spawn defaults overwrite (the flame jet's
+/// friendly-false flip — the W4-d4 drain lift, keep-one union).
 fn spawn_device_kind(
     app: &mut App,
     kind: u16,
@@ -2184,6 +2187,32 @@ mod tests {
             .filter(|p| p.active && p.kind == crate::projectile::TRAP_SPIKY_BALL)
             .count();
         assert_eq!(live, 2, "one cap decision, two spawns");
+    }
+
+    /// The temple style-2 flame trap (`Wiring.cs:1772-1801`'s variant 2,
+    /// frameY 36): the jet 187 now SPAWNS through the drain (the W4-g43
+    /// row + the W4-d4 machine, keep-one union) with the C#'s stock
+    /// friendly/hostile FALSE — the spawn site flips the pool's
+    /// friendly-true default off (`Projectile.cs:2741-2751` sets neither
+    /// flag; the jet's damage rides its 188 children). frameX 18 → +1 X:
+    /// the jet spawns at `(10*16+8+10, 20*16+8)` = (178, 328) with
+    /// velocity (5, 0), damage 40, knockback 2. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g43_the_flame_trap_spawns_the_jet_friendly_false() {
+        let mut app = app_with(137, 18, 2 * 18);
+        trip_and_tick(&mut app);
+        let jet = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::FLAMETHROWER_TRAP)
+            .expect("the 187 jet spawns (the style-2 trap fires)");
+        assert_eq!(jet.pos, Vec2::new(178.0, 328.0), "the +10 px X offset");
+        assert_eq!(jet.vel, Vec2::new(5.0, 0.0), "the flame speed 5");
+        assert_eq!(jet.damage, 40);
+        assert_eq!(jet.knock_back, 2.0, "the shared trap knockback 2f");
+        assert!(!jet.friendly, "the spawn site flips the friendly default off");
+        assert_eq!(jet.time_left, 60, "the row's 60-tick life");
     }
 
     #[test]
