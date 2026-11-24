@@ -315,14 +315,6 @@ pub struct World {
     pub downed_mech_boss3: bool,
     pub downed_mech_boss2: bool,
     pub downed_plant_boss: bool,
-    /// `NPC.EoCKilledToday` / `NPC.WoFKilledToday` (`NPC.cs:6611-6613`,
-    /// W4-f35): the Badger's Hat latches — the boss death heal feed
-    /// (`DoDeathEvents_DropBossPotionsAndHearts`, `:79003-79015`) sets
-    /// them, the hat drops + both clear when both are up; the dusk
-    /// transition resets both (`Main.cs:65221` `ResetBadgerHatTime`).
-    /// Runtime-only (the C# statics are not saved).
-    pub eoc_killed_today: bool,
-    pub wof_killed_today: bool,
     /// The Goblin Army invasion (`Main.invasionType = 1`).
     pub invasion_goblins: bool,
     /// The remaining invasion enemies (`Main.invasionSize`).
@@ -401,25 +393,6 @@ pub struct World {
     /// (`DoDeathEvents` case 109, `:79376-79384`). The Clown kind is
     /// unported, so the latch has no live setter yet — the file round-trips.
     pub downed_clown: bool,
-    /// `NPC.downedEmpressOfLight` (`NPC.cs:6393`): the event flag 23
-    /// (`DoDeathEvents` case 636, `:79351-79352`). The HallowBoss kind is
-    /// unported (R7), so the latch has no live setter yet.
-    pub downed_empress_of_light: bool,
-    /// `NPC.downedHalloweenKing` (`NPC.cs:6373`): a Pumpking killed while
-    /// the Pumpkin Moon is up (case 327, `:79210-79215`, event flag 5).
-    pub downed_halloween_king: bool,
-    /// `NPC.downedHalloweenTree` (`NPC.cs:6371`): a Mourning Wood killed
-    /// while the Pumpkin Moon is up (case 325, `:79216-79221`, flag 4).
-    pub downed_halloween_tree: bool,
-    /// `NPC.downedChristmasIceQueen` (`NPC.cs:6375`): an Ice Queen killed
-    /// while the Frost Moon is up (case 345, `:79228-79233`, flag 20).
-    pub downed_christmas_ice_queen: bool,
-    /// `NPC.downedChristmasSantank` (`NPC.cs:6379`): a Santa-NK1 killed
-    /// while the Frost Moon is up (case 346, `:79234-79239`, flag 22).
-    pub downed_christmas_santank: bool,
-    /// `NPC.downedChristmasTree` (`NPC.cs:6377`): an Everscream killed
-    /// while the Frost Moon is up (case 344, `:79222-79227`, flag 21).
-    pub downed_christmas_tree: bool,
     /// The Skeletron Prime head's centre + the present flag (the limbs'
     /// tether reads — the WoF write-through shape).
     pub prime_present: bool,
@@ -527,10 +500,6 @@ pub struct World {
     /// `NPC.cs:19142-19147` — the 685 → 679 transform raises it once, then
     /// re-pushes `7 WorldData`) — the same standing-in (W4-g51 id-140).
     pub unlocked_slime_old_spawn: bool,
-    /// `NPC.unlockedSlimeCopperSpawn` (`NPC.TransformCopperSlime`,
-    /// `NPC.cs:19166-19171` — a `CanConvertIntoCopperSlimeTownNPC` NPC →
-    /// 684 raises it once) — the same standing-in (W4-g51 id-140).
-    pub unlocked_slime_copper_spawn: bool,
     /// `CreditsRollEvent._creditsRollRemainingTime`
     /// (`CreditsRollEvent.cs:10`) — the end-game credits roll's remaining
     /// frames, clamped 0..28800 (`:8`'s MAX_TIME). A private static in the
@@ -542,9 +511,6 @@ pub struct World {
     /// 678's arrival; the doom party clears it, `Main.cs:17940`). The town-slime
     /// kinds are unported, so the latch round-trips (W4-f45).
     pub unlocked_slime_green_spawn: bool,
-    /// `NPC.unlockedSlimeOldSpawn` (`NPC.cs:19147` — `TransformElderSlime`, the
-    /// bound 685's rescue). Unported kind; the latch round-trips (W4-f45).
-    pub unlocked_slime_old_spawn: bool,
     /// `NPC.unlockedSlimePurpleSpawn` (`NPC.cs:81774` — the bound 686's death
     /// transforms it to the Town Slime Purple 680). Unported; round-trips.
     pub unlocked_slime_purple_spawn: bool,
@@ -552,9 +518,6 @@ pub struct World {
     /// projectile transforms the bound 687 to the Town Slime Yellow 683).
     /// Unported; the latch round-trips (W4-f45).
     pub unlocked_slime_yellow_spawn: bool,
-    /// `NPC.unlockedSlimeCopperSpawn` (`NPC.cs:19171` — `TransformCopperSlime`,
-    /// the convertible town NPC's shimmer). Unported; round-trips (W4-f45).
-    pub unlocked_slime_copper_spawn: bool,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
@@ -580,25 +543,6 @@ pub struct World {
     /// `town_arrival`'s tail arms (`Main.cs:65900-65911`).
     pub bought_cat: bool,
     pub bought_dog: bool,
-    /// `NPC.combatBookVolumeTwoWasUsed` (`WorldFile.cs:1407` write / `:2418`
-    /// read, v259+; the use arm `Player.cs:45337-45349`, item 5336). The g89b
-    /// boosters lane co-claims the consumer (`npc_ai_town.rs`'s `combat_book_two`
-    /// env); the file round-trips the latch (W4-f45).
-    pub combat_book_volume_two_was_used: bool,
-    /// `NPC.peddlersSatchelWasUsed` (`WorldFile.cs:1408` write / `:2426` read,
-    /// v260+; the use arm `Player.cs:45368-45383`, item 5343). The g89b lane
-    /// co-claims the consumer; the file round-trips the latch (W4-f45).
-    pub peddlers_satchel_was_used: bool,
-    /// `NPC.boughtCat` (`WorldFile.cs:1392` / `:2358`) — the 4829 Cat License's
-    /// town-pet unlock (`ItemCheck_UsePetLicenses` `Player.cs:45354-45357`,
-    /// `NPC.UnlockOrExchangePet` `NPC.cs:80894-80918`; the use arm
-    /// `Player.cs:45356`, item 4829 -> the Cat 637). W4-g87 + the f43 town-
-    /// spawn lane's `TailFlags.bought_cat` consumer; the file round-trips.
-    pub bought_cat: bool,
-    /// `NPC.boughtDog` (`WorldFile.cs:1393` / `:2359`) — the 4830 Dog License's
-    /// town-pet unlock (`Player.cs:45358-45361`; item 4830 -> the Dog 638).
-    /// W4-g87 + the f43 lane's consumer; round-trips (W4-f45).
-    pub bought_dog: bool,
     /// `NPC.boughtBunny` (`WorldFile.cs:1394` / `:2360`) — the 4910 Bunny
     /// License's town-pet unlock (`Player.cs:45362-45365`; item 4910 -> the
     /// Bunny 656; the doom party clears it, `Main.cs:17941`). W4-g87 + the
@@ -610,29 +554,6 @@ pub struct World {
     /// the eight-flag widening the town-slime arrival arms read
     /// (`town_arrival_pets::tail_can_spawn`, `Main.cs:65912-65943`).
     pub unlocked_slime_blue_spawn: bool,
-    /// `NPC.unlockedSlimeGreenSpawn` (`WorldFile.cs:1410`, v261) — flag8's
-    /// second term (`Main.cs:65796-65799`: `GenuineParty || green`).
-    pub unlocked_slime_green_spawn: bool,
-    /// `NPC.unlockedSlimeOldSpawn` (`WorldFile.cs:1411`, v261).
-    pub unlocked_slime_old_spawn: bool,
-    /// `NPC.unlockedSlimePurpleSpawn` (`WorldFile.cs:1412`, v261).
-    pub unlocked_slime_purple_spawn: bool,
-    /// `NPC.unlockedSlimeYellowSpawn` (`WorldFile.cs:1414`, v261).
-    pub unlocked_slime_yellow_spawn: bool,
-    /// `NPC.unlockedSlimeCopperSpawn` (`WorldFile.cs:1415`, v261; the
-    /// shimmer conversion's target gate, `NPCID.cs:10120`).
-    pub unlocked_slime_copper_spawn: bool,
-    /// `NPC.combatBookVolumeTwoWasUsed` (`NPC.cs:6341`; the 5336 use arm
-    /// `Player.cs:45337-45348`, `.wld` write `WorldFile.cs:1407` / read
-    /// `:2416-2423` version ≥259) — the same world-field standing-in
-    /// (W4-g89e). The town-NPC stat ladder's second +250/×0.8/+0.25/+8
-    /// block (`NPC.cs:53025-53031`) reads it.
-    pub combat_book_volume_two_was_used: bool,
-    /// `NPC.peddlersSatchelWasUsed` (`NPC.cs:6343`, the 5343 use
-    /// `Player.cs:45370-45382`; `Chest.SetupTravelShop`'s +1 slot row
-    /// `Chest.cs:1303-1306`) — the same standing-in (W4-g90 lane 7; the
-    /// .wld flag reads from v260, `WorldFile.cs:2405`).
-    pub peddlers_satchel_was_used: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -1081,15 +1002,6 @@ pub struct World {
     /// `AI_007_TownEntities_UpdateSavedStates`): the bound bartender's
     /// rescue flag. The rescue path is unported, so the file round-trips.
     pub saved_bartender: bool,
-    /// `WorldGen.crimson` (`WorldFile.cs:1281` write / `:2080` read): the
-    /// evil biome's flavour — the generation options' `crimson` choice
-    /// (`worldgen::GenOptions.crimson`), stamped at generation.
-    pub crimson: bool,
-    /// `Main.dungeonX`/`Main.dungeonY` (`WorldFile.cs:1279-1280` write /
-    /// `:2078-2079` read): the dungeon's entrance anchor — the generator
-    /// stamps the entrance column/row (`worldgen/dungeon.rs`).
-    pub dungeon_x: i32,
-    pub dungeon_y: i32,
 
     // --- W4-f45 Ph4: the banner tally, the angler list, the spawn unlocks ---
     /// `BannerSystem.killCount[]` (`BannerSystem.cs:172-186`'s `Save`): the
@@ -1097,14 +1009,6 @@ pub struct World {
     /// owner is `App.banners` (the sparse map); the save densifies it here,
     /// the load reads it back and the App re-sparsifies (`app/mod.rs`).
     pub banner_kill_counts: Vec<i32>,
-    /// `Main.anglerWhoFinishedToday` (`WorldFile.cs:1329-1333` write /
-    /// `:2152-2156` read): the player names who handed in today's quest. The
-    /// port's single player collapses the list's meaning to the bool
-    /// `angler_quest_turned_in`, but the file carries the real name list.
-    pub angler_who_finished_today: Vec<String>,
-    /// `NPC.unlockedSlimeBlueSpawn` (`NPC.cs:79411-79414`): the King Slime's
-    /// death unlocks the Nerdy Slime (the `ViolentlySpawnNerdySlime` call).
-    pub unlocked_slime_blue_spawn: bool,
     /// `NPC.unlockedMerchantSpawn` (`WorldGen.cs:5585`): the Merchant's
     /// arrival unlock — overrides his 5000-copper gate (`NPC.cs:7177`).
     pub unlocked_merchant_spawn: bool,
@@ -1122,12 +1026,6 @@ pub struct World {
     pub unlocked_arms_dealer_spawn: bool,
     /// `NPC.unlockedNurseSpawn` (`WorldGen.cs:5591`, override `NPC.cs:7160`).
     pub unlocked_nurse_spawn: bool,
-    /// `ExtraSpawnPointManager.extraSpawnPoints` (`WorldFile.cs:1425` write /
-    /// `:2501` read, v297+; `ExtraSpawnPointManager.cs:436-456`): the team-based
-    /// extra respawn anchors as (X, Y) tile pairs — a count byte then that many
-    /// i16 pairs. The c46 respawn lane's consumer reads them; the file
-    /// round-trips the list (W4-f45).
-    pub extra_spawn_points: Vec<(i16, i16)>,
 }
 
 impl World {
