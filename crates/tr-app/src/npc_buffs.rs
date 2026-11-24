@@ -1096,6 +1096,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // W4-d41 — the critters: `{ 538..540, [31] }`
         // (`NPCID.cs:9112-9132`); the tumbler: `{ 546, [31] }`
         // (`:9168-9174`).
+        // The luck critters (W4-e26, E8 keep-one): none of 361/604/605
+        // has a `DebuffImmunitySets` row (`NPCID.cs:6075+`'s dictionary
+        // carries no entry for them) — the null-row else-branch
+        // (`NPC.cs:17822-17828`), no immunity. The Duck dropped to c10.
+        NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => &[],
     }
 }
 

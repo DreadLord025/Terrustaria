@@ -4447,6 +4447,37 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Cultist Archer",
+    // The luck critters (W4-e26, E8 keep-one): the populator registers
+    // all three (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set, `NPCID.cs:10460`). Display names ride
+    // `Lang.GetNPCNameValue` (`NPCs.json`: 361 "Frog", 604 "Ladybug",
+    // 605 "Gold Ladybug"). The Duck entry dropped to c10 (the waterfowl
+    // family's canonical owner, research/108 SEAL S1); the c8 generic
+    // sight gate auto-covers these rows at merge (research/238 §1).
+    BestiaryEntryDef {
+        credit_id: "Frog",
+        net_id: 361,
+        kind: NpcKind::Frog,
+        variant: None,
+        quick_unlock: false,
+        name: "Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "LadyBug",
+        net_id: 604,
+        kind: NpcKind::LadyBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Ladybug",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldLadyBug",
+        net_id: 605,
+        kind: NpcKind::GoldLadyBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Ladybug",
     },
 ];
 
@@ -4462,6 +4493,7 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
         entry.quick_unlock,
         full,
     )
+    }
     }
 }
 

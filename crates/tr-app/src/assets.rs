@@ -1714,6 +1714,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_378",
         "NPC_379",
         "NPC_380",
+        // W4-e26 — the luck critter sheets (`LUCK_CRITTER_SHEETS`, E8
+        // keep-one: the Duck's NPC_362 dropped to c10).
+        "NPC_361",
+        "NPC_604",
+        "NPC_605",
 ];
 
 
@@ -2669,6 +2674,7 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 187] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 184] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2747,6 +2753,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 187] = [
         // vec below). The white archer's NPC_380 is a DRAW sheet only
         // (the Hide=true fold rides 379's entry — no portrait slot).
         356, 366, 367, 377, 378, 379,
+        // W4-e26 — the luck critters (E8 keep-one: the Duck 362 dropped
+        // to c10), appended last for the same reason.
+        361, 604, 605,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -3792,6 +3801,12 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_377").copied(),
                 atlas.sheet("NPC_378").copied(),
                 atlas.sheet("NPC_379").copied(),
+                // W4-e26 — the luck critter strips (361/604/605; the
+                // Duck's NPC_362 dropped to c10, E8 keep-one), appended
+                // last so the earlier slots keep their indexes.
+                atlas.sheet("NPC_361").copied(),
+                atlas.sheet("NPC_604").copied(),
+                atlas.sheet("NPC_605").copied(),
             ],
 
 
