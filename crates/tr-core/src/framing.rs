@@ -17,7 +17,11 @@
 //! edit-time reframes reuse the stored value, re-rolling only the
 //! `SquareTileFrame` centre. The `Main.tileLargeFrames` /
 //! `Main.wallLargeFrames` lookups replace the variant per position, exactly as
-//! the C# does.
+//! the C# does. W4-d109 adds the save half: the port's `.trwld` v18 tail
+//! persists the packed variants and the full passes reuse them on such a
+//! load ([`crate::world::World::variants_from_save`]) — a port-only extension
+//! (the C# `.wld` never serializes the bits); generated worlds, retail `.wld`
+//! loads and pre-v18 saves keep the reset roll.
 //!
 //! The merge relation itself is generated into [`crate::tiledata`] from the decompiled
 //! source, so it stays in sync with the game's `TileMergeAttempt` table.
@@ -1308,7 +1312,14 @@ pub fn frame_world(world: &mut World) -> usize {
                     }
                     // Slopes and half bricks frame exactly like full blocks; the draw
                     // pass clips the sprite into the slope/half silhouette.
-                    let rolled = rng.next_range(0, 3) as usize;
+                    // W4-d109: a `.trwld` v18 load restored the variants — reuse
+                    // them (`TileFrame` resetFrame:false, WorldGen.cs:81713);
+                    // otherwise the reset roll (`:81705-81709`).
+                    let rolled = if world.variants_from_save {
+                        world.frame_number(y as usize * w + x) as usize
+                    } else {
+                        rng.next_range(0, 3) as usize
+                    };
                     if let Some((fx, fy)) = frame_of_variant(world, x as i32, y, rolled) {
                         row[x] = (fx, fy, rolled as u8);
                     }
@@ -1626,7 +1637,13 @@ pub fn frame_walls(world: &mut World) -> usize {
                     if wall == 0 || wall as usize >= td::WALL_COUNT {
                         continue;
                     }
-                    let rolled = wall_reset_roll(&mut rng, wall);
+                    let rolled = if world.variants_from_save {
+                        // W4-d109: reuse the stored `wallFrameNumber`
+                        // (`WallFrame` resetFrame:false, Framing.cs:399).
+                        world.wall_frame_number(i) as usize
+                    } else {
+                        wall_reset_roll(&mut rng, wall)
+                    };
                     if let Some((cell, variant)) =
                         wall_frame_of_variant(world, x as i32, y as i32, rolled)
                     {
@@ -2229,6 +2246,117 @@ mod tests {
         let _ = wall_reset_roll(&mut plain, 2);
         let _ = mirror2.next_range(0, 3);
         assert_eq!(plain.next(), mirror2.next());
+    }
+
+    // ---- W4-d109: the save half — a `.trwld` v18 load reuses the stored variants ----
+
+    /// With `variants_from_save` set (a `.trwld` v18 load), `frame_world`
+    /// reuses the stored `frameNumber` (`TileFrame` resetFrame:false,
+    /// `WorldGen.cs:81713`) instead of re-rolling: each interior stone cell
+    /// takes the frame its stored variant selects, and two runs are identical.
+    #[test]
+    fn w4_d109_frame_world_reuses_the_saved_tile_variants() {
+        let build = || {
+            let mut w = World::new("t".into(), 24, 24);
+            for y in 1..23 {
+                for x in 1..23 {
+                    solid(&mut w, x, y, 1);
+                }
+            }
+            // A spread of stored variants across the slab (the save restored them).
+            for y in 1..23 {
+                for x in 1..23 {
+                    let idx = w.index(x, y);
+                    w.set_frame_number(idx, ((x + y) % 3) as u8);
+                }
+            }
+            w.variants_from_save = true;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        frame_world(&mut a);
+        frame_world(&mut b);
+        for y in 2..22 {
+            for x in 2..22 {
+                let idx = a.index(x, y);
+                let v = ((x + y) % 3) as i16;
+                // Interior stone: the plain frame row, variant column.
+                assert_eq!(
+                    (a.tiles[idx].frame_x, a.tiles[idx].frame_y),
+                    ([18, 36, 54][v as usize], 18),
+                    "frame at ({x},{y}) must follow the stored variant {v}",
+                );
+                assert_eq!(a.frame_number(idx) as i16, v, "stored variant kept");
+                assert_eq!(
+                    (a.tiles[idx].frame_x, a.tiles[idx].frame_y),
+                    (b.tiles[idx].frame_x, b.tiles[idx].frame_y),
+                    "a == b across the two reuse runs",
+                );
+            }
+        }
+    }
+
+    /// With `variants_from_save` set, `frame_walls` reuses the stored
+    /// `wallFrameNumber` (`WallFrame` resetFrame:false, `Framing.cs:399`): an
+    /// enclosed normal wall takes the cell its stored variant selects, and the
+    /// value is kept (not re-rolled). Two runs are identical.
+    #[test]
+    fn w4_d109_frame_walls_reuses_the_saved_wall_variants() {
+        let build = || {
+            let mut w = World::new("t".into(), 24, 24);
+            for y in 4..12 {
+                for x in 4..12 {
+                    let i = w.index(x, y);
+                    w.tiles[i].wall = 2; // a normal wall, no large-frame lookup
+                    w.set_wall_frame_number(i, ((x + y) % 3) as u8);
+                }
+            }
+            w.variants_from_save = true;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        frame_walls(&mut a);
+        frame_walls(&mut b);
+        // Fully enclosed interior cells (mask 15 + the center lookup).
+        for y in 5..11 {
+            for x in 5..11 {
+                let idx = a.index(x, y);
+                let v = ((x + y) % 3) as usize;
+                assert_eq!(a.wall_frame_number(idx) as usize, v, "stored variant kept");
+                let mask = 15 + CENTER_WALL_FRAMES[(x % 3) as usize][(y % 3) as usize] as usize;
+                let (col, row) = WALL_FRAMES[mask][v];
+                let t = a.tile(x as i32, y as i32).unwrap();
+                assert_eq!((t.wall_col(), t.wall_row()), (col, row));
+                let tb = b.tile(x as i32, y as i32).unwrap();
+                assert_eq!(
+                    (t.wall_col(), t.wall_row()),
+                    (tb.wall_col(), tb.wall_row()),
+                    "a == b across the two reuse runs",
+                );
+            }
+        }
+    }
+
+    /// The control: with `variants_from_save` FALSE (a fresh generation), the
+    /// full pass re-rolls — the stored variants are overwritten by the stream,
+    /// proving the reuse arm is gated on the flag, not unconditional.
+    #[test]
+    fn w4_d109_a_fresh_world_still_rerolls_the_variants() {
+        let mut w = World::new("t".into(), 24, 24);
+        for y in 1..23 {
+            for x in 1..23 {
+                solid(&mut w, x, y, 1);
+                let idx = w.index(x, y);
+                w.set_frame_number(idx, 0); // a uniform pre-roll the stream must overwrite
+            }
+        }
+        assert!(!w.variants_from_save, "a fresh world rolls");
+        frame_world(&mut w);
+        let spread: std::collections::HashSet<u8> =
+            w.variants.iter().skip(25).copied().collect();
+        assert!(spread.len() > 1, "the reset stream must vary the variants");
     }
 
     /// S1-K-2 wave C: the thin ice (162) carries the `IcesSnow` merge arm

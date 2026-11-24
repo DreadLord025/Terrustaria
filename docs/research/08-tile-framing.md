@@ -115,7 +115,11 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
    (the ANALYSIS "Autotiling" section records the deliberate stream deviations), the
    phlebas/lazure wall lookups with their re-store (which exposed the missing fourth
    `wallFrameLookup` column) and the wall-21 quirk. The hash functions are gone
-   (framing.rs no longer has `variant`/`wall_variant`).
+   (framing.rs no longer has `variant`/`wall_variant`). **W4-d109 (2026-11-20) added the
+   save half**: the port's `.trwld` v18 tail persists `World::variants` and a v18 load
+   reuses the stored values in the full passes (`World::variants_from_save`) — a
+   port-only extension, since the C# `.wld` never serializes the bits (the refutation
+   above stands for the vanilla file). ANALYSIS "Autotiling" records the old→new.
 
 - **~~`Framing.SelfFrame8Way` not ported~~ — RESOLVED by W4-d110 (2026-11-20, code-only)**.
   `self_frame_8way` + `find_block_style`/`will_it_blend` + the const 256-mask lookup port

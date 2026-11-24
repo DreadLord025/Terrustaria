@@ -845,6 +845,12 @@ mod tests {
     // unpinned until the gate generates them). `PaintTheTemple` itself
     // already landed with M5-SEED-1 (`finish_seeds.rs`) and only fires
     // under the anniversary flag — likewise inert here.
+    // W4-d109 (code-only, the save half of S1-A-3): the `.trwld` v18 tail
+    // persists `World::variants` and the framing passes reuse them on a save
+    // load. This pin is UNCHANGED by that change: `generate()` runs only the
+    // pipeline steps and never frames (framing is the app-side post-pipeline
+    // seam), and `variants` is not a hashed `Tile` field — the pin hashes an
+    // un-framed world. (The S1-P-i33 deferred re-pin above still stands.)
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -1372,6 +1378,9 @@ mod tests {
     // drunk spike rows, the remix search/fallback; `a == b` stays the
     // guard). The pre-existing S1-P-i33 staleness note still applies at
     // the gate.
+    // W4-d109 (code-only): the `.trwld` v18 variants persistence leaves this
+    // pin UNCHANGED for the same reason as SEED42_512 above — `generate()`
+    // never frames and `variants` is unhashed. The i33 deferred re-pin stands.
     const DEFAULT_WORLD: u32 = 3647283075;
     // W4-d107 (2026-11-20, code-only): the special-seed branches land in
     // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +
