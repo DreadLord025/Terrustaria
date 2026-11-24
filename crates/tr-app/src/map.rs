@@ -652,20 +652,6 @@ pub struct WorldMap {
     /// (`Player.cs:24940-24947`), clamped 0.01..1 (`Main.cs:55559-55566`).
     /// `b = (byte)(255 * alpha)` (`:55568`) tints the overlay tile pass and
     /// the icon block (`:55625`).
-    /// 0.2..3 (`Main.cs:55515-55522`).
-    pub minimap_scale: f32,
-    /// `Main.mapMinimapAlpha` (`Main.cs:66753`, default 1): the MapAlphaUp/Down
-    /// keys step it ±0.015 (`Player.cs:24921-24928`), clamped 0.01..1
-    /// (`Main.cs:55523-55530`); it tints the backdrop AND the tile pass
-    /// (`b = (byte)(255 * alpha)`, `:55532`).
-    pub minimap_alpha: f32,
-    /// `Main.mapOverlayScale` (`Main.cs:66754`, default 2.5): the overlay's
-    /// zoom axis — keys ×1.05/×0.95 (`Player.cs:24932-24939`), clamped
-    /// `screen_w/world_w .. 16*RenderZoom` (`Main.cs:55550-55558`). The
-    /// overlay draw itself is out of P4 scope; the state rides for the keys.
-    pub overlay_scale: f32,
-    /// `Main.mapOverlayAlpha` (`Main.cs:66755`, default 0.35): keys ±0.015
-    /// (`Player.cs:24940-24947`), clamped 0.01..1 (`Main.cs:55559-55566`).
     pub overlay_alpha: f32,
     /// `Main.mapTime` (`Main.cs:803`) — the countdown that gates the
     /// lighting → map export (`LegacyLighting.cs:349`).
@@ -768,14 +754,6 @@ pub struct WorldMap {
     /// state itself is the union's `pan_target: Option<[f32; 2]>` above
     /// (`None` = the C# flag false, `Some(end)` = armed + destination —
     /// research/84 §10.3 step 2's representation keep-one).
-    /// `Main.PanTargetMapFullscreen` (`Main.cs:55361-55385`): the offscreen
-    /// pylon click pans the map toward `pan_target_end` at a 0.15 lerp.
-    pub pan_target: bool,
-    /// `Main.PanTargetMapFullscreenEnd` — the pan destination, world tiles.
-    pub pan_target_end: [f32; 2],
-    /// `Main.mouseLeft && Main.mouseLeftRelease` (`Main.cs:55363`): the press
-    /// edge that cancels an in-progress pan, sampled by the frame before
-    /// `prepare` (the C# reads the live input inside `DrawMap`).
     pub pan_cancel_press: bool,
     /// `Main.cancelWormHole` (`Main.cs`): the pylon marker hover sets it
     /// (`TeleportPylonsMapLayer.cs:81`) so a same-frame unity-potion hover
@@ -797,9 +775,6 @@ impl WorldMap {
             minimap_alpha: 1.0, // `Main.cs:66753`
             overlay_scale: 2.5, // `Main.cs:66754`
             overlay_alpha: 0.35, // `Main.cs:66755`
-            minimap_alpha: 1.0,
-            overlay_scale: 2.5,
-            overlay_alpha: 0.35,
             map_time: 0,
             map_time_max: 0,
             map_delay: 2, // `Main.cs:66504` (static ctor), `WorldGen.cs:6947`
@@ -841,11 +816,6 @@ impl WorldMap {
     pub fn clear(&mut self) {
         for t in self.tiles.iter_mut() {
             t.clear();
-            pylon_tile: (-1, -1),
-            pan_target: false,
-            pan_target_end: [0.0, 0.0],
-            pan_cancel_press: false,
-            cancel_wormhole: false,
         }
     }
 
@@ -1339,25 +1309,6 @@ impl WorldMap {
             self.pos = pos;
             if done {
                 self.pan_target = None;
-        // would overshoot), snapping when within 1 tile.
-        if self.pan_target {
-            if self.pan_cancel_press {
-                self.pan_target = false;
-            } else {
-                let dx = self.pan_target_end[0] - self.pos[0];
-                let dy = self.pan_target_end[1] - self.pos[1];
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist < 1.0 {
-                    self.pos = self.pan_target_end;
-                    self.pan_target = false;
-                } else {
-                    let mut amount = 0.15f32;
-                    if dist * 0.15 < 1.0 {
-                        amount = 1.0 / dist;
-                    }
-                    self.pos[0] += dx * amount;
-                    self.pos[1] += dy * amount;
-                }
             }
         }
         // `Main.cs:55387-55395`.
@@ -1371,11 +1322,6 @@ impl WorldMap {
         // §10.3 step 2).
         if self.reset_pos {
             self.recentre(center_tile);
-        // view centre `(screenPosition + screenSize/2)/16f` and clears the pan.
-        if self.reset_pos {
-            self.pan_target = false;
-            self.pos = center_tile;
-            self.reset_pos = false;
         }
 
         // `MapRenderer.CheckMapTargets` (`MapRenderer.cs:357-378`).

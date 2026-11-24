@@ -589,7 +589,7 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                 m.scale = scale;
                 // The fit overrides the helper's recentre arm: disarm it
                 // and keep the pan clear (`recentre` already cleared it).
-                m.pan_target = false;
+                m.pan_target = None;
                 m.reset_pos = false;
             }
         }

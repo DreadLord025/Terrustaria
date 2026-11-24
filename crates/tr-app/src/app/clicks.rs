@@ -1111,10 +1111,6 @@ impl App {
                 // destination, research/84 §10.3 step 2).
                 if let Some(m) = self.map.as_mut() {
                     m.pan_target = Some([info.x as f32, info.y as f32]);
-                // `:103-107`: pan to the offscreen pylon's tile.
-                if let Some(m) = self.map.as_mut() {
-                    m.pan_target = true;
-                    m.pan_target_end = [info.x as f32, info.y as f32];
                 }
             }
             PylonClick::Teleport(_) => {
@@ -1597,20 +1593,24 @@ impl App {
     /// `interaction.Interact()`. The port's live interactions: index 0
     /// `CloseChat` → `Main.CloseNPCChatOrSign` (`NPCInteractions.cs:
     /// 283-286`, `Main.cs:40680-40692` — the sign half closes too, W4-f22)
-    /// and index 1 the sign's `OpenSign` toggle (`NPCInteractions.cs:
-    /// 31-41` — `Main.editSign` ? `SubmitSignText` :
-    /// `IngameFancyUI.OpenVirtualKeyboard(1)`). The other interaction
-    /// buttons (shop/happiness/housing/…) are deferred —
-    /// docs/ANALYSIS.md "Town chatter UI (S1-E-10b)".
-    /// `Interact` — Close → `Main.CloseNPCChatOrSign`
-    /// (`NPCInteractions.cs:283-286`, `Main.cs:40680-40692`): the talk
-    /// latch clears, `npcChatText` empties, sound 11 plays and
-    /// `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`);
-    /// Happiness → `ReportHappiness.Interact` (`NPCInteractions.cs:
-    /// 305-311`): sound 12 + `npcChatText = HappinessReport` (the
-    /// portrait hop / corner item are unported). The other interaction
-    /// buttons (shop/housing/…) are deferred — docs/ANALYSIS.md "Town
-    /// chatter UI (S1-E-10b)".
+    /// The NPC-chat panel's interaction buttons (`NPCChatPanel.DrawButtons`
+    /// / `PrepareInteractions`, `NPCChatPanel.cs:88-175`). The union of the
+    /// landed lanes, one owner per vanilla row:
+    ///   * the sign's `OpenSign` toggle while a sign is open
+    ///     (`NPCInteractions.cs:15-42`: `Main.editSign ? SubmitSignText :
+    ///     IngameFancyUI.OpenVirtualKeyboard(1)`, `:31-41`);
+    ///   * the Dryad's `StardewValleyBit` "Purify" (`NPCInteractions.cs:79-103`),
+    ///     shown while the cola is held (`CanDryadPlayStardewAnimation`) and
+    ///     riding the interaction row BEFORE Close (the `NPCInteractions.All`
+    ///     order, `:515-517`) — W4-f30;
+    ///   * `ReportHappiness` (`NPCInteractions.cs:291-311`) when its Condition
+    ///     holds (`!NPC.CanShowHomelessText(talkNPC)` AND a non-empty
+    ///     `HappinessReport`);
+    ///   * `CloseChat` (`NPCInteractions.cs:271-287` / `Main.CloseNPCChatOrSign`,
+    ///     `Main.cs:40680-40692`): the talk latch clears, `npcChatText` empties,
+    ///     sound 11 plays and `NPCChatPanel.Close` resets `_lastHovered`.
+    /// The shop / housing / reforge rows stay deferred (docs/ANALYSIS.md
+    /// "Town chatter UI (S1-E-10b)").
     pub(crate) fn handle_npc_chat_clicks(&mut self) {
         let sign_open = self.player.as_ref().is_some_and(|p| p.sign >= 0);
         if self.talk_npc.is_none() && !sign_open {
@@ -1622,140 +1622,100 @@ impl App {
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
-        let labels = ui::npc_chat::interactions(sign_open, self.sign_editing());
-        let rects =
-            ui::npc_chat::interaction_rects(&self.lookups, screen, &self.npc_chat_text, &labels);
-        let hovered = rects
-            .iter()
-            .position(|r| ui::in_rect(self.mouse_pos, *r))
-            .map_or(-1, |i| i as i32);
         // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`).
         let happiness = !crate::happiness::can_show_homeless_text(
             self.talk_npc.and_then(|i| self.npcs.get(i)),
         ) && !self.shopping_settings.happiness_report.is_empty();
-        let close =
-            ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text, happiness);
-        let happy =
-            ui::npc_chat::happiness_button_rect(&self.lookups, screen, &self.npc_chat_text, happiness);
-        let hovered = if ui::in_rect(self.mouse_pos, close) {
-            0
-        } else if happy.is_some_and(|r| ui::in_rect(self.mouse_pos, r)) {
-            1
         // W4-f30 — the Dryad's Stardew bit (`NPCInteractions.cs:79-103`): the
         // "Purify" button shows while the cola is held (`CanDryadPlayStardew-
-        // Animation`). It rides the interaction row BEFORE Close (the
-        // `NPCInteractions.All` order, `:515-517`); the port models the two
-        // buttons the panel owns (the shop/happiness/… rows stay deferred).
+        // Animation`).
         let held = self.inventory.get(self.selected).map_or(0, |s| s.kind);
         let stardew = crate::dryad_stardew::can_dryad_play_stardew_animation(
             held,
             self.talk_npc.and_then(|i| self.npcs.get(i)),
         );
-        let (stardew_rect, close_rect) =
-            ui::npc_chat::button_rects(&self.lookups, screen, &self.npc_chat_text, stardew);
-        // The hover pick: the Stardew button (index 0) when shown, else Close.
-        let hovered = if stardew && ui::in_rect(self.mouse_pos, stardew_rect) {
-            0
-        } else if ui::in_rect(self.mouse_pos, close_rect) {
-            if stardew { 1 } else { 0 }
+        // The live label list in registration order (`NPCInteractions.All`,
+        // `:513-530`): OpenSign (sign only), Stardew (cola held), Happiness
+        // (condition), then CloseChat (always last, `:515`).
+        let mut labels: Vec<String> = Vec::new();
+        let sign_index = if sign_open {
+            labels.push(crate::lang::inter(if self.sign_editing() { 47 } else { 48 }));
+            Some(0usize)
         } else {
-            -1
+            None
         };
-        // `:157-160` — the hover-change tick (no gamepad in the port, so
-        // the `!UsingGamepad || num2 != -1` gate always passes).
+        let stardew_index = if stardew {
+            labels.push(crate::dryad_stardew::give_cola_button_text());
+            Some(labels.len() - 1)
+        } else {
+            None
+        };
+        let happiness_index = if happiness {
+            labels.push(ui::npc_chat::happiness_label());
+            Some(labels.len() - 1)
+        } else {
+            None
+        };
+        labels.push(crate::lang::inter(52));
+        let close_index = labels.len() - 1;
+        let rects =
+            ui::npc_chat::interaction_rects(&self.lookups, screen, &self.npc_chat_text, &labels);
+        let hovered = rects
+            .iter()
+            .position(|r| ui::in_rect(self.mouse_pos, *r))
+            .map_or(-1i64, |i| i as i64);
+        // `:157-160` — the hover-change tick (no gamepad in the port, so the
+        // `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
             crate::chest::play_menu_sound(self, 12);
         }
         self.npc_chat_last_hovered = hovered;
-        if hovered >= 0 && self.ui_left_press {
-            self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`):
-            // `CloseSign(quiet: true)` (W4-e10 — no cue from the sign
-            // half), `SetTalkNPC(-1)` + the text clear + sound 11
-            // (`:40688`, the function's own) + the panel's `Close` reset.
-            crate::signs::close_sign(self, true); // `:40682`
-            self.talk_npc = None;
-        if hovered == 1 && self.ui_left_press {
-            self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-            // `DryadPurification.Interact` (`NPCInteractions.cs:121-130`):
-            // the portrait hop (unported), sound 12, then the world-status
-            // report from the `57` census store. The pure-world achievement
-            // (`HandleSpecialEvent(27)`) rides the achievement lane.
-            crate::chest::play_menu_sound(self, 12);
-            let (text, _pure) = crate::lang::dryad_world_status_dialog(
-                &self.world.name,
-                self.world_evil_good,
-                self.world_evil_evil,
-                self.world_evil_blood,
-            );
-            self.npc_chat_text = text; // `:125` — `Main.npcChatText = …`
+        if hovered < 0 || !self.ui_left_press {
             return;
         }
-        if hovered == 0 && self.ui_left_press {
-            self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
-            // half is unported; `SetTalkNPC(-1)` + the text clear + sound
-            // 11 + the panel's `Close` reset.
-            self.set_talk_npc(None);
-            self.npc_chat_text.clear();
-            // `SetTalkNPC(-1)` (`Player.cs:4383-4386`): NotInShop — the
-            // captured mood resets (W4-f37).
-            self.shop_mood = 1.0;
-            crate::chest::play_menu_sound(self, 11);
-            self.npc_chat_last_hovered = -1;
-            match hovered {
-                0 => {
-                    // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`):
-                    // `CloseSign(quiet: true)` + `SetTalkNPC(-1)` + the
-                    // text clear + sound 11 + the panel's `Close` reset
-                    // (`NPCChatPanel.cs:265-269`).
-                    crate::signs::close_sign(self, true); // `:40682`
-                    self.talk_npc = None; // `:40683`
-                    self.npc_chat_text.clear(); // `:40685`
-                    crate::chest::play_menu_sound(self, 11); // `:40688`
-                    self.npc_chat_last_hovered = -1;
-                }
-                1 => {
-                    // `Actions.OpenSign.Interact` (`NPCInteractions.cs:
-                    // 31-41`): the edit toggle.
-                    if self.sign_editing() {
-                        let text = self.sign_edit_text().to_string();
-                        crate::signs::submit_sign_text(self, &text); // `:35`
-                    } else {
-                        crate::signs::open_sign_keyboard(self); // `:39`
-                    }
-                }
-                _ => {}
+        let hit = hovered as usize;
+        self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
+        // `Actions.OpenSign.Interact` (`NPCInteractions.cs:31-41`): the edit
+        // toggle.
+        if Some(hit) == sign_index {
+            if self.sign_editing() {
+                let text = self.sign_edit_text().to_string();
+                crate::signs::submit_sign_text(self, &text); // `:35`
+            } else {
+                crate::signs::open_sign_keyboard(self); // `:39`
             }
-        } else if hovered == 1 && self.ui_left_press {
-            self.ui_left_press = false;
-            // `ReportHappiness.Interact` (`NPCInteractions.cs:305-311`):
-            // `npcChatCornerItem = 0` (unported) + sound 12 +
-            // `npcChatText = currentShoppingSettings.HappinessReport`
-            // (the report REPLACES the chat line — the talk latch stays).
+            return;
+        }
+        // `StardewValleyBit.Interact` (`NPCInteractions.cs:97-102`): the
+        // portrait hop + sound 12, then the gift. The hop is the deferred
+        // portrait system; the sound plays here.
+        if Some(hit) == stardew_index {
+            crate::chest::play_menu_sound(self, 12);
+            crate::dryad_stardew::dryad_do_stardew_valley_bit(self);
+            return;
+        }
+        // `ReportHappiness.Interact` (`NPCInteractions.cs:305-311`):
+        // `npcChatCornerItem = 0` (unported) + sound 12 +
+        // `npcChatText = currentShoppingSettings.HappinessReport`
+        // (the report REPLACES the chat line — the talk latch stays).
+        if Some(hit) == happiness_index {
             crate::chest::play_menu_sound(self, 12);
             self.npc_chat_text = self.shopping_settings.happiness_report.clone();
             // `Main.DoNPCPortraitHop` (`:310`) — the hop counter resets
             // (the portrait draw stays deferred, S1-E-10b).
             ui::npc_chat::do_npc_portrait_hop(self);
-        if hovered == -1 || !self.ui_left_press {
             return;
         }
-        self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-        if stardew && hovered == 0 {
-            // `StardewValleyBit.Interact` (`NPCInteractions.cs:97-102`): the
-            // portrait hop + sound 12, then the gift. The hop is the deferred
-            // portrait system; the sound plays here.
-            crate::chest::play_menu_sound(self, 12);
-            crate::dryad_stardew::dryad_do_stardew_valley_bit(self);
+        if hit != close_index {
             return;
         }
-        // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
-        // half is unported; `SetTalkNPC(-1)` + the text clear + sound
-        // 11 + the panel's `Close` reset.
-        self.talk_npc = None;
-        self.npc_chat_text.clear();
-        crate::chest::play_menu_sound(self, 11);
+        // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`):
+        // `CloseSign(quiet: true)` + `SetTalkNPC(-1)` + the text clear +
+        // sound 11 + the panel's `Close` reset (`NPCChatPanel.cs:265-269`).
+        crate::signs::close_sign(self, true); // `:40682`
+        self.set_talk_npc(None); // `:40683` + the W4-f37 mood reset
+        self.npc_chat_text.clear(); // `:40685`
+        crate::chest::play_menu_sound(self, 11); // `:40688`
         self.npc_chat_last_hovered = -1;
         // W4-f30 — the Joja latches clear on the close (`NPC.cs:93772`).
         crate::dryad_stardew::reset_joja_latches(self);
@@ -2054,14 +2014,6 @@ impl App {
     /// the press while the overlay is open.
     pub(crate) fn handle_debug_commands_clicks(&mut self) {
         if !self.ui_left_press || !self.debug_commands_open {
-    /// The bestiary info page's wheel scroll (`UIBestiaryTest.ScrollWheel`,
-    /// `UIBestiaryTest.cs:846-850` → `UIBestiaryEntryInfoPage.UpdateScrollbar`,
-    /// `:59-65`): `ViewPosition -= scrollWheelValue`, clamped by the
-    /// scrollbar's `SetView` (`UIScrollbar.cs:72-78`). `delta` is in notches
-    /// (positive = wheel up); one notch is `WHEEL_STEP` px, the shared
-    /// `char_select` convention. W4-e23 remainder (the scrollbar thumb).
-    pub(crate) fn scroll_bestiary_info(&mut self, delta: f32) {
-        if !self.bestiary_open {
             return;
         }
         let (sw, sh) = self.screen_size();
@@ -2120,6 +2072,26 @@ impl App {
             ui::debug_commands::Click::None => {}
         }
         self.ui_left_press = false;
+    }
+    /// The bestiary info page's wheel scroll (`UIBestiaryTest.ScrollWheel`,
+    /// `UIBestiaryTest.cs:846-850` → `UIBestiaryEntryInfoPage.UpdateScrollbar`,
+    /// `:59-65`): `ViewPosition -= scrollWheelValue`, clamped by the
+    /// scrollbar's `SetView` (`UIScrollbar.cs:72-78`). `delta` is in notches
+    /// (positive = wheel up); one notch is `WHEEL_STEP` px, the shared
+    /// `char_select` convention. W4-e23 remainder (the scrollbar thumb).
+    pub(crate) fn scroll_bestiary_info(&mut self, delta: f32) {
+        if !self.bestiary_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let content_h = self.bestiary_info_content_height(screen);
+        let page = ui::bestiary::info_page_rect(&ui::bestiary::panel_rect(screen));
+        let view_h = ui::bestiary::info_page_view_height(page);
+        let wheel = delta * ui::char_select::WHEEL_STEP;
+        let moved = ui::bestiary::info_page_scroll(self.bestiary_ui.info_scroll, wheel);
+        let (_, pos) = ui::bestiary::info_page_set_view(view_h, content_h, moved);
+        self.bestiary_ui.info_scroll = pos;
     }
 
     /// `IngameFancyUI.Close` for the debug commands overlay: a fresh
@@ -2362,13 +2334,6 @@ impl App {
             }
             _ => false,
         }
-        let content_h = self.bestiary_info_content_height(screen);
-        let page = ui::bestiary::info_page_rect(&ui::bestiary::panel_rect(screen));
-        let view_h = ui::bestiary::info_page_view_height(page);
-        let wheel = delta * ui::char_select::WHEEL_STEP;
-        let moved = ui::bestiary::info_page_scroll(self.bestiary_ui.info_scroll, wheel);
-        let (_, pos) = ui::bestiary::info_page_set_view(view_h, content_h, moved);
-        self.bestiary_ui.info_scroll = pos;
     }
 
     /// The info page's total content height for the current selection —
@@ -3272,11 +3237,6 @@ impl App {
                         // `SetTalkNPC(-1)`, `PlaySound(10)`, scale 2.5 +
                         // recentre (both ride `set_open(true)`).
                         self.try_open_fullscreen_map();
-                    } else {
-                        // `Main.cs:41106-41120`: `k == 1/2/3` ->
-                        // `Main.mapStyle = 0/1/2` + `PlaySound(12)`.
-                        self.map_style = k as i32 - 1;
-                        self.audio.play("Menu_Tick"); // `:41109/41114/41119`
                     }
                     return;
                 }
@@ -3716,6 +3676,8 @@ impl App {
                 // `SendData(4)` in MP (`:41250-41253/:41276-41279`) — the
                 // player-info packet carries no hideMisc/superCart field in
                 // the port's `net.rs`, so the flip stays local (ANALYSIS).
+            }
+        }
         // `Main.DrawLoadoutButtons`' click arm (`Main.cs:41965-41978`): a left
         // press-edge on a loadout button switches the set. The buttons draw
         // only on the equipment page (`EquipPage == 0`, `Main.cs:41394`), and
