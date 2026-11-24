@@ -163,6 +163,23 @@ fn npc_light_anchor(
 /// adds the light inside `AI()` before the move, one step of position
 /// lag, the `npc_light` precedent).
 pub(crate) fn snail_light(
+    kind: NpcKind,
+    pos: Vec2,
+    width: f32,
+    height: f32,
+) -> Option<(i32, i32, [f32; 3])> {
+    let rgb = match kind {
+        NpcKind::GlowingSnail => [0.1, 0.2, 0.7],
+        NpcKind::MagmaSnail => [0.6, 0.3, 0.1],
+        _ => return None,
+    };
+    Some((
+        tile_x(pos, width, XAnchor::CenterTruncated),
+        tile_y(pos, height, XAnchor::CenterTruncated),
+        rgb,
+    ))
+}
+
 /// The ShimmerSlime 676's per-tick centre light (`NPC.cs:61130`, W4-f47
 /// keep-one 144): `Lighting.AddLight(base.Center, 23)` — the
 /// `(Vector2, torchID)` overload (`Lighting.cs:151-155`) truncates the
@@ -178,16 +195,6 @@ pub(crate) fn shimmer_slime_light(
     pos: Vec2,
     width: f32,
     height: f32,
-) -> Option<(i32, i32, [f32; 3])> {
-    let rgb = match kind {
-        NpcKind::GlowingSnail => [0.1, 0.2, 0.7],
-        NpcKind::MagmaSnail => [0.6, 0.3, 0.1],
-        _ => return None,
-    };
-    Some((
-        tile_x(pos, width, XAnchor::CenterTruncated),
-        tile_y(pos, height, XAnchor::CenterTruncated),
-        rgb,
     p: &tr_core::lighting::LightParams,
 ) -> Option<(i32, i32, [f32; 3])> {
     if kind != NpcKind::ShimmerSlime {
@@ -198,7 +205,6 @@ pub(crate) fn shimmer_slime_light(
         tile_y(pos, height, XAnchor::CenterTruncated),
         tr_core::tile_light::torch_color(23, p),
     ))
-}
 }
 
 #[cfg(test)]

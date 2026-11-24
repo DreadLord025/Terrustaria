@@ -1,3 +1,4 @@
+// MERGE canary (d43 retire): fn w4_d43_the_owl_mimic_folds_its_credit_and_takes_no_grid_slot (the Owl/OwlMimic fold is in entry_for_npc).
 //! The bestiary entry catalog — the port's NPC family as the
 //! `BestiaryDatabase`'s rows (`BestiaryDatabaseNPCsPopulator.cs` builds one
 //! entry per NPC net id; the port has the same twelve).
@@ -628,311 +629,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Desert Djinn",
     },
-    // W4-g5 — the two unclaimed aiStyle-8 casters (`BestiaryEntry.Enemy`,
-    // the automated populator `BestiaryDatabaseNPCsPopulator.cs:851-868`;
-    // the display names ride `Lang.GetNPCName`, en-US NPCs.json).
-    BestiaryEntryDef {
-        credit_id: "RuneWizard",
-        net_id: 172,
-        kind: NpcKind::RuneWizard,
-        variant: None,
-        quick_unlock: false,
-        name: "Rune Wizard",
-    },
-    BestiaryEntryDef {
-        credit_id: "LibrarianSkeleton",
-        net_id: 693,
-        kind: NpcKind::LibrarianSkeleton,
-        variant: None,
-        quick_unlock: false,
-        name: "Librarian Skeleton",
-    // W4-f42 — the sandstorm debris + desert family (the `NPC.cs:3949-4018`
-    // spawn arm's picks). The vanilla net ids are the bestiary credits.
-    BestiaryEntryDef {
-        credit_id: "Tumbleweed",
-        net_id: 546,
-        variant: None,
-        quick_unlock: false,
-        name: "Tumbleweed",
-    },
-    BestiaryEntryDef {
-        credit_id: "Vulture",
-        net_id: 61,
-        variant: None,
-        quick_unlock: false,
-        name: "Vulture",
-    },
-    BestiaryEntryDef {
-        credit_id: "Antlion",
-        net_id: 69,
-        variant: None,
-        quick_unlock: false,
-        name: "Antlion",
-    },
-    BestiaryEntryDef {
-        credit_id: "Mummy",
-        net_id: 78,
-        variant: None,
-        quick_unlock: false,
-        name: "Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "DarkMummy",
-        net_id: 79,
-        variant: None,
-        quick_unlock: false,
-        name: "Dark Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "BloodMummy",
-        net_id: 630,
-        variant: None,
-        quick_unlock: false,
-        name: "Blood Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "LightMummy",
-        net_id: 80,
-        variant: None,
-        quick_unlock: false,
-        name: "Light Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "WalkingAntlion",
-        net_id: 580,
-        variant: None,
-        quick_unlock: false,
-        name: "Walking Antlion",
-    },
-    BestiaryEntryDef {
-        credit_id: "FlyingAntlion",
-        net_id: 581,
-        variant: None,
-        quick_unlock: false,
-        name: "Flying Antlion",
-    // W4-d41 — the cavern crawdads/shellies (`BestiaryEntry.Enemy`, the
-    // automated populator `BestiaryDatabaseNPCsPopulator.cs:851-868`;
-    // the Caverns tag `:1121-1122`/`:1148-1149`). ONE entry per pair:
-    // the 2-variants' draw modifiers hide them (`NPCID.cs`'s redigit
-    // dictionary, the merge's last word) and their credits fold onto
-    // the 1-variant (`ContentSamples.cs:1019-1020`, `entry_for_npc`).
-    // The name rides `Lang.GetNPCName` (en-US NPCs.json).
-    BestiaryEntryDef {
-        credit_id: "Crawdad",
-        net_id: 494,
-        kind: NpcKind::Crawdad,
-        variant: None,
-        quick_unlock: false,
-        name: "Crawdad",
-    },
-    BestiaryEntryDef {
-        credit_id: "GiantShelly",
-        net_id: 496,
-        kind: NpcKind::GiantShelly,
-        variant: None,
-        quick_unlock: false,
-        name: "Giant Shelly",
-    },
-    // W4-d41 — the salamanders: ONE entry for the nine colours. The
-    // vanilla's automated populator registers 499 only (the redigit
-    // dictionary hides 498/500-506), and `ContentSamples.cs:1021-1025`
-    // folds ALL of 498-506 onto the 499 credit — the entry's kind is
-    // Salamander2 (net 499), every other colour folds onto it
-    // (`entry_for_npc`). The Caverns tag (`:1435-1443`).
-    BestiaryEntryDef {
-        credit_id: "Salamander2",
-        net_id: 499,
-        kind: NpcKind::Salamander2,
-        variant: None,
-        quick_unlock: false,
-        name: "Salamander",
-    },
-    // W4-d41 — the desert antlions (`BestiaryEntry.Enemy`, the automated
-    // populator; the UndergroundDesert tag `:1256-1257`/`:1523`).
-    BestiaryEntryDef {
-        credit_id: "GiantWalkingAntlion",
-        net_id: 508,
-        kind: NpcKind::GiantWalkingAntlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Giant Antlion Charger",
-    },
-    BestiaryEntryDef {
-        credit_id: "GiantFlyingAntlion",
-        net_id: 509,
-        variant: None,
-        quick_unlock: false,
-        name: "Giant Antlion Swarmer",
-    },
-    // W4-d41 — the Dune Splicer: ONE entry on the head's id 510 — the
-    // body/tail's draw modifiers hide them (the leinfors dictionary's
-    // `Hide = true`) and the kills credit the head (the Devourer's fold,
-    // `entry_for_npc`). The UndergroundDesert tag (`:626`/`:1385`).
-    BestiaryEntryDef {
-        credit_id: "DuneSplicerHead",
-        net_id: 510,
-        kind: NpcKind::DuneSplicerHead,
-        variant: None,
-        quick_unlock: false,
-        name: "Dune Splicer",
-    },
-    // W4-d41 — the Tomb Crawler: ONE entry on the head's id 513 — the
-    // body/tail's draw modifiers hide them (the leinfors dictionary's
-    // `Hide = true`) and the kills credit the head (the Devourer's fold,
-    // `entry_for_npc`). The UndergroundDesert tag (`:1150`).
-    BestiaryEntryDef {
-        credit_id: "TombCrawlerHead",
-        net_id: 513,
-        kind: NpcKind::TombCrawlerHead,
-        variant: None,
-        quick_unlock: false,
-        name: "Tomb Crawler",
-    },
-    // W4-d41 — the solar fragments (516/519) have NO bestiary entries:
-    // their draw modifiers hide them (the leinfors dictionary's
-    // `Hide = true`) and `entry_for_npc` keeps them entry-less (the
-    // `has_entry` filter skips them in the frame sweep). The ancient
-    // orbs (522/523) are Hide=true too — no entries.
-    // W4-d41 — the desert ghouls (`BestiaryEntry.Enemy`, the automated
-    // populator; the UndergroundDesert/CorruptUndergroundDesert/
-    // CrimsonUndergroundDesert tags `:1420-1422`).
-    BestiaryEntryDef {
-        credit_id: "DesertGhoul",
-        net_id: 524,
-        kind: NpcKind::DesertGhoul,
-        variant: None,
-        quick_unlock: false,
-        name: "Ghoul",
-    },
-    BestiaryEntryDef {
-        credit_id: "DesertGhoulCorruption",
-        net_id: 525,
-        kind: NpcKind::DesertGhoulCorruption,
-        variant: None,
-        quick_unlock: false,
-        name: "Vile Ghoul",
-    },
-    BestiaryEntryDef {
-        credit_id: "DesertGhoulCrimson",
-        net_id: 526,
-        kind: NpcKind::DesertGhoulCrimson,
-        variant: None,
-        quick_unlock: false,
-        name: "Tainted Ghoul",
-    },
-    // W4-d41 — the hallowed ghoul + the lamias (`BestiaryEntry.Enemy`,
-    // the automated populator; the HallowUndergroundDesert tag
-    // `:1423`, the UndergroundDesert/evil tags `:1557-1558`).
-    BestiaryEntryDef {
-        credit_id: "DesertGhoulHallow",
-        net_id: 527,
-        kind: NpcKind::DesertGhoulHallow,
-        variant: None,
-        quick_unlock: false,
-        name: "Dreamer Ghoul",
-    },
-    BestiaryEntryDef {
-        credit_id: "DesertLamiaLight",
-        net_id: 528,
-        kind: NpcKind::DesertLamiaLight,
-        variant: None,
-        quick_unlock: false,
-        name: "Lamia",
-    },
-    BestiaryEntryDef {
-        credit_id: "DesertLamiaDark",
-        net_id: 529,
-        kind: NpcKind::DesertLamiaDark,
-        variant: None,
-        quick_unlock: false,
-        name: "Lamia",
-    },
-    // W4-d41 — the sand poacher: ONE entry on the walker's id 530 — the
-    // wall form's draw modifiers hide it (the leinfors dictionary's
-    // `Hide = true`) and its credit folds onto 530
-    // (`ContentSamples.cs:1038`, `entry_for_npc`). The UndergroundDesert
-    // tag (`:1337`/`:1647`).
-    BestiaryEntryDef {
-        credit_id: "DesertScorpionWalk",
-        net_id: 530,
-        kind: NpcKind::DesertScorpionWalk,
-        variant: None,
-        quick_unlock: false,
-        name: "Sand Poacher",
-    },
-    // W4-d41 — the basilisk + the tortured soul + the slimes + the bride
-    // (`BestiaryEntry.Enemy`, the automated populator; the
-    // UndergroundDesert tag `:1257`, the TheUnderworld tag `:1444`, the
-    // BloodMoon tag `:1424`, the UndergroundDesert tag `:1106`).
-    BestiaryEntryDef {
-        credit_id: "DesertBeast",
-        net_id: 532,
-        kind: NpcKind::DesertBeast,
-        variant: None,
-        quick_unlock: false,
-        name: "Basilisk",
-    },
-    BestiaryEntryDef {
-        credit_id: "DemonTaxCollector",
-        net_id: 534,
-        kind: NpcKind::DemonTaxCollector,
-        variant: None,
-        quick_unlock: false,
-        name: "Tortured Soul",
-    },
-    BestiaryEntryDef {
-        credit_id: "TheBride",
-        net_id: 536,
-        kind: NpcKind::TheBride,
-        variant: None,
-        quick_unlock: false,
-        name: "The Bride",
-    },
-    BestiaryEntryDef {
-        credit_id: "SandSlime",
-        net_id: 537,
-        kind: NpcKind::SandSlime,
-        variant: None,
-        quick_unlock: false,
-        name: "Sand Slime",
-    },
-    // W4-d41 — the spiked slime (535) has NO bestiary entry: its draw
-    // modifiers hide it (the redigit dictionary's `Hide = true`).
-    // W4-d41 — the critters + the tumbler (`BestiaryEntry.Critter`/
-    // `Enemy`, the automated populator; the Surface tag `:1153-1162`,
-    // the UndergroundDesert/Sandstorm tags `:1292`). The gold squirrel's
-    // UI provider folds onto [299, 538]
-    // (`BestiaryDatabaseNPCsPopulator.cs:716`) — the entry keeps its own
-    // 539 net id (the gold-critter pattern).
-    BestiaryEntryDef {
-        credit_id: "SquirrelRed",
-        net_id: 538,
-        kind: NpcKind::SquirrelRed,
-        variant: None,
-        quick_unlock: false,
-        name: "Red Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "SquirrelGold",
-        net_id: 539,
-        kind: NpcKind::SquirrelGold,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "PartyBunny",
-        net_id: 540,
-        variant: None,
-        quick_unlock: false,
-        name: "Bunny",
-    },
-// The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
-    // clone 665 (R4 FINAL, research/322 — stat-identical, one aiStyle-9
-    // arm, one {31} immunity, one name; both net ids are Hide=true
-    // exclusions in C# (`NPCID.cs:1443-1456`) — the port's entry is the
-    // pre-existing base row, kept; the 665 banner split (Tim's 177) is
-    // unreachable, no credit drains for either).
+    // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
+    // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {
         credit_id: "ChaosBall",
         net_id: 30,
@@ -981,18 +679,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Shark",
     },
-    // W4-e21 — the bunny statue's pair: `BestiaryEntry.Critter(46)` /
-    // `Critter(540)` (the automated populator, `BestiaryDatabaseNPCsPopulator
-    // .cs:851-868` — `CountsAsACritter`); the 540 name rides the vanilla
-    // `Lang.GetNPCName` ("Party Bunny"), the 46 "Bunny".
     BestiaryEntryDef {
-        credit_id: "Bunny",
-        net_id: 46,
-        variant: None,
-        quick_unlock: false,
-        name: "Bunny",
-    },
-BestiaryEntryDef {
         credit_id: "DevourerHead",
         net_id: 7,
         kind: NpcKind::DevourerHead,
@@ -1883,9 +1570,7 @@ BestiaryEntryDef {
         net_id: 551,
         kind: NpcKind::DD2Betsy,
         variant: None,
-        // W4-d41: `BestiaryDatabaseNPCsPopulator.cs:681` — the boss's
-        // `CommonEnemyUICollectionInfoProvider(..., quickUnlock: true)`.
-        quick_unlock: true,
+        quick_unlock: false,
         name: "Betsy",
     },
     BestiaryEntryDef {
@@ -2033,31 +1718,6 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: true,
         name: "Ancient Cultist",
-    },
-    // W4-d9 wiring (the d40 7a88c61c dragon row, verbatim): the Phantasm
-    // Dragon's own entry (`BestiaryDatabaseNPCsPopulator.cs:1679` attaches
-    // the Dungeon spawn condition; the UI provider maps its credit onto
-    // 439 with quickUnlock, `:695` — the Sharkron precedent: the kill
-    // credit stays "CultistDragonHead", the entry is its own).
-    BestiaryEntryDef {
-        credit_id: "CultistDragonHead",
-        net_id: 454,
-        variant: None,
-        quick_unlock: false,
-        name: "Phantasm Dragon",
-    },
-    // W4-d9 wiring: the 521 squidhead's own entry (the d41 band's unrowed
-    // summon, ported here) — `BestiaryDatabaseNPCsPopulator.cs:1912`
-    // attaches the Dungeon spawn condition, `:696` maps the UI credit
-    // onto 439 with quickUnlock. The legacy name is "Ancient Vision"
-    // (`NPCID.cs:12540`'s LegacyNameToIdMap row).
-    BestiaryEntryDef {
-        credit_id: "AncientCultistSquidhead",
-        net_id: 521,
-        kind: NpcKind::AncientCultistSquidhead,
-        variant: None,
-        quick_unlock: false,
-        name: "Ancient Vision",
     },
     BestiaryEntryDef {
         credit_id: "StardustTower",
@@ -2404,27 +2064,6 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Sharkron",
     },
-    // W4-d125 empress wiring — the boss's entry (the vanilla
-    // `NPCID.Search.GetName(636)` = "HallowBoss", `NPCID.cs:11949`; the
-    // boss quick-unlock rule) + the Prismatic Lacewing's own entry
-    // (661 = "EmpressButterfly", `NPCID.cs:11999`; the populator
-    // attaches info at `BestiaryDatabaseNPCsPopulator.cs:1185`).
-    BestiaryEntryDef {
-        credit_id: "HallowBoss",
-        net_id: 636,
-        kind: NpcKind::EmpressOfLight,
-        variant: None,
-        quick_unlock: true,
-        name: "Empress of Light",
-    },
-    BestiaryEntryDef {
-        credit_id: "EmpressButterfly",
-        net_id: 661,
-        kind: NpcKind::PrismaticLacewing,
-        variant: None,
-        quick_unlock: false,
-        name: "Prismatic Lacewing",
-    },
     BestiaryEntryDef {
         credit_id: "PrimeCannon",
         net_id: 128,
@@ -2518,17 +2157,6 @@ BestiaryEntryDef {
         name: "Angry Nimbus",
     },
     BestiaryEntryDef {
-        // Doc-sweep lane 36 — the ShimmerSlime's credit
-        // (`BestiaryDatabaseNPCsPopulator`, net 676; the tr-core
-        // banner map 676 => 289 already carries the id).
-        credit_id: "ShimmerSlime",
-        net_id: 676,
-        kind: NpcKind::ShimmerSlime,
-        variant: None,
-        quick_unlock: false,
-        name: "Shimmer Slime",
-    },
-    BestiaryEntryDef {
         credit_id: "DungeonSpirit",
         net_id: 288,
         kind: NpcKind::DungeonSpirit,
@@ -2615,7 +2243,15 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Corrupt Goldfish",
     },
-BestiaryEntryDef {
+    BestiaryEntryDef {
+        credit_id: "Vulture",
+        net_id: 61,
+        kind: NpcKind::Vulture,
+        variant: None,
+        quick_unlock: false,
+        name: "Vulture",
+    },
+    BestiaryEntryDef {
         credit_id: "Demon",
         net_id: 62,
         kind: NpcKind::Demon,
@@ -2652,7 +2288,15 @@ BestiaryEntryDef {
         quick_unlock: true,
         name: "Dungeon Guardian",
     },
-// W4-d38 b7 — BestiaryEntry.Enemy(333)
+    BestiaryEntryDef {
+        credit_id: "Bunny",
+        net_id: 46,
+        kind: NpcKind::Bunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
+    // W4-d38 b7 — BestiaryEntry.Enemy(333)
     // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
     BestiaryEntryDef {
         credit_id: "SlimeRibbonWhite",
@@ -3090,38 +2734,6 @@ BestiaryEntryDef {
     // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
     // `CountsAsACritter` set — plus the `FindEntryByNPCID(359)`/`(677)`
     // cavern-spawn info rows).
-    // W4-f18 first-20 port — batch 1's five critters. The credit ids are
-    // the vanilla `NPCID` names (`BestiaryDatabaseNPCsPopulator.cs`'s
-    // `ContentSamples.NpcBestiaryCreditIdsByNpcNetIds` rows); the display
-    // names ride `en-US.NPCs.json`'s NPCName rows.
-    BestiaryEntryDef {
-        credit_id: "Firefly",
-        net_id: 355,
-        variant: None,
-        quick_unlock: false,
-        name: "Firefly",
-    },
-    BestiaryEntryDef {
-        credit_id: "Butterfly",
-        net_id: 356,
-        variant: None,
-        quick_unlock: false,
-        name: "Butterfly",
-    },
-    BestiaryEntryDef {
-        credit_id: "Worm",
-        net_id: 357,
-        variant: None,
-        quick_unlock: false,
-        name: "Worm",
-    },
-    BestiaryEntryDef {
-        credit_id: "LightningBug",
-        net_id: 358,
-        variant: None,
-        quick_unlock: false,
-        name: "Lightning Bug",
-    },
     BestiaryEntryDef {
         credit_id: "Snail",
         net_id: 359,
@@ -3130,10 +2742,6 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Snail",
     },
-    // W4-f18 batch 2 — the GlowingSnail, the Frog and the two walker
-    // ducks. The Duck2 363 is Hide=true (`NPCID.cs:3617-3622`) — it folds
-    // onto the Duck 362's entry (no row of its own, the DetonatingBubble
-    // precedent); the credit ids ride the vanilla NPCID names.
     BestiaryEntryDef {
         credit_id: "GlowingSnail",
         net_id: 360,
@@ -3190,12 +2798,6 @@ BestiaryEntryDef {
     // localization rows: Duck2/DuckWhite/DuckWhite2 all read "Duck",
     // Seagull2 "Seagull", Grebe2 "Grebe"
     // (`Terraria.Localization.Content.en-US.NPCs.json`).
-        credit_id: "Frog",
-        net_id: 361,
-        variant: None,
-        quick_unlock: false,
-        name: "Frog",
-    },
     BestiaryEntryDef {
         credit_id: "Duck",
         net_id: 362,
@@ -3233,7 +2835,15 @@ BestiaryEntryDef {
     // 484-487).Info`, `BestiaryDatabaseNPCsPopulator.cs:890-1886`;
     // `NPCID.Search.GetName` credits). The display names ride the
     // en-US NPCs.json rows ("Gold Bird" … "Enchanted Nightcrawler").
-BestiaryEntryDef {
+    BestiaryEntryDef {
+        credit_id: "Worm",
+        net_id: 357,
+        kind: NpcKind::Worm,
+        variant: None,
+        quick_unlock: false,
+        name: "Worm",
+    },
+    BestiaryEntryDef {
         credit_id: "TruffleWorm",
         net_id: 374,
         kind: NpcKind::TruffleWorm,
@@ -3259,7 +2869,15 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Skeleton Merchant",
     },
-// W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "CultistDragonHead",
+        net_id: 454,
+        kind: NpcKind::CultistDragonHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Phantasm Dragon",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
     BestiaryEntryDef {
         credit_id: "Butcher",
         net_id: 460,
@@ -3537,7 +3155,15 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Etherian Lightning Bug",
     },
-BestiaryEntryDef {
+    BestiaryEntryDef {
+        credit_id: "WalkingAntlion",
+        net_id: 580,
+        kind: NpcKind::WalkingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Charger",
+    },
+    BestiaryEntryDef {
         credit_id: "LarvaeAntlion",
         net_id: 582,
         kind: NpcKind::LarvaeAntlion,
@@ -3576,7 +3202,23 @@ BestiaryEntryDef {
     // Swarmer", 509 "Giant Antlion Swarmer", 587 "Wandering Eye Fish" —
     // NOT the credit-id spellings).
     // E8 merge: the FlyingFish 224 entry is d37's row above (dup drop).
-BestiaryEntryDef {
+    BestiaryEntryDef {
+        credit_id: "GiantFlyingAntlion",
+        net_id: 509,
+        kind: NpcKind::GiantFlyingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Antlion Swarmer",
+    },
+    BestiaryEntryDef {
+        credit_id: "FlyingAntlion",
+        net_id: 581,
+        kind: NpcKind::FlyingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Swarmer",
+    },
+    BestiaryEntryDef {
         credit_id: "EyeballFlyingFish",
         net_id: 587,
         kind: NpcKind::EyeballFlyingFish,
@@ -3715,17 +3357,6 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Blood Squid",
-    // The Shimmerfly (W4-c9's entry, adopted by W4-g62 with the kind
-    // rowing): the populator registers it (`BestiaryDatabaseNPCsPopulator.cs`'s
-    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
-    // `CountsAsACritter` set — plus the `FindEntryByNPCID(677)`
-    // cavern-spawn info row). The snail trio's entries stay c9's.
-    BestiaryEntryDef {
-        credit_id: "Shimmerfly",
-        net_id: 677,
-        variant: None,
-        quick_unlock: false,
-        name: "Shimmerfly",
     },
     // W4-d42 - the NPCID 620-624 roster's own credits (the
     // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
@@ -3797,7 +3428,15 @@ BestiaryEntryDef {
     },
     // W4-d42 - the NPCID 630-630 roster's own credits (the
     // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
-// W4-d35: the 33 data-wave kinds' entries (73..140), id order.
+    BestiaryEntryDef {
+        credit_id: "BloodMummy",
+        net_id: 630,
+        kind: NpcKind::BloodMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Mummy",
+    },
+    // W4-d35: the 33 data-wave kinds' entries (73..140), id order.
     // The Hide kinds (96/97/99/100/112) have NO own row - their
     // credit folds onto the head (try_entry_for_npc/entry_for_npc).
     BestiaryEntryDef {
@@ -3815,31 +3454,7 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Bird",
-    // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds. The automated
-    // populator registers every non-town, non-Hide enemy by its vanilla
-    // net id (`BestiaryDatabaseNPCsPopulator.cs:851-868`); the Spike Ball
-    // 70 is `Hide = true` (`NPCID.cs:1711-1715`) so it folds onto no entry
-    // of its own — but `entry_for_npc` still needs a row to resolve, so it
-    // carries one here (the BlazingWheel 72 precedent, also Hide=true).
-BestiaryEntryDef {
-        credit_id: "PinkJellyfish",
-        net_id: 64,
-        kind: NpcKind::PinkJellyfish,
-        variant: None,
-        quick_unlock: false,
-        name: "Pink Jellyfish",
     },
-BestiaryEntryDef {
-        credit_id: "SpikeBall",
-        net_id: 70,
-        kind: NpcKind::SpikeBall,
-        variant: None,
-        quick_unlock: false,
-        name: "Spike Ball",
-    }
-    }
-    }
-    }
     BestiaryEntryDef {
         credit_id: "Pixie",
         net_id: 75,
@@ -3856,7 +3471,31 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Armored Skeleton",
     },
-BestiaryEntryDef {
+    BestiaryEntryDef {
+        credit_id: "Mummy",
+        net_id: 78,
+        kind: NpcKind::Mummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "DarkMummy",
+        net_id: 79,
+        kind: NpcKind::DarkMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightMummy",
+        net_id: 80,
+        kind: NpcKind::LightMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Light Mummy",
+    },
+    BestiaryEntryDef {
         credit_id: "Wraith",
         net_id: 82,
         kind: NpcKind::Wraith,
@@ -3888,10 +3527,6 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Mimic",
     },
-    // W4-d25 STYLE-26 wiring: the Unicorn row mirrors W4-d35 batch C
-    // (6ed8c22f) verbatim (the merge keep-one); the Wolf's row rides
-    // `BestiaryDatabaseNPCsPopulator.cs:1513` (NightTime + Snow tags)
-    // and the en-US `NPCs.json:93` name.
     BestiaryEntryDef {
         credit_id: "Unicorn",
         net_id: 86,
@@ -3948,10 +3583,6 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Angler Fish",
     },
-    // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds. The WallCreeper
-    // 164 is `Hide = true` (`NPCID.cs`'s draw modifiers) so it folds onto
-    // the WallCreeperWall's credit in `entry_for_npc`, but it still needs a
-    // row to resolve (the Spike Ball precedent).
     BestiaryEntryDef {
         credit_id: "GreenJellyfish",
         net_id: 103,
@@ -4017,81 +3648,6 @@ BestiaryEntryDef {
         name: "Gastropod",
     },
     BestiaryEntryDef {
-        credit_id: "WallCreeper",
-        net_id: 164,
-        kind: NpcKind::WallCreeper,
-        variant: None,
-        quick_unlock: false,
-        name: "Wall Creeper",
-    },
-    BestiaryEntryDef {
-        credit_id: "WallCreeperWall",
-        net_id: 165,
-        kind: NpcKind::WallCreeperWall,
-        variant: None,
-        quick_unlock: false,
-        name: "Wall Creeper",
-    },
-    BestiaryEntryDef {
-        credit_id: "IceElemental",
-        net_id: 169,
-        kind: NpcKind::IceElemental,
-        variant: None,
-        quick_unlock: false,
-        name: "Ice Elemental",
-    },
-    BestiaryEntryDef {
-        credit_id: "Herpling",
-        net_id: 174,
-        kind: NpcKind::Herpling,
-        variant: None,
-        quick_unlock: false,
-        name: "Herpling",
-    },
-    BestiaryEntryDef {
-        credit_id: "Derpling",
-        net_id: 177,
-        kind: NpcKind::Derpling,
-        variant: None,
-        quick_unlock: false,
-        name: "Derpling",
-    },
-    BestiaryEntryDef {
-        credit_id: "CrimsonAxe",
-        net_id: 179,
-        kind: NpcKind::CrimsonAxe,
-        variant: None,
-        quick_unlock: false,
-        name: "Crimson Axe",
-    },
-    BestiaryEntryDef {
-        credit_id: "FloatyGross",
-        net_id: 182,
-        kind: NpcKind::FloatyGross,
-        variant: None,
-        quick_unlock: false,
-        name: "Floaty Gross",
-    },
-    BestiaryEntryDef {
-        credit_id: "LostGirl",
-        net_id: 195,
-        kind: NpcKind::LostGirl,
-        variant: None,
-        quick_unlock: false,
-        name: "Lost Girl",
-    },
-    BestiaryEntryDef {
-        credit_id: "Nymph",
-        net_id: 196,
-        kind: NpcKind::Nymph,
-        variant: None,
-        quick_unlock: false,
-        name: "Nymph",
-    },
-    // W4-g8 lane 1 batch 3 — the CursedSkull + the nine bat/flyer family
-    // members. The VampireBat 158 is `Hide = true` (it folds onto the
-    // Vampire 159 in the vanilla) but still needs a row to resolve.
-BestiaryEntryDef {
         credit_id: "IlluminantBat",
         net_id: 137,
         kind: NpcKind::IlluminantBat,
@@ -4141,7 +3697,23 @@ BestiaryEntryDef {
     // kinds (d43 rows them later - research/148's TRIGGERED conditional).
     // W4-c7 — the firefly family's own entries (the populator registers
     // all four; `NPCID.Search.GetName` credits).
-BestiaryEntryDef {
+    BestiaryEntryDef {
+        credit_id: "Firefly",
+        net_id: 355,
+        kind: NpcKind::Firefly,
+        variant: None,
+        quick_unlock: false,
+        name: "Firefly",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightningBug",
+        net_id: 358,
+        kind: NpcKind::LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Lightning Bug",
+    },
+    BestiaryEntryDef {
         credit_id: "Lavafly",
         net_id: 654,
         kind: NpcKind::Lavafly,
@@ -4149,1032 +3721,21 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Lavafly",
     },
-BestiaryEntryDef {
+    BestiaryEntryDef {
+        credit_id: "Shimmerfly",
+        net_id: 677,
+        kind: NpcKind::Shimmerfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Shimmerfly",
+    },
+    BestiaryEntryDef {
         credit_id: "Maggot",
         net_id: 606,
         kind: NpcKind::Maggot,
         variant: None,
         quick_unlock: false,
         name: "Maggot",
-    },BestiaryEntryDef {
-        credit_id: "AngryTrapper",
-        net_id: 175,
-        kind: NpcKind::AngryTrapper,
-        variant: None,
-        quick_unlock: false,
-        name: "Angry Trapper",
-    },
-// The aiStyle-9 spit/flare family (W4-d23): the three wired kinds' own
-    // entries — the populator registers all three by id (112/666 the
-    // Corruption spit, 516 the Solar Pillar flare; the normal-enemy kill
-    // ladder, no quick-unlock).
-    BestiaryEntryDef {
-        credit_id: "VileSpit",
-        net_id: 112,
-        kind: NpcKind::VileSpit,
-        variant: None,
-        quick_unlock: false,
-        name: "Vile Spit",
-    },
-    BestiaryEntryDef {
-        credit_id: "VileSpitEaterOfWorlds",
-        net_id: 666,
-        kind: NpcKind::VileSpitEoW,
-        variant: None,
-        quick_unlock: false,
-        name: "Vile Spit",
-    },
-    BestiaryEntryDef {
-        credit_id: "SolarFlare",
-        net_id: 516,
-        kind: NpcKind::SolarFlare,
-        variant: None,
-        quick_unlock: false,
-        name: "Solar Flare",
-    },BestiaryEntryDef {
-        credit_id: "IceBat",
-        net_id: 150,
-        kind: NpcKind::IceBat,
-        variant: None,
-        quick_unlock: false,
-        name: "Ice Bat",
-    },
-    BestiaryEntryDef {
-        credit_id: "LavaBat",
-        credit_id: "Lavabat",
-        net_id: 151,
-        kind: NpcKind::Lavabat,
-        variant: None,
-        quick_unlock: false,
-        name: "Lava Bat",
-        name: "Lavabat",
-    },
-    BestiaryEntryDef {
-        credit_id: "GiantFlyingFox",
-        net_id: 152,
-        kind: NpcKind::GiantFlyingFox,
-        variant: None,
-        quick_unlock: false,
-        name: "Giant Flying Fox",
-    },
-    BestiaryEntryDef {
-        credit_id: "RedDevil",
-        net_id: 156,
-        kind: NpcKind::RedDevil,
-        variant: None,
-        quick_unlock: false,
-        name: "Red Devil",
-    },
-    BestiaryEntryDef {
-        credit_id: "VampireBat",
-        net_id: 158,
-        kind: NpcKind::VampireBat,
-        variant: None,
-        quick_unlock: false,
-        name: "Vampire Bat",
-    },
-    // The VampireBat's Transform(159) target (`NPC.cs:23353`) — aiStyle 3
-    // (the fighter walker), NOT a style-14 member; it lands here because
-    // the transform pair is one unit (the bat flees the surface by day,
-    // the vampire walks it by night — `:58843-58851` transforms back).
-// W4-g8 lane 1 batch 4 — the last three ≤230 d22-d33 machine members.
-// W4-g8 machine round 3 — the VampireBat's Transform(159) target
-    // (`BestiaryDatabaseNPCsPopulator.cs:1465` gives 159 its own Eclipse
-    // info row; the legacy name "Vampire" maps to 158, `NPCID.cs:12301`).
-    BestiaryEntryDef {
-        credit_id: "Vampire",
-        net_id: 159,
-        kind: NpcKind::Vampire,
-        variant: None,
-        quick_unlock: false,
-        name: "Vampire",
-    },
-BestiaryEntryDef {
-        credit_id: "SporeBat",
-        net_id: 634,
-        kind: NpcKind::SporeBat,
-        variant: None,
-        quick_unlock: false,
-        name: "Spore Bat",
-    },
-    BestiaryEntryDef {
-        credit_id: "QueenSlimeMinionPurple",
-        net_id: 660,
-        kind: NpcKind::QueenSlimeMinionPurple,
-        variant: None,
-        quick_unlock: false,
-        name: "Queen Slime Minion",
-    // W4-d36 census batch 0.
-    BestiaryEntryDef {
-        credit_id: "ToxicSludge",
-        net_id: 141,
-        kind: NpcKind::ToxicSludge,
-        variant: None,
-        quick_unlock: false,
-        name: "Toxic Sludge",
-    },
-    BestiaryEntryDef {
-        credit_id: "Penguin",
-        net_id: 148,
-        kind: NpcKind::Penguin,
-        variant: None,
-        quick_unlock: false,
-        name: "Penguin",
-    },
-    BestiaryEntryDef {
-        credit_id: "PenguinBlack",
-        net_id: 149,
-        kind: NpcKind::PenguinBlack,
-        variant: None,
-        quick_unlock: false,
-        name: "Penguin",
-    },
-    BestiaryEntryDef {
-        credit_id: "GiantTortoise",
-        net_id: 153,
-        kind: NpcKind::GiantTortoise,
-        variant: None,
-        quick_unlock: false,
-        name: "Giant Tortoise",
-    },
-    BestiaryEntryDef {
-        credit_id: "IceTortoise",
-        net_id: 154,
-        kind: NpcKind::IceTortoise,
-        variant: None,
-        quick_unlock: false,
-        name: "Ice Tortoise",
-    },
-    // W4-d36 E4 — own entry (the populator adds the Night/Snow info at
-    // `BestiaryDatabaseNPCsPopulator.cs:1513-1517`; the name rides
-    // `Lang.GetNPCNameValue`).
-    BestiaryEntryDef {
-        credit_id: "Wolf",
-        net_id: 155,
-        kind: NpcKind::Wolf,
-        variant: None,
-        quick_unlock: false,
-        name: "Wolf",
-    },
-    // W4-d25 STYLE-26 wiring (commit 2): the Tumbleweed's row rides
-    // `BestiaryDatabaseNPCsPopulator.cs:1292` (Desert + Sandstorm tags)
-    // and the en-US `NPCs.json:563` name ("Angry Tumbler"; the credit id
-    // is `NPCID.Search.GetName(546)` = "Tumbleweed").
-// W4-d120 — AddTownNPCs_Manual (BestiaryDatabaseNPCsPopulator.cs:814-
-    // 822): the four town kinds' TownNPC entries; the names ride the
-    // en-US NPCs.json rows (`NPCName.<const>`).
-    BestiaryEntryDef {
-        credit_id: "SantaClaus",
-        net_id: 142,
-        kind: NpcKind::SantaClaus,
-        variant: None,
-        quick_unlock: false,
-        name: "Santa Claus",
-    },
-    BestiaryEntryDef {
-        credit_id: "Truffle",
-        net_id: 160,
-        kind: NpcKind::Truffle,
-        variant: None,
-        quick_unlock: false,
-        name: "Truffle",
-    },
-    BestiaryEntryDef {
-        credit_id: "Steampunker",
-        net_id: 178,
-        kind: NpcKind::Steampunker,
-        variant: None,
-        quick_unlock: false,
-        name: "Steampunker",
-    },
-    BestiaryEntryDef {
-        credit_id: "Cyborg",
-        net_id: 209,
-        kind: NpcKind::Cyborg,
-        variant: None,
-        quick_unlock: false,
-        name: "Cyborg",
-    },
-    // The dragonflies (W4-d33): the populator's visible card is the Red
-    // 599 "Dragonfly" (`NPCs.json:637`) — 595/596/597/598/600 are
-    // `Hide = true` (`NPCID.cs:510-543`, `GetExclusions` drops them from
-    // `AddEmptyEntries_CrittersAndEnemies_Automated`, `:851-885`) and
-    // their kill credits fold onto 599 (`ContentSamples.cs:1043-1047`).
-    // The hidden colours keep their OWN entries (the c8 TruffleWormDigger
-    // precedent: own entry + cs_id for the catch/release chain's
-    // `kind_from_net_id`; `entry_for_npc` folds the kill credit).
-    BestiaryEntryDef {
-        credit_id: "BlackDragonfly",
-        net_id: 595,
-        kind: NpcKind::BlackDragonfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Dragonfly",
-    },
-    BestiaryEntryDef {
-        credit_id: "BlueDragonfly",
-        net_id: 596,
-        kind: NpcKind::BlueDragonfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Dragonfly",
-    },
-    BestiaryEntryDef {
-        credit_id: "GreenDragonfly",
-        net_id: 597,
-        kind: NpcKind::GreenDragonfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Dragonfly",
-    },
-    BestiaryEntryDef {
-        credit_id: "OrangeDragonfly",
-        net_id: 598,
-        kind: NpcKind::OrangeDragonfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Dragonfly",
-    },
-    BestiaryEntryDef {
-        credit_id: "RedDragonfly",
-        net_id: 599,
-        kind: NpcKind::RedDragonfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Dragonfly",
-    },
-    // The Yellow 600 is Hide=true too (`NPCID.cs:538-543`) — its credit
-    // folds onto 599; the Gold 601 keeps its OWN visible card
-    // ("Gold Dragonfly", `NPCs.json:639` — no Hide row, no
-    // `ContentSamples` fold, the GoldLadyBug precedent).
-    BestiaryEntryDef {
-        credit_id: "YellowDragonfly",
-        net_id: 600,
-        kind: NpcKind::YellowDragonfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Dragonfly",
-    },
-    BestiaryEntryDef {
-        credit_id: "GoldDragonfly",
-        net_id: 601,
-        kind: NpcKind::GoldDragonfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Dragonfly",
-    },
-    // The fairy critters + the windy balloon (W4-d33 wiring): all four
-    // are VISIBLE cards — the `NPCID.cs:5148-5169` fairy draw modifiers
-    // only shift Position/Direction (no Hide), the balloon's
-    // `:5232-5239` row sets a CustomTexturePath + Scale 0.8 (no Hide);
-    // no `ContentSamples` credit fold. The names ride
-    // `Lang.GetNPCName` (en-US NPCs.json: "Pink Fairy" / "Green Fairy"
-    // / "Blue Fairy" / "Windy Balloon"). d42 batch-2/3's rows,
-    // constants-copy (keep-one d37c-E3).
-    BestiaryEntryDef {
-        credit_id: "FairyCritterPink",
-        net_id: 583,
-        kind: NpcKind::FairyCritterPink,
-        variant: None,
-        quick_unlock: false,
-        name: "Pink Fairy",
-    },
-    BestiaryEntryDef {
-        credit_id: "FairyCritterGreen",
-        net_id: 584,
-        kind: NpcKind::FairyCritterGreen,
-        variant: None,
-        quick_unlock: false,
-        name: "Green Fairy",
-    },
-    BestiaryEntryDef {
-        credit_id: "FairyCritterBlue",
-        net_id: 585,
-        kind: NpcKind::FairyCritterBlue,
-        variant: None,
-        quick_unlock: false,
-        name: "Blue Fairy",
-    },
-    BestiaryEntryDef {
-        credit_id: "WindyBalloon",
-        net_id: 594,
-        kind: NpcKind::WindyBalloon,
-        variant: None,
-        quick_unlock: false,
-        name: "Windy Balloon",
-    // W4-d39 (research/125) — the Butterfly (356). The populator's
-    // `AddEmptyEntries_CrittersAndEnemies_Automated` registers it as a
-    // `BestiaryEntry.Critter` (`CountsAsACritter`: lifeMax <= 5 && damage
-    // == 0, `NPC.cs:6887-6896`); the credit id is the NPCID field name
-    // (`GetBestiaryCreditId`'s IdDictionary reflection) and the name rides
-    // `Lang.GetNPCName` (en-US NPCs.json:316). The info row is
-    // `BestiaryDatabaseNPCsPopulator.cs:1028`.
-// W4-d39 — the scorpion pair (366/367) + the grasshopper (377), the
-    // same automated Critter registration; the info rows are
-    // `BestiaryDatabaseNPCsPopulator.cs:1100`/`:1071`/`:902`. Both
-    // scorpions display "Scorpion" (en-US NPCs.json:327-328).
-    // W4-f18 batch 3 — the scorpion pair and the TruffleWorm. The
-    // DuckWhite2 365 (Hide=true, `NPCID.cs:3633-3638`) folds onto the
-    // DuckWhite 364; the TruffleWormDigger 375 (Hide=true,
-    // `NPCID.cs:3713-3718`) folds onto the TruffleWorm 374 — neither has
-    // a row of its own (the DetonatingBubble precedent).
-    BestiaryEntryDef {
-        credit_id: "ScorpionBlack",
-        net_id: 366,
-        kind: NpcKind::ScorpionBlack,
-        variant: None,
-        quick_unlock: false,
-        name: "Scorpion",
-    },
-    BestiaryEntryDef {
-        credit_id: "Scorpion",
-        net_id: 367,
-        kind: NpcKind::Scorpion,
-        variant: None,
-        quick_unlock: false,
-        name: "Scorpion",
-    },
-// W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb, the
-    // CultistArcherBlue and the ArmedZombie. The CultistArcherWhite 380
-    // (Hide=true, `NPCID.cs:3734-3739`) folds onto the CultistArcherBlue
-    // 379 — no row of its own (the DetonatingBubble precedent).
-    BestiaryEntryDef {
-        credit_id: "Grasshopper",
-        net_id: 377,
-        kind: NpcKind::Grasshopper,
-        variant: None,
-        quick_unlock: false,
-        name: "Grasshopper",
-    },
-    // W4-d39 batch 3 — the teeth bomb (378, the BloodMoon-tagged enemy,
-    // populator :1146) + the blue cultist archer (379, the Dungeon-
-    // tagged enemy, populator :1522). The white archer (380) is a
-    // Hide=true exclusion — NO entry (the fold above rides 379).
-    BestiaryEntryDef {
-        credit_id: "ChatteringTeethBomb",
-        net_id: 378,
-        kind: NpcKind::ChatteringTeethBomb,
-        variant: None,
-        quick_unlock: false,
-        name: "Chattering Teeth Bomb",
-    },
-    BestiaryEntryDef {
-        credit_id: "CultistArcherBlue",
-        net_id: 379,
-        kind: NpcKind::CultistArcherBlue,
-        variant: None,
-        quick_unlock: false,
-        name: "Cultist Archer",
-    // The luck critters (W4-e26, E8 keep-one): the populator registers
-    // all three (`BestiaryDatabaseNPCsPopulator.cs`'s
-    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
-    // `CountsAsACritter` set, `NPCID.cs:10460`). Display names ride
-    // `Lang.GetNPCNameValue` (`NPCs.json`: 361 "Frog", 604 "Ladybug",
-    // 605 "Gold Ladybug"). The Duck entry dropped to c10 (the waterfowl
-    // family's canonical owner, research/108 SEAL S1); the c8 generic
-    // sight gate auto-covers these rows at merge (research/238 §1).
-    BestiaryEntryDef {
-        credit_id: "LadyBug",
-        net_id: 604,
-        kind: NpcKind::LadyBug,
-        variant: None,
-        quick_unlock: false,
-        name: "Ladybug",
-    },
-    BestiaryEntryDef {
-        credit_id: "GoldLadyBug",
-        net_id: 605,
-        kind: NpcKind::GoldLadyBug,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Ladybug",
-    // W4-g10 lane 3 — the town pets' entries: the populator registers one
-    // `BestiaryEntry.TownNPC` per town-pet net id
-    // (`BestiaryDatabaseNPCsPopulator.cs:833-843`); the credit ids are
-    // `NPCID.Search.GetName`'s spellings (`lang_tables.rs`'s NPC_ID rows).
-    // The cat/dog/bunny name plates are overridden to `Friends.TownCat`
-    // etc. (`:646-648` → `en-US.json:839-841` "Town Cat"/"Town Dog"/
-    // "Town Bunny"); the slimes keep `NPCName.TownSlime*`
-    // (`en-US.NPCs.json:715-722`).
-    BestiaryEntryDef {
-        credit_id: "TownCat",
-        net_id: 637,
-        kind: NpcKind::TownCat,
-        variant: None,
-        quick_unlock: false,
-        name: "Town Cat",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownDog",
-        net_id: 638,
-        kind: NpcKind::TownDog,
-        variant: None,
-        quick_unlock: false,
-        name: "Town Dog",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownBunny",
-        net_id: 656,
-        kind: NpcKind::TownBunny,
-        variant: None,
-        quick_unlock: false,
-        name: "Town Bunny",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownSlimeBlue",
-        net_id: 670,
-        kind: NpcKind::TownSlimeBlue,
-        variant: None,
-        quick_unlock: false,
-        name: "Nerdy Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownSlimeGreen",
-        net_id: 678,
-        kind: NpcKind::TownSlimeGreen,
-        variant: None,
-        quick_unlock: false,
-        name: "Cool Slime",
-        credit_id: "PalworldCattivaDistressed",
-        net_id: 695,
-        kind: NpcKind::PalworldCattivaDistressed,
-        variant: None,
-        quick_unlock: false,
-        name: "Cattiva",
-    },
-    BestiaryEntryDef {
-        credit_id: "PalworldFoxsparksDistressed",
-        net_id: 696,
-        kind: NpcKind::PalworldFoxsparksDistressed,
-        variant: None,
-        quick_unlock: false,
-        name: "Foxparks",
-    },
-    BestiaryEntryDef {
-        credit_id: "OwlMimic",
-        net_id: 689,
-        kind: NpcKind::OwlMimic,
-        variant: None,
-        quick_unlock: false,
-        name: "Owl",
-    },
-    BestiaryEntryDef {
-        credit_id: "StatueMimic",
-        net_id: 690,
-        kind: NpcKind::StatueMimic,
-        variant: None,
-        quick_unlock: false,
-        name: "Statue",
-    },
-    BestiaryEntryDef {
-        credit_id: "MossZombie",
-        net_id: 691,
-        kind: NpcKind::MossZombie,
-        variant: None,
-        quick_unlock: false,
-        name: "Moss Zombie",
-    },
-    BestiaryEntryDef {
-        credit_id: "Orca",
-        net_id: 692,
-        kind: NpcKind::Orca,
-        variant: None,
-        quick_unlock: false,
-        name: "Orca",
-    },
-BestiaryEntryDef {
-        credit_id: "TownSlimeCopper",
-        net_id: 684,
-        variant: None,
-        quick_unlock: false,
-        name: "Squire Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "BoundTownSlimeOld",
-        net_id: 685,
-        kind: NpcKind::BoundTownSlimeOld,
-        variant: None,
-        quick_unlock: false,
-        name: "Old Shaking Chest",
-    },
-    BestiaryEntryDef {
-        credit_id: "BoundTownSlimePurple",
-        net_id: 686,
-        kind: NpcKind::BoundTownSlimePurple,
-        variant: None,
-        quick_unlock: false,
-        name: "Clumsy Balloon Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "BoundTownSlimeYellow",
-        net_id: 687,
-        kind: NpcKind::BoundTownSlimeYellow,
-        variant: None,
-        quick_unlock: false,
-        name: "Mystic Frog",
-    },
-    BestiaryEntryDef {
-        credit_id: "Pufferfish",
-        net_id: 688,
-        kind: NpcKind::Pufferfish,
-        variant: None,
-        quick_unlock: false,
-        name: "Pufferfish",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownSlimeOld",
-        net_id: 679,
-        kind: NpcKind::TownSlimeOld,
-        variant: None,
-        quick_unlock: false,
-        name: "Elder Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownSlimePurple",
-        net_id: 680,
-        kind: NpcKind::TownSlimePurple,
-        variant: None,
-        quick_unlock: false,
-        name: "Clumsy Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownSlimeRainbow",
-        net_id: 681,
-        kind: NpcKind::TownSlimeRainbow,
-        variant: None,
-        quick_unlock: false,
-        name: "Diva Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownSlimeRed",
-        net_id: 682,
-        kind: NpcKind::TownSlimeRed,
-        variant: None,
-        quick_unlock: false,
-        name: "Surly Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "TownSlimeYellow",
-        net_id: 683,
-        kind: NpcKind::TownSlimeYellow,
-        variant: None,
-        quick_unlock: false,
-        name: "Mystic Slime",
-    },
-    // W4-g10 lane 3 batch 2 — the copper slime (the populator's
-    // `BestiaryEntry.TownNPC(684)` row, `BestiaryDatabaseNPCsPopulator.cs:843`).
-BestiaryEntryDef {
-        credit_id: "ArmedZombie",
-        net_id: 430,
-        kind: NpcKind::ArmedZombie,
-        variant: None,
-        quick_unlock: false,
-        name: "Zombie",
-    BestiaryEntryDef {
-        credit_id: "YellowCockatiel",
-        net_id: 674,
-        kind: NpcKind::YellowCockatiel,
-        variant: None,
-        quick_unlock: false,
-        name: "Yellow Cockatiel",
-    },
-    BestiaryEntryDef {
-        credit_id: "GrayCockatiel",
-        net_id: 675,
-        kind: NpcKind::GrayCockatiel,
-        variant: None,
-        quick_unlock: false,
-        name: "Gray Cockatiel",
-    },
-BestiaryEntryDef {
-        credit_id: "Stinkbug",
-        net_id: 669,
-        kind: NpcKind::Stinkbug,
-        variant: None,
-        quick_unlock: false,
-        name: "Stinkbug",
-    },
-BestiaryEntryDef {
-        credit_id: "ScarletMacaw",
-        net_id: 671,
-        kind: NpcKind::ScarletMacaw,
-        variant: None,
-        quick_unlock: false,
-        name: "Scarlet Macaw",
-    },
-    BestiaryEntryDef {
-        credit_id: "BlueMacaw",
-        net_id: 672,
-        kind: NpcKind::BlueMacaw,
-        variant: None,
-        quick_unlock: false,
-        name: "Blue Macaw",
-    },
-    BestiaryEntryDef {
-        credit_id: "Toucan",
-        net_id: 673,
-        kind: NpcKind::Toucan,
-        variant: None,
-        quick_unlock: false,
-        name: "Toucan",
-    },
-    BestiaryEntryDef {
-        credit_id: "PirateGhost",
-        net_id: 662,
-        kind: NpcKind::PirateGhost,
-        variant: None,
-        quick_unlock: false,
-        name: "Pirate's Curse",
-    },
-    BestiaryEntryDef {
-        credit_id: "TorchGod",
-        net_id: 664,
-        kind: NpcKind::TorchGod,
-        variant: None,
-        quick_unlock: true,
-        name: "The Torch God",
-    },
-    BestiaryEntryDef {
-        credit_id: "ChaosBallTim",
-        net_id: 665,
-        kind: NpcKind::ChaosBallTim,
-        variant: None,
-        quick_unlock: false,
-        name: "Chaos Ball",
-    },
-BestiaryEntryDef {
-        credit_id: "GoldenSlime",
-        net_id: 667,
-        kind: NpcKind::GoldenSlime,
-        variant: None,
-        quick_unlock: false,
-        name: "Golden Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "QueenSlimeBoss",
-        net_id: 657,
-        kind: NpcKind::QueenSlimeBoss,
-        variant: None,
-        quick_unlock: true,
-        name: "Queen Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "QueenSlimeMinionBlue",
-        net_id: 658,
-        kind: NpcKind::QueenSlimeMinionBlue,
-        variant: None,
-        quick_unlock: false,
-        name: "Crystal Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "QueenSlimeMinionPink",
-        net_id: 659,
-        kind: NpcKind::QueenSlimeMinionPink,
-        variant: None,
-        quick_unlock: false,
-        name: "Bouncy Slime",
-    },
-BestiaryEntryDef {
-        credit_id: "GemBunnyAmber",
-        net_id: 652,
-        kind: NpcKind::GemBunnyAmber,
-        variant: None,
-        quick_unlock: false,
-        name: "Amber Bunny",
-    },
-    BestiaryEntryDef {
-        credit_id: "HellButterfly",
-        net_id: 653,
-        kind: NpcKind::HellButterfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Hell Butterfly",
-    },
-BestiaryEntryDef {
-        credit_id: "GemBunnyTopaz",
-        net_id: 647,
-        kind: NpcKind::GemBunnyTopaz,
-        variant: None,
-        quick_unlock: false,
-        name: "Topaz Bunny",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemBunnySapphire",
-        net_id: 648,
-        kind: NpcKind::GemBunnySapphire,
-        variant: None,
-        quick_unlock: false,
-        name: "Sapphire Bunny",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemBunnyEmerald",
-        net_id: 649,
-        kind: NpcKind::GemBunnyEmerald,
-        variant: None,
-        quick_unlock: false,
-        name: "Emerald Bunny",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemBunnyRuby",
-        net_id: 650,
-        kind: NpcKind::GemBunnyRuby,
-        variant: None,
-        quick_unlock: false,
-        name: "Ruby Bunny",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemBunnyDiamond",
-        net_id: 651,
-        kind: NpcKind::GemBunnyDiamond,
-        variant: None,
-        quick_unlock: false,
-        name: "Diamond Bunny",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemSquirrelEmerald",
-        net_id: 642,
-        kind: NpcKind::GemSquirrelEmerald,
-        variant: None,
-        quick_unlock: false,
-        name: "Emerald Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemSquirrelRuby",
-        net_id: 643,
-        kind: NpcKind::GemSquirrelRuby,
-        variant: None,
-        quick_unlock: false,
-        name: "Ruby Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemSquirrelDiamond",
-        net_id: 644,
-        kind: NpcKind::GemSquirrelDiamond,
-        variant: None,
-        quick_unlock: false,
-        name: "Diamond Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemSquirrelAmber",
-        net_id: 645,
-        kind: NpcKind::GemSquirrelAmber,
-        variant: None,
-        quick_unlock: false,
-        name: "Amber Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemBunnyAmethyst",
-        net_id: 646,
-        kind: NpcKind::GemBunnyAmethyst,
-        variant: None,
-        quick_unlock: false,
-        name: "Amethyst Bunny",
-    },
-BestiaryEntryDef {
-        credit_id: "GemSquirrelAmethyst",
-        net_id: 639,
-        kind: NpcKind::GemSquirrelAmethyst,
-        variant: None,
-        quick_unlock: false,
-        name: "Amethyst Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemSquirrelTopaz",
-        net_id: 640,
-        kind: NpcKind::GemSquirrelTopaz,
-        variant: None,
-        quick_unlock: false,
-        name: "Topaz Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "GemSquirrelSapphire",
-        net_id: 641,
-        kind: NpcKind::GemSquirrelSapphire,
-        variant: None,
-        quick_unlock: false,
-        name: "Sapphire Squirrel",
-    },
-    BestiaryEntryDef {
-        credit_id: "RockGolem",
-        net_id: 631,
-        kind: NpcKind::RockGolem,
-        variant: None,
-        quick_unlock: false,
-        name: "Rock Golem",
-    },
-    BestiaryEntryDef {
-        credit_id: "MaggotZombie",
-        net_id: 632,
-        kind: NpcKind::MaggotZombie,
-        variant: None,
-        quick_unlock: false,
-        name: "Maggot Zombie",
-    },
-BestiaryEntryDef {
-        credit_id: "SporeSkeleton",
-        net_id: 635,
-        kind: NpcKind::SporeSkeleton,
-        variant: None,
-        quick_unlock: false,
-        name: "Spore Skeleton",
-    // W4-d36 E4b — own entry (the populator adds the Eclipse info at
-    // `BestiaryDatabaseNPCsPopulator.cs:1466`; the name rides
-    // `Lang.GetNPCNameValue`).
-    BestiaryEntryDef {
-        credit_id: "Frankenstein",
-        net_id: 162,
-        kind: NpcKind::Frankenstein,
-        variant: None,
-        quick_unlock: false,
-        name: "Frankenstein",
-    },
-    // W4-d36 hover batch — own entries (no Hide folds; the populator adds
-    // the Crimson/Jungle info at `BestiaryDatabaseNPCsPopulator.cs:611`/
-    // `:1339`/`:1570`; the names ride `Lang.GetNPCNameValue`).
-    BestiaryEntryDef {
-        credit_id: "Crimera",
-        net_id: 173,
-        kind: NpcKind::Crimera,
-        variant: None,
-        quick_unlock: false,
-        name: "Crimera",
-    },
-    BestiaryEntryDef {
-        credit_id: "MossHornet",
-        net_id: 176,
-        kind: NpcKind::MossHornet,
-        variant: None,
-        quick_unlock: false,
-        name: "Moss Hornet",
-    },
-    BestiaryEntryDef {
-        credit_id: "Moth",
-        net_id: 205,
-        kind: NpcKind::Moth,
-        variant: None,
-        quick_unlock: false,
-        name: "Moth",
-    },
-    // W4-d36 E4 batch 2 — the remaining fighters' entries (appended last,
-    // the small-lane convention). The populator adds the Eclipse info to
-    // 166 (`BestiaryDatabaseNPCsPopulator.cs:1394`) and the UndergroundSnow
-    // info to 167 (`:1551`); the names ride `Lang.GetNPCNameValue`.
-    // 163 BlackRecluse is `Hide = true` (GetLeinforsEntries) and its
-    // credit folds onto 238 BlackRecluseWall (`ContentSamples.cs:1036`:
-    // `creditIds[163] = creditIds[238]`). d37's 238 kind is not on this
-    // branch, so the row is emitted at net 238 keyed on the wall
-    // crawler's credit (doc-109 §4's fold note; the populator attaches
-    // the SpiderNest info to 238, `:1555`). The DRAW sheet stays 163
-    // through `texture_net_id`'s own row (the Sharkron 372 precedent).
-BestiaryEntryDef {
-        credit_id: "SwampThing",
-        net_id: 166,
-        kind: NpcKind::SwampThing,
-        variant: None,
-        quick_unlock: false,
-        name: "Swamp Thing",
-    },
-    BestiaryEntryDef {
-        credit_id: "UndeadViking",
-        net_id: 167,
-        kind: NpcKind::UndeadViking,
-        variant: None,
-        quick_unlock: false,
-        name: "Undead Viking",
-    },
-    // W4-d36 E4 batch 3 — own entries (none of the five carries a
-    // `Hide = true` draw-modifier row — `NPCID.cs:2384-2477`'s offsets;
-    // the credit ids are the `NPCID.Search.GetName` names,
-    // `ContentSamples.cs:868-870`). The populator adds the BloodMoon
-    // event to 168 (`BestiaryDatabaseNPCsPopulator.cs:1280`), the
-    // CorruptIce/HallowIce/CrimsonIce biomes to 170/171/180
-    // (`:1565`/`:1566`/`:1568`) and TheCrimson + UndergroundCrimson to
-    // 181 (`:612`/`:1569`/`:1792`). All three pigrons display "Pigron"
-    // (the en-US `NPCs.Pigron*.DisplayName` rows).
-    BestiaryEntryDef {
-        credit_id: "CorruptPenguin",
-        net_id: 168,
-        kind: NpcKind::CorruptPenguin,
-        variant: None,
-        quick_unlock: false,
-        name: "Corrupt Penguin",
-    },
-    BestiaryEntryDef {
-        credit_id: "PigronCorruption",
-        net_id: 170,
-        kind: NpcKind::PigronCorruption,
-        variant: None,
-        quick_unlock: false,
-        name: "Pigron",
-    },
-    BestiaryEntryDef {
-        credit_id: "PigronHallow",
-        net_id: 171,
-        kind: NpcKind::PigronHallow,
-        variant: None,
-        quick_unlock: false,
-        name: "Pigron",
-    },
-    BestiaryEntryDef {
-        credit_id: "PigronCrimson",
-        net_id: 180,
-        kind: NpcKind::PigronCrimson,
-        variant: None,
-        quick_unlock: false,
-        name: "Pigron",
-    },
-    BestiaryEntryDef {
-        credit_id: "FaceMonster",
-        net_id: 181,
-        kind: NpcKind::FaceMonster,
-        variant: None,
-        quick_unlock: false,
-        name: "Face Monster",
-    },
-    // W4-d36 E4 batch 4 — the Snow Flinx / Armored Viking own entries (no
-    // Hide row — `NPCID.cs:2481-2487`/`:2563-2569` carry Velocity=1f only;
-    // the credit ids are the `NPCID.Search.GetName` names,
-    // `ContentSamples.cs:868-870`). The populator adds the UndergroundSnow
-    // biome to 185 (`BestiaryDatabaseNPCsPopulator.cs:1182`) and 197
-    // (`:1552`). The Lihzahrd pair shares ONE credit: 199 is `Hide = true`
-    // (`NPCID.cs:2577-2582`) and 198's credit folds onto 199's name
-    // (`ContentSamples.cs:1052`: `creditIds[198] = creditIds[199]`), so the
-    // entry emits at net 198 keyed on "LihzahrdCrawler" (the BlackRecluse
-    // 238 precedent — the hidden form's credit, the visible form's net).
-    // Both display "Lihzahrd" (the en-US `NPCs.Lihzahrd*.DisplayName` rows);
-    // the populator attaches TheTemple to 198 (`:1468`) and 199 (`:1395`).
-    BestiaryEntryDef {
-        credit_id: "SnowFlinx",
-        net_id: 185,
-        kind: NpcKind::SnowFlinx,
-        variant: None,
-        quick_unlock: false,
-        name: "Snow Flinx",
-    },
-    BestiaryEntryDef {
-        credit_id: "ArmoredViking",
-        net_id: 197,
-        kind: NpcKind::ArmoredViking,
-        variant: None,
-        quick_unlock: false,
-        name: "Armored Viking",
-    },
-    BestiaryEntryDef {
-        credit_id: "LihzahrdCrawler",
-        net_id: 198,
-        kind: NpcKind::Lihzahrd,
-        variant: None,
-        quick_unlock: false,
-        name: "Lihzahrd",
-    },
-    // W4-d36 E4 batch 5 — the SEAL batch's five own entries (no Hide row
-    // — `NPCID.cs:2592-2618` carries Velocity=1f only for 201/202/203/206,
-    // and 204 has NO draw-modifier row at all; the credit ids are the
-    // `NPCID.Search.GetName` names, `ContentSamples.cs:868-870` — none of
-    // the five folds). The bone trio all display "Skeleton" (the en-US
-    // `NPCs.HeadacheSkeleton/MisassembledSkeleton/PantlessSkeleton.
-    // DisplayName` rows); the populator adds Caverns to 201/202/203
-    // (`BestiaryDatabaseNPCsPopulator.cs:1469-1471`), UndergroundJungle to
-    // 204 (`:1132`) and UndergroundSnow to 206 (`:1529`).
-    BestiaryEntryDef {
-        credit_id: "HeadacheSkeleton",
-        net_id: 201,
-        kind: NpcKind::HeadacheSkeleton,
-        variant: None,
-        quick_unlock: false,
-        name: "Skeleton",
-    },
-    BestiaryEntryDef {
-        credit_id: "MisassembledSkeleton",
-        net_id: 202,
-        kind: NpcKind::MisassembledSkeleton,
-        variant: None,
-        quick_unlock: false,
-        name: "Skeleton",
-    },
-    BestiaryEntryDef {
-        credit_id: "PantlessSkeleton",
-        net_id: 203,
-        kind: NpcKind::PantlessSkeleton,
-        variant: None,
-        quick_unlock: false,
-        name: "Skeleton",
-    },
-    BestiaryEntryDef {
-        credit_id: "SpikedJungleSlime",
-        net_id: 204,
-        kind: NpcKind::SpikedJungleSlime,
-        variant: None,
-        quick_unlock: false,
-        name: "Spiked Jungle Slime",
-    },
-    BestiaryEntryDef {
-        credit_id: "IcyMerman",
-        net_id: 206,
-        kind: NpcKind::IcyMerman,
-        variant: None,
-        quick_unlock: false,
-        name: "Icy Merman",
     },
 ];
 
@@ -5190,12 +3751,6 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
         entry.quick_unlock,
         full,
     )
-    }
-    }
-    }
-    }
-    }
-    }
 }
 
 /// W4-c8 final — `NPC.CountsAsACritter` (`NPC.cs:6887-6897`): the
@@ -5614,65 +4169,6 @@ pub fn try_entry_for_npc(
         // OWN ENTRIES entry net 375 for the cs_id fallback, the
         // ForceBubble precedent; mirroring it here would break the
         // s1_f_3 cs_id==net gate.)
-        // W4-c6 style-59 wiring: the blade's bestiary draw modifiers are
-        // Hide=true (`NPCID.cs:3398-3403`) — the credit folds onto the
-        // Pumpking (the fishron-hazard precedent). The DRAW sheet stays
-        // NPC_328 through `texture_net_id`'s own row.
-        NpcKind::PumpkingBlade => NpcKind::Pumpking,
-        // W4-d9 wiring (d40 rows): the dragon segments' bestiary credit
-        // folds onto the head (`ContentSamples.cs`; the Hide=true variants
-        // have no own entry).
-        NpcKind::CultistDragonBody1
-        | NpcKind::CultistDragonBody2
-        | NpcKind::CultistDragonBody3
-        | NpcKind::CultistDragonBody4
-        | NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
-        // W4-d39: the white cultist archer (380) is a Hide=true exclusion
-        // (`NPCID.cs:3735`, the populator's `GetExclusions`) — it folds
-        // onto the blue archer's 379 entry (the Sharkron2 precedent).
-        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
-        // W4-d41 — the cavern 2-variants fold onto the 1-variants' credits
-        // (`ContentSamples.cs:1019-1020`: {495→494}, {497→496}); their
-        // draw modifiers hide them (the redigit dictionary's `Hide=true`).
-        NpcKind::Crawdad2 => NpcKind::Crawdad,
-        NpcKind::GiantShelly2 => NpcKind::GiantShelly,
-        // W4-d41 — the salamander colours fold onto the 499 entry
-        // (`ContentSamples.cs:1021-1025`: ALL of 498-506 → the 499
-        // credit; the redigit dictionary hides 498/500-506).
-        NpcKind::Salamander
-        | NpcKind::Salamander3
-        | NpcKind::Salamander4
-        | NpcKind::Salamander5
-        | NpcKind::Salamander6
-        | NpcKind::Salamander7
-        | NpcKind::Salamander8
-        | NpcKind::Salamander9 => NpcKind::Salamander2,
-        // W4-d41 — the Dune Splicer segments fold onto the head's entry
-        // (the leinfors dictionary's `Hide = true` — one credit for the
-        // whole worm, the Devourer precedent).
-        NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerHead,
-        // W4-d41 — the Tomb Crawler segments fold onto the head's entry
-        // (the leinfors dictionary's `Hide = true`).
-        NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerHead,
-        // W4-d41 — the sand poacher's wall form folds onto the walker's
-        // entry (`ContentSamples.cs:1038`: {531→530}; the leinfors
-        // dictionary's `Hide = true`).
-        NpcKind::DesertScorpionWall => NpcKind::DesertScorpionWalk,
-        // W4-f18 batch 2 — the Duck2 363 is Hide=true (`NPCID.cs:3617-
-        // 3622`): the swimming form folds onto the walker Duck 362's
-        // entry (one credit per waterfowl, the DetonatingBubble precedent).
-        NpcKind::Duck2 => NpcKind::Duck,
-        // W4-f18 batch 3 — the DuckWhite2 365 folds onto the DuckWhite 364
-        // (Hide=true, `NPCID.cs:3633-3638`); the TruffleWormDigger 375
-        // folds onto the TruffleWorm 374 (Hide=true, `NPCID.cs:3713-3718`).
-        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
-        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
-        // CultistArcherBlue 379 (Hide=true, `NPCID.cs:3734-3739`).
-        // W4-d36 E4 batch 4 — the Lihzahrd Crawler (199) is Hide=true
-        // (`NPCID.cs:2577-2582`); its credit folds onto the 198 entry
-        // (`ContentSamples.cs:1052`: `creditIds[198] = creditIds[199]`),
-        // keyed on the crawler's name (the BlackRecluse 238 precedent).
-        NpcKind::LihzahrdCrawler => NpcKind::Lihzahrd,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -5729,9 +4225,6 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // bestiary draw modifiers hide it (`NPCID.cs:3721-3725`), so it
         // never has an entry of its own.
         NpcKind::SleepingAngler => NpcKind::Angler,
-        // W4-d120 — the bound Tavernkeep rides the Tavernkeep's row: the
-        // vanilla's draw modifier Hide=true (`NPCID.cs:5178-5184`), the
-        // Sleeping Angler precedent.
         // The bound Wizard/Mechanic ride their freed rows (the C#'s
         // bestiary ids 106/123 have no entries of their own — the bound
         // Goblin 105 has none either).
@@ -5754,16 +4247,6 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // `texture_net_id`'s own rows.
         NpcKind::DetonatingBubble => NpcKind::DukeFishron,
         NpcKind::Sharkron2 => NpcKind::Sharkron,
-        // W4-d9 wiring (d40 rows): the dragon segments' bestiary credit
-        // folds onto the head (`ContentSamples.cs`; the Hide=true variants
-        // have no own entry). The head 454 + the squidhead 521 keep their
-        // OWN entries (the Sharkron precedent — the UI provider's
-        // {454,439}/{521,439} quickUnlock mapping is not the kill credit).
-        NpcKind::CultistDragonBody1
-        | NpcKind::CultistDragonBody2
-        | NpcKind::CultistDragonBody3
-        | NpcKind::CultistDragonBody4
-        | NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
         // The Force Bubble rides the Officer's row — the vanilla's bestiary
         // draw modifiers hide it (`NPCID.cs:3766-3770`'s `Hide = true`), so
         // it never has an entry of its own (the Sleeping Angler precedent;
@@ -5832,72 +4315,6 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // Bubble precedent; its own ENTRIES entry + cs_id 375 stand for
         // the not-catchable friendly/immunity gate).
         NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
-        // W4-c6 style-59 wiring: the blade's Hide=true draw modifiers
-        // (`NPCID.cs:3398-3403`) — no entry of its own; the credit folds
-        // onto the Pumpking (the ForceBubble/fishron-hazard precedent).
-        // The populator DOES attach invasion-spawn info to entry 328
-        // (`BestiaryDatabaseNPCsPopulator.cs:1655`) — the entry exists in
-        // the vanilla DB but is hidden from the grid; the port's fold
-        // keeps the credit on the boss row like every Hide=true rider.
-        NpcKind::PumpkingBlade => NpcKind::Pumpking,
-        // The dragonflies (W4-d33): the five Hide=true colours fold onto
-        // the visible RedDragonfly 599 card — the kill credit
-        // `ContentSamples.cs:1043-1047` (`NpcBestiaryCreditIdsByNpcNetIds`
-        // [595/596/597/598/600] = [599]). The Gold 601 keeps its own card.
-        NpcKind::BlackDragonfly
-        | NpcKind::BlueDragonfly
-        | NpcKind::GreenDragonfly
-        | NpcKind::OrangeDragonfly
-        | NpcKind::YellowDragonfly => NpcKind::RedDragonfly,
-        // W4-d39: the white cultist archer (380) is a Hide=true exclusion
-        // (`NPCID.cs:3735`) — it rides the blue archer's 379 row (the
-        // Sharkron2 precedent). The DRAW sheet stays NPC_380 through
-        // `texture_net_id`'s own row.
-        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
-        // W4-d41 — the cavern 2-variants ride the 1-variants' rows
-        // (`ContentSamples.cs:1019-1020`'s credit fold; the redigit
-        // dictionary's `Hide = true` keeps them out of the roster).
-        NpcKind::Crawdad2 => NpcKind::Crawdad,
-        NpcKind::GiantShelly2 => NpcKind::GiantShelly,
-        // W4-d41 — the salamander colours ride the 499 row
-        // (`ContentSamples.cs:1021-1025`'s credit fold).
-        NpcKind::Salamander
-        | NpcKind::Salamander3
-        | NpcKind::Salamander4
-        | NpcKind::Salamander5
-        | NpcKind::Salamander6
-        | NpcKind::Salamander7
-        | NpcKind::Salamander8
-        | NpcKind::Salamander9 => NpcKind::Salamander2,
-        // W4-d41 — the Dune Splicer segments ride the head's row (the
-        // leinfors dictionary's `Hide = true`).
-        NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerHead,
-        // W4-d41 — the Tomb Crawler segments ride the head's row (the
-        // leinfors dictionary's `Hide = true`).
-        NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => NpcKind::TombCrawlerHead,
-        // W4-d41 — the sand poacher's wall form rides the walker's row
-        // (`ContentSamples.cs:1038`'s credit fold).
-        NpcKind::DesertScorpionWall => NpcKind::DesertScorpionWalk,
-        // W4-f18 batch 2 — the Duck2 363 folds onto the Duck 362's row
-        // (Hide=true, `NPCID.cs:3617-3622`; the try_entry twin above).
-        NpcKind::Duck2 => NpcKind::Duck,
-        // W4-f18 batch 3 — the DuckWhite2 365 / TruffleWormDigger 375 fold
-        // onto their walker rows (the try_entry twin above).
-        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
-        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
-        // CultistArcherBlue 379 (the try_entry twin above).
-        // W4-d43 — the Owl Mimic 689 is Hide=true (`NPCID.cs:755-761`'s
-        // NPCBestiaryDrawModifiers) and its kill credit folds onto the
-        // visible Owl 611 (`ContentSamples.cs:1054`:
-        // `npcBestiaryCreditIdsByNpcNetIds[689] = ...[611]`). It keeps its
-        // OWN ENTRIES row + cs_id 689 for the catch/release chain (the
-        // d33 BlackDragonfly precedent); `try_entry_for_npc` stays
-        // unfolded so the s1_f_3 cs_id==net invariant holds. The Owl 611
-        // kind rides d42's band — the fold resolves at the merge.
-        NpcKind::OwlMimic => NpcKind::Owl,
-        // W4-d36 E4 batch 4 — the Lihzahrd Crawler folds onto the 198 entry
-        // (the `try_entry_for_npc` twin above; `ContentSamples.cs:1052`).
-        NpcKind::LihzahrdCrawler => NpcKind::Lihzahrd,
         other => other,
     };
     ENTRIES
@@ -6213,34 +4630,6 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ENTRIES.len());
-    }
-
-    /// W4-d43 retire — the Owl Mimic 689 is Hide=true and folds its kill
-    /// credit onto the visible Owl 611 (`ContentSamples.cs:1054`), the d33
-    /// hidden-dragonfly precedent: `entry_for_npc` folds, `try_entry_for_npc`
-    /// stays unfolded (the s1_f_3 cs_id==net invariant), the 689 entry keeps
-    /// its own row + cs_id for the catch/release chain, and 689 takes no
-    /// bestiary grid slot. The Owl 611 kind rides d42's band — the fold's
-    /// TARGET resolves at the merge (this witness pins the source side).
-    /// WRITTEN, NOT RUN (code-only mode).
-    #[test]
-    fn w4_d43_the_owl_mimic_folds_its_credit_and_takes_no_grid_slot() {
-        // The 689 entry keeps its OWN row (the catch/release chain keys it).
-        let own = try_entry_for_npc(NpcKind::OwlMimic, SlimeVariant::Blue)
-            .expect("the OwlMimic keeps its own unfolded entry");
-        assert_eq!(own.net_id, 689);
-        assert_eq!(own.credit_id, "OwlMimic");
-        assert_eq!(NpcKind::OwlMimic.cs_id(), 689);
-        // Hide=true (`NPCID.cs:755-761`) — no bestiary grid slot.
-        assert!(
-            !crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&689),
-            "the Hide=true OwlMimic takes no bestiary sheet slot"
-        );
-        // The world-draw sheet stays packed (only the grid slot drops).
-        assert!(
-            crate::assets::STATIC_SHEET_NAMES.contains(&"NPC_689"),
-            "the NPC_689 world sheet stays packed"
-        );
     }
 
     #[test]

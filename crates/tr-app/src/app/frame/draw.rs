@@ -526,6 +526,7 @@ impl App {
                                 ) {
                                     self.entity_lights.add(x, y, rgb);
                                 }
+                            }
                             // W4-g8 lane 1 batch 1 — the Pixie's hallow glow
                             // (`NPC.cs:24801`, the aiStyle-22 arm's 75 branch):
                             // (0.9, 0.3+(270-mouseTextColor)/400, 0.2) at the
