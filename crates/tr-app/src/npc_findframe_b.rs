@@ -607,6 +607,10 @@ pub fn find_frame_b(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
 /// precedent in `npc.rs`. Shared with `npc_findframe_extra2` (the
 /// Chaos Elemental 120 / Face Monster 181 ride the same group) — the
 /// keep-one house rule, the d48 snail-delegate precedent.
+/// precedent in `npc.rs`. Shared with `npc_findframe_extra3` (the
+/// Snow Flinx 185 / Nymph 196 / Lihzahrd 198 + the batch-2 skeletons
+/// ride the same group) — the keep-one house rule, the e14
+/// ChaosElemental/FaceMonster delegate precedent.
 pub(crate) fn humanoid_fighter_frame(
     s: &mut FrameState,
     i: &FrameInput,

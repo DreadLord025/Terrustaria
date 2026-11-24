@@ -39,6 +39,14 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     // The snow spawn cap scales with the gfx quality (S1-B-6,
     // `Main.cs:13057`).
     app.rain.gfx_quality = app.gfx_quality.quality;
+    // `Rain.NewRain` reads the STORED `Main.waterStyle` (`Rain.cs:205`) —
+    // latch the frame's `CalculateWaterStyle` value (the fountain head arm
+    // `Main.cs:57390-57393` included), the same seam convention.
+    app.rain.water_style = crate::biome::calculate_water_style_with_fountain(
+        &app.world,
+        app.camera,
+        app.scene_metrics.active_fountain_color,
+    ) as u32;
     app.rain.update(
         &app.world,
         app.camera,

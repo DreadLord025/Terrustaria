@@ -15,9 +15,11 @@
 //! ±21 tile) and the room (the `15*strength + Next(15)` diameter, the
 //! slant vector, the outer brick + inner carve). The vanilla's
 //! `GenerationProgress`, `ProtectionType`, the shape modifiers
-//! (`ModShapes.All`/`TileRunner`-style) and the biome/sacred/dungeon-substyle
-//! style tables stay out of this slice — the pass writes the brick/wall/
-//! carved grid directly, the way the port's other worldgen passes do.
+//! (`ModShapes.All`/`TileRunner`-style) stay out of this slice — the pass
+//! writes the brick/wall/carved grid directly, the way the port's other
+//! worldgen passes do. The biome style tables (`dungeonGenerationStyles`:
+//! snow/desert/hallow/crimson) live in `dungeon_styles.rs` (W4-c32, unwired
+//! data tables + lookups).
 //!
 //! The pass replaces the shape-level `pass_dungeon` corridor approximation:
 //! it keeps the entrance tower, the shaft and the reach-to-rock-layer
@@ -71,6 +73,43 @@ impl DungeonColor {
             DungeonColor::Blue => 481,
             DungeonColor::Green => 482,
             DungeonColor::Pink => 483,
+        }
+    }
+
+    /// `genVars.windowGlassWallType` (`DungeonCrawler.cs:68/78/88`).
+    pub fn window_glass_wall(self) -> u16 {
+        match self {
+            DungeonColor::Blue => 91,
+            DungeonColor::Green => 92,
+            DungeonColor::Pink => 90,
+        }
+    }
+
+    /// `genVars.windowClosedGlassWallType` (:69/79/89).
+    pub fn window_closed_glass_wall(self) -> u16 {
+        match self {
+            DungeonColor::Blue => 96,
+            DungeonColor::Green => 94,
+            DungeonColor::Pink => 98,
+        }
+    }
+
+    /// `genVars.windowEdgeWallType` (:70/80/90).
+    pub fn window_edge_wall(self) -> u16 {
+        match self {
+            DungeonColor::Blue => 8,
+            DungeonColor::Green => 9,
+            DungeonColor::Pink => 7,
+        }
+    }
+
+    /// `genVars.windowPlatformItemTypes` (:71/81/91) — the one-item array
+    /// `GetCurrentDungeonStyle` copies (`DungeonGenerationStyles.cs:106`).
+    pub fn window_platform_items(self) -> &'static [i32] {
+        match self {
+            DungeonColor::Blue => &[1386],
+            DungeonColor::Green => &[1385],
+            DungeonColor::Pink => &[1384],
         }
     }
 }
@@ -452,7 +491,8 @@ fn carve_interior(
 /// world: the setup (the color roll + the step count), the layout crawl,
 /// the entrance tower + shaft at the dungeon anchor, and the cracked-brick
 /// runs. The vanilla's entrance-hall precalculation and the biome styles
-/// (`dungeonGenerationStyles`) ride the follow-up.
+/// (`dungeonGenerationStyles`) ride the follow-up — the style tables
+/// themselves landed in `dungeon_styles.rs` (W4-c32), still unwired.
 ///
 /// The colour roll lives here — [`DungeonColor::roll`] below is this pass's
 /// `SetupDungeonGenVarVariables` `genRand.Next(3)` triple, and the live

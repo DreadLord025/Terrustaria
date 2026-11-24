@@ -563,6 +563,18 @@ pub const EXPLODING_BULLET: u16 = 286;
 /// Bullet: inflicts Midas 72 (`Projectile.cs:3758-3771`, `StatusNPC`
 /// `:11537-11540`). S1-P-i18.
 pub const GOLDEN_BULLET: u16 = 287;
+/// `ProjectileID.SilverBullet` (981, `ProjectileID.cs:2516`) — the Silver
+/// Bullet's shot (aiStyle 1, `Projectile.cs:9340-9353`): 4x4, friendly,
+/// ranged, penetrate 1, light 0.5, alpha 255, scale 1.2, timeLeft 600,
+/// extraUpdates 1. W4-g2d rowless-rider batch (the e3e flag): a plain
+/// bullet — the generic aiStyle-1 flight is its whole AI (the only
+/// per-type `AI_001` site is the `Next(6)` dust-279 gate `:56746-56752`,
+/// dust-only, skipped with the layer like every other bullet's trail).
+/// The `Damage_PVE_Inner` x3-vs-Werewolf arm (`:13385-13388`,
+/// `targetNPC.type == 104`) is INERT: the Werewolf (`NPCID.cs:10885`) is
+/// an unported NPC kind (the port's internal id 104 is DD2SkeletonT1,
+/// NOT the vanilla id — `npc/data.rs:288`); recorded in research/26d-g2d.
+pub const SILVER_BULLET: u16 = 981;
 /// The special-bullet kind set S1-P-i18 owns (the aiStyle-1 arms in
 /// `projectile_special_bullets`). Disjoint from the ai001 A/B/C kind lists,
 /// the riders and the moon-lord set. 90 CrystalShard is aiStyle 24 (the
@@ -1024,6 +1036,37 @@ pub const RAIN_CLOUD_MOVING: u16 = 237;
 pub const RAIN_CLOUD_RAINING: u16 = 238;
 /// `ProjectileID.RainFriendly` (239) — the cloud's rain drop (aiStyle 45).
 pub const RAIN_FRIENDLY: u16 = 239;
+// W4-g2 — the rowless proj kinds of d5's findings F5/F6 (the census doc
+// `26d-projectile-ai-41-50-census.md` on `origin/task/W4-d5-proj-ai-41-50`):
+// the Chlorophyte Partisan's orb and the Blood Rain's cloud chain. Without a
+// `proj_data` row the data-carrying spawn silently declines the shot.
+/// `ProjectileID.ChlorophyteOrb` (229, `ProjectileID.cs:1012`) — the
+/// Chlorophyte Partisan's orb (aiStyle 44, `Projectile.cs:3151-3163`): 30x30,
+/// friendly, melee, penetrate -1, light 0.2, id-static 10. The stock
+/// `tileCollide = true` (`:775`) stands — the orb dies on tile contact, the
+/// spore cloud 228's `false` does not carry over.
+pub const CHLOROPHYTE_ORB: u16 = 229;
+/// `ProjectileID.BloodCloudMoving` (243, `ProjectileID.cs:1040`) — the Blood
+/// Rain's flying cloud (aiStyle 45, `Projectile.cs:3255-3262`): 28x28,
+/// penetrate -1, netImportant — the 237 twin, verbatim.
+pub const BLOOD_CLOUD_MOVING: u16 = 243;
+/// `ProjectileID.BloodCloudRaining` (244, `ProjectileID.cs:1042`) — the
+/// settled blood cloud (aiStyle 45, `Projectile.cs:3263-3273`): 54x28,
+/// tileCollide false, ignoreWater, penetrate -1, timeLeft 18000. Its rain
+/// cadence is 10 (`:28030`) and its owner cap 1 (`:28072`) — the arm's
+/// per-kind constants, not row fields.
+pub const BLOOD_CLOUD_RAINING: u16 = 244;
+/// `ProjectileID.BloodRain` (245, `ProjectileID.cs:1044`) — the blood drop
+/// (aiStyle 45, `Projectile.cs:3274-3288`): 4x40, friendly, magic,
+/// penetrate 2, timeLeft 300, scale 1.1, extraUpdates 1, ignoreWater,
+/// id-static 10. The arm pins alpha 100 (`:28099`).
+pub const BLOOD_RAIN: u16 = 245;
+/// `ProjectileID.RainNimbus` (264, `ProjectileID.cs:1082`) — the hostile
+/// rain-cloud drop (aiStyle 45, `Projectile.cs:3491-3502`): 4x40, hostile,
+/// penetrate -1, timeLeft 120, scale 1.1, extraUpdates 1, ignoreWater. The
+/// arm pins rotation `atan2(vy, vx) + 1.57` (`:28103`). Spawned by the
+/// Angry Nimbus (`NPC.cs:31647`, `Owner: Main.myPlayer`).
+pub const RAIN_NIMBUS: u16 = 264;
 /// `ProjectileID.GoldenShowerFriendly` (280) — the Golden Shower's stream
 /// (aiStyle 12).
 pub const GOLDEN_SHOWER: u16 = 280;
@@ -1033,8 +1076,34 @@ pub const SHADOWBEAM: u16 = 294;
 /// `ProjectileID.InfernoFriendlyBolt` (295) — the Inferno Fork's bolt
 /// (aiStyle 50); it spawns the blast 296 on death.
 pub const INFERNO_FORK_BOLT: u16 = 295;
-/// `ProjectileID.Blast` (296) — the fork's on-death explosion (aiStyle 50).
+/// `ProjectileID.Blast` (296) - the fork's on-death explosion (aiStyle 50).
 pub const INFERNO_BLAST: u16 = 296;
+// W4-g2 — d5's F1/F4 rowless hostile twins (aiStyles 48/50).
+/// `ProjectileID.ShadowBeamHostile` (290, `ProjectileID.cs:1134`) — the
+/// Necromancer's beam (283/284, `NPC.cs:21204`) (aiStyle 48,
+/// `Projectile.cs:3793-3803`): 4x4, hostile, magic, extraUpdates 100,
+/// timeLeft 100, penetrate -1. The delay table maps 290→3 (`:53991`); the
+/// arm's Item8 cue at `localAI[0] == 1` (`:28229-28232`) and the
+/// HandleMovement reflect (`:18861-18904`) ride the 294's shape.
+pub const SHADOWBEAM_HOSTILE: u16 = 290;
+/// `ProjectileID.InfernoHostileBolt` (291, `ProjectileID.cs:1136`) — the
+/// Diabolist's bolt (285/286, `NPC.cs:21207`) (aiStyle 50,
+/// `Projectile.cs:3804-3814`): 12x12, hostile, alpha 255, magic,
+/// tileCollide false, penetrate -1. The spawn passes the target centre as
+/// `ai[0]/ai[1]` (`NPC.cs:21219`); the arm's arrival-dot kill (`:28333`)
+/// reads them.
+pub const INFERNO_HOSTILE_BOLT: u16 = 291;
+/// `ProjectileID.InfernoHostileBlast` (292, `ProjectileID.cs:1138`) — the
+/// bolt's on-death blast (aiStyle 50, `Projectile.cs:3815-3825`): 130x130,
+/// hostile, alpha 255, magic, tileCollide false, penetrate -1. The Kill
+/// spawn (`:74334-74340`) carries the bolt's FULL damage (no 0.75).
+pub const INFERNO_HOSTILE_BLAST: u16 = 292;
+/// `ProjectileID.UFOLaser` (433, `ProjectileID.cs:1420`) — the UFO minion's
+/// laser (aiStyle 48, `Projectile.cs:5037-5046`): 8x8, friendly,
+/// extraUpdates 100, timeLeft 100, ignoreWater. The stock penetrate 1
+/// (`:774`) stands — the laser dies on its first hit, unlike the beams.
+/// `Sets.MinionShot` (`ProjectileID.cs:431`) already lists 433.
+pub const UFO_LASER: u16 = 433;
 /// `ProjectileID.VenomFang` (355) — the Poison Staff's aiStyle-1 rider.
 pub const VENOM_FANG: u16 = 355;
 /// `ProjectileID.FrostBoltStaff` (359) — the Frost Staff's bolt.
@@ -1683,6 +1752,8 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         CRYSTAL_BULLET | CRYSTAL_SHARD => 0.5, // `:1722` / `:1736`
         CURSED_BULLET => 0.5,                  // `:1922`
         CHLOROPHYTE_BULLET => 0.5,             // `:2955`
+        // W4-g2 (d5 F6) — the Partisan's orb (`Projectile.cs:3159`).
+        CHLOROPHYTE_ORB => 0.2,                // `:3159`
         HIGH_VELOCITY_BULLET => 0.5,           // `:3245`
         ICHOR_BULLET => 0.5,                   // `:3657`
         VENOM_BULLET => 0.5,                   // `:3706`
@@ -1690,6 +1761,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         NANO_BULLET => 0.5,                    // `:3734`
         EXPLODING_BULLET => 0.5,               // `:3747`
         GOLDEN_BULLET => 0.5,                  // `:3765`
+        SILVER_BULLET => 0.5,                  // `:9347` (W4-g2d)
         // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
         // `light = 1f` (the 986 plain override keeps the stock 0).
         987..=993 => 1.0,
@@ -2336,6 +2408,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:3758-3771` — GoldenBullet 287: penetrate 1,
             // extraUpdates 2, scale 1.3 (Midas on hit).
             GOLDEN_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.3)),
+            // W4-g2d — `Projectile.cs:9340-9353`: the Silver Bullet 981:
+            // 4x4, aiStyle 1, friendly, penetrate 1, alpha 255, scale 1.2,
+            // timeLeft 600, extraUpdates 1 (NOT the hardmode bullets' 2),
+            // ranged (`:9351`). The stock tileCollide TRUE stands. Light
+            // 0.5 rides `set_defaults_light`.
+            SILVER_BULLET => (4.0, 4.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts —
             // `penetrate = -1`, `trap = true`, aiStyle 1. (The spiky ball 185
             // left this group in S1-D-5/S1-D-4c: its own arm below carries
@@ -2862,6 +2940,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `timeLeft = 300`, `scale = 1.1f`, `extraUpdates = 1`, the
             // id-static immunity with the 10-tick cooldown.
             RAIN_FRIENDLY => (4.0, 40.0, 45, 5, 300, 1, true, false, false, (false, -2, true, 10, 0, 1.1)),
+            // W4-g2 (d5 F5) — `:3255-3262`: the Blood Rain's flying cloud:
+            // 28x28, aiStyle 45, `penetrate = -1`, `netImportant` — the 237
+            // twin verbatim (the stock tileCollide true / timeLeft 3600).
+            BLOOD_CLOUD_MOVING => (28.0, 28.0, 45, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-g2 (d5 F5) — `:3263-3273`: the settled blood cloud: 54x28,
+            // aiStyle 45, `tileCollide = false`, `ignoreWater`,
+            // `penetrate = -1`, `timeLeft = 18000`, `netImportant` — the 238
+            // twin; its rain cadence 10 / cap 1 ride the arm's kind match.
+            BLOOD_CLOUD_RAINING => (54.0, 28.0, 45, -1, 18000, 0, false, false, false, RESET_STATE),
+            // W4-g2 (d5 F5) — `:3274-3288`: the blood drop: 4x40, aiStyle
+            // 45, friendly, `penetrate = 2` (the 239's 5 does NOT carry
+            // over), `timeLeft = 300`, `scale = 1.1f`, magic,
+            // `extraUpdates = 1`, `ignoreWater`, the id-static 10 pair. The
+            // arm pins alpha 100 (`:28099`).
+            BLOOD_RAIN => (4.0, 40.0, 45, 2, 300, 1, true, false, false, (false, -2, true, 10, 0, 1.1)),
+            // W4-g2 (d5 F5) — `:3491-3502`: the hostile rain-cloud drop:
+            // 4x40, aiStyle 45, hostile, `penetrate = -1`, `timeLeft = 120`,
+            // `scale = 1.1f`, `extraUpdates = 1`, `ignoreWater`. No class
+            // flag, no immunity pair — the arm pins rotation (`:28103`).
+            RAIN_NIMBUS => (4.0, 40.0, 45, -1, 120, 1, true, false, false, (false, -2, false, -1, 0, 1.1)),
             // `:3664-3674` — the Golden Shower's stream: 32x32, aiStyle 12,
             // alpha 255, `penetrate = 5`, `extraUpdates = 2`, `ignoreWater`.
             GOLDEN_SHOWER => (32.0, 32.0, 12, 5, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
@@ -2884,6 +2982,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:3859-3868` — the bolt's on-death blast: 150x150, aiStyle 50,
             // alpha 255, `tileCollide = false`, `penetrate = -1`.
             INFERNO_BLAST => (150.0, 150.0, 50, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-g2 (d5 F4) — `:3804-3814`: the Diabolist's bolt: 12x12,
+            // aiStyle 50, hostile, alpha 255, magic, `tileCollide = false`,
+            // `penetrate = -1`. The stock timeLeft 3600 (`:787`) stands.
+            INFERNO_HOSTILE_BOLT => (12.0, 12.0, 50, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-g2 (d5 F4) — `:3815-3825`: the bolt's on-death blast:
+            // 130x130 (the friendly 296's 150 does NOT carry over), aiStyle
+            // 50, hostile, alpha 255, magic, `tileCollide = false`,
+            // `penetrate = -1`.
+            INFERNO_HOSTILE_BLAST => (130.0, 130.0, 50, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-g2 (d5 F1) — `:3793-3803`: the Necromancer's beam: 4x4,
+            // aiStyle 48, hostile, magic, `extraUpdates = 100`,
+            // `timeLeft = 100`, `penetrate = -1`. The delay table's 290→3
+            // arm (`:53991`) rides `ai_magnet_bolt`.
+            SHADOWBEAM_HOSTILE => (4.0, 4.0, 48, -1, 100, 100, true, false, false, RESET_STATE),
+            // W4-g2 (d5 F1) — `:5037-5046`: the UFO minion's laser: 8x8,
+            // aiStyle 48, friendly, `extraUpdates = 100`, `timeLeft = 100`,
+            // `ignoreWater`. The stock penetrate 1 (`:774`) stands — the
+            // laser dies on its first hit; the delay table's default 0
+            // (`:53997-53998`) is correct for it.
+            UFO_LASER => (8.0, 8.0, 48, 1, 100, 100, true, false, false, RESET_STATE),
             // `:4451-4463` — the venom fang: 12x12, aiStyle 1 (the rider
             // hook), alpha 255, `penetrate = 5`, the local immunity with
             // the 10-tick cooldown, `timeLeft = 58`.
@@ -4214,6 +4332,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 30x30, aiStyle 44, `penetrate = -1`, `tileCollide = false`,
             // melee, scale 1.1, idStatic immunity cooldown 10.
             CHLOROPHYTE_SPORE_CLOUD => (30.0, 30.0, 44, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 0, 1.1)),
+            // W4-g2 (d5 F6) — `:3151-3163`: the Chlorophyte Partisan's orb:
+            // 30x30, aiStyle 44, friendly, melee, `penetrate = -1`,
+            // `light = 0.2f`, the id-static 10 pair. The stock tileCollide
+            // TRUE stands (the 228's false does not carry over) — the orb
+            // dies on tile contact. Scale 1 / alpha 0 (the stock).
+            CHLOROPHYTE_ORB => (30.0, 30.0, 44, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, true, 10, 0, 1.0)),
             // `:7705-7715` — the Thunder Spear's bolt (732): 15x15,
             // aiStyle 44, `penetrate = 1`, `tileCollide = true`, melee.
             THUNDER_SPEAR_BOLT => (15.0, 15.0, 44, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
@@ -4440,6 +4564,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i21: the Nimbus Rod's two clouds set `netImportant`
             // (`Projectile.cs:3186`/`:3194`); the rain drop 239 keeps false.
             || matches!(kind, RAIN_CLOUD_MOVING | RAIN_CLOUD_RAINING)
+            // W4-g2 (d5 F5): the Blood Rain's two clouds set `netImportant`
+            // (`Projectile.cs:3257`/`:3265`); the drop 245 keeps false.
+            || matches!(kind, BLOOD_CLOUD_MOVING | BLOOD_CLOUD_RAINING)
             // S1-P-i35 — the bobber family sets `netImportant` itself
             // (`Projectile.cs:4514`/`:9428`).
             || BOBBER_KINDS.contains(&kind)
@@ -4523,6 +4650,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
             // keep the stock false.
             || kind == RAIN_CLOUD_RAINING
+            // W4-g2 (d5 F5/F1): the blood cloud 244 (`Projectile.cs:3267`),
+            // the blood drop 245 (`:3276`), the hostile nimbus drop 264
+            // (`:3493`) and the UFO laser 433 (`:5045`) set `ignoreWater`;
+            // the moving blood cloud 243 keeps the stock false (`:3255-
+            // 3262` has no such line — the 237 twin).
+            || matches!(kind, BLOOD_CLOUD_RAINING | BLOOD_RAIN | RAIN_NIMBUS | UFO_LASER)
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -4626,6 +4759,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d21 — the thrown melee weapons (1082/1083,
                     // `:10102`/`:10112`) + the blade slam (1129, `:10593`).
                     | ANTLION_CLAW | STYLIST_SCISSORS | CHLOROPHYTE_CLAYMORE_BLADE_SLAM
+                    // W4-g2 (d5 F6): the Partisan's orb sets `melee = true`
+                    // (`Projectile.cs:3157`). The 228/732 siblings set it too
+                    // (`:3144`/`:7713`) — the W4-g2 reconciliation round closes
+                    // the recorded gap (the spore cloud 228 and the Thunder
+                    // Spear's bolt 732 join the melee census).
+                    | CHLOROPHYTE_ORB | CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT
             ),
         ranged: matches!(
             kind,
@@ -4655,6 +4794,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-g2d — the Silver Bullet 981 sets `ranged = true`
+            // (`Projectile.cs:9351`); the musket-ball twin's census entry
+            // above predates the row.
+                | SILVER_BULLET
         ),
         magic: matches!(
             kind,
@@ -4701,6 +4844,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // Arc Surge (1122, `:10443`) + the Glacier Fang shot (1115,
                 // `:10407`). The 1091 trap sets NO magic flag (`:10175-10185`).
                 | LIGHTNING_STRIKE_SHOT | ARC_SURGE | GLACIER_FANG_SHOT
+                // W4-g2 (d5 F5/F4/F1): the blood drop 245 (`Projectile.cs:
+                // 3284`), the hostile inferno pair 290/291/292 (`:3799`/
+                // `:3811`/`:3822`). The 294/239 siblings' magic writes were
+                // missed by the earlier census — the W4-g2 reconciliation
+                // round closes them: the Shadowbeam 294 (`:3844`) and the
+                // rain drop 239 (`:3214`) join the magic census. The 264/433
+                // set NO class flag (`:3491-3502`/`:5037-5046`).
+                | BLOOD_RAIN | SHADOWBEAM_HOSTILE | INFERNO_HOSTILE_BOLT | INFERNO_HOSTILE_BLAST
+                | SHADOWBEAM | RAIN_FRIENDLY
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -5112,6 +5264,14 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:57078`).
         CHLOROPHYTE_SPORE_CLOUD => 5,
         THUNDER_SPEAR_BOLT => 4,
+        // W4-g2 (d5 F6/F5) — the Partisan orb's 4-frame sheet
+        // (`Main.cs:8606`, the aiStyle-44 frame machine wraps at it) and the
+        // Blood Rain clouds' sheets (`Main.cs:8608-8609`: the moving cloud 4,
+        // the raining cloud 6 — the 237/238 twins). The drops 245/264 and the
+        // beams/bolts/blasts 290-292/433 have no override — the stock 1.
+        CHLOROPHYTE_ORB => 4,
+        BLOOD_CLOUD_MOVING => 4,
+        BLOOD_CLOUD_RAINING => 6,
         NORTH_POLE_FLAKE => 3,
         // S1-P-i30 — the Butcher's Chainsaw (509): the 2-frame sheet
         // (`Main.cs:8481`), the aiStyle-20 machine's `frameCounter >= 2`
@@ -5234,6 +5394,25 @@ mod tests {
             assert!(spawnable.contains(&k), "kind {k} packs");
         }
     }
+    /// W4-g2 reconciliation — the four sibling rows the first census missed
+    /// (`163-projectile-rowless-kinds-w4-g2.md` "Recorded gaps"): the melee
+    /// 228/732 (`Projectile.cs:3144`/`:7713`) and the magic 239/294
+    /// (`:3214`/`:3844`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn the_w4_g2_sibling_class_flags_are_census_complete() {
+        let flags = |k: u16| {
+            let d = proj_data(k).expect("a row");
+            (d.melee, d.ranged, d.magic)
+        };
+        // The Partisan's spore cloud 228: melee (`:3144`), no ranged/magic.
+        assert_eq!(flags(CHLOROPHYTE_SPORE_CLOUD), (true, false, false));
+        // The Thunder Spear's bolt 732: melee (`:7713`).
+        assert_eq!(flags(THUNDER_SPEAR_BOLT), (true, false, false));
+        // The Nimbus Rod's rain drop 239: magic (`:3214`).
+        assert_eq!(flags(RAIN_FRIENDLY), (false, false, true));
+        // The Shadowbeam Staff's beam 294: magic (`:3844`).
+        assert_eq!(flags(SHADOWBEAM), (false, false, true));
+    }
 
     #[test]
     fn the_single_hit_immunity_override_is_the_crystal_shard_only() {
@@ -5245,5 +5424,117 @@ mod tests {
         assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
+    }
+
+    /// W4-g2 (d5 F1/F4/F5/F6) — the nine rowless kinds' `SetDefaults`
+    /// slices, WRITTEN NOT RUN (code-only mode): every value re-read from
+    /// the cited C# arms. (w, h, aiStyle, penetrate, timeLeft, extraUpdates,
+    /// tileCollide, alpha, scale).
+    #[test]
+    fn the_w4_g2_rowless_rows_are_verbatim() {
+        let cases: [(u16, f32, f32, u8, i32, i32, u32, bool, i32, f32); 9] = [
+            // `Projectile.cs:3151-3163` — the orb: stock tileCollide TRUE.
+            (CHLOROPHYTE_ORB, 30.0, 30.0, 44, -1, 3600, 0, true, 0, 1.0),
+            // `:3255-3262` — the moving blood cloud (the 237 twin).
+            (BLOOD_CLOUD_MOVING, 28.0, 28.0, 45, -1, 3600, 0, true, 0, 1.0),
+            // `:3263-3273` — the settled blood cloud (the 238 twin).
+            (BLOOD_CLOUD_RAINING, 54.0, 28.0, 45, -1, 18000, 0, false, 0, 1.0),
+            // `:3274-3288` — the blood drop: penetrate 2, NOT the 239's 5.
+            (BLOOD_RAIN, 4.0, 40.0, 45, 2, 300, 1, true, 0, 1.1),
+            // `:3491-3502` — the hostile nimbus drop.
+            (RAIN_NIMBUS, 4.0, 40.0, 45, -1, 120, 1, true, 0, 1.1),
+            // `:3793-3803` — the hostile beam.
+            (SHADOWBEAM_HOSTILE, 4.0, 4.0, 48, -1, 100, 100, true, 0, 1.0),
+            // `:3804-3814` — the hostile bolt.
+            (INFERNO_HOSTILE_BOLT, 12.0, 12.0, 50, -1, 3600, 0, false, 255, 1.0),
+            // `:3815-3825` — the hostile blast: 130, NOT the 296's 150.
+            (INFERNO_HOSTILE_BLAST, 130.0, 130.0, 50, -1, 3600, 0, false, 255, 1.0),
+            // `:5037-5046` — the UFO laser: STOCK penetrate 1.
+            (UFO_LASER, 8.0, 8.0, 48, 1, 100, 100, true, 0, 1.0),
+        ];
+        for (kind, w, h, style, pen, life, extra, collide, alpha, scale) in cases {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
+            assert_eq!((d.w, d.h), (w, h), "kind {kind} box");
+            assert_eq!(d.ai_style, style, "kind {kind} aiStyle");
+            assert_eq!(d.penetrate, pen, "kind {kind} penetrate");
+            assert_eq!(d.time_left, life, "kind {kind} timeLeft");
+            assert_eq!(d.extra_updates, extra, "kind {kind} extraUpdates");
+            assert_eq!(d.tile_collide, collide, "kind {kind} tileCollide");
+            assert_eq!(d.alpha, alpha, "kind {kind} alpha");
+            assert_eq!(d.scale, scale, "kind {kind} scale");
+        }
+        // The immunity pairs: the orb / blood drop ride idStatic-10
+        // (`:3161-3162`/`:3286-3287`); the rest keep the reset.
+        for kind in [CHLOROPHYTE_ORB, BLOOD_RAIN] {
+            let d = proj_data(kind).unwrap();
+            assert!(d.uses_id_static_immunity, "kind {kind} idStatic");
+            assert_eq!(d.id_static_hit_cooldown, 10, "kind {kind} cooldown");
+            assert!(!d.uses_local_immunity, "kind {kind} no local pair");
+        }
+        for kind in [BLOOD_CLOUD_MOVING, BLOOD_CLOUD_RAINING, RAIN_NIMBUS,
+            SHADOWBEAM_HOSTILE, INFERNO_HOSTILE_BOLT, INFERNO_HOSTILE_BLAST, UFO_LASER]
+        {
+            let d = proj_data(kind).unwrap();
+            assert!(!d.uses_local_immunity && !d.uses_id_static_immunity, "kind {kind} reset");
+        }
+        // The class flags: melee 229 (`:3157`), magic 245/290/291/292
+        // (`:3284`/`:3799`/`:3811`/`:3822`); the clouds/drops 243/244/264
+        // and the laser 433 set NONE.
+        assert!(proj_data(CHLOROPHYTE_ORB).unwrap().melee);
+        for kind in [BLOOD_RAIN, SHADOWBEAM_HOSTILE, INFERNO_HOSTILE_BOLT, INFERNO_HOSTILE_BLAST] {
+            assert!(proj_data(kind).unwrap().magic, "kind {kind} magic");
+        }
+        for kind in [BLOOD_CLOUD_MOVING, BLOOD_CLOUD_RAINING, RAIN_NIMBUS, UFO_LASER] {
+            let d = proj_data(kind).unwrap();
+            assert!(!d.melee && !d.ranged && !d.magic, "kind {kind} no class flag");
+        }
+        // netImportant: the two blood clouds (`:3257`/`:3265`); the drop
+        // 245 and the rest keep false.
+        assert!(proj_data(BLOOD_CLOUD_MOVING).unwrap().net_important);
+        assert!(proj_data(BLOOD_CLOUD_RAINING).unwrap().net_important);
+        assert!(!proj_data(BLOOD_RAIN).unwrap().net_important);
+        // ignoreWater: 244/245/264/433 (`:3267`/`:3276`/`:3493`/`:5045`);
+        // the moving cloud 243 keeps false.
+        for kind in [BLOOD_CLOUD_RAINING, BLOOD_RAIN, RAIN_NIMBUS, UFO_LASER] {
+            assert!(proj_data(kind).unwrap().ignore_water, "kind {kind} ignoreWater");
+        }
+        assert!(!proj_data(BLOOD_CLOUD_MOVING).unwrap().ignore_water);
+        // The orb's light 0.2 (`:3159`) — every other new kind stays dark.
+        assert_eq!(proj_data(CHLOROPHYTE_ORB).unwrap().light, 0.2);
+        // The frame sheets (`Main.cs:8606-8609`): orb 4, clouds 4/6; the
+        // drops/beams/bolts/blasts keep the stock 1.
+        assert_eq!(proj_frames(CHLOROPHYTE_ORB), 4);
+        assert_eq!(proj_frames(BLOOD_CLOUD_MOVING), 4);
+        assert_eq!(proj_frames(BLOOD_CLOUD_RAINING), 6);
+        for kind in [BLOOD_RAIN, RAIN_NIMBUS, SHADOWBEAM_HOSTILE,
+            INFERNO_HOSTILE_BOLT, INFERNO_HOSTILE_BLAST, UFO_LASER]
+        {
+            assert_eq!(proj_frames(kind), 1, "kind {kind} stock sheet");
+        }
+    }
+
+    /// W4-g2d rowless-rider batch — the Silver Bullet 981's `SetDefaults`
+    /// slice (`Projectile.cs:9340-9353`), WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn the_w4_g2d_silver_bullet_row_is_verbatim() {
+        let d = proj_data(SILVER_BULLET).expect("the 981 row landed");
+        assert_eq!((d.w, d.h), (4.0, 4.0), ":9342-9343");
+        assert_eq!(d.ai_style, 1, ":9344");
+        assert_eq!(d.penetrate, 1, ":9346");
+        assert_eq!(d.light, 0.5, ":9347");
+        assert_eq!(d.alpha, 255, ":9348");
+        assert_eq!(d.scale, 1.2, ":9349");
+        assert_eq!(d.time_left, 600, ":9350");
+        assert!(d.ranged && !d.melee && !d.magic, ":9351");
+        assert_eq!(d.extra_updates, 1, ":9352 — NOT the hardmode 2");
+        assert!(d.tile_collide, "the stock true (:775) stands");
+        assert!(!d.ignore_water && !d.net_important && !d.arrow && !d.trap);
+        assert!(!d.uses_local_immunity && !d.uses_id_static_immunity);
+        assert_eq!(proj_frames(SILVER_BULLET), 1, "no Main.projFrames override");
+        // The rowed siblings stay rowless (the g2d task-seeds, research/26d-g2d):
+        // the 19 phaseblades need the AI_003 machine, the 491 needs _Old.
+        for kind in [1059, 1065, 1074, 1075, 1076, 1101, 1102, 491] {
+            assert!(proj_data(kind).is_none(), "kind {kind} stays rowless (task-seed)");
+        }
     }
 }

@@ -217,6 +217,23 @@ pub fn resolve_in_list(
     resolve(infinite, left, top, width, height, h_align, v_align, min_w, min_h, max_w, padding)
 }
 
+/// `UIList.RecalculateChildren`'s inner-height total (`UIList.cs:116-128`):
+/// every item's outer height plus one `ListPadding` **per item** — including
+/// the last (`:125`'s `num += GetOuterDimensions().Height + num2` runs for
+/// every row, so the trailing padding is part of `_innerListHeight` and is
+/// scrollable). The single-item list drops the padding (`:122`'s
+/// `num2 = (Count == 1) ? 0 : ListPadding`); an empty list totals 0.
+/// `UIScrollbar.SetView` receives this as `maxViewSize`
+/// (`UIList.UpdateScrollbar`, `:130-137`).
+pub fn list_total_height(row_heights: &[f32], list_padding: f32) -> f32 {
+    let mut num = 0.0f32;
+    for &h in row_heights {
+        let num2 = if row_heights.len() == 1 { 0.0 } else { list_padding };
+        num += h + num2;
+    }
+    num
+}
+
 /// The element's inner rect = outer − padding (`UIElement.GetInnerDimensions`,
 /// the `Recalculate` tail `UIElement.cs:298-303`).
 pub fn inner(rect: [f32; 4], padding: [f32; 4]) -> [f32; 4] {
@@ -864,6 +881,26 @@ mod tests {
         // Asymmetric padding (the `right` column's PaddingTop 8 / Bottom 12,
         // `UIWorldCreation.cs:187-197`).
         assert_eq!(inner([550.0, 202.0, 500.0, 298.0], [0.0, 8.0, 0.0, 12.0]), [550.0, 210.0, 500.0, 278.0]);
+    }
+
+    #[test]
+    fn list_total_height_keeps_the_trailing_padding() {
+        // `UIList.cs:116-128`: `num2 = (Count == 1) ? 0 : ListPadding` is added
+        // for EVERY row (`:125`), so the last row's trailing padding is part of
+        // `_innerListHeight` — the scroll range includes it.
+        // The achievements rows: 102 px + ListPadding 5 (`UIAchievementsMenu.cs:55`).
+        assert_eq!(list_total_height(&[102.0; 137], 5.0), 137.0 * 107.0);
+        // The select screens' cards: 96 + 5 (`UICharacterSelect.cs:52`).
+        assert_eq!(list_total_height(&[96.0; 6], 5.0), 606.0);
+        // The single-item list drops the padding (`:122`).
+        assert_eq!(list_total_height(&[96.0], 5.0), 96.0);
+        assert_eq!(list_total_height(&[102.0], 5.0), 102.0);
+        // An empty list totals 0 (`num` starts at 0 and the loop never runs).
+        assert_eq!(list_total_height(&[], 5.0), 0.0);
+        // Mixed heights accumulate each row's own outer height (`:125`'s
+        // `GetOuterDimensions().Height`), the emotes group rows' case
+        // (`UIEmotesMenu.cs:67`'s ListPadding 14).
+        assert_eq!(list_total_height(&[50.0, 86.0, 50.0], 14.0), 50.0 + 86.0 + 50.0 + 42.0);
     }
 
     #[test]

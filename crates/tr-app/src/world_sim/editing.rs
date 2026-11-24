@@ -16887,10 +16887,12 @@ pub fn use_pirate_map(app: &mut App) -> bool {
 /// then `ConsumeItem` and `DD2Event.SummonCrystal` (`StartInvasion` + the
 /// crystal NPC at the point + the starter-crystal drops).
 ///
-/// Deviations: `DropStarterCrystals`' per-player drops ride the item-drop pass;
-/// `WouldFailSpawningHere` (`DD2Event.cs:603-613`) landed with B-6c (S1-E-12d) —
-/// the 60-tile each-side arena check + the bartender warning, the walker in
-/// `tr_core::stray`.
+/// `DropStarterCrystals` (`DD2Event.cs:929-942`, called at `:598` right
+/// after the crystal's `NewNPC`) lands here (W4-d124): five
+/// `Item.NewItem(EntitySource_WorldEvent, crystal.Center, 3822, 2)` drops.
+/// `WouldFailSpawningHere` (`DD2Event.cs:603-613`) landed with B-6c
+/// (S1-E-12d) — the 60-tile each-side arena check + the bartender warning,
+/// the walker in `tr_core::stray`.
 pub fn use_etherian_crystal(app: &mut App) -> bool {
     if app.world.invasion_type != 0 || app.world.snow_moon || app.world.pumpkin_moon {
         return false;
@@ -16971,7 +16973,29 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
         0.0,
     );
     crystal.hp = crystal.max_hp;
+    // `DropStarterCrystals` (`DD2Event.cs:929-942`, `SummonCrystalDirect`'s
+    // `:598` call — AFTER the crystal's `NewNPC` at `:597`): the FIRST
+    // active 548 in `Main.npc` order pays FIVE `Item.NewItem(source,
+    // Center, 3822, 2)` drops (`:935-938`) then breaks (`:939`). The port
+    // just pushed the only crystal, so its centre is the drop point.
+    // RNG census: each `Item.NewItem` (`Item.cs:49654-49772`) draws the
+    // velocity pair `Next(-30,31)*0.1` / `Next(-40,-15)*0.1` (`:49749-49750`
+    // — 3822 is NOT in `ItemID.Sets.ItemNoGravity`, `ItemID.cs:1320`) and
+    // `Prefix(0)` draws nothing (`Item.cs:515-518`'s early return); the
+    // port's pinned triplet+phase rides `spawn_item_drop_px` on the
+    // use-path's `UpdatePlayers` stream (the `ItemCheck` stage).
+    let (cx, cy) = crystal.center();
     app.npcs.push(crystal);
+    for _ in 0..5 {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            rng,
+            tr_core::dd2::ENERGY_CRYSTAL_ITEM,
+            2,
+            Vec2::new(cx, cy),
+        );
+    }
     // The C# arm (`Player.cs:32438-32445`) is a tile interaction: consume +
     // `SummonCrystal`, NO `ApplyItemTime` — the swing timers stay untouched.
     true

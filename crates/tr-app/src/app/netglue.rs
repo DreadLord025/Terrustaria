@@ -861,6 +861,11 @@ impl App {
             // (`MessageBuffer.cs:2342-2363`) land with the send-path pass
             // (S1-I-4).
             C2s::TeamChangeFromUi(_) => {}
+            // S1-I-1 wave D94: the projectile family's client-sent support
+            // ids (66 heal relay `:3036-3055`, 99/115 minion targets
+            // `:3570-3597`) have bodies + codecs (`net.rs`); the host
+            // apply/relay arms land with the send-path pass (S1-I-4).
+            C2s::HealPlayer(_) | C2s::MinionRestTarget(_) | C2s::MinionAttackTarget(_) => {}
         }
     }
 
@@ -1946,6 +1951,18 @@ impl App {
             // the peer-spectate apply (`MessageBuffer.cs:4380-4383`) land
             // with the send-path pass (S1-I-4).
             S2c::UpdatePlayerLuckFactors(_) | S2c::SpectatePlayer(_) => {}
+            // S1-I-1 wave D94: the projectile family's server-sent support
+            // ids (66 `:3036-3055`, 99 `:3570-3583`, 115 `:3584-3597`) have
+            // bodies + codecs (`net.rs`); the client read sites land with
+            // the send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::HealPlayer(_) | S2c::MinionRestTarget(_) | S2c::MinionAttackTarget(_) => {}
+            // 101 tower shields (`:3611-3651` clamp) + 106 smoke poof
+            // (`:3742-3751` Utils.PoofOfSmoke) — same wave, same parking.
+            S2c::TowerShields(_) | S2c::PoofOfSmoke(_) => {}
+            // 100 NPC portal teleport (`:3598-3610` style-4 teleport +
+            // netOffset zero) + 108 cannon redirect (`:3758-3773` owner-gated
+            // ShootFromCannon) — same wave, same parking.
+            S2c::NpcPortalTeleport(_) | S2c::WiredCannonShot(_) => {}
         }
     }
 

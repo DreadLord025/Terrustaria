@@ -13169,6 +13169,60 @@ mod crystal_summon_tests {
             "the crystal spawned"
         );
         assert_eq!(app.inventory[app.selected].count, 0, "the item consumed");
+        // `DropStarterCrystals` (`DD2Event.cs:929-942`, `SummonCrystalDirect`'s
+        // `:598` call, W4-d124): FIVE 2-stack energy crystals (3822) at the
+        // crystal's centre — the point (anchor*16 + (40, 64)) minus the
+        // crystal's half-box, + half-box back = exactly (sx, sy).
+        let crystals: Vec<&ItemDrop> = app
+            .items
+            .iter()
+            .filter(|d| d.kind == tr_core::dd2::ENERGY_CRYSTAL_ITEM)
+            .collect();
+        assert_eq!(crystals.len(), 5, "the five starter drops (`:935`)");
+        assert!(crystals.iter().all(|d| d.count == 2), "stack 2 (`:937`)");
+        assert!(crystals.iter().all(|d| d.prefix == 0), "Prefix(0) — no roll");
+        // The stand at (150, 119), frame (0, 0): sx = 150*16+40 = 2440,
+        // sy = 119*16+64 = 1968; the drop seam's +1 px X offset rides
+        // `spawn_item_drop_px` (`Item.NewItem`'s box-left convention).
+        let (sx, sy) = (150.0 * TILE_PX + 40.0, 119.0 * TILE_PX + 64.0);
+        assert!(
+            crystals.iter().all(|d| (d.pos.x - (sx + 1.0)).abs() < 1e-3
+                && (d.pos.y - sy).abs() < 1e-3),
+            "the crystal's centre (`:937`)"
+        );
+        // RNG census: the summon's gates draw nothing (the arena walker is
+        // zero-RNG, S1-E-12d); the five `Item.NewItem` calls draw the pinned
+        // triplet each (`spawn_item_drop_px`), 3822 non-prefixable so no
+        // prefix roll — 15 draws total on the use-path's stream.
+        let mut fresh = tr_core::UnifiedRandom::new(0x5E17);
+        let mut control = base_app();
+        *control.rngs.stream(crate::app::RngKey::UpdatePlayers) =
+            tr_core::UnifiedRandom::new(0x5E17);
+        let mut player = crate::player::Player::spawn(&control.world);
+        player.max_hp = 200;
+        control.player = Some(player);
+        let camx = control.camera;
+        control.mouse_pos = {
+            let (w, h) = control.screen_size();
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 119.0 * TILE_PX + 8.0);
+            let screen = Vec2::new(w, h) * 0.5;
+            (wp - camx) * control.zoom + screen
+        };
+        control.inventory[control.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(crate::world_sim::editing::use_etherian_crystal(&mut control));
+        for _ in 0..15 {
+            fresh.next_float();
+        }
+        assert_eq!(
+            *control.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            fresh,
+            "5 drops x 3 draws (velocity/phase triplet); the gates draw nothing"
+        );
     }
 
     #[test]

@@ -595,9 +595,14 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 ## Deviations
 
 * The framework ports the **flat/event halves** of `UIElement`/`UserInterface`:
-  the retained tree, `IsElementUnderMouse`/`MouseCaptured` as a general predicate,
-  `UIList`'s scroll mechanics and `UIScrollbar`'s drag/handle are deliberately out
-  (the immediate-mode ruling + no ported consumer). The child→parent **event bubble**
+  the retained tree and `IsElementUnderMouse`/`MouseCaptured` as a general predicate
+  are deliberately out (the immediate-mode ruling). `UIList`'s scroll mechanics
+  *are* ported for the list screens: the inner-height sum verbatim
+  (`uistate::list_total_height`, `UIList.cs:116-128`), the raw-counter wheel
+  (120 px/detent), the `SetView` clamp and — for char/world select — the
+  `UIScrollbar` drag/handle; the achievements list gained the same wheel + range
+  and its clipped draw + scrollbar in W4-d88 (its bar's drag and the emotes
+  wheel's px scroll remain). The child→parent **event bubble**
   (`UIElement.cs:414-546`) *is* ported (`framework.rs::bubble_chain` + `Element`
   parent links, S1-H-1) and drives the select screens' card-button resolution;
   `OverflowHidden` **clipping** is ported too (S1-H-2): `tr-render/src/clip.rs` +

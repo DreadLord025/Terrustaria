@@ -306,7 +306,7 @@ pub fn draw_carried(
 /// type name; the port stores no per-NPC names, so the type name is what the
 /// tooltip can honestly show (recorded in `docs/ANALYSIS.md`).
 ///
-/// `Lang.GetNPCName(netId)` (`Lang.cs:188-195`) answers it from the
+/// `Lang.GetNPCName(netId)` (`Lang.cs:180-191`) answers it from the
 /// `NPCName.{const name}` key, so the table is the id class' own spellings
 /// (`NPCID.cs`) instead of a hand-written list.
 fn npc_type_name(kind: NpcKind) -> Option<String> {

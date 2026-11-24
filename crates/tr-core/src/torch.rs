@@ -83,6 +83,8 @@ pub(crate) fn platform_proper_top_frame(frame_x: i16) -> bool {
 /// `pub`: the reverse-vine root crawl reads it (`TileDrawing.cs:770`,
 /// W4-g28 pass 1 / g30 pass 3 — identical visibility change, keep-one
 /// landed by the union-exec).
+/// W4-g28 pass 1 / g30 pass 3 — identical visibility change, keep-one at
+/// the family merge).
 pub fn top_edge_can_be_attached_to(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;

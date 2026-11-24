@@ -131,22 +131,27 @@ Screens already covered by immediate ports are listed for completeness at the en
 
 ### Element classes (`Terraria/UI/*.cs` + `GameContent/UI/Elements/*.cs`)
 
+> **2026-11-20 (W4-d82):** the full 64-class census + the d81/d82/d83 lane
+> split lives in [18b](18b-element-census.md). d82's middle band (rows 22-34,
+> 13 classes) is LANDED on `task/W4-d82-ui-elements-2` — the rows below are
+> annotated where they overlap.
+
 | C# class (file:line) | What it is | Rust counterpart | Status |
 | --- | --- | --- | --- |
 | `UIList` + `UIInnerList` (`UIList.cs:10,14`) | scrolling viewport with ∞ height + scrolling | per-screen row maths (`char_select`, `achievements`, `emotes`, `chest`) | MISSING as a class |
 | `UIScrollbar` | thumb track/drag | static sprite only (`char_creation.rs:1860` "never scrolls") | PARTIAL |
 | `UISliderBase`, `UIColoredSliderSimple` | slider input element | `sliders.rs` draw-only | PARTIAL (no drag element) |
 | `UISearchBar`, `UIWrappedSearchBar` | bestiary/creative filter input | none | MISSING |
-| `UIProgressBar`, `UIGenProgressBar` | progress elements | `bars.rs` (boss bar, bespoke) | PARTIAL/MISSING for the generic element |
-| `UIHeader`, `UIHorizontalSeparator`, `UIVerticalSeparator` | chrome | `panel.rs` separators (9-slice primitives) | PARTIAL |
+| `UIProgressBar`, `UIGenProgressBar` | progress elements | `bars.rs` (boss bar, bespoke) | PARTIAL/MISSING for the generic element — `UIGenProgressBar` LANDED S1-E-17 (`world_load.rs`, re-verified W4-d82); `UIProgressBar` = d83 |
+| `UIHeader`, `UIHorizontalSeparator`, `UIVerticalSeparator` | chrome | `panel.rs` separators (9-slice primitives) | PARTIAL — header/separator draws LANDED S1-E-17 + the element halves W4-d82 (`chrome_elements.rs`, research/18b rows 33/34); `UIVerticalSeparator` = d83 |
 | `UISlicedImage`, `UISlicedImage` variants, `UIImageFramed` | sliced images | `uistate::spliced_rects` primitive | PARTIAL (helper, not element) |
 | `UIToggleImage`, `UIImage`, `UIText` | basic draw elements | `text::push_font_text`, `panel` | PARTIAL |
 | `UISortableElement` | drag-reorder | none | MISSING |
-| `UIDynamicItemCollection` (+subclasses) | item grids | `slot.rs` per-context draw | PARTIAL |
+| `UIDynamicItemCollection` (+subclasses) | item grids | `slot.rs` per-context draw | PARTIAL — the base grid geometry + budget walk LANDED W4-d82 (`item_collection.rs`, research/18b row 30); the per-entry `DrawSlot` stays the subclass seam |
 | `UIItemSlot`, `UIItemIcon` | item slot *elements* | `slot.rs::draw` (ports `ItemSlot.Draw` directly, no element) | PARTIAL |
 | `UIParticleLayer` | UI particles | none | MISSING |
 | `PowerStripUIElement` | power-button strip | none | MISSING |
-| `UICreativePowerButton`, `UIDifficultyButton`, `UIClothStyleButton`, `UICharacterNameButton`, `UIIconTextButton`, `UIDebugCommandItem`, `UIDebugLoadoutItem` | composite buttons | none | MISSING |
+| `UICreativePowerButton`, `UIDifficultyButton`, `UIClothStyleButton`, `UICharacterNameButton`, `UIIconTextButton`, `UIDebugCommandItem`, `UIDebugLoadoutItem` | composite buttons | none | MISSING — W4-d82 landed `UICreativePowerButton` (empty marker), `UIDifficultyButton`/`UIHairStyleButton` element halves (`buttons.rs`) and the two debug rows (`debug_items.rs`), research/18b rows 25/27-29/32; cloth/name = d81, icon-text = d83 |
 | `UIKeybindingListItem`, `-Cycle-`, `-Simple-`, `-Slider-`, `-ToggleListItem` | controls screen rows | none | MISSING |
 | `UIBestiaryEntryButton/Grid/Icon/InfoPage/SortingOptionsGrid/FilteringOptionsGrid/NPCEntryPortrait/InfoItemLine` | bestiary elements | `bestiary.rs` (immediate) | PARTIAL |
 | `UIAchievementListItem`, `EmoteButton`, `EmotesGroupListItem`, `UICharacterListItem`, `AWorldListItem`, `UICharacter`, `UIWorldCreationPreview`, `UIResourcePack`, `UIWorkshopPublishResourcePackListItem` | list rows/cards | `achievements.rs`, `emotes.rs`, `cards.rs` + the select screens (immediate) | PARTIAL |
