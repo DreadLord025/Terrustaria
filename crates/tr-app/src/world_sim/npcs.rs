@@ -3918,6 +3918,153 @@ pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32
     true
 }
 
+/// `NPC.Collision_WaterCollision`'s shimmer/honey contact
+/// (`NPC.cs:93052-93076`, W4-f47): the faithful `WetCollision` probe sets
+/// `shimmerWet`/`honeyWet` and, on shimmer, `TryAddingRepeatedBuff(353,
+/// 100)` (the Shimmering buff that drives the transparency ramp). Runs as
+/// a post-pass after the per-NPC AI step — timing-equivalent to the C#'s
+/// `UpdateCollision` position, because `UpdateNPC_BuffSetFlags` (which
+/// reads the buff into `shimmering`) and `UpdateNPC_UpdateGravity` (which
+/// reads `shimmerWet`) both run at the NEXT tick's head, ahead of the
+/// contact. The `!wet` clear (`:92527-92532`) folds in.
+pub(crate) fn shimmer_wet_contact_pass(app: &mut App) {
+    for n in app.npcs.iter_mut() {
+        if n.hp <= 0 {
+            continue;
+        }
+        let net_id = n.kind.net_id();
+        let style = n.kind.ai_style();
+        // `:93055` — the no-wet exemption list (the probe is skipped,
+        // wetCount zeroed, lava false). The port has no wetCount/lava
+        // fields on Npc; the skip just leaves the wet flags cleared.
+        let exempt = (net_id == 690 && n.ai[0] == 0.0)
+            || net_id == 72
+            || style == 21
+            || style == 67
+            || net_id == 376
+            || net_id == 579
+            || net_id == 541
+            || (style == 7 && n.ai[0] == 25.0);
+        if exempt {
+            // The C# skips the probe and zeroes wetCount/lava only — it
+            // does NOT write base.wet/shimmerWet/honeyWet here. The port
+            // leaves the per-arm wet cache and clears the kind flags (the
+            // shimmer contact must not fire for the exempt kinds).
+            n.shimmer_wet = false;
+            n.honey_wet = false;
+            continue;
+        }
+        let (w, h) = n.size();
+        let (wet, honey, shimmer) =
+            crate::npc_ai_slime::wet_collision(&app.world, n.x, n.y, w as i32, h as i32);
+        if honey {
+            n.honey_wet = true; // :93064-93067
+        }
+        if shimmer {
+            n.shimmer_wet = true; // :93068-93070
+            // :93071-93074 — netMode != 1 → TryAddingRepeatedBuff(353,100).
+            n.buffs.try_adding_repeated_buff(353, 100, 10);
+        }
+        if wet {
+            n.wet = true;
+        } else {
+            // :92527-92532 — !wet clears all three.
+            n.wet = false;
+            n.shimmer_wet = false;
+            n.honey_wet = false;
+        }
+    }
+}
+
+/// The `NPC.GetShimmered` drain (`NPC.cs:91517-91519` → `:91548-91592`,
+/// W4-f47): every NPC whose transparency ramp crossed 0.9 this tick
+/// (`wants_shimmer_transform`, armed in `update_preamble`) resolves its arm
+/// HERE, after the per-NPC pass — the arms transform / spawn / deactivate,
+/// they need the app wholesale (the shimmer item-chain's post-pass
+/// convention). Slot order = the C#'s `Main.npc[]` walk; the draws ride
+/// `UpdateNpcs` (`Main.cs:17767`).
+pub(crate) fn drain_shimmer_transforms(app: &mut App) {
+    let due: Vec<usize> = app
+        .npcs
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.wants_shimmer_transform && n.hp > 0)
+        .map(|(i, _)| i)
+        .collect();
+    if due.is_empty() {
+        return;
+    }
+    for i in due {
+        app.npcs[i].wants_shimmer_transform = false;
+        let net_id = app.npcs[i].kind.net_id();
+        let outcome = tr_core::shimmer::resolve_npc_shimmer(
+            net_id as u16,
+            app.npcs[i].spawned_from_statue,
+        );
+        let (cx, cy) = app.npcs[i].center();
+        let center = Vec2::new(cx, cy);
+        match outcome {
+            tr_core::shimmer::NpcShimmerOutcome::Nothing => {}
+            tr_core::shimmer::NpcShimmerOutcome::StatuePoof => {
+                // `:91550-91560` — ShimmerEffect + noSpawnCycle + the
+                // active=false poof (no loot, no death events: the port's
+                // despawn_timer 0 removal, the `:77993` convention).
+                crate::shimmer::shimmer_effect(app, center, RngKey::UpdateNpcs);
+                app.npc_no_spawn_cycle = true;
+                app.npcs[i].despawn_timer = 0;
+            }
+            tr_core::shimmer::NpcShimmerOutcome::TransformNpc { new_type } => {
+                // `:91561-91565` — Transform(target) THEN ShimmerEffect at
+                // the POST-transform Center (the bottom-anchored reposition
+                // moves it). The roster gap (676/677 etc.) leaves the NPC
+                // untouched but the effect still plays.
+                if let (Some((kind, slime)), Some(player)) = (
+                    crate::npc::kind_from_net_id(new_type as i32),
+                    app.player.as_ref(),
+                ) {
+                    app.npcs[i].transform_to_kind(&app.world, player, kind);
+                    app.npcs[i].slime = slime;
+                }
+                let (cx, cy) = app.npcs[i].center();
+                crate::shimmer::shimmer_effect(
+                    app,
+                    Vec2::new(cx, cy),
+                    RngKey::UpdateNpcs,
+                );
+            }
+            tr_core::shimmer::NpcShimmerOutcome::DropItem { item_type } => {
+                // `:91566-91577` — SpawnShimmeredItem(source, Center, 0,
+                // target) (stack defaults to 1) + ShimmerEffect +
+                // noSpawnCycle + active=false.
+                crate::shimmer::spawn_shimmered_item(
+                    app,
+                    center,
+                    0,
+                    item_type,
+                    1,
+                    RngKey::UpdateNpcs,
+                );
+                crate::shimmer::shimmer_effect(app, center, RngKey::UpdateNpcs);
+                app.npc_no_spawn_cycle = true;
+                app.npcs[i].despawn_timer = 0;
+            }
+            tr_core::shimmer::NpcShimmerOutcome::TownVariant => {
+                // `:91578-91591` — ai[0]=25, ai[1..3]=0, netUpdate,
+                // transparency 0.89, FindBuffIndex(353) → DelBuff. The
+                // state-25 emergence machine (npc_ai_town) takes over.
+                let n = &mut app.npcs[i];
+                n.ai = [25.0, 0.0, 0.0, 0.0];
+                n.net_update = true;
+                n.shimmer_transparency = 0.89;
+                n.buffs.remove_buff(353);
+            }
+        }
+    }
+    // The poof removals (`active = false` — no death events, the despawn
+    // retain's convention).
+    app.npcs.retain(|n| !n.despawn_expired());
+}
+
 /// The saucer/scutlix/dutchman carrier write-through PRE-pass (S1-D-8b's
 /// migrated scan family, re-wired by S1-D-3-wire-saucer): the `AI_075`
 /// rider/mount host links + the shell's crew slots, and the `AI_093`
@@ -4938,6 +5085,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // ess_scale stamp's one-frame convention — the sim runs ahead of the
     // draw that refreshes it).
     let app_light = &app.light;
+    // W4-f47 doc-sweep lane 36 — the state-25 emergence seam's inputs: the
+    // frame clock (the `Main.timeForVisualEffects` stand-in, ×60 in the
+    // closure) and the shared entity-light list; the progression-43 latch
+    // drains after the pass (the notify needs the app wholesale).
+    let app_anim_time = app.anim_time;
+    let mut shimmer_progression43 = false;
     // Limit the scope of borrows to just the tick closure
     {
         // W4-c8 sweep — the GoldWorm sparkle's light inputs, captured
@@ -4986,6 +5139,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // draws Main.rand through the live gore pool on the UpdateNPCs
         // stream — threaded alongside the dust pool (the S1-F-13c shape).
         let gore = &mut app.gore;
+        let entity_lights = &mut app.entity_lights;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -5650,6 +5804,44 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     } else if !is_style75 {
                         npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
                     }
+                        // W4-f47 doc-sweep lane 36 — the town state-25 shimmer
+                        // emergence seam (`NPC.cs:53187-53277`): the drain's
+                        // TownVariant arm set ai[0]=25; the emergence machine
+                        // runs at the NPC's slot turn INSTEAD of the dry walk
+                        // (the C# arm returns from AI() at `:53277`). The
+                        // visuals drain onto the shared pool/lights on the
+                        // UpdateNPCs stream; the generic slot tail below
+                        // (just_hit/sounds/look-for-home) still runs, exactly
+                        // the C# UpdateNPC tail after AI(). The b3 merge folds
+                        // this into its ai_007 adapter (ANALYSIS 121).
+                        let shimmer25 = npcs[i].kind.is_town_npc_like()
+                            && npcs[i].ai[0] == 25.0
+                            && npcs[i].hp > 0;
+                        if shimmer25 {
+                            npcs[i].update_preamble(step);
+                            // `Main.timeForVisualEffects` (`Main.cs:17162-
+                            // 17164`, the ++counter mod 216000): anim_time is
+                            // seconds — ×60 recovers the tick count (the
+                            // TR_SHOT 1/60 pin keeps it exact).
+                            let tve = (app_anim_time as f64 * 60.0) % 216000.0;
+                            let progression43 = crate::npc_ai_town::town_shimmer_step(
+                                &mut npcs[i],
+                                world,
+                                player,
+                                tve,
+                                npcs_rng,
+                                dust,
+                                &dust_spawn_ctx,
+                                entity_lights,
+                            );
+                            if progression43 {
+                                shimmer_progression43 = true;
+                            }
+                            npcs[i].find_frame();
+                            npcs[i].contact(player, npcs_rng);
+                        } else {
+                            npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                        }
                     } else {
                         npcs[i].update_preamble(step);
                         let ctx = crate::npc_ai_style75::Style75Ctx {
@@ -7344,6 +7536,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut shots = Vec::new();
     let mut ai_shots = Vec::new();
     let mut gallop_dust = Vec::new();
+    // W4-f47 keep-one 144 — the ShimmerSlime 676's dust requests carry the
+    // requester's netOffset (`NPC.cs:61148` adds it to the rolled position
+    // at the spawn).
+    let mut shimmer_slime_dust = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
         // `FindBannerToAssociateTo` (`Projectile.cs:11104-11117`): the
         // hostile shot spawned from an NPC (`EntitySource_Parent`) carries
@@ -7360,6 +7556,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         for d in n.wants_gallop_dust.drain(..) {
             gallop_dust.push(d);
+        }
+        for d in n.wants_shimmer_slime_dust.drain(..) {
+            shimmer_slime_dust.push((d, n.net_offset));
         }
     }
     for (owner_slot, banner, (kind, sx, sy, svx, svy, dmg)) in shots {
@@ -7615,6 +7814,48 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             slot.fade_in = 1.1;
             slot.no_gravity = true;
             slot.no_light = true;
+        }
+    }
+    // W4-f47 keep-one 144 — the ShimmerSlime 676's shimmer dust
+    // (`NPC.cs:61133-61148`): the arm-level gate + the 4 NextFloat rolls
+    // already rode the UpdateNPCs stream in-step (`ai_001_slimes`);
+    // `Dust.NewDustPerfect(pos, 306)` and its post-spawn writes run here
+    // on the SAME stream (the gallop-dust seam — the pool-internal draw
+    // placement after the tick's AI is the recorded deviation).
+    if !shimmer_slime_dust.is_empty() {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        // `Main.timeForVisualEffects` (`Main.cs:17162-17164`): anim_time
+        // is seconds — ×60 recovers the tick count, mod 216000 (the
+        // town state-25 seam's convention).
+        let tve = ((app.anim_time as f64 * 60.0) % 216000.0) as f32;
+        for (d, net_offset) in shimmer_slime_dust {
+            let idx = app.dust.new_dust_perfect(
+                rng,
+                &ctx,
+                &app.world,
+                Vec2::new(d.x, d.y),
+                306,
+                Some(Vec2::new(d.vx, d.vy)),
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            );
+            // `:61134-61148` — the post-spawn writes, sentinel included.
+            let slot = app.dust.slot_mut(idx);
+            slot.no_gravity = true;
+            slot.no_light_emittance = true;
+            slot.alpha = 127;
+            // `:61137-61138` — the hue: (tve/300 + jitter*0.1) mod 1,
+            // saturation 1, luminosity 0.65, then A = 0 (all f32 in C#).
+            let hue = ((tve / 300.0 + d.hue_jitter * 0.1) % 1.0) as f64;
+            let rgb = crate::ui::color::hsl_to_rgb(hue, 1.0, 0.65, 255);
+            slot.color = tr_core::particles::Color { r: rgb[0], g: rgb[1], b: rgb[2], a: 0 };
+            slot.scale = d.scale;
+            slot.fade_in = 0.9;
+            // `:61148` — the netOffset applies to the POSITION only (the
+            // velocity was derived pre-offset in-arm).
+            slot.position += net_offset;
         }
     }
     // S1-D-3 W-1 — the WoF's `NPC.NewNPC` drain (`NPC.cs:25712`,
@@ -7938,6 +8179,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // (one spawn call suppressed, `:80171-80174`). The adapter already
     // despawned the slot through the timer seam (the silent retain
     // below); the latch drains onto the App here.
+    // W4-f47 doc-sweep lane 36 — the state-25 completion's progression 43
+    // (`AchievementsHelper.NotifyProgressionEvent(43)`, `NPC.cs:53273`): the
+    // emergence seam latched it inside the pass; the notify needs the app
+    // wholesale, so it credits here (the notify is RNG-free).
+    if shimmer_progression43 {
+        let _ = app.notify_progression_net(43);
+    }
+    // W4-f47 — the NPC.GetShimmered drain (`NPC.cs:91517-91519`): the
+    // transparency ramp's 0.9 crossings resolve after the pass (the arms
+    // transform/spawn/poof — the shimmer item-chain's post-pass convention).
+    drain_shimmer_transforms(app);
+    // W4-f47 — the shimmer/honey wet contact (`NPC.cs:93052-93076`): the
+    // faithful probe + the buff-353 add, timing-equivalent at the post-pass
+    // (the flag/gravity readers run at the next tick's head).
+    shimmer_wet_contact_pass(app);
     // The saucer core's crew (`AI`'s aiStyle-76 init arm): the 2 turrets
     // 393, the 2 cannons 394 and the shell 392, each `ai[0]`-linked (the
     // port's link rides the write-through) with the seat `ai[1]`.
@@ -8267,7 +8523,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the first draw is the `Next(spawnRate)` gate (`NPC.cs:312-318`), so the
     // per-call LCG advance the splitmix bridge needed dies outright.
     let mut spawned = None;
-    if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
+    // `NPC.SpawnNPC`'s noSpawnCycle head (`NPC.cs:80171-80175`, W4-f47):
+    // the shimmer statue-poof / item-drop arms set the flag; ONE spawn
+    // cycle is skipped (the flag clears even when the timer/crowd gates
+    // would have refused anyway — the C# consumes it unconditionally).
+    let spawn_cycle_skipped = std::mem::replace(&mut app.npc_no_spawn_cycle, false);
+    if !spawn_cycle_skipped && app.npcs.len() < 200 && app.npc_timer <= 0.0 {
         let mut rng = app.rngs.stream(RngKey::SpawnNpc);
         // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
         // — the pre-roll before the regular spawner (`:296-302`'s call
@@ -21457,10 +21718,39 @@ mod w4_c10_tail_wiring_tests {
                     ..Default::default()
                 };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+
+/// W4-f47 — the NPC shimmer-transform drain + the wet-contact pass
+/// witnesses (WRITTEN NOT RUN, code-only mode).
+#[cfg(test)]
+mod shimmer_transform_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use tr_core::tile::{Tile, FLAG_ACTIVE, LiquidKind};
+
+    /// A 64x200 world, dirt ground at y=120, a shimmer pool at x 28..32 /
+    /// y 118..119 (the contact fixture).
+    fn shimmer_world() -> tr_core::World {
+        let mut w = tr_core::World::new("shim".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            }
+        }
+        }
+        for x in 28..32 {
+            for y in 118..120 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
             }
         }
         w.compute_column_surface();
         w
+    }
     }
 
     fn app_with_player() -> (App, Player) {
@@ -21947,5 +22237,217 @@ mod empress_wiring_tests {
         assert!(p.immune, "the General lane is untouched");
     }
     }
+    fn app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = shimmer_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app
     }
+
+    /// `NPC.cs:91561-91565` — the NPC-set arm transforms in place (the
+    /// blue slime 1 → the shimmer slime 676 is a roster gap, so the
+    /// zombie 3 → the skeleton 21 is the live witness).
+    #[test]
+    fn w4_f47_the_npc_set_arm_transforms_in_place() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        // Zombie net_id 3 → ShimmerTransformToNPC[3] = 21 (Skeleton).
+        assert_eq!(app.npcs[0].kind, NpcKind::Skeleton);
+        assert!(!app.npcs[0].wants_shimmer_transform, "the request drained");
+        assert!(!app.npc_no_spawn_cycle, "the transform arm does not skip spawns");
+    }
+
+    /// `NPC.cs:91550-91560` — the statue poof deactivates + skips one
+    /// spawn cycle, no loot.
+    #[test]
+    fn w4_f47_the_statue_poof_deactivates_and_skips_the_cycle() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.spawned_from_statue = true;
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        assert!(app.npcs.is_empty(), "the poof removed the NPC");
+        assert!(app.npc_no_spawn_cycle, "one spawn cycle skipped");
+        assert!(app.items.is_empty(), "no loot");
+    }
+
+    /// `NPC.cs:91578-91591` — the town arm zeroes the ai, sets 0.89 and
+    /// deletes buff 353 (the Guide 22 is in ShimmerTownTransform).
+    #[test]
+    fn w4_f47_the_town_arm_arms_state25_and_strips_the_buff() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.buffs.add_buff(353, 100);
+        n.ai = [1.0, 2.0, 3.0, 4.0];
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        assert_eq!(app.npcs[0].ai, [25.0, 0.0, 0.0, 0.0]);
+        assert_eq!(app.npcs[0].shimmer_transparency, 0.89);
+        assert_eq!(app.npcs[0].buffs.find_buff_index(353), None);
+        assert!(app.npcs[0].net_update);
+    }
+
+    /// `NPC.cs:93068-93074` — the shimmer contact sets shimmerWet and
+    /// adds buff 353 (100 ticks); a dry NPC keeps neither.
+    #[test]
+    fn w4_f47_the_shimmer_contact_adds_buff_353() {
+        let mut app = app();
+        // In the pool (x 30 tiles, y 118).
+        let mut wet = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        wet.hp = wet.max_hp;
+        // Dry, far from the pool.
+        let mut dry = Npc::new(NpcKind::Zombie, 50.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        dry.hp = dry.max_hp;
+        app.npcs.push(wet);
+        app.npcs.push(dry);
+        shimmer_wet_contact_pass(&mut app);
+        assert!(app.npcs[0].shimmer_wet, "the pool contact");
+        assert_eq!(app.npcs[0].buffs.buff_time_of(353), 100);
+        assert!(!app.npcs[1].shimmer_wet);
+        assert_eq!(app.npcs[1].buffs.find_buff_index(353), None);
+    }
+
+    /// Doc-sweep lane 36 — the state-25 emergence seam is LIVE: a Guide
+    /// with ai[0]=25 rides `town_shimmer_step` inside `update_npcs` (the
+    /// dry `update_guide` walk never runs — the C# arm returns at
+    /// `:53277`), the ai[2] hold counts down on the UpdateNPCs stream,
+    /// and the completion credits progression 43 through the post-pass
+    /// latch. The witness drives the whole tick path, not the pure fn.
+    #[test]
+    fn w4_f47ds_the_state25_seam_runs_inside_update_npcs() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.home = Some((30, 120));
+        // The completion edge: ai1 74 → 75, transparency 1/60 → 0 dry.
+        n.ai = [25.0, 74.0, 0.0, 0.0];
+        n.shimmer_transparency = 1.0 / 60.0;
+        n.variation_index = 0;
+        app.npcs.push(n);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].ai, [0.0; 4], "the emergence completed");
+        assert_eq!(app.npcs[0].variation_index, 1, "the variant flipped");
+        assert_eq!(app.npcs[0].vy, -4.0, "the completion kick");
+        // The progression-43 latch drained post-pass (the achievement row).
+        let credited = app
+            .achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == "PROGRESSION_EVENT_43" && c.completed);
+        assert!(credited, "progression 43 credited through the seam");
+    }
+
+    /// The seam's gate: a DRY-walking Guide (ai[0]=0) never enters the
+    /// emergence machine — the tick rides the existing walk unchanged.
+    #[test]
+    fn w4_f47ds_the_seam_gate_leaves_the_dry_walk_alone() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.home = Some((30, 120));
+        app.npcs.push(n);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].ai[0], 0.0, "no emergence state");
+        // The old walk moved it (the 0.5 px/tick stand-in until b3 lands).
+        assert_ne!(app.npcs[0].x, 30.0 * TILE_PX, "the dry walk ran");
+    }
+
+    /// W4-f47 keep-one 144 — the 676 dust drain end-to-end
+    /// (`NPC.cs:61133-61148`): a queued `ShimmerSlimeDust` request spawns
+    /// ONE dust 306 through the shared pool on the UpdateNPCs stream, with
+    /// the C# post-writes verbatim — noGravity, noLightEmittance, alpha
+    /// 127, the hue colour with A=0, the rolled scale, fadeIn 0.9 — and
+    /// the netOffset lands on the POSITION only. The allocator's own 6
+    /// draws (pos pair, vel pair, frame, scale) ride the stream after the
+    /// in-arm rolls (the gallop-dust placement convention).
+    #[test]
+    fn w4_f47_the_shimmer_slime_dust_drain_spawns_306_with_the_post_writes() {
+        use crate::app::RngKey;
+        use crate::npc::ShimmerSlimeDust;
+        let mut app = app();
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let mut n = Npc::new(NpcKind::ShimmerSlime, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.net_offset = Vec2::new(2.0, -3.0);
+        n.wants_shimmer_slime_dust.push(ShimmerSlimeDust {
+            x: 484.0,
+            y: 1602.0,
+            vx: 0.3,
+            vy: -0.7,
+            hue_jitter: 0.5,
+            scale: 0.65,
+        });
+        app.npcs.push(n);
+        *app.rngs.stream(RngKey::UpdateNpcs) = UnifiedRandom::new(4242);
+        app.anim_time = 1.0; // tve = 60 → hue base 60/300 = 0.2
+        // Park the camera on the dust so the NewDust cull passes (the
+        // flow_app default camera sits at the origin).
+        app.camera = Vec2::new(484.0, 1602.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].wants_shimmer_slime_dust.is_empty(), "the queue drained");
+        let hits: Vec<_> = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 306)
+            .collect();
+        assert_eq!(hits.len(), 1, "one 306 spawned");
+        let d = hits[0];
+        assert!(d.no_gravity);
+        assert!(d.no_light_emittance);
+        assert_eq!(d.alpha, 127);
+        assert_eq!(d.scale, 0.65);
+        assert_eq!(d.fade_in, 0.9);
+        assert_eq!(d.velocity, Vec2::new(0.3, -0.7));
+        // The position: the rolled point + the netOffset (`:61148`).
+        assert_eq!(d.position, Vec2::new(486.0, 1599.0));
+        // The hue: (60/300 + 0.5*0.1) mod 1, sat 1, lum 0.65, A 0 — the
+        // same f32 arithmetic the drain runs (the f64 widening is inside
+        // hsl_to_rgb).
+        let hue = ((60.0f32 / 300.0 + 0.5f32 * 0.1) % 1.0) as f64;
+        let rgb = crate::ui::color::hsl_to_rgb(hue, 1.0, 0.65, 255);
+        assert_eq!((d.color.r, d.color.g, d.color.b, d.color.a), (rgb[0], rgb[1], rgb[2], 0));
+        // The allocator contract: a perfect spawn of the same inputs
+        // draws exactly 6 (the 0x0 box clamps to 5x5 → Next(1) twice, the
+        // velocity pair, the frame Next(3), the scale roll) — the in-arm
+        // gate draws are pinned by the npc_ai_slime witnesses; the drain
+        // adds only this shape on top of the tick's AI draws.
+        let mut probe_pool = tr_core::particles::DustPool::new();
+        let ctx = app.spawn_ctx();
+        let mut probe_rng = UnifiedRandom::new(7);
+        let mut probe_twin = UnifiedRandom::new(7);
+        probe_pool.new_dust_perfect(
+            &mut probe_rng,
+            &ctx,
+            &app.world,
+            Vec2::new(484.0, 1602.0),
+            306,
+            Some(Vec2::new(0.3, -0.7)),
+            0,
+            tr_core::particles::Color::default(),
+            1.0,
+        );
+        for _ in 0..2 {
+            let _ = probe_twin.next_max(1); // the 5x5 clamp: Next(5-4)
+        }
+        let _ = probe_twin.next_range(-20, 21);
+        let _ = probe_twin.next_range(-20, 21);
+        let _ = probe_twin.next_max(3);
+        let _ = probe_twin.next_range(-20, 21);
+        assert_eq!(probe_rng, probe_twin, "the perfect spawn draws exactly 6");
+    }
+}
+}
 }

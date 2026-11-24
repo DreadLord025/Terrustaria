@@ -33,7 +33,7 @@ pub const NPC_MAX_BUFFS: usize = 20;
 /// fields wiped by `UpdateNPC_BuffFlagsReset` (`NPC.cs:92151-92192`) at the
 /// start of every tick; deriving them fresh each tick is equivalent.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct NpcBuffFlags {
+pub struct NpcBuffFlags {
     /// buff 20 `Poisoned` (`NPC.cs:91981-91984`).
     poisoned: bool,
     /// buff 30 `Bleeding` (`NPC.cs:91989-91992`).
@@ -64,6 +64,10 @@ struct NpcBuffFlags {
     accelerate_poisons: bool,
     /// buff 137 `drippingSlime` (`NPC.cs:92049-92052`).
     dripping_slime: bool,
+    /// buff 353 `Shimmering` (`NPC.cs:92133-92143`) — the immune-353 branch
+    /// DELETES the buff mid-scan instead of setting this flag (verbatim
+    /// `DelBuff(i)`, the shift-left skips the shifted-in slot this tick).
+    pub shimmering: bool,
 }
 
 /// `DOTTally` (`NPC.cs:59-141`): one tick's sum of per-debuff `regenLoss`.
@@ -1115,6 +1119,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::TownSlimeRed
         | NpcKind::TownSlimeYellow
         | NpcKind::TownSlimeCopper => &[],
+        // Doc-sweep lane 36 — 676 has no `DebuffImmunitySets` row
+        // (`NPCID.cs:6075+` carries no 676 entry) — the C# else-branch's
+        // no-immunity (`NPC.cs:17826-17832`).
+        NpcKind::ShimmerSlime => &[],
     }
 }
 
@@ -1332,11 +1340,36 @@ impl NpcBuffs {
     /// step before the AI: flags reset (implicit — the flags are derived
     /// fresh) → set flags with the timer decrement → clear expired → apply
     /// DOTs. `UpdateNPC_SoulDrainDebuff` (`:90375`) and the VFX pass
-    /// (`:90378`) have no port systems yet.
-    pub fn update_buffs_tick(&mut self, hp: &mut i32, max_hp: i32) {
+    /// (`:90378`) have no port systems yet. Returns the tick's flags — the
+    /// caller stores `shimmering` (buff 353) for the transparency ramp
+    /// (`NPC.cs:91514`, W4-f47).
+    pub fn update_buffs_tick(&mut self, hp: &mut i32, max_hp: i32) -> NpcBuffFlags {
         let flags = self.set_flags_tick();
         self.clear_expired_buffs();
         self.apply_dots(&flags, hp, max_hp);
+        flags
+    }
+
+    /// `NPC.TryAddingRepeatedBuff` (`NPC.cs:93303-93313`): not immune, and
+    /// (absent OR `buffTime <= low_threshold`) → `AddBuff(id, time)`. The
+    /// shimmer contact calls it with (353, 100, default 10) (`:93073`).
+    pub fn try_adding_repeated_buff(&mut self, buff_id: i32, time: i32, low_threshold: i32) {
+        if self.buff_immune[buff_id as usize] {
+            return;
+        }
+        match self.find_buff_index(buff_id) {
+            None => self.add_buff(buff_id, time),
+            Some(i) if self.buff_time[i] <= low_threshold => self.add_buff(buff_id, time),
+            Some(_) => {}
+        }
+    }
+
+    /// The `FindBuffIndex(353)` → `DelBuff(num)` pair the town shimmer arm
+    /// runs (`NPC.cs:91586-91590`).
+    pub fn remove_buff(&mut self, buff_type: i32) {
+        if let Some(i) = self.find_buff_index(buff_type) {
+            self.del_buff(i);
+        }
     }
 
     /// `UpdateNPC_BuffSetFlags` (`NPC.cs:91965-92149`): per non-empty slot
@@ -1373,6 +1406,18 @@ impl NpcBuffs {
                 153 => flags.shadow_flame = true,
                 204 => flags.oiled = true,
                 137 => flags.dripping_slime = true,
+                353 => {
+                    // `NPC.cs:92133-92143`: immune → DelBuff(i) MID-scan
+                    // (the shift-left skips the shifted-in slot this tick,
+                    // exactly like the C# — the index loop re-reads the
+                    // arrays each pass); else the shimmering flag arms the
+                    // transparency ramp (`:91514`).
+                    if self.buff_immune[353] {
+                        self.del_buff(i);
+                    } else {
+                        flags.shimmering = true;
+                    }
+                }
                 _ => {}
             }
         }
@@ -2138,5 +2183,82 @@ mod tests {
         b.buff_immune[20] = true;
         assert_eq!(b.find_buff_index(20), None);
         assert_eq!(b.find_buff_index(0), None);
+    }
+
+    // -----------------------------------------------------------------
+    // W4-f47 — buff 353 (Shimmering) + the repeated-buff helper witnesses
+    // (WRITTEN NOT RUN, code-only mode)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn w4_f47_buff_353_sets_the_shimmering_flag() {
+        // NPC.cs:92133-92143 — the non-immune branch sets shimmering.
+        let mut b = NpcBuffs::default();
+        b.add_buff(353, 100);
+        let mut hp = 100;
+        let flags = b.update_buffs_tick(&mut hp, 100);
+        assert!(flags.shimmering);
+        assert_eq!(b.buff_time_of(353), 99, "the tick decremented");
+        // No 353 → the flag is false (the reset is implicit).
+        let mut b2 = NpcBuffs::default();
+        let flags2 = b2.update_buffs_tick(&mut hp, 100);
+        assert!(!flags2.shimmering);
+    }
+
+    #[test]
+    fn w4_f47_buff_353_immune_deletes_mid_scan() {
+        // NPC.cs:92135-92138 — buffImmune[353] → DelBuff(i) IN the scan:
+        // the shift-left skips the shifted-in slot this tick.
+        let mut b = NpcBuffs::default();
+        b.buff_immune[353] = true;
+        b.buff_type[0] = 353;
+        b.buff_time[0] = 50;
+        b.buff_type[1] = 20; // Poisoned shifts into slot 0, skipped this tick
+        b.buff_time[1] = 50;
+        let mut hp = 100;
+        let flags = b.update_buffs_tick(&mut hp, 100);
+        assert!(!flags.shimmering, "the immune branch never sets the flag");
+        assert!(!flags.poisoned, "the shifted-in slot is skipped this tick");
+        assert_eq!(b.buff_type[0], 20);
+        assert_eq!(b.buff_time[0], 50, "the shifted-in buff did not decrement");
+        assert_eq!(b.find_buff_index(353), None, "353 is gone");
+        // The next tick processes the shifted-in Poisoned.
+        let flags2 = b.update_buffs_tick(&mut hp, 100);
+        assert!(flags2.poisoned);
+    }
+
+    #[test]
+    fn w4_f47_try_adding_repeated_buff_respects_the_low_threshold() {
+        // NPC.cs:93303-93313 — absent → add; present with time <= 10 →
+        // refresh; present above 10 → no-op; immune → never.
+        let mut b = NpcBuffs::default();
+        b.try_adding_repeated_buff(353, 100, 10);
+        assert_eq!(b.buff_time_of(353), 100);
+        // Above the threshold: no refresh.
+        b.try_adding_repeated_buff(353, 100, 10);
+        assert_eq!(b.buff_time_of(353), 100);
+        // At/below the threshold: refresh.
+        b.buff_time[0] = 10;
+        b.try_adding_repeated_buff(353, 100, 10);
+        assert_eq!(b.buff_time_of(353), 100);
+        // Immune: never added.
+        let mut b2 = NpcBuffs::default();
+        b2.buff_immune[353] = true;
+        b2.try_adding_repeated_buff(353, 100, 10);
+        assert_eq!(b2.find_buff_index(353), None);
+    }
+
+    #[test]
+    fn w4_f47_remove_buff_deletes_the_found_index() {
+        // The town arm's FindBuffIndex(353) → DelBuff (NPC.cs:91586-91590).
+        let mut b = NpcBuffs::default();
+        b.add_buff(20, 60);
+        b.add_buff(353, 100);
+        b.remove_buff(353);
+        assert_eq!(b.find_buff_index(353), None);
+        assert_eq!(b.find_buff_index(20), Some(0), "the tail shifted left");
+        // Absent → no-op.
+        b.remove_buff(353);
+        assert_eq!(b.find_buff_index(20), Some(0));
     }
 }

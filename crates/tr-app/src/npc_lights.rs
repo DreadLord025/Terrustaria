@@ -163,6 +163,17 @@ fn npc_light_anchor(
 /// adds the light inside `AI()` before the move, one step of position
 /// lag, the `npc_light` precedent).
 pub(crate) fn snail_light(
+/// The ShimmerSlime 676's per-tick centre light (`NPC.cs:61130`, W4-f47
+/// keep-one 144): `Lighting.AddLight(base.Center, 23)` — the
+/// `(Vector2, torchID)` overload (`Lighting.cs:151-155`) truncates the
+/// centre coordinate BEFORE the /16 (`XAnchor::CenterTruncated`) and
+/// reads `TorchID.TorchColor(23)` — the SHIMMER torch
+/// (`TorchID.cs:131`/`:161`, `ShimmerTorchLight`: the animated
+/// mouseTextColor pulse, `tile_light::torch_color`'s id-23 arm). RNG-free
+/// — the draw-side feed convention (`npc_light` above); the C# runs it
+/// inside `AI_001_Slimes` per tick, the feed collects it after the step
+/// in slot order (the aiStyle-8 precedent).
+pub(crate) fn shimmer_slime_light(
     kind: NpcKind,
     pos: Vec2,
     width: f32,
@@ -177,7 +188,17 @@ pub(crate) fn snail_light(
         tile_x(pos, width, XAnchor::CenterTruncated),
         tile_y(pos, height, XAnchor::CenterTruncated),
         rgb,
+    p: &tr_core::lighting::LightParams,
+) -> Option<(i32, i32, [f32; 3])> {
+    if kind != NpcKind::ShimmerSlime {
+        return None;
+    }
+    Some((
+        tile_x(pos, width, XAnchor::CenterTruncated),
+        tile_y(pos, height, XAnchor::CenterTruncated),
+        tr_core::tile_light::torch_color(23, p),
     ))
+}
 }
 
 #[cfg(test)]
@@ -285,5 +306,32 @@ mod tests {
         // styles and never reach it.
         assert!(npc_light(NpcKind::PrimeVice, Vec2::ZERO, 52.0, 52.0, 0.0).is_none());
         assert!(npc_light(NpcKind::DD2KoboldFlyerT3, Vec2::ZERO, 38.0, 38.0, 0.0).is_none());
+    }
+
+    /// W4-f47 keep-one 144 — `NPC.cs:61130`: `AddLight(base.Center, 23)`.
+    /// The 24x18 ShimmerSlime box at (160, 176) has Center (172, 185);
+    /// the `(Vector2, torchID)` overload truncates BEFORE dividing
+    /// (`Lighting.cs:154`): (int)172/16 = 10, (int)185/16 = 11. The colour
+    /// is `torch_color(23)` — the shimmer torch's mouseTextColor pulse
+    /// (`ShimmerTorchLight`, `TorchID.cs:161`), NOT a constant.
+    #[test]
+    fn w4_f47_the_shimmer_slime_lights_torch_23_at_the_truncated_center() {
+        let mut p = tr_core::lighting::LightParams::default();
+        p.mouse_text_color = 225;
+        let (x, y, rgb) =
+            shimmer_slime_light(NpcKind::ShimmerSlime, Vec2::new(160.0, 176.0), 24.0, 18.0, &p)
+                .expect("the 676 lights every tick");
+        assert_eq!((x, y), (10, 11));
+        assert_eq!(rgb, tr_core::tile_light::torch_color(23, &p));
+        // The pulse moves the colour: a different mouseTextColor changes
+        // the shimmer-torch terms (the id-23 arm reads it).
+        p.mouse_text_color = 190;
+        let (_, _, rgb2) =
+            shimmer_slime_light(NpcKind::ShimmerSlime, Vec2::new(160.0, 176.0), 24.0, 18.0, &p)
+                .unwrap();
+        assert_ne!(rgb, rgb2, "the shimmer torch pulses");
+        // Every other kind stays dark on this feed.
+        assert!(shimmer_slime_light(NpcKind::Slime, Vec2::ZERO, 24.0, 18.0, &p).is_none());
+        assert!(shimmer_slime_light(NpcKind::IlluminantSlime, Vec2::ZERO, 24.0, 18.0, &p).is_none());
     }
 }

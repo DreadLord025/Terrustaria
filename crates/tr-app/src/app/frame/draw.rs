@@ -456,6 +456,20 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // W4-f47 keep-one 144 — the ShimmerSlime 676's
+                        // `AddLight(base.Center, 23)` (`NPC.cs:61130`):
+                        // the shimmer-torch pulse, RNG-free (the
+                        // npc_lights seam; the dust half rides the sim's
+                        // slot-turn drain).
+                        if let Some((x, y, rgb)) = crate::npc_lights::shimmer_slime_light(
+                            n.kind,
+                            pos,
+                            w,
+                            h,
+                            &params,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                         // S1-D-4 W-10: the Horseman's unconditional
                         // `Lighting.AddLight(Center, 0.4, 0.36, 0.2)`
                         // (`NPC.cs:62420`) — slice B's pure fn, no RNG

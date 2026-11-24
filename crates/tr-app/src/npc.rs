@@ -3030,6 +3030,22 @@ pub enum NpcKind {
     /// `ExtraFramesCount` 6. The `CanConvertIntoCopperSlimeTownNPC`
     /// shimmer target (`NPCID.cs:10120`).
     TownSlimeCopper,
+    /// `NPCID.ShimmerSlime` (676, `NPCID.cs:12029`) — the shimmer
+    /// transform target of the 15 slime/critter rows
+    /// (`ShimmerTransformToNPC`, `NPCID.cs:10470`): 24x18, aiStyle 1,
+    /// dmg 20, def 5, 80 HP, scale 1, value 150 copper
+    /// (`Item.buyPrice(0,0,1,50)`, `NPC.cs:17566-17578`), NPCHit1/
+    /// NPCDeath1, the class-default kb 1 (the row writes none). The
+    /// doc-sweep lane 36 row: the roster gap left every `-> 676`
+    /// transform a no-op. The AI rides the shared aiStyle-1 stand-in
+    /// (`update_slime`) until b1's `ai_001_slime_family` adapter lands
+    /// (the activation contract, research/151 §3); the 676 light/dust
+    /// arm (`NPC.cs:61128-61150`) is WIRED in `npc_ai_slime` (keep-one
+    /// 144). The HitEffect arm (`:82058-82078`) is the dust lanes'
+    /// (g62 hit / g60 death, the 676 death-half census gap seeded —
+    /// research/151 §2). The 677 Shimmerfly twin is
+    /// W4-c7/c9's pushed claim — NOT landed here (ANALYSIS 121).
+    ShimmerSlime,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3076,6 +3092,28 @@ pub struct GallopDustAi {
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
+}
+
+/// The ShimmerSlime's per-tick shimmer dust (`NPC.cs:61128-61150`, W4-f47
+/// keep-one 144). The arm-level draws (the `Next(3)`/`Next(5)` gate + the
+/// 4 `NextFloat` rolls) are consumed IN-STEP by `ai_001_slimes`; this
+/// carries the fully-rolled `NewDustPerfect(pos, 306)` request to the sim
+/// drain, which feeds `DustPool` on the same UpdateNPCs stream at the
+/// NPC's slot turn (the gallop-dust seam). The hue colour needs
+/// `Main.timeForVisualEffects` (the drain computes it); the position
+/// carries the PRE-netOffset roll (`:61148` adds the offset at the
+/// drain). Velocity is the pre-offset `(pos - Center) * 0.1`, X ×0.25,
+/// positive Y flipped (`:61139-61145`).
+#[derive(Clone, Copy, Debug)]
+pub struct ShimmerSlimeDust {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    /// The `NextFloat() * 0.1` hue jitter (`:61137`).
+    pub hue_jitter: f32,
+    /// The `NextFloat() * 0.3 + 0.5` scale (`:61146`).
+    pub scale: f32,
 }
 
 /// S1-E-21g — one queued NPC-side sound play (the `wants_hostile_shot`
@@ -3169,8 +3207,26 @@ pub struct Npc {
     /// `NPC.shimmerTransparency` (`NPC.cs`'s field) — the 1.0 of a
     /// shimmer-released NPC (`WorldItem.GetShimmered`'s makeNPC arm,
     /// `WorldItem.cs:1768`, and 4986's `:1732`) or the 0.89 of the shimmered
-    /// variant (`NPC.GetShimmered`, `NPC.cs:91548`). Render layer only.
+    /// variant (`NPC.GetShimmered`, `NPC.cs:91548`). The transparency ramp
+    /// (`NPC.cs:91514-91544`, W4-f47) drives it live; the render layer
+    /// multiplies the tint by `1 - transparency` (`Main.cs:26282-26286`).
     pub shimmer_transparency: f32,
+    /// `NPC.shimmering` (`NPC.cs:6245`) — buff 353 active this tick
+    /// (`UpdateNPC_BuffSetFlags` `:92141`, reset `:92191`). The transparency
+    /// ramp's rise gate (`:91514`); the town arm's home-stamp gate
+    /// (`:53296`).
+    pub shimmering: bool,
+    /// `Entity.shimmerWet` — the shimmer-contact flag
+    /// (`Collision_WaterCollision`, `NPC.cs:93068-93075`); the wet gravity
+    /// override reads it first (`:90939`). Cleared with `wet` (`:92531`).
+    pub shimmer_wet: bool,
+    /// `Entity.honeyWet` (`NPC.cs:93064-93067`) — the honey gravity arm
+    /// (`:90944`).
+    pub honey_wet: bool,
+    /// The `GetShimmered` request (`NPC.cs:91517-91519`): the transparency
+    /// ramp crossed 0.9 this tick; the sim drains it after the NPC pass
+    /// (the arms transform/spawn/kill — they need the app wholesale).
+    pub wants_shimmer_transform: bool,
     /// `NPC.extraValue` (`WorldItem.cs:1125-1200`'s carrier): the coins a
     /// revenge enemy picked up, dropped on kill via `NPCLoot_DropMoney`'s
     /// `+= extraValue` (:79680).
@@ -3691,6 +3747,10 @@ pub struct Npc {
     /// 62437`): fully-rolled at the AI site, drained into the DustPool
     /// post-tick (`world_sim/npcs.rs`).
     pub wants_gallop_dust: Vec<GallopDustAi>,
+    /// The ShimmerSlime 676's shimmer-dust spawns (`NPC.cs:61133-61148`,
+    /// W4-f47 keep-one 144): fully-rolled at the AI site, drained into the
+    /// DustPool at the NPC's slot turn (`world_sim/npcs.rs`).
+    pub wants_shimmer_slime_dust: Vec<ShimmerSlimeDust>,
     /// S1-E-21g — the NPC-side sound requests (`SoundEngine.PlaySound`
     /// sites inside the AI machines): the sim drains them after the
     /// machine's draws on the `UpdateNPCs` stream (the
@@ -5188,6 +5248,10 @@ impl Npc {
         Self {
             kind,
             shimmer_transparency: 0.0,
+            shimmering: false,
+            shimmer_wet: false,
+            honey_wet: false,
+            wants_shimmer_transform: false,
             extra_value: 0,
             slime: SlimeVariant::Blue,
             x,
@@ -5509,6 +5573,7 @@ impl Npc {
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
             wants_gallop_dust: Vec::new(),
+            wants_shimmer_slime_dust: Vec::new(),
             wants_sound: Vec::new(),
             wants_plantera_hooks: 0,
             wants_plantera_tentacles: 0,
@@ -6598,6 +6663,10 @@ impl Npc {
             // rows write no knockBackResist — the head's 1f
             // (`NPC.cs:8533`) stands (the ForceBubble / W4-c9 precedent).
             NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 1.0,
+            // Doc-sweep lane 36 — 676 writes no knockBackResist row
+            // (`NPC.cs:17566-17578`): the class default 1f (`:8533`),
+            // NOT the 0.4 catch-all.
+            NpcKind::ShimmerSlime => 1.0,
             _ => 0.4,
         }
     }
@@ -7450,6 +7519,8 @@ impl Npc {
             // The luck critters (W4-e26, E8 keep-one): defense 0 each
             // (`NPC.cs:13607` / `:16769`).
             NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0,
+            // Doc-sweep lane 36 — 676 defense 5 (`NPC.cs:17572`).
+            NpcKind::ShimmerSlime => 5,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -8314,6 +8385,9 @@ impl Npc {
             // The luck critters (W4-e26, E8 keep-one): the rows write no
             // value — the head's 0f (`NPC.cs:8544`) stands.
             NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0.0,
+            // Doc-sweep lane 36 — 676 value `Item.buyPrice(0,0,1,50)` =
+            // 150 copper (`NPC.cs:17575`).
+            NpcKind::ShimmerSlime => 150.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -10074,7 +10148,25 @@ impl Npc {
         // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
         // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
         // the frame's movement, exactly like the original.
-        self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
+        let flags = self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
+        // `UpdateNPC_BuffFlagsReset` (`:92191`) + `BuffSetFlags` (`:92141`):
+        // the shimmering flag is derived fresh each tick (W4-f47).
+        self.shimmering = flags.shimmering;
+        // `UpdateNPC_BuffApplyVFX`'s shimmer tail (`NPC.cs:91514-91544`):
+        // the transparency ramp runs at the buff block's position (the C#
+        // VFX pass `:90378`, before the AI). The crossing REQUEST rides
+        // `wants_shimmer_transform` — the sim drains it after the pass (the
+        // GetShimmered arms spawn/kill, they need the app wholesale).
+        let (t, crossed) = tr_core::shimmer::npc_shimmer_transparency_tick(
+            self.shimmering,
+            self.shimmer_transparency,
+            self.just_hit,
+            self.buffs.buff_immune[353],
+        );
+        self.shimmer_transparency = t;
+        if crossed {
+            self.wants_shimmer_transform = true;
+        }
         self.hurt_cd = (self.hurt_cd - dt).max(0.0);
         // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
         for v in self.immune.iter_mut() {
@@ -12334,7 +12426,13 @@ impl Npc {
             | NpcKind::IceSlime
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
-            | NpcKind::UmbrellaSlime => self.update_slime(world, player, dt),
+            | NpcKind::UmbrellaSlime
+            // Doc-sweep lane 36 — the ShimmerSlime 676 rides the shared
+            // aiStyle-1 stand-in (the b1 wiring's family arm claims it
+            // at merge; keep-one 144 wired the 676 light/dust arm on the
+            // faithful `npc_ai_slime` core — the stand-in route draws
+            // nothing until b1 lands, the documented merge seam).
+            | NpcKind::ShimmerSlime => self.update_slime(world, player, dt),
             NpcKind::DemonEye
             | NpcKind::WanderingEye
             | NpcKind::CataractEye
@@ -16753,6 +16851,24 @@ impl Npc {
                     crate::npc_findframe_a::find_frame_kind(self.kind)
                         .expect("a wave-A kind"),
                 );
+            }
+            // Doc-sweep lane 36 — the ShimmerSlime's `case 676`
+            // (`NPC.cs:70823-70846`): the SAME 8-tick hop strip as the
+            // wave-A group, but the wrap rides `Main.npcFrameCount[676]`
+            // (= 2, `Main.cs:67116`'s row) and the 302/304 spriteDirection
+            // snap (`:70824-70827`) never matches 676 — the blue-slime
+            // arm's shape with the count read, verbatim.
+            NpcKind::ShimmerSlime => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = crate::render::entities::npc_rows(676);
+                    self.frame = if self.frame + 1 >= count {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
             }
             // Case 4/5 — the eye and the servant (`NPC.cs:67247-67256`): the
             // counter ticks with the motion class, the frame wraps over the
@@ -32670,6 +32786,9 @@ impl Npc {
             NpcKind::Frog => 744,
             NpcKind::LadyBug => 604,
             NpcKind::GoldLadyBug => 605,
+            // Doc-sweep lane 36 — the ShimmerSlime's vanilla id (free in
+            // the hash space; the 677 twin is c7/c9's).
+            NpcKind::ShimmerSlime => 676,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -38944,7 +39063,7 @@ mod tests {
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
     
-    pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 617] = [
+    pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 618] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -39562,6 +39681,7 @@ mod tests {
         NpcKind::TownSlimeRed,
         NpcKind::TownSlimeYellow,
         NpcKind::TownSlimeCopper,
+        NpcKind::ShimmerSlime,
     ];;
 
     #[test]
@@ -41209,6 +41329,39 @@ mod tests {
                 assert!(n.hp <= hp, "{kind:?} hp grew");
             }
         }
+    /// Doc-sweep lane 36 — the ShimmerSlime 676's `SetDefaults` row
+    /// (`NPC.cs:17566-17578`) through the port's tables: 24x18, aiStyle 1,
+    /// dmg 20, def 5, 80 HP, the class-default kb 1 (the row writes none),
+    /// value 150 copper, NPCHit1/NPCDeath1, the vanilla protocol id, the
+    /// 2-frame strip, and the shimmer-transform resolve now finds the
+    /// kind (the roster gap closed). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_f47ds_the_shimmer_slime_row_matches_the_csharp() {
+        let kind = NpcKind::ShimmerSlime;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 676);
+        assert_eq!(kind.net_id(), 676);
+        assert_eq!(kind.ai_style(), 1);
+        assert_eq!(kind.size(), (24.0, 18.0));
+        assert_eq!(shell.size(), (24.0, 18.0));
+        assert_eq!(kind.contact_damage(), 20);
+        assert_eq!(shell.defense(), 5);
+        assert_eq!(kind.max_hp(), 80);
+        assert_eq!(shell.hp, 80);
+        assert_eq!(shell.knock_back_resist(), 1.0, "the class default, not 0.4");
+        assert_eq!(shell.value(), 150.0);
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(kind.to_u16(), 676);
+        assert_eq!(NpcKind::from_u16(676), Some(kind));
+        assert_eq!(crate::render::entities::npc_rows(676), 2);
+        // The transform chain resolves: the blue slime's release/transform
+        // target 676 now maps to a live kind (the drain's TransformNpc arm).
+        assert_eq!(
+            crate::npc::kind_from_net_id(676),
+            Some((kind, SlimeVariant::Blue))
+        );
+        assert_eq!(tr_core::shimmer::transform_to_npc(1), 676);
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -41332,7 +41485,7 @@ mod tests {
         // MERGE-SIDE re-pin (367 s1 step 6): the batch pins were
         // cumulative-on-branch; every batch test reads the SETTLED
         // roster (455 after d42 + d35's 33 = 488).
-        assert_eq!(ALL_KINDS.len(), 617);
+        assert_eq!(ALL_KINDS.len(), 618);
     }
     }
 
@@ -45658,6 +45811,7 @@ mod tests {
 }
 }
 }
+}
 
 mod shard_stat_tests {
     use super::*;
@@ -46208,7 +46362,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            617,
+            618,
             concat!(
                 "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate)",
                 " UNION ",
@@ -46240,6 +46394,8 @@ mod s1_f_3_tests {
             "every decodable kind resolves (the wire roster's size - 273 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-e26's three luck critters (the Duck dropped to c10, E8 keep-one), L-B gate)"
             281,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-g10 lane 3's eleven town pets 637/638/656/670/678-684; the d37 research/250 pin-fix, decl 281)"
+            271,
+            "every decodable kind resolves (the wire roster's size - 271 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + doc-sweep 36's ShimmerSlime)"
         );
         assert!(
             covered > 43,

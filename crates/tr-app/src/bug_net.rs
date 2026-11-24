@@ -62,9 +62,9 @@
 //! `AI_AttemptToFindTeleportSpot` is unported (kind 687 has no roster row);
 //! the `WrongBugNet` immunity counter collapses onto the port's single
 //! damage lane (the M4-HAZARD-1 admission); `gravDir` is the normal 1f;
-//! the catch item's drop box is the port's universal 14×14 (`ItemDrop`)
-//! centred on the spawn point instead of the per-texture `WorldItem`
-//! box; the catcher reservation (`Item.DefaultAssignNewItemsToPlayer`)
+//! the catch item's drop box is the port's universal 16×16 (`ItemDrop`,
+//! `WorldItem.cs:138`) centred on the spawn point; the catcher reservation
+//! (`Item.DefaultAssignNewItemsToPlayer`)
 //! has no host-side `22 ItemOwner` sender yet; the release reach gate is
 //! the port's circular `IsInTileInteractionRange` stand-in.
 
@@ -808,9 +808,8 @@ pub(crate) fn catch_npc(app: &mut App, i: usize, who: u8) -> bool {
             let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
             // The C# `worldItem.Center = center` (`Item.cs:49736`) anchors
             // the drop's CENTRE on the truncated player centre; the port's
-            // seam takes the top-left of its 14×14 box (`ItemDrop::SIZE`),
-            // so the half-size offset stands in for the per-texture
-            // `WorldItem.width/height` (ANALYSIS).
+            // seam takes the top-left of its 16×16 box (`ItemDrop::SIZE`,
+            // `WorldItem.cs:138`), so the half-size offset lands the centre.
             let half = crate::item::SIZE * 0.5;
             crate::world_sim::items::spawn_item_drop_px(
                 &mut app.items,

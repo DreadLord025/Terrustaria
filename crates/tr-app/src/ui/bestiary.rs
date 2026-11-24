@@ -2927,6 +2927,15 @@ fn portrait_data(
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
+        // Doc-sweep lane 36 — the ShimmerSlime's portrait rests the
+        // 2-frame strip's row height over the 24x18 box (the
+        // small-kinds shape).
+        (NpcKind::ShimmerSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 32.0, h, white)
+        }
     }
 
 /// `UIBestiaryEntryInfoPage`'s content for the selected entry: the

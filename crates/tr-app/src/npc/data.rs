@@ -1245,6 +1245,10 @@ impl NpcKind {
             NpcKind::TownSlimeRed => 682,
             NpcKind::TownSlimeYellow => 683,
             NpcKind::TownSlimeCopper => 684,
+            // Doc-sweep lane 36 — the ShimmerSlime keeps its vanilla id
+            // (676 is free in the protocol space; the 677 twin is
+            // W4-c7/c9's pushed claim). `NPCID.cs:12029`.
+            NpcKind::ShimmerSlime => 676,
         }
     
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
@@ -2040,6 +2044,8 @@ impl NpcKind {
             682 => NpcKind::TownSlimeRed,
             683 => NpcKind::TownSlimeYellow,
             684 => NpcKind::TownSlimeCopper,
+            // Doc-sweep lane 36 — the ShimmerSlime's vanilla id (`to_u16`).
+            676 => NpcKind::ShimmerSlime,
             _ => return None,
         })
     
@@ -3378,6 +3384,8 @@ impl NpcKind {
             // W4-d41 — the critters' `NPCHit1` (`NPC.cs:15881`/`:15893`/
             // `:9344`), the tumbler's `NPCHit11` (`:15980`).
             NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => "NPC_Hit_1",
+            // Doc-sweep lane 36 — `SoundID.NPCHit1` (`NPC.cs:17576`).
+            NpcKind::ShimmerSlime => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -4193,6 +4201,8 @@ impl NpcKind {
             // W4-d41 — the critters' `NPCDeath1` (`NPC.cs:15882`/`:15894`/
             // `:9345`), the tumbler's `NPCDeath15` (`:15981`).
             NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => "NPC_Killed_1",
+            // Doc-sweep lane 36 — `SoundID.NPCDeath1` (`NPC.cs:17577`).
+            NpcKind::ShimmerSlime => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -5577,6 +5587,9 @@ impl NpcKind {
             // the shared 604/605 row): `AI_115_LadyBugs`
             // (`NPC.cs:47580-47714`).
             NpcKind::LadyBug | NpcKind::GoldLadyBug => 115,
+            // aiStyle 1 — doc-sweep lane 36, the ShimmerSlime
+            // (`NPC.cs:17570`), the shared slime family.
+            NpcKind::ShimmerSlime => 1,
         }
     }
 
@@ -6729,6 +6742,8 @@ impl NpcKind {
             | NpcKind::TownSlimeRed
             | NpcKind::TownSlimeYellow
             | NpcKind::TownSlimeCopper => (18.0, 20.0),
+            // Doc-sweep lane 36 — 676 24x18 (`NPC.cs:17568-17569`).
+            NpcKind::ShimmerSlime => (24.0, 18.0),
         }
     }
 
@@ -8307,6 +8322,8 @@ impl NpcKind {
             | NpcKind::TownSlimeRed
             | NpcKind::TownSlimeYellow
             | NpcKind::TownSlimeCopper => 250,
+            // Doc-sweep lane 36 — 676 lifeMax 80 (`NPC.cs:17573`).
+            NpcKind::ShimmerSlime => 80,
         }
     }
 
@@ -9135,6 +9152,8 @@ impl NpcKind {
             | NpcKind::TownSlimeRed
             | NpcKind::TownSlimeYellow
             | NpcKind::TownSlimeCopper => 10,
+            // Doc-sweep lane 36 — 676 damage 20 (`NPC.cs:17571`).
+            NpcKind::ShimmerSlime => 20,
         }
     }
 }

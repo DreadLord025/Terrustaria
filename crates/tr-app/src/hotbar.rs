@@ -402,9 +402,21 @@ impl SmartSelectCtx<'_> {
                     continue;
                 }
                 7 => {
-                    // The `ItemTrader.TryGetTradeOption` arm (`:17595-17600`)
-                    // is unported (no shimmer-trade table); the
-                    // ExtractinatorMode arm (`:17601-17605`) is the pick.
+                    // `Player.cs:17593-17607` (W4-f47): the ItemTrader arm
+                    // first — on the Chlorophyte Extractinator (642) a slot
+                    // the trade table accepts wins; else the ExtractinatorMode
+                    // arm (`:17601-17605`).
+                    let trader_tile = self
+                        .world
+                        .tile(tx, ty)
+                        .is_some_and(|t| t.active() && t.kind == 642);
+                    if trader_tile
+                        && slot.count > 0
+                        && tr_core::extract::chlorophyte_trade(kind, slot.count).is_some()
+                    {
+                        result = i;
+                        break;
+                    }
                     if tr_core::extract::extractinator_mode(kind) >= 0 {
                         result = i;
                         break;
@@ -421,7 +433,6 @@ impl SmartSelectCtx<'_> {
                 _ => continue,
             }
         }
-        let _ = (tx, ty); // the trader arm's tile read is the unported half
         result
     }
 }
@@ -748,4 +759,43 @@ mod tests {
     // canonical potions.rs seam live in `potions.rs::tests`
     // (`quick_heal_chooser_*` — the smallest-overheal, the 227 +30 grace,
     // the coin/ammo/vault scan and the non-potion skips all pinned there).
+
+    // ---------------- W4-f47: the chlorophyte trader smart-select arm ----
+
+    /// `Player.cs:17593-17600` — on the Chlorophyte Extractinator (642) a
+    /// trade-table item (Copper Ore 12) wins strategy 7 even though it is
+    /// not an ExtractinatorMode input.
+    #[test]
+    fn w4_f47_smart_select_trader_arm_picks_the_ore_on_642() {
+        let mut w = tr_core::World::new("ss".into(), 40, 40);
+        let i = w.index(11, 10);
+        w.tiles[i] = tr_core::tile::Tile { kind: 642, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut inv = [EMPTY_SLOT; INV];
+        inv[3] = slot(12, 5); // Copper Ore — trader-only, mode -1
+        let (coins, ammo) = empty_carry();
+        let c = ctx(&w, &inv, &coins, &ammo, (11.0 * 16.0 + 8.0, 10.0 * 16.0 + 8.0), false);
+        assert_eq!(smart_select_lookup(&c, true, 0), Some(3));
+    }
+
+    /// `Player.cs:17601-17605` — on the plain Extractinator (219) the
+    /// trader arm does NOT fire (the table is 642-only); Copper Ore has no
+    /// ExtractinatorMode, so no slot matches strategy 7.
+    #[test]
+    fn w4_f47_smart_select_trader_arm_is_642_only() {
+        let mut w = tr_core::World::new("ss".into(), 40, 40);
+        let i = w.index(11, 10);
+        w.tiles[i] = tr_core::tile::Tile { kind: 219, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut inv = [EMPTY_SLOT; INV];
+        inv[3] = slot(12, 5); // Copper Ore — no mode, no trader on 219
+        let (coins, ammo) = empty_carry();
+        let c = ctx(&w, &inv, &coins, &ammo, (11.0 * 16.0 + 8.0, 10.0 * 16.0 + 8.0), false);
+        // No extractinator input → the strategy falls through (no pick).
+        assert_eq!(smart_select_lookup(&c, true, 0), None);
+        // Silt (424, mode 0) still picks on 219.
+        inv[3] = slot(424, 5);
+        let c2 = ctx(&w, &inv, &coins, &ammo, (11.0 * 16.0 + 8.0, 10.0 * 16.0 + 8.0), false);
+        assert_eq!(smart_select_lookup(&c2, true, 0), Some(3));
+    }
 }

@@ -1734,6 +1734,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_683",
         // W4-g10 lane 3 batch 2 — the copper slime's sheet.
         "NPC_684",
+        // Doc-sweep lane 36 — the ShimmerSlime's 2-frame strip (the
+        // d35 atlas-repack wave owns the packing reconciliation; a
+        // missing file keeps the draw arm's None fallback).
+        "NPC_676",
 ];
 
 
@@ -3842,6 +3846,8 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_683").copied(),
                 // W4-g10 lane 3 batch 2 — the copper slime.
                 atlas.sheet("NPC_684").copied(),
+                // Doc-sweep lane 36 — the ShimmerSlime's strip.
+                atlas.sheet("NPC_676").copied(),
             ],
 
 

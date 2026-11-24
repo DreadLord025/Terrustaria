@@ -2569,6 +2569,7 @@ pub(crate) const TOWN_PET_SHEETS: &[u32] = &[
     682, // Surly Slime
     683, // Mystic Slime
     684, // Squire Slime (the copper slime, W4-g10 batch 2)
+    676, // the Shimmer Slime (doc-sweep lane 36)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -5647,6 +5648,12 @@ pub(crate) fn draw_npcs(
             NpcKind::Frog => pumpkin_moon_draw(assets.npc_sheet(361), npc_rows(361), n, w, h),
             NpcKind::LadyBug => scaled_anchor(assets.npc_sheet(604), npc_rows(604), n, w, h),
             NpcKind::GoldLadyBug => scaled_anchor(assets.npc_sheet(605), npc_rows(605), n, w, h),
+            // Doc-sweep lane 36 — the ShimmerSlime draws its own 2-frame
+            // strip (`Main.npcFrameCount[676]` = 2) at the generic
+            // centred anchor (the small-kinds shape).
+            NpcKind::ShimmerSlime => {
+                pumpkin_moon_draw(assets.npc_sheet(676), npc_rows(676), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;

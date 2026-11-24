@@ -2518,6 +2518,17 @@ BestiaryEntryDef {
         name: "Angry Nimbus",
     },
     BestiaryEntryDef {
+        // Doc-sweep lane 36 — the ShimmerSlime's credit
+        // (`BestiaryDatabaseNPCsPopulator`, net 676; the tr-core
+        // banner map 676 => 289 already carries the id).
+        credit_id: "ShimmerSlime",
+        net_id: 676,
+        kind: NpcKind::ShimmerSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Shimmer Slime",
+    },
+    BestiaryEntryDef {
         credit_id: "DungeonSpirit",
         net_id: 288,
         kind: NpcKind::DungeonSpirit,
