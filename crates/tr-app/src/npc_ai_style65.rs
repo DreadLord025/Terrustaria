@@ -2130,4 +2130,40 @@ mod tests {
         ai_065_step(BUTTERFLY, &mut n, &w, &ctx(&players, &[]), &mut rng);
         assert_eq!(n.facing, 1, "a zero-velocity tick keeps the direction");
     }
+
+    /// SEAL (research/338 §4, renumbered 281→338 per §8.5): the 444 catch row rides the gold range —
+    /// `NPC.cs:14287` writes catchItem 2891, `bug_net.rs:152`'s
+    /// `442..=448 => 2889 + type - 442` covers it (2889 + 2).
+    #[test]
+    fn w4_d30_seal_the_gold_butterfly_catch_row_rides_the_gold_range() {
+        assert_eq!(crate::bug_net::catch_item(GOLD_BUTTERFLY, 0.0), 2891);
+        // The gold row ignores ai[2] (only 356 re-derives, `:45106`).
+        assert_eq!(crate::bug_net::catch_item(GOLD_BUTTERFLY, 7.0), 2891);
+    }
+
+    /// SEAL (research/338 §4, renumbered 281→338 per §8.5): the HellButterfly's item is lava bait
+    /// (`ItemID.cs:1306`), the GoldButterfly's is not — the plain net
+    /// burns on 653's catch, never on 444's.
+    #[test]
+    fn w4_d30_seal_the_hell_butterfly_is_lava_bait_the_gold_is_not() {
+        let hell_item = crate::bug_net::catch_item(HELL_BUTTERFLY, 0.0);
+        let gold_item = crate::bug_net::catch_item(GOLD_BUTTERFLY, 0.0);
+        assert!(crate::bug_net::is_lava_bait(hell_item), "4845");
+        assert!(!crate::bug_net::is_lava_bait(gold_item), "2891");
+    }
+
+    /// SEAL (research/338 §3c/§3d, renumbered 281→338 per §8.5): the g65 "Kill-309" arm is projectile
+    /// 309 (FrostBlastFriendly) and d77's 661 cue is the Onyx Black Bolt —
+    /// neither shares an id space with this module's NPC kinds. Pin the
+    /// projectile const so a future census cannot fold the axes.
+    #[test]
+    fn w4_d30_seal_the_g65_309_and_d77_661_are_other_id_spaces() {
+        assert_eq!(crate::projectile::FROST_BLAST_FRIENDLY, 309);
+        // The module's census stays NPC-side (NPC.cs SetDefaults rows).
+        assert_eq!(
+            (BUTTERFLY, GOLD_BUTTERFLY, HELL_BUTTERFLY, EMPRESS_BUTTERFLY),
+            (356, 444, 653, 661)
+        );
+        assert_ne!(EMPRESS_BUTTERFLY as u16, crate::projectile::FROST_BLAST_FRIENDLY);
+    }
 }

@@ -1145,6 +1145,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // App's swing/reuse timers (fed before the tick, the
             // `frame_inputs` convention).
             p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
+            // W4-f37 — `Player.Update`'s post-`UpdateEquips` discount
+            // refresh (`Player.cs:25636-25639`): `if (Main.npcShop <= 0)
+            // discountAvailable = discountEquipped`. `update_with_grapple`
+            // below runs the ResetEffects → UpdateEquips chain that arms
+            // `discount_equipped` (the 854/3035 rows); the shop-open tick
+            // LATCHES the previous value (the vanilla never re-reads it
+            // while `npcShop > 0`), the shop-closed tick mirrors the flag.
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -1158,6 +1165,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &app.npcs,
                 app.talk_npc,
             );
+            // W4-f37 — the refresh itself (`Player.cs:25636-25639`): only
+            // the shop-CLOSED ticks copy `discountEquipped` into the App's
+            // `discount_available` mirror; an open shop keeps its latch.
+            if app.shop_npc.is_none() {
+                app.discount_available = p.discount_equipped;
+            }
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
             // sits right after `FloorVisuals`, inside `Player.Update`).
@@ -1558,6 +1571,23 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // nothing; the attenuation gate still applies.
                 app.audio.play_death_sound(p.x, p.y);
             }
+            // W4-f3 — the petrify-transition burst (`Player.cs:25226-25233`):
+            // the stoned edge queues 20 type-1 puffs + the per-puff `Next(2)`
+            // noGravity roll. The C#'s `PlaySound(0)` (`:25225`) is a cited
+            // seam (the stoned hurt rides `hurt_inner`'s own cue above), so the
+            // drain replays only the dust chain on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_stoned_dust() {
+                crate::player_dust::drain_stoned_dust(app, burst);
+            }
+            // W4-f3 — the Vortex-stealth transition ring (`Player.cs:25872-
+            // 25893`): the stealth machine's `flag11` tick queues the centre;
+            // the drain replays the two Next(2) gates + the RotatedByRandom
+            // spins + the type-229/240 chains. The machine runs at `:25826`
+            // (after the stoned edge `:25228`), so the drain follows the
+            // stoned burst on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_vortex_stealth_dust() {
+                crate::player_dust::drain_vortex_stealth(app, burst);
+            }
             // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
             // fast-run footstep at the player's top-left position — the
             // case-17 `Main.rand.Next(-10, 11)` pitch roll (`:862`) rides
@@ -1570,6 +1600,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     sy,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
+            }
+            // W4-d51 — the fast-run trail (`Player.cs:20217-20298`): the dust
+            // arm follows the footstep sound on the same stream — the
+            // source's sound-then-dust order inside `SpawnFastRunParticles`
+            // (which runs in `HorizontalMovement`, BEFORE the jump/dash
+            // chains below).
+            if let Some(burst) = p.take_fast_run_dust() {
+                crate::player_dust::drain_fast_run(app, burst);
             }
             // S1-E-21f — the extra-jump chain's plays: case 16's one
             // `Next(-10, 11) * 0.01` pitch (`LegacySoundPlayer.cs:851`) rides
@@ -1592,6 +1630,68 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-d51 — the extra-jump chain's dust burst (`Player.cs:
+            // 20818-21012`): the tick snapshotted the box/velocity AFTER the
+            // ascent write; the drain replays the arm's `Dust.NewDust` chain
+            // here, right after the sound drain, so the sound-then-dust draw
+            // order matches the source (the `Main.cs:17754` `UpdatePlayers`
+            // swap covers both). Sandstorm / Blizzard queue no dust.
+            if let Some(burst) = p.take_jump_dust() {
+                crate::player_dust::drain_jump_dust(app, burst);
+            }
+            // W4-d51 — the `DashMovement` dust burst (`Player.cs:21259-21512`):
+            // the trail (active dash) or the start burst, snapshotted at the
+            // C# read moment; no sound rides the dash, so the drain follows
+            // the jump chain's on the same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_dash_dust() {
+                crate::player_dust::drain_dash_dust(app, burst);
+            }
+            // W4-f3 — the wall-climb/wallslide puff (`Player.cs:21654-21826`,
+            // five sites): the wall machines run at `:26758-26765`, right
+            // after `DashMovement` (`:26757`) and before `DoubleJumpVisuals`
+            // (`:26767`); the drain follows the dash dust on the same
+            // `UpdatePlayers` stream. The suppression probe (the Rat climbing
+            // into a ceiling) ran on the tick side.
+            if let Some(burst) = p.take_wall_dust() {
+                crate::player_dust::drain_wall_dust(app, burst);
+            }
+            // W4-f3 — the `DoubleJumpVisuals` trail (`Player.cs:21892-22021`):
+            // the performing-jump arm's per-tick dust, snapshotted at the C#
+            // read moment; the drain follows the dash dust on the same
+            // `UpdatePlayers` stream (the C# runs `DoubleJumpVisuals` at
+            // `:26767`, right after `DashMovement` `:26757`).
+            if let Some(burst) = p.take_double_jump_dust() {
+                crate::player_dust::drain_double_jump_dust(app, burst);
+            }
+            // W4-f3 seal (KEEP-E1 drain order, e1 3245d624) — the wing-glide dust
+            // (`Player.cs:27040-27337`) drains HERE, right after DoubleJumpVisuals
+            // (`:26767`): the glide arm runs inside `WingMovement` (`:26818` →
+            // `:27034`), BEFORE `CheckDrowning` (`:27655`) and the splash
+            // (`:27783`). The old f3 order drained it after the floor dust, a
+            // cross-lane RNG-order deviation. The wings-4 wingFrame machine +
+            // Item13 cadence stay g66's cited seams (the wing lane's).
+            if let Some(burst) = p.take_wing_glide_dust() {
+                crate::player_dust::drain_wing_glide(app, burst);
+            }
+            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
+            // Volume/Pan only — no draws, no stream.
+            if p.take_drown_sound() {
+                app.audio.play_drown_sound();
+            }
+            // W4-f3 seal (KEEP-E1 drain order) — the drowning bubble
+            // (`Player.cs:23283-23316`, `CheckDrowning` `:27655`) drains BEFORE
+            // the splash (`:27783`): the C# runs CheckDrowning before the
+            // WetCollision splash block. The `Next(20)` gate drew on the tick
+            // side; the type-34 puff rides the pool's own wet-probe kill.
+            if let Some((mouth, width)) = p.take_drown_bubble() {
+                crate::player_dust::drain_drown_bubble(app, mouth, width);
+            }
+            // W4-f3 — the liquid entry/exit splash DUST (`Player.cs:27783-27940`):
+            // the C# runs the dust loop BEFORE `PlaySound(19)`, so the drain
+            // precedes the splash sound on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_splash_dust() {
+                crate::player_dust::drain_splash_dust(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
@@ -1604,10 +1704,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
-            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
-            // Volume/Pan only — no draws, no stream.
-            if p.take_drown_sound() {
-                app.audio.play_drown_sound();
+            // W4-f3 — the floor dust (`Player.cs:23790-24043`, `MakeFloorDust`):
+            // the `FloorVisuals` call (`:28271`) queues the floor-tile snapshot;
+            // the drain replays the per-iteration gate rolls + the NewDust chain
+            // on the `UpdatePlayers` stream (the shimmer orchestrator + Item177
+            // cue are cited seams). It drains AFTER the splash sound (`:28271`
+            // follows `:27783`), the e1 execution order.
+            if let Some(burst) = p.take_floor_dust() {
+                crate::player_dust::drain_floor_dust(app, burst);
             }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.
@@ -3492,5 +3596,45 @@ mod tests {
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
+    }
+
+    /// W4-f37 — `Player.Update`'s discount refresh (`Player.cs:25636-25639`):
+    /// `if (Main.npcShop <= 0) discountAvailable = discountEquipped`. The
+    /// shop-CLOSED ticks mirror the equipped flag; an OPEN shop latches the
+    /// value it had when it opened — equipping or unequipping the Discount
+    /// Card mid-shop never changes the open shop's prices (the vanilla
+    /// re-reads only after the shop closes).
+    #[test]
+    fn the_discount_available_refresh_latches_while_the_shop_is_open() {
+        let mut app = ammo_app();
+        // No card, no shop: the mirror stays false.
+        tick_ammo(&mut app);
+        assert!(!app.discount_available);
+        // Equip the Discount Card (854) with the shop closed: the refresh
+        // copies `discountEquipped` into the App mirror.
+        app.player.as_mut().unwrap().equipped[3] = 854;
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().discount_equipped);
+        assert!(app.discount_available, "the closed-shop tick mirrors");
+        // Open a shop, then UNEQUIP: the open shop keeps the latch.
+        app.shop_npc = Some(0);
+        app.player.as_mut().unwrap().equipped[3] = 0;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().discount_equipped);
+        assert!(app.discount_available, "the open shop latches true");
+        // Close the shop: the next tick re-reads the (now false) flag.
+        app.shop_npc = None;
+        tick_ammo(&mut app);
+        assert!(!app.discount_available, "the closed-shop tick mirrors");
+        // The reverse latch: open WITHOUT the card, equip mid-shop — the
+        // open shop keeps false until it closes.
+        app.shop_npc = Some(0);
+        app.player.as_mut().unwrap().equipped[3] = 854;
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().discount_equipped);
+        assert!(!app.discount_available, "the open shop latches false");
+        app.shop_npc = None;
+        tick_ammo(&mut app);
+        assert!(app.discount_available);
     }
 }

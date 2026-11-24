@@ -98,10 +98,22 @@ pub mod id {
     pub const PLAYER_CHEST_INDEX: u8 = 80; // MessageBuffer.cs:3216-3227 / NetMessage.cs:1175-1178
     pub const CHEST_SIZE: u8 = 155; // MessageBuffer.cs:4429-4438 / NetMessage.cs:1650-1653
     pub const CHEST_NAME: u8 = 69; // MessageBuffer.cs:3059-3078 / NetMessage.cs:1334-1341
+    /// `34 ChestUpdates` (W4-g52): the chest/dresser/piggy-bank place/destroy
+    /// relay (`NetMessage.cs:913-927`, `MessageBuffer.cs:1984-2158`; the client
+    /// send sites `Player.cs:53787-53795`, `Chest.cs:577-583`). Byte-verbatim
+    /// with the g48 codec (keep-one at merge).
+    pub const CHEST_UPDATES: u8 = 34;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
     pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
+    /// `162 DamageNPCAck` (`MessageID.cs:338`) — NO body: `SendData` has no
+    /// case 162, the frame is the bare id; the host fires it at the HEAD of
+    /// the `28` strike arm (`MessageBuffer.cs:1768-1771`) and the client
+    /// pops `NPC.pendingDamages[0]` (`MessageBuffer.cs:1819-1824`,
+    /// `NPC.AckDamage`, `NPC.cs:90703-90713`). W4-g52 owns the SEND side;
+    /// the client damage-queue apply is the apply-arm lane (g48-g51).
+    pub const NPC_STRIKE_ACK: u8 = 162;
     pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
     /// `70 CatchNPC` (S1-P-i36): one `(short)` npc slot — the client's bug
     /// net caught it (`NPC.cs:79904`); the host converts
@@ -270,6 +282,65 @@ pub mod id {
     pub const POOF_OF_SMOKE: u8 = 106; // MessageID.cs:226 / NetMessage.cs:1400-1402 / MessageBuffer.cs:3742-3751
     pub const WIRED_CANNON_SHOT: u8 = 108; // MessageID.cs:230 / NetMessage.cs:1403-1411 / MessageBuffer.cs:3758-3773
     pub const MINION_ATTACK_TARGET: u8 = 115; // MessageID.cs:244 / NetMessage.cs:1357-1360 / MessageBuffer.cs:3584-3597
+    // ---- S1-I-1 wave B (W4-d92): the NPC family's SECOND half ----
+    // Census: the NPC-family ids whose body centres on `Main.npc` / the NPC
+    // statics / the NPC shop / the NPC smoke, minus c27's entity-state tier
+    // (18/36/41/43/51/55/62/84), wave A's 60/72/74 and the already-ported
+    // 23/28/53/54/70/71/97/98 and the lanes' claimed tails (d96 took 35/40,
+    // d99 took 61/65/78/100/101/103/106/112): 56/92 remain — batch 1 landed
+    // 130/131/136/137/153/162, batch 2 lands 56 (this id) + 92. Bodies +
+    // codecs only; the apply/relay arms and the send fan-out are S1-I-4.
+    /// `130 FishOutNPC` (`MessageID.cs:274`) — a client fished an NPC out:
+    /// `(ushort)` tile x, `(ushort)` tile y, `(short)` type
+    /// (`NetMessage.cs:1528-1532`); the host spawns it
+    /// (`MessageBuffer.cs:4086-4121`, the 682 town-slime unlock at
+    /// `:4095-4103`); sent at `Player.cs:52423-52426` (`netMode == 1`).
+    pub const FISH_OUT_NPC: u8 = 130;
+    /// `131 TamperWithNPC` (`MessageID.cs:276`) — `(ushort)` npc slot,
+    /// `(byte)` kind; kind 1 adds `(int)` immune time + `(short)` fromWho
+    /// (`NetMessage.cs:1533-1541`); the client applies `GetImmuneTime`
+    /// (`MessageBuffer.cs:4122-4133`); sent at `WorldGen.cs:48373-48376`
+    /// (the 485 statue-break 582 spawns).
+    pub const TAMPER_WITH_NPC: u8 = 131;
+    /// `136 SyncCavernMonsterType` (`MessageID.cs:286`) — the 2×3
+    /// `NPC.cavernMonsterType` grid as six `(ushort)`s, row-major
+    /// (`NetMessage.cs:1572-1582`, `NPC.cs:6585`/`:95268`); the client
+    /// stores it (`MessageBuffer.cs:4204-4218`); the join push is
+    /// `MessageBuffer.cs:870`.
+    pub const CAVERN_MONSTER_TYPES: u8 = 136;
+    /// `137 RequestNPCBuffRemoval` (`MessageID.cs:288`) — `(short)` npc +
+    /// `(ushort)` buff type (`NetMessage.cs:1583-1586`); the host runs
+    /// `RequestBuffRemoval` behind the slot range gate
+    /// (`MessageBuffer.cs:4219-4229`); sent at `NPC.cs:89995-89998`
+    /// (`netMode == 1`, the `CanBeRemovedByNetMessage` gate `:89987`).
+    pub const NPC_BUFF_REMOVAL_REQUEST: u8 = 137;
+    /// `153 NPCDebuffDamage` (`MessageID.cs:320`) — `(byte)` npc slot +
+    /// `(short)` damage (`NetMessage.cs:1646-1649`); both sides apply
+    /// `GetHurtByDebuff` and the host relays (`MessageBuffer.cs:4408-4418`,
+    /// `NPC.cs:91864-91888`); the only send sites are host-side
+    /// (`NPC.cs:91853-91860`, the electric-eel 60-tick/50-damage pulse).
+    pub const NPC_DEBUFF_DAMAGE: u8 = 153;
+    /// `162 DamageNPCAck` (`MessageID.cs:338`) — NO body: `SendData` has no
+    /// case 162, the frame is the bare id; the host fires it at the HEAD of
+    /// the `28` strike arm (`MessageBuffer.cs:1768-1771`) and the client
+    /// pops `NPC.pendingDamages[0]` (`MessageBuffer.cs:1819-1824`,
+    /// `NPC.AckDamage`, `NPC.cs:90703-90713`).
+    pub const NPC_STRIKE_ACK: u8 = 162;
+    /// `56 UniqueTownNPCInfoSyncRequest` (`MessageID.cs:125`) — `(short)` npc
+    /// slot; the host appends `GivenName` (a `BinaryWriter` string) + `(int)`
+    /// townNpcVariationIndex only when `netMode == 2`
+    /// (`NetMessage.cs:1046-1053`); the client asks with the bare slot
+    /// (`NPC.TrySyncingUniqueTownNPCData`, `NPC.cs:90559-90566`) and the host
+    /// answers the asker (`MessageBuffer.cs:2612-2630`).
+    pub const UNIQUE_TOWN_NPC_INFO: u8 = 56;
+    /// `92 SyncExtraValue` (`MessageID.cs:198`) — `(short)` npc slot,
+    /// `(int)` value, two floats x/y (`NetMessage.cs:1321-1326`); a coin
+    /// pickup credits a town NPC's `extraValue`: the sender adds the delta
+    /// locally then sends it (`WorldItem.cs:1186-1194`), the host adds the
+    /// delta and relays the TOTAL (`MessageBuffer.cs:3455-3459`), the client
+    /// sets it + `moneyPing` (`:3450-3454`). The slot gate is `0..=maxNPCs`
+    /// (`:3448`, inclusive — unlike 56's `< maxNPCs`).
+    pub const NPC_EXTRA_VALUE: u8 = 92;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1445,6 +1516,25 @@ pub struct ChestItem {
     pub kind: i16,
 }
 
+/// `msg 34 ChestUpdates`'s body (`NetMessage.cs:913-927`, W4-g52): the action
+/// byte (0/2/4 place chest/dresser/piggy-bank, 1/3/5 destroy — the client send
+/// sites `Player.cs:53785-53796`), the tile, the style, and the resulting chest
+/// index. The writer's last short is `number5` on the server and a literal `0`
+/// on the client (`:918-927`); the host reader zeroes it before its
+/// place/destroy pass (`MessageBuffer.cs:1991-1994`). Byte-verbatim with the
+/// g48 codec (keep-one at merge).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChestUpdates {
+    /// The C#'s `b4` action byte.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+    pub style: i16,
+    /// `PlaceChest`'s return (`-1` = refused) or `Chest.FindChest`'s index on
+    /// the destroy relays; the client's own send writes 0.
+    pub chest: i16,
+}
+
 /// `msg 33 SyncPlayerChest`'s body (`NetMessage.cs:879-911`): the chest index,
 /// its tile position and the optional name (`name_len` = 1..=20 with the text
 /// following, 0 = none, 255 = a too-long name the C# refuses,
@@ -2037,6 +2127,104 @@ pub struct LucyPopup {
     pub velocity_y: f32,
     pub x: i32,
     pub y: i32,
+
+}
+// ---- S1-I-1 wave B (W4-d92): the NPC family's second half ----
+
+/// `msg 130 FishOutNPC`'s body (`NetMessage.cs:1528-1532`): `(ushort)` tile
+/// x, `(ushort)` tile y, `(short)` npc type. The host multiplies both
+/// coordinates by 16 and `NPC.NewNPC`s the type (`MessageBuffer.cs:4104-4110`);
+/// type 682 (Red Slime) also flips `NPC.unlockedSlimeRedSpawn` once and
+/// re-pushes `7 WorldData` (`:4095-4103`). The wire carries TILE coordinates
+/// — the sender already divided by 16 (`Player.cs:52425`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FishOutNpc {
+    pub tile_x: u16,
+    pub tile_y: u16,
+    pub npc_type: i16,
+}
+
+/// `msg 131 TamperWithNPC`'s body (`NetMessage.cs:1533-1541`): `(ushort)` npc
+/// slot, `(byte)` kind; kind 1 appends `(int)` immune time + `(short)`
+/// fromWho. The client's kind-1 arm calls `GetImmuneTime(time, fromWho)`
+/// (`MessageBuffer.cs:4128-4131`); a slot ≥ `Main.maxNPCs` tames a throwaway
+/// `new NPC()` instead (`:4127`). The only send site is the 485 statue-break
+/// 582 spawn's `GetImmuneTime(-1, 20)` (`WorldGen.cs:48373-48376`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TamperWithNpc {
+    pub npc: u16,
+    pub kind: u8,
+    /// Present only when `kind == 1` (the `(int)` time + `(short)` fromWho).
+    pub immune: Option<(i32, i16)>,
+}
+
+/// `msg 136 SyncCavernMonsterType`'s body (`NetMessage.cs:1572-1582`): the
+/// 2×3 `NPC.cavernMonsterType` grid (`NPC.cs:6585`, allocated `new int[2, 3]`
+/// at `:95268`) written row-major as six `(ushort)`s — outer loop `i < 2`,
+/// inner `j < 3`. The client stores them verbatim (`MessageBuffer.cs:4210-4216`);
+/// the join push is `MessageBuffer.cs:870`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CavernMonsterTypes {
+    /// `[i][j]`, row-major — the C#'s `int[2, 3]` narrowed to the wire's
+    /// `ushort` (the values are npc types, `NPC.cs:18123-18129`).
+    pub types: [[u16; 3]; 2],
+}
+
+/// `msg 137 RequestNPCBuffRemoval`'s body (`NetMessage.cs:1583-1586`):
+/// `(short)` npc slot + `(ushort)` buff type. The host gates the slot to
+/// `0..Main.maxNPCs` then runs `RequestBuffRemoval` (`MessageBuffer.cs:4222-4227`);
+/// the client sends it from `NPC.RequestBuffRemoval` behind the
+/// `BuffID.Sets.CanBeRemovedByNetMessage` gate (`NPC.cs:89987-89998`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcBuffRemovalRequest {
+    pub npc: i16,
+    pub buff_type: u16,
+}
+
+/// `msg 153 NPCDebuffDamage`'s body (`NetMessage.cs:1646-1649`): `(byte)` npc
+/// slot + `(short)` damage. BOTH sides apply `GetHurtByDebuff` and the host
+/// relays to the others (`MessageBuffer.cs:4410-4416`); the damage lands on
+/// `realLife` when set, the immortal gate skips the subtraction, and a
+/// life ≤ 0 is floored to 1 + a 9999 `StrikeNPCNoInteraction`
+/// (`NPC.cs:91864-91888`). Host-sent only (the electric-eel pulse,
+/// `NPC.cs:91853-91860`), so it is `S2c`-only like `97`/`98`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcDebuffDamage {
+    pub npc: u8,
+    pub damage: i16,
+}
+
+/// `msg 56 UniqueTownNPCInfoSyncRequest`'s body (`NetMessage.cs:1046-1053`):
+/// `(short)` npc slot, then — ONLY in the host's answer (`netMode == 2`) —
+/// `GivenName` (`BinaryWriter.Write(string)`: 7-bit length + UTF-8) and
+/// `(int)` townNpcVariationIndex. The client's request is the bare slot
+/// (`NPC.cs:90564`); the host's read arm answers it back to the asker
+/// (`MessageBuffer.cs:2626`), the client's read arm stores the pair behind
+/// the `0..Main.maxNPCs` slot gate (`:2615-2623`). Other host send sites:
+/// the shimmer town-NPC variation flip (`NPC.cs:53265`) and the pet
+/// exchange's new name (`NPC.cs:80959`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UniqueTownNpcInfo {
+    pub npc: i16,
+    /// Present only in the host's answer (`NetMessage.cs:1048` netMode gate).
+    pub info: Option<(String, i32)>,
+}
+
+/// `msg 92 SyncExtraValue`'s body (`NetMessage.cs:1321-1326`): `(short)` npc
+/// slot, `(int)` value, `(float)` x, `(float)` y (the writer's `number3` /
+/// `number4` are floats — the reader `ReadSingle`s them,
+/// `MessageBuffer.cs:3446-3447`). The value is a DELTA on the client→host
+/// leg (the host does `extraValue += num229` then relays the accumulated
+/// total, `MessageBuffer.cs:3457-3458`) and the TOTAL on the host→client
+/// leg (the client assigns it and pings the coins at (x, y), `:3452-3453`).
+/// Sent when a dropped coin is absorbed by a town NPC
+/// (`WorldItem.cs:1186-1194`, the `netMode != 0` branch).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcExtraValue {
+    pub npc: i16,
+    pub value: i32,
+    pub x: f32,
+    pub y: f32,
 }
 // ---- W4-d97 (S1-I-1 player-family SECOND half): the high-region bodies ----
 // Bodies + codecs only; the dispatcher apply/relay arms stay parked (S1-I-4).
@@ -2431,6 +2619,10 @@ pub enum C2s {
     /// (`Player.cs:31520`, the `1023` violin cases; `NetMessage.cs:1878`'s
     /// chest drops).
     ChestItem(ChestItem),
+    /// `34 ChestUpdates` - this client mined/placed a container
+    /// (`Player.cs:53785-53796`'s destroy asks, `Chest.cs:577-583`'s place
+    /// asks; W4-g52).
+    ChestUpdates(ChestUpdates),
     /// `46 OpenSignRequest` - a client asks for a sign's text
     /// (`Player.cs:32720`).
     SignRequest(SignRequest),
@@ -2530,6 +2722,20 @@ pub enum C2s {
     /// changed (`Main.cs:17682-17685`); the host overrides + relays
     /// (`MessageBuffer.cs:3584-3597`).
     MinionAttackTarget(MinionAttackTarget),
+    /// `130 FishOutNPC` - a client fished an NPC out at the tile point
+    /// (`Player.cs:52423-52426`; the host spawns, `MessageBuffer.cs:4086-4121`).
+    FishOutNpc(FishOutNpc),
+    /// `137 RequestNPCBuffRemoval` - a client asks the host to drop an NPC
+    /// buff (`NPC.cs:89995-89998`; `MessageBuffer.cs:4219-4229`).
+    NpcBuffRemovalRequest(NpcBuffRemovalRequest),
+    /// `56 UniqueTownNPCInfoSyncRequest` - a client asks for a town NPC's
+    /// name + variation (`NPC.cs:90559-90566`); the host answers
+    /// (`MessageBuffer.cs:2624-2627`). The request carries the bare slot.
+    UniqueTownNpcInfo(UniqueTownNpcInfo),
+    /// `92 SyncExtraValue` - a coin pickup's credit delta for a town NPC
+    /// (`WorldItem.cs:1193`); the host accumulates + relays the total
+    /// (`MessageBuffer.cs:3455-3459`).
+    NpcExtraValue(NpcExtraValue),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2596,6 +2802,9 @@ pub enum S2c {
     /// `32 SyncChestItem` - one chest slot, relayed to the other clients
     /// (`MessageBuffer.cs:1913-1916`).
     ChestItem(ChestItem),
+    /// `34 ChestUpdates` - the host's place/destroy result, relayed
+    /// (`MessageBuffer.cs:2006-2112`'s `TrySendData(34, …)` arms; W4-g52).
+    ChestUpdates(ChestUpdates),
     /// `33 SyncPlayerChest` - the chest a player opened
     /// (`MessageBuffer.cs:1880`, `:1980`; `Player.cs:32885`).
     PlayerChest(PlayerChest),
@@ -2732,6 +2941,28 @@ pub enum S2c {
     /// remote owner (`WorldGen.cs:50691`; owner replays
     /// `ShootFromCannon(fromWire: true)`, `MessageBuffer.cs:3758-3773`).
     WiredCannonShot(WiredCannonShot),
+    /// `131 TamperWithNPC` - the host tames an NPC's immunity (the 485
+    /// statue-break 582 spawns, `WorldGen.cs:48373-48376`;
+    /// `MessageBuffer.cs:4122-4133`).
+    TamperWithNpc(TamperWithNpc),
+    /// `136 SyncCavernMonsterType` - the cavern spawn grid, the join push
+    /// (`MessageBuffer.cs:870`, read `:4204-4218`).
+    CavernMonsterTypes(CavernMonsterTypes),
+    /// `153 NPCDebuffDamage` - an NPC's debuff tick damage, host-sent and
+    /// relayed (`NPC.cs:91853-91860`, `MessageBuffer.cs:4408-4418`).
+    NpcDebuffDamage(NpcDebuffDamage),
+    /// `162 DamageNPCAck` - the host's ack of a `28` strike, no body
+    /// (`MessageBuffer.cs:1768-1771` sends, `:1819-1824` pops
+    /// `NPC.pendingDamages[0]`).
+    NpcStrikeAck,
+    /// `56 UniqueTownNPCInfoSyncRequest` - the host's answer with the town
+    /// NPC's `GivenName` + `townNpcVariationIndex`
+    /// (`MessageBuffer.cs:2617-2623` stores them).
+    UniqueTownNpcInfo(UniqueTownNpcInfo),
+    /// `92 SyncExtraValue` - a town NPC's accumulated coin credit, relayed
+    /// by the host (`MessageBuffer.cs:3458`); the client assigns + moneyPings
+    /// (`:3450-3454`).
+    NpcExtraValue(NpcExtraValue),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2749,6 +2980,10 @@ pub enum S2c {
     },
     /// `28 NPCStrike` — a validated strike, relayed by the host.
     NpcStrike(NpcStrike),
+    /// `162 DamageNPCAck` - the host's ack of a `28` strike, no body
+    /// (`MessageBuffer.cs:1768-1771` sends, `:1819-1824` pops
+    /// `NPC.pendingDamages[0]`).
+    NpcStrikeAck,
     /// `10 TileBlock` — one section's tile snapshot (the C#'s
     /// `SendSection`, `NetMessage.cs:2697-2712`).
     TileBlock(Box<TileBlock>),
@@ -2809,6 +3044,7 @@ impl C2s {
             Self::Ping => id::PING,
             Self::ChestOpenRequest(_) => id::CHEST_OPEN_REQUEST,
             Self::ChestItem(_) => id::CHEST_ITEM,
+            Self::ChestUpdates(_) => id::CHEST_UPDATES,
             Self::SignRequest(_) => id::SIGN_REQUEST,
             Self::SignData(_) => id::SIGN_DATA,
             Self::HitSwitch(_) => id::HIT_SWITCH,
@@ -2839,6 +3075,10 @@ impl C2s {
             Self::HealPlayer(_) => id::HEAL_PLAYER,
             Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
             Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
+            Self::FishOutNpc(_) => id::FISH_OUT_NPC,
+            Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
+            Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
+            Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2869,6 +3109,9 @@ impl C2s {
                 .i16(c.stack)
                 .u8(c.prefix)
                 .i16(c.kind),
+            // `NetMessage.cs:913-927` — the client branch writes the literal
+            // `0` short (`:926`); the host's `number5` relay rides S2c.
+            Self::ChestUpdates(c) => w.u8(c.action).i16(c.x).i16(c.y).i16(c.style).i16(0),
             Self::SignRequest(s) => w.i16(s.x).i16(s.y),
             Self::SignData(s) => w
                 .i16(s.sign)
@@ -2975,6 +3218,21 @@ impl C2s {
             Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
             // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
             Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
+            // `NetMessage.cs:1528-1532`: (ushort)x, (ushort)y, (short)type.
+            Self::FishOutNpc(f) => w.u16(f.tile_x).u16(f.tile_y).i16(f.npc_type),
+            // `NetMessage.cs:1583-1586`: (short)npc, (ushort)buff type.
+            Self::NpcBuffRemovalRequest(q) => w.i16(q.npc).u16(q.buff_type),
+            // `NetMessage.cs:1046-1053`: (short)npc; the name + variation
+            // ride only the host's answer (the client sends the bare slot).
+            Self::UniqueTownNpcInfo(t) => {
+                let w = w.i16(t.npc);
+                match &t.info {
+                    Some((name, variation)) => w.str(name).i32(*variation),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y.
+            Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3048,6 +3306,18 @@ impl C2s {
                 stack: r.i16()?,
                 prefix: r.u8()?,
                 kind: r.i16()?,
+            }),
+            // `MessageBuffer.cs:1986-1994` — the host reads the fifth short
+            // then zeroes it; the client's send wrote 0 anyway.
+            id::CHEST_UPDATES => Self::ChestUpdates(ChestUpdates {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                style: r.i16()?,
+                chest: {
+                    let _ = r.i16()?;
+                    0
+                },
             }),
             id::SIGN_REQUEST => Self::SignRequest(SignRequest {
                 x: r.i16()?,
@@ -3179,6 +3449,30 @@ impl C2s {
             id::MINION_ATTACK_TARGET => Self::MinionAttackTarget(MinionAttackTarget {
                 player_id: r.u8()?,
                 npc: r.i16()?,
+            // `MessageBuffer.cs:4092-4094`: (ushort)x, (ushort)y, (short)type.
+            id::FISH_OUT_NPC => Self::FishOutNpc(FishOutNpc {
+                tile_x: r.u16()?,
+                tile_y: r.u16()?,
+                npc_type: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4222-4223`: (short)npc, (ushort)buff type.
+            id::NPC_BUFF_REMOVAL_REQUEST => Self::NpcBuffRemovalRequest(NpcBuffRemovalRequest {
+                npc: r.i16()?,
+                buff_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:2614`: the host reads ONLY the (short) slot —
+            // the request is bodyless past it (`NPC.cs:90564`).
+            id::UNIQUE_TOWN_NPC_INFO => Self::UniqueTownNpcInfo(UniqueTownNpcInfo {
+                npc: r.i16()?,
+                info: None,
+            }),
+            // `MessageBuffer.cs:3444-3447`: (short)npc, (int)value, two
+            // ReadSingles (the writer's number3/number4 are floats).
+            id::NPC_EXTRA_VALUE => Self::NpcExtraValue(NpcExtraValue {
+                npc: r.i16()?,
+                value: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -3334,6 +3628,7 @@ impl S2c {
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
             Self::NpcStrike(_) => id::NPC_STRIKE,
+            Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
             Self::InitialSpawn => id::INITIAL_SPAWN,
             Self::Ping => id::PING,
             Self::NpcKilled { .. } => id::NPC_KILLED,
@@ -3350,6 +3645,7 @@ impl S2c {
             Self::Time { .. } => id::INT_TIME,
             Self::Edit { .. } => id::INT_EDIT,
             Self::ChestItem(_) => id::CHEST_ITEM,
+            Self::ChestUpdates(_) => id::CHEST_UPDATES,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::SignData(_) => id::SIGN_DATA,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
@@ -3392,6 +3688,12 @@ impl S2c {
             Self::PoofOfSmoke(_) => id::POOF_OF_SMOKE,
             Self::NpcPortalTeleport(_) => id::NPC_PORTAL_TELEPORT,
             Self::WiredCannonShot(_) => id::WIRED_CANNON_SHOT,
+            Self::TamperWithNpc(_) => id::TAMPER_WITH_NPC,
+            Self::CavernMonsterTypes(_) => id::CAVERN_MONSTER_TYPES,
+            Self::NpcDebuffDamage(_) => id::NPC_DEBUFF_DAMAGE,
+            Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
+            Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
+            Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
         }
     }
 
@@ -3459,6 +3761,8 @@ impl S2c {
             Self::PlayerState(ps) => ps.write_to(w),
             Self::Time { time, day } => w.f64(*time).bool(*day),
             Self::NpcStrike(st) => st.write_to(w),
+            // `SendData` has no case 162 — the bare id is the whole frame.
+            Self::NpcStrikeAck => w,
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             Self::ChestItem(c) => w
                 .i16(c.chest)
@@ -3466,6 +3770,13 @@ impl S2c {
                 .i16(c.stack)
                 .u8(c.prefix)
                 .i16(c.kind),
+            // `NetMessage.cs:913-923` — the server branch writes `number5`.
+            Self::ChestUpdates(c) => w
+                .u8(c.action)
+                .i16(c.x)
+                .i16(c.y)
+                .i16(c.style)
+                .i16(c.chest),
             Self::PlayerChest(c) => {
                 // `NetMessage.cs:903-910`: the length byte, then the C#
                 // `BinaryWriter.Write(string)` (a 7-bit length + bytes) when
@@ -3644,6 +3955,41 @@ impl S2c {
                 .i16(c.angle)
                 .i16(c.ammo)
                 .u8(c.owner),
+            // `NetMessage.cs:1533-1541`: (ushort)npc, (byte)kind; kind 1
+            // appends (int)time + (short)fromWho.
+            Self::TamperWithNpc(t) => {
+                let w = w.u16(t.npc).u8(t.kind);
+                match t.immune {
+                    Some((time, from_who)) => w.i32(time).i16(from_who),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1572-1582`: the 2×3 grid, row-major (ushort)s.
+            Self::CavernMonsterTypes(c) => {
+                let mut w = w;
+                for row in &c.types {
+                    for ty in row {
+                        w = w.u16(*ty);
+                    }
+                }
+                w
+            }
+            // `NetMessage.cs:1646-1649`: (byte)npc, (short)damage.
+            Self::NpcDebuffDamage(d) => w.u8(d.npc).i16(d.damage),
+            // `SendData` has no case 162 — the bare id is the whole frame.
+            Self::NpcStrikeAck => w,
+            // `NetMessage.cs:1046-1053`: (short)npc, then the netMode == 2
+            // answer's string + (int) variation.
+            Self::UniqueTownNpcInfo(t) => {
+                let w = w.i16(t.npc);
+                match &t.info {
+                    Some((name, variation)) => w.str(name).i32(*variation),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y
+            // — the host relay carries the accumulated extraValue.
+            Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3702,6 +4048,8 @@ impl S2c {
                 y: r.f32()?,
             },
             id::NPC_STRIKE => Self::NpcStrike(NpcStrike::read_from(r)?),
+            // `MessageBuffer.cs:1819-1824`: no body.
+            id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
             id::INITIAL_SPAWN => Self::InitialSpawn,
             id::PING => Self::Ping,
             id::NPC_KILLED => Self::NpcKilled { npc: r.i16()? },
@@ -3743,6 +4091,15 @@ impl S2c {
                 stack: r.i16()?,
                 prefix: r.u8()?,
                 kind: r.i16()?,
+            }),
+            // `MessageBuffer.cs:1986-1990` — the client keeps the fifth short
+            // (the host's `num35` result index).
+            id::CHEST_UPDATES => Self::ChestUpdates(ChestUpdates {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                style: r.i16()?,
+                chest: r.i16()?,
             }),
             id::PLAYER_CHEST => Self::PlayerChest(read_player_chest(r)?),
             id::SIGN_DATA => Self::SignData(read_sign_data(r)?),
@@ -3829,6 +4186,48 @@ impl S2c {
             id::MISC_EVENT_VALUES => Self::MiscEventValue(MiscEventValue {
                 kind: r.u8()?,
                 value: r.i32()?,
+            }),
+            // `MessageBuffer.cs:4125-4131`: (ushort)npc, (byte)kind; the
+            // kind-1 arm reads (int)time + (short)fromWho.
+            id::TAMPER_WITH_NPC => {
+                let npc = r.u16()?;
+                let kind = r.u8()?;
+                let immune = if kind == 1 {
+                    Some((r.i32()?, r.i16()?))
+                } else {
+                    None
+                };
+                Self::TamperWithNpc(TamperWithNpc { npc, kind, immune })
+            }
+            // `MessageBuffer.cs:4210-4216`: exactly six (ushort)s, row-major.
+            id::CAVERN_MONSTER_TYPES => {
+                let mut types = [[0u16; 3]; 2];
+                for row in &mut types {
+                    for ty in row {
+                        *ty = r.u16()?;
+                    }
+                }
+                Self::CavernMonsterTypes(CavernMonsterTypes { types })
+            }
+            // `MessageBuffer.cs:4410-4411`: (byte)npc, (short)damage.
+            id::NPC_DEBUFF_DAMAGE => Self::NpcDebuffDamage(NpcDebuffDamage {
+                npc: r.u8()?,
+                damage: r.i16()?,
+            }),
+            // `MessageBuffer.cs:1819-1824`: no body.
+            id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
+            // `MessageBuffer.cs:2614-2622`: (short)npc, then the host
+            // answer's string + (int) variation.
+            id::UNIQUE_TOWN_NPC_INFO => Self::UniqueTownNpcInfo(UniqueTownNpcInfo {
+                npc: r.i16()?,
+                info: Some((r.str()?, r.i32()?)),
+            }),
+            // `MessageBuffer.cs:3444-3447`: (short)npc, (int)value, floats.
+            id::NPC_EXTRA_VALUE => Self::NpcExtraValue(NpcExtraValue {
+                npc: r.i16()?,
+                value: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
             }),
             id::PROJECTILE_TRACKERS => Self::ProjectileTrackers(ProjectileTrackers {
                 player_id: r.u8()?,
@@ -4819,6 +5218,88 @@ pub struct Slot {
     pub sections: Vec<bool>,
     /// The grid width the latch is sized for (0 = not allocated yet).
     pub sections_w: i32,
+    /// `NetMessage.buffer[id].broadcast` (`MessageBuffer.cs:35`/`:81`, set
+    /// `:928` when the slot reaches State 10): the `SendData` fan-out gate —
+    /// only the default arm's `10 TileBlock` bypasses it for State >= 3
+    /// (`NetMessage.cs:1805`).
+    pub broadcast: bool,
+    /// `RemoteClient.TileSectionsCheckTime` (`RemoteClient.cs:33`): the last
+    /// `Main.GameUpdateCount` each section was checked at — `IsSectionActive`
+    /// (`:220-224`) reads it with the 60-tick `SectionInactiveTime` window
+    /// (`DataStructures/ActiveSections.cs:65`), NOT the streamed latch above.
+    pub section_check_time: Vec<u32>,
+}
+
+/// `ActiveSections.SectionInactiveTime` (`DataStructures/ActiveSections.cs:65`)
+/// — the tick window a checked section stays "active" for `IsSectionActive`.
+pub const SECTION_INACTIVE_TIME: u32 = 60;
+
+/// `RemoteClient.IsSectionActive`'s predicate (`RemoteClient.cs:220-224`):
+/// `TileSectionsCheckTime[x, y] + SectionInactiveTime >= Main.GameUpdateCount`
+/// (the C# uint add wraps; `wrapping_add` matches).
+pub fn section_active_at(last_check: u32, now: u32) -> bool {
+    last_check.wrapping_add(SECTION_INACTIVE_TIME) >= now
+}
+
+/// `RemoteClient.SectionRange` over one slot's latch (`RemoteClient.cs:191-218`)
+/// — the four-corner test the `SendData(20)` relay arm runs per client
+/// (`NetMessage.cs:1712`). Free fn so the fan-out can call it under the slots
+/// lock it already holds.
+fn slot_section_range(c: &Slot, size: i32, first_x: i32, first_y: i32) -> bool {
+    // The four corner offsets, the C#'s i = 0..3 order.
+    const CORNERS: [(i32, i32); 4] = [(0, 0), (1, 0), (0, 1), (1, 1)];
+    if c.sections_w == 0 {
+        return false;
+    }
+    for (dx, dy) in CORNERS {
+        let sx = section_x(first_x + dx * size);
+        let sy = section_y(first_y + dy * size);
+        // The C# indexes TileSections directly (a negative coordinate throws
+        // inside SendData's try); the port refuses out-of-grid.
+        if sx < 0 || sy < 0 {
+            continue;
+        }
+        let i = (sy * c.sections_w + sx) as usize;
+        if c.sections.get(i) == Some(&true) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `RemoteClient.IsSectionActive` over one slot's check-time grid
+/// (`RemoteClient.cs:220-224`), under a held slots lock. Coords clamp to
+/// `[0, maxSections]` (`ActiveSections.cs:53-56`); an unallocated or
+/// out-of-grid slot reads inactive.
+fn slot_section_active(c: &Slot, sx: i32, sy: i32, now: u32) -> bool {
+    if c.sections_w == 0 {
+        return false;
+    }
+    let (sx, sy) = (sx.max(0), sy.max(0));
+    let i = (sy * c.sections_w + sx) as usize;
+    c.section_check_time
+        .get(i)
+        .is_some_and(|&t| section_active_at(t, now))
+}
+
+/// The entity context the `SendData` relay arms read off `Main.npc[number]` /
+/// `Main.projectile[number]` (`NetMessage.cs:1751-1800`). The port keeps the
+/// entities beside the server, so the caller passes the two fields the arms
+/// need: the culling exemption and the entity's `NetSectionCoordinates`
+/// (`NPC.cs:6899` / `Projectile.cs:602` — `GetSectionX((int)position.X >> 4)`).
+#[derive(Clone, Copy, Debug)]
+pub enum RelayCtx {
+    /// `case 28` (`NetMessage.cs:1751-1762`): `nPC5.life <= 0` bypasses the
+    /// section filter; otherwise the client's section must be active.
+    Strike { dead: bool, section: (i32, i32) },
+    /// `case 27` (`NetMessage.cs:1774-1800`): `flag3` (`type == 12 ||
+    /// Main.projPet[type] || aiStyle == 11 || netImportant`, `:1777`) bypasses
+    /// the section filter. The per-projectile skipped-flag motion rides
+    /// `net_proj_sync::ProjSync::note_broadcast` at the same site.
+    Projectile {
+        ignores_sections: bool,
+        section: (i32, i32),
+    },
 }
 
 type Slots = Arc<Mutex<HashMap<u32, Slot>>>;
@@ -4889,6 +5370,8 @@ impl Server {
                         inventory: HashMap::new(),
                         sections: Vec::new(),
                         sections_w: 0,
+                        broadcast: false,
+                        section_check_time: Vec::new(),
                     },
                 );
                 let Ok(mut reader) = stream.try_clone() else {
@@ -4956,6 +5439,18 @@ impl Server {
         self.slots.lock().map(|s| s.len()).unwrap_or(0)
     }
 
+    /// W4-g52 — whether the slot's `NetMessage.buffer[id].broadcast` gate is
+    /// open (`MessageBuffer.cs:928`, State 10). The flag-motion callers
+    /// (`ProjSync::note_broadcast`'s per-client legs, `NetMessage.cs:1784`)
+    /// skip not-connected / not-broadcast slots before writing flags.
+    pub fn broadcast_open(&self, id: u32) -> bool {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&id).map(|c| c.broadcast))
+            .unwrap_or(false)
+    }
+
     pub fn state(&self, id: u32) -> i32 {
         self.slots
             .lock()
@@ -4968,6 +5463,14 @@ impl Server {
         if let Ok(mut s) = self.slots.lock() {
             if let Some(c) = s.get_mut(&id) {
                 c.state = state;
+                // `NetMessage.buffer[whoAmI].broadcast = true`
+                // (`MessageBuffer.cs:928`): the `12 PlayerSpawn` arm raises
+                // State 3 -> 10 and opens the slot's `SendData` fan-out gate
+                // in the same step. The flag never lowers again (the slot
+                // dies instead — `Reset` `:81` clears it on reuse).
+                if state >= slot_state::IN_WORLD {
+                    c.broadcast = true;
+                }
             }
         }
     }
@@ -5026,26 +5529,138 @@ impl Server {
         }
     }
 
-    /// Broadcasts to every slot except `except` — the C# `SendData`'s
-    /// default `ignoreClient` routing (`NetMessage.cs:1692-1826`).
-    pub fn broadcast(&self, msg: &S2c) {
-        let frame = msg.encode();
-        if let Ok(clients) = self.clients.lock() {
-            for o in clients.values() {
-                o.push(frame.clone(), false);
-            }
-        }
+    /// The `SendData` default-arm fan-out (`NetMessage.cs:1801-1811`): every
+    /// connected slot whose `buffer.broadcast` is open, minus `ignore` — the
+    /// `ignoreClient` parameter. The one bypass: a State >= 3 slot still
+    /// receives `10 TileBlock` while its sections stream (`:1805`'s
+    /// `(broadcast || (State >= 3 && msgType == 10))`). The `34/69` and `13`
+    /// arms (`:1696-1707`/`:1763-1773`) are the same predicate without the
+    /// bypass — which only ever fires for id 10, so this covers them too.
+    fn fanout(&self, msg: &S2c, ignore: Option<u32>) {
+        self.fanout_filtered(msg, ignore, None, 0);
     }
 
-    pub fn broadcast_except(&self, msg: &S2c, except: u32) {
+    /// The per-message relay arms (`NetMessage.cs:1692-1812`): the `20`
+    /// SectionRange filter (`:1708-1718`), the `28` strike filter
+    /// (`:1751-1762`) and the `27` projectile filter (`:1774-1800`). `ctx`
+    /// carries the entity fields those arms read; `now` is
+    /// `Main.GameUpdateCount` for the `IsSectionActive` window. The `23`
+    /// arm's skipped-sync counters mutate per NPC and live in the decision
+    /// layer (`net_npc_sync::send_state`), which emits targeted sends — a
+    /// `23` reaching this fn is a priority one (the death/despawn pushes),
+    /// where the C# filter is the plain broadcast gate anyway (`:1722-1731`).
+    fn fanout_filtered(&self, msg: &S2c, ignore: Option<u32>, ctx: Option<RelayCtx>, now: u32) {
         let frame = msg.encode();
+        let msg_id = msg.msg_id();
+        // The `20` arm's `SectionRange((int)Math.Max(number3, number4),
+        // number, (int)number2)` — the square's size + first corner
+        // (`NetMessage.cs:1712`, the SendTileSquare writer `:2629`).
+        let square = match msg {
+            S2c::SectionRange(r) => Some((
+                (r.w as i32).max(r.h as i32),
+                r.x as i32,
+                r.y as i32,
+            )),
+            _ => None,
+        };
+        // Snapshot the eligible ids under the slots lock, then push under the
+        // clients lock — never both at once (the accept/reader threads take
+        // them in the other order).
+        let eligible: Vec<u32> = self
+            .slots
+            .lock()
+            .map(|s| {
+                s.iter()
+                    .filter(|(id, c)| {
+                        if Some(**id) == ignore {
+                            return false;
+                        }
+                        match msg_id {
+                            // `:1708-1718` — the 20 arm: broadcast gate +
+                            // the four-corner latch test, NO State-3 bypass.
+                            id::SECTION_RANGE => {
+                                let Some((size, fx, fy)) = square else {
+                                    return false;
+                                };
+                                c.broadcast && slot_section_range(c, size, fx, fy)
+                            }
+                            // `:1751-1762` — the 28 arm: the dead NPC's
+                            // strike reaches everyone; a live one only the
+                            // section-active clients.
+                            id::NPC_STRIKE => match ctx {
+                                Some(RelayCtx::Strike { dead, section }) => {
+                                    c.broadcast
+                                        && (dead || slot_section_active(c, section.0, section.1, now))
+                                }
+                                None => false,
+                            },
+                            // `:1774-1800` — the 27 arm: flag3 bypasses the
+                            // section filter; otherwise section-active only.
+                            id::PROJECTILE => match ctx {
+                                Some(RelayCtx::Projectile {
+                                    ignores_sections,
+                                    section,
+                                }) => {
+                                    c.broadcast
+                                        && (ignores_sections
+                                            || slot_section_active(c, section.0, section.1, now))
+                                }
+                                None => false,
+                            },
+                            // `:1801-1811` — the default arm (and 34/69/13).
+                            _ => {
+                                c.broadcast
+                                    || (c.state >= slot_state::SPAWN_REQUESTED
+                                        && msg_id == id::TILE_BLOCK)
+                            }
+                        }
+                    })
+                    .map(|(id, _)| *id)
+                    .collect()
+            })
+            .unwrap_or_default();
         if let Ok(clients) = self.clients.lock() {
-            for (id, o) in clients.iter() {
-                if *id != except {
+            for id in eligible {
+                if let Some(o) = clients.get(&id) {
                     o.push(frame.clone(), false);
                 }
             }
         }
+    }
+
+    /// Broadcasts to every slot — `SendData(msg, -1, -1, ...)`'s default arm
+    /// (`NetMessage.cs:1801-1811`).
+    pub fn broadcast(&self, msg: &S2c) {
+        self.fanout(msg, None);
+    }
+
+    /// Broadcasts to every slot except `except` — the C# `SendData`'s
+    /// `ignoreClient` routing (`NetMessage.cs:1692-1826`).
+    pub fn broadcast_except(&self, msg: &S2c, except: u32) {
+        self.fanout(msg, Some(except));
+    }
+
+    /// The `28 DamageNPC` relay (`NetMessage.cs:1751-1762`): every broadcast-
+    /// open slot except `ignore`, section-culled unless the NPC died. `now`
+    /// is `Main.GameUpdateCount` (`RemoteClient.IsSectionActive`'s clock).
+    pub fn relay_strike(&self, msg: &S2c, ignore: u32, ctx: RelayCtx, now: u32) {
+        self.fanout_filtered(msg, Some(ignore), Some(ctx), now);
+    }
+
+    /// The `27 SyncProjectile` relay (`NetMessage.cs:1774-1800`): every
+    /// broadcast-open slot except `ignore`, section-culled unless flag3
+    /// (`type 12 / projPet / aiStyle 11 / netImportant`). The skipped-flag
+    /// motion runs at the caller through `ProjSync::note_broadcast`.
+    pub fn relay_projectile(&self, msg: &S2c, ignore: Option<u32>, ctx: RelayCtx, now: u32) {
+        self.fanout_filtered(msg, ignore, Some(ctx), now);
+    }
+
+    /// The `20 SendTileSquare` fan-out (`NetMessage.cs:1708-1718`): the
+    /// square's four corners must land in a section the slot already holds
+    /// (`RemoteClient.SectionRange`, the latch — NOT the check-time grid).
+    /// No ignore at the C# sites (`SendTileSquare` passes `whoAmi = -1`).
+    pub fn relay_tile_square(&self, msg: &S2c, ignore: Option<u32>) {
+        self.fanout_filtered(msg, ignore, None, 0);
     }
 
     /// Kicks a slot with a reason: the `Disconnect` is queued with the
@@ -5095,8 +5710,76 @@ impl Server {
                     c.sections = vec![false; want];
                     c.sections_w = w;
                 }
+                if c.section_check_time.len() != want {
+                    c.section_check_time = vec![0; want];
+                }
             }
         }
+    }
+
+    /// `RemoteClient.SectionRange(size, firstX, firstY)`
+    /// (`RemoteClient.cs:191-218`): true when ANY of the square's four corners
+    /// lands in a section already streamed to this slot (`TileSections`, the
+    /// latch — not the check-time grid). The `SendData(20)` relay filter
+    /// (`NetMessage.cs:1712`) passes the clamped `max(w, h)` as the size.
+    pub fn section_range(&self, id: u32, size: i32, first_x: i32, first_y: i32) -> bool {
+        let Ok(s) = self.slots.lock() else {
+            return false;
+        };
+        let Some(c) = s.get(&id) else {
+            return false;
+        };
+        slot_section_range(c, size, first_x, first_y)
+    }
+
+    /// `RemoteClient.IsSectionActive(sectionCoords)`
+    /// (`RemoteClient.cs:220-224`): the check-time grid + the 60-tick
+    /// `SectionInactiveTime` window — NOT the streamed latch. Coords clamp to
+    /// `[0, maxSections]` (`ActiveSections.cs:53-56`); an unallocated or
+    /// out-of-grid slot reads inactive.
+    pub fn is_section_active(&self, id: u32, sx: i32, sy: i32, now: u32) -> bool {
+        let Ok(s) = self.slots.lock() else {
+            return false;
+        };
+        let Some(c) = s.get(&id) else {
+            return false;
+        };
+        slot_section_active(c, sx, sy, now)
+    }
+
+    /// The `CheckSection_ForClient` stamp (`RemoteClient.cs:165`):
+    /// `TileSectionsCheckTime[i, j] = Main.GameUpdateCount` for every section
+    /// in the fluff box around the position — the `IsSectionActive` refresh.
+    pub fn mark_section_checked(&self, id: u32, sx: i32, sy: i32, now: u32) {
+        let Ok(mut s) = self.slots.lock() else {
+            return;
+        };
+        let Some(c) = s.get_mut(&id) else {
+            return;
+        };
+        if c.sections_w == 0 || sx < 0 || sy < 0 {
+            return;
+        }
+        let i = (sy * c.sections_w + sx) as usize;
+        if let Some(t) = c.section_check_time.get_mut(i) {
+            *t = now;
+        }
+    }
+
+    /// W4-g52 — a snapshot of the slot's check-time grid + its width, for
+    /// the cadence's per-(client, NPC-section) `IsSectionActive` reads
+    /// (`NetMessage.cs:1740`). The decision layer evaluates
+    /// `section_active_at(t, now)` off this same-tick snapshot (the stamps
+    /// run ahead of the cadence in `net_tick`'s fixed-step loop).
+    pub fn section_check_times(&self, id: u32) -> (i32, Vec<u32>) {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| {
+                s.get(&id)
+                    .map(|c| (c.sections_w, c.section_check_time.clone()))
+            })
+            .unwrap_or((0, Vec::new()))
     }
 
     /// Whether the section at `(sx, sy)` was already streamed to this slot.
@@ -7033,6 +7716,616 @@ mod tests {
             other => panic!("expected 143, got {:?}", other.msg_id()),
         }
         assert_eq!(r.remaining(), 0);
+
+    }
+    // ---- S1-I-1 wave B (W4-d92): the NPC family's second half ----
+
+    #[test]
+    fn s1_i_1b_fish_out_npc_round_trips() {
+        // `NetMessage.cs:1528-1532`: (ushort)x, (ushort)y, (short)type —
+        // TILE coordinates (the sender divides by 16, `Player.cs:52425`).
+        let f = FishOutNpc {
+            tile_x: 260,
+            tile_y: 340,
+            npc_type: 682, // the Red Slime unlock type (`MessageBuffer.cs:4095`)
+        };
+        let c = C2s::FishOutNpc(f).encode();
+        assert_eq!(c[2], 130);
+        let mut body = Vec::new();
+        body.extend_from_slice(&260u16.to_le_bytes());
+        body.extend_from_slice(&340u16.to_le_bytes());
+        body.extend_from_slice(&682i16.to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::FishOutNpc(d) => assert_eq!(d, f),
+            other => panic!("expected 130, got {:?}", other.msg_id()),
+        }
+        // Host-only read arm (`MessageBuffer.cs:4088` netMode == 2 gate):
+        // the S2c side has no 130 body.
+        assert!(S2c::decode(130, &mut NetReader::new(&body)).is_none());
+        // Truncated (5 of 6 bytes) must not decode.
+        assert!(C2s::decode(130, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_tamper_with_npc_round_trips() {
+        // `NetMessage.cs:1533-1541`: (ushort)npc, (byte)kind; kind 1 appends
+        // (int)time + (short)fromWho. The one send site is the 485
+        // statue-break 582 spawn's GetImmuneTime(-1, 20)
+        // (`WorldGen.cs:48373-48376`).
+        let t = TamperWithNpc {
+            npc: 15,
+            kind: 1,
+            immune: Some((-1, 20)),
+        };
+        let f = S2c::TamperWithNpc(t).encode();
+        assert_eq!(f[2], 131);
+        let mut body = Vec::new();
+        body.extend_from_slice(&15u16.to_le_bytes());
+        body.push(1);
+        body.extend_from_slice(&(-1i32).to_le_bytes());
+        body.extend_from_slice(&20i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TamperWithNpc(d) => assert_eq!(d, t),
+            other => panic!("expected 131, got {:?}", other.msg_id()),
+        }
+        // A non-1 kind writes NO tail (`NetMessage.cs:1536` gate).
+        let bare = TamperWithNpc {
+            npc: 3,
+            kind: 0,
+            immune: None,
+        };
+        let g = S2c::TamperWithNpc(bare).encode();
+        assert_eq!(g[2], 131);
+        assert_eq!(&g[3..], &[3, 0, 0]);
+        match S2c::decode(g[2], &mut NetReader::new(&g[3..])).expect("decode") {
+            S2c::TamperWithNpc(d) => assert_eq!(d, bare),
+            other => panic!("expected 131, got {:?}", other.msg_id()),
+        }
+        // A kind-1 body truncated before the fromWho must not decode.
+        assert!(S2c::decode(131, &mut NetReader::new(&body[..7])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_cavern_monster_types_round_trips() {
+        // `NetMessage.cs:1572-1582`: the 2×3 grid row-major, six (ushort)s
+        // (`NPC.cavernMonsterType`, `NPC.cs:6585`/`:95268`); the reader
+        // loops i<2 then j<3 (`MessageBuffer.cs:4210-4216`).
+        let c = CavernMonsterTypes {
+            types: [[494, 496, 498], [495, 497, 506]],
+        };
+        let f = S2c::CavernMonsterTypes(c).encode();
+        assert_eq!(f[2], 136);
+        assert_eq!(f.len(), 3 + 12);
+        let mut body = Vec::new();
+        for ty in [494u16, 496, 498, 495, 497, 506] {
+            body.extend_from_slice(&ty.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CavernMonsterTypes(d) => assert_eq!(d, c),
+            other => panic!("expected 136, got {:?}", other.msg_id()),
+        }
+        // Five of the six shorts must not decode.
+        assert!(S2c::decode(136, &mut NetReader::new(&body[..10])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_npc_buff_removal_request_round_trips() {
+        // `NetMessage.cs:1583-1586`: (short)npc + (ushort)buff type; the
+        // host gates the slot to 0..maxNPCs (`MessageBuffer.cs:4224`).
+        let q = NpcBuffRemovalRequest {
+            npc: 42,
+            buff_type: 24, // Poisoned — a CanBeRemovedByNetMessage buff
+        };
+        let c = C2s::NpcBuffRemovalRequest(q).encode();
+        assert_eq!(c[2], 137);
+        let mut body = Vec::new();
+        body.extend_from_slice(&42i16.to_le_bytes());
+        body.extend_from_slice(&24u16.to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcBuffRemovalRequest(d) => assert_eq!(d, q),
+            other => panic!("expected 137, got {:?}", other.msg_id()),
+        }
+        // Host-only read arm (`MessageBuffer.cs:4220` netMode == 2 gate).
+        assert!(S2c::decode(137, &mut NetReader::new(&body)).is_none());
+        assert!(C2s::decode(137, &mut NetReader::new(&body[..3])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_npc_debuff_damage_round_trips() {
+        // `NetMessage.cs:1646-1649`: (byte)npc + (short)damage; both sides
+        // apply GetHurtByDebuff, the host relays (`MessageBuffer.cs:4410-4416`).
+        let d = NpcDebuffDamage { npc: 7, damage: 50 };
+        let f = S2c::NpcDebuffDamage(d).encode();
+        assert_eq!(f[2], 153);
+        let mut body = vec![7];
+        body.extend_from_slice(&50i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcDebuffDamage(x) => assert_eq!(x, d),
+            other => panic!("expected 153, got {:?}", other.msg_id()),
+        }
+        // Host-sent only (the electric-eel pulse, `NPC.cs:91853-91860`):
+        // no C2s body, like 97/98.
+        assert!(C2s::decode(153, &mut NetReader::new(&body)).is_none());
+        assert!(S2c::decode(153, &mut NetReader::new(&body[..2])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_unique_town_npc_info_round_trips() {
+        // `NetMessage.cs:1046-1053`: (short)npc; the netMode == 2 answer
+        // appends GivenName (7-bit length + UTF-8) + (int)variation. The
+        // client request is the bare slot (`NPC.cs:90564`).
+        let req = UniqueTownNpcInfo {
+            npc: 17,
+            info: None,
+        };
+        let c = C2s::UniqueTownNpcInfo(req.clone()).encode();
+        assert_eq!(c, vec![5, 0, 56, 17, 0]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::UniqueTownNpcInfo(d) => assert_eq!(d, req),
+            other => panic!("expected 56, got {:?}", other.msg_id()),
+        }
+        // The host answer (`MessageBuffer.cs:2619-2622` reads string + int).
+        let ans = UniqueTownNpcInfo {
+            npc: 17,
+            info: Some(("Andrew".into(), 1)),
+        };
+        let f = S2c::UniqueTownNpcInfo(ans.clone()).encode();
+        assert_eq!(f[2], 56);
+        let mut body = Vec::new();
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.push(6); // Write7BitEncodedInt(6) — one byte
+        body.extend_from_slice(b"Andrew");
+        body.extend_from_slice(&1i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::UniqueTownNpcInfo(d) => assert_eq!(d, ans),
+            other => panic!("expected 56, got {:?}", other.msg_id()),
+        }
+        // Truncated before the variation int must not decode.
+        assert!(S2c::decode(56, &mut NetReader::new(&body[..12])).is_none());
+        // The bare-slot request must not decode on the S2c side (the client
+        // arm always reads the string + int, `MessageBuffer.cs:2619-2621`).
+        assert!(S2c::decode(56, &mut NetReader::new(&[17, 0])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_npc_extra_value_round_trips() {
+        // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y —
+        // number3/number4 are floats (WorldItem.cs:1193 passes position.X/Y;
+        // the reader ReadSingles them, `MessageBuffer.cs:3446-3447`).
+        let e = NpcExtraValue {
+            npc: 5,
+            value: 1250, // a delta on the C2s leg, the total on the S2c leg
+            x: 4096.5,
+            y: 1024.25,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&1250i32.to_le_bytes());
+        body.extend_from_slice(&4096.5f32.to_bits().to_le_bytes());
+        body.extend_from_slice(&1024.25f32.to_bits().to_le_bytes());
+        // The client's coin-credit delta (`WorldItem.cs:1193`).
+        let c = C2s::NpcExtraValue(e).encode();
+        assert_eq!(c[2], 92);
+        assert_eq!(c.len(), 3 + 14);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcExtraValue(d) => assert_eq!(d, e),
+            other => panic!("expected 92, got {:?}", other.msg_id()),
+        }
+        // The host's relay of the accumulated total
+        // (`MessageBuffer.cs:3458`).
+        let f = S2c::NpcExtraValue(e).encode();
+        assert_eq!(f[2], 92);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcExtraValue(d) => assert_eq!(d, e),
+            other => panic!("expected 92, got {:?}", other.msg_id()),
+        }
+        // Truncated before the y float must not decode.
+        assert!(C2s::decode(92, &mut NetReader::new(&body[..10])).is_none());
+        assert!(S2c::decode(92, &mut NetReader::new(&body[..13])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_npc_strike_ack_is_bodyless() {
+        // `SendData` has no case 162 — the frame is the bare id
+        // (`MessageBuffer.cs:1768-1771` sends it at the head of the 28 arm;
+        // `:1819-1824` the client pops NPC.pendingDamages[0]).
+        let f = S2c::NpcStrikeAck.encode();
+        assert_eq!(f, vec![3, 0, 162]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcStrikeAck => {}
+            other => panic!("expected 162, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(162, &mut NetReader::new(&[])).is_none());
+    }
+    /// W4-g52 — `162 DamageNPCAck` (`MessageID.cs:338`): NO body, `SendData`
+    /// has no case 162, so the frame is the bare id (`MessageBuffer.cs:
+    /// 1768-1771` sends it at the head of the `28` arm; `:1819-1824` the
+    /// client pops `NPC.pendingDamages[0]`). Byte-verbatim with the d92 codec.
+    #[test]
+    fn w4_g52_npc_strike_ack_is_bodyless() {
+        let f = S2c::NpcStrikeAck.encode();
+        assert_eq!(f, vec![3, 0, 162]);
+        assert_eq!(S2c::NpcStrikeAck.msg_id(), id::NPC_STRIKE_ACK);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcStrikeAck => {}
+            other => panic!("expected 162, got {:?}", other.msg_id()),
+        }
+        // The client never sends it — no C2s arm exists.
+        assert!(C2s::decode(162, &mut NetReader::new(&[])).is_none());
+    }
+
+    /// W4-g52 — `34 ChestUpdates` (`NetMessage.cs:913-927`): byte action +
+    /// three shorts + the fifth short — the host writes `number5`, the client
+    /// a literal 0 (`:926`); the host reader zeroes it
+    /// (`MessageBuffer.cs:1991-1994`), the client keeps it (`:1990`).
+    /// Byte-verbatim with the g48 codec (keep-one at merge).
+    #[test]
+    fn w4_g52_chest_updates_round_trips() {
+        let u = ChestUpdates {
+            action: 0,
+            x: 120,
+            y: 340,
+            style: 4,
+            chest: 17,
+        };
+        let f = S2c::ChestUpdates(u).encode();
+        assert_eq!(f[2], 34);
+        let mut body = vec![0];
+        for v in [120i16, 340, 4, 17] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ChestUpdates(d) => assert_eq!(d, u),
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+        // The client's destroy ask (`Player.cs:53787`): action 1, style and
+        // index default to 0 — the writer's else branch (`:924-927`).
+        let c = C2s::ChestUpdates(ChestUpdates {
+            action: 1,
+            x: 120,
+            y: 340,
+            style: 0,
+            chest: 17, // ignored on the wire: the client writes 0
+        })
+        .encode();
+        assert_eq!(c[2], 34);
+        assert_eq!(&c[c.len() - 2..], &0i16.to_le_bytes());
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ChestUpdates(d) => {
+                assert_eq!(d.action, 1);
+                assert_eq!((d.x, d.y, d.style, d.chest), (120, 340, 0, 0));
+            }
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+        // The refusal relay: chest = -1 (`MessageBuffer.cs:2006`).
+        let refused = ChestUpdates { chest: -1, ..u };
+        let f = S2c::ChestUpdates(refused).encode();
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ChestUpdates(d) => assert_eq!(d.chest, -1),
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+    }
+
+    // ---- W4-g52: the SendData relay arms (NetMessage.cs:1692-1826) ----
+
+    /// A live server with `n` raw-socket peers (no handshake — the relay
+    /// tests drive the slot state directly and read the pushed frames).
+    fn relay_server_with_peers(n: usize) -> (Server, Vec<TcpStream>) {
+        let server = Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        let mut socks = Vec::new();
+        for _ in 0..n {
+            socks.push(TcpStream::connect(&addr).unwrap());
+        }
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        while server.client_count() < n && Instant::now() < deadline {
+            thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(server.client_count(), n, "the accept thread registered all");
+        (server, socks)
+    }
+
+    /// Drains everything queued on a peer socket; returns the frame ids.
+    fn drained_ids(sock: &mut TcpStream) -> Vec<u8> {
+        sock.set_read_timeout(Some(std::time::Duration::from_millis(150)))
+            .unwrap();
+        let mut ids = Vec::new();
+        while let Ok(f) = read_frame(sock) {
+            ids.push(f[0]);
+        }
+        ids
+    }
+
+    fn empty_tile_block() -> S2c {
+        S2c::TileBlock(Box::new(TileBlock {
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+            records: vec![TileRecord {
+                active: false,
+                kind: 0,
+                frame_important: false,
+                frame_x: 0,
+                frame_y: 0,
+                wall: 0,
+                wall_frame: 0,
+                liquid: 0,
+                liquid_kind: 0,
+                half_brick: false,
+                slope: 0,
+                actuator: false,
+                inactive: false,
+                paint: 0,
+                wall_paint: 0,
+                wires: 0,
+                invisible_block: false,
+                invisible_wall: false,
+                fullbright_block: false,
+                fullbright_wall: false,
+            }],
+        }))
+    }
+
+    fn one_tile_square(x: i16, y: i16, w: u8, h: u8) -> S2c {
+        let mut r = match empty_tile_block() {
+            S2c::TileBlock(b) => b.records[0],
+            _ => unreachable!(),
+        };
+        r.active = true;
+        r.kind = 1;
+        S2c::SectionRange(Box::new(SectionRange {
+            x,
+            y,
+            w,
+            h,
+            change_type: 0,
+            records: vec![r; (w as usize) * (h as usize)],
+        }))
+    }
+
+    /// The default arm (`NetMessage.cs:1801-1811`): the `broadcast` flag
+    /// opens at State 10 (`MessageBuffer.cs:928`), the State >= 3 bypass is
+    /// `10 TileBlock` ONLY, and `ignoreClient` drops the sender.
+    #[test]
+    fn w4_g52_default_arm_gates_on_broadcast_with_the_tile_block_bypass() {
+        let (server, mut socks) = relay_server_with_peers(2);
+        // Both FRESH: nothing fans out.
+        server.broadcast(&S2c::Ping);
+        assert!(drained_ids(&mut socks[0]).is_empty());
+        assert!(drained_ids(&mut socks[1]).is_empty());
+        // Slot 1 in-world, slot 2 still streaming (State 3).
+        server.set_state(1, slot_state::IN_WORLD);
+        server.set_state(2, slot_state::SPAWN_REQUESTED);
+        server.broadcast(&S2c::Ping);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::PING]);
+        assert!(
+            drained_ids(&mut socks[1]).is_empty(),
+            "State 3 has no broadcast flag — the bypass is id 10 only"
+        );
+        server.broadcast(&empty_tile_block());
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::TILE_BLOCK]);
+        assert_eq!(
+            drained_ids(&mut socks[1]),
+            vec![id::TILE_BLOCK],
+            "`(State >= 3 && msgType == 10)` streams sections pre-join"
+        );
+        // ignoreClient = 1: the sender never gets its own relay.
+        server.broadcast_except(&S2c::Ping, 1);
+        assert!(drained_ids(&mut socks[0]).is_empty());
+        assert!(drained_ids(&mut socks[1]).is_empty());
+        server.set_state(2, slot_state::IN_WORLD);
+        server.broadcast_except(&S2c::Ping, 1);
+        assert!(drained_ids(&mut socks[0]).is_empty());
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::PING]);
+    }
+
+    /// The `20` arm (`NetMessage.cs:1708-1718`): the square's four corners
+    /// (`RemoteClient.SectionRange`, `RemoteClient.cs:191-218`) must land in
+    /// a section the slot already holds — the LATCH, not the check-time grid
+    /// — and there is no State-3 bypass on this arm.
+    #[test]
+    fn w4_g52_tile_square_relays_only_to_slots_holding_a_corner_section() {
+        let (server, mut socks) = relay_server_with_peers(3);
+        for i in 1..=2 {
+            server.set_state(i, slot_state::IN_WORLD);
+            server.ensure_sections(i, 900, 600); // 5x4 grid
+        }
+        // Slot 3 never reaches State 10 — its broadcast flag stays closed
+        // (the C# State never lowers; `Reset` clears on reuse only).
+        server.set_state(3, slot_state::SPAWN_REQUESTED);
+        server.ensure_sections(3, 900, 600);
+        server.mark_section_sent(1, 0, 0);
+        server.mark_section_sent(2, 2, 1);
+        server.mark_section_sent(3, 0, 0); // latched, but no broadcast flag
+        // A check-time stamp alone does NOT satisfy the 20 arm.
+        server.mark_section_checked(2, 0, 0, 1000);
+        // 1x1 at (10,10): every corner in section (0,0) — slot 1 only.
+        server.relay_tile_square(&one_tile_square(10, 10, 1, 1), None);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::SECTION_RANGE]);
+        assert!(drained_ids(&mut socks[1]).is_empty());
+        assert!(
+            drained_ids(&mut socks[2]).is_empty(),
+            "the 20 arm has no State-3 bypass (NetMessage.cs:1712)"
+        );
+        // 3x3 at (198,148): corners (0,0)/(1,0)/(0,1)/(1,1) — slot 1 holds
+        // (0,0); slot 2's (2,1) is not a corner.
+        server.relay_tile_square(&one_tile_square(198, 148, 3, 3), None);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::SECTION_RANGE]);
+        assert!(drained_ids(&mut socks[1]).is_empty());
+        // 1x1 at (410,160): section (2,1) — slot 2 only.
+        server.relay_tile_square(&one_tile_square(410, 160, 1, 1), None);
+        assert!(drained_ids(&mut socks[0]).is_empty());
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::SECTION_RANGE]);
+        // Nobody holds (4,3): the square reaches no one.
+        server.relay_tile_square(&one_tile_square(850, 550, 1, 1), None);
+        assert!(drained_ids(&mut socks[0]).is_empty());
+        assert!(drained_ids(&mut socks[1]).is_empty());
+        // The size is max(w, h) (`:1712`): a 1x3 at (199,0) reaches section
+        // (1,0) with its far corner — slot 1's (0,0) is the first corner.
+        server.relay_tile_square(&one_tile_square(199, 0, 1, 3), None);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::SECTION_RANGE]);
+        assert!(drained_ids(&mut socks[1]).is_empty());
+    }
+
+    /// The `28` arm (`NetMessage.cs:1751-1762`): a live NPC's strike only
+    /// reaches section-active clients; a dead one's reaches everyone. The
+    /// window is the 60-tick `SectionInactiveTime` (`ActiveSections.cs:65`).
+    #[test]
+    fn w4_g52_strike_relays_by_section_activity_or_death() {
+        let (server, mut socks) = relay_server_with_peers(3);
+        for i in 1..=3 {
+            server.set_state(i, slot_state::IN_WORLD);
+            server.ensure_sections(i, 900, 600);
+        }
+        server.mark_section_checked(1, 0, 0, 1000);
+        server.mark_section_checked(3, 0, 0, 1000); // the sender
+        let strike = S2c::NpcStrike(NpcStrike {
+            npc: 0,
+            generation: 1,
+            damage: 10,
+            knock_back: 3.0,
+            hit_direction: 1,
+            crit: false,
+        });
+        let live = RelayCtx::Strike {
+            dead: false,
+            section: (0, 0),
+        };
+        server.relay_strike(&strike, 3, live, 1000);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::NPC_STRIKE]);
+        assert!(
+            drained_ids(&mut socks[1]).is_empty(),
+            "slot 2 never checked section (0,0) — culled"
+        );
+        assert!(
+            drained_ids(&mut socks[2]).is_empty(),
+            "ignoreClient = the striking peer"
+        );
+        // The window edge: 940 + 60 >= 1000 passes, 1001 fails.
+        server.mark_section_checked(2, 0, 0, 940);
+        server.relay_strike(&strike, 3, live, 1000);
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::NPC_STRIKE]);
+        server.relay_strike(&strike, 3, live, 1001);
+        assert!(drained_ids(&mut socks[1]).is_empty());
+        // Death bypasses the section filter for everyone but the sender.
+        let dead = RelayCtx::Strike {
+            dead: true,
+            section: (0, 0),
+        };
+        server.relay_strike(&strike, 3, dead, 5000);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::NPC_STRIKE]);
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::NPC_STRIKE]);
+        assert!(drained_ids(&mut socks[2]).is_empty());
+    }
+
+    /// The `27` arm (`NetMessage.cs:1774-1800`): flag3 (`type 12 / projPet /
+    /// aiStyle 11 / netImportant`, `:1777`) bypasses the section filter;
+    /// otherwise the client's section must be active.
+    #[test]
+    fn w4_g52_projectile_relays_by_flag3_or_section_activity() {
+        let (server, mut socks) = relay_server_with_peers(2);
+        for i in 1..=2 {
+            server.set_state(i, slot_state::IN_WORLD);
+            server.ensure_sections(i, 900, 600);
+        }
+        server.mark_section_checked(1, 1, 1, 2000);
+        let ps = S2c::Projectile(Box::new(ProjectileState {
+            key: projectile_key(1, 0, 1),
+            x: 300.0,
+            y: 300.0,
+            vx: 4.0,
+            vy: 0.0,
+            kind: 1,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 10,
+            knock_back: 2.0,
+            original_damage: 10,
+            ai2: None,
+        }));
+        let plain = RelayCtx::Projectile {
+            ignores_sections: false,
+            section: (1, 1),
+        };
+        server.relay_projectile(&ps, Some(2), plain, 2000);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::PROJECTILE]);
+        assert!(drained_ids(&mut socks[1]).is_empty());
+        let flag3 = RelayCtx::Projectile {
+            ignores_sections: true,
+            section: (1, 1),
+        };
+        server.relay_projectile(&ps, None, flag3, 9000);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::PROJECTILE]);
+        assert_eq!(
+            drained_ids(&mut socks[1]),
+            vec![id::PROJECTILE],
+            "flag3 clears the section cull for every client"
+        );
+        // The window expiry culls the plain shot again.
+        server.relay_projectile(&ps, None, plain, 2061);
+        assert!(drained_ids(&mut socks[0]).is_empty());
+        assert!(drained_ids(&mut socks[1]).is_empty());
+    }
+
+    /// The `34/69` arm (`NetMessage.cs:1696-1707`) is the plain broadcast
+    /// gate — no section filter, no State-3 bypass. The port's `69 ChestName`
+    /// rides it; `34 ChestUpdates` has no port body yet.
+    #[test]
+    fn w4_g52_chest_name_relays_on_the_plain_broadcast_gate() {
+        let (server, mut socks) = relay_server_with_peers(2);
+        server.set_state(1, slot_state::IN_WORLD);
+        server.set_state(2, slot_state::IN_WORLD);
+        // No sections allocated at all — the 69 arm does not read them.
+        let name = S2c::ChestName(ChestName {
+            chest: 0,
+            x: 3,
+            y: 5,
+            name: "loot".into(),
+        });
+        server.broadcast_except(&name, 1);
+        assert!(drained_ids(&mut socks[0]).is_empty());
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::CHEST_NAME]);
+    }
+
+    /// `section_active_at`'s uint wrap + the 60-tick boundary
+    /// (`RemoteClient.cs:223`, `ActiveSections.cs:65`), and the latch's
+    /// out-of-grid refusal (`RemoteClient.cs:212`'s throw inside the try).
+    #[test]
+    fn w4_g52_section_predicates_wrap_and_refuse_out_of_grid() {
+        assert!(section_active_at(1000, 1060), "the boundary is inclusive");
+        assert!(!section_active_at(1000, 1061));
+        assert!(
+            section_active_at(u32::MAX - 10, 49),
+            "the C# uint add wraps: MAX-10 + 60 = 49"
+        );
+        assert!(!section_active_at(u32::MAX - 10, 50));
+        let (server, _socks) = relay_server_with_peers(1);
+        server.set_state(1, slot_state::IN_WORLD);
+        // Unallocated grid: both predicates refuse.
+        assert!(!server.section_range(1, 1, 0, 0));
+        assert!(!server.is_section_active(1, 0, 0, 0));
+        server.ensure_sections(1, 900, 600);
+        server.mark_section_sent(1, 0, 0);
+        // A negative corner is refused, not panicked (the C# throws inside
+        // SendData's try; TrySendData swallows it).
+        assert!(!server.section_range(1, 1, -5, -5));
+        // The far corner still lands in the latched section.
+        assert!(server.section_range(1, 1, 199, 149));
+        assert!(!server.section_range(1, 1, 200, 150));
+        // IsSectionActive clamps negatives onto (0,0) (ActiveSections.cs:53).
+        server.mark_section_checked(1, 0, 0, 500);
+        assert!(server.is_section_active(1, -3, -7, 560));
     }
     #[test]
     fn w4_d97_team_change_from_ui_byte_pin() {

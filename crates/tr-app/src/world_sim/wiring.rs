@@ -214,6 +214,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         grab_delay_player: 255,
                         being_grabbed: false,
                         on_conveyor: false,
+                        instanced: false,
                     });
                 }
                 tr_core::wiring::StatueSpawn::Teleport { x, y, roster } => {
@@ -913,6 +914,7 @@ mod tests {
                 grab_delay_player: 255,
                 being_grabbed: false,
                 on_conveyor: false,
+                instanced: false,
             });
         }
         trip_and_tick(&mut app);

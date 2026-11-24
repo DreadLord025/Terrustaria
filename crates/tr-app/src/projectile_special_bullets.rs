@@ -154,6 +154,38 @@ pub(crate) fn step(
     // their zero-draw census, the parameter is unread for them).
     rng: &mut dyn tr_core::loot::DropRng,
 ) {
+    // W4-g63 — the dust-free scratch entry (the `ProjectilePool::update`
+    // precedent): the witnesses below run the flight on a scratch pool;
+    // the live sim threads the real pool through [`step_dust`].
+    let mut dust = tr_core::particles::DustPool::new();
+    let ctx = tr_core::particles::SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: Vec2::ZERO,
+        screen_size: Vec2::new(
+            world.width as f32 * tr_core::TILE_PX,
+            world.height as f32 * tr_core::TILE_PX,
+        ),
+        max_dust_to_draw: 6000,
+    };
+    let mut rng = tr_core::UnifiedRandom::new(0);
+    step_dust(p, world, npcs, local_immunity, &mut rng, &mut dust, &ctx);
+}
+
+/// W4-g63 — the full step with the caller's `UpdateProjectiles` stream +
+/// the live dust pool: the 207's `alpha < 170` 10-point trail
+/// (`:56780-56793`) is RE-ARMED at the head of the homing block. Every
+/// other kind's stream stays untouched (no emitter fires).
+pub(crate) fn step_dust(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    local_immunity: &[i32],
+    rng: &mut dyn tr_core::loot::DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // ---- 1. The hook group above the counter ------------------------------
     // `:55660-55671` — the 242 HighVelocity fade (the 302/438/462/592
     // siblings are other modules' kinds): `num109 = (float)Math.Sqrt(
@@ -199,7 +231,7 @@ pub(crate) fn step(
     // (type == 207 || type == 837)`), so a homing bullet NEVER reaches
     // the generic gravity arm — the steer replaces it.
     if p.kind == CHLOROPHYTE_BULLET {
-        chlorophyte_homing(p, world, npcs);
+        chlorophyte_homing(p, world, npcs, rng, dust, dust_ctx);
     }
 
     // ---- 4. The rotation tail + clamp -------------------------------------
@@ -218,10 +250,26 @@ pub(crate) fn step(
 }
 
 /// The 207's homing block (`Projectile.cs:56778-56887`), in the C#'s own
-/// order: the trail-dust window (SKIPPED — dust-only, `:56780-56793`),
+/// order: the trail-dust window (W4-g63 RE-ARMED, `:56780-56793`),
 /// the speed latch, the alpha fade, the acquire scan, the held-target
 /// validity check and the steer blend.
-fn chlorophyte_homing(p: &mut Projectile, world: &World, npcs: &[Npc]) {
+fn chlorophyte_homing(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    rng: &mut dyn tr_core::loot::DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
+    // `:56780-56793` — W4-g63: the `alpha < 170` 10-point dust-75 trail
+    // RE-ARMED (no explicit draws; the window reads the PRE-fade alpha,
+    // the C# block sits above the `alpha -= 25` at `:56809`).
+    if p.alpha < 170 {
+        crate::projectile_trail_dust::chlorophyte_bullet_trail(
+            &crate::projectile_trail_dust::TrailSlot::of(p),
+            rng, dust, dust_ctx, world,
+        );
+    }
     // `:56802-56808` — `num185 = (float)Math.Sqrt(vx*vx + vy*vy)`; the
     // first tick latches `localAI[0]` to the launch speed (the steer
     // keeps THAT speed, not the current one).
@@ -355,7 +403,7 @@ fn move_bullet(p: &mut Projectile, world: &World, npcs: &[Npc], local_immunity: 
         // (`:19282-19283`) ride the cue queue (the dust is SKIPPED).
         METEOR_SHOT => {
             if p.penetrate > 1 {
-                p.wants_sound = Some((2, 10, p.pos.x, p.pos.y, 0.0));
+                p.wants_sound = Some((2, 10, p.pos.x, p.pos.y, 0.0, 1.0));
                 p.penetrate -= 1;
                 if hit_x {
                     p.vel.x = -last.x;
@@ -738,7 +786,7 @@ mod tests {
         assert!(p.active, "the first bounce lives");
         assert_eq!(p.penetrate, 1, "one penetrate spent");
         assert_eq!(p.vel.x, -4.0, "the full-strength reflect");
-        assert_eq!(p.wants_sound, Some((2, 10, 186.0, 160.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 10, 186.0, 160.0, 0.0, 1.0)));
         // Fly back left into a second wall at tile x = 10 (px 160).
         for y in 8..14 {
             let i = w.index(10, y);

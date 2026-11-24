@@ -3,6 +3,14 @@
 > Wave 2 · researched 2026-11-12 · sources: `decompiled/Terraria/UI/*` (37 files,
 > ~11 970 lines) + `decompiled/Terraria/GameContent/UI/*` (ROADMAP:933 — 170 files,
 > 34 k lines) + `crates/tr-app/src/ui/` (31 files, ~25 840 lines) + ROADMAP §23.
+>
+> **ALL-ROWS STATUS REFRESH 2026-11-21 (W4-d85 FINAL phase)** — the
+> framework rows re-verified against the branch tips (d87 `38779a1d2`
+> margins/snap/state-stack/layers, d88 `d2279e811` UIList/scissor, d85
+> `23fe0d4e5`). The **FINAL 28-screen coverage table** is research/112
+> §5 (this doc's gap table below keeps the historical rows; the
+> refresh marks are inline). f22's research/144 declares the family
+> COMPLETE; this refresh independently re-verifies it.
 
 ## Scope
 
@@ -87,6 +95,7 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | Clamp `MathHelper.Clamp` | PORTED | `uistate.rs::xna_clamp` :50-52 | min-wins when min>max; test `xna_clamp_keeps_the_min_when_min_exceeds_max` |
 | Layout math `:308-320` | PORTED | `uistate.rs::resolve` :83-107 | min/max clamp before alignment (:99-101); tests `resolve_*` |
 | Margins `:293-297`, `:317-318` | PORTED (W4-d87, 2026-11-20) | `uistate.rs::resolve_with_margins` | inflate-before-align (`:317-319`), shrink-after (`:293-296`); `resolve` delegates at `margin=[0;4]` bit-identically; tests `resolve_margins_*`, `resolve_zero_margins_is_bit_identical_to_the_old_margin_free_pass` |
+| Margins `:293-297`, `:317-318` | ~~MISSING~~ **PORTED (REFRESH: d87 `75009f973`)** | `uistate::resolve_with_margins` | inflate-before-align, shrink-after; `resolve` delegates at 0 margins bit-identically |
 | Padding / inner rect `:298-303` | PORTED | `uistate.rs::inner` :111-118 | test `resolve_padding_shrinks_the_inner_rect_only` |
 | Parent = `UIList` ⇒ height ∞ `:288-291` | MISSING | `uistate.rs:73-75` | admitted in code; list rows derive arithmetically per screen |
 | Root dims `UserInterface.cs:332-336` | PARTIAL | per-screen root rects (`char_select::select_player` etc.) | `Main.UIScale` ported (`settings::ui_scale_max`, `Settings::ui_scale`, the `GameUI.UIScale` bar) but the `GetDimensions()` division is still not applied to the per-screen rects (S1-H-3; docs/ANALYSIS.md) |
@@ -106,6 +115,11 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | `Activate`/`Deactivate`/`Initialize` :548-605 | MISSING | — | immediate mode; screens carry their own reset |
 | State stack `_history`/`GoBack` :305-322 | PORTED (W4-d87, 2026-11-20) | `ui/state_stack.rs` (`StateStack::set_state/go_back`, the 33→29 history sawtooth) | `GoBack` **verified dead code**: all 8 `GoBack()` grep hits are screens' own private helpers (`UIWorldCreation.cs:670-674` → `Main.OpenWorldSelectUI()`), never `UserInterface.GoBack`; machine ported, `flow.rs` not rewired; 7 tests |
 | `GameInterfaceLayer` / `InterfaceScaleType` | PARTIAL (W4-d87, 2026-11-20) | `ui/layers.rs` (`VANILLA_LAYERS` = the 43-layer `Main.cs:44718-44918` table, `layer_matrix`, `draw_interface` stop-on-false walk) | machinery + data ported; `frame.rs` still draws in fixed code order — wiring the passes through the table is the follow-up; 4 tests |
+| Snap points `:124-145, :271-283`, `SnapPoint.cs` | ~~MISSING~~ **PORTED (REFRESH: d87 `164cb7090`)** | `ui/pointer.rs` (the snap-point maths) | `SnapPoint.Calculate` anchor × dimensions + offset; the gamepad NAVIGATOR stays absent (the row below) |
+| Gamepad / `UILinkPointNavigator` (`UserInterface.cs:184-187`) | MISSING | — | NoGamepadSupport / gamepad branch unported (Stage-1 exclusion, unchanged) |
+| `Activate`/`Deactivate`/`Initialize` :548-605 | MISSING | — | immediate mode; screens carry their own reset (unchanged, by design) |
+| State stack `_history`/`GoBack` :305-322 | ~~MISSING~~ **PORTED (REFRESH: d87 `164cb7090`)** | `ui/pointer.rs` (SetState/GoBack/AddToHistory, the 33→29 history sawtooth) | the dead-code claim **VERIFIED 2026-11-21** (W4-d85 doc-sweep: all 8 `.GoBack()` hits are UIState-own methods; `_history` is write-only in 1.4.5.8) — d87 ports the machinery anyway for the seam's completeness |
+| `GameInterfaceLayer` / `InterfaceScaleType` | ~~MISSING~~ **PARTIAL (REFRESH: d87 `164cb7090`)** | the 43-layer `Main.cs:44718-44918` table + the stop-on-false walk | the named layer list + the three scale spaces landed as data; the per-layer zoom matrix application stays the follow-up (d87's own PARTIAL mark) |
 | `UIPanel` 9-slice / separators / scrollbar sprite | PORTED | `panel.rs` :1-21 (`CORNER`/`BAR` constants) | draw-only; thumb drag per screen |
 | `UITextPanel` / `UIImageButton` / `UIColoredImageButton` | PORTED | `uistate.rs:290-527` | tests `text_panel_rect_*`, `lookups_default_*` |
 | `Utils.DrawSplicedPanel` | PORTED | `uistate.rs::spliced_rects` :168-219 | incl. the `:2593` top-right quirk; 4 tests |
@@ -119,7 +133,7 @@ Screens already covered by immediate ports are listed for completeness at the en
 
 | C# class (file) | Provides | Rust counterpart | Status | Impact |
 | --- | --- | --- | --- | --- |
-| `UIElement` fields: margins, `MaxWidth`/`MaxHeight`/`Min*`, `OverrideSamplerState`, `UseImmediateMode`, `IgnoresMouseInteraction`(partial), `PassThroughMouseInteraction` | layout + draw modifiers | `uistate.rs` covers px/pct/H/VAlign/padding only | PARTIAL | behavioural if a future element sets them |
+| `UIElement` fields: margins, `MaxWidth`/`MaxHeight`/`Min*`, `OverrideSamplerState`, `UseImmediateMode`, `IgnoresMouseInteraction`(partial), `PassThroughMouseInteraction` | layout + draw modifiers | `uistate.rs` px/pct/H/VAlign/padding + d87's margins (`75009f973`) | PARTIAL | margins closed (REFRESH); the sampler/immediate-mode flags stay unmodelled (no caller sets them) |
 | `UIElement.Recalculate/RecalculateChildren` as tree ops | whole-tree relayout | per-screen per-frame derivation | MISSING (by design) | the `UIList` ∞-height case is now modelled (`resolve_in_list`, S1-H-2) |
 | `UIElement` event bubble (`:414-547`) | ancestor handlers + ancestor `IsMouseHovering` | `framework.rs::bubble_chain` + `Element` parent links | PORTED (S1-H-1) | the `MouseOver`-driven ancestor hovering is the same chain (`:510-521`) |
 | `UIElement.Draw` `OverflowHidden` path + `GetClippingRectangle` | clipping | `tr-render/src/clip.rs` + `SpriteRenderer::push_clip`/`pop_clip` + `Element.viewport` for the hit side | PORTED (S1-H-2) | the clip cuts pixels in the fragment stage; hit-testing stops descending through an ancestor that does not contain the point (`UIElement.cs:327-341`) |
@@ -128,6 +142,10 @@ Screens already covered by immediate ports are listed for completeness at the en
 | `UserInterface` (object, `_currentState`, `_history`) | element stack, `GoBack`, 32-entry history | `ui/state_stack.rs` (`StateStack`) + `flow.rs` table | PORTED (W4-d87; machine only — `flow.rs` not rewired, `GoBack` verified dead code) | `GoBack` semantics (2-state pop) modelled + tested |
 | `GameInterfaceLayer`, `LegacyGameInterfaceLayer`, `InterfaceScaleType` | named layer stack, 3 scale spaces | `ui/layers.rs` (`VANILLA_LAYERS`, `layer_matrix`, `draw_interface`) + fixed order in `frame.rs` | PARTIAL (W4-d87; machinery + data ported, `frame.rs` wiring pending) | ordering data exists; no per-layer zoom applied yet |
 | `UIState` (as a class you instantiate) | 100% root + `NoGamepadSupport` | `FrontScreen` / per-screen root | PARTIAL | no shared root type |
+| `UIElement.GetSnapPoints`, `SetSnapPoint` ; `SnapPoint.cs` | gamepad nav anchors | d87's snap-point port (`164cb7090`) | ~~MISSING~~ **PORTED (REFRESH: d87)** | the anchor maths; the navigator stays gamepad-only absent |
+| `UserInterface` (object, `_currentState`, `_history`) | element stack, `GoBack`, 32-entry history | `flow.rs` table + d87's state-stack port (`164cb7090`) | ~~MISSING/partial~~ **PORTED (REFRESH: d87)** | the 33→29 sawtooth + `SetState`/`GoBack`/`AddToHistory` landed; `GoBack` has zero callers in 1.4.5.8 (verified `ef9c8954`) |
+| `GameInterfaceLayer`, `LegacyGameInterfaceLayer`, `InterfaceScaleType` | named layer stack, 3 scale spaces | d87's 43-layer table + stop-on-false walk (`164cb7090`) | ~~MISSING~~ **PARTIAL (REFRESH: d87)** | the layer list is data now; the per-layer zoom application stays the follow-up |
+| `UIState` (as a class you instantiate) | 100% root + `NoGamepadSupport` | `FrontScreen` / per-screen root | PARTIAL | no shared root type (by design, immediate mode) |
 
 ### Element classes (`Terraria/UI/*.cs` + `GameContent/UI/Elements/*.cs`)
 
@@ -138,8 +156,8 @@ Screens already covered by immediate ports are listed for completeness at the en
 
 | C# class (file:line) | What it is | Rust counterpart | Status |
 | --- | --- | --- | --- |
-| `UIList` + `UIInnerList` (`UIList.cs:10,14`) | scrolling viewport with ∞ height + scrolling | per-screen row maths (`char_select`, `achievements`, `emotes`, `chest`) | MISSING as a class |
-| `UIScrollbar` | thumb track/drag | static sprite only (`char_creation.rs:1860` "never scrolls") | PARTIAL |
+| `UIList` + `UIInnerList` (`UIList.cs:10,14`) | scrolling viewport with ∞ height + scrolling | `uistate::resolve_in_list` + `list_total_height` (d88 `d2279e811`: the verbatim `RecalculateChildren` inner-height sum, the raw-counter wheel, the `SetView` clamp, the AABB cull) + per-screen row maths | ~~MISSING as a class~~ **PORTED as machinery (REFRESH: d88)** — the ∞-height case S1-H-2, the scroll/scissor consumers d88; still not a retained class (by design) |
+| `UIScrollbar` | thumb track/drag | `panel::draw_scrollbar` + the per-screen drag (`front_scrollbar_press`/`drag`, the reports/seeds-list attach-on-overflow) | PARTIAL (the drag is per-screen, not an element — unchanged) |
 | `UISliderBase`, `UIColoredSliderSimple` | slider input element | `sliders.rs` draw-only | PARTIAL (no drag element) |
 | `UISearchBar`, `UIWrappedSearchBar` | bestiary/creative filter input | none | MISSING |
 | `UIProgressBar`, `UIGenProgressBar` | progress elements | `bars.rs` (boss bar, bespoke) | PARTIAL/MISSING for the generic element — `UIGenProgressBar` LANDED S1-E-17 (`world_load.rs`, re-verified W4-d82); `UIProgressBar` = d83 |
@@ -153,6 +171,10 @@ Screens already covered by immediate ports are listed for completeness at the en
 | `PowerStripUIElement` | power-button strip | none | MISSING |
 | `UICreativePowerButton`, `UIDifficultyButton`, `UIClothStyleButton`, `UICharacterNameButton`, `UIIconTextButton`, `UIDebugCommandItem`, `UIDebugLoadoutItem` | composite buttons | none | MISSING — W4-d82 landed `UICreativePowerButton` (empty marker), `UIDifficultyButton`/`UIHairStyleButton` element halves (`buttons.rs`) and the two debug rows (`debug_items.rs`), research/18b rows 25/27-29/32; cloth/name = d81, icon-text = d83 |
 | `UIKeybindingListItem`, `-Cycle-`, `-Simple-`, `-Slider-`, `-ToggleListItem` | controls screen rows | none | MISSING |
+| `UISortableElement` | drag-reorder | `ui/sortable.rs` (d83 `17799c642` tip) | ~~MISSING~~ **PORTED on d83 (REFRESH)** |
+| `UIDynamicItemCollection` (+subclasses) | item grids | `slot.rs` per-context draw | PARTIAL |
+| `UICreativePowerButton`, `UIDifficultyButton`, `UIClothStyleButton`, `UICharacterNameButton`, `UIIconTextButton`, `UIDebugCommandItem`, `UIDebugLoadoutItem` | composite buttons | d82/d83 element halves (`UICreativePowerButton` empty marker d82 `484c25291`; `UIIconTextButton` d84's `workshop_kit.rs`; the debug row pair d85; `UICharacterNameButton`'s trim d85 `9b8cd40d`) | ~~MISSING~~ **PORTED across d82/d83/d84/d85 (REFRESH)** — the per-element residual pins ride the f23 census |
+| `UIKeybindingListItem`, `-Cycle-`, `-Simple-`, `-Slider-`, `-ToggleListItem` | controls screen rows | `ui/keybinding_rows.rs` (d83, per d86's 18c note) | ~~MISSING~~ **PORTED on d83 (REFRESH: 18c's row-40-44 note)** |
 | `UIBestiaryEntryButton/Grid/Icon/InfoPage/SortingOptionsGrid/FilteringOptionsGrid/NPCEntryPortrait/InfoItemLine` | bestiary elements | `bestiary.rs` (immediate) | PARTIAL |
 | `UIAchievementListItem`, `EmoteButton`, `EmotesGroupListItem`, `UICharacterListItem`, `AWorldListItem`, `UICharacter`, `UIWorldCreationPreview`, `UIResourcePack`, `UIWorkshopPublishResourcePackListItem` | list rows/cards | `achievements.rs`, `emotes.rs`, `cards.rs` + the select screens (immediate) | PARTIAL |
 | `IngameFancyUI` (open helpers), `IngameUIWindows`, `InGameNotificationsTracker`, `InGamePopups`, `GameTipsDisplay` | window open/close tracker, notifications | `frame.rs` open flags; `mod.rs::draw_hud` | PARTIAL |
@@ -160,25 +182,62 @@ Screens already covered by immediate ports are listed for completeness at the en
 
 ### `UIState` subclasses with no Rust screen at all
 
+**Wave-4 split (2026-11-20, branches `task/W4-d84/d85/d86-ui-screens-*`, table order):**
+d84 = first 6 (the Workshop/ResourcePack cluster: `UIWorkshopHub`,
+`UIWorkshopSelectResourcePackToPublish`, `UIWorkshopSelectWorldToPublish`,
+`UIWorkshopWorldImport`, `UIResourcePackSelectionMenu`, `UIResourcePackInfoMenu`).
+**d85 = second 6 (table rows 7-12)**: `UIDebugCommandsList`,
+`UIDebugLoadoutsList`, the `UIDebugLoadoutItem`-family row (both debug lists
+plus their row elements `UIDebugCommandItem`/`UIDebugLoadoutItem`),
+`UIReportsPage`, `UIWorldCreationAdvanced`,
+`UIWorldCreationAdvancedSecretSeedsList`.
+d86 = the rest (`UIWorldGenDebug`, `UITextWrappingTest`, `UIManageControls`,
+the `AWorkshopPublishInfoState` pair if not folded into d84).
+`UICreativePowersMenu` is Journey-mode (c24 lane) - skipped by all three.
+
+**REFRESH 2026-11-21 (W4-d85 FINAL)**: the "Lines" column below held
+class-declaration line numbers, not lengths — the raw-file counts are
+in research/112 §5's final table (f22's 18d established the correction).
+Every `none` row in the d84/d86/c24 ranges is now LANDED on its tip;
+the rows keep their historical text with the refresh verdict appended.
+
 | C# state (file) | Lines | Rust counterpart | Notes |
 | --- | --- | --- | --- |
-| `UIWorkshopHub` | 13 | none | Steam Workshop hub |
-| `UIWorkshopSelectResourcePackToPublish` | 17 | none | |
-| `UIWorkshopSelectWorldToPublish` | 16 | none | |
-| `UIWorkshopWorldImport` | 18 | none | |
-| `UIResourcePackSelectionMenu` | 17 | none | |
-| `UIResourcePackInfoMenu` | 15 | none | |
-| `UIDebugCommandsList` | 15 | none | debug |
-| `UIDebugLoadoutsList` | 14 | none | debug |
-| `UIDebugLoadoutItem`-family screens | — | none | debug |
-| `UIReportsPage` | 16 | none | |
-| `UIWorldCreationAdvanced` | 16 | none | ROADMAP:953 lists it; world_creation.rs covers the base screen only |
-| `UIWorldCreationAdvancedSecretSeedsList` | 17 | none | same |
-| `UIWorldGenDebug` | 27 | none | debug |
-| `UICreativePowersMenu` | 13 | none | journey-mode powers |
-| `UITextWrappingTest` | 14 | none | test-only screen |
-| `UIManageControls` | 20 | none | keybinding screen; `input_map.rs` has the data, not the screen |
-| `UIWorldLoad` | 16 | `world_select.rs`/`save_list.rs` (folded in) | PARTIAL — verify no screen is lost |
+| `UIWorkshopHub` | 13 | none | Steam Workshop hub — d84 claim; EXCLUDED-BY-DESIGN fallback (research/18c, ANALYSIS "Not ported and not planned") |
+| `UIWorkshopSelectResourcePackToPublish` | 17 | none | d84 claim; same Workshop exclusion fallback |
+| `UIWorkshopSelectWorldToPublish` | 16 | none | d84 claim; same Workshop exclusion fallback |
+| `UIWorkshopWorldImport` | 18 | none | d84 claim; same Workshop exclusion fallback |
+| `UIResourcePackSelectionMenu` | 17 | none | d84 claim; MISSING-with-dependency fallback (no AssetSourceController/ResourcePackList port — research/18c) |
+| `UIResourcePackInfoMenu` | 15 | none | same |
+| `UIDebugCommandsList` | 15 | none | debug — d85 claim (research/18c reconciled split) |
+| `UIDebugLoadoutsList` | 14 | none | debug — d85 claim |
+| `UIDebugLoadoutItem`-family screens | — | none | debug — d85 claim (row elements: d82 `ui/debug_items.rs`) |
+| `UIReportsPage` | 16 | none | d85 claim (+ the IProvideReports data family) |
+| `UIWorldCreationAdvanced` | 16 | none | ROADMAP:953 lists it; world_creation.rs covers the base screen only — d85 claim |
+| `UIWorldCreationAdvancedSecretSeedsList` | 17 | none | same — d85 claim |
+| `UIWorldGenDebug` | 27 | none | debug — EXCLUDED (dev-only worldgen inspector, Testing/** subsystem; research/18c scope-outs) |
+| `UICreativePowersMenu` | 13 | none | journey-mode powers — c24 lane |
+| `UITextWrappingTest` | 14 | none | test-only screen — EXCLUDED (dev text-wrap harness; closes research/38-7's undocumented absence, research/18c) |
+| `UIManageControls` | 20 | `ui/manage_controls.rs` + `input_profiles.rs` (d86) | PORTED (d86) — screen state machine + the PlayerInputProfile data; rows: d83 `ui/keybinding_rows.rs`; `input_map.rs` keeps the 14+6 bind DATA for the input pass |
+| `AWorkshopPublishInfoState` (+ForResourcePack/ForWorld) | — | `ui/workshop_publish_info.rs` (d86) | data/state half PORTED (d86); Steam I/O excluded with Social/** (research/18c pair decision) |
+| `UIWorldLoad` | 16 | `ui/world_load.rs` (first-class `FrontScreen::WorldLoad`, S1-E-17) | PORTED — re-verified against UIWorldLoad.cs:16-137 (research/18c); nothing was folded into world_select/save_list; deferrals recorded (drunk Main.rand arms, gameTips, F5 debug scope-out, gamepad squiggle) |
+| `UIWorkshopHub` | 13 | `ui/workshop_hub.rs` (d84 `ba7e8f94a`) | **PORTED (REFRESH)** — the no-Steam hub view; the Steam I/O stays excluded |
+| `UIWorkshopSelectResourcePackToPublish` | 17 | `ui/workshop_publish.rs` (d84 `5db83131e`) | **PORTED (REFRESH)** |
+| `UIWorkshopSelectWorldToPublish` | 16 | `ui/workshop_publish.rs` (d84 `05d2fe8d8`) | **PORTED (REFRESH)** |
+| `UIWorkshopWorldImport` | 18 | `ui/workshop_publish.rs` (d84 `0607f5f8f`) | **PORTED (REFRESH)** |
+| `UIResourcePackSelectionMenu` | 17 | `ui/resource_packs.rs` + `resource_pack.rs` (d84 `856a1c74d`/`2d178bcb4`) | **PORTED (REFRESH)** — the data layer landed, d86's dependency fallback moot |
+| `UIResourcePackInfoMenu` | 15 | `ui/resource_pack_info.rs` (d84 `ff68eb9d9`) | **PORTED (REFRESH)** |
+| `UIDebugCommandsList` | 165 | `ui/debug_commands.rs` (W4-d85) | PORTED (immediate overlay; `/hh` opener, 62-row registry, search + scroll; fake-item hover tooltip not drawn — ANALYSIS "Debug lists (W4-d85)") |
+| `UIDebugLoadoutsList` | 146 | `ui/debug_loadouts.rs` + `loadout.rs` (W4-d85) | PORTED (immediate overlay; `/loadouts` opener, ScenarioTestLoadout JSON reader + Apply, static `_lastSearch`; ~~minion respawn deferred~~ **the respawn landed the doc-sweep `6220169d` + the FINAL dragon-grow fix `d3f720cf1`** — ANALYSIS "Debug lists (W4-d85)") |
+| `UIDebugLoadoutItem`-family screens | — | `ui/debug_commands.rs` + `ui/debug_loadouts.rs` row halves (W4-d85) | PORTED (the two row elements; hover tooltips not drawn) |
+| `UIReportsPage` | 248 | `ui/reports.rs` (W4-d85) | PORTED (immediate front screen; `TR_UI=reports`, empty-log initial message, attach-on-overflow scrollbar + GoToBottom, parked Back target; ~~no issue-report pipeline~~ **the reporter data layer landed `ecbde4c4` + the IssueReportsIndicator consumer wire `389dd8134` (FINAL)** — ANALYSIS "Reports page (W4-d85)") |
+| `UIWorldCreationAdvanced` | 532 | `ui/world_creation_advanced.rs` (W4-d85) | PORTED (immediate front screen; the seed icon opens it, the 10-option grid with the Normal/Everything cascades on the draft, the secret cell, the joined-seed description; ring/particles not drawn — ANALYSIS "Advanced world creation (W4-d85)") |
+| `UIWorldCreationAdvancedSecretSeedsList` | 459 | `ui/secret_seeds_list.rs` (W4-d85) | PORTED (the unlocked-seed rows from the draft's lists, CustomSort by unlock text, toggle + glow ring, attach-on-overflow scrollbar; particles + settings tracker not ported — same ANALYSIS section) |
+| `UIWorldGenDebug` | 27 | none | **SCOPE-OUT (REFRESH: d86 `19641e25f` recorded it in `world_load.rs` + ANALYSIS)** — dev-only worldgen inspector, the `UIWorldLoad.cs:50-52` F5 arm; excluded with `Testing/**` |
+| `UICreativePowersMenu` | 13 | `ui/journey.rs` (c24 `ff99f1486`) | **PORTED (REFRESH)** — the Journey strips/categories/sliders/search/duplication |
+| `UITextWrappingTest` | 14 | none | **SCOPE-OUT (REFRESH: d86 18c)** — test-only harness, research/38's UNDOCUMENTED-ABSENCE now recorded |
+| `UIManageControls` | 20 | `ui/manage_controls.rs` + `input_profiles.rs` (d86 `21fab7274`) | **PORTED (REFRESH)** — the screen state machine + the profile data; rows cite d83's `keybinding_rows.rs` |
+| `UIWorldLoad` | 16 | `ui/world_load.rs` (S1-E-17, first-class `FrontScreen::WorldLoad`) | ~~PARTIAL — verify no screen is lost~~ **PORTED (REFRESH: d86 `19641e25f` re-verified in depth)** — nothing was folded into world_select/save_list; the row was stale |
 | `NewCraftingUI` | 21 | `crafting.rs` | PORTED (immediate) |
 | `UICharacterSelect/UICharacterCreation/UIWorldSelect/UIWorldCreation/UIVirtualKeyboard/UIAchievementsMenu/UIBestiaryTest/UIEmotesMenu` | — | `char_*`, `world_*`, `keyboard.rs`, `achievements.rs`, `bestiary.rs`, `emotes.rs` | PORTED |
 
@@ -237,6 +296,11 @@ fns across 31 files (framework-relevant subset):
    cancel at 0 and omits them. All current callers pass 0, so behaviour matches
    today, but any new element with a margin diverges invisibly. Behavioural,
    latent; admitted in code, not in ROADMAP.
+1. ~~**Margins silently dropped**~~ **CLOSED (REFRESH 2026-11-21): d87
+   `75009f973`** — `resolve_with_margins` ports `:293-297`/`:317-318`;
+   `resolve` delegates at 0 margins bit-identically, so every existing
+   caller is unchanged and a future margin-bearing element resolves
+   faithfully.
 2. **`MaxHeight` clamp uses `f32::MAX`** (`uistate.rs:101`) instead of
    `MaxHeight.GetValue(parentH)` (`UIElement.cs:314,316`). Same as the `Fill`
    default; a percent-valued `MaxHeight` cannot be expressed. Behavioural, latent.
@@ -315,6 +379,22 @@ fns across 31 files (framework-relevant subset):
     271-283`); still absent: `UILinkPointNavigator` (the consumer) and
     `NoGamepadSupport` handling (`UIState.cs:5`). Behavioural (gamepad input
     unsupported), expected for Stage 1.
+9. ~~**`GoBack`/history "dead code" claim unverified**~~ **VERIFIED
+   2026-11-21 (W4-d85 doc-sweep `ef9c8954`)** — the full `decompiled/` +
+   `decompiled-libs/` sweep finds 8 `.GoBack()` hits, ALL UIState-own
+   private/static methods (`UICharacterCreation.cs:1207/:2378`,
+   `UIWorldCreation.cs:667/:1375`, `UIWorldCreationAdvanced.cs:472/:530`,
+   `UIWorldCreationAdvancedSecretSeedsList.cs:383/:410`); ZERO callers of
+   `UserInterface.GoBack` — `_history` is write-only in 1.4.5.8. The
+   original deviation's "is called from the back-button paths" claim was
+   FALSE (the `IHaveBackButtonCommand` screens call their OWN GoBack
+   methods, not the UserInterface one). d87 ports the state-stack
+   machinery anyway (`164cb7090`).
+10. **Snap points / gamepad** — **PARTIAL (REFRESH 2026-11-21): d87
+    `164cb7090` ports the anchor maths** (`SnapPoint.cs:26-30` +
+    `UIElement.cs:124-145/:271-283`); the `UILinkPointNavigator` and the
+    `NoGamepadSupport` handling (`UIState.cs:5`) stay absent — gamepad
+    input unsupported, expected for Stage 1 (unchanged).
 
 ## Task seeds
 
@@ -328,6 +408,18 @@ fns across 31 files (framework-relevant subset):
   `resolve_with_margins` reproduces `:293-297`/`:317-318` in C# order with
   hand-computed pins; `resolve` delegates at 0 margins bit-identically.
   Deviation 1 closed.
+- ~~**S — Verify the `GoBack` dead-code claim.**~~ **DONE 2026-11-21
+  (W4-d85 doc-sweep lane 30)**: the full `decompiled/` + `decompiled-libs/`
+  sweep for `.GoBack()` finds 8 call sites, all UIState-own methods
+  (`UICharacterCreation.cs:1207/:2378`, `UIWorldCreation.cs:667/:1375`,
+  `UIWorldCreationAdvanced.cs:472/:530`,
+  `UIWorldCreationAdvancedSecretSeedsList.cs:383/:410`); zero callers of
+  `UserInterface.GoBack` (`UserInterface.cs:305-313`) — the `_history`
+  list is write-only in 1.4.5.8. Evidence recorded in `pointer.rs:6-15`.
+- ~~**M — Port margins into `uistate::resolve`.**~~ **DONE (REFRESH
+  2026-11-21): d87 `75009f973`** — `resolve_with_margins` inflates before
+  align, shrinks after; `resolve` delegates at 0 margins bit-identically.
+  Deviation 1 closed for future callers.
 - ✅ **M — Model the `UIList` ∞-height parent.** DONE 2026-11-13
   (`S1-H-2-uilst-scissor`): `uistate::resolve_in_list` sets
   `parent[3] = f32::POSITIVE_INFINITY` (`UIElement.cs:288-291`), tested by
@@ -361,3 +453,21 @@ fns across 31 files (framework-relevant subset):
   wire `app/frame.rs`'s HUD passes through the table so draw order is data, not
   code, and apply the per-layer zoom matrices. Prerequisite for any screen that
   must draw between existing HUD layers.
+- ~~**M — `UIWorldCreationAdvanced` + secret-seeds list** (ROADMAP:953)~~
+  **DONE 2026-11-20 (W4-d85 rows 11-12)**: `ui/world_creation_advanced.rs`
+  + `ui/secret_seeds_list.rs` immediate ports; the option rows derive
+  arithmetically (the `UIList` ∞-height seed landed). The Everything
+  icon's glitch animation landed 2026-11-21 (doc-sweep lane 30).
+- ~~**L — Screens with no counterpart:** `UIManageControls` …
+  `UICreativePowersMenu`. `UIWorkshop*` / `UIResourcePack*` should be
+  scoped out (Steam-only)~~ **DONE (REFRESH 2026-11-21)**: UIManageControls
+  → d86 `21fab7274`, UICreativePowersMenu → c24 `ff99f1486`, the
+  Workshop/ResourcePack cluster → d84 `ba7e8f94a` (the no-Steam VIEWS
+  ported; the Steam I/O stays excluded, research/38's rows updated).
+  The only unported screens left are the two d86 scope-outs
+  (UIWorldGenDebug/UITextWrappingTest) — research/112 §5's final table.
+- ~~**L — Layer stack.**~~ **PARTIAL (REFRESH 2026-11-21): d87
+  `164cb7090`** — the named 43-layer list (`Main.cs:44718-44918`) + the
+  stop-on-false walk + the `InterfaceScaleType` spaces landed as data;
+  the per-layer zoom-matrix application to the draw passes stays the
+  follow-up (d87's own PARTIAL mark).

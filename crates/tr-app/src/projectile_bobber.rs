@@ -193,7 +193,7 @@ pub(crate) fn bobber_step(
         if p.ai[0] == 2.0 {
             p.ai[0] += 1.0;
             // `SoundID.Item17` (`:53699`) — the reel cue.
-            p.wants_sound = Some((2, 17, p.pos.x, p.pos.y, 0.0));
+            p.wants_sound = Some((2, 17, p.pos.x, p.pos.y, 0.0, 1.0));
             if !p.lava_wet && !p.honey_wet {
                 do_a_splash(p);
             }

@@ -37,6 +37,7 @@
 //! | `WaterDeath` / `LavaDeath` :508/:541 | `water_death` / `lava_death` |
 //! | `UsesCustomCanPlace` / `UsesGlobalLiquidChecks` :144/:157 | `uses_custom_can_place` / `uses_global_liquid_checks` |
 //! | `GetStyleOverride` :728 | `get_style_override` + [`resolve_tile_def`] (the frameY consumer, W4-d112) |
+//! | `GetStyleOverride` :728 | `get_style_override` (tag) + [`get_tile_data_for_tile`] resolution |
 //! | `HookCheckIfCanPlace` / `HookPlaceOverride` / `HookPostPlaceMyPlayer` | `hook_check_if_can_place` / `hook_place_override` / `hook_post_place_my_player` |
 //! | `CoordinateHeights` :1417 | `coordinate_heights` |
 //! | `CoordinateWidth` :1503 / `CoordinatePadding` :1537 | `coordinate_width` / `coordinate_padding` |
@@ -69,6 +70,12 @@
 //!   kill-cascade anchor lookup keep their base-def frame math (their C#
 //!   counterparts are the `WorldGen.Check*` loops, not this overload); the
 //!   framing/liquid-death consumers wire in with their own tasks.
+//! - **~~`GetStyleOverride` resolution~~ — DONE (W4-e11):** the frameY-based
+//!   `GetTileData(Tile)` overload :5196-5261 is [`get_tile_data_for_tile`],
+//!   with the `GetStyle_Detritus/SmallPiles/Stalactite` arms (:5294-5327),
+//!   the `TryGetTileBounds` caller (:5163-5194) and the tile-based
+//!   `CheckWaterDeath`/`CheckLavaDeath` (:5083-5119). The `Liquid.cs:1190`
+//!   settlement kill wiring is the liquid task's seam.
 //! - **`onlyCheck`/preview** (`TileObjectPreviewData.placementCache`,
 //!   `objectPreview`, the anchor `Rectangle` bookkeeping TileObject.cs:219-321):
 //!   dead code when `onlyCheck=false` (verified by reading; the rectangle and
@@ -112,6 +119,8 @@ pub use registry::{BY_KIND, FRAME_IMPORTANT, KILL_TILE_NO_CELL_DROP, TABLE};
 /// implementations :5294-5327). The frameY-based resolution is the tile-based
 /// `GetTileData(Tile)` overload (:5196-5261), ported as [`resolve_tile_def`]
 /// (W4-d112, S1-F-7 wave B); the tag itself is generated data.
+/// `GetTileData(Tile)` overload (:5196-5261) — ported as
+/// [`get_tile_data_for_tile`] (W4-e11).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum GetStyleOverride {
     #[default]
@@ -539,9 +548,10 @@ pub fn kill_tile_no_cell_drop(kind: u16) -> bool {
 }
 
 /// `TileObjectData.GetTileData(type, style, alternate)` for an already-resolved
-/// tile def (`TileObjectData.cs:5126-5194`): `style` picks a sub-tile,
+/// tile def (`TileObjectData.cs:5126-5161`): `style` picks a sub-tile,
 /// `alternate - 1` indexes the alternates (`alternate = 0` → the def itself,
-/// which is how the `CanPlace` loop addresses the base def).
+/// which is how the `CanPlace` loop addresses the base def); an out-of-range
+/// alternate keeps the resolved def (W4-e12, :5150-5159).
 pub fn get_tile_data(
     def: &'static TileObjectDef,
     style: i32,
@@ -561,10 +571,18 @@ pub fn get_tile_data(
     {
         resolved = sub;
     }
-    // :5148-5157 — `alternate--`, then index the alternates.
+    // :5148-5157 — `alternate--`, then index the alternates. C# replaces the
+    // def ONLY with a non-null in-range entry; a null slot or an index past
+    // the list KEEPS the current def (:5152-5159). W4-e12: the old `?` here
+    // answered None on an out-of-range alternate — a divergence for the
+    // `TileObject.Place`/`DrawPreview` callers that carry an arbitrary
+    // `alternate` (the `CanPlace` loop only ever passes 0..=AlternatesCount,
+    // :203-208, so it never noticed).
     let alt = alternate - 1;
     if alt >= 0 {
-        resolved = resolved.alternates.get(alt as usize)?;
+        if let Some(a) = resolved.alternates.get(alt as usize) {
+            resolved = a;
+        }
     }
     Some(resolved)
 }
@@ -618,6 +636,201 @@ pub fn try_get_tile_bounds(
     }
     // :5191-5193 — the bounds are the object's tile extents.
     Some((bx, by, def.width, def.height))
+
+}
+/// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
+/// frameY/frameX-based style RESOLUTION consumer of the registry (the tile
+/// counterpart of the index-based [`get_tile_data`]). The frame pair decodes
+/// a style index through `CoordinateFullWidth/Height`, `StyleWrapLimit`,
+/// `StyleHorizontal` and `StyleMultiplier`; a `GetStyleOverride` tag wins
+/// over that decode, `StyleLineSkip > 1` re-decodes, then `SubTiles[style]`
+/// narrows and the alternates' `[Style, Style + RandomStyleRange]` bands
+/// answer. W4-e11 (the d111-researched "open half").
+pub fn get_tile_data_for_tile(tile: &Tile) -> Option<&'static TileObjectDef> {
+    // :5198-5201 — a null/inactive tile answers null (the port's Option-tile
+    // callers pass a live `&Tile`, so only the active flag gates).
+    if !tile.active() {
+        return None;
+    }
+    // :5202-5211 — `_data[type]`; an out-of-range type throws in C# (a
+    // corrupt save), the port answers None like an unregistered kind.
+    let base = def_for_tile(tile.kind)?;
+    resolve_from_frames(base, tile)
+}
+
+/// The :5212-5260 body of [`get_tile_data_for_tile`] — the frame decode and
+/// sub-tile/alternate walk over an already-looked-up base def (split out so
+/// synthetic defs can pin the branches the generated table never combines).
+/// `None` only from an override arm whose `SubTiles[i]` slot is null (the
+/// C# returns the null element; every generated override def has the slot).
+fn resolve_from_frames(
+    base: &'static TileObjectDef,
+    tile: &Tile,
+) -> Option<&'static TileObjectDef> {
+    // :5212-5221 — the frame decode. `frame_x`/`frame_y` are i16 in the port
+    // (C# short); the division truncates exactly like C#.
+    let num = tile.frame_x as i32 / base.coordinate_full_width();
+    let num2 = tile.frame_y as i32 / base.coordinate_full_height();
+    let wrap = if base.style_wrap_limit == 0 {
+        1
+    } else {
+        base.style_wrap_limit
+    };
+    let num4 = if base.style_horizontal {
+        num2 * wrap + num
+    } else {
+        num * wrap + num2
+    };
+    let mut style = num4 / base.style_multiplier;
+    let mut remainder = num4 % base.style_multiplier;
+    // :5222-5226 — the override delegate short-circuits the whole walk.
+    match base.get_style_override {
+        GetStyleOverride::None => {}
+        // GetStyle_Detritus (:5294-5301): frameY >= 36 -> SubTiles[0].
+        GetStyleOverride::Detritus => {
+            return if tile.frame_y >= 36 {
+                subtile_at(base, 0)
+            } else {
+                Some(base)
+            };
+        }
+        // GetStyle_SmallPiles (:5303-5310): frameY >= 18 -> SubTiles[0].
+        GetStyleOverride::SmallPiles => {
+            return if tile.frame_y >= 18 {
+                subtile_at(base, 0)
+            } else {
+                Some(base)
+            };
+        }
+        // GetStyle_Stalactite (:5312-5327): frameY >= 90/72/36 ->
+        // SubTiles[2/1/0].
+        GetStyleOverride::Stalactite => {
+            let idx = if tile.frame_y >= 90 {
+                2
+            } else if tile.frame_y >= 72 {
+                1
+            } else if tile.frame_y >= 36 {
+                0
+            } else {
+                return Some(base);
+            };
+            return subtile_at(base, idx);
+        }
+    }
+    // :5227-5240 — StyleLineSkip > 1 re-decodes from the line grid.
+    let skip = base.style_line_skip;
+    if skip > 1 {
+        if base.style_horizontal {
+            style = num2 / skip * wrap + num;
+            remainder = num2 % skip;
+        } else {
+            style = num / skip * wrap + num2;
+            remainder = num % skip;
+        }
+    }
+    // :5241-5248 — SubTiles[style] when present (null-padded list in C#; the
+    // port stores the non-null (style, def) pairs — a null slot keeps the
+    // current def, exactly like the C# null check).
+    let mut resolved = base;
+    if style >= 0 {
+        if let Some(sub) = subtile_at(base, style) {
+            resolved = sub;
+        }
+    }
+    // :5249-5258 — the resolved def's alternates answer on the remainder band
+    // `[Style, Style + RandomStyleRange]` (inclusive both ends).
+    for alt in resolved.alternates {
+        if remainder >= alt.style && remainder <= alt.style + alt.random_style_range {
+            return Some(alt);
+        }
+    }
+    Some(resolved)
+}
+
+/// The `SubTiles[index]` lookup shared by [`get_tile_data_for_tile`] and the
+/// override arms — the C# null-padded list indexed directly; the port's
+/// (style, def) pairs answer None for a null slot.
+fn subtile_at(def: &'static TileObjectDef, index: i32) -> Option<&'static TileObjectDef> {
+    def.subtiles
+        .iter()
+        .find(|(style, _)| *style as i32 == index)
+        .map(|(_, sub)| *sub)
+}
+
+/// `TileObjectData.TryGetTileBounds` (`TileObjectData.cs:5163-5194`) — the
+/// object bounding box a cell belongs to, through the frame-resolved def
+/// ([`get_tile_data_for_tile`]): the frame remainder walks back left over
+/// `CoordinateWidth` columns and up over the `CoordinateHeights` rows.
+/// `None` for an inactive/unregistered cell (the C# `false` + 1x1 default).
+pub fn try_get_tile_bounds(world: &World, x: i32, y: i32) -> Option<TileBounds> {
+    let tile = world.tile(x, y)?;
+    let def = get_tile_data_for_tile(tile)?;
+    // :5172-5175 — the full-object grid index and the in-object remainder.
+    let full_w = def.coordinate_full_width();
+    let full_h = def.coordinate_full_height();
+    let num = tile.frame_x as i32 / full_w;
+    let num2 = tile.frame_y as i32 / full_h;
+    let mut num3 = tile.frame_x as i32 - num * full_w;
+    let mut num4 = tile.frame_y as i32 - num2 * full_h;
+    let mut bounds = TileBounds {
+        x,
+        y,
+        width: 1,
+        height: 1,
+    };
+    // :5176-5181 — walk left over the coordinate columns.
+    while num3 >= def.coordinate_width {
+        num3 -= def.coordinate_width;
+        bounds.x -= 1;
+    }
+    // :5182-5190 — walk up over the coordinate rows.
+    for h in def.coordinate_heights {
+        if num4 >= *h {
+            num4 -= h;
+            bounds.y -= 1;
+        }
+    }
+    // :5191-5192 — the resolved def's object size.
+    bounds.width = def.width;
+    bounds.height = def.height;
+    Some(bounds)
+}
+
+/// The `Rectangle` out-parameter of [`try_get_tile_bounds`]
+/// (`TileObjectData.cs:5165`, `System.Drawing.Rectangle` x/y/width/height).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// `TileObjectData.CheckWaterDeath(Tile)` (`TileObjectData.cs:5083-5095`) —
+/// the frame-resolved def's `WaterDeath`, or the global `Main.tileWaterDeath`
+/// table when no def resolves / the def uses global checks. Read by the
+/// liquid settlement kill (`Liquid.cs:1195`) and the rain kill
+/// (`WorldGen.cs:72930`).
+pub fn check_water_death(tile: &Tile) -> bool {
+    if !tile.active() {
+        return false;
+    }
+    match get_tile_data_for_tile(tile) {
+        Some(def) if !def.uses_global_liquid_checks => def.water_death,
+        _ => TILE_WATER_DEATH.contains(&tile.kind),
+    }
+}
+
+/// `TileObjectData.CheckLavaDeath(Tile)` (`TileObjectData.cs:5107-5119`) —
+/// the lava twin, read by `Liquid.cs:1190` and `WorldGen.cs:80439`.
+pub fn check_lava_death(tile: &Tile) -> bool {
+    if !tile.active() {
+        return false;
+    }
+    match get_tile_data_for_tile(tile) {
+        Some(def) if !def.uses_global_liquid_checks => def.lava_death,
+        _ => crate::tiledata::TILE_LAVA_DEATH.has(tile.kind),
+    }
 }
 /// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
 /// frame-based resolution consumer (W4-d112, S1-F-7 wave B): decodes the
@@ -2751,8 +2964,80 @@ mod tests {
         assert_eq!(get_tile_data(&WITH_SUBS, 5, 0).unwrap().height, 7);
         // alternate - 1 indexes the alternates of the resolved def.
         assert_eq!(get_tile_data(&WITH_SUBS, 0, 1).unwrap().height, 9);
-        // An alternate index past the list -> None.
-        assert!(get_tile_data(&WITH_SUBS, 0, 2).is_none());
+        // An alternate index past the list KEEPS the resolved def
+        // (:5150-5159, W4-e12 — the old port answered None here).
+        assert_eq!(get_tile_data(&WITH_SUBS, 0, 2).unwrap().height, 1);
+        // The sub-tile carries NO alternates: an out-of-range alternate
+        // keeps the SUB-TILE, not the base (:5141-5148 runs first).
+        assert_eq!(get_tile_data(&WITH_SUBS, 5, 1).unwrap().height, 7);
+    }
+
+    /// W4-e12 — the alternate tail of `GetTileData(int,int,int)`
+    /// (`TileObjectData.cs:5150-5159`) on the REAL registry: a non-null
+    /// in-range entry replaces the def, anything else keeps it. The
+    /// consumers are `TileObject.Place` (:31, arbitrary `toBePlaced.alternate`)
+    /// and `DrawPreview` (:859); the `CanPlace` loop (:203-208) only passes
+    /// 0..=AlternatesCount, which is why the old None-on-overflow never bit.
+    #[test]
+    fn test_w4_e12_alternate_overflow_keeps_the_resolved_def() {
+        // Chair 15: base 1 alternate (A1, height 2), sub-tile S16 carries
+        // its OWN single alternate (registry D_15_S16_A1).
+        let chair = def_for_tile(15).unwrap();
+        assert_eq!(chair.alternates.len(), 1);
+        let s16 = chair
+            .subtiles
+            .iter()
+            .find(|(s, _)| *s == 16)
+            .unwrap()
+            .1;
+        assert_eq!(s16.alternates.len(), 1);
+        // In range: the alternate replaces (:5154-5158).
+        assert!(std::ptr::eq(
+            get_tile_data(chair, 0, 1).unwrap(),
+            &chair.alternates[0]
+        ));
+        assert!(std::ptr::eq(
+            get_tile_data(chair, 16, 1).unwrap(),
+            &s16.alternates[0]
+        ));
+        // Past the list: the resolved def stands (base / sub-tile).
+        for alt in [2, 7, i32::MAX] {
+            assert!(std::ptr::eq(get_tile_data(chair, 0, alt).unwrap(), chair));
+            assert!(std::ptr::eq(get_tile_data(chair, 16, alt).unwrap(), s16));
+        }
+        // alternate 0 and negatives: `alternate--` < 0 skips the list
+        // entirely (:5150-5152).
+        for alt in [0, -1, -9] {
+            assert!(std::ptr::eq(get_tile_data(chair, 0, alt).unwrap(), chair));
+        }
+        // Table 14: base alternates EMPTY, sub-tiles 13/25 carry none —
+        // every alternate index keeps the resolved node.
+        let table = def_for_tile(14).unwrap();
+        assert!(table.alternates.is_empty());
+        let s13 = table.subtiles.iter().find(|(s, _)| *s == 13).unwrap().1;
+        assert!(std::ptr::eq(get_tile_data(table, 0, 3).unwrap(), table));
+        assert!(std::ptr::eq(get_tile_data(table, 13, 3).unwrap(), s13));
+    }
+
+    /// W4-e12 — the consumer end of the overflow fix: `TileObject.Place`
+    /// (`TileObject.cs:31-35`) resolves through `get_tile_data` with the
+    /// instance's arbitrary `alternate`; an overflow keeps the def, so the
+    /// placement RUNS (the old None refused it before any world write).
+    #[test]
+    fn test_w4_e12_place_rides_the_alternate_overflow() {
+        let w = world();
+        let chair = def_for_tile(15).unwrap();
+        // Facing left keeps the base def (alternate 0).
+        let mut obj = must_place(&w, 10, 19, chair, -1);
+        assert_eq!(obj.alternate, 0);
+        let mut w_ok = world();
+        obj.alternate = 5; // past the 1-entry list -> the base def stands.
+        assert!(place(&mut w_ok, &obj));
+        // Byte-equal to the alternate-0 placement (same resolved def).
+        let mut w_ref = world();
+        obj.alternate = 0;
+        assert!(place(&mut w_ref, &obj));
+        assert_eq!(w_ok.tiles, w_ref.tiles);
     }
 
     // ---- W4-d113: TryGetTileBounds coordinate walk (TileObjectData.cs:5163-5194)
@@ -2904,6 +3189,109 @@ mod tests {
             None
         }
         assert_eq!(try_get_tile_bounds(&w, 10, 10, none_seam), None);
+    }
+
+    // ---- W4-e11: the tile-based GetTileData(Tile) resolution (:5196-5261) ----
+
+    /// An active tile of `kind` with the given frames (the resolution reads
+    /// only `active`/`kind`/`frame_x`/`frame_y`).
+    fn framed_tile(kind: u16, frame_x: i16, frame_y: i16) -> Tile {
+        Tile {
+            kind,
+            frame_x,
+            frame_y,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_w4_e11_horizontal_line_skip_redecode() {
+        // No generated def combines StyleHorizontal with StyleLineSkip > 1
+        // (the 27 skip defs are all vertical doors/plates), so the :5230-5234
+        // horizontal arm is pinned synthetically: wrap 3, skip 2, 18-px grid.
+        static SUB4: TileObjectDef = TileObjectDef {
+            height: 7,
+            ..base_def()
+        };
+        static HSKIP: TileObjectDef = TileObjectDef {
+            coordinate_width: 16,
+            coordinate_padding: 2,
+            style_horizontal: true,
+            style_wrap_limit: 3,
+            style_line_skip: 2,
+            subtiles: &[(4u16, &SUB4)],
+            ..base_def()
+        };
+        // fx 18 -> num 1; fy 54 -> num2 3. The pre-skip decode would be
+        // num4 = 3*3+1 = 10 (style 10); the skip re-decode (:5232-5233) is
+        // style = 3/2*3 + 1 = 4, remainder = 3%2 = 1 -> SubTiles[4].
+        let t = framed_tile(0, 18, 54);
+        let r = resolve_from_frames(&HSKIP, &t).unwrap();
+        assert!(std::ptr::eq(r, &SUB4));
+        // fy 36 -> num2 2: style = 2/2*3+1 = 4 again, remainder 0.
+        let t = framed_tile(0, 18, 36);
+        assert!(std::ptr::eq(resolve_from_frames(&HSKIP, &t).unwrap(), &SUB4));
+        // fy 18 -> num2 1: style = 1/2*3+1 = 1 (no sub), remainder 1.
+        let t = framed_tile(0, 18, 18);
+        assert!(std::ptr::eq(resolve_from_frames(&HSKIP, &t).unwrap(), &HSKIP));
+    }
+
+    #[test]
+    fn test_w4_e11_null_subtile_slot_keeps_the_def() {
+        // The C# SubTiles list is null-padded (:5241-5247 keeps the current
+        // def on a null slot); the port's (style, def) pairs model that.
+        static SUB5: TileObjectDef = TileObjectDef {
+            height: 7,
+            ..base_def()
+        };
+        static SPARSE: TileObjectDef = TileObjectDef {
+            coordinate_width: 16,
+            coordinate_padding: 2,
+            style_horizontal: true,
+            subtiles: &[(5u16, &SUB5)],
+            ..base_def()
+        };
+        // fx 36 -> num4 = 2 (wrap 0 -> 1): a null slot -> the base def.
+        let t = framed_tile(0, 36, 0);
+        assert!(std::ptr::eq(resolve_from_frames(&SPARSE, &t).unwrap(), &SPARSE));
+        // fx 90 -> num4 = 5 -> the sub-tile.
+        let t = framed_tile(0, 90, 0);
+        assert!(std::ptr::eq(resolve_from_frames(&SPARSE, &t).unwrap(), &SUB5));
+    }
+
+    #[test]
+    fn test_w4_e11_alternate_band_is_inclusive_both_ends() {
+        // :5254 — `num6 >= Style && num6 <= Style + RandomStyleRange`.
+        static ALT: TileObjectDef = TileObjectDef {
+            style: 1,
+            random_style_range: 1,
+            height: 9,
+            ..base_def()
+        };
+        static BANDED: TileObjectDef = TileObjectDef {
+            coordinate_width: 16,
+            coordinate_padding: 2,
+            style_horizontal: true,
+            style_multiplier: 3,
+            alternates: &[ALT],
+            ..base_def()
+        };
+        // remainder 0 -> below the band -> base; 1 and 2 -> the alternate.
+        for (fx, want_alt) in [(0i16, false), (18, true), (36, true), (54, false)] {
+            let t = framed_tile(0, fx, 0);
+            let r = resolve_from_frames(&BANDED, &t).unwrap();
+            assert_eq!(std::ptr::eq(r, &ALT), want_alt, "fx {fx}");
+        }
+    }
+
+    #[test]
+    fn test_w4_e11_inactive_and_unregistered_answer_none() {
+        // :5198-5201 inactive -> null; :5207-5211 unregistered -> null.
+        let mut t = framed_tile(165, 0, 90);
+        t.flags &= !FLAG_ACTIVE;
+        assert!(get_tile_data_for_tile(&t).is_none());
+        assert!(get_tile_data_for_tile(&framed_tile(1, 0, 0)).is_none());
     }
 
     #[test]

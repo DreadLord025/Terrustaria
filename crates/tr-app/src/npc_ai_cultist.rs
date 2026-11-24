@@ -1,11 +1,11 @@
 //! The Lunatic Cultist's machine — `NPC.AI_084_LunaticCultist`
 //! (`NPC.cs:64414-65388`), aiStyle 84, `NPCID.CultistBoss` (439) +
-//! `NPCID.CultistBossClone` (440) — the census B-3 MAJOR GAP (the live
-//! `npc.rs::update_lunatic_cultist` is a 35-line spawn-in stub vs the
-//! 976-line C# machine). S1-D-3 cultist, **code-only mode**: pure fns
-//! over a local state struct + Ctx/Effects seams, UNWIRED (the
-//! `npc_ai_fishron.rs` precedent, ad41a646); the live stub stays
-//! byte-identical until the wiring round.
+//! `NPCID.CultistBossClone` (440) — the census B-3 MAJOR GAP (the old
+//! `npc.rs::update_lunatic_cultist` was a 35-line spawn-in stub vs the
+//! 976-line C# machine). S1-D-3 cultist, **W4-c1 WIRED**: the aiStyle-84
+//! axis arm (`npc.rs::ai_084_cultist`) runs `cultist_ai_step` for the
+//! 439 boss over an EMPTY clone view (kind 440 has no port kind — the
+//! solo path); the old stub is retired.
 //!
 //! Identity census (`ID/NPCID.cs`): `CultistBoss = 439` (:11553),
 //! `CultistBossClone = 440` (:11555), `CultistTablet = 437` (:11549) /
@@ -88,8 +88,8 @@
 //!   obligations, cited here so the census gap is fully mapped.
 //! When `ai[0]` holds a deferred state the step reports it on
 //! `CultistOut::deferred_state` and leaves the state untouched (the
-//! module is UNWIRED; the selector can still pick those attacks —
-//! the wiring must not claim the dispatch until 4/7/8 land).
+//! W4-c1 solo wiring rides this: the selector can still pick those
+//! attacks — states 4/7/8 stay deferred until they land).
 //!
 //! **RNG by construction** — every `Main.rand` draw in the ported
 //! scope, in stream order (the port consumes the sound-gate draws
@@ -141,7 +141,7 @@
 //!   440 at `Bottom = (X, Y)` (`NPC.cs:80770`) — the request's Y is
 //!   already `(int)center6.Y + height / 2` (INTEGER half, `:65119`).
 
-#![allow(dead_code)] // wiring deferred (S1-D-3 cultist, code-only mode)
+#![allow(dead_code)] // the 440-clone seams await kind 440 (W4-c1 solo wiring)
 
 use crate::npc_ai_style37::{attack_damage_for_projectiles, rotated_by};
 use tr_core::unified_random::UnifiedRandom;

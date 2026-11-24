@@ -12,6 +12,8 @@ pub(crate) mod empress_draw;
 pub(crate) mod foliage;
 pub(crate) mod gore;
 pub(crate) mod liquids;
+pub(crate) mod multi_tile_grass;
+pub(crate) mod multi_tile_vines;
 pub(crate) mod player_layers;
 pub(crate) mod pylons;
 pub(crate) mod ropes;
@@ -37,6 +39,11 @@ pub(crate) mod tile_ctor;
 // drains run PLAN-ONLY at the C# PostDrawTiles position in tiles.rs
 // (UNION-CONTRACT-tilepass §8); the pixel-binding merge is §8's script.
 pub(crate) mod tile_attach;
+// W4-d57: UNWIRED TE-furniture draw slice (the 395/520/471 legacy arms +
+// the Part1 anchor collection + the ItemSlot icon colour chain) — the
+// draw_tiles seam is contested by the in-flight tile-draw siblings; wiring
+// is the family's merge step.
+pub(crate) mod te_furniture;
 pub(crate) mod tile_cracks;
 // W4-g29 pass 2: UNWIRED Draw orchestration (prologue/loop bounds/black
 // strips/epilogue/PostDrawTiles order) — the draw_tiles seam is contested

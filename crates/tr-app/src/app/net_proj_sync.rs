@@ -133,8 +133,9 @@ fn state_of(pool: &ProjectilePool, slot: usize) -> net::ProjectileState {
 
 /// `flag3` (`NetMessage.cs:1777`): the section-culling exemption —
 /// `type == 12 || Main.projPet[type] || aiStyle == 11 || netImportant`.
-/// `proj_pet` is a parameter because `Main.projPet` has no port table yet;
-/// the caller passes the pet flag once it lands (false today).
+/// `proj_pet` is a parameter so the pure tests can pin each leg; the live
+/// callers pass `crate::projectile::proj_pet(kind)` (the verbatim
+/// `Main.projPet` table, `Main.cs:8728-8852` — W4-g52).
 pub(crate) fn sync_ignores_sections(
     kind: u16,
     proj_pet: bool,
@@ -171,9 +172,10 @@ impl ProjSync {
         // A flag3 projectile clears its skipped flags on every broadcast
         // (`NetMessage.cs:1779-1781`); a fresh slot has none set, but the
         // recycled index may carry stale flags from its previous occupant.
+        // W4-g52: the `projPet` table landed (`Main.cs:8728-8852`).
         let p = &pool.slots()[slot];
         let ai_style = proj_data(p.kind).map_or(255, |d| d.ai_style);
-        if sync_ignores_sections(p.kind, false, ai_style, p.net_important) {
+        if sync_ignores_sections(p.kind, crate::projectile::proj_pet(p.kind), ai_style, p.net_important) {
             self.slots[slot].sync_skipped = [false; 255];
         }
         Some(ProjSend::Sync(state_of(pool, slot)))
@@ -330,7 +332,8 @@ impl ProjSync {
     ) {
         let p = &pool.slots()[slot];
         let ai_style = proj_data(p.kind).map_or(255, |d| d.ai_style);
-        if sync_ignores_sections(p.kind, false, ai_style, p.net_important) {
+        // W4-g52: the `projPet` table landed (`Main.cs:8728-8852`).
+        if sync_ignores_sections(p.kind, crate::projectile::proj_pet(p.kind), ai_style, p.net_important) {
             self.slots[slot].sync_skipped = [false; 255];
             return;
         }
@@ -346,6 +349,35 @@ impl ProjSync {
     /// is unguarded at the site — only `SendData`'s netMode gate applies).
     pub(crate) fn despawn_mark_applies(ai_style: u8, hostile: bool) -> bool {
         ai_style == 16 && !hostile
+    }
+
+    /// W4-g52 — one player's skipped flag (`Projectile.cs:386`'s
+    /// `netSyncSkippedForPlayer[i]`). The `27` relay's ignoreClient leg
+    /// (`NetMessage.cs:1784`) never touches the sender's flag, so the
+    /// netglue caller snapshots/restores it around `note_broadcast`.
+    pub(crate) fn skipped_for(&self, slot: usize, player: u8) -> bool {
+        self.slots
+            .get(slot)
+            .and_then(|sn| sn.sync_skipped.get(player as usize).copied())
+            .unwrap_or(false)
+    }
+
+    /// W4-g52 — restore one player's skipped flag (the ignoreClient leg).
+    pub(crate) fn set_skipped_for(&mut self, slot: usize, player: u8, v: bool) {
+        if let Some(sn) = self.slots.get_mut(slot) {
+            if let Some(f) = sn.sync_skipped.get_mut(player as usize) {
+                *f = v;
+            }
+        }
+    }
+
+    /// W4-g52 — the whole skipped-flag row, for the not-connected legs the
+    /// `:1784` continue skips before the flag write (`:1792`/`:1795`).
+    pub(crate) fn skipped_snapshot(&self, slot: usize) -> [bool; 255] {
+        self.slots
+            .get(slot)
+            .map(|sn| sn.sync_skipped)
+            .unwrap_or([false; 255])
     }
 
     /// The AI immediate sites (`Projectile.cs:23744`/`:23760`/`:23780`,

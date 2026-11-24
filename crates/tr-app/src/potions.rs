@@ -840,7 +840,20 @@ pub fn undo_slow_magic_use(app: &mut App) {
 /// 4529`): the player hitbox rect, the HealLife colour, the UpdatePlayers
 /// stream. Shared by the ItemCheck and quick-use paths. Reads the player
 /// coords into locals first so the pool/rng borrows stay disjoint.
+/// `pub(crate)` since W4-f37: the nurse's paid heal (`Main.cs:40112`)
+/// spawns through the same seam — its click runs OUTSIDE every swap, so
+/// the caller passes the stream ([`spawn_heal_text_on`]).
 fn spawn_heal_text(app: &mut App, amount: i32) {
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    spawn_heal_text_on(app, amount, rng);
+}
+
+/// [`spawn_heal_text`] with the caller's stream — the nurse-heal click
+/// (`NPCChatText_DoNurseHeal`, `Main.cs:40112`) draws the two
+/// `CombatText.NewText` position jitters (`CombatText.cs:88-89`) on the
+/// bare-`Main.rand` stand-in (`app.rngs.global()`, the S1-A-11 §4
+/// click convention), NOT the UpdatePlayers swap.
+pub(crate) fn spawn_heal_text_on(app: &mut App, amount: i32, rng: &mut tr_core::UnifiedRandom) {
     let Some(p) = app.player.as_ref() else {
         return;
     };
@@ -856,7 +869,6 @@ fn spawn_heal_text(app: &mut App, amount: i32) {
         width: crate::player::WIDTH,
         height,
     };
-    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
     crate::combat_text::spawn_amount(
         &mut app.combat_texts,
         location,

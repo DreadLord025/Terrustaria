@@ -207,6 +207,16 @@ pub(crate) fn advance_time_with_events(
         }
         crate::world_events::check_morning_lanterns(&mut app.world_events);
     }
+    // W4-g52 audit — the boundary `SendData(7)` re-pushes
+    // (`UpdateTime_StartNight` `Main.cs:65358-65361`, `UpdateTime_StartDay`
+    // `:65406-65409`, both `netMode == 2` only): the header carries the new
+    // day flag + the cleared event flags to every client. The send rides
+    // AFTER the eclipse/blood-moon clears above — the C# `stopMoonEvent`
+    // (`:65246`/`:65392`) runs before its `SendData(7)`, so a stale event
+    // flag must never ride the boundary header (the dusk witness pins it).
+    if was_day != app.world.day_time {
+        app.net_world_repush();
+    }
     (blood_moon_started, eclipse_started)
 }
 
@@ -227,14 +237,28 @@ pub(crate) fn update_taxes(world: &mut tr_core::World, day_rate: i32) {
 
 /// `Player.CollectTaxes` (`Player.cs:24129-24155`): 50 copper per housed,
 /// living, non-pet town NPC per collection, capped at 25 gold
-/// (`Item.buyPrice(0, 25)`).
+/// (`Item.buyPrice(0, 25)`). On the tenth-anniversary world BOTH the
+/// per-payer rate and the cap double (`:24133-24137`:
+/// `num2 *= 2; num *= 2;` under `Main.tenthAnniversaryWorld` — the port's
+/// `SeedFlags::TENTH_ANNIVERSARY`, the `world_sim/editing.rs:756` feed).
+/// The `>= cap` early return (`:24138`) reads the DOUBLED cap, and the
+/// post-add clamp (`:24151-24153`) is the strict `>` compare.
 pub(crate) fn collect_taxes(world: &mut tr_core::World) {
-    if !world.tax_collector || world.tax_money >= crate::world_sim::npcs::TAX_CAP {
+    // `:24131-24137` — the rate/cap pair, doubled on the anniversary seed.
+    let (mut rate, mut cap) = (50, crate::world_sim::npcs::TAX_CAP);
+    if world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+    {
+        cap *= 2;
+        rate *= 2;
+    }
+    if !world.tax_collector || world.tax_money >= cap {
         return;
     }
-    world.tax_money += 50 * world.tax_payers;
-    if world.tax_money > crate::world_sim::npcs::TAX_CAP {
-        world.tax_money = crate::world_sim::npcs::TAX_CAP;
+    world.tax_money += rate * world.tax_payers;
+    if world.tax_money > cap {
+        world.tax_money = cap;
     }
 }
 
@@ -668,5 +692,42 @@ mod tests {
         advance_time_with_events(&mut app, 5.0, false);
         assert!(app.world.day_time, "dawn ran");
         assert!(app.world_events.free_cake, "StartDay keeps the latch");
+    /// W4-f37 doc-sweep — `Player.CollectTaxes`'s anniversary pair
+    /// (`Player.cs:24133-24137`): on `Main.tenthAnniversaryWorld` BOTH the
+    /// 50-copper rate and the 25-gold cap double (`num2 *= 2; num *= 2;`).
+    /// The `>= cap` early return (`:24138`) and the strict `>` clamp
+    /// (`:24151-24153`) read the DOUBLED cap.
+    #[test]
+    fn the_anniversary_world_doubles_the_tax_rate_and_the_cap() {
+        // The plain world: 50 per payer, 250000 cap (the standing witness).
+        let mut w = World::new("t".into(), 8, 8);
+        w.tax_collector = true;
+        w.tax_payers = 3;
+        collect_taxes(&mut w);
+        assert_eq!(w.tax_money, 150, "3 x 50 on the plain world");
+        // The anniversary seed: 100 per payer.
+        let mut a = World::new("t".into(), 8, 8);
+        a.seeds |= tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY;
+        a.tax_collector = true;
+        a.tax_payers = 3;
+        collect_taxes(&mut a);
+        assert_eq!(a.tax_money, 300, "3 x 100 on the anniversary world");
+        // The doubled cap: a purse at the PLAIN cap still collects (the
+        // `>= cap` gate reads 500000), and the clamp lands on 500000.
+        a.tax_money = crate::world_sim::npcs::TAX_CAP; // 250000 < 500000
+        a.tax_payers = 100;
+        collect_taxes(&mut a);
+        assert_eq!(a.tax_money, 260000, "the plain cap is not the gate");
+        a.tax_money = 500_000 - 10;
+        collect_taxes(&mut a);
+        assert_eq!(a.tax_money, 500_000, "the doubled 50-gold cap holds");
+        let capped = a.tax_money;
+        collect_taxes(&mut a);
+        assert_eq!(a.tax_money, capped, "no collection past the doubled cap");
+        // The plain world's cap is untouched by the sibling's seed.
+        w.tax_money = crate::world_sim::npcs::TAX_CAP - 10;
+        w.tax_payers = 100;
+        collect_taxes(&mut w);
+        assert_eq!(w.tax_money, crate::world_sim::npcs::TAX_CAP);
     }
 }

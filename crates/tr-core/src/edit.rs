@@ -9,6 +9,7 @@ use crate::world::World;
 
 mod place;
 pub use place::{place_alch, place_item_tile, place_tile, place_tile_forced, place_torch};
+pub use place::{place_alch, place_chest, place_item_tile, place_tile, place_torch};
 mod wall;
 // S1-P-i33 — the wall-edit table (drop conversions, the FULL Main.wallHouse,
 // the smash gate, the unsafe→safe replacement). `can_player_smash_wall` lives
@@ -28,8 +29,8 @@ pub use hammer::{
 mod kill;
 pub use kill::{
     actuation_square_frame, can_kill_tile, kill_tile, kill_tile_sound, pot_break_sound,
-    square_tile_frame_default, HerbEvent, KillSounds, ObjectDrop, PileLootEvent, PotEvent,
-    SoundCue, TileKill, TreeDropEvent,
+    square_tile_frame_default, BulbSummonEvent, HerbEvent, KillSounds, ObjectDrop,
+    PileLootEvent, PotEvent, SoundCue, TileKill, TreeDropEvent,
 };
 pub(crate) use kill::{
     remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,

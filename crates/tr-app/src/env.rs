@@ -685,6 +685,28 @@ pin_num! {
 }
 
 pin_bool! {
+    /// `TR_DEBUG_COMMANDS`: `DebugOptions.enableDebugCommands`
+    /// (`Testing/DebugOptions.cs:8`) — the `/hh`/`/loadouts` chat commands
+    /// register only under it (`DebugCommandProcessor.cs:30-33`).
+    debug_commands,
+    "TR_DEBUG_COMMANDS"
+}
+
+pin_bool! {
+    /// `TR_DEBUG_COMMANDS_LIST`: opens `UIDebugCommandsList` on start (the
+    /// W4-d85 screenshot fixture; the vanilla opens on `/hh` only).
+    debug_commands_list_open,
+    "TR_DEBUG_COMMANDS_LIST"
+}
+
+pin_bool! {
+    /// `TR_DEBUG_LOADOUTS_LIST`: opens `UIDebugLoadoutsList` on start (the
+    /// W4-d85 screenshot fixture; the vanilla opens on `/loadouts` only).
+    debug_loadouts_list_open,
+    "TR_DEBUG_LOADOUTS_LIST"
+}
+
+pin_bool! {
     /// `TR_NOCRAFT=1` turns the crafting panel off (`TR_CRAFT=1` forces it back on).
     no_craft,
     "TR_NOCRAFT"

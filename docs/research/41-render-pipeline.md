@@ -241,7 +241,18 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
 - **D-10 — Linear-clamp sampling paths unavailable (pixel, low).** `SamplerState.LinearClamp`
   (`Main.cs:45025`, `48204`, `55613`) and `Main.SamplerStateForCursor` (`Main.cs:45257`)
   have no equivalent; the port's single nearest sampler is used everywhere.
-- **D-11 — Order-only batching ignores XNA's `Deferred` sort (pixel, medium).** The
+- **D-11 — Order-only batching ignores XNA's `Deferred` sort (pixel, medium).**
+  **MECHANISM LANDED 2026-11-20 (S1-G-11, `task/W4-d68-composite-order`, code-only —
+  tests written not run; UNARMED, frozen default byte-identical).** Correction to the
+  original framing: XNA's `Deferred` does **not** sort (it flushes in submission
+  order; only `Texture`/`BackToFront`/`FrontToBack` reorder and the sources use none
+  of them) — the vanilla composite order comes from `TileBatch`'s layered mode
+  (`Graphics/TileBatch.cs:421-439/485-536/672-725`), ported as
+  `tr-render/src/batch.rs` + `sprite.rs::reorder_layered` (the stable per-blend-run
+  sort by `(LayerStack<<16)|textureId`, stable per-sheet ids — ANALYSIS "The atlas
+  composite order (S1-G-11)"). The `TileDrawing` `SetLayer` arming waits on the
+  per-layer draw passes; until then all keys are 0 and the upload is unchanged. The
+  original text follows. The
   vanilla's `SpriteSortMode.Deferred` batches group sprites by texture and sort by
   depth within a batch; the port preserves push order into one buffer. For opaque
   content this is invisible; for overlapping translucent sprites (glass tiles,
@@ -319,8 +330,13 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   vanilla buckets they correspond to (module 02 owns the phase order; this owns the
   intra-range order), plus a note in `docs/ANALYSIS.md` on D-11 (Deferred sorting).
   Depends on nothing.
-- **L** — Reproduce the vanilla's *per-texture* batching semantics on top of the
-  atlas: group the instances by source sheet and flush one draw per sheet (or per
+- **L** — ~~Reproduce the vanilla's *per-texture* batching semantics on top of the
+  atlas~~ **mechanism consumed by S1-G-11 (2026-11-20, code-only)**: the sort-key
+  reorder (`batch.rs` + `reorder_layered`) reproduces `TileBatch`'s layered flush
+  without per-sheet draws — one draw per blend run stays. REMAINING: the
+  `TileDrawing` `SetLayer` arming (the per-layer draw passes) + the golden re-pin
+  when it lands. The original text follows. Group the instances by source sheet and
+  flush one draw per sheet (or per
   contiguous group) so the blend order matches `TileBatch`'s per-texture batches and
   XNA's `Deferred` grouping. This is the structural fix for D-3/D-11 and would also
   make the atlas packing irrelevant to ordering. Depends on the S blend test and the

@@ -139,7 +139,17 @@ fn kill_step(p: &mut Projectile, world: &World) {
 /// dust × 2 dusts — the `NextFloat` lerp, the `NextFloat` scale and the
 /// `SelectRandom` colour pick (`Next(2)`) — kept on the stream (the bodies
 /// skipped). The wet prime (`:30235-30238`) folds dry (no liquid-wet flag).
-pub(crate) fn molotov_step(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
+/// cocktail (399), then the `HandleMovement`-68 collision
+/// (`:19780-19786`). The 669 Ale-Throwing-Glove dust branch (`flag35`) is a
+/// different kind and stays out. Zero RNG (the `alpha==0` dust `:30191-30207`
+/// is skipped whole, its draws with it).
+pub(crate) fn molotov_step(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // `:30168` — `rotation += 0.25 * direction`.
     p.rot += 0.25 * p.direction as f32;
     // `:30169-30170` — the kind flags.
@@ -172,6 +182,13 @@ pub(crate) fn molotov_step(p: &mut Projectile, world: &World, rng: &mut dyn Drop
             let _ = rng.next_float(); // the 0.8 - NextFloat*0.2 scale
             let _ = rng.next_range(0, 2); // SelectRandom(white, gold)
         }
+    // `:30189-30207` — W4-g63: the 399's `alpha == 0` fire dust RE-ARMED
+    // (flag34; the 669's flag35 block is kind > 400, W4-g64's).
+    if p.alpha == 0 && p.kind == MOLOTOV_COCKTAIL {
+        crate::projectile_trail_dust::molotov_fire_dust(
+            &crate::projectile_trail_dust::TrailSlot::of(p),
+            p.rot, rng, dust, dust_ctx, world,
+        );
     }
     // `:30222` — `spriteDirection = direction`.
     p.sprite_direction = p.direction;
@@ -647,6 +664,23 @@ mod tests {
         World::new("t".into(), 64, 800)
     }
 
+    /// W4-g63 — the scratch dust seam (the `Npc::update_rng` convention):
+    /// a fresh pool + the permissive ctx, so the re-armed molotov fire
+    /// dust always lands. The state censuses below are unchanged.
+    fn scratch_dust(w: &World) -> (tr_core::particles::DustPool, tr_core::particles::SpawnCtx) {
+        (
+            tr_core::particles::DustPool::new(),
+            tr_core::particles::SpawnCtx {
+                game_menu: false,
+                game_paused: false,
+                generating: false,
+                screen_position: Vec2::ZERO,
+                screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+                max_dust_to_draw: 6000,
+            },
+        )
+    }
+
     /// The javelin (507) flies straight for 60 ticks, then falls 0.3/tick with
     /// the 0.98 X decay (`Projectile.cs:57473-57477`).
     #[test]
@@ -676,16 +710,18 @@ mod tests {
         p.pos = Vec2::new(500.0, 500.0);
         p.vel = Vec2::new(4.0, 0.0);
         p.direction = 1;
+        let (mut dust, dctx) = scratch_dust(&w);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
         // alpha starts 255; tick 1/2 no fade (ai[0] < 3), tick 3 fades 40.
-        molotov_step(&mut p, &w, &mut rng);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.alpha, 255, "ai[0]=1 < 3, no fade");
-        molotov_step(&mut p, &w, &mut rng);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.alpha, 255, "ai[0]=2 < 3, no fade");
-        molotov_step(&mut p, &w, &mut rng);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.alpha, 215, "ai[0]=3 fades 40");
         assert!((p.rot - 0.75).abs() < 1e-6, "3 ticks of 0.25 spin");
         for _ in 0..12 {
-            molotov_step(&mut p, &w, &mut rng);
+            molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         }
         // ai[0]=15 now: gravity armed.
         assert!(p.vel.y > 0.0, "tick 15 adds 0.2 gravity");
@@ -700,7 +736,9 @@ mod tests {
         let mut p = proj(MOLOTOV_COCKTAIL);
         p.pos = Vec2::new(500.0, 500.0);
         p.time_left = 3;
-        molotov_step(&mut p, &w, &mut rng);
+        let (mut dust, dctx) = scratch_dust(&w);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.w, 80.0);
         assert_eq!(p.h, 80.0);
         assert_eq!(p.knock_back, 8.0);
@@ -960,9 +998,10 @@ mod tests {
         p.pos = Vec2::new(500.0, 500.0);
         p.alpha = 0; // the dust window is open
         p.ai[0] = 20.0; // past the fade, no further alpha change
+        let (mut dust, dctx) = scratch_dust(&w);
         let mut rng = tr_core::UnifiedRandom::new(669);
         let mut oracle = tr_core::UnifiedRandom::new(669);
-        molotov_step(&mut p, &w, &mut rng);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         // Two dusts × (NextFloat, NextFloat, Next(2)).
         for _ in 0..2 {
             let _ = oracle.next_float();
@@ -975,9 +1014,10 @@ mod tests {
         m.pos = Vec2::new(500.0, 500.0);
         m.alpha = 0;
         m.ai[0] = 20.0;
+        let (mut dust2, dctx2) = scratch_dust(&w);
         let mut rng2 = tr_core::UnifiedRandom::new(1);
         let mut control = tr_core::UnifiedRandom::new(1);
-        molotov_step(&mut m, &w, &mut rng2);
+        molotov_step(&mut m, &w, &mut rng2, &mut dust2, &dctx2);
         assert_eq!(rng2.next_range(0, 1), control.next_range(0, 1), "399 zero draws");
     }
 

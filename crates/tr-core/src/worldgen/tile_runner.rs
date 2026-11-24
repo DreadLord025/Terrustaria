@@ -111,7 +111,8 @@ const NON_SOLID_SAVE_SLOPES: [i32; 8] = [131, 351, 336, 340, 342, 341, 343, 344]
 /// — every solid tile plus the eight non-solid kinds above. The runner's
 /// slope-clear flag reads it (`WorldGen.cs:76802`: `type >= 0 &&
 /// !TileID.Sets.SaveSlopes[type]`), so solid runner kinds keep their slopes.
-fn save_slopes(kind: i32) -> bool {
+/// Shared with the Quick Cleanup pass (W4-d104 pass 29, `:17953`).
+pub(crate) fn save_slopes(kind: i32) -> bool {
     (kind >= 0 && TILE_SOLID.has(kind as u16)) || NON_SOLID_SAVE_SLOPES.contains(&kind)
 }
 

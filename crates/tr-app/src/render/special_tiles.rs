@@ -4,19 +4,16 @@
 //! platform slope side-fills (`DrawBasicTile`, `TileDrawing.cs:1515-1545`,
 //! glow arm `:1367-1401`).
 //!
-//! **UNWIRED module (code-only mode, 2026-11-18).** The draw-pass seam
-//! (`render/tiles.rs::draw_tiles` + `tr_core::drawdata`) is contested by the
-//! in-flight S1-G-1 siblings (vines G-1a, ropes G-1b, cracks G-1c, pylons
-//! G-1d), so this slice lands as pure draw/decision functions with the
-//! wiring deferred to the family's merge step — the `drawdata_anim.rs`
-//! (S1-F-9b) pattern. Intended call sites:
+//! **Partially wired (W4-d59, 2026-11-20).** The platform slope side-fills
+//! are WIRED: `render/tiles.rs`'s cell dispatch calls [`platform_side_fill`]
+//! + [`push_platform_side_fill`] in the `TileID.Sets.Platforms && slope > 0`
+//! arm of `DrawBasicTile`, BEFORE the generic `push_slope` column path (the
+//! C# returns early, `:1544`). The remaining slices stay UNWIRED (the
+//! `drawdata_anim.rs` S1-F-9b pattern). Intended call sites:
 //! * [`chest_frame_adjust`] — after `draw_data` in the tile-frame resolution
 //!   (`render/tiles.rs::resolve_tile_frame`), keyed on
 //!   `chest::find_chest(chests, anchor)` over [`chest_anchor`]; the C# caches
 //!   the lookup per frame in `_chestPositions` (`TileDrawing.cs:4300-4303`).
-//! * [`platform_side_fill`] + [`push_platform_side_fill`] — the
-//!   `TileID.Sets.Platforms && slope > 0` arm of `DrawBasicTile`, BEFORE the
-//!   generic `push_slope` column path (the C# returns early, `:1544`).
 //! * [`draw_sun_orb`] / [`draw_butterfly_cage`] / [`push_weapon_rack_item`] —
 //!   the non-solid-layer special pass (`TileDrawing.cs:736`), fed by the
 //!   `CacheSpecialDraws_Part1` legacy-point collection (`:4152-4255`).
@@ -32,7 +29,7 @@
 //!   yet (the S1-G-13 layer-target family is unwired); the side-fill push
 //!   draws into the world range and the layer decision is returned in
 //!   [`PlatformSideFill`] for the wiring step.
-#![allow(dead_code)] // UNWIRED — see the module doc; the wiring is the S1-G-1 merge step.
+#![allow(dead_code)] // the legacy/chest arms stay UNWIRED — see the module doc.
 
 use tr_core::tiledata::{SET_BLOCKS_STAIRS, SET_PLATFORMS, TILE_SOLID};
 use tr_render::SpriteRenderer;
@@ -149,9 +146,10 @@ pub(crate) fn chest_frame_adjust(
 // ---------------------------------------------------------------------------
 
 /// The neighbour-cell facts the side-fill gates read. `invisible` is
-/// `Tile.invisibleBlock()` (`Tile.cs:528-531`, `bTileHeader3 & 0x20`) — the
-/// port's `Tile` does not carry that bit yet, so the wiring passes `false`
-/// (recorded deviation, ANALYSIS "S1-G-1e special tiles").
+/// `Tile.invisibleBlock()` (`Tile.cs:528-531`, `bTileHeader3 & 0x20`); the
+/// port carries it in the world extras byte (`World::invisible_block`,
+/// `world.rs`), so [`FillNeighbor::from_world`] reads the real bit —
+/// [`FillNeighbor::from_tile`] keeps `false` for callers without the world.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct FillNeighbor {
     pub active: bool,
@@ -162,8 +160,8 @@ pub(crate) struct FillNeighbor {
 }
 
 impl FillNeighbor {
-    /// Snapshot a world tile; the invisible bit reads `false` until the
-    /// port's `Tile` carries `bTileHeader3` (see the struct doc).
+    /// Snapshot a world tile; the invisible bit reads `false` (no world
+    /// handle — use [`FillNeighbor::from_world`] at the draw seam).
     pub(crate) fn from_tile(t: &tr_core::tile::Tile) -> Self {
         Self {
             active: t.active(),
@@ -171,6 +169,20 @@ impl FillNeighbor {
             slope: t.slope(),
             half_brick: t.half_brick(),
             invisible: false,
+        }
+    }
+
+    /// Snapshot the tile at `(x, y)` WITH the Echo-coating bit
+    /// (`Tile.invisibleBlock()` via `World::invisible_block`). An
+    /// out-of-world cell reads the default (inactive) tile — the C#
+    /// `Main.tile[x, y]` outside the draw area never reaches the gates.
+    pub(crate) fn from_world(world: &tr_core::world::World, x: i32, y: i32) -> Self {
+        match world.tile(x, y) {
+            Some(t) => Self {
+                invisible: world.invisible_block(x, y),
+                ..Self::from_tile(t)
+            },
+            None => Self::default(),
         }
     }
 }
@@ -269,17 +281,30 @@ pub(crate) fn platform_side_fill(
 /// sheet rect from [`PlatformSideFill::src`] (`TileDrawing.cs:1532`/`:1542`).
 /// `sheet_uv` maps platform-sheet pixels to atlas UVs (the caller's
 /// `Atlas::uv("Tiles_19", …)` equivalent); the tint is `drawData.finalColor`.
+/// The C# passes `drawData.tileSpriteEffect` (`:1532`) and the painted
+/// `drawTexture`, so the flip and the paint byte ride the push too.
 pub(crate) fn push_platform_side_fill(
     r: &mut SpriteRenderer,
     sheet_uv: impl Fn(f32, f32, f32, f32) -> Option<[f32; 4]>,
     pos: [f32; 2],
     fill: &PlatformSideFill,
     color: [f32; 4],
-) {
+    flip: bool,
+    paint: u8,
+) -> u32 {
     let [sx, sy, sw, sh] = fill.src;
     if let Some(uv) = sheet_uv(sx as f32, sy as f32, sw as f32, sh as f32) {
-        r.push_sprite([pos[0], pos[1] + 16.0], [sw as f32, sh as f32], uv, color);
+        r.push_sprite_paint(
+            [pos[0], pos[1] + 16.0],
+            [sw as f32, sh as f32],
+            crate::render::entities::flip_uv(uv, flip),
+            color,
+            0.0,
+            paint,
+        );
+        return 1;
     }
+    0
 }
 
 // ---------------------------------------------------------------------------
@@ -694,6 +719,36 @@ mod tests {
         assert_eq!(block_type(true, 3), 1); // half brick wins
         assert_eq!(block_type(false, 1), 2);
         assert_eq!(block_type(false, 4), 5);
+    }
+
+    #[test]
+    fn from_world_reads_the_echo_bit_and_defaults_out_of_world() {
+        // W4-d59: the draw seam snapshots neighbours WITH the Echo bit
+        // (`World::invisible_block`, the extras byte's 0x20).
+        let mut w = tr_core::world::World::new("fills".into(), 8, 8);
+        let t = w.tile_mut(3, 4).unwrap();
+        t.kind = 1;
+        t.flags = tr_core::tile::FLAG_ACTIVE;
+        t.set_slope(2);
+        let n = FillNeighbor::from_world(&w, 3, 4);
+        assert!(n.active && n.kind == 1 && n.slope == 2 && !n.invisible);
+        w.set_invisible_block(3, 4, true);
+        assert!(FillNeighbor::from_world(&w, 3, 4).invisible);
+        // from_tile keeps the bit false (no world handle).
+        assert!(!FillNeighbor::from_tile(w.tile(3, 4).unwrap()).invisible);
+        // Out-of-world: the default inactive tile (the gates never fire).
+        let o = FillNeighbor::from_world(&w, -1, 4);
+        assert!(!o.active && !o.invisible);
+        // The Echo veto: a coated right-below neighbour blocks the slope-1
+        // fill unless Echo sight is on (`TileDrawing.cs:1524`).
+        let mut rb = solid(1);
+        rb.invisible = true;
+        assert!(platform_side_fill(1, 0, &FillNeighbor::default(), &FillNeighbor::default(), &rb, false).is_none());
+        assert!(platform_side_fill(1, 0, &FillNeighbor::default(), &FillNeighbor::default(), &rb, true).is_some());
+        // …and a coated stair-blocker BELOW vetoes via the shared tail.
+        let mut below = solid(386);
+        below.invisible = true;
+        assert!(platform_side_fill(1, 0, &below, &FillNeighbor::default(), &solid(1), false).is_some());
     }
 
     // -- DrawSpecialTilesLegacy ----------------------------------------------

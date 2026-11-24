@@ -554,6 +554,20 @@ pub const CONSTELLATION_WHIP: u16 = 1034;
 pub const MOON_LORD_WHIP: u16 = 1035;
 /// `ProjectileID.SlimeWhip` (1104).
 pub const SLIME_WHIP: u16 = 1104;
+/// S1-E-21h d76 DOC-SWEEP — the Kill()-tail non-bomb cue kinds
+/// (`Projectile.cs:70855-70975`, the d76 line-order range's last four
+/// `PlaySound` sites; d77's map starts at `:71112`).
+/// `ProjectileID.JimsDrone` (1020) — the Item62 blast (`:70865`).
+pub const JIMS_DRONE: u16 = 1020;
+/// `ProjectileID.BirdDroppings` (1080) — the Item177 splat (`:70936`).
+pub const BIRD_DROPPINGS: u16 = 1080;
+/// `ProjectileID.TorchGodHelper` (1084) — the Item10 pop (`:70958`).
+pub const TORCH_GOD_HELPER: u16 = 1084;
+/// `ProjectileID.PrettyMirror` (1085) — the Item106 shatter (`:70904`).
+pub const PRETTY_MIRROR: u16 = 1085;
+/// `ProjectileID.RemoteControlCar` (1105) — shares the 1020 Item62 blast
+/// (`:70855`'s `type == 1020 || type == 1105` arm).
+pub const REMOTE_CONTROL_CAR: u16 = 1105;
 pub const BETSY_BREATH: u16 = 687;
 /// `ProjectileID.DD2BetsyFireball` (686) — Betsy's fireball
 /// (`AI_110`'s phase-4 volley: `NewProjectile(..., 686, 35, ...)`).
@@ -5617,6 +5631,30 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (the call site overrides to 300, `NPC.cs:24464`); knockBack 6
             // is overridden by the call's `KnockBack: 0f`.
             SAND_BALL_FALLING => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-E-21h d76 DOC-SWEEP — the Kill()-tail non-bomb cue kinds
+            // (`Projectile.cs:70855-70975`). The rows land so the death-hook
+            // cue map can spawn them; the AI machines for the four unarmed
+            // styles (195/200/202/205) are the documented census follow-ups
+            // (UNARMED_ROWED, the i25 precedent) — the cue lands on death.
+            // `:9659-9666` — Jim's Drone (1020): 12x12, aiStyle 195,
+            // friendly, penetrate -1 (the stock tileCollide true / 3600 life).
+            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:10078-10086` — Bird Droppings (1080): 10x10, aiStyle 200,
+            // alpha 255, penetrate -1, ignoreWater (the overlay below); the
+            // stock friendly false / tileCollide true / 3600 life.
+            BIRD_DROPPINGS => (10.0, 10.0, 200, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:10115-10124` — the Torch God's helper (1084): 4x4, aiStyle
+            // 202, extraUpdates 2, timeLeft 300, penetrate -1, tileCollide
+            // false (the d21 row values, kept identical for the merge).
+            TORCH_GOD_HELPER => (4.0, 4.0, 202, -1, 300, 2, false, false, false, RESET_STATE),
+            // `:10125-10132` — the Pretty Mirror (1085): 18x18, aiStyle 2
+            // (the thrown family — its rotation ladder `:23245` is already
+            // in `ai_style2`), friendly, penetrate 1.
+            PRETTY_MIRROR => (18.0, 18.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:10294-10302` — the RC Car (1105): 26x26, aiStyle 205,
+            // friendly, tileCollide true, correctSlopeCollision (the slope
+            // pass is the d21 movement follow-up; the d21 row values kept).
+            REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -5983,6 +6021,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the blade slam set `ignoreWater` (`Projectile.cs:10182`/
             // `:10431`/`:10441`/`:10408`/`:10587`).
             || matches!(kind, STORM_LIGHTNING | LIGHTNING_STRIKE_SHOT | ARC_SURGE | GLACIER_FANG_SHOT | CHLOROPHYTE_CLAYMORE_BLADE_SLAM),
+            // S1-E-21h d76 DOC-SWEEP — `Projectile.cs:10085`: the Bird
+            // Droppings (1080) sets `ignoreWater = true`.
+            || kind == BIRD_DROPPINGS,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -6690,9 +6731,172 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
     }
 }
 
+/// `Main.projPet` (`Main.cs:8728-8852`) — the pet/light-pet projectile set.
+/// The `SendData(27)` relay's flag3 section-cull exemption reads it
+/// (`NetMessage.cs:1777`); the whole 125-row census lands verbatim (the
+/// array is zero-initialised and only these writes set it true — the other
+/// `Main.projPet[` reads in Player/Projectile/MessageBuffer are consumers).
+pub const fn proj_pet(kind: u16) -> bool {
+    matches!(
+        kind,
+        111 | 112
+            | 127
+            | 175
+            | 191
+            | 192
+            | 193
+            | 194
+            | 197
+            | 198
+            | 199
+            | 200
+            | 208
+            | 209
+            | 210
+            | 211
+            | 236
+            | 266
+            | 268
+            | 269
+            | 313
+            | 314
+            | 317
+            | 319
+            | 324
+            | 334
+            | 353
+            | 373
+            | 375
+            | 380
+            | 387
+            | 388
+            | 390
+            | 391
+            | 392
+            | 393
+            | 394
+            | 395
+            | 398
+            | 407
+            | 423
+            | 492
+            | 499
+            | 533
+            | 613
+            | 623
+            | 625
+            | 626
+            | 627
+            | 628
+            | 653
+            | 701
+            | 702
+            | 703
+            | 755
+            | 758
+            | 759
+            | 764
+            | 765
+            | 774
+            | 815
+            | 816
+            | 817
+            | 821
+            | 825
+            | 831
+            | 833
+            | 834
+            | 835
+            | 854
+            | 858
+            | 859
+            | 860
+            | 864
+            | 875
+            | 881
+            | 882
+            | 883
+            | 884
+            | 885
+            | 886
+            | 887
+            | 888
+            | 889
+            | 890
+            | 891
+            | 892
+            | 893
+            | 894
+            | 895
+            | 896
+            | 897
+            | 898
+            | 899
+            | 900
+            | 901
+            | 934
+            | 946
+            | 951
+            | 956
+            | 957
+            | 958
+            | 959
+            | 960
+            | 963
+            | 970
+            | 994
+            | 998
+            | 1003
+            | 1004
+            | 1018
+            | 1022
+            | 1027
+            | 1046
+            | 1050
+            | 1056
+            | 1090
+            | 1093
+            | 1094
+            | 1095
+            | 1096
+            | 1112
+            | 1113
+            | 1118
+            | 1119
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-g52 — the `Main.projPet` census (`Main.cs:8728-8852`): all 125
+    /// `= true` write sites, and nothing else. The boundary kinds pin the
+    /// gaps (12 is flag3 by its own type test, NOT a pet; 72/18/500/650 are
+    /// the `Player.cs:48561` companion special-cases, not `projPet` rows).
+    #[test]
+    fn w4_g52_proj_pet_matches_the_main_census() {
+        const ROWS: &[u16] = &[
+            111, 112, 127, 175, 191, 192, 193, 194, 197, 198, 199, 200, 208, 209, 210, 211, 236,
+            266, 268, 269, 313, 314, 317, 319, 324, 334, 353, 373, 375, 380, 387, 388, 390, 391,
+            392, 393, 394, 395, 398, 407, 423, 492, 499, 533, 613, 623, 625, 626, 627, 628, 653,
+            701, 702, 703, 755, 758, 759, 764, 765, 774, 815, 816, 817, 821, 825, 831, 833, 834,
+            835, 854, 858, 859, 860, 864, 875, 881, 882, 883, 884, 885, 886, 887, 888, 889, 890,
+            891, 892, 893, 894, 895, 896, 897, 898, 899, 900, 901, 934, 946, 951, 956, 957, 958,
+            959, 960, 963, 970, 994, 998, 1003, 1004, 1018, 1022, 1027, 1046, 1050, 1056, 1090,
+            1093, 1094, 1095, 1096, 1112, 1113, 1118, 1119,
+        ];
+        assert_eq!(ROWS.len(), 125, "the census grep count (Main.cs)");
+        for k in 0..=1200u16 {
+            assert_eq!(
+                proj_pet(k),
+                ROWS.contains(&k),
+                "projPet[{k}] vs Main.cs:8728-8852"
+            );
+        }
+        assert!(!proj_pet(12), "type 12 is flag3 by its own arm, not projPet");
+        assert!(!proj_pet(72) && !proj_pet(18) && !proj_pet(500) && !proj_pet(650));
+    }
 
     #[test]
     fn the_damage_class_flags_match_the_set_defaults_census() {

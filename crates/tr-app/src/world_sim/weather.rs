@@ -148,6 +148,10 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     let night_pre = app.world.time < 16200.0;
     let dusk_pre = app.world.time < 32400.0;
     let mut night_raining = false;
+    // W4-g52 audit — `Main.oldMaxRaining` (`Main.cs:64952-64958`): the
+    // strength-change detector for the `SendData(7)` re-push.
+    let mut old_max_raining = app.rain.max_raining();
+    let mut max_raining_changed = false;
     let App {
         world_tick_step,
         world,
@@ -193,6 +197,14 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // (the C# falls back to a fresh `Player()`).
             app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
         );
+        // W4-g52 audit — the maxRaining change check (`Main.cs:64952-64958`)
+        // runs right after the rain section, BEFORE `UpdateTimeRate`/the
+        // time add; the re-push itself fires after the tick closure (the
+        // header needs the whole App).
+        if rain.max_raining() != old_max_raining {
+            max_raining_changed = true;
+            old_max_raining = rain.max_raining();
+        }
         // (4) `Main.cs:64963-64966`: the event walks — CultistRitual
         // (the delay decay + the recheck window's AnyDanger arm),
         // BirthdayParty/LanternNight (the persistence clears riding the
@@ -346,6 +358,12 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // past 16200 while raining; the roll + the player gates ride
     // `deerclops_roll`, the spawn `SpawnOnPlayer`'s shape.
     let crossed = night_pre && world.time >= 16200.0 && night_raining;
+    // W4-g52 audit — the maxRaining-change `SendData(7)` (`Main.cs:64954-64957`,
+    // `netMode == 2`): one header re-push per changed tick batch (after the
+    // destructured `world` borrow's last read above).
+    if max_raining_changed {
+        app.net_world_repush();
+    }
     if crossed {
         let zone_snow = app.scene_metrics.zone_snow;
         let passed = deerclops_roll(

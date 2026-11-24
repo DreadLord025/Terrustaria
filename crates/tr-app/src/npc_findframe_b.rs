@@ -611,6 +611,7 @@ pub fn find_frame_b(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
 /// Snow Flinx 185 / Nymph 196 / Lihzahrd 198 + the batch-2 skeletons
 /// ride the same group) — the keep-one house rule, the e14
 /// ChaosElemental/FaceMonster delegate precedent.
+/// precedent in `npc.rs`.
 pub(crate) fn humanoid_fighter_frame(
     s: &mut FrameState,
     i: &FrameInput,

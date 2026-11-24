@@ -24,6 +24,7 @@ mod npc_death_heals;
 mod presents;
 mod buff_effects;
 mod buff_effects_misc;
+mod buff_effects_orbs;
 mod buffs;
 mod buff_effects_accessory;
 mod bug_net;
@@ -44,10 +45,12 @@ mod entity_lights;
 mod item_lights;
 mod npc_lights;
 mod npc_lights_c;
+mod npc_lights_a;
 mod player_lights;
 mod proj_lights;
 mod eoc_fight;
 mod input_map;
+mod input_profiles;
 mod inv;
 mod luck;
 mod wiring_stub;
@@ -58,6 +61,7 @@ mod item_sorting;
 mod sortdata;
 mod lang;
 mod lang_tables;
+mod loadout;
 mod loot_db;
 mod loot_db_gen;
 mod map;
@@ -253,10 +257,10 @@ mod npc_ai_bat;
 mod npc_ai_eye;
 mod npc_ai_golem;
 mod npc_ai_slime;
-// S1-D-3 cultist: UNWIRED Lunatic Cultist machine (AI_084, 439/440) -
-// the live npc.rs::update_lunatic_cultist stub stays byte-identical
-// until the wiring round (the npc_ai_fishron precedent; states 4/7/8
-// deferred, see the module doc).
+// S1-D-3 cultist / W4-c1: WIRED Lunatic Cultist machine (AI_084, 439) -
+// the aiStyle-84 axis arm (npc.rs::ai_084_cultist) claims the dispatch;
+// the old update_lunatic_cultist stub is retired. The 440 clone has no
+// port kind (solo path); states 4/7/8 deferred, see the module doc.
 mod npc_ai_cultist;
 // S1-D-3 (B-6a): UNWIRED pillar machine (aiStyle 94) - the dispatch swap
 // + the checkDead intercept are the wiring wave; R72 wires the 629
@@ -306,11 +310,20 @@ mod npc_findframe_extra7h;
 mod npc_findframe_extra7i;
 mod npc_findframe_extra7j;
 mod npc_findframe_extra7k;
+mod npc_findframe_extra4;
+mod npc_findframe_extra7;
+mod npc_findframe_extra8;
+mod npc_findframe_extra9;
+mod npc_findframe_extra10;
+mod npc_findframe_extra11;
+mod npc_findframe_extra12;
+mod npc_findframe_extra13;
 mod persist;
 mod grapple;
 mod gore_seam;
 mod creative;
 mod creative_sacrifices;
+mod hair_window;
 mod happiness;
 mod hotbar;
 mod hurt_modifiers;
@@ -473,12 +486,21 @@ mod projectile_rope_coil;
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+// W4-g63 — the projectile TRAIL dust lane 1 (kinds 1-400): the per-kind
+// trailing/ambient dust arms inside Projectile.AI(), re-armed onto the live
+// DustPool on the UpdateProjectiles stream (research/66; g64 owns 401+, g65
+// the Kill death dust).
+mod projectile_trail_dust;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
 // helpers (:37718-37991). Wired into update_editing (the boss-spawner seam).
 mod recall_teleport;
+// W4-d51: the player-tick `Dust.NewDust` drain lanes — the extra-jump chain
+// (`Player.JumpMovement`, Player.cs:20818-21012) first; the tick queues the
+// box/velocity snapshot, this module replays on the `UpdatePlayers` stream.
+mod player_dust;
 mod regen;
 mod research;
 mod sand;

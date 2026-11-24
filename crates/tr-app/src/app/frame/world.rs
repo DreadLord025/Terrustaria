@@ -28,6 +28,11 @@ impl App {
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
+    // The debug commands overlay (`UIDebugCommandsList`, W4-d85) — an
+    // `IngameFancyUI` state like the bestiary; its clicks consume the press
+    // before the chest/crafting/inventory handlers see it.
+    self.handle_debug_commands_clicks();
+    self.handle_debug_loadouts_clicks();
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.

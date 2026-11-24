@@ -95,7 +95,9 @@ pub(crate) struct WorldChest {
     /// `Main.cs:17810`). `Default` 0 — the C# field's zero init.
     pub(crate) frame_counter: i32,
     /// `Chest.frame` (`Chest.cs:86`): the draw frame the chest rewrite reads
-    /// (`TileDrawing.cs:4309-4320`, `render/special_tiles.rs::chest_frame_adjust`)
+    /// (`TileDrawing.cs:4309-4320`; the keep-one selection is
+    /// `tr-render/src/chest_frames.rs::chest_frame_adjust`, the W4-d58 move
+    /// wired by `draw_tiles` via `chest_draw_frame` — W4-f16 dedupe)
     /// — 0 closed, 1 half-open, 2 open.
     pub(crate) frame: i32,
     /// `Chest.eatingAnimationTime` (`Chest.cs:88`): the hopper/vacuum eat
@@ -174,12 +176,21 @@ pub(crate) fn find_empty_chest(chests: &[WorldChest], x: i32, y: i32) -> Option<
 /// caller-contract violations and panic with the invariant (the house
 /// `expect` pattern, `craft.rs:443`).
 pub(crate) fn create_chest(chests: &mut Vec<WorldChest>, x: i32, y: i32) -> usize {
-    let idx = find_empty_chest(chests, x, y).expect(
+    try_create_chest(chests, x, y).expect(
         "create_chest follows a find-first miss; a taken coord or full store \
          is the C# -1 path (Chest.cs:595-597)",
-    );
-    // `CreateWorldChest` fills with empty instances (`Chest.cs:107-109`) —
-    // the port's empty slot list, air implied beyond the length.
+    )
+}
+
+/// `Chest.CreateChest(X, Y, id = -1)` (`Chest.cs:590-607`) with the C# `-1`
+/// failure kept caller-visible: `FindEmptyChest` misses (coords taken or the
+/// store full, `Chest.cs:595-597`) → `None`. The host's `34 ChestUpdates`
+/// place arm reads the `-1` to send the refusal relay (`MessageBuffer.cs:
+/// 2004-2011`); [`create_chest`] is the find-first-miss contract that panics
+/// on the same path. `CreateWorldChest` fills with empty instances
+/// (`Chest.cs:107-109`) — the port's empty slot list, air implied beyond it.
+pub(crate) fn try_create_chest(chests: &mut Vec<WorldChest>, x: i32, y: i32) -> Option<usize> {
+    let idx = find_empty_chest(chests, x, y)?;
     let fresh = WorldChest {
         tile: (x, y),
         slots: Vec::new(),
@@ -192,7 +203,164 @@ pub(crate) fn create_chest(chests: &mut Vec<WorldChest>, x: i32, y: i32) -> usiz
     } else {
         chests[idx] = fresh;
     }
-    idx
+    Some(idx)
+}
+
+/// `WorldGen.GetItemDrop_Chests(style, secondType)` (`WorldGen.cs:41554-41838`):
+/// the item a refused chest placement drops back. `secondType` selects the
+/// 467 family (the `3884` base), else the 21 family (the `48` base). The
+/// switch arms are the C#'s verbatim; an unlisted style keeps the base.
+pub(crate) fn get_item_drop_chests(style: i32, second_type: bool) -> u16 {
+    if second_type {
+        match style {
+            1 => 3885,
+            2 => 3939,
+            3 => 3965,
+            4 => 3988,
+            5 => 4153,
+            6 => 4174,
+            7 => 4195,
+            8 => 4216,
+            9 => 4265,
+            10 => 4267,
+            11 => 4574,
+            12 | 13 => 4712,
+            14 => 5156,
+            15 => 5177,
+            16 => 5198,
+            17 => 5556,
+            18 => 5609,
+            19 => 5697,
+            20 => 5720,
+            21 => 5745,
+            22 => 5763,
+            23 => 5784,
+            24 => 5805,
+            25 => 5826,
+            26 => 5846,
+            27 => 5865,
+            28 => 5886,
+            29 => 5905,
+            30 => 5939,
+            31 => 5962,
+            32 => 5982,
+            33 => 6005,
+            34 => 6028,
+            35 => 6051,
+            36 => 6074,
+            37 => 6118,
+            _ => 3884,
+        }
+    } else {
+        match style {
+            1 | 2 => 306,
+            3 | 4 => 328,
+            5 => 343,
+            6 => 348,
+            7 => 625,
+            8 => 626,
+            9 => 627,
+            10 => 680,
+            11 => 681,
+            12 => 831,
+            13 => 838,
+            14 => 914,
+            15 => 952,
+            16 => 1142,
+            17 => 1298,
+            18 | 23 => 1528,
+            19 | 24 => 1529,
+            20 | 25 => 1530,
+            21 | 26 => 1531,
+            22 | 27 => 1532,
+            28 => 2230,
+            29 => 2249,
+            30 => 2250,
+            31 => 2526,
+            32 => 2544,
+            33 => 2559,
+            34 => 2574,
+            35 | 36 => 2612,
+            37 | 38 => 2613,
+            39 | 40 => 2614,
+            41 => 2615,
+            42 => 2616,
+            43 => 2617,
+            44 => 2618,
+            45 => 2619,
+            46 => 2620,
+            47 => 2748,
+            48 => 2814,
+            49 => 3180,
+            50 => 3125,
+            51 => 3181,
+            _ => 48,
+        }
+    }
+}
+
+/// `WorldGen.GetItemDrop_Dressers(style)` (`WorldGen.cs:49855-50036`): the item
+/// a refused dresser placement drops back. Styles 1..=3 are `646 + style`,
+/// 5..=15 are `2386 + style - 5`, the rest the C#'s nested switch; an unlisted
+/// style keeps the `334` base.
+pub(crate) fn get_item_drop_dressers(style: i32) -> u16 {
+    if (1..=3).contains(&style) {
+        return (646 + style) as u16;
+    }
+    match style {
+        4 => 918,
+        5..=15 => (2386 + style - 5) as u16,
+        16 => 2529,
+        17 => 2545,
+        18 => 2562,
+        19 => 2577,
+        20 => 2637,
+        21 => 2638,
+        22 => 2639,
+        23 => 2640,
+        24 => 2816,
+        25 => 3132,
+        26 => 3134,
+        27 => 3133,
+        28 => 3911,
+        29 => 3912,
+        30 => 3913,
+        31 => 3914,
+        32 => 3934,
+        33 => 3968,
+        34 => 4148,
+        35 => 4169,
+        36 => 4190,
+        37 => 4211,
+        38 => 4301,
+        39 => 4569,
+        40 => 5151,
+        41 => 5172,
+        42 => 5193,
+        43 => 5551,
+        44 => 5604,
+        45 => 5692,
+        46 => 5715,
+        47 => 5741,
+        48 => 5766,
+        49 => 5787,
+        50 => 5808,
+        51 => 5829,
+        52 => 5848,
+        53 => 5868,
+        54 => 5888,
+        55 => 5908,
+        56 => 5942,
+        57 => 5965,
+        58 => 5985,
+        59 => 6008,
+        60 => 6031,
+        61 => 6054,
+        62 => 6077,
+        63 => 6099,
+        64 => 6121,
+        _ => 334,
+    }
 }
 
 /// `Chest.RemoveChest` (`Chest.cs:132-141`): the slot becomes null. Index
@@ -2049,6 +2217,52 @@ mod tests {
         w.tiles[i].kind = kind;
         w.tiles[i].frame_x = frame_x;
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    }
+
+    /// W4-g52 — the `34` refusal drop tables (`WorldGen.cs:41554-41838` /
+    /// `:49855-50036`): the C#'s switch arms verbatim, the base for unlisted
+    /// styles, and the `secondType` family split.
+    #[test]
+    fn w4_g52_the_chest_refusal_drop_tables_match_the_csharp() {
+        // GetItemDrop_Chests — the 21 family (secondType false), base 48.
+        assert_eq!(get_item_drop_chests(0, false), 48);
+        assert_eq!(get_item_drop_chests(1, false), 306);
+        assert_eq!(get_item_drop_chests(2, false), 306);
+        assert_eq!(get_item_drop_chests(5, false), 343);
+        assert_eq!(get_item_drop_chests(18, false), 1528);
+        assert_eq!(get_item_drop_chests(23, false), 1528);
+        assert_eq!(get_item_drop_chests(51, false), 3181);
+        assert_eq!(get_item_drop_chests(99, false), 48, "unlisted keeps the base");
+        // The 467 family (secondType true), base 3884.
+        assert_eq!(get_item_drop_chests(0, true), 3884);
+        assert_eq!(get_item_drop_chests(1, true), 3885);
+        assert_eq!(get_item_drop_chests(12, true), 4712);
+        assert_eq!(get_item_drop_chests(13, true), 4712);
+        assert_eq!(get_item_drop_chests(37, true), 6118);
+        assert_eq!(get_item_drop_chests(99, true), 3884);
+        // GetItemDrop_Dressers — base 334, the 1..=3 and 5..=15 ranges.
+        assert_eq!(get_item_drop_dressers(0), 334);
+        assert_eq!(get_item_drop_dressers(1), 647);
+        assert_eq!(get_item_drop_dressers(3), 649);
+        assert_eq!(get_item_drop_dressers(4), 918);
+        assert_eq!(get_item_drop_dressers(5), 2386);
+        assert_eq!(get_item_drop_dressers(15), 2396);
+        assert_eq!(get_item_drop_dressers(16), 2529);
+        assert_eq!(get_item_drop_dressers(64), 6121);
+        assert_eq!(get_item_drop_dressers(99), 334, "unlisted keeps the base");
+    }
+
+    /// W4-g52 — `try_create_chest` keeps the C# `-1` caller-visible
+    /// (`Chest.cs:595-597`): a taken coord or a full store refuses, where
+    /// `create_chest` panics on the same path.
+    #[test]
+    fn w4_g52_try_create_chest_refuses_a_taken_coord() {
+        let mut chests: Vec<WorldChest> = Vec::new();
+        assert_eq!(try_create_chest(&mut chests, 10, 18), Some(0));
+        // The same coord is taken — FindEmptyChest misses (`Chest.cs:529-533`).
+        assert_eq!(try_create_chest(&mut chests, 10, 18), None);
+        // A fresh coord claims the next slot.
+        assert_eq!(try_create_chest(&mut chests, 30, 40), Some(1));
     }
 
     /// DW-1.1 — `CreateChest`/`FindChest`/`FindEmptyChest`/`RemoveChest`

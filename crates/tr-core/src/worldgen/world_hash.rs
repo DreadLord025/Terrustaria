@@ -238,6 +238,96 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-d109 (code-only, the save half of S1-A-3): the `.trwld` v18 tail
+    // persists `World::variants` and the framing passes reuse them on a save
+    // load. This pin is UNCHANGED by that change: `generate()` runs only the
+    // pipeline steps and never frames (framing is the app-side post-pipeline
+    // seam), and `variants` is not a hashed `Tile` field — the pin hashes an
+    // un-framed world. (The S1-P-i33 deferred re-pin above still stands.)
+    // W4-d104 pass 28 (2026-11-20, code-only): the `Floating Island
+    // Houses` pass (`WorldGen.cs:17859-17874` + `IslandHouse`
+    // `:79203-79484`) lands — the compact islands pass's inline plank box
+    // retires for the faithful sunplate house at the vanilla slot, on the
+    // fresh `pass_rng("Floating Island Houses")` stream. Any world whose
+    // islands placed moves BY DESIGN (the house tiles/walls/frames swap);
+    // a 512-wide world's island band collapses (the sky-band guard), so
+    // this pin is UNCHANGED by the pass itself — the sibling lanes' pins
+    // still re-measure at the gate. The a == b determinism halves stay
+    // untouched.
+    // W4-d104 pass 29 (2026-11-21, code-only): the `Quick Cleanup` pass
+    // (`WorldGen.cs:17875-17993`) lands after Floating Island Houses — the
+    // full-world tidy sweep (the ocean lava→water swap, the beach sand
+    // drip on the fresh `pass_rng("Quick Cleanup")` stream, the
+    // sandstone-wall retypes/liquid arms, the surface-sand wall
+    // inheritance, the slope/half-brick clear family under the
+    // 137/130-non-solid window). On a 512-wide world the beach band
+    // (`x < 380 || x > width - 380`) covers the whole sweep width, so the
+    // drip's draws and the slope clears move this pin BY DESIGN too —
+    // stale, the gate re-pins. The a == b halves stay untouched.
+    // W4-d104 pass 30 (2026-11-21, code-only): the `Hellforge` pass
+    // (`WorldGen.cs:18187-18234`) lands — `maxTilesX / 200` forges retry
+    // onto the hell-house wall columns on the fresh `pass_rng("Hellforge")`
+    // stream. On a 512-wide world the count is 2 and the compact hell
+    // forts' wall-14 columns can host a forge, so this pin moves BY
+    // DESIGN too — stale, the gate re-pins. The a == b halves stay
+    // untouched.
+    // W4-d104 pass 30 graft (2026-11-21, code-only, research/86 §6.2):
+    // the bare `place_3x2` write becomes the full `PlaceTile(77)` route
+    // (the g37 B7 body grafted into this lane's correctly-ordered pass —
+    // the entry gate, the inactive-seat Clear arm, the
+    // ResetsHalfBrickPlacementAttempt reset, the two SquareTileFrame
+    // calls). The retry DRAW SCHEDULE is unchanged (the route draws no
+    // RNG); the tile bytes can move where a seat carried residue or a
+    // refused placement resets halfBrick/frames. This pin was ALREADY
+    // stale-by-design from the pass landing — the graft folds into the
+    // same deferred re-pin. The a == b halves stay untouched.
+    // W4-d104 pass 31 (2026-11-21, code-only): the `Spreading Grass`
+    // classic arm (`WorldGen.cs:18237-18351`) lands — the surface biome
+    // retypes + the first-surface grass spread move the surface cells of
+    // every world (the 512 included). No RNG draw (the classic arm is
+    // draw-free), so only the tiles move. Stale-by-design; the gate
+    // re-pins. The a == b halves stay untouched.
+    // W4-d104 pass 31 fix (2026-11-21, code-only, research/86 §6.1): the
+    // sweep-2 call flips `repeat:false` → `repeat:true` — the LIVE
+    // `:18334` call takes the C# default (`:75146`); the ported
+    // `repeat:false` was the dead `:18339` catch arm. The 3×3 recursion
+    // now fires, so MORE surface cells grass (the whole first-surface
+    // dirt run above worldSurface, not one cell per column). Still NO
+    // RNG draw — no pinned grass-spread draws exist to re-derive; this
+    // pin was ALREADY stale-by-design and folds into the same deferred
+    // re-pin. The a == b halves stay untouched.
+    // W4-d104 pass 32 (2026-11-21, code-only): the `Surface Ore and
+    // Stone` pass (`WorldGen.cs:18447-18511` + `OrePatch` `:10579-10705`
+    // + `StonePatch` `:10242-10324`) lands — the ore/stone patch scatters
+    // on the fresh `pass_rng("Surface Ore and Stone")` stream. The
+    // 512-wide pin is UNCHANGED by this pass: the sub-vanilla width guard
+    // skips before any draw (the stone count `Next(1, width*7/4200)`
+    // throws there; the C# never generates a ≤600-wide world). The
+    // a == b halves stay untouched.
+    // W4-d104 pass 33 (2026-11-21, code-only): the `Place Fallen Log`
+    // pass (`WorldGen.cs:18513-18655`) lands — the 488 logs on the fresh
+    // `pass_rng("Place Fallen Log")` stream. The 512-wide pin is
+    // UNCHANGED: the ≤800 width guard skips before any draw (the C#
+    // column draw `Next(400, width-400)` throws there). The a == b
+    // halves stay untouched.
+    // W4-d104 pass 34 (2026-11-21, code-only): the `Traps` pass
+    // (`WorldGen.cs:18657-18786` + `placeTrap` `:8922-9513` +
+    // `PlaceSandTrap` `:35463-35735`) lands — the dart/boulder/explosive/
+    // geyser traps + the desert sand traps on the fresh
+    // `pass_rng("Traps")` stream. The 512-wide pin is UNCHANGED: the
+    // ≤400 width guard skips before any draw (the C# column draw
+    // `Next(200, width-200)` throws there). The a == b halves stay
+    // untouched.
+    // W4-d104 pass 35 (2026-11-21, code-only): the `Piles` pass
+    // (`WorldGen.cs:18788-19458`) lands — the seven decor scatters on the
+    // fresh `pass_rng("Piles")` stream. The 512-wide pin MOVES by design
+    // (the column band `Next(25, 487)` is live there) — stale, the gate
+    // re-pins. The a == b halves stay untouched.
+    // W4-d104 pass 36 (2026-11-21, code-only): the `Spawn Point` pass
+    // (`WorldGen.cs:19460-19587`) lands — the spawn search replaces the
+    // compact tail anchor. The spawn fields are NOT hashed (the tile
+    // fold only), and the search draws on its own stream, so this pin is
+    // UNCHANGED by the pass. The a == b halves stay untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -307,6 +397,60 @@ mod tests {
     // 15/16/18/19 cells stay zero-call-site UNWIRED on f25, g42's
     // Convert(3) closes at four sites). No game-logic change: BOTH pins
     // UNCHANGED, a == b untouched.
+    // W4-d109 (code-only): the `.trwld` v18 variants persistence leaves this
+    // pin UNCHANGED for the same reason as SEED42_512 above — `generate()`
+    // never frames and `variants` is unhashed. The i33 deferred re-pin stands.
+    // W4-d104 pass 28 (2026-11-20, code-only): the faithful `Floating
+    // Island Houses` pass (above) moves this pin BY DESIGN — the default
+    // 4200-wide world's 3-4 islands swap their plank-box houses for the
+    // sunplate shells/interiors/furniture, and the house draws move off
+    // the shared `drng` (the islands pass was its last consumer, so no
+    // other step's ledger shifts). The re-pin is DEFERRED to the merge
+    // gate (no compiler on this branch); the a == b determinism halves
+    // stay untouched.
+    // W4-d104 pass 29 (2026-11-21, code-only): the `Quick Cleanup` sweep
+    // (above) moves this pin BY DESIGN — the slope/half-brick clears and
+    // the wall retypes fire across the default world, and the beach sand
+    // drip draws on the pass's own stream. Re-pin DEFERRED to the merge
+    // gate; the a == b halves stay untouched.
+    // W4-d104 pass 30 (2026-11-21, code-only): the `Hellforge` pass
+    // (above) moves this pin BY DESIGN — the default world's 21 forge
+    // retries place 77 forges in the hell houses. Re-pin DEFERRED to the
+    // merge gate; the a == b halves stay untouched.
+    // W4-d104 pass 30 graft (2026-11-21, code-only, research/86 §6.2):
+    // the full PlaceTile-77 route (above) replaces the bare Place3x2 —
+    // draw-schedule unchanged, tile bytes may move on residue seats /
+    // refused-placement resets. Folds into the SAME deferred re-pin;
+    // the a == b halves stay untouched.
+    // W4-d104 pass 31 (2026-11-21, code-only): the `Spreading Grass`
+    // classic arm (above) moves this pin BY DESIGN — the surface retypes
+    // and the first-surface grass land across the default world. No RNG
+    // draw; re-pin DEFERRED to the merge gate; the a == b halves stay
+    // untouched.
+    // W4-d104 pass 31 fix (2026-11-21, code-only, research/86 §6.1): the
+    // repeat:true flip (above) fires the 3×3 recursion — more surface
+    // cells grass, still zero draws. Folds into the SAME deferred
+    // re-pin; the a == b halves stay untouched.
+    // W4-d104 pass 32 (2026-11-21, code-only): the `Surface Ore and
+    // Stone` pass (above) moves this pin BY DESIGN — the default world's
+    // ore veins + stone blobs land on the surface band. Re-pin DEFERRED
+    // to the merge gate; the a == b halves stay untouched.
+    // W4-d104 pass 33 (2026-11-21, code-only): the `Place Fallen Log`
+    // pass (above) moves this pin BY DESIGN — the default world's 1-3
+    // fallen logs (488) land on the grass surface. Re-pin DEFERRED to
+    // the merge gate; the a == b halves stay untouched.
+    // W4-d104 pass 34 (2026-11-21, code-only): the `Traps` pass (above)
+    // moves this pin BY DESIGN — the default world's ~210 traps + ~12
+    // sand traps land underground. Re-pin DEFERRED to the merge gate;
+    // the a == b halves stay untouched.
+    // W4-d104 pass 35 (2026-11-21, code-only): the `Piles` pass (above)
+    // moves this pin BY DESIGN — the default world's ~2500 pile decor
+    // cells land across the seven scatters. Re-pin DEFERRED to the merge
+    // gate; the a == b halves stay untouched.
+    // W4-d104 pass 36 (2026-11-21, code-only): the `Spawn Point` pass
+    // (above) leaves this pin UNCHANGED — the spawn fields are not
+    // hashed and the search draws on its own stream. The a == b halves
+    // stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // W4-d107 (2026-11-20, code-only): the special-seed branches land in
     // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +

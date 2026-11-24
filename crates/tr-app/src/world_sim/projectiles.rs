@@ -468,6 +468,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     let dust_spawn_ctx = app.spawn_ctx();
     let gore_pool = std::mem::replace(&mut app.gore, tr_core::gore::GorePool::new());
     app.projectiles.set_gore_pool(Some(gore_pool));
+    // W4-g63 — the trail-dust lane's live seam: the frame's spawn ctx
+    // (`Main.screenPosition/width/height` + the gfx budget) captured
+    // BEFORE the step closure's `&mut app.world`/`&mut app.dust` field
+    // borrows (the `world_sim/npcs.rs` `dust_spawn_ctx` convention).
+    let dust_spawn_ctx = app.spawn_ctx();
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update_dust(
             &mut app.world,
@@ -553,14 +558,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // passed. The C# plays inline mid-walk; the port drains at the pass
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
-    for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
+    for (id, style, x, y, pitch_offset, volume_scale) in app.projectiles.drain_proj_sounds() {
         // S1-P-i08 + W3-i39 — the aiStyle-3 wall thud (`Projectile.cs:19571`)
         // and `AI_007`'s latch dig cue (`Projectile.cs:52757`:
         // `PlaySound(0, i*16, j*16)`) are the int-id Dig play: case 0's
         // `Next(3)` variation + `Next(-10, 11)*0.01` pitch ride the same
         // stream, attenuation gate first (the `play_place_sound` façade's
         // id-0 arm, `LegacySoundPlayer.cs:440-452`, S1-E-21 wave B); the
-        // id-2 styles keep the wave-A façade.
+        // id-2 styles keep the wave-A façade. The d76 DOC-SWEEP volume term
+        // rides the id-2/3/4 façades (the Corrupt Whip ×0.6 / Lights Bane
+        // `0.15*ai[0]`); the id-0 Dig sites all queue volume 1.
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
         } else if id == 18 {
@@ -570,7 +577,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // the `place_tile_sound` table's 330-333 arm).
             app.audio.play_place_sound((18, 1), x, y, rng);
         } else {
-            app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+            app.audio.play_proj_sound((id, style), x, y, pitch_offset, volume_scale, rng);
         }
     }
     // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):
@@ -952,12 +959,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 if let Some(text) = chat {
                     app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
                 }
-                if let Some((id, style, x, y, pitch)) = cue {
+                if let Some((id, style, x, y, pitch, vol)) = cue {
                     app.audio.play_proj_sound(
                         (id, style),
                         x,
                         y,
                         pitch,
+                        vol,
                         app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
                     );
                 }
