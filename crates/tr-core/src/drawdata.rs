@@ -3208,6 +3208,9 @@ mod tests {
         let wall = |p| convert_paint_id_to_tile_shader_index(p, false, true);
         for p in 0..=29 {
             assert_eq!(wall(p), tile(p), "wall pass {p}");
+        }
+    }
+
     // ---- W4-g80: the actuated draw lane — the disco arm + actColor ----
 
     /// W4-g80 census witness 1 — `Tile.actColor`'s `Color` overload
