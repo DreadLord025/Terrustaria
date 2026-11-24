@@ -979,6 +979,18 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (`NPCID.cs:6075+`'s dictionary carries no 46/540 keys) — the C#
         // else-branch's no-immunity (`NPC.cs:17826-17832`).
         NpcKind::Bunny | NpcKind::PartyBunny => &[],
+        // W4-f42 — the sandstorm debris + desert family: none has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+`) — the no-immunity
+        // else-branch.
+        NpcKind::Tumbleweed
+        | NpcKind::Vulture
+        | NpcKind::Antlion
+        | NpcKind::Mummy
+        | NpcKind::DarkMummy
+        | NpcKind::BloodMummy
+        | NpcKind::LightMummy
+        | NpcKind::WalkingAntlion
+        | NpcKind::FlyingAntlion => &[],
     }
 }
 

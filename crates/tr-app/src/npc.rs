@@ -28,7 +28,7 @@ pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     false
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum NpcKind {
     Slime,
     DemonEye,
@@ -2562,6 +2562,40 @@ pub enum NpcKind {
     /// (`NPCID.cs:9466-9472`). NOT `Main.npcCatchable` (the catch
     /// census: `Main.cs:9326-9418` lists 583-585 but not 594).
     WindyBalloon,
+    // ---- W4-f42 (sandstorm second half): the sandstorm's debris + the
+    // desert family the `NPC.cs:3949-4018` spawn arm picks. The protocol
+    // ids ride the next-free 354..362 band (353 BlazingWheel reserved);
+    // the vanilla `NPC.type` rides `cs_id`/`net_id` (the bestiary rows).
+    /// `NPCID.Tumbleweed` (546) — the wind-blown debris (`aiStyle 26`,
+    /// `NPC.cs:15972-15984`): 30x30, dmg 30, def 6, 50 HP, kb 0.8,
+    /// value 100. The `AI_026_Unicorns` 546 arm (`NPC.cs:62378-62408`'s
+    /// separation, `:62565-62579`'s hop + ZoneDesert despawn,
+    /// `:62703-62715`'s wind-driven walk, `:62919-62923`'s rotation).
+    /// `NPCID.Vulture` (61) — the desert flyer (`aiStyle 17`,
+    /// `NPC.cs:9554-9566`): 36x36, dmg 15, def 4, 40 HP, kb 0.8, value 60.
+    /// `NPCID.Antlion` (69) — the desert burrower (`aiStyle 19`,
+    /// `NPC.cs:9666-9679`): 24x24, dmg 10, def 6, 45 HP, kb 0, value 60,
+    /// behindTiles.
+    /// `NPCID.Mummy` (78) — the desert walker (`aiStyle 3`,
+    /// `NPC.cs:9799-9811`): 18x40, dmg 50, def 16, 130 HP, kb 0.6,
+    /// value 600. The half-life rage speed row (`NPC.cs:57907-57943`).
+    /// `NPCID.DarkMummy` (79) — the corrupt desert walker (`aiStyle 3`,
+    /// `NPC.cs:9812-9824`): 18x40, dmg 60, def 18, 180 HP, kb 0.5,
+    /// value 700. The rage row's ×1.5 cap (`:57916-57919`).
+    /// `NPCID.BloodMummy` (630) — the crimson desert walker (`aiStyle 3`,
+    /// `NPC.cs:17107-17119`): 18x40, dmg 60, def 18, 180 HP, kb 0.5,
+    /// value 700. The rage row's ×1.5 cap (the 79 twin).
+    /// `NPCID.LightMummy` (80) — the hallow desert walker (`aiStyle 3`,
+    /// `NPC.cs:9825-9837`): 18x40, dmg 55, def 18, 200 HP, kb 0.55,
+    /// value 700.
+    /// `NPCID.WalkingAntlion` (580) — the desert charger (`aiStyle 3`,
+    /// `NPC.cs:14854-14867`): 26x26, dmg 25, def 10, 80 HP, kb 0.5,
+    /// value 80, npcSlots 0.8. The 508/580/582 lerp speed row
+    /// (`NPC.cs:58139-58202`).
+    /// `NPCID.FlyingAntlion` (581) — the desert flyer (`aiStyle 44`,
+    /// `NPC.cs:14868-14881`): 30x22, dmg 29, def 8, 60 HP, kb 0.5,
+    /// value 90, npcSlots 0.8. The `AI_044` 581 arm
+    /// (`NPC.cs:30987-31019`'s 0.06/0.02/4/2/40/150 rows).
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2631,6 +2665,10 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:20862`/`:20931`/`:21232`, the Brain's blinks
     /// `:32505`/`:32622`); the style façade + case 2's one pitch draw.
     Item8,
+    /// W4-f42 — `PlaySound(SoundID.Item5, pos)` — the Antlion's spit
+    /// (`NPC.cs:24449`, the ai[0] == 200 cooldown tick); case 2's one
+    /// pitch draw (the Item8 façade shape).
+    Item5,
     /// `PlaySound(SoundID.Item14, pos)` — the Golem fist's dash launch
     /// (`NPC.cs:19415`, `AI_047_GolemFist`'s `ai[1] == 1` tick); case 2.
     Item14,
@@ -3347,6 +3385,22 @@ pub struct Npc {
     /// Tumbleweed's wind gate (`NPC.cs:62709-62712`: the cap term zeroes
     /// outside the sandstorm). FALSE by default (the module ctx fixture).
     pub gallop_zone_sandstorm: bool,
+    /// W4-f42 — `Main.windSpeedTarget` pre-stamped by the sim (the
+    /// `wind_speed_current` convention) — the Tumbleweed's wind-driven
+    /// walk reads it (`NPC.cs:62709`'s `Lerp(0.6, 1, |windSpeedTarget|)`).
+    pub wind_speed_target: f32,
+    /// W4-f42 — `Main.player[target].ZoneSandstorm` pre-stamped by the sim
+    /// (the Tumbleweed's wind gate, `NPC.cs:62710`; outside the zone the
+    /// wind term zeroes).
+    pub player_zone_sandstorm: bool,
+    /// W4-f42 — `Main.player[target].ZoneDesert` pre-stamped by the sim
+    /// (the Tumbleweed's despawn gate, `NPC.cs:62570-62579`).
+    pub player_zone_desert: bool,
+    /// W4-f42 — the Tumbleweed's same-type separation inputs
+    /// (`NPC.cs:62382-62403`): the OTHER active Tumbleweeds' positions in
+    /// slot order (the `twin_time_lefts` pre-pass convention — the AI's
+    /// `&World` borrow cannot see its siblings).
+    pub tumbleweed_siblings: Vec<(f32, f32)>,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -4980,6 +5034,10 @@ impl Npc {
             gallop_wind_speed_target: 0.0,
             gallop_zone_desert: true,
             gallop_zone_sandstorm: false,
+            wind_speed_target: 0.0,
+            player_zone_sandstorm: false,
+            player_zone_desert: false,
+            tumbleweed_siblings: Vec::new(),
             twin_time_lefts: Vec::new(),
             gallop_siblings: Vec::new(),
             dragonfly_neighbors: Vec::new(),
@@ -5925,6 +5983,14 @@ impl Npc {
             // (`NPC.cs:9336-9347`), so the class default 1f stands
             // (`:8533`); the stock `_ => 0.4` below never sees them.
             NpcKind::Bunny | NpcKind::PartyBunny => 1.0,
+            // W4-f42 — the sandstorm debris + desert family's
+            // `knockBackResist`: 546 0.8 (`NPC.cs:15982`), 61 0.8
+            // (`:9562`), 69 0 (`:9676`), 78 0.6 (`:9809`), 79/630 0.5
+            // (`:9822`/`:17117`), 80 0.55 (`:9835`), 580/581 0.5
+            // (`:14864`/`:14877`).
+            NpcKind::Antlion => 0.0,
+            NpcKind::DarkMummy | NpcKind::BloodMummy => 0.5,
+            NpcKind::WalkingAntlion | NpcKind::FlyingAntlion => 0.5,
             _ => 0.4,
         }
     }
@@ -6688,6 +6754,10 @@ impl Npc {
             | NpcKind::FairyCritterGreen
             | NpcKind::FairyCritterBlue
             | NpcKind::WindyBalloon => 0,
+            // W4-f42 — the sandstorm debris + desert family's `defense`:
+            // 546 6 (`NPC.cs:15978`), 61 4 (`:9560`), 69 6 (`:9672`),
+            // 78 16 (`:9805`), 79/630/80 18 (`:9818`/`:17113`/`:9831`),
+            // 580 10 (`:14860`), 581 8 (`:14874`).
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -7460,6 +7530,10 @@ impl Npc {
             | NpcKind::FairyCritterGreen
             | NpcKind::FairyCritterBlue
             | NpcKind::WindyBalloon => 0.0,
+            // W4-f42 — the sandstorm debris + desert family's `value`:
+            // 546 100 (`NPC.cs:15983`), 61 60 (`:9565`), 69 60 (`:9677`),
+            // 78 600 (`:9810`), 79/630/80 700 (`:9823`/`:17118`/`:9836`),
+            // 580 80 (`:14865`), 581 90 (`:14879`).
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -11242,6 +11316,16 @@ impl Npc {
             // walker (`NPC.cs:14609`); its `num107` cap is the
             // distance-scaled 489 row (`npc_ai3_speeds.rs:550`).
             | NpcKind::BloodZombie => self.update_zombie(world, player, dt, rng),
+            | NpcKind::BloodZombie
+            // W4-f42 — the desert walkers (the mummies 78/79/80/630 + the
+            // WalkingAntlion 580) ride the same aiStyle-3 fighter machine;
+            // their speed rows live in `npc_ai3_speeds` (the 78/79/80/630
+            // half-life rage `NPC.cs:57907-57943`, the 508/580/582 lerp
+            // `:58139-58202`).
+            | NpcKind::Mummy
+            | NpcKind::DarkMummy
+            | NpcKind::BloodMummy
+            | NpcKind::WalkingAntlion => self.update_zombie(world, player, dt),
             NpcKind::Guide
             | NpcKind::DD2Bartender
             | NpcKind::Merchant
@@ -11756,6 +11840,15 @@ impl Npc {
             // — already ported). The `FindFrame` humanoid-group case
             // (`NPC.cs:68569`) rides `humanoid_town_frame` below.
             NpcKind::Vampire => self.update_skeleton(world, player, dt),
+            // W4-f42 — the desert flyers: the Vulture (61, aiStyle 17), the
+            // Antlion (69, aiStyle 19), the FlyingAntlion (581, aiStyle 44).
+            // The pure cores live in `npc_ai_desert`; the wrappers integrate
+            // off the returned noGravity/noTileCollide flags.
+            NpcKind::Antlion => self.update_antlion(world, player, rng),
+            NpcKind::FlyingAntlion => self.update_flying_antlion(world, player),
+            // W4-f42 — the Tumbleweed (546, aiStyle 26) rides the shared
+            // AI_026_Unicorns core with the 546 branches woven in.
+                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
             // S1-D-2: the aiStyle-5 hover family (6/42/23/5) rides the
             // style axis (`ai_005_hover_family`) — these arms are unreachable
             // through `update_rng` (the axis claims style 5 first).
@@ -17342,6 +17435,120 @@ impl Npc {
             // Sluggy/Buggy row-0 stand-ins dropped - c8's crawler groups
             // above own the case-484/485-487 machines (NPC.cs:72807-72883).
             NpcKind::TargetDummy => {
+            // W4-f42 — the sandstorm debris + desert family's FindFrame arms.
+            // The mummies (78/79/80/630) ride the humanoid-group walk
+            // (`NPC.cs:68559-68561`/`:68618`, the 16-frame strips); the
+            // WalkingAntlion (580) the case-580 walk (`:70069-70103`); the
+            // Vulture (61) the case-61 flap (`:73537-73557`); the Antlion
+            // (69) the case-69 dig (`:74291-74310`); the FlyingAntlion (581)
+            // the case-581 flap (`:70105-70119`); the Tumbleweed (546) has
+            // no FindFrame case (single frame, the rotation rides the AI).
+            NpcKind::Mummy | NpcKind::DarkMummy | NpcKind::BloodMummy | NpcKind::LightMummy => {
+                // W4-f42 — the faithful wave-B humanoid-fighter arm
+                // (`npc_findframe_b::find_frame_b`, the case-78/79/80/630
+                // group `NPC.cs:68559-68561`/`:68618`): the airborne row 1,
+                // the idle row 0, the |vx|*2+1 walk over rows 2..count.
+                let fk = match self.kind {
+                    NpcKind::Mummy => crate::npc_findframe_b::FindFrameKind::Mummy,
+                    NpcKind::DarkMummy => crate::npc_findframe_b::FindFrameKind::DarkMummy,
+                    NpcKind::BloodMummy => crate::npc_findframe_b::FindFrameKind::BloodMummy,
+                    _ => crate::npc_findframe_b::FindFrameKind::LightMummy,
+                };
+                let mut s = crate::npc_findframe_b::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                };
+                let i = crate::npc_findframe_b::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    wet: self.wet,
+                    ai: self.ai,
+                };
+                crate::npc_findframe_b::find_frame_b(fk, &mut s, &i);
+                self.frame = s.row;
+                self.frame_counter = s.counter;
+                self.sprite_dir = s.sprite_dir;
+                self.rotation = s.rotation;
+            }
+            NpcKind::WalkingAntlion => {
+                // `:70071-70102` — airborne holds the velocity-class row;
+                // idle row 0; the walk climbs from row 2 on the
+                // `1 + |vx|/2` accumulator, >6 advances, wraps at count.
+                if self.vy != 0.0 {
+                    self.frame = num2 as u32;
+                } else if self.vx == 0.0 {
+                    self.frame = 0;
+                } else {
+                    if self.facing < 0 && self.vx < 0.0 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.facing > 0 && self.vx > 0.0 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.frame < 2 {
+                        self.frame = 2;
+                    }
+                    self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.rows() {
+                        self.frame = 2;
+                    }
+                }
+            }
+                // `:73539-73556` — spriteDirection = direction, rotation =
+                // vx * 0.1; idle row 0; else the 5×5 counter walks rows 1..5.
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 25.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame = (self.frame_counter / 5.0) as u32 + 1;
+                }
+            }
+                // `:74292-74309` — ai[0] < 190: the 6-tick counter walks
+                // rows 0..count-2; else the last row (the spit pose).
+                if self.ai[0] < 190.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= self.rows() - 1 {
+                            self.frame = 0;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = self.rows() - 1;
+                }
+            }
+            NpcKind::FlyingAntlion => {
+                // `:70106-70118` — the sprite follows the velocity sign; the
+                // 3-tick counter walks the whole strip, wrapping at count.
+                if (self.vx > 0.0 && self.facing > 0) || (self.vx < 0.0 && self.facing < 0) {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 3.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= self.rows() {
+                        self.frame = 0;
+                    }
+                }
+            }
+                // No FindFrame case (`NPC.cs`'s switch has no 546) — the
+                // single frame stands; the AI's rotation tail spins it.
                 self.frame = 0;
             }
             NpcKind::DukeFishron => {
@@ -19013,7 +19220,6 @@ impl Npc {
                 if self.frame >= 3 {
                     self.frame = 0;
                 }
-            }
             // `case 62` (`NPC.cs:73887-73902`): the Demon's flap —
             // spriteDirection follows direction, the vx*0.1 tilt, the
             // 5-tick counter over the 5-row strip.
@@ -19314,7 +19520,21 @@ impl Npc {
         // all-false until the stealth/calm systems land), the tank-pet
         // slot inert until the pet system lands.
         let cand = crate::npc_target::session_candidate_for(player, self.kind);
-        let discouraged = !world.eclipse
+        // W4-f42 — the mummies (78/79/80/630) sit in the shared gate's
+        // always-encouraged id list (`NPC.cs:60302`'s `npcID != 78 &&
+        // != 79 && != 80 && != 630` terms), and the WalkingAntlion (580)
+        // is a `case 580:` of the switch (`:60324`) — both chase in the
+        // day above the surface (the zombie family's discourage fold
+        // does not reach them).
+        let desert_fighter = matches!(
+            self.kind,
+            NpcKind::Mummy
+                | NpcKind::DarkMummy
+                | NpcKind::BloodMummy
+                | NpcKind::WalkingAntlion
+        );
+        let discouraged = !desert_fighter
+            && !world.eclipse
             && world.day_time
             && !self.spawned_from_statue
             && !((self.y as f64) > world.world_surface * 16.0)
@@ -21180,6 +21400,78 @@ impl Npc {
             self.y = ny;
             self.on_ground = false;
         }
+    }
+
+    /// W4-f42 — the Vulture (61, aiStyle 17): the pure core + the
+    /// gravity/collision integration off the returned flags. The perch
+    /// (`ai[0] == 0`, noGravity false) integrates with gravity + tile
+    /// collision; the flight bounces through `integrate_flyer_collision`.
+    fn update_vulture(&mut self, world: &World, player: &Player) {
+        let out = crate::npc_ai_desert::vulture_ai(self, world, player);
+        if out.no_gravity {
+            self.integrate_flyer_collision(world);
+        } else {
+            // The perch: gravity + the axis-separated tile collision (the
+            // walker tail shape, no jump — the vulture sits until takeoff).
+            let (w, h) = self.size();
+            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+            let nx = self.x + self.vx;
+            if !collides_rect(world, nx, self.y, w, h) {
+                self.x = nx;
+            } else {
+                self.vx = 0.0;
+            }
+            let ny = self.y + self.vy;
+            if !collides_rect(world, self.x, ny, w, h) {
+                self.y = ny;
+                self.on_ground = false;
+            } else if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+                self.vy = 0.0;
+                self.on_ground = true;
+            } else {
+                self.vy = 0.0;
+            }
+        }
+    }
+
+    /// W4-f42 — the Antlion (69, aiStyle 19): the pure core + the emergence
+    /// (noGravity + noTileCollide → raw integration) vs the burrow (gravity +
+    /// tile collision). The sand-ball shot rides `wants_hostile_shot_ai`.
+    fn update_antlion(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let out = crate::npc_ai_desert::antlion_ai(self, world, player, rng);
+        if out.no_tile_collide {
+            self.integrate_no_tile_collide();
+        } else {
+            let (w, h) = self.size();
+            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+            let nx = self.x + self.vx;
+            if !collides_rect(world, nx, self.y, w, h) {
+                self.x = nx;
+            } else {
+                self.vx = 0.0;
+            }
+            let ny = self.y + self.vy;
+            if !collides_rect(world, self.x, ny, w, h) {
+                self.y = ny;
+                self.on_ground = false;
+            } else if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+                self.vy = 0.0;
+                self.on_ground = true;
+            } else {
+                self.vy = 0.0;
+            }
+        }
+    }
+
+    /// W4-f42 — the FlyingAntlion (581, aiStyle 44): the pure core + the
+    /// no-gravity bounce integration.
+    fn update_flying_antlion(&mut self, world: &World, player: &Player) {
+        let _out = crate::npc_ai_desert::flying_antlion_ai(self, world, player);
+        self.integrate_flyer_collision(world);
     }
 
     /// `AI_005_EaterOfSouls`'s hover core through the framework's
@@ -29901,6 +30193,13 @@ impl Npc {
             // above — the G6 key stays injective; the wyvern renumber's
             // precedent). `cs_id` keeps the real 46/540 for the caps.
             NpcKind::PartyBunny => 237,
+            // W4-f42 — the sandstorm debris + desert family: the port-local
+            // protocol ids (`to_u16`'s 354-362 band) — the vanilla 61/69/
+            // 78/79/80 collide with the GoblinSummoner/GolemHead/GrayGrunt/
+            // PirateDeckhand/SkeletronHand/PirateCaptainsMate/WallOfFleshEye/
+            // PirateArcher arms above, so the hash rides the port band (the
+            // wyvern renumber's precedent); 546/580/581/630 are free but
+            // ride the same band for one contiguous family block.
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -32189,6 +32488,9 @@ mod tests {
         // fires at 360 (`:21079-21082`), never at the standard 650. W4-g5
         // draw-parity: the curse volley is LIVE — the Djinn fires the 596
         // PROJECTILE through `wants_djinn_curse` (never a sphere).
+        // fires at 360 (`:21079-21082`), never at the standard 650. The
+        // curse volley (W4-f42) rides `wants_hostile_shot_ai` (the 596),
+        // never `wants_sphere` — the sphere lane stays empty.
         let mut w = ground_air();
         let mut player = surface_player(&w);
         let mut djinn = Npc::new(NpcKind::DesertDjinn, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
@@ -32206,6 +32508,7 @@ mod tests {
             assert!(
                 djinn.wants_sphere.is_empty(),
                 "the Djinn fires a projectile, never a sphere"
+                "the Djinn's curse rides the hostile-shot lane, never a sphere"
             );
             // The trigger tick: `ai[1] = 181` (`:21035`) then the same
             // tick's `ai[1]--` (`:21116`) — the windup reads 180 exactly
@@ -35434,7 +35737,7 @@ mod tests {
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
     
-    pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 557] = [
+    pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 557] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -36358,6 +36661,27 @@ mod tests {
             assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
             assert_eq!(kind.size(), (w, h), "{kind:?} size");
             assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+    /// W4-f42 — the nine sandstorm debris + desert kinds' `SetDefaults`
+    /// rows pin against the C# (the d40/smallkinds pattern), through the
+    /// port's tables, plus the 354-362 protocol band's round-trip and the
+    /// bestiary net ids (research/108-input-f42's claims table). WRITTEN,
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_f42_the_desert_family_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, proto, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BloodMummy, 630, 359, 3, 18.0, 40.0, 60, 18, 180, 0.5, 700.0),
+            (NpcKind::WalkingAntlion, 580, 361, 3, 26.0, 26.0, 25, 10, 80, 0.5, 80.0),
+            (NpcKind::FlyingAntlion, 581, 362, 44, 30.0, 22.0, 29, 8, 60, 0.5, 90.0),
+        ];
+        for (kind, ty, proto, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} round-trip");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} bestiary net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
             assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
             assert_eq!(shell.defense(), def, "{kind:?} defense");
             assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
@@ -40663,6 +40987,7 @@ mod tests {
         assert_eq!((n.facing, n.sprite_dir), (-1, -1), "ignores the aim");
     }
 }
+}
 
 mod shard_stat_tests {
     use super::*;
@@ -41233,6 +41558,8 @@ mod s1_f_3_tests {
             "every decodable kind resolves (the wire roster's size - 281 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies + W4-d33 wiring's three fairies + the windy balloon, L-B gate)"
             272,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-e21's bunny pair 46/540)"
+            279,
+            "every decodable kind resolves (the wire roster's size - 279 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-f42's nine desert kinds)"
         );
         assert!(
             covered > 43,
@@ -45020,6 +45347,12 @@ mod s1_d_2_tests {
         (NpcKind::FairyCritterGreen, 112),
         (NpcKind::FairyCritterBlue, 112),
         (NpcKind::WindyBalloon, 113),
+        // W4-f42 — the sandstorm debris + desert family (`NPC.cs:15976`
+        // the Tumbleweed's 26, `:9558` the Vulture's 17, `:9670` the
+        // Antlion's 19, `:9799`/`:9812`/`:17107`/`:9825` the mummies' 3,
+        // `:14854` the WalkingAntlion's 3, `:14872` the FlyingAntlion's 44).
+        (NpcKind::BloodMummy, 3),
+        (NpcKind::WalkingAntlion, 3),
     ];
 
     #[test]

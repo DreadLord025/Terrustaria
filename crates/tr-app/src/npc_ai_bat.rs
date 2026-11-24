@@ -55,6 +55,17 @@
 //! stream shift the W4-d128 plan mandates — the golden outputs re-bless at
 //! the verification gate (ANALYSIS "The caster aiStyle-8 draw-parity
 //! (W4-g5)").
+//! RNG order is by construction: every `Main.rand` draw this machine makes is
+//! the teleport search's `Next(targetTileX - range, targetTileX + range + 1)`
+//! then `Next(targetTileY - range, ...)` pair per attempt (`NPC.cs:18952-18953`,
+//! cited inline below), plus — W4-f42 — the Djinn's curse volley search
+//! (`:21140-21141`, the shared `npc_ai_caster::djinn_curse_search`, X then Y
+//! per attempt). The per-type dust arms (`:21282`, `:21292`, `:21319`,
+//! `:21331`, `:21340`, `:21350`, `:21366`), the teleport bursts' `Next(1, 3)`
+//! scales (`:20867`/`:20936`) and the Rune Wizard's aim jitter
+//! (`:21268-21269`) all draw `Main.rand` too and are skipped wholesale — the
+//! dust system (S1-E-2/S1-E-3) and the unported kinds own them; the skip
+//! keeps the surviving stream's order exact.
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};
@@ -720,6 +731,7 @@ pub fn ai_style_8_step(
             npc.net_update = true;
         }
     }
+    }
     // `:21075-21078` — the 285/286 early wrap (W4-d38): past 400 the
     // counter jumps to 650 (the diabolist teleports sooner).
     if (npc.kind == NpcKind::DiabolistRed || npc.kind == NpcKind::DiabolistWhite)
@@ -797,6 +809,13 @@ pub fn ai_style_8_step(
             // `wants_djinn_curse` — damage 0, knockback 1, ai0 = target).
             if npc.ai[1] % 30.0 == 0.0 && npc.ai[1] / 30.0 < 5.0 {
                 // `:21121` — the window puff (netMode-independent).
+            // 5th (ai[1] = 120/90/60/30/0 after the decrement). W4-f42
+            // wires the search + the 596 spawn (the S1-E-5 wholesale skip
+            // retires); the search helpers ride `npc_ai_caster` (the
+            // faithful re-port's `to_tile`/`solid_tiles`, one copy).
+            if npc.ai[1] % 30.0 == 0.0 && npc.ai[1] / 30.0 < 5.0 {
+                // `:21121` — the Item8 puff plays BEFORE the netMode gate
+                // (every qualifying tick, even a client's).
                 npc.wants_sound.push(crate::npc::NpcSoundRequest {
                     cue: crate::npc::NpcSoundCue::Item8,
                     x: npc.x,
@@ -851,6 +870,36 @@ pub fn ai_style_8_step(
                             ));
                             break;
                         }
+                // `:21122` — single-player/host only (the port's fold).
+                let (scx, scy) = npc.center();
+                let (pcx, pcy) = player.center();
+                // `:21133-21136` — the >2000-px gate draws NOTHING.
+                let (dx, dy) = (pcx - scx, pcy - scy);
+                if (dx * dx + dy * dy).sqrt() <= 2000.0 {
+                    // `:21137-21160` — the shared search (one copy, the
+                    // faithful re-port's helper).
+                    if let Some((x, y)) = crate::npc_ai_caster::djinn_curse_search(
+                        world,
+                        rng,
+                        (scx, scy),
+                        (pcx, pcy),
+                    ) {
+                        // `:21155` — the 596 curse at the tile centre:
+                        // damage 0, knockback 1, ai0 = this.target (the
+                        // homing tail's player index). The request rides
+                        // the ai-payload lane (the drain spawns it with
+                        // `spawn_hostile_ai`, the kb-1 override there).
+                        npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: crate::projectile::DESERT_DJINN_CURSE,
+                            x: (x * 16 + 8) as f32,
+                            y: (y * 16 + 8) as f32,
+                            vx: 0.0,
+                            vy: 0.0,
+                            damage: 0,
+                            ai0: npc.target as f32,
+                            ai1: 0.0,
+                            scale: None,
+                        });
                     }
                 }
             }
@@ -1055,6 +1104,8 @@ pub fn ai_style_8_step(
             }
             }
         }
+        }
+    }
     }
     // `:21279-21374` — the per-type dust/light tail: the lights are the
     // frame pass's feed (`npc_lights.rs::npc_light`, S1-E-5). W4-g5
@@ -1113,6 +1164,7 @@ pub fn ai_style_8_step(
         npc.vy = 0.0;
     }
     shot
+}
 }
 
 /// `NPC.AI_GlobalFiringDistanceCheck` (`NPC.cs:55835-55841`): the target's
@@ -1240,6 +1292,11 @@ mod tests {
     /// list stays empty — the Djinn fires a PROJECTILE, not a sphere).
     #[test]
     fn the_djinn_triggers_at_180_wraps_at_360_and_fires_curses() {
+    /// 360 wrap resets to 1 via the 650 block. W4-f42: the curse volley
+    /// fires on the %30 ticks (ai[1] = 120/90/60/30/0) into the
+    /// hostile-shot-ai lane — never a sphere return.
+    #[test]
+    fn the_djinn_triggers_at_180_wraps_at_360_and_fires_the_curse_lane() {
         let w = ground_air();
         let p = player_at(100.0 * 16.0, 116.0 * 16.0);
         let mut n = Npc::new(NpcKind::DesertDjinn, 96.0 * 16.0, 120.0 * 16.0 - 62.0, 1, 0.0);
@@ -1269,6 +1326,17 @@ mod tests {
             }
             curses += n.wants_djinn_curse.len();
             n.wants_djinn_curse.clear();
+            assert!(s.is_none(), "the curse rides the shot-ai lane, not a sphere");
+            assert!(n.ai[0] < 650.0, "the wrap keeps the counter under 650");
+            for shot in n.wants_hostile_shot_ai.drain(..) {
+                assert_eq!(shot.kind, crate::projectile::DESERT_DJINN_CURSE);
+                assert_eq!(shot.damage, 0);
+                assert_eq!(shot.ai0, n.target as f32, "ai0 = this.target (:21155)");
+                // The tile centre: x*16+8, y*16+8.
+                assert_eq!(shot.x % 16.0, 8.0);
+                assert_eq!(shot.y % 16.0, 8.0);
+                curses += 1;
+            }
             if before == 359.0 {
                 assert_eq!(n.ai[0], 1.0, "360 -> 650 -> 1 in one tick");
                 wrapped = true;
@@ -1277,6 +1345,7 @@ mod tests {
         assert!(wrapped, "the Djinn wrapped at 360 within 400 ticks");
         assert!(window_ticks > 0, "the 181 windup crossed %30 window ticks");
         assert!(curses > 0, "the volley queued curse requests");
+        assert!(curses >= 5, "the %30 volley fired (got {curses})");
     }
 
     /// `NPC.cs:21061-21068` — the red-hat double-step: the unconditional
@@ -1825,4 +1894,5 @@ mod tests {
         assert!(spot.is_none());
         assert_eq!(rng, before, "the >125-tile bail consumes no draws");
     }
+}
 }

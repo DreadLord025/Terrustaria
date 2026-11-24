@@ -7423,6 +7423,37 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// W4-f42 — `AI_010`'s sand-ball arm for the Antlion's spit
+    /// (`Projectile.cs:57826-58100`, the type-31 path). The call site
+    /// (`NPC.cs:24462-24465`) sets `ai[0] = 2`, so the `ai0 != 2` dust gate
+    /// (`:57828-57835`) never fires and the `ai0 == 2` gravity arm
+    /// (`:58022-58037`) runs: +0.2 vy, the ±0.04 vx drag toward zero. The
+    /// owner is 255 (hostile), so the `myPlayer == owner` channel arm
+    /// (`:57953-57996`) and the tile-break scan (`:58038-58072`) never run.
+    fn ai_sand_ball_falling(&mut self, world: &World) {
+        // `:57951-57952`: the latch.
+        self.tile_collide = true;
+        self.local_ai[1] = 0.0;
+        // `:58022-58037`: the ai0 == 2 gravity + drag (the double compares).
+        if self.ai[0] == 2.0 {
+            self.vel.y += 0.2;
+            if (self.vel.x as f64) < -0.04 {
+                self.vel.x += 0.04;
+            } else if (self.vel.x as f64) > 0.04 {
+                self.vel.x -= 0.04;
+            } else {
+                self.vel.x = 0.0;
+            }
+        }
+        // `:58092-58099`: the spin + the fall cap.
+        self.rot += 0.1;
+        if self.vel.y > 10.0 {
+            self.vel.y = 10.0;
+        }
+        // The style-10 tile collision + kill-on-contact movement.
+        self.kill_step(world);
+    }
+
     /// The Book of Skulls' rider (`AI_001`'s `else if (this.type == 207 ||
     /// this.type == 837)` block, `Projectile.cs:56778-56887`): the in-tile
     /// `timeLeft` drain, the cached spawn speed, the alpha fade, the NPC
@@ -17584,6 +17615,15 @@ impl ProjectilePool {
                                 self.slots[i].ai_snowball_hostile(world);
                             } else if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
                                 self.slots[i].ai_dungeon_debris(world, rng, local_owner);
+                            } else if self.slots[i].kind == SAND_BALL_FALLING {
+                                // W4-f42 — the Antlion's sand ball: the
+                                // ai0 = 2 gravity arm (`AI_010`
+                                // `Projectile.cs:58022-58037`), the spin +
+                                // fall cap (`:58092-58099`), the style-10
+                                // tile collision. The ai0 != 2 dust gate
+                                // (`:57828-57835`) never fires for the
+                                // Antlion's spit (ai0 = 2 at the call site).
+                                self.slots[i].ai_sand_ball_falling(world);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 7)`
@@ -20598,6 +20638,18 @@ impl ProjectilePool {
                                 &mut self.slots[i],
                                 world,
                                 rect,
+                        // W4-f42 — `AI()`'s `else if (this.aiStyle == 107)`
+                        // (`Projectile.cs:33553-33678`): the Desert Djinn's
+                        // curse (596). The 575 NebulaSphere branch is an
+                        // unported kind; the 596 arm owns the fade/frame/
+                        // orbit gates, the timeLeft<4 burst resize and the
+                        // shared homing tail. KIND-gated so any future
+                        // style-107 kind keeps the fall-through.
+                        107 if self.slots[i].kind == DESERT_DJINN_CURSE => {
+                            crate::projectile_ai_djinn::curse_ai(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
                                 rng,
                             );
                         }
@@ -20784,6 +20836,10 @@ impl ProjectilePool {
                         self.try_cancel_channel(i, p);
                     }
                 }
+                // W4-f42 — `Kill()`'s 596 arm (`Projectile.cs:72470-72501`)
+                // sits ahead of every 73xxx+ arm in the C# body order; the
+                // kinds are disjoint so only one death arm fires per slot.
+                self.djinn_curse_kill(i, player.as_deref_mut(), rng);
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
@@ -24627,6 +24683,52 @@ impl ProjectilePool {
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
+
+    /// W4-f42 — `Kill()`'s 596 arm (`Projectile.cs:72470-72501`): the
+    /// Djinn curse's death burst. The resize keeps the old centre
+    /// (`position = Center; width = height = 60; Center = position`),
+    /// damage 30 (expert 22), `Damage()` hurts through the resized box
+    /// (the hostile lane — the boxed player-contact test, the
+    /// `damage_player` proxy widened to the slot's own box), the Item14
+    /// blast plays, and the three dust loops' explicit draw census rides
+    /// the `UpdateProjectiles` stream. The dust bodies are the
+    /// projectile-arm skip (`projectile_ai_djinn` module doc).
+    fn djinn_curse_kill(
+        &mut self,
+        slot: usize,
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        if self.slots[slot].kind != DESERT_DJINN_CURSE {
+            return;
+        }
+        let expert = player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+        crate::projectile_ai_djinn::curse_kill_resize(&mut self.slots[slot], expert);
+        // `:72481` — `Damage()`: the hostile box walk against the player.
+        if let Some(player) = player {
+            let p = &self.slots[slot];
+            if p.damage > 0 {
+                let cx = p.pos.x + p.w * 0.5;
+                let cy = p.pos.y + p.h * 0.5;
+                let inside = p.pos.x < player.x + crate::player::WIDTH
+                    && p.pos.x + p.w > player.x
+                    && p.pos.y < player.y + crate::player::HEIGHT
+                    && p.pos.y + p.h > player.y;
+                if inside {
+                    player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+                }
+            }
+        }
+        // `:72482` — `SoundEngine.PlaySound(SoundID.Item14, position)`:
+        // the Item-style case-2 play (the `wants_sound` (2, 14) shape);
+        // the death hook sits past the per-sub-step forward, so the cue
+        // parks straight in the pool queue.
+        let (sx, sy) = (self.slots[slot].pos.x, self.slots[slot].pos.y);
+        self.pending_proj_sounds.push((2, 14, sx, sy, 0.0));
+        // `:72483-72501` — the three dust loops' explicit draws.
+        crate::projectile_ai_djinn::curse_kill_draws(rng);
+    }
+}
 }
 
 /// S1-E-21h — the projectile sound wave's witnesses (written, NOT run —

@@ -592,6 +592,29 @@ pub(crate) struct StickyDust {
     pub(crate) post_arms: bool,
 }
 
+/// W4-f42 — one tick's `DoubleJumpVisuals` sandstorm arm
+/// (`Player.cs:21905-21926`): the three type-124 dusts + the optional
+/// 220-222 gore. The tick computes the geometry; the drain rolls
+/// `Dust.NewDust`/`Gore.NewGore` on the `UpdatePlayers` stream in the C#'s
+/// order (3 dusts, then the gore's `Next(220, 223)` type pick + spawn), so
+/// the RNG order is unchanged (S1-A-10). `gravDir` is always 1 in the port.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SandstormJumpVisual {
+    /// The dust spawn top-left: `(position.X, position.Y + height/2)`.
+    pub(crate) dust_pos: Vec2,
+    /// The dust `SpeedX/SpeedY`: `velocity * 0.3`.
+    pub(crate) dust_vel: Vec2,
+    /// `num4 = (jump / 75f + 1f) / 2f` — the dust scale + the gore scale.
+    pub(crate) num4: f32,
+    /// The gore request when `miscCounter % 3 == 0`: `(position.X +
+    /// width/2 - 18, position.Y + height/2)` and `-velocity`. The drain
+    /// rolls the 220-222 type and overwrites the velocity to
+    /// `velocity * 0.3 * num4`, alpha 100.
+    pub(crate) gore: Option<(Vec2, Vec2)>,
+    /// The player's live velocity (the gore's post-spawn overwrite reads it).
+    pub(crate) vel: Vec2,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -1983,6 +2006,10 @@ pub struct Player {
     /// the RNG order is unchanged (S1-A-10). The type-153 `velocity *= 0.1`
     /// and `noGravity` post-arms ride the drain too.
     pending_sticky_dust: Vec<StickyDust>,
+    /// W4-f42 — the tick's `DoubleJumpVisuals` sandstorm arm
+    /// (`Player.cs:21905-21926`): `None` unless the sandstorm jump is
+    /// performing + ascending. The drain rolls the 3 dust-124s + the gore.
+    pending_sandstorm_jump: Option<SandstormJumpVisual>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2918,6 +2945,7 @@ impl Player {
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
+            pending_sandstorm_jump: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3507,6 +3535,12 @@ impl Player {
         std::mem::take(&mut self.pending_sticky_dust)
     }
 
+    /// W4-f42 — takes the tick's `DoubleJumpVisuals` sandstorm arm
+    /// (`Player.cs:21905-21926`) — the caller owns `Main.dust` + `Main.gore`.
+    pub(crate) fn take_sandstorm_jump(&mut self) -> Option<SandstormJumpVisual> {
+        self.pending_sandstorm_jump.take()
+    }
+
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
     /// the seat tile re-decodes through `GetSittingTargetInfo` (`:56-61`),
     /// any control input / the mount / a facing mismatch stands up
@@ -3675,6 +3709,7 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.pending_sticky_dust.clear();
+        self.pending_sandstorm_jump = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -7218,6 +7253,14 @@ impl Player {
                 self.run_slowdown *= 0.1;
             }
         }
+        // W4-f42 — `Player.cs:26573-26577`: the sandstorm dash's run boost
+        // reads the PREVIOUS tick's `sandStorm` (the per-tick clear at
+        // `:26743` runs later in the tick; `DoubleJumpVisuals` `:26767`
+        // re-sets it while the jump performs). Acceleration ×1.5, top ×2.
+        if self.sand_storm {
+            self.run_acceleration *= 1.5;
+            self.max_run_speed *= 2.0;
+        }
         // `Player.cs:25256-25287`: the hover latches — a down press edge
         // latches hover-down, an up edge swaps to hover-up; landing clears
         // both. The vanilla default is `Settings.HoverControl == Hold`
@@ -7349,6 +7392,12 @@ impl Player {
 
         let jump_pressed = input.jump && !self.jump_held;
         self.jump_held = input.jump;
+        // W4-f42 — `Player.cs:26743`: the per-tick `sandStorm = false`
+        // ahead of `JumpMovement`; `DoubleJumpVisuals` (`:26767`, wired
+        // after the flight section below) re-sets it while the sandstorm
+        // jump performs, so the flag stands exactly one tick per ascent
+        // tick — the run boost above read the PREVIOUS tick's value.
+        self.sand_storm = false;
         // `:21024` clears the latch at the END of the held block, so the
         // jump branches read the PREVIOUS tick's latch — capture it first.
         let released = self.release_jump;
@@ -7481,6 +7530,14 @@ impl Player {
             || self.mount.kind() == 61;
         self.sticky_movement(world, sticky_cart, sticky_half, rng);
 
+        // W4-f42 — `Player.cs:26767`: `DoubleJumpVisuals()` runs after
+        // `CarpetMovement` (no port carpet) and BEFORE the wings/mount
+        // sandStorm clear — the port's clear rides `flight_section`'s head
+        // (`:26768-26771`, the next statement here), so the call sits ahead
+        // of it: the visual sets the flag, a wing/mount tick clears it
+        // again, exactly the C# order. The wet/webbed/grapple bypass keeps
+        // the flight section (and its clear) out — the flag stands.
+        self.double_jump_visuals();
         // The flight section (`Player.cs:26744-27360`): the wings and the
         // rocket boots REPLACE the gravity integration on the ticks they run.
         // The plain gravity below applies only in the fallback. The wet ticks
@@ -8833,6 +8890,55 @@ impl Player {
                 self.can_jump_again[i] = false;
             }
         }
+    }
+
+    /// W4-f42 — `Player.DoubleJumpVisuals`' sandstorm arm
+    /// (`Player.cs:21905-21926`), called from `Player.Update` at `:26767`
+    /// (after `CarpetMovement`, before the wings/mount sandStorm clear at
+    /// `:26768-26771`). While the sandstorm jump is performing + ascending
+    /// (`gravDir` is always 1 in the port): three type-124 dusts at
+    /// `(position.X, position.Y + height/2)` with `velocity * 0.3`, alpha
+    /// 150, scale `num4 = (jump/75 + 1)/2`, then `velocity *= 0.5*num4` and
+    /// `fadeIn = 1.5*num4`; `sandStorm = true`; and on `miscCounter % 3 == 0`
+    /// a 220-222 gore at `(position.X + width/2 - 18, position.Y + height/2)`
+    /// with `-velocity`, scale `num4`, then `velocity = velocity*0.3*num4`,
+    /// alpha 100. The dust/gore bodies ride the drain (the caller owns the
+    /// pools); the geometry + the `sandStorm` set land here.
+    fn double_jump_visuals(&mut self) {
+        let i = ExtraJump::Sandstorm.index();
+        // `:21905` — performing && has && !canJumpAgain && ascending.
+        if self.performing_jump != Some(ExtraJump::Sandstorm)
+            || !self.has_jump_options[i]
+            || self.can_jump_again[i]
+            || self.vy >= 0.0
+        {
+            return;
+        }
+        // `:21907-21911` — num3 = height (gravDir 1).
+        let num3 = self.height;
+        // `:21912` — num4 = (jump / 75f + 1f) / 2f.
+        let num4 = (self.jump as f32 / 75.0 + 1.0) / 2.0;
+        let dust_pos = Vec2::new(self.x, self.y + num3 / 2.0);
+        let dust_vel = Vec2::new(self.vx, self.vy) * 0.3;
+        // `:21919` — the flag the run boost + the leg pose + the direction
+        // lock all read.
+        self.sand_storm = true;
+        // `:21920-21925` — the every-3rd-tick gore.
+        let gore = if self.misc_counter % 3 == 0 {
+            Some((
+                Vec2::new(self.x + self.width / 2.0 - 18.0, self.y + num3 / 2.0),
+                -Vec2::new(self.vx, self.vy),
+            ))
+        } else {
+            None
+        };
+        self.pending_sandstorm_jump = Some(SandstormJumpVisual {
+            dust_pos,
+            dust_vel,
+            num4,
+            gore,
+            vel: Vec2::new(self.vx, self.vy),
+        });
     }
 
     /// `Player.SpawnFastRunParticles`' sound half (`Player.cs:20205-20216`):
@@ -16178,6 +16284,64 @@ mod tests {
         tap_air(&w, &mut p);
         assert_eq!(p.performing_jump, Some(ExtraJump::Cloud));
         assert_eq!(p.jump, (15.0 * 0.75) as i32, "cloud 0.75x boost");
+    }
+
+    /// W4-f42 — `Player.cs:21905-21926`: the performing sandstorm jump sets
+    /// `sandStorm` and queues the 3-dust + gore visual; the per-tick clear
+    /// (`:26743`) drops it again once the ascent ends.
+    #[test]
+    fn w4_f42_the_sandstorm_jump_sets_the_field_and_queues_the_visual() {
+        let w = ground_world();
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Sandstorm]);
+        // Ground jump, then the air tap consumes the sandstorm.
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        tap_air(&w, &mut p);
+        assert_eq!(p.performing_jump, Some(ExtraJump::Sandstorm));
+        assert!(p.vy < 0.0, "ascending");
+        assert!(p.sand_storm, "the visual set the flag (:21919)");
+        let v = p.take_sandstorm_jump().expect("the visual queued");
+        // num4 = (jump/75 + 1)/2 — jump 45 → (0.6 + 1)/2 = 0.8.
+        assert!((v.num4 - 0.8).abs() < 1e-6, "num4 = (45/75+1)/2");
+        assert_eq!(v.dust_pos, Vec2::new(p.x, p.y + p.height / 2.0));
+        assert_eq!(v.dust_vel, Vec2::new(p.vx, p.vy) * 0.3);
+        // The ascent ends: the flag clears on the next rest tick.
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert!(!p.sand_storm, "the per-tick clear dropped the flag");
+        assert!(p.take_sandstorm_jump().is_none(), "no visual at rest");
+    }
+
+    /// W4-f42 — `Player.cs:26573-26577`: the sandStorm run boost —
+    /// acceleration ×1.5, top speed ×2 — reads the flag at the stat slot
+    /// (before the `:26743` clear). One rightward tick from rest: the
+    /// boosted acceleration integrates a larger vx than the plain tick.
+    #[test]
+    fn w4_f42_the_sandstorm_field_boosts_the_run_stats() {
+        let w = ground_world();
+        let mut plain = Player::spawn(&w);
+        let mut boosted = Player::spawn(&w);
+        for _ in 0..120 {
+            plain.update(&w, PlayerInput::default());
+            boosted.update(&w, PlayerInput::default());
+        }
+        boosted.sand_storm = true;
+        let right = PlayerInput { right: true, ..Default::default() };
+        plain.update(&w, right);
+        boosted.update(&w, right);
+        assert!(
+            boosted.vx > plain.vx,
+            "the ×1.5 acceleration boost: {} > {}",
+            boosted.vx,
+            plain.vx
+        );
+        // The per-tick clear (`:26743`) dropped the flag after the stat
+        // slot read it — the boost applied exactly this tick.
+        assert!(!boosted.sand_storm, "the per-tick clear ran");
+        assert!(!plain.sand_storm);
     }
 
     /// `Player.cs:20755-20758`: the ground jump re-arms every granted option.

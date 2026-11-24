@@ -860,6 +860,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(VAMPIRE_SHEET)
             .chain(DRAGONFLY_SHEETS)
             .chain(FAIRY_BALLOON_SHEETS)
+            .chain(DESERT_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1941,6 +1942,20 @@ pub(crate) const BLOOD_MOON_SHEETS: &[u32] = &[489, 490];
 /// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
 /// `NpcAssets::npc_sheets` exactly like `BLOOD_MOON_SHEETS`.
 pub(crate) const G5_CASTER_SHEETS: &[u32] = &[172, 693];
+/// W4-f42 — the sandstorm debris + desert family's sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// [`NpcAssets::npc_sheets`] exactly like `WAVE_A_SHEETS`.
+pub(crate) const DESERT_SHEETS: &[u32] = &[
+    546, // the Tumbleweed
+    61,  // the Vulture
+    69,  // the Antlion
+    78,  // the Mummy
+    79,  // the DarkMummy
+    630, // the BloodMummy
+    80,  // the LightMummy
+    580, // the WalkingAntlion
+    581, // the FlyingAntlion
+];
 
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
@@ -5277,6 +5292,20 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-f42 — the sandstorm debris + desert family draw their own
+            // sheets (`DESERT_SHEETS`) at `Main.npcFrameCount[type]` rows
+            // with the generic centred anchor (the wave-A shape). The
+            // Tumbleweed's rotation rides `n.rotation` (the AI tail).
+            NpcKind::Tumbleweed
+            | NpcKind::Mummy
+            | NpcKind::DarkMummy
+            | NpcKind::BloodMummy
+            | NpcKind::LightMummy
+            | NpcKind::WalkingAntlion
+            | NpcKind::FlyingAntlion => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -5561,6 +5590,10 @@ pub(crate) fn draw_npcs(
                     | NpcKind::FairyCritterGreen
                     | NpcKind::FairyCritterBlue
                     | NpcKind::WindyBalloon
+                    // W4-f42 — the Tumbleweed's roll (`NPC.cs:62921`,
+                    // rotation += vx * 0.05), the Vulture's flight tilt
+                    // (`:73540`, vx * 0.1), the Antlion's aim (`:24421`),
+                    // the FlyingAntlion's tilt (`:30996`, vx * 0.1).
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
@@ -6412,10 +6445,28 @@ mod anchor_tests {
         // deferred 20 are NOT in D40_SHEETS, so their None-returning arms
         // stay out of this check).
         for &id in D40_SHEETS {
+        // W4-f42 — the sandstorm debris + desert family: every kind's draw
+        // sheet must be packed (the same M4-NPC-3v guard).
+        for &id in DESERT_SHEETS {
             let name = format!("NPC_{id}");
             assert!(
                 packed(&name),
                 "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
+        }
+        for kind in [
+            NpcKind::Tumbleweed,
+            NpcKind::Vulture,
+            NpcKind::Antlion,
+            NpcKind::Mummy,
+            NpcKind::DarkMummy,
+            NpcKind::LightMummy,
+            NpcKind::FlyingAntlion,
+        ] {
+            let tex_id = texture_net_id(kind);
+            assert!(
+                DESERT_SHEETS.contains(&(tex_id as u32)),
+                "{kind:?} draws from NPC_{tex_id}, outside DESERT_SHEETS"
             );
         }
     }
@@ -6822,6 +6873,7 @@ mod anchor_tests {
             );
         }
     }
+}
 }
 
 /// The task/offsets pins: the three audit claims the branch fixes, each

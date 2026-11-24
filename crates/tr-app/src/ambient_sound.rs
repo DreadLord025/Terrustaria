@@ -648,6 +648,15 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             // type-159 `Next(500)` arm (`NPC.cs:57352-57355`, case 29
             // style 7 — `fighter_ambient_moans` below).
             | Vampire
+            // W4-f42 — the desert aiStyle-3 walkers: the mummies (78/79/80/
+            // 630) draw their own `Next(500)` moan (`NPC.cs:57348`,
+            // `fighter_ambient_moans` below) and the WalkingAntlion (580)
+            // draws nothing — both ride the same idle counter.
+            | Mummy
+            | DarkMummy
+            | BloodMummy
+            | LightMummy
+            | WalkingAntlion
             | Scarecrow1
             | Scarecrow2
             | Scarecrow3

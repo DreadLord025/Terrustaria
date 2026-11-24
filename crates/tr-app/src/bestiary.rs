@@ -646,6 +646,70 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Librarian Skeleton",
+    // W4-f42 — the sandstorm debris + desert family (the `NPC.cs:3949-4018`
+    // spawn arm's picks). The vanilla net ids are the bestiary credits.
+    BestiaryEntryDef {
+        credit_id: "Tumbleweed",
+        net_id: 546,
+        variant: None,
+        quick_unlock: false,
+        name: "Tumbleweed",
+    },
+    BestiaryEntryDef {
+        credit_id: "Vulture",
+        net_id: 61,
+        variant: None,
+        quick_unlock: false,
+        name: "Vulture",
+    },
+    BestiaryEntryDef {
+        credit_id: "Antlion",
+        net_id: 69,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mummy",
+        net_id: 78,
+        variant: None,
+        quick_unlock: false,
+        name: "Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "DarkMummy",
+        net_id: 79,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodMummy",
+        net_id: 630,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightMummy",
+        net_id: 80,
+        variant: None,
+        quick_unlock: false,
+        name: "Light Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "WalkingAntlion",
+        net_id: 580,
+        variant: None,
+        quick_unlock: false,
+        name: "Walking Antlion",
+    },
+    BestiaryEntryDef {
+        credit_id: "FlyingAntlion",
+        net_id: 581,
+        variant: None,
+        quick_unlock: false,
+        name: "Flying Antlion",
     },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (R4 FINAL, research/322 — stat-identical, one aiStyle-9
@@ -2305,15 +2369,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Corrupt Goldfish",
     },
-    BestiaryEntryDef {
-        credit_id: "Vulture",
-        net_id: 61,
-        kind: NpcKind::Vulture,
-        variant: None,
-        quick_unlock: false,
-        name: "Vulture",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "Demon",
         net_id: 62,
         kind: NpcKind::Demon,
@@ -3209,15 +3265,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Etherian Lightning Bug",
     },
-    BestiaryEntryDef {
-        credit_id: "WalkingAntlion",
-        net_id: 580,
-        kind: NpcKind::WalkingAntlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Antlion Charger",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "LarvaeAntlion",
         net_id: 582,
         kind: NpcKind::LarvaeAntlion,
@@ -3264,15 +3312,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Giant Antlion Swarmer",
     },
-    BestiaryEntryDef {
-        credit_id: "FlyingAntlion",
-        net_id: 581,
-        kind: NpcKind::FlyingAntlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Antlion Swarmer",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "EyeballFlyingFish",
         net_id: 587,
         kind: NpcKind::EyeballFlyingFish,
@@ -3482,15 +3522,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     },
     // W4-d42 - the NPCID 630-630 roster's own credits (the
     // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
-    BestiaryEntryDef {
-        credit_id: "BloodMummy",
-        net_id: 630,
-        kind: NpcKind::BloodMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Blood Mummy",
-    },
-    // W4-d35: the 33 data-wave kinds' entries (73..140), id order.
+// W4-d35: the 33 data-wave kinds' entries (73..140), id order.
     // The Hide kinds (96/97/99/100/112) have NO own row - their
     // credit folds onto the head (try_entry_for_npc/entry_for_npc).
     BestiaryEntryDef {
@@ -3522,21 +3554,14 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Pink Jellyfish",
     },
-    BestiaryEntryDef {
-        credit_id: "Antlion",
-        net_id: 69,
-        kind: NpcKind::Antlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Antlion",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "SpikeBall",
         net_id: 70,
         kind: NpcKind::SpikeBall,
         variant: None,
         quick_unlock: false,
         name: "Spike Ball",
+    }
     }
     },
     BestiaryEntryDef {
@@ -3555,31 +3580,7 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Armored Skeleton",
     },
-    BestiaryEntryDef {
-        credit_id: "Mummy",
-        net_id: 78,
-        kind: NpcKind::Mummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "DarkMummy",
-        net_id: 79,
-        kind: NpcKind::DarkMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Dark Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "LightMummy",
-        net_id: 80,
-        kind: NpcKind::LightMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Light Mummy",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "Wraith",
         net_id: 82,
         kind: NpcKind::Wraith,
@@ -4022,15 +4023,7 @@ BestiaryEntryDef {
     // `BestiaryDatabaseNPCsPopulator.cs:1292` (Desert + Sandstorm tags)
     // and the en-US `NPCs.json:563` name ("Angry Tumbler"; the credit id
     // is `NPCID.Search.GetName(546)` = "Tumbleweed").
-    BestiaryEntryDef {
-        credit_id: "Tumbleweed",
-        net_id: 546,
-        kind: NpcKind::Tumbleweed,
-        variant: None,
-        quick_unlock: false,
-        name: "Angry Tumbler",
-    },
-    // W4-d120 — AddTownNPCs_Manual (BestiaryDatabaseNPCsPopulator.cs:814-
+// W4-d120 — AddTownNPCs_Manual (BestiaryDatabaseNPCsPopulator.cs:814-
     // 822): the four town kinds' TownNPC entries; the names ride the
     // en-US NPCs.json rows (`NPCName.<const>`).
     BestiaryEntryDef {
