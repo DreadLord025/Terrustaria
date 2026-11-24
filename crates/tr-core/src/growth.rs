@@ -78,6 +78,18 @@ pub use trees::{
 
 // S1-K-3b: the grass/spread family lives in `growth/grass.rs`; the public
 // seams stay on `growth` (verbatim move, behaviour frozen).
+/// `world_gore_a::tree_grow_fx` requests on the `UpdateWorldGen` stream.
+/// Restored from the g17 wiring commit 9bb6f316f:919-931 (the growth/grass.rs
+/// FX seam kept its parameters but the type declarations were lost in the
+/// union).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GrowthFxCtx<'a> {
+    pub players: &'a [(bool, f32, f32, f32, f32)],
+}
+
+/// The FX requests one `update_world` call collected (pick order).
+pub type TreeFxRequests = Vec<(i32, i32)>;
+
 pub use grass::{
     spread_desert_walls, spread_grass, spread_grass_walls, update_world_grass_growth,
 };
@@ -812,6 +824,72 @@ pub fn grow_spike(
     world.frame_important[spike_type as usize] = true;
 }
 
+fn overworld_mushroom_growth(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    min_i: i32,
+    max_i: i32,
+    min_j: i32,
+    max_j: i32,
+    rng: &mut UnifiedRandom,
+) {
+    // `:74271`: the entry guard binds the overworld switch too.
+    if !overworld::in_world_10(world, i, j) {
+        return;
+    }
+    // `if (!Main.tile[i, j].inActive())` (`:74706`).
+    if !world.tile(i, j).is_some_and(|t| t.inactive()) {
+        // The plant-71 roll (`:74708-74719`): the free cell above, Next(10).
+        if !world.tile(i, min_j).is_some_and(|t| t.active()) && rng.next_max(10) == 0 {
+            // `PlaceTile(i, minJ, 71, mute: true)` — the below-gate (active,
+            // flat, type 70) then `frameX = Next(5) * 18` (`:59652-59676`).
+            let below_ok = min_j + 1 < world.height
+                && world.tile(i, min_j + 1).is_some_and(|t| {
+                    t.active() && t.slope() == 0 && !t.half_brick() && t.kind == 70
+                });
+            if below_ok {
+                let fx = (rng.next_max(5) * 18) as i16;
+                let idx = world.index(i, min_j);
+                let t = &mut world.tiles[idx];
+                t.flags |= FLAG_ACTIVE;
+                t.kind = 71;
+                t.frame_x = fx;
+                // `CopyPaintAndCoating(Main.tile[i, j])` (`:74713`).
+                let (src_meta, src_extras) = {
+                    let si = world.index(i, j);
+                    (world.tiles[si].meta, world.extras_at(si))
+                };
+                let di = world.index(i, min_j);
+                world.tiles[di].meta = src_meta;
+                world.set_extras_at(di, src_extras);
+                if world.frame_important.len() <= 71 {
+                    world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+                }
+                world.frame_important[71] = true;
+            }
+        }
+        // The tree roll (`:74720-74727`): Next(300), then TryGrowingTreeByType(5).
+        // The `& flag10` (PlayerLOS) evaluates the grow regardless — the FX
+        // gate only suppresses the cosmetic shake (unported).
+        if rng.next_max(300) == 0 {
+            let _ = crate::growth::try_growing_tree_by_type(world, 5, i, j, rng);
+        }
+    }
+    // The 3×3 mud→mushroom-grass scan (`:74731-74745`).
+    for num23 in min_i..max_i {
+        for num24 in min_j..max_j {
+            if (i != num23 || j != num24)
+                && world
+                    .tile(num23, num24)
+                    .is_some_and(|t| t.active() && t.kind == 59)
+            {
+                spread_grass(world, num23, num24, 59, 70);
+            }
+        }
+    }
+}
+
 pub fn update_world_overground_tile(
     world: &mut World,
     x: i32,
@@ -841,8 +919,14 @@ pub fn update_world_overground_tile_ts(
     rng: &mut UnifiedRandom,
     ts: Option<&mut TownSpawnWalker<'_>>,
 ) {
-    let kind = world.tile(x, y).map(|t| (t.active(), t.kind));
-    let Some((active, kind)) = kind else {
+    // The clamped window (`:72032-72051`, fdedf9776:710-721): the C# clamps
+    // the +/-1 box to the 10-tile margin BEFORE any arm.
+    let min_i = (x - 1).max(10);
+    let max_i = (x + 2).min(world.width - 10);
+    let min_j = (y - 1).max(10);
+    let max_j = (y + 2).min(world.height - 10);
+    let kind = world.tile(x, y).map(|t| (t.active(), t.inactive(), t.kind));
+    let Some((active, inactive, kind)) = kind else {
         return;
     };
     if !active {
@@ -2751,15 +2835,6 @@ fn underground_nactive_arms(
     // 69 is disjoint from every earlier arm's kind set and the fn self-gates
     // on `kind == 69`. Same caller stream (UpdateWorldGen).
     crate::vine_growth::grow_underground_jungle_thorn(world, i, j, rng);
-    // The wall arms (`:72499-72502`, behind `AllowedToSpreadInfections`); the
-    // web and town-NPC arms park.
-    if allowed_to_spread {
-        spread_grass_walls(world, wall_dist, i, j, rng);
-        spread_desert_walls(world, wall_dist, i, j, rng);
-    }
-    // The wall arms run in the DISPATCHER after this body returns — every
-    // path (alch/inactive/actuated/nactive) reaches them (`:73809-73813`,
-    // W4-g42 GROWTH FINAL).
 }
 
 
