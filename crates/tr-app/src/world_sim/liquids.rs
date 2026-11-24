@@ -3,7 +3,6 @@
 //! `WaterfallManager.UpdateFrame` / `FindWaterfalls` scan.
 
 use glam::Vec2;
-use tr_core::TILE_PX;
 
 use crate::app::App;
 
@@ -42,12 +41,21 @@ pub(crate) fn update_waterfalls(app: &mut App, dt: f32, screen: Vec2) {
     if steps == 0 {
         return;
     }
-    let half = screen * 0.5 / app.zoom;
-    let view = [
-        ((app.camera.x - half.x) / TILE_PX).floor() as i32 - 1,
-        ((app.camera.y - half.y) / TILE_PX).floor() as i32 - 1,
-        ((app.camera.x + half.x) / TILE_PX).ceil() as i32 + 1,
-        ((app.camera.y + half.y) / TILE_PX).ceil() as i32 + 1,
-    ];
-    app.waterfall.find_waterfalls(&app.world, view, false);
+    // `WaterfallManager.cs:119-122`: the scan rectangle truncates the raw
+    // unscaled `Main.screenPosition`/screen size (`(int)` casts, no zoom
+    // divide, no floor/ceil); the `-1`/`+2` margins live inside
+    // `find_waterfalls`. The view's top-left is camera - screen/2, the same
+    // S1-E-19 `Camera.UnscaledPosition` convention the draw pass feeds
+    // `ScreenInfo`.
+    let view = tr_core::waterfall::WaterfallManager::scan_view(
+        [app.camera.x - screen.x * 0.5, app.camera.y - screen.y * 0.5],
+        screen.x,
+        screen.y,
+    );
+    // `Main.cs:61841`: `FindWaterfalls(Main.instantBGTransitionCounter == 10)`
+    // — the spawn/teleport instant-BG window (`Player.cs:37569` /
+    // `Main.cs:62559` set 10; `DrawBG` decrements at `:64039-64041`, which
+    // runs after this pass in the port's frame order).
+    let forced = app.bg_instant == 10;
+    app.waterfall.find_waterfalls(&app.world, view, forced);
 }

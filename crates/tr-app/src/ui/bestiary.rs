@@ -250,12 +250,7 @@ pub fn entry_hover_text(entry: &crate::bestiary::BestiaryEntryDef, state: Unlock
     if !state.known() {
         return "???".to_string();
     }
-    let localized = crate::lang::npc_name(entry.net_id);
-    if localized.is_empty() {
-        entry.name.to_string()
-    } else {
-        localized
-    }
+    crate::lang::npc_name_or(entry.net_id, entry.name)
 }
 
 /// `BestiaryEntry.CommonEnemy`'s flavor-text key
@@ -3607,15 +3602,11 @@ fn draw_info_page(
     let mut ty = panel[1] + 60.0;
     // The name — tier 1+ (`GetHoverText`'s `???` gate,
     // `UnlockableNPCEntryIcon.cs:213-226`).
-    // `Lang.GetNPCNameValue(netId)` (`Lang.cs:220-223`) — the localized NPC
-    // name (the English column stays the fallback for a missing key).
+    // `Lang.GetNPCNameValue(netId)` (`Lang.cs:175-178`) — the localized NPC
+    // name (the English column stays the fallback for a missing key — the
+    // shared `npc_name_or` seam, `task/W4-c23-lang-fsorder-npcnames`).
     let shown_name = if state.known() {
-        let localized = crate::lang::npc_name(entry.net_id);
-        if localized.is_empty() {
-            entry.name.to_string()
-        } else {
-            localized
-        }
+        crate::lang::npc_name_or(entry.net_id, entry.name)
     } else {
         "???".to_string()
     };

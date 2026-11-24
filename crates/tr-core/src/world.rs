@@ -205,6 +205,14 @@ pub struct World {
     pub downed_mech_boss3: bool,
     pub downed_mech_boss2: bool,
     pub downed_plant_boss: bool,
+    /// `NPC.EoCKilledToday` / `NPC.WoFKilledToday` (`NPC.cs:6611-6613`,
+    /// W4-f35): the Badger's Hat latches — the boss death heal feed
+    /// (`DoDeathEvents_DropBossPotionsAndHearts`, `:79003-79015`) sets
+    /// them, the hat drops + both clear when both are up; the dusk
+    /// transition resets both (`Main.cs:65221` `ResetBadgerHatTime`).
+    /// Runtime-only (the C# statics are not saved).
+    pub eoc_killed_today: bool,
+    pub wof_killed_today: bool,
     /// The Goblin Army invasion (`Main.invasionType = 1`).
     pub invasion_goblins: bool,
     /// The remaining invasion enemies (`Main.invasionSize`).
@@ -663,6 +671,8 @@ impl World {
             downed_mech_boss3: false,
             downed_mech_boss2: false,
             downed_plant_boss: false,
+            eoc_killed_today: false,
+            wof_killed_today: false,
             invasion_goblins: false,
             invasion_size: 0,
 

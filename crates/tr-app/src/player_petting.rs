@@ -109,6 +109,21 @@ impl PettingInfo {
         }
     }
 
+    /// The projectile constructor (`PlayerPettingInfo.cs:32-41`, W4-d21
+    /// fold 2): `isPetting = false`, `proj = whoAmI`, `type = proj.type`,
+    /// the offset + small flag ride (the NPC/mount lanes keep their own ctors).
+    pub fn from_projectile(who_am_i: i32, kind: u16, offset: (f32, f32), small: bool) -> Self {
+        Self {
+            is_petting: false,
+            npc: -1,
+            proj: who_am_i,
+            kind: kind as i32,
+            mount: false,
+            offset_from_pet: offset,
+            is_pet_small: small,
+        }
+    }
+
     /// The mount constructor (`PlayerPettingInfo.cs:43-52`).
     pub fn from_mount(mount_id: i32, small: bool) -> Self {
         Self {

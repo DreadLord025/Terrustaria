@@ -490,6 +490,13 @@ pub(crate) fn held_item_lights(
         // dust half is skipped.
         let v = loc + Vec2::new(8.0 * dir, -10.0) + pos;
         emit(v, [1.0 * 1.3, 0.7 * 1.3, 0.8 * 1.3]);
+        // colour (1, .7, .8) × 1.3. W4-d21 fold 2: the `petting.isPetting`
+        // gate is live (the pulley gate already rides `p.pulley` upstream);
+        // the `Next(40)` dust half is skipped.
+        if !p.petting.is_petting {
+            let v = loc + Vec2::new(8.0 * dir, -10.0) + pos;
+            emit(v, [1.0 * 1.3, 0.7 * 1.3, 0.8 * 1.3]);
+        }
     }
     out
 }
@@ -857,6 +864,25 @@ mod tests {
         p.pulley = true;
         assert!(held_item_lights(&p, 8, 20.0, zones(), &w, &params()).is_empty());
         assert!(held_item_lights(&p, 4952, 20.0, zones(), &w, &params()).is_empty());
+    }
+
+    /// W4-d21 fold 2 — the petting gate on the 4952 light (`:50174`):
+    /// while petting, the Fairy Queen item's light refuses; the other
+    /// held lights keep burning (their gates read pulley only).
+    #[test]
+    fn w4_d21_the_petting_gate_refuses_the_fairy_queen_light() {
+        let mut p = player();
+        let w = World::new("t".into(), 64, 800);
+        assert!(!held_item_lights(&p, 4952, 20.0, zones(), &w, &params()).is_empty());
+        p.petting.is_petting = true;
+        assert!(
+            held_item_lights(&p, 4952, 20.0, zones(), &w, &params()).is_empty(),
+            ":50174 — the petting refusal"
+        );
+        assert!(
+            !held_item_lights(&p, 8, 20.0, zones(), &w, &params()).is_empty(),
+            "the torch light has no petting gate"
+        );
     }
 
     #[test]

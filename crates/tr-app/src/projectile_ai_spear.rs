@@ -543,14 +543,19 @@ pub(crate) fn ai_spore(p: &mut Projectile) {
     }
 }
 
-/// `AI()`'s aiStyle-44 arm (`Projectile.cs:27893-27948`) for the spear's two
-/// riders: the ChlorophytePartisan's spore cloud (228, `:27896-27904`) and the
-/// ThunderSpear's bolt (732, `:27905-27921`). The shared frame machine
-/// (`:27941-27948`) advances `frame` every `num321` ticks (6 for 228, 3 for
-/// 732), wrapping at `Main.projFrames`. The 732's `Next(5)` dust gate
+/// `AI()`'s aiStyle-44 arm (`Projectile.cs:27893-27948`) for the spear's
+/// riders: the ChlorophytePartisan's spore cloud (228, `:27896-27904`), the
+/// ThunderSpear's bolt (732, `:27905-27921`) and — W4-g2 (d5 F6) — the
+/// Partisan's orb (229, `:27922-27940`). The shared frame machine
+/// (`:27941-27948`) advances `frame` every `num321` ticks (6 for 228/229,
+/// 3 for 732), wrapping at `Main.projFrames`. The 732's `Next(5)` dust gate
 /// (`:27913`) is dust-only — skipped with its body; the light (`:27920`) is
-/// skipped. The 229 arm is another kind (unrowed).
-pub(crate) fn ai_spear_subshot_44(p: &mut Projectile) {
+/// skipped. The 229's four dust-157 spawns with their
+/// `NextVector2Square(-4, 4)` draws (`:27934-27939`, TWO `NextFloat` each)
+/// are dust-only too — skipped with their draws (the module's zero-
+/// observable-state convention; the kept-draw families are the ones whose
+/// rolls feed behaviour).
+pub(crate) fn ai_spear_subshot_44(p: &mut Projectile, world: &World) {
     let num321 = match p.kind {
         228 => {
             // `:27898-27903` — the fade: velocity * 0.96, alpha += 2, kill at
@@ -571,6 +576,32 @@ pub(crate) fn ai_spear_subshot_44(p: &mut Projectile) {
             }
             p.rot = p.vel.to_angle();
             3
+        }
+        229 => {
+            // `:27924-27927` — the first-tick cue: `ai[0] == 0` and a clear
+            // `CanHitLine(Center, 1, 1, Center + velocity * 10, 1, 1)` play
+            // `SoundID.Item8` (the int overload — style 0). The cue rides
+            // `wants_sound` (the S1-E-21h drain); the line test runs even
+            // when the cue is declined — it is the C#'s `&&` order.
+            if p.ai[0] == 0.0 {
+                let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                let ahead = center + p.vel * 10.0;
+                if can_hit_line(
+                    world, center.x, center.y, 1.0, 1.0, ahead.x, ahead.y, 1.0, 1.0,
+                ) {
+                    p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+                }
+            }
+            // `:27928-27933` — the age counter, then past 20 the gravity
+            // `+0.3` and the X friction `*0.98`.
+            p.ai[0] += 1.0;
+            if p.ai[0] > 20.0 {
+                p.vel.y += 0.3;
+                p.vel.x *= 0.98;
+            }
+            // `:27934-27939` — the 4× dust 157 (NextVector2Square draws) —
+            // dust-only, skipped with the draws.
+            6
         }
         _ => 6,
     };

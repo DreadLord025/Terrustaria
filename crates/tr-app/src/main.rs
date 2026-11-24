@@ -17,6 +17,11 @@ mod bank;
 mod banners;
 mod bestiary;
 mod biome;
+mod boss_bags;
+mod fishing_crates;
+mod misc_bags;
+mod npc_death_heals;
+mod presents;
 mod buff_effects;
 mod buff_effects_misc;
 mod buffs;
@@ -38,6 +43,7 @@ mod env;
 mod entity_lights;
 mod item_lights;
 mod npc_lights;
+mod npc_lights_c;
 mod player_lights;
 mod proj_lights;
 mod eoc_fight;
@@ -286,6 +292,20 @@ mod npc_findframe_high2;
 // W4-g10 lane 3: the town pets' FindFrame arm (the humanoid-group body
 // with the pet overrides, NPC.cs:68622-69655).
 mod npc_findframe_pet;
+mod npc_findframe_extra2;
+mod npc_findframe_extra3;
+mod npc_findframe_extra5;
+mod npc_findframe_extra6;
+mod npc_findframe_extra7b;
+mod npc_findframe_extra7c;
+mod npc_findframe_extra7d;
+mod npc_findframe_extra7e;
+mod npc_findframe_extra7f;
+mod npc_findframe_extra7g;
+mod npc_findframe_extra7h;
+mod npc_findframe_extra7i;
+mod npc_findframe_extra7j;
+mod npc_findframe_extra7k;
 mod persist;
 mod grapple;
 mod gore_seam;
@@ -342,6 +362,16 @@ mod projectile_ai_style49;
 // dispatch arms are the wiring round (the d5 / npc_ai_style25 precedent).
 mod projectile_ai_style63;
 mod projectile_ai_style69;
+// W4-d21 — the projectile aiStyles 201-210 missing machines (201/202/203/
+// 204/205/208/209; 206 landed a9 8c4fded8 verify-only, 207 empty/no kinds,
+// 210 already ai_yoyo_shot). The rows land in projectile/data.rs; the
+// dispatch arms are wired in projectile.rs::update. Code-only mode —
+// witness tests written not run.
+mod projectile_ai_201_210;
+// W4-d21 folds 3+4 — the MultiPointHitbox + LightningGenerator port (the
+// 203 storm-lightning bolt paths: tile truncation + the multi-segment
+// damage hitbox; the census proved the generator is NOT render-only).
+mod lightning_generator;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

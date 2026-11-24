@@ -643,6 +643,20 @@ pub(crate) struct App {
     /// hover sites are unported, so nothing arms it today — the field keeps
     /// the check's shape.
     pub(crate) no_throw: i32,
+    /// `Player.cursorItemIconID` (`Player.cs:1851`, W4-d21 fold 2) — the
+    /// right-click-interaction cursor icon the hover arms set (the petting
+    /// `TryPetting` `Main.cs:37958`, the money-trough/void-lens arms). 0 =
+    /// no icon (`cursorItemIconEnabled = false`). The icon DRAW is the
+    /// render layer's follow-up; the field carries the sim state.
+    pub(crate) cursor_item_icon_id: u16,
+    /// `Player.BlockInteractionWithProjectiles` (`Player.cs:3024`, W4-d21
+    /// fold 2) — the static interaction cooldown: the static ctor arms 3
+    /// (`:57125`), the gamepad inventory-close re-arms 3 (`:5050`), and
+    /// `Main.DoUpdate` decrements it while the right button is released
+    /// (`Main.cs:16849-16852`). The pet/money-trough/void-lens right-click
+    /// arms gate on `== 0` (`:37964`). The port is keyboard+mouse (no
+    /// gamepad re-arm); the decrement rides the editing pass head.
+    pub(crate) block_interaction_with_projectiles: i32,
     /// `Main.mouseRightRelease` as the vanilla recomputes it at the END of
     /// every interface draw (`Main.cs:62458-62465`: `!Main.mouseRight`) —
     /// the buff bar's cancel reads `mouseRight && mouseRightRelease`
@@ -895,11 +909,23 @@ pub(crate) struct App {
     /// (S1-E-1 phase 2); the `world_sim` drain feeds the cart's queued
     /// requests into it and the frame ticks/draws the client slots.
     pub(crate) dust: tr_core::particles::DustPool,
-    /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
-    /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
+    /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2205`, stored by
+    /// `WaterfallManager.cs:960-962`): the waterfall loop's (strength, x, y)
+    /// that `Main.Ambience` reads every ¼ s. Honey falls never feed it
+    /// (`WaterfallManager.cs:708`'s kind-14 skip).
     pub(crate) ambient_waterfall: (f32, f32, f32),
-    /// `Main.ambientLavafallX/Y/Strength` (`WaterfallManager.cs:960-962`).
+    /// `Main.ambientLavafallX/Y/Strength` (`Main.cs:2207-2211`, stored by
+    /// `WaterfallManager.cs:963-965`): the lavafall loop's (strength, x, y).
     pub(crate) ambient_lavafall: (f32, f32, f32),
+    /// `Main.ambientLavaX/Y/Strength` (`Main.cs:2213-2217`, stored by
+    /// `oldDrawWater`'s `Main.cs:57932-57936` retro-only scan): the pooled
+    /// lava's (strength, x, y) - the lavafall loop's position pick and
+    /// strength sum read it (`Main.Ambience`, `Main.cs:13488-13497`).
+    /// `tr_core::retro_water::ambient_lava_scan` ports the scan and the
+    /// frame's legacy-light tail runs it in Retro/Trippy (W4-g73 closeout);
+    /// non-retro modes never write, so the triple keeps the
+    /// `Main.cs:67235-67236` load reset (-1, -1, 0) until a retro frame.
+    pub(crate) ambient_lava: (f32, f32, f32),
     /// `Main.ambientCounter` — the ¼ s gate of `Main.Ambience`
     /// (`Main.cs:13469-13476`).
     pub(crate) ambient_counter: f32,
@@ -3414,8 +3440,16 @@ impl App {
         // save-time snapshot — the rain event comes back, `cloudAlpha` :=
         // `maxRaining`. The triple rode the `.trwld` v14 block (S1-J-7).
         rain.restore_saved(world.raining, world.rain_time, world.max_raining);
-        let ambient_waterfall = (0.0, 0.0, 0.0);
-        let ambient_lavafall = (0.0, 0.0, 0.0);
+        // `Main.cs:67229-67234` world-load reset: X/Y = -1, Strength = 0 —
+        // the (strength, x, y) tuples start at the reset, not (0, 0, 0)
+        // (a 0-position triple would pass the `x == -1 || y == -1` 2D gate
+        // of `LegacySoundPlayer.cs:376` differently).
+        let ambient_waterfall = (0.0, -1.0, -1.0);
+        let ambient_lavafall = (0.0, -1.0, -1.0);
+        // `Main.cs:67235-67236` load reset; the retro-only `oldDrawWater`
+        // scan (`:57932-57936`) writes it on Retro/Trippy frames
+        // (`tr_core::retro_water`, W4-g73 closeout).
+        let ambient_lava = (0.0, -1.0, -1.0);
         let ambient_counter = 0.0f32;
         // `Main.atmo` starts at its surface value; recomputed per draw below.
         let atmo = 1.0_f32;
@@ -3895,6 +3929,8 @@ impl App {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
+            cursor_item_icon_id: 0,
+            block_interaction_with_projectiles: 3,
             ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
@@ -4012,6 +4048,7 @@ impl App {
             rain,
             ambient_waterfall,
             ambient_lavafall,
+            ambient_lava,
             ambient_counter,
             wind,
             world_tick_step: FixedStepper::new(1.0 / 60.0, 8),

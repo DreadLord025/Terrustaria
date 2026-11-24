@@ -1694,6 +1694,124 @@ mod tests {
         }
     }
 
+    /// W4-g25 batch 1 — the food/range-if sound provisions (10 sites).
+    /// `Item.cs` has ZERO `PlaySound` calls; these pin the `UseSound` data
+    /// rows the `SetFoodDefaults` gulp split and the four range-if blocks
+    /// provision (the play call is wave A's `Player.cs:51681-51698` seam).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g25_batch1_the_food_and_range_if_sound_rows() {
+        let row = |kind: u16| {
+            let d = registry::get(kind).expect("the kind is registered");
+            let style = d.use_sound.map(|i| crate::soundid::SOUND_STYLES[i as usize].name);
+            (style, d.use_style, d.use_sound_pitch)
+        };
+        // 1. Ale 353 — `DefaultToFood(…, useGulpSound: true)` (`Item.cs:48380`):
+        //    gulp → Item3 + useStyle 9 (`:48545`/`:48553`).
+        assert_eq!(row(353), (Some("Item3"), 9, 0.0));
+        // 2. Marshmallow 967 — NON-gulp `DefaultToFood` (`:48302`) → Item2,
+        //    then the case re-styles to 9 AFTER (`:48304`) — the sound stays
+        //    Item2 (the style write does not touch UseSound).
+        assert_eq!(row(967), (Some("Item2"), 9, 0.0));
+        // 3. Cooked Marshmallow 969 — the same non-gulp + post-style pair
+        //    (`:48233-48235`).
+        assert_eq!(row(969), (Some("Item2"), 9, 0.0));
+        // 4. Rock Candy 5645 — gulp `DefaultToFood` (`:48371`) provisions
+        //    Item3, then the case OVERRIDES to Item2 (`:48372`); useStyle 9
+        //    from the gulp helper stands.
+        assert_eq!(row(5645), (Some("Item2"), 9, 0.0));
+        // 5. Eggnog 1912 — `IsFood` (`ItemID.cs:498`) routes to
+        //    `SetFoodDefaults` (`Item.cs:48689`), whose case calls
+        //    `DefaultToHealingPotion` (`:48387` → `:48572` Item3) — NOT the
+        //    `SetDefaults2` case 1912 (`:20741`, unreachable for food).
+        assert_eq!(row(1912), (Some("Item3"), 9, 0.0));
+        // 6. Golden Delight 4022 — non-gulp `DefaultToFood` (`:48045`):
+        //    Item2 + useStyle 2 (`:48549`/`:48557`), no post-override.
+        assert_eq!(row(4022), (Some("Item2"), 2, 0.0));
+        // 7. Life Hair Dye 1977 — the range-if `type >= 1977 && type <= 1986`
+        //    (`:21235`) provisions Item3 + useStyle 9 (`:21253-21254`); the
+        //    case-label group 1970-1976 (`:21217-21233`) is the gemspark
+        //    blocks, NOT this block (1976 stays silent).
+        assert_eq!(row(1977), (Some("Item3"), 9, 0.0));
+        assert_eq!(row(1976).0, None);
+        // 8. Fleshcatcher 2421 — the range-if `type >= 2421 && type <= 2422`
+        //    (`:23074`) provisions Item1 (`:23081`), useStyle 1 (`:23076`).
+        assert_eq!(row(2421), (Some("Item1"), 1, 0.0));
+        // 9. Rockfish 2320 — the `if (type == 2320)` block (`:23099`)
+        //    provisions Item1 (`:23112`), useStyle 1 (`:23105`).
+        assert_eq!(row(2320), (Some("Item1"), 1, 0.0));
+        // 10. Flaming Mace 5012 — the shared 5011/5012 case (`:40333-40334`)
+        //     provisions Item1 (`:40351`), useStyle 5 (`:40336`); the
+        //     `if (type == 5012)` arm (`:40346`) only swaps the shoot.
+        assert_eq!(row(5012), (Some("Item1"), 5, 0.0));
+        // The provisions draw NOTHING: `initial_use_sound` is a pure table
+        // read (no RNG parameter), and the pitch column is 0 everywhere in
+        // this batch (the only nonzero pitch is 1513, wave A's pin).
+        for kind in [353u16, 967, 969, 5645, 1912, 4022, 1977, 2421, 2320, 5012] {
+            let (_, pitch) = initial_use_sound(kind).expect("the batch plays at the use start");
+            assert_eq!(pitch, 0.0, "kind {kind}");
+        }
+    }
+
+    /// W4-g25 batch 2 — the null/trackable/deprecated/override sound
+    /// provisions (10 sites). The explicit `UseSound = null` rows, the
+    /// non-`ItemN` style names, the `Deprecated` → air zeroing, and the
+    /// post-helper overrides. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g25_batch2_the_null_trackable_deprecated_and_override_rows() {
+        let row = |kind: u16| {
+            let d = registry::get(kind).expect("the kind is registered");
+            let style = d.use_sound.map(|i| crate::soundid::SOUND_STYLES[i as usize].name);
+            (style, d.use_style, d.use_sound_pitch)
+        };
+        // 1. Medusa Head 3269 — explicit `UseSound = null` (`Item.cs:30324`),
+        //    useStyle 4 (`:30314`): the use start is silent.
+        assert_eq!(row(3269), (None, 4, 0.0));
+        assert_eq!(initial_use_sound(3269), None);
+        // 2. Zenith 4956 — explicit null (`:40004`), useStyle 1 (`:40001`).
+        assert_eq!(row(4956), (None, 1, 0.0));
+        // 3. Portal Gun 3384 — explicit null (`:30958`), useStyle 5.
+        assert_eq!(row(3384), (None, 5, 0.0));
+        // 4. Leaf Blower 1178 — `SoundID.LeafBlower` (`:14469`), a NAMED
+        //    id-2 style: `(2, 34).WithVolume(0.13)` (`SoundID.cs:1726`),
+        //    NOT a trackable. The volume override rides the style row.
+        let leaf = &crate::soundid::SOUND_STYLES[registry::get(1178).unwrap().use_sound.unwrap() as usize];
+        assert_eq!((leaf.sound_id, leaf.style, leaf.trackable), (2, 34, None));
+        assert_eq!(leaf.volume, 0.13);
+        // 5. Palworld Pet Chillet 5665 — `SoundID.PalSummon` (`:44514`), a
+        //    TRACKABLE (id 42, `CreateTrackable("pal_summon").WithVolume(0.15)`,
+        //    `SoundID.cs:1712`); useStyle 1 (`:44511`).
+        let pal = &crate::soundid::SOUND_STYLES[registry::get(5665).unwrap().use_sound.unwrap() as usize];
+        assert_eq!((pal.sound_id, pal.trackable), (42, Some("pal_summon")));
+        assert_eq!(pal.volume, 0.15);
+        assert_eq!(row(5665).1, 1);
+        // 6. Glacier Fang 6153 — `SoundID.GlacierFang_Charging` (`:47431`),
+        //    a NAMED id-2 style `(2, 210)` (`SoundID.cs:1594`), useStyle 5.
+        let glacier = &crate::soundid::SOUND_STYLES[registry::get(6153).unwrap().use_sound.unwrap() as usize];
+        assert_eq!((glacier.sound_id, glacier.style, glacier.trackable), (2, 210, None));
+        assert_eq!(row(6153).1, 5);
+        // 7. Vortex Axe 2772 — the case provisions Item1 (`:26478`) BUT the
+        //    id is `Deprecated` (`ItemID.cs:1316`), so the epilogue
+        //    `TurnToAir` (`Item.cs:48922-48925`) zeroes it: name "None",
+        //    useStyle 0, no sound.
+        assert_eq!(row(2772), (None, 0, 0.0));
+        assert_eq!(registry::get(2772).unwrap().name, "None");
+        // 8. First Fractal 4722 — same Deprecated → air zeroing (case
+        //    `:38793` Item1, `ItemID.cs:1316`).
+        assert_eq!(row(4722), (None, 0, 0.0));
+        // 9. Whoopie Cushion 215 — `DefaultToVoiceOverrideAccessory` sets
+        //    null (`:4049` → `:47788`), then the case OVERRIDES to Item16
+        //    (`:4057`) + useStyle 10 (`:4056`). The override wins.
+        assert_eq!(row(215), (Some("Item16"), 10, 0.0));
+        // 10. Arc Surge 6173 — `DefaultToStaff` provisions Item43 (`:47556`
+        //     → `:48021`), then the case OVERRIDES to Item15 (`:47560`);
+        //     useStyle 5 from the staff helper stands.
+        assert_eq!(row(6173), (Some("Item15"), 5, 0.0));
+        // The deprecated ids answer None through the use-start gate too.
+        assert_eq!(initial_use_sound(2772), None);
+        assert_eq!(initial_use_sound(4722), None);
+    }
+
     #[test]
     fn s1_f_10_item_slot_clone_and_refresh_snapshot() {
         // `Item.Clone`/`Item.Refresh` (`Item.cs:49837-49840`, `:49945-49961`,

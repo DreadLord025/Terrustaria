@@ -52,9 +52,10 @@ fn xna_clamp(value: f32, min: f32, max: f32) -> f32 {
 }
 
 /// The resolved box of one element — `UIElement.GetDimensionsBasedOnParentDimensions`
-/// (`UIElement.cs:306-323`) with the margins left out (every P6 element leaves
-/// them 0; `UIElement.cs:316-317` adds them back and `Recalculate` :293-297
-/// subtracts them again, so they cancel at 0):
+/// (`UIElement.cs:306-323`) at **zero margins** (every P6 element leaves them 0).
+/// The full margin maths (`:317-318` inflate before the align shift, `Recalculate`
+/// :293-297 shrink after) lives in [`resolve_with_margins`]; this delegates to it
+/// with `margin = [0; 4]`, so the two agree exactly at 0:
 ///
 /// ```text
 /// X = Left.GetValue(parentW) + parentX          (`UIElement.cs:308`)
@@ -98,9 +99,7 @@ pub fn resolve(
     resolve_with_max_h(parent, left, top, width, height, h_align, v_align, min_w, min_h, max_w, f32::MAX, padding)
 }
 
-/// [`resolve`] with the height clamp's maximum made explicit. `max_h` is
-/// `MaxHeight.GetValue(parentH)`, which no P6 element overrides — the `UIList`
-/// ∞-height case is the only caller that must see it ([`resolve_in_list`]).
+/// [`resolve_with_margins`] at zero margins — the shape every P6 caller uses.
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_with_max_h(
     parent: [f32; 4],
@@ -116,15 +115,70 @@ pub fn resolve_with_max_h(
     max_h: f32,
     padding: [f32; 4],
 ) -> [f32; 4] {
+    resolve_with_margins(
+        parent, left, top, width, height, h_align, v_align, min_w, min_h, max_w, max_h, [0.0; 4], padding,
+    )
+}
+
+/// [`resolve`] with the element's margins — the faithful `Recalculate` head
+/// (`UIElement.cs:285-304`):
+///
+/// ```text
+/// outer = GetDimensionsBasedOnParentDimensions(parent)   // :292
+/// // inside :306-322 the clamp uses Min/MaxWidth.GetValue(parentW) (:311-314),
+/// // then the size INFLATES by the margins BEFORE the align shift:
+/// W += MarginLeft + MarginRight                          // :317
+/// H += MarginTop + MarginBottom                          // :318
+/// X += parentW*HAlign - W*HAlign                         // :319 (W already inflated)
+/// Y += parentH*VAlign - H*VAlign                         // :320
+/// // back in Recalculate the margins SHRINK the box to `_dimensions`:
+/// X += MarginLeft;  Y += MarginTop                       // :293-294
+/// W -= MarginLeft + MarginRight                          // :295
+/// H -= MarginTop + MarginBottom                          // :296
+/// ```
+///
+/// `margin` is `(left, top, right, bottom)`. The inflate/subtract pair is NOT a
+/// no-op with `HAlign`/`VAlign != 0`: the alignment sees the inflated size, so a
+/// centred margin box shifts by half the margin total before the shrink — ported
+/// in that order, never folded away. At `margin == [0; 4]` this is bit-identical
+/// to the old margin-free `resolve` (the `+ 0.0`/`- 0.0` steps are exact for
+/// every finite float). The returned rect is `_dimensions` (== `GetDimensions()`),
+/// the outer-minus-margins box the C# hit-tests (`ContainsPoint` :354-357).
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_with_margins(
+    parent: [f32; 4],
+    left: Style,
+    top: Style,
+    width: Style,
+    height: Style,
+    h_align: f32,
+    v_align: f32,
+    min_w: f32,
+    min_h: f32,
+    max_w: f32,
+    max_h: f32,
+    margin: [f32; 4],
+    padding: [f32; 4],
+) -> [f32; 4] {
     // `UIElement.cs:308-309`.
     let mut x = left.px + left.pct * parent[2] + parent[0];
     let mut y = top.px + top.pct * parent[3] + parent[1];
-    // `UIElement.cs:310-316`: the min/max clamp happens BEFORE the alignment.
-    let w = xna_clamp(width.px + width.pct * parent[2], min_w, max_w);
-    let h = xna_clamp(height.px + height.pct * parent[3], min_h, max_h);
-    // `UIElement.cs:319-320`.
+    // `UIElement.cs:310-316`: the min/max clamp happens BEFORE the margin inflate
+    // and BEFORE the alignment — the clamp bounds the *content* size, not the
+    // margin box.
+    let mut w = xna_clamp(width.px + width.pct * parent[2], min_w, max_w);
+    let mut h = xna_clamp(height.px + height.pct * parent[3], min_h, max_h);
+    // `UIElement.cs:317-318` — inflate to the margin box.
+    w += margin[0] + margin[2];
+    h += margin[1] + margin[3];
+    // `UIElement.cs:319-320` — align the INFLATED box.
     x += parent[2] * h_align - w * h_align;
     y += parent[3] * v_align - h * v_align;
+    // `UIElement.cs:293-296` — shrink back to `_dimensions`.
+    x += margin[0];
+    y += margin[1];
+    w -= margin[0] + margin[2];
+    h -= margin[1] + margin[3];
     let _ = padding; // padding affects only `inner` (`UIElement.cs:298-303`), not the outer rect.
     [x, y, w, h]
 }
@@ -161,6 +215,23 @@ pub fn resolve_in_list(
     // (`UIElement.cs:33-39`) — with the ∞ parent that is `float.MaxValue`, which
     // is what `resolve` already clamps against.
     resolve(infinite, left, top, width, height, h_align, v_align, min_w, min_h, max_w, padding)
+}
+
+/// `UIList.RecalculateChildren`'s inner-height total (`UIList.cs:116-128`):
+/// every item's outer height plus one `ListPadding` **per item** — including
+/// the last (`:125`'s `num += GetOuterDimensions().Height + num2` runs for
+/// every row, so the trailing padding is part of `_innerListHeight` and is
+/// scrollable). The single-item list drops the padding (`:122`'s
+/// `num2 = (Count == 1) ? 0 : ListPadding`); an empty list totals 0.
+/// `UIScrollbar.SetView` receives this as `maxViewSize`
+/// (`UIList.UpdateScrollbar`, `:130-137`).
+pub fn list_total_height(row_heights: &[f32], list_padding: f32) -> f32 {
+    let mut num = 0.0f32;
+    for &h in row_heights {
+        let num2 = if row_heights.len() == 1 { 0.0 } else { list_padding };
+        num += h + num2;
+    }
+    num
 }
 
 /// The element's inner rect = outer − padding (`UIElement.GetInnerDimensions`,
@@ -664,6 +735,93 @@ mod tests {
     }
 
     #[test]
+    fn resolve_margins_align_the_inflated_box_then_shrink() {
+        // Hand-computed C# case (`UIElement.cs:315-320` + `:293-296`):
+        // parent [0,0,200,100], Width 50, Height 20, HAlign 0.5, VAlign 0.5,
+        // margins L10 T4 R6 B8.
+        //   :315 clamp: W=50, H=20;  :317-318 inflate: W=50+16=66, H=20+12=32;
+        //   :319 x = 0 + 200*0.5 - 66*0.5 = 67;  :320 y = 100*0.5 - 32*0.5 = 34;
+        //   :293-296 shrink: x=67+10=77, y=34+4=38, W=66-16=50, H=32-12=20.
+        let boxed = resolve_with_margins(
+            [0.0, 0.0, 200.0, 100.0],
+            Style::px(0.0),
+            Style::px(0.0),
+            Style::px(50.0),
+            Style::px(20.0),
+            0.5,
+            0.5,
+            0.0,
+            0.0,
+            200.0,
+            100.0,
+            [10.0, 4.0, 6.0, 8.0],
+            [0.0; 4],
+        );
+        assert_eq!(boxed, [77.0, 38.0, 50.0, 20.0]);
+        // The naive "shrink then centre" would give x=75, y=40 — the inflate
+        // BEFORE the align shift (`:317-319` order) is the half-margin delta.
+        let unaligned = resolve_with_margins(
+            [0.0, 0.0, 200.0, 100.0],
+            Style::px(0.0),
+            Style::px(0.0),
+            Style::px(50.0),
+            Style::px(20.0),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            200.0,
+            100.0,
+            [10.0, 4.0, 6.0, 8.0],
+            [0.0; 4],
+        );
+        // No alignment: pure `:293-294` offset, size back to the style values.
+        assert_eq!(unaligned, [10.0, 4.0, 50.0, 20.0]);
+    }
+
+    #[test]
+    fn resolve_margins_clamp_the_content_size_before_inflating() {
+        // `:315-316` clamps against Min/Max BEFORE `:317-318` inflates: a 10 px
+        // width with MinWidth 30 and margins 5+5 resolves W = 30 (not 10+10-10),
+        // and the align shift sees 40. x = 0 + 100*0.5 - 40*0.5 = 30, +5 = 35.
+        let clamped = resolve_with_margins(
+            [0.0, 0.0, 100.0, 100.0],
+            Style::px(0.0),
+            Style::px(0.0),
+            Style::px(10.0),
+            Style::px(10.0),
+            0.5,
+            0.0,
+            30.0,
+            0.0,
+            100.0,
+            100.0,
+            [5.0, 0.0, 5.0, 0.0],
+            [0.0; 4],
+        );
+        assert_eq!(clamped, [35.0, 0.0, 30.0, 10.0]);
+    }
+
+    #[test]
+    fn resolve_zero_margins_is_bit_identical_to_the_old_margin_free_pass() {
+        // Every existing P6 caller leaves the margins 0 — the delegation must
+        // not move a single rect (the `+0.0/-0.0` steps are exact).
+        let cases = [
+            (Style::new(-10.0, 0.5), Style::px(50.0), 1.0, 0.0),
+            (Style::new(-10.0, 0.5), Style::px(50.0), 0.5, 0.5),
+            (Style::px(0.0), Style::px(-45.0), 0.0, 1.0),
+            (Style::pct(0.25), Style::pct(0.75), 0.3, 0.7),
+        ];
+        for (w, h, ha, va) in cases {
+            let old = resolve(ROOT, Style::px(0.0), Style::px(0.0), w, h, ha, va, 0.0, 0.0, ROOT[2], [0.0; 4]);
+            let new = resolve_with_margins(
+                ROOT, Style::px(0.0), Style::px(0.0), w, h, ha, va, 0.0, 0.0, ROOT[2], f32::MAX, [0.0; 4], [0.0; 4],
+            );
+            assert_eq!(old, new);
+        }
+    }
+
+    #[test]
     fn resolve_clamps_min_width_before_aligning() {
         // A 100 px-wide element with MinWidth 315 grows first, then aligns:
         // x = 475 + (650 - 315) = 810 — not 475 + (650 - 100) = 1025.
@@ -723,6 +881,26 @@ mod tests {
         // Asymmetric padding (the `right` column's PaddingTop 8 / Bottom 12,
         // `UIWorldCreation.cs:187-197`).
         assert_eq!(inner([550.0, 202.0, 500.0, 298.0], [0.0, 8.0, 0.0, 12.0]), [550.0, 210.0, 500.0, 278.0]);
+    }
+
+    #[test]
+    fn list_total_height_keeps_the_trailing_padding() {
+        // `UIList.cs:116-128`: `num2 = (Count == 1) ? 0 : ListPadding` is added
+        // for EVERY row (`:125`), so the last row's trailing padding is part of
+        // `_innerListHeight` — the scroll range includes it.
+        // The achievements rows: 102 px + ListPadding 5 (`UIAchievementsMenu.cs:55`).
+        assert_eq!(list_total_height(&[102.0; 137], 5.0), 137.0 * 107.0);
+        // The select screens' cards: 96 + 5 (`UICharacterSelect.cs:52`).
+        assert_eq!(list_total_height(&[96.0; 6], 5.0), 606.0);
+        // The single-item list drops the padding (`:122`).
+        assert_eq!(list_total_height(&[96.0], 5.0), 96.0);
+        assert_eq!(list_total_height(&[102.0], 5.0), 102.0);
+        // An empty list totals 0 (`num` starts at 0 and the loop never runs).
+        assert_eq!(list_total_height(&[], 5.0), 0.0);
+        // Mixed heights accumulate each row's own outer height (`:125`'s
+        // `GetOuterDimensions().Height`), the emotes group rows' case
+        // (`UIEmotesMenu.cs:67`'s ListPadding 14).
+        assert_eq!(list_total_height(&[50.0, 86.0, 50.0], 14.0), 50.0 + 86.0 + 50.0 + 42.0);
     }
 
     #[test]

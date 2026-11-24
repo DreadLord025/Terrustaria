@@ -66,6 +66,14 @@
 //! (`:21268-21269`) all draw `Main.rand` too and are skipped wholesale — the
 //! dust system (S1-E-2/S1-E-3) and the unported kinds own them; the skip
 //! keeps the surviving stream's order exact.
+//! cited inline below). W4-d52 wires the PORTED kinds' dust arms through the
+//! live `DustPool` on the caller's stream: the teleport bursts' `Next(1, 3)`
+//! scales (`:20867`/`:20936`) + the 50-dust loops, and the ambient tail gates
+//! (`:21282` 29/45, `:21292` 32, `:21366` the else group). The unported kinds'
+//! arms (172 `:21319`, 693/281-286 `:20882-20902`/`:21331-21355`) stay cited
+//! skips — they land with their kinds. The Djinn's curse volley
+//! (`:21140-21141`) and the Rune Wizard's aim jitter (`:21268-21269`) remain
+//! the unported arms' draws.
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};
@@ -297,6 +305,22 @@ pub struct CasterShot {
 /// use constant scales (0 draws). The `NewDust` internals stay the dust
 /// task's documented skip (policy A, ANALYSIS "The caster aiStyle-8
 /// draw-parity (W4-g5)").
+/// Compatibility seam for the pre-dust draw-parity witnesses: runs the
+/// 6-argument live step with a throwaway empty pool (the argument draws are
+/// unchanged, so the RNG stream the witnesses replay is the same one).
+fn ai_style_8_step_draws(npc: &mut Npc, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    let mut dust = tr_core::particles::DustPool::new();
+    let ctx = tr_core::particles::SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: glam::Vec2::ZERO,
+        screen_size: glam::Vec2::new(world.width as f32 * TILE_PX, world.height as f32 * TILE_PX),
+        max_dust_to_draw: 6000,
+    };
+    ai_style_8_step(npc, world, player, rng, &mut dust, &ctx);
+}
+
 fn teleport_burst_draws(rng: &mut UnifiedRandom, kind: NpcKind) {
     if matches!(kind, NpcKind::GoblinSorcerer | NpcKind::Tim) {
         for _ in 0..50 {
@@ -535,6 +559,8 @@ pub fn ai_style_8_step(
     world: &World,
     player: &Player,
     rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) -> Option<CasterShot> {
     // `:20819` — `flag4 = RedHatSkeletronAdjustmentsEnabled()`.
     let mut flag4 = npc.red_hat_skeletron_adjustments_enabled();
@@ -594,6 +620,16 @@ pub fn ai_style_8_step(
     // wires BOTH Item8 plays (`:20862` the departure at the OLD position
     // BEFORE the move, `:20931` the arrival AFTER it) — the queue keeps
     // the C#'s order around the placement.
+    // zero the velocity, clear ai[2]/ai[3]. W4-d52 wires the two 50-dust
+    // bursts (sites 20867/20876/20888-20918 departure, 20936/20945/
+    // 20957-20987 arrival) through the live pool: 29/45 draw Next(1,3)
+    // as the scale ARGUMENT 50× per burst (the draw happens even when
+    // NewDust culls); 32's type-172 and the else group's type-6 use
+    // constant scales. The unported kinds' arms (172/693/281-286) stay
+    // cited skips. S1-E-21g wires BOTH Item8 plays (`:20862` the
+    // departure at the OLD position BEFORE the move, `:20931` the
+    // arrival AFTER it) — the queue keeps the C#'s order around the
+    // placement.
     if npc.ai[2] != 0.0 && npc.ai[3] != 0.0 {
         let (w, h) = npc.size();
         // `:20858-20861` — the 172 vanishes on the teleport tick (W4-g5).
@@ -606,8 +642,9 @@ pub fn ai_style_8_step(
             x: npc.x,
             y: npc.y,
         });
-        // `:20863-20922` — burst 1, at the OLD position.
-        teleport_burst_draws(rng, npc.kind);
+        // `:20863-20922` — the departure burst (the netOffset pair
+        // `:20857`/`:20923` nets to zero single-player).
+        caster_teleport_burst(npc, rng, dust, dust_ctx, world);
         // `:20924-20925` — `(float)(base.width / 2)` is INTEGER division.
         npc.x = npc.ai[2] * 16.0 - (w as i32 / 2) as f32 + 8.0;
         npc.y = npc.ai[3] * 16.0 - h;
@@ -621,8 +658,8 @@ pub fn ai_style_8_step(
             x: npc.x,
             y: npc.y,
         });
-        // `:20932-20991` — burst 2, at the NEW position.
-        teleport_burst_draws(rng, npc.kind);
+        // `:20932-20991` — the arrival burst at the NEW position.
+        caster_teleport_burst(npc, rng, dust, dust_ctx, world);
     }
     // `:20993` — the counter tick.
     npc.ai[0] += 1.0;
@@ -1117,36 +1154,15 @@ pub fn ai_style_8_step(
     }
     }
     // `:21279-21374` — the per-type dust/light tail: the lights are the
-    // frame pass's feed (`npc_lights.rs::npc_light`, S1-E-5). W4-g5
-    // draw-parity: the dust arms' GATE draws are consumed every tick at
-    // their C# positions (the `NewDust` internals stay the dust task's
-    // skip): 29/45 `Next(5)` (`:21282`), 32 `Next(3)` (`:21292`), the else
-    // group (24) `Next(6)` (`:21366`); 533 draws NOTHING (`:21358-21361`,
-    // light only). The 172's alpha dust (`:21310-21325`) and the 693's
-    // light (`:21301-21308`) are ported here (W4-g5); the 281-286 arms
-    // are the d38 branch's claim.
-    if matches!(npc.kind, NpcKind::GoblinSorcerer | NpcKind::Tim) {
-        let _ = rng.next_max(5); // `:21282` — Next(5) == 0 gates the dust
-    } else if npc.kind == NpcKind::DarkCaster {
-        let _ = rng.next_max(3); // `:21292` — Next(3) != 0 gates the dust
-    } else if npc.kind == NpcKind::LibrarianSkeleton {
-        // `:21301-21308` — light only, NO draw (the ai[0]-scaled light is
-        // the frame pass's feed, `npc_lights.rs`).
-    } else if npc.kind == NpcKind::RuneWizard {
-        // `:21310-21325` — the alpha dust: 1 iteration (alpha < 255) or 2
-        // (alpha == 255), each gated by `Next(255) > 255 - alpha`. The
-        // gate draw is arm-level (consumed); the dust's Next(30)/Next(30)/
-        // Next(6) internals stay the dust task's skip.
-        let iterations = if npc.alpha == 255 { 2 } else { 1 };
-        for _ in 0..iterations {
-            let _ = rng.next_max(255); // `:21319` — the alpha gate
-        }
-    } else if npc.kind == NpcKind::DesertDjinn {
-        // `:21358-21361` — light only, NO draw.
-    } else {
-        // `:21362-21373` — the else group: light + Next(6) == 0.
-        let _ = rng.next_max(6);
-    }
+    // frame pass's feed (`npc_lights.rs::npc_light`, S1-E-5). W4-d52
+    // wires the ported kinds' dust arms (the netOffset pair
+    // `:21279`/`:21374` nets to zero single-player): 29/45 the Next(5)
+    // gate + type-27 (`:21282-21288`, site 21284), 32 the Next(3) gate +
+    // type-172 (`:21292-21299`, site 21294), the else group (24) the
+    // Next(6) gate + type-6 (`:21366-21372`, site 21368). 533 draws
+    // NOTHING (light only, `:21358-21361`); 172/693/281-286's arms are
+    // unported-kind skips.
+    caster_ambient_dust(npc, rng, dust, dust_ctx, world);
     // The generic movement tail — `NPC.UpdateNPC`'s gravity + collision
     // (`NPC.cs:90465-90493`) runs after `AI()` returns; the port applies it
     // at the end of this step (the ordering deviation is recorded in
@@ -1190,6 +1206,139 @@ pub fn global_firing_distance_check(shoot: (f32, f32), target: (f32, f32)) -> bo
     sx >= rx && sx < rx + rw && sy >= ry && sy < ry + rh
 }
 
+/// W4-d52 — one 50-dust teleport burst (`NPC.cs:20863-20922` departure /
+/// `:20932-20991` arrival — the two loops are per-type identical). The
+/// ported kinds: 29/45 → type 27 with the `Next(1,3)` scale ARGUMENT
+/// (drawn even when `NewDust` culls), 32 → type 172 scale 1.5, 533 →
+/// type 27 scale 2.5, the else group (24) → type 6 scale 2.5. The
+/// unported kinds' arms (172/693/281-286) are cited skips — they land
+/// with their kinds. All post-spawn writes land on whatever slot
+/// `NewDust` returned (sentinel included).
+fn caster_teleport_burst(
+    npc: &Npc,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+) {
+    use tr_core::particles::Color;
+    let (w, h) = npc.size();
+    let pos = glam::Vec2::new(npc.x, npc.y);
+    let (wi, hi) = (w as i32, h as i32);
+    for _ in 0..50 {
+        match npc.kind {
+            // `:20865-20873` / `:20934-20942` — 29/45, type 27.
+            NpcKind::GoblinSorcerer | NpcKind::Tim => {
+                // The scale argument draws FIRST (even on a cull).
+                let scale_arg = rng.next_range(1, 3) as f32;
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, wi, hi, 27, 0.0, 0.0, 100, Color::default(), scale_arg,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 3.0;
+                // `:20869` reads the dust's FINAL scale (post-NewDust).
+                if d.scale > 1.0 {
+                    d.no_gravity = true;
+                }
+            }
+            // `:20874-20879` / `:20943-20948` — 32, type 172.
+            NpcKind::DarkCaster => {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, wi, hi, 172, 0.0, 0.0, 100, Color::default(), 1.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 3.0;
+                d.no_gravity = true;
+            }
+            // `:20910-20915` / `:20979-20984` — 533, type 27 scale 2.5.
+            NpcKind::DesertDjinn => {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, wi, hi, 27, 0.0, 0.0, 100, Color::default(), 2.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 3.0;
+                d.no_gravity = true;
+            }
+            // `:20916-20921` / `:20985-20990` — the else group (24), type 6.
+            _ => {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, wi, hi, 6, 0.0, 0.0, 100, Color::default(), 2.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 3.0;
+                d.no_gravity = true;
+            }
+        }
+    }
+}
+
+/// W4-d52 — the caster's per-tick ambient dust tail (`NPC.cs:21279-21374`):
+/// 29/45 the `Next(5)==0` gate + type 27 (`:21282-21288`), 32 the
+/// `Next(3)!=0` gate + type 172 (`:21292-21299`), the else group (24) the
+/// `Next(6)==0` gate + type 6 (`:21366-21372`). 533 draws NOTHING (light
+/// only). The gate draw runs EVERY tick for the gated kinds. Position is
+/// `(x, y + 2)`; the unported kinds' arms are cited skips.
+fn caster_ambient_dust(
+    npc: &Npc,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+) {
+    use tr_core::particles::Color;
+    let (w, h) = npc.size();
+    let pos = glam::Vec2::new(npc.x, npc.y + 2.0);
+    let (wi, hi) = (w as i32, h as i32);
+    match npc.kind {
+        NpcKind::GoblinSorcerer | NpcKind::Tim => {
+            // `:21282` — Next(5) == 0 gates the dust.
+            if rng.next_max(5) != 0 {
+                return;
+            }
+            let idx = dust.new_dust(
+                rng, ctx, world, pos, wi, hi, 27, npc.vx * 0.2, npc.vy * 0.2, 100,
+                Color::default(), 1.5,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity.x *= 0.5;
+            d.velocity.y = -2.0;
+        }
+        NpcKind::DarkCaster => {
+            // `:21292` — Next(3) != 0 gates the dust.
+            if rng.next_max(3) == 0 {
+                return;
+            }
+            let idx = dust.new_dust(
+                rng, ctx, world, pos, wi, hi, 172, npc.vx * 0.2, npc.vy * 0.2, 100,
+                Color::default(), 0.9,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity.x *= 0.3;
+            d.velocity.y *= 0.2;
+            d.velocity.y -= 1.0;
+        }
+        NpcKind::DesertDjinn => {
+            // `:21358-21361` — light only, no dust, no draw.
+        }
+        _ => {
+            // `:21366` — the else group (24), Next(6) == 0 gates the dust.
+            if rng.next_max(6) != 0 {
+                return;
+            }
+            let idx = dust.new_dust(
+                rng, ctx, world, pos, wi, hi, 6, npc.vx * 0.2, npc.vy * 0.2, 100,
+                Color::default(), 1.65,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity.x *= 1.0;
+            d.velocity.y *= 1.0;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1216,6 +1365,28 @@ mod tests {
         p
     }
 
+    /// W4-d52 — the solo-test entry: a fresh scratch pool + the permissive
+    /// whole-world ctx (the `update_rng` house pattern), so the witnesses
+    /// keep their exact call shape while the dust arms draw on the same
+    /// stream. The live sim threads the real pool through the 6-arg step.
+    fn step_solo(
+        n: &mut Npc,
+        w: &World,
+        p: &Player,
+        rng: &mut UnifiedRandom,
+    ) -> Option<CasterShot> {
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        ai_style_8_step(n, w, p, rng, &mut dust, &ctx)
+    }
+
     /// `NPC.cs:20836-20843` + `:20993` — the first tick inits ai[0] to 500
     /// and the same tick's increment leaves 501; hand arithmetic:
     /// 0 → 500 → 501, then +1 per tick.
@@ -1226,9 +1397,9 @@ mod tests {
         let mut n = Npc::new(NpcKind::Tim, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
         n.hp = n.max_hp;
         let mut rng = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        step_solo(&mut n, &w, &p, &mut rng);
         assert_eq!(n.ai[0], 501.0, "0 -> 500 init -> 501 (same-tick ++)");
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        step_solo(&mut n, &w, &p, &mut rng);
         assert_eq!(n.ai[0], 502.0);
     }
 
@@ -1247,13 +1418,13 @@ mod tests {
         n.hp = n.max_hp;
         n.ai[0] = 99.0; // the next tick's ++ lands exactly on 100
         let mut rng = UnifiedRandom::new(7);
-        let shot = ai_style_8_step(&mut n, &w, &p, &mut rng);
+        let shot = step_solo(&mut n, &w, &p, &mut rng);
         assert!(shot.is_none());
         assert_eq!(n.ai[0], 100.0);
         assert_eq!(n.ai[1], 29.0, "30 minus the same-tick decrement");
         let mut fired = None;
         for expect in [28.0, 27.0, 26.0, 25.0] {
-            let s = ai_style_8_step(&mut n, &w, &p, &mut rng);
+            let s = step_solo(&mut n, &w, &p, &mut rng);
             assert_eq!(n.ai[1], expect);
             if expect == 25.0 {
                 fired = s;
@@ -1280,7 +1451,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(7);
         let mut fired = None;
         for _ in 0..25 {
-            if let Some(s) = ai_style_8_step(&mut n, &w, &p, &mut rng) {
+            if let Some(s) = step_solo(&mut n, &w, &p, &mut rng) {
                 fired = Some(s);
                 break;
             }
@@ -1312,7 +1483,7 @@ mod tests {
         n.hp = n.max_hp;
         n.ai[0] = 179.0;
         let mut rng = UnifiedRandom::new(7);
-        let s = ai_style_8_step(&mut n, &w, &p, &mut rng);
+        let s = step_solo(&mut n, &w, &p, &mut rng);
         assert!(s.is_none());
         assert_eq!(n.ai[0], 180.0);
         assert_eq!(n.ai[1], 180.0, "181 minus the same-tick decrement");
@@ -1321,9 +1492,8 @@ mod tests {
         let mut curses = 0;
         for _ in 0..400 {
             let before = n.ai[0];
-            let before_windup = n.ai[1];
-            let s = ai_style_8_step(&mut n, &w, &p, &mut rng);
-            assert!(s.is_none(), "the Djinn never requests a sphere");
+            let s = step_solo(&mut n, &w, &p, &mut rng);
+            assert!(s.is_none(), "the Djinn's volley stays skipped");
             assert!(n.ai[0] < 650.0, "the wrap keeps the counter under 650");
             // The window ticks: ai[1] AFTER the decrement hits a %30
             // multiple below the 5th (`:21119`).
@@ -1372,7 +1542,7 @@ mod tests {
         n.hp = n.max_hp;
         n.ai[0] = 98.0;
         let mut rng = UnifiedRandom::new(7);
-        let s = ai_style_8_step(&mut n, &w, &p, &mut rng);
+        let s = step_solo(&mut n, &w, &p, &mut rng);
         assert!(s.is_none(), "the 29 windup has not reached 25");
         assert_eq!(n.ai[0], 100.0, "98 +2 (the flag4 double-step)");
         assert_eq!(n.ai[1], 29.0, "the 100 trigger's 30 minus the same-tick --");
@@ -1383,7 +1553,7 @@ mod tests {
         m.hp = m.max_hp;
         m.ai[0] = 98.0;
         let mut rng2 = UnifiedRandom::new(7);
-        ai_style_8_step(&mut m, &w, &p, &mut rng2);
+        step_solo(&mut m, &w, &p, &mut rng2);
         assert_eq!(m.ai[0], 99.0, "no flag4: the plain +1");
         assert_eq!(m.ai[1], 0.0, "99 is not a trigger tick");
     }
@@ -1560,7 +1730,7 @@ mod tests {
         n.vx = 5.0;
         n.vy = 3.0;
         let mut rng = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        step_solo(&mut n, &w, &p, &mut rng);
         // 60*16 - 18/2 + 8 = 960 - 9 + 8 = 959; the gravity tail then
         // settles the feet on the 120-row floor (y = 1920 - 40 = 1880).
         assert_eq!(n.x, 959.0);
@@ -1579,6 +1749,106 @@ mod tests {
     /// stream state (the five-probe convention's exact-replay form).
     #[test]
     fn w4_g5_the_tim_arrival_tick_draws_100_burst_scales_plus_the_ambient() {
+    /// W4-d52 — one `NewDust` default block on an empty pool under the
+    /// 50 % band (`Dust.cs:153-193`): the two position rolls, the
+    /// velocity pair, the frame `Next(3)`, the scale roll; the type-6
+    /// tweak adds one `Next(-10,6)` (`Dust.cs:214-220`), 27/172 none.
+    fn burst_block(r: &mut UnifiedRandom, dust_type: i32, box_w: i32, box_h: i32) {
+        r.next_max(box_w.max(5) - 4);
+        r.next_max(box_h.max(5) - 4);
+        r.next_range(-20, 21);
+        r.next_range(-20, 21);
+        r.next_max(3);
+        r.next_range(-20, 21);
+        if dust_type == 6 {
+            r.next_range(-10, 6);
+        }
+    }
+
+    /// W4-d52 — `NPC.cs:20863-20922` / `:20932-20991`: the 50-dust burst's
+    /// draw census per ported kind. 29/45 draw the `Next(1,3)` scale
+    /// ARGUMENT before every block (even on a cull); 32/533/24 use
+    /// constant scales. The mirror replays one burst per kind from one
+    /// seed; the pool drains between kinds so the census stays on the
+    /// empty-pool path.
+    #[test]
+    fn w4_d52_caster_teleport_burst_draws_match_the_oracle() {
+        let w = ground_air();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        for kind in [
+            NpcKind::GoblinSorcerer,
+            NpcKind::Tim,
+            NpcKind::DarkCaster,
+            NpcKind::FireImp,
+            NpcKind::DesertDjinn,
+        ] {
+            let mut n = Npc::new(kind, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+            n.hp = n.max_hp;
+            let (bw, bh) = n.size();
+            let (bw, bh) = (bw as i32, bh as i32);
+            let mut rng = UnifiedRandom::new(52);
+            let mut probe = UnifiedRandom::new(52);
+            let mut dust = tr_core::particles::DustPool::new();
+            caster_teleport_burst(&n, &mut rng, &mut dust, &ctx, &w);
+            for i in 0..50 {
+                match kind {
+                    NpcKind::GoblinSorcerer | NpcKind::Tim => {
+                        probe.next_range(1, 3);
+                        burst_block(&mut probe, 27, bw, bh);
+                    }
+                    NpcKind::DarkCaster => burst_block(&mut probe, 172, bw, bh),
+                    NpcKind::DesertDjinn => burst_block(&mut probe, 27, bw, bh),
+                    _ => burst_block(&mut probe, 6, bw, bh),
+                }
+                assert_eq!(rng.peek(), probe.peek(), "{kind:?} burst stream @{i}");
+                // Drain per dust: the census stays on the empty-pool
+                // path (the live pool's pressure bands are the d50
+                // chain's wiring-wave concern).
+                for s in dust.slots_mut() {
+                    s.active = false;
+                }
+            }
+            // The post-spawn writes: velocity x3, noGravity (29/45 only
+            // when the FINAL scale > 1 — the scale-2 argument always
+            // clears it, the scale-1 arm keeps gravity). The drain above
+            // cleared `active` only — the field values survive.
+            let d = dust.slot(0);
+            match kind {
+                NpcKind::GoblinSorcerer | NpcKind::Tim => {
+                    assert_eq!(d.dust_type, 27);
+                    assert!(d.scale > 1.0 || !d.no_gravity);
+                }
+                NpcKind::DarkCaster => {
+                    assert_eq!(d.dust_type, 172);
+                    assert!(d.no_gravity);
+                }
+                NpcKind::DesertDjinn => {
+                    assert_eq!(d.dust_type, 27);
+                    assert!(d.no_gravity);
+                }
+                _ => {
+                    assert_eq!(d.dust_type, 6);
+                    assert!(d.no_gravity);
+                }
+            }
+        }
+    }
+
+    /// W4-d52 — the full pending-teleport tick draws BOTH bursts (the
+    /// departure at the OLD position, the arrival at the NEW one) on the
+    /// caller's stream, around the placement. The mirror replays the
+    /// Tim census: 2 x 50 x (the `Next(1,3)` argument + the 27 block).
+    /// The teleport search itself draws nothing here (ai[2]/ai[3] are
+    /// pre-armed, the `:20855` gate takes the placement directly).
+    #[test]
+    fn w4_d52_the_teleport_tick_draws_both_bursts() {
         let w = ground_air();
         let p = player_at(100.0 * 16.0, 116.0 * 16.0);
         let mut n = Npc::new(NpcKind::Tim, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
@@ -1587,7 +1857,7 @@ mod tests {
         n.ai[2] = 60.0;
         n.ai[3] = 120.0;
         let mut rng = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         let mut mirror = UnifiedRandom::new(7);
         for _ in 0..100 {
             let _ = mirror.next_range(1, 3); // the two bursts' scales
@@ -1609,7 +1879,7 @@ mod tests {
         n.ai[2] = 60.0;
         n.ai[3] = 120.0;
         let mut rng = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         let mut mirror = UnifiedRandom::new(7);
         let _ = mirror.next_max(3);
         assert_eq!(rng, mirror, "the 32 bursts draw nothing; one Next(3)");
@@ -1633,7 +1903,7 @@ mod tests {
             n.hp = n.max_hp;
             n.ai[0] = 10.0; // no trigger tick, no 650 search
             let mut rng = UnifiedRandom::new(7);
-            ai_style_8_step(&mut n, &w, &p, &mut rng);
+            ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
             let mut mirror = UnifiedRandom::new(7);
             if let Some(max) = gate {
                 let _ = mirror.next_max(max);
@@ -1654,7 +1924,7 @@ mod tests {
         n.hp = n.max_hp;
         n.ai[0] = 649.0; // the ++ lands 650 → the teleport attempt
         let mut rng = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.ai[0], 1.0, "the 650 block resets the counter");
         assert_eq!(n.ai[1], 4.0, "num88 = 5 is the WINDUP only (minus the same-tick --)");
         assert!(n.ai[2] != 0.0 && n.ai[3] != 0.0, "a spot was chosen");
@@ -1691,7 +1961,7 @@ mod tests {
         n.ai[0] = 10.0;
         n.ai[1] = 121.0; // the decrement lands 120 — a window tick
         let mut rng = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.ai[1], 120.0);
         assert_eq!(n.wants_sound.len(), 1, "the window's Item8 (:21121)");
         let (cx, cy, ai0) = *n.wants_djinn_curse.first().expect("a curse queued");
@@ -1731,7 +2001,7 @@ mod tests {
         n.ai[1] = 121.0;
         let mut rng = UnifiedRandom::new(7);
         let before = rng.clone();
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(rng, before, "the >2000 gate consumes no draws");
         assert!(n.wants_djinn_curse.is_empty());
         assert_eq!(n.wants_sound.len(), 1, "the puff plays regardless");
@@ -1753,12 +2023,12 @@ mod tests {
         n.ai[0] = 10.0; // mid-cycle: no trigger, no teleport
         let mut rng = UnifiedRandom::new(7);
         assert_eq!(n.alpha, 0, "the SetDefaults default");
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.alpha, 1, "alpha++ per tick");
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.alpha, 2);
         n.just_hit = true;
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.alpha, 0, "the strike resets alpha to 0");
     }
 
@@ -1774,14 +2044,14 @@ mod tests {
         for trigger in [75.0, 150.0, 225.0, 300.0, 375.0, 450.0] {
             n.ai[0] = trigger - 1.0; // the ++ lands on the trigger
             n.ai[1] = 0.0;
-            ai_style_8_step(&mut n, &w, &p, &mut rng);
+            ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
             assert_eq!(n.ai[0], trigger);
             assert_eq!(n.ai[1], 29.0, "the {trigger} trigger winds 30 (minus the --)");
         }
         // A non-trigger tick does not wind.
         n.ai[0] = 100.0;
         n.ai[1] = 0.0;
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.ai[1], 0.0, "101 is not a 75-spaced trigger");
     }
 
@@ -1800,7 +2070,7 @@ mod tests {
         let mut mirror = UnifiedRandom::new(7);
         let _ = mirror.next_range(-10, 11); // the X jitter
         let _ = mirror.next_range(-10, 11); // the Y jitter
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.wants_hostile_shot.len(), 1, "one 129 bolt");
         let (kind, _, _, _, _, dmg) = n.wants_hostile_shot[0];
         assert_eq!(kind, 129, "the RuneBlast");
@@ -1823,7 +2093,7 @@ mod tests {
         n.ai[0] = 10.0;
         n.alpha = 100; // below 255: 1 iteration
         let mut rng = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         let mut mirror = UnifiedRandom::new(7);
         let _ = mirror.next_max(255); // 1 iteration
         assert_eq!(rng, mirror, "1 Next(255) below alpha 255");
@@ -1833,7 +2103,7 @@ mod tests {
         n2.ai[0] = 10.0;
         n2.alpha = 254; // the ramp ++ lands 255: 2 iterations
         let mut rng2 = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n2, &w, &p, &mut rng2);
+        ai_style_8_step_draws(&mut n2, &w, &p, &mut rng2);
         let mut mirror2 = UnifiedRandom::new(7);
         let _ = mirror2.next_max(255);
         let _ = mirror2.next_max(255);
@@ -1851,10 +2121,10 @@ mod tests {
         n.hp = n.max_hp;
         n.ai[0] = 10.0;
         let mut rng = UnifiedRandom::new(7);
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.local_ai[0], 1.0, "localAI[0]++");
         assert_eq!(n.local_ai[3], 0.0, "the facing latch waits for > 1");
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.local_ai[0], 2.0);
         assert_eq!(n.local_ai[3], 1.0, "the facing latches past 1");
     }
@@ -1874,7 +2144,7 @@ mod tests {
         let mut mirror = UnifiedRandom::new(7);
         let _ = mirror.next_float(); // the circular angle
         let _ = mirror.next_float(); // the circular radius
-        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        ai_style_8_step_draws(&mut n, &w, &p, &mut rng);
         assert_eq!(n.wants_hostile_shot_ai.len(), 1, "one 1092 book");
         let shot = &n.wants_hostile_shot_ai[0];
         assert_eq!(shot.kind, 1092, "the LibrarianSkeletonBook");
@@ -1904,4 +2174,142 @@ mod tests {
         assert_eq!(rng, before, "the >125-tile bail consumes no draws");
     }
 }
+        n.ai[2] = 60.0;
+        n.ai[3] = 120.0;
+        let (bw, bh) = n.size();
+        let (bw, bh) = (bw as i32, bh as i32);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = UnifiedRandom::new(52);
+        let mut probe = UnifiedRandom::new(52);
+        let mut dust = tr_core::particles::DustPool::new();
+        ai_style_8_step(&mut n, &w, &p, &mut rng, &mut dust, &ctx);
+        for burst in 0..2 {
+            for i in 0..50 {
+                probe.next_range(1, 3);
+                burst_block(&mut probe, 27, bw, bh);
+                assert_eq!(rng.peek(), probe.peek(), "burst {burst} dust {i}");
+            }
+        }
+        assert_eq!(dust.slots().iter().filter(|s| s.active).count(), 100);
+        assert_eq!(n.ai[2], 0.0);
+        assert_eq!(n.ai[3], 0.0);
+    }
+
+    /// W4-d52 — `NPC.cs:21279-21374`: the ambient tail's per-kind gate
+    /// census. 29/45 `Next(5)==0`, 32 `Next(3)!=0`, the else group (24)
+    /// `Next(6)==0` — the gate draw runs EVERY tick; 533 draws NOTHING.
+    /// The mirror replays 200 ticks per kind from one seed, draining the
+    /// pool per tick so the census stays on the empty-pool path.
+    #[test]
+    fn w4_d52_caster_ambient_dust_gates_match_the_oracle() {
+        let w = ground_air();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        for kind in [
+            NpcKind::GoblinSorcerer,
+            NpcKind::Tim,
+            NpcKind::DarkCaster,
+            NpcKind::FireImp,
+            NpcKind::DesertDjinn,
+        ] {
+            let mut n = Npc::new(kind, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+            n.hp = n.max_hp;
+            n.vx = 2.0;
+            n.vy = -1.0;
+            let (bw, bh) = n.size();
+            let (bw, bh) = (bw as i32, bh as i32);
+            let mut rng = UnifiedRandom::new(52);
+            let mut probe = UnifiedRandom::new(52);
+            let mut dust = tr_core::particles::DustPool::new();
+            let mut passes = 0;
+            for tick in 0..200 {
+                caster_ambient_dust(&n, &mut rng, &mut dust, &ctx, &w);
+                let pass = match kind {
+                    NpcKind::GoblinSorcerer | NpcKind::Tim => probe.next_max(5) == 0,
+                    NpcKind::DarkCaster => probe.next_max(3) != 0,
+                    NpcKind::DesertDjinn => false,
+                    _ => probe.next_max(6) == 0,
+                };
+                if pass {
+                    passes += 1;
+                    let ty = match kind {
+                        NpcKind::GoblinSorcerer | NpcKind::Tim => 27,
+                        NpcKind::DarkCaster => 172,
+                        _ => 6,
+                    };
+                    burst_block(&mut probe, ty, bw, bh);
+                }
+                assert_eq!(rng.peek(), probe.peek(), "{kind:?} ambient stream @{tick}");
+                for s in dust.slots_mut() {
+                    s.active = false;
+                }
+            }
+            match kind {
+                NpcKind::DesertDjinn => {
+                    assert_eq!(passes, 0, "533 is light-only");
+                    assert_eq!(rng.peek(), UnifiedRandom::new(52).peek(), "533 drew nothing");
+                }
+                NpcKind::DarkCaster => assert!(passes > 100, "the 2-in-3 gate fired {passes}/200"),
+                _ => assert!(passes > 5 && passes < 80, "the gate fired {passes}/200"),
+            }
+        }
+    }
+
+    /// W4-d52 — the ambient post-spawn writes per kind: 29/45 noGravity +
+    /// velocity.X * 0.5 + velocity.Y = -2 (`:21285-21287`); 32 noGravity +
+    /// X * 0.3, Y * 0.2 then -1 (`:21295-21298`); the else group noGravity
+    /// + the C#'s literal x1 writes (`:21369-21371`).
+    #[test]
+    fn w4_d52_caster_ambient_dust_writes_the_post_fields() {
+        let w = ground_air();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        for kind in [NpcKind::Tim, NpcKind::DarkCaster, NpcKind::FireImp] {
+            let mut n = Npc::new(kind, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+            n.hp = n.max_hp;
+            n.vx = 2.0;
+            n.vy = -1.0;
+            let mut rng = UnifiedRandom::new(0);
+            let mut dust = tr_core::particles::DustPool::new();
+            loop {
+                caster_ambient_dust(&n, &mut rng, &mut dust, &ctx, &w);
+                if dust.slot(0).active {
+                    break;
+                }
+            }
+            let d = dust.slot(0);
+            assert!(d.no_gravity, "{kind:?} noGravity");
+            match kind {
+                NpcKind::Tim => {
+                    assert_eq!(d.dust_type, 27);
+                    assert_eq!(d.velocity.y, -2.0, "the Y overwrite");
+                }
+                NpcKind::DarkCaster => {
+                    assert_eq!(d.dust_type, 172);
+                    // The block's Y roll * 0.2 - 1 stays below -0.6.
+                    assert!(d.velocity.y < -0.6, "the Y * 0.2 - 1 lift");
+                }
+                _ => assert_eq!(d.dust_type, 6),
+            }
+        }
+    }
 }

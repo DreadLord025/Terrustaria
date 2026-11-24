@@ -331,6 +331,11 @@ class Gen:
 
     def sugar(self, name, args, where, locals_=None):
         a = split_args(args)
+        # `this._masterModeDropRng` (`ItemDropDatabase.cs:15`, the private
+        # field = 4): every `MasterModeDropOnAllPlayers` call passes it as
+        # the chanceDenominator — resolve it to its literal value so the
+        # master pet/mount rows keep the 1/4 gate (W4-f35 doc-sweep).
+        a = ["4" if x == "this._masterModeDropRng" else x for x in a]
         inta = []
         for x in a:
             try:

@@ -5,8 +5,10 @@ pub mod clip;
 pub mod font_atlas;
 pub mod gpu;
 pub mod post;
+pub mod quality_light;
 pub mod sprite;
 pub mod targets;
+pub mod tile_visibility;
 pub mod water_mask;
 
 #[cfg(test)]

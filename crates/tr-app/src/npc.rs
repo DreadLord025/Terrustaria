@@ -10690,7 +10690,7 @@ impl Npc {
             // fists arm (the full-velocity anchor, the balance ladders,
             // the real collideX/Y exit, the state-3 hover) over the
             // npc_ai_style47 reference port's documented fold-outs.
-            47 => self.ai_047_golem_fist_family(world, player, rng),
+            47 => self.ai_047_golem_fist_family(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 55)` (`NPC.cs:32657-32741`) - the
             // Creeper (267), the style's only user. S1-D-3 W-2 wiring: the
             // faithful `npc_ai_style55::ai_055_step` replaces the retired
@@ -11972,10 +11972,16 @@ impl Npc {
     /// `if (this.aiStyle == 9)` block (`NPC.cs:21377-21571`). The ported
     /// sphere kinds (25/30+665/33) ride `npc_ai_style9::sphere_family_step`
     /// (the one-shot `TargetClosest` launch, the ftw rows, the
-    /// `EncourageDespawn(100)`, the alpha/spin writes); the dust bursts
-    /// are the documented skip (the module header pins the exact rand
-    /// order — the ported arm consumes zero draws).
-    fn ai_009_sphere_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    /// `EncourageDespawn(100)`, the alpha/spin writes); W4-d52 wires the
+    /// dust loop through the live pool on the caller's stream.
+    fn ai_009_sphere_family(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let flags = crate::npc_ai_style9::Style9Flags {
             // `Main.getGoodWorld` has no runtime flag in the port yet
             // (the seed only rides worldgen) — the ftw rows stay parked.
@@ -11987,7 +11993,7 @@ impl Npc {
             wall_of_flesh_alive: false,
             red_hat: self.red_hat_skeletron_adjustments_enabled(),
         };
-        crate::npc_ai_style9::sphere_family_step(self, world, player, flags, rng);
+        crate::npc_ai_style9::sphere_family_step(self, world, player, flags, rng, dust, dust_ctx);
     }
 
     /// S1-D-3 W-2: the aiStyle-55 family arm — `NPC.AI()`'s
@@ -14322,7 +14328,15 @@ impl Npc {
     // style-66 arm were the same machine twice — the c10 `ai_066_crawler`
     // superset above is the live route, so this body is the c8 record only.
     #[deny(unreachable_patterns)]
-    fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
+    fn update_kind_ai(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        dt: f32,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         match self.kind {
             // S1-D-3ff wave A: the nine LOW-id slimes ride the same
             // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
@@ -14585,7 +14599,7 @@ impl Npc {
             | NpcKind::GolemHead
             | NpcKind::GolemFistLeft
             | NpcKind::GolemFistRight
-            | NpcKind::GolemHeadFree => self.update_golem_rng(world, player, rng),
+            | NpcKind::GolemHeadFree => self.update_golem_rng(world, player, rng, dust, dust_ctx),
             NpcKind::Deerclops => self.update_deerclops(world, player, rng),
             NpcKind::Skeleton => {
                 unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
@@ -15065,28 +15079,14 @@ impl Npc {
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
-            // W4-d36 hover batch (173/176/205): same axis, same unreachable.
-            NpcKind::Crimera | NpcKind::MossHornet | NpcKind::Moth => {
-                unreachable!("aiStyle 5 rides the style axis (W4-d36)")
-            }
             NpcKind::KingSlime => self.update_king_slime(world, player, rng),
-            NpcKind::EyeOfCthulhu => {
-                unreachable!("aiStyle 4 rides the style axis (W4-d22)")
-            }
-            // W4-d24 axis census: the King Slime (aiStyle 15) rides the
-            // style axis above (`15 => update_king_slime`) — this arm is
-            // unreachable through `update_rng` (the S1-D-2 axis precedent).
-            NpcKind::KingSlime => {
-                unreachable!("aiStyle 15 rides the style axis (W4-d24)")
-            }
-            NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
+            NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player, rng, dust, dust_ctx),
             NpcKind::ServantOfCthulhu => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn
-            | NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => {
-                self.update_caster(world, player, rng)
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => {
+                self.update_caster(world, player, rng, dust, dust_ctx)
             }
             // S1-D-3: the aiStyle-9 sphere family (25/30+665/33) rides the
             // style axis (`ai_009_sphere_family`) — this arm is unreachable
@@ -26643,21 +26643,13 @@ impl Npc {
     /// player escapes, and a burst of blue slimes when it lands. Minion spawning is
     /// reported through `spawn_minion` so the app can add them to its NPC list.
     /// `AI()`'s aiStyle-4 block — the Eye of Cthulhu's phase machine
-    /// (`NPC.cs:19960-20801`). The state: `ai[0]` the phase (0 the hover,
-    /// 1/2 the spins, 3 the final), `ai[1]` the sub-state, `ai[2]` the
-    /// timer, `ai[3]` the dash/servant counter. The expert-mode and
-    /// `getGoodWorld` branches are out (the port has neither difficulty
-    /// flag) — the classic path is verbatim, the skips carry the C# cites.
-    /// The movement integrates directly (`noTileCollide` + `noGravity`).
-    ///
-    /// W4-d22 (RNG census): the machine draws on the caller's `UpdateNPCs`
-    /// stream — the per-tick `Next(5)` dust gate (`:20062`, EVERY tick
-    /// before the dawn-flee return), the servant burst's 10 dust
-    /// (`:20189-20192`), the spin hand-off's 6 gore + 20 dust + the
-    /// per-tick spin dust pair (`:20365-20379`). The dust/gore pools carry
-    /// the C#'s own slot/pressure rolls (`Dust.cs:75-252`, `Gore.cs:1286-
-    /// 1456`); the sound plays queue on `wants_sound` (the sim drains them
-    /// at the C# call position, the S1-E-21g convention).
+    /// (`NPC.cs`'s aiStyle-4 `if` in `AI()`, 841 C# lines). The state:
+    /// `ai[0]` the phase (0 the hover, 1/2 the spins, 3 the final),
+    /// `ai[1]` the sub-state, `ai[2]` the timer, `ai[3]` the dash/servant
+    /// counter. The expert-mode and `getGoodWorld` branches are out (the
+    /// port has neither difficulty flag) — the classic path is verbatim,
+    /// the skips carry the C# cites. The movement integrates directly
+    /// (`noTileCollide` + `noGravity`).
     fn update_eye_of_cthulhu(
         &mut self,
         world: &World,
@@ -26665,7 +26657,6 @@ impl Npc {
         rng: &mut UnifiedRandom,
         dust: &mut tr_core::particles::DustPool,
         dust_ctx: &tr_core::particles::SpawnCtx,
-        gore: &mut tr_core::gore::GorePool,
     ) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -26729,33 +26720,12 @@ impl Npc {
         if self.rotation > num6 - num7 && self.rotation < num6 + num7 {
             self.rotation = num6;
         }
-        // `:20062-20067` — the per-tick 1-in-5 dust gate: the `Next(5)`
-        // draw is consumed EVERY tick (the gate rolls before the dawn-flee
-        // return); on 0 the type-5 dust spawns at (x, y + h*0.25) over the
-        // width × h*0.5 box at the eye's velocity, then velocity.X *= 0.5
-        // / velocity.Y *= 0.1. W4-d22: the draw was skipped (no rng) — the
-        // UpdateNPCs stream desynced every tick.
-        if rng.next_max(5) == 0 {
-            let idx = dust.new_dust(
-                rng,
-                dust_ctx,
-                world,
-                Vec2::new(self.x, self.y + h * 0.25),
-                w as i32,
-                (h * 0.5) as i32,
-                5,
-                self.vx,
-                2.0,
-                0,
-                tr_core::particles::Color::default(),
-                1.0,
-            );
-            if idx != tr_core::particles::DUST_SENTINEL {
-                let d = dust.slot_mut(idx);
-                d.velocity.x *= 0.5;
-                d.velocity.y *= 0.1;
-            }
-        }
+        // W4-d52 — the ambient blood drip (`NPC.cs:20062-20067`, site
+        // 20064): the Next(5) gate runs EVERY tick, after the rotation
+        // snap and BEFORE the dawn check.
+        crate::eoc_fight::ambient_drip(
+            self.x, self.y, w as i32, h, self.vx, rng, dust, dust_ctx, world,
+        );
         // `NPC.cs:20071-20074`: `Main.IsItDay() | dead` — the climb-away,
         // `velocity.Y -= 0.04f; EncourageDespawn(10)`. The 10-tick window is
         // the C#'s `timeLeft` cap (`:7249-7256`); the sim ticks it down and
@@ -26817,34 +26787,21 @@ impl Npc {
                         let num19 = pcy - cy;
                         let num20 = 5.0 / (num18 * num18 + num19 * num19).sqrt();
                         let (vx, vy) = (num18 * num20, num19 * num20);
-                        let (sx, sy) = (cx + vx * 10.0, cy + vy * 10.0);
-                        self.wants_servant = Some((sx, sy, vx, vy));
-                        // `:20188` — the int PlaySound(3) at the spawn point
-                        // (Style defaults 1; the sim drains it on the
-                        // UpdateNPCs stream, the S1-E-21g convention).
-                        self.wants_sound.push(NpcSoundRequest {
-                            cue: NpcSoundCue::NpcHit(1),
-                            x: sx,
-                            y: sy,
-                        });
-                        // `:20189-20192` — the 10-dust burst at the spawn
-                        // point, 20×20 box, type 5, velocity ×0.4.
-                        for _ in 0..10 {
-                            dust.new_dust(
-                                rng,
-                                dust_ctx,
-                                world,
-                                Vec2::new(sx, sy),
-                                20,
-                                20,
-                                5,
-                                vx * 0.4,
-                                vy * 0.4,
-                                0,
-                                tr_core::particles::Color::default(),
-                                1.0,
-                            );
-                        }
+                        self.wants_servant = Some((cx + vx * 10.0, cy + vy * 10.0, vx, vy));
+                        // W4-d52 — the burst's ten type-5 dusts
+                        // (`NPC.cs:20189-20192`, site 20191): AFTER the
+                        // NewNPC + the int PlaySound(3) (the port's
+                        // wants_servant drain resolves the spawn; the
+                        // sound is the E21g queue's — the burst draws
+                        // ride the UpdateNPCs stream in-step).
+                        crate::eoc_fight::servant_burst_dust(
+                            (cx + vx * 10.0, cy + vy * 10.0),
+                            (vx, vy),
+                            rng,
+                            dust,
+                            dust_ctx,
+                            world,
+                        );
                     }
                 }
             } else if self.ai[1] == 1.0 {
@@ -26932,61 +26889,31 @@ impl Npc {
                     if self.ai[0] == 3.0 {
                         self.ai[2] = 0.0;
                     } else {
-                        // `:20364-20375`'s hand-off: the int PlaySound(3)
-                        // (Style defaults 1), the 2×3 gore burst (types
-                        // 8/7/6, the Next(-30,31)×0.2 velocity pair each),
-                        // the 20-dust loop (the same pair), then the
-                        // case-15 roar. W4-d22: the gore/dust draws were
-                        // SKIPPED — restored on the caller's stream.
-                        //
-                        // ORDER DEVIATION (documented, ANALYSIS W4-d22):
-                        // the C# plays the hit cue BEFORE the gore/dust
-                        // draws; the port queues both plays on
-                        // `wants_sound` and the sim drains them AFTER the
-                        // machine's draws (the S1-E-21g convention) — the
-                        // hit cue's case-3 pitch draw lands after the
-                        // burst's rolls instead of before. The draw COUNT
-                        // is exact; the within-tick order of that one
-                        // pitch draw is the deferred sound-inline seam.
+                        // S1-E-21g — `:20364-20375`'s hand-off pair: the
+                        // int `PlaySound(3, pos)` (Style defaults 1) then
+                        // the case-15 roar `PlaySound(15, pos, 0)`.
+                        // W4-d52 wires the gore/dust burst BETWEEN them
+                        // (sites 20373/20379): the gore argument draws +
+                        // NewGore kicks (the visuals are d55's) then the
+                        // 20 type-5 dusts, all on the UpdateNPCs stream.
+                        // Neither play's position is the centre —
+                        // `base.position` (`:20364`/`:20375`).
                         self.wants_sound.push(NpcSoundRequest {
                             cue: NpcSoundCue::NpcHit(1),
                             x: self.x,
                             y: self.y,
                         });
-                        // `:20365-20370` — 2 passes × 3 gores (8, 7, 6).
-                        for _ in 0..2 {
-                            for gore_type in [8, 7, 6] {
-                                let gvx = rng.next_range(-30, 31) as f32 * 0.2;
-                                let gvy = rng.next_range(-30, 31) as f32 * 0.2;
-                                gore.new_gore(
-                                    rng,
-                                    world,
-                                    Vec2::new(self.x, self.y),
-                                    Vec2::new(gvx, gvy),
-                                    gore_type,
-                                    1.0,
-                                );
-                            }
-                        }
-                        // `:20371-20374` — the 20-dust loop.
-                        for _ in 0..20 {
-                            let dvx = rng.next_range(-30, 31) as f32 * 0.2;
-                            let dvy = rng.next_range(-30, 31) as f32 * 0.2;
-                            dust.new_dust(
-                                rng,
-                                dust_ctx,
-                                world,
-                                Vec2::new(self.x, self.y),
-                                w as i32,
-                                h as i32,
-                                5,
-                                dvx,
-                                dvy,
-                                0,
-                                tr_core::particles::Color::default(),
-                                1.0,
-                            );
-                        }
+                        crate::eoc_fight::spin_handoff_burst(
+                            self.x,
+                            self.y,
+                            w as i32,
+                            h as i32,
+                            !dust.child_safety.disabled,
+                            rng,
+                            dust,
+                            dust_ctx,
+                            world,
+                        );
                         self.wants_sound.push(NpcSoundRequest {
                             cue: NpcSoundCue::Roar(0),
                             x: self.x,
@@ -26995,26 +26922,12 @@ impl Npc {
                     }
                 }
             }
-            // `:20379` — the per-tick spin dust: the Next(-30,31)×0.2
-            // velocity pair draws EVERY spin tick (outside the hand-off).
-            {
-                let dvx = rng.next_range(-30, 31) as f32 * 0.2;
-                let dvy = rng.next_range(-30, 31) as f32 * 0.2;
-                dust.new_dust(
-                    rng,
-                    dust_ctx,
-                    world,
-                    Vec2::new(self.x, self.y),
-                    w as i32,
-                    h as i32,
-                    5,
-                    dvx,
-                    dvy,
-                    0,
-                    tr_core::particles::Color::default(),
-                    1.0,
-                );
-            }
+            // W4-d52 — the per-tick spin drip (`NPC.cs:20379`, site
+            // 20379): one type-5 dust every spin tick, AFTER the
+            // hand-off block, before the 0.98 damp.
+            crate::eoc_fight::spin_tick_dust(
+                self.x, self.y, w as i32, h as i32, rng, dust, dust_ctx, world,
+            );
             self.vx *= 0.98;
             self.vy *= 0.98;
             if self.vx.abs() < 0.1 {
@@ -28576,34 +28489,17 @@ impl Npc {
     /// `NPC.NewNPC`'s `Bottom` semantics (`:80770`). The Poltergeist (aiStyle
     /// 22) rides this arm as its documented stand-in and stays shotless (the
     /// step's standard shoot match has no arm for it).
-    /// W4-d43 — the Water Bolt Mimic (694, aiStyle 10): the faithful
-    /// `npc_ai_style10::style10_ai` book machine (`NPC.cs:21572-21918`), the
-    /// 600-tick cycle / charge / dash / Water-Sphere summon. The arm owns its
-    /// noTileCollide integration; the kb write and the sphere spawn ride the
-    /// port's override / wants_sphere seams.
-    fn update_water_bolt_mimic(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        let out = crate::npc_ai_style10::style10_ai(
-            self, world, player, 694, self.just_hit, 0, rng,
-        );
-        if let Some(kb) = out.knock_back_resist {
-            self.kb_resist_override = Some(kb);
-        }
-        if out.play_item8_sound {
-            self.wants_sound.push(crate::npc::NpcSoundRequest {
-                cue: crate::npc::NpcSoundCue::Item8,
-                x: self.x,
-                y: self.y,
-            });
-        }
-        if let Some((sx, sy)) = out.spawn_water_sphere {
-            self.wants_sphere.push((NpcKind::WaterSphere, sx as f32, sy as f32, 0.0));
-        }
-    }
-
-    fn update_caster(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn update_caster(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         self.ai[0] = self.caster_counter as f32;
         self.ai[1] = self.cast_windup as f32;
-        let shot = crate::npc_ai_bat::ai_style_8_step(self, world, player, rng);
+        let shot = crate::npc_ai_bat::ai_style_8_step(self, world, player, rng, dust, dust_ctx);
         self.caster_counter = self.ai[0] as i32;
         self.cast_windup = self.ai[1] as i32;
         if let Some(shot) = shot {
@@ -35784,7 +35680,22 @@ impl Npc {
     /// draws (the beam triggers, the blocked-line lead) are restored.
     fn update_golem(&mut self, world: &World, player: &Player) {
         let mut scratch = UnifiedRandom::new(0);
-        self.update_golem_rng(world, player, &mut scratch);
+        // W4-d52: the direct-call entry runs the dust arms on a scratch
+        // pool with a permissive ctx (the `update_rng` house pattern) —
+        // the sim threads the live pool through `update_golem_rng`.
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(
+                world.width as f32 * TILE_PX,
+                world.height as f32 * TILE_PX,
+            ),
+            max_dust_to_draw: 6000,
+        };
+        self.update_golem_rng(world, player, &mut scratch, &mut dust, &ctx);
     }
 
     /// The aiStyle-47 axis arm's delegate (the three-way reconcile,
@@ -35794,8 +35705,15 @@ impl Npc {
     /// reference port, whose documented fold-outs (the dropped anchor Y,
     /// the never-set collide flags, the solo-only balance) it supersedes.
     /// The reference module + its witnesses stay as the audit cross-check.
-    fn ai_047_golem_fist_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        self.update_golem_rng(world, player, rng);
+    fn ai_047_golem_fist_family(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        self.update_golem_rng(world, player, rng, dust, dust_ctx);
     }
 
     /// The golem family's `TargetClosest` seam (R22 G2 / R23 G3): the
@@ -35815,7 +35733,14 @@ impl Npc {
         self.sprite_dir = self.facing;
     }
 
-    fn update_golem_rng(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn update_golem_rng(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -35888,9 +35813,24 @@ impl Npc {
                 // The part scan's flags ride the World (the sim's anchor
                 // pass scans the pool — `:19544-19566`); the shield
                 // `dontTakeDamage = flag` (`:19567`) rides the sim too.
-                // The dead-part dust rolls (`:19589-19624`) are SKIPPED
-                // (no dust layer in this machine — the RNG draws go with
-                // them, the port's standing cosmetic-skip pattern).
+                // W4-d52 — the dead-part smoke (`:19587-19625`, sites
+                // 19591/19598 left, 19609/19616 right): the !getGoodWorld
+                // gate (false — the seed-only fold) opens the per-tick
+                // type-31 puff + the gated type-6 ember for each DEAD
+                // fist, left before right, on the UpdateNPCs stream.
+                // The netOffset add/subtract pair (`:19586`/`:19626`)
+                // nets to zero in the single-player port (the field is
+                // never written).
+                if !world.golem_fist_left_alive {
+                    crate::npc_ai_golem::dead_part_smoke(
+                        -80.0, (cx, cy), self.scale, rng, dust, dust_ctx, world,
+                    );
+                }
+                if !world.golem_fist_right_alive {
+                    crate::npc_ai_golem::dead_part_smoke(
+                        62.0, (cx, cy), self.scale, rng, dust, dust_ctx, world,
+                    );
+                }
                 if self.ai[0] == 0.0 {
                     // The grounded charge (`:19638-19703`): the literal
                     // `velocity.Y == 0f` gate, the `num4` ladder (the v1
@@ -35928,9 +35868,19 @@ impl Npc {
                     }
                 } else if self.vy == 0.0 {
                     // `:19706-19719` — the landing returns the machine to
-                    // the charge state; the Item14 sound + the dust/gore
-                    // rows are SKIPPED (no sound/dust layer here).
+                    // the charge state; W4-d52 wires the dust/gore row
+                    // (site 19714 — the four type-31 puffs + the gore's
+                    // three draws per 20-px column). The Item14 sound
+                    // (`:19708`) queues BEFORE the row, the C# order.
+                    self.wants_sound.push(NpcSoundRequest {
+                        cue: NpcSoundCue::Item14,
+                        x: self.x,
+                        y: self.y,
+                    });
                     self.ai[0] = 0.0;
+                    crate::npc_ai_golem::body_landing_burst(
+                        self.x, self.y, w as i32, h, rng, dust, dust_ctx, world,
+                    );
                 } else {
                     // The flight (`:19721-19765`): the hitbox-span test,
                     // the balance-scaled sink and the `num7` cap ladder.
@@ -36127,6 +36077,15 @@ impl Npc {
                     self.vx = 0.0;
                     self.vy = 0.0;
                     self.ai[1] += 1.0;
+                    // W4-d52 — the wind-up charge dust (`:19337-19353`,
+                    // site 19344): while `ai[1] <= 15` after the ++, one
+                    // type-228 NewDustPerfect per tick at the SNAPPED
+                    // centre (the C# reads `base.Center` after `:19334`).
+                    if self.ai[1] <= 15.0 {
+                        crate::npc_ai_golem::fist_windup_dust(
+                            (anchor_x, anchor_y), rng, dust, dust_ctx, world,
+                        );
+                    }
                     if self.ai[1] >= 30.0 {
                         self.local_ai[0] = 1.0;
                         self.collide_x = false;
@@ -36156,9 +36115,7 @@ impl Npc {
                     // axis, the `>700 || collideX || collideY` exit.
                     self.ai[1] += 1.0;
                     // S1-E-21g — `NPC.cs:19412-19416`: the launch's first
-                    // tick plays Item14 (`ai[1] == 1` after the increment;
-                    // the Next(2) dust roll at `:19417` stays SKIPPED —
-                    // it draws AFTER the play, so the queue order holds).
+                    // tick plays Item14 (`ai[1] == 1` after the increment).
                     if self.ai[1] == 1.0 {
                         self.wants_sound.push(NpcSoundRequest {
                             cue: NpcSoundCue::Item14,
@@ -36166,6 +36123,13 @@ impl Npc {
                             y: self.y,
                         });
                     }
+                    // W4-d52 — the dash trail (`:19417-19422`, site
+                    // 19421): the Next(2) gate EVERY dash tick, then the
+                    // type-306 OurFavoriteColor puff. The gate draw runs
+                    // even when it fails (the C#'s `if (Next(2) == 0)`).
+                    crate::npc_ai_golem::fist_dash_dust(
+                        (cx, cy), (self.vx, self.vy), rng, dust, dust_ctx, world,
+                    );
                     if self.vx.abs() > self.vy.abs() {
                         if (self.vx > 0.0 && cx > pcx) || (self.vx < 0.0 && cx < pcx) {
                             self.local_ai[0] = 0.0;
@@ -42559,14 +42523,14 @@ mod tests {
         let mut wd = ground_air();
         let mut dc = Npc::new(NpcKind::DarkCaster, 100.0 * 16.0, 118.0 * 16.0, 1, 0.0);
         dc.hp = dc.max_hp;
-        dc.update_caster(&wd, &player, &mut rng);
+        dc.update_caster(&wd, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&wd));
         assert_eq!(dc.local_ai[3], 0.0, "no head, no latch");
         wd.skeletron_red_hat = true;
-        dc.update_caster(&wd, &player, &mut rng);
+        dc.update_caster(&wd, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&wd));
         assert_eq!(dc.local_ai[3], 1.0, "`:20825`'s latch");
         assert!(dc.red_hat_skeletron_adjustments_enabled());
         wd.skeletron_red_hat = false;
-        dc.update_caster(&wd, &player, &mut rng);
+        dc.update_caster(&wd, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&wd));
         assert_eq!(dc.local_ai[3], 1.0, "the C# has no reset arm");
         // `FindFrame`'s `:77050-77053`: the latched caster banks 3 rows.
         dc.vy = 0.0;
@@ -42579,7 +42543,7 @@ mod tests {
         let mut fired = false;
         for _ in 0..1200 {
             dc.wants_sphere.clear();
-            dc.update_caster(&wd, &player, &mut rng);
+            dc.update_caster(&wd, &player, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&wd));
             if let Some((kind, _, _, ai3)) = dc.wants_sphere.first().copied() {
                 assert_eq!(kind, NpcKind::WaterSphere);
                 assert_eq!(ai3, 1.0, "the latched caster's sphere rides ai[3]=1");
@@ -52287,6 +52251,21 @@ mod tests {
         n.ai_028_wof_eye_family(&w, &player);
         assert_eq!((n.facing, n.sprite_dir), (-1, -1), "ignores the aim");
     }
+
+    /// W4-d52 — a permissive dust ctx (the whole world on-screen, full
+    /// budget) for the dust-wired arms' direct-call tests: the pool never
+    /// culls, so the scratch spawn always lands and the draw count matches
+    /// the live empty-pool path (the `update_rng` house pattern).
+    fn dust_ctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
 }
 }
 }
@@ -53815,6 +53794,19 @@ mod s1_d_3n_tests {
 mod s1_f_13b_tests {
     use super::*;
 
+    /// W4-d52 — a permissive dust ctx for the dust-wired arms' direct-call
+    /// tests (the `update_rng` house pattern).
+    fn dust_ctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// The 16 Pumpkin Moon kinds with the C#'s verbatim `SetDefaults` rows
     /// (`NPC.cs:12929-12977` the 305-314 group, `:12978` 315, `:13115` 325,
     /// `:13129` 326, `:13142` 327, `:13175` 329, `:13188` 330): the vanilla
@@ -54641,7 +54633,7 @@ mod s1_f_13b_tests {
                     | NpcKind::Tim
                     | NpcKind::DarkCaster
                     | NpcKind::FireImp
-                    | NpcKind::DesertDjinn => legacy.update_caster(&w, &player_b, &mut rng_b),
+                    | NpcKind::DesertDjinn => legacy.update_caster(&w, &player_b, &mut rng_b, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w)),
                     _ => unreachable!(),
                 }
                 legacy.find_frame();
@@ -54697,7 +54689,7 @@ mod s1_f_13b_tests {
         let mut rng_a = UnifiedRandom::new(31);
         let mut rng_b = UnifiedRandom::new(31);
         named.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
-        stand.update_caster(&w, &player_b, &mut rng_b);
+        stand.update_caster(&w, &player_b, &mut rng_b, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w));
         stand.find_frame();
         stand.contact(&mut player_b, &mut rng_b);
         assert_eq!(named.alpha, 0, "the named machine's 330 row");
@@ -58509,7 +58501,7 @@ mod s1_f_13c_wire_tests {
         let mut p = night_player(&w);
         let mut n = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
         let mut rng = UnifiedRandom::new(0);
-        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w));
     }
 
     /// The shot rows exist: the drained kinds resolve through `proj_data`
@@ -59473,6 +59465,19 @@ mod s1_f_13d_tests {
     // (the restored-c10 scope fix).
     use super::tests::{bare, ground};
 
+    /// W4-d52 — a permissive dust ctx for the dust-wired arms' direct-call
+    /// tests (the `update_rng` house pattern).
+    fn dust_ctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// The two kinds' verbatim `SetDefaults` rows: the bubble
     /// (`NPC.cs:13882-13894`) and the turret (`:13922-13934`). The bubble
     /// carries no damage/kb/value rows — the head defaults 0 (`:8563`),
@@ -59713,7 +59718,7 @@ mod s1_f_13d_tests {
             n.hp = n.max_hp;
             let (x0, y0) = (n.x, n.y);
             for _ in 0..120 {
-                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng);
+                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w));
             }
             assert_eq!(n.x, x0, "{kind:?} stand-in holds its x");
             assert_eq!(n.y, y0, "{kind:?} stand-in holds its y");
@@ -62832,8 +62837,18 @@ mod w4_d23_style9_wiring_tests {
                 pure.gfx_off_y = crate::npc_ai_unicorn_b::gfx_off_y_decay(
                     pure.gfx_off_y, pure.vx, pure.step_speed,
                 );
+                let mut scratch_dust = tr_core::particles::DustPool::new();
+                let scratch_ctx = tr_core::particles::SpawnCtx {
+                    game_menu: false,
+                    game_paused: false,
+                    generating: false,
+                    screen_position: Vec2::ZERO,
+                    screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+                    max_dust_to_draw: 6000,
+                };
                 crate::npc_ai_style9::sphere_family_step(
                     &mut pure, &w, &player_b, flags, &mut rng_b,
+                    &mut scratch_dust, &scratch_ctx,
                 );
                 pure.just_hit = false;
                 pure.find_frame();

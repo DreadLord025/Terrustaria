@@ -3,6 +3,32 @@
 > Wave 3 · researched 2026-11-12 · sources: decompiled (`decompiled/Terraria/ID/*`), crates
 > (`crates/tr-app`, `crates/tr-core`), ROADMAP/ANALYSIS/PORT_MAP, research/05-npc-core.md
 
+> **Status refresh 2026-11-20 (W4-c45, `task/W4-c45-id-sets-prefix-dust`, code-only).**
+> The coverage table below is the 2026-11-12 snapshot; since then:
+> - **PrefixID**: the full 97-constant walk landed (S1-F-4, `prefix_id.rs`); deviation 8's
+>   *behavioural* half was already covered — `prefix.rs::stat_switch`'s 78 arms match
+>   `Item.TryGetPrefixStatMultipliersForItem` case-for-case (the C# switch itself has NO
+>   62..80 cases; the accessory band rides `value_multiplier`'s tier bumps `Item.cs:1047-1062`
+>   + `grant_prefix_benefits` `Player.cs:13955-14046`). W4-c45 adds the `Sets` carrier
+>   (`prefix_id::SETS_REDUCED_NATURAL_CHANCE`, `PrefixID.cs:14` declaration order,
+>   cross-pinned against the roll engine's sorted copy) and pins all 97 spellings/values.
+> - **ProjectileID**: full 1137-constant walk (S1-F-5, `projectile_id.rs`).
+> - **DustID / SoundID / ArmorIDs / PlayerItemSlotID**: landed (S1-F-6, `id_tables.rs`;
+>   the 506-style `SoundID` registry is the generated `soundid.rs`, S1-E-21 wave A).
+>   W4-c45 pins EVERY `(id, name)` pair of the sixteen ArmorIDs walks + the DustID walk +
+>   the 506 SoundID field names in ctor order (mechanical parse-and-diff vs the decompiled
+>   C#: ALL OK, zero table corrections needed), and adds the two size-counter carriers
+>   (`NPC_DEATH_COUNT = 69` `SoundID.cs:1383`, `ITEM_SOUND_COUNT = 211` `:1595`).
+> - **Deviations 1/2/3/5 (protocol-id collisions)**: stay RESOLVED (S1-F-1/F-2). W4-c45
+>   re-swept the grown roster mechanically: `npc/data.rs` `to_u16` has **270** unique ids
+>   over 270 distinct kinds, `from_u16` decodes exactly those 270, 0 duplicates and
+>   0 mismatches in either direction — no collision remains; the S1-F-1 separation
+>   precedent (pirates/probe at 182..188, Deerclops/Prime keep 78..84) holds and no id
+>   was moved. `#[deny(unreachable_patterns)]` guards both fns (`npc/data.rs:217`/`:597`).
+> - Still open: the long tail of small sets (ChainID/CloudID/ExtrasID/GlowMaskID/NPCHeadID/
+>   MessageID/… — the "no Rust counterpart" list below minus the four landed ones), the
+>   `cs_id`/three-id-spaces structural unification, and the id-census harness seed.
+
 ## Scope
 
 This module is a **mechanical census**, not a subsystem: it enumerates every id set the

@@ -124,6 +124,33 @@ impl LocalizedText {
     pub fn format(&self, lookup: &dyn Fn(&str) -> Option<Substitution>, args: &[String]) -> String {
         format_net(&self.value_with(lookup), args)
     }
+
+    /// `LocalizedText.ConditionsMet` (`LocalizedText.cs:35-45`): the
+    /// `VariableText.ConditionsMet` gate over the global substitutions — a
+    /// plain string (no tokens) is always true. The loading tips' reroll loop
+    /// (`GameTipsProvider.cs:37-49`) and `Lang.CreateDialogFilter`'s default
+    /// (`Lang.cs:422-425`) read it.
+    pub fn conditions_met(&self, lookup: &dyn Fn(&str) -> Option<Substitution>) -> bool {
+        match &self.parsed {
+            Some(parsed) => parsed.conditions_met(lookup),
+            None => true,
+        }
+    }
+
+    /// `LocalizedText.GetValueIfConditionsMet(out string formatted)`
+    /// (`LocalizedText.cs:70-78`): `Some(formatted)` when every condition and
+    /// variable resolves; `None` leaves the caller's text untouched (the
+    /// Guide's help-text gate, `Main.cs:39254`). A plain string is always
+    /// `Some(Value)`.
+    pub fn value_if_conditions_met(
+        &self,
+        lookup: &dyn Fn(&str) -> Option<Substitution>,
+    ) -> Option<String> {
+        match &self.parsed {
+            Some(parsed) => parsed.try_format(lookup),
+            None => Some(self.value.clone()),
+        }
+    }
 }
 
 /// `LanguageManager`.
@@ -618,6 +645,58 @@ mod tests {
         );
         m.set_substitution("IsNight", false);
         assert_eq!(m.get_text_value("Game.NotNight"), "The sun is out");
+    }
+
+    /// `LocalizedText.ConditionsMet` (`LocalizedText.cs:35-45`) and
+    /// `GetValueIfConditionsMet` (`:70-78`, S1-L-12b): the gate the loading
+    /// tips' reroll loop (`GameTipsProvider.cs:37-49`) and the Guide's
+    /// help-text pick (`Main.cs:39254`) read.
+    #[test]
+    fn conditions_met_gates_the_conditional_rows() {
+        let json = r#"{
+            "Tips": {
+                "Trash": "{?TrashEnabled}Sell with the trash can",
+                "NoTrash": "{!TrashEnabled}Trash is disabled",
+                "Mixed": "{?BloodMoon}The {PlayerName} era",
+                "Plain": "No tokens here"
+            }
+        }"#;
+        let mut m = manager_with(json);
+        // Clone the rows out so the lookup closure can re-borrow the manager
+        // (the `text_format_with` pattern).
+        let trash = m.get_text("Tips.Trash").clone();
+        let no_trash = m.get_text("Tips.NoTrash").clone();
+        let mixed = m.get_text("Tips.Mixed").clone();
+        let plain = m.get_text("Tips.Plain").clone();
+        // Unset condition answers false (`CheckConditionsAndLoadArgs`'s
+        // `as bool? ?? false`, VariableText.cs:79).
+        assert!(!trash.conditions_met(&|n| m.substitution(n)));
+        assert!(no_trash.conditions_met(&|n| m.substitution(n)));
+        assert!(plain.conditions_met(&|n| m.substitution(n)));
+        assert_eq!(trash.value_if_conditions_met(&|n| m.substitution(n)), None);
+        assert_eq!(
+            plain.value_if_conditions_met(&|n| m.substitution(n)),
+            Some("No tokens here".to_string())
+        );
+        m.set_substitution("TrashEnabled", true);
+        assert!(trash.conditions_met(&|n| m.substitution(n)));
+        assert!(!no_trash.conditions_met(&|n| m.substitution(n)));
+        assert_eq!(
+            trash.value_if_conditions_met(&|n| m.substitution(n)),
+            Some("Sell with the trash can".to_string())
+        );
+        // The gate checks the VARIABLES too: a passing condition with a
+        // missing variable still fails (`CheckConditionsAndLoadArgs` loads
+        // both, VariableText.cs:73-94).
+        m.set_substitution("BloodMoon", true);
+        assert!(!mixed.conditions_met(&|n| m.substitution(n)));
+        assert_eq!(mixed.value_if_conditions_met(&|n| m.substitution(n)), None);
+        m.set_substitution("PlayerName", "Jeff");
+        assert!(mixed.conditions_met(&|n| m.substitution(n)));
+        assert_eq!(
+            mixed.value_if_conditions_met(&|n| m.substitution(n)),
+            Some("The Jeff era".to_string())
+        );
     }
 
     #[test]

@@ -54,7 +54,8 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 - `UserInterface.cs::SetState`/`GoBack`/`AddToHistory`/`ResetState` (:276-322).
 - `crates/tr-app/src/ui/uistate.rs::Style` (:26-46) — `StyleDimension`.
 - `uistate.rs::xna_clamp` (:50-52) — `Math.Max(min, Math.Min(max, value))`.
-- `uistate.rs::resolve` (:83-107) — the layout pass, pure, margins dropped.
+- `uistate.rs::resolve` (:83-107) — the layout pass, pure; margins now in
+  `resolve_with_margins` (W4-d87).
 - `uistate.rs::inner` (:111-118) — the padding tail of `Recalculate` (:298-303).
 - `framework.rs::Element`/`get_element_at` (:36-80) — the flat hit order.
 - `pointer.rs::PointerState::{tick,press,release,mouse_captured,reset_on_state_change}`
@@ -85,7 +86,7 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | `StyleDimension` px + percent | PORTED | `uistate.rs::Style` :26-46 | `GetValue` = px + pct·container (:17-20 of StyleDimension.cs); constructors match :24-32 |
 | Clamp `MathHelper.Clamp` | PORTED | `uistate.rs::xna_clamp` :50-52 | min-wins when min>max; test `xna_clamp_keeps_the_min_when_min_exceeds_max` |
 | Layout math `:308-320` | PORTED | `uistate.rs::resolve` :83-107 | min/max clamp before alignment (:99-101); tests `resolve_*` |
-| Margins `:293-297`, `:317-318` | MISSING | `uistate.rs:54-58,105` | dropped: every P6 caller leaves them 0, so they cancel; latent divergence |
+| Margins `:293-297`, `:317-318` | PORTED (W4-d87, 2026-11-20) | `uistate.rs::resolve_with_margins` | inflate-before-align (`:317-319`), shrink-after (`:293-296`); `resolve` delegates at `margin=[0;4]` bit-identically; tests `resolve_margins_*`, `resolve_zero_margins_is_bit_identical_to_the_old_margin_free_pass` |
 | Padding / inner rect `:298-303` | PORTED | `uistate.rs::inner` :111-118 | test `resolve_padding_shrinks_the_inner_rect_only` |
 | Parent = `UIList` ⇒ height ∞ `:288-291` | MISSING | `uistate.rs:73-75` | admitted in code; list rows derive arithmetically per screen |
 | Root dims `UserInterface.cs:332-336` | PARTIAL | per-screen root rects (`char_select::select_player` etc.) | `Main.UIScale` ported (`settings::ui_scale_max`, `Settings::ui_scale`, the `GameUI.UIScale` bar) but the `GetDimensions()` division is still not applied to the per-screen rects (S1-H-3; docs/ANALYSIS.md) |
@@ -100,11 +101,11 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | `ResetState`/200 ms lockout :165-179 | PORTED | `pointer.rs::reset_on_state_change` :142 | test `dw_1_2_the_state_change_disable_swallows_the_next_press` |
 | `OverflowHidden` scissor :199-238 | PORTED | `tr-render/src/clip.rs` + `SpriteRenderer::push_clip`/`pop_clip`; wired in `char_select.rs`, `world_select.rs`, `char_creation.rs` (`draw_hairstyles_menu`) | the clip is a per-instance `clip` vec4 + `discard` in `sprite.wgsl` (one instanced draw); nested pushes intersect as `GetClippingRectangle` does. S1-H-2 |
 | `GetClippingRectangle` :252-269 | PORTED | `clip.rs::intersect`/`ClipStack` + `uistate::inner` at the call sites | reads the element's **inner** rect (`:254`), which is what the screens push; S1-H-2 |
-| Snap points `:124-145, :271-283`, `SnapPoint.cs` | MISSING | — | gamepad navigation absent |
+| Snap points `:124-145, :271-283`, `SnapPoint.cs` | PORTED (W4-d87, 2026-11-20) | `ui/snap.rs` (`SnapPoint::set/calculate/change_info`, `get_snap_point`, `get_snap_points`) | the anchor maths + the self-then-children pre-order walk over the flat table; the gamepad consumer (`UILinkPointNavigator`) is still absent; 5 tests |
 | Gamepad / `UILinkPointNavigator` (`UserInterface.cs:184-187`) | MISSING | — | NoGamepadSupport / gamepad branch unported |
 | `Activate`/`Deactivate`/`Initialize` :548-605 | MISSING | — | immediate mode; screens carry their own reset |
-| State stack `_history`/`GoBack` :305-322 | MISSING | `flow.rs` `next_flow_state` | code comment (`pointer.rs:8-10`) claims zero call sites in 1.4.5.8 — **unverified** here |
-| `GameInterfaceLayer` / `InterfaceScaleType` | MISSING | fixed order in `frame.rs` | no named layer list, no per-layer zoom matrix (`Game`/`UI`/`None`) |
+| State stack `_history`/`GoBack` :305-322 | PORTED (W4-d87, 2026-11-20) | `ui/state_stack.rs` (`StateStack::set_state/go_back`, the 33→29 history sawtooth) | `GoBack` **verified dead code**: all 8 `GoBack()` grep hits are screens' own private helpers (`UIWorldCreation.cs:670-674` → `Main.OpenWorldSelectUI()`), never `UserInterface.GoBack`; machine ported, `flow.rs` not rewired; 7 tests |
+| `GameInterfaceLayer` / `InterfaceScaleType` | PARTIAL (W4-d87, 2026-11-20) | `ui/layers.rs` (`VANILLA_LAYERS` = the 43-layer `Main.cs:44718-44918` table, `layer_matrix`, `draw_interface` stop-on-false walk) | machinery + data ported; `frame.rs` still draws in fixed code order — wiring the passes through the table is the follow-up; 4 tests |
 | `UIPanel` 9-slice / separators / scrollbar sprite | PORTED | `panel.rs` :1-21 (`CORNER`/`BAR` constants) | draw-only; thumb drag per screen |
 | `UITextPanel` / `UIImageButton` / `UIColoredImageButton` | PORTED | `uistate.rs:290-527` | tests `text_panel_rect_*`, `lookups_default_*` |
 | `Utils.DrawSplicedPanel` | PORTED | `uistate.rs::spliced_rects` :168-219 | incl. the `:2593` top-right quirk; 4 tests |
@@ -122,13 +123,18 @@ Screens already covered by immediate ports are listed for completeness at the en
 | `UIElement.Recalculate/RecalculateChildren` as tree ops | whole-tree relayout | per-screen per-frame derivation | MISSING (by design) | the `UIList` ∞-height case is now modelled (`resolve_in_list`, S1-H-2) |
 | `UIElement` event bubble (`:414-547`) | ancestor handlers + ancestor `IsMouseHovering` | `framework.rs::bubble_chain` + `Element` parent links | PORTED (S1-H-1) | the `MouseOver`-driven ancestor hovering is the same chain (`:510-521`) |
 | `UIElement.Draw` `OverflowHidden` path + `GetClippingRectangle` | clipping | `tr-render/src/clip.rs` + `SpriteRenderer::push_clip`/`pop_clip` + `Element.viewport` for the hit side | PORTED (S1-H-2) | the clip cuts pixels in the fragment stage; hit-testing stops descending through an ancestor that does not contain the point (`UIElement.cs:327-341`) |
-| `UIElement.GetSnapPoints`, `SetSnapPoint` ; `SnapPoint.cs` | gamepad nav anchors | none | MISSING | gamepad only |
+| `UIElement.GetSnapPoints`, `SetSnapPoint` ; `SnapPoint.cs` | gamepad nav anchors | `ui/snap.rs` (W4-d87) | PORTED (maths + walk); the gamepad consumer is still absent |
 | `UIElement.Activate/Deactivate/Initialize/ExecuteRecursively/CopyStyle` | lifecycle | none | MISSING | none today (immediate screens) |
-| `UserInterface` (object, `_currentState`, `_history`) | element stack, `GoBack`, 32-entry history | `flow.rs` table | MISSING/partial | `GoBack` semantics (2-state pop) not modelled |
-| `GameInterfaceLayer`, `LegacyGameInterfaceLayer`, `InterfaceScaleType` | named layer stack, 3 scale spaces | fixed order in `frame.rs` | MISSING | ordering is hard-coded; no per-layer zoom |
+| `UserInterface` (object, `_currentState`, `_history`) | element stack, `GoBack`, 32-entry history | `ui/state_stack.rs` (`StateStack`) + `flow.rs` table | PORTED (W4-d87; machine only — `flow.rs` not rewired, `GoBack` verified dead code) | `GoBack` semantics (2-state pop) modelled + tested |
+| `GameInterfaceLayer`, `LegacyGameInterfaceLayer`, `InterfaceScaleType` | named layer stack, 3 scale spaces | `ui/layers.rs` (`VANILLA_LAYERS`, `layer_matrix`, `draw_interface`) + fixed order in `frame.rs` | PARTIAL (W4-d87; machinery + data ported, `frame.rs` wiring pending) | ordering data exists; no per-layer zoom applied yet |
 | `UIState` (as a class you instantiate) | 100% root + `NoGamepadSupport` | `FrontScreen` / per-screen root | PARTIAL | no shared root type |
 
 ### Element classes (`Terraria/UI/*.cs` + `GameContent/UI/Elements/*.cs`)
+
+> **2026-11-20 (W4-d82):** the full 64-class census + the d81/d82/d83 lane
+> split lives in [18b](18b-element-census.md). d82's middle band (rows 22-34,
+> 13 classes) is LANDED on `task/W4-d82-ui-elements-2` — the rows below are
+> annotated where they overlap.
 
 | C# class (file:line) | What it is | Rust counterpart | Status |
 | --- | --- | --- | --- |
@@ -136,16 +142,16 @@ Screens already covered by immediate ports are listed for completeness at the en
 | `UIScrollbar` | thumb track/drag | static sprite only (`char_creation.rs:1860` "never scrolls") | PARTIAL |
 | `UISliderBase`, `UIColoredSliderSimple` | slider input element | `sliders.rs` draw-only | PARTIAL (no drag element) |
 | `UISearchBar`, `UIWrappedSearchBar` | bestiary/creative filter input | none | MISSING |
-| `UIProgressBar`, `UIGenProgressBar` | progress elements | `bars.rs` (boss bar, bespoke) | PARTIAL/MISSING for the generic element |
-| `UIHeader`, `UIHorizontalSeparator`, `UIVerticalSeparator` | chrome | `panel.rs` separators (9-slice primitives) | PARTIAL |
+| `UIProgressBar`, `UIGenProgressBar` | progress elements | `bars.rs` (boss bar, bespoke) | PARTIAL/MISSING for the generic element — `UIGenProgressBar` LANDED S1-E-17 (`world_load.rs`, re-verified W4-d82); `UIProgressBar` = d83 |
+| `UIHeader`, `UIHorizontalSeparator`, `UIVerticalSeparator` | chrome | `panel.rs` separators (9-slice primitives) | PARTIAL — header/separator draws LANDED S1-E-17 + the element halves W4-d82 (`chrome_elements.rs`, research/18b rows 33/34); `UIVerticalSeparator` = d83 |
 | `UISlicedImage`, `UISlicedImage` variants, `UIImageFramed` | sliced images | `uistate::spliced_rects` primitive | PARTIAL (helper, not element) |
 | `UIToggleImage`, `UIImage`, `UIText` | basic draw elements | `text::push_font_text`, `panel` | PARTIAL |
 | `UISortableElement` | drag-reorder | none | MISSING |
-| `UIDynamicItemCollection` (+subclasses) | item grids | `slot.rs` per-context draw | PARTIAL |
+| `UIDynamicItemCollection` (+subclasses) | item grids | `slot.rs` per-context draw | PARTIAL — the base grid geometry + budget walk LANDED W4-d82 (`item_collection.rs`, research/18b row 30); the per-entry `DrawSlot` stays the subclass seam |
 | `UIItemSlot`, `UIItemIcon` | item slot *elements* | `slot.rs::draw` (ports `ItemSlot.Draw` directly, no element) | PARTIAL |
 | `UIParticleLayer` | UI particles | none | MISSING |
 | `PowerStripUIElement` | power-button strip | none | MISSING |
-| `UICreativePowerButton`, `UIDifficultyButton`, `UIClothStyleButton`, `UICharacterNameButton`, `UIIconTextButton`, `UIDebugCommandItem`, `UIDebugLoadoutItem` | composite buttons | none | MISSING |
+| `UICreativePowerButton`, `UIDifficultyButton`, `UIClothStyleButton`, `UICharacterNameButton`, `UIIconTextButton`, `UIDebugCommandItem`, `UIDebugLoadoutItem` | composite buttons | none | MISSING — W4-d82 landed `UICreativePowerButton` (empty marker), `UIDifficultyButton`/`UIHairStyleButton` element halves (`buttons.rs`) and the two debug rows (`debug_items.rs`), research/18b rows 25/27-29/32; cloth/name = d81, icon-text = d83 |
 | `UIKeybindingListItem`, `-Cycle-`, `-Simple-`, `-Slider-`, `-ToggleListItem` | controls screen rows | none | MISSING |
 | `UIBestiaryEntryButton/Grid/Icon/InfoPage/SortingOptionsGrid/FilteringOptionsGrid/NPCEntryPortrait/InfoItemLine` | bestiary elements | `bestiary.rs` (immediate) | PARTIAL |
 | `UIAchievementListItem`, `EmoteButton`, `EmotesGroupListItem`, `UICharacterListItem`, `AWorldListItem`, `UICharacter`, `UIWorldCreationPreview`, `UIResourcePack`, `UIWorkshopPublishResourcePackListItem` | list rows/cards | `achievements.rs`, `emotes.rs`, `cards.rs` + the select screens (immediate) | PARTIAL |
@@ -202,7 +208,17 @@ fns across 31 files (framework-relevant subset):
   `dw_2_3_the_fat_buttons_do_not_double_click_into_play`), `world_select` 17 (same pair),
   `chest` 13 (`dw_3_2_*` scroll math + `dw_3_2_scroll_wheel_gate_matches_doscrollingininventory`),
   `emotes` 6, `ingame_options` 27, `char_creation` 23, `keyboard` 13.
-- No test covers: margins, snap points, or the layer stack. (The `UIList`
+- Margins, snap points and the layer/state stack are now covered (W4-d87,
+  2026-11-20): `uistate.rs` `resolve_margins_align_the_inflated_box_then_shrink`,
+  `resolve_margins_clamp_the_content_size_before_inflating`,
+  `resolve_zero_margins_is_bit_identical_to_the_old_margin_free_pass`;
+  `snap.rs` 5 (`snap_calculate_is_position_plus_offset_plus_anchor_times_size`,
+  `get_snap_points_is_self_then_children_in_append_order`, …);
+  `state_stack.rs` 7 (`go_back_pops_two_and_reappends_one`,
+  `the_history_sawtooths_33_to_29_not_a_sliding_window`, …);
+  `layers.rs` 4 (`the_vanilla_table_is_43_layers_in_main_order`,
+  `the_walk_stops_on_the_first_false_and_counts_the_stopping_layer`, …).
+  (The `UIList`
   ∞-height case is covered by `resolve_in_list_gives_the_child_an_infinite_parent_height`;
   `OverflowHidden` clipping by `clip.rs`'s stack/edge-rule tests,
   `dw_2_1_a_row_outside_its_list_viewport_is_unreachable` and
@@ -211,7 +227,13 @@ fns across 31 files (framework-relevant subset):
 
 ## Deviations & risks
 
-1. **Margins silently dropped** — `uistate.rs:54-58,105` documents that margins
+1. ~~**Margins silently dropped**~~ — **FIXED 2026-11-20 (W4-d87)**:
+   `uistate::resolve_with_margins` ports `:293-297` + `:317-318` in C# order
+   (clamp → inflate → align the inflated box → shrink); `resolve` /
+   `resolve_with_max_h` / `resolve_in_list` delegate at `margin = [0; 4]`,
+   bit-identical for every existing caller (pinned by
+   `resolve_zero_margins_is_bit_identical_to_the_old_margin_free_pass`). The
+   earlier text read: `uistate.rs:54-58,105` documents that margins
    cancel at 0 and omits them. All current callers pass 0, so behaviour matches
    today, but any new element with a margin diverges invisibly. Behavioural,
    latent; admitted in code, not in ROADMAP.
@@ -276,26 +298,36 @@ fns across 31 files (framework-relevant subset):
    event-driven from `loop.rs` (`:390-403`), so the press dispatch may run before
    or after a hover refresh in the same frame. Determinism-relevant for
    double-click edges. Not verified; no test pins it.
-9. **`GoBack`/history "dead code" claim unverified** — `pointer.rs:8-10` states
-   zero call sites in 1.4.5.8. `UserInterface.GoBack` (:305-313) *is* called from
-   the back-button paths of `IHaveBackButtonCommand` screens; the port reimplements
-   back as a `next_flow_state` table entry per screen instead. Behavioural if a
-   screen relies on the 2-deep history pop.
-10. **Snap points / gamepad** absent — no `UILinkPointNavigator`, no anchor maths
-    (`SnapPoint.cs:26-30`), no `NoGamepadSupport` handling (`UIState.cs:5`).
-    Behavioural (gamepad input unsupported), expected for Stage 1.
+9. ~~**`GoBack`/history "dead code" claim unverified**~~ — **VERIFIED 2026-11-20
+   (W4-d87)**: `UserInterface.GoBack` has zero call sites in 1.4.5.8. All 8
+   `GoBack()` grep hits are screens' own private helpers —
+   `UIWorldCreation.cs:670-674` (sound 11 + `Main.OpenWorldSelectUI()`),
+   `UICharacterCreation.cs:1207,2378`, `UIWorldCreationAdvanced.cs:475`,
+   `UIWorldCreationAdvancedSecretSeedsList.cs:383,410` — none reaches
+   `UserInterface.GoBack`. The earlier text's "is called from the back-button
+   paths" was wrong. The machine is now ported anyway
+   (`ui/state_stack.rs`, `SetState`/`GoBack`/`AddToHistory` :276-322, the
+   33→29 history sawtooth), and `pointer.rs`'s header records the evidence;
+   `flow.rs` keeps its per-screen `next_flow_state` back entries (faithful —
+   that is what the C# screens actually do).
+10. **Snap points / gamepad** — the anchor maths is now ported (W4-d87,
+    2026-11-20: `ui/snap.rs`, `SnapPoint.cs:26-30` + `UIElement.cs:124-145,
+    271-283`); still absent: `UILinkPointNavigator` (the consumer) and
+    `NoGamepadSupport` handling (`UIState.cs:5`). Behavioural (gamepad input
+    unsupported), expected for Stage 1.
 
 ## Task seeds
 
 - **S — Pin the event order.** Add a `ui/pointer.rs` test that reproduces
   `UserInterface.cs:190-228`'s order (hover swap before clicks, left before right)
   against the front-end dispatch in `app/loop.rs:390-403`. Depends on nothing.
-- **S — Verify the `GoBack` dead-code claim.** Grep `decompiled` for
-  `UserInterface.GoBack` / `.GoBack()` call sites and record the result in
-  `pointer.rs:8-10`; if non-empty, add a `flow.rs` history seed. (S)
-- **M — Port margins into `uistate::resolve`.** Add `margin: [f32;4]` to the
-  signature and reproduce `:293-297`/`:317-318` (add then subtract), with a test
-  against a C# hand-computed case. Closes deviation 1 for future callers.
+- ✅ **S — Verify the `GoBack` dead-code claim.** DONE 2026-11-20 (W4-d87):
+  zero `UserInterface.GoBack` call sites; all 8 hits are screens' private
+  helpers. Evidence recorded in `pointer.rs`'s header + deviation 9.
+- ✅ **M — Port margins into `uistate::resolve`.** DONE 2026-11-20 (W4-d87):
+  `resolve_with_margins` reproduces `:293-297`/`:317-318` in C# order with
+  hand-computed pins; `resolve` delegates at 0 margins bit-identically.
+  Deviation 1 closed.
 - ✅ **M — Model the `UIList` ∞-height parent.** DONE 2026-11-13
   (`S1-H-2-uilst-scissor`): `uistate::resolve_in_list` sets
   `parent[3] = f32::POSITIVE_INFINITY` (`UIElement.cs:288-291`), tested by
@@ -322,7 +354,10 @@ fns across 31 files (framework-relevant subset):
 - **L — Screens with no counterpart:** `UIManageControls` (20 lines C#, has
   `input_map.rs` data behind it) and `UICreativePowersMenu`. `UIWorkshop*` /
   `UIResourcePack*` should be scoped out (Steam-only) and recorded in module 38.
-- **L — Layer stack.** Introduce a named ordered layer list
-  (`GameInterfaceLayer` analogue) in `app/frame.rs` so draw order is data, not
-  code, with `InterfaceScaleType` spaces. Prerequisite for any screen that must
-  draw between existing HUD layers.
+- **L — Layer stack.** PARTIAL 2026-11-20 (W4-d87): `ui/layers.rs` carries the
+  named ordered list (`VANILLA_LAYERS`, the 43-layer `Main.cs:44718-44918`
+  table), `InterfaceScaleType` + `layer_matrix` (the three scale spaces) and
+  `draw_interface` (the stop-on-false walk, `Main.cs:44930-44935`). Remaining:
+  wire `app/frame.rs`'s HUD passes through the table so draw order is data, not
+  code, and apply the per-layer zoom matrices. Prerequisite for any screen that
+  must draw between existing HUD layers.

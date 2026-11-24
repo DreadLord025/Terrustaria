@@ -3045,9 +3045,10 @@ mod tests {
     }
 
     /// `TileID.Sets.BasicChest` (`TileID.cs:570`) gates the open path: tile
-    /// 341 (the craft scan's frozen second entry) is not a `BasicChest`, and
-    /// an inactive chest tile never reaches the interaction chain
-    /// (`:32035-32041`).
+    /// 341 (`LivingDemonFire`, `TileID.cs:1311` — the craft/cull scans'
+    /// former wrong second entry, fixed by i46 / W4-a2) is not a
+    /// `BasicChest`, and an inactive chest tile never reaches the
+    /// interaction chain (`:32035-32041`).
     #[test]
     fn non_basic_chest_and_inactive_tiles_are_not_openable() {
         let mut w = world();

@@ -2,7 +2,6 @@
 //! dark-rectangle merge, slope/half/sliced block variants and the per-frame
 //! draw statistics.
 use crate::assets;
-use crate::biome::calculate_water_style;
 use crate::item::ItemDrop;
 use crate::net;
 use crate::npc::Npc;
@@ -297,6 +296,10 @@ pub(crate) fn draw_tiles(
     // `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade alphas
     // the `DrawWaters` ramp drives; the liquid and waterfall passes consume it.
     liquid_alpha: &[f32; 15],
+    // `Main.SceneMetrics.ActiveFountainColor` (`SceneMetrics.cs:486-517`):
+    // the tile-207 flowing-frame colour the `CalculateWaterStyle` head arm
+    // reads (`Main.cs:57390-57393`); -1 = no flowing fountain in the scan.
+    active_fountain_color: i32,
     // The frame's deterministic seed for the `TrySparkling` draws.
     sparkle_seed: u64,
     // The wind state and the sway counters (`TileDrawing.DrawGrass`/`DrawTrees`;
@@ -359,9 +362,14 @@ pub(crate) fn draw_tiles(
         },
     };
 
-    // `Main.waterStyle` is a single biome value for the whole frame, exactly like
-    // `Main.CalculateWaterStyle` (the original evaluates it from the player's biome).
-    let mut water_style = calculate_water_style(world, camera);
+    // `Main.waterStyle` is a single value for the whole frame
+    // (`Main.DrawWaters`, `Main.cs:57475`: `CalculateWaterStyle()`) — the
+    // fountain head arm (`:57390-57393`) first, then the biome walk.
+    let mut water_style = crate::biome::calculate_water_style_with_fountain(
+        world,
+        camera,
+        active_fountain_color,
+    );
     // `TR_WATER_STYLE=<n>`: pin the water style so the per-style passes, the
     // `liquidAlpha` cross-fade and the biome liquid sheets stay screenshotable.
     if let Some(n) = crate::env::water_style() {
@@ -492,6 +500,14 @@ pub(crate) fn draw_tiles(
     // collects their `AddLight` list for the light map — keeping the walk out of
     // the G6-cached path makes the light feed deterministic per frame index.
     for d in std::mem::take(&mut scratch.waterfall_quads) {
+        // `WaterfallManager.DrawWaterfall(int, ...)`'s type-25 arm
+        // (`WaterfallManager.cs:972-980`): the shimmer fall replaces the tint
+        // with the self-luminous base + sparkle pair.
+        if d.texture == 25 {
+            stats.waterfalls +=
+                crate::render::liquids::draw_shimmer_fall(r, lookups, anim_time, &d);
+            continue;
+        }
         let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
             continue;
         };
@@ -834,6 +850,7 @@ pub(crate) fn draw_tiles(
                         ty,
                         tile,
                         water_style,
+                        waterfall,
                     );
                 }
                 // The switch's early `return` arms (751/752 off their (0,0)
@@ -1193,6 +1210,37 @@ pub(crate) fn draw_tiles(
             vine_wind_counter,
             &vine_roots,
         );
+    }
+    // W4-g31 attach phase (UNION-CONTRACT-tilepass §8): the TR_TILEPASS
+    // SHADOW attach — the union's draw_layer/post_draw_tiles drivers run
+    // at the C# PostDrawTiles position (after the fused walk + the inline
+    // foliage/vine passes, before the NPC pass) over the same camera
+    // rect, PLAN-ONLY: no sprites pushed, a separate _rand stream (the
+    // fused pass's roll stream is never passed in), no shared state
+    // mutated, the G6 key untouched. Default
+    // OFF — unset the pin and zero union code runs here. The pixel
+    // binding (the fused loop split into the two draw_layer calls) is
+    // §8's merge script.
+    if crate::env::tilepass_shadow() {
+        let shadow_inputs = crate::render::tile_attach::ShadowInputs {
+            camera,
+            zoom,
+            screen,
+            // The fused pass's pinned-default convention (the
+            // HIGH_LIGHT/MEDIUM_LIGHT constants at :425): the adaptive
+            // App.gfx_quality.quality threads in at the pixel merge (§8).
+            gfx_quality: 0.5,
+            grass_counter: grass_wind_counter,
+            sunflower_counter: sunflower_wind_counter,
+            vine_counter: vine_wind_counter,
+            anim_time,
+            sparkle_seed,
+            disco: params.disco,
+        };
+        let shadow = crate::render::tile_attach::run_shadow(
+            world, wind, light, &shadow_inputs,
+        );
+        log::info!("TILEPASS shadow: {}", shadow.summary());
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
     draw_phase("npcs");
@@ -2235,5 +2283,64 @@ mod tests {
         // (`blockType() != 0`, `WallDrawing.cs:243` / `Tile.cs:202-214`).
         assert!(!tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 1, false));
         assert!(!tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 0, true));
+    }
+}
+#[cfg(test)]
+mod w4_g75_retire_contract_tests {
+    /// W4-g75 retire-contract (`a3093a66f`, folded) - the solid-layer
+    /// `DrawTile_LiquidBehindTile` call feeds the manager handle
+    /// (`TileDrawing.cs:3858`'s
+    /// `Main.instance.waterfallManager.CheckForWaterfall(tileX, tileY)`):
+    /// `draw_tiles` already carries `waterfall` (the `DoDraw_Waterfalls`
+    /// seam), so the spout clause needs no new plumbing. The `inActive()`
+    /// half of the same line rides the g80 lane's gate (af6cd44f).
+    #[test]
+    fn the_liquid_behind_call_feeds_the_waterfall_manager() {
+        let src = include_str!("tiles.rs");
+        let call = src
+            .find("stats.quads += draw_tile_liquid_behind(")
+            .expect("the solid-layer liquid-behind call");
+        let tail = &src[call..call + 600];
+        let end = tail.find(");").expect("the call's argument list closes");
+        assert!(
+            tail[..end].contains("waterfall,"),
+            "the :3858 spout clause needs the manager handle at the call site"
+        );
+    }
+
+    /// W4-g73 retire phase — the `CalculateWaterStyle` fountain head arm
+    /// (`Main.cs:57390-57393`) reaches the tile pass: `draw_tiles` takes
+    /// `active_fountain_color` and resolves `water_style` through
+    /// `calculate_water_style_with_fountain` (the head arm BEFORE the
+    /// biome walk), so a flowing fountain recolours the liquid/waterfall
+    /// sheets exactly like `Main.waterStyle` (`Main.cs:57475`).
+    #[test]
+    fn the_tile_pass_water_style_carries_the_fountain_head_arm() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert!(
+            body.contains("active_fountain_color: i32,"),
+            "draw_tiles takes the scene scan's fountain colour"
+        );
+        let resolve = body
+            .find("calculate_water_style_with_fountain(")
+            .expect("the head-arm resolution");
+        let tail = &body[resolve..resolve + 200];
+        assert!(
+            tail.contains("active_fountain_color,"),
+            "the resolution feeds the fountain colour (the :57390 arm)"
+        );
+        // The frame's caller supplies the scene-metric value.
+        let frame = include_str!("../app/frame/draw.rs");
+        let call = frame
+            .find("tile_stats = draw_tiles(")
+            .expect("the frame's tile-pass call");
+        let tail = &frame[call..call + 6000];
+        let end = tail.find(");").expect("the call's argument list closes");
+        assert!(
+            tail[..end].contains("self.scene_metrics.active_fountain_color,"),
+            "the frame feeds the scan's flowing-fountain colour"
+        );
     }
 }

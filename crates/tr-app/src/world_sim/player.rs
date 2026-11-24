@@ -721,6 +721,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     }
                 }
                 p.revive();
+                // `Player.Spawn`'s local-player arm (`Player.cs:37569`):
+                // `Main.instantBGTransitionCounter = 10` — the instant-BG
+                // window that also forces the waterfall rescan
+                // (`Main.cs:61841`, world_sim/liquids.rs reads it).
+                app.bg_instant = 10;
                 app.respawn_skip_available = false;
                 app.respawn_skip_frames = 0;
                 app.npcs.clear();
@@ -1026,6 +1031,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // mounted, roped or airborne (`Player.cs:50209-50224`).
             // W4-g10 FINAL: the petting gates are live — holdStyles 4/5/6
             // hide the item while petting (`:50204`/`:50225-50232`).
+            // W4-d21 fold 2: `CanVisuallyHoldItem`'s petting refusals
+            // (`Player.cs:50204-50207`/`:50225-50232`) — the holdStyle
+            // 4/5/6 arms all refuse while petting.
             let mounted_blocks_hold = p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
             let petting_blocks_hold = p.petting.is_petting && matches!(hold_style, 4 | 5 | 6);
             let can_visually_hold = !mounted_blocks_hold

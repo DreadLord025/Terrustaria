@@ -754,10 +754,38 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
 /// `Player.cs:33354`) — same 0.35 volume, one variation.
 pub(crate) const MOUNT_CUSTOM_CUES: &[&str] = &["pal_chillet", "pal_chillet_joy"];
 
+/// W4-d21 fold 2 — the `Sounds/Custom/` trackables the projectile AI arms
+/// play: `SoundID.PalDigtoiseJoy = CreateTrackable("pal_digtoise_joy")
+/// .WithVolume(0.35f)` (`SoundID.cs:1724`), the digtoise's state-5 petted
+/// joy (`Projectile.cs:38517`). One variation, pinned. The other Pal cues
+/// (`pal_digtoise` `:1723`, `pal_summon`, the foxsparks/cattiva joys) ride
+/// their machines' follow-ups — the 204's idle cues are the documented
+/// sound-body skip, the 1093/1094/1112/1113/1118 AI machines are unported.
+pub(crate) const PROJ_CUSTOM_CUES: &[&str] = &["pal_digtoise_joy"];
+
 /// Whether the cue name is in the SFX bank (the item-use coverage test's
 /// seam, S1-E-21 wave A).
 pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
     SFX_CUES.iter().any(|(n, _)| *n == cue)
+}
+
+/// `SoundID.MenuAccept` (`SoundID.cs:1068`/:1710,
+/// `CreateTrackable("menu_accept")` — one variation, volume 1, no pitch
+/// variance, `SoundType.Sound`, uncapped): the tracked style the quit-path
+/// witnesses register their pool entry through (the W4-g24 doc-sweep seam,
+/// kept by the W4-g73 quit-stop keep-one; g24's `WorldGen.SecretSeed.Enable`
+/// caller rides the g24 branch, so the default build has no production
+/// reader here — the allow keeps it warning-clean until that merge).
+#[allow(dead_code)]
+pub fn menu_accept_style() -> crate::tracked_sound::TrackedStyle {
+    crate::tracked_sound::TrackedStyle {
+        cue: "menu_accept",
+        variations: 1,
+        volume: 1.0,
+        pitch_variance: 0.0,
+        sound_type: crate::tracked_sound::SoundType::Sound,
+        max_tracked_instances: 0,
+    }
 }
 
 /// S1-E-21 wave C — resolve an NPC hit/death cue name to its
@@ -793,7 +821,7 @@ fn sound_type(cue: &str) -> u32 {
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
         .or_else(|| {
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || PROJ_CUSTOM_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }
@@ -835,6 +863,13 @@ pub struct Audio {
     /// The two `SoundInstanceLiquid[n]` stand-ins (`LegacySoundPlayer.cs:322`):
     /// 0 = the waterfall, 1 = the lavafall. `Some` while the loop plays.
     liquid_loops: [Option<rodio::Sink>; 2],
+    /// The live pan gains the playing liquid-loop sources read (the XNA
+    /// `Pan` write reaches the instance mid-play, `:1267`/`:1297`).
+    liquid_pans: [Option<LiquidPanGains>; 2],
+    /// The `StopWaterfallAmbienceAudio` call count (a test seam — the
+    /// headless Apps have no liquid sink, so the quit flows assert the
+    /// sentinel-stop pair through this; the W4-g24/g73 quit-stop keep-one).
+    liquid_ambience_stops: u64,
     /// The decoded SceneState ambient loops (`blizzard_strong_loop` /
     /// `blizzard_inside_building_loop`, from `Sounds/Custom/<name>.xnb` —
     /// the trackable path, `LegacySoundPlayer.cs:257`). The blizzard loops
@@ -945,6 +980,7 @@ impl Audio {
                     .chain(NPC_CUSTOM_CUES.iter())
                     .chain(ITEM_CUSTOM_CUES.iter())
                     .chain(MOUNT_CUSTOM_CUES.iter())
+                    .chain(PROJ_CUSTOM_CUES.iter())
                 {
                     let path = custom.join(format!("{name}.xnb"));
                     match load_sound(&path) {
@@ -987,6 +1023,8 @@ impl Audio {
             cues,
             played: Default::default(),
             liquid_loops: [None, None],
+            liquid_pans: [None, None],
+            liquid_ambience_stops: 0,
             tracked: crate::tracked_sound::SoundPlayer::default(),
             sound_style_random: tr_core::unified_random::UnifiedRandom::new(1),
             liquid_cues,
@@ -1275,7 +1313,9 @@ impl Audio {
     /// S1-E-21 wave A — `Player.ItemCheck_StartActualUse`'s sound arm
     /// (`Player.cs:51681-51698`): `SoundEngine.PlaySound(sItem.UseSound,
     /// base.Center, sItem.useSoundPitch)` for the style at
-    /// [`crate::soundid::SOUND_STYLES`] index `style_index`.
+    /// [`crate::soundid::SOUND_STYLES`] index `style_index`. W4-d21 fold 2:
+    /// the projectile trackables ([`Audio::play_proj_sound`]'s id-42 arm)
+    /// share the case-42 tail.
     ///
     /// The façade (`SoundEngine.cs:93-99`) passes `type.Style`,
     /// `type.Volume * volumeScale` (volumeScale 1 here) and
@@ -1341,11 +1381,13 @@ impl Audio {
             )
         };
         // Resolve against the loaded bank's static names (the cue is always
-        // in SFX_CUES/ITEM_CUSTOM_CUES — an unregistered name is a bank gap).
+        // in SFX_CUES/ITEM_CUSTOM_CUES/PROJ_CUSTOM_CUES — an unregistered
+        // name is a bank gap).
         let name = SFX_CUES
             .iter()
             .map(|(n, _)| *n)
             .chain(ITEM_CUSTOM_CUES.iter().copied())
+            .chain(PROJ_CUSTOM_CUES.iter().copied())
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
@@ -2223,8 +2265,8 @@ impl Audio {
     /// gates), the boomerang whoosh (`AI_003` `:38868-38891`), the Magic
     /// Missile hum (`AI_009` `:43361-43367`), the Light's Bane slash
     /// (`AI_188` `:42231-42239`) and the bomb blast
-    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). Every ported site is
-    /// a `SoundID.ItemN` style play — the same façade as wave A
+    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). The id-2 sites are
+    /// `SoundID.ItemN` style plays — the same façade as wave A
     /// (`SoundEngine.cs:93-99`: the `GetRandomPitch` NextFloat on the
     /// audio-only `sound_style_random`, then the attenuation gate
     /// `LegacySoundPlayer.cs:369-436`, then case 2's `Main.rand` pitch
@@ -2233,8 +2275,11 @@ impl Audio {
     /// swap. `pitch_offset` is the C# call's third argument (the ported
     /// sites all pass none; the 301 Stacked Discs' −0.33 arm is deferred).
     /// Returns the cue played; `None` when the gate refused or the style
-    /// is not a legacy id-2 row (the trackable families ride their own
-    /// façades — deferred, ANALYSIS S1-E-21h).
+    /// is not a legacy id-2 row or a landed id-42 trackable (the unported
+    /// trackable families ride their own façades — deferred, ANALYSIS
+    /// S1-E-21h). W4-d21 fold 2: the id-42 arm routes the landed
+    /// projectile trackables ([`PROJ_CUSTOM_CUES`]) through the case-42
+    /// path (`play_use_sound`, the digtoise joy `Projectile.cs:38517`).
     pub fn play_proj_sound(
         &mut self,
         (id, style): (u16, i32),
@@ -2243,6 +2288,26 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        if id == 42 {
+            // The trackable case (`LegacySoundPlayer.cs:1376-1381`): the
+            // style resolves through the generated rows, but only the
+            // landed projectile cues play — the rest stay the documented
+            // skip (their machines are unported).
+            let idx = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.sound_id == 42 && s.style == style)?;
+            let s = &crate::soundid::SOUND_STYLES[idx];
+            let base = s.trackable?;
+            let cue = if s.variations == 1 {
+                base.to_string()
+            } else {
+                format!("{base}_0")
+            };
+            if !PROJ_CUSTOM_CUES.contains(&cue.as_str()) {
+                return None;
+            }
+            return self.play_use_sound(idx as u16, x, y, pitch_offset, rng);
+        }
         if id != 2 {
             return None;
         }
@@ -2390,11 +2455,15 @@ impl Audio {
 
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
     /// two persistent liquid loops whose Volume/Pan update in place every ¼ s
-    /// tick (`Main.Ambience`, `Main.cs:13466-13515`). `volume <= 0` stops the
-    /// channel outright (the vanilla stops the instance; no fade). The pan is
-    /// baked at creation (a documented deviation — XNA re-pans the live
-    /// instance).
-    pub fn set_liquid_loop(&mut self, channel: usize, volume: f32, pan: f32) {
+    /// tick (`Main.Ambience`, `Main.cs:13466-13509`). `volume <= 0` stops the
+    /// channel outright (the vanilla stops the instance; no fade). The pan
+    /// rides shared per-loop gains (`liquid_pans`) so the live instance
+    /// re-pans exactly like XNA's `SoundInstanceLiquid[n].Pan = num3`
+    /// (`:1267`/`:1297`); `pitch` is the re-volume arm's
+    /// `Pitch = -0.2f` (case 34, `:1268`) / `-0f` (case 35, `:1298`) — XNA
+    /// octaves, so the sink's speed is `2^pitch` (the fresh-create arms pass
+    /// `None` and keep the default rate, `:1272-1275`/`:1302-1305`).
+    pub fn set_liquid_loop(&mut self, channel: usize, volume: f32, pan: f32, pitch: Option<f32>) {
         let Some((channels, rate, samples)) = self.liquid_cues.get(channel).cloned().flatten()
         else {
             return;
@@ -2410,23 +2479,89 @@ impl Audio {
         }
         if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
             sink.set_volume(volume);
+            // The live re-pan (`:1267`/`:1297`): the shared gains the
+            // playing source reads per sample.
+            if let Some(gains) = &self.liquid_pans[channel] {
+                gains.store_left(left);
+                gains.store_right(right);
+            }
+            if let Some(p) = pitch {
+                sink.set_speed(2.0f32.powf(p.clamp(-1.0, 1.0)));
+            }
             return;
         }
         // A fresh looped sink: the decoded PCM wrapped in an infinite repeat.
+        let gains = LiquidPanGains::new(left, right);
         let buf =
             rodio::buffer::SamplesBuffer::new(channels, rate, samples).convert_samples::<f32>();
-        let source = Panned {
+        let source = PannedShared {
             inner: buf.repeat_infinite(),
             channels,
-            left: left.max(right).max(0.0),
-            right: right.max(left).max(0.0),
+            gains: gains.clone(),
             channel: 0,
         };
         if let Ok(sink) = rodio::Sink::try_new(handle) {
             sink.append(source);
             sink.set_volume(volume);
             self.liquid_loops[channel] = Some(sink);
+            self.liquid_pans[channel] = Some(gains);
         }
+    }
+
+    /// `SoundInstanceLiquid[n] != null && State == Playing`
+    /// (`LegacySoundPlayer.cs:1264`/`:1294`): the re-volume arm's guard —
+    /// headless (no output device) nothing ever plays, the fresh-create
+    /// convention. A stopped-but-not-reaped sink reads as finished.
+    pub fn liquid_loop_playing(&self, channel: usize) -> bool {
+        self.liquid_loops
+            .get(channel)
+            .and_then(|s| s.as_ref())
+            .is_some_and(|sink| !sink.empty())
+    }
+
+    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`): the
+    /// `PlaySound(34, -1, -1, 0)` + `PlaySound(35, -1, -1, 0)` pair — the
+    /// sentinel stop arm of both liquid-loop cases (`LegacySoundPlayer.cs:
+    /// 1257-1262`/:1287-1292: `x == -1 || y == -1` ORs into the stop
+    /// condition BEFORE the volume walk matters and `Stop()`s the live
+    /// `SoundInstanceLiquid[n]` outright — no attenuation, no fade, no RNG:
+    /// the case bodies never reach a pitch draw). Called by `SaveAndQuit`
+    /// (`:6704`) and inlined by `JustQuit` (`:6631-6632`) BEFORE
+    /// `StopTrackedSounds`, so the loops die at the quit moment rather than
+    /// at the next ¼ s `Main.Ambience` re-volume tick. The port kills the
+    /// sinks DIRECTLY (the g24 shape — `set_liquid_loop(ch, 0.0)`'s stop arm
+    /// gates on the decoded cue + output handle first, so the headless
+    /// no-device path would never reach it); stopping a dead slot is a
+    /// no-op, the C# null/Playing guard's equivalent.
+    /// Keep-one (W4-g73 retire): the g24 doc-sweep `c3eccb77` and this
+    /// branch's closeout `4e7e3f58` both wired `:6704` — ONE seam survives
+    /// (this fn + the one `save_and_quit` call), g24's counter seam kept,
+    /// the closeout's route-through-`set_liquid_loop` body retired.
+    pub fn stop_waterfall_ambience(&mut self) {
+        self.liquid_ambience_stops += 1;
+        for channel in 0..2 {
+            if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
+                sink.stop();
+                self.liquid_loops[channel] = None;
+            }
+        }
+    }
+
+    /// The `StopWaterfallAmbienceAudio` call count (the headless test seam,
+    /// the `played_count` convention).
+    #[allow(dead_code)] // test-only reader on this branch (the quit witnesses)
+    pub fn liquid_ambience_stop_count(&self) -> u64 {
+        self.liquid_ambience_stops
+    }
+
+    /// `SoundEngine.StopTrackedSounds` (`SoundEngine.cs:151-157` →
+    /// `SoundPlayer.StopAll`, `SoundPlayer.cs:79-86`): every tracked
+    /// instance stops and the pool clears. The `!Main.dedServ &&
+    /// IsAudioSupported` gate is the port's always-true stand-in (the
+    /// headless pool still tracks entries). Called by `SaveAndQuit`
+    /// (`WorldGen.cs:6715`) and `JustQuit` (`:6646`).
+    pub fn stop_tracked_sounds(&mut self) {
+        self.tracked.stop_all();
     }
 
     /// `SoundEngine.PlayTrackedSound(SoundStyle)`'s global arm
@@ -2592,6 +2727,25 @@ impl Audio {
     ) -> Option<&crate::tracked_sound::ActiveSound> {
         self.tracked.find_active_sound(style)
     }
+
+    /// The pool-entry count of one tracked style (no `IsPlaying` filter —
+    /// the `find_active_sound` semantics) — the headless test seam: no
+    /// output device drains an entry, so the count is the number of plays
+    /// landed (the W4-g24 quit-path witnesses, kept by the keep-one).
+    #[allow(dead_code)] // test-only reader on this branch (the quit witnesses)
+    pub fn tracked_count_for(&self, style: &crate::tracked_sound::TrackedStyle) -> usize {
+        self.tracked.count_style_entries(style)
+    }
+
+    /// The test seam: register a silent one-sample cue under `name` so the
+    /// tracked/slot paths can run headless (the real decode needs the
+    /// retail Content junction; `Audio::new(None)` loads nothing). The
+    /// vanilla `SoundEngine.IsAudioSupported` gate is the port's
+    /// always-true headless stand-in — a registered cue plays.
+    #[cfg(test)]
+    pub(crate) fn insert_test_cue(&mut self, name: &'static str) {
+        self.cues.insert(name, (1, 22050, vec![0]));
+    }
 }
 
 fn load_sound(path: &Path) -> anyhow::Result<tr_content::Sound> {
@@ -2608,6 +2762,85 @@ struct Panned<S> {
     left: f32,
     right: f32,
     channel: u16,
+}
+
+/// The liquid loops' live pan gains — the XNA `SoundEffectInstance.Pan`
+/// write (`LegacySoundPlayer.cs:1267`/`:1297`) reaches the PLAYING source:
+/// the audio thread reads the atomics per sample while the ¼ s ambience
+/// tick stores the new `pan_gains` pair. `Arc` clones share one cell.
+#[derive(Clone)]
+struct LiquidPanGains {
+    left: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    right: std::sync::Arc<std::sync::atomic::AtomicU32>,
+}
+
+impl LiquidPanGains {
+    fn new(left: f32, right: f32) -> Self {
+        use std::sync::atomic::AtomicU32;
+        Self {
+            left: std::sync::Arc::new(AtomicU32::new(left.to_bits())),
+            right: std::sync::Arc::new(AtomicU32::new(right.to_bits())),
+        }
+    }
+
+    fn store_left(&self, v: f32) {
+        self.left.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn store_right(&self, v: f32) {
+        self.right.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn load(&self) -> (f32, f32) {
+        use std::sync::atomic::Ordering;
+        (
+            f32::from_bits(self.left.load(Ordering::Relaxed)),
+            f32::from_bits(self.right.load(Ordering::Relaxed)),
+        )
+    }
+}
+
+/// [`Panned`] with shared live gains — the liquid-loop source shape.
+struct PannedShared<S> {
+    inner: S,
+    channels: u16,
+    gains: LiquidPanGains,
+    channel: u16,
+}
+
+impl<S: Iterator<Item = f32>> Iterator for PannedShared<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        let sample = self.inner.next()?;
+        let (left, right) = self.gains.load();
+        let gain = match self.channel {
+            0 => left,
+            1 => right,
+            _ => 1.0,
+        };
+        self.channel = if self.channels == 0 {
+            0
+        } else {
+            (self.channel + 1) % self.channels
+        };
+        Some(sample * gain)
+    }
+}
+
+impl<S: Source<Item = f32>> Source for PannedShared<S> {
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 impl<S: Iterator<Item = f32>> Iterator for Panned<S> {
@@ -3408,6 +3641,67 @@ mod tests {
         assert_eq!(audio.play_roar(0, 0.0, 0.0), Some("Roar_0"));
     }
 
+    /// W4-g73 falls-adjacent — the liquid loops' live pan: the shared gains
+    /// the playing source reads update in place (the XNA
+    /// `SoundInstanceLiquid[n].Pan = num3` write,
+    /// `LegacySoundPlayer.cs:1267`/`:1297`), and the headless slot guard
+    /// reads not-playing (the fresh-create convention).
+    #[test]
+    fn the_liquid_loop_pan_gains_update_the_live_source() {
+        let gains = LiquidPanGains::new(1.0, 0.5);
+        let reader = gains.clone();
+        assert_eq!(reader.load(), (1.0, 0.5));
+        // The ¼ s re-pan stores reach the same cell the source reads.
+        let (left, right) = sound::pan_gains(-0.75);
+        gains.store_left(left);
+        gains.store_right(right);
+        assert_eq!(reader.load(), (left, right));
+        assert_eq!(reader.load(), (1.0, 0.25));
+        // The source shape applies the gains per channel.
+        let mut src = PannedShared {
+            inner: [1.0f32, 1.0, 1.0, 1.0].into_iter(),
+            channels: 2,
+            gains: reader,
+            channel: 0,
+        };
+        assert_eq!(src.next(), Some(1.0));
+        assert_eq!(src.next(), Some(0.25));
+        // Headless: no output device, so the slot never plays.
+        let audio = Audio::new(None);
+        assert!(!audio.liquid_loop_playing(0));
+        assert!(!audio.liquid_loop_playing(1));
+    }
+
+    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`) +
+    /// `StopTrackedSounds` (`:6646`/`:6715` → `SoundPlayer.StopAll`,
+    /// `SoundPlayer.cs:79-86`): the sentinel pair stops BOTH liquid
+    /// channels draw-free and the tracked pool empties. Headless there is
+    /// no sink, so the stop count is the witness seam; a tracked entry
+    /// registered through the test cue proves the pool drain. (The
+    /// W4-g24/g73 quit-stop keep-one: this supersedes the closeout's
+    /// `the_quit_stop_kills_both_liquid_loop_channels` — same stop, the
+    /// counter + RNG-neutral + drain assertions are the superset.)
+    #[test]
+    fn w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain() {
+        let mut audio = Audio::new(None);
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.liquid_ambience_stop_count(), 0);
+        audio.stop_waterfall_ambience();
+        audio.stop_waterfall_ambience();
+        assert_eq!(audio.liquid_ambience_stop_count(), 2, "each call counts");
+        assert!(!audio.liquid_loop_playing(0), "dead slots stay dead");
+        assert!(!audio.liquid_loop_playing(1));
+        assert_eq!(rng.peek(), peek, "the sentinel pair draws nothing");
+        // The tracked pool: one entry lands, StopAll clears it.
+        audio.insert_test_cue("menu_accept");
+        let style = menu_accept_style();
+        let _ = audio.play_tracked_global(style.clone());
+        assert_eq!(audio.tracked_count_for(&style), 1, "the entry landed");
+        audio.stop_tracked_sounds();
+        assert_eq!(audio.tracked_count_for(&style), 0, "StopAll cleared the pool");
+    }
+
     /// S1-E-21g — the int-overload peers draw exactly ONE case pitch on
     /// the passed stream and NO NextFloat; the style façades
     /// (`NPCDeath61`/`NPCDeath13`) add the audio-only NextFloat but the
@@ -4059,6 +4353,30 @@ mod tests {
             assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
         }
         // A non-id-2 family (the deferred trackables) refuses draw-free.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// W4-d21 fold 2 — the digtoise joy cue (`SoundID.PalDigtoiseJoy`,
+    /// `Projectile.cs:38517`, style 289 / id 42): the trackable case-42
+    /// path plays the pinned single variation, NO gameplay draw (the
+    /// GetRandomPitch NextFloat rides the audio-only stream). An unlanded
+    /// id-42 style (the achievement, style 0) still refuses draw-free.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d21_the_digtoise_joy_cue_plays_the_trackable() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let cue = audio.play_proj_sound((42, 289), 0.0, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("pal_digtoise_joy"));
+        assert_eq!(rng.peek(), peek, "the trackable draws no gameplay roll");
+        assert!(PROJ_CUSTOM_CUES.contains(&"pal_digtoise_joy"));
+        assert_eq!(sound_type("pal_digtoise_joy"), 42);
+        // The unlanded trackables keep the documented skip.
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
         assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);

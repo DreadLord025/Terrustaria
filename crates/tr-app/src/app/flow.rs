@@ -2132,8 +2132,10 @@ pub(crate) mod front_flow_tests {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
         App {
-            ambient_waterfall: (0.0, 0.0, 0.0),
-            ambient_lavafall: (0.0, 0.0, 0.0),
+            // The `Main.cs:67229-67236` load reset (strength 0, x/y -1).
+            ambient_waterfall: (0.0, -1.0, -1.0),
+            ambient_lavafall: (0.0, -1.0, -1.0),
+            ambient_lava: (0.0, -1.0, -1.0),
             ambient_counter: 0.0,
             craft_filter: None,
             craft_filters: crate::craft_filter::FilterBoard::default(),
@@ -2322,6 +2324,8 @@ pub(crate) mod front_flow_tests {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
+            cursor_item_icon_id: 0,
+            block_interaction_with_projectiles: 3,
             ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
