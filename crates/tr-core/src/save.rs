@@ -67,6 +67,9 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// stored values (`TileFrame`/`WallFrame` resetFrame:false) instead of
 /// re-rolling. A pre-v18 file loads with the `World::new` zeros and re-rolls
 /// (the C#'s own reset semantics).
+/// v18 appended `WorldGen.crimson` (`WorldFile.cs:1281`'s flags byte — W4-g69:
+/// the cloud lane's `RollRareCloud` type-36 gate reads the world evil type);
+/// a pre-v18 file loads with the corruption default (`:3507`'s fallback).
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -465,6 +468,11 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `wallFrameNumber` instead of re-rolling. The reader restores them and
     // sets `variants_from_save`, which the framing passes read.
     w.write_all(&world.variants)?;
+    // v18: `WorldGen.crimson` (`WorldFile.cs:1281`'s flags byte) — W4-g69:
+    // the world evil type the cloud lane's RollRareCloud gate reads; a
+    // pre-v18 file loads with the corruption default (the vanilla's own
+    // `WorldFile.cs:3507` fallback).
+    w.write_all(&[u8::from(world.crimson)])?;
     Ok(())
 }
 
@@ -853,6 +861,10 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.bought_cat = r.u8()? != 0;
         world.bought_dog = r.u8()? != 0;
         world.bought_bunny = r.u8()? != 0;
+    // v18: the world evil type (see the writer's citation) — a pre-v18
+    // file keeps the corruption default (`WorldFile.cs:3507`'s fallback).
+    if version >= 18 {
+        world.crimson = r.u8()? != 0;
     }
     // v18: the Empress's downed flag (W4-d125, see the writer's citation).
     if version >= 18 {
@@ -1148,6 +1160,8 @@ mod tests {
         // byte, W4-d125) is now the current format, so the gate pins 18.
         // current one (`save.rs` version gate). v18 (the framing-variants
         // block, W4-d109) is now the current format, so the gate pins 18.
+        // current one (`save.rs` version gate). v18 (the WorldGen.crimson
+        // byte, W4-g69) is now the current format, so the gate pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
@@ -1234,6 +1248,9 @@ mod tests {
         // flags block's tail. The v18 variants block is peeled first.)
         let tail = v18_tail_len(&buf) + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 2;
         buf.truncate(buf.len() - tail);
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +1 more: the v18 WorldGen.crimson byte, W4-g69.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1 + 1));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1349,6 +1366,7 @@ mod tests {
         // the v17 fishron flag (1) and the v18 pet-license flags (3, W4-g87).
         let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 3;
         // the v17 fishron flag (1) and the v18 empress flag (1).
+        // the v17 fishron flag (1) and the v18 crimson byte (1).
         let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 1;
         v12.truncate(cur_len - tail - 1);
         // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5)
@@ -1404,6 +1422,7 @@ mod tests {
         let height = i32::from_le_bytes(buf[dims + 4..dims + 8].try_into().unwrap()) as usize;
         width * height
     }
+    /// v18 `WorldGen.crimson` byte (W4-g69).
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL - v18_tail_len(buf);
@@ -1598,6 +1617,9 @@ mod tests {
         let mut v14 = buf.clone();
         let tail = v18_tail_len(&v14) + 1 + 5 + 1 + 1;
         v14.truncate(v14.len() - tail);
+        // The v16 style bytes + the v17 fishron byte + the v18 crimson
+        // byte ride behind the v15 flag (7 bytes).
+        v14.truncate(v14.len() - 1 - 5 - 1 - 1);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
@@ -1645,6 +1667,22 @@ mod tests {
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back, _) = parse(&v17).unwrap();
         assert!(!back.downed_empress_of_light, "a pre-v18 file resets the flag");
+
+        }    fn w4_g69_the_world_evil_type_round_trips_in_v18() {
+        // `WorldGen.crimson` (`WorldFile.cs:1281`'s flags byte) — W4-g69:
+        // the cloud lane's RollRareCloud type-36 gate reads the world evil
+        // type, so the v18 tail persists it. Both arms round-trip; a
+        // pre-v18 file keeps the corruption default (`:3507`'s fallback).
+        w.crimson = true;
+        assert!(back.crimson, "the crimson world survives the reload");
+        w.crimson = false;
+        buf.clear();
+        assert!(!parse(&buf).unwrap().0.crimson, "corruption round-trips too");
+        // A v17 file (the last byte truncated, the version patched) loads
+        // with the default even when the payload's world was crimson.
+        buf.truncate(buf.len() - 1);
+        buf[8..12].copy_from_slice(&17u32.to_le_bytes());
+        assert!(!back.crimson, "a pre-v18 file keeps the corruption default");
     }
 
     #[test]
@@ -1664,6 +1702,9 @@ mod tests {
         // Peel the v18 variants block first (W4-d109).
         let tail = v18_tail_len(&buf) + 2 + V6_FLAGS_LEN + 2 + 4 * 4 + 4;
         buf.truncate(buf.len() - tail);
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +1 more: the v18 WorldGen.crimson byte, W4-g69.)
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 1));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -2405,4 +2446,7 @@ mod tests {
         write_world(&mut b, &w, &WorldSide::default()).unwrap();
         assert_eq!(a, b);
     }
+
+// balance-close (union shared delimiter)
+}
 }

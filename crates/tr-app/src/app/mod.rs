@@ -1,3 +1,5 @@
+{
+// balance-open (union shared delimiter)
 //! The App — the port of `Terraria.Main`'s instance state (the C# statics,
 //! one struct) plus the `main` bootstrap that builds it: the world load, the
 //! atlas and the starting entities. The remaining `impl App` glue that has
@@ -431,11 +433,11 @@ pub(crate) struct App {
     /// `Main.timesTriedToFastStack` (`Main.cs:1697`).
     pub(crate) times_tried_to_fast_stack: i32,
     /// `Main.cursorOverride` (`Main.cs:2047`): the hovered slot's
-    /// alternate-click cursor — 8 = transfer from the chest, 9 = transfer to
-    /// it (`ItemSlot.cs:213-218`) — or −1. Reset per interface frame
-    /// (`Main.cs:44941`), set by the chest hover evaluation (`ItemSlot.cs:
-    /// 599-627`); the Cursors_8/9 texture draw is a recorded follow-up (the
-    /// phase-4 file scope excludes assets.rs/cursor.rs).
+    /// alternate-click cursor — 3 favourite, 6 trash, 8 transfer from the
+    /// chest, 9 transfer to it, 10 sell (`ItemSlot.cs:213-218`) — or −1.
+    /// Reset per interface frame (`Main.cs:44941`), set by the hover
+    /// evaluation (`ItemSlot.cs:599-627`); the override texture draw landed
+    /// W4-e19 (`ui::cursor::draw_override`, `Main.cs:45269-45310`).
     pub(crate) cursor_override: i32,
     /// `Main.defaultChestName` (`Main.cs:1753`) — the tile default captured
     /// at the rename keyboard's open (`IngameFancyUI.cs:103-123`); the
@@ -833,6 +835,51 @@ pub(crate) struct App {
     /// The debug *window* (the typed always-present overlay, top-left). Its own
     /// toggle (F4) so it can be up while the large `TR_DEBUG` overlay is off.
     pub(crate) debug_overlay: bool,
+    /// `Main.hideUI` (`Main.cs:2085`): the F11 interface-hide toggle
+    /// (`DoUpdate_F11_ToggleUI`, `Main.cs:18402-18424`). While true the
+    /// `DrawInterface_8_CheckF11UIHideToggle` layer (`:46175-46183`) returns
+    /// false, so every later interface layer stands down (W4-g21 batch 2).
+    pub(crate) hide_ui: bool,
+    /// `Main.drawDiag` (`Main.cs:509`): the F7 graphics-diagnostics cycle
+    /// (`DoUpdate_F7_ToggleGraphicsDiagnostics`, `Main.cs:18426-18452`) —
+    /// `(drawDiag + 1) % 3`; >0 forces `showFrameRate` (`:62479-62481`) and
+    /// clears the net-diagnostics flag (`:18440-18443`).
+    pub(crate) draw_diag: i32,
+    /// `Main.shouldDrawNetDiagnosticsUI` (`Main.cs:647`): the F8 net-diagnostics
+    /// toggle (`DoUpdate_F8_ToggleNetDiagnostics`, `Main.cs:18454-18473`);
+    /// turning it on zeroes `drawDiag` (`:18462-18465`).
+    pub(crate) net_diag: bool,
+    /// `Main.showFrameRate` (`Main.cs:991`): the F10 FPS toggle
+    /// (`DoUpdate_F10_ToggleFPS`, `Main.cs:18492-18514`) — `DrawFPS`
+    /// (`Main.cs:21491-21526`) draws the fps/ups line while it holds.
+    pub(crate) show_frame_rate: bool,
+    /// `Main.releaseUI` (`Main.cs:2087`): the F11 press-edge latch.
+    pub(crate) release_ui: bool,
+    /// `Main.drawRelease` (`Main.cs:511`): the F7 press-edge latch.
+    pub(crate) draw_release: bool,
+    /// `Main.netRelease` (`Main.cs:987`): the F8 press-edge latch.
+    pub(crate) net_release: bool,
+    /// `Main.frameRelease` (`Main.cs:989`): the F10 press-edge latch.
+    pub(crate) frame_release: bool,
+    /// `Main.allChestStackHover` (`Main.cs:1297`): the quick-stack button's
+    /// hover latch (`DoStatefulTickSound`, `Main.cs:41865`, W4-g21 batch 3).
+    pub(crate) all_chest_stack_hover: bool,
+    /// `Main.inventorySortMouseOver` (`Main.cs:1299`): the sort button's hover
+    /// latch (`DoStatefulTickSound`, `Main.cs:41890`, W4-g21 batch 3).
+    pub(crate) inventory_sort_hover: bool,
+    /// `Main.hotbarLockMouseOver` (`Main.cs:42515`): the hotbar-lock icon's
+    /// hover latch (`DoStatefulTickSound`, W4-g21 batch 5 host 71).
+    pub(crate) hotbar_lock_hover: bool,
+    /// `Main.toggleAccMouseOver` (`Main.cs:47588`): the builder-accessory
+    /// toggle row's shared hover latch — the block-replacement and
+    /// torch-biome-swap icons feed it (`DoStatefulTickSound(ref int, state)`,
+    /// `Main.cs:3249-3259`; -1 = none hovered). W4-g21 batch 5 hosts 72/73.
+    pub(crate) toggle_acc_hover: i32,
+    /// The world housing banners' hover boxes (`DrawNPCHousesInWorld`,
+    /// `Main.cs:40711-40832`), rebuilt each draw while `EquipPage == 1` — the
+    /// right-click kick-out hit-tests them (`Main.cs:40824-40829`, W4-g21
+    /// batch 4 host 53).
+    pub(crate) house_banners: Vec<crate::house_banners::Banner>,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -890,6 +937,22 @@ pub(crate) struct App {
     pub(crate) step_input_was: bool,
     pub(crate) mouse_down: bool,
     pub(crate) last_mouse: Vec2,
+    /// `Main.mouseX`/`Main.mouseY` at the previous `UpdateMainMouse`
+    /// (`PlayerInput.cs:911-917`: `lastMouseX = mouseX; mouseX =
+    /// PlayerInput.MouseX`) — the per-frame snapshot the W4-d10
+    /// counterweight channel delta reads (`Projectile.cs:67521`). Shifted
+    /// at the frame head beside the `step_input` pair (the same
+    /// `DoUpdate_HandleInput` region, `Main.cs:17158`).
+    pub(crate) mouse_tick_prev: Vec2,
+    /// `Main.mouseX - Main.lastMouseX` (and Y) in the world-update zoom
+    /// basis — `SetZoom_MouseInWorld` (`PlayerInput.cs:2528-2542`) scales
+    /// both screen offsets by `1 / RenderZoom`, so the delta is the raw
+    /// screen delta divided by the zoom (the per-component `(int)`
+    /// truncations differ from the scaled difference by at most 1 px).
+    /// Refreshed at the frame head; the counterweight channel push drains
+    /// it through `YoyoInputs::mouse_delta` at the projectile tick
+    /// (`Projectile.cs:67521`, the W4-d10 un-park).
+    pub(crate) mouse_tick_delta: Vec2,
     pub(crate) last_frame: Instant,
     pub(crate) frame_history: VecDeque<f32>,
     pub(crate) last_stats: tr_render::sprite::RenderStats,
@@ -1394,6 +1457,61 @@ fn apply_pose_pin(world: &mut World, mut p: Option<&mut crate::player::Player>, 
     world.revision = world.revision.wrapping_add(1);
 }
 
+/// The gen-time starter ledger's name resolution — `NPC.getNewNPCName`
+/// (`NPC.cs:7281-7325`): the kind's `RandomFromCategory(<Kind>Names,
+/// genRand)` pick, the raw draw word carried by the ledger record
+/// (`worldgen::starter_npcs`). The category size resolves the index exactly
+/// like `LanguageManager.RandomFromCategory` (`value[random.Next(Count)]`).
+/// Kinds with no category (the C#'s `_ => ""` arm) keep the static name.
+fn starter_npc_name(net_id: u16, roll: u32) -> String {
+    let category = match net_id {
+        17 => "MerchantNames",
+        18 => "NurseNames",
+        19 => "ArmsDealerNames",
+        20 => "DryadNames",
+        22 => "GuideNames",
+        38 => "DemolitionistNames",
+        54 => "ClothierNames",
+        107 => "GoblinTinkererNames",
+        108 => "WizardNames",
+        124 => "MechanicNames",
+        160 => "TruffleNames",
+        178 => "SteampunkerNames",
+        207 => "DyeTraderNames",
+        208 => "PartyGirlNames",
+        209 => "CyborgNames",
+        227 => "PainterNames",
+        228 => "WitchDoctorNames",
+        229 => "PirateNames",
+        353 => "StylistNames",
+        368 => "TravelingMerchantNames",
+        369 => "AnglerNames",
+        453 => "SkeletonMerchantNames",
+        441 => "TaxCollectorNames",
+        550 => "BartenderNames",
+        588 => "GolferNames",
+        633 => "BestiaryGirlNames",
+        663 => "PrincessNames",
+        637 => "CatNames_Siamese",
+        638 => "DogNames_Labrador",
+        656 => "BunnyNames_White",
+        670 => "SlimeNames_Blue",
+        678 => "SlimeNames_Green",
+        679 => "SlimeNames_Old",
+        680 => "SlimeNames_Purple",
+        681 => "SlimeNames_Rainbow",
+        682 => "SlimeNames_Red",
+        683 => "SlimeNames_Yellow",
+        684 => "SlimeNames_Copper",
+        _ => return String::new(),
+    };
+    let size = crate::lang::category_size(category);
+    if size == 0 {
+        return String::new();
+    }
+    crate::lang::random_from_category(category, (roll % size as u32) as usize)
+}
+
 impl App {
     /// The swapchain size in pixels (the deterministic fallback mirrors the
     /// `TR_SHOT`/headless default of 1280x720).
@@ -1620,9 +1738,13 @@ impl App {
     /// vanilla's `WorldGen.drunkWorldGen` and friends), and the other front
     /// screens play the plain title track.
     pub(crate) fn update_menu_music(&mut self) {
-        let menu_flags = match &self.front {
+        // W4-g22 MENU-FINAL — the drunk arm's two micro-seed titles
+        // (`Main.cs:12465-12472`) read the SAME seed text through the
+        // combined resolution (`seed_identity`, the vampirism micro seed
+        // is `Main.vampireSeed`, `WorldGen.cs:555-558`).
+        let (menu_flags, menu_micro_flags) = match &self.front {
             Some(FrontScreen::WorldCreation(draft)) => {
-                tr_core::seeds::SeedFlags::from_seed_text(&draft.seed)
+                ui::world_creation::seed_identity(&draft.seed)
             }
             // W4-d85: the Advanced tab carries the toggled option flags
             // too (`Main.UpdateAudio_DecideOnNewMusic` reads the live
@@ -1635,11 +1757,20 @@ impl App {
                     | state.draft.option_flags()
             }
             _ => tr_core::seeds::SeedFlags::default(),
+            _ => Default::default(),
         };
+        // `Main.menuMode == 3000` (`:12486-12489`): the credits page's
+        // JourneysEnd (89) — the legacy menu owns that page.
+        let menu_credits = self
+            .menu
+            .as_ref()
+            .is_some_and(|m| m.page == menu::Page::Credits);
         self.music.update(audio::MusicEnv {
             music_volume: self.settings.music_volume,
             menu: true,
             menu_flags,
+            menu_micro_flags,
+            menu_credits,
             // `Main.activeMusicBox = -1` — the derived default 0 is the first
             // box's id, which would override the title track.
             music_box: -1,
@@ -2255,6 +2386,13 @@ impl App {
             // "can't afford" lines (`Next(3)` → 52/53/54).
             let roll = self.rngs.global().next_max(3);
             self.npc_chat_text = crate::lang::dialog(52 + roll);
+
+        }        // `Main.cs:40105` — `NPCChatText_DoNurseHeal` plays sound 12 FIRST,
+        // before the `healCost > 0` / `BuyItem` gates (the port's collapse
+        // runs the cost gate inside; the cue plays on the button press).
+        crate::chest::play_menu_sound(self, 12);
+        let cost = self.nurse_heal_cost(nurse_idx);
+        if cost <= 0 || self.coins < cost as u64 {
             return false;
         }
         let Some(player) = self.player.as_mut() else {
@@ -2289,6 +2427,22 @@ impl App {
         let _ = self.achievements.notify_custom_float("Pay", cost as f32);
         crate::potions::spawn_heal_text_on(self, missing, self.rngs.global());
         self.npc_chat_text = crate::lang::dialog(line);
+        // `SoundEngine.PlaySound(SoundID.Item4)` (`Main.cs:40111`) — the
+        // coins cue AFTER `HandleNurseService`, BEFORE `HealEffect`
+        // (`:40112`). The legacy `PlaySound(SoundID)` façade
+        // (`SoundEngine.cs:93-99`) draws the `GetRandomPitch` NextFloat on
+        // the audio-only `sound_style_random` and case 2's ONE
+        // `Next(-6,7)` pitch roll on the bare-`Main.rand` stand-in (the
+        // click runs outside every swap, the S1-A-11 §4 convention).
+        if let Some(idx) = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == "Item4")
+        {
+            let mut rng = self.rngs.global().clone();
+            self.audio
+                .play_use_sound(idx as u16, -1.0, -1.0, 0.0, &mut rng);
+            *self.rngs.global() = rng;
+        }
         true
     }
 
@@ -2776,6 +2930,55 @@ impl App {
                         draft.enable_secret_seed_options(true);
                         draft.seed.clear();
                         draft.is_special_seed_text = false;
+
+        }
+        }
+        }            // `OnFinishedSettingSeed` (`:817-842`): the trimmed seed lands.
+            // W4-g24 — `SecretSeed.Enable`'s cue (`WorldGen.cs:537-540`):
+            // the first secret seed the text unlocks plays the tracked
+            // `SoundID.MenuAccept` — `TryApplyingCopiedSeed`'s Enable loop
+            // flips `playSound` false after the first (`WorldFileData.cs:
+            // 268-272`), and the plain-text arm (`:836-841`) enables at most
+            // one. The port is stateless (no `seed.Enabled` session cache),
+            // so every submit with a micro seed plays once — the
+            // first-enable-per-entry semantics of a fresh creation screen.
+            // W4-g24 FINAL — the classic-option arm's 24 (`:830-835`):
+            // `GetOptionFromSeedText` resolves the ELSE-branch text (the
+            // `TryApplyingCopiedSeed` join failed), `SelectOption` runs and
+            // `SoundEngine.PlaySound(24)` (`SoundID.Chat`, `SoundID.cs:70`,
+            // case 24 draw-free — `LegacySoundPlayer.cs:957-962`). Cue
+            // only: the `_isSpecialSeedText`/`SelectOption` draft-state
+            // half is the d85 Advanced-tab surface (its `WorldSeed` arm
+            // carries `option_for_seed_text` + `select_option`; the
+            // created world's flags already ride `resolve_seed_text`'s
+            // classic half) — keep-one note in research/146 §3.
+                if let FrontScreen::WorldCreation(draft) = &mut back {
+                    // The merge keep-one (W4-g24 FINAL over W4-g22's
+                    // seed_flags probe): g24's three-arm resolution is the
+                    // faithful `OnFinishedSettingSeed` shape — the joined
+                    // micro-seed `TryApplyingCopiedSeed` arm, the
+                    // classic-option Chat (24) arm and the single-secret
+                    // `Enable` MenuAccept arm.
+                    let (micro, _, _) = tr_core::seeds::resolve_seed_text(&draft.seed);
+                    if micro.count() > 0 {
+                        self.audio
+                            .play_tracked_global(crate::audio::menu_accept_style());
+                    } else if tr_core::seeds::option_for_seed_text(&draft.seed).is_some() {
+                        // `:834` — the classic-option text plays Chat (24).
+                        // The else-if mirrors the C#'s branch exclusivity:
+                        // a joined micro-seed text took the `TryApplying-
+                        // CopiedSeed` success arm, never the 24.
+                        self.audio.play("Chat"); // `SoundEngine.PlaySound(24)`
+                    } else if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some() {
+                        // `:836-841` — the SINGLE (unjoined) micro-seed
+                        // text: `CheckInputForSecretSeed` resolves it and
+                        // `Enable(secretSeed)` plays the same tracked
+                        // MenuAccept (`WorldGen.cs:539`). The joined form
+                        // took the first arm above; this one covers the
+                        // plain "pumpkinseason" submit the batch-1 arm
+                        // missed (`resolve_seed_text` counts only the
+                        // `|`-prefixed parts). Stateless once-per-submit,
+                        // the batch-1 convention.
                     }
                 }
                 self.enter_front(back);
@@ -2999,6 +3202,13 @@ impl App {
         // the select-world Play loaded the world and then drew the lobby over
         // it instead of entering the world (BUG-21).
         self.enter_loaded_world();
+        // W4-g24 — `playWorldCallBack`'s tail (`WorldGen.cs:6843`):
+        // `SoundEngine.PlaySound(11)` after the spawn (`:6840`) — the
+        // world-enter close cue. Case 11 (`LegacySoundPlayer.cs:760-768`)
+        // draws NOTHING; the 2D play rides no RNG stream. The net client
+        // install (`client_install_world`) is the S2c world-state path, not
+        // `playWorld` — it keeps its own silence.
+        self.audio.play("Menu_Close");
         // `loop`'s boot block (`loop.rs:88-100`): the camera lands on the
         // world's spawn and the zoom on the setting, before the first frame.
         self.camera = Vec2::new(
@@ -3192,6 +3402,13 @@ impl App {
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
+                    // W4-f33 — the Torch God's Favor permanent unlock rides
+                    // the v7 sidecar line (`Player.cs:55241-55242`): the
+                    // biome torches resume with the character. The builder
+                    // toggle half restores through the UsingBiomeTorches
+                    // setter (`builderAccStatus[11]`, `:3960-3963`).
+                    p.unlocked_biome_torches = saved.unlocked_biome_torches;
+                    p.set_using_biome_torches(saved.using_biome_torches);
                     for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                         inventory[i] = ItemSlot {
                             kind: *kind,
@@ -3283,8 +3500,49 @@ impl App {
         if sections.from_wld {
             // The file's roster wins; the Guide spawn is skipped (below).
         } else if sections.native.npcs.is_empty() {
-            if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
-                npcs.push(guide);
+            // W4-d105 lane 5 (#37): the gen-time starter-NPC ledger — the
+            // `Guide` pass (`WorldGen.cs:19685-19897`) spawned these with
+            // `NPC.NewNPC` at generation. A classic world carries exactly
+            // one homeless Guide; the seed worlds carry their own rosters.
+            // The records store the VANILLA netID; the name roll resolves
+            // through the kind's `getNewNPCName` category
+            // (`NPC.cs:7281-7325`).
+            for rec in &world.gen_npcs {
+                let Some((kind, _)) = crate::npc::kind_from_net_id(rec.kind as i32) else {
+                    continue;
+                };
+                let Some(mut npc) =
+                    Npc::spawn_town_at(&world, (rec.x / TILE_PX) as i32, (rec.y / TILE_PX) as i32, kind)
+                else {
+                    continue;
+                };
+                // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`) — the
+                // ledger carries the bottom-centre anchor; the port's Npc
+                // x/y is the top-left position.
+                let (w, h) = kind.size();
+                npc.x = rec.x - w * 0.5;
+                npc.y = rec.y - h;
+                // The port folds `NPC.direction` into `facing`
+                // (`npc.rs:1803-1806`).
+                npc.facing = rec.direction;
+                // Every starter spawn is homeless (`homeless = true` in
+                // every arm); the home tile rides the record for the
+                // look-for-home tick.
+                npc.home = None;
+                npc.given_name = if !rec.given_name_key.is_empty() {
+                    crate::lang::text(rec.given_name_key)
+                } else {
+                    starter_npc_name(rec.kind, rec.name_roll)
+                };
+                npcs.push(npc);
+            }
+            // Pre-ledger saves (and a ledger whose spawns all collided)
+            // keep the vanilla-gen arrival: one homeless Guide at the spawn
+            // point, which the look-for-home tick re-houses within seconds.
+            if npcs.is_empty() {
+                if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
+                    npcs.push(guide);
+                }
             }
         } else {
             for rec in &sections.native.npcs {
@@ -4220,6 +4478,22 @@ impl App {
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
             debug_overlay: false,
+            // W4-g21 batch 2 — the F-key diagnostic toggles' boot state: the
+            // C# statics default false/0 (`Main.cs:509/:647/:991/:2085`), the
+            // release latches false (`:511/:987/:989/:2087`).
+            hide_ui: false,
+            draw_diag: 0,
+            net_diag: false,
+            show_frame_rate: false,
+            release_ui: false,
+            draw_release: false,
+            net_release: false,
+            frame_release: false,
+            all_chest_stack_hover: false,
+            inventory_sort_hover: false,
+            hotbar_lock_hover: false,
+            toggle_acc_hover: -1,
+            house_banners: Vec::new(),
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
@@ -4238,6 +4512,8 @@ impl App {
             step_input_was: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
+            mouse_tick_prev: Vec2::ZERO,
+            mouse_tick_delta: Vec2::ZERO,
             last_frame: Instant::now(),
             frame_history: VecDeque::with_capacity(256),
             last_stats: tr_render::sprite::RenderStats::default(),
@@ -4849,8 +5125,14 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 edit::TileInteraction::DialRefused => {
                     log::info!("TR_TOGGLE {},{} -> dial refused", op.x, op.y)
                 }
+                edit::TileInteraction::BuffStation { kind } => {
+                    log::info!("TR_TOGGLE {},{} -> buff station ({kind})", op.x, op.y)
+                }
                 edit::TileInteraction::CandleToggled => {
                     log::info!("TR_TOGGLE {},{} -> candle toggled", op.x, op.y)
+                }
+                edit::TileInteraction::RightClickToggle { kind, .. } => {
+                    log::info!("TR_TOGGLE {},{} -> right-click toggle ({kind})", op.x, op.y)
                 }
                 edit::TileInteraction::ChairSit { .. } => {
                     log::info!("TR_TOGGLE {},{} -> chair sit", op.x, op.y)
@@ -4876,6 +5158,11 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 // the tile kind.
                 edit::TileInteraction::Extractinator => {
                     log::info!("TR_TOGGLE {},{} -> extractinator", op.x, op.y)
+                }
+                // W4-e28: the station-buff grant needs the player's buff
+                // slots (none at load) — the dispatch only reports the row.
+                edit::TileInteraction::StationBuff { buff_type, .. } => {
+                    log::info!("TR_TOGGLE {},{} -> station buff {buff_type}", op.x, op.y)
                 }
                 edit::TileInteraction::BankOpen { bank } => {
                     log::info!("TR_TOGGLE {},{} -> bank {bank}", op.x, op.y)
@@ -5431,7 +5718,15 @@ pub(crate) mod tr_hooks {
         assert!(app.menu.is_some(), "the boot App opens the lobby");
 
         // The Play: the world swaps in and the lobby must not come back.
+        // W4-g24 — `playWorldCallBack`'s tail (`WorldGen.cs:6843`): the
+        // world-enter plays the Menu_Close (11) exactly once per swap.
+        let plays_before = app.audio.played_count();
         app.swap_world(&paths[1]).expect("first swap");
+        assert_eq!(
+            app.audio.played_count(),
+            plays_before + 1,
+            "the world-enter cue (case 11, draw-free)"
+        );
         assert!(app.menu.is_none(), "the lobby must not come back");
         assert!(app.front.is_none(), "the 888 side clears too");
         assert_eq!(app.world.name, "Beta", "the selected world is live");
@@ -6006,6 +6301,14 @@ mod s1_e_18_tests {
     fn the_nurse_refusals_draw_the_dialog_rolls() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         crate::lang::init(tr_core::localization::GameCulture::English);
+
+        }    /// W4-g21 — `NPCChatText_DoNurseHeal`'s two cues (`Main.cs:40105`,
+    /// `:40111`): sound 12 plays FIRST on every button press (even a refused
+    /// heal), sound `Item4` only inside the `BuyItem` success arm. The
+    /// Item4 case-2 pitch roll draws ONE `Next(-6,7)` on the bare-`Main.rand`
+    /// stand-in (the click runs outside every swap); the `GetRandomPitch`
+    /// NextFloat rides the audio-only `sound_style_random`.
+    fn w4_g21_the_nurse_heal_plays_the_tick_then_the_coins_cue() {
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let mut player = crate::player::Player::spawn(&app.world);
         player.hp = player.max_hp / 2;
@@ -6043,6 +6346,21 @@ mod s1_e_18_tests {
         assert_eq!(app.npc_chat_text, crate::lang::dialog(55 + roll));
         assert!((56..=57).contains(&(55 + roll)), "the blood line drops");
         assert_eq!(*app.rngs.global(), twin, "two draws spent");
+        let cost = app.nurse_heal_cost(0);
+        assert!(cost > 0);
+        // The refused heal: the `:40105` tick still plays, no Item4.
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.global().clone();
+        assert_eq!(app.audio.played_count(), before + 1, "only the tick");
+        assert_eq!(*app.rngs.global(), rng_before, "no gameplay draw");
+        // The paid heal: tick + Item4, and the case-2 pitch roll advanced the
+        // bare stream by exactly one `Next(-6,7)` draw.
+        app.coins = cost as u64;
+        let mut witness = app.rngs.global().clone();
+        witness.next_range(-6, 7); // `LegacySoundPlayer.cs:634`'s default arm
+        assert!(app.nurse_heal(0));
+        assert_eq!(app.audio.played_count(), before + 2, "tick + Item4");
+        assert_eq!(*app.rngs.global(), witness, "one pitch draw, in order");
     }
 }
 

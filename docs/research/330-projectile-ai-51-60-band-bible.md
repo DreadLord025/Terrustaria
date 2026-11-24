@@ -54,7 +54,7 @@ precedent — no duplicate 51–60 labels exist in the match).
 
 **Boundary closure.** Style 50 (the Inferno Fork family) is the d5 band
 (`156-projectile-ai-41-50-census.md`, W4-d5); style 61+ starts the d7 band
-(`26e-projectile-ai-61-70-census.md`, W4-d7). The 51 arm's head `:28402`
+(`167-projectile-ai-61-70-census.md`, W4-d7). The 51 arm's head `:28402`
 sits directly below the 50 arm's tail `:28401`, the 60 arm's tail `:29309`
 directly above the 61 head — no gap, no overlap.
 

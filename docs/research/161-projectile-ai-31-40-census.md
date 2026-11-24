@@ -1,4 +1,4 @@
-# 26d — Projectile aiStyles 31-40 COVERAGE census (W4-d4)
+# 161 — Projectile aiStyles 31-40 COVERAGE census (W4-d4)
 
 > Researched 2026-11-21 against `a725acb0` (wave-3 complete). C# cites are
 > `decompiled/Terraria/Projectile.cs` (stable); Rust cites are
@@ -57,7 +57,7 @@ merge pass's `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_
 | 32 | ARMED | `:17832` | `beach_ball_step` (pool-side) | 155 | `the_beach_ball_row_and_flight_tail` / `…bounces_off_an_npc_at_20_ticks` / `…dies_at_zero_velocity` (projectile.rs) + the return pair `w4_d4_union_the_beach_ball_death_returns_the_item` (pool) / `…the_beach_ball_return_drains_on_the_items_stream` (world_sim) + `w4_d4_retire_the_refund_gates_and_the_dig_cue` (foreign-ball arm) + the item-use `w4_d4_sweep_the_beach_ball_item_throws_the_155_and_consumes` + the row pin `w4_d4_verify_the_beach_ball_and_piranha_gun_item_rows` (editing.rs); wind-32 in `uses_wind_physics` (`:13895`) |
 | 33 | ARMED | `:17432` | `projectile_ai_light_items::flare_step` | 163/310/1008-1011 | `the_flare_rows_carry_the_csharp_defaults` / `the_flare_fades_alpha_by_50_and_snapshots_its_velocity` / `the_flare_sticks_on_a_blocked_move_and_zeroes_damage` (light_items) |
 | 34 | ARMED | `:17801` | `projectile_ai_darts::firework_flight` + the `dart_electro_firework_kill` burst (`:76464-76674`) | 167-170 (+415-418 unrowed boxes) | rows: `s1_p_i16_the_dart_rows_match_set_defaults` (the 167-170 loop, darts); the use arm: `s1_p_i16_the_fireworks_launcher_fires_two_rockets` (editing.rs); wind tail runs after the dispatch (the arm-owned-integration convention) |
-| 35 | ARMED — RETIRE-PENDING canonical flip | `:17825` (d4 `ai_rope_coil`; the merge keeps g82's `35 => coil_step`, research/26e FINAL-FINAL) | d4 `ai_rope_coil` `:11413` / g82 `coil_step` (canonical) | 171/475/505/506 | rows `the_rope_coil_rows_carry_style_35`; fall `the_rope_coil_falls_after_30_ticks`; the four-kind placement loop `the_rope_coil_places_its_rope_and_dies` (the g82 salvage note); owner gate `the_rope_coil_placement_is_owner_gated`; refund queue `w4_d4_union_the_coil_death_queues_the_refund_ladder`; gates+cue `w4_d4_retire_the_refund_gates_and_the_dig_cue`; module ladder/reverse-walk/parity/NaN pins (projectile_rope_coil.rs); drain contract `w4_d4_union_the_coil_expiry_drains_the_refund_as_a_world_drop` (world_sim); usability ×3 (editing.rs); wind-35 in the list |
+| 35 | ARMED — RETIRE-PENDING canonical flip | `:17825` (d4 `ai_rope_coil`; the merge keeps g82's `35 => coil_step`, research/169 FINAL-FINAL) | d4 `ai_rope_coil` `:11413` / g82 `coil_step` (canonical) | 171/475/505/506 | rows `the_rope_coil_rows_carry_style_35`; fall `the_rope_coil_falls_after_30_ticks`; the four-kind placement loop `the_rope_coil_places_its_rope_and_dies` (the g82 salvage note); owner gate `the_rope_coil_placement_is_owner_gated`; refund queue `w4_d4_union_the_coil_death_queues_the_refund_ladder`; gates+cue `w4_d4_retire_the_refund_gates_and_the_dig_cue`; module ladder/reverse-walk/parity/NaN pins (projectile_rope_coil.rs); drain contract `w4_d4_union_the_coil_expiry_drains_the_refund_as_a_world_drop` (world_sim); usability ×3 (editing.rs); wind-35 in the list |
 | 36 | ARMED | `:17920` | `projectile_ai_thrown::bee_step` + pool-side `ai_bat` (316, the i21 type-branch) | 181/566/307/316 | bee: `s1_p_i28_bee_steers_toward_target` + the beenade draw-order pair (thrown); bat: `s1_p_i21_the_bat_fades_and_flips` / `s1_p_i21_the_bat_homes_after_thirty_ticks` (projectile.rs) |
 | 37 | ARMED | `:17811` | `ai_trap_spear` (the 185 stand-in RETIRED — F3) | 186 | `the_spear_reverses_on_solid_contact_and_kills_at_the_anchor` / `the_spear_flies_straight_and_points_off_its_anchor` (projectile.rs) |
 | 38 | ARMED | `:17818` | `ai_flame_jet` | 187 (+188 child) | `the_flame_jet_cycles_every_six_ticks_and_never_moves` / `the_flame_jet_child_spawn_is_owner_gated` (projectile.rs) + the child ramp gate `w4_d4_sweep_the_flames_trap_launch_ramp_deals_no_damage` (the DOC-SWEEP `Damage_CanDealDamage` port, `:12448`) |
@@ -68,7 +68,7 @@ The one-arm-per-rowed-style coverage pin
 (`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`, `projectile.rs:24729`)
 guards the whole band — a second `35 =>` at the merge would trip the
 `unreachable_patterns` deny (S1-D-4c), which is why the keep-one verdict
-matters (research/26e FINAL-FINAL).
+matters (research/169 FINAL-FINAL).
 
 ## Finding F3 carried from W4-f19 — style 37's row was a DELIBERATE stand-in
 
@@ -158,10 +158,10 @@ rotation negates + the same-direction early return.
   comparison + the union recommendation (keep d4's machine; keep g82's
   chain preview / Kill-refund ladder / usability walk / framing arm; drop
   g82's duplicate `coil_step` half) lives in
-  `26e-rope-coil-keep-one.md`. The one behavioural gap found: the coil's
+  `169-rope-coil-keep-one.md`. The one behavioural gap found: the coil's
   `Kill()` refund (`Projectile.cs:77572-77615`) is unported on this branch
   — g82's `coil_death_drop` is the ladder to wire at the death drain.
   **RETIRED (2026-11-21)**: the union landed (refund `bb2f8d2c`, usability
   `1cae02fd`, preview geometry `bb2f8d2c`/`ee950e51`); the FINAL-FINAL
   re-adjudication against g82 tip `187557f8` REVERSED the machine verdict
-  (g82 `coil_step` canonical — see `26e-rope-coil-keep-one.md` "FINAL-FINAL").
+  (g82 `coil_step` canonical — see `169-rope-coil-keep-one.md` "FINAL-FINAL").

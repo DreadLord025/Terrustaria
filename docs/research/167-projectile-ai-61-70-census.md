@@ -1,4 +1,4 @@
-# 26e — Projectile aiStyles 61-70 dispatch census (W4-d7)
+# 167 — Projectile aiStyles 61-70 dispatch census (W4-d7; renumbered 26e→167 per registry-150)
 
 > Researched 2026-11-20/21 against `a725acb0` (wave-3 complete). C# cites are
 > `decompiled/Terraria/Projectile.cs` (stable); Rust cites are

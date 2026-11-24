@@ -1097,9 +1097,11 @@ impl App {
         self.npc_chat_last_hovered = hovered;
         if hovered == 0 && self.ui_left_press {
             self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
-            // half is unported; `SetTalkNPC(-1)` + the text clear + sound
-            // 11 + the panel's `Close` reset.
+            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`):
+            // `CloseSign(quiet: true)` (W4-e10 — no cue from the sign
+            // half), `SetTalkNPC(-1)` + the text clear + sound 11
+            // (`:40688`, the function's own) + the panel's `Close` reset.
+            crate::signs::close_sign(self, true); // `:40682`
             self.talk_npc = None;
             self.npc_chat_text.clear();
             // `SetTalkNPC(-1)` (`Player.cs:4383-4386`): NotInShop — the
@@ -1142,6 +1144,12 @@ impl App {
         // The inventory button (`DrawBestiaryIcon`'s click arm): open the
         // bestiary, close the inventory (`IngameFancyUI.OpenUIState`).
         if self.inventory_open && ui::bestiary::button_hit(self.mouse_pos) {
+            // `SoundEngine.PlaySound(12)` (`Main.cs:42458`) — AFTER the
+            // `SetTalkNPC(-1)`/`npcChatCornerItem = 0`/`npcChatText = ""`
+            // clears (no port state) + `mouseLeftRelease = false`, BEFORE
+            // `IngameFancyUI.OpenUIState` (`:42459`, which closes the
+            // inventory).
+            self.audio.play("Menu_Tick");
             self.inventory_open = false;
             self.bestiary_open = true;
             self.bestiary_selected = None;
@@ -1169,6 +1177,12 @@ impl App {
         // `DrawEmoteBubblesButton`'s click arm (`Main.cs:42400-42405`):
         // open the emotes wheel.
         if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
+            // `SoundEngine.PlaySound(12)` (`Main.cs:42403`) — AFTER the
+            // `SetTalkNPC(-1)`/`npcChatCornerItem = 0`/`npcChatText = ""`
+            // clears (no port state) + `mouseLeftRelease = false`, BEFORE
+            // `IngameFancyUI.OpenUIState(new UIEmotesMenu())` (`:42404`,
+            // which closes the inventory).
+            self.audio.play("Menu_Tick");
             self.inventory_open = false;
             // `UIEmotesMenu.OnActivate` rebuilds the page, so the wheel opens
             // with its scroll at 0 (`EmoteSystem::open`).
@@ -1599,6 +1613,27 @@ impl App {
             .count();
         self.achievements_scroll =
             ui::achievements::scroll_wheel(self.achievements_scroll, notches, rows, &list);
+    }
+
+    /// `DrawNPCHousesInWorld`'s right-click kick-out (`Main.cs:40824-40829`,
+    /// W4-g21 batch 4 host 53): while the housing tab is up, a right press on
+    /// a banner's hover box runs `WorldGen.kickOut(num)` (`WorldGen.cs:4869-4879`)
+    /// and plays `SoundEngine.PlaySound(12)` (`:40828`). The banner boxes are
+    /// rebuilt each draw (`house_banners`); the press is consumed.
+    fn handle_house_banner_clicks(&mut self) {
+        if !self.ui_right_press || self.equip_page != 1 || self.house_banners.is_empty() {
+            return;
+        }
+        let Some(npc_idx) = crate::house_banners::banner_at(&self.house_banners, self.mouse_pos) else {
+            return;
+        };
+        self.ui_right_press = false; // `Main.mouseRightRelease = false` (`:40826`)
+        // `WorldGen.kickOut` (`WorldGen.cs:4869-4879`): the NPC goes homeless,
+        // the look-for-home timer arms (3600), the registered room drops.
+        if let Some(npc) = self.npcs.get_mut(npc_idx) {
+            crate::town::kick_out(&mut self.town_rooms, npc);
+        }
+        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:40828`)
     }
 
     /// `DrawInterface_38_MouseCarriedObject`'s click tail
@@ -2192,8 +2227,10 @@ impl App {
         // inventory is open (their home is `DrawInventory`, `:41055`) and the
         // map system is enabled (`:41056`'s `Main.mapEnabled` wraps the row).
         // A hit consumes the press and returns before the slot handling.
-        // `PlaySound(10)/(12)` (`:41100,41109-41119`) is not ported — no UI cue
-        // is loaded (`audio.rs:22-31`).
+        // W4-g21: the row's `PlaySound(10)/(12)` (`:41100,41109-41119`) now
+        // play — k0 the fullscreen-map open is sound 10 (`Menu_Open`), k1/2/3
+        // the style switches are sound 12 (`Menu_Tick`), each AFTER its state
+        // write exactly like the C#.
         if left && self.inventory_open && self.settings.map_enabled {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
@@ -2213,13 +2250,19 @@ impl App {
                         // `SetTalkNPC(-1)` / `npcChatCornerItem = 0` have no
                         // port counterpart.
                         self.inventory_open = false;
+                        // `SoundEngine.PlaySound(10)` (`:41100`) — AFTER the
+                        // inventory close + `SetTalkNPC(-1)`, BEFORE the
+                        // fullscreen-map state writes.
+                        self.audio.play("Menu_Open");
                         if let Some(m) = self.map.as_mut() {
                             m.set_open(true);
                         }
                     } else {
                         // `Main.cs:41106-41120`: `k == 1/2/3` ->
-                        // `Main.mapStyle = 0/1/2`.
+                        // `Main.mapStyle = 0/1/2`, each followed by
+                        // `SoundEngine.PlaySound(12)` (`:41109/:41114/:41119`).
                         self.map_style = k as i32 - 1;
+                        self.audio.play("Menu_Tick");
                     }
                     return;
                 }
@@ -2436,6 +2479,39 @@ impl App {
                 return;
             }
         }
+        // The quick-stack-all / sort-inventory buttons (`Main.cs:41833-41897`,
+        // W4-g21 batch 3 hosts 62/63/64): both ride `chest == -1 && npcShop == 0`
+        // (`:41833/:41869`) and the `!LocalPlayerHasPendingInventoryActions`
+        // hover gate. The quick-stack button's left press runs QuickStackAllChests
+        // (sound 12), its right press cycles the mode (sound 10 + SaveSettings);
+        // the sort button's left press runs SortInventory (sound 12). A hit
+        // consumes the press before the trash/equipment arms.
+        if self.inventory_open && self.open_container() == -1 && self.shop_npc.is_none() {
+            let pending = self.mouse_item.kind != 0 && self.mouse_item.count != 0;
+            if !pending {
+                let stack_size = self
+                    .lookups
+                    .chest_stack
+                    .first()
+                    .and_then(|s| s.as_ref())
+                    .map(|s| (s.width as f32, s.height as f32))
+                    .unwrap_or((30.0, 30.0));
+                if ui::inventory::quick_stack_button_hit(self.mouse_pos, stack_size) {
+                    if left {
+                        self.quick_stack_all_click();
+                        return;
+                    }
+                    if right_edge {
+                        self.quick_stack_mode_click();
+                        return;
+                    }
+                }
+                if left && ui::inventory::sort_button_hit(self.mouse_pos) {
+                    self.sort_inventory_click();
+                    return;
+                }
+            }
+        }
         // The trash slot's left click (`ItemSlot.LeftClick`'s context-6 arm,
         // `ItemSlot.cs:937-941`): `MouseItemSwap(ref trashItem, 6)` — the
         // plain held/trash swap (no favorited-held guard exists in the C#
@@ -2455,6 +2531,42 @@ impl App {
                 self.audio.play("Grab");
             }
             return;
+        }
+        // The misc-page ticks (`Main.cs:41226-41283`, W4-g21 batch 2 hosts
+        // 58/59): the pet/light tick (rows 0/1) and the super-cart tick (row 2)
+        // are checked before the misc slot grid — the C# tick box sits over the
+        // slot's right edge (`flag3`, `:41284`), gated on `mouseItem.IsAir`.
+        if left && self.inventory_open && self.equip_page == ui::inventory::EQUIP_PAGE_MISC {
+            let (sw, sh) = self.screen_size();
+            let base_y = ui::inventory::equip_page_base_y(sh, self.main_m_h());
+            let tick = self
+                .lookups
+                .ui_tick_on
+                .as_ref()
+                .map(|s| (s.width as f32, s.height as f32))
+                .unwrap_or((16.0, 16.0));
+            let air = self.mouse_item.kind == 0 || self.mouse_item.count == 0;
+            let unlocked = self.player.as_ref().is_some_and(|p| p.unlocked_super_cart);
+            if let Some((m, super_cart)) = ui::inventory::misc_tick_click(
+                sw, base_y, self.mouse_pos, tick, air, unlocked,
+            ) {
+                if let Some(p) = self.player.as_mut() {
+                    if super_cart {
+                        // `Main.cs:41273`: `enabledSuperCart = !enabledSuperCart`.
+                        p.enabled_super_cart = !p.enabled_super_cart;
+                    } else if m == 0 {
+                        p.toggle_pet(self.equip.misc_equips[0].kind); // `:41242`
+                    } else {
+                        p.toggle_light(self.equip.misc_equips[1].kind); // `:41246`
+                    }
+                }
+                // `SoundEngine.PlaySound(12)` (`Main.cs:41249/:41275`).
+                self.audio.play("Menu_Tick");
+                // `SendData(4)` in MP (`:41250-41253/:41276-41279`) — the
+                // player-info packet carries no hideMisc/superCart field in
+                // the port's `net.rs`, so the flip stays local (ANALYSIS).
+                return;
+            }
         }
         // The equipment columns (`Main.cs:41288,41450,41491,41519`): armour,
         // vanity, dye and — on the misc page — the misc-equip/misc-dye pair.
@@ -2496,6 +2608,49 @@ impl App {
             self.coin_ammo_click(ctx, k, left, right_edge);
             return;
         }
+        // The hotbar-lock + builder-accessory icon toggles (`Main.cs:42479-42596`,
+        // W4-g21 batch 5 hosts 71/72/73): each left press flips its state and
+        // plays sound 22 (`SoundID.Unlock`), consuming the press before the slot
+        // grid. The hotbar-lock icon draws inside `DrawInventory` (`:41046`);
+        // the block-replacement / torch-biome icons ride `DrawBuilderAccToggles`
+        // (`:47575-47588`) and gate on `playerInventory`.
+        if left && self.inventory_open {
+            let push_up = ui::chrome::builder_accs_count_to_show(
+                self.player.as_ref().is_some_and(|p| p.info_acc_mech_show_wires),
+                self.player.as_ref().is_some_and(|p| p.ruler_line),
+                self.player.as_ref().is_some_and(|p| p.ruler_grid),
+                self.player.as_ref().is_some_and(|p| p.auto_actuator),
+                self.player.as_ref().is_some_and(|p| p.auto_paint),
+                self.player.as_ref().is_some_and(|p| p.unlocked_biome_torches),
+            ) >= 10;
+            if ui::chrome::hotbar_lock_hit(&self.lookups, push_up, self.mouse_pos) {
+                if let Some(p) = self.player.as_mut() {
+                    p.hb_locked = !p.hb_locked; // `:42507`
+                }
+                self.audio.play("Unlock"); // `SoundEngine.PlaySound(22)` (`:42506`)
+                return;
+            }
+            if ui::chrome::block_replace_hit(&self.lookups, push_up, self.mouse_pos) {
+                if let Some(p) = self.player.as_mut() {
+                    // `:42545`: `builderAccStatus[10] = enabled ? 1 : 0`.
+                    let enabled = p.builder_acc_status[10] == 0;
+                    p.builder_acc_status[10] = if enabled { 1 } else { 0 };
+                }
+                self.audio.play("Unlock"); // `:42544`
+                return;
+            }
+            if self.player.as_ref().is_some_and(|p| p.unlocked_biome_torches)
+                && ui::chrome::torch_biome_hit(&self.lookups, push_up, self.mouse_pos)
+            {
+                if let Some(p) = self.player.as_mut() {
+                    // `:42585`: `builderAccStatus[11] = enabled ? 1 : 0`.
+                    let enabled = p.builder_acc_status[11] == 0;
+                    p.builder_acc_status[11] = if enabled { 1 } else { 0 };
+                }
+                self.audio.play("Unlock"); // `:42584`
+                return;
+            }
+        }
         let Some(slot) = self.slot_at_mouse() else {
             return;
         };
@@ -2505,15 +2660,16 @@ impl App {
                 // the click latches `changeItem`, which `Player.Update`
                 // feeds to `Select` (`Player.cs:25087-25091`) — buffered,
                 // not immediate. The hover gate (`:43616`) refuses the
-                // locked hotbar (`hbLocked` has no port state — the lock
-                // icon is a recorded no-op, `ui/chrome.rs`), the torch
-                // auto-select hold and an active channel; `Main.blockMouse`
-                // (`:43620`) blocks the held button after a mid-use switch.
+                // locked hotbar (`hbLocked`, W4-g21 batch 5 host 71), the
+                // torch auto-select hold and an active channel;
+                // `Main.blockMouse` (`:43620`) blocks the held button after a
+                // mid-use switch.
+                let hb_locked = self.player.as_ref().is_some_and(|p| p.hb_locked);
                 let control_torch = self.keys.iter().any(|k| {
                     crate::input_map::is_bound(&self.keybinds, crate::input_map::Action::Torch, *k)
                 });
                 let channel = self.player.as_ref().is_some_and(|p| p.channel);
-                if !control_torch && !channel && !self.block_mouse {
+                if !hb_locked && !control_torch && !channel && !self.block_mouse {
                     if self.selection.select(self.selected, slot, false) {
                         self.audio.play("Menu_Tick"); // `Select`, `:506`
                     }
@@ -3170,6 +3326,219 @@ impl App {
         crate::item_sorting::sort_chest(&mut wc.slots, mult);
     }
 
+    /// `Main.cs:41845-41850` — the quick-stack-all button's left press:
+    /// `Player.QuickStackAllChests` (`Player.cs:23183-23189`) then
+    /// `SoundEngine.PlaySound(12)` (`:41849`). The `HasLockedInventory` gate
+    /// (`Player.cs:23089-23096`) is `IsStackingItems || pending actions`; the
+    /// port's `inventoryChestStack`/`disableVoidBag` have no state (the net
+    /// slot-lock is unported), so the gate reads the cursor-held item only
+    /// (`LocalPlayerHasPendingInventoryActions`, `Main.cs:42598-42605` —
+    /// `FakeCursorItem` is the port's `mouse_item`; `CraftingRequests.
+    /// HasPendingRequests` is unported, false). W4-g21 batch 3, host 62.
+    fn quick_stack_all_click(&mut self) {
+        // `HasLockedInventory`: a held cursor item locks the inventory.
+        if self.mouse_item.kind != 0 && self.mouse_item.count != 0 {
+            return;
+        }
+        let smart = self.settings.stack_to_chests_mode == 1;
+        // The banks-then-chests entry (`QuickStackToNearbyInventories`,
+        // `QuickStacking.cs:232-236`). The bank MoveCoins pre-pass + the item
+        // transfer into the in-range banks; the port's banks are always
+        // unlocked and the tile-bank range scan is the caller's.
+        self.quick_stack_banks();
+        // The world-chest transfer (`QuickStackToNearbyChests`, `:251-266`).
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        let use_void = crate::chest::use_void_bag(self);
+        // The in-range chests (`NearbyChests.GetChestsInRangeOf`,
+        // `NearbyChests.cs:10-31`): the port's `craft::chests_in_range` scans
+        // the tile kinds within 600 px of the player's feet, dropping the
+        // locked/in-use ones — but quick-stack KEEPS the locked chests (they
+        // block the transfer, `DestinationHelper.locked`), so the scan here
+        // includes them. The C# walks `Main.chest[]` instance order; the port
+        // walks the store order (the recorded raster-order deviation).
+        let player_center = self.player.as_ref().map(|p| p.center());
+        let open_chest = self.open_container();
+        // The range + locked scan first (immutable borrows), then the mutable
+        // slot borrows — the two cannot overlap.
+        let mut in_range: Vec<(usize, bool, (f32, f32))> = Vec::new();
+        if let Some((px, py)) = player_center {
+            for (idx, wc) in self.world_chests.iter().enumerate() {
+                if wc.tile == crate::chest::removed_tile() {
+                    continue;
+                }
+                let cx = wc.tile.0 as f32 * 16.0 + 16.0;
+                let cy = wc.tile.1 as f32 * 16.0 + 16.0;
+                let dx = cx - px;
+                let dy = cy - py;
+                if dx * dx + dy * dy > crate::craft::CHEST_RANGE_PX * crate::craft::CHEST_RANGE_PX {
+                    continue;
+                }
+                let locked = crate::chest::is_locked_or_in_use(&self.world_chests, &self.world, idx, open_chest);
+                in_range.push((idx, locked, (cx, cy)));
+            }
+        }
+        let mut chests: Vec<(&mut [crate::item::ItemSlot], bool, (f32, f32), i32)> = Vec::new();
+        for (idx, locked, pos) in in_range {
+            if let Some(wc) = self.world_chests.get_mut(idx) {
+                chests.push((&mut wc.slots[..], locked, pos, idx as i32));
+            }
+        }
+        // The void vault is a SOURCE (packed + restored), never a destination.
+        let vault: Option<&mut [crate::item::ItemSlot]> = if use_void {
+            self.player.as_mut().map(|p| &mut p.banks[3][..])
+        } else {
+            None
+        };
+        let _blocked = crate::quick_stack::quick_stack_to_nearby_chests(
+            crate::quick_stack::QuickStackInput {
+                grid: &mut self.inventory,
+                vault,
+                fav: &fav,
+                chests,
+                smart_stack: smart,
+            },
+        );
+        // `SoundEngine.PlaySound(12)` (`Main.cs:41849`) — AFTER the transfer.
+        self.audio.play("Menu_Tick");
+    }
+
+    /// `QuickStacking.QuickStackToNearbyBanks` (`QuickStacking.cs:238-249`):
+    /// MoveCoins into each in-range bank, then the item transfer. The port's
+    /// tile-bank range scan (`NearbyChests.GetBanksInRangeOf`, `:59-83`) reads
+    /// the piggy 29 / safe 97 / defender 463 / void 491 tiles around the player;
+    /// the projectile-bank half (Money Trough / Void Lens) is unported.
+    fn quick_stack_banks(&mut self) {
+        let Some(p) = self.player.as_ref() else { return };
+        let (px, py) = p.center();
+        let reach = (crate::craft::CHEST_RANGE_PX / 16.0 + 2.0) as i32;
+        let tx = (px / 16.0) as i32;
+        let ty = (py / 16.0) as i32;
+        // The bank kinds in range, in raster order, deduped by bank index
+        // (`!scratch.Contains(bank)`, `NearbyChests.cs:73`).
+        let mut found: Vec<usize> = Vec::new();
+        for j in (tx - reach)..=(tx + reach) {
+            for k in (ty - reach)..=(ty + reach) {
+                let Some(t) = self.world.tile(j, k) else { continue };
+                if !t.active() {
+                    continue;
+                }
+                let bi = match t.kind {
+                    29 => 0,  // piggy bank → bank (-2)
+                    97 => 1,  // safe → bank2 (-3)
+                    463 => 2, // defender's forge → bank3 (-4)
+                    491 => 3, // void vault → bank4 (-5)
+                    _ => continue,
+                };
+                // The void vault refuses while a Closed Void Bag 5325 is carried
+                // (`ContainerIndexToPlayerBank`, `NearbyChests.cs:118-127`).
+                if bi == 3
+                    && self.inventory.iter().chain(self.equip.coins.iter()).chain(self.equip.ammo.iter())
+                        .any(|s| s.count > 0 && s.kind == 5325)
+                {
+                    continue;
+                }
+                if !found.contains(&bi) {
+                    found.push(bi);
+                }
+            }
+        }
+        if found.is_empty() {
+            return;
+        }
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        // MoveCoins into each bank (the audio/rng pre-pass, `ChestUI.MoveCoins`
+        // `:997-1207`), then the item transfer. The banks borrow disjointly.
+        let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
+        for &bi in &found {
+            let Some(p) = self.player.as_mut() else { break };
+            crate::bank::move_coins(
+                &mut p.banks[bi],
+                &mut self.inventory,
+                &mut self.equip.coins,
+                &fav,
+                &mut self.audio,
+                &mut rng,
+            );
+        }
+        *self.rngs.global() = rng;
+        // The item transfer into the in-range banks (no void vault source).
+        let Some(p) = self.player.as_mut() else { return };
+        let banks: Vec<&mut [crate::item::ItemSlot]> = found
+            .iter()
+            .map(|&bi| &mut p.banks[bi][..])
+            .collect();
+        crate::quick_stack::quick_stack_to_nearby_banks(&mut self.inventory, &fav, banks);
+    }
+
+    /// `Main.cs:41851-41857` — the quick-stack button's right press:
+    /// `Player.Settings.CycleQuickStackMode` + `SoundEngine.PlaySound(10)`
+    /// (`:41855`) + `Main.SaveSettings` (`:41856`). W4-g21 batch 3, host 63.
+    fn quick_stack_mode_click(&mut self) {
+        self.settings.stack_to_chests_mode =
+            crate::quick_stack::cycle_quick_stack_mode(self.settings.stack_to_chests_mode);
+        self.audio.play("Menu_Open"); // `PlaySound(10)` (`:41855`)
+        let _ = self.settings.save(); // `Main.SaveSettings` (`:41856`)
+    }
+
+    /// `Main.cs:41883-41888` — the sort-inventory button's left press:
+    /// `ItemSorting.SortInventory` (`ItemSorting.cs:1616-1627`) then
+    /// `SoundEngine.PlaySound(12)` (`:41887`). The `HasLockedInventory` gate is
+    /// the quick-stack one; the Coin Gun 905 suppresses the coin consolidation.
+    /// W4-g21 batch 3, host 64.
+    fn sort_inventory_click(&mut self) {
+        if self.mouse_item.kind != 0 && self.mouse_item.count != 0 {
+            return;
+        }
+        let has_coin_gun = self.inventory.iter().chain(self.equip.coins.iter()).chain(self.equip.ammo.iter())
+            .any(|s| s.count > 0 && s.kind == 905);
+        let mult = match self.player.as_ref() {
+            Some(p) => [p.melee_damage, p.ranged_damage, p.magic_damage, p.minion_damage],
+            None => [1.0; 4],
+        };
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        let overflow = crate::item_sorting::sort_inventory(
+            &mut self.inventory,
+            &mut self.equip.coins,
+            &mut self.equip.ammo,
+            &fav,
+            has_coin_gun,
+            mult,
+        );
+        // The coin-overflow tail (`SortCoins`, `:1870-1876`): QuickSpawnItem the
+        // remainder at the player's centre (`GetOrDropItem` → the pickup stack
+        // first, the overflow spawns a world drop). The port deposits into the
+        // grid and drops the rest.
+        if !overflow.is_empty() {
+            let center = self.player.as_ref().map(|p| p.center()).unwrap_or((0.0, 0.0));
+            let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
+            for (kind, count) in overflow {
+                let left = crate::item::deposit_pickup(
+                    &mut self.inventory,
+                    &mut self.equip.ammo,
+                    kind,
+                    0,
+                    count,
+                    |i| favs.contains(&i),
+                    &mut |_| {},
+                );
+                if left > 0 {
+                    crate::world_sim::items::spawn_item_drop_px(
+                        &mut self.items,
+                        &mut rng,
+                        kind,
+                        left,
+                        glam::Vec2::new(center.0, center.1),
+                    );
+                }
+            }
+            *self.rngs.global() = rng;
+        }
+        self.audio.play("Menu_Tick"); // `PlaySound(12)` (`:41887`)
+    }
+
     /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +
     /// `RightClick` order, `ItemSlot.cs:588-597`): the left press runs the
     /// cursor-8 shift transfer or the action-0 movement, the held right
@@ -3362,6 +3731,25 @@ impl App {
                 self.close_menu();
                 self.inventory_open = true;
             }
+            // W4-g22 DOC-SWEEP — the connecting overlay's Cancel
+            // (`Main.cs:48615-48635`): the 11 already rode the cue queue
+            // (`:48621`/`:48822`); the state change is `cancel_connect`.
+            Action::CancelConnect => self.cancel_connect(),
+            // W4-g22 DOC-SWEEP — menuMode 200's Load Backup
+            // (`Main.cs:48837-48853`): the `.bak` probe decides the cue —
+            // restore + 10 + `WorldGen.playWorld` (`:48841-48845`) or
+            // 11 + menuMode 0 (`:48849-48851`).
+            Action::LoadBackup => self.load_backup(),
+            // W4-g22 DOC-SWEEP — 200's Cancel / 201's Back
+            // (`Main.cs:48854-48860`, `:48873-48879`): the 11 already rode
+            // the cue queue; menuMode 0 / netMode 0.
+            Action::CancelLoadFailed => {
+                if let Some(m) = self.menu.as_mut() {
+                    m.page = menu::Page::Main;
+                    m.selected = 0;
+                    m.load_failed_path = None;
+                }
+            }
             Action::Singleplayer => {
                 // `Main.cs:48981-48987`: menuMode 1 -> `OpenCharacterSelectUI`
                 // (888) — the real screen flow replaces the old "Single
@@ -3419,19 +3807,7 @@ impl App {
                     }
                 }
             }
-            Action::Host { port, password } => match net::Server::start(port, password) {
-                Ok(server) => {
-                    log::info!("hosting on {}", server.addr());
-                    self.net = NetRole::Host(server);
-                    self.close_menu();
-                }
-                Err(e) => {
-                    if let Some(m) = self.menu.as_mut() {
-                        m.connecting = false;
-                        m.error = Some(format!("host failed: {e}"));
-                    }
-                }
-            },
+            Action::Host { port, password } => self.start_hosting(port, password),
             // `Lang.menu[131]`'s row (`Main.cs:48928-48935`): `menuMode = 888`
             // + `Main.MenuUI.SetState(Main.AchievementsMenu)`. The port keeps
             // the legacy menu live behind the overlay (the vanilla state
@@ -3463,7 +3839,97 @@ impl App {
         }
     }
 
+    /// W4-g22 DOC-SWEEP — the connecting overlay's Cancel state change
+    /// (`Main.cs:48615-48635`): `Netplay.InvalidateAllOngoingIPSetAttempts`
+    /// + `Disconnect = true` + the socket close, then `menuMode = 0` /
+    /// `netMode = 0`. The port drops the client role (the socket close),
+    /// clears the join target and returns the menu to its main page. The
+    /// 11 rides the menu's cue queue (`:48621`/`:48822`), not this fn.
+    pub(crate) fn cancel_connect(&mut self) {
+        self.net = NetRole::Off;
+        self.join_target = None;
+        self.net_state = net::client_state::NOT_CONNECTED;
+        self.net_dropped = false;
+        if let Some(m) = self.menu.as_mut() {
+            m.connecting = false;
+            m.page = menu::Page::Main;
+            m.selected = 0;
+            m.hint = None;
+            m.bar_grab = None;
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP — menuMode 200's Load Backup row
+    /// (`Main.cs:48837-48853`): when the `.bak` exists, move the corrupt
+    /// `.wld` to `.bad` and the `.bak` onto the world path, play 10 and
+    /// re-enter the load (`WorldGen.playWorld()` + `menuMode = 10` —
+    /// the port parks `play_world` for the frame-boundary swap); without
+    /// a backup, play 11 and return to menuMode 0. The probe re-runs here
+    /// exactly as the C# re-reads `FileUtilities.Exists` (`:48839`).
+    pub(crate) fn load_backup(&mut self) {
+        let Some(path) = self.menu.as_ref().and_then(|m| m.load_failed_path.clone()) else {
+            return;
+        };
+        let mut bak = path.as_os_str().to_os_string();
+        bak.push(".bak");
+        let bak = std::path::PathBuf::from(bak);
+        if bak.exists() {
+            let mut bad = path.as_os_str().to_os_string();
+            bad.push(".bad");
+            // `FileUtilities.Move` (`:48841-48842`): the corrupt file
+            // parks as `.bad`, the backup takes its place. A failed move
+            // keeps the page live (the C# would throw; the port logs).
+            match std::fs::rename(&path, std::path::PathBuf::from(&bad))
+                .and_then(|()| std::fs::rename(&bak, &path))
+            {
+                Ok(()) => {
+                    self.audio.play("Menu_Open"); // `:48843`
+                    // `WorldGen.playWorld()` + `menuMode = 10`
+                    // (`:48844-48845`): the load re-runs at the frame
+                    // boundary; both front-end sides close.
+                    self.play_world = Some(path);
+                    self.front = None;
+                    self.park_menu();
+                }
+                Err(e) => log::warn!("backup restore failed: {e}"),
+            }
+        } else {
+            self.audio.play("Menu_Close"); // `:48849`
+            if let Some(m) = self.menu.as_mut() {
+                m.page = menu::Page::Main; // `:48850-48851`
+                m.selected = 0;
+                m.load_failed_path = None;
+            }
+        }
+    }
+
     /// Leaves the menu and applies the settings it edited (`Main.SaveSettings`).
+    /// The Host action's body (`Main.cs:52011`'s host row →
+    /// `Netplay.StartServer`): the server starts on the LIVE world and the
+    /// menu closes. W4-g24 — `serverLoadWorldCallBack`'s tail
+    /// (`WorldGen.cs:6921`): `SoundEngine.PlaySound(10)` after the world
+    /// load succeeds. The port hosts on the live world (no load ladder —
+    /// the retry/backup arms `:6876-6920` are the load-failure UI, out of
+    /// scope), so the successful Host start is the seam. Case 10 draws
+    /// NOTHING (`LegacySoundPlayer.cs:750-758`); the failure arm keeps the
+    /// menu with its error and plays nothing.
+    pub(crate) fn start_hosting(&mut self, port: u16, password: String) {
+        match net::Server::start(port, password) {
+            Ok(server) => {
+                log::info!("hosting on {}", server.addr());
+                self.net = NetRole::Host(server);
+                self.audio.play("Menu_Open"); // `WorldGen.cs:6921`
+                self.close_menu();
+            }
+            Err(e) => {
+                if let Some(m) = self.menu.as_mut() {
+                    m.connecting = false;
+                    m.error = Some(format!("host failed: {e}"));
+                }
+            }
+        }
+    }
+
     pub(crate) fn close_menu(&mut self) {
         if let Some(m) = self.menu.take() {
             self.settings = m.settings;
@@ -3672,6 +4138,40 @@ mod tests {
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::chest::{DEFAULT_MAX_ITEMS, WorldChest};
     use tr_core::World;
+
+    /// W4-g24 — `serverLoadWorldCallBack`'s tail (`WorldGen.cs:6921`): the
+    /// successful Host start plays the Menu_Open (10) once — the port hosts
+    /// on the live world, so the Host action is the load-success seam. The
+    /// failed start (the port is taken) keeps the menu and plays nothing.
+    #[test]
+    fn w4_g24_the_host_start_plays_the_menu_open_once() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let before = app.audio.played_count();
+        // Port 0 asks the OS for a free port (`net::Server::start`).
+        app.start_hosting(0, String::new());
+        assert!(matches!(app.net, crate::app::NetRole::Host(_)));
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the host-load cue (:6921)"
+        );
+        // A second server on the SAME port fails to bind: no cue, the
+        // menu error arm.
+        let port = match &app.net {
+            crate::app::NetRole::Host(s) => s
+                .addr()
+                .rsplit(':')
+                .next()
+                .and_then(|p| p.parse::<u16>().ok())
+                .expect("the addr carries a port"),
+            _ => unreachable!(),
+        };
+        let mut app2 = flow_app(None, vec![], vec![]);
+        let before2 = app2.audio.played_count();
+        app2.start_hosting(port, String::new());
+        assert!(matches!(app2.net, crate::app::NetRole::Off));
+        assert_eq!(app2.audio.played_count(), before2, "the failure is silent");
+    }
 
     /// Inside the chest grid's cell (0, 0) — the drawn 52·0.755 px cell at
     /// (73, 258) (`ui::chest::slot_at`).
@@ -3965,6 +4465,81 @@ mod tests {
         assert!(!chest::try_placing_in_chest(&mut app, 3, false));
     }
 
+    /// W4-g22 DOC-SWEEP witness — the connecting-cancel end to end: the
+    /// menu queues ONE Menu_Close (`Main.cs:48621`), `cancel_connect`
+    /// drops the client role, clears the join target and returns the main
+    /// page (`menuMode = 0` / `netMode = 0`, `:48622-48623`).
+    #[test]
+    fn doc_sweep_cancel_connect_drops_the_role_and_returns_main() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut m = crate::menu::Menu::new(app.settings.clone(), "T".into());
+        m.page = crate::menu::Page::JoinPassword;
+        m.connecting = true;
+        m.hover = Some(0);
+        app.menu = Some(m);
+        app.join_target = Some(("127.0.0.1:7777".into(), String::new()));
+        let action = app.menu.as_mut().unwrap().click();
+        assert!(matches!(action, menu::Action::CancelConnect));
+        let cue = app.menu.as_mut().unwrap().take_cue();
+        assert_eq!(cue, Some("Menu_Close"));
+        let before = app.audio.played_count();
+        app.audio.play(cue.unwrap());
+        assert_eq!(app.audio.played_count(), before + 1, "one 11");
+        app.cancel_connect();
+        assert!(matches!(app.net, NetRole::Off), "the socket closed");
+        assert!(app.join_target.is_none());
+        let m = app.menu.as_ref().unwrap();
+        assert!(!m.connecting);
+        assert_eq!(m.page, crate::menu::Page::Main, "menuMode = 0");
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the Load Backup probe end to end
+    /// (`Main.cs:48837-48853`): with a `.bak` the corrupt file parks as
+    /// `.bad`, the backup takes the world path, ONE Menu_Open plays and
+    /// the load re-parks; without one, ONE Menu_Close plays and the page
+    /// returns to Main.
+    #[test]
+    fn doc_sweep_load_backup_probe_moves_and_plays() {
+        let dir = std::env::temp_dir().join(format!("tr-g22-bak-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("w.trwld");
+        std::fs::write(&path, b"corrupt").unwrap();
+        let mut bak = path.as_os_str().to_os_string();
+        bak.push(".bak");
+        let bak = std::path::PathBuf::from(bak);
+        // WITH a backup: 10 + the moves + the re-park.
+        std::fs::write(&bak, b"good").unwrap();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.menu = Some(crate::menu::Menu::open_load_failed(
+            app.settings.clone(),
+            path.clone(),
+            true,
+        ));
+        let before = app.audio.played_count();
+        app.load_backup();
+        assert_eq!(app.audio.played_count(), before + 1, "one 10");
+        assert_eq!(app.play_world.as_deref(), Some(path.as_path()));
+        assert!(app.menu.is_none(), "both sides closed for the load");
+        let mut bad = path.as_os_str().to_os_string();
+        bad.push(".bad");
+        assert_eq!(std::fs::read(std::path::PathBuf::from(&bad)).unwrap(), b"corrupt");
+        assert_eq!(std::fs::read(&path).unwrap(), b"good");
+        // WITHOUT a backup: 11 + Main.
+        std::fs::write(&path, b"corrupt2").unwrap();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.menu = Some(crate::menu::Menu::open_load_failed(
+            app.settings.clone(),
+            path.clone(),
+            false,
+        ));
+        let before = app.audio.played_count();
+        app.load_backup();
+        assert_eq!(app.audio.played_count(), before + 1, "one 11");
+        assert!(app.play_world.is_none());
+        assert_eq!(app.menu.as_ref().unwrap().page, crate::menu::Page::Main);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// DW-4.3 — the accelerator ladder (`Main.cs:61781-61807`): the first
     /// step consumes 30 frames (delay 7 → 6), the ladder bottoms at 2, and
     /// `superFastStack` starts accumulating on the 11th decay (~2 s in).
@@ -4124,8 +4699,8 @@ mod tests {
     /// DW-4.5 — the shift hover evaluation (`GetAlternateClickAction`,
     /// `ItemSlot.cs:644-726`): cursor 8 on a chest cell with inventory room,
     /// 9 on an inventory slot with a placeable stack, −1 without Shift and
-    /// −1 when nothing has room. (The Cursors_8/9 texture draw is the
-    /// recorded follow-up — the state is what the click arms consume.)
+    /// −1 when nothing has room. (The override texture draw landed W4-e19 —
+    /// `ui::cursor::draw_override`; the state is what the click arms consume.)
     #[test]
     fn dw_4_5_cursor_override_eval_per_hover_and_shift() {
         let mut app = chest_app(vec![slot(9, 5)]);
@@ -4664,6 +5239,52 @@ mod tests {
             100,
             "the bank untouched by the chest row"
         );
+    }
+
+    /// W4-g21 batch 3 hosts 62/63/64 — the quick-stack-all / sort buttons
+    /// (`Main.cs:41833-41897`): the left press runs the engine + sound 12, the
+    /// quick-stack right press cycles the mode + sound 10. The buttons ride
+    /// `chest == -1 && npcShop == 0`, so the test closes the container first.
+    #[test]
+    fn w4_g21_quick_stack_and_sort_buttons_fire_their_engines_and_cues() {
+        // A closed-container app with one in-range world chest holding wood.
+        let mut app = inv_app();
+        app.world_chests.push(WorldChest {
+            tile: (20, 10),
+            slots: vec![slot(9, 9900), EMPTY_SLOT],
+            name: String::new(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        });
+        // Put the player next to the chest so it is in range.
+        if let Some(p) = app.player.as_mut() {
+            p.x = 20.0 * 16.0;
+            p.y = 10.0 * 16.0;
+        }
+        app.inventory[10] = slot(9, 50); // storage wood
+        // The quick-stack button's left press (498, 244).
+        app.mouse_pos = Vec2::new(505.0, 250.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.world_chests[0].slots[0].count, 9950, "the wood quick-stacked");
+        assert!(app.inventory[10].count == 0, "the source drained");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)` (`:41849`)");
+        // The quick-stack button's right press cycles the mode + sound 10.
+        app.mouse_pos = Vec2::new(505.0, 250.0);
+        let before = app.audio.played_count();
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.settings.stack_to_chests_mode, 1, "the mode cycled");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(10)` (`:41855`)");
+        // The sort button's left press (534, 244) runs SortInventory + sound 12.
+        app.inventory[11] = slot(2, 30);
+        app.inventory[12] = slot(9, 20);
+        app.mouse_pos = Vec2::new(540.0, 250.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)` (`:41887`)");
     }
 
     /// DW-3.6 — the bank DepositAll call site gains the MoveCoins pre-pass
@@ -5469,6 +6090,50 @@ mod tests {
                 "page {page} must not toggle the tick"
             );
         }
+    }
+
+    /// W4-g21 batch 2 hosts 58/59 — the misc-page pet/light/super-cart ticks
+    /// (`Main.cs:41226-41283`): a press flips the flag, cues `PlaySound(12)`
+    /// and is consumed before the misc slot grid; a held stack keeps them inert.
+    #[test]
+    fn w4_g21_the_misc_ticks_toggle_pet_light_and_super_cart() {
+        let mut app = inv_app();
+        app.equip_page = ui::inventory::EQUIP_PAGE_MISC;
+        let (sw, sh) = app.screen_size();
+        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
+        let tick = (16.0, 16.0);
+        // The pet tick (row 0).
+        let pet = ui::inventory::misc_tick_pos(sw, base_y, 0);
+        app.mouse_pos = Vec2::new(pet.x + 2.0, pet.y + 2.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hide_misc[0], "the pet hid");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)` (`:41249`)");
+        // The light tick (row 1).
+        let light = ui::inventory::misc_tick_pos(sw, base_y, 1);
+        app.mouse_pos = Vec2::new(light.x + 2.0, light.y + 2.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hide_misc[1]);
+        // The super-cart tick (row 2) needs `unlockedSuperCart`.
+        app.player.as_mut().unwrap().unlocked_super_cart = true;
+        let cart = ui::inventory::super_cart_tick_pos(sw, base_y, tick);
+        app.mouse_pos = Vec2::new(cart.x + 2.0, cart.y + 2.0);
+        let enabled_before = app.player.as_ref().unwrap().enabled_super_cart;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().enabled_super_cart,
+            !enabled_before,
+            "the cart flipped (`:41273`)"
+        );
+        // A held stack keeps every tick inert (`Main.mouseItem.IsAir`, `:41228`).
+        app.mouse_item = slot(3, 5);
+        app.mouse_pos = Vec2::new(pet.x + 2.0, pet.y + 2.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hide_misc[0], "no flip while holding");
     }
 
     /// `Main.cs:42828-42858` + `:42864-42867`: a press on a page tab sets
@@ -6427,6 +7092,34 @@ mod housing_query_tests {
         );
     }
 
+    /// W4-g21 batch 4 host 53 — `DrawNPCHousesInWorld`'s right-click kick-out
+    /// (`Main.cs:40824-40829`): a right press on a banner's hover box runs
+    /// `WorldGen.kickOut` (the NPC goes homeless, the room drops) + sound 12.
+    #[test]
+    fn w4_g21_the_banner_right_click_kicks_the_npc_out() {
+        let mut app = housing_app();
+        // Park a banner box over the Guide (the draw rebuilds these each frame;
+        // the test stands one in directly).
+        app.house_banners = vec![crate::house_banners::Banner {
+            npc: 0,
+            rect: [100.0, 100.0, 30.0, 30.0],
+            reserved: 1,
+        }];
+        app.mouse_pos = Vec2::new(110.0, 110.0);
+        let before = app.audio.played_count();
+        app.ui_right_press = true;
+        app.handle_house_banner_clicks();
+        assert!(app.npcs[0].home.is_none(), "the Guide went homeless");
+        assert_eq!(
+            app.npcs[0].look_for_home_timeout,
+            crate::town::KICK_OUT_LOOK_FOR_HOME_TIMEOUT,
+            "the 3600-tick timer armed"
+        );
+        assert!(!app.town_rooms.has_room_quick(22), "the registered room dropped");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)` (`:40828`)");
+        assert!(!app.ui_right_press, "the press is consumed");
+    }
+
     #[test]
     fn the_housing_query_cell_arms_the_query_and_the_world_click_reports() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -6769,6 +7462,113 @@ mod s1_p_i44_shop_click_tests {
         assert_eq!(app.shop_stock[0].stack, 2);
         // The buy price of a buyOnce torch row: 50/5 = 10 per unit.
         assert_eq!(app.coins, 1_000_000 - 100);
+    }
+
+    /// W4-e19 round 3 — the quicksell COIN math end-to-end
+    /// (`Player.SellItem`, `Player.cs:35184-35195`): a BOUGHT unit re-sold
+    /// while the sellback memo covers it refunds at the BUY price — the
+    /// purse nets zero across buy→shift-sell. The C# spawns the payout as
+    /// coin stacks through the four denomination loops (74/73/72/71,
+    /// slots 53→0, `DoCoins` carrying at 100, the clone-restore refusal
+    /// `:35321-35328`); the port's aggregate purse folds that half out
+    /// (the recorded coin-model deviation) — the COPPER total is the same.
+    #[test]
+    fn w4_e19_the_bought_unit_quicksells_at_the_buy_price() {
+        let mut app = shop_app();
+        // Buy one Gel (88, value 40000 → 40000 copper at mood 1).
+        app.mouse_pos = SHOP_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (88, 1));
+        assert_eq!(app.coins, 1_000_000 - 40000);
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 1);
+        // Park the cursor unit into grid slot 0 (the plain place swap).
+        app.inventory[0] = app.mouse_item;
+        app.mouse_item = EMPTY_SLOT;
+        // Shift-hover the slot with the shop open → the sell cursor.
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_SELL);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        // `:35191-35195` — num = 8000×1 + (−8000 + 40000)×min(1,1) = 40000:
+        // the memo'd unit refunds the WHOLE buy price, the purse nets zero.
+        assert_eq!(app.coins, 1_000_000, "the buy→quicksell round trip nets zero");
+        assert_eq!(app.inventory[0].count, 0, "the slot aired out");
+        // `Chest.AddItemToShop`'s `Remove` eats the memo'd unit first — a
+        // full re-sell of bought goods adds NO stock row (`Chest.cs:672-676`).
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0, "the memo consumed");
+    }
+
+    /// The un-memo'd quicksell pays the 20 % rate (`calcForSelling / 5`,
+    /// min 1, × stack): a torch stack found in the world (no buy memo)
+    /// sells 6 × 10 = 60 copper. The coin refusal (`GetSellOrTrash`
+    /// `:204-207`) keeps 71-74 out of the sell cursor — pinned above.
+    #[test]
+    fn w4_e19_the_unmemoed_quicksell_pays_the_fifth() {
+        let mut app = shop_app();
+        app.inventory[0] = ItemSlot {
+            kind: 8, // Torch, value 50 → 50/5 = 10 per unit
+            name: crate::registry::name(8),
+            count: 6,
+            prefix: 0,
+        };
+        assert_eq!(app.shop_sellback.get_amount(8, 0), 0, "no memo");
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_SELL);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.coins, 1_000_000 + 60);
+        assert_eq!(app.inventory[0].count, 0);
+        // The sold units re-stock as a buyOnce row (`Chest.cs:691-705`).
+        let last = app.shop_stock.last().unwrap();
+        assert!(last.buy_once);
+        assert_eq!((last.item, last.stack), (8, 6));
+    }
+
+    /// W4-e19 final — the shift-quicksell UI-hint census: the C# mouse path
+    /// has NO text tooltip for the sell action — the hint IS the cursor
+    /// override (id 10, `ItemSlot.cs:218`'s `AlternateClickAction.Sell`,
+    /// drawn white/no-shadow at `Main.cs:45293-45309`). The
+    /// `gamepadHintText` (`Lang.misc[75]` "Sell") rides the gamepad-only
+    /// `BuildCommand` chain (`ItemSlot.cs:4446`), unported. This witness
+    /// pins the hint's full gate ladder: the coin refusal (71-74 → no
+    /// cursor), the favourite refusal (`:632`), the no-shop trash fallback
+    /// (`GetSellOrTrash` `:200-203`), and the shift release clearing it.
+    #[test]
+    fn w4_e19_the_quicksell_hint_is_the_cursor_gate_ladder() {
+        let mut app = shop_app();
+        app.inventory[0] = ItemSlot {
+            kind: 8,
+            name: crate::registry::name(8),
+            count: 6,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_SELL, "the sell hint lights");
+        // The coin refusal (`:204-207`): a copper stack never sells.
+        app.inventory[0].kind = 71;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "coins refuse the sell cursor");
+        // The favourite refusal (`:632`): favorited slots answer null.
+        app.inventory[0].kind = 8;
+        app.favorite_slots.push(0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "favorites refuse");
+        app.favorite_slots.clear();
+        // No shop → the trash cursor (`GetSellOrTrash` `:200-203`).
+        app.shop_npc = None;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_TRASH, "the trash fallback");
+        // Shift released → nothing (`ShiftInUse` gate, `:644`).
+        app.keys.remove(&KeyCode::ShiftLeft);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "no shift, no hint");
     }
 }
 
@@ -7217,5 +8017,211 @@ mod w4_f35_boss_bag_open_tests {
                 assert_eq!(*app.rngs.stream(*k), want, "kind {kind}: {} pristine", k.name());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_g21_sound_site_tests {
+    //! W4-g21 — the Main.cs PlaySound sites 1-90 batch: the map-icon row's
+    //! clicks (`:41100`/`:41109`/`:41114`/`:41119`), the emotes button
+    //! (`:42403`) and the bestiary button (`:42458`). WRITTEN NOT RUN
+    //! (the wave's code-only mode).
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    fn inv_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app
+    }
+
+    /// `Main.cs:41095-41104`: the k0 icon closes the inventory and opens the
+    /// fullscreen map with `SoundEngine.PlaySound(10)` (`:41100`).
+    #[test]
+    fn the_fullscreen_map_icon_plays_menu_open() {
+        let mut app = inv_app();
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        let (sw, sh) = app.screen_size();
+        let [x, y] = ui::chrome::map_icon_rect(0, Vec2::new(sw, sh));
+        app.mouse_pos = Vec2::new(x + 5.0, y + 5.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.inventory_open, "the inventory closed (`:41097`)");
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "the map opened");
+        assert_eq!(app.audio.played_count(), before + 1, "one Menu_Open cue");
+    }
+
+    /// `Main.cs:41106-41120`: the k1/2/3 icons switch `mapStyle` and each
+    /// plays `SoundEngine.PlaySound(12)` AFTER the write.
+    #[test]
+    fn the_map_style_icons_tick_after_the_style_write() {
+        for k in 1..4usize {
+            let mut app = inv_app();
+            let (sw, sh) = app.screen_size();
+            let [x, y] = ui::chrome::map_icon_rect(k, Vec2::new(sw, sh));
+            app.mouse_pos = Vec2::new(x + 5.0, y + 5.0);
+            let before = app.audio.played_count();
+            app.ui_left_press = true;
+            app.handle_inventory_clicks();
+            assert_eq!(app.map_style, k as i32 - 1, "mapStyle = k-1");
+            assert_eq!(
+                app.audio.played_count(),
+                before + 1,
+                "one Menu_Tick cue (k={k})"
+            );
+            assert!(app.inventory_open, "the style switch keeps the inventory");
+        }
+    }
+
+    /// `Main.cs:42403`: the emotes button's click plays sound 12 BEFORE
+    /// `IngameFancyUI.OpenUIState` closes the inventory.
+    #[test]
+    fn the_emotes_button_click_ticks() {
+        let mut app = inv_app();
+        app.mouse_pos = Vec2::new(539.0, 283.0); // inside the (534,278) 30x30 box
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(app.emotes.menu_open, "the wheel opened");
+        assert!(!app.inventory_open, "the inventory closed");
+        assert_eq!(app.audio.played_count(), before + 1, "the `:42403` tick");
+        assert!(!app.ui_left_press, "the press was consumed");
+    }
+
+    /// `Main.cs:42458`: the bestiary button's click plays sound 12 BEFORE
+    /// `IngameFancyUI.OpenUIState(Main.BestiaryUI)`.
+    #[test]
+    fn the_bestiary_button_click_ticks() {
+        let mut app = inv_app();
+        app.mouse_pos = Vec2::new(503.0, 283.0); // inside the (498,278) 30x30 box
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(app.bestiary_open, "the bestiary opened");
+        assert!(!app.inventory_open, "the inventory closed");
+        assert_eq!(app.audio.played_count(), before + 1, "the `:42458` tick");
+        assert!(!app.ui_left_press, "the press was consumed");
+    }
+
+    // ---- W4-g21 batch 5 (hosts 71/72/73) — WRITTEN NOT RUN (code-only) ----
+
+    /// The three icon sheets at synthetic round sizes (the geometry rides
+    /// the `Frame` cell math, not the retail pixels): Lock 20x22 → cell
+    /// 10x22, BlockReplace 36x26 → cell 12x26, Extra_211 52x28 → cell 13x28.
+    fn batch5_icons(app: &mut App) {
+        let rect = |w, h| {
+            Some(tr_render::SheetRect {
+                x: 0,
+                y: 0,
+                width: w,
+                height: h,
+                plain_frame: (0, 0),
+            })
+        };
+        app.lookups.atlas_size = (8192, 8192);
+        app.lookups.hb_lock = [rect(20, 22), rect(20, 22)];
+        app.lookups.block_replace = rect(36, 26);
+        app.lookups.torch_biome = rect(52, 28);
+    }
+
+    /// `Main.cs:42504-42508`: the hotbar-lock icon's left press plays sound
+    /// 22 (`SoundID.Unlock`) and flips `hbLocked` (`:42507`); the locked
+    /// hotbar then refuses the closed-hotbar pointer select (`:43616`),
+    /// and a second press unlocks it again.
+    #[test]
+    fn batch5_hotbar_lock_click_flips_and_gates_the_closed_hotbar() {
+        let mut app = inv_app();
+        batch5_icons(&mut app);
+        // Inside the idle box (0,21)..(9,40.8).
+        app.mouse_pos = Vec2::new(4.0, 30.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hb_locked, "locked (`:42507`)");
+        assert_eq!(app.audio.played_count(), before + 1, "one Unlock cue (`:42506`)");
+        // The closed-hotbar hover/click gate (`:43616`/`:43620`) refuses the
+        // locked hotbar: no buffered select.
+        app.inventory_open = false;
+        app.inventory[3] = crate::item::ItemSlot {
+            kind: 9,
+            name: registry::name(9),
+            count: 6,
+            prefix: 0,
+        };
+        app.mouse_pos = Vec2::new(160.0, 40.0); // closed-hotbar slot 3
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.selection.buffered, -1, "the locked hotbar refuses");
+        // Unlock through the icon again, then the select buffers.
+        app.inventory_open = true;
+        app.mouse_pos = Vec2::new(4.0, 30.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().hb_locked, "unlocked");
+        app.inventory_open = false;
+        app.mouse_pos = Vec2::new(160.0, 40.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.selection.buffered, 3, "the unlocked hotbar selects");
+    }
+
+    /// `Main.cs:42542-42546`: the block-replacement icon's left press plays
+    /// sound 22 and flips `builderAccStatus[10]` (`enabled ? 1 : 0`) — the
+    /// `TileReplacementEnabled` getter (`Player.cs:3373`) follows.
+    #[test]
+    fn batch5_block_replace_click_flips_the_builder_status() {
+        let mut app = inv_app();
+        batch5_icons(&mut app);
+        // Inside the idle box (0,44)..(10.8,67.4).
+        app.mouse_pos = Vec2::new(5.0, 50.0);
+        assert!(app.player.as_ref().unwrap().tile_replacement_enabled());
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().builder_acc_status[10], 1);
+        assert!(!app.player.as_ref().unwrap().tile_replacement_enabled());
+        assert_eq!(app.audio.played_count(), before + 1, "one Unlock cue (`:42544`)");
+        // A second press turns it back on.
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().tile_replacement_enabled());
+        // The closed inventory never flips (the icons gate on
+        // `playerInventory`, `:42520`).
+        app.inventory_open = false;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().tile_replacement_enabled());
+    }
+
+    /// `Main.cs:42582-42586` + `:47580`: the torch-biome icon draws/clicks
+    /// only while `unlockedBiomeTorches`; the press plays sound 22 and flips
+    /// `builderAccStatus[11]` — `UsingBiomeTorches` (`Player.cs:3950-3964`)
+    /// gates on BOTH the unlock and the toggle.
+    #[test]
+    fn batch5_torch_biome_click_needs_the_unlock_and_flips_the_toggle() {
+        let mut app = inv_app();
+        batch5_icons(&mut app);
+        // Inside the idle box (0,68)..(11.7,93.2).
+        app.mouse_pos = Vec2::new(5.0, 75.0);
+        // Without the unlock the icon never draws (`:47580`) — no flip.
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().builder_acc_status[11], 0);
+        assert_eq!(app.audio.played_count(), before, "no cue without the unlock");
+        // Unlocked: the press flips the toggle OFF (`enabled ? 1 : 0`).
+        app.player.as_mut().unwrap().unlocked_biome_torches = true;
+        assert!(app.player.as_ref().unwrap().using_biome_torches());
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().builder_acc_status[11], 1);
+        assert!(!app.player.as_ref().unwrap().using_biome_torches());
+        assert_eq!(app.audio.played_count(), before + 1, "one Unlock cue (`:42584`)");
+        // The setter writes ONLY builderAccStatus[11] (`Player.cs:3960-3963`).
+        app.player.as_mut().unwrap().set_using_biome_torches(true);
+        assert_eq!(app.player.as_ref().unwrap().builder_acc_status[11], 0);
+        assert!(app.player.as_ref().unwrap().using_biome_torches());
     }
 }

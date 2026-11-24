@@ -6,7 +6,7 @@
 //! machines (code-only mode: no compiler/tests were run on this branch;
 //! the witness tests below are written, not executed).
 //!
-//! ## Census (research/26e row 69)
+//! ## Census (research/167 row 69)
 //!
 //! ONE vanilla member: Flairon 404 (`ProjectileID.cs:1362`, `SetDefaults`
 //! `Projectile.cs:4847-4856`: 26×26, friendly, `penetrate = -1`,

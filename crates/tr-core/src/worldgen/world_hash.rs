@@ -328,6 +328,58 @@ mod tests {
     // compact tail anchor. The spawn fields are NOT hashed (the tile
     // fold only), and the search draws on its own stream, so this pin is
     // UNCHANGED by the pass. The a == b halves stay untouched.
+    // W4-c29 (code-only): the dead-man's-chest block lands BEFORE the
+    // thin ice — the pin stays UNCHANGED: `generate()` carries no
+    // chest-stock hook, so `world.chests` is empty, the candidate scan
+    // finds nothing and the block draws only the DeadManChests config
+    // roll on its own fresh `pass_rng("Micro Biomes")` copy (no tile
+    // writes, no other step's ledger shifts). The 138 frame-important
+    // boot bit is inert without the kind.
+    // W4-c29 gem-moss fidelity (2026-11-21, code-only): `Spread.Gem`'s
+    // duplicate-visit redraw + the 178 anchor gate/frame-row draw, the
+    // `neonMossBiome` clamp fixes and the moss arm A/F changes all ride
+    // the EXISTING `pass_rng("Gem Caves")` / `pass_rng("Moss")` slots —
+    // no new stream, but the draw COUNTS and the painted tiles change, so
+    // this pin moves BY DESIGN on any world whose gem/moss passes place
+    // content. The 512 world's gem-cave band (`rockLayer+30 .. height-230`)
+    // and moss bands collapse on the compact terrain, so the placement may
+    // be nil — but the neon-moss arm A runs on every world (`width/2100`
+    // rounds to 0 on 512, so arm A is skipped there too). Whether the pin
+    // moves depends on the 512 terrain's pockets; the re-pin is DEFERRED
+    // to the gate (no compiler on this branch). The a==b halves stay green.
+    // W4-d105 lane 5 (2026-11-20, code-only): the classic unexecuted passes
+    // #37-45 land one per commit — Guide (the gen-time starter-NPC ledger,
+    // `WorldGen.cs:19685-19897`), Sunflowers (`:19898`), Herbs (`:19964`),
+    // Dye Plants (`:19981`), Flowers (`:20447`), Mushrooms (`:20599`),
+    // Random Gems (`:20729`), Moss Grass (`:20769`) and Larva (`:20868`).
+    // Each draws from its own `pass_rng("<vanilla name>")` stream (no other
+    // step's ledger shifts), but the tile writes move every world's hash BY
+    // DESIGN. The re-pins are DEFERRED to the merge gate (no compiler on
+    // this branch); the `a == b` determinism halves stay untouched. The
+    // Guide pass writes no tiles (the NPC ledger is not hashed), so its
+    // commit alone moves neither pin. #38 Sunflowers writes tile 27 on the
+    // grass tops (the band attempts + the PlaceSunflower style draws), so
+    // both pins move by design from that commit on. #39 Herbs plants tile
+    // 82 (the PlantAlch attempts, `WorldGen.cs:45901-45938`) — both pins
+    // move again by design. #40 Dye Plants writes tile 227 (the plantDye
+    // attempts), matures the herbs (82 → 83 → 84) and plants the glow
+    // tulips 656 + the chillet eggs 752 (`WorldGen.cs:19981-19994` +
+    // `:71286-71455` / `:45748-45775` / `:45622-45678`) — both pins move
+    // again by design. #41 Flowers recolours the grass tufts to the patch
+    // styles (3 → 73) and plants the bare-top flowers
+    // (`WorldGen.cs:20447-20598`) — both pins move again by design.
+    // #42 Mushrooms turns the grass tufts / sunflowers into mushrooms
+    // (frameX 144) and the glowing mushrooms tall (frameX 270)
+    // (`WorldGen.cs:20599-20696`) — both pins move again by design.
+    // #43 Random Gems scatters the exposed gems 178 (the weighted Next(12)
+    // styles + the Next(3) frame_y) and the marble/granite diamond patches
+    // (`WorldGen.cs:20729-20768`) — both pins move again by design.
+    // #44 Moss Grass grows the long moss 184 on the free neighbours of
+    // every moss tile (`WorldGen.cs:20769-20812`) — both pins move again
+    // by design. #45 Larva moves the larva placement out of the hive pass
+    // into its own slot (the 3×4 clear + the Place3x3-231 writes,
+    // `WorldGen.cs:20868-20900`) — the hive-pass larva tiles now land later
+    // (after the muds-walls scan), so both pins move again by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -451,6 +503,27 @@ mod tests {
     // (above) leaves this pin UNCHANGED — the spawn fields are not
     // hashed and the search draws on its own stream. The a == b halves
     // stay untouched.
+    // W4-c29 (2026-11-21, code-only): the dead-man's-chest block
+    // (`DeadMansChestBiome.cs:10-625` + `WorldGen.cs:20916-20938`) draws
+    // only the DeadManChests config roll on the no-hook path (empty
+    // `world.chests` → no candidates → no tile writes), on its own fresh
+    // `pass_rng("Micro Biomes")` copy — this pin is UNCHANGED by W4-c29.
+    // The stocked tr-app path traps gold chests by design (the 467
+    // retype, the 137/138/141 traps, the red wires); that moves the
+    // APP-side world, not this tr-core pin. The S1-P-i33 deferral above
+    // still stands; the gate re-pins sequentially.
+    // W4-c29 gem-moss fidelity (2026-11-21, code-only): the gem/moss
+    // fidelity fixes (the `Spread.Gem` duplicate-visit redraw, the 178
+    // anchor gate + `Next(3)*18` frame-row draw, the `neonMossBiome`
+    // clamp/step/loop fixes, the moss arm A reject ledger + dungeon
+    // exclusion, the arm F live column-major `Main.tileMoss` sweep) change
+    // the gem-cave and moss-pass tiles and draw counts on the DEFAULT
+    // 4200x1200 world — arm A places `4200/2100 = 2` neon biomes and the
+    // gem/moss cave passes find pockets, so this pin moves BY DESIGN. The
+    // re-pin is DEFERRED to the merge gate (no compiler on this branch);
+    // the `a == b` determinism halves stay green. The 178/184
+    // frame-important boot bits (`Main.cs:7413-7414`) keep the stored gem
+    // frames through the load-time framer.
     const DEFAULT_WORLD: u32 = 3647283075;
     // W4-d107 (2026-11-20, code-only): the special-seed branches land in
     // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +

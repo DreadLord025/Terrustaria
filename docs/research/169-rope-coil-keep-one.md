@@ -1,4 +1,4 @@
-# 26e — Rope-coil DUPLICATE keep-one (W4-d4 DOC-SWEEP, 2026-11-21)
+# 169 — Rope-coil DUPLICATE keep-one (W4-d4 DOC-SWEEP, 2026-11-21; renumbered 26e→169 per registry-150)
 
 > **STATUS: the KEEP-d4-machine verdict below is SUPERSEDED — see
 > "FINAL-FINAL re-adjudication" at the foot of this doc (RETIRE phase):

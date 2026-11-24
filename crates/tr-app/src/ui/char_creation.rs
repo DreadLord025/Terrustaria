@@ -65,6 +65,13 @@ pub struct NewPlayerDraft {
     pub pants_color: [u8; 4],
     /// `public Color shoeColor = new Color(160, 105, 60)` (`Player.cs:2566`).
     pub shoe_color: [u8; 4],
+    /// W4-e10 — `Player.voiceVariant` (`Player.cs:1346`, ctor default 1
+    /// `:56045`): the hurt-voice family the picker cycles
+    /// (`PlayerVoiceID.VariantOrder` {1,2,3}).
+    pub voice_variant: i32,
+    /// W4-e10 — `Player.voicePitchOffset` (`Player.cs:1348`, default 0): the
+    /// pitch slider's value, quantized to 1/20 steps (`:680-684`).
+    pub voice_pitch_offset: f32,
     /// `UICharacterCreation.dirty` (`:154`): the Draw-time check of `:2011-2021`
     /// — the name went non-empty or the template (hair/cloth/colours) left
     /// [`NewPlayerDraft::new`]'s initial state. Back consults it (`:1213`).
@@ -94,6 +101,8 @@ impl NewPlayerDraft {
             undershirt_color: [160, 180, 215, 255], // `Player.cs:2562`
             pants_color: [255, 230, 175, 255], // `Player.cs:2564`
             shoe_color: [160, 105, 60, 255],   // `Player.cs:2566`
+            voice_variant: 1,                  // `Player.cs:56045`
+            voice_pitch_offset: 0.0,           // `Player.cs:1348`
             dirty: false,
         }
     }
@@ -130,13 +139,15 @@ impl NewPlayerDraft {
     }
 
     /// `GetPlayerTemplateValues() != initialState` (`UICharacterCreation.cs:
-    /// 2017-2019`): the serialized template covers hair, clothing style and the
-    /// seven colours (voice fields are the documented no-audio deviation) —
-    /// not the name and not the difficulty.
+    /// 2017-2019`): the serialized template covers hair, clothing style, the
+    /// voice pair (W4-e10) and the seven colours — not the name and not the
+    /// difficulty.
     pub fn template_dirty(&self) -> bool {
         let initial = Self::new();
         self.hair != initial.hair
             || self.skin_variant != initial.skin_variant
+            || self.voice_variant != initial.voice_variant
+            || self.voice_pitch_offset != initial.voice_pitch_offset
             || self.hair_color != initial.hair_color
             || self.eye_color != initial.eye_color
             || self.skin_color != initial.skin_color
@@ -172,6 +183,34 @@ pub struct CreationState {
     /// `UISliderBase.CurrentLockedSlider`'s port for the three HSL bars —
     /// 0 none, 1..=3 Hue/Saturation/Luminance while the button is held.
     pub hsl_grab: u8,
+    /// W4-e10 — `UISliderBase.CurrentLockedSlider == _pitchSlider`'s port
+    /// (`UIColoredSlider.cs:77-97`): the pitch bar's drag latch.
+    pub pitch_grab: bool,
+    /// W4-e10 — `_oldMaleForVoiceAutoSwitch` (`:136`, default true): the
+    /// gender the voice auto-switch last saw (`UpdateSelectedGender`,
+    /// `:1305-1329`).
+    pub old_male_for_voice: bool,
+    /// W4-e10 — `_playedVoicePreviewThisFrame` (`:144`): the per-frame
+    /// preview latch (`PlayVoicePreview`, `:1517-1527`), cleared at the head
+    /// of every update (`:178`).
+    pub played_voice_preview: bool,
+    /// W4-e10 — `_pitchChanged`/`_pitchChangedCooldown` (`:158-160`): the
+    /// 3-tick debounce before a pitch drag's preview plays (`PitchSlider-
+    /// Update`, `:649-656`; `PitchChanged`, `:658-662`).
+    pub pitch_changed: bool,
+    pub pitch_changed_cooldown: i32,
+    /// W4-e10 — `_soundedUsage` (`UIColoredSlider.cs:31`): the pitch bar's
+    /// one-Menu_Tick-per-grab latch (`:83-92`).
+    pub pitch_sounded_usage: bool,
+    /// W4-e10 — `_alreadyHovered` (`UIColoredSlider.cs:29`): the pitch bar's
+    /// hover-edge Menu_Tick latch (`:134-143`).
+    pub pitch_already_hovered: bool,
+    /// W4-g22 DOC-SWEEP — `UIColoredSlider._alreadyHovered` (`:134-142`):
+    /// the per-bar hover latch, 12 once per enter (`:136`).
+    pub hsl_hovered: [bool; 3],
+    /// W4-g22 DOC-SWEEP — `UIColoredSlider._soundedUsage` (`:83-92`): the
+    /// per-bar drag latch, 12 once per held-drag spell (`:85`).
+    pub hsl_sounded: [bool; 3],
 }
 
 impl CreationState {
@@ -183,6 +222,15 @@ impl CreationState {
             category: 0,
             hair_picked: false,
             hsl_grab: 0,
+            pitch_grab: false,
+            old_male_for_voice: true, // `:136`
+            played_voice_preview: false,
+            pitch_changed: false,
+            pitch_changed_cooldown: 0,
+            pitch_sounded_usage: false,
+            pitch_already_hovered: false,
+            hsl_hovered: [false; 3],
+            hsl_sounded: [false; 3],
         }
     }
 }
@@ -231,6 +279,131 @@ pub const CATEGORY_IDS: [usize; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 /// the first five are the male variants (`PlayerVariantID.Sets.Male =
 /// CreateBoolSet(0, 1, 2, 3, 8, 10)`, `ID/PlayerVariantID.cs:20`).
 pub const VALID_CLOTH_STYLES: [i32; 10] = [0, 2, 1, 3, 8, 9, 7, 5, 6, 4];
+
+/// W4-e10 — `_validVoiceStyles` (`:74`) = `PlayerVoiceID.VariantOrder`
+/// (`ID/PlayerVoiceID.cs:34`): the three picker families — 1 Male (the legacy
+/// id-1 hurt), 2 Female (id-20), 3 Other (`DefaultPlayerHurt`).
+pub const VALID_VOICE_STYLES: [i32; 3] = [1, 2, 3];
+
+/// W4-e10 — `PlayerVoiceID.Sets.Colors` (`ID/PlayerVoiceID.cs:16`): the voice
+/// icon's per-variant tint — index 0 White (the `CreateCustomSet` default),
+/// 1 CornflowerBlue (100,149,237), 2 HotPink (255,105,180), 3 LimeGreen
+/// (50,205,50). `voiceIcon_OnUpdate` (`:725-728`) reads it by `voiceVariant`.
+pub const VOICE_ICON_COLORS: [[u8; 4]; 4] = [
+    [255, 255, 255, 255],
+    [100, 149, 237, 255],
+    [255, 105, 180, 255],
+    [50, 205, 50, 255],
+];
+
+/// W4-e10 — `Main.CycleVoiceStyle` (`Main.cs:52377-52395`): find the variant's
+/// index in `VariantOrder` (0 when absent), add `offset`, wrap modulo 3 with
+/// the negative fix, land `VariantOrder[num]`. The prev/next buttons
+/// (`Click_VoiceCycleBack`/`Forward`, `:1529-1539`) call it with ±1.
+pub fn cycle_voice_style(voice_variant: i32, offset: i32) -> i32 {
+    let mut num = 0;
+    for (i, v) in VALID_VOICE_STYLES.iter().enumerate() {
+        if *v == voice_variant {
+            num = i as i32;
+            break;
+        }
+    }
+    num = (num + offset) % VALID_VOICE_STYLES.len() as i32;
+    if num < 0 {
+        num += VALID_VOICE_STYLES.len() as i32;
+    }
+    VALID_VOICE_STYLES[num as usize]
+}
+
+/// W4-e10 — `voiceNumber_OnUpdate` (`:710-723`): the variant's 1-based index
+/// in `VariantOrder` (index 0 + 1 = "1" when absent), the number the play
+/// button's corner `UIText` shows.
+pub fn voice_number(voice_variant: i32) -> i32 {
+    VALID_VOICE_STYLES
+        .iter()
+        .position(|v| *v == voice_variant)
+        .map_or(0, |i| i as i32)
+        + 1
+}
+
+/// W4-e10 — `UpdateSelectedGender` (`:1305-1329`): when the gender flipped
+/// since the last call, variant 1 (male) becomes 2 on a male→female flip and
+/// variant 2 becomes 1 on female→male; variant 3 is gender-neutral. Returns
+/// whether a preview should play — ALWAYS true (both arms end in
+/// `PlayVoicePreview`). `old_male` is `_oldMaleForVoiceAutoSwitch` (`:136`).
+pub fn update_selected_gender(
+    draft: &mut NewPlayerDraft,
+    old_male: &mut bool,
+) -> bool {
+    let male = is_male(draft.skin_variant);
+    if *old_male != male {
+        match draft.voice_variant {
+            1 if *old_male => draft.voice_variant = 2,
+            2 if !*old_male => draft.voice_variant = 1,
+            _ => {}
+        }
+        *old_male = male;
+    }
+    true
+}
+
+/// W4-e10 — `RemapPitchSliderKnob` (`:680-684`): quantize the slider position
+/// to 1/20 steps — `(float)Math.Round(value * 20f) / 20f`, banker's rounding
+/// (`Math.Round`'s default, the `tr_core::damage::round_bankers` convention).
+pub fn remap_pitch_slider_knob(value: f32) -> f32 {
+    tr_core::damage::round_bankers((value * 20.0) as f64) as f32 / 20.0
+}
+
+/// W4-e10 — `Utils.Remap` (`Utils.cs:345-348`) over the pitch slider's
+/// 0..1 ↔ -1..1 range: `MathHelper.Lerp(toMin, toMax, GetLerpValue(...))`
+/// with the clamp. `GetLerpValue` (`:322-343`) returns the clamped
+/// `(t - from) / (to - from)`.
+fn pitch_remap(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    let t = ((value - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
+    to_min + (to_max - to_min) * t
+}
+
+/// W4-e10 — `SetPitchSlider_Keyboard` (`:686-696`): quantize the drag's 0..1
+/// position, remap to the -1..1 `voicePitchOffset`, and on a change arm the
+/// 3-tick preview debounce (`PitchChanged`, `:658-662`). Returns whether the
+/// offset changed (the caller plays the Menu_Tick usage cue,
+/// `UIColoredSlider.cs:83-87`).
+pub fn set_pitch_slider(state: &mut CreationState, amount: f32) -> bool {
+    let amount = remap_pitch_slider_knob(amount);
+    let old = state.draft.voice_pitch_offset;
+    state.draft.voice_pitch_offset = pitch_remap(amount, 0.0, 1.0, -1.0, 1.0);
+    state.pitch_changed_cooldown = 3; // `:691`
+    if old != state.draft.voice_pitch_offset {
+        state.pitch_changed = true; // `PitchChanged` (`:660`)
+        state.pitch_changed_cooldown = 3; // `:661`
+        return true;
+    }
+    false
+}
+
+/// W4-e10 — `GetPitchSlider` (`:698-701`): the knob's 0..1 position —
+/// `Remap(RemapPitchSliderKnob(_pitchAmount), -1, 1, 0, 1)`. `_pitchAmount`
+/// tracks `voicePitchOffset` (`:690`), so the draft's offset is the source.
+pub fn get_pitch_slider(draft: &NewPlayerDraft) -> f32 {
+    pitch_remap(
+        remap_pitch_slider_knob(draft.voice_pitch_offset),
+        -1.0,
+        1.0,
+        0.0,
+        1.0,
+    )
+}
+
+/// W4-e10 — `GetVoicePitchColorAt` (`:703-708`): the per-blip colour —
+/// `fromValue = (x*4 + 0.5) % 1`, `num = Remap(fromValue, 0, .5, 0, 1) *
+/// Remap(fromValue, .5, 1, 1, 0)`, `Color.Lerp((90,90,120), White, num^5)`.
+pub fn voice_pitch_color_at(x: f32) -> [u8; 4] {
+    let from_value = (x * 4.0 + 0.5) % 1.0;
+    let num = pitch_remap(from_value, 0.0, 0.5, 0.0, 1.0)
+        * pitch_remap(from_value, 0.5, 1.0, 1.0, 0.0);
+    let t = num * num * num * num * num;
+    lerp_rgb([90, 90, 120, 255], [255, 255, 255, 255], t)
+}
 
 /// `_defaultHairstylesForClothStyle` (`:60-72`) — `TryAutoAssigningHair`'s map
 /// (`:631-637`), keyed by cloth style.
@@ -441,9 +614,17 @@ pub struct Layout {
     pub armor_buttons: [[f32; 4]; 5],
     /// (860/894/928, 459, 32, 32) — Copy/Paste/Randomize template (`:396-430`).
     pub template_buttons: [[f32; 4]; 3],
-    /// (669, 420, 52, 52) — the voice play button (`:474-504`; the prev/next
-    /// `TexturePackButtons` are not decoded — documented).
+    /// (669, 420, 52, 52) — the voice play button (`:474-504`).
     pub voice_button: [f32; 4],
+    /// W4-e10 — (650/708, 429, 32, 32) — the prev/next `TexturePackButtons`
+    /// `UIImageButton`s (`:452-473`): `Frame(2,2,0,1)`/`(1,1)` of the 64x64
+    /// sheet = 32x32, `VAlign .5, HAlign 0/1` of the 90x50 voice row.
+    pub voice_prev: [f32; 4],
+    pub voice_next: [f32; 4],
+    /// W4-e10 — the pitch `UIColoredSlider` (`:505-517`): `187x0`,
+    /// `VAlign 1, HAlign .5, Top -10, Left 55` of the voice row. Carries the
+    /// element rect; the bar/hit/knob derive through [`voice_pitch_rects`].
+    pub voice_pitch: [f32; 4],
     /// (550, 509, 240, 50) — Back (`MakeBackAndCreatebuttons`, `:1177-1184`).
     pub back: [f32; 4],
     /// (810, 509, 240, 50) — Create (`:1190-1197`; HAlign 1 of the 500 root).
@@ -972,6 +1153,54 @@ pub fn layout(screen: Vec2, name_w: f32) -> Layout {
         f32::MAX,
         [0.0; 4],
     );
+    // W4-e10 — the prev/next `UIImageButton`s (`:452-473`): the
+    // `TexturePackButtons` sheet is 64x64, `Frame(2,2,0,1)`/`(1,1)` = 32x32
+    // (the ctor sizes the element to the frame, `UIImageButton.cs:29-33`).
+    // `VAlign .5, HAlign 0/1, Left (0,0)` of the voice row.
+    let voice_row_inner = uistate::inner(voice_row, [0.0; 4]);
+    let voice_prev = uistate::resolve(
+        voice_row_inner,
+        uistate::Style::px(0.0),
+        uistate::Style::px(0.0),
+        uistate::Style::px(32.0),
+        uistate::Style::px(32.0),
+        0.0,
+        0.5,
+        0.0,
+        0.0,
+        f32::MAX,
+        [0.0; 4],
+    );
+    let voice_next = uistate::resolve(
+        voice_row_inner,
+        uistate::Style::px(0.0),
+        uistate::Style::px(0.0),
+        uistate::Style::px(32.0),
+        uistate::Style::px(32.0),
+        1.0,
+        0.5,
+        0.0,
+        0.0,
+        f32::MAX,
+        [0.0; 4],
+    );
+    // The pitch slider element (`:505-512`): `Width (187,0)`, Height unset
+    // (0), `VAlign 1, HAlign .5, Top -10, Left 55`. The bar/hit/knob derive
+    // through [`voice_pitch_rects`] (`UIColoredSlider.DrawSelf`'s
+    // `DrawValueBar(X + W - 10, Y + 10 + 8)`, `:76`).
+    let voice_pitch = uistate::resolve(
+        voice_row_inner,
+        uistate::Style::px(55.0),
+        uistate::Style::px(-10.0),
+        uistate::Style::new(187.0, 0.0),
+        uistate::Style::px(0.0),
+        0.5,
+        1.0,
+        0.0,
+        0.0,
+        f32::MAX,
+        [0.0; 4],
+    );
 
     // --- Back / Create (`MakeBackAndCreatebuttons`, `:1177-1203`) ---
     // `Width (-10, 0.5), Height 50, VAlign 1, Top -45`, `HAlign 0/1` of the root.
@@ -1030,6 +1259,9 @@ pub fn layout(screen: Vec2, name_w: f32) -> Layout {
         armor_buttons,
         template_buttons,
         voice_button,
+        voice_prev,
+        voice_next,
+        voice_pitch,
         back,
         create,
     }
@@ -1146,6 +1378,15 @@ pub fn hsl_slider_knob(bar: [f32; 4], value: f32) -> [f32; 2] {
     [bar[0] + 5.0 + sliders::BLIPS as f32 * value, bar[1] + 8.0]
 }
 
+/// W4-e10 — the pitch slider's bar/hit rects from the element rect
+/// (`voice_pitch`): `UIColoredSlider.DrawSelf` draws the value bar at
+/// `(X + Width - 10, Y + 10 + 8)` (`UIColoredSlider.cs:76`), then
+/// [`hsl_slider_rects`] centres the 178x16 bar on that point. The element's
+/// Height is unset (0), so the bar sits 18 px below the element's top.
+pub fn voice_pitch_rects(element: [f32; 4]) -> ([f32; 4], [f32; 4]) {
+    hsl_slider_rects(element[0] + element[2] - 10.0, element[1] + 18.0)
+}
+
 /// The read a drag produces (`UIColoredSlider.cs:130-133`):
 /// `(mouseX - rectangle.X) / rectangle.Width` inside the hit rectangle, 0 left
 /// of it, 1 right of it.
@@ -1176,6 +1417,8 @@ pub fn hsl_sliders_update(
     if state.category < 3 {
         // The HSL menu is only live over a colour category (`:1826`).
         state.hsl_grab = 0;
+        state.hsl_hovered = [false; 3];
+        state.hsl_sounded = [false; 3];
         return highlight;
     }
     let color_id = state.category;
@@ -1207,6 +1450,161 @@ pub fn hsl_sliders_update(
         }
     }
     highlight
+}
+
+// --- The voice picker (W4-e10) --------------------------------------------------
+
+/// W4-e10 — the cues one char-creation update may emit: the pitch bar's
+/// Menu_Tick latches (`UIColoredSlider.cs:83-92`/`:134-143`) and the one
+/// `PlayVoicePreview` (`:1517-1527`). The caller (the flow's draw arm) plays
+/// them through `Audio` on the bare-`Main.rand` stand-in — the creation screen
+/// runs outside every world swap (`Click_RandomizePlayer`'s convention).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct VoicePreviewCues {
+    /// One `PlaySound(12)` from the pitch bar (the usage cue OR the hover
+    /// edge — the C# can fire both in a frame, the port folds them to the
+    /// bar's single Menu_Tick seam).
+    pub menu_tick: bool,
+    /// The preview hurt-voice play (`PlayVoicePreview`).
+    pub preview: bool,
+}
+
+/// W4-e10 — `PlayVoicePreview` (`:1517-1527`): the per-frame latch — the first
+/// request in a frame plays, the rest are swallowed. Returns whether THIS
+/// request should play (the caller resolves the voice through
+/// [`preview_voice`] and drains it). The C# swaps `_player.position` to
+/// `(-1,-1)` around `PlayHurtSound` so the cue is unpositioned; the port's
+/// drain already plays every voice arm at `(-1,-1)`.
+pub fn play_voice_preview(state: &mut CreationState) -> bool {
+    if state.played_voice_preview {
+        return false;
+    }
+    state.played_voice_preview = true;
+    true
+}
+
+/// W4-e10 — the preview's voice: a fresh `PendingPlayer` has no stoned buff,
+/// no voiceOverride, no mount/werewolf/armor, so `PlayHurtSound` reduces to
+/// its tail — [`crate::player::default_voice_hurt`] over the draft's voice
+/// fields (`Player.cs:38694-38712`). The creation screen is a menu: no world
+/// seeds are live, so the DST/remix flags are false.
+pub fn preview_voice(draft: &NewPlayerDraft) -> Option<crate::player::HurtVoice> {
+    crate::player::default_voice_hurt(
+        draft.voice_variant,
+        draft.voice_pitch_offset,
+        is_male(draft.skin_variant),
+        false,
+        false,
+    )
+}
+
+/// W4-e10 — the pitch bar's draw-side drag (`UIColoredSlider.DrawSelf`,
+/// `UIColoredSlider.cs:46-102` over the creation screen's `SetPitchSlider_
+/// Keyboard`/`PitchSliderUpdate`): while held, the bar latches on hover and
+/// re-writes `voicePitchOffset` every frame (the one-Menu_Tick-per-grab
+/// `_soundedUsage` latch, `:83-92`); the hover edge plays one Menu_Tick
+/// (`_alreadyHovered`, `:134-143`); a change arms the 3-tick preview debounce
+/// (`PitchChanged`, `:658-662`) that `PitchSliderUpdate` (`:649-656`) drains.
+/// Returns the cues to play. Only live over the ClothStyles menu (the voice
+/// row's home); the HSL bars own the lock elsewhere (`GetUsageLevel`).
+pub fn voice_pitch_update(
+    l: &Layout,
+    state: &mut CreationState,
+    mouse: Vec2,
+    mouse_down: bool,
+) -> VoicePreviewCues {
+    let mut cues = VoicePreviewCues::default();
+    // `UICharacterCreation.Update` (`:176-180`) clears the per-frame preview
+    // latch at the head of every update — the port's draw pass is the update.
+    state.played_voice_preview = false;
+    if !matches!(middle_for(state.category), MiddleMenu::ClothStyles) {
+        // The voice row is not live: release the latch, keep the debounce.
+        state.pitch_grab = false;
+        state.pitch_sounded_usage = false;
+        state.pitch_already_hovered = false;
+        return cues;
+    }
+    let (_, hit) = voice_pitch_rects(l.voice_pitch);
+    let in_bar = in_rect(mouse, hit);
+    if !mouse_down {
+        // `if (!Main.mouseLeft) CurrentLockedSlider = null;` (`:49-52`).
+        state.pitch_grab = false;
+    }
+    // `(CurrentLockedSlider == this) | wasInBar` aims the bar (`:77`); the
+    // lock latches only from an unlocked state (`:94-97`).
+    let aimed = in_bar || state.pitch_grab;
+    if aimed && mouse_down {
+        if in_bar {
+            state.pitch_grab = true;
+        }
+        if state.pitch_grab {
+            // `_slideKeyboardAction(obj)` (`:82`) — `SetPitchSlider_Keyboard`.
+            let amount = hsl_slider_value(hit, mouse.x);
+            let changed = set_pitch_slider(state, amount);
+            if changed && !state.pitch_sounded_usage {
+                cues.menu_tick = true; // `PlaySound(12)` (`:85`)
+            }
+            state.pitch_sounded_usage = true; // `:87`
+        }
+    } else {
+        state.pitch_sounded_usage = false; // `:91`
+    }
+    // The hover-edge Menu_Tick (`DrawValueBar`, `:131-143`): the highlight
+    // draws while aimed; the FIRST aimed frame plays one 12.
+    if aimed {
+        if !state.pitch_already_hovered {
+            cues.menu_tick = true; // `PlaySound(12)` (`:136`)
+        }
+        state.pitch_already_hovered = true;
+    } else {
+        state.pitch_already_hovered = false;
+    }
+    // `PitchSliderUpdate` (`:649-656`): the debounce counts down, then the
+    // preview plays once.
+    if state.pitch_changed {
+        state.pitch_changed_cooldown -= 1;
+        if state.pitch_changed_cooldown <= 0 {
+            state.pitch_changed = false;
+            if play_voice_preview(state) {
+                cues.preview = true;
+            }
+        }
+    }
+    cues
+}
+
+/// W4-g22 DOC-SWEEP — the HSL bars' two per-bar cue latches
+/// (`UIColoredSlider.cs`): the hover enter plays 12 once
+/// (`_alreadyHovered`, `:134-142` — the highlight flag IS the latch input)
+/// and the held drag plays 12 once per spell (`_soundedUsage`, `:83-92`,
+/// re-arming on release). Runs after [`hsl_sliders_update`] with its
+/// highlight answer; returns the number of 12s to play (0..=2 — a hover
+/// enter and a drag start can coincide on one bar, the C# plays both).
+pub fn hsl_slider_cues(state: &mut CreationState, highlight: [bool; 3], mouse_down: bool) -> u32 {
+    let mut cues = 0;
+    for k in 0..3 {
+        // The hover latch (`:131-143`): `flag || lockMode == 1` is the
+        // highlight the update derived.
+        if highlight[k] {
+            if !state.hsl_hovered[k] {
+                cues += 1; // `:136`
+            }
+            state.hsl_hovered[k] = true;
+        } else {
+            state.hsl_hovered[k] = false;
+        }
+        // The usage latch (`:80-92`): the locked bar under a held button.
+        let dragging = mouse_down && state.hsl_grab == (k + 1) as u8;
+        if dragging {
+            if !state.hsl_sounded[k] {
+                cues += 1; // `:85`
+            }
+            state.hsl_sounded[k] = true;
+        } else {
+            state.hsl_sounded[k] = false;
+        }
+    }
+    cues
 }
 
 // --- The Randomize / Copy / Paste handlers -------------------------------------
@@ -1265,10 +1663,11 @@ const FEMALE_HAIR_CASES: [i32; 69] = [
 ];
 
 /// `Click_RandomizePlayer` (`:1545-1657`): the cloth menu's Randomize button,
-/// over the draft. The voice fields (`voiceVariant`/`voicePitchOffset`) and the
-/// preview armour assignments stay the screen's documented no-audio /
-/// no-item-icon deviations: the `Main.rand` draws are still consumed in the
-/// source's order so the stream stays 1:1.
+/// over the draft. The preview armour assignments stay the screen's
+/// documented no-item-icon deviation: the `Main.rand` draws are still
+/// consumed in the source's order so the stream stays 1:1. W4-e10 lands the
+/// voice pair (`:1571-1575`) and the trailing `UpdateSelectedGender`
+/// (`:1655`); the preview itself plays through the caller's audio seam.
 pub fn randomize_player(rng: &mut UnifiedRandom, draft: &mut NewPlayerDraft, hair_picked: &mut bool) {
     // `int index = Main.rand.Next(AvailableHairstyles.Count);`
     // `player.hair = AvailableHairstyles[index]; this._lastSelectedHairstyle = player.hair;`
@@ -1305,13 +1704,27 @@ pub fn randomize_player(rng: &mut UnifiedRandom, draft: &mut NewPlayerDraft, hai
         VALID_CLOTH_STYLES[rng.next_max(VALID_CLOTH_STYLES.len() as i32) as usize];
 
     // `player.voiceVariant = (player.Male ? 1 : 2); if (Main.rand.Next(2) == 0)
-    // voiceVariant = 3;` — the voice draw is consumed, the field dropped.
-    let _ = rng.next_max(2);
+    // voiceVariant = 3;` (`:1571-1575`) — the draw lands the field now (W4-e10).
+    draft.voice_variant = if is_male(draft.skin_variant) { 1 } else { 2 };
+    if rng.next_max(2) == 0 {
+        draft.voice_variant = 3;
+    }
 
     // `switch (player.hair + 1)`: the hair forces the gender (`:1576-1652`),
     // and the `Male` setter remaps `skinVariant` to the other variant.
     let male = !FEMALE_HAIR_CASES.contains(&(draft.hair + 1));
     set_male(&mut draft.skin_variant, male);
+}
+
+/// W4-e10 — `Click_RandomizePlayer`'s tail (`:1653-1656`): the armor reset is
+/// the no-item-icon deviation, then `Click_CharClothStyle`'s
+/// `UpdateSelectedGender` (`:1290`) runs — the gender auto-switch + the voice
+/// preview request. Returns whether a preview should play (always true, the
+/// `update_selected_gender` contract); the caller drains it through the audio
+/// seam. Kept separate from [`randomize_player`] so the pure draw-order
+/// witness stays stream-only.
+pub fn randomize_player_voice_tail(state: &mut CreationState) -> bool {
+    update_selected_gender(&mut state.draft, &mut state.old_male_for_voice)
 }
 
 /// `GetHexColor` (`:1764-1777`): a `#`-prefixed (or bare) `≤6`-digit hex string
@@ -1365,19 +1778,15 @@ const TEMPLATE_COLOR_KEYS: [(&str, usize); 7] = [
 /// `voiceStyle`, `voicePitch` and the seven `GetHexText` colours are kept;
 /// `PlayerInput.PrettyPrintProfiles` (`PlayerInput.cs:2016-2035`) is a no-op for
 /// this flat object (it only rewrites nested-object/array indentation), and
-/// `Formatting.Indented` is [`serde_json::to_string_pretty`]. The voice fields
-/// are the screen's no-audio deviation: the draft carries no voice, so the
-/// gender default (`Player.cs:55735`'s `(Male ? 1 : 2)`) is written.
+/// `Formatting.Indented` is [`serde_json::to_string_pretty`]. W4-e10: the
+/// voice pair rides the draft's live fields (`:1362-1369`).
 pub fn player_template(draft: &NewPlayerDraft) -> String {
     let mut map = serde_json::Map::new();
     map.insert("version".into(), json!(1));
     map.insert("hairStyle".into(), json!(draft.hair));
     map.insert("clothingStyle".into(), json!(draft.skin_variant));
-    map.insert(
-        "voiceStyle".into(),
-        json!(if is_male(draft.skin_variant) { 1 } else { 2 }),
-    );
-    map.insert("voicePitch".into(), json!(0.0));
+    map.insert("voiceStyle".into(), json!(draft.voice_variant));
+    map.insert("voicePitch".into(), json!(draft.voice_pitch_offset));
     for (key, id) in TEMPLATE_COLOR_KEYS {
         let hex = hex_text(draft.color_of(id).unwrap_or([255; 4]));
         map.insert(key.into(), json!(hex));
@@ -1398,10 +1807,11 @@ fn template_int(v: &serde_json::Value) -> Option<i32> {
 /// land its fields on the draft. The C# takes the substring from the first `{`
 /// to the last `}` (so surrounding prose is tolerated), lower-cases every key
 /// for case-insensitive lookup, and validates each value against the screen's
-/// tables before writing. Returns whether a JSON object was found. Fields the
-/// port lacks (voice style/pitch) are validated and dropped, like the C#'s
-/// no-op arms; a non-numeric `version` aborts the whole paste exactly as the
-/// `(long)` cast's `catch` does (`:1441-1444`).
+/// tables before writing. Returns whether a JSON object was found. W4-e10
+/// lands the voice pair (`:1462-1475` — `voiceStyle` validated against
+/// `_validVoiceStyles`, `voicePitch` written raw); a non-numeric `version`
+/// aborts the whole paste exactly as the `(long)` cast's `catch` does
+/// (`:1441-1444`).
 pub fn apply_player_template(
     draft: &mut NewPlayerDraft,
     hair_picked: &mut bool,
@@ -1443,8 +1853,17 @@ pub fn apply_player_template(
             draft.skin_variant = c;
         }
     }
-    // `voiceStyle`/`voicePitch` (`:1462-1475`) are validated but dropped — the
-    // draft has no voice (the screen's no-audio deviation).
+    // `voiceStyle` (`:1462-1469`): validated against `_validVoiceStyles`.
+    if let Some(v) = fields.get("voicestyle").and_then(|v| template_int(v)) {
+        if VALID_VOICE_STYLES.contains(&v) {
+            draft.voice_variant = v;
+        }
+    }
+    // `voicePitch` (`:1470-1475`): `(float)(double)value2` — written raw, no
+    // clamp (`_pitchAmount` tracks it, `:1474`).
+    if let Some(p) = fields.get("voicepitch").and_then(|v| v.as_f64()) {
+        draft.voice_pitch_offset = p as f32;
+    }
     for (key, id) in TEMPLATE_COLOR_KEYS {
         if let Some(hsl) = fields
             .get(&key.to_lowercase())
@@ -1455,6 +1874,86 @@ pub fn apply_player_template(
         }
     }
     true
+}
+
+// --- The census-only 888 sites (W4-g22 DOC-SWEEP) ---------------------------------
+
+/// The armor row's seven `EquipArmor*` handlers (`UICharacterCreation.cs:530-
+/// 613`) each play 12 before the assignment (`:532`/`:538`/`:549`/`:560`/
+/// `:571`/`:582`/`:599`). The port draws the row's chrome but keeps no armor
+/// state (`_maleArmor`/`_femaleArmor` are unported — the preview decodes no
+/// `Images/Item_*` sheets), so the assignments land here as the pure census
+/// and the cue answers 12 for every button. `(head, body, leg)` per gender;
+/// the Formal/Swimming pairs differ per gender, the other five share one
+/// assignment (`_femaleArmor = (_maleArmor = ...)`). The Swimming female
+/// also carries `Accessory1Item = 208` (`:611`) — see
+/// [`armor_assignment_accessory`].
+///
+/// MENU-FINAL census correction: `button` here is the HANDLER census order
+/// (0 None, 1 Gold, 2 Silver, 3 Funeral, 4 Hallowed, 5 Formal, 6 Swimming),
+/// NOT the layout order. Only FIVE handlers are subscribed in 1.4.5.8
+/// (`:355/:362/:369/:376/:383`): the layout's `armor_buttons`
+/// `[HAlign 0/.5/.25/.75/1]` map to `[None, Hallowed, Silver, Formal,
+/// Swimming]` = census ids `[0, 4, 2, 5, 6]`; `EquipArmorGold` (`:536`) and
+/// `EquipArmorFuneral` (`:558`) are declared but never subscribed — dead
+/// handlers, kept in the census for completeness.
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_assignment(button: usize, male: bool) -> (i32, i32, i32) {
+    match button {
+        0 => (0, 0, 0),                                  // None (`:533`)
+        1 => (92, 83, 79),                               // Gold (`:541-543`)
+        2 => (91, 82, 78),                               // Silver (`:552-554`)
+        3 => (4704, 4705, 4706),                         // Funeral (`:563-565`)
+        4 => (5660, 551, 552),                           // Hallowed (`:574-576`)
+        5 if male => (239, 240, 241),                    // Formal (`:585-587`)
+        5 => (3478, 3479, 0),                            // Formal female (`:591-593`)
+        6 if male => (237, 3785, 5649),                  // Swimming (`:602-604`)
+        6 => (237, 5646, 5647),                          // Swimming female (`:608-610`)
+        _ => (0, 0, 0),
+    }
+}
+
+/// The Swimming female's `Accessory1Item = 208` (`:611`) — the only
+/// accessory any `EquipArmor*` assigns (the flipper). Every other
+/// handler/gender leaves the accessory slots at 0.
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_assignment_accessory(button: usize, male: bool) -> i32 {
+    if button == 6 && !male { 208 } else { 0 }
+}
+
+/// MENU-FINAL — the five LIVE armor buttons' handler ids, in the layout's
+/// `armor_buttons` order (`[HAlign 0/.5/.25/.75/1]`, `:348-384`): None,
+/// Hallowed, Silver, Formal, Swimming. Gold/Funeral are dead handlers.
+pub const ARMOR_LAYOUT_HANDLERS: [usize; 5] = [0, 4, 2, 5, 6];
+
+/// The armor row's cue — every `EquipArmor*` plays 12 (`:532-599`); the
+/// census answers it for all seven buttons (the state half is
+/// [`armor_assignment`], unwired with the armor preview).
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_click_cue(_button: usize) -> u32 {
+    12
+}
+
+/// `Click_VoicePitch` (`:1040-1043`) plays 12 and nothing else — the pitch
+/// slider's drag chrome is the documented no-audio deviation, but the
+/// CLICK cue is its own site. Census-only (the voice state is unported).
+#[allow(dead_code)] // census-only - the voice state is unported
+pub fn voice_pitch_click_cue() -> u32 {
+    12
+}
+
+/// `HandleBackButtonUsage` (`:2366-2380`): the gamepad Back on a non-Info
+/// category plays 12 and re-selects CharInfo; on CharInfo it falls through
+/// to `GoBack` (11, `:1212`). Returns the cue id. Census-only — the gamepad
+/// snap points are out of scope (§J.3); the port's Escape/Back rides the
+/// mouse `Click_GoBack` path instead.
+#[allow(dead_code)] // census-only - the gamepad snap points are out of scope
+pub fn back_button_usage_cue(category: usize) -> u32 {
+    if category != 0 {
+        12 // `:2370`
+    } else {
+        11 // `GoBack` (`:1212`)
+    }
 }
 
 // --- Clicks ---------------------------------------------------------------------
@@ -1501,7 +2000,136 @@ pub enum Click {
     /// The cloth menu's Randomize button (`Click_RandomizePlayer`,
     /// `:1545-1657`).
     RandomizePlayer,
+    /// W4-e10 — the voice prev button (`Click_VoiceCycleBack`, `:1529-1533`):
+    /// `CycleVoiceStyle(-1)` + the preview.
+    VoicePrev,
+    /// W4-e10 — the voice next button (`Click_VoiceCycleForward`,
+    /// `:1535-1539`): `CycleVoiceStyle(+1)` + the preview.
+    VoiceNext,
+    /// W4-e10 — the voice play button (`Click_VoicePlay`, `:1512-1515`): the
+    /// preview alone.
+    VoicePlay,
+    /// W4-e10 — the pitch slider element (`Click_VoicePitch`, `:1040-1043`):
+    /// one Menu_Tick (12); the drag itself runs in [`voice_pitch_update`].
+    VoicePitch,
     None,
+}
+
+/// W4-g22 DOC-SWEEP — the per-site click cue of the creator's `Click_*`
+/// handlers (the 888 inline-cue census, `UICharacterCreation.cs`). Every
+/// handler plays its own `SoundEngine.PlaySound` BEFORE its state write;
+/// `None` means the port has no live control for the site (the armor row's
+/// seven `EquipArmor*` handlers `:532-599`, the voice-pitch click `:1042`
+/// and the gamepad `HandleBackButtonUsage` `:2370` are census-only — the
+/// armor/voice state is not ported). The App plays the answer through
+/// `chest::play_menu_sound` (10/11/12 → Menu_Open/Menu_Close/Menu_Tick).
+pub fn click_cue(click: Click) -> Option<u32> {
+    Some(match click {
+        // `Click_ColorPicker` (`:1239`), `Click_ClothStyles` (`:1252`),
+        // `Click_HairStyles` (`:1261`), `Click_CharInfo` (`:1270`) — all
+        // four category handlers play 12.
+        Click::Category(_) => 12,
+        // `Click_CharClothStyle` (`:1288`) — the variant pick plays 12
+        // (the armor-guard re-entry through `EquipArmorNone` `:1281`
+        // plays the same 12, `:532`).
+        Click::ClothStyle(_) => 12,
+        // `Click_Naming` (`:1661`) and `Click_NamingAndCreating` (`:1670`)
+        // play 10 BEFORE the keyboard opens / the character finishes.
+        Click::Name | Click::Create => 10,
+        // `GoBack` (`:1212`) plays 11 before the dirty check parks the
+        // mode-40 confirm or the char select reopens.
+        Click::Back => 11,
+        // `Click_CopyHex` (`:1333`) / `Click_PasteHex` (`:1339`) play 12
+        // before the clipboard read/write (a failed paste still played).
+        Click::CopyHex | Click::PasteHex => 12,
+        // `Click_CopyPlayerTemplate` (`:1410`) / `Click_PastePlayerTemplate`
+        // (`:1416`) play 12 before the clipboard read/write.
+        Click::CopyTemplate | Click::PasteTemplate => 12,
+        // `Click_RandomizePlayer` (`:1547`) and `Click_RandomizeSingleColor`
+        // (`:1781`) play 12 before the `Main.rand` rolls.
+        Click::RandomizePlayer | Click::RandomizeColor => 12,
+        // `UIDifficultyButton.LeftMouseDown` (`UIDifficultyButton.cs:84`)
+        // plays 12 after the difficulty write — the row is a button of its
+        // own, not a `Click_*` handler.
+        Click::Difficulty(_) => 12,
+        // `UIHairStyleButton.LeftMouseDown` (`UIHairStyleButton.cs:82`)
+        // plays 12 after the hair write.
+        Click::Hair(_) => 12,
+        _ => return None,
+    })
+}
+
+/// The hover-sounding element under the pointer — the census of the four
+/// DrawSelf-latched buttons (`UIDifficultyButton.cs:49-60`,
+/// `UIHairStyleButton.cs:43-54`, `UIClothStyleButton.cs:67-78` — each plays
+/// 12 once on the hover edge, re-arming on exit) plus the two
+/// `FadedMouseOver` panels (Back/Create, `:1226` — sound on every
+/// `MouseOver` event, which the framework fires on the enter edge only,
+/// `UIElement.cs:510-520`) and the ten `UIColoredImageButton.MouseOver`
+/// category buttons (`UIColoredImageButton.cs:95`). The ids are stable per
+/// element so the App's edge latch (`front_hover_hit`) fires once per
+/// enter; `None` over anything silent (the plates' name button latches too
+/// — `UICharacterNameButton.cs:69` — id 100).
+pub fn hover_element(l: &Layout, category: usize, mouse: Vec2) -> Option<u32> {
+    for id in CATEGORY_IDS {
+        if in_rect(mouse, l.categories[id]) {
+            return Some(id as u32); // `UIColoredImageButton.cs:95`
+        }
+    }
+    if in_rect(mouse, l.back) {
+        return Some(10); // `FadedMouseOver` (`:1226`)
+    }
+    if in_rect(mouse, l.create) {
+        return Some(11); // `FadedMouseOver` (`:1226`)
+    }
+    match middle_for(category) {
+        MiddleMenu::Info => {
+            if in_rect(mouse, l.info_name) {
+                return Some(100); // `UICharacterNameButton.cs:69`
+            }
+            for (k, _) in DIFFICULTY_IDS.iter().enumerate() {
+                if in_rect(mouse, l.difficulty_buttons[k]) {
+                    return Some(12 + k as u32); // `UIDifficultyButton.cs:53`
+                }
+            }
+        }
+        MiddleMenu::Hairstyles => {
+            // The list clips (`GetClippingRectangle`, `:254`): a button
+            // outside the view never draws, so its DrawSelf latch never
+            // fires — the hit-test clips the same way.
+            let view = uistate::inner(l.hair_list, HAIR_LIST_PADDING);
+            if in_rect(mouse, view) {
+                for (i, _) in HAIRSTYLES.iter().enumerate() {
+                    if in_rect(mouse, hair_button(l.hair_grid, i)) {
+                        return Some(20 + i as u32); // `UIHairStyleButton.cs:47`
+                    }
+                }
+            }
+        }
+        MiddleMenu::ClothStyles => {
+            for (i, _) in VALID_CLOTH_STYLES.iter().enumerate() {
+                if in_rect(mouse, l.cloth_buttons[i]) {
+                    return Some(300 + i as u32); // `UIClothStyleButton.cs:71`
+                }
+            }
+            // The template Copy/Paste/Randomize trio are
+            // `UIColoredImageButton`s too (`:406-430`).
+            for (k, _) in l.template_buttons.iter().enumerate() {
+                if in_rect(mouse, l.template_buttons[k]) {
+                    return Some(320 + k as u32); // `UIColoredImageButton.cs:95`
+                }
+            }
+        }
+        MiddleMenu::Hsl { .. } => {
+            // The hex Copy/Paste/Randomize trio (`:1006-1031`).
+            for (k, _) in l.hsl_buttons.iter().enumerate() {
+                if in_rect(mouse, l.hsl_buttons[k]) {
+                    return Some(330 + k as u32); // `UIColoredImageButton.cs:95`
+                }
+            }
+        }
+    }
+    None
 }
 
 /// The click table over the live geometry: the categories bar (always), the
@@ -1565,6 +2193,23 @@ pub fn click_at(l: &Layout, category: usize, mouse: Vec2) -> Click {
                     return click;
                 }
             }
+            // W4-e10 — the voice row (`:452-517`): prev/next cycle the
+            // variant, the play button previews, the pitch element clicks one
+            // Menu_Tick (its drag runs in the draw pass). The pitch bar sits
+            // below the play button, so the rects do not overlap.
+            if in_rect(mouse, l.voice_prev) {
+                return Click::VoicePrev; // `:461`
+            }
+            if in_rect(mouse, l.voice_next) {
+                return Click::VoiceNext; // `:472`
+            }
+            if in_rect(mouse, l.voice_button) {
+                return Click::VoicePlay; // `:503`
+            }
+            let (_, pitch_hit) = voice_pitch_rects(l.voice_pitch);
+            if in_rect(mouse, pitch_hit) {
+                return Click::VoicePitch; // `:513`
+            }
         }
         // The HSL menu's rows drag in the draw pass; the hex panel and the
         // slider *element* rects click nothing (the C# slider's click is its
@@ -1602,14 +2247,11 @@ pub enum HoverTarget {
     CopyTemplate,
     PasteTemplate,
     RandomizePlayer,
-    /// The pitch slider's `UISliderBase.CurrentAimedSlider` read (`:1924-1927`)
-    /// — the pitch drag chrome is the documented no-audio deviation.
-    #[allow(dead_code)]
+    /// W4-e10 — the pitch slider's `UISliderBase.CurrentAimedSlider` read
+    /// (`:1924-1927`).
     VoicePitch,
-    /// The prev/next `TexturePackButtons` are not decoded (documented).
-    #[allow(dead_code)]
+    /// W4-e10 — the prev/next `TexturePackButtons` (`:1928-1935`).
     VoicePrev,
-    #[allow(dead_code)]
     VoiceNext,
     VoicePlay,
 }
@@ -1714,7 +2356,11 @@ fn draw_hair_button(
 /// makes the timing unobservable. `time` is `Main.GlobalTimeWrappedHourly`
 /// (the preview's animation clock, `:92`); `mouse_down` feeds the HSL drag
 /// latch. Mutates the draft like the source's draw-side paths do
-/// (`:1102-1124`, `:2011-2021`).
+/// (`:1102-1124`, `:2011-2021`). The merge compose (W4-e10 × W4-g22): returns
+/// BOTH cue answers — the voice-picker cues (the pitch bar's Menu_Tick + the
+/// debounce preview) and the HSL bars' highlight flags (the
+/// `hsl_sliders_update` answer) so the App can run the W4-g22 DOC-SWEEP cue
+/// latches ([`hsl_slider_cues`]) without re-running the drag.
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -1724,14 +2370,18 @@ pub fn draw(
     time: f32,
     mouse: Vec2,
     mouse_down: bool,
-) {
+) -> (VoicePreviewCues, [bool; 3]) {
     let l = layout(screen, 0.0);
 
     // The Draw-time dirty check (`:2011-2021`) runs before Back's consult.
     state.draft.refresh_dirty();
     // The HSL drag pass runs in the draw like the source's `DrawSelf` chain
     // (`UIColoredSlider.cs:47-90`): hit-test -> mutate -> render.
-    let _highlight = hsl_sliders_update(&l, state, mouse, mouse_down);
+    let highlight = hsl_sliders_update(&l, state, mouse, mouse_down);
+    // W4-e10 — the pitch bar's drag + the preview debounce (the same
+    // `DrawSelf`/`OnUpdate` chain, `UIColoredSlider.cs:46-102` +
+    // `PitchSliderUpdate` `:649-656`). Clears the per-frame preview latch.
+    let voice_cues = voice_pitch_update(&l, state, mouse, mouse_down);
 
     // The creation panel: bg `(33, 43, 79) * 0.8` (`:201`), border the
     // `UIPanel` default black (`UIPanel.cs:18`).
@@ -1884,7 +2534,7 @@ pub fn draw(
 
     // The hover tooltip (`:1980-1993`): the hovered element's string at the
     // cursor + (16, 16), clamped to the screen the way `:1984-1991` does.
-    if let Some(text) = hover_tooltip(&l, state.category, mouse) {
+    if let Some(text) = hover_tooltip(&l, state, mouse) {
         let w = hud_text_width(r, lookups, &text, 1.0);
         let mut x = mouse.x + 16.0;
         let mut y = mouse.y + 16.0;
@@ -1896,17 +2546,18 @@ pub fn draw(
         }
         border_string(r, lookups, x, y, [1.0; 4], &text);
     }
+    (voice_cues, highlight)
 }
 
 /// `UICharacterCreation.Draw`'s tooltip resolution (`:1880-1979`) over the
 /// port's live elements.
-fn hover_tooltip(l: &Layout, category: usize, mouse: Vec2) -> Option<String> {
+fn hover_tooltip(l: &Layout, state: &CreationState, mouse: Vec2) -> Option<String> {
     for id in CATEGORY_IDS {
         if in_rect(mouse, l.categories[id]) {
             return tooltip_for(HoverTarget::Category(id));
         }
     }
-    match middle_for(category) {
+    match middle_for(state.category) {
         MiddleMenu::Hsl { .. } => {
             for (k, target) in [
                 HoverTarget::CopyHex,
@@ -1933,6 +2584,20 @@ fn hover_tooltip(l: &Layout, category: usize, mouse: Vec2) -> Option<String> {
                 if in_rect(mouse, l.template_buttons[k]) {
                     return tooltip_for(target);
                 }
+            }
+            // W4-e10 — the voice row's tooltips (`:1924-1939`), in the C#'s
+            // last-match-wins order: pitch (aimed) < prev < next < play. The
+            // rects do not overlap, so the order only pins the seam.
+            let (_, pitch_hit) = voice_pitch_rects(l.voice_pitch);
+            let pitch_aimed = in_rect(mouse, pitch_hit) || state.pitch_grab;
+            if pitch_aimed {
+                return tooltip_for(HoverTarget::VoicePitch); // `:1924-1927`
+            }
+            if in_rect(mouse, l.voice_prev) {
+                return tooltip_for(HoverTarget::VoicePrev); // `:1928-1932`
+            }
+            if in_rect(mouse, l.voice_next) {
+                return tooltip_for(HoverTarget::VoiceNext); // `:1933-1935`
             }
             if in_rect(mouse, l.voice_button) {
                 return tooltip_for(HoverTarget::VoicePlay); // `:1936-1939`
@@ -2272,21 +2937,145 @@ fn draw_cloth_styles_menu(
             in_rect(mouse, l.template_buttons[k]),
         );
     }
-    // The voice play button (`:474-504`): a null-texture `UIColoredImageButton`
-    // — the SmallPanel back panel still draws (`UIColoredImageButton.cs:33-45`,
-    // `:72`), the null only silences the icon slot (`:87`) — here carrying the
-    // `Voice` icon in `OurFavoriteColor`.
+    // W4-e10 — the voice play button (`:474-504`): a null-texture
+    // `UIColoredImageButton` (the back panel still draws,
+    // `UIColoredImageButton.cs:33-45`/`:72`) carrying the `Voice` icon tinted
+    // by `voiceIcon_OnUpdate` (`:725-728` — `PlayerVoiceID.Sets.Colors`), and
+    // the corner number `voiceNumber_OnUpdate` (`:710-723`) at scale 0.85,
+    // `TextOrigin (0.5, 1)`, `Top -6, Left -12` of the button (`:491-500`).
+    let voice_color = VOICE_ICON_COLORS
+        .get(state.draft.voice_variant.clamp(0, 3) as usize)
+        .copied()
+        .unwrap_or([255; 4]);
     uistate::draw_colored_image_button(
         r,
         lookups,
-        true,
+        false,
         l.voice_button,
         None,
         lookups.cc_voice,
-        uistate::OUR_FAVORITE_COLOR,
+        voice_color,
         false,
         in_rect(mouse, l.voice_button),
     );
+    // The corner number (`UIText("", 0.85)` + `voiceNumber_OnUpdate`): the
+    // origin (0.5, 1) centres X and bottoms Y on the anchor; the anchor is
+    // the button's bottom-right + (Left -12, Top -6) (`:494-498`), then
+    // `UIText.DrawSelf`'s `-2f * textScale` Y lift (`UIText.cs:138`).
+    let number = voice_number(state.draft.voice_variant).to_string();
+    let nw = hud_text_width(r, lookups, &number, 0.85);
+    let nh = super::text::line_height(lookups) * 0.85;
+    let nx = l.voice_button[0] + l.voice_button[2] - 12.0 - nw * 0.5;
+    let ny = l.voice_button[1] + l.voice_button[3] - 6.0 - nh - 2.0 * 0.85;
+    // `ShadowColor = Color.Black * 0.3` (`:499`): `DrawColorCodedStringShadow`
+    // at spread 1.5 (`UIText.cs:158`) — the four ±1.5 side passes
+    // (`ChatManager.ShadowDirections`, `ChatManager.cs:376-382`), then the
+    // white text.
+    for [dx, dy] in [[-1.5, 0.0], [1.5, 0.0], [0.0, -1.5], [0.0, 1.5]] {
+        hud_text(r, lookups, nx + dx, ny + dy, 0.85, [0.0, 0.0, 0.0, 0.3], &number);
+    }
+    hud_text(r, lookups, nx, ny, 0.85, [1.0; 4], &number);
+    // W4-e10 — the prev/next `UIImageButton`s (`:452-473`): the
+    // `TexturePackButtons` `Frame(2,2,0,1)`/`(1,1)` (32x32 of the 64x64
+    // sheet), `Color * (hover ? 1 : 0.4)` (`SetVisibility(1,1)`,
+    // `UIImageButton.cs:51`), the outline frame on hover in
+    // `OurFavoriteColor` (`:52-55`).
+    draw_voice_arrow(r, lookups, l.voice_prev, 0, in_rect(mouse, l.voice_prev));
+    draw_voice_arrow(r, lookups, l.voice_next, 1, in_rect(mouse, l.voice_next));
+    // W4-e10 — the pitch slider (`:505-517`): the bar + 167 blips coloured by
+    // `GetVoicePitchColorAt`, the highlight while aimed, the knob at
+    // `GetPitchSlider`.
+    draw_voice_pitch_slider(r, lookups, state, l, mouse);
+}
+
+/// W4-e10 — one voice prev/next `UIImageButton` (`:452-473`): `col` picks the
+/// `Frame(2,2,col,1)` quadrant of the 64x64 `TexturePackButtons` sheet (the
+/// bottom row — row 1), the hover outline the same quadrant of the Outline
+/// sheet. `UIImageButton.DrawSelf` (`UIImageButton.cs:48-56`).
+fn draw_voice_arrow(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    rect: [f32; 4],
+    col: u32,
+    hovered: bool,
+) {
+    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+    // `asset.Frame(2, 2, col, 1)` — a 32x32 quadrant, bottom row.
+    let frame_uv = |sheet: tr_render::SheetRect| {
+        let fw = sheet.width as f32 / 2.0;
+        let fh = sheet.height as f32 / 2.0;
+        let x0 = sheet.x as f32 + fw * col as f32;
+        let y0 = sheet.y as f32 + fh; // row 1
+        [x0 / aw, y0 / ah, (x0 + fw) / aw, (y0 + fh) / ah]
+    };
+    if let Some(sheet) = lookups.cc_voice_arrows {
+        // `Color * (IsMouseHovering ? _visibilityActive : _visibilityInactive)`
+        // — both 1 here (`SetVisibility(1f, 1f)`, `:459`/`:470`), so the tint
+        // is White at full strength either way; the hover swaps the outline.
+        r.push_ui_sprite([rect[0], rect[1]], [rect[2], rect[3]], frame_uv(sheet), [1.0; 4]);
+    }
+    if hovered {
+        if let Some(sheet) = lookups.cc_voice_arrows_outline {
+            r.push_ui_sprite(
+                [rect[0], rect[1]],
+                [rect[2], rect[3]],
+                frame_uv(sheet),
+                color::tint(uistate::OUR_FAVORITE_COLOR),
+            );
+        }
+    }
+}
+
+/// W4-e10 — the pitch `UIColoredSlider` (`:505-517`): the bar + 167 blips
+/// (`GetVoicePitchColorAt`, `:703-708`), the `ColorHighlight` while aimed, the
+/// knob at `GetPitchSlider` (`:698-701`). The drag itself runs in
+/// [`voice_pitch_update`]; this only renders the live value.
+fn draw_voice_pitch_slider(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    state: &CreationState,
+    l: &Layout,
+    mouse: Vec2,
+) {
+    let (bar, hit) = voice_pitch_rects(l.voice_pitch);
+    if let Some(uv) = lookups.hud_uv(lookups.ui_color_bar.as_ref()) {
+        r.push_ui_sprite([bar[0], bar[1]], [bar[2], bar[3]], uv, [1.0; 4]);
+    }
+    if let Some(uv) = lookups.hud_uv(lookups.ui_color_blip.as_ref()) {
+        for i in 0..sliders::BLIPS {
+            let c = voice_pitch_color_at(i as f32 / sliders::BLIPS as f32);
+            r.push_ui_sprite(
+                [bar[0] + 5.0 + i as f32, bar[1] + 4.0],
+                [sliders::BLIP_W, sliders::BLIP_H],
+                uv,
+                color::tint(c),
+            );
+        }
+    }
+    // The highlight while aimed (`UIColoredSlider.cs:131-133`).
+    if in_rect(mouse, hit) || state.pitch_grab {
+        if let Some(uv) = lookups.hud_uv(lookups.ui_slider_highlight.as_ref()) {
+            r.push_ui_sprite(
+                [bar[0], bar[1]],
+                [bar[2], bar[3]],
+                uv,
+                color::tint(uistate::OUR_FAVORITE_COLOR),
+            );
+        }
+    }
+    // The knob at `GetPitchSlider` (`:147`), float-half centred.
+    if let Some(uv) = lookups.hud_uv(lookups.ui_color_slider.as_ref()) {
+        let centre = hsl_slider_knob(bar, get_pitch_slider(&state.draft));
+        r.push_ui_sprite(
+            [
+                centre[0] - sliders::KNOB_W / 2.0,
+                centre[1] - sliders::KNOB_H / 2.0,
+            ],
+            [sliders::KNOB_W, sliders::KNOB_H],
+            uv,
+            [1.0; 4],
+        );
+    }
 }
 
 #[cfg(test)]
@@ -2681,6 +3470,140 @@ mod tests {
         assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[2])), Click::RandomizeColor);
     }
 
+    /// W4-g22 DOC-SWEEP witness — the creator's per-site click cues
+    /// (`UICharacterCreation.cs`): the four category handlers play 12
+    /// (`:1239`/`:1252`/`:1261`/`:1270`), the cloth variant plays 12
+    /// (`:1288`); the unported armor/voice sites stay census-only (`None`).
+    #[test]
+    fn doc_sweep_category_and_cloth_clicks_play_12() {
+        for id in CATEGORY_IDS {
+            assert_eq!(click_cue(Click::Category(id)), Some(12), "category {id}");
+        }
+        for style in VALID_CLOTH_STYLES {
+            assert_eq!(click_cue(Click::ClothStyle(style)), Some(12), "style {style}");
+        }
+        // The naming pair plays 10 (`:1661`/`:1670`), Back plays 11
+        // (`GoBack`, `:1212`), the hex clipboard pair plays 12
+        // (`:1333`/`:1339`).
+        assert_eq!(click_cue(Click::Name), Some(10));
+        assert_eq!(click_cue(Click::Create), Some(10));
+        assert_eq!(click_cue(Click::Back), Some(11));
+        assert_eq!(click_cue(Click::CopyHex), Some(12));
+        assert_eq!(click_cue(Click::PasteHex), Some(12));
+        // The template pair (`:1410`/`:1416`), the two randomizers
+        // (`:1547`/`:1781`) and the difficulty rows
+        // (`UIDifficultyButton.cs:84`) all play 12.
+        assert_eq!(click_cue(Click::CopyTemplate), Some(12));
+        assert_eq!(click_cue(Click::PasteTemplate), Some(12));
+        assert_eq!(click_cue(Click::RandomizePlayer), Some(12));
+        assert_eq!(click_cue(Click::RandomizeColor), Some(12));
+        for d in DIFFICULTY_IDS {
+            assert_eq!(click_cue(Click::Difficulty(d)), Some(12), "difficulty {d}");
+        }
+        // The hair buttons (`UIHairStyleButton.cs:82`).
+        assert_eq!(click_cue(Click::Hair(0)), Some(12));
+        assert_eq!(click_cue(Click::Hair(51)), Some(12));
+        // A dead click is silent.
+        assert_eq!(click_cue(Click::None), None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the hover census: every sounding element
+    /// answers a stable id, silent space answers `None`, and the hair grid
+    /// clips to the list view (`UIHairStyleButton.DrawSelf` only runs for
+    /// drawn buttons).
+    #[test]
+    fn doc_sweep_hover_elements_answer_stable_ids() {
+        let l = layout(SCREEN, 40.0);
+        let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+        assert_eq!(hover_element(&l, 0, centre(l.categories[3])), Some(3));
+        assert_eq!(hover_element(&l, 0, centre(l.back)), Some(10));
+        assert_eq!(hover_element(&l, 0, centre(l.create)), Some(11));
+        assert_eq!(hover_element(&l, 0, centre(l.info_name)), Some(100));
+        assert_eq!(hover_element(&l, 0, centre(l.difficulty_buttons[1])), Some(13));
+        assert_eq!(hover_element(&l, 2, centre(hair_button(l.hair_grid, 0))), Some(20));
+        assert_eq!(hover_element(&l, 1, centre(l.cloth_buttons[0])), Some(300));
+        assert_eq!(hover_element(&l, 1, centre(l.template_buttons[2])), Some(322));
+        assert_eq!(hover_element(&l, 3, centre(l.hsl_buttons[0])), Some(330));
+        // A far-outside-the-view hair cell is clipped (row 20 sits ~961 px
+        // down the unscrolled grid, the view is 119 tall).
+        assert_eq!(hover_element(&l, 2, centre(hair_button(l.hair_grid, 200))), None);
+        // The preview and the panel border are silent.
+        assert_eq!(hover_element(&l, 0, centre(l.preview)), None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the HSL bars' two cue latches
+    /// (`UIColoredSlider.cs:136`/`:85`): the hover enter plays one 12,
+    /// staying hovered is silent, the held drag plays one more 12, holding
+    /// the drag is silent, release re-arms the usage latch, exit re-arms
+    /// the hover latch.
+    #[test]
+    fn doc_sweep_hsl_hover_and_usage_latches() {
+        let mut s = CreationState::new();
+        s.category = 3;
+        // Hover enter on bar 0: one cue.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 1);
+        // Still hovered, no button: silent.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 0);
+        // The drag starts (the update latched hsl_grab = 1): one more cue.
+        s.hsl_grab = 1;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 1);
+        // Held drag: silent.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 0);
+        // Release: the usage latch re-arms; the hover stays latched.
+        s.hsl_grab = 0;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 0);
+        s.hsl_grab = 1;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 1);
+        // Exit: both latches clear; re-enter plays again.
+        s.hsl_grab = 0;
+        assert_eq!(hsl_slider_cues(&mut s, [false, false, false], false), 0);
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 1);
+        // A hover enter and a drag start on DIFFERENT bars in one frame
+        // play both (the C# runs each bar's DrawSelf independently). Bar 1
+        // was already hovered (its hover latch is set); the drag starts now.
+        let mut s = CreationState::new();
+        s.category = 3;
+        s.hsl_hovered[1] = true;
+        s.hsl_grab = 2;
+        assert_eq!(hsl_slider_cues(&mut s, [true, true, false], true), 2);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the census-only 888 sites: the seven
+    /// armor handlers play 12 with their exact assignments (the
+    /// Formal/Swimming gender split), the voice-pitch click plays 12, the
+    /// gamepad Back plays 12 off-Info / 11 on Info.
+    #[test]
+    fn doc_sweep_armor_voice_and_gamepad_back_census() {
+        for b in 0..7 {
+            assert_eq!(armor_click_cue(b), 12, "armor button {b}");
+        }
+        assert_eq!(armor_assignment(0, true), (0, 0, 0));
+        assert_eq!(armor_assignment(1, true), (92, 83, 79));
+        assert_eq!(armor_assignment(2, false), (91, 82, 78));
+        assert_eq!(armor_assignment(3, true), (4704, 4705, 4706));
+        assert_eq!(armor_assignment(4, false), (5660, 551, 552));
+        assert_eq!(armor_assignment(5, true), (239, 240, 241));
+        assert_eq!(armor_assignment(5, false), (3478, 3479, 0));
+        assert_eq!(armor_assignment(6, true), (237, 3785, 5649));
+        assert_eq!(armor_assignment(6, false), (237, 5646, 5647));
+        // MENU-FINAL census correction: only five handlers are subscribed
+        // (`:355/:362/:369/:376/:383`); the layout order maps to census ids
+        // [None, Hallowed, Silver, Formal, Swimming]. Gold (1) / Funeral (3)
+        // are dead handlers. The Swimming female alone carries the flipper.
+        assert_eq!(ARMOR_LAYOUT_HANDLERS, [0, 4, 2, 5, 6]);
+        for b in 0..7 {
+            for male in [true, false] {
+                let want = if b == 6 && !male { 208 } else { 0 };
+                assert_eq!(armor_assignment_accessory(b, male), want, "{b}/{male}");
+            }
+        }
+        assert_eq!(voice_pitch_click_cue(), 12);
+        assert_eq!(back_button_usage_cue(0), 11, "CharInfo falls to GoBack");
+        for c in 1..=9 {
+            assert_eq!(back_button_usage_cue(c), 12, "category {c}");
+        }
+    }
+
     #[test]
     fn alt_gender_reference_swaps_every_variant() {
         // `PlayerVariantID.Sets.AltGenderReference` (`ID/PlayerVariantID.cs:21`).
@@ -2751,7 +3674,12 @@ mod tests {
         let shoe = hsl_to_rgb_scaled(random_color_vector(&mut reference));
         let mut skin_variant =
             VALID_CLOTH_STYLES[reference.next_max(VALID_CLOTH_STYLES.len() as i32) as usize];
-        let _ = reference.next_max(2); // the voice draw
+        // W4-e10 — the voice draw lands the field (`:1571-1575`): the gender
+        // default from the PRE-hair-remap variant, then the Next(2) override.
+        let mut voice_variant = if is_male(skin_variant) { 1 } else { 2 };
+        if reference.next_max(2) == 0 {
+            voice_variant = 3;
+        }
         let male = !FEMALE_HAIR_CASES.contains(&(hair + 1));
         if male != is_male(skin_variant) {
             skin_variant = alt_gender_reference(skin_variant);
@@ -2771,6 +3699,7 @@ mod tests {
         assert_eq!(draft.pants_color, pants);
         assert_eq!(draft.shoe_color, shoe);
         assert_eq!(draft.skin_variant, skin_variant);
+        assert_eq!(draft.voice_variant, voice_variant);
         // `_lastSelectedHairstyle = player.hair` (`:1551`).
         assert!(hair_picked);
         // The streams end on the same raw sample — same number/order of draws.
@@ -2778,6 +3707,7 @@ mod tests {
         // The landed values are always in the screen's tables.
         assert!(HAIRSTYLES.contains(&draft.hair));
         assert!(VALID_CLOTH_STYLES.contains(&draft.skin_variant));
+        assert!(VALID_VOICE_STYLES.contains(&draft.voice_variant));
     }
 
     #[test]
@@ -2996,5 +3926,233 @@ mod tests {
         assert!(lookups.cc_color_character.is_none());
         assert!(lookups.cc_panel.is_none());
         assert!(lookups.cc_colors.iter().all(|s| s.is_none()));
+    }
+
+    // --- W4-e10: the voice picker ---------------------------------------------
+
+    #[test]
+    fn w4_e10_voice_tables_match_the_id_sets() {
+        // `_validVoiceStyles` (`:74`) = `PlayerVoiceID.VariantOrder`
+        // (`ID/PlayerVoiceID.cs:34`); the icon colours `Sets.Colors` (`:16`).
+        assert_eq!(VALID_VOICE_STYLES, [1, 2, 3]);
+        assert_eq!(VOICE_ICON_COLORS[0], [255, 255, 255, 255]); // White default
+        assert_eq!(VOICE_ICON_COLORS[1], [100, 149, 237, 255]); // CornflowerBlue
+        assert_eq!(VOICE_ICON_COLORS[2], [255, 105, 180, 255]); // HotPink
+        assert_eq!(VOICE_ICON_COLORS[3], [50, 205, 50, 255]); // LimeGreen
+    }
+
+    #[test]
+    fn w4_e10_cycle_voice_style_wraps_the_variant_order() {
+        // `Main.CycleVoiceStyle` (`Main.cs:52377-52395`): ±1 wraps modulo 3
+        // with the negative fix; an absent variant starts at index 0.
+        assert_eq!(cycle_voice_style(1, 1), 2);
+        assert_eq!(cycle_voice_style(2, 1), 3);
+        assert_eq!(cycle_voice_style(3, 1), 1);
+        assert_eq!(cycle_voice_style(1, -1), 3);
+        assert_eq!(cycle_voice_style(3, -1), 2);
+        assert_eq!(cycle_voice_style(2, -1), 1);
+        // An unhandled variant (e.g. the load-clamped 4) reads index 0.
+        assert_eq!(cycle_voice_style(4, 1), 2);
+        assert_eq!(cycle_voice_style(4, -1), 3);
+    }
+
+    #[test]
+    fn w4_e10_voice_number_is_the_one_based_variant_index() {
+        // `voiceNumber_OnUpdate` (`:710-723`).
+        assert_eq!(voice_number(1), 1);
+        assert_eq!(voice_number(2), 2);
+        assert_eq!(voice_number(3), 3);
+        assert_eq!(voice_number(4), 1); // absent -> index 0 + 1
+    }
+
+    #[test]
+    fn w4_e10_update_selected_gender_auto_switches_on_a_flip() {
+        // `UpdateSelectedGender` (`:1305-1329`): variant 1 -> 2 on male->female,
+        // 2 -> 1 on female->male, 3 neutral; no flip leaves the variant; the
+        // preview request is always true.
+        let mut d = NewPlayerDraft::new();
+        d.skin_variant = 0; // male
+        d.voice_variant = 1;
+        let mut old = true;
+        assert!(update_selected_gender(&mut d, &mut old));
+        assert_eq!(d.voice_variant, 1); // no flip
+        // male -> female (skin 4), variant 1 -> 2.
+        d.skin_variant = 4;
+        assert!(update_selected_gender(&mut d, &mut old));
+        assert_eq!(d.voice_variant, 2);
+        assert!(!old);
+        // female -> male, variant 2 -> 1.
+        d.skin_variant = 0;
+        assert!(update_selected_gender(&mut d, &mut old));
+        assert_eq!(d.voice_variant, 1);
+        assert!(old);
+        // variant 3 is gender-neutral.
+        d.voice_variant = 3;
+        d.skin_variant = 4;
+        assert!(update_selected_gender(&mut d, &mut old));
+        assert_eq!(d.voice_variant, 3);
+    }
+
+    #[test]
+    fn w4_e10_pitch_knob_quantizes_bankers_to_twentieths() {
+        // `RemapPitchSliderKnob` (`:680-684`): `Math.Round(v*20)/20`, banker's.
+        assert_eq!(remap_pitch_slider_knob(0.0), 0.0);
+        assert_eq!(remap_pitch_slider_knob(1.0), 1.0);
+        assert_eq!(remap_pitch_slider_knob(0.5), 0.5);
+        // 0.025 * 20 = 0.5 -> banker's 0 -> 0.0; 0.075 * 20 = 1.5 -> 2 -> 0.1.
+        assert_eq!(remap_pitch_slider_knob(0.025), 0.0);
+        assert_eq!(remap_pitch_slider_knob(0.075), 0.1);
+        assert_eq!(remap_pitch_slider_knob(0.33), 0.35); // 6.6 -> 7
+    }
+
+    #[test]
+    fn w4_e10_pitch_slider_remaps_and_arms_the_debounce() {
+        // `SetPitchSlider_Keyboard` (`:686-696`): 0..1 -> -1..1, the change
+        // arms `_pitchChanged` + cooldown 3.
+        let mut s = CreationState::new();
+        assert!(set_pitch_slider(&mut s, 1.0)); // 0 -> 1.0
+        assert_eq!(s.draft.voice_pitch_offset, 1.0);
+        assert!(s.pitch_changed);
+        assert_eq!(s.pitch_changed_cooldown, 3);
+        // The same value again: no change, no re-arm flag flip.
+        s.pitch_changed = false;
+        assert!(!set_pitch_slider(&mut s, 1.0));
+        assert!(!s.pitch_changed);
+        // `GetPitchSlider` (`:698-701`) inverts: offset 1.0 -> knob 1.0.
+        assert_eq!(get_pitch_slider(&s.draft), 1.0);
+        assert!(set_pitch_slider(&mut s, 0.0)); // -> -1.0
+        assert_eq!(s.draft.voice_pitch_offset, -1.0);
+        assert_eq!(get_pitch_slider(&s.draft), 0.0);
+    }
+
+    #[test]
+    fn w4_e10_voice_pitch_color_blips_match_the_remap() {
+        // `GetVoicePitchColorAt` (`:703-708`): at x=0, fromValue=0.5,
+        // num = Remap(.5,0,.5,0,1)*Remap(.5,.5,1,1,0) = 1*1 = 1 -> White.
+        assert_eq!(voice_pitch_color_at(0.0), [255, 255, 255, 255]);
+        // At x=0.125, fromValue=(0.5+0.5)%1=0 -> num=0 -> (90,90,120).
+        assert_eq!(voice_pitch_color_at(0.125), [90, 90, 120, 255]);
+    }
+
+    #[test]
+    fn w4_e10_preview_voice_runs_the_default_hurt_tail() {
+        // A fresh draft (variant 1, pitch 0, male) -> Male(0.0); the pitch
+        // remaps ±0.7; variant 2 -> Female, 3 -> DefaultPlayerHurt.
+        let mut d = NewPlayerDraft::new();
+        assert_eq!(preview_voice(&d), Some(crate::player::HurtVoice::Male(0.0)));
+        d.voice_pitch_offset = 1.0;
+        assert_eq!(preview_voice(&d), Some(crate::player::HurtVoice::Male(0.7)));
+        d.voice_pitch_offset = -1.0;
+        assert_eq!(preview_voice(&d), Some(crate::player::HurtVoice::Male(-0.7)));
+        d.voice_pitch_offset = 0.0;
+        d.voice_variant = 2;
+        assert_eq!(preview_voice(&d), Some(crate::player::HurtVoice::Female(0.0)));
+        d.voice_variant = 3;
+        assert_eq!(
+            preview_voice(&d),
+            Some(crate::player::HurtVoice::Style("DefaultPlayerHurt", 0.0))
+        );
+        // An unhandled variant falls through silently (`:38701-38712`).
+        d.voice_variant = 4;
+        assert_eq!(preview_voice(&d), None);
+    }
+
+    #[test]
+    fn w4_e10_play_voice_preview_latches_once_per_frame() {
+        // `PlayVoicePreview` (`:1517-1527`): the first request plays, the rest
+        // are swallowed until the per-frame clear (`:178`).
+        let mut s = CreationState::new();
+        assert!(play_voice_preview(&mut s));
+        assert!(!play_voice_preview(&mut s));
+        s.played_voice_preview = false; // the Update head clear
+        assert!(play_voice_preview(&mut s));
+    }
+
+    #[test]
+    fn w4_e10_voice_row_layout_matches_the_csharp_rects() {
+        // Hand-derived from `MakeClothStylesMenu` (`:431-517`) over the
+        // 1600x900 screen: the voice row (650,421,90,50), the play button
+        // (669,420,52,52), prev/next (650/708,430,32,32), the pitch element
+        // (656.5,461,187,0) and its bar/hit.
+        let l = layout(SCREEN, 0.0);
+        assert_eq!(l.voice_button, [669.0, 420.0, 52.0, 52.0]);
+        assert_eq!(l.voice_prev, [650.0, 430.0, 32.0, 32.0]);
+        assert_eq!(l.voice_next, [708.0, 430.0, 32.0, 32.0]);
+        assert_eq!(l.voice_pitch, [656.5, 461.0, 187.0, 0.0]);
+        let (bar, hit) = voice_pitch_rects(l.voice_pitch);
+        assert_eq!(bar, [655.5, 471.0, 178.0, 16.0]);
+        assert_eq!(hit, [658.5, 475.0, 174.0, 8.0]);
+    }
+
+    #[test]
+    fn w4_e10_voice_clicks_route_the_picker() {
+        // `click_at` over the ClothStyles menu: prev/next/play/pitch.
+        let l = layout(SCREEN, 0.0);
+        let at = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
+        assert_eq!(click_at(&l, 1, at(l.voice_prev)), Click::VoicePrev);
+        assert_eq!(click_at(&l, 1, at(l.voice_next)), Click::VoiceNext);
+        assert_eq!(click_at(&l, 1, at(l.voice_button)), Click::VoicePlay);
+        let (_, hit) = voice_pitch_rects(l.voice_pitch);
+        assert_eq!(click_at(&l, 1, at(hit)), Click::VoicePitch);
+        // The voice row is only live over ClothStyles (category 1).
+        assert_eq!(click_at(&l, 0, at(l.voice_button)), Click::None);
+    }
+
+    #[test]
+    fn w4_e10_pitch_drag_writes_the_offset_and_debounces_the_preview() {
+        // `voice_pitch_update` over the ClothStyles menu: a press in the bar
+        // latches, writes the offset, plays one Menu_Tick; the 3-tick debounce
+        // then fires the preview once.
+        let l = layout(SCREEN, 0.0);
+        let mut s = CreationState::new();
+        s.category = 1; // ClothStyles
+        let (_, hit) = voice_pitch_rects(l.voice_pitch);
+        let mid = Vec2::new(hit[0] + hit[2] * 0.5, hit[1] + hit[3] * 0.5);
+        // First held frame: latch + write + the usage/hover Menu_Tick. The
+        // bar's midpoint is 0.5 -> offset 0.0, the draft default — no change,
+        // so the debounce does not arm yet.
+        let cues = voice_pitch_update(&l, &mut s, mid, true);
+        assert!(s.pitch_grab);
+        assert!(cues.menu_tick);
+        assert_eq!(s.draft.voice_pitch_offset, 0.0); // mid -> 0.5 -> 0.0
+        assert!(!s.pitch_changed);
+        // The debounce counts down over the next held frames; the preview
+        // fires only if the offset actually changed. Drag to the right end.
+        let far = Vec2::new(hit[0] + hit[2] + 40.0, hit[1] + 1.0);
+        let mut preview_seen = false;
+        for _ in 0..6 {
+            let c = voice_pitch_update(&l, &mut s, far, true);
+            preview_seen |= c.preview;
+        }
+        assert_eq!(s.draft.voice_pitch_offset, 1.0);
+        assert!(preview_seen, "the debounce fires the preview after the change");
+        // Releasing clears the latch.
+        voice_pitch_update(&l, &mut s, far, false);
+        assert!(!s.pitch_grab);
+    }
+
+    #[test]
+    fn w4_e10_template_carries_the_live_voice_pair() {
+        // `GetPlayerTemplateValues` (`:1362-1369`) + the paste (`:1462-1475`).
+        let mut d = NewPlayerDraft::new();
+        d.voice_variant = 3;
+        d.voice_pitch_offset = 0.5;
+        let json = player_template(&d);
+        assert!(json.contains("\"voiceStyle\": 3"));
+        assert!(json.contains("\"voicePitch\": 0.5"));
+        let mut p = NewPlayerDraft::new();
+        assert!(apply_player_template(&mut p, &mut false, &json));
+        assert_eq!(p.voice_variant, 3);
+        assert_eq!(p.voice_pitch_offset, 0.5);
+        // An out-of-table voiceStyle is dropped (`_validVoiceStyles`), the
+        // pitch still lands raw.
+        let mut q = NewPlayerDraft::new();
+        assert!(apply_player_template(
+            &mut q,
+            &mut false,
+            "{\"version\": 1, \"voiceStyle\": 9, \"voicePitch\": -0.25}",
+        ));
+        assert_eq!(q.voice_variant, 1); // unchanged
+        assert_eq!(q.voice_pitch_offset, -0.25);
     }
 }

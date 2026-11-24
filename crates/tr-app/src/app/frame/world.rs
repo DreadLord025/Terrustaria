@@ -37,6 +37,10 @@ impl App {
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.
     self.handle_npc_chat_clicks();
+    // The world housing banners' right-click kick-out (`DrawNPCHousesInWorld`,
+    // `Main.cs:40824-40829`, W4-g21 batch 4 host 53) — the banner hover box
+    // consumes the right press before the chest/crafting/inventory handlers.
+    self.handle_house_banner_clicks();
     // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest
@@ -208,6 +212,8 @@ impl App {
         eclipse: self.world.eclipse
             && self.camera.y
                 < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+        // W4-f33 — the Torch God minigame track (`Main.cs:12542`).
+        in_torch_god_minigame: self.scene_metrics.in_torch_god_minigame,
         shimmer: self.scene_metrics.zone_shimmer,
         town_npcs: self.scene_metrics.town_npc_count,
         // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
@@ -267,6 +273,8 @@ impl App {
         quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
         menu: false,
         menu_flags: Default::default(),
+        menu_micro_flags: Default::default(),
+        menu_credits: false,
         music_box: self.scene_metrics.active_music_box,
         music_box_silence: self.scene_metrics.music_box_silence,
     });

@@ -169,6 +169,23 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             .player
             .as_ref()
             .map_or(1.0, |p| p.melee_speed(app.inventory[app.selected].kind)),
+        // S1-E-21h d75 — the drill hum's `inventory[selectedItem].pick > 0`
+        // read (`Projectile.cs:25512`), snapshotted off the held ItemDef.
+        held_pick_positive: crate::registry::item(app.inventory[app.selected].kind)
+            .is_some_and(|it| it.pick > 0),
+        // W4-d10 — `AI_099_1_Counterweights`'s channel push (`:67521`):
+        // the frame-head `UpdateMainMouse` snapshot (`PlayerInput.cs:
+        // 911-917`), already in the world-update zoom basis
+        // (`SetZoom_MouseInWorld`, `:2528-2542`). Drained per projectile
+        // tick — every sub-step reads the same per-tick delta, exactly
+        // like the C# reads the same `Main.mouseX/lastMouseX` pair.
+        mouse_delta: (app.mouse_tick_delta.x, app.mouse_tick_delta.y),
+        // W4-d10 — the yoyo-string accessory grants (`Player.cs:14710-
+        // 14754`, the `ApplyEquipFunctional` rows; `ResetEffects` clears
+        // per tick `:18435`/`:18439`). The yoyo arm's lifetime/range terms
+        // and the counterweight's radius/ghost split read them.
+        yoyo_string: app.player.as_ref().is_some_and(|p| p.yoyo_string),
+        magic_string: app.player.as_ref().is_some_and(|p| p.magic_string),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)
@@ -691,6 +708,92 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // `0.15*ai[0]`); the id-0 Dig sites all queue volume 1.
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
+        } else if id == 13 {
+            // S1-E-21h d75 part 2 + d77 — the Shatter plays: case 13 draws
+            // NOTHING (`LegacySoundPlayer.cs:783-792`), attenuation gate
+            // first. The queue's sixth term carries the call-site
+            // volumeScale: the Crystal Shard's lead (`Projectile.cs:25943`,
+            // `PlaySound(13, x, y, 0, 0.35f)`) queues 0.35; the Kill-tail
+            // water bottles (`:77018`/`:77033`/`:77048`) and the molotov
+            // (`:73923`) queue the stock 1.0 (d77's wall-break int arm
+            // shape — both draw-free, the volume rides the queue).
+            app.audio.play_shatter_sound(x, y, volume_scale);
+        } else if id == 6 {
+            // S1-E-21h d77 — the spore cloud's Grass rustle
+            // (`Projectile.cs:74517`, `PlaySound(6, pos)`): the wall-break
+            // façade's int arm (`LegacySoundPlayer.cs:706-716`, one
+            // `Next(-30, 31)` pitch), attenuation gate first.
+            app.audio.play_wall_break_sound((id, 1), x, y, rng);
+        } else if id == 15 {
+            // The yoyo-shot's rare roar (`:36821`, `PlaySound(15, …, 0,
+            // 0.35f, jitter)`): case 15 draws nothing (the slot guard is the
+            // whole decision); the arm already drew the Next(100)/Next(6)/
+            // NextFloat jitter inline — the jitter VALUE and the 0.35
+            // volumeScale are dropped here (the recorded deviation).
+            app.audio.play_roar(style, x, y);
+        } else if id == 36 {
+            // The dash-roar twin (`:36825`, `PlaySound(36, …, -1, 0.35f,
+            // jitter)`): case 36 draws nothing, style −1 → slot 0 at
+            // Pitch += 0.6.
+            app.audio.play_dash_roar(style, x, y);
+        } else if id == 29 {
+            // S1-E-21h d75 part 3 — the Phantasmal Deathray's first-tick
+            // zombie-voice cue (`Projectile.cs:31504`, `PlaySound(29, x, y,
+            // 104)`): case 29's Style IS the slot (`LegacySoundPlayer.cs:
+            // 1008-1050`), the ×0.55 style-104 volume arm, the playing guard
+            // BEFORE the one `Next(-10, 11)` pitch — all ride the E21e
+            // `play_fighter_moan` façade on the same UpdateProjectiles
+            // stream, attenuation gate first. The int overload draws NO
+            // `GetRandomPitch` NextFloat.
+            // The C# sites truncate (`PlaySound(29, (int)X, (int)Y, …)`
+            // `:31504`/`:72989`) — the drain-side truncation is the
+            // faithful gate probe (the d75 part-6 receipt).
+            app.audio.play_fighter_moan(29, style, x.trunc(), y.trunc(), rng);
+        } else if id == 3 && style == 29 {
+            // S1-E-21h d75 part 4 — the 1054 SpiderBoulder's death cue
+            // (`Projectile.cs:74865`, `PlaySound(SoundID.NPCHit29, x, y)`).
+            // d3's `boulder_kill` parks the (3, 29) tuple; the C# call is
+            // the STYLE overload (one audio-only GetRandomPitch), so the
+            // drain routes to wave C's style façade — case 3's one
+            // `Next(-10, 11)` pitch rides this stream, gate first. Other
+            // id-3 styles fall through (the façade's None — a future
+            // style's route is its own lane's follow-up).
+            app.audio.play_npc_hit_sound("NPC_Hit_29", x, y, rng);
+        } else if id == 4 && style == -6 {
+            // S1-E-21h d75 part 4 + d77 compose — the 1055 Ghoulder's death
+            // cue (`Projectile.cs:74869`, `PlaySound(SoundID.NPCDeath6, x,
+            // y)`): the STYLE overload — case 4's one `Next(-10, 11)` pitch
+            // after the gate (the 10 playing guard is style-10-only), the
+            // GetRandomPitch NextFloat audio-only. d3's `boulder_kill`
+            // intent rides the −6 named-route sentinel (the −34 precedent,
+            // the d75 part-6 receipt): the payload alone cannot tell the
+            // style call from d77's kill-tail int `(4, 6)` — the sentinel
+            // keeps BOTH overload paths live.
+            app.audio.play_npc_death_style(6, x, y, rng);
+        } else if id == 4 {
+            // S1-E-21h d77 — the kill-tail death cries: the Sharknado bolt
+            // (`Projectile.cs:73763`, `PlaySound(4, Center, 19)`), the
+            // Phantasmal Sphere (`:73016`, style 6), the Stardust Jellyfish
+            // (`:72571`, style 7): the int-overload case-4 façade (one
+            // `Next(-10, 11)` pitch after the gate, the 10 playing guard,
+            // NO GetRandomPitch).
+            app.audio.play_npc_death_int(style, x, y, rng);
+        } else if id == 37 {
+            // S1-E-21h d75 part 4 — the 502 Meowmere star's bounce chime
+            // (`Projectile.cs:18209`, `PlaySound(37, x, y, 5 + ai[0])`):
+            // case 37's Next(57,59) slot pick + the Next(-40,41) pitch
+            // ride this stream (the int overload — no GetRandomPitch),
+            // the Style×0.05 volume scales inside the façade.
+            app.audio.play_star_chime(style, x, y, rng);
+        } else if id == 2 && style == -34 {
+            // S1-E-21h d75 part 4 — the 1106 Foxparks flame's per-life cue
+            // (`Projectile.cs:41369`, `PlaySound(SoundID.FoxparksFlame,
+            // Center)`): the −34 named-row marker routes to the NAMED
+            // (2, 34) row at volume 0.15 (`SoundID.cs:1725`) — the plain
+            // +34 tuple stays Item34's (d76's Nebula Blaze latch, volume
+            // 1.0). The by-name façade keeps the volume (the
+            // play_chillet_sound precedent).
+            app.audio.play_foxparks_flame(x, y, rng);
         } else if id == 18 {
             // W4-d1 retire — the falling-block forced placement's coin-pile
             // tail (`WorldGen.cs:60273-60278`: the legacy Coins 18, the int
@@ -699,6 +802,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.audio.play_place_sound((18, 1), x, y, rng);
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, volume_scale, rng);
+            // S1-E-21h f1 — the queue's sixth term (d77's `volumeScale`
+            // seam, adopted from `9d35874a`): the id-0/13/4 int-overload
+            // routes ride INSIDE `play_proj_sound_scaled`'s int match (f1's
+            // part-4 shape) and ignore the scale (the int overload's own
+            // volume is 1 at every f1 site); the id-2 styles fold it into
+            // `play_use_sound_scaled`'s post-gate multiply
+            // (`LegacySoundPlayer.cs:1411`).
+            app.audio
+                .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, rng);
         }
     }
     // W4-e7 lane 23 — the Snapping Stone strike family's queued cues
@@ -860,6 +972,29 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing_max = app.swing;
         app.item_time = 5.0 / 60.0;
     }
+    // W4-d10 — the Coin Portal's gold-coin fountain (`Projectile.cs:32932-
+    // 32933`): `Item.NewItem` of the Gold Coin 73 (stack 1, prefix 0) at
+    // the truncated centre with the arm's EXPLICIT velocity — the
+    // RotatedByRandom pair + the NextFloat speed already drew on the
+    // `UpdateProjectiles` stream inside the AI; the explicit-velocity arm
+    // (`Item.cs:49738-49741`) skips the scatter pair and prefix 0 rolls
+    // nothing, so this drain is stream-neutral. The 14×14 item box centres
+    // on the spawn point (`WorldItem.Center = center`, `Item.cs:49736`).
+    for (x, y, vx, vy) in app.projectiles.drain_coin_drops() {
+        app.items.push(crate::item::ItemDrop::new(
+            73,
+            1,
+            0,
+            x - crate::item::SIZE * 0.5,
+            y - crate::item::SIZE * 0.5,
+            vx,
+            vy,
+            0.0,
+        ));
+        if app.items.len() > 300 {
+            app.items.remove(0);
+        }
+    }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
     // item fills the owner's inventory first (`Player.GetItem`'s slot walk),
@@ -950,18 +1085,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         let half = crate::item::SIZE * 0.5;
         let drop = crate::item::ItemDrop::new(
             item,
-            stack as u32,
-            0,
-            cx - half,
-            cy - half,
-            vx,
-            vy,
-            0.0,
+            1,
+            glam::Vec2::new(x, y),
         );
-        app.items.push(drop);
-        if app.items.len() > 300 {
-            app.items.remove(0);
-        }
     }
     // W4-d6 — the aiStyle-60 slime walk's campfire-validate mismatch kills
     // (`Wiring.ToggleCampFire` → `ValidateTileSquareIsActiveAndOfType`,
@@ -1262,6 +1388,83 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     }
 }
 
+/// W4-d6 residual 7 — the 298-orb chain end-to-end (written, NOT run —
+/// code-only mode): the Spectre-Hood hit queues the intent, the pass-tail
+/// drain spawns the orb centred, and the armed style-52 dispatch flies it
+/// into the player for the contact heal (`Projectile.cs:28504-28532`).
+#[cfg(test)]
+mod w4_d6_heal_orb_chain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::{LOST_SOUL, SPIRIT_HEAL};
+
+    #[test]
+    fn w4_d6_the_hit_intent_drains_into_a_flying_orb_that_heals_on_contact() {
+        // The 8x8 fixture world, the player parked mid-world; a high-life
+        // zombie overlapping a Lost Soul shot. The hood flag + the missing
+        // health arm the ghostHeal spawn; the drained 298 homes at speed 4
+        // through the (v*15+d)/16 blend and heals on the <50f contact.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.local_id = 0;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        player.hp = 50;
+        player.max_hp = 100;
+        player.ghost_heal = true;
+        player.life_steal = 80.0;
+        app.player = Some(player);
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 56.0, 40.0, 1, 0.0);
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        app.npcs.push(npc);
+        // The magic shot overlapping the victim (the 12x12 soul box),
+        // flying right at 8 px/tick — it exits the 8x8 world (the
+        // out-of-world guard, no Kill) before the id-static 10-tick window
+        // expires, so exactly ONE hit lands and ONE orb spawns.
+        app.projectiles
+            .spawn_with_data_ai_owned(LOST_SOUL, 0, 58.0, 44.0, 8.0, 0.0, 100, 0.0, 0.0, 0.0);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The drain spawned the orb: centred on the POST-strike victim
+        // centre (the 6x6 half-extent subtract), ai0 = the local player
+        // (the missing-health scan), ai1 = the 0.2 float share.
+        let orb = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == SPIRIT_HEAL)
+            .expect("the drained 298 lives");
+        let n = &app.npcs[0];
+        let (nw, nh) = n.size();
+        assert_eq!(orb.ai[0], 0.0, "the target scan picked the local player");
+        let strike = 10_000 - n.hp;
+        assert!(strike > 0, "the hit landed");
+        // The drain runs at the pass TAIL, so the orb's first AI tick is
+        // the NEXT pass — this tick it holds the spawn velocity 0.
+        assert!(orb.vel.length() < 1e-6, "the drain spawns at rest");
+        let heal = orb.ai[1];
+        assert!((heal - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
+        // The next ticks: the armed 52 dispatch blends toward the player
+        // (the victim centre is ~15f from the player centre — inside the
+        // 50f contact radius, so the box overlap decides; the orb closes
+        // the last few px within a tick or two). Fly it home.
+        for _ in 0..40 {
+            update_projectiles(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            !app.projectiles
+                .slots()
+                .iter()
+                .any(|p| p.active && p.kind == SPIRIT_HEAL),
+            "the contact killed the orb (:28526)"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert!(p.hp > 50, "the contact healed");
+        assert!(p.hp <= 100, "the statLifeMax2 cap");
+    }
+}
+
 /// W4-d4 union — the `Kill()` world-drop drain's wire + stream contract
 /// (written, NOT run — code-only): the coil refund ladder
 /// (`Projectile.cs:77572-77615`) spawns `Item.NewItem` world drops at the
@@ -1369,83 +1572,6 @@ mod w4_d4_death_drop_tests {
     }
 }
 
-/// W4-d6 residual 7 — the 298-orb chain end-to-end (written, NOT run —
-/// code-only mode): the Spectre-Hood hit queues the intent, the pass-tail
-/// drain spawns the orb centred, and the armed style-52 dispatch flies it
-/// into the player for the contact heal (`Projectile.cs:28504-28532`).
-#[cfg(test)]
-mod w4_d6_heal_orb_chain_tests {
-    use super::*;
-    use crate::app::flow::front_flow_tests::flow_app;
-    use crate::projectile::{LOST_SOUL, SPIRIT_HEAL};
-
-    #[test]
-    fn w4_d6_the_hit_intent_drains_into_a_flying_orb_that_heals_on_contact() {
-        // The 8x8 fixture world, the player parked mid-world; a high-life
-        // zombie overlapping a Lost Soul shot. The hood flag + the missing
-        // health arm the ghostHeal spawn; the drained 298 homes at speed 4
-        // through the (v*15+d)/16 blend and heals on the <50f contact.
-        let mut app = flow_app(None, vec![], vec![]);
-        app.local_id = 0;
-        let mut player = crate::player::Player::spawn(&app.world);
-        player.x = 40.0;
-        player.y = 40.0;
-        player.hp = 50;
-        player.max_hp = 100;
-        player.ghost_heal = true;
-        player.life_steal = 80.0;
-        app.player = Some(player);
-        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 56.0, 40.0, 1, 0.0);
-        npc.hp = 10_000;
-        npc.max_hp = 10_000;
-        npc.defense_override = Some(0);
-        app.npcs.push(npc);
-        // The magic shot overlapping the victim (the 12x12 soul box),
-        // flying right at 8 px/tick — it exits the 8x8 world (the
-        // out-of-world guard, no Kill) before the id-static 10-tick window
-        // expires, so exactly ONE hit lands and ONE orb spawns.
-        app.projectiles
-            .spawn_with_data_ai_owned(LOST_SOUL, 0, 58.0, 44.0, 8.0, 0.0, 100, 0.0, 0.0, 0.0);
-        update_projectiles(&mut app, 1.0 / 60.0);
-        // The drain spawned the orb: centred on the POST-strike victim
-        // centre (the 6x6 half-extent subtract), ai0 = the local player
-        // (the missing-health scan), ai1 = the 0.2 float share.
-        let orb = app
-            .projectiles
-            .slots()
-            .iter()
-            .find(|p| p.active && p.kind == SPIRIT_HEAL)
-            .expect("the drained 298 lives");
-        let n = &app.npcs[0];
-        let (nw, nh) = n.size();
-        assert_eq!(orb.ai[0], 0.0, "the target scan picked the local player");
-        let strike = 10_000 - n.hp;
-        assert!(strike > 0, "the hit landed");
-        // The drain runs at the pass TAIL, so the orb's first AI tick is
-        // the NEXT pass — this tick it holds the spawn velocity 0.
-        assert!(orb.vel.length() < 1e-6, "the drain spawns at rest");
-        let heal = orb.ai[1];
-        assert!((heal - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
-        // The next ticks: the armed 52 dispatch blends toward the player
-        // (the victim centre is ~15f from the player centre — inside the
-        // 50f contact radius, so the box overlap decides; the orb closes
-        // the last few px within a tick or two). Fly it home.
-        for _ in 0..40 {
-            update_projectiles(&mut app, 1.0 / 60.0);
-        }
-        assert!(
-            !app.projectiles
-                .slots()
-                .iter()
-                .any(|p| p.active && p.kind == SPIRIT_HEAL),
-            "the contact killed the orb (:28526)"
-        );
-        let p = app.player.as_ref().unwrap();
-        assert!(p.hp > 50, "the contact healed");
-        assert!(p.hp <= 100, "the statLifeMax2 cap");
-    }
-}
-
 /// S1-E-21h — the pass-tail sound drain's stream contract (written, NOT
 /// run — code-only mode): the projectile cue plays consume the
 /// `UpdateProjectiles` stream ONLY when the attenuation gate passed, and
@@ -1535,6 +1661,336 @@ mod s1_e_21h_sound_stream_tests {
             *app.rngs.stream(RngKey::UpdateProjectiles),
             witness,
             "the one-cue-per-life latch draws nothing on tick 2"
+        );
+    }
+
+    /// S1-E-21h d75 part 2 — the new drain arms' stream contract: the
+    /// Crystal Shard's Shatter (id 13) and the yoyo dash's roar pair
+    /// (id 15/36) draw NOTHING from the pass stream at the drain (cases
+    /// 13/15/36 are draw-free in the legacy player) — the dash's own
+    /// `Next(100)` roll already drew inside the arm. The sonar trackable
+    /// (id 42) is draw-free too.
+    #[test]
+    fn s1_e_21h_d75_p2_the_shatter_and_roar_drains_are_draw_free() {
+        use crate::projectile::{CRYSTAL_SHARD_MELEE, EYE_OF_CTHULHU_DASH};
+        // The lead shard: one Next(100)-free Shatter intent — the whole
+        // pass draws nothing (the shard arm is RNG-free).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.audio.set_listener(listener(1.0));
+        app.projectiles.spawn_with_data_ai_owned(
+            CRYSTAL_SHARD_MELEE,
+            0,
+            32.0,
+            32.0,
+            0.0,
+            0.0,
+            10,
+            4.0,
+            0.0,
+            0.0,
+        );
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine: the Shatter drain draws nothing",
+                key.name()
+            );
+        }
+        // The dash: `extraUpdates = 3` — four sub-steps, but the cue
+        // block's gate reads `localAI[0] == 0` and the SAME arm call bumps
+        // the counter after it (`:36845`), so only the FIRST sub-step
+        // rolls Next(100); the drain then adds one case-2 pitch draw for
+        // the common Item20 intent (the roar drains draw nothing). The
+        // 100-px box would trip the out-of-world guard in the 8x8 fixture
+        // world — shrink it (the cue block reads no box state; Center
+        // reads pos + w/2).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .spawn_with_data_ai_owned(
+                EYE_OF_CTHULHU_DASH,
+    /// S1-E-21h f1 — the `Kill()` death cue's stream contract: a shot that
+    /// dies this pass queues its death cue, and the case-2 pitch draw rides
+    /// the `UpdateProjectiles` stream ONLY when audible. The Jester's Arrow
+    /// (5, `:75670` Item10) dies on its first sub-step's `penetrate == 0`
+    /// after a hit; here it is spawned with `time_left = 1` so the lifetime
+    /// block kills it on tick 1 without a target. Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_the_death_cue_draws_ride_update_projectiles_only_when_audible() {
+        use crate::projectile::JESTERS_ARROW;
+        fn dying_star_app() -> App {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.projectiles.spawn_with_data_ai_owned(
+                JESTERS_ARROW,
+                0,
+                32.0,
+                32.0,
+                0.0,
+                0.0,
+                10,
+                4.0,
+                0.0,
+                0.0,
+            )
+            .expect("a free slot");
+        app.projectiles.slots_mut()[slot].w = 8.0;
+        app.projectiles.slots_mut()[slot].h = 8.0;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        if witness.next_range(0, 100) == 0 {
+            let _ = witness.next_range(0, 6);
+            let _ = witness.next_float();
+            // The roar drain draws nothing.
+        } else {
+            let _ = witness.next_range(-6, 7);
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "the first sub-step's roll + the intent's drain draw"
+            );
+            // Force the lifetime kill on tick 1 (the death hook fires).
+            let slot = app
+                .projectiles
+                .slots()
+                .iter()
+                .position(|p| p.active && p.kind == JESTERS_ARROW)
+                .expect("the arrow lives");
+            app.projectiles.slots_mut()[slot].time_left = 1;
+            app
+        }
+        // Muted: the death cue queues but the drain's gate refuses before
+        // the case-2 switch — no gameplay draw.
+        let mut app = dying_star_app();
+        app.audio.set_listener(listener(0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine under the muted death-cue gate",
+                key.name()
+            );
+        }
+        // Audible: exactly ONE case-2 default pitch draw (`Next(-6, 7)`)
+        // on the `UpdateProjectiles` stream — the death cue's Item10.
+        let mut app = dying_star_app();
+        app.audio.set_listener(listener(1.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "exactly one case-2 pitch draw for the death cue"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+    }
+
+    /// S1-E-21h d75 part 4 — the two new drain routes' stream contract:
+    /// the RainbowBoulder trackable `(42, 274)` (d3's hard-bounce cue,
+    /// `Projectile.cs:20104`) draws NOTHING (case 42,
+    /// `LegacySoundPlayer.cs:1376-1381`); the FoxparksFlame named-row
+    /// marker `(2, -34)` (`:41369`) draws exactly ONE case-2 default
+    /// pitch (`Next(-6, 7)`) — the same draw the plain +34 tuple makes,
+    /// only the volume differs (0.15 vs 1.0). Both fire only past the
+    /// attenuation gate. The intents are parked through a rowed carrier
+    /// (the FROST_BOLT slot at rest — its own first-tick latch pre-fired
+    /// via ai[1]; the 1047/1106 rows ride d3/d18's pushed tips).
+    #[test]
+    fn s1_e_21h_d75_p4_the_rainbow_and_foxparks_drain_routes_draw_correctly() {
+        // The trackable: muted refuses draw-free …
+        let mut app = frost_bolt_app();
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0));
+        // The death fired once: the second tick draws nothing further.
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "the once-per-death cue draws nothing on tick 2"
+        );
+    }
+
+    /// S1-E-21h f1 fifth batch — the Kill-tail death cue's stream contract:
+    /// the Holy Water bottle (69, `:77018` Shatter) dies this pass and queues
+    /// its id-13 cue; the Shatter case draws NOTHING (`LegacySoundPlayer.cs:
+    /// 783-792`), so the `UpdateProjectiles` stream stays pristine whether
+    /// audible or muted — the gate still precedes the (empty) case. The
+    /// bottle is aiStyle 2 (RNG-free flight), spawned `time_left = 1` so the
+    /// lifetime block kills it on tick 1. Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_b5_the_water_bottle_shatter_cue_is_draw_free() {
+        use crate::projectile::HOLY_WATER;
+        fn dying_bottle_app() -> App {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.projectiles.spawn_with_data_ai_owned(
+                HOLY_WATER, 0, 32.0, 32.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0,
+            );
+            let slot = app
+                .projectiles
+                .slots()
+                .iter()
+                .position(|p| p.active && p.kind == HOLY_WATER)
+                .expect("the bottle lives");
+            app.projectiles.slots_mut()[slot].time_left = 1;
+            app
+        }
+        // Audible: the Shatter plays but draws nothing — every stream pristine.
+        let mut app = dying_bottle_app();
+        app.audio.set_listener(listener(1.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine — the Shatter case draws nothing",
+                key.name()
+            );
+        }
+        // Muted: the gate refuses before the (empty) case — still pristine.
+        let mut app = dying_bottle_app();
+        app.audio.set_listener(listener(0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine under the muted gate",
+                key.name()
+            );
+        }
+        // … audible: case 42 draws nothing anywhere.
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine: the trackable drain draws nothing",
+                key.name()
+            );
+        }
+        // The FoxparksFlame marker: one case-2 pitch on UpdateProjectiles.
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((2, -34, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "exactly one case-2 pitch draw for the named flame row"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+        // The 1054 SpiderBoulder death cue (3, 29): case 3's ONE
+        // `Next(-10, 11)` pitch draw (`LegacySoundPlayer.cs:670`), the
+        // GetRandomPitch NextFloat audio-only.
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((3, 29, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "case 3: exactly one pitch draw for the NPCHit29 death cue"
+        );
+        // The 1055 Ghoulder death cue (4, 6): case 4's ONE
+        // `Next(-10, 11)` pitch draw (`:693`), no playing guard (10-only).
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((4, 6, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "case 4: exactly one pitch draw for the NPCDeath6 death cue"
+        );
+        // The 502 Meowmere star chime (37, style): case 37's TWO draws —
+        // the Next(57,59) slot pick, then the Next(-40,41) pitch
+        // (`LegacySoundPlayer.cs:1328`/`:1332`).
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active)
+            .expect("the carrier");
+        app.projectiles.slots_mut()[slot].ai[1] = 1.0;
+        app.projectiles.slots_mut()[slot].wants_sound = Some((37, 6, 32.0, 32.0, 0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(57, 59);
+        let _ = witness.next_range(-40, 41);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "case 37: slot pick then pitch, two draws"
         );
     }
 }
@@ -2000,6 +2456,7 @@ mod s1_p_i09_yoyo_snapshot_tests {
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
     }
 }
+})
 
 /// W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn drain
 /// (`Projectile.cs:32346-32356`): the VANILLA ids 454/521 resolve through

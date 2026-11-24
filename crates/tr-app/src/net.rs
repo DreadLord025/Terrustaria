@@ -92,6 +92,11 @@ pub mod id {
     pub const SIGN_REQUEST: u8 = 46; // MessageBuffer.cs:2366-2375
     pub const SIGN_DATA: u8 = 47; // MessageBuffer.cs:2376-2405 / NetMessage.cs:979-986
     pub const PLAYER_BUFFS: u8 = 50; // MessageBuffer.cs:2454-2480 / NetMessage.cs:996-1008
+    /// `51 MiscDataSync` (`MessageID.cs:115`): the (player, kind) pair —
+    /// kind 5 is the Torch God bestiary-kill request (`Player.cs:45241`'s
+    /// `SendData(51, …, 5f)` → `MessageBuffer.cs:2514-2520` registers the
+    /// 664 kill on the server). W4-f33.
+    pub const MISC_DATA_SYNC: u8 = 51; // MessageBuffer.cs:2482-2530 / NetMessage.cs:1010-1013
     pub const ADD_NPC_BUFF: u8 = 53; // MessageBuffer.cs:2565-2575 / NetMessage.cs:1019-1022
     pub const NPC_BUFFS: u8 = 54; // MessageBuffer.cs:2577-2593 / NetMessage.cs:1024-1039
     pub const HIT_SWITCH: u8 = 59; // MessageBuffer.cs:2682-2693 / NetMessage.cs:1063-1066
@@ -804,6 +809,18 @@ pub struct PlayerNet {
     /// `Player` ctor's 0.0 (the shroomite-stealth writers are still unported,
     /// `npc_target.rs:83`). W4-c27.
     pub stealth: f32,
+    /// `Player.unlockedBiomeTorches` — fed by `4 PlayerInfo`'s bitsByte16
+    /// bit 2 (`NetMessage.cs:184` / `MessageBuffer.cs:345`, W4-f33). The
+    /// peer's own conversion gates read it locally in the C#; the port
+    /// carries it for parity with the wire (the 5043 use's `SendData(4)`
+    /// re-announces it, `Player.cs:45240`).
+    pub unlocked_biome_torches: bool,
+    /// `Player.UsingBiomeTorches` — bitsByte16 bit 0 (`NetMessage.cs:182` /
+    /// `MessageBuffer.cs:343`, W4-f33): the builder-toggle half of the pair.
+    pub using_biome_torches: bool,
+    /// `Player.happyFunTorchTime` — bitsByte16 bit 1 (`NetMessage.cs:183` /
+    /// `MessageBuffer.cs:344`, W4-f33): the Torch God event runs on the peer.
+    pub happy_fun_torch_time: bool,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1007,7 +1024,11 @@ impl NpcInfo {
 /// position/velocity, the stack, the prefix, the flag byte and the type, plus
 /// the conditional shimmer fields. C#'s `noBroadcast`/`instanced` split and
 /// the slot-400 spawn request are the M6-NET-5 follow-ups (deviation in
-/// `docs/ANALYSIS.md`).
+/// `docs/ANALYSIS.md`). W4-g15 lane 5 — the flag bit 3 `enemyGrabDelayTime`
+/// conditional byte (`NetMessage.cs:652`/`:665-668`, the clamp 0..255) is
+/// now carried; the `90` instanced-loot variant (the same body + the
+/// client's `instanced = true` / `reservedFor = myPlayer`,
+/// `MessageBuffer.cs:1489-1493`) stays the g52b pre-switch gap.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ItemState {
     pub slot: i16,
@@ -1020,12 +1041,17 @@ pub struct ItemState {
     pub kind: i16,
     pub shimmered: bool,
     pub shimmer_time: f32,
+    /// `WorldItem.enemyGrabDelayTime` clamped 0..255 (`NetMessage.cs:667`);
+    /// the flag bit 3 carries its presence. W4-g15 lane 5.
+    pub enemy_grab_delay: u8,
 }
 
 impl ItemState {
     fn write_to(&self, w: NetWriter) -> NetWriter {
         let mut flags = BitsByte::new();
         flags.set(2, self.shimmered || self.shimmer_time > 0.0);
+        // `NetMessage.cs:652` — bit 3 carries the enemy-grab delay presence.
+        flags.set(3, self.enemy_grab_delay > 0);
         let w = w
             .i16(self.slot)
             .f32(self.x)
@@ -1036,8 +1062,14 @@ impl ItemState {
             .u8(self.prefix)
             .bitsbyte(flags)
             .i16(self.kind);
-        if self.shimmered || self.shimmer_time > 0.0 {
+        let w = if self.shimmered || self.shimmer_time > 0.0 {
             w.bool(self.shimmered).f32(self.shimmer_time)
+        } else {
+            w
+        };
+        // `NetMessage.cs:665-668` — the conditional enemy-grab byte.
+        if self.enemy_grab_delay > 0 {
+            w.u8(self.enemy_grab_delay)
         } else {
             w
         }
@@ -1058,6 +1090,8 @@ impl ItemState {
         } else {
             (false, 0.0)
         };
+        // `MessageBuffer.cs:1459` — the conditional enemy-grab byte.
+        let enemy_grab_delay = if flags.get(3) { r.u8()? } else { 0 };
         Some(Self {
             slot,
             x,
@@ -1069,6 +1103,7 @@ impl ItemState {
             kind,
             shimmered,
             shimmer_time,
+            enemy_grab_delay,
         })
     }
 }
@@ -2738,6 +2773,14 @@ pub enum C2s {
     PlayerChest(PlayerChest),
     /// `50 PlayerBuffs` - this client's buff ids (`Main.cs:17675`).
     PlayerBuffs(PlayerBuffs),
+    /// `51 MiscDataSync` — the (player, kind) misc-event pair
+    /// (`NetMessage.cs:1010-1013`). Kind 5: the Torch God's Favor use asks
+    /// the server to register the 664 bestiary kill (`Player.cs:45241`,
+    /// `MessageBuffer.cs:2514-2520`). W4-f33.
+    MiscDataSync {
+        player_id: u8,
+        kind: u8,
+    },
     /// `59 HitSwitch` - a client tripped a switch (`Collision.cs:3303-3304`,
     /// `Player.cs:32178` and the other `HitSwitch` call sites).
     HitSwitch(HitSwitch),
@@ -3207,6 +3250,7 @@ impl C2s {
             Self::AddNpcBuff(_) => id::ADD_NPC_BUFF,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
+            Self::MiscDataSync { .. } => id::MISC_DATA_SYNC,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
             Self::PlayerMana(_) => id::PLAYER_MANA,
             Self::TeamChange(_) => id::TEAM_CHANGE,
@@ -3301,6 +3345,8 @@ impl C2s {
                 }
                 w.u16(0)
             }
+            // `NetMessage.cs:1010-1013` — the (byte) player, (byte) kind.
+            Self::MiscDataSync { player_id, kind } => w.u8(*player_id).u8(*kind),
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
@@ -3515,6 +3561,10 @@ impl C2s {
                 player_id: r.u8()?,
                 buffs: read_terminated_u16(r),
             }),
+            id::MISC_DATA_SYNC => Self::MiscDataSync {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            },
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
                 y: r.i16()?,
@@ -5518,6 +5568,15 @@ pub struct Slot {
     pub sections: Vec<bool>,
     /// The grid width the latch is sized for (0 = not allocated yet).
     pub sections_w: i32,
+    /// `Main.player[id].unlockedBiomeTorches` — the server's copy, fed by
+    /// `4 PlayerInfo`'s bitsByte16 bit 2 (`MessageBuffer.cs:345`, W4-f33).
+    pub unlocked_biome_torches: bool,
+    /// `Main.player[id].UsingBiomeTorches` — bitsByte16 bit 0
+    /// (`MessageBuffer.cs:343`, W4-f33).
+    pub using_biome_torches: bool,
+    /// `Main.player[id].happyFunTorchTime` — bitsByte16 bit 1
+    /// (`MessageBuffer.cs:344`, W4-f33).
+    pub happy_fun_torch_time: bool,
     /// `NetMessage.buffer[id].broadcast` (`MessageBuffer.cs:35`/`:81`, set
     /// `:928` when the slot reaches State 10): the `SendData` fan-out gate —
     /// only the default arm's `10 TileBlock` bypasses it for State >= 3
@@ -5670,6 +5729,9 @@ impl Server {
                         inventory: HashMap::new(),
                         sections: Vec::new(),
                         sections_w: 0,
+                        unlocked_biome_torches: false,
+                        using_biome_torches: false,
+                        happy_fun_torch_time: false,
                         broadcast: false,
                         section_check_time: Vec::new(),
                     },
@@ -5789,6 +5851,32 @@ impl Server {
                 c.name = name;
             }
         }
+    }
+
+    /// The server's `Main.player[id]` biome-torch trio write
+    /// (`MessageBuffer.cs:343-345`, W4-f33): `UsingBiomeTorches` (bit 0),
+    /// `happyFunTorchTime` (bit 1), `unlockedBiomeTorches` (bit 2) of the
+    /// `4 PlayerInfo` bitsByte16.
+    pub fn set_slot_torch_flags(&self, id: u32, using: bool, happy: bool, unlocked: bool) {
+        if let Ok(mut s) = self.slots.lock() {
+            if let Some(c) = s.get_mut(&id) {
+                c.using_biome_torches = using;
+                c.happy_fun_torch_time = happy;
+                c.unlocked_biome_torches = unlocked;
+            }
+        }
+    }
+
+    /// The server's copy of the peer's biome-torch trio (a snapshot).
+    pub fn slot_torch_flags(&self, id: u32) -> (bool, bool, bool) {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| {
+                s.get(&id)
+                    .map(|c| (c.using_biome_torches, c.happy_fun_torch_time, c.unlocked_biome_torches))
+            })
+            .unwrap_or((false, false, false))
     }
 
     /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`
@@ -6671,6 +6759,7 @@ mod tests {
                 kind: 42,
                 shimmered: true,
                 shimmer_time: 30.0,
+                enemy_grab_delay: 100,
             })),
             S2c::ItemState(Box::new(ItemState {
                 slot: 6,
@@ -6683,6 +6772,7 @@ mod tests {
                 kind: 1,
                 shimmered: false,
                 shimmer_time: 0.0,
+                enemy_grab_delay: 0,
             })),
             S2c::ItemDead { slot: 9 },
             S2c::NetModule {
@@ -8826,4 +8916,390 @@ mod tests {
 
 // balance-close (union shared delimiter)
 }}}}}}}}}}}}}}}}}}}}}}}}}}}}}))))))
+    #[test]
+    fn w4_d99_crystal_invasion_wipe_is_bodyless() {
+        // No `case 114` writer arm and the reader consumes nothing
+        // (`MessageBuffer.cs:3855-3860` DD2Event.WipeEntities; the send is
+        // `SendData(114)` with no args, `DD2Event.cs:636`): [len=3][114].
+        let f = S2c::CrystalInvasionWipe.encode();
+        assert_eq!(f, vec![3, 0, 114]);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::CrystalInvasionWipe => {}
+            other => panic!("expected 114, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+    }
+
+    fn w4_d99_crystal_invasion_wait_round_trips() {
+        // `NetMessage.cs:1436-1438` (case 116), verbatim: the raw
+        // (int)number — `_timeLeftUntilSpawningBegins`
+        // (`DD2Event.cs:949`); the client stores TimeLeftBetweenWaves
+        // (`MessageBuffer.cs:3864`).
+        let t = CrystalInvasionWait { time_left: 1800 };
+        let f = S2c::CrystalInvasionWait(t).encode();
+        assert_eq!(f[2], 116);
+        assert_eq!(&f[3..], &1800i32.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CrystalInvasionWait(d) => assert_eq!(d, t),
+            other => panic!("expected 116, got {:?}", other.msg_id()),
+    fn w4_d99_remove_revenge_marker_round_trips() {
+        // `NetMessage.cs:1518-1520` (case 127), verbatim: the raw
+        // (int)number — the marker UniqueID (`CoinLossRevengeSystem.cs:451`);
+        // the client destroys it (`MessageBuffer.cs:4051-4054`). Matches
+        // the 126 marker body's leading unique_id field.
+        let m = RemoveRevengeMarker { unique_id: 42 };
+        let f = S2c::RemoveRevengeMarker(m).encode();
+        assert_eq!(f[2], 127);
+        assert_eq!(&f[3..], &42i32.to_le_bytes());
+            S2c::RemoveRevengeMarker(d) => assert_eq!(d, m),
+            other => panic!("expected 127, got {:?}", other.msg_id()),
+    fn w4_d99_lucy_popup_round_trips() {
+        // `NetMessage.cs:1595-1602` (case 141), verbatim: (byte)number
+        // (source), (byte)number2 (variation), number3/number4 (the
+        // velocity floats) THEN number5/number6 (the position ints) —
+        // deliberately different magnitudes so a swapped pair cannot
+        // pass. Both directions (`LucyAxeMessage.cs:133` client send,
+        // `MessageBuffer.cs:4274` relay).
+        let l = LucyPopup {
+            source: 2,
+            variation: 7,
+            velocity_x: 1.5,
+            velocity_y: -3.25,
+            x: 51200,
+            y: -1024,
+        };
+        let mut body = vec![2u8, 7];
+        body.extend_from_slice(&1.5f32.to_le_bytes());
+        body.extend_from_slice(&(-3.25f32).to_le_bytes());
+        body.extend_from_slice(&51200i32.to_le_bytes());
+        body.extend_from_slice(&(-1024i32).to_le_bytes());
+        let f = C2s::LucyPopup(l).encode();
+        assert_eq!(f[2], 141);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
+        let s = S2c::LucyPopup(l).encode();
+        assert_eq!(s[2], 141);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::LucyPopup(d) => assert_eq!(d, l),
+    fn w4_d99_crystal_invasion_skip_is_bodyless() {
+        // No `case 143` writer arm and the reader consumes nothing
+        // (`MessageBuffer.cs:4298-4303` AttemptToSkipWaitTime on the host;
+        // the send is `SendData(143)` with no args, `DD2Event.cs:1790`):
+        // [len=3][143].
+        let f = C2s::CrystalInvasionSkip.encode();
+        assert_eq!(f, vec![3, 0, 143]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::CrystalInvasionSkip => {}
+            other => panic!("expected 143, got {:?}", other.msg_id()),
+    /// W4-f33 — `51 MiscDataSync`'s (byte player, byte kind) body
+    /// (`NetMessage.cs:1010-1013`): the 5043 use's kind-5 bestiary-kill
+    /// request round-trips. WRITTEN NOT RUN (code-only).
+    fn w4_f33_the_misc_data_sync_pair_round_trips() {
+        let m = C2s::MiscDataSync {
+            player_id: 3,
+            kind: 5,
+        let f = m.encode();
+        assert_eq!(f[2], 51, "MessageID.MiscDataSync");
+        assert_eq!(&f[3..], &[3, 5], "the (player, kind) pair");
+            C2s::MiscDataSync { player_id, kind } => {
+                assert_eq!((player_id, kind), (3, 5));
+            }
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+    /// W4-f33 — the `4 PlayerInfo` bitsByte16 biome-torch trio
+    /// (`NetMessage.cs:182-184` / `MessageBuffer.cs:343-345`): bit 0
+    /// UsingBiomeTorches, bit 1 happyFunTorchTime, bit 2
+    /// unlockedBiomeTorches ride the identity push's flags2.
+    fn w4_f33_the_player_info_torch_trio_round_trips() {
+        let mut pi = PlayerInfo::with_name(1, "TorchBearer");
+        pi.flags2.set(0, true); // UsingBiomeTorches
+        pi.flags2.set(1, true); // happyFunTorchTime
+        pi.flags2.set(2, true); // unlockedBiomeTorches
+        let f = C2s::PlayerInfo(pi.clone()).encode();
+            C2s::PlayerInfo(d) => {
+                assert!(d.flags2.get(0), "bit 0 UsingBiomeTorches");
+                assert!(d.flags2.get(1), "bit 1 happyFunTorchTime");
+                assert!(d.flags2.get(2), "bit 2 unlockedBiomeTorches");
+                // The artisan-bread bit (flags3 bit 6, the g90 lane) stays
+                // independent of the trio.
+                assert!(!d.flags3.get(6));
+            other => panic!("expected 4, got {:?}", other.msg_id()),
+    /// W4-g52 — `162 DamageNPCAck` (`MessageID.cs:338`): NO body, `SendData`
+    /// has no case 162, so the frame is the bare id (`MessageBuffer.cs:
+    /// 1768-1771` sends it at the head of the `28` arm; `:1819-1824` the
+    /// client pops `NPC.pendingDamages[0]`). Byte-verbatim with the d92 codec.
+    fn w4_g52_npc_strike_ack_is_bodyless() {
+        let f = S2c::NpcStrikeAck.encode();
+        assert_eq!(f, vec![3, 0, 162]);
+        assert_eq!(S2c::NpcStrikeAck.msg_id(), id::NPC_STRIKE_ACK);
+            S2c::NpcStrikeAck => {}
+            other => panic!("expected 162, got {:?}", other.msg_id()),
+        // The client never sends it — no C2s arm exists.
+        assert!(C2s::decode(162, &mut NetReader::new(&[])).is_none());
+    /// W4-g52 — `34 ChestUpdates` (`NetMessage.cs:913-927`): byte action +
+    /// three shorts + the fifth short — the host writes `number5`, the client
+    /// a literal 0 (`:926`); the host reader zeroes it
+    /// (`MessageBuffer.cs:1991-1994`), the client keeps it (`:1990`).
+    /// Byte-verbatim with the g48 codec (keep-one at merge).
+    fn w4_g52_chest_updates_round_trips() {
+        let u = ChestUpdates {
+            action: 0,
+            x: 120,
+            y: 340,
+            style: 4,
+            chest: 17,
+        let f = S2c::ChestUpdates(u).encode();
+        assert_eq!(f[2], 34);
+        let mut body = vec![0];
+        for v in [120i16, 340, 4, 17] {
+            body.extend_from_slice(&v.to_le_bytes());
+            S2c::ChestUpdates(d) => assert_eq!(d, u),
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        // The client's destroy ask (`Player.cs:53787`): action 1, style and
+        // index default to 0 — the writer's else branch (`:924-927`).
+        let c = C2s::ChestUpdates(ChestUpdates {
+            action: 1,
+            style: 0,
+            chest: 17, // ignored on the wire: the client writes 0
+        })
+        .encode();
+        assert_eq!(c[2], 34);
+        assert_eq!(&c[c.len() - 2..], &0i16.to_le_bytes());
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ChestUpdates(d) => {
+                assert_eq!(d.action, 1);
+                assert_eq!((d.x, d.y, d.style, d.chest), (120, 340, 0, 0));
+        // The refusal relay: chest = -1 (`MessageBuffer.cs:2006`).
+        let refused = ChestUpdates { chest: -1, ..u };
+        let f = S2c::ChestUpdates(refused).encode();
+            S2c::ChestUpdates(d) => assert_eq!(d.chest, -1),
+    // ---- W4-g52: the SendData relay arms (NetMessage.cs:1692-1826) ----
+    /// A live server with `n` raw-socket peers (no handshake — the relay
+    /// tests drive the slot state directly and read the pushed frames).
+    fn relay_server_with_peers(n: usize) -> (Server, Vec<TcpStream>) {
+        let server = Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        let mut socks = Vec::new();
+        for _ in 0..n {
+            socks.push(TcpStream::connect(&addr).unwrap());
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        while server.client_count() < n && Instant::now() < deadline {
+            thread::sleep(std::time::Duration::from_millis(2));
+        assert_eq!(server.client_count(), n, "the accept thread registered all");
+        (server, socks)
+    /// Drains everything queued on a peer socket; returns the frame ids.
+    fn drained_ids(sock: &mut TcpStream) -> Vec<u8> {
+        sock.set_read_timeout(Some(std::time::Duration::from_millis(150)))
+            .unwrap();
+        let mut ids = Vec::new();
+        while let Ok(f) = read_frame(sock) {
+            ids.push(f[0]);
+        ids
+    fn empty_tile_block() -> S2c {
+        S2c::TileBlock(Box::new(TileBlock {
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+            records: vec![TileRecord {
+                active: false,
+                kind: 0,
+                frame_important: false,
+                frame_x: 0,
+                frame_y: 0,
+                wall: 0,
+                wall_frame: 0,
+                liquid: 0,
+                liquid_kind: 0,
+                half_brick: false,
+                slope: 0,
+                actuator: false,
+                inactive: false,
+                paint: 0,
+                wall_paint: 0,
+                wires: 0,
+                invisible_block: false,
+                invisible_wall: false,
+                fullbright_block: false,
+                fullbright_wall: false,
+            }],
+        }))
+    fn one_tile_square(x: i16, y: i16, w: u8, h: u8) -> S2c {
+        let mut r = match empty_tile_block() {
+            S2c::TileBlock(b) => b.records[0],
+            _ => unreachable!(),
+        r.active = true;
+        r.kind = 1;
+        S2c::SectionRange(Box::new(SectionRange {
+            x,
+            y,
+            w,
+            h,
+            change_type: 0,
+            records: vec![r; (w as usize) * (h as usize)],
+    /// The default arm (`NetMessage.cs:1801-1811`): the `broadcast` flag
+    /// opens at State 10 (`MessageBuffer.cs:928`), the State >= 3 bypass is
+    /// `10 TileBlock` ONLY, and `ignoreClient` drops the sender.
+    fn w4_g52_default_arm_gates_on_broadcast_with_the_tile_block_bypass() {
+        let (server, mut socks) = relay_server_with_peers(2);
+        // Both FRESH: nothing fans out.
+        server.broadcast(&S2c::Ping);
+        assert!(drained_ids(&mut socks[0]).is_empty());
+        assert!(drained_ids(&mut socks[1]).is_empty());
+        // Slot 1 in-world, slot 2 still streaming (State 3).
+        server.set_state(1, slot_state::IN_WORLD);
+        server.set_state(2, slot_state::SPAWN_REQUESTED);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::PING]);
+        assert!(
+            drained_ids(&mut socks[1]).is_empty(),
+            "State 3 has no broadcast flag — the bypass is id 10 only"
+        );
+        server.broadcast(&empty_tile_block());
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::TILE_BLOCK]);
+        assert_eq!(
+            drained_ids(&mut socks[1]),
+            vec![id::TILE_BLOCK],
+            "`(State >= 3 && msgType == 10)` streams sections pre-join"
+        // ignoreClient = 1: the sender never gets its own relay.
+        server.broadcast_except(&S2c::Ping, 1);
+        server.set_state(2, slot_state::IN_WORLD);
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::PING]);
+    /// The `20` arm (`NetMessage.cs:1708-1718`): the square's four corners
+    /// (`RemoteClient.SectionRange`, `RemoteClient.cs:191-218`) must land in
+    /// a section the slot already holds — the LATCH, not the check-time grid
+    /// — and there is no State-3 bypass on this arm.
+    fn w4_g52_tile_square_relays_only_to_slots_holding_a_corner_section() {
+        let (server, mut socks) = relay_server_with_peers(3);
+        for i in 1..=2 {
+            server.set_state(i, slot_state::IN_WORLD);
+            server.ensure_sections(i, 900, 600); // 5x4 grid
+        // Slot 3 never reaches State 10 — its broadcast flag stays closed
+        // (the C# State never lowers; `Reset` clears on reuse only).
+        server.set_state(3, slot_state::SPAWN_REQUESTED);
+        server.ensure_sections(3, 900, 600);
+        server.mark_section_sent(1, 0, 0);
+        server.mark_section_sent(2, 2, 1);
+        server.mark_section_sent(3, 0, 0); // latched, but no broadcast flag
+        // A check-time stamp alone does NOT satisfy the 20 arm.
+        server.mark_section_checked(2, 0, 0, 1000);
+        // 1x1 at (10,10): every corner in section (0,0) — slot 1 only.
+        server.relay_tile_square(&one_tile_square(10, 10, 1, 1), None);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::SECTION_RANGE]);
+            drained_ids(&mut socks[2]).is_empty(),
+            "the 20 arm has no State-3 bypass (NetMessage.cs:1712)"
+        // 3x3 at (198,148): corners (0,0)/(1,0)/(0,1)/(1,1) — slot 1 holds
+        // (0,0); slot 2's (2,1) is not a corner.
+        server.relay_tile_square(&one_tile_square(198, 148, 3, 3), None);
+        // 1x1 at (410,160): section (2,1) — slot 2 only.
+        server.relay_tile_square(&one_tile_square(410, 160, 1, 1), None);
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::SECTION_RANGE]);
+        // Nobody holds (4,3): the square reaches no one.
+        server.relay_tile_square(&one_tile_square(850, 550, 1, 1), None);
+        // The size is max(w, h) (`:1712`): a 1x3 at (199,0) reaches section
+        // (1,0) with its far corner — slot 1's (0,0) is the first corner.
+        server.relay_tile_square(&one_tile_square(199, 0, 1, 3), None);
+    /// The `28` arm (`NetMessage.cs:1751-1762`): a live NPC's strike only
+    /// reaches section-active clients; a dead one's reaches everyone. The
+    /// window is the 60-tick `SectionInactiveTime` (`ActiveSections.cs:65`).
+    fn w4_g52_strike_relays_by_section_activity_or_death() {
+        for i in 1..=3 {
+            server.ensure_sections(i, 900, 600);
+        server.mark_section_checked(1, 0, 0, 1000);
+        server.mark_section_checked(3, 0, 0, 1000); // the sender
+        let strike = S2c::NpcStrike(NpcStrike {
+            npc: 0,
+            generation: 1,
+            damage: 10,
+            knock_back: 3.0,
+            hit_direction: 1,
+            crit: false,
+        });
+        let live = RelayCtx::Strike {
+            dead: false,
+            section: (0, 0),
+        server.relay_strike(&strike, 3, live, 1000);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::NPC_STRIKE]);
+            "slot 2 never checked section (0,0) — culled"
+            "ignoreClient = the striking peer"
+        // The window edge: 940 + 60 >= 1000 passes, 1001 fails.
+        server.mark_section_checked(2, 0, 0, 940);
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::NPC_STRIKE]);
+        server.relay_strike(&strike, 3, live, 1001);
+        // Death bypasses the section filter for everyone but the sender.
+        let dead = RelayCtx::Strike {
+            dead: true,
+        server.relay_strike(&strike, 3, dead, 5000);
+        assert!(drained_ids(&mut socks[2]).is_empty());
+    /// The `27` arm (`NetMessage.cs:1774-1800`): flag3 (`type 12 / projPet /
+    /// aiStyle 11 / netImportant`, `:1777`) bypasses the section filter;
+    /// otherwise the client's section must be active.
+    fn w4_g52_projectile_relays_by_flag3_or_section_activity() {
+        server.mark_section_checked(1, 1, 1, 2000);
+        let ps = S2c::Projectile(Box::new(ProjectileState {
+            key: projectile_key(1, 0, 1),
+            x: 300.0,
+            y: 300.0,
+            vx: 4.0,
+            vy: 0.0,
+            kind: 1,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            knock_back: 2.0,
+            original_damage: 10,
+            ai2: None,
+        }));
+        let plain = RelayCtx::Projectile {
+            ignores_sections: false,
+            section: (1, 1),
+        server.relay_projectile(&ps, Some(2), plain, 2000);
+        assert_eq!(drained_ids(&mut socks[0]), vec![id::PROJECTILE]);
+        let flag3 = RelayCtx::Projectile {
+            ignores_sections: true,
+        server.relay_projectile(&ps, None, flag3, 9000);
+            vec![id::PROJECTILE],
+            "flag3 clears the section cull for every client"
+        // The window expiry culls the plain shot again.
+        server.relay_projectile(&ps, None, plain, 2061);
+    /// The `34/69` arm (`NetMessage.cs:1696-1707`) is the plain broadcast
+    /// gate — no section filter, no State-3 bypass. The port's `69 ChestName`
+    /// rides it; `34 ChestUpdates` has no port body yet.
+    fn w4_g52_chest_name_relays_on_the_plain_broadcast_gate() {
+        // No sections allocated at all — the 69 arm does not read them.
+        let name = S2c::ChestName(ChestName {
+            chest: 0,
+            x: 3,
+            y: 5,
+            name: "loot".into(),
+        server.broadcast_except(&name, 1);
+        assert_eq!(drained_ids(&mut socks[1]), vec![id::CHEST_NAME]);
+    /// `section_active_at`'s uint wrap + the 60-tick boundary
+    /// (`RemoteClient.cs:223`, `ActiveSections.cs:65`), and the latch's
+    /// out-of-grid refusal (`RemoteClient.cs:212`'s throw inside the try).
+    fn w4_g52_section_predicates_wrap_and_refuse_out_of_grid() {
+        assert!(section_active_at(1000, 1060), "the boundary is inclusive");
+        assert!(!section_active_at(1000, 1061));
+            section_active_at(u32::MAX - 10, 49),
+            "the C# uint add wraps: MAX-10 + 60 = 49"
+        assert!(!section_active_at(u32::MAX - 10, 50));
+        let (server, _socks) = relay_server_with_peers(1);
+        // Unallocated grid: both predicates refuse.
+        assert!(!server.section_range(1, 1, 0, 0));
+        assert!(!server.is_section_active(1, 0, 0, 0));
+        server.ensure_sections(1, 900, 600);
+        // A negative corner is refused, not panicked (the C# throws inside
+        // SendData's try; TrySendData swallows it).
+        assert!(!server.section_range(1, 1, -5, -5));
+        // The far corner still lands in the latched section.
+        assert!(server.section_range(1, 1, 199, 149));
+        assert!(!server.section_range(1, 1, 200, 150));
+        // IsSectionActive clamps negatives onto (0,0) (ActiveSections.cs:53).
+        server.mark_section_checked(1, 0, 0, 500);
+        assert!(server.is_section_active(1, -3, -7, 560));
+
+// balance-close (union shared delimiter)
+}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}))))
 }

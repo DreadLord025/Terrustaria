@@ -254,8 +254,9 @@ pub(crate) struct ShrapnelSpawn {
 }
 
 /// `AI()`'s aiStyle-14 type-346 block (`Projectile.cs:24867-24897`) —
-/// Everscream's ornament. The `localAI[0]` one-shot latch (the Item1 cue
-/// `:24872` skipped), `frame = (int)ai[1]` (the `NPC.cs:32885` `Next(2)`
+/// Everscream's ornament. The `localAI[0]` one-shot latch carries the
+/// Item1 cue (`:24872`, S1-E-21h d75 — queued draw-free), `frame =
+/// (int)ai[1]` (the `NPC.cs:32885` `Next(2)`
 /// payload), the per-frame light (`:24877`/`:24881`, skipped — no pool
 /// layer), and the last-tick burst: when `owner == Main.myPlayer &&
 /// timeLeft == 1`, five 347 shrapnel fly out at speed 10 with the C#'s
@@ -278,9 +279,12 @@ pub(crate) fn ornament(
     rng: &mut dyn tr_core::loot::DropRng,
     out: &mut Vec<ShrapnelSpawn>,
 ) {
-    // `:24869-24873` — the one-shot latch.
+    // `:24869-24873` — the one-shot latch. S1-E-21h d75 — `:24872`: the
+    // Item1 play INSIDE the latch at `base.position` (the drain rolls the
+    // style-1 variation at the pass tail; the arm itself draws nothing).
     if p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
+        p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0));
     }
     // `:24874` — the frame pin.
     p.frame = p.ai[1] as i32;
@@ -620,6 +624,24 @@ mod tests {
         let mut out2 = Vec::new();
         ornament(&mut q, &mut rng, &mut out2);
         assert!(out2.is_empty());
+    }
+
+    /// S1-E-21h d75 — the ornament's latch cue (`:24872`): the Item1 play
+    /// INSIDE the `localAI[0]` one-shot latch at `base.position`, queued
+    /// draw-free (the drain rolls the style variation at the pass tail);
+    /// the second tick queues nothing, burst window or not.
+    #[test]
+    fn s1_e_21h_d75_the_ornament_latch_queues_item1_once() {
+        let mut p = shot(ORNAMENT_HOSTILE);
+        p.time_left = 2; // no burst — the cue rides the latch alone
+        let mut rng = RecordRng::default();
+        let mut out = Vec::new();
+        ornament(&mut p, &mut rng, &mut out);
+        assert_eq!(p.wants_sound, Some((2, 1, 1600.0, 800.0, 0.0)));
+        assert!(rng.draws.is_empty(), "the cue draws nothing in the arm");
+        p.wants_sound = None;
+        ornament(&mut p, &mut rng, &mut out);
+        assert_eq!(p.wants_sound, None, "one cue per life");
     }
 
     /// 352 (`:24848-24866`): the alpha pulse ±25 bouncing 0..255 with the

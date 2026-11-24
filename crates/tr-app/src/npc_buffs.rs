@@ -603,12 +603,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
         NpcKind::BoneThrowingSkeleton4 => &[20],
         NpcKind::SkeletonMerchant => &[31],
-        NpcKind::CultistDragonHead
-        | NpcKind::CultistDragonBody1
         | NpcKind::CultistDragonBody2 => &[],
         // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
         NpcKind::CultistDragonBody3
-        | NpcKind::CultistDragonBody4
         | NpcKind::CultistDragonTail
         | NpcKind::Butcher => &[],
         NpcKind::CreatureFromTheDeep => &[31],
@@ -1064,6 +1061,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // DebuffImmunitySets) — the null-row else-branch, no immunity.
         | NpcKind::CultistDragonBody2
         | NpcKind::CultistDragonBody3
+        NpcKind::CultistDragonHead
+        | NpcKind::CultistDragonBody1
+        | NpcKind::CultistDragonBody4
         | NpcKind::CultistDragonTail => &[],
         // W4-d9 wiring: the 521 squidhead's 14-id `SpecificallyImmuneTo`
         // row (`NPCID.cs:9040-9048`).

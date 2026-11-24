@@ -1,4 +1,10 @@
-//! W4-f35 — the expert/master boss drop trees: the census.
+//! 184 — W4-f35 — the expert/master boss drop trees: the census.
+//!
+//! RENAME CHAIN: 65 → 184 (registry-150 §1/§3 round-1 assignment; 65 =
+//! W4-f17 `65-kinds-coverage-1.md` wins). Executed at the
+//! integration/batch-O merge (merger dedupe per §9/§10); refs re-pointed
+//! (boss_bags/fishing_crates/misc_bags/npc_death_heals/presents headers,
+//! ANALYSIS, PORT_MAP, ROADMAP, 195-bag-open-master-census, INDEX).
 //!
 //! Scope: the two loot trees that ride `Main.expertMode`/`Main.masterMode`
 //! per boss —

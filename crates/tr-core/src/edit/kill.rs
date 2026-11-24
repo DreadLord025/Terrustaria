@@ -187,6 +187,20 @@ pub struct TileKill {
     /// AFTER the hit cell's `KillTile_PlaySounds` cue (the C# order:
     /// `KillTile`'s entry sound precedes the `SquareTileFrame` cascade).
     pub check_sounds: Vec<(u16, u16, i32, i32)>,
+    /// The `Check*`-level cue tails (W4-g24): `(legacy id, style, x, y)` at
+    /// the cell whose `TileFrame` ran the check — the SURVIVING object cell
+    /// the cascade frames (the C# `KillTile` clears the hit cell to type 0
+    /// before `SquareTileFrame`, so the check fires on the neighbour that
+    /// still stands), NOT the snapped origin `num`. `Check2x1`'s piggy/bowl
+    /// Shatter (`WorldGen.cs:47235`/:47255, `PlaySound(13, i * 16, y * 16)`)
+    /// and `CheckOrb`'s crimson-4 / shadow-13 tail (`:54337`/:54341, at
+    /// `(i, j)`). Recorded AFTER the check's kill loop — the C# plays the
+    /// tails at the check's end, so they land after the nested kills' own
+    /// cues in play order (the c14 keep-one, research/106 §5). The tails sit
+    /// OUTSIDE the `netMode != 1 && !generatingWorld` drop gate (`:54335`
+    /// follows the gate's close at `:54334`) and are not `noItem`-gated —
+    /// the app plays them regardless of the drop flags.
+    pub check_cues: Vec<(u16, u16, i32, i32)>,
 }
 
 // The ring walk's re-entrancy cap (`square_tile_frame` → the check → the
@@ -540,6 +554,18 @@ fn square_tile_frame(
         if let Some((id, style)) = plan.sound {
             kill.check_sounds.push((id, style, cx, cy));
         }
+        // The `Check*`-level cue tails (`WorldGen.cs:47235`/:47255/:54337/
+        // :54341), recorded AFTER the kill loop — the C# plays them at the
+        // check's tail (`Check2x1`'s `:47235`/:47255 follow the `:47108-
+        // :47116` kill block; `CheckOrb`'s `:54335-54342` follows the
+        // `:54214-54223` loop), so the tail's cue lands after the nested
+        // kills' own cues in play order (W4-g24 doc-sweep — the c14
+        // keep-one: c14's `check_sounds` records at this same position,
+        // research/106 §5). OUTSIDE the drop gates — the piggy/bowl
+        // Shatter plays even under `noItem` (the C# tail has no gate), and
+        // the orb tail follows the netMode/generatingWorld block. Not
+        // `no_item`-gated.
+        kill.check_cues.extend(plan.cues);
         // The `Check*` tail's `TileFrame` ring (`WorldGen.cs:49841-49849`,
         // :50161-50168, :47499-47506): walked with `destroyObject` reset so a
         // neighbouring piece whose anchor died inside this sweep reaches its
@@ -611,6 +637,7 @@ fn kill_plan_cells(
             kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
             kill.bulb_summons.extend(inner.bulb_summons);
             kill.check_sounds.extend(inner.check_sounds);
+            kill.check_cues.extend(inner.check_cues);
         }
     }
 }
@@ -646,6 +673,53 @@ pub(crate) fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bo
         && !t.half_brick()
 }
 
+/// `WorldGen.SolidTileAllowTopSlope` (`WorldGen.cs:70320-70338`): an active,
+/// non-actuated solid (or planter-box 380) tile whose BOTTOM is not a slope —
+/// a platform passes only as a half-brick. An out-of-range read throws into
+/// the `catch` → false (no `InWorld` guard here, unlike the bottom-slope
+/// variant); the port's dense array has no in-world null case.
+pub(crate) fn solid_tile_allow_top_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && (td::TILE_SOLID.has(t.kind) || t.kind == 380)
+        && ((!td::SET_PLATFORMS.has(t.kind) && !t.bottom_slope())
+            || (td::SET_PLATFORMS.has(t.kind) && t.half_brick()))
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowLeftSlope` (`WorldGen.cs:70340-70358`): an active,
+/// non-actuated solid, non-platform, non-halfBrick tile whose RIGHT is not a
+/// slope (`rightSlope` = slope 1 or 3, `Tile.cs:320-328`). OOB → false (the
+/// `catch`).
+pub(crate) fn solid_tile_allow_left_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !t.half_brick()
+        && !matches!(t.slope(), 1 | 3)
+        && !td::SET_PLATFORMS.has(t.kind)
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowRightSlope` (`WorldGen.cs:70360-70378`): the mirror
+/// of [`solid_tile_allow_left_slope`] — the LEFT side must not be a slope
+/// (`leftSlope` = slope 2 or 4, `Tile.cs:310-318`).
+pub(crate) fn solid_tile_allow_right_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !t.half_brick()
+        && !matches!(t.slope(), 2 | 4)
+        && !td::SET_PLATFORMS.has(t.kind)
+        && !t.inactive()
+}
+
 /// The destruction plan of one `Check*` routine: the object cells to
 /// `KillTile` (active cells of the object's type — the exact cell guard each
 /// C# kill loop applies), the drop vanilla would spawn (`None` for checks
@@ -671,6 +745,10 @@ struct CheckPlan {
     /// the CHECKED cell after the kill loop - `CheckOrb`'s tail
     /// (`WorldGen.cs:54335-54342`) and `Check2x1`'s piggy arm (`:47235`).
     sound: Option<(u16, u16)>,
+    /// The check's own cue tails — `(legacy id, style, x, y)` at the C#
+    /// play's trigger cell (`TileKill::check_cues`). `Default::default()`
+    /// (empty) on every check that plays nothing.
+    cues: Vec<(u16, u16, i32, i32)>,
 }
 
 /// The `TileFrameImportant` object dispatch (`WorldGen.cs:84962`): runs the
@@ -702,6 +780,11 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         14 | 87 | 88 | 186 | 187 => check_3x2(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
+        // W4-g24: the bowls (103) join the `Check2x1` dispatch group
+        // (`WorldGen.cs:85595-85602` — 16/18/29/103/134/462/649). Only the
+        // 103 arm is ported (its Shatter tail `:47255` + the style drop);
+        // 16/134/462/649 stay unported (their drop tables are open rows).
+        103 => check_bowl(world, x, y),
         21 => check_chest(world, x, y),
         27 => check_sunflower(world, x, y),
         28 => check_pot(world, x, y),
@@ -1237,6 +1320,11 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // Heart (`flag` = frameX >= 36, `:54177-54180`) plays the killed
         // sound 4 style 1, everything else Shatter 13.
         sound: Some(if crimson { (4, 1) } else { (13, 1) }),
+        // `:54335-54342` — the tail OUTSIDE the netMode/generatingWorld
+        // gate: the crimson heart (`flag`, frameX >= 36) plays the killed
+        // cue 4 (style 1), the shadow orb / mana crystal the Shatter 13 —
+        // both at the TRIGGER cell `(i, j)`, not the snapped origin.
+        cues: vec![if crimson { (4, 1, x, y) } else { (13, 1, x, y) }],
     })
 }
 
@@ -1276,7 +1364,8 @@ fn check_piggy(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             tile_kind: 29,
             x: ox,
             y,
-            item: None,
+            // `:47234` — `Item.NewItem(..., 87)` (the Piggy Bank item).
+            item: Some(87),
         }),
         cells: killable_cells(world, &region, 29),
         pot_event: None,
@@ -1289,6 +1378,66 @@ fn check_piggy(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // `ObjectDrop` above carries no item - the loot seam) and plays
         // Shatter 13 at the checked cell.
         sound: Some((13, 1)),
+        // `:47235` — `PlaySound(13, i * 16, y * 16)`: the Shatter at the
+        // TRIGGER cell `i` (the clicked cell), not the snapped origin.
+        cues: vec![(13, 1, x, y)],
+    })
+}
+
+/// `WorldGen.Check2x1`'s case-103 arm (`WorldGen.cs:47011-47023`, the bowl
+/// pair): the same `frameX == first + 18` integrity (:47005) plus BOTH
+/// bottom cells on a table — the plain `Main.tileTable` test OR
+/// `AnchorValid(tile, AnchorType.Table)` (:47015/:47019 — the bowls accept
+/// platforms, unlike the piggy bank's case-29 arm). The drop is the style
+/// row `num3 = frameX / 18 >> 1` (:46986): 0 Bowl 356, 1 Dynasty Bowl 2235,
+/// 2 Fancy Dishes 2242, 3 Glass Bowl 2243 (:47241-47253); the Shatter tail
+/// plays at the trigger cell (:47255).
+fn check_bowl(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let frame_x = t.frame_x as i32;
+    let style = (frame_x / 18) >> 1; // `:46985-46986` — num2 >> 1
+    let ox = x - frame_x / 18 % 2; // `:46988`
+    let left = world.tile(ox, y);
+    let right = world.tile(ox + 1, y);
+    let left_x = left.map(|l| l.frame_x as i32).unwrap_or(i32::MIN);
+    let mut broken = !(right.is_some_and(|c| c.frame_x as i32 == left_x + 18)
+        && left.is_some_and(|c| c.active() && c.kind == 103)
+        && right.is_some_and(|c| c.active() && c.kind == 103));
+    // `:47013-47022` — each bottom cell: the plain table test failing AND
+    // the table anchor failing marks the pair broken.
+    for bx in [ox, ox + 1] {
+        let below_ok = world.tile(bx, y + 1).is_some_and(|b| {
+            let plain_table = b.active()
+                && crate::tileobject::is_table(b.kind)
+                && !b.half_brick()
+                && !b.top_slope();
+            plain_table || anchor_valid_table(b)
+        });
+        if !below_ok {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    let item = match style {
+        1 => 2235,
+        2 => 2242,
+        3 => 2243,
+        _ => 356,
+    };
+    let region = [(ox, y), (ox + 1, y)];
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: 103,
+            x: ox,
+            y,
+            item: Some(item),
+        }),
+        cells: killable_cells(world, &region, 103),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
     })
 }
 
@@ -1340,6 +1489,7 @@ fn check_lamp(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_lamp).
     })
 }
@@ -1406,6 +1556,7 @@ fn check_clock(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_clock).
     })
 }
@@ -1465,6 +1616,7 @@ fn check_bookcase(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: Some(region_ring(&region)),
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -1521,6 +1673,7 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_lantern).
     })
 }
@@ -1589,6 +1742,7 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: Some(region_ring(&region)),
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -1655,6 +1809,7 @@ fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan>
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
     })
 }
@@ -1726,6 +1881,7 @@ fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s Check3x3 has no tail).
     })
 }
@@ -1790,6 +1946,7 @@ fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_chandelier).
     })
 }
@@ -1857,6 +2014,7 @@ fn check_door_closed(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_door_closed).
     })
 }
@@ -1908,6 +2066,7 @@ fn check_door_open(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_door_open).
     })
 }
@@ -2087,6 +2246,7 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         ring: Some(region_ring(&region)),
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -2128,6 +2288,7 @@ fn check_chair(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_chair).
     })
 }
@@ -2169,6 +2330,7 @@ fn check_bench(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_bench).
     })
 }
@@ -2226,6 +2388,7 @@ fn check_chest(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
         // floats until a later break (`WorldGen.cs`'s check_chest).
     })
 }
@@ -2468,6 +2631,7 @@ fn check_jungle_plant(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Ch
 
         })
         }        sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -2501,6 +2665,17 @@ pub struct KillSounds {
 /// (`WorldGen.cs:66427-66575`) for the hit cell's `kind`/`frame_x`. `fail`
 /// mirrors the C# argument (`false` on the real break, `true` from the
 /// failure-tick callers, `Player.cs:39880`/`Projectile.cs:70219`).
+///
+/// Call-site census (W4-g24 FINAL re-sweep): the C# has TWO —
+/// `KillTile` (`:63558`, gated `!dedServ && !isGeneratingOrLoadingWorld &&
+/// !gameMenu`) and `ReplaceTile` (`:62575`, the player tile-replacement
+/// arm, `Player.cs:39903`). The port drains the table at the break seam
+/// (`world_sim/editing.rs`, `fail: false`) and the zombie-bash fail seam
+/// (`world_sim/npcs.rs`, `fail: true`); the `ReplaceTile` surface itself
+/// is the recorded unported deviation (ANALYSIS "Liquid settlement" —
+/// the port takes the `KillTile` + forced-`PlaceTile` fallback, so the
+/// `:62575` call has no live port path; when `ReplaceTile` lands it
+/// reuses THIS table, no new cue work).
 ///
 /// Deviation (research D3): the 147/224 arm rolls `genRand.Next(2)` between
 /// `Item48`/`Item49`; the port pins `Item_48` and draws nothing — audio-only
@@ -2650,6 +2825,7 @@ fn check_pot(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -2677,6 +2853,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             ring: None,
             bulb_summon: None,
             sound: None,
+        cues: Vec::new(),
         });
     }
     // :46904-46913 - only 185 carries the ground rules (the echo 649 is out
@@ -2712,6 +2889,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -2824,6 +3002,7 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -2911,6 +3090,7 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -2991,6 +3171,7 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         ring: None,
         bulb_summon: None,
         sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -5440,6 +5621,105 @@ mod tests {
     fn w4_c14_the_check_tail_sounds_ride_the_kill_record() {
         use crate::worldgen::evil::add_shadow_orb;
         let orb_world = |crimson: bool| {
+
+        }
+        }    /// W4-g24 — `Check2x1`'s piggy Shatter tail (`WorldGen.cs:47235`): the
+    /// cue rides the check record at the cell whose `TileFrame` ran the
+    /// check — the SURVIVING pair cell (the C# clears the hit cell to
+    /// type 0 before `SquareTileFrame`, so the check fires on the
+    /// neighbour), not the snapped origin `num`. The tail is NOT
+    /// `noItem`-gated (the C# plays it outside the drop block).
+    fn w4_g24_piggy_break_records_the_shatter_at_the_framed_cell() {
+        let mut w = soil_world(2);
+        set_object_cell(&mut w, 10, 20, 29, 0, 0);
+        set_object_cell(&mut w, 11, 20, 29, 18, 0);
+        // The direct hit on the RIGHT cell: the left cell (10, 20) survives
+        // to be framed, its Check2x1 plays the Shatter at (10, 20); the
+        // origin snaps to 10 for the drop.
+        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        assert_eq!(kill.check_cues, vec![(13, 1, 10, 20)]);
+        let drop = kill.object_drops.iter().find(|d| d.tile_kind == 29);
+        assert_eq!(drop.and_then(|d| d.item), Some(87), "the piggy item");
+        // The mirror hit: the RIGHT cell is framed, the cue lands there.
+        // `noItem` suppresses the drop but not the cue tail.
+        let kill = kill_tile(&mut w, 10, 20, true).unwrap();
+        assert_eq!(kill.check_cues, vec![(13, 1, 11, 20)]);
+        assert!(kill.object_drops.is_empty(), "noItem holds the drop");
+    }
+
+    /// W4-g24 doc-sweep (the c14 keep-one, research/106 §5) — the tail
+    /// records AFTER the check's kill loop: two adjacent piggy pairs on one
+    /// trigger break frame left-first (`SQUARE_FRAME_ORDER`'s (-1,0) precedes
+    /// (+1,0)), so the LEFT pair's Shatter tail (`:47235`, the C# plays it
+    /// after the `:47108-47116` kill block) lands BEFORE the RIGHT pair's
+    /// nested kill cues. The before-loop recording would have interleaved
+    /// them the other way — c14's `check_sounds` position is the faithful
+    /// one, kept.
+    fn w4_g24_the_check_tail_records_after_the_kill_loop() {
+        // The left pair (10/11, 20) and the right pair (12/13, 20).
+        set_object_cell(&mut w, 12, 20, 29, 0, 0);
+        set_object_cell(&mut w, 13, 20, 29, 18, 0);
+        // The trigger block between them: its 3x3 frames both pairs.
+        set_active(&mut w, 11, 19, 1);
+        let kill = trigger_at(&mut w, 11, 19);
+        assert_eq!(
+            kill.check_cues,
+            vec![(13, 1, 10, 20), (13, 1, 13, 20)],
+            "the left pair's tail first, the right pair's second"
+        );
+        // Both pairs died (their cells are gone), the drops rode the plan.
+        assert_all_gone(&w, &[(10, 20), (11, 20), (12, 20), (13, 20)]);
+        let piggy_drops = kill
+            .object_drops
+            .iter()
+            .filter(|d| d.tile_kind == 29)
+            .count();
+        assert_eq!(piggy_drops, 2, "one drop per pair");
+    /// W4-g24 — `Check2x1`'s case-103 bowl arm (`WorldGen.cs:47011-47023`,
+    /// the drop `:47239-47255`): the pair survives on a table (the plain
+    /// `Main.tileTable` test OR the Table anchor — platforms pass, unlike
+    /// the piggy's case-29), dies off it with the style-row item
+    /// (356/2235/2242/2243) and the Shatter at the trigger cell.
+    fn w4_g24_bowl_pair_table_anchor_and_the_style_drop() {
+        // On a bench (the plain table test): the pair survives a
+        // pass-through framing.
+        set_object_cell(&mut w, 10, 21, 14, 0, 0);
+        set_object_cell(&mut w, 11, 21, 14, 18, 0);
+        set_object_cell(&mut w, 10, 20, 103, 0, 0);
+        set_object_cell(&mut w, 11, 20, 103, 18, 0);
+        set_active(&mut w, 10, 19, 1);
+        trigger_at(&mut w, 10, 19);
+        assert!(w.tile(10, 20).unwrap().active(), "the bowls sit on the bench");
+        // Off the table: the direct hit kills the pair, drops the style-0
+        // Bowl 356 and records the Shatter at the SURVIVING framed cell
+        // (11, 20) — the hit cell (10, 20) is cleared to type 0 first.
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_all_gone(&w, &[(10, 20), (11, 20)]);
+        let drop = kill.object_drops.iter().find(|d| d.tile_kind == 103);
+        assert_eq!(drop.and_then(|d| d.item), Some(356));
+        // The style rows: frameX 36/72 → num3 = 1/2 → 2235/2242; 108 → 3 →
+        // 2243 (`:46986`'s `frameX / 18 >> 1`).
+        for (fx, item) in [(36i16, 2235i32), (72, 2242), (108, 2243)] {
+            let mut w = soil_world(2);
+            set_object_cell(&mut w, 10, 20, 103, fx, 0);
+            set_object_cell(&mut w, 11, 20, 103, fx + 18, 0);
+            let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+            let drop = kill.object_drops.iter().find(|d| d.tile_kind == 103);
+            assert_eq!(drop.and_then(|d| d.item), Some(item), "frameX {fx}");
+        }
+        // A platform below passes the Table anchor (`AnchorValid`,
+        // `:51841-51871` — the flat segment frames), unlike the piggy arm.
+        set_object_cell(&mut w, 10, 21, 19, 0, 0);
+        set_object_cell(&mut w, 11, 21, 19, 18, 0);
+        assert!(
+            w.tile(10, 20).unwrap().active(),
+            "the platform's Table anchor carries the bowls"
+    /// W4-g24 — `CheckOrb`'s tail (`WorldGen.cs:54335-54342`): the crimson
+    /// heart plays the killed cue 4 (style 1), the shadow orb the Shatter
+    /// 13 — both at the TRIGGER cell, outside the netMode/generatingWorld
+    /// drop gate (the `no_item` break still records the cue).
+    fn w4_g24_orb_tail_cue_by_evil_at_the_trigger_cell() {
+        let orb_world = || -> World {
             let mut w = World::new("t".into(), 200, 200);
             for x in 0..200 {
                 for y in 0..200 {
@@ -5483,6 +5763,16 @@ mod tests {
             "the piggy's own Shatter tail: {:?}",
             kill.check_sounds
         );
+        // The shadow orb: the Shatter 13 at the first framed orb cell the
+        // cascade reaches — (99, 100), the bottom-left member (the hit cell
+        // (99, 99) is cleared to type 0 before the frame walk).
+        let mut w = orb_world();
+        add_shadow_orb(&mut w, 100, 100, false);
+        let kill = kill_tile(&mut w, 99, 99, true).unwrap();
+        assert_eq!(kill.check_cues, vec![(13, 1, 99, 100)]);
+        // The crimson heart: the killed cue 4 style 1 (frameX >= 36).
+        add_shadow_orb(&mut w, 100, 100, true);
+        assert_eq!(kill.check_cues, vec![(4, 1, 99, 100)]);
     }
 
     #[test]
@@ -5530,4 +5820,7 @@ mod tests {
         );
         assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
     }
+
+// balance-close (union shared delimiter)
+}}})
 }

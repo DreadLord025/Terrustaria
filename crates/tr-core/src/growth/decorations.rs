@@ -567,8 +567,12 @@ pub fn plant_dye(world: &mut World, i: i32, j: i32, exotic: bool, rng: &mut Unif
             !t.active() || matches!(t.kind, 3 | 51 | 61 | 73 | 74 | 184 | 697 | 703)
         })
     };
-    // The band 1 arm (`:71303-71366`).
-    if (j as f64) < world.world_surface && free_above(world) {
+    // The band 1 arm (`:71298-71377`): `j < worldSurface || remixWorldGen`
+    // — the remix bypass lets the surface arm run at any depth (W4-d105
+    // doc-sweep: the remix half was missing; the gen-time twin
+    // `worldgen::surface::plant_dye` carries it).
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX);
+    if ((j as f64) < world.world_surface || remix) && free_above(world) {
         if dye_density_blocked(world, i, j, num, exotic) {
             return;
         }
@@ -579,7 +583,15 @@ pub fn plant_dye(world: &mut World, i: i32, j: i32, exotic: bool, rng: &mut Unif
                 || crate::tiledata::SET_CONVERSION_MOSS.has(here.kind)
                 || here.kind == 0;
             if let Some(t) = cell(world, i, j - 1) {
-                if t.liquid > 0 && t.liquid_kind() != crate::tile::LiquidKind::Water {
+                // `:71318-71321`: the veto is `liquid > 0 && (lava() ||
+                // honey())` — water and shimmer pass (W4-d105 doc-sweep:
+                // the prior `!= Water` also vetoed shimmer).
+                if t.liquid > 0
+                    && matches!(
+                        t.liquid_kind(),
+                        crate::tile::LiquidKind::Lava | crate::tile::LiquidKind::Honey
+                    )
+                {
                     ok = false;
                 }
             }
@@ -616,8 +628,12 @@ pub fn plant_dye(world: &mut World, i: i32, j: i32, exotic: bool, rng: &mut Unif
             }
         }
     }
-    // `:71368-71371`: the underground band's gate.
-    if (j as f64) < world.world_surface || j >= world.height - 200 {
+    // `:71378-71381`: the underground band's gate —
+    // `if (!(j >= worldSurface) && !remixWorldGen || j >= UnderworldLayer)
+    // return;` i.e. the band runs only at/below the surface (or on remix)
+    // and above the underworld layer. (W4-d105 doc-sweep: the remix half
+    // was missing — the gen-time twin carries it.)
+    if ((j as f64) < world.world_surface && !remix) || j >= world.height - 200 {
         return;
     }
     if free_above(world) {
@@ -1016,6 +1032,109 @@ mod tests {
         assert!(
             !w2.tile(100, 219).is_some_and(|t| t.active()),
             "the exotic density scan blocks the neighbour"
+        );
+    }
+
+    /// W4-d105 doc-sweep: the remix bypass (`WorldGen.cs:71298` /
+    /// `:71378`) — on a remix world the surface arm runs at any depth and
+    /// the underground gate no longer refuses the above-surface band. The
+    /// gen-time twin (`worldgen::surface::plant_dye`) already carried both
+    /// halves; the runtime growth twin was missing them.
+    #[test]
+    fn w4_d105_the_runtime_dye_carries_the_remix_bypass() {
+        // A grass cell BELOW the surface (j 220 > world_surface 100): on a
+        // classic world band 1 refuses (j >= surface) and band 2's grass
+        // dispatch has no grass arm — nothing plants. On remix, band 1's
+        // `|| remixWorldGen` lets the grass pick run.
+        let mut w = world();
+        w.world_surface = 100.0;
+        put(&mut w, 100, 220, 2, 0);
+        let mut rng = UnifiedRandom::new(9);
+        plant_dye(&mut w, 100, 220, false, &mut rng);
+        assert!(
+            !w.tile(100, 219).is_some_and(|t| t.active() && t.kind == 227),
+            "classic: the below-surface grass cell plants nothing"
+        );
+        let mut w = world();
+        w.world_surface = 100.0;
+        w.seeds |= crate::seeds::SeedFlags::REMIX;
+        put(&mut w, 100, 220, 2, 0);
+        let mut rng = UnifiedRandom::new(9);
+        plant_dye(&mut w, 100, 220, false, &mut rng);
+        assert!(
+            w.tile(100, 219).is_some_and(|t| t.active() && t.kind == 227),
+            "remix: band 1 runs below the surface"
+        );
+        // The underground gate's remix half (`:71378`): on a classic world
+        // an above-surface cell returns before band 2; on remix band 1
+        // runs first. An exotic plant on a dirt cell above the surface:
+        // classic band 1 refuses, band 2 runs the exotic arm (one
+        // Next(8,12) draw + write); remix runs band 1's exotic arm and
+        // band 2 bails on the fresh 227 (one draw + write). Same stream
+        // position, same cell — the write side both paths must reach.
+        let mut classic = world();
+        classic.world_surface = 250.0;
+        put(&mut classic, 100, 220, 0, 0);
+        let mut remix = world();
+        remix.world_surface = 250.0;
+        remix.seeds |= crate::seeds::SeedFlags::REMIX;
+        put(&mut remix, 100, 220, 0, 0);
+        let mut r1 = UnifiedRandom::new(9);
+        let mut r2 = UnifiedRandom::new(9);
+        plant_dye(&mut classic, 100, 220, true, &mut r1);
+        plant_dye(&mut remix, 100, 220, true, &mut r2);
+        assert_eq!(r1.next(), r2.next(), "the exotic draw count matches");
+        assert!(
+            classic.tile(100, 219).is_some_and(|t| t.active() && t.kind == 227)
+                && remix.tile(100, 219).is_some_and(|t| t.active() && t.kind == 227),
+            "both worlds plant the exotic style"
+        );
+    }
+
+    /// W4-d105 doc-sweep: the exotic arm's liquid veto
+    /// (`WorldGen.cs:71318-71321`) is `lava() || honey()` only — shimmer
+    /// passes (the prior `!= Water` port also vetoed shimmer).
+    #[test]
+    fn w4_d105_the_exotic_veto_is_lava_and_honey_only() {
+        use crate::tile::LiquidKind;
+        // Shimmer above the grass cell: the exotic plant still lands.
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 220, 2, 0);
+        let i = w.index(100, 219);
+        w.tiles[i].liquid = 100;
+        w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+        let mut rng = UnifiedRandom::new(9);
+        plant_dye(&mut w, 100, 220, true, &mut rng);
+        assert!(
+            w.tile(100, 219).is_some_and(|t| t.active() && t.kind == 227),
+            "shimmer does not veto the exotic arm"
+        );
+        // Honey above: the veto holds.
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 220, 2, 0);
+        let i = w.index(100, 219);
+        w.tiles[i].liquid = 100;
+        w.tiles[i].set_liquid_kind(LiquidKind::Honey);
+        let mut rng = UnifiedRandom::new(9);
+        plant_dye(&mut w, 100, 220, true, &mut rng);
+        assert!(
+            !w.tile(100, 219).is_some_and(|t| t.active() && t.kind == 227),
+            "honey vetoes the exotic arm"
+        );
+        // Lava above: the veto holds.
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 220, 2, 0);
+        let i = w.index(100, 219);
+        w.tiles[i].liquid = 100;
+        w.tiles[i].set_liquid_kind(LiquidKind::Lava);
+        let mut rng = UnifiedRandom::new(9);
+        plant_dye(&mut w, 100, 220, true, &mut rng);
+        assert!(
+            !w.tile(100, 219).is_some_and(|t| t.active() && t.kind == 227),
+            "lava vetoes the exotic arm"
         );
     }
 

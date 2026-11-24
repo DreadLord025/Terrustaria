@@ -432,6 +432,24 @@ impl App {
                     id,
                 ); // `:2478`
             }
+            // `case 51` — MiscDataSync (`MessageBuffer.cs:2482-2530`). The
+            // server overrides the player byte to the sender's slot
+            // (`:2485-2488`); kind 5 registers the Torch God's 664 bestiary
+            // kill (`:2514-2520` — the 5043 use's `SendData(51, …, 5f)`,
+            // `Player.cs:45241`, W4-f33). The other kinds' systems
+            // (Skeletron 1, the roars 2, the sundial 3, the mimic smoke 4,
+            // the moondial 6) are unported — no-ops like the C#'s missing
+            // arms on a client.
+            C2s::MiscDataSync { kind, .. } => {
+                if kind == 5 {
+                    self.bestiary.kills.register_kill("TorchGod");
+                    let _ = self.try_grant_bestiary_100_net();
+                    self.broadcast_bestiary_kill(
+                        664,
+                        self.bestiary.kills.get_kill_count("TorchGod"),
+                    );
+                }
+            }
             // `case 1` — the version literal (`MessageBuffer.cs:199-214`).
             C2s::Connect(version) => {
                 if server.state(id) != slot_state::FRESH {
@@ -487,6 +505,16 @@ impl App {
                     return;
                 }
                 server.set_slot_name(id, pi.name.clone());
+                // `player18.UsingBiomeTorches/happyFunTorchTime/
+                // unlockedBiomeTorches = bitsByte33[0..2]`
+                // (`MessageBuffer.cs:343-345`, W4-f33) — the server keeps
+                // its own copy of the biome-torch trio.
+                server.set_slot_torch_flags(
+                    id,
+                    pi.flags2.get(0),
+                    pi.flags2.get(1),
+                    pi.flags2.get(2),
+                );
                 log::info!("slot {id} announced as {}", pi.name);
             }
             // `case 5` — one inventory slot (`MessageBuffer.cs:399-462`).
@@ -1651,20 +1679,27 @@ impl App {
             if p.id != id {
                 server.send(id, &S2c::PlayerState(Box::new(self.player_state_of(p))));
                 if !p.name.is_empty() {
-                    server.send(
-                        id,
-                        &S2c::PlayerInfo(net::PlayerInfo::with_name(p.id as u8, &p.name)),
-                    );
+                    let mut pi = net::PlayerInfo::with_name(p.id as u8, &p.name);
+                    // The peer's biome-torch trio rides the relayed identity
+                    // (`NetMessage.cs:182-184`, W4-f33).
+                    pi.flags2.set(0, p.using_biome_torches);
+                    pi.flags2.set(1, p.happy_fun_torch_time);
+                    pi.flags2.set(2, p.unlocked_biome_torches);
+                    server.send(id, &S2c::PlayerInfo(pi));
                 }
             }
         }
         // The host is a player too (its slot is 0): the display names ride
         // `4 PlayerInfo`, which msg 13 lacks.
         if !self.player_name.is_empty() {
-            server.send(
-                id,
-                &S2c::PlayerInfo(net::PlayerInfo::with_name(0, &self.player_name)),
-            );
+            let mut pi = net::PlayerInfo::with_name(0, &self.player_name);
+            // `bitsByte16[0..2]` (`NetMessage.cs:182-184`, W4-f33).
+            if let Some(p) = self.player.as_ref() {
+                pi.flags2.set(0, p.using_biome_torches());
+                pi.flags2.set(1, p.torch_god.happy_fun_torch_time);
+                pi.flags2.set(2, p.unlocked_biome_torches);
+            }
+            server.send(id, &S2c::PlayerInfo(pi));
         }
         let name = server.slot_name(id);
         let (px, py) = self.net_peer_spawn_pos();
@@ -2063,6 +2098,11 @@ impl App {
                         });
                     if let Some(p) = self.remote_players.get_mut(&peer) {
                         p.name = pi.name.clone();
+                        // `bitsByte33[0..2]` (`MessageBuffer.cs:343-345`,
+                        // W4-f33): the peer's biome-torch trio.
+                        p.using_biome_torches = pi.flags2.get(0);
+                        p.happy_fun_torch_time = pi.flags2.get(1);
+                        p.unlocked_biome_torches = pi.flags2.get(2);
                     }
                 }
             }
@@ -2321,6 +2361,9 @@ impl App {
                 }
                 drop.shimmered = d.shimmered;
                 drop.shimmer_time = d.shimmer_time;
+                // `MessageBuffer.cs:1487` — the `21`/`90` handler writes the
+                // enemy-grab delay from the conditional byte. W4-g15 lane 5.
+                drop.enemy_grab_delay_time = d.enemy_grab_delay as i32;
                 drop.age = 60.0;
                 self.net_items.insert(d.slot as i16, drop);
                 self.net_items_dirty = true;
@@ -2443,8 +2486,10 @@ impl App {
                 }
             }
             // `case 47` — a sign's text (`MessageBuffer.cs:2376-2405`): the
-            // record is rewritten and, when the sender is us, the editor
-            // opens (unported — S1-E-26 records the gap).
+            // record is rewritten and, when the sender is us and bit 0 of
+            // the flags byte is clear, `OpenSign` runs (`:2400-2403`) —
+            // W4-e10: the latch + the Menu_Open cue (`Player.cs:33547`);
+            // the sign EDITOR itself stays S1-E-26's.
             S2c::SignData(sd) => {
                 if sd.sign < 0 || sd.sign >= crate::signs::MAX_SIGNS {
                     return; // `:2384`
@@ -2456,6 +2501,23 @@ impl App {
                     sd.y as i32,
                     sd.text.clone(),
                 );
+                // `:2400` — netMode 1 (this arm IS the client), the sender
+                // is us, the record survived `TextSign`, `!bitsByte5[0]`.
+                // The dense-store deviation: `text_sign` splices a dead-
+                // tile record (the later indices shift), so the C#'s
+                // `Main.sign[num58] != null` probe is "a record still sits
+                // at this tile" and the open uses THAT record's index
+                // (ANALYSIS, the W4-e10 gap-census phase).
+                let live_idx = self
+                    .world
+                    .signs
+                    .iter()
+                    .position(|r| r.x == sd.x as i32 && r.y == sd.y as i32);
+                if u32::from(sd.sender) == self.local_id && sd.flags & 1 == 0 {
+                    if let Some(idx) = live_idx {
+                        crate::signs::open_sign(self, idx as i32);
+                    }
+                }
             }
             // `case 50` — a player's buff ids (`MessageBuffer.cs:2454-2480`):
             // ours is skipped (`:2461-2464`), a peer's lands in its record
@@ -2868,10 +2930,17 @@ impl App {
     /// `6 WorldRequest`.
     fn client_send_identity(&self, client: &net::Client) {
         let me = self.local_id as u8;
-        client.send(&C2s::PlayerInfo(net::PlayerInfo::with_name(
-            me,
-            &self.player_name,
-        )));
+        let mut pi = net::PlayerInfo::with_name(me, &self.player_name);
+        // `bitsByte16` (`NetMessage.cs:182-184`, W4-f33): bit 0
+        // UsingBiomeTorches, bit 1 happyFunTorchTime, bit 2
+        // unlockedBiomeTorches — the 5043 use's `SendData(4)`
+        // (`Player.cs:45240`) re-announces the pair through this push.
+        if let Some(p) = self.player.as_ref() {
+            pi.flags2.set(0, p.using_biome_torches());
+            pi.flags2.set(1, p.torch_god.happy_fun_torch_time);
+            pi.flags2.set(2, p.unlocked_biome_torches);
+        }
+        client.send(&C2s::PlayerInfo(pi));
         // The health (`Main.cs`'s 16 in the same push).
         let (hp, max_hp) = self
             .player
@@ -3984,6 +4053,26 @@ impl App {
                 });
             }
             NetRole::Client(client) => {
+                // W4-g15 lane 5 — the client's `22 ItemOwner` reservation
+                // hold ticks down on the 10 Hz cadence (the C#'s
+                // `timeToKeepReservation` decrements per 60 Hz update,
+                // `WorldItem.cs:445-448`; the port's client reservation map
+                // is the `net_reserved` stand-in, so the hold decays 6 per
+                // cadence tick — the same 1 s grid the host's
+                // `net_play_counter` batches). An expired hold releases the
+                // reservation (the C#'s `FindOwner` re-reserves on the next
+                // tick; the port's client grab gate reads the map live).
+                let expired: Vec<i16> = self
+                    .net_reserved
+                    .iter_mut()
+                    .filter_map(|(slot, (_, hold))| {
+                        *hold = hold.saturating_sub(6);
+                        if *hold == 0 { Some(*slot) } else { None }
+                    })
+                    .collect();
+                for slot in expired {
+                    self.net_reserved.remove(&slot);
+                }
                 // S1-I-4d: the client's own projectiles already drained through
                 // `drain_proj_outbox` above (`Projectile.cs:17210-17244`'s owner
                 // machine → `27`, despawns → `29`).
@@ -4117,7 +4206,8 @@ impl App {
     }
 
     /// Builds the `21 ItemDrop` body for one live drop (`NetMessage.cs:646-669`
-    /// minus the ownership/enemy-delay bits the port does not carry yet).
+    /// minus the ownership bits the port does not carry yet; the enemy-delay
+    /// byte landed in W4-g15 lane 5).
     fn item_state_of(slot: i16, it: &item::ItemDrop) -> net::ItemState {
         net::ItemState {
             slot,
@@ -4130,6 +4220,8 @@ impl App {
             kind: it.kind as i16,
             shimmered: it.shimmered,
             shimmer_time: it.shimmer_time,
+            // `NetMessage.cs:667` — the clamp 0..255. W4-g15 lane 5.
+            enemy_grab_delay: it.enemy_grab_delay_time.clamp(0, 255) as u8,
         }
     }
 
@@ -4225,6 +4317,21 @@ impl App {
     pub(crate) fn send_switch_outcome(&self, outcome: &crate::collision::SwitchOutcome) {
         for (x, y) in &outcome.switches {
             self.send_hit_switch(*x, *y);
+        }
+    }
+
+    /// The 5043 use's `NetMessage.SendData(51, -1, -1, null, whoAmI, 5f)`
+    /// (`Player.cs:45241`, W4-f33): a CLIENT asks the server to register the
+    /// Torch God's 664 bestiary kill (`MessageBuffer.cs:2514-2520`'s
+    /// `netMode == 2` arm). The host + single-player register locally in the
+    /// use arm itself (the bestiary is per-world content, the host IS the
+    /// server) — this seam only carries the client request.
+    pub(crate) fn send_torch_god_bestiary_request(&self) {
+        if let NetRole::Client(client) = &self.net {
+            client.send(&C2s::MiscDataSync {
+                player_id: self.local_id as u8,
+                kind: 5,
+            });
         }
     }
 
@@ -5888,6 +5995,26 @@ mod handshake_tests {
         assert_eq!(host_app.last_item_update, 0);
     }
 
+    /// W4-g15 lane 5 — the client's `22 ItemOwner` reservation hold ticks
+    /// down on the 10 Hz cadence (6 per tick, the `timeToKeepReservation`
+    /// 60 Hz clock's batched stand-in); an expired hold releases the
+    /// reservation so the grab gate re-opens.
+    #[test]
+    fn w4_g15_the_client_reservation_hold_expires() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Seed a reservation directly (the join burst's 22 carries 255, so
+        // the store starts empty; a live reservation is the host's
+        // ReserveFor announcement — the port's client map is the stand-in).
+        client_app.net_reserved.insert(0, (3, 12));
+        // One cadence tick: 12 - 6 = 6, still held.
+        client_app.net_tick(0.1);
+        assert_eq!(client_app.net_reserved.get(&0), Some(&(3, 6)), "the hold decayed 6");
+        // Another: 6 - 6 = 0, released.
+        client_app.net_tick(0.1);
+        assert!(!client_app.net_reserved.contains_key(&0), "the expired hold released");
+        let _ = host_app;
+    }
+
     #[test]
     fn the_host_own_snapshot_reaches_the_client() {
         let (mut host_app, mut client_app) = in_world_pair();
@@ -7241,6 +7368,65 @@ mod message_family_tests {
         // The host's own player is not the subject (the relay excludes the
         // sender), so its dodge bookkeeping is untouched.
         assert_eq!(host_app.player.as_ref().unwrap().shadow_dodge_timer, 0);
+
+        }    /// W4-e10 gap census — `case 47`'s client tail (`MessageBuffer.cs:
+    /// 2400-2403`) over the live pair: the client's `46` request answers
+    /// with a `47` addressed to the asker (`:2372`), and the client's
+    /// dispatch opens the sign (`Player.OpenSign` — the latch, the text,
+    /// ONE Menu_Open `Player.cs:33547`). The sign EDITOR stays S1-E-26.
+    fn w4_e10_the_47_answer_opens_our_sign_with_one_menu_open() {
+        // A 2-wide sign at (3, 2)/(4, 2) on BOTH sides (the rename-test
+        // convention: the world transfer already ran, the fixture plants
+        // matching tiles directly — the client's `TextSign` needs the
+        // live tile to keep the record).
+        for app in [&mut host_app, &mut client_app] {
+            for x in [3, 4] {
+                let i = app.world.index(x, 2);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 55,
+                    frame_x: if x == 3 { 0 } else { 18 },
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let idx = crate::signs::find_or_create(&mut host_app.world.signs, 3, 2).unwrap();
+        host_app.world.signs[idx].text = "ahoy".into();
+        let before = client_app.audio.played_count();
+        // The client asks (`46`); the host answers `47` to the asker.
+            client.send(&C2s::SignRequest(net::SignRequest { x: 4, y: 2 }));
+        let mut opened = false;
+        for _ in 0..60 {
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = client_app.player.as_ref().is_some_and(|p| p.sign >= 0);
+            if opened {
+                break;
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        assert!(opened, "the 47 answer opened the sign (:2402)");
+        assert_eq!(p.sign, 0, "the dense-store index");
+        assert_eq!(client_app.world.signs[0].text, "ahoy", "TextSign (:2394)");
+        assert_eq!(client_app.npc_chat_text, "ahoy", "`:33549`");
+        assert_eq!(client_app.audio.played_count(), before + 1, "`:33547` once");
+        // The flags bit set: the host pushes a quiet `47` — the record
+        // lands, no re-open, no cue.
+        crate::signs::close_sign(&mut client_app, true);
+        let mid = client_app.audio.played_count();
+            server.send(
+                1,
+                &S2c::SignData(net::SignData {
+                    sign: 0,
+                    x: 3,
+                    y: 2,
+                    text: "quiet".into(),
+                    sender: 1,
+                    flags: 1,
+                }),
+            );
+        let mut landed = false;
+            landed = client_app.world.signs.first().is_some_and(|r| r.text == "quiet");
+            if landed {
+        assert!(landed, "the quiet 47 rewrote the record");
+        assert_eq!(client_app.player.as_ref().unwrap().sign, -1, "bit 0 refuses");
+        assert_eq!(client_app.audio.played_count(), mid, "no cue");
     }
 }
 
@@ -8179,4 +8365,7 @@ mod w4_g52_relay_tests {
 
 // balance-close (union shared delimiter)
 }}}}}}}}}}}
+
+// balance-close (union shared delimiter)
+}}}}}
 }

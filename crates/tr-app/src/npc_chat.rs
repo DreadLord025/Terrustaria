@@ -1519,11 +1519,20 @@ mod tests {
         guide.y = p.y;
         app.npcs.push(guide);
         app.place_down = true; // the fresh right press (`Main.mouseRight && Main.npcChatRelease`)
+        let before = app.audio.played_count();
         let text = crate::world_sim::npcs::talk_to_npc(&mut app, false);
         let text = text.expect("a town NPC under the region opens the chat");
         assert!(!text.is_empty(), "the Guide answers a line");
         assert_eq!(app.talk_npc, Some(0), "SetTalkNPC(i), `:43081`");
         assert_eq!(app.npc_chat_text, text, "Main.npcChatText = GetChat(), `:43082`");
+        // W4-g21 — `SoundEngine.PlaySound(24)` (`Main.cs:43083`): the fresh
+        // talk plays the `Chat` cue AFTER the `GetChat` answer.
+        assert_eq!(app.audio.played_count(), before + 1, "the `:43083` Chat cue");
+        // The same-NPC re-click declines (`:43077`'s `talkNPC != i`) — no
+        // second cue.
+        let before = app.audio.played_count();
+        assert!(crate::world_sim::npcs::talk_to_npc(&mut app, false).is_none());
+        assert_eq!(app.audio.played_count(), before, "the re-click is silent");
     }
 
     /// `Main.cs:43047` — the gate is `nPC.townNPC || type in {...}`: a zombie

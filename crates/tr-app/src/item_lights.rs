@@ -13,16 +13,15 @@
 //! each draws exactly one `Main.rand.Next(90, 111)` and nothing else) and the
 //! four `Main.essScale` arms (3456-3459, RNG-free).
 //!
-//! **Deferred, draw-free skips (the stream stays exact):**
-//! * 116 (`:1211-1222`): the flicker draw is followed by a `Next(250) == 0`
-//!   gate whose `Dust.NewDust` chain draws a pool-state-dependent number of
-//!   further rolls — porting the light half alone would shorten the stream.
-//!   The whole arm is skipped until the item dust pass lands.
-//! * 501 (`:1295-1303`): dust-only, no `AddLight` — nothing to port here.
-//! * 75 / `BossBag` (`:1624-1648`): the light halves are already in
+//! **The dust-gated arms (W4-g15 landed them in [`crate::item_dust`]):**
+//! * 116 (`:1211-1222`): the flicker + the `Next(250) == 0` dust gate now ride
+//!   `item_dust::meteorite_visual` (the whole arm, stream-exact). `rand_light`
+//!   still returns `None` for 116 — the items pass routes it to `item_dust`.
+//! * 501 (`:1295-1303`): dust-only, no `AddLight` — `item_dust::pixie_dust_visual`.
+//! * 75 / `BossBag` (`:1624-1648`): the light halves stay in
 //!   `entity_lights::item_light`; the `timeSinceItemSpawned % 12` dust halves
-//!   (`NextVector2CircularEdge` + two `NextFloat`s + the `NewDust` chain) stay
-//!   skipped with the dust pass.
+//!   (`NextVector2CircularEdge` + two `NextFloat`s + the `NewDust` chain) now
+//!   ride `item_dust::fallen_star_sparkle` / `boss_bag_sparkle`.
 
 use glam::Vec2;
 use tr_core::UnifiedRandom;
@@ -54,7 +53,8 @@ pub(crate) fn rand_light(
         let num = rng.next_range(90, 111) as f32 * 0.01 * ((ess_scale + 0.5) / 2.0);
         [0.25 * num, 0.25 * num, 0.25 * num]
     } else if kind == 116 {
-        // `:1211-1222` — deferred wholesale (the dust gate, module docs).
+        // `:1211-1222` — routed to `item_dust::meteorite_visual` (W4-g15):
+        // the flicker + the dust gate ride there, stream-exact.
         return None;
     } else if kind == 3191 {
         // `:1224-1228` — the Enchanted Nightcrawler's pink flicker.

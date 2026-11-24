@@ -57,9 +57,18 @@ pub(crate) fn use_extractinator(app: &mut App, tx: i32, ty: i32, world_pos: Vec2
     // (`ItemTrader.cs:65-80`).
     if is_chlorophyte {
         if let Some((giving, taking)) = extract::chlorophyte_trade(held.kind, held.count) {
+            // W4-e10 — `Player.cs:41681`: `SoundEngine.PlaySound(7)` —
+            // UNPOSITIONED (the flag arm), BEFORE `ApplyItemTime`
+            // (`:41682`). Case 7's one `Next(-10, 11) * 0.01` pitch draw
+            // (`LegacySoundPlayer.cs:725`) rides `UpdatePlayers` (the
+            // `PlaceThing` caller under the `Main.cs:17754` swap), after
+            // the gate. The positioned tile-corner `play_at` stand-in is
+            // retired.
+            app.audio.play_pickup_sound(
+                false,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
             let mut secs = apply_item_time_secs(app, true);
-            app.audio
-                .play_at("Grab", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
             // `context.SkipItemConsumption = true` (`:41683`) + the trader's
             // own decrement (`:41684-41688`) — the standard consumable path is
             // skipped so it cannot double-spend.
@@ -99,8 +108,14 @@ pub(crate) fn use_extractinator(app: &mut App, tx: i32, ty: i32, world_pos: Vec2
         return None;
     }
     let secs = apply_item_time_secs(app, is_chlorophyte);
-    app.audio
-        .play_at("Grab", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+    // W4-e10 — `Player.cs:41694`: `SoundEngine.PlaySound(7)` —
+    // UNPOSITIONED, AFTER `ApplyItemTime` (`:41693`) and the roll above,
+    // BEFORE `ExtractinatorUse`'s drop. The one case-7 pitch draw rides
+    // `UpdatePlayers` after the gate (the trader arm's contract).
+    app.audio.play_pickup_sound(
+        false,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     // The held stack decrements one per action (the C#'s generic consumable
     // path, `Player.cs:43280`): the silt/slush/fossil inputs are consumable in
     // vanilla and the port's `itemdata` carries that flag for all of them but
@@ -356,8 +371,11 @@ mod tests {
         use_extractinator(&mut a, tx, ty, pos);
         assert!(!a.items.is_empty(), "the extraction spawned its drop");
 
-        // The twin: the roll chain, then the spawn's velocity triplet +
-        // prefix — the exact order `use_extractinator` runs.
+        // The twin: the roll chain, then the W4-e10 Grab chime's ONE
+        // case-7 `Next(-10, 11)` pitch draw (`Player.cs:41694`,
+        // `LegacySoundPlayer.cs:725` — after the gate, before the drop),
+        // then the spawn's velocity triplet + prefix — the exact order
+        // `use_extractinator` runs.
         let (mut twin, _, _) = extract_world(219);
         let held = twin.inventory[twin.selected].kind;
         let tile = twin.world.tile(tx, ty).unwrap();
@@ -365,6 +383,7 @@ mod tests {
         let mut rng = tr_core::UnifiedRandom::new(4242);
         let (it, stack) =
             tr_core::extract::roll_extractinator_drop(mode, tile.kind, twin.world.hard_mode, &mut rng);
+        let _pitch = rng.next_range(-10, 11); // the Grab chime's case-7 draw
         let mut twin_items = Vec::new();
         items::spawn_item_drop_px(&mut twin_items, &mut rng, it as u16, stack.max(1) as u32, pos);
         assert_eq!(

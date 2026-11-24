@@ -1,5 +1,9 @@
-//! W4-f35 DOC-SWEEP — the bag OPEN mechanics + the master-mode bag
+//! 195 — W4-f35 DOC-SWEEP — the bag OPEN mechanics + the master-mode bag
 //! drop rates: the census.
+//!
+//! RENAME CHAIN: 66 → 195 (registry-150 §1/§3 round-1 assignment; 66 =
+//! W4-g63 `66-proj-trail-dust-claims.md` wins). Executed at the
+//! integration/batch-O merge (merger dedupe per §9/§10); INDEX ref re-pointed.
 //!
 //! Companion to `184-expert-drop-trees-census.md` (the per-boss grant
 //! trees). This doc sweeps the MECHANICS around the open — the

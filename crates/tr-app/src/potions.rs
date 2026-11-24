@@ -124,6 +124,12 @@ impl PotionDelayTimes {
 /// `restorationDelayTime` (`:51864-51868`); the Eggnog 1912 and the Mushroom
 /// 5 ride their own times AND reset hunger (`:51869-51880`); everything
 /// else rides `potionDelayTime` (`:51881-51885`).
+///
+/// W4-e10 — returns the hunger transition flag: true when the reset's
+/// `UpdateHungerBuffs` fired the 333-expiry arm, whose `PlaySound(
+/// SoundID.Hungry)` (`Player.cs:12138`, UNPOSITIONED) the app-level caller
+/// plays (the Player has no audio device — the `pending_hurt_sound`
+/// handoff pattern, folded to a return value on this pure path).
 pub fn apply_potion_delay(
     p: &mut Player,
     def: &ItemDef,
@@ -131,7 +137,7 @@ pub fn apply_potion_delay(
     rng: &mut UnifiedRandom,
     dont_starve: bool,
     remix: bool,
-) {
+) -> bool {
     if def.id == 3001 {
         // `:51857`: `Next(2400, 4200 + 1)` — the upper bound is EXCLUSIVE in
         // the C# `Next(min, max)`, the +1 makes 4200 reachable.
@@ -141,20 +147,23 @@ pub fn apply_potion_delay(
             p.potion_delay = (p.potion_delay as f32 * PHILOSOPHER_STONE_MULTIPLIER) as i32;
         }
         p.buffs.add_buff(POTION_SICKNESS, p.potion_delay); // `:51862`
+        false
     } else if def.id == 227 || def.id == 126 {
         p.potion_delay = times.restoration; // `:51866`
         p.buffs.add_buff(POTION_SICKNESS, p.potion_delay); // `:51867`
+        false
     } else if def.id == 1912 {
         p.potion_delay = EGGNOG_DELAY; // `:51871` (`eggnogDelayTime`, unscaled)
         p.buffs.add_buff(POTION_SICKNESS, p.potion_delay); // `:51872`
-        try_to_reset_hunger_to_neutral(p, dont_starve, remix); // `:51873`
+        try_to_reset_hunger_to_neutral(p, dont_starve, remix) // `:51873`
     } else if def.id == 5 {
         p.potion_delay = times.mushroom; // `:51877`
         p.buffs.add_buff(POTION_SICKNESS, p.potion_delay); // `:51878`
-        try_to_reset_hunger_to_neutral(p, dont_starve, remix); // `:51879`
+        try_to_reset_hunger_to_neutral(p, dont_starve, remix) // `:51879`
     } else {
         p.potion_delay = times.potion; // `:51883`
         p.buffs.add_buff(POTION_SICKNESS, p.potion_delay); // `:51884`
+        false
     }
 }
 
@@ -228,12 +237,13 @@ pub fn apply_life_and_or_mana(
 /// `Player.TryToResetHungerToNeutral` (`Player.cs:12081-12096`): zero the
 /// timers of the 332/333/334 hunger buffs, then `UpdateHungerBuffs`
 /// (`:12098-12150`). The `Main.dontStarveWorld`/`Main.remixWorld` arms read
-/// the world seed flags the caller hands in; the emote/sound halves are
-/// UI/audio seams (out of scope, the buff writes are the state change).
+/// the world seed flags the caller hands in; the emote half is a UI seam.
 /// NOTE: like the C#, the follow-up `UpdateHungerBuffs` skips every slot
 /// whose timer was just zeroed (`:12102-12105`) — the call is a structural
-/// no-op on the reset slots, kept for the source shape.
-pub fn try_to_reset_hunger_to_neutral(p: &mut Player, dont_starve: bool, remix: bool) {
+/// no-op on the reset slots, kept for the source shape. W4-e10: returns
+/// the 333-expiry flag (the `SoundID.Hungry` play, `:12138`) for the
+/// app-level caller.
+pub fn try_to_reset_hunger_to_neutral(p: &mut Player, dont_starve: bool, remix: bool) -> bool {
     let mut flag = false;
     for i in 0..crate::buffs::MAX_BUFFS {
         let bt = p.buffs.buff_type[i];
@@ -243,7 +253,9 @@ pub fn try_to_reset_hunger_to_neutral(p: &mut Player, dont_starve: bool, remix: 
         }
     }
     if flag {
-        update_hunger_buffs(p, dont_starve, remix); // `:12092-12095`
+        update_hunger_buffs(p, dont_starve, remix) // `:12092-12095`
+    } else {
+        false
     }
 }
 
@@ -251,8 +263,11 @@ pub fn try_to_reset_hunger_to_neutral(p: &mut Player, dont_starve: bool, remix: 
 /// the live (type, time) pairs first because `add_buff` compacts slots — the
 /// observable writes (the expiry grants + the zeroing) land on the same buff
 /// TYPES. The 332 expiry's remix+dontStarve arm grants 28800 (`:12110-12113`),
-/// every other world 18000 (`:12116`).
-fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
+/// every other world 18000 (`:12116`). W4-e10: returns true when the
+/// 333-expiry arm fired (`:12127-12139`) — its `PlaySound(SoundID.Hungry)`
+/// (`:12138`) is the app-level caller's (the emote `:12137` stays a UI seam).
+fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) -> bool {
+    let mut hungry = false;
     let slots: Vec<(i32, i32)> = (0..crate::buffs::MAX_BUFFS)
         .filter(|&i| p.buffs.buff_type[i] > 0 && p.buffs.buff_time[i] > 0)
         .map(|i| (p.buffs.buff_type[i], p.buffs.buff_time[i]))
@@ -284,6 +299,10 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
             333 => {
                 if time <= 2 {
                     p.buffs.add_buff(334, 5); // `:12131`/`:12135` (both arms 5)
+                    // `:12138`: `SoundEngine.PlaySound(SoundID.Hungry)` —
+                    // UNPOSITIONED, the case-42 trackable (one variation,
+                    // no gameplay draw; the façade NextFloat audio-only).
+                    hungry = true;
                 }
                 if !dont_starve {
                     if let Some(s) = p.buffs.find_buff_index(333) {
@@ -299,6 +318,7 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
             _ => {}
         }
     }
+    hungry
 }
 
 /// The buff-94 Mana Sickness effect arm (`Player.cs:10318-10327`):
@@ -411,15 +431,27 @@ pub fn use_potion_item(app: &mut App, held: ItemSlot) -> bool {
     // Strange Brew delay roll FIRST) then `ItemCheck_StartActualUse`'s sound
     // (`:51680-51698`). The animation/timers arm here too — the heal phase
     // below reads nothing from them, so the order is the C#'s.
-    {
+    let hungry = {
         let Some(p) = app.player.as_mut() else {
             return false;
         };
         let times = PotionDelayTimes::rebuild(p.p_stone);
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         if def.potion {
-            apply_potion_delay(p, def, &times, rng, dont_starve, remix);
+            apply_potion_delay(p, def, &times, rng, dont_starve, remix)
+        } else {
+            false
         }
+    };
+    // W4-e10 — the Eggnog/Mushroom reset's 333-expiry arm fired inside
+    // `ApplyPotionDelay` (`Player.cs:12138`: `PlaySound(SoundID.Hungry)` —
+    // UNPOSITIONED, `SoundEngine.cs:93`'s x=-1/y=-1 defaults, the case-42
+    // trackable façade: the `GetRandomPitch` NextFloat is audio-only, no
+    // gameplay draw). Played HERE — after the delay phase, before the
+    // swing seam — the C#'s position in the call chain.
+    if hungry {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        app.audio.play_voice_style("Hungry", -1.0, -1.0, 0.0, rng);
     }
     // The swing seam (`ApplyItemAnimation`, `Player.cs:4449-4451` + the
     // sound). The reuse lock (`SetItemAnimation`'s tail, `:4496`) rides the
@@ -686,7 +718,7 @@ pub fn quick_heal(app: &mut App) -> bool {
         .world
         .seeds
         .contains(tr_core::seeds::SeedFlags::REMIX);
-    let (heal_text, drowning) = {
+    let (heal_text, drowning, hungry) = {
         let Some(p) = app.player.as_mut() else {
             return false;
         };
@@ -709,12 +741,13 @@ pub fn quick_heal(app: &mut App) -> bool {
             app.audio.play_use_sound(idx, x, y, pitch, rng);
         }
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let mut hungry = false;
         if def.potion {
-            apply_potion_delay(p, def, &times, rng, dont_starve, remix); // `:5517-5520`
+            hungry = apply_potion_delay(p, def, &times, rng, dont_starve, remix); // `:5517-5520`
         }
         let heal_text = apply_life_and_or_mana(p, def, rng); // `:5521`
         if def.id == 5 {
-            try_to_reset_hunger_to_neutral(p, dont_starve, remix); // `:5522-5525`
+            hungry |= try_to_reset_hunger_to_neutral(p, dont_starve, remix); // `:5522-5525`
         }
         // `:5526-5534`: the buff grant WITH the buffTime 0 → 3600 fallback.
         if def.buff_type > 0 {
@@ -722,8 +755,17 @@ pub fn quick_heal(app: &mut App) -> bool {
             p.buffs.add_buff(def.buff_type, time);
         }
         let drowning = def.id == 126 && p.breath == 0; // `:5543-5546`
-        (heal_text, drowning)
+        (heal_text, drowning, hungry)
     };
+    // W4-e10 — the reset's 333-expiry arm fired (`Player.cs:12138`:
+    // `PlaySound(SoundID.Hungry)` — UNPOSITIONED, the case-42 trackable
+    // façade, no gameplay draw). The Player-only block above cannot reach
+    // the audio device; the flag rides out and plays here, before the
+    // heal text — the C#'s position inside the use call.
+    if hungry {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        app.audio.play_voice_style("Hungry", -1.0, -1.0, 0.0, rng);
+    }
     if let Some(amount) = heal_text {
         spawn_heal_text(app, amount);
     }
@@ -776,7 +818,7 @@ pub fn quick_mana(app: &mut App) -> bool {
         .world
         .seeds
         .contains(tr_core::seeds::SeedFlags::REMIX);
-    let heal_text = {
+    let (heal_text, hungry) = {
         let Some(p) = app.player.as_mut() else {
             return false;
         };
@@ -793,11 +835,20 @@ pub fn quick_mana(app: &mut App) -> bool {
             app.audio.play_use_sound(idx, x, y, pitch, rng); // `:5613`
         }
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        if def.potion {
-            apply_potion_delay(p, def, &times, rng, dont_starve, remix); // `:5614-5617`
-        }
-        apply_life_and_or_mana(p, def, rng) // `:5618`
+        let hungry = if def.potion {
+            apply_potion_delay(p, def, &times, rng, dont_starve, remix) // `:5614-5617`
+        } else {
+            false
+        };
+        (apply_life_and_or_mana(p, def, rng), hungry) // `:5618`
     };
+    // W4-e10 — the reset's 333-expiry arm fired (`Player.cs:12138`), the
+    // unpositioned case-42 Hungry trackable, no gameplay draw (the QuickHeal
+    // twin's contract).
+    if hungry {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        app.audio.play_voice_style("Hungry", -1.0, -1.0, 0.0, rng);
+    }
     if let Some(amount) = heal_text {
         spawn_heal_text(app, amount);
     }
@@ -1688,5 +1739,134 @@ mod tests {
         update_hunger_buffs(&mut q, true, true);
         let i = q.buffs.find_buff_index(333).unwrap();
         assert_eq!(q.buffs.buff_time[i], 28800, "the remix+dontStarve row");
+    }
+
+    // ---- W4-e10: the Hungry cue (Player.cs:12138) --------------------------
+
+    /// W4-e10 — the 333-expiry flag: true ONLY on the `time <= 2` arm
+    /// (`Player.cs:12127-12139`), false on a fresh 333 and on the 332 tier.
+    #[test]
+    fn w4_e10_the_hungry_flag_rides_only_the_333_expiry() {
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(333, 2);
+        assert!(update_hunger_buffs(&mut p, false, false), "the expiry arm");
+        assert!(p.buffs.find_buff_index(334).is_some(), "334 granted (:12135)");
+        let mut q = Player::spawn(&w);
+        q.buffs.add_buff(333, 1000);
+        assert!(!update_hunger_buffs(&mut q, false, false), "a fresh 333");
+        let mut r = Player::spawn(&w);
+        r.buffs.add_buff(332, 2);
+        assert!(!update_hunger_buffs(&mut r, false, false), "the 332 tier is silent");
+    }
+
+    /// W4-e10 — the Eggnog drink's reset fires the Hungry chime
+    /// (`Player.cs:12138` via `ApplyPotionDelay` `:51873`): the audible
+    /// listener plays it UNPOSITIONED (case-42 trackable), the gameplay
+    /// stream sees only the Item3 use-sound pitch draw + the heal rolls —
+    /// the façade adds NO gameplay draw. The silent twin plays nothing.
+    #[test]
+    fn w4_e10_the_eggnog_reset_plays_the_hungry_chime_draw_free() {
+        // The audible rig: a live 333 at time 2, the listener on the player.
+        let mut app = drink_app();
+        let (px, py) = {
+            let p = app.player.as_ref().unwrap();
+            (p.x, p.y)
+        };
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (px, py),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.inventory[0] = slot(1912, 2);
+        app.selected = 0;
+        let p = app.player.as_mut().unwrap();
+        p.hp = 10;
+        p.buffs.add_buff(333, 2);
+        let before = app.audio.played_count();
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        // The Eggnog delay is a constant (2400, no roll) and its heal is
+        // the fixed 80 (`ApplyLifeAndOrMana` rolls ONLY for the Strange
+        // Brew 3001) — the gameplay draws are the Item128 use-sound's
+        // case-2 default pitch (`:51680`), then the heal text's jitter
+        // pair; the Hungry façade between them draws NOTHING here.
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
+        assert_eq!(
+            app.audio.played_count(),
+            before + 2,
+            "the Item use sound + the Hungry chime"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.potion_delay, EGGNOG_DELAY);
+        assert!(p.buffs.find_buff_index(334).is_some(), "the 333 expired");
+        assert!(p.buffs.find_buff_index(333).is_none());
+        // The gameplay stream twin: pitch draw, then the heal-text jitter
+        // pair — NO draw for the trackable façade.
+        let _ = mirror.next_range(-6, 7); // the Item128 use pitch (default arm)
+        let _ = mirror.next_range(-10, 11); // the heal text jitter x
+        let _ = mirror.next_range(-21, 22); // the heal text jitter y
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror,
+            "the Hungry façade adds no gameplay draw"
+        );
+        // The silent twin: the gate refuses both plays, the stream matches
+        // the draw-free chain (no pitch, the jitter pair only).
+        let mut app2 = drink_app();
+        app2.inventory[0] = slot(1912, 2);
+        app2.selected = 0;
+        let p = app2.player.as_mut().unwrap();
+        p.hp = 10;
+        p.buffs.add_buff(333, 2);
+        let before2 = app2.audio.played_count();
+        let mut mirror2 = app2.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(use_potion_item(&mut app2, app2.inventory[0]));
+        assert_eq!(app2.audio.played_count(), before2, "silent: no plays");
+        let _ = mirror2.next_range(-10, 11);
+        let _ = mirror2.next_range(-21, 22);
+        assert_eq!(
+            *app2.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror2
+        );
+    }
+
+    /// W4-e10 — the QuickHeal Mushroom path (`Player.cs:5522-5525` →
+    /// `TryToResetHungerToNeutral` → `UpdateHungerBuffs` `:12138`): the
+    /// reset's expiry chime plays once, unpositioned, draw-free.
+    #[test]
+    fn w4_e10_the_quick_heal_mushroom_reset_plays_hungry() {
+        let mut app = drink_app();
+        let (px, py) = {
+            let p = app.player.as_ref().unwrap();
+            (p.x, p.y)
+        };
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (px, py),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.inventory[0] = slot(5, 2);
+        let p = app.player.as_mut().unwrap();
+        p.hp = 50;
+        p.buffs.add_buff(333, 2);
+        let before = app.audio.played_count();
+        assert!(quick_heal(&mut app));
+        assert_eq!(
+            app.audio.played_count(),
+            before + 2,
+            "the Mushroom use sound + the Hungry chime"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.potion_delay, 1800, "the mushroom delay row");
+        assert!(p.buffs.find_buff_index(334).is_some());
     }
 }

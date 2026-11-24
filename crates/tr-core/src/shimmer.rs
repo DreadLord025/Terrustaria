@@ -61,6 +61,7 @@ pub fn transform_to_item(
 /// ThreeQuartersAtRight 7 — `Main.GetMoonPhase()` is `(MoonPhase)moonPhase`,
 /// `Main.cs:3199-3202`). W4-e19 round 3 census (the `cab982244` fold, the
 /// f47 seal research/151 §1.5): the old port read an inverted
+/// `Main.cs:3199-3202`). W4-e19 round 3 census: the old port read an inverted
 /// 0=empty/4=full convention (the sky FLOORS table's own stand-in) — the
 /// switch arms now carry the enum's real indices; the `_` default (Empty 4)
 /// is 5406.
@@ -451,6 +452,8 @@ mod tests {
         // the arm is 3461-only. W4-e19 round 3 (the f47 seal research/151
         // §1.5 fold): the old inverted-convention pins (4=Full, 0=default)
         // are corrected to the enum's indices.
+        // the arm is 3461-only. W4-e19 round 3: the old inverted-convention
+        // pins (4=Full, 0=default) are corrected to the enum's indices.
         assert_eq!(transform_to_item(3461, -1, 0, 0), 5408); // Full
         assert_eq!(transform_to_item(3461, -1, 0, 2), 5403); // HalfAtLeft
         assert_eq!(transform_to_item(3461, -1, 0, 6), 5405); // HalfAtRight

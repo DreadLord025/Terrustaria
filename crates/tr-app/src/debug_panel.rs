@@ -1,3 +1,5 @@
+{
+// balance-open (union shared delimiter)
 //! The F3 developer workbench — the `tr-app` adapter.
 //!
 //! The panel's state, layout, hit-testing and input→intent translation live in
@@ -417,6 +419,10 @@ fn world_rows(
         // `WorldGen.JustQuit()`), the panel being the chat dispatcher's
         // stand-in (the S1-E-29 recorded deviation, the `pauseworld` row's
         // precedent) — the W4-g24/g73 quit-stop keep-one's F3 consumer.
+        // W4-g24 doc-sweep — the `/quit` debug chat command
+        // (`ToolkitDebugCommands.cs:232-237`: `WorldGen.JustQuit()`), the
+        // panel being the chat dispatcher's stand-in (the S1-E-29 recorded
+        // deviation, the `pauseworld` row's precedent).
         ("Quit (no save)".to_string(), R),
     ]
 }
@@ -859,6 +865,10 @@ fn world_click(app: &mut App, row: usize) {
             // `WorldGen.JustQuit()` (`WorldGen.cs:6627-6662`), the no-save
             // exit. The panel is the chat dispatcher's stand-in (the
             // `pauseworld` row's precedent).
+            // W4-g24 doc-sweep — the `/quit` chat command
+            // (`ToolkitDebugCommands.cs:232-237`): `WorldGen.JustQuit()`
+            // (`WorldGen.cs:6627-6662`), the no-save exit. The panel is the
+            // chat dispatcher's stand-in (the `pauseworld` row's precedent).
             app.just_quit();
         }
         _ => {}
@@ -908,6 +918,25 @@ mod tests {
             },
         );
         assert!(!app.stepper.paused, "the second click resumed the world");
+    }
+
+    /// W4-g24 doc-sweep — the quit row is the `/quit` chat command
+    /// (`ToolkitDebugCommands.cs:232-237`): `WorldGen.JustQuit` runs its
+    /// sentinel-stop pair + the tracked drain, then the single-player
+    /// `GoToWorldSelect` hop (`WorldGen.cs:6655`). The row count includes
+    /// the new row (16).
+    #[test]
+    fn w4_g24_the_quit_row_runs_just_quit() {
+        let mut app = flow_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 16);
+        click_world(&mut app, 15);
+        assert_eq!(app.audio.liquid_ambience_stop_count(), 1, "the :6631 pair");
+        assert!(matches!(
+            app.front,
+            Some(crate::app::flow::FrontScreen::WorldSelect)
+        ), "the world-select hop");
+        assert!(matches!(app.net, crate::app::NetRole::Off));
     }
 
     #[test]
@@ -1138,6 +1167,9 @@ mod tests {
             Some(crate::app::flow::FrontScreen::WorldSelect)
         ), "the world-select hop");
         assert!(matches!(app.net, crate::app::NetRole::Off));
+
+        }        // The quit-stop keep-one (g73 retire bce01ece8's C#-verified fix,
+        // adopted on g24) — the `/quit` row is the new tail row 15.
     }
 
     /// S1-E-34 — the F3 god-mode row flips the debug flag.

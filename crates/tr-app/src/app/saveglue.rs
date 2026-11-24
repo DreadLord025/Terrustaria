@@ -349,6 +349,7 @@ impl App {
     /// the IMMEDIATE `StopWaterfallAmbienceAudio`/`StopTrackedSounds` halves
     /// are wired below (the W4-g24/g73 quit-stop keep-one: ONE `:6704`
     /// call site, the g24 seam set + this branch's tracked drain).
+    /// are wired below (W4-g24 doc-sweep).
     pub(crate) fn save_and_quit(&mut self) {
         // `WorldGen.cs:6703`: `SoundEngine.PlaySound(11)`.
         self.audio.play("Menu_Close");
@@ -413,6 +414,7 @@ impl App {
     // `debug` feature, OFF by default); the test module exercises it in
     // every build. The allow keeps the default build warning-clean
     // (the g24 `7ca8b087` fold, kept by the quit-stop keep-one).
+    // every build. The allow keeps the default build warning-clean.
     #[allow(dead_code)]
     pub(crate) fn just_quit(&mut self) {
         // `WorldGen.cs:6631-6632`: the inlined 34/35 sentinel pair (the
@@ -956,6 +958,12 @@ mod tests {
     /// (`:6631-6632`/:6646) inlines the same pair. Both drain the tracked
     /// pool; the sentinel-stop counter pins the immediate liquid-loop stop
     /// (the frame's ¼ s tick is NOT the seam under test).
+    /// W4-g24 doc-sweep — the quit paths' audio stops: `SaveAndQuit`
+    /// (`WorldGen.cs:6704`/:6715) calls `StopWaterfallAmbienceAudio` then
+    /// `StopTrackedSounds`; `JustQuit` (`:6631-6632`/:6646) inlines the same
+    /// pair. Both drain the tracked pool; the sentinel-stop counter pins
+    /// the immediate liquid-loop stop (the frame's ¼ s tick is NOT the
+    /// seam under test).
     #[test]
     fn w4_g24_the_quit_paths_stop_the_ambience_and_the_tracked_pool() {
         let style = crate::audio::menu_accept_style();

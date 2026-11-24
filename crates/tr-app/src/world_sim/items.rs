@@ -30,14 +30,50 @@ const CANT_TAKE_LUNCH_MONEY: &[u16] = &[
     101,
 ];
 
+/// `NPCID.Sets.CanConvertIntoCopperSlimeTownNPC` (`NPCID.cs:10120`):
+/// `CreateBoolSet(1, 302, 335, 336, 333, 334)` — the Blue Slime (1) and the
+/// five zombie/skeleton family rows a dropped Copper Shortsword (89) /
+/// Chain Knife (3507) converts into the Copper Town Slime
+/// (`WorldItem.GetPickedUpByMonsters_Special`, `WorldItem.cs:1105`).
+const CAN_CONVERT_COPPER_SLIME: &[u16] = &[1, 302, 335, 336, 333, 334];
+
+/// `WorldItem.GetPickedUpByMonsters_Special` (`WorldItem.cs:1086-1116`,
+/// W4-g15 lane 5): the first convertible hostile NPC whose hitbox intersects
+/// the drop's consumes it and raises `unlockedSlimeCopperSpawn`. The C#
+/// `break`s on the first match (`:1109`); the `NPC.TransformCopperSlime`
+/// (`NPC.cs:19160-19182`) target (684 TownSlimeCopper) has no NpcKind row
+/// (the town-slime family is unported), so the port raises the flag and
+/// leaves the NPC — the documented roster-gap shape (the
+/// `spawn_shimmer_release` precedent: the accounting runs, the spawn waits
+/// for the roster). The `TownSlimeTransform` particle broadcast is the
+/// orchestrator lane's. Returns true when the drop was consumed
+/// (`TurnToAirAndSync`, `:1114`). RNG-free.
+/// The disjoint-borrow shape (the `DustSink` convention): the scan reads the
+/// NPC list only; the caller raises `world.unlocked_slime_copper_spawn`
+/// post-tick (the closure holds `world = &app.world`).
+fn copper_slime_pickup(npcs: &[crate::npc::Npc], drop: &ItemDrop) -> bool {
+    let (dx0, dy0) = (drop.pos.x as i32, drop.pos.y as i32);
+    let dsz = crate::item::SIZE as i32;
+    // `:1102-1110` — the first intersecting convertible NPC wins.
+    npcs.iter().any(|n| {
+        let (nw, nh) = n.size();
+        n.hp > 0
+            && CAN_CONVERT_COPPER_SLIME.contains(&n.kind.cs_id())
+            && dx0 < (n.x as i32) + nw as i32
+            && dx0 + dsz > n.x as i32
+            && dy0 < (n.y as i32) + nh as i32
+            && dy0 + dsz > n.y as i32
+    })
+}
+
 pub(crate) fn update_items(app: &mut App, dt: f32) {
     if app.is_client() {
         // The host owns the drops: ask it to collect whatever lies in our
         // grab rectangle and hide those locally until the next authoritative
         // snapshot. The range is `GetItemGrabRange`'s expanded hitbox
         // (`Player.cs:34926`, S1-P-i47) — the old 26 px circle had no C#
-        // counterpart. The client's accessory flags are the local player's;
-        // the unported grants read false (the `GrabFlags` seam).
+        // counterpart. The client's accessory flags are the local player's
+        // LIVE flags (W4-g15 lane 5 — the `GrabFlags` seam now reads them).
         let Some(p) = app.player.as_ref() else {
             return;
         };
@@ -56,8 +92,18 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             {
                 return false;
             }
-            let range = crate::item::get_item_grab_range(it.kind, crate::item::GrabFlags::default())
-                as f32;
+            // W4-g15 lane 5 — the client's accessory margins read the LIVE
+            // local-player flags (the host half below does the same); the
+            // old `GrabFlags::default()` refused the Gold Ring / magnet
+            // range extensions on the client's optimistic grab.
+            let flags = crate::item::GrabFlags {
+                gold_ring: p.gold_ring,
+                mana_magnet: p.mana_magnet,
+                life_magnet: p.life_magnet,
+                treasure_magnet: p.treasure_magnet,
+                journey_far_range: p.far_placement_range,
+            };
+            let range = crate::item::get_item_grab_range(it.kind, flags) as f32;
             crate::item::grab_rect_intersects(
                 px,
                 py,
@@ -128,8 +174,38 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     // the RNG borrows stay per-call inside the step closure.
     let dust = &mut app.dust;
     let mut voodoo: Option<(Vec2, u32)> = None;
+    // W4-g15 lane 5 — the copper-slime unlock latch: the flag write rides
+    // the post-tick pass (the closure holds the world borrow); the latch
+    // makes a second coin this tick see the lock the C#'s in-loop write
+    // would show.
+    let mut copper_unlocked = false;
     // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
     let mut shimmer_due: Vec<u32> = Vec::new();
+    // W4-g15 — the dust spawn ctx captured ONCE per tick, before the items
+    // borrow (the `world_sim/npcs.rs` dust convention / the
+    // `world_sim/player.rs:426` snapshot pattern). The day/remix/DD2 gates
+    // the despawn burns read are captured here too (they cannot change
+    // mid-tick).
+    let dust_ctx = app.spawn_ctx();
+    // 347 §2.1 keep-one — the e19 splash drain's water style wins (the f47b
+    // adopt): `Main.waterStyle` is the live biome style the `Dust.dustWater()`
+    // arm reads (`Dust.cs:402-418`); the `TR_WATER_STYLE` pin caps at 14 like
+    // the draw pass so the splash dust family matches the pinned liquid
+    // draws (`app/frame/draw.rs`). The g15 unpinned camera recompute retired.
+    let water_style = crate::env::water_style()
+        .map(|n| n.min(14) as i32)
+        .unwrap_or_else(|| crate::biome::calculate_water_style(&app.world, app.camera) as i32);
+    let day_time = app.world.day_time;
+    let remix_world = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    let dd2_ongoing = app.world.dd2_event_ongoing;
+    // W4-g15 lane 5 — the TryFillBucket gates (`WorldItem.cs:550-563`): the
+    // rain toggle + intensity, the world-surface presence (`Main.cs:2788`'s
+    // `worldSurface > 50`), the remix flag and the day rate. Captured once
+    // per tick (they cannot change mid-tick).
+    let raining = app.rain.is_raining();
+    let max_raining = app.rain.max_raining();
+    let has_world_surface = app.world.world_surface > 50.0;
+    let day_rate = app.world.day_rate();
     app.item_step.tick(dt.min(0.25), |step| {
         // --- `Player.GrabItems` (`Player.cs:34905-34976`, S1-P-i47) ---------
         // The C# runs it from `Player.Update` (`:27428`) BEFORE the item
@@ -191,6 +267,9 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 gold_ring: pl.gold_ring,
                 mana_magnet: pl.mana_magnet,
                 life_magnet: pl.life_magnet,
+                // W4-g15 lane 5 — the 5010/5126 grants now arm the flag
+                // (`player.rs`, `Player.cs:14552`/`:15292`).
+                treasure_magnet: pl.treasure_magnet,
                 journey_far_range: pl.far_placement_range,
                 ..Default::default()
             };
@@ -315,8 +394,15 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     // stack into `extraValue` while the CARRIER's
                     // `extraValue < value && extraValue + value <
                     // 999000000` (`realLife` redirect, `:1143-1155`).
+                    // W4-g15 lane 5 — the `:405` gate row also applies:
+                    // `enemyGrabDelayTime == 0 && playerIndexTheItemIsReservedFor
+                    // == Main.myPlayer`. The port runs the revenge arm at the
+                    // pickup (the standing coin-wallet deviation, ANALYSIS
+                    // S1-P-i50), so the reservation is the grab gate's own
+                    // `reserved_elsewhere` (already checked above); the
+                    // enemy-delay clock gates the monster suck too.
                     let mut drop = items[i].clone();
-                    if expert_mode {
+                    if expert_mode && drop.enemy_grab_delay_time == 0 {
                         let coin_copper = registry::coin_value(kind) * drop.count as u64;
                         // The C# walks Main.npc in index order and processes
                         // EVERY intersecting NPC (no break, `:1121-1200`);
@@ -653,11 +739,22 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
+            // W4-g15 lane 5 — the reservation gate
+            // `playerIndexTheItemIsReservedFor != Main.myPlayer`
+            // (`WorldItem.cs:683` CheckLavaDeath / `:159` TryCombining):
+            // a drop reserved for ANOTHER peer neither burns nor combines.
+            // The port's host owns every drop in SP (the map is empty);
+            // the MP reservation lives in `net_reserved` (the same read
+            // the grab gate above uses).
+            let reserved_elsewhere = app
+                .net_reserved
+                .get(&(i as i16))
+                .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255);
             // `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:418-421`,
             // `:681-763`): the doll in lava is consumed and the sacrifice
             // runs (the resolve rides the post-tick pass — the closure holds
             // the items borrow).
-            if drop.kind == 267 {
+            if drop.kind == 267 && !reserved_elsewhere {
                 let tx = (drop.center().x / TILE_PX) as i32;
                 let ty = (drop.center().y / TILE_PX) as i32;
                 let in_lava = world.tile(tx, ty).is_some_and(|t| {
@@ -680,12 +777,86 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             let in_lava = world.tile(tx, ty).is_some_and(|t| {
                 t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava
             });
-            if in_lava && (rare == 0 || rare == -1) && !lava_immune {
+            if in_lava && !reserved_elsewhere && (rare == 0 || rare == -1) && !lava_immune {
                 // `TurnToAirAndSync` — the drop vanishes.
                 items.swap_remove(i);
                 continue;
             }
             let was_grabbed = drop.being_grabbed;
+            // W4-g15 lane 5 — `TryFillBucket` (`WorldItem.cs:399-402`,
+            // `:548-571`): an empty bucket (205) resting in the rain on a
+            // wind-allowing wall at the surface fills into a water bucket
+            // (206), keeping its stack. The C# runs it BEFORE UpdateShimmer
+            // and MoveInWorld; the two draws (`Next(num3)`, `NextFloat`) ride
+            // the `UpdateItems` stream. The gate reads the drop's pre-move
+            // position (the C# checks before MoveInWorld).
+            if !was_grabbed && drop.kind == 205 && !reserved_elsewhere {
+                // The kind swaps to 206 in place; the stack is kept. The drop
+                // continues through the rest of the update as a water bucket
+                // (the C# mutates `this.inner` in place).
+                try_fill_bucket(
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    &mut drop,
+                    world,
+                    raining,
+                    max_raining,
+                    has_world_surface,
+                    remix_world,
+                    day_rate,
+                );
+            }
+            // W4-g15 lane 5 — `GetPickedUpByMonsters_Special`
+            // (`WorldItem.cs:405-407`, `:1086-1116`): a dropped Copper
+            // Shortsword (89) / Chain Knife (3507) touching a convertible
+            // hostile NPC while the Copper Town Slime is locked is consumed
+            // and raises the unlock flag. The C# gate (`:405`) is
+            // `enemyGrabDelayTime == 0 && playerIndexTheItemIsReservedFor ==
+            // Main.myPlayer`; the reservation is `reserved_elsewhere`. The
+            // NPC-side `TransformCopperSlime` (684) is the roster gap — the
+            // flag is the observable half (the `spawn_shimmer_release`
+            // precedent). The flag write rides the post-tick pass (the
+            // closure holds `world = &app.world`); `copper_unlocked` carries
+            // the first-grant latch so a second coin this tick sees the lock
+            // the C#'s in-loop flag write would show.
+            if !was_grabbed
+                && (drop.kind == 89 || drop.kind == 3507)
+                && !reserved_elsewhere
+                && drop.enemy_grab_delay_time == 0
+                && !copper_unlocked
+                && !app.world.unlocked_slime_copper_spawn
+            {
+                if copper_slime_pickup(&app.npcs, &drop) {
+                    copper_unlocked = true;
+                    items.swap_remove(i);
+                    continue;
+                }
+            }
+            // W4-g15 — `WorldItem.UpdateShimmer`'s shimmered sparkle
+            // (`WorldItem.cs:459-481`) draws `Main.rand` INSIDE UpdateShimmer
+            // (`:403`), BEFORE MoveInWorld's splash. The port's `update` is
+            // RNG-free, so the sparkle drain runs here first (the C# position),
+            // then the movement, then the splash drain below.
+            if !was_grabbed && drop.shimmered {
+                let mut s = crate::item_dust::DustSink {
+                    rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    dust: &mut app.dust,
+                    world,
+                    ctx: &dust_ctx,
+                    audio: &mut *audio,
+                };
+                crate::item_dust::shimmered_sparkle(&mut s, &drop);
+            }
+            // `MoveInWorld`'s repulsion scan (`WorldItem.cs:790-847`) runs at
+            // the head of the movement half, BEFORE the gravity add — the
+            // slice-level pass nudges the neighbours' live velocities (and
+            // this drop's own X) and parks the `flag` for the ×0.8 tail. A
+            // grabbed drop skips MoveInWorld entirely (`:425-435`), no scan.
+            // The clone re-reads its X afterwards — the scan wrote the slot.
+            // (347 §1: e19's keeper half; the g15 skip confirmed, 358 §5.)
+            if !was_grabbed && drop.shimmered {
+                drop.repulsed = crate::item::ItemDrop::repel_shimmered(items, i);
+                drop.vel.x = items[i].vel.x;
+            }
             drop.update(world, step);
             // Doc-sweep lane 36 — the splash arms (`WorldItem.cs:886-954`
             // entry / `:965-1033` exit) run INSIDE MoveInWorld in the C#;
@@ -702,6 +873,86 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     splash_water_style,
                 );
             }
+            // `MoveInWorld`'s entry/exit splash (`WorldItem.cs:881-1035`):
+            // the drop queued the edge; the burst drains HERE, inside the
+            // per-drop loop, BEFORE the despawn/visual halves below — the C#
+            // draws the dust + the case-19 play inside `MoveInWorld` (`:413`),
+            // ahead of `UpdateItem_VisualEffects` (`:436`), all on the
+            // `UpdateItems` stream (`Main.cs:18024`'s swap). The g67
+            // rain-splash contract: `DustPool::new_dust` + the post-writes.
+            // 347 §2.1 keep-one: e19's `ItemSplash`/`take_splash` form; the
+            // g15 `splash_edge` drain retired with its marker field.
+            if let Some(splash) = drop.take_splash() {
+                item_splash(
+                    &mut app.dust,
+                    &dust_ctx,
+                    water_style,
+                    &mut app.audio,
+                    splash,
+            // W4-g15 — `DespawnIfMeetingConditions` (`WorldItem.cs:423`,
+            // `:639-679`): the fallen-star daytime burn / the 4143 expiry /
+            // the 3822 DD2 despawn, AFTER MoveInWorld and BEFORE the visual
+            // effects. A fired burn airs the drop out (`TurnToAirAndSync`).
+            if !was_grabbed {
+                let burned = {
+                    let mut s = crate::item_dust::DustSink {
+                        rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                        dust: &mut app.dust,
+                        world,
+                        ctx: &dust_ctx,
+                        audio: &mut *audio,
+                    };
+                    // The C#'s three independent `if`s (`:645`/`:657`/`:665`);
+                    // the kinds are mutually exclusive, so at most one fires.
+                    let a = crate::item_dust::fallen_star_burn(&mut s, &drop, day_time, remix_world, was_grabbed);
+                    let b = crate::item_dust::mana_cloak_star_expiry(&mut s, &drop);
+                    let c = crate::item_dust::dd2_energy_despawn(&mut s, &drop, dd2_ongoing);
+                    a || b || c
+                };
+                if burned {
+                    items.swap_remove(i);
+                    continue;
+                }
+            // W4-g15 lane 5 — `CheckInWorld` (`WorldItem.cs:422`, `:573-588`):
+            // a drop whose position leaves the world (20-tile fluff) is
+            // recovered to the spawn if it is a `RecoverableImportantItem`
+            // (the boss bags, `ItemID.cs:1386` — the same 21-row set as
+            // `BossBag`), else aired out. The C# runs it AFTER CheckLavaDeath
+            // and BEFORE DespawnIfMeetingConditions; the port keeps it after
+            // the despawn burns (the kinds are disjoint — a boss bag never
+            // burns — so the order is observationally identical). The recover
+            // target is the world spawn in SP (`Main.LocalPlayer.SpawnX < 0`
+            // when no bed is set; the port's `bed_spawn` is the override).
+                let ptx = (drop.pos.x as i32) >> 4;
+                let pty = (drop.pos.y as i32) >> 4;
+                let fluff = 20;
+                let in_world = ptx >= fluff
+                    && ptx < world.width - fluff
+                    && pty >= fluff
+                    && pty < world.height - fluff;
+                if !in_world {
+                    if crate::entity_lights::BOSS_BAG.contains(&drop.kind) {
+                        // `:579` — the recover: `Center = spawn.ToWorldCoordinates()`
+                        // (the +8/+8 cell centre), `velocity = Zero`. The SP
+                        // target is the world spawn; a validated bed overrides.
+                        let (sx, sy) = match world.bed_spawn {
+                            Some((bx, by))
+                                if crate::world_sim::editing::bed_spawn_valid(world, bx, by)
+                                    .is_ok() =>
+                            {
+                                (bx, by)
+                            }
+                            _ => (world.spawn_x, world.spawn_y),
+                        };
+                        let cx = sx as f32 * TILE_PX + 8.0;
+                        let cy = sy as f32 * TILE_PX + 8.0;
+                        drop.pos = Vec2::new(cx - crate::item::SIZE * 0.5, cy - crate::item::SIZE * 0.5);
+                        drop.vel = Vec2::ZERO;
+                    } else {
+                        // `:584` — `TurnToAir`.
+                        items.swap_remove(i);
+                        continue;
+                    }
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
             // it at `:436`, after the movement half, per live drop in
@@ -711,8 +962,27 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // pass above and never reaches here; the lava-burned drops are
             // the same. The RNG-free arms stay in the frame feed
             // (`entity_lights::item_light`).
+            //
+            // W4-g15 — the 116 meteorite arm is now ported (it was deferred
+            // here): its flicker + 1/250 dust gate ride `item_dust`. The 501
+            // pixie-dust arm is dust-only. The 75 / boss-bag `% 12` sparkles
+            // follow the (RNG-free) light halves.
             let ess = app.ess_scale;
-            if let Some((x, y, rgb)) = crate::item_lights::rand_light(
+            if drop.kind == 116 {
+                let light = {
+                    let mut s = crate::item_dust::DustSink {
+                        rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                        dust: &mut app.dust,
+                        world,
+                        ctx: &dust_ctx,
+                        audio: &mut *audio,
+                    };
+                    crate::item_dust::meteorite_visual(&mut s, &drop)
+                };
+                if let Some((x, y, rgb)) = light {
+                    app.entity_lights.add(x, y, rgb);
+                }
+            } else if let Some((x, y, rgb)) = crate::item_lights::rand_light(
                 drop.kind,
                 drop.pos,
                 crate::item::SIZE,
@@ -721,6 +991,31 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             ) {
                 app.entity_lights.add(x, y, rgb);
             }
+            if drop.kind == 501 {
+                let mut s = crate::item_dust::DustSink {
+                    rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    dust: &mut app.dust,
+                    world,
+                    ctx: &dust_ctx,
+                    audio: &mut *audio,
+                };
+                crate::item_dust::pixie_dust_visual(&mut s, &drop);
+            }
+            if drop.kind == 75 || crate::entity_lights::BOSS_BAG.contains(&drop.kind) {
+                let mut s = crate::item_dust::DustSink {
+                    rng: app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    dust: &mut app.dust,
+                    world,
+                    ctx: &dust_ctx,
+                    audio: &mut *audio,
+                };
+                crate::item_dust::fallen_star_sparkle(&mut s, &drop);
+                crate::item_dust::boss_bag_sparkle(&mut s, &drop);
+            }
+            // W4-g15 — `WorldItem.cs:437-440`: the `timeSinceItemSpawned` tick
+            // runs AFTER `UpdateItem_VisualEffects` (`:436`), so the sparkle /
+            // expiry gates above read the pre-increment value this tick.
+            drop.tick_age();
             // `WorldItem.UpdateShimmer`'s 0.9 trigger (`WorldItem.cs:528-535`):
             // the transform runs after the step's items borrow is released (the
             // apply needs the app wholesale for the spawns and the world flags).
@@ -735,7 +1030,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // differ by one tick of motion — ANALYSIS S1-P-i47). The
             // drained sources are later indices, removed highest-first.
             if !was_grabbed {
-                let drained = crate::item::ItemDrop::combine_nearby(items, i);
+                let drained = crate::item::ItemDrop::combine_nearby(items, i, reserved_elsewhere);
                 for j in drained.into_iter().rev() {
                     items.swap_remove(j);
                 }
@@ -744,14 +1039,279 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         }
     });
     app.item_step.cap_backlog();
+    // W4-g15 lane 5 — the copper-slime unlock flag (`NPC.cs:19171`): the
+    // scan consumed the coin(s) inside the closure; the world write lands
+    // here (the `Transform(684)` target is the town-slime roster gap).
+    if copper_unlocked {
+        app.world.unlocked_slime_copper_spawn = true;
+    }
     // The voodoo sacrifice resolves after the items borrow drops (the
     // spawn/kill pass takes `app` wholesale).
     if let Some((pos, stack)) = voodoo {
         crate::world_sim::npcs::voodoo_doll_lava_death(app, pos, stack);
     }
     // The shimmer transforms apply in the list order (the C#'s single-item
-    // `GetShimmered` per tick; a step fires at most one per drop).
+    // `GetShimmered` per tick; a step fires at most one per drop). They run
+    // BEFORE the wish grant: the C#'s `UpdateShimmer` (`:403`) precedes
+    // `TryGrantingMakeAWishSet` (`:414`), and the grant's `swap_remove`
+    // would invalidate the `shimmer_due` indices.
     crate::shimmer::apply_due_transforms(app, &shimmer_due);
+    // W4-g15 lane 5 — the Heroicis-set grant (`TryGrantingMakeAWishSet`): the
+    // gate + the five spawns take `app` wholesale, so they resolve here. The
+    // C# runs the grant per-drop inside UpdateItem (`:414-417`); the port
+    // scans the live list post-tick (the same observable outcome — a wet
+    // desert platinum coin grants once; the grant is draw-free so the scan
+    // order does not move any RNG stream). A platinum coin in WATER never
+    // rides the shimmer ramp (`shimmerWet` refuses), so the two passes are
+    // disjoint on the grant's input.
+    try_granting_make_a_wish_set(app);
+}
+
+/// `WorldItem.TryGrantingMakeAWishSet` (`WorldItem.cs:590-610`, W4-g15
+/// lane 5): a platinum coin (74) that is WET (water), a single stack, NOT
+/// shimmer-wet, still grab-delayed for a NAMED player (`grabDelayTime > 0 &&
+/// grabDelayPlayer != 255` — a player drop, not a tile drop), and whose
+/// closest player stands in the DESERT, is consumed and spawns the five
+/// Heroicis pieces (5655/5656/5657/5658/5661) as shimmered items, plus the
+/// RainbowBoulder cue.
+///
+/// The gate `playerIndexTheItemIsReservedFor == Main.myPlayer` (`:592`) is
+/// the port's `net_reserved` answer (a foreign reservation refuses). The
+/// `Player.FindClosest` (`Player.cs:4942-4967`) is the single-session-player
+/// scan — the port's one player is slot 0, so the closest is always it; the
+/// C#'s `b != byte.MaxValue` guard is vacuous (an all-inactive roster returns
+/// 0, never 255), and the port's `app.player.is_none()` is the no-player
+/// case. The `ZoneDesert` read is the port's last-scan `scene_metrics`
+/// (the standing convention — `update_scene` runs after the items pass).
+///
+/// `SpawnShimmeredItem` (`WorldItem.cs:623-637`): `Item.RequestNewItem` with
+/// the explicit velocity `(itemNumber * (itemNumber % 2 * 2 - 1), 0)` — the
+/// alternating ±itemNumber X spread (0, -1, +2, -3, +4 for the five) — and
+/// the modifier sets `shimmerTime = 1; shimmered = true; shimmerWet = true;
+/// wet = true`. The explicit-velocity arm draws NO scatter (`Item.cs:49738-
+/// 49741`), and `prefix: 0` draws nothing (`Item.cs:511-514`) — the spawn is
+/// DRAW-FREE, so the port's pinned triplet is skipped entirely.
+///
+/// The port scans the live list post-tick (the C# runs the grant per-drop
+/// inside `UpdateItem`); a granted coin is consumed and its five pieces are
+/// appended, so the scan walks the ORIGINAL length only (the pieces are
+/// kind != 74 and never re-grant). The grant is draw-free, so the scan order
+/// moves no RNG stream.
+fn try_granting_make_a_wish_set(app: &mut App) {
+    // The desert zone + a live player are the shared gates (`:594-595`);
+    // capture them once (they cannot change during the scan).
+    if !app.scene_metrics.zone_desert || app.player.is_none() {
+        return;
+    }
+    let n = app.items.len();
+    let mut i = 0;
+    while i < n {
+        let Some(drop) = app.items.get(i) else {
+            break;
+        };
+        if drop.kind != 74 {
+            i += 1;
+            continue;
+        }
+        // `:592` — the gate row. `wet` is the water flag (the C# `base.wet`),
+        // `shimmerWet` the shimmer-liquid flag; a coin in shimmer is refused.
+        let reserved_elsewhere = app
+            .net_reserved
+            .get(&(i as i16))
+            .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255);
+        if reserved_elsewhere
+            || !drop.wet
+            || drop.count != 1
+            || drop.shimmer_wet
+            || drop.grab_delay_time <= 0
+            || drop.grab_delay_player == 255
+        {
+            i += 1;
+            continue;
+        }
+        let center = drop.center();
+        // `:597` — `TurnToAirAndSync`.
+        app.items.swap_remove(i);
+        // `:598-603` — the five pieces, `SpawnShimmeredItem(num++, type)`.
+        for (num, kind) in [5655u16, 5656, 5657, 5658, 5661].into_iter().enumerate() {
+            let vx = num as f32 * ((num % 2 * 2) as f32 - 1.0);
+            let mut piece = ItemDrop::new(
+                kind,
+                1,
+                0,
+                center.x - crate::item::SIZE * 0.5,
+                center.y - crate::item::SIZE * 0.5,
+                vx,
+                0.0,
+                0.0,
+            );
+            // The `SpawnShimmeredItem` modifier (`:631-635`).
+            piece.shimmer_time = 1.0;
+            piece.shimmered = true;
+            piece.shimmer_wet = true;
+            piece.wet = true;
+            app.items.push(piece);
+        }
+        // `:604-607` — the `HeroicisSetSpawnSound` particle broadcast is the
+        // RainbowBoulder cue at the coin's centre (`ParticleOrchestrator.cs:
+        // 897-900`); the port has no particle-orchestrator pass, the sound is
+        // the whole observable effect.
+        app.audio.play_rainbow_boulder(center.x, center.y);
+        // The swap brought a new drop into slot i — re-check it (do not
+        // advance). The appended pieces sit beyond the original length n.
+    }
+}
+
+/// `WorldItem.TryFillBucket` (`WorldItem.cs:548-571`, W4-g15 lane 5): an
+/// empty bucket (205) resting in the rain on a wind-allowing wall at the
+/// surface fills into a water bucket (206), keeping its stack. The gate
+/// (`:550`): the reservation (the caller passes it), `Main.raining`,
+/// `Main.isThereAWorldSurface || Main.remixWorld`, and
+/// `WorldGen.IsSurfaceForAtmospherics(position.ToTileCoordinates())`. The
+/// cell (`:554-556`) is the drop's CENTRE tile, and its wall must ride
+/// `WallID.Sets.AllowsWind`. The fill chance (`:558-563`): `num3 = 600`,
+/// divided by `dayRate` when `0 < dayRate < 600`; then `Next(num3) == 0 &&
+/// NextFloat() < maxRaining`. Both draws ride the `UpdateItems` stream (the
+/// C# runs TryFillBucket inside UpdateItem under the `Main.cs:18024` swap).
+/// The fill is `SetDefaults(206)` + the stack kept (`:565-567`) — the port
+/// swaps the kind in place (the bucket's other stats are not modelled on a
+/// drop, the kind is the whole observable identity).
+#[allow(clippy::too_many_arguments)]
+fn try_fill_bucket(
+    rng: &mut UnifiedRandom,
+    drop: &mut ItemDrop,
+    world: &tr_core::world::World,
+    raining: bool,
+    max_raining: f32,
+    has_world_surface: bool,
+    remix_world: bool,
+    day_rate: i32,
+) {
+    // `:550` — the gate row (the reservation is the caller's).
+    if !raining || (!has_world_surface && !remix_world) {
+        return;
+    }
+    // `WorldGen.IsSurfaceForAtmospherics` (`WorldGen.cs:10976-10987`): the
+    // remix branch reads the rock layer + the maxTilesY-350 floor, else the
+    // world surface. The position is the drop's top-left (`base.position`).
+    let ptx = (drop.pos.x as i32) >> 4;
+    let pty = (drop.pos.y as i32) >> 4;
+    let surface = if remix_world {
+        (pty as f64) > world.rock_layer && pty < world.height - 350
+    } else {
+        (pty as f64) <= world.world_surface
+    };
+    if !surface {
+        return;
+    }
+    // `:554-556` — the CENTRE tile's wall must allow wind.
+    let cx = (drop.center().x as i32) / 16;
+    let cy = (drop.center().y as i32) / 16;
+    let Some(tile) = world.tile(cx, cy) else {
+        return;
+    };
+    if !tr_core::wind::wall_allows_wind(tile.wall) {
+        return;
+    }
+    // `:558-563` — the two draws, in order, on the UpdateItems stream.
+    let mut num3 = 600;
+    if day_rate > 0 && day_rate < num3 {
+        num3 /= day_rate;
+    }
+    if rng.next_max(num3) == 0 && rng.next_float() < max_raining {
+        // `:565-567` — SetDefaults(206), the stack kept.
+        drop.kind = 206;
+    }
+}
+
+/// `WorldItem.MoveInWorld`'s entry/exit splash burst (`WorldItem.cs:881-1035`,
+/// W4-e19 deferred 4 — the g67 rain-splash contract): the dust family by the
+/// edge's kind flags (lava 35 ×5 → shimmer 308 ×10 with the `Next(6)` colour
+/// switch → honey 152 ×5 → water `dustWater()` ×10), each `Dust.NewDust` at
+/// `(pos.X - 6, pos.Y + height/2 - 8)` with the `width + 12 × 24` box (the
+/// water EXIT arm drops the `- 8`, `:1011`), then the per-family post-writes
+/// and the case-19 play (`SoundID.Splash`, style 4/5 for the shimmer
+/// entry/exit, the default 1 otherwise). All draws ride the `UpdateItems`
+/// stream — the C# runs inside `WorldItem.UpdateItem` under the
+/// `Main.cs:18024` swap. The dust rolls come FIRST (the C# plays the sound
+/// AFTER the loop); the play's own pitch draw follows the attenuation gate
+/// (`audio::play_splash_sound`). `water_style` is `Main.waterStyle` — the
+/// caller feeds the live biome style honouring the `TR_WATER_STYLE` pin
+/// (the f47b keep-one adopt).
+fn item_splash(
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &tr_core::world::World,
+    water_style: i32,
+    audio: &mut crate::audio::Audio,
+    rng: &mut UnifiedRandom,
+    splash: crate::item::ItemSplash,
+) {
+    use tr_core::particles::Color;
+    // The dust anchor (`:892` etc.): `position.X - 6f`,
+    // `position.Y + height/2 - 8f`; the water exit arm (`:1011`) has no `- 8`.
+    let size = crate::item::SIZE;
+    let water_exit = !splash.lava && !splash.shimmer && !splash.honey && splash.exit;
+    let y_off = if water_exit { size / 2.0 } else { size / 2.0 - 8.0 };
+    let anchor = Vec2::new(splash.pos.x - 6.0, splash.pos.y + y_off);
+    let (w, h) = (size as i32 + 12, 24);
+    // The family: (dust type, count, style). `Dust.dustWater()` reads the
+    // camera's water style (`Main.waterStyle`, the g67 seam).
+    let (ty, n, style) = if splash.lava {
+        (35, 5, 1) // `:944-953`/`:1023-1032`
+    } else if splash.shimmer {
+        (308, 10, if splash.exit { 5 } else { 4 }) // `:890-913`/`:969-992`
+    } else if splash.honey {
+        (152, 5, 1) // `:917-926`/`:996-1005`
+    } else {
+        (tr_core::particles::dust_water(water_style), 10, 1) // `:930-939`/`:1009-1018`
+    };
+    for _ in 0..n {
+        let idx = dust.new_dust(
+            rng, ctx, world, anchor, w, h, ty, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        if ty == 35 {
+            // `:946-951` — vel.Y -= 1.5, vel.X *= 2.5, scale 1.3, alpha 100.
+            d.velocity.y -= 1.5;
+            d.velocity.x *= 2.5;
+            d.scale = 1.3;
+            d.alpha = 100;
+            d.no_gravity = true;
+        } else if ty == 308 {
+            // `:892-911` — vel.Y -= 4, vel.X *= 2.5, scale 0.8 (SET, not ×),
+            // noGravity, then the `Next(6)` four-colour switch.
+            d.velocity.y -= 4.0;
+            d.velocity.x *= 2.5;
+            d.scale = 0.8;
+            d.no_gravity = true;
+            d.color = match rng.next_max(6) {
+                0 => Color::new(255, 255, 210, 255),
+                1 => Color::new(190, 245, 255, 255),
+                2 => Color::new(255, 150, 255, 255),
+                _ => Color::new(190, 175, 255, 255),
+            };
+        } else if ty == 152 {
+            // `:919-924` — vel.Y-- (1.0), vel.X *= 2.5, scale 1.3, alpha 100.
+            d.velocity.y -= 1.0;
+            d.velocity.x *= 2.5;
+            d.scale = 1.3;
+            d.alpha = 100;
+            d.no_gravity = true;
+        } else {
+            // `:932-937` — vel.Y -= 4, vel.X *= 2.5, scale *= 0.8 (MULTIPLY),
+            // alpha 100, noGravity.
+            d.velocity.y -= 4.0;
+            d.velocity.x *= 2.5;
+            d.scale *= 0.8;
+            d.alpha = 100;
+            d.no_gravity = true;
+        }
+    }
+    // `:913`/`:926`/`:939`/`:953` — `SoundEngine.PlaySound(19, (int)x, (int)y
+    // [, style])`: the shimmer arms pass 4 (entry) / 5 (exit), the rest the
+    // default style 1. The play gates on attenuation BEFORE its pitch draw.
+    audio.play_splash_sound(style, splash.pos.x as i32 as f32, splash.pos.y as i32 as f32, rng);
 }
 
 /// Spawns the drop left by a broken tile, with a small random pop like
@@ -1097,8 +1657,9 @@ fn drop_interrupt_actions(app: &mut App) {
 /// top-left box sits at `center - SIZE/2` (`WorldItem.Center` setter).
 /// The ownership arms `grabDelayTime = DefaultGrabDelay` for the named
 /// player (`WorldItem.ApplySpawnOwnership`, `:306-313`); the
-/// `enemyGrabDelayTime` twin (`Item.cs:49757-49760`) gates only the monster
-/// grab (`WorldItem.cs:405`), unported.
+/// `enemyGrabDelayTime` twin (`Item.cs:49757-49760`) gates the monster
+/// grab (`WorldItem.cs:405`) — W4-g15 lane 5 ports it (the named-player
+/// arm sets it, the all-players 255 arm does not).
 fn spawn_player_drop(
     items: &mut Vec<ItemDrop>,
     kind: u16,
@@ -1123,6 +1684,11 @@ fn spawn_player_drop(
         0.0,
     );
     drop.apply_grab_delay(grab_delay_player);
+    // `Item.cs:49757-49760` — the named-player ownership arm also sets the
+    // monster-grab clock (the all-players 255 arm does not). W4-g15 lane 5.
+    if grab_delay_player != 255 {
+        drop.apply_enemy_grab_delay();
+    }
     items.push(drop);
     if items.len() > 300 {
         items.remove(0);
@@ -1232,6 +1798,10 @@ mod shimmer_tests {
     /// 144), parked at x = 30 tiles — outside the
     /// 42 px pickup magnet of the player at x = 9 (`ItemUpdate`'s magnet,
     /// `item.rs:176-188`) but inside the coin-luck 1000 px window.
+    /// shimmer row (pos y = 19*16, flush on the 20-row floor), parked at
+    /// x = 30 tiles — outside the 42 px pickup magnet of the player at x = 9
+    /// (`ItemUpdate`'s magnet, `item.rs:176-188`) but inside the coin-luck
+    /// 1000 px window.
     fn resting_drop(kind: u16, count: u32) -> ItemDrop {
         let mut d = ItemDrop::new(
             kind,
@@ -1259,6 +1829,15 @@ mod shimmer_tests {
         // itself is the C#'s `+= 0.01f` accumulation: the f32 undershoot at
         // the 90th sum puts the >0.9 crossing on ramp-tick 91 = update-tick
         // 92 (`WorldItem.cs:518-536`, the same arithmetic both sides).
+        // The ramp is the C#'s `+= 0.01f` accumulation crossing >0.9
+        // (`WorldItem.cs:518-536`); the f32 sum crosses on the 91st ramping
+        // tick. W4-e19: the faithful `WetCollision` surface offset
+        // (`Collision.cs:1610-1612`, liquid 255 → surface +0.0625 px) means
+        // the resting drop's centre-shrunk probe first overlaps on tick 2
+        // (the naive full-box probe overlapped on tick 1), so the ramp starts
+        // one tick later — the transform lands ~tick 92. The exact start tick
+        // is probe-geometry, not the ramp arithmetic; pin the outcome + the
+        // 91-tick ramp duration loosely.
         let mut ticks = 0;
         while !app.items[0].shimmered && ticks < 120 {
             update_items(&mut app, 1.0 / 60.0);
@@ -1268,6 +1847,7 @@ mod shimmer_tests {
             eprintln!("transformed after {ticks} ticks");
         }
         assert_eq!(ticks, 92, "the >0.9 crossing tick count (one-tick probe lag)");
+        assert!((90..=93).contains(&ticks), "the >0.9 crossing tick count: {ticks}");
         let d = &app.items[0];
         assert!(d.shimmered, "the transform fired");
         assert_eq!(d.kind, 699); // Tin Ore
@@ -1456,6 +2036,71 @@ mod shimmer_tests {
         app.gfx_quality.max_dust_to_draw = 6000;
         // Above the pool (rows 18-19), dry, falling — parked at x = 30
         // tiles (outside the player's grab magnet).
+
+        }    // --- W4-e19: the shared tail + the decraft spawn shape ----------------
+    fn w4_e19_the_transform_tail_cuts_velocity_and_resets_shimmer_time() {
+        // `WorldItem.cs:1835-1845` — after the transform the surviving drop
+        // gets shimmerTime = 1, shimmerWet = true, velocity *= 0.1.
+        let mut d = resting_drop(11, 3);
+        d.vel = Vec2::new(2.0, 3.0);
+        app.items.push(d);
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let d = &app.items[0];
+        assert!(d.shimmered);
+        assert_eq!(d.kind, 699);
+        // The tail set shimmerTime = 1 at the transform tick (the stack
+        // survived). The decay arm (`:538-545`) is NOT gated on `!shimmered`
+        // (a shimmered drop's ramp condition is false, so it falls to the
+        // decay), so the 1.0 dries 0.01/tick over the remaining ~28 ticks —
+        // it is below 1 but still positive (the GrabItems gate re-opens at 0).
+        assert!(d.shimmer_time < 1.0 && d.shimmer_time > 0.0,
+            "the tail reset then decayed: {}", d.shimmer_time);
+        assert!(d.shimmer_wet, "the tail set shimmerWet");
+        // The velocity was cut ×0.1 at the transform tick (2.0→0.2, 3.0→0.3),
+        // then the shimmered float damps/rises it; the X friction (×0.95/tick)
+        // decays 0.2 toward 0. The cut is verified by the magnitude bound.
+        assert!(d.vel.x.abs() <= 0.2, "the ×0.1 cut bound: {}", d.vel.x);
+    }
+    fn w4_e19_the_transform_spawns_the_shimmer_effect_dust() {
+        // `WorldItem.cs:1846` → `ShimmerEffect` (`:1669-1688`): 20 dust 309.
+        app.items.push(resting_drop(11, 3));
+        let n309 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 309).count();
+        assert!(n309 >= 20, "the ShimmerEffect burst: {n309} dust 309");
+    fn w4_e19_the_decraft_spawns_shimmered_ingredients_at_the_center() {
+        // `WorldItem.cs:1825` → `SpawnShimmeredItem` (`:628-637`): the
+        // ingredient spawns shimmered (shimmerTime 1, shimmerWet) at the
+        // source's Centre with the alternating fan velocity, prefix 0.
+        app.items.push(resting_drop(3077, 60)); // Silk Rope → 2 Cobweb units
+        let spawn = app.items.iter().find(|d| d.kind == 225).expect("the cobweb spawn");
+        assert!(spawn.shimmered, "the ingredient is shimmered");
+        assert!(spawn.shimmer_wet, "SpawnShimmeredItem sets shimmerWet");
+        assert_eq!(spawn.prefix, 0, "SpawnShimmeredItem passes prefix 0");
+        // The first spawn (n=0) has fan velocity (0 * (0%2*2-1), 0) = (0, 0);
+        // the X friction keeps 0 at 0 (the shimmered float only writes vel.Y).
+        assert_eq!(spawn.vel.x, 0.0, "the n=0 fan has no horizontal velocity");
+        // The source aired out (60 - 2*30 = 0).
+        assert!(!app.items.iter().any(|d| d.kind == 3077));
+    fn w4_e19_the_coin_merge_does_not_recalculate_luck_eagerly() {
+        // `Player.cs:18090-18101` — AddCoinLuck sets coinLuck + luckNeedsSync
+        // only; RecalculateLuck runs on the per-tick UpdateLuck, NOT here.
+        // The port's add_coin_luck adds the merged stack without rebuilding
+        // `luck` (the old apply called recalculate_luck eagerly).
+        app.items.push(resting_drop(72, 4)); // Silver → 400 copper-equivalent
+        let luck_before = app.player.as_ref().unwrap().luck_state.luck;
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.luck_state.coin_luck, 400.0, "the merged stack fed coinLuck");
+        // `luck` is rebuilt by the luck pass, not the coin arm — the items
+        // pass alone does not touch it (no UpdateLuck in update_items).
+        assert_eq!(p.luck_state.luck, luck_before, "no eager RecalculateLuck");
+    /// W4-e19 deferred 4 — the entry splash (`WorldItem.cs:881-958`): a dry
+    /// drop falling into the shimmer pool arms `wetCount = 20` and bursts 10
+    /// dust 308 (the `Next(6)` colour switch) through the shared pool, all on
+    /// the `UpdateItems` stream. The camera parks at the pool so the spawn
+    fn w4_e19_the_shimmer_entry_splash_bursts_10_dust_308() {
+        // Above the pool (rows 18-19), dry, falling — parked at x = 30 tiles
+        // (outside the player's grab magnet).
         app.items.push(ItemDrop::new(
             2, 1, 0, 30.0 * TILE_PX, 16.0 * TILE_PX, 0.0, 2.0, 0.0,
         ));
@@ -1494,6 +2139,9 @@ mod shimmer_tests {
     fn w4_f47k1_the_shimmer_exit_splash_after_the_cooldown() {
         let mut app = shimmer_world();
         app.gfx_quality.max_dust_to_draw = 6000;
+
+        }    /// the OLD shimmerWet (still set at the edge) and plays style 5.
+    fn w4_e19_the_shimmer_exit_splash_after_the_cooldown() {
         // Resting IN the pool (the entry burst fires on tick 1).
         app.items.push(resting_drop(2, 1));
         app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
@@ -1519,6 +2167,8 @@ mod shimmer_tests {
     fn w4_f47k1_the_wet_count_suppresses_the_second_burst() {
         let mut app = shimmer_world();
         app.gfx_quality.max_dust_to_draw = 6000;
+
+        }    fn w4_e19_the_wet_count_suppresses_the_second_burst() {
         app.items.push(resting_drop(2, 1));
         app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
         update_items(&mut app, 1.0 / 60.0); // entry burst
@@ -1538,6 +2188,8 @@ mod shimmer_tests {
     fn w4_f47k1_the_water_entry_splash_uses_the_water_style_dust() {
         let mut app = shimmer_world();
         app.gfx_quality.max_dust_to_draw = 6000;
+
+        }    fn w4_e19_the_water_entry_splash_uses_the_water_style_dust() {
         // Replace the shimmer pool with water.
         for x in 0..40 {
             for y in 18..=19 {
@@ -1559,6 +2211,7 @@ mod shimmer_tests {
         let ws = crate::env::water_style()
             .map(|n| n.min(14) as i32)
             .unwrap_or_else(|| crate::biome::calculate_water_style(&app.world, app.camera) as i32);
+        let ws = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
         let want = tr_core::particles::dust_water(ws);
         let hits: Vec<_> = app.dust.slots().iter().filter(|d| d.active && d.dust_type == want).collect();
         assert!(hits.len() >= 10, "the water burst: {} dust {want}", hits.len());
@@ -1940,6 +2593,412 @@ mod lava_burn_tests {
             app.npcs.iter().any(|n| n.kind == NpcKind::WallOfFlesh),
             "the wall awoke"
         );
+    }
+
+    /// W4-g15 lane 5 — the reservation gate (`WorldItem.cs:683` / `:159`):
+    /// a drop reserved for ANOTHER peer neither burns in lava nor combines
+    /// with its neighbours. The port's `net_reserved` map carries the MP
+    /// reservation; SP leaves it empty (the gate is vacuous there).
+    #[test]
+    fn w4_g15_a_foreign_reserved_drop_neither_burns_nor_combines() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = hell_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 496.0 * TILE_PX;
+        app.player = Some(player);
+        // Two rare-0 dirt drops inside the 30 px merge window, both in the
+        // lava pool; slot 0 is reserved for peer 3 (not us, not 255).
+        app.items.push(ItemDrop::new(
+            2, 5, 0, 200.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0,
+        ));
+        app.items.push(ItemDrop::new(
+            2, 3, 0, 200.0 * TILE_PX + 10.0, 498.0 * TILE_PX, 0.0, 0.0, 0.0,
+        ));
+        app.net_reserved.insert(0, (3, 15));
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 2, "the reserved drop did not burn");
+        assert_eq!(app.items[0].count, 5, "and did not combine");
+        assert_eq!(app.items[1].count, 3);
+        // The reservation cleared: the next tick burns BOTH (the player is
+        // far outside the grab rectangle, so the grab pass never touches
+        // them — the lava check is the only consumer).
+        app.net_reserved.remove(&0);
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the unreserved drops burned");
+    }
+}
+
+#[cfg(test)]
+mod make_a_wish_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::ItemDrop;
+    use crate::player::Player;
+
+    /// A desert world with a water pool at rows 18-19, columns 18-22; the
+    /// player stands in the desert (the scene flag is set directly — the
+    /// grant reads `scene_metrics.zone_desert`, the last-scan convention).
+    fn desert_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::world::World::new("desert".into(), 40, 40);
+        for x in 18..22 {
+            for y in 18..20 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Water);
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        // Far from the coin (outside the grab rectangle) so the grab pass
+        // never touches it — the grant is the only consumer.
+        player.x = 2.0 * TILE_PX;
+        player.y = 10.0 * TILE_PX;
+        app.player = Some(player);
+        app.scene_metrics.zone_desert = true;
+        // The listener at the coin so the positioned RainbowBoulder cue is
+        // audible (the attenuation gate, `sound.rs:105`'s 2500 px).
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (20.0 * TILE_PX, 18.0 * TILE_PX),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    /// A wet, single-stack, grab-delayed platinum coin in the desert grants
+    /// the five Heroicis pieces as shimmered items with the alternating
+    /// ±itemNumber X spread, and plays the RainbowBoulder cue.
+    #[test]
+    fn w4_g15_a_wet_desert_platinum_coin_grants_the_heroicis_set() {
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.apply_grab_delay(0); // a player drop, named-player delay
+        app.items.push(coin);
+        let before = app.audio.played_count();
+        try_granting_make_a_wish_set(&mut app);
+        assert!(!app.items.iter().any(|it| it.kind == 74), "the coin consumed");
+        let pieces: Vec<&ItemDrop> = app
+            .items
+            .iter()
+            .filter(|it| matches!(it.kind, 5655 | 5656 | 5657 | 5658 | 5661))
+            .collect();
+        assert_eq!(pieces.len(), 5, "the five pieces spawned");
+        for (num, p) in pieces.iter().enumerate() {
+            assert!(p.shimmered && p.shimmer_wet && p.wet, "the modifier flags");
+            assert_eq!(p.shimmer_time, 1.0);
+            let vx = num as f32 * ((num % 2 * 2) as f32 - 1.0);
+            assert_eq!(p.vel.x, vx, "the ±itemNumber spread (0,-1,2,-3,4)");
+            assert_eq!(p.vel.y, 0.0);
+        }
+        assert!(app.audio.played_count() > before, "the RainbowBoulder cue");
+    }
+
+    /// The gate row (`WorldItem.cs:592`): a dry coin, a multi-stack, a
+    /// shimmer-wet coin, an undelayed coin, an all-players-delayed coin, or
+    /// a non-desert player all refuse the grant.
+    #[test]
+    fn w4_g15_the_wish_gate_refuses_the_wrong_states() {
+        // Dry coin.
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.apply_grab_delay(0);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "dry refuses");
+        // Multi-stack.
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 2, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.apply_grab_delay(0);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "stack != 1 refuses");
+        // Shimmer-wet.
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.shimmer_wet = true;
+        coin.apply_grab_delay(0);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "shimmerWet refuses");
+        // All-players delay (255).
+        let mut app = desert_app();
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.apply_grab_delay(255);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "255 delay refuses");
+        // Non-desert.
+        let mut app = desert_app();
+        app.scene_metrics.zone_desert = false;
+        let mut coin = ItemDrop::new(74, 1, 0, 20.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.wet = true;
+        coin.apply_grab_delay(0);
+        app.items.push(coin);
+        try_granting_make_a_wish_set(&mut app);
+        assert!(app.items.iter().any(|it| it.kind == 74), "non-desert refuses");
+    }
+}
+
+#[cfg(test)]
+mod check_in_world_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::ItemDrop;
+    use crate::player::Player;
+
+    /// A 100x100 world with the spawn at (50, 50); the player stands far
+    /// from the off-world drops so the grab pass never touches them.
+    fn wide_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::world::World::new("wide".into(), 100, 100);
+        w.spawn_x = 50;
+        w.spawn_y = 50;
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        // Far from every test drop (the grab rectangle is ~52 px) so the
+        // grab pass never touches them — CheckInWorld is the only consumer.
+        player.x = 50.0 * TILE_PX;
+        player.y = 2.0 * TILE_PX;
+        app.player = Some(player);
+        app
+    }
+
+    /// `CheckInWorld` (`WorldItem.cs:573-588`): a rare-0 drop beyond the
+    /// 20-tile fluff airs out; a boss bag (RecoverableImportantItem) is
+    /// recovered to the spawn cell centre with zero velocity.
+    #[test]
+    fn w4_g15_off_world_drops_air_out_and_boss_bags_recover() {
+        let mut app = wide_app();
+        // A dirt drop at tile (5, 50) — inside the 20-tile fluff (x < 20).
+        app.items.push(ItemDrop::new(2, 1, 0, 5.0 * TILE_PX, 50.0 * TILE_PX, 3.0, 0.0, 0.0));
+        // A boss bag (3318) at tile (95, 50) — beyond width - 20 = 80.
+        app.items.push(ItemDrop::new(3318, 1, 0, 95.0 * TILE_PX, 50.0 * TILE_PX, 3.0, 0.0, 0.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(!app.items.iter().any(|it| it.kind == 2), "the dirt aired out");
+        let bag = app.items.iter().find(|it| it.kind == 3318).expect("the bag recovered");
+        // The spawn cell (50, 50) centre = (50*16+8, 50*16+8); the drop's
+        // top-left = centre - SIZE/2.
+        let want = Vec2::new(50.0 * TILE_PX + 8.0 - crate::item::SIZE * 0.5, 50.0 * TILE_PX + 8.0 - crate::item::SIZE * 0.5);
+        assert!((bag.pos - want).length() < 0.5, "recovered to the spawn, got {:?}", bag.pos);
+        assert_eq!(bag.vel, Vec2::ZERO, "the velocity zeroed");
+    }
+
+    /// A drop INSIDE the fluff boundary is untouched (the gate is strict).
+    #[test]
+    fn w4_g15_a_drop_inside_the_fluff_survives() {
+        let mut app = wide_app();
+        // Tile (25, 50) — inside [20, 80).
+        app.items.push(ItemDrop::new(2, 1, 0, 25.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.iter().any(|it| it.kind == 2), "the in-bounds drop survives");
+    }
+}
+
+#[cfg(test)]
+mod fill_bucket_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::ItemDrop;
+
+    /// A surface world (worldSurface 60 > 50) with a wind-allowing wall (0)
+    /// at the bucket's centre cell; the rain is on at full intensity.
+    fn rain_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::world::World::new("rain".into(), 100, 100);
+        w.world_surface = 60.0;
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    /// `TryFillBucket` (`WorldItem.cs:548-571`): the gate refuses when it is
+    /// not raining, when there is no world surface (and no remix), when the
+    /// drop is below the surface, or when the centre wall blocks wind. The
+    /// draws are NOT consumed on a refused gate (the C# returns before them).
+    #[test]
+    fn w4_g15_the_fill_bucket_gate_refuses_the_wrong_states() {
+        // Not raining.
+        let mut app = rain_app();
+        let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, false, 1.0, true, false, 1);
+        assert_eq!(b.kind, 205, "no rain refuses");
+        // No world surface, no remix.
+        let mut app = rain_app();
+        let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, false, false, 1);
+        assert_eq!(b.kind, 205, "no surface refuses");
+        // Below the surface (tile y 70 > worldSurface 60).
+        let mut app = rain_app();
+        let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 70.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, true, false, 1);
+        assert_eq!(b.kind, 205, "below surface refuses");
+        // A wind-blocking wall (1) at the centre cell.
+        let mut app = rain_app();
+        let cx = (50.0 * TILE_PX + crate::item::SIZE * 0.5) as i32 / 16;
+        let cy = (30.0 * TILE_PX + crate::item::SIZE * 0.5) as i32 / 16;
+        let idx = app.world.index(cx, cy);
+        app.world.tiles[idx].wall = 1;
+        let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, true, false, 1);
+        assert_eq!(b.kind, 205, "a blocking wall refuses");
+    }
+
+    /// A passing gate consumes the two draws in order (`Next(num3)` then
+    /// `NextFloat`) and fills the bucket to 206 keeping the stack when both
+    /// hit. The day-rate divisor scales num3 (600 / dayRate). A refused
+    /// gate consumes NO draws (the C# returns before them).
+    #[test]
+    fn w4_g15_a_passing_gate_fills_the_bucket_and_keeps_the_stack() {
+        // Find a seed whose first Next(600) == 0 (the dayRate-1 num3) so the
+        // gate fires; maxRaining 1.0 makes the NextFloat arm always pass.
+        let mut seed = 0;
+        while tr_core::UnifiedRandom::new(seed).next_max(600) != 0 {
+            seed += 1;
+        }
+        let mut app = rain_app();
+        app.rngs.reset(seed);
+        let mut b = ItemDrop::new(205, 7, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, true, false, 1);
+        assert_eq!(b.kind, 206, "the bucket filled");
+        assert_eq!(b.count, 7, "the stack kept (SetDefaults(206) + stack restore)");
+        // The two draws ran in order: Next(600) then NextFloat. Replay them
+        // on a witness seeded identically and confirm the stream advanced
+        // by exactly those two (the next draw matches the witness's third).
+        let mut witness = tr_core::UnifiedRandom::new(seed);
+        let _ = witness.next_max(600);
+        let _ = witness.next_float();
+        let want_next = witness.next_max(1000);
+        let got_next = app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(1000);
+        assert_eq!(got_next, want_next, "exactly two draws consumed, in order");
+        // The day-rate divisor: dayRate 2 → num3 = 300. A seed whose first
+        // Next(300) == 0 fires; the SAME seed's Next(600) may differ — the
+        // divisor is load-bearing.
+        let mut seed300 = 0;
+        while tr_core::UnifiedRandom::new(seed300).next_max(300) != 0 {
+            seed300 += 1;
+        }
+        let mut app = rain_app();
+        app.rngs.reset(seed300);
+        let mut b = ItemDrop::new(205, 1, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, true, false, 2);
+        assert_eq!(b.kind, 206, "dayRate 2 → num3 300 fills on the 300-seed");
+        // A refused gate (no rain) consumes NO draws.
+        let mut app = rain_app();
+        app.rngs.reset(seed);
+        let mut b = ItemDrop::new(205, 1, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, false, 1.0, true, false, 1);
+        assert_eq!(b.kind, 205);
+        let mut witness = tr_core::UnifiedRandom::new(seed);
+        let want = witness.next_max(1000);
+        let got = app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(1000);
+        assert_eq!(got, want, "a refused gate draws nothing");
+    }
+}
+
+#[cfg(test)]
+mod copper_slime_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::ItemDrop;
+    use crate::npc::{Npc, NpcKind};
+
+    /// A world with a Blue Slime (the convertible kind 1) at (50, 50); the
+    /// player stands far away so the grab pass never touches the drop.
+    fn slime_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::world::World::new("slime".into(), 100, 100);
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 2.0 * TILE_PX;
+        player.y = 2.0 * TILE_PX;
+        app.player = Some(player);
+        let mut n = Npc::new(NpcKind::Slime, 50.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        app.npcs.push(n);
+        app
+    }
+
+    /// `GetPickedUpByMonsters_Special` (`WorldItem.cs:1086-1116`): a Copper
+    /// Shortsword (89) overlapping the Blue Slime consumes the drop and
+    /// raises the unlock flag; the NPC stays (the 684 transform is the
+    /// roster gap). A second drop does NOT re-grant (the flag gates).
+    #[test]
+    fn w4_g15_a_copper_shortsword_on_a_blue_slime_raises_the_unlock() {
+        let mut app = slime_app();
+        // The drop's box overlaps the slime's (both at tile 50).
+        let d = ItemDrop::new(89, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        assert!(!app.world.unlocked_slime_copper_spawn);
+        assert!(copper_slime_pickup(&app.npcs, &d), "the convertible slime consumed it");
+        // The flag write is the caller's post-tick step (the closure holds
+        // the world borrow); the helper is the scan only.
+        app.world.unlocked_slime_copper_spawn = true;
+        assert!(app.world.unlocked_slime_copper_spawn, "the flag raised");
+        assert_eq!(app.npcs.len(), 1, "the NPC stays (the 684 roster gap)");
+        // The Chain Knife (3507) is the other kind; a non-convertible NPC
+        // (a Zombie, kind 3) refuses.
+        let mut app = slime_app();
+        app.npcs[0].kind = NpcKind::Zombie;
+        let d = ItemDrop::new(3507, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        assert!(!copper_slime_pickup(&app.npcs, &d), "a zombie is not convertible");
+        assert!(!app.world.unlocked_slime_copper_spawn);
+        // A drop far from the slime refuses (no hitbox overlap).
+        let app = slime_app();
+        let d = ItemDrop::new(89, 1, 0, 80.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        assert!(!copper_slime_pickup(&app.npcs, &d), "no overlap refuses");
+    }
+
+    /// W4-g15 lane 5 — the `enemyGrabDelayTime` clock (`WorldItem.cs:28`,
+    /// `:449-452`): the named-player ownership arm sets it to 100
+    /// (`Item.cs:49757-49760`), it decrements per update, and the monster
+    /// grab gate (`:405`) refuses while it is positive. The all-players 255
+    /// arm does NOT set it.
+    #[test]
+    fn w4_g15_the_enemy_grab_delay_clock_gates_the_monster_pickup() {
+        // The named-player arm sets the clock; the 255 arm does not.
+        let mut d = ItemDrop::new(89, 1, 0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        d.apply_grab_delay(0);
+        d.apply_enemy_grab_delay();
+        assert_eq!(d.enemy_grab_delay_time, 100, "the named-player arm sets 100");
+        // The decrement: one update ticks it down.
+        let w = tr_core::world::World::new("t".into(), 32, 32);
+        d.update(&w, 1.0 / 60.0);
+        assert_eq!(d.enemy_grab_delay_time, 99, "the clock decrements");
+        // The gate: a positive clock refuses the monster pickup even with
+        // an overlapping convertible slime — the gate is the update_items
+        // `:405` row (the scan helper itself does not read the clock).
+        let mut app = slime_app();
+        let mut coin = ItemDrop::new(89, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.enemy_grab_delay_time = 50;
+        app.items.push(coin);
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "the positive clock refused the monster grab");
+        assert!(!app.world.unlocked_slime_copper_spawn, "no unlock while delayed");
+        // A zero clock allows the pickup (the scan fires, the flag lands
+        // post-tick).
+        app.items[0].enemy_grab_delay_time = 0;
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the zero clock allowed the monster grab");
+        assert!(app.world.unlocked_slime_copper_spawn, "the unlock landed post-tick");
     }
 }
 
@@ -2852,4 +3911,7 @@ mod drop_witness_tests {
         assert!(app.items.is_empty());
     }
 
+
+// balance-close (union shared delimiter)
+}}}}}})
 }

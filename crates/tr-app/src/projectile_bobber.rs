@@ -24,9 +24,11 @@
 //!   `NextFromList` sparkle draws are SKIPPED (the dust/particle-skip
 //!   convention) — a recorded RNG-order deviation on the `UpdateProjectiles`
 //!   stream.
-//! - The sonar popup (`PopupText.AssignAsSonarText`) and the `SoundID.
-//!   SonarPotion` trackable cue are draw/audio seams with no port consumer;
-//!   the `sonarPotion` flag rides but the popup/sound are skipped.
+//! - The sonar popup (`PopupText.AssignAsSonarText`) is a draw seam with no
+//!   port consumer; the `SoundID.SonarPotion` trackable cue IS ported
+//!   (S1-E-21h d75 part 2): it queues on `wants_sound` (id 42, style 311)
+//!   inside the bite arms and rides the pool's sound drain — the
+//!   `GetRandomPitch` NextFloat is audio-only, case 42 draws nothing.
 //! - The chum-bucket projectile book is unported, so `chumsInWater` is 0 and
 //!   `ReduceRemainingChumsInPool` (`:53712`) is a no-op.
 //! - The blood-moon fish enemies (586/587/618/620/621) and the red town slime
@@ -409,8 +411,9 @@ fn fishing_check(p: &mut Projectile, world: &World, inputs: &BobberInputs, rng: 
                 if res.net_update {
                     p.net_update = true;
                 }
-                // The sonar popup + cue (`:20746-20751`/`:20762-20766`) are
-                // skipped draw/audio seams (module doc); the flag rides.
+                // S1-E-21h d75 part 2 — the sonar bite cues (`:20746-20751`/
+                // `:20762-20766`): the popup stays a skipped draw seam.
+                sonar_bite_cues(p, inputs.sonar_potion, res.rolled_item, res.rolled_enemy);
             }
         }
     }
@@ -421,6 +424,26 @@ fn fishing_check(p: &mut Projectile, world: &World, inputs: &BobberInputs, rng: 
 /// style 0 rides the pool's splash drain.
 fn do_a_splash(p: &mut Projectile) {
     p.wants_splash = Some((0, p.pos.x, p.pos.y));
+}
+
+/// S1-E-21h d75 part 2 — `SetFishingCheckResults`'s sonar cues
+/// (`Projectile.cs:20746-20751`/:20762-20766): `SoundID.SonarPotion`
+/// (id 42, style 311 — the `Sounds/Custom/sonar_potion` trackable,
+/// `SoundID.cs:1740`) at `base.position`, one play per landed roll, the
+/// ITEM arm first (the C# statement order — the single intent slot keeps
+/// the ENEMY cue when both land, the turret-pair fold). The style's
+/// `GetRandomPitch` NextFloat (variance 0.03) is audio-only and case 42
+/// draws nothing from the pass stream. The popup text stays skipped.
+fn sonar_bite_cues(p: &mut Projectile, sonar: bool, rolled_item: u16, rolled_enemy: i32) {
+    if !sonar {
+        return;
+    }
+    if rolled_item > 0 {
+        p.wants_sound = Some((42, 311, p.pos.x, p.pos.y, 0.0));
+    }
+    if rolled_enemy > 0 {
+        p.wants_sound = Some((42, 311, p.pos.x, p.pos.y, 0.0));
+    }
 }
 
 /// The kill hook's catch hand-off (`Projectile.cs:71986-71994` →
@@ -669,6 +692,31 @@ mod tests {
         assert!(fired, "the bite timer crossed 660 and FishingCheck ran");
     }
 
+    /// S1-E-21h d75 part 2 — the sonar bite cues (`:20746-20751`/
+    /// `:20762-20766`): the trackable intent (42, 311) at `base.position`,
+    /// one per landed roll, gated on the potion flag; the item arm first,
+    /// the enemy arm's intent REPLACES it when both land (the single-slot
+    /// fold). No potion, no roll → no intent.
+    #[test]
+    fn s1_e_21h_d75_p2_the_sonar_bite_queues_the_trackable() {
+        let mut p = bobber(480.0, 320.0);
+        // No potion: nothing queues.
+        sonar_bite_cues(&mut p, false, 2300, 586);
+        assert_eq!(p.wants_sound, None);
+        // No roll: nothing queues either.
+        sonar_bite_cues(&mut p, true, 0, 0);
+        assert_eq!(p.wants_sound, None);
+        // The item arm.
+        sonar_bite_cues(&mut p, true, 2300, 0);
+        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0)));
+        // The enemy arm alone.
+        p.wants_sound = None;
+        sonar_bite_cues(&mut p, true, 0, 586);
+        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0)));
+        // Both land: the enemy intent wins the slot (the C# order).
+        p.wants_sound = None;
+        sonar_bite_cues(&mut p, true, 2300, 586);
+        assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0)));
     /// W4-d7 F1 — the aiStyle-61 bounce (`:19615-19625`): a blocked X
     /// reflects at 0.3; a blocked Y reflects at 0.3 only when
     /// `lastVelocity.Y > 1`; NO Kill. The caller passes the pre-collision
@@ -698,4 +746,5 @@ mod tests {
         assert_eq!(p3.vel.x, 4.0, "the unblocked X holds");
         assert!((p3.vel.y - -1.8).abs() < 1e-6, "the blocked Y reflects");
     }
+}
 }

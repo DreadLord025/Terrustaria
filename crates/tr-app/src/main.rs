@@ -57,12 +57,21 @@ mod eoc_fight;
 mod input_map;
 mod input_profiles;
 mod inv;
+mod house_banners;
 mod luck;
+mod torch_god;
+mod projectile_ai_torch_god;
+// W4-f33 — the Torch God's Favor (5043) permanent-upgrade use path
+// (ItemCheck_UseTorchGodsFavor, Player.cs:45226-45243), wired at the
+// ItemCheck_OwnerOnlyCode permanent-item seam (:43600).
+mod torch_god_favor_use;
 mod wiring_stub;
 mod yoyo_string;
 mod item;
+mod item_dust;
 mod itemdata;
 mod item_sorting;
+mod quick_stack;
 mod sortdata;
 mod lang;
 mod lang_tables;
@@ -259,6 +268,11 @@ mod npc_ai_style13;
 // edit; the projectile-side infrastructure (STINGER 55 row + rider +
 // timed-shot list) IS live (see the module doc + docs/research/110).
 mod npc_ai_style5;
+// W4-f2 closeout (research/94 §10) — the tail census's two UNCLAIMED
+// sites' pure staged decisions (the Medusa gaze + the BigMimic reflect).
+// The merge fold (research/94 §4/§15): e9's npc_water_collision module
+// DROPPED — f2's water_collision_sounds pass is the superset keeper.
+mod npc_sounds_tail;
 mod npc_ai_style30;
 mod npc_ai_style31;
 mod npc_ai_style32;
@@ -381,6 +395,22 @@ mod projectile_ai001_a;
 mod special_arrows;
 mod projectile_frost_shots;
 mod projectile_ai001_c;
+// W4-f20 slice D — the AI_001 per-type arms for the 7 rowed aiStyle-1
+// kinds the S1-D-5 slices never covered (323/357/485/661/710/719/819,
+// Projectile.cs:54002-57798); census research/167 F6/F7. Code-only mode —
+// witness tests written not run.
+mod projectile_ai001_d;
+// W4-f20 slice E — the AI_001 per-type arms for the aiStyle-1 kinds the
+// round-b row branches rowed but left on the generic ai_arrow (435/576/
+// 709, Projectile.cs:54002-57794); census research/26f. ROW-GATED INERT
+// until c11/d11/d15 merge (the d7 unwired precedent). Code-only mode —
+// witness tests written not run.
+mod projectile_ai001_e;
+// W4-f20 F7 — the Harpy-charm chain: the ai[2]-bits producer
+// (Player.Update_HarpyCharm, Player.cs:28436-28490) + ApplyHarpyCharm
+// (Projectile.cs:57796-57824) + the AI_001 charm tail (:57769-57793);
+// census research/26f F7. Code-only mode — witness tests written not run.
+mod projectile_harpy_charm;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
@@ -407,6 +437,12 @@ mod projectile_ai_201_210;
 // 203 storm-lightning bolt paths: tile truncation + the multi-segment
 // damage hitbox; the census proved the generator is NOT render-only).
 mod lightning_generator;
+// W4-d7: UNWIRED projectile aiStyle machines (research/167) — the rows +
+// W4-d10 — the aiStyles 91-100 census port: the nine missing styles +
+// the aiStyle-99 counterweight sub-arm (f19 F1). The rows land in
+// projectile/data.rs; the dispatch arms are wired in projectile.rs::update.
+// Code-only mode — witness tests written not run.
+mod projectile_ai_91_100;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in
@@ -499,6 +535,7 @@ mod projectile_bobber;
 // family (W4-d3)").
 mod projectile_ai_boulder;
 // W4-d4 × W4-g82 union (research/26e): the rope-coil lane's EXTRAS — the
+// W4-d4 × W4-g82 union (research/169): the rope-coil lane's EXTRAS — the
 // Kill() refund ladder (:77572-77615, WIRED at the pool's death hook + the
 // world-sim drain) and the trailing-chain placement preview
 // (Main.cs:28499-28669, the UNWIRED draw half — the g82b lane's contract).
@@ -549,6 +586,12 @@ mod shimmer;
 mod signs;
 mod sound;
 mod soundid;
+// W4-g22: the Main.cs PlaySound census batch 2 (sites 91-180 of 271,
+// :44118-:49727) — the hair-window scroll machine, the clothes-window
+// open/cancel/save cue arms, the builder-accessory toggle cycles and the
+// case-20 female-hit slot pick. The menu-half cues ride Menu::pending_cue
+// (code-only mode — witnesses written not run).
+mod main_sounds;
 mod test_world_helpers;
 mod town;
 mod town_arrival;

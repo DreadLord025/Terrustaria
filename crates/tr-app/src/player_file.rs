@@ -120,6 +120,22 @@ pub struct PlayerFile {
     pub inv_favorites: u64,
     pub is_favorite: bool,
     pub revision: u32,
+    /// W4-e10 — `Player.voiceVariant` (`Player.cs:1346`): the hurt-voice
+    /// family, read at release >= 280 (`:55730`) and clamped 1..4 by
+    /// `LoadPlayer_LastMinuteFixes` (`:55831`); below 280 the gender default
+    /// `(Male ? 1 : 2)` (`:55735`).
+    pub voice_variant: i32,
+    /// W4-e10 — `Player.voicePitchOffset` (`Player.cs:1348`): read at release
+    /// >= 281 (`:55740`), else 0 (`:55736`/`:55744`).
+    pub voice_pitch_offset: f32,
+    /// `Player.unlockedBiomeTorches` (`Player.cs:2046`, save `:54777` /
+    /// load `:55241` at release >= 229) — the Torch God's Favor permanent
+    /// unlock (W4-f33). Older releases carry no unlock block; false.
+    pub unlocked_biome_torches: bool,
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3963` — the
+    /// `builderAccStatus[11] == 0` property, save `:54778` / load `:55242`).
+    /// The builder-toggle half of the pair; the use arm sets both.
+    pub using_biome_torches: bool,
 }
 
 #[derive(Debug)]
@@ -325,9 +341,13 @@ fn read_player_fields(
     mana = mana.min(400); // `:55231-55234`
     // The unlock/seed bools (`:55235-55262`).
     let _extra = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
+    // W4-f33 — the biome-torch pair (`:55241-55242`): the Torch God's Favor
+    // permanent unlock + the UsingBiomeTorches builder toggle.
+    let mut unlocked_biome_torches = false;
+    let mut using_biome_torches = false;
     if version >= 229 {
-        r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
-        r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
+        unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
+        using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
         if version >= 256 {
             r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
         }
@@ -436,6 +456,7 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
+            None, // the inc1 files stop before the voice pair
         ));
     }
     // --- S1-J-5 increment 2: buffs through hideInfo (`:55578-55623`) ------
@@ -495,6 +516,7 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
+            None, // the inc2 files stop before the voice pair
         ));
     }
     // --- S1-J-5 increment 3: the Deserialize tail (`:55624-55762`) --------
@@ -610,12 +632,21 @@ fn read_player_fields(
             }
         }
     }
-    if version >= 280 {
-        r.u8().ok_or(PlayerFileError::Truncated("voice"))?; // `:55728-55731`
-    }
-    if version >= 281 {
-        r.f32().ok_or(PlayerFileError::Truncated("voicePitch"))?; // `:55738-55741`
-    }
+    // W4-e10 — the voice pair (`:55728-55745`). Below 280 the C# clamps
+    // skinVariant and defaults the voice to the gender pick + 0 pitch
+    // (`:55733-55737`); the skinVariant clamp also runs in
+    // `LoadPlayer_LastMinuteFixes` (`finish_player_file`), so only the voice
+    // default is needed here.
+    let voice_variant = if version >= 280 {
+        r.u8().ok_or(PlayerFileError::Truncated("voice"))? as i32 // `:55730`
+    } else {
+        if crate::ui::char_creation::is_male(skin_variant as i32) { 1 } else { 2 } // `:55735`
+    };
+    let voice_pitch_offset = if version >= 281 {
+        r.f32().ok_or(PlayerFileError::Truncated("voicePitch"))? // `:55740`
+    } else {
+        0.0 // `:55736`/`:55744`
+    };
     if version >= 300 {
         // _pendingRefunds (`:55746-55754`): count + Item.DeserializeFrom triples.
         let n = r.i32().ok_or(PlayerFileError::Truncated("refundCount"))?;
@@ -631,8 +662,8 @@ fn read_player_fields(
                 .ok_or(PlayerFileError::Truncated("dialogue"))?;
         }
     }
-    // `LoadPlayer_LastMinuteFixes` (`:55830`) clamps skinVariant to the
-    // variant set (done in `finish_player_file`).
+    // `LoadPlayer_LastMinuteFixes` (`:55830-55831`) clamps skinVariant +
+    // voiceVariant (done in `finish_player_file`).
     Ok(finish_player_file(
         name,
         difficulty,
@@ -647,11 +678,17 @@ fn read_player_fields(
         inv_favorites,
         is_favorite,
         revision,
+        Some((voice_variant, voice_pitch_offset)),
+        unlocked_biome_torches,
+        using_biome_torches,
     ))
 }
 
 /// The shared tail of both walk depths: the `LoadPlayer_LastMinuteFixes`
-/// skinVariant clamp (`Player.cs:55830`) and the `PlayerFile` assembly.
+/// skinVariant + voiceVariant clamps (`Player.cs:55830-55831`) and the
+/// `PlayerFile` assembly. `voice` is `None` for the shallow retry depths
+/// (the inc1/inc2 files stop before the voice pair) — the gender default
+/// `(Male ? 1 : 2)` + 0 pitch stands in (`:55735-55736`).
 #[allow(clippy::too_many_arguments)]
 fn finish_player_file(
     name: String,
@@ -667,8 +704,20 @@ fn finish_player_file(
     inv_favorites: u64,
     is_favorite: bool,
     revision: u32,
+    voice: Option<(i32, f32)>,
+    unlocked_biome_torches: bool,
+    using_biome_torches: bool,
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
+    // `:55831` — `Utils.Clamp(voiceVariant, 1, 4)`; the shallow depths carry
+    // no voice pair, so the gender default stands in (`:55735`).
+    let (voice_variant, voice_pitch_offset) = voice.unwrap_or_else(|| {
+        (
+            if crate::ui::char_creation::is_male(skin_variant as i32) { 1 } else { 2 },
+            0.0,
+        )
+    });
+    let voice_variant = voice_variant.clamp(1, 4);
     PlayerFile {
         name,
         difficulty,
@@ -689,6 +738,10 @@ fn finish_player_file(
         inv_favorites,
         is_favorite,
         revision,
+        voice_variant,
+        voice_pitch_offset,
+        unlocked_biome_torches,
+        using_biome_torches,
     }
 }
 
@@ -725,10 +778,14 @@ fn read_legacy_port_subset(
     mana_max = mana_max.min(200);
     mana = mana.min(400);
     // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
-    // the 11 bools the old subset writer emitted (no 324 dead slot).
-    for _ in 0..11 {
-        r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    // the 11 bools the old subset writer emitted (no 324 dead slot). The
+    // biome-torch pair is bools 2-3 (W4-f33: the Torch God's Favor unlock).
+    let mut unlock_bools = [false; 11];
+    for b in unlock_bools.iter_mut() {
+        *b = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
     }
+    let unlocked_biome_torches = unlock_bools[1];
+    let using_biome_torches = unlock_bools[2];
     let _tax = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
     let _pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
     let _pvp = r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
@@ -764,6 +821,10 @@ fn read_legacy_port_subset(
         *slot = (id, stack, prefix);
     }
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
+    // The legacy 279 subset carries no voice pair: the gender default + 0
+    // pitch (`Player.cs:55735-55736`), the same stand-in the shallow retry
+    // depths use.
+    let voice_variant = if crate::ui::char_creation::is_male(skin_variant as i32) { 1 } else { 2 };
     Ok(PlayerFile {
         name,
         difficulty,
@@ -784,6 +845,10 @@ fn read_legacy_port_subset(
         inv_favorites,
         is_favorite,
         revision,
+        voice_variant,
+        voice_pitch_offset: 0.0,
+        unlocked_biome_torches,
+        using_biome_torches,
     })
 }
 
@@ -816,6 +881,18 @@ pub struct PlayerFileWrite {
     /// the golden-fixture test pins the harness's `FixtureClock` value
     /// (2026-11-18T00:00:00Z, kind Utc → kind bits 01, no offset).
     pub last_saved_binary: i64,
+    /// W4-e10 — `Player.voiceVariant` (`Player.cs:1346`), written as a byte at
+    /// `:54924`. The creation draft's picked variant (ctor default 1).
+    pub voice_variant: i32,
+    /// W4-e10 — `Player.voicePitchOffset` (`Player.cs:1348`), written as an
+    /// f32 at `:54925`. The creation draft's pitch (default 0).
+    pub voice_pitch_offset: f32,
+    /// `Player.unlockedBiomeTorches` (`Player.cs:54777`) — the Torch God's
+    /// Favor permanent unlock (W4-f33). A fresh character is false.
+    pub unlocked_biome_torches: bool,
+    /// `Player.UsingBiomeTorches` (`Player.cs:54778`) — the builder-toggle
+    /// half (`builderAccStatus[11] == 0`); the use arm sets both.
+    pub using_biome_torches: bool,
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54742`): release 326, the
@@ -864,8 +941,8 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(file.mana); // `:54774`
     w.i32(file.mana_max); // `:54775`
     w.boolean(false); // `:54776` extraAccessory (ctor `:56076`)
-    w.boolean(false); // `:54777` unlockedBiomeTorches
-    w.boolean(false); // `:54778` UsingBiomeTorches (unlocked=false -> false)
+    w.boolean(file.unlocked_biome_torches); // `:54777` unlockedBiomeTorches (W4-f33)
+    w.boolean(file.using_biome_torches); // `:54778` UsingBiomeTorches (W4-f33)
     w.boolean(false); // `:54779` ateArtisanBread (ctor `:56077`)
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
     w.boolean(false); // `:54781` usedAegisCrystal (ctor `:56078`)
@@ -972,7 +1049,11 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // `:54899-54902` builderAccStatus[12] (`Player.cs:814`,
     // `BuilderAccToggleIDs.Count = 12`, `Player.cs:47-75`): a fresh int[12]
     // with the ctor's `builderAccStatus[0] = 1` (`:56092`, the ruler-line
-    // toggle starts ON).
+    // toggle starts ON); every other slot keeps the int-array default 0.
+    // Slot 11 is the UsingBiomeTorches backing (`Player.cs:3960-3963`): the
+    // ctor never writes it (stays 0), the use arm's `UsingBiomeTorches =
+    // true` keeps it 0, and a `false` toggle would write 1 (W4-f33 — the
+    // port's fresh character is locked, so the slot stays at the ctor 0).
     w.i32(1);
     for _ in 0..11 {
         w.i32(0);
@@ -1035,9 +1116,12 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
             w.boolean(false);
         }
     }
-    w.u8(1); // `:54924` (byte)voiceVariant — the ctor sets 1 (`Player.cs:56045`)
-    w.f32(0.0); // `:54925` voicePitchOffset (`Player.cs:1348`, default 0f)
-                // `:54926` CraftingRequests.SavePossibleRefunds
+    // W4-e10 — `:54924` (byte)voiceVariant / `:54925` voicePitchOffset: the
+    // creation draft's picked pair (ctor defaults 1 / 0f, `Player.cs:56045`/
+    // `:1348`). The byte cast mirrors `(byte)newPlayer.voiceVariant`.
+    w.u8(file.voice_variant as u8);
+    w.f32(file.voice_pitch_offset);
+    // `:54926` CraftingRequests.SavePossibleRefunds
                 // (`CraftingRequests.cs:353-362`): the sum of consumed items over _pendingCrafts
                 // — a fresh queue is empty → count 0, no item payloads.
     w.i32(0);
@@ -1184,6 +1268,10 @@ mod tests {
             inventory,
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             last_saved_binary: 0,
+            voice_variant: 1,
+            voice_pitch_offset: 0.0,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
         }
     }
 
@@ -1216,6 +1304,72 @@ mod tests {
             1 << 0 | 1 << 2,
             "the per-slot favourited bits ride the release-326 inventory walk"
         );
+        // W4-e10 — the voice pair round-trips (`:54924-54925` write,
+        // `:55730`/`:55740` read).
+        assert_eq!(file.voice_variant, 1);
+        assert_eq!(file.voice_pitch_offset, 0.0);
+    }
+
+    /// W4-e10 — the picked voice pair survives a save/load at the C# offsets
+    /// (`Player.cs:54924-54925` write, `:55730`/`:55740` read, the
+    /// `LoadPlayer_LastMinuteFixes` clamp `:55831`).
+    #[test]
+    fn w4_e10_the_voice_pair_round_trips_at_the_csharp_offsets() {
+        let mut w = sample();
+        w.voice_variant = 3;
+        w.voice_pitch_offset = -0.5;
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&w))).unwrap();
+        assert_eq!(file.voice_variant, 3);
+        assert_eq!(file.voice_pitch_offset, -0.5);
+        // The byte cast: variant 2 (female) rides the same u8 slot.
+        w.voice_variant = 2;
+        w.voice_pitch_offset = 0.75;
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&w))).unwrap();
+        assert_eq!(file.voice_variant, 2);
+        assert_eq!(file.voice_pitch_offset, 0.75);
+    }
+
+    /// W4-e10 — `LoadPlayer_LastMinuteFixes` clamps voiceVariant to 1..4
+    /// (`Player.cs:55831`): a 0 byte clamps up to 1, a 200 byte clamps down
+    /// to 4 (the picker only offers 1..3, but a hand-edited file can carry
+    /// anything).
+    #[test]
+    fn w4_e10_the_loaded_voice_variant_clamps_to_1_through_4() {
+        // Build a release-326 body, then patch the voice byte at its offset.
+        // The voice pair sits 9 bytes before the plaintext end (voice 1 +
+        // pitch 4 + refunds 4 + dialogues 4 = 13; the variant is the first).
+        let plain = serialize_plaintext(&sample());
+        let voice_off = plain.len() - 13;
+        for (byte, expect) in [(0u8, 1i32), (200u8, 4i32), (3u8, 3i32)] {
+            let mut patched = plain.clone();
+            patched[voice_off] = byte;
+            let file = read_player_bytes(&patched).unwrap();
+            assert_eq!(file.voice_variant, expect, "byte {byte} clamps to {expect}");
+        }
+    }
+
+    /// W4-e10 — below release 280 the voice pair is absent: the reader
+    /// defaults voiceVariant to the gender pick `(Male ? 1 : 2)` and the
+    /// pitch to 0 (`Player.cs:55733-55737`). Truncate the 13-byte voice+
+    /// refunds+dialogues tail off a release-326 body and restamp it 279.
+    #[test]
+    fn w4_e10_below_280_the_voice_defaults_to_the_gender_pick() {
+        let plain = serialize_plaintext(&sample());
+        // sample() is skin_variant 0 (male) -> the default variant is 1.
+        let mut lo = plain[..plain.len() - 13].to_vec();
+        lo[..4].copy_from_slice(&279i32.to_le_bytes());
+        let file = read_player_bytes(&lo).unwrap();
+        assert_eq!(file.voice_variant, 1);
+        assert_eq!(file.voice_pitch_offset, 0.0);
+        // A female body (skin_variant 4) defaults to variant 2.
+        let mut female = sample();
+        female.skin_variant = 4;
+        let plain_f = serialize_plaintext(&female);
+        let mut lo_f = plain_f[..plain_f.len() - 13].to_vec();
+        lo_f[..4].copy_from_slice(&279i32.to_le_bytes());
+        let file_f = read_player_bytes(&lo_f).unwrap();
+        assert_eq!(file_f.voice_variant, 2);
+        assert_eq!(file_f.voice_pitch_offset, 0.0);
     }
 
     /// `Item.favorited`'s bitfield round-trips (`Player.cs:54820-54824`'s
@@ -1247,6 +1401,34 @@ mod tests {
         // The empty slots read false — their favourited byte is consumed with
         // the rest of the triple (`:55363`).
         assert_eq!(file.inventory[30], (0, 0, 0));
+    }
+
+    /// W4-f33 — the Torch God's Favor biome-torch pair round-trips the
+    /// release-326 `.plr` (`Player.cs:54777-54778` write / `:55241-55242`
+    /// read, the 229+ unlock block's first two bools): the permanent unlock
+    /// + the UsingBiomeTorches toggle survive a save + load, and the
+    /// surrounding unlock bools stay aligned (the inventory after the block
+    /// reads unchanged).
+    #[test]
+    fn w4_f33_the_biome_torch_pair_round_trips_the_plr() {
+        let written = PlayerFileWrite {
+            unlocked_biome_torches: true,
+            using_biome_torches: true,
+            ..sample()
+        };
+        let bytes = write_player_bytes(&written);
+        let file = read_player_bytes(&cbc_decrypt(&bytes)).expect("the unlock file reads");
+        assert!(file.unlocked_biome_torches, "the :54777 bool survived");
+        assert!(file.using_biome_torches, "the :54778 bool survived");
+        // The walk stayed aligned through the unlock block — the fields
+        // AFTER it match the sample's.
+        assert_eq!(file.inventory, sample().inventory);
+        assert_eq!(file.inv_favorites, sample().inv_favorites);
+        // The fresh sample writes false and reads false.
+        let plain_file =
+            read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(!plain_file.unlocked_biome_torches);
+        assert!(!plain_file.using_biome_torches);
     }
 
     /// The 322+ armour/dye favourited bytes are version-gated on read: a
@@ -1490,6 +1672,12 @@ mod tests {
             // 2026-11-18T00:00:00Z, DateTimeKind.Utc → kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.
             last_saved_binary: 0x48DF_4506_E391_C000,
+            // The harness's fresh player: voiceVariant 1 (ctor `:56045`),
+            // voicePitchOffset 0 — the fixture's `:54924-54925` bytes.
+            voice_variant: 1,
+            voice_pitch_offset: 0.0,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
         };
         let plain = serialize_plaintext(&file);
         let fixture_raw = include_bytes!("../../../assets/test/golden.plr");

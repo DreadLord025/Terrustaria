@@ -879,8 +879,21 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_282",
         "Extra_299",
         "Extra_305",
+        // `TextureAssets.Extra[255]/[256]` — the super-cart on/off ticks
+        // (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
+        "Extra_255",
+        "Extra_256",
         "UI/Cursor_0",
         "UI/Cursor_1",
+        // The cursor-override sheets (`Main.cs:45285-45309`): 3 favourite,
+        // 6 trash, 7 unequip/backpack, 8 from-chest, 9 to-chest, 10 sell
+        // (`ItemSlot.cs:213-218`'s AlternateClickAction ids). W4-e19.
+        "UI/Cursor_3",
+        "UI/Cursor_6",
+        "UI/Cursor_7",
+        "UI/Cursor_8",
+        "UI/Cursor_9",
+        "UI/Cursor_10",
         "Mana",
         "Inventory_Back13",
         // P2 inventory panels: coins/ammo/misc/trash backgrounds, page tabs and
@@ -898,6 +911,30 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `TextureAssets.InventoryTickOn/Off`).
         "Inventory_Tick_On",
         "Inventory_Tick_Off",
+        // `UI/ChestStack_0..3` — the quick-stack-all button's 4 frames
+        // (`Main.cs:41838-41867`, `TextureAssets.ChestStack`,
+        // `AssetInitializer.cs:245-248`); `UI/Sort_0..1` — the sort-inventory
+        // button's idle/hover frames (`Main.cs:41891`, `TextureAssets.InventorySort`,
+        // `AssetInitializer.cs:275-278`). W4-g21 batch 3 hosts 62/63/64.
+        "UI/ChestStack_0",
+        "UI/ChestStack_1",
+        "UI/ChestStack_2",
+        "UI/ChestStack_3",
+        "UI/Sort_0",
+        "UI/Sort_1",
+        // `UI/House_Banner` — the world housing banner (`Main.cs:40783`,
+        // `TextureAssets.HouseBanner`, `AssetInitializer.cs:265`, W4-g21
+        // batch 4 host 53).
+        "UI/House_Banner",
+        // W4-g21 batch 5 hosts 71/72/73 — the hotbar-lock icon
+        // (`TextureAssets.HbLock[0/1]`, `AssetInitializer.cs:475-476`), the
+        // block-replacement icon (`TextureAssets.blockReplaceIcon[0]`,
+        // `:477`) and the torch-biome-swap icon (`TextureAssets.Extra[211]`,
+        // the `ExtrasID.Count` loop `:362-365`).
+        "Lock_0",
+        "Lock_1",
+        "UI/BlockReplace_0",
+        "Extra_211",
         "UI/DisplaySlots_0",
         "UI/DisplaySlots_1",
         "UI/DisplaySlots_2",
@@ -1139,6 +1176,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/CharCreation/ClothStyleFemale",
         "UI/CharCreation/Voice",
         "UI/CharCreation/ColorCharacter",
+        // W4-e10 — the voice prev/next buttons + their hover outline
+        // (`UICharacterCreation.cs:450-451`), 64x64 `Frame(2,2)` sheets.
+        "UI/TexturePackButtons",
+        "UI/TexturePackButtonsOutline",
         "UI/WorldCreation/PreviewBorder",
         "UI/WorldCreation/IconRandomName",
         "UI/WorldCreation/IconRandomSeed",
@@ -2565,6 +2606,9 @@ pub struct AmbienceTex {
 // + W4-d23's 12 portrait slots (175/112/666/516/150/151/152/156/158/159/634/660; the
 // 43/56/101/259/260/48/62/93/121/137/226 sheets already ride the rows above) = 340.
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 338] = [
+
+        ]pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2687,6 +2731,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 338] = [
         // W4-e26 — the luck critters (E8 keep-one: the Duck 362 dropped
         // to c10), appended last for the same reason.
         361, 604, 605,
+        // W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon's head
+        // + the 521 squidhead's own bestiary entries — appended last so
+        // the earlier slots keep their indexes. The segments fold onto
+        // the head's credit (no own slots).
+        454, 521,
     ];
 
 
@@ -3214,6 +3263,10 @@ pub struct Lookups {
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
+    /// `Extra_255`/`Extra_256`: the super-cart on/off ticks
+    /// (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
+    pub extra_255: Option<tr_render::SheetRect>,
+    pub extra_256: Option<tr_render::SheetRect>,
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -3263,6 +3316,10 @@ pub struct Lookups {
     /// `Images/UI/Cursor_0` / `Cursor_1`: the vanilla mouse cursor
     /// (`Main.DrawCursor`; `[0]` normal, `[1]` smart).
     pub cursor: [Option<tr_render::SheetRect>; 2],
+    /// `Images/UI/Cursor_{3,6,7,8,9,10}`: the cursor-override sheets
+    /// (`Main.cs:45285-45309`), indexed by the override id minus 3 with the
+    /// 4/5 gap collapsed — see [`Lookups::cursor_override`]. W4-e19.
+    pub cursor_overrides: [Option<tr_render::SheetRect>; 6],
     /// `Images/Mana`: the mana stars (`ClassicPlayerResourcesDisplaySet.DrawMana`).
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
@@ -3296,6 +3353,29 @@ pub struct Lookups {
     /// the right of every accessory row (`Main.cs:41436-41460`).
     pub ui_tick_on: Option<tr_render::SheetRect>,
     pub ui_tick_off: Option<tr_render::SheetRect>,
+    /// `UI/ChestStack_0..3`: the quick-stack-all button's frames
+    /// (`Main.cs:41838-41867`, W4-g21 batch 3 host 62).
+    pub chest_stack: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Sort_0..1`: the sort-inventory button's idle/hover frames
+    /// (`Main.cs:41891`, W4-g21 batch 3 host 64).
+    pub inventory_sort: [Option<tr_render::SheetRect>; 2],
+    /// `UI/House_Banner`: the world housing banner (`Main.cs:40783`,
+    /// W4-g21 batch 4 host 53).
+    pub house_banner: Option<tr_render::SheetRect>,
+    /// `Images/Lock_0`/`Lock_1` (`TextureAssets.HbLock[0/1]`,
+    /// `AssetInitializer.cs:475-476`): the hotbar-lock icon's locked/unlocked
+    /// frames (`Main.DrawHotbarLockIcon`, `Main.cs:42488`, W4-g21 batch 5
+    /// host 71). Index 0 = locked, 1 = unlocked.
+    pub hb_lock: [Option<tr_render::SheetRect>; 2],
+    /// `Images/UI/BlockReplace_0` (`TextureAssets.blockReplaceIcon[0]`,
+    /// `AssetInitializer.cs:477`): the block-replacement icon's 3-frame
+    /// strip (`Main.DrawBlockReplacementIcon`, `Main.cs:42533`, W4-g21
+    /// batch 5 host 72).
+    pub block_replace: Option<tr_render::SheetRect>,
+    /// `Images/Extra_211` (`TextureAssets.Extra[211]`): the torch-biome-swap
+    /// icon's 4-frame strip (`Main.DrawTorchBiomeSwapIcon`, `Main.cs:42573`,
+    /// W4-g21 batch 5 host 73).
+    pub torch_biome: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
@@ -3477,6 +3557,11 @@ pub struct Lookups {
     pub cc_cloth_styles: [Option<tr_render::SheetRect>; 2],
     /// `UI/CharCreation/Voice` 26x32 (`:482`).
     pub cc_voice: Option<tr_render::SheetRect>,
+    /// W4-e10 — `UI/TexturePackButtons` / `TexturePackButtonsOutline` 64x64
+    /// (`:450-451`): the voice prev/next `Frame(2,2,0,1)`/`(1,1)` buttons and
+    /// their hover outline.
+    pub cc_voice_arrows: Option<tr_render::SheetRect>,
+    pub cc_voice_arrows_outline: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/ColorCharacter` 26x238 — the Clothing category's
     /// 7-frame body stack, one 26x34 frame per layer
     /// (`UICharacterCreation.cs:747-759`).
@@ -3526,6 +3611,23 @@ pub struct Lookups {
 }
 
 impl Lookups {
+    /// The cursor-override sheet for a `Main.cursorOverride` id
+    /// (`Main.cs:45285-45309`): 3 favourite, 6 trash, 7 unequip/backpack,
+    /// 8 from-chest, 9 to-chest, 10 sell. Ids 4/5 (the grab/smart cursors)
+    /// are not override ids; anything else answers `None`. W4-e19.
+    pub fn cursor_override(&self, id: i32) -> Option<tr_render::SheetRect> {
+        let slot = match id {
+            3 => 0,
+            6 => 1,
+            7 => 2,
+            8 => 3,
+            9 => 4,
+            10 => 5,
+            _ => return None,
+        };
+        self.cursor_overrides[slot]
+    }
+
     /// The bestiary NPC sheet's slot in `bestiary_npc_sheets` for a vanilla
     /// net id — `BESTIARY_NPC_SHEET_IDS` is the parallel order table (the
     /// ui's portraits derive their sheet from the entry's `net_id` this
@@ -3654,6 +3756,8 @@ impl Lookups {
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
+            extra_255: atlas.sheet("Extra_255").copied(),
+            extra_256: atlas.sheet("Extra_256").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
@@ -3666,6 +3770,8 @@ impl Lookups {
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
             ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
+            cursor_overrides: [3, 6, 7, 8, 9, 10]
+                .map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
@@ -3679,6 +3785,16 @@ impl Lookups {
             ui_defense_shield: atlas.sheet("Extra_58").copied(),
             ui_tick_on: atlas.sheet("Inventory_Tick_On").copied(),
             ui_tick_off: atlas.sheet("Inventory_Tick_Off").copied(),
+            chest_stack: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/ChestStack_{i}")).copied()
+            }),
+            inventory_sort: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/Sort_{i}")).copied()
+            }),
+            house_banner: atlas.sheet("UI/House_Banner").copied(),
+            hb_lock: [0, 1].map(|i| atlas.sheet(&format!("Lock_{i}")).copied()),
+            block_replace: atlas.sheet("UI/BlockReplace_0").copied(),
+            torch_biome: atlas.sheet("Extra_211").copied(),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),
@@ -4450,6 +4566,8 @@ atlas.sheet("NPC_442").copied(),
             ]
             .map(|n| atlas.sheet(n).copied()),
             cc_voice: atlas.sheet("UI/CharCreation/Voice").copied(),
+            cc_voice_arrows: atlas.sheet("UI/TexturePackButtons").copied(),
+            cc_voice_arrows_outline: atlas.sheet("UI/TexturePackButtonsOutline").copied(),
             cc_color_character: atlas.sheet("UI/CharCreation/ColorCharacter").copied(),
             wc_preview_border: atlas.sheet("UI/WorldCreation/PreviewBorder").copied(),
             wc_icons: [
@@ -5565,3 +5683,4 @@ mod tests {
         }
     }
 }
+]

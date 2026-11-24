@@ -1,3 +1,5 @@
+{
+// balance-open (union shared delimiter)
 //! Tile and wall editing (plan stage A4): the per-frame mining/placing loop,
 //! the break/place helpers behind it and the replicated-edit applier the net
 //! layer feeds.
@@ -19,7 +21,7 @@ use super::items::spawn_item_drop;
 
 mod wiring;
 pub(crate) use wiring::use_wiring_tool;
-mod doors;
+pub(crate) mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
@@ -1950,7 +1952,64 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // shared `ItemCheck_ApplyManaRegenDelay` head ABOVE — both lanes carried
     // it; the gate's second copy was dropped, it re-applied the same delay
     // twice per tick.)
+    // W4-e10 — the expiry-edge marker for the EmitMaxManaEffect tail
+    // below (`Player.cs:42834-42837`: the arm runs INSIDE the
+    // `itemTime > 0` guard, on the decrement that lands at zero).
+    let item_time_was_running = app.item_time > 0.0;
     app.item_time = (app.item_time - dt).max(0.0);
+    // W4-e10 — `Player.ItemCheck`'s itemTime-expiry tail
+    // (`Player.cs:42837-42844`): on the tick the action timer lands at
+    // zero, the Starfury 65 / Ice Blade 724 / Enchanted Sword 989 fire
+    // `EmitMaxManaEffect` (`:49798-49808`): `PlaySound(25)` UNPOSITIONED
+    // (case 25, no draws), then 5 type-45 dust over the player's box —
+    // alpha 255, `default` colour, scale `Next(20, 26) * 0.1` (one draw
+    // per dust on `UpdatePlayers`, the `Main.cs:17754` swap), noLight +
+    // noGravity, velocity halved. The `!JustDroppedAnItem &&
+    // IsAllowedToHoldItems` gate mirrors the held-light arm's fold
+    // (`player_lights.rs`: the allowed flag is constants-true).
+    if app.item_time == 0.0 && item_time_was_running {
+        let held = app.inventory[app.selected];
+        if matches!(held.kind, 65 | 724 | 989)
+            && app.player.as_ref().is_some_and(|p| !p.just_dropped_an_item)
+        {
+            app.audio.play_max_mana_sound();
+            if let Some(p) = app.player.as_ref() {
+                let (pos, w, h) = (
+                    glam::Vec2::new(p.x, p.y),
+                    crate::player::WIDTH as i32,
+                    p.height as i32,
+                );
+                let ctx = app.spawn_ctx();
+                for _ in 0..5 {
+                    let scale = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(20, 26) as f32
+                        * 0.1;
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &ctx,
+                        &app.world,
+                        pos,
+                        w,
+                        h,
+                        45,
+                        0.0,
+                        0.0,
+                        255,
+                        tr_core::particles::Color::default(),
+                        scale,
+                    );
+                    if idx != tr_core::particles::DUST_SENTINEL {
+                        let d = app.dust.slot_mut(idx);
+                        d.no_light = true;
+                        d.no_gravity = true;
+                        d.velocity *= 0.5;
+                    }
+                }
+            }
+        }
+    }
     // `Player.itemRotation`'s per-tick update for the aimed styles (useStyle
     // 5 reads the mouse; `ItemCheck`'s shoot block, `Player.cs:47349-47376`).
     if app.swing > 0.0 && app.swing_style == 5 {
@@ -2195,6 +2254,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         return;
     }
     if permanent_upgrades::pet_license_item_check(app, prev_mine_released && !prev_mine_down) {
+    // W4-f33 — the Torch God's Favor permanent upgrade
+    // (`ItemCheck_UseTorchGodsFavor`, `Player.cs:45226-45243`, the `:43600`
+    // permanent-item seam — after the recall arms, BEFORE the boss spawners
+    // `:43603`, the C# `ItemCheck_OwnerOnlyCode` order). The mid-swing
+    // `ItemTimeIsZero && itemAnimation > 0 && !unlockedBiomeTorches` machine
+    // (the recall/boss-spawner shape); a started use consumes the tick.
+    if crate::torch_god_favor_use::torch_gods_favor_item_check(
+        app,
+        prev_mine_released && !prev_mine_down,
+    ) {
         return;
     }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
@@ -2212,7 +2281,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let held = app.inventory[app.selected];
         let is_summon = matches!(
             held.kind,
-            43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
+            43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556
+                | 557 | 5120 | 2767 | 4271
         );
         if is_summon && held.count > 0 {
             if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
@@ -2259,6 +2329,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             return;
         }
         if held.kind == 1958 && held.count > 0 && use_naughty_present(app) {
+            return;
+        }
+        // W4-e10 — the Solar Tablet 2767 / Blood Moon Starter 4271
+        // (`Player.cs:43988-44027`): the day/eclipse and night/blood-moon
+        // gates, the roar BEFORE the action re-arm, the event flag and
+        // the chat row.
+        if held.kind == 2767 && held.count > 0 && use_solar_tablet(app) {
+            return;
+        }
+        if held.kind == 4271 && held.count > 0 && use_blood_moon_starter(app) {
             return;
         }
         // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
@@ -2570,6 +2650,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // `UndoSlowMagicUse` half (`Player.cs:51946-51948`/`:51954-51966`,
         // folded into `potions::use_potion_item` — the i37 coordination
         // note's deferred i19 fold).)
+        // (W4-f33: the 5043 favor use is NOT a press-edge consumable arm —
+        // it rides the mid-swing permanent-item machine above,
+        // `torch_god_favor_use::torch_gods_favor_item_check`, the C#
+        // `ItemCheck_OwnerOnlyCode` seam `Player.cs:43600`.)
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
@@ -2843,6 +2927,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     crate::projectile::ENCHANTED_BOOMERANG
                     | crate::projectile::WOODEN_BOOMERANG
                     | crate::projectile::ICE_BOOMERANG => Some(1),
+                    // S1-E-21h d75 part 6 — the phaseblade rows join the
+                    // single-flight list (`Player.cs:52162`'s
+                    // `IsAPhaseblade[sItem.shoot]` term).
+                    1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102 => Some(1),
                     _ => None,
                 };
                 if let Some(limit) = limit {
@@ -6009,11 +6097,17 @@ pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
     }
     // `PlaceThing_TryReplacingWalls` (`Player.cs:39816-39829`): the
     // `PlaceThing_ValidWallForReplacement` gate (`:39831-39839`: wall > 0 and
-    // not 350) + `NearFriendlyWall` + `WorldGen.ReplaceWall`. The port's
-    // replacement toggle (`builderAccStatus[10]`) defaults ON like vanilla's
-    // and has no UI yet (ANALYSIS, S1-P-i33).
+    // not 350) + `NearFriendlyWall` + `WorldGen.ReplaceWall`. The replacement
+    // toggle (`TileReplacementEnabled` = `builderAccStatus[10] == 0`,
+    // `Player.cs:3373`) defaults ON like vanilla's; the `DrawBlockReplacementIcon`
+    // click flips it (W4-g21 batch 5 host 72, `Main.cs:42545`).
     let cell_wall = app.world.tile(tx, ty).map_or(0, |t| t.wall);
-    if cell_wall > 0
+    let replacement_enabled = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.tile_replacement_enabled());
+    if replacement_enabled
+        && cell_wall > 0
         && cell_wall != edit::WALL_UNBREAKABLE
         && edit::near_friendly_wall(&app.world, tx, ty)
     {
@@ -6403,6 +6497,20 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
         if let Some((name, volume)) = kill_cue((id, style)) {
             app.audio
                 .play_at(name, sx as f32 * TILE_PX, sy as f32 * TILE_PX, volume);
+
+        }
+        }    // W4-g24 — the `Check*`-level cue tails (`TileKill::check_cues`):
+    // `Check2x1`'s piggy/bowl Shatter (`WorldGen.cs:47235`/:47255) and
+    // `CheckOrb`'s crimson-4 / shadow-13 tail (`:54337`/:54341), at the
+    // TRIGGER cell the C# plays at. The core records them AFTER the check's
+    // kill loop (the C# plays the tails at the check's end — the c14
+    // keep-one, research/106 §5), so they drain after the hit/pot cues above
+    // in the C# order. Same pinned-cue path as the sibling kill cues (the
+    // D3 convention — no per-play variation/pitch draws); the tails are not
+    // `noItem`-gated (the C# plays them outside the drop gate), so they
+    // drain unconditionally.
+    for &(id, style, cx, cy) in &kill.check_cues {
+                .play_at(name, cx as f32 * TILE_PX, cy as f32 * TILE_PX, volume);
         }
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
@@ -6471,9 +6579,13 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             cell.frame_y = frame_y;
         }
     }
-    // The Coin Portal projectile of the pot loot (:57176-57182); the port
-    // has no 518 family yet — `spawn_with_data` declines it and the break
-    // still returns like the C# (recorded deviation, phase 5).
+    // The Coin Portal projectile of the pot loot (`WorldGen.cs:57176-57182`,
+    // `SpawnThingsFromPot`'s luck-0 arm — NOT the Coin Gun 905, which fires
+    // the coin projectiles 158 via `useAmmo = AmmoID.Coin`, `Item.cs:11824-
+    // 11841`). The 518 row + aiStyle-94 arm landed W4-d10 (`5c229707`): the
+    // spawn resolves now (the old no-row decline is closed). The C# gates
+    // `Main.netMode != 1` (not a client) — the port's single-player/host
+    // fold; the `GetClosestRollLuck` luck-0 roll rides `spawn_things_from_pot`.
     for (px, py) in portals {
         let _ = app.projectiles.spawn_with_data(
             518,
@@ -6970,6 +7082,23 @@ fn cell_drops(
         // and the cactus 80 (whose `tile_drop` row feeds the touch/plate
         // lanes) are suppressed here (the records carry their drops).
         5 | 72 | 80 | 323 | 583..=589 | 596 | 616 | 634 => Vec::new(),
+        // The exposed-gems tile 178 drops the gem of its style column
+        // (`KillTile_GetItemDrops`, `WorldGen.cs:65493-65518`:
+        // `switch (tileCache.frameX / 18)` → 0 Amethyst 181, 1 Topaz 180,
+        // 2 Sapphire 177, 3 Emerald 179, 4 Ruby 178, 5 Diamond 182,
+        // 6 Amber 999). The hit cell carries `frame_x` (the C# `tileCache`),
+        // so the per-cell arm reads it — `registry::tile_drop` is frame_y-only
+        // and refuses 178 (the style-0 cascade/record paths drop nothing).
+        178 => match i32::from(hit.frame_x) / 18 {
+            0 => vec![(181, 1)],
+            1 => vec![(180, 1)],
+            2 => vec![(177, 1)],
+            3 => vec![(179, 1)],
+            4 => vec![(178, 1)],
+            5 => vec![(182, 1)],
+            6 => vec![(999, 1)],
+            _ => Vec::new(),
+        },
         83 | 84 => herb_drops(
             hit.kind,
             i32::from(hit.frame_x) / 18,
@@ -7905,7 +8034,7 @@ fn is_blocked_by_lava(create_tile: u16, place_style: i32, target: &tr_core::tile
 }
 
 /// `Player.PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`),
-/// verbatim (the g82-extras union per research/26e, ported from g82's
+/// verbatim (the g82-extras union per research/169, ported from g82's
 /// `check_rope_usability`, `67c9a740`): when the held item places a rope
 /// AND the target is already a rope, walk DOWN the column (through ropes,
 /// track 314, platforms and planters 380) to find the first free cell —
@@ -8046,7 +8175,7 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     // walk retargets `Player.tileTargetY` BEFORE the lava gate / the
     // assorted cut rule / the placement read it (`:39727`'s `tile` re-read
     // and `:39743`'s gate both see the moved target). The g82-extras union
-    // per research/26e; `can_use` is the port's true (the C#'s only false
+    // per research/169; `can_use` is the port's true (the C#'s only false
     // return rides the unported `IsTileLoaded` arm).
     let (_, ty) = check_rope_usability(&app.world, kind, true, tx, ty);
     // `Item.placeStyle` — the `CustomPlace(type, placeStyle)` gate reads it
@@ -8367,6 +8496,17 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         app.player.as_ref().map(|p| p.facing),
     );
     // S1-P-i42 — `PlaceThing_Tiles_PlaceIt`'s biome-torch conversion
+    // (`Player.cs:40129-40132`): with the Torch God's favour unlocked AND the
+    // biome-swap toggle ON (`UsingBiomeTorches` = `unlockedBiomeTorches &&
+    // builderAccStatus[11] == 0`, `Player.cs:3950-3958`) and a PLAIN torch
+    // (style 0), the placed style becomes the biome's (`BiomeTorchPlaceStyle`,
+    // `:40236-40289`). The `DrawTorchBiomeSwapIcon` click flips the toggle
+    // (W4-g21 batch 5 host 73, `Main.cs:42585`). The hold-light family already
+    // reads the same unlock (`player_lights.rs`); this is the placement half.
+    // The ZoneShimmer / ZoneUndergroundDesert arms read fields the port's
+    // `Zones` does not carry — skipped in place, the remaining arms (incl.
+    // temple + remix) keep their C# order (the player_lights
+    // `biome_torch_hold_style` precedent).
     // (`Player.cs:40129-40132`): with the Torch God's favour unlocked
     // (`UsingBiomeTorches`) and a PLAIN torch (style 0), the placed style
     // becomes the biome's (`BiomeTorchPlaceStyle`, `:40236-40289`). The
@@ -8374,11 +8514,33 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // this is the placement half. The ZoneShimmer / ZoneUndergroundDesert
     // arms read fields the port's `Zones` does not carry — skipped in place,
     // the remaining arms (incl. temple + remix) keep their C# order (the
-    // player_lights `biome_torch_hold_style` precedent).
+    // player_lights `biome_torch_hold_style` precedent). W4-f33: the gate
+    // reads the `UsingBiomeTorches` PROPERTY (`:3950-3959` — the unlock AND
+    // the builder toggle `builderAccStatus[11] == 0`), not the raw unlock
+    // flag; with the toggle unported the two agree, but the property is
+    // the C# gate (the 5043 use sets both, `:45231-45232`).
     if kind == 4 && style == 0 {
         if let Some(p) = app.player.as_ref() {
-            if p.unlocked_biome_torches {
+            if p.using_biome_torches() {
                 style = biome_torch_place_style(p, &app.world);
+            }
+        }
+    }
+    // W4-f33c — `FigureOutWhatToPlace`'s campfire half
+    // (`Player.cs:43426-43429`, the gate BOTH the preview (:43408) and the
+    // live placement (:39748) read): `UsingBiomeTorches && tileToCreate ==
+    // 215 && previewPlaceStyle == 0` → `BiomeCampfirePlaceStyle`
+    // (`:40348-40401`). The campfire rides the TileObject route (`D_215`,
+    // `uses_custom_can_place`), so the conversion runs HERE — ahead of
+    // `place_item_tile`'s `CanPlace` — not in the torch family's legacy
+    // `PlaceThing_Tiles_PlaceIt` arm (`:40129-40132`, style already fixed
+    // by the time the object route places). The converted style picks the
+    // frameX column `TileLightScanner.cs:1062-1151` lights — this is the
+    // biome-light half of the favour.
+    if kind == 215 {
+        if let Some(p) = app.player.as_ref() {
+            if p.using_biome_torches() {
+                style = biome_campfire_place_style(p, &app.world, style);
             }
         }
     }
@@ -8423,6 +8585,17 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 
 /// `Player.BiomeTorchPlaceStyle` (`Player.cs:40236-40289`): the biome torch
 /// style for a plain torch placed with the Torch God's favour. The arm order
+/// is the C#'s verbatim — ALL twelve arms now live (W4-f33: `ZoneShimmer`
+/// `:40240` and `ZoneUndergroundDesert` `:40280` were skipped while the
+/// `Zones` snapshot dropped the flags; the snapshot carries them now,
+/// `scene.rs::zones`). `ZoneLihzhardTemple` (`:40248`) rides `Zones.temple`;
+/// the remix desert arm (`:40284-40287`) reads the world's REMIX seed flag.
+/// The underworld arm reads `Main.UnderworldLayer * 16` =
+/// `(height - 200) * 16` (`Main.cs:2790`).
+/// `pub(crate)`: the aiStyle-60 Shimmer stream's torch conversion calls it
+/// with `useWithoutTorchGodsFavor: true` (`Projectile.cs:29142`) — the same
+/// unconditional body (W4-d6 `5d81f2de`; the visibility lifted here so the
+/// d6 branch merges without a conflict, W4-f33).
 /// is the C#'s verbatim; `ZoneShimmer` (`:40240`) and `ZoneUndergroundDesert`
 /// (`:40280`) read fields the port's `Zones` does not carry and are skipped
 /// in place (the remaining arms keep their order, the
@@ -8435,6 +8608,10 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 /// unconditional body (W4-d6).
 pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
     let z = p.zones;
+    // `:40240-40243` — the shimmer arm comes FIRST (the Aether torch).
+    if z.shimmer {
+        return 23;
+    }
     // `:40244-40247` — the dungeon arm comes before the underworld one.
     if z.dungeon {
         return 13;
@@ -8466,9 +8643,13 @@ pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) 
     if z.jungle {
         return 21; // `:40276-40279`
     }
-    // `:40280-40283` — the surface-desert half (the underground-desert half
-    // reads an unported `Zones` field — skipped).
-    if z.desert && (p.y as f64) < world.world_surface * TILE_PX as f64 {
+    // `:40280-40283` — `(ZoneDesert && position.Y < worldSurface * 16.0) ||
+    // ZoneUndergroundDesert`: the surface-desert half OR the underground
+    // desert zone (W4-f33: the second half restored — the `Zones` snapshot
+    // carries `underground_desert` now).
+    if (z.desert && (p.y as f64) < world.world_surface * TILE_PX as f64)
+        || z.underground_desert
+    {
         return 16;
     }
     // `:40284-40287` — `ZoneDesert && Main.remixWorld`: the remix seed's
@@ -8476,6 +8657,81 @@ pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) 
     // gate above never fires there (the player_lights hold-style precedent).
     if z.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
         return 16;
+    }
+    0
+}
+
+/// `Player.BiomeCampfirePlaceStyle` (`Player.cs:40348-40401`): the biome
+/// campfire style for a plain campfire (966 → tile 215) placed with the
+/// Torch God's favour (W4-f33c). The arm order is the C#'s verbatim —
+/// NOT the torch ladder's: glowshroom comes SECOND (before temple and
+/// dungeon, `:40356-40359`), and temple/jungle share style 13 (the Jungle
+/// campfire), dungeon style 7 (Bone). The C# method carries the
+/// `style == 0` half INSIDE its own gate (`:40350`); the port takes the
+/// style and returns it unchanged when non-zero — the replacement callers
+/// (`:39899`/`:39923`) gate on the property but NOT on style, so the body
+/// must carry it. The converted style writes the frameX column (54 ×
+/// style, `D_215`'s `style_horizontal` def) that
+/// `TileLightScanner.cs:1062-1151` lights.
+pub(crate) fn biome_campfire_place_style(
+    p: &crate::player::Player,
+    world: &World,
+    style: i32,
+) -> i32 {
+    // `:40350` — `!UsingBiomeTorches` is the callers' gate; `style != 0`
+    // returns unchanged HERE (the C# `if` body simply never runs).
+    if style != 0 {
+        return style;
+    }
+    let z = p.zones;
+    // `:40352-40355` — the shimmer arm FIRST (the Shimmer campfire, style 15).
+    if z.shimmer {
+        return 15;
+    }
+    // `:40356-40359` — glowshroom BEFORE temple/dungeon (the torch ladder
+    // puts it after the underworld — the orders differ, keep the C#'s).
+    if z.glowshroom {
+        return 14;
+    }
+    // `:40360-40363` — the temple (Lihzhard) arm: the Jungle campfire 13.
+    if z.temple {
+        return 13;
+    }
+    // `:40364-40367` — the dungeon arm: the Bone campfire 7.
+    if z.dungeon {
+        return 7;
+    }
+    // `:40368-40371` — below the underworld layer (`Main.cs:2790`:
+    // `(height - 200) * 16`): the Demon campfire 2.
+    let underworld_px = (world.height - 200) as f32 * TILE_PX;
+    if p.y > underworld_px {
+        return 2;
+    }
+    if z.hallow {
+        return 12; // `:40372-40375`
+    }
+    if z.corrupt {
+        return 10; // `:40376-40379`
+    }
+    if z.crimson {
+        return 11; // `:40380-40383`
+    }
+    if z.snow {
+        return 3; // `:40384-40387`
+    }
+    if z.jungle {
+        return 13; // `:40388-40391` — same style as the temple arm
+    }
+    // `:40392-40395` — `(ZoneDesert && position.Y < worldSurface * 16.0) ||
+    // ZoneUndergroundDesert` (the f64 compare, the torch ladder's precedent).
+    if (z.desert && (p.y as f64) < world.world_surface * TILE_PX as f64)
+        || z.underground_desert
+    {
+        return 8;
+    }
+    // `:40396-40399` — `ZoneDesert && Main.remixWorld`.
+    if z.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        return 8;
     }
     0
 }
@@ -8960,11 +9216,13 @@ fn resolve_melee_strike(
                         // `NewItemOwnership.ReserveForLocalPlayer` →
                         // `enemyGrabDelayTime = DefaultGrabDelay = 100`
                         // (`Item.cs:49757-49760`, `WorldItem.cs:110`): the
-                        // monsters cannot suck it for 100 ticks; the port's
-                        // revenge arm has no enemy-delay field. The player
-                        // grab gate reads `grab_delay_time` (S1-P-i47/i51):
-                        // the enemy-delay is a separate C# clock, so the
-                        // drop stays player-grabbable immediately.
+                        // monsters cannot suck it for 100 ticks. W4-g15
+                        // lane 5 ports the clock (`apply_enemy_grab_delay`);
+                        // the player grab gate reads `grab_delay_time`
+                        // (S1-P-i47/i51) — the enemy-delay is a separate C#
+                        // clock, so the drop stays player-grabbable
+                        // immediately.
+                        coin.apply_enemy_grab_delay();
                         coin.age = 0.0;
                         app.items.push(coin);
                     }
@@ -9140,8 +9398,26 @@ mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
+    /// W4-g24 — `WorldGen.PlaceObject`'s plain-0 cue (`WorldGen.cs:51441`,
+    /// `PlaySound(0, x * 16, y * 16)` behind `!mute`): the port's
+    /// `TileObject`-routed placement plays through the SAME
+    /// `place_tile_sound` switch — the registry-route kinds are never the
+    /// special 127/314/330-333 arms (no `CustomPlace` def for those), so
+    /// the default (0, 1) covers both routes 1:1. Coverage witness: the
+    /// site is landed, not re-ported.
+    #[test]
+    fn w4_g24_place_object_route_plays_the_plain_dig_cue() {
+        // A representative registry-route kind (the chair 15): the route
+        // gate passes and the cue switch answers the plain Dig.
+        assert!(tr_core::tileobject::routes_through_tile_object(15, 0));
+        assert_eq!(edit::place_tile_sound(15), (0, 1));
+        // The special-cue kinds never route through TileObject — the
+        // switch's per-type arms cannot disagree with PlaceObject's 0.
+        for kind in [127u16, 314, 330, 331, 332, 333] {
+            assert!(!tr_core::tileobject::routes_through_tile_object(kind, 0));
+        }
     /// W4-d4 union item 2 — `PlaceThing_Tiles_CheckRopeUsability`
-    /// (`Player.cs:41506-41545`, the g82-extras union per research/26e):
+    /// (`Player.cs:41506-41545`, the g82-extras union per research/169):
     /// the rope-on-rope down-column walk. Written NOT run (code-only).
     #[test]
     fn w4_d4_union_the_usability_walk_descends_the_rope_column() {
@@ -10464,6 +10740,73 @@ mod tests {
         assert_eq!(drops, vec![(3, 1, 7, 12)]);
     }
 
+    // W4-c29 doc-sweep lane 40: the exposed-gems 178 per-cell break-drop slice
+    // (`KillTile_GetItemDrops`, `WorldGen.cs:65493-65518`) — the gem of the
+    // style column (`frameX / 18`), read from the hit cell's `frame_x`.
+    #[test]
+    fn test_w4_c29_break_drop_events_exposed_gems_drop_the_style_gem() {
+        // `switch (tileCache.frameX / 18)`: 0 Amethyst 181, 1 Topaz 180,
+        // 2 Sapphire 177, 3 Emerald 179, 4 Ruby 178, 5 Diamond 182, 6 Amber 999.
+        let expected = [181u16, 180, 177, 179, 178, 182, 999];
+        for (style, &gem) in expected.iter().enumerate() {
+            let kill = edit::TileKill {
+                kind: 178,
+                ..Default::default()
+            };
+            let hit = Some(HitCell {
+                x: 5,
+                y: 9,
+                kind: 178,
+                frame_x: (style * 18) as i16,
+                frame_y: 0,
+            });
+            let (drops, portals) = drop_events(&kill, hit);
+            assert!(portals.is_empty());
+            assert_eq!(drops, vec![(gem, 1, 5, 9)], "178 style {style}");
+        }
+        // An out-of-range column drops nothing (the C# `dropItem > 0` gate,
+        // `WorldGen.cs:63953` — the switch leaves `dropItem = 0`).
+        let kill = edit::TileKill {
+            kind: 178,
+            ..Default::default()
+        };
+        let hit = Some(HitCell {
+            x: 5,
+            y: 9,
+            kind: 178,
+            frame_x: 7 * 18,
+            frame_y: 0,
+        });
+        let (drops, _) = drop_events(&kill, hit);
+        assert!(drops.is_empty(), "178 column 7 drops nothing");
+    }
+
+    // W4-c29 doc-sweep lane 40: the gem-stone/moss per-cell break-drop slice
+    // rides `registry::tile_drop` through the generic `cell_drops` arm.
+    #[test]
+    fn test_w4_c29_break_drop_events_gem_stone_and_moss_drop_their_items() {
+        // The gem-stone block 63 drops the Sapphire 177 (`:64945-64952`).
+        let kill = edit::TileKill { kind: 63, ..Default::default() };
+        let hit = Some(HitCell { x: 3, y: 4, kind: 63, frame_x: 0, frame_y: 0 });
+        let (drops, _) = drop_events(&kill, hit);
+        assert_eq!(drops, vec![(177, 1, 3, 4)]);
+        // The moss tile 179 drops the Stone Block 3 (`:63999-64011`).
+        let kill = edit::TileKill { kind: 179, ..Default::default() };
+        let hit = Some(HitCell { x: 3, y: 4, kind: 179, frame_x: 0, frame_y: 0 });
+        let (drops, _) = drop_events(&kill, hit);
+        assert_eq!(drops, vec![(3, 1, 3, 4)]);
+        // The moss brick 512 drops the Gray Brick 129 (`:64012-64024`).
+        let kill = edit::TileKill { kind: 512, ..Default::default() };
+        let hit = Some(HitCell { x: 3, y: 4, kind: 512, frame_x: 0, frame_y: 0 });
+        let (drops, _) = drop_events(&kill, hit);
+        assert_eq!(drops, vec![(129, 1, 3, 4)]);
+        // The rainbow moss 627 drops the Stone Block 3 (`:64009-64011`).
+        let kill = edit::TileKill { kind: 627, ..Default::default() };
+        let hit = Some(HitCell { x: 3, y: 4, kind: 627, frame_x: 0, frame_y: 0 });
+        let (drops, _) = drop_events(&kill, hit);
+        assert_eq!(drops, vec![(3, 1, 3, 4)]);
+    }
+
     #[test]
     fn test_DW_3_2_break_drop_events_object_cascades_resolve_items() {
         // Registry kinds drop nothing per-cell (`KillTile_GetItemDrops`'s
@@ -10664,6 +11007,75 @@ mod tests {
         app.mine_down = true;
         update_editing(&mut app, 1.0 / 60.0, screen);
         assert!(app.player.as_ref().unwrap().mount.is_active());
+    }
+
+    #[test]
+    fn w4_e10_the_mana_blade_expiry_emits_the_max_mana_effect() {
+        // `Player.cs:42837-42844` -> `EmitMaxManaEffect` (`:49798-49808`):
+        // the itemTime-zero edge fires the unpositioned case-25 chime (no
+        // draws) + 5 type-45 dust; each dust draws the scale Next(20, 26)
+        // FIRST (the C# argument evaluation), then NewDust's six internals
+        // (`Dust.cs:170-190`). All on UpdatePlayers.
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        let (px, py, ph) = {
+            let p = app.player.as_ref().unwrap();
+            (p.x, p.y, p.height)
+        };
+        app.gfx_quality.max_dust_to_draw = 6000;
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (px, py),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.inventory[app.selected] = ItemSlot {
+            kind: 65,
+            name: "Starfury",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = false; // no use arms — the expiry tail only
+        app.item_time = 1.0 / 60.0; // one tick left
+        let seed = 0x4D41_4E41i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let before = app.audio.played_count();
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.item_time, 0.0);
+        assert_eq!(app.audio.played_count(), before + 1, "the case-25 chime");
+        let active: Vec<_> = (0..tr_core::particles::DUST_SENTINEL)
+            .filter(|&i| app.dust.slot(i).active && app.dust.slot(i).dust_type == 45)
+            .collect();
+        assert_eq!(active.len(), 5, "the five mana sparkles");
+        for &i in &active {
+            let d = app.dust.slot(i);
+            assert!(d.no_light && d.no_gravity, "the post-arms (:49804-49805)");
+            assert_eq!(d.alpha, 255);
+        }
+        // The draw twin: per dust the scale roll then the six internals
+        // (box 20x42 -> next_max(16)/next_max(38), no pressure band at
+        // slot < 0.5*6000, type 45 has no tweak/ChildSafety draws).
+        for _ in 0..5 {
+            let _ = witness.next_range(20, 26); // the scale argument
+            let _ = witness.next_max(16); // position.X (width 20 - 4)
+            let _ = witness.next_max((ph as i32) - 4); // position.Y
+            let _ = witness.next_range(-20, 21); // velocity.X
+            let _ = witness.next_range(-20, 21); // velocity.Y
+            let _ = witness.next_max(3); // frame.Y
+            let _ = witness.next_range(-20, 21); // the scale jitter
+        }
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            witness,
+            "the chime is draw-free; the dust chain is exact"
+        );
+        // The next tick (itemTime already 0) does NOT re-fire.
+        let before = app.audio.played_count();
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.audio.played_count(), before, "the edge fires once");
     }
 
     #[test]
@@ -17778,18 +18190,24 @@ fn summon_item_check(app: &App, item: u16) -> bool {
 /// The pre-hardmode boss spawners (`ItemCheck_UseBossSpawners`,
 /// `Player.cs:43751-43900`): the Worm Food 70 (`ZoneCorrupt` -> the EoW
 /// head 13), the Slime Crown 560 (ungated -> the King 50), the
-/// Abeemination 1133 (ungated -> the Queen Bee 222; the vanilla's
-/// Item173 sound rides the roar — the port's bank holds the one), the
-/// Bloody Spine 1331 (`ZoneCrimson` -> the Brain 266). The mech trio
-/// 544/556/557 and the later
-/// 4988/5120/5334 = the follow-ups. `NPC.SpawnOnPlayer` puts the boss at
-/// the player; the EoW rides the worm engine (the chain assembles in the
-/// worm pass); the Brain arrives alone (the Creepers' orbit = the
-/// follow-up).
+/// Abeemination 1133 (ungated -> the Queen Bee 222), the Bloody Spine
+/// 1331 (`ZoneCrimson` -> the Brain 266). The mech trio 544/556/557 and
+/// the later 4988/5120/5334 = the follow-ups. `NPC.SpawnOnPlayer` puts
+/// the boss at the player; the EoW rides the worm engine (the chain
+/// assembles in the worm pass); the Brain arrives alone (the Creepers'
+/// orbit = the follow-up).
+///
+/// W4-e10 — the cues are the C#'s own: the Abeemination plays
+/// `SoundID.Item173` at `(int)position.X/Y` (`Player.cs:43864`, the
+/// style façade — the case-2 pitch draw rides `UpdatePlayers`), every
+/// other arm plays `PlaySound(15, (int)position.X, (int)position.Y, 0)`
+/// (`:43760`/`:43775`/`:43792`/`:43808`/`:43826`/`:43842`/`:43879` —
+/// the int overload, case 15's slot-0 roar with the playing guard, NO
+/// draws). The play runs BEFORE the spawn, like the C# order.
 pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     let held = app.inventory[app.selected];
     let item = held.kind;
-    if !matches!(item, 70 | 560 | 1133 | 1331 | 544 | 556 | 557) {
+    if !matches!(item, 70 | 560 | 1133 | 1331 | 544 | 556 | 557 | 5120) {
         return false;
     }
     if !summon_item_check(app, item) {
@@ -17799,10 +18217,12 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     // 560/1133 run ungated). The mech trio swaps the biome for the clock:
     // `!Main.IsItDay()` (`:43838`/`:43849`/`:43860`); the 1.4.5 item
     // variant's DisabledBossSummonVariant folds out (no variant system).
+    // The Deer Thing 5120 gates on ZoneSnow (`:43906`).
     let zone_ok = match item {
         70 => app.scene_metrics.zone_corrupt,
         1331 => app.scene_metrics.zone_crimson,
         544 | 556 | 557 => !app.world.day_time,
+        5120 => app.scene_metrics.zone_snow,
         _ => true,
     };
     if !zone_ok {
@@ -17858,6 +18278,16 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
             b.hp = b.max_hp;
             Some(b)
         }
+        // W4-e10 — the Deer Thing 5120 (`Player.cs:43906-43918`): the
+        // ZoneSnow gate above, then `NPC.SpawnOnPlayer(plr, 668)` — the
+        // generic surface-scan spawn (`NPC.cs:80631`'s SpawnBoss); the
+        // port parks the Deerclops at the player like the King Slime arm
+        // (the surface scan's deviation, ANALYSIS S1-P).
+        5120 => {
+            let mut d = Npc::new(NpcKind::Deerclops, px, py, 1, 0.0);
+            d.hp = d.max_hp;
+            Some(d)
+        }
         _ => {
             let mut b = Npc::new(NpcKind::BrainOfCthulhu, px, py, 1, 0.0);
             b.hp = b.max_hp;
@@ -17867,7 +18297,30 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     let Some(boss) = boss else {
         return false;
     };
-    app.audio.play("Roar_0");
+    // W4-e10 — the C# cue sites (`Player.cs:43760`/`:43775`/`:43792`/
+    // `:43808`/`:43826`/`:43842`/`:43864`/`:43879`/`:43909`), at the
+    // player's TOP-LEFT (truncated), before the spawn.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    if item == 1133 {
+        // `:43864`: `PlaySound(SoundID.Item173, (int)position.X,
+        // (int)position.Y)` — the style façade (`play_proj_sound`'s
+        // contract: the NextFloat audio-only, the case-2 pitch on
+        // `UpdatePlayers` after the gate).
+        app.audio.play_proj_sound(
+            (2, 173),
+            plx,
+            ply,
+            0.0,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+    } else {
+        // `PlaySound(15, x, y, 0)` — case 15, slot 0, the playing guard.
+        app.audio.play_roar(0, plx, ply);
+    }
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -17900,6 +18353,15 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
+    // W4-e10 — `Player.cs:43926`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15 slot 0 (playing guard, no draws),
+    // BEFORE `StartInvasion` (`:43932`), at the player's top-left.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -17907,7 +18369,6 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
         1,
         Some(crate::app::RngKey::UpdatePlayers),
     );
-    app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -17944,6 +18405,15 @@ pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
     if crate::world_sim::lunar::anyone_near_cultists(app) {
         return false;
     }
+    // W4-e10 — `Player.cs:44030`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15 slot 0, after the ApplyItemTime
+    // decision, before StartImpendingDoom (`:44032`).
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.world.moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
     app.world.max_moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
     crate::chat::broadcast_death_text(
@@ -17970,7 +18440,14 @@ pub fn use_snow_globe(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    app.audio.play("Roar_0");
+    // W4-e10 — `Player.cs:43943`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15 slot 0, BEFORE StartInvasion(2).
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -17995,7 +18472,15 @@ pub fn use_snow_globe(app: &mut App) -> bool {
 /// play. The C# gate is `ItemTimeIsZero && itemAnimation > 0`: the ACTION
 /// re-arms inside the running swing, the animation is untouched.
 fn apply_moon_item(app: &mut App, kind: u16) {
-    app.audio.play("Roar_0");
+    // W4-e10 — `Player.cs:43977`/`:44044`: `PlaySound(15,
+    // (int)position.X, (int)position.Y, 0)` — case 15 slot 0 (the
+    // playing guard, no draws), at the player's top-left.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -18022,7 +18507,7 @@ pub(crate) fn use_pumpkin_moon_medallion(app: &mut App) -> bool {
     true
 }
 
-/// The Naughty Present 1958 (`Player.cs:44041-44052`): the snow twin — same
+/// The Naughty Present 1958 (`Player.cs:44041-44052`): the snow twin - same
 /// gates, `Main.startSnowMoon`.
 pub(crate) fn use_naughty_present(app: &mut App) -> bool {
     if app.world.day_time
@@ -18034,6 +18519,81 @@ pub(crate) fn use_naughty_present(app: &mut App) -> bool {
     }
     apply_moon_item(app, 1958);
     app.world.start_snow_moon();
+    true
+}
+
+/// W4-e10 — the Solar Tablet 2767 (`ItemCheck_UseEventItems`,
+/// `Player.cs:43988-44008`): the `Main.dayTime && !Main.eclipse` gate,
+/// then the roar FIRST (`:43990`, before `ApplyItemTime` — the reverse
+/// of the invasion arms' order), the eclipse flag and the `NewText` row
+/// (the remix world reads `Lang.misc[106]`, every other `misc[20]`,
+/// `ChatColors.World`).
+pub(crate) fn use_solar_tablet(app: &mut App) -> bool {
+    if !app.world.day_time || app.world.eclipse {
+        return false;
+    }
+    // `:43990`: `PlaySound(15, (int)position.X, (int)position.Y, 0)` —
+    // case 15 slot 0 (the playing guard, no draws), at the top-left,
+    // BEFORE `ApplyItemTime` (`:43991`).
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.item_time = crate::item::use_time_secs(2767);
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    app.world.eclipse = true; // `:43994`
+    let key = if app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        "LegacyMisc.106" // `:43997`
+    } else {
+        "LegacyMisc.20" // `:44001`
+    };
+    crate::chat::broadcast_death_text(&mut app.chat, &crate::lang::text(key), crate::chat::COLOR_WORLD);
+    true
+}
+
+/// W4-e10 — the Blood Moon Starter 4271 (`ItemCheck_UseEventItems`,
+/// `Player.cs:44009-44027`): the `!Main.dayTime && !Main.bloodMoon` gate,
+/// the roar FIRST (`:44011`), then `NotifyProgressionEvent(4)` (`:44015`),
+/// the blood-moon flag, the new-moon phase bump (`GetMoonPhase() == Empty`
+/// → `moonPhase = 5`, `:44017-44020`) and the `Lang.misc[8]` row. The C#
+/// sets `Main.bloodMoon` directly — NOT `startBloodMoon` (no dial-cooldown
+/// reset on this path).
+pub(crate) fn use_blood_moon_starter(app: &mut App) -> bool {
+    if app.world.day_time || app.world.blood_moon {
+        return false;
+    }
+    // `:44011`: the case-15 slot-0 roar at the top-left, before the
+    // action-time re-arm.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.item_time = crate::item::use_time_secs(4271);
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    let _ = app.notify_progression_net(4); // `:44015`
+    app.world.blood_moon = true; // `:44016`
+    if app.world.moon_phase == 0 {
+        app.world.moon_phase = 5; // `:44017-44020` (MoonPhase.Empty)
+    }
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        &crate::lang::text("LegacyMisc.8"),
+        crate::chat::COLOR_WORLD,
+    ); // `:44021`
     true
 }
 
@@ -18052,7 +18612,15 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     let Some(eye) = Npc::spawn_eye_of_cthulhu(&app.world, pcx, pcy) else {
         return false;
     };
-    app.audio.play("Roar_0");
+    // W4-e10 — `Player.cs:43775`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15's slot-0 roar (the playing guard,
+    // no draws), at the TOP-LEFT, not the unpositioned stand-in.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -18352,6 +18920,205 @@ mod loot_summon_tests {
         assert_eq!(app.inventory[app.selected].count, 1);
     }
 
+    /// W4-e10 — the summon cues' RNG contract: the case-15 roar
+    /// (`PlaySound(15, x, y, 0)`, `Player.cs:43760` et al.) draws NOTHING
+    /// on `UpdatePlayers` (`LegacySoundPlayer.cs:826-842`); the
+    /// Abeemination's `SoundID.Item173` style play (`:43864`) spends
+    /// exactly ONE case-2 `Next(-6, 7) * 0.01` pitch roll
+    /// (`LegacySoundPlayer.cs:632`) on the stream — the façade's
+    /// `GetRandomPitch` NextFloat is audio-only.
+    #[test]
+    fn w4_e10_the_summon_cues_ride_their_faithful_seams() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (64.0, 64.0),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        // The Slime Crown: the roar plays, the stream does not move.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 560,
+            name: "Slime Crown".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(use_boss_summon_item(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the crown's roar");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "case 15 draws nothing"
+        );
+        // The Abeemination: ONE case-2 pitch roll on UpdatePlayers.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1133,
+            name: "Abeemination".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = mirror.next_range(-6, 7);
+        let before = app.audio.played_count();
+        assert!(use_boss_summon_item(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the Item173 chime");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror,
+            "the Item173 case-2 pitch is the only draw"
+        );
+        // W4-e10 — the Deer Thing 5120 (`Player.cs:43906-43918`): the
+        // ZoneSnow gate refuses off-biome (no cue, stack intact); in the
+        // snow the roar plays once (case 15, no draws) and the Deerclops
+        // spawns.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 5120,
+            name: "Deer Thing".into(),
+            count: 1,
+            prefix: 0,
+        };
+        app.scene_metrics.zone_snow = false;
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(!use_boss_summon_item(&mut app), "off-biome refuses");
+        assert_eq!(app.audio.played_count(), before, "no cue on the refusal");
+        assert_eq!(app.inventory[app.selected].count, 1, "the stack is intact");
+        app.scene_metrics.zone_snow = true;
+        assert!(use_boss_summon_item(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the deer's roar");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "case 15 draws nothing"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Deerclops && n.hp > 0),
+            "the Deerclops spawned"
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the deer paid one");
+    }
+
+    /// W4-e10 — the invasion items' roars ride the case-15 slot-0 seam
+    /// (`Player.cs:43926`/`:43943`/`:43960`/`:43977`/`:44030`/`:44044`):
+    /// one play per accepted use, at the player's top-left, no draws.
+    /// The playing guard refuses a second roar while the slot is live
+    /// (`LegacySoundPlayer.cs:834`) — headless the slot never fills, so
+    /// each use counts one.
+    #[test]
+    fn w4_e10_the_invasion_items_play_the_roar_once_per_use() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        player.max_hp = 200;
+        app.player = Some(player);
+        app.inventory[app.selected] = ItemSlot {
+            kind: 602,
+            name: "Snow Globe".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(use_snow_globe(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the globe's roar");
+        // A live invasion refuses the next use — no cue on the refusal.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1315,
+            name: "Pirate Map".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(!use_pirate_map(&mut app), "the live invasion refuses");
+        assert_eq!(app.audio.played_count(), before, "the refusal is silent");
+    }
+
+    /// W4-e10 — the Solar Tablet 2767 / Blood Moon Starter 4271
+    /// (`Player.cs:43988-44027`): the roar plays once per accepted use
+    /// (case 15, draw-free), the gates refuse silently, the flags land
+    /// and the starter's new-moon bump fires only on phase 0.
+    #[test]
+    fn w4_e10_the_celestial_starters_roar_and_gate() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        // The Solar Tablet: day gate.
+        app.world.day_time = true;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 2767,
+            name: "Solar Tablet".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let before = app.audio.played_count();
+        assert!(use_solar_tablet(&mut app));
+        assert!(app.world.eclipse, "the eclipse arms");
+        assert_eq!(app.audio.played_count(), before + 1, "the tablet's roar");
+        assert_eq!(app.inventory[app.selected].count, 0);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "case 15 draws nothing"
+        );
+        // The re-use refuses (eclipse up) — silent, stack intact.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 2767,
+            name: "Solar Tablet".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(!use_solar_tablet(&mut app));
+        assert_eq!(app.audio.played_count(), before);
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The Blood Moon Starter: night gate, the phase-0 bump.
+        app.world.day_time = false;
+        app.world.moon_phase = 0;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 4271,
+            name: "Blood Moon Starter".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(use_blood_moon_starter(&mut app));
+        assert!(app.world.blood_moon);
+        assert_eq!(app.world.moon_phase, 5, "the new-moon bump (:44019)");
+        assert_eq!(app.audio.played_count(), before + 1, "the starter's roar");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "still draw-free"
+        );
+        // The re-use refuses (blood moon up).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 4271,
+            name: "Blood Moon Starter".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(!use_blood_moon_starter(&mut app));
+        assert_eq!(app.audio.played_count(), before);
+        // A non-new moon keeps its phase.
+        app.world.blood_moon = false;
+        app.world.moon_phase = 3;
+        assert!(use_blood_moon_starter(&mut app));
+        assert_eq!(app.world.moon_phase, 3, "only Empty bumps");
+    }
+
     #[test]
     fn the_eoc_kill_sets_the_downed_flag() {
         // `NPC.downedBoss1 = true` rides the death pass; the loot resolves
@@ -18384,7 +19151,14 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    app.audio.play("Roar_0");
+    // W4-e10 — `Player.cs:43960`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15 slot 0, BEFORE StartInvasion(3).
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -19857,6 +20631,300 @@ mod item_mechanics {
         assert_eq!(app.inventory[app.selected].kind, 8, "the stack stays torch");
     }
 
+    /// W4-g21 batch 5 host 73 — `PlaceThing_Tiles_PlaceIt`'s biome-torch
+    /// conversion (`Player.cs:40129-40132`) gates on `UsingBiomeTorches`
+    /// (`:3950-3958`: the unlock AND `builderAccStatus[11] == 0`): with the
+    /// `DrawTorchBiomeSwapIcon` toggle OFF (`Main.cs:42585`) the placed torch
+    /// stays plain (style 0 → `frameY = 22*0`); with it ON in a snow zone the
+    /// style becomes 9 (`BiomeTorchPlaceStyle`, `:40272-40275` →
+    /// `frameY = 22*9`). The world is 240 tall so the underworld arm
+    /// (`:40252`, `(height-200)*16 = 640`) stays below the player — the
+    /// 40-tall `flat_world` would invert it. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn batch5_the_biome_swap_toggle_gates_the_placed_torch_style() {
+        let mut app = flat_app();
+        // A taller copy of the flat rig: floor row 20, underworld line 640.
+        let mut w = World::new("biome-torch".into(), 40, 240);
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        app.world = w;
+    // ---- W4-f33: the biome-torch conversion census -------------------------
+    // WRITTEN NOT RUN (code-only mode). `BiomeTorchPlaceStyle`
+    // (`Player.cs:40236-40289`) — every arm's style id + the C# arm order,
+    // the `UsingBiomeTorches` gate (the unlock AND the builder toggle), and
+    // the placement route's frameY write (`WorldGen.cs:59839`: 22 × style).
+    // The shimmer + underground-desert arms are RESTORED here (the `Zones`
+    // snapshot carries the flags now, `scene.rs::zones`).
+
+    /// The full arm table in the C#'s priority order — each zone alone maps
+    /// to its style, and the earlier arms shadow the later ones.
+    #[test]
+    fn w4_f33_the_place_style_arms_are_the_full_csharp_table() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.y = 100.0; // above the underworld line ((800-200)*16)
+        // The plain forest: style 0 (`:40288` falls through).
+        assert_eq!(biome_torch_place_style(&p, &w), 0);
+        // Each arm alone (the C# order: shimmer, dungeon, temple, underworld,
+        // glowshroom, hallow, corrupt, crimson, snow, jungle, desert, remix).
+        let cases: [(fn(&mut tr_core::scene::Zones), i32); 10] = [
+            (|z| z.shimmer = true, 23),       // `:40240-40243`
+            (|z| z.dungeon = true, 13),       // `:40244-40247`
+            (|z| z.temple = true, 21),        // `:40248-40251`
+            (|z| z.glowshroom = true, 22),    // `:40256-40259`
+            (|z| z.hallow = true, 20),        // `:40260-40263`
+            (|z| z.corrupt = true, 18),       // `:40264-40267`
+            (|z| z.crimson = true, 19),       // `:40268-40271`
+            (|z| z.snow = true, 9),           // `:40272-40275`
+            (|z| z.jungle = true, 21),        // `:40276-40279`
+            (|z| z.underground_desert = true, 16), // `:40280` second half
+        ];
+        for (set, style) in cases {
+            p.zones = tr_core::scene::Zones::default();
+            set(&mut p.zones);
+            assert_eq!(biome_torch_place_style(&p, &w), style);
+        }
+        // The underworld arm (`:40252-40255`): position.Y > (height-200)*16.
+        p.zones = tr_core::scene::Zones::default();
+        p.y = (w.height - 100) as f32 * TILE_PX;
+        assert_eq!(biome_torch_place_style(&p, &w), 7);
+        // The surface-desert half (`:40280` first half): ZoneDesert above the
+        // world-surface line (the 40x40 flat world's surface is height*0.25).
+        p.y = 100.0;
+        p.zones.desert = true;
+        assert_eq!(biome_torch_place_style(&p, &w), 16);
+        // The order pins: shimmer shadows dungeon; dungeon shadows the
+        // underworld; the underworld shadows snow; snow shadows jungle.
+        p.zones = tr_core::scene::Zones::default();
+        p.zones.shimmer = true;
+        p.zones.dungeon = true;
+        assert_eq!(biome_torch_place_style(&p, &w), 23);
+        p.zones.shimmer = false;
+        p.y = (w.height - 100) as f32 * TILE_PX;
+        assert_eq!(biome_torch_place_style(&p, &w), 13, "dungeon before underworld");
+        p.zones.dungeon = false;
+        p.zones.snow = true;
+        assert_eq!(biome_torch_place_style(&p, &w), 7, "underworld before snow");
+    }
+
+    /// The remix desert arm (`:40284-40287`): `ZoneDesert && Main.remixWorld`
+    /// converts BELOW the surface line too (the inverted world's desert).
+    #[test]
+    fn w4_f33_the_remix_desert_arm_converts_below_the_surface() {
+        let mut w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.zones.desert = true;
+        // Below the surface line, no remix: the surface gate refuses, the
+        // fall-through keeps style 0.
+        p.y = (w.world_surface * TILE_PX as f64 + 100.0) as f32;
+        assert_eq!(biome_torch_place_style(&p, &w), 0);
+        // The remix seed arms the second desert gate.
+        w.seeds |= tr_core::seeds::SeedFlags::REMIX;
+        assert_eq!(biome_torch_place_style(&p, &w), 16);
+    }
+
+    /// The placement route end-to-end: the 5043 unlock converts a plain
+    /// torch's frameY to 22 × the biome style (`WorldGen.cs:59839`), and the
+    /// builder toggle (`builderAccStatus[11] = 1`) refuses the conversion
+    /// (the `UsingBiomeTorches` property gate, `Player.cs:40129`).
+    #[test]
+    fn w4_f33_the_place_route_converts_the_plain_torch_and_the_toggle_gates() {
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(8, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.snow = true;
+        // Toggle OFF (`builderAccStatus[11] = 1`): the torch stays plain.
+        p.builder_acc_status[11] = 1;
+        assert!(use_tile_item(&mut app, 15, 19), "the placement succeeds");
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 0, "plain style 0");
+        // Toggle ON: the snow biome's style 9 (`frameY = 22*9 = 198`).
+        app.player.as_mut().unwrap().builder_acc_status[11] = 0;
+        assert!(use_tile_item(&mut app, 16, 19), "the second placement succeeds");
+        assert_eq!(app.world.tile(16, 19).unwrap().frame_y, 198, "ice style 9");
+        assert!(use_tile_item(&mut app, 15, 19), "the placement succeeds");
+        let t = *app.world.tile(15, 19).unwrap();
+        assert!(t.active() && t.kind == 4);
+        assert_eq!(t.frame_y, 9 * 22, "the snow torch style (`:40272`)");
+        // The toggle OFF: the property reads false, the torch stays plain.
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(8, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.builder_acc_status[11] = 1;
+        p.zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 0, "plain torch");
+        // No unlock: plain even in the biome (the `:40129` gate).
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(8, 5);
+        app.player.as_mut().unwrap().zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 0);
+    }
+
+    /// A non-zero placeStyle never converts (`:40238`'s `style == 0` half):
+    /// the biome torch items place their OWN style verbatim. The campfire
+    /// (966 → tile 215) is a different conversion family
+    /// (`BiomeCampfirePlaceStyle`, `:40348-40401`) — the torch gate
+    /// (`tileToCreate == 4`) never touches it.
+    #[test]
+    fn w4_f33_the_conversion_is_plain_torch_only() {
+        // The ice torch item (974) carries placeStyle 9 — the gate's
+        // `style == 0` refuses the conversion, the style rides verbatim.
+        assert_eq!(registry::place_style(974), 9);
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(974, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 9 * 22);
+        // The campfire item places tile 215 — the torch conversion's
+        // `kind == 4` gate never fires for it (the campfire family rides
+        // its OWN ladder, W4-f33c below).
+        assert_eq!(registry::place_tile(966), Some(215));
+    }
+
+    // ---- W4-f33c: the biome-campfire conversion census ---------------------
+    // WRITTEN NOT RUN (code-only mode). `BiomeCampfirePlaceStyle`
+    // (`Player.cs:40348-40401`) — the campfire ladder's arm order DIFFERS
+    // from the torch's (glowshroom second, temple/dungeon before the
+    // underworld, temple/jungle share style 13, dungeon 7 Bone). The
+    // converted style picks the frameX column `TileLightScanner.cs:1062`
+    // lights (54 × style, `D_215` horizontal) — the biome-light half.
+
+    /// The full campfire arm table in the C#'s priority order — each zone
+    /// alone maps to its style, the earlier arms shadow the later ones.
+    #[test]
+    fn w4_f33c_the_campfire_place_arms_are_the_full_csharp_table() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.y = 100.0; // above the underworld line ((800-200)*16)
+        // The plain forest: style 0 (`:40400` falls through).
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 0);
+        // Each arm alone (the C# order: shimmer, glowshroom, temple, dungeon,
+        // underworld, hallow, corrupt, crimson, snow, jungle, desert, remix).
+        let cases: [(fn(&mut tr_core::scene::Zones), i32); 10] = [
+            (|z| z.shimmer = true, 15),       // `:40352-40355`
+            (|z| z.glowshroom = true, 14),    // `:40356-40359`
+            (|z| z.temple = true, 13),        // `:40360-40363`
+            (|z| z.dungeon = true, 7),        // `:40364-40367`
+            (|z| z.hallow = true, 12),        // `:40372-40375`
+            (|z| z.corrupt = true, 10),       // `:40376-40379`
+            (|z| z.crimson = true, 11),       // `:40380-40383`
+            (|z| z.snow = true, 3),           // `:40384-40387`
+            (|z| z.jungle = true, 13),        // `:40388-40391`
+            (|z| z.underground_desert = true, 8), // `:40392` second half
+        ];
+        for (set, style) in cases {
+            p.zones = tr_core::scene::Zones::default();
+            set(&mut p.zones);
+            assert_eq!(biome_campfire_place_style(&p, &w, 0), style);
+        }
+        // The underworld arm (`:40368-40371`): position.Y > (height-200)*16.
+        p.zones = tr_core::scene::Zones::default();
+        p.y = (w.height - 100) as f32 * TILE_PX;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 2);
+        // The surface-desert half (`:40392` first half).
+        p.y = 100.0;
+        p.zones.desert = true;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 8);
+        // The order pins — THE ladder differs from the torch's:
+        // glowshroom shadows temple AND dungeon AND the underworld.
+        p.zones = tr_core::scene::Zones::default();
+        p.zones.glowshroom = true;
+        p.zones.temple = true;
+        p.zones.dungeon = true;
+        p.y = (w.height - 100) as f32 * TILE_PX;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 14, "glowshroom second");
+        p.zones.glowshroom = false;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 13, "temple before dungeon");
+        p.zones.temple = false;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 7, "dungeon before underworld");
+        // Shimmer shadows everything.
+        p.zones.shimmer = true;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 15);
+    }
+
+    /// The method's own `style == 0` gate (`:40350`): a non-zero placeStyle
+    /// rides VERBATIM even inside a converting biome (the biome campfire
+    /// items place their own style — the replacement callers `:39899` /
+    /// `:39923` don't pre-gate style, the body must). The remix desert arm
+    /// (`:40396-40399`) converts below the surface line too.
+    #[test]
+    fn w4_f33c_the_campfire_style_gate_and_the_remix_arm() {
+        let mut w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.zones.snow = true;
+        // The Frozen Campfire's own style 3 stays 3 even in the jungle.
+        p.zones.jungle = true;
+        assert_eq!(biome_campfire_place_style(&p, &w, 3), 3);
+        assert_eq!(registry::place_style(3048), 3);
+        // Below the surface line, no remix: style 0 falls through.
+        p.zones = tr_core::scene::Zones::default();
+        p.zones.desert = true;
+        p.y = (w.world_surface * TILE_PX as f64 + 100.0) as f32;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 0);
+        // The remix seed arms the second desert gate.
+        w.seeds |= tr_core::seeds::SeedFlags::REMIX;
+        assert_eq!(biome_campfire_place_style(&p, &w, 0), 8);
+    }
+
+    /// The placement route end-to-end: the 5043 unlock converts a plain
+    /// campfire's frameX to 54 × the biome style (`D_215`'s horizontal
+    /// write, `TileObject.cs:67-76` — `coordinate_full_width` 54), and the
+    /// scanner lights that column (`TileLightScanner.cs:1062`). The builder
+    /// toggle refuses the conversion; the biome campfire item's own style
+    /// rides verbatim.
+    #[test]
+    fn w4_f33c_the_place_route_converts_the_plain_campfire() {
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(966, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.snow = true;
+        // The 3×2 object anchors on the floor row (y 20); target (15, 19)
+        // → object cells x 14-16, y 18-19.
+        assert!(use_tile_item(&mut app, 15, 19), "the placement succeeds");
+        let t = *app.world.tile(15, 19).unwrap();
+        assert!(t.active() && t.kind == 215);
+        // The centre column: 54 × 3 + 18 = 180 → frameX / 54 == 3, the
+        // Frozen campfire's [0.45, 0.75, 1.0] light column.
+        assert_eq!(t.frame_x, 3 * 54 + 18, "the snow campfire style (`:40384`)");
+        assert_eq!(t.frame_y, 18, "the bottom row of the lit pair (frameY < 36)");
+        assert_eq!(app.inventory[app.selected].count, 4, "one campfire consumed");
+        // The toggle OFF: the property reads false, the campfire stays plain.
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(966, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.builder_acc_status[11] = 1;
+        p.zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_x, 18, "plain campfire");
+        // No unlock: plain even in the biome (the `:43426` gate).
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(966, 5);
+        app.player.as_mut().unwrap().zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_x, 18);
+        // The Frozen Campfire item (3048, placeStyle 3) rides its own style
+        // even with the unlock ON in a converting biome (the body's gate).
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(3048, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.jungle = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_x, 3 * 54 + 18);
+    }
+
     /// t4 — `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`:
     /// `gravity = 0.1f`, `maxFallSpeed = 7f`), the horizontal friction of
     /// `MoveInWorld` (`WorldItem.cs:854-860`: `velocity.X *= 0.95f`, then the
@@ -20693,6 +21761,35 @@ mod wall_placement_tests {
         assert_eq!(app.inventory[app.selected].count, 0);
     }
 
+    /// W4-g21 batch 5 host 72 — `TileReplacementEnabled`
+    /// (`Player.cs:3373`, `builderAccStatus[10] == 0`) gates
+    /// `PlaceThing_TryReplacingWalls` (`:39612-39615`): with the toggle OFF
+    /// (the `DrawBlockReplacementIcon` click, `Main.cs:42545`) the occupied
+    /// cell refuses the placement — no conversion, no item consumed; the
+    /// default ON converts exactly like the i33 witness above. WRITTEN NOT
+    /// RUN (code-only).
+    #[test]
+    fn batch5_the_replacement_toggle_gates_the_wall_conversion() {
+        let mut w = empty_world();
+        set_wall(&mut w, 9, 10, 4); // support neighbour
+        set_wall(&mut w, 10, 10, 2); // unsafe dirt wall
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5); // Wood Wall → 4
+        // Toggle OFF: `builderAccStatus[10] = 1` (`Main.cs:42545`).
+        app.player.as_mut().unwrap().builder_acc_status[10] = 1;
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 2, "no conversion while OFF");
+        assert_eq!(app.inventory[app.selected].count, 5, "no item consumed");
+        // Toggle back ON: the conversion lands (the i33 route).
+        app.player.as_mut().unwrap().builder_acc_status[10] = 0;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "converted while ON");
+        assert_eq!(app.inventory[app.selected].count, 4, "one item consumed");
+    }
+
     /// `Player.CanPlayerSmashWall` (`Player.cs:45917-45940`) gates the hammer:
     /// a fully enclosed unsafe wall refuses the break; opening a neighbour
     /// lets it through. The unbreakable 350 always refuses.
@@ -20924,3 +22021,4 @@ mod extractinator_use_gate_tests {
 // balance-close (union shared delimiter)
 }}
 }
+}}}

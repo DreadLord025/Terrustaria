@@ -16,6 +16,17 @@
 //! research/18c); `OnActivate`'s `ChangePoint(3000)` (`:37-44`) and
 //! `UpdateGamepadSquiggle` (`:122-127`) are the Stage-1 gamepad exclusion;
 //! `Main.gameTips` (`:117-118`) is research/19 M3.
+//! SOUND CENSUS (W4-g24 FINAL, research/146 §4): the screen's ONE audible
+//! cue is `Update`'s Inventory-abort `PlaySound(11)`
+//! (`UIWorldLoad.cs:57`) — landed in `session.rs::world_load_queue_abort`
+//! (`Menu_Close`, once per queue via the `!QueuedAbort` gate; the pure
+//! `queue_abort_on_inventory` below returns the edge, the caller owns the
+//! play). The bar itself (`UIGenProgressBar`) is CUE-LESS — zero
+//! `PlaySound` in the element; the F5 arm (`:50-53`) opens `UIWorldGenDebug`
+//! which is ALSO cue-less (f23's pass-icons/debug-elements ports carry no
+//! sound sites) and stays DEBUG-DEFERRED. The generation-start 10
+//! (`WorldGen.cs:6593`) and completion 10 (`:6603`) bracket the screen —
+//! both landed (g24 batch 1 / S1-E-17). No gen-progress cue is missing.
 
 use tr_core::scene::get_lerp_value;
 

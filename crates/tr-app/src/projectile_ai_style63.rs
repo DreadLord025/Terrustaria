@@ -7,7 +7,7 @@
 //! no compiler/tests were run on this branch; the witness tests below are
 //! written, not executed).
 //!
-//! ## Census (research/26e row 63)
+//! ## Census (research/167 row 63)
 //!
 //! ONE vanilla member: BabySpider 379 (`ProjectileID.cs:1312`,
 //! `SetDefaults` `Projectile.cs:4635-4644`: 14×10, friendly,

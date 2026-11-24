@@ -59,6 +59,13 @@ const BANNED_IN_INVENTORY: &[u16] = &[
     58, 184, 1734, 1735, 1867, 1868, 3453, 3454, 3455, 4143, 5013, 6135, 6136,
 ];
 
+/// `ItemID.Sets.ItemsThatShouldNotBeInInventory` (`ID/ItemID.cs:345`) — the
+/// public predicate the hopper-range scan reads (`Wiring.IsHopperInRangeOf`
+/// `Wiring.cs:2612`). W4-g15 lane 5.
+pub(crate) fn banned_in_inventory(kind: u16) -> bool {
+    BANNED_IN_INVENTORY.contains(&kind)
+}
+
 /// `Main.tileContainer` (`Main.cs:10076-10080`): the tile kinds whose 2×2 a
 /// chest anchor stands on. `SaveChests:1617-1632`'s pre-pass destroys every
 /// chest whose four anchor cells are not active tiles from this set.
@@ -1156,7 +1163,9 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     // `npcChatText = ""`: the port's dialog + shop close
     // (`Main.SetNPCShopIndex(-1)`'s equivalent) plus the talk-NPC latch and
     // the chat text (S1-P-i43 — the C# clears the chatter before opening;
-    // `CloseSign`'s sign half has no port state, `npcChatCornerItem` neither).
+    // `npcChatCornerItem` has no port field). W4-e10: `CloseSign()` runs
+    // with its DEFAULT quiet=false — an open sign plays the `:33537` cue.
+    crate::signs::close_sign(app, false); // `:33087`
     app.close_shop();
     app.talk_npc = None; // `:33088` — `SetTalkNPC(-1)`
     app.npc_chat_text.clear(); // `:33090` — `Main.npcChatText = ""`
@@ -1374,7 +1383,9 @@ pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool
     let ox = x - i32::from(t.frame_x) / 18 % 3;
     let oy = y - i32::from(t.frame_y) / 18;
     // `:32871-32876` — the prologue: `CancelClothesWindow(quiet)` (no port
-    // clothes window), the sign/talk/chat clears (the world route's mapping).
+    // clothes window), the sign/talk/chat clears (the world route's
+    // mapping). W4-e10: `CloseSign()` `:32873` is the default quiet=false.
+    crate::signs::close_sign(app, false); // `:32873`
     app.close_shop();
     app.talk_npc = None; // `:32874` — `SetTalkNPC(-1)`
     app.npc_chat_text.clear(); // `:32876` — `npcChatText = ""`
@@ -1567,8 +1578,8 @@ fn in_interaction_range_to_multi_tile_hitbox(
 // arms and the bank-only `IsBlockedFromTransferIntoChest`, `ChestUI.cs:
 // 1291-1302`), the net messages 32/38 (`:1247`/:1258/:1283, `ItemSlot.cs:808`),
 // `DoCoins`' roll-over (`Player.cs:39567-39569`) landed with S1-P-i50
-// (`item.rs::do_coins`, wired at the transfer tails), the
-// cursor-override texture draw (see `App.cursor_override`).
+// (`item.rs::do_coins`, wired at the transfer tails). The cursor-override
+// texture draw landed W4-e19 (`ui::cursor::draw_override`).
 
 /// Reads chest slot `slot` of the store entry `idx` with the implicit-air
 /// encoding (decision #4): positions beyond `slots.len()` answer

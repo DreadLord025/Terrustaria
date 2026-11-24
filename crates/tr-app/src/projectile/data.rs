@@ -76,6 +76,9 @@ pub const SQUIRREL_HOOK: u16 = 865;
 /// `ProjectileID.QueenSlimeHook` (935) — the `extraUpdates = 3` hook whose
 /// latch teleports its owner.
 pub const QUEEN_SLIME_HOOK: u16 = 935;
+/// `ProjectileID.TorchGod` (949) — the Torch God event's snuffed-torch
+/// shot (`Projectile.cs:8948-8955`, W4-f33).
+pub const TORCH_GOD: u16 = 949;
 pub const SHURIKEN: u16 = 3;
 /// `ProjectileID.VilethornBase` (7) — the Vilethorn's first segment
 /// (`Projectile.cs:874-884`).
@@ -174,6 +177,12 @@ pub const BONE_JAVELIN: u16 = 598;
 /// spear, the `AI_001` 507/508/662/680/685 gravity group (`Projectile.cs:5770-5778`,
 /// `:57471-57478`).
 pub const JAVELIN: u16 = 507;
+/// `ProjectileID.Meowmere` (502, `ProjectileID.cs:1558`) — the Meowmere
+/// sword's bouncing star: aiStyle 8 with its OWN kind-first bounce arm
+/// (`Projectile.cs:18206-18254`, the five-bounce chime ladder the d75
+/// part-4 owed gate serves), `penetrate = 5`, melee, local immunity 10
+/// (`:5732-5742`). S1-E-21h d75 part 5 — the row that arms the gate.
+pub const MEOWMERE: u16 = 502;
 /// `ProjectileID.Glowstick` (50) — the thrown light, aiStyle 14
 /// (`Projectile.cs:1326-1336`). S1-P-i42.
 pub const GLOWSTICK: u16 = 50;
@@ -333,6 +342,18 @@ pub const SHADOWFLAME_ARROW: u16 = 495;
 /// `ProjectileID.BloodArrow` (`ProjectileID.cs:2192`) — the Blood Rain
 /// Bow's rain shot.
 pub const BLOOD_ARROW: u16 = 819;
+/// `ProjectileID.Stake` (`ProjectileID.cs:1200`) — the Stake Launcher's
+/// shot (W4-f20 slice D, `Projectile.cs:4160-4171`).
+pub const STAKE: u16 = 323;
+/// `ProjectileID.PulseBolt` (`ProjectileID.cs:1268`) — the Pulse Bow's
+/// override shot (W4-f20 slice D, `Projectile.cs:4474-4486`).
+pub const PULSE_BOLT: u16 = 357;
+/// `ProjectileID.Hellwing` (`ProjectileID.cs:1524`) — the Hellwing Bow's
+/// homing bat (W4-f20 slice D, `Projectile.cs:5604-5615`).
+pub const HELLWING: u16 = 485;
+/// `ProjectileID.DD2BetsyArrow` (`ProjectileID.cs:1974`) — the Betsy Bow's
+/// shot (W4-f20 slice D, `Projectile.cs:7521-7535`).
+pub const BETSY_ARROW: u16 = 710;
 /// `ProjectileID.ShimmerArrow` (`ProjectileID.cs:2566`).
 pub const SHIMMER_ARROW: u16 = 1006;
 /// `ProjectileID.DesertDjinnCurse` (596, `ProjectileID.cs:1746`) — the
@@ -979,6 +1000,54 @@ pub const CANNON_EXPLOSIVE: u16 = 601;
 /// The bunny cannon's projectile (281, `Projectile.cs:3676-3687` — aiStyle 49,
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
 pub const CANNON_BUNNY: u16 = 281;
+/// `ProjectileID.ShadowFlame` (496, `ProjectileID.cs:1546`) — the
+/// Shadowflame Hex Doll's aiStyle-91 flame (`Projectile.cs:5692-5704`).
+pub const SHADOW_FLAME: u16 = 496;
+/// The Toxic Flasks' cloud trio (511-513, `ProjectileID.cs:1576-1580`) —
+/// aiStyle 92 (`Projectile.cs:5805-5840`), the `UseGroupStaticImmunity(511)`
+/// shared identity. W4-d10.
+pub const TOXIC_CLOUD: u16 = 511;
+pub const TOXIC_CLOUD_2: u16 = 512;
+pub const TOXIC_CLOUD_3: u16 = 513;
+/// `ProjectileID.GasTrap` (1007, `ProjectileID.cs:2568`) — the dart trap's
+/// poison gas, aiStyle 92 (`Projectile.cs:9558-9569`), hostile AND friendly
+/// AND trap. W4-d10.
+pub const GAS_TRAP: u16 = 1007;
+/// `ProjectileID.ChlorophyteClaymoreSporeCloud` (1128,
+/// `ProjectileID.cs:2810`) — the claymore's spore orb, aiStyle 92
+/// (`Projectile.cs:10565-10579`), the idStatic-30 pair. W4-d10.
+pub const SPORE_CLOUD: u16 = 1128;
+/// `ProjectileID.NailFriendly` (514, `ProjectileID.cs:1582`) — the Nail
+/// Gun's nail, aiStyle 93 (`Projectile.cs:5841-5850`). W4-d10.
+pub const NAIL_FRIENDLY: u16 = 514;
+/// `ProjectileID.CoinPortal` (518, `ProjectileID.cs:1590`) — the Coin
+/// Gun's portal, aiStyle 94 (`Projectile.cs:5879-5888`). W4-d10.
+pub const COIN_PORTAL: u16 = 518;
+/// `ProjectileID.ToxicBubble` (523, `ProjectileID.cs:1600`) — the Toxic
+/// Flask's bubble, aiStyle 95 (`Projectile.cs:5929-5938`). W4-d10.
+pub const TOXIC_BUBBLE: u16 = 523;
+/// `ProjectileID.IchorSplash` (524, `ProjectileID.cs:1602`) — the Ichor
+/// Flask's splash, aiStyle 96 (`Projectile.cs:5939-5952`). W4-d10.
+pub const ICHOR_SPLASH: u16 = 524;
+/// `ProjectileID.FlyingPiggyBank` (525, `ProjectileID.cs:1604`) — the
+/// Money Trough's flying piggy bank, aiStyle 97
+/// (`Projectile.cs:5953-5961`). W4-d10.
+pub const FLYING_PIGGY_BANK: u16 = 525;
+/// `ProjectileID.CultistBossParticle` (526, `ProjectileID.cs:1606`) — the
+/// Lunatic Cultist's homing particle, aiStyle 98
+/// (`Projectile.cs:5962-5970`). W4-d10.
+pub const CULTIST_BOSS_PARTICLE: u16 = 526;
+/// `ProjectileID.MedusaHead` (535, `ProjectileID.cs:1624`) — the Medusa
+/// Head's held channel marker, aiStyle 100 (`Projectile.cs:6094-6106`).
+/// W4-d10.
+pub const MEDUSA_HEAD: u16 = 535;
+// `ProjectileID.MedusaHeadRay` (536) — the ray kind is d11's claim
+// (`6aca9b7f`: the row + `ai_medusa_ray` + the `MEDUSA_HEAD_RAY` const).
+// The keep-one drop-hunk EXECUTED (W4-d10, the crosschecks doc §2): d10's
+// duplicate const is REMOVED; the 535 dispatch spawns the rays through
+// the LITERAL 536 (`spawn_with_data_ai_owned(536, …)`) so this branch
+// compiles standalone (the no-row spawn declines) AND merges without a
+// const collision — d11's const is the one definition.
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1061,6 +1130,38 @@ pub const SNAPPING_STONE_MELEE_EFFECT: u16 = 1131;
 pub const SNAPPING_STONE_SUMMON_EFFECT: u16 = 1132;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
+/// The yoyo accessory counterweights (`Projectile.cs:6084-6093`): 10×10,
+/// `extraUpdates = 1`, `DefaultToYoyo()` (aiStyle 99, melee, penetrate −1),
+/// `drawLayer = 0`, `scale = 1f`, `counterweight = true`. Their AI is the
+/// style-99 SUB-arm `AI_099_1_Counterweights` (`:67380-67731`), gated ahead
+/// of the yoyo arm by the C# `AI()` chain (`:33153-33156`) — W4-d10 (the
+/// f19 F1 census finding).
+pub const BLACK_COUNTERWEIGHT: u16 = 556;
+pub const BLUE_COUNTERWEIGHT: u16 = 557;
+pub const GREEN_COUNTERWEIGHT: u16 = 558;
+pub const PURPLE_COUNTERWEIGHT: u16 = 559;
+pub const RED_COUNTERWEIGHT: u16 = 560;
+pub const YELLOW_COUNTERWEIGHT: u16 = 561;
+/// `ProjectileID.PinkCounterweight` (1079, the 1.4.4 pink bag drop).
+pub const PINK_COUNTERWEIGHT: u16 = 1079;
+/// The seven counterweight kinds — the `AI()` sub-arm gate
+/// (`(aiStyle == 99 && type >= 556 && type <= 561) || type == 1079`,
+/// `Projectile.cs:33153`).
+pub const COUNTERWEIGHT_KINDS: [u16; 7] = [
+    BLACK_COUNTERWEIGHT,
+    BLUE_COUNTERWEIGHT,
+    GREEN_COUNTERWEIGHT,
+    PURPLE_COUNTERWEIGHT,
+    RED_COUNTERWEIGHT,
+    YELLOW_COUNTERWEIGHT,
+    PINK_COUNTERWEIGHT,
+];
+/// The counterweight kind test — the C# inline
+/// `(type >= 556 && type <= 561) || type == 1079` (`:33153`, `:67397`'s
+/// complement, `:67820`, `:18415`).
+pub const fn is_counterweight(kind: u16) -> bool {
+    matches!(kind, 556..=561 | 1079)
+}
 /// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
 /// (`Projectile.cs:9237-9252`'s SetDefaults, `AI_188_LightsBane`
 /// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
@@ -1678,6 +1779,31 @@ pub const NEBULA_ARCANUM: u16 = 617;
 /// `ProjectileID.NebulaArcanumSubshot` (618) — the Arcanum's arm (aiStyle
 /// 119, 18x30, `timeLeft = 420`, local-immunity 20).
 pub const NEBULA_ARCANUM_SUBSHOT: u16 = 618;
+// W4-d78 batch 2 — the Kill child-spawn family's unrowed kinds (the 617/246/
+// 117 death arms spawn these; without a row the data-carrying spawn declines
+// the child and the burst vanishes). Ids verified against `ID/ProjectileID.cs`.
+/// `ProjectileID.NebulaArcanumExplosionShotShard` (620, `ProjectileID.cs:1794`)
+/// — the Arcanum bolt's death shard (aiStyle 29's own 620 arm,
+/// `Projectile.cs:37672-37704`, 8x8, alpha 255, magic, `penetrate = 1`; the
+/// 617 Kill arm `Projectile.cs:72354`/`:72370`). S1-E-21h d77's Kill-host
+/// port; W4-d78 batch 2 rows the child-spawn family. ONE row for the kind
+/// (the d77 `NEBULA_ARCANUM_SHARD` alias below — the merge dedupe).
+pub const NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD: u16 = 620;
+/// S1-E-21h d77's name for the same kind 620 (the merge keeps both lanes'
+/// call sites; the `proj_data` row is single).
+pub const NEBULA_ARCANUM_SHARD: u16 = NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD;
+/// `ProjectileID.Stynger` (246, `ProjectileID.cs:1046`) — the Stynger
+/// launcher's bolt (aiStyle 1, 10x10, alpha 255, ranged, `extraUpdates = 1`;
+/// its Kill arm `Projectile.cs:76944-76986` spawns the 249 shrapnel).
+pub const STYNGER: u16 = 246;
+/// `ProjectileID.StyngerShrapnel` (249, `ProjectileID.cs:1052`) — the
+/// Stynger bolt's death shrapnel (aiStyle 2, 12x12, ranged; its OWN Kill arm
+/// `Projectile.cs:76987-77015` blasts a 100-box).
+pub const STYNGER_SHRAPNEL: u16 = 249;
+/// `ProjectileID.BoneShard` (1124, `ProjectileID.cs:2802`) — the Bone Arrow's
+/// death shard (aiStyle 1, 6x6, ranged, `timeLeft = 600`, scale 0.95,
+/// `extraUpdates = 1`; the 117 Kill arm `Projectile.cs:74748`).
+pub const BONE_SHARD: u16 = 1124;
 // W4-d8 — the aiStyle-72/73/74/76 census (the Bubble Gun, the firework
 // fountains, the Scutlix mount's laser and the two mount crosshairs). Every
 // id is the verbatim `ProjectileID` value; the `SetDefaults` arms are cited
@@ -1758,6 +1884,10 @@ pub const ELECTROSPHERE_MISSILE: u16 = 442;
 /// `ProjectileID.Electrosphere` (443, `ProjectileID.cs:1440`) — the sphere the
 /// missile's death spawns (aiStyle 77).
 pub const ELECTROSPHERE: u16 = 443;
+/// `ProjectileID.SkyDragonsFuryElectrosphere` (1110, `ProjectileID.cs:2774`) —
+/// the Sky Dragon's Fury alt-shot's death circle (aiStyle 77, the 443 sibling;
+/// W4-f20 F3, the 709 Kill-hook half `Projectile.cs:73372-73388`).
+pub const SKY_DRAGONS_FURY_ELECTROSPHERE: u16 = 1110;
 /// `ProjectileID.ChargedBlasterOrb` (459, `ProjectileID.cs:1472`) — the
 /// cannon's charge orb (aiStyle 1, `extraUpdates = 1`).
 pub const CHARGED_BLASTER_ORB: u16 = 459;
@@ -1770,6 +1900,11 @@ pub const CHARGED_BLASTER_BEAM: u16 = 461;
 /// `ProjectileID.CrystalPulse` (521, `ProjectileID.cs:1596`) — the Crystal
 /// Serpent's pulse (aiStyle 29's own 521 arm, `extraUpdates = 1`).
 pub const CRYSTAL_PULSE: u16 = 521;
+/// `ProjectileID.CrystalPulse2` (522, `ProjectileID.cs:1598`) — the pulse's
+/// death-split shard (aiStyle 29's own 522 arm, `Projectile.cs:37742-37773`:
+/// the ai[1] counter kills at > 40, the 0.2 gravity / 0.98 drag). W4-g1 lane a
+/// (the 521 Kill hook's spawn target — row+arm+hook land together).
+pub const CRYSTAL_PULSE_2: u16 = 522;
 /// `ProjectileID.SparkleGuitar` (856, `ProjectileID.cs:2266`) — the Sparkle
 /// Guitar's note (aiStyle 167, the CatmullRom arc).
 pub const SPARKLE_GUITAR: u16 = 856;
@@ -2533,6 +2668,115 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             43 | 201..=205 | 527..=531 => {
                 (24.0, 24.0, 17, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
+            // W4-d10 — the Shadowflame Hex Doll's flame (496,
+            // `Projectile.cs:5692-5704`): 40×40, aiStyle 91, magic,
+            // `MaxUpdates = 3` (extraUpdates 2, `:554-563`'s setter),
+            // penetrate 3, the local-immunity −1 pair, alpha 255; the
+            // stock tileCollide true / timeLeft 3600. The AI is
+            // `projectile_ai_91_100::ai_shadowflame`.
+            SHADOW_FLAME => (
+                40.0,
+                40.0,
+                91,
+                3,
+                TIME_LEFT_DEFAULT,
+                2,
+                true,
+                false,
+                false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Toxic Cloud trio (`Projectile.cs:5805-5840`):
+            // 32×32 / 40×38 / 30×28, aiStyle 92, penetrate −1, scale 1.1,
+            // magic, alpha 255, `UseGroupStaticImmunity(511)` (the shared
+            // identity below). The stock tileCollide stands at spawn — the
+            // AI clears it every tick (`:32567`).
+            TOXIC_CLOUD => (
+                32.0, 32.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            TOXIC_CLOUD_2 => (
+                40.0, 38.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            TOXIC_CLOUD_3 => (
+                30.0, 28.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            // W4-d10 — the Gas Trap's poison gas (`Projectile.cs:9558-9569`):
+            // 50×50, aiStyle 92, hostile AND friendly, penetrate −1, scale
+            // 1.1, trap, hide (no port field — the draw layer).
+            GAS_TRAP => (
+                50.0, 50.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
+                (false, -2, false, -1, 0, 1.1),
+            ),
+            // W4-d10 — the Chlorophyte Claymore's spore cloud
+            // (`Projectile.cs:10565-10579`): 30×30, aiStyle 92, melee,
+            // penetrate −1, scale 1.1, tileCollide false, the idStatic-30
+            // pair (the double noEnchantmentVisuals write is one flag).
+            SPORE_CLOUD => (
+                30.0, 30.0, 92, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, true, 30, 0, 1.1),
+            ),
+            // W4-d10 — the Nail Gun's nail (`Projectile.cs:5841-5850`):
+            // 10×10, aiStyle 93, penetrate 3, alpha 255, ranged; the stock
+            // tileCollide/timeLeft. The AI is `ai_nail` + the 4×4
+            // collision box (`:19962`).
+            NAIL_FRIENDLY => (
+                10.0, 10.0, 93, 3, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Coin Gun's portal (`Projectile.cs:5879-5888`):
+            // 32×32, aiStyle 94, alpha 255, tileCollide false, ignoreWater;
+            // the stock penetrate 1 / timeLeft 3600. No damage-class flag.
+            COIN_PORTAL => (
+                32.0, 32.0, 94, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Toxic Flask's bubble (`Projectile.cs:5929-5938`):
+            // 32×32, aiStyle 95, alpha 255, ranged, penetrate 1; the stock
+            // tileCollide/timeLeft.
+            TOXIC_BUBBLE => (
+                32.0, 32.0, 95, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Ichor Flask's splash (`Projectile.cs:5939-5952`):
+            // 10×10, aiStyle 96, alpha 255, penetrate 5, ignoreWater,
+            // melee, extraUpdates 5, the idStatic-10 pair.
+            ICHOR_SPLASH => (
+                10.0, 10.0, 96, 5, TIME_LEFT_DEFAULT, 5, true, false, false,
+                (false, -2, true, 10, 255, 1.0),
+            ),
+            // W4-d10 — the Money Trough's flying piggy bank
+            // (`Projectile.cs:5953-5961`): 30×24, aiStyle 97, tileCollide
+            // false, timeLeft 10800, drawLayer 3 (no port field); the
+            // stock penetrate 1, no damage-class flag (the bank is a
+            // friendly interactable, `IsInteractable` :78832).
+            FLYING_PIGGY_BANK => (
+                30.0, 24.0, 97, 1, 10800, 0, false, false, false, RESET_STATE,
+            ),
+            // W4-d10 — the Lunatic Cultist's homing particle
+            // (`Projectile.cs:5962-5970`): 8×8, aiStyle 98, tileCollide
+            // false, timeLeft 120, alpha 255; the stock penetrate 1. The
+            // C# row sets NO hostile flag — the particle is a visual
+            // homing marker (the `:788` friendly default false stands;
+            // the port's hostile-contact proxy keeps it inert).
+            CULTIST_BOSS_PARTICLE => (
+                8.0, 8.0, 98, 1, 120, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Medusa Head's held marker
+            // (`Projectile.cs:6094-6106`): 18×18, aiStyle 100, friendly,
+            // penetrate −1, tileCollide false, magic, ignoreWater; the
+            // stock timeLeft 3600 (the AI pins 2 every tick). drawLayer 8
+            // + usesOwnerLight are draw-layer state (no port fields). The
+            // `Damage_CanDealDamage` refusal (`:12448`'s `type == 535`)
+            // means the marker itself never hits — its 536 rays carry the
+            // damage (d11's claim).
+            MEDUSA_HEAD => (
+                18.0, 18.0, 100, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
@@ -2838,6 +3082,41 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:5732-5742` — the Meowmere star (502): 16x16,
+            // aiStyle 8, friendly (the pool's stock true), melee,
+            // `penetrate = 5`, `usesLocalNPCImmunity = true` +
+            // `localNPCHitCooldown = 10`. The stock `timeLeft = 3600`
+            // (`:787`), `tileCollide` (`:775`), `extraUpdates = 0`, alpha 0
+            // and scale 1 stand — the arm writes NO override. The bounce
+            // ladder + chime ride the kind-first arm in `ai_ball_of_fire`
+            // (`:18206-18254`, the d75 part-4 owed gate this row arms);
+            // the `:24346-24352` velocity rotation is ported beside it.
+            // S1-E-21h d75 part 5.
+            MEOWMERE => (16.0, 16.0, 8, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0)),
+            // `Projectile.cs:10006-10021` — the phaseblade/phaser SMALL
+            // group (1059-1064 + 1071/1075/1101): 38x38, aiStyle 3,
+            // friendly (the pool's stock true), melee, `penetrate = -1`,
+            // `netImportant`, `usesLocalNPCImmunity = true` +
+            // `localNPCHitCooldown = 10`. The stock `timeLeft = 3600`
+            // (`:787`), `tileCollide` (`:775`), `extraUpdates = 0` stand —
+            // the arm writes no override (the 1101's `glowMask = 372` is
+            // a draw-layer field with no port carrier). S1-E-21h d75
+            // part 6 — the `IsAPhaseblade` set rows (`ProjectileID.cs:192`,
+            // 19 kinds; the 1073 trap is NOT in the set, `:10038-10046`).
+            1059..=1064 | 1071 | 1075 | 1101 => {
+                (38.0, 38.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0))
+            }
+            // `Projectile.cs:10022-10037` — the LARGE group (1065-1070 +
+            // 1072/1076/1102): the same arm at 46x46 (the 1102's
+            // `glowMask = 373` likewise rides the unported glow layer).
+            1065..=1070 | 1072 | 1076 | 1102 => {
+                (46.0, 46.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0))
+            }
+            // `Projectile.cs:10047-10058` — the 1074 White Phaseblade's
+            // OWN arm: 46x46, the same flags, no glowMask write. The
+            // phaser's Item7/Item182 cue pair rides `ai_boomerang`'s
+            // kind-gated arms (the 1074 exception at every site).
+            1074 => (46.0, 46.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0)),
             // `Projectile.cs:5770-5778` — the Javelin (507): 16x16, aiStyle 1,
             // `penetrate = 3`, friendly+ranged; the stock `timeLeft = 3600`
             // (`:787`) and `tileCollide` (`:775`). The flight is the `AI_001`
@@ -4240,6 +4519,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `tileCollide = false`, `penetrate = -1`, `timeLeft = 420`,
             // local-immunity 20; alpha at the 0 reset.
             NEBULA_ARCANUM_SUBSHOT => (18.0, 30.0, 119, -1, 420, 0, false, false, false, (true, 20, false, -1, 0, 1.0)),
+            // `:6681-6690` NebulaArcanumExplosionShotShard — 8x8, aiStyle 29
+            // (the per-kind shard arm), alpha 255, `penetrate = 1`, magic,
+            // friendly; the stock tileCollide true / 3600 life (the 40-tick
+            // ai[1] counter kills it first; `:774-775`/`:787` resets).
+            // S1-E-21h d77 + W4-d78 batch 2 (the merge dedupe — one row,
+            // both lanes' constants alias kind 620): the 617's Kill scatter
+            // (`:72354`/`:72370`) spawns it with `ai[0]` = the 86/90 dust
+            // pick; the AI_029 kind-gate reads it as the dust id only.
+            NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD => (
+                8.0, 8.0, 29, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `:6793-6804` LastPrism — 14x18, aiStyle 75, `penetrate = -1`,
             // `tileCollide = false` (`drawLayer = 7`/`ignoreWater` dropped);
             // the channel keep-alive and the 6x laser spawn are Phase 4's.
@@ -4277,6 +4568,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | VALOR_YOYO
             | TERRARIAN_YOYO
             | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),            // The yoyo shots (M4-PROJ-4b): the four children the yoyo
+            // W4-d10 (f19 F1) — the counterweight family
+            // (`Projectile.cs:6084-6093`): 10×10, `extraUpdates = 1`,
+            // `DefaultToYoyo()` (aiStyle 99, melee, penetrate −1),
+            // `drawLayer = 0`, `scale = 1f`, `counterweight = true` (no
+            // port field — the draw path knows the kinds, assets.rs:706).
+            // The AI is the style-99 SUB-arm `AI_099_1_Counterweights`.
+            BLACK_COUNTERWEIGHT | BLUE_COUNTERWEIGHT | GREEN_COUNTERWEIGHT
+            | PURPLE_COUNTERWEIGHT | RED_COUNTERWEIGHT | YELLOW_COUNTERWEIGHT
+            | PINK_COUNTERWEIGHT => (10.0, 10.0, 99, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             // on-hit arms spawn — `SetDefaults` verbatim.
             // `CascadeExplosion` (`:10528-10541`): 32×32, aiStyle 189, the
             // `alpha = 255`/`hide` pair, `penetrate = 4`, local-immunity with
@@ -4627,6 +4927,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater` (the overlay below), the `NewProjectileSetup`
             // 300-tick seed (`:11065-11068`).
             443 => (80.0, 80.0, 77, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-f20 F3 — the Sky Dragon's Fury circle 1110
+            // (`Projectile.cs:10340-10352`): 80x80, aiStyle 77, friendly,
+            // alpha 255, scale 1, melee, ignoreWater, tileCollide false,
+            // penetrate -1; the `NewProjectileSetup` 300-tick seed
+            // (`:11065-11068`, the 443 sibling). The 709's Kill spawns it
+            // (`:73384`) and overrides timeLeft to `30 * Next(2,6)`.
+            SKY_DRAGONS_FURY_ELECTROSPHERE => (80.0, 80.0, 77, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // The Fireworks Launcher's rockets 167-170 (`:2558-2569`):
             // 14x14, aiStyle 34, `timeLeft = 45`, the idStatic-1 pair with
             // `appliesImmunityTimeOnSingleHits` (the plain PVE walk applies
@@ -4800,6 +5107,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // old 1200 was a row deviation; `hide` has no port field):
             // 10x10 aiStyle-1 arrows (485's 24x24 box aside).
             117 => (10.0, 10.0, 1, 1, 1200, 2, true, true, false, RESET_STATE),
+            // W4-d78 batch 2 — `Projectile.cs:10514-10527` the Bone Shard
+            // (1124): 6x6, aiStyle 1, friendly, `penetrate = 1`,
+            // `timeLeft = 600`, ranged, tileCollide true, `extraUpdates = 1`.
+            // The arm writes `scale = 1.2f` (`:10521`) then OVERWRITES it
+            // with `scale = 0.95f` (`:10525`) — the row keeps the LAST write
+            // (the double-set quirk, verbatim). The 2-frame sheet is
+            // `Main.cs:8562`; the 117 Kill arm (`:74748`) spawns it.
+            BONE_SHARD => (6.0, 6.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 0, 0.95)),
             469 => (
                 10.0, 10.0, 1, 1, 1200, 0, true, true, false,
                 (false, -2, false, -1, 255, 1.0),
@@ -5299,6 +5614,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // W4-f33 — `Projectile.cs:8948-8955`: the Torch God shot (949):
+            // 4x4, aiStyle 184 (`AI_184_BadTorchLuck`), `penetrate = -1`,
+            // `tileCollide = false` (the AI's ai[1] budget arms it later).
+            // The stock `friendly`/`hostile` stay false (`:788`/`:764` —
+            // the arm touches neither): the hurt rides the AI's own
+            // `SelfHurtPlayers`, never the pool's PVE/EVP lanes. The stock
+            // timeLeft 3600 (`:787`) / extraUpdates 0 (`:771`) stand.
+            TORCH_GOD => (4.0, 4.0, 184, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             // The dungeon-debris trio (`Projectile.cs:7748-7755`): 10x10,
             // aiStyle 10, `penetrate = -1`; everything else keeps the reset
             // (`tileCollide` true `:775`, `timeLeft` 3600 `:787`,
@@ -5536,6 +5859,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
             // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
             ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d78 batch 2 — the Stynger pair (the Kill child-spawn family).
+            // `Projectile.cs:3289-3298` — the Stynger bolt (246): 10x10,
+            // aiStyle 1, friendly, ranged, `alpha = 255`, `extraUpdates = 1`;
+            // the stock penetrate 1 / timeLeft 3600 / tileCollide true
+            // (`:774-775`/`:787` resets — the arm writes no override).
+            STYNGER => (
+                10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3314-3321` — the Stynger shrapnel (249): 12x12,
+            // aiStyle 2, friendly, ranged; the stock penetrate 1 / 3600 /
+            // tileCollide true, alpha at the 0 reset. The 5-frame sheet is
+            // `Main.cs:8610`.
+            STYNGER_SHRAPNEL => (12.0, 12.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // S1-P-i22 — the magic guns + tomes' shots. The verbatim
             // `SetDefaults` arms, in `ProjectileID` order; `light`/`magic`/
             // `melee`/`ranged`/`ignoreWater`/`drawLayer`/`armorPenetration`
@@ -5627,6 +5964,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:5908-5918` — the Crystal Pulse (521): 14x14,
             // aiStyle 29, `alpha = 255`, `penetrate = 1`, `extraUpdates = 1`.
             CRYSTAL_PULSE => (14.0, 14.0, 29, 1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:5919-5928` — the Crystal Pulse 2 (522): 8x8,
+            // aiStyle 29, `alpha = 255`, `penetrate = 1`, magic, friendly.
+            // NO extraUpdates line (the stock 0). W4-g1 lane a — the 521
+            // Kill hook's split shard (the row+arm+hook land together).
+            CRYSTAL_PULSE_2 => (8.0, 8.0, 29, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `Projectile.cs:8206-8219` — the Sparkle Guitar note (856): 32x32,
             // aiStyle 167, `alpha = 255`, `tileCollide = false`,
             // `extraUpdates = 2`, local immunity −1, ignoreWater, magic.
@@ -5972,9 +6314,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         },
         // `UseGroupStaticImmunity(181)` (`Projectile.cs:10676-10681`) — the
         // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
-        // id-static table keys both under one cooldown. Every other row keeps
-        // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
-        immunity_identity: if matches!(kind, BEE | GIANT_BEE) { BEE } else { 0 },
+        // id-static table keys both under one cooldown. W4-d10: the Toxic
+        // Cloud trio shares 511 the same way (`:5814`/`:5826`/`:5838`).
+        // Every other row keeps 0 = "use the kind" (the `:782` reset
+        // `immunityIdentity = type`).
+        immunity_identity: if matches!(kind, BEE | GIANT_BEE) {
+            BEE
+        } else if matches!(kind, TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3) {
+            TOXIC_CLOUD
+        } else {
+            0
+        },
         alpha,
         // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
         // other row carries its own scale in the state group.
@@ -6001,6 +6351,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-g2 (d5 F5): the Blood Rain's two clouds set `netImportant`
             // (`Projectile.cs:3257`/`:3265`); the drop 245 keeps false.
             || matches!(kind, BLOOD_CLOUD_MOVING | BLOOD_CLOUD_RAINING)
+            // W4-d10 — the Coin Portal sets `netImportant` (`:5881`).
+            || kind == COIN_PORTAL
             // S1-P-i35 — the bobber family sets `netImportant` itself
             // (`Projectile.cs:4514`/`:9428`).
             || BOBBER_KINDS.contains(&kind)
@@ -6045,6 +6397,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
             || matches!(kind, GOLF_BALL | 739..=752)
+            // S1-E-21h d75 part 6 — the phaseblade rows' `netImportant = true`
+            // (`Projectile.cs:10014`/`:10030`/`:10055`, the 19-kind
+            // `IsAPhaseblade` set).
+            || matches!(kind, 1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102),
             // W4-d4 — `Projectile.cs:2428`: the Beach Ball (155) sets
             // `netImportant = true`.
             || kind == BEACH_BALL
@@ -6119,6 +6475,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the moving blood cloud 243 keeps the stock false (`:3255-
             // 3262` has no such line — the 237 twin).
             || matches!(kind, BLOOD_CLOUD_RAINING | BLOOD_RAIN | RAIN_NIMBUS | UFO_LASER)
+            // W4-d10 — the Coin Portal sets `ignoreWater` (`:5887`); the
+            // Ichor Splash too (`:5947`); the Medusa Head marker (`:6105`).
+            || matches!(kind, COIN_PORTAL | ICHOR_SPLASH | MEDUSA_HEAD)
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -6159,6 +6518,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i16 — the Electrosphere sphere 443's `ignoreWater = true`
             // (`Projectile.cs:5147`, the `:5137-5149` row block).
             || kind == 443
+            // W4-f20 F3 — the Sky Dragon's Fury circle 1110's `ignoreWater`
+            // (`Projectile.cs:10349`, the `:10340-10352` row block).
+            || kind == SKY_DRAGONS_FURY_ELECTROSPHERE
             // S1-P-i14 — the bullet-launch projectiles that set `ignoreWater`:
             // the Xenopopper bubble 444 (`Projectile.cs:5159`) and the Onyx
             // black bolt 661 (`:7118`).
@@ -6235,6 +6597,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // M2-MOUNT-4 — `Projectile.cs:6540`: the Scutlix laser (606)
             // sets `ignoreWater = true`.
             || kind == SCUTLIX_LASER,
+            || matches!(kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM),
+            // W4-d4 — `Projectile.cs:2735`: the Spear Trap's spear (186)
+            // sets `ignoreWater = true` (the row landed with the 37 arm).
+            || kind == TRAP_SPEAR
+            // W4-d4 — `Projectile.cs:2748`: the flame jet (187) sets
+            // `ignoreWater = true` (the row landed with the 38 arm).
+            || kind == FLAMETHROWER_TRAP
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -6261,6 +6630,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // the whip sets NONE (`DefaultToWhip` `:10704-10718`). The bombs
         // (28/29/37/519) and the Crystal Storm item 518's proj set none.
         melee: YOYO_KINDS.contains(&kind)
+            // W4-d10 — the counterweights ride `DefaultToYoyo` too
+            // (`Projectile.cs:6089` → `:10770`).
+            || is_counterweight(kind)
             || FLAIL_KINDS.contains(&kind)
             || matches!(
                 kind,
@@ -6271,9 +6643,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // yoyo on-hit shots (1125/1130/1134/1135,
                 // `:10535`/`:10605`/`:10648`/`:10661`), the flail helpers
                 // (248/405/928, `:3312`/`:4866`/`:8801`).
+                // S1-E-21h d75 part 5 — the Meowmere star (502, `:5738`).
+                // S1-E-21h d75 part 6 — the 19 phaseblade/phaser kinds
+                // (`ProjectileID.cs:192`'s `IsAPhaseblade` set; the melee
+                // writes `:10013`/`:10029`/`:10054`).
                 ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG
                     | SWORD_BEAM | TERRA_BEAM | LIGHT_BEAM | NIGHT_BEAM | ENCHANTED_BEAM
-                    | LIGHTS_BANE | TERRARIAN_BEAM
+                    | LIGHTS_BANE | TERRARIAN_BEAM | MEOWMERE
+                    | 1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
                     // PROJ-171 retire: the 978 Volcano's `melee = true`
@@ -6281,6 +6658,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (keep-d12c — d12c's 9e668d0f0 owns the 978 melee flag).
                     // W4-d9 — the InfluxWaver's melee wave (`Projectile.cs:5234`).
                     | INFLUX_WAVER
+                    // W4-f20 F3 — the Sky Dragon's Fury circle 1110's
+                    // `this.melee = true` (`Projectile.cs:10348`).
+                    | SKY_DRAGONS_FURY_ELECTROSPHERE
+                    // W4-g2 (d5 F6): the Partisan's orb sets `melee = true`
+                    // (`Projectile.cs:3157`). The 228/732 siblings set it too
+                    // (`:3144`/`:7713`) — the W4-g2 reconciliation round closes
+                    // the recorded gap (the spore cloud 228 and the Thunder
+                    // Spear's bolt 732 join the melee census).
+                    | CHLOROPHYTE_ORB | CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT
                     // W4-d1 — `Projectile.cs:5752`: the Star Wrath star's
                     // `melee = true` (the Starfury 9's `:893` is the S1-P-i22
                     // row's documented drop — the 503 carries it verbatim).
@@ -6317,6 +6703,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (1131, `:10620`); the strike's crit-comparison flip
                     // (`:14343-14345`) overwrites the slot flags at spawn.
                     | SNAPPING_STONE_MELEE_EFFECT
+                    // W4-d9 — the InfluxWaver's melee wave (`Projectile.cs:5234`).
+                    | INFLUX_WAVER
+                // W4-d10 — the Chlorophyte Claymore's spore cloud (1128,
+                // `:10572`) and the Ichor Flask's splash (524, `:5948`).
+                    | SPORE_CLOUD | ICHOR_SPLASH
             ),
         ranged: matches!(
             kind,
@@ -6361,6 +6752,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-e7 lane 23 — the Snapping Stone ranged effect (1121,
             // `:10500`); the summon effect 1132 sets NO class (`:10624-10635`).
                 | SNAPPING_STONE_EFFECT
+            // W4-d10 — the Nail Gun's nail (514, `:5849`) and the Toxic
+            // Flask's bubble (523, `:5935`).
+                | NAIL_FRIENDLY | TOXIC_BUBBLE
         ),
         magic: matches!(
             kind,
@@ -6398,6 +6792,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | SPIRIT_HEAL
                 | VENOM_FANG | FROST_BOLT | TYPHOON | LEAF
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
+                // The Arcanum's death shard (620, `:6687`) — d77 + d78's
+                // co-claim, ONE set member at the merge (the two constants
+                // alias kind 620, research/372 §3).
+                | NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
                 // W4-c3 — the Shadowflames bolt's `magic = true`
@@ -6417,6 +6815,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // Arc Surge (1122, `:10443`) + the Glacier Fang shot (1115,
                 // `:10407`). The 1091 trap sets NO magic flag (`:10175-10185`).
                 | LIGHTNING_STRIKE_SHOT | ARC_SURGE | GLACIER_FANG_SHOT
+                // W4-g1 lane a — the Crystal Serpent pair's `magic = true`
+                // (`Projectile.cs:5914`/`:5925`).
+                | CRYSTAL_PULSE | CRYSTAL_PULSE_2
                 // W4-g2 (d5 F5/F4/F1): the blood drop 245 (`Projectile.cs:
                 // 3284`), the hostile inferno pair 290/291/292 (`:3799`/
                 // `:3811`/`:3822`). The 294/239 siblings' magic writes were
@@ -6727,13 +7128,30 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // W4-c11 — `Main.cs:8532`: the Martian Turret bolt's 4-frame sheet.
         435 => 4,
         436 => 4,
+        // W4-f20 F3 — the Electrosphere sphere 443 + the Sky Dragon's Fury
+        // circle 1110 share the 4-frame sheet (`Main.cs:8536`/`:8559`); the
+        // aiStyle-77 pulse's 3-tick frame machine wraps at 4
+        // (`Projectile.cs:30724-30733`).
+        443 | SKY_DRAGONS_FURY_ELECTROSPHERE => 4,
         447 => 4,
         448 => 3,
         450 => 5,
         454 => 2,
         456 => 4,
         462 => 5,
+        // W4-f20 slice D — the Hellwing bat's 5-frame sheet
+        // (`Main.cs:8482`); the AI_001 rotation tail's 2-tick frame
+        // machine wraps at 5 (`Projectile.cs:57716-57725`).
+        HELLWING => 5,
         519 => 4,
+        // W4-d10 — the aiStyle-92/94/97/100 sheets: the Coin Portal's
+        // 4-frame spin (`Main.cs:8486`), the Flying Piggy Bank's 5-frame
+        // flap (`:8479`), the Medusa Head's 12-frame charge (`:8548`), the
+        // spore cloud's 5-frame first-tick roll (`:8726`).
+        518 => 4,
+        525 => 5,
+        535 => 12,
+        1128 => 5,
         574 => 2,
         601 => 2,
         645 => 7,
@@ -6894,6 +7312,14 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The 968's 24-frame sheet (`Main.cs:8706`) — the arm's
         // `frame = (int)ai[1]` pin (`Projectile.cs:23238`) reads it.
         968 => 24,
+        // W4-d78 batch 2 — the Kill child-spawn family's sheets: the Stynger
+        // shrapnel's 5 rows (`Main.cs:8610`; the aiStyle-2 arm has no frame
+        // writer for it, the slice reads frame 0) and the Bone Shard's 2 rows
+        // (`Main.cs:8562`; the AI_001 first-tick `frame = Next(2)` roll,
+        // `Projectile.cs:54016-54020`). The Stynger bolt 246 and the Arcanum
+        // shard 620 keep the stock 1 (no `projFrames` override).
+        STYNGER_SHRAPNEL => 5,
+        BONE_SHARD => 2,
         // The Frost Moon family (S1-D-4): the present's 2-frame sheet
         // (`Main.cs:8529`) — AI()'s aiStyle-58 arm pins frame 0/1
         // (`Projectile.cs:28915`/`:28928`); the frost shard's 5-frame sheet
@@ -7146,6 +7572,11 @@ mod tests {
         for k in [42, 65, 68, 354, 85, 117, 469, 485, 495, 819, 615, 630, 705, 714, 932] {
             assert_eq!(flags(k), (false, true, false), "kind {k}");
         }
+        // W4-d78 batch 2 — the Kill child-spawn family's ranged kinds
+        // (246/249 `:3295`/`:3320`, 1124 `:10523`).
+        for k in [STYNGER, STYNGER_SHRAPNEL, BONE_SHARD] {
+            assert_eq!(flags(k), (false, true, false), "kind {k}");
+        }
         for k in (133..=144).chain(338..=341).chain(715..=718) {
             assert_eq!(flags(k), (false, true, false), "kind {k}");
         }
@@ -7181,6 +7612,8 @@ mod tests {
         assert_eq!(flags(SKY_FRACTURE), (false, false, true));
         assert_eq!(flags(LAST_PRISM), (false, false, true));
         assert_eq!(flags(LEAF), (false, false, true));
+        // W4-d78 batch 2 — the Arcanum's death shard (620, `:6687`).
+        assert_eq!(flags(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD), (false, false, true));
         // The melee families: yoyos (DefaultToYoyo), flails (DefaultToFlail),
         // the boomerangs, the sword beams, the yoyo on-hit shots.
         assert_eq!(flags(WOOD_YOYO), (true, false, false));
@@ -7335,36 +7768,55 @@ mod tests {
     /// the cited `Projectile.cs` lines; the stock defaults (`:714-715`,
     /// `:764`, `:774-775`, `:779`, `:785`, `:787`) stand where the arm writes
     /// nothing. WRITTEN, NOT RUN (code-only mode).
+    /// W4-d78 batch 2 — the Kill child-spawn family's rows (WRITTEN, NOT RUN
+    /// — code-only mode). Each is the verbatim `SetDefaults` slice against
+    /// the C# arm cited per row; the class flags and frame counts ride the
+    /// census pins above.
     #[test]
-    fn w4_d8_the_proj_ai_71_80_missing_rows_match_set_defaults() {
-        // The aiStyle-72 Bubble (410, `:4917-4932`): 14x14, penetrate 1,
-        // timeLeft 100, alpha 255, magic, ignoreWater; the stock tileCollide
-        // true (`:775`) and extraUpdates 0 stand. The remix `armorPenetration
-        // = 20` arm (`:4928-4931`) is unported (no remix flag).
-        let b = proj_data(BUBBLE).unwrap();
-        assert_eq!((b.w, b.h), (14.0, 14.0));
-        assert_eq!(b.ai_style, 72);
-        assert_eq!(b.penetrate, 1);
-        assert_eq!(b.time_left, 100);
-        assert_eq!(b.alpha, 255);
-        assert_eq!(b.extra_updates, 0);
-        assert!(b.tile_collide);
-        assert!(b.magic);
-        assert!(b.ignore_water);
-        // The aiStyle-73 firework fountains (419-422, `:4951-4959`): 4x4,
-        // the idStatic-3 pair, the stock penetrate 1 / tileCollide true,
-        // timeLeft 600 (the `NewProjectile` seed `:11033-11048`). NO class
-        // flag (`:4951-4959` sets none).
-        for k in FIREWORK_FOUNTAINS {
-            let d = proj_data(k).unwrap();
-            assert_eq!((d.w, d.h), (4.0, 4.0), "kind {k}");
-            assert_eq!(d.ai_style, 73, "kind {k}");
-            assert_eq!(d.penetrate, 1, "kind {k}");
-            assert_eq!(d.time_left, 600, "kind {k}");
-            assert!(d.tile_collide, "kind {k}");
-            assert!(d.uses_id_static_immunity, "kind {k}");
-            assert_eq!(d.id_static_hit_cooldown, 3, "kind {k}");
-            assert_eq!((d.melee, d.ranged, d.magic), (false, false, false), "kind {k}");
+    fn w4_d78_b2_the_child_spawn_family_rows_match_set_defaults() {
+        // The Stynger bolt (246, `:3289-3298`): 10x10 aiStyle 1, ranged,
+        // alpha 255, extraUpdates 1, the stock penetrate 1 / 3600 / collide.
+        let d = proj_data(STYNGER).expect("the 246 row");
+        assert_eq!((d.w, d.h, d.ai_style), (10.0, 10.0, 1));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 3600, 1));
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 255);
+        assert_eq!((d.melee, d.ranged, d.magic), (false, true, false));
+        assert!(!d.arrow && !d.trap);
+        // The Stynger shrapnel (249, `:3314-3321`): 12x12 aiStyle 2, ranged,
+        // the stock penetrate 1 / 3600 / collide, alpha at the 0 reset.
+        let d = proj_data(STYNGER_SHRAPNEL).expect("the 249 row");
+        assert_eq!((d.w, d.h, d.ai_style), (12.0, 12.0, 2));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 3600, 0));
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 0);
+        assert_eq!((d.melee, d.ranged, d.magic), (false, true, false));
+        // The Arcanum death shard (620, `:6681-6690`): 8x8 aiStyle 29, magic,
+        // alpha 255, penetrate 1, the stock 3600 / collide.
+        let d = proj_data(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD).expect("the 620 row");
+        assert_eq!((d.w, d.h, d.ai_style), (8.0, 8.0, 29));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 3600, 0));
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 255);
+        assert_eq!((d.melee, d.ranged, d.magic), (false, false, true));
+        // The Bone Shard (1124, `:10514-10527`): 6x6 aiStyle 1, ranged,
+        // penetrate 1, timeLeft 600, extraUpdates 1, scale 0.95 (the LAST
+        // write wins over the 1.2 double-set), alpha at the 0 reset.
+        let d = proj_data(BONE_SHARD).expect("the 1124 row");
+        assert_eq!((d.w, d.h, d.ai_style), (6.0, 6.0, 1));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 600, 1));
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 0);
+        assert_eq!(d.scale, 0.95);
+        assert_eq!((d.melee, d.ranged, d.magic), (false, true, false));
+        // The frame slices: 249 = 5, 1124 = 2; 246/620 keep the stock 1.
+        assert_eq!(proj_frames(STYNGER_SHRAPNEL), 5);
+        assert_eq!(proj_frames(BONE_SHARD), 2);
+        assert_eq!(proj_frames(STYNGER), 1);
+        assert_eq!(proj_frames(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD), 1);
+        // Every child kind reaches the spawner (the rows are not dead data).
+        for k in [STYNGER, STYNGER_SHRAPNEL, NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD, BONE_SHARD] {
+            assert!(spawnable_kinds().contains(&k), "kind {k} packs its sheet");
         }
         // The aiStyle-74 Scutlix laser (434, `:5047-5055`): 1x1, extraUpdates
         // 100, penetrate −1, the stock timeLeft 3600 / tileCollide true.
@@ -7389,6 +7841,32 @@ mod tests {
         }
     }
     }
+
+    /// W4-d78 FINAL — the 620-row co-claim equivalence pin (WRITTEN, NOT RUN
+    /// — code-only mode). d77's Kill-host wave (`0573b70f`, tip `5f10560b`)
+    /// rows the SAME kind as `NEBULA_ARCANUM_SHARD` (its data.rs:1058/:2833):
+    /// `(8, 8, 29, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
+    /// (false, -2, false, -1, 255, 1.0))` — field-for-field THIS row. The
+    /// merge keeps ONE row/const (research/372 §3); this witness pins the
+    /// values both sides carry so either survivor passes it verbatim.
+    #[test]
+    fn w4_d78_final_the_shard_row_matches_the_d77_co_claim() {
+        let d = proj_data(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD).expect("the 620 row");
+        // d77's tuple, term by term (its data.rs:2833).
+        assert_eq!((d.w, d.h), (8.0, 8.0));
+        assert_eq!(d.ai_style, 29);
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert!(!d.melee && !d.ranged && d.magic);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.scale, 1.0);
+        // The stock immunity tuple both rows carry (no local pair, no
+        // id-static, alpha 255 — the AI_029 fuse kills at 40 ticks).
+        assert!(!d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, -2);
+        assert!(!d.uses_id_static_immunity);
     /// W4-g2 (d5 F1/F4/F5/F6) — the nine rowless kinds' `SetDefaults`
     /// slices, WRITTEN NOT RUN (code-only mode): every value re-read from
     /// the cited C# arms. (w, h, aiStyle, penetrate, timeLeft, extraUpdates,
@@ -7498,6 +7976,69 @@ mod tests {
         // the 19 phaseblades need the AI_003 machine, the 491 needs _Old.
         for kind in [1059, 1065, 1074, 1075, 1076, 1101, 1102, 491] {
             assert!(proj_data(kind).is_none(), "kind {kind} stays rowless (task-seed)");
+
+        }        // The merge compose: d75 part 6 ROWED + MACHINED the 19 phaseblades
+        // (the AI_003 machine landed with the rows — the g2d task-seed
+        // RETIRED, research/32's SEAL). Only the 491 keeps its rowless
+        // seed (the _Old machine is still owed).
+        for kind in [1059, 1065, 1074, 1075, 1076, 1101, 1102] {
+            assert!(proj_data(kind).is_some(), "kind {kind} rowed by d75 part 6");
+        }
+        assert!(proj_data(491).is_none(), "the 491 stays rowless (task-seed)");
+    }
+    /// W4-d8 — the aiStyle-72/73/74/76 rows keep their verbatim `SetDefaults`
+    /// slices (the data half of the census). Every value is hand-derived from
+    /// the cited `Projectile.cs` lines; the stock defaults (`:714-715`,
+    /// `:764`, `:774-775`, `:779`, `:785`, `:787`) stand where the arm writes
+    /// nothing. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d8_the_proj_ai_71_80_missing_rows_match_set_defaults() {
+        // The aiStyle-72 Bubble (410, `:4917-4932`): 14x14, penetrate 1,
+        // timeLeft 100, alpha 255, magic, ignoreWater; the stock tileCollide
+        // true (`:775`) and extraUpdates 0 stand. The remix `armorPenetration
+        // = 20` arm (`:4928-4931`) is unported (no remix flag).
+        let b = proj_data(BUBBLE).unwrap();
+        assert_eq!((b.w, b.h), (14.0, 14.0));
+        assert_eq!(b.ai_style, 72);
+        assert_eq!(b.penetrate, 1);
+        assert_eq!(b.time_left, 100);
+        assert_eq!(b.alpha, 255);
+        assert_eq!(b.extra_updates, 0);
+        assert!(b.tile_collide);
+        assert!(b.magic);
+        assert!(b.ignore_water);
+        // The aiStyle-73 firework fountains (419-422, `:4951-4959`): 4x4,
+        // the idStatic-3 pair, the stock penetrate 1 / tileCollide true,
+        // timeLeft 600 (the `NewProjectile` seed `:11033-11048`). NO class
+        // flag (`:4951-4959` sets none).
+        for k in FIREWORK_FOUNTAINS {
+            let d = proj_data(k).unwrap();
+            assert_eq!((d.w, d.h), (4.0, 4.0), "kind {k}");
+            assert_eq!(d.ai_style, 73, "kind {k}");
+            assert_eq!(d.penetrate, 1, "kind {k}");
+            assert_eq!(d.time_left, 600, "kind {k}");
+            assert!(d.tile_collide, "kind {k}");
+            assert!(d.uses_id_static_immunity, "kind {k}");
+            assert_eq!(d.id_static_hit_cooldown, 3, "kind {k}");
+            assert_eq!((d.melee, d.ranged, d.magic), (false, false, false), "kind {k}");
+        // The aiStyle-74 Scutlix laser (434, `:5047-5055`): 1x1, extraUpdates
+        // 100, penetrate −1, the stock timeLeft 3600 / tileCollide true.
+        let s = proj_data(SCUTLIX_LASER_FRIENDLY).unwrap();
+        assert_eq!((s.w, s.h), (1.0, 1.0));
+        assert_eq!(s.ai_style, 74);
+        assert_eq!(s.extra_updates, 100);
+        assert_eq!(s.penetrate, -1);
+        assert_eq!(s.time_left, 3600);
+        assert!(s.tile_collide);
+        // The aiStyle-76 mount crosshairs (441/453, `:5117-5125`/`:5250-5258`):
+        // 1x1, tileCollide false, ignoreWater; the stock penetrate 1 /
+        // timeLeft 3600 / friendly false (`:788`, held by the arm).
+        for k in MOUNT_CROSSHAIRS {
+            assert_eq!((d.w, d.h), (1.0, 1.0), "kind {k}");
+            assert_eq!(d.ai_style, 76, "kind {k}");
+            assert!(!d.tile_collide, "kind {k}");
+            assert!(d.ignore_water, "kind {k}");
+            assert_eq!(d.time_left, 3600, "kind {k}");
         }
 
         }    /// W4-c11 witness — `Projectile.cs:5056-5063`: the Martian Turret's
@@ -7528,3 +8069,4 @@ mod tests {
 // balance-close (union shared delimiter)
 }
 }
+}}

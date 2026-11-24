@@ -460,6 +460,63 @@ impl AchievementManager {
         self.notify(CondKind::Custom(flag))
     }
 
+    /// `Main.Achievements.GetCondition(row, name).Complete()`
+    /// (`AchievementsHelper.cs`'s `HandleSpecialEvent` arms) — the ROW-NAMED
+    /// complete the broadcast `notify_custom` cannot express: nine rows
+    /// share the `CustomFlagCondition("Use")` key (`achievements_data.rs` —
+    /// STAR_POWER, GET_A_LIFE, NOT_THE_BEES, THROWING_LINES,
+    /// RAINBOWS_AND_UNICORNS, TOPPED_OFF, FLY_A_KITE_ON_A_WINDY_DAY,
+    /// DRINK_BOTTLED_WATER_WHILE_DROWNING, GAIN_TORCH_GODS_FAVOR); a
+    /// special event completes EXACTLY its own row's condition
+    /// (`AchievementCondition.Complete()` sets the flag and fires the
+    /// row's `OnConditionComplete`, `Achievement.cs:93-108`), not every
+    /// listener of the key. (The potions.rs drowning arm's broadcast
+    /// `notify_custom("Use")` predates this seam — its over-completion is
+    /// the recorded deviation to fix when the special-event dispatcher
+    /// absorbs it.) W4-f33.
+    pub fn complete_condition(&mut self, row: &str, cond: &str) -> Option<&'static str> {
+        let mut done = None;
+        {
+            let a = self.list.iter_mut().find(|a| a.name == row)?;
+            if a.completed {
+                return None;
+            }
+            let c = a
+                .conditions
+                .iter_mut()
+                .find(|c| c.name == cond && !c.completed)?;
+            c.value = c.max;
+            c.completed = true;
+            if a.is_completed() {
+                a.completed = true;
+                done = Some(a.name);
+            }
+        }
+        // `AchievementCompleted` (`AchievementManager.cs:180-187`): Save()
+        // then the OnAchievementCompleted event — outside the list borrow.
+        if let Some(name) = done {
+            self.save();
+            self.completed_events.push(name);
+        }
+        done
+    }
+
+    /// `AchievementsHelper.HandleSpecialEvent(player, eventID)`
+    /// (`AchievementsHelper.cs:282-380`) — the `whoAmI != Main.myPlayer`
+    /// head folds (the port's single player). The ported arms: 24 (the
+    /// 5043 favor use, `:367-369` — GAIN_TORCH_GODS_FAVOR's "Use", W4-f33).
+    /// The other event ids' systems are unported (their rows stay open —
+    /// the f30 tail census's CITED sites); an unknown id is a no-op like
+    /// the C# switch's missing default. The `Main.netMode` fan-outs
+    /// (`:1-2`'s TOPPED_OFF double-check reads statLifeMax/statManaMax)
+    /// arrive with their own systems.
+    pub fn handle_special_event(&mut self, event_id: i32) -> Option<&'static str> {
+        match event_id {
+            24 => self.complete_condition("GAIN_TORCH_GODS_FAVOR", "Use"),
+            _ => None,
+        }
+    }
+
     /// `((CustomIntCondition)Main.Achievements.GetCondition(row, name)).Value++`
     /// / `+= amount` (`AchievementsHelper.cs:403`, `:413-417`, `:427`).
     pub fn notify_custom_int(&mut self, name: &'static str, amount: i32) -> Option<&'static str> {
@@ -800,6 +857,77 @@ mod tests {
         // FREQUENT_FLYER's `Pay` float shares the implementation.
         assert_eq!(m.notify_custom_float("Pay", 9_999.5), None);
         assert_eq!(m.notify_custom_float("Pay", 0.5), Some("FREQUENT_FLYER"));
+    }
+
+    /// W4-f33 — the torch-god achievement census: `GAIN_TORCH_GODS_FAVOR`
+    /// is a `CustomFlagCondition("Use")` row (`AchievementInitializer.cs:360-362`),
+    /// NOT a progression event — the f30 tail census's progression ids
+    /// (21/33-46) never name it. The ONLY notify site is the 5043 use's
+    /// `HandleSpecialEvent(24)` (`Player.cs:45233` → `AchievementsHelper.cs:367-369`);
+    /// the event-end survival grant (`TorchAttack` `:17870-17873`, the 5043
+    /// drop) fires NO achievement in the C#. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f33_the_torch_god_row_is_a_use_flag_not_a_progression() {
+        let m = AchievementManager::registry();
+        let row = m
+            .list
+            .iter()
+            .find(|a| a.name == "GAIN_TORCH_GODS_FAVOR")
+            .unwrap();
+        // The initializer's one condition: `CustomFlagCondition.Create("Use")`
+        // (`AchievementInitializer.cs:361`) — the dictionary key is "Use".
+        assert_eq!(row.conditions.len(), 1);
+        assert_eq!(row.conditions[0].name, "Use");
+        assert_eq!(row.conditions[0].kind, CondKind::Custom("Use"));
+        // No progression id completes it (the event-end grant is silent).
+        let mut m = AchievementManager::registry();
+        for id in [21u32, 24, 29, 33, 45] {
+            assert_eq!(m.notify_progression(id), None, "progression {id}");
+        }
+        assert!(!m
+            .list
+            .iter()
+            .any(|a| a.name == "GAIN_TORCH_GODS_FAVOR" && a.completed));
+    }
+
+    /// W4-f33 — `HandleSpecialEvent(24)` completes EXACTLY the torch row:
+    /// the nine `CustomFlagCondition("Use")` rows share the key, so the
+    /// broadcast `notify_custom("Use")` would over-complete (the potions
+    /// drowning arm's recorded deviation). The named seam is the C#'s
+    /// `GetCondition("GAIN_TORCH_GODS_FAVOR", "Use").Complete()`.
+    #[test]
+    fn w4_f33_special_event_24_completes_only_the_torch_row() {
+        let mut m = AchievementManager::registry();
+        assert_eq!(
+            m.handle_special_event(24),
+            Some("GAIN_TORCH_GODS_FAVOR")
+        );
+        // The other eight "Use" rows stay open (STAR_POWER, GET_A_LIFE,
+        // NOT_THE_BEES, THROWING_LINES, RAINBOWS_AND_UNICORNS, TOPPED_OFF,
+        // FLY_A_KITE_ON_A_WINDY_DAY, DRINK_BOTTLED_WATER_WHILE_DROWNING).
+        for name in [
+            "STAR_POWER",
+            "GET_A_LIFE",
+            "NOT_THE_BEES",
+            "THROWING_LINES",
+            "RAINBOWS_AND_UNICORNS",
+            "TOPPED_OFF",
+            "FLY_A_KITE_ON_A_WINDY_DAY",
+            "DRINK_BOTTLED_WATER_WHILE_DROWNING",
+        ] {
+            assert!(
+                !m.list.iter().any(|a| a.name == name && a.completed),
+                "{name} must stay open"
+            );
+        }
+        // The completion event queued once; a second 24 is a no-op (the
+        // row is already complete — `AchievementCondition.Complete()` on a
+        // completed condition fires nothing, `Achievement.cs:93-108`).
+        assert_eq!(m.take_completed_events(), vec!["GAIN_TORCH_GODS_FAVOR"]);
+        assert_eq!(m.handle_special_event(24), None);
+        assert!(m.take_completed_events().is_empty());
+        // An unported event id is a no-op (the C# switch's missing default).
+        assert_eq!(m.handle_special_event(99), None);
     }
 
     /// S1-E-18: `NPCKilledCondition.CreateMany` (`NPCKilledCondition.cs:70-79`)

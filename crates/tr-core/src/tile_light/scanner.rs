@@ -142,6 +142,10 @@ fn torch_lights(
                         p.disco[1] as f32 / 255.0,
                         p.disco[2] as f32 / 255.0,
                     ],
+                    // `:1095` — `G = 1.2824999f` VERBATIM (W4-f33c: the
+                    // rounded 1.2825 is a DIFFERENT f32 — 0x3fa428f6 vs the
+                    // C#'s 0x3fa428f5, one ULP; the Ultra Bright campfire's
+                    // green channel must not drift).
                     6 => [0.75, 1.2824999, 1.2],
                     7 => [0.95, 0.65, 1.3],
                     8 => [1.4, 0.85, 0.55],
@@ -1311,6 +1315,76 @@ mod tests {
         // 235 (Teleporter) is NOT lighted in C# (no tileLighted[235] write);
         // its `case 235` (`:1010`) is dead code in vanilla too — keep it dark.
         close(lit(&tile(235, 0, 0), 5, 5, &p), [0.0; 3]);
+    /// W4-f33c — the campfire biome-variant light census
+    /// (`TileLightScanner.cs:1062-1151`): every `frameX / 54` column's RGB,
+    /// the flicker term `Next(28, 42) * 0.005 + (270 - mouseTextColor)/700`
+    /// added to ALL channels, and the frameY < 36 lit gate. The columns are
+    /// what `BiomeCampfirePlaceStyle`'s conversion picks (W4-f33c's
+    /// placement half). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f33c_the_campfire_biome_columns_light_their_verbatim_rgbs() {
+        // Freeze the two animated inputs so the columns are exact:
+        // mouseTextColor is a u8 — 255 is its cap, so δ = (270-255)/700 ≈
+        // 0.0214286 rides EVERY flicker term; the draw is in [28, 42) →
+        // n in [0.1614, 0.2265). demon_torch 0 pins column 2's red/blue.
+        let mut p = LightParams::default();
+        p.mouse_text_color = 255;
+        p.demon_torch = 0.0;
+        p.disco = [51, 102, 153];
+        // (style, base RGB) — the C# switch verbatim; column 15 rides
+        // TorchColor(23) and column 2 the demon blend, checked separately.
+        let columns: [(i16, [f32; 3]); 13] = [
+            (0, [0.9, 0.3, 0.1]),    // default (`:1141-1145`)
+            (1, [0.7, 1.0, 0.5]),    // `:1068-1072`
+            (3, [0.45, 0.75, 1.0]),  // `:1078-1082`
+            (4, [1.15, 1.15, 0.5]),  // `:1083-1087`
+            (5, [51.0 / 255.0, 102.0 / 255.0, 153.0 / 255.0]), // `:1088`
+            (6, [0.75, 1.2824999, 1.2]), // `:1093-1097` — the ULP pin
+            (7, [0.95, 0.65, 1.3]),  // `:1098-1102`
+            (8, [1.4, 0.85, 0.55]),  // `:1103-1107`
+            (9, [0.25, 1.3, 0.8]),   // `:1108-1112`
+            (10, [0.95, 0.4, 1.4]),  // `:1113-1117`
+            (11, [1.4, 0.7, 0.5]),   // `:1118-1122`
+            (12, [1.25, 0.6, 1.2]),  // `:1123-1127`
+            (13, [0.75, 1.45, 0.9]), // `:1128-1132`
+        ];
+        for (style, base) in columns {
+            let c = lit(&tile(215, style * 54, 0), 5, 5, &p);
+            for i in 0..3 {
+                let d = c[i] - base[i];
+                // The flicker band [0.1614, 0.2265) widened to
+                // [0.160, 0.228]: the base + n add rounds per channel
+                // (large bases quantise coarser than the flicker's f32
+                // steps). Verified over every base × draw 28..41.
+                assert!(
+                    (0.160..0.228).contains(&d),
+                    "style {style} channel {i}: {c:?} vs {base:?} (flicker {d})"
+                );
+            }
+        }
+        // Column 14 (`:1133-1137`): [0.25, 0.65, 1.0].
+        let c = lit(&tile(215, 14 * 54, 0), 5, 5, &p);
+        for (i, b) in [0.25, 0.65, 1.0].iter().enumerate() {
+            assert!((0.160..0.228).contains(&(c[i] - b)), "style 14 {c:?}");
+        }
+        // Column 2 (`:1073-1077`): demon blend at demon_torch 0 → [1, .3, .5].
+        let c = lit(&tile(215, 2 * 54, 0), 5, 5, &p);
+        for (i, b) in [1.0, 0.3, 0.5].iter().enumerate() {
+            assert!((0.160..0.228).contains(&(c[i] - b)), "style 2 {c:?}");
+        }
+        // Column 15 (`:1138-1140`): TorchColor(23) — the shimmer provider
+        // at mouseTextColor 255: num = 0.9 + 15/900 ≈ 0.91667, num2 clamps
+        // to 1.0 → [0.825, 0.55, 1.1].
+        let c = lit(&tile(215, 15 * 54, 0), 5, 5, &p);
+        for (i, b) in [0.825, 0.55, 1.1].iter().enumerate() {
+            assert!((0.160..0.228).contains(&(c[i] - b)), "style 15 {c:?}");
+        }
+        // The 1.2824999f ULP pin: the port's literal must BE the C#'s f32
+        // (0x3fa428f5), not the rounded 1.2825 (0x3fa428f6).
+        assert_eq!(1.2824999f32.to_bits(), 0x3fa428f5);
+        // The lit gate (`:1063`): frameY >= 36 is the extinguished pair —
+        // NO light, and no flicker draw either (the whole arm is gated).
+        close(lit(&tile(215, 6 * 54, 36), 5, 5, &p), [0.0; 3]);
     }
 
     #[test]
@@ -1660,4 +1734,5 @@ mod tests {
         apply_tile_light(&w, &tile(238, 0, 18), 5, 5, &mut rng, &p, &mut c);
         close(c, [0.5, 0.9, 0.5]);
     }
+}
 }

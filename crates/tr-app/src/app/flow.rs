@@ -430,6 +430,16 @@ pub(crate) struct FrontDraw<'a> {
     /// The Advanced tab's Everything-icon glitch state
     /// (`App.world_advanced_glitch` — the `ProvideUIElement` closure).
     pub(crate) everything_glitch: ui::world_creation_advanced::EverythingGlitch,
+    /// W4-e10 — the creation screen's voice-picker audio seam (the pitch
+    /// bar's Menu_Tick + the `PlayVoicePreview` hurt cue); W4-g22 DOC-SWEEP
+    /// — the same seam carries the HSL bars' DrawSelf-time cues
+    /// (`UIColoredSlider`'s hover/usage latches play inside the draw pass
+    /// in the C#, `UIColoredSlider.cs:85`/`:136`). The other screens leave
+    /// it untouched.
+    pub(crate) audio: &'a mut crate::audio::Audio,
+    /// W4-e10 — the bare-`Main.rand` stand-in for the creation screen's voice
+    /// plays (the front end runs outside every world swap).
+    pub(crate) rng_global: &'a mut tr_core::UnifiedRandom,
 }
 
 /// The five front screens' behaviour surface — the C# `UIState` shape: the
@@ -508,6 +518,36 @@ fn world_play_click(app: &mut App, i: usize) -> Option<FlowClick> {
     }
 }
 
+/// W4-e10 — `PlayVoicePreview`'s audio drain (`UICharacterCreation.cs:1517-
+/// 1527`): resolve the draft's voice through the SAME `PlayHurtSound` tail
+/// the world drain uses ([`ui::char_creation::preview_voice`]) and play it
+/// unpositioned (`(-1,-1)`, the C#'s position swap). The gameplay draws ride
+/// the bare-`Main.rand` stand-in (the creation screen runs outside every
+/// world swap); the style façades' `GetRandomPitch` NextFloat rides the
+/// audio-only stream inside `play_voice_style`. Shared by the draw-side
+/// debounce preview and the click-side cycle/play/gender previews.
+pub(crate) fn drain_voice_preview(
+    audio: &mut crate::audio::Audio,
+    rng: &mut tr_core::UnifiedRandom,
+    draft: &ui::char_creation::NewPlayerDraft,
+) {
+    match ui::char_creation::preview_voice(draft) {
+        Some(crate::player::HurtVoice::Male(pitch)) => {
+            audio.play_hurt_sound(pitch, rng);
+        }
+        Some(crate::player::HurtVoice::Female(pitch)) => {
+            audio.play_female_hurt_sound(pitch, rng);
+        }
+        Some(crate::player::HurtVoice::Style(name, pitch)) => {
+            audio.play_voice_style(name, -1.0, -1.0, pitch, rng);
+        }
+        // A fresh draft never reaches the stoned/override/mount/chicken/Npc
+        // arms (`preview_voice` runs only the default tail); an unhandled
+        // variant falls through silently like the C#.
+        _ => {}
+    }
+}
+
 impl FrontScreenBehaviours for FrontScreen {
     fn header(&self) -> String {
         match self {
@@ -559,7 +599,7 @@ impl FrontScreenBehaviours for FrontScreen {
                 // categories, the one middle menu, Back/Create and the hover
                 // tooltip. The HSL drag runs inside (the `CurrentLockedSlider`
                 // latch) off `front_mouse_down`.
-                ui::char_creation::draw(
+                let (cues, highlight) = ui::char_creation::draw(
                     d.renderer,
                     d.lookups,
                     d.player_assets,
@@ -569,6 +609,29 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.mouse,
                     d.front_mouse_down,
                 );
+                // W4-e10 — the voice-picker cues: the pitch bar's Menu_Tick
+                // (12) and the `PlayVoicePreview` hurt cue (`:1517-1527`),
+                // both on the bare-`Main.rand` stand-in (the front end runs
+                // outside every world swap).
+                if cues.menu_tick {
+                    d.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                }
+                if cues.preview {
+                    drain_voice_preview(d.audio, d.rng_global, &state.draft);
+                }
+                // W4-g22 DOC-SWEEP — the HSL bars' DrawSelf cue latches
+                // (`UIColoredSlider.cs:136` hover-enter / `:85` drag-start,
+                // 12 each): the highlight the drag pass just derived feeds
+                // `hsl_slider_cues`, the plays run here (the draw itself
+                // stays audio-free, the App owns the seam).
+                let hsl_cues = ui::char_creation::hsl_slider_cues(
+                    state,
+                    highlight,
+                    d.front_mouse_down,
+                );
+                for _ in 0..hsl_cues {
+                    d.audio.play("Menu_Tick");
+                }
             }
             FrontScreen::WorldCreation(draft) => {
                 // `Main.MenuUI.Draw`'s `UIWorldCreation` state (`:1024-1033`,
@@ -775,11 +838,30 @@ impl FrontScreenBehaviours for FrontScreen {
                     Create(ui::char_creation::CreationState),
                     Back(ui::char_creation::CreationState),
                 }
+                // W4-e10 — the voice-preview request the click arms raise
+                // (the cycle/play/gender handlers); drained after the borrow
+                // through the audio seam. The per-frame latch lives on the
+                // state (`play_voice_preview`).
+                let mut voice_preview = false;
+                // W4-g22 DOC-SWEEP — the per-site inline cue
+                // (`UICharacterCreation.cs`'s `Click_*` `PlaySound`s,
+                // `click_cue`'s census): the categories and the cloth
+                // variant play 12 before their state write. The click
+                // resolves against the live category first; the play runs
+                // before the borrow block (the audio seam needs the App).
+                let category = match app.front.as_ref() {
+                    Some(FrontScreen::CharCreation(state)) => state.category,
+                    _ => return None,
+                };
+                let click = ui::char_creation::click_at(&l, category, mouse);
+                if let Some(id) = ui::char_creation::click_cue(click) {
+                    crate::chest::play_menu_sound(app, id);
+                }
                 let nav = {
                     let Some(FrontScreen::CharCreation(state)) = app.front.as_mut() else {
                         return None;
                     };
-                    match ui::char_creation::click_at(&l, state.category, mouse) {
+                    match click {
                         // `SelectColorPicker`/`Click_*` (`:1810-1833`): the
                         // picker selects and the middle menu follows
                         // (`middle_for`), seeding `_currentColorHSL` from the
@@ -804,8 +886,11 @@ impl FrontScreenBehaviours for FrontScreen {
                         }
                         // `Click_CharClothStyle` (`:1277-1291`): the armor
                         // guard is out of scope (no armor preview); the
-                        // variant lands and the hair auto-assigns while
-                        // untouched (`TryAutoAssigningHair`, `:630-637`).
+                        // variant lands, the hair auto-assigns while
+                        // untouched (`TryAutoAssigningHair`, `:630-637`), the
+                        // Menu_Tick (12) plays (`:1288`) and
+                        // `UpdateSelectedGender` (`:1290`) runs the voice
+                        // auto-switch + preview (W4-e10).
                         ui::char_creation::Click::ClothStyle(v) => {
                             state.draft.skin_variant = v;
                             if !state.hair_picked {
@@ -815,6 +900,38 @@ impl FrontScreenBehaviours for FrontScreen {
                                     state.draft.hair = hair;
                                 }
                             }
+                            app.audio.play("Menu_Tick"); // `:1288`
+                            ui::char_creation::update_selected_gender(
+                                &mut state.draft,
+                                &mut state.old_male_for_voice,
+                            );
+                            voice_preview = ui::char_creation::play_voice_preview(state);
+                            Nav::None
+                        }
+                        // W4-e10 — `Click_VoiceCycleBack`/`Forward`
+                        // (`:1529-1539`): `CycleVoiceStyle(±1)` + the preview.
+                        ui::char_creation::Click::VoicePrev => {
+                            state.draft.voice_variant =
+                                ui::char_creation::cycle_voice_style(state.draft.voice_variant, -1);
+                            voice_preview = ui::char_creation::play_voice_preview(state);
+                            Nav::None
+                        }
+                        ui::char_creation::Click::VoiceNext => {
+                            state.draft.voice_variant =
+                                ui::char_creation::cycle_voice_style(state.draft.voice_variant, 1);
+                            voice_preview = ui::char_creation::play_voice_preview(state);
+                            Nav::None
+                        }
+                        // W4-e10 — `Click_VoicePlay` (`:1512-1515`): the
+                        // preview alone.
+                        ui::char_creation::Click::VoicePlay => {
+                            voice_preview = ui::char_creation::play_voice_preview(state);
+                            Nav::None
+                        }
+                        // W4-e10 — `Click_VoicePitch` (`:1040-1043`): one
+                        // Menu_Tick; the drag runs in the draw pass.
+                        ui::char_creation::Click::VoicePitch => {
+                            app.audio.play("Menu_Tick"); // `:1042`
                             Nav::None
                         }
                         ui::char_creation::Click::Name => Nav::Name(state.clone()),
@@ -873,16 +990,28 @@ impl FrontScreenBehaviours for FrontScreen {
                             // `Click_RandomizePlayer` runs on the front end —
                             // outside every world swap: the bare-`Main.rand`
                             // stand-in (`app/rng.rs`'s `global`).
+                            app.audio.play("Menu_Tick"); // `:1547`
                             ui::char_creation::randomize_player(
                                 app.rngs.global(),
                                 &mut state.draft,
                                 &mut state.hair_picked,
                             );
+                            // The tail (`:1653-1656`): `Click_CharClothStyle`'s
+                            // `UpdateSelectedGender` + the preview (W4-e10).
+                            ui::char_creation::randomize_player_voice_tail(state);
+                            voice_preview = ui::char_creation::play_voice_preview(state);
                             Nav::None
                         }
                         ui::char_creation::Click::None => Nav::None,
                     }
                 };
+                // W4-e10 — drain the click-side voice preview after the
+                // borrow (the audio seam needs `app` free).
+                if voice_preview {
+                    if let Some(FrontScreen::CharCreation(state)) = app.front.as_ref() {
+                        drain_voice_preview(&mut app.audio, app.rngs.global(), &state.draft);
+                    }
+                }
                 match nav {
                     Nav::None => {}
                     Nav::Name(state) => {
@@ -963,11 +1092,19 @@ impl FrontScreenBehaviours for FrontScreen {
                 let mut nav = Nav::None;
                 let mut flow = None;
                 let mut create_draft: Option<ui::world_creation::NewWorldDraft> = None;
+                // W4-g22 DOC-SWEEP — the per-site inline cue
+                // (`UIWorldCreation.cs`'s handlers + the GroupOptionButton
+                // 12, `click_cue`'s census) plays before the state write;
+                // Back's 11 rides the flow hop instead (Bug 17).
+                let click = ui::world_creation::click_at(&l, mouse);
+                if let Some(id) = ui::world_creation::click_cue(click) {
+                    crate::chest::play_menu_sound(app, id);
+                }
                 {
                     let Some(FrontScreen::WorldCreation(draft)) = app.front.as_mut() else {
                         return None;
                     };
-                    match ui::world_creation::click_at(&l, mouse) {
+                    match click {
                         // `ClickRandomizeName` (`:497-503`): the port's
                         // `AssignRandomWorldName` stand-in re-derives the
                         // name (`:1002-1025`'s composition tables have no
@@ -995,6 +1132,11 @@ impl FrontScreenBehaviours for FrontScreen {
                         ui::world_creation::Click::AdvancedSeed => {
                             flow = Some(FlowClick::WorldAdvancedOpen);
                         }
+                        // source's `int.MaxValue`); the icon's Advanced-tab
+                        // click degrades to the same keyboard (plan
+                        // Uncertainty 4) — its own button 12 already played.
+                        ui::world_creation::Click::Seed
+                        | ui::world_creation::Click::SeedIcon => nav = Nav::Seed(draft.clone()),
                         // `Click_NamingAndCreating` (`:710-724`): an empty
                         // name opens the naming keyboard (`allowEmpty: false`,
                         // 27), a filled one finishes (`:722`).
@@ -1167,11 +1309,35 @@ impl FrontScreenBehaviours for FrontScreen {
                 // handlers): the on-screen keys type, the toggles cycle the
                 // `KeyState`, Submit re-checks the validation, Cancel runs
                 // the `_cancelAction`.
+                let l = ui::keyboard::layout(screen, app.vk_grid);
+                // The click resolves against the live state first (the
+                // read borrow drops before the audio play).
+                let click = match app.front.as_ref() {
+                    Some(FrontScreen::Keyboard(session)) => {
+                        ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse)
+                    }
+                    _ => return None,
+                };
+                // W4-g22 DOC-SWEEP — the on-screen keys' own cues
+                // (`UIVirtualKeyboard.cs`): Shift/Symbol/letter keys/Space/
+                // Backspace play 12 BEFORE the edit (`:252`/`:286`/`:525`/
+                // `:499`/`:394`); Submit/Cancel play their 10/11 inside
+                // `keyboard_submit`/`keyboard_cancel` already (the
+                // validation gate decides), so they queue nothing here.
+                match click {
+                    ui::keyboard::Click::Char(_)
+                    | ui::keyboard::Click::Shift
+                    | ui::keyboard::Click::Symbol
+                    | ui::keyboard::Click::Space
+                    | ui::keyboard::Click::Backspace => {
+                        app.audio.play("Menu_Tick");
+                    }
+                    _ => {}
+                }
                 let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() else {
                     return None;
                 };
-                let l = ui::keyboard::layout(screen, app.vk_grid);
-                match ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse) {
+                match click {
                     ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
                     // The shift button: `(keyState != Shift) ? Shift : Default`
                     // (`:250-254`).
@@ -1651,9 +1817,9 @@ impl App {
     /// The element id under the pointer on the live front screen — the
     /// framework's `GetElementAt` (`UIElement.cs:324-352`), fed to the pointer
     /// machine so its `LastClicked` compares elements and a card's double-click
-    /// is recognised (`UICharacterListItem.cs:68-69`). `None` on the screens
-    /// without element ids (the creation screens and the keyboard) and when no
-    /// front screen is live.
+    /// is recognised (`UICharacterListItem.cs:68-69`). Also feeds the Bug-17
+    /// hover edge on the creation screens and the keyboard (W4-g22
+    /// DOC-SWEEP). `None` when no front screen is live.
     pub(crate) fn front_hit(&self) -> Option<u32> {
         let front = self.front.as_ref()?;
         let (sw, sh) = self.screen_size();
@@ -1673,7 +1839,56 @@ impl App {
                 let favorites: Vec<bool> = self.worlds.iter().map(|w| w.is_favorite).collect();
                 ui::world_select::hit_element(&l, &favorites, self.mouse_pos)
             }
+            // W4-g22 DOC-SWEEP — the creator's hover-sounding elements
+            // (`hover_element`'s census: the DrawSelf-latched buttons +
+            // the FadedMouseOver panels + the UIColoredImageButtons). The
+            // +1000 base keeps the ids off the select screens' `select_hit`
+            // range so a screen switch never reads a stale latch as the
+            // same element. The loop's Bug-17 edge plays the 12.
+            FrontScreen::CharCreation(state) => {
+                let l = ui::char_creation::layout(screen, 0.0);
+                ui::char_creation::hover_element(&l, state.category, self.mouse_pos)
+                    .map(|id| id + 1000)
+            }
+            // W4-g22 DOC-SWEEP — the world creator's hover census (the
+            // GroupOptionButton/plate DrawSelf latches + FadedMouseOver).
+            // The +2000 base keeps the ids off both other screens' ranges.
+            FrontScreen::WorldCreation(_) => {
+                let l = ui::world_creation::layout(screen, 0.0);
+                ui::world_creation::hover_element(&l, self.mouse_pos).map(|id| id + 2000)
+            }
+            // W4-g22 DOC-SWEEP — the keyboard's hover census: ONLY the
+            // Submit/Cancel pair sounds (`FadedMouseOver`); the grid keys
+            // are colour-only. The +3000 base keeps the ids separate.
+            FrontScreen::Keyboard(_) => {
+                let l = ui::keyboard::layout(screen, self.vk_grid);
+                ui::keyboard::hover_element(&l, self.mouse_pos).map(|id| id + 3000)
+            }
             _ => None,
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP — whether the element id [`App::front_hit`]
+    /// answers SOUNDS on hover. The select screens' card BODIES are
+    /// silent (`UICharacterListItem.MouseOver` `:294-300` /
+    /// `UIWorldListItem.MouseOver` `:475-479` swap colours only — the
+    /// tick belongs to the child `UIImageButton.MouseOver`
+    /// `UIImageButton.cs:61` and the Back/New `FadedMouseOver`); every
+    /// other id the hit-test answers is a sounding element.
+    pub(crate) fn front_hit_sounds(&self, hit: u32) -> bool {
+        match self.front.as_ref() {
+            Some(FrontScreen::CharSelect | FrontScreen::WorldSelect) => {
+                if hit == ui::select_hit::BACK || hit == ui::select_hit::NEW {
+                    return true; // `FadedMouseOver` (`:124`/`:126`)
+                }
+                if hit >= ui::select_hit::CARD_BASE {
+                    let part = (hit - ui::select_hit::CARD_BASE) % ui::select_hit::PARTS;
+                    return part != ui::select_hit::PART_BODY;
+                }
+                false
+            }
+            // The creation/keyboard hit-tables list sounding elements only.
+            _ => true,
         }
     }
 
@@ -2226,6 +2441,301 @@ pub(crate) mod front_flow_tests {
             assert_eq!(front, Some(parked), "the exact parked screen returns");
             assert!((backup.is_none()) && page.is_none());
         }
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — a category click on the live
+    /// creator plays ONE Menu_Tick (`Click_CharInfo`'s 12,
+    /// `UICharacterCreation.cs:1270`) and the category lands; a dead click
+    /// on the panel plays nothing.
+    #[test]
+    fn doc_sweep_a_category_click_plays_one_tick() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The Clothing category button (id 1).
+        app.mouse_pos = centre(l.categories[1]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the category");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::CharCreation(ref s)) if s.category == 1
+        ));
+        // A click on empty panel space is silent.
+        app.mouse_pos = Vec2::new(l.panel[0] + 4.0, l.panel[1] + 4.0);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before, "a dead click is silent");
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — the naming plate plays ONE
+    /// Menu_Open (`Click_Naming`'s 10, `:1661`) and opens the keyboard;
+    /// Back on a clean draft plays ONE Menu_Close (`GoBack`'s 11, `:1212`)
+    /// and returns to the char select — no second cue from the hop.
+    #[test]
+    fn doc_sweep_naming_and_back_play_their_own_cues_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        app.mouse_pos = centre(l.info_name);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 10 on the name plate");
+        assert!(matches!(app.front, Some(FrontScreen::Keyboard(_))));
+        // Cancel back to the creator (the keyboard's own 11), then Back.
+        app.keyboard_cancel();
+        app.pointer.tick(300.0);
+        app.mouse_pos = centre(l.back);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 11 on Back");
+        assert!(matches!(app.front, Some(FrontScreen::CharSelect)));
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — a difficulty row plays ONE
+    /// Menu_Tick (`UIDifficultyButton.LeftMouseDown`, `:84`) and the pick
+    /// lands; the randomize-player button plays ONE Menu_Tick
+    /// (`Click_RandomizePlayer`, `:1547`).
+    #[test]
+    fn doc_sweep_difficulty_and_randomize_play_one_tick() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The Expert row (display index 2 -> id 1).
+        app.mouse_pos = centre(l.difficulty_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the row");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::CharCreation(ref s)) if s.draft.difficulty == 1
+        ));
+        // The Clothing category's randomize button.
+        app.mouse_pos = centre(l.categories[1]);
+        front_press(&mut app);
+        app.mouse_pos = centre(l.template_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on randomize");
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — the creator's hover edge plays one
+    /// Menu_Tick per enter through the loop's Bug-17 latch (`front_hit` now
+    /// answers the creator's sounding elements), staying inside is silent,
+    /// and re-entering after an exit plays again (the DrawSelf
+    /// `_soundedHover` reset, `UIHairStyleButton.cs:51-53`).
+    #[test]
+    fn doc_sweep_creator_hover_edge_ticks_once_per_enter() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The loop's cursor-moved path (`app/loop.rs`'s Bug-17 block).
+        let hover = |app: &mut App| {
+            let hit = app.front_hit();
+            if hit != app.front_hover_hit {
+                if hit.is_some() {
+                    app.audio.play("Menu_Tick");
+                }
+                app.front_hover_hit = hit;
+            }
+        };
+        app.mouse_pos = centre(l.categories[2]);
+        let before = app.audio.played_count();
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one tick on enter");
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "no repeat inside");
+        // Exit to the preview (silent), then re-enter: the latch re-arms.
+        app.mouse_pos = centre(l.preview);
+        hover(&mut app);
+        app.mouse_pos = centre(l.categories[2]);
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 2, "re-enter ticks again");
+        // Moving to a DIFFERENT sounding element is a fresh enter.
+        app.mouse_pos = centre(l.back);
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 3, "a new element ticks");
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — a size row on the live world
+    /// creator plays ONE Menu_Tick (the GroupOptionButton 12) and the pick
+    /// lands; the seed plate plays ONE Menu_Open (`OpenSeedInputMenu`'s 10,
+    /// `:704`) and opens the keyboard; Back plays ONE Menu_Close (the hop's
+    /// 11, `GoBack` `:672`) — never doubled.
+    #[test]
+    fn doc_sweep_world_creator_rows_and_plates_play_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(0, 0))),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::world_creation::layout(Vec2::new(sw, sh), 0.0);
+        app.mouse_pos = centre(l.size_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the size row");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::WorldCreation(ref d)) if d.size == 2
+        ));
+        app.mouse_pos = centre(l.seed_plate);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 10 on the seed plate");
+        assert!(matches!(app.front, Some(FrontScreen::Keyboard(_))));
+        app.keyboard_cancel();
+        app.pointer.tick(300.0);
+        app.mouse_pos = centre(l.back);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 11 on Back, not two");
+        assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the seed submit's special-seed cue
+    /// (`UIWorldCreation.cs:834`'s 24): a seed text resolving a generation
+    /// option plays Chat ON TOP of the submit's 10; a plain text plays
+    /// only the submit's 10.
+    #[test]
+    fn doc_sweep_special_seed_submit_plays_the_chat_cue() {
+        for (text, extra) in [("for the worthy", 1u64), ("hello world", 0)] {
+            let mut app = flow_app(
+                Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(0, 0))),
+                Vec::new(),
+                Vec::new(),
+            );
+            app.pointer.tick(300.0);
+            let (sw, sh) = app.screen_size();
+            let l = ui::world_creation::layout(Vec2::new(sw, sh), 0.0);
+            app.mouse_pos = centre(l.seed_plate);
+            front_press(&mut app);
+            let Some(FrontScreen::Keyboard(s)) = app.front.as_mut() else {
+                panic!("the seed keyboard opened");
+            };
+            ui::keyboard::write_str(&mut s.state, text);
+            let before = app.audio.played_count();
+            app.keyboard_submit();
+            assert_eq!(
+                app.audio.played_count(),
+                before + 1 + extra,
+                "seed {text:?}: the submit's 10 plus {extra} Chat"
+            );
+            assert!(matches!(
+                app.front,
+                Some(FrontScreen::WorldCreation(ref d)) if d.seed == text
+            ));
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — the on-screen keyboard keys play
+    /// ONE Menu_Tick each (`UIVirtualKeyboard.cs:252`/`:286`/`:525`/
+    /// `:499`/`:394`): a letter key, the shift toggle and backspace; the
+    /// dead space outside the layer stays silent.
+    #[test]
+    fn doc_sweep_keyboard_keys_tick_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let cl = ui::char_creation::layout(screen, 0.0);
+        app.mouse_pos = centre(cl.info_name);
+        front_press(&mut app);
+        // The grid layer (`TR_VK_GRID=1`'s shape).
+        app.vk_grid = true;
+        let l = ui::keyboard::layout(screen, true);
+        // A letter key (0, 0).
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 0, 0, 1));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the key");
+        // The shift toggle.
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 0, 4, 1));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on shift");
+        // Backspace.
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 8, 4, 2));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on backspace");
+        // Outside the layer: silent.
+        app.mouse_pos = Vec2::new(10.0, 10.0);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the hover-sound census across the
+    /// screens: the select card BODIES are silent (colour-only MouseOver),
+    /// their buttons and Back/New sound; every creation/keyboard id the
+    /// hit-tables answer sounds.
+    #[test]
+    fn doc_sweep_card_bodies_do_not_tick_but_buttons_do() {
+        let players = vec![entry("Alpha", true)];
+        let mut app = flow_app(Some(FrontScreen::CharSelect), players, Vec::new());
+        use ui::select_hit as sh;
+        assert!(!app.front_hit_sounds(sh::card_part(0, sh::PART_BODY)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_PLAY)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_FAVORITE)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_RENAME)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_DELETE)));
+        assert!(app.front_hit_sounds(sh::BACK));
+        assert!(app.front_hit_sounds(sh::NEW));
+        // The world screen mirrors it.
+        let mut app = flow_app(Some(FrontScreen::WorldSelect), Vec::new(), Vec::new());
+        assert!(!app.front_hit_sounds(sh::card_part(3, sh::PART_BODY)));
+        assert!(app.front_hit_sounds(sh::card_part(3, sh::PART_PLAY)));
+        // The creation screens' tables list sounding elements only.
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(app.front_hit_sounds(1000));
+        // The loop's edge with the gate: a card body enter plays nothing.
+        let players = vec![entry("Alpha", true)];
+        let mut app = flow_app(Some(FrontScreen::CharSelect), players, Vec::new());
+        let (sw, sh2) = app.screen_size();
+        let screen = Vec2::new(sw, sh2);
+        let l = ui::char_select::resolved_layout(screen, app.front_header_w("Select Player"), 1);
+        let c0 = ui::char_select::card_layout(l.list, 0);
+        // A point inside the card but off every button (the name strip).
+        app.mouse_pos = Vec2::new(c0.card[0] + c0.card[2] * 0.5, c0.card[1] + 4.0);
+        let hit = app.front_hit();
+        assert_eq!(hit, Some(ui::select_hit::card_part(0, ui::select_hit::PART_BODY)));
+        let before = app.audio.played_count();
+        if hit != app.front_hover_hit {
+            if hit.is_some_and(|h| app.front_hit_sounds(h)) {
+                app.audio.play("Menu_Tick");
+            }
+            app.front_hover_hit = hit;
+        }
+        assert_eq!(app.audio.played_count(), before, "the body enter is silent");
     }
 
     #[test]
@@ -3060,6 +3570,19 @@ pub(crate) mod front_flow_tests {
             zoom_pinned: false,
             debug: false,
             debug_overlay: false,
+            hide_ui: false,
+            draw_diag: 0,
+            net_diag: false,
+            show_frame_rate: false,
+            release_ui: false,
+            draw_release: false,
+            net_release: false,
+            frame_release: false,
+            all_chest_stack_hover: false,
+            inventory_sort_hover: false,
+            hotbar_lock_hover: false,
+            toggle_acc_hover: -1,
+            house_banners: Vec::new(),
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
@@ -3076,6 +3599,8 @@ pub(crate) mod front_flow_tests {
             step_input_was: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
+            mouse_tick_prev: Vec2::ZERO,
+            mouse_tick_delta: Vec2::ZERO,
             last_frame: Instant::now(),
             frame_history: VecDeque::new(),
             last_stats: tr_render::sprite::RenderStats::default(),
@@ -3235,6 +3760,10 @@ pub(crate) mod front_flow_tests {
                 inventory,
                 inv_favorites: 0,
                 last_saved_binary: 0,
+                voice_variant: 1,
+                voice_pitch_offset: 0.0,
+                unlocked_biome_torches: false,
+                using_biome_torches: false,
             },
         )
         .unwrap();
@@ -3596,7 +4125,9 @@ pub(crate) mod front_flow_tests {
         assert_eq!(session.request.max_length, usize::MAX);
         assert_eq!(session.tail, KeyboardTail::WorldSeed);
         // The submit tail: the trimmed seed lands (`OnFinishedSettingSeed`,
-        // `:817-819`), the creator returns.
+        // `:817-819`), the creator returns. W4-g24 — the plain "51" carries
+        // no micro seed, so no tracked MenuAccept lands (the classic-option
+        // 24 of `:834` is a UIWorldCreation site outside this wave).
         app.keyboard_character('5');
         app.keyboard_character('1');
         app.keyboard_submit();
@@ -3604,6 +4135,12 @@ pub(crate) mod front_flow_tests {
             panic!("the creator returns");
         };
         assert_eq!(draft.seed, "51");
+        assert_eq!(
+            app.audio
+                .tracked_count_for(&crate::audio::menu_accept_style()),
+            0,
+            "a plain seed plays no MenuAccept"
+        );
         // The title is the `UI.EnterSeed` key, not a literal: the keyboard
         // header follows the culture.
         crate::lang::set_language(tr_core::localization::GameCulture::Russian);
@@ -3612,6 +4149,144 @@ pub(crate) mod front_flow_tests {
             "Укажите семечко (не заполняйте для случайного выбора)"
         );
         crate::lang::set_language(tr_core::localization::GameCulture::English);
+    }
+
+    /// W4-g24 — `OnFinishedSettingSeed`'s secret-seed cue
+    /// (`UIWorldCreation.cs:820`/:841 → `WorldGen.SecretSeed.Enable`,
+    /// `WorldGen.cs:537-540`): a seed text carrying a micro seed plays the
+    /// tracked `MenuAccept` ONCE per submit (`TryApplyingCopiedSeed`'s loop
+    /// flips `playSound` false after the first Enable,
+    /// `WorldFileData.cs:268-272`); a plain seed plays nothing.
+    #[test]
+    fn w4_g24_the_seed_submit_plays_menu_accept_once_for_a_micro_seed() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = world_creation_app();
+        let l = world_creation_layout(&app);
+        app.mouse_pos = Vec2::new(
+            l.seed_plate[0] + l.seed_plate[2] * 0.5,
+            l.seed_plate[1] + l.seed_plate[3] * 0.5,
+        );
+        app.handle_front_click();
+        // Two micro seeds joined: ONE MenuAccept (the first Enable only —
+        // `TryApplyingCopiedSeed` flips playSound false after the first).
+        // The silent test cue lets the tracked path run headless (the pool
+        // add follows the cue gate; no output device is needed).
+        app.audio.insert_test_cue("menu_accept");
+        for c in "pumpkinseason|arachnophobia|12345".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        let style = crate::audio::menu_accept_style();
+        assert_eq!(
+            app.audio.tracked_count_for(&style),
+            1,
+            "the first secret seed's Enable plays ONE tracked MenuAccept"
+        );
+        let Some(FrontScreen::WorldCreation(draft)) = app.front.as_ref() else {
+            panic!("the creator returns");
+        };
+        assert_eq!(draft.seed, "pumpkinseason|arachnophobia|12345");
+        // The resolve the arm reads: two micro seeds, one Enable-with-sound.
+        let (micro, _, _) = tr_core::seeds::resolve_seed_text(&draft.seed);
+        assert_eq!(micro.count(), 2, "both micro seeds resolve");
+        // A plain seed submit: the arm's gate is false — no tracked call.
+        let count_before = app.audio.tracked_count_for(&style);
+        app.mouse_pos = Vec2::new(
+            l.seed_plate[0] + l.seed_plate[2] * 0.5,
+            l.seed_plate[1] + l.seed_plate[3] * 0.5,
+        );
+        app.handle_front_click();
+        for c in "5162020".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(
+            app.audio.tracked_count_for(&style),
+            count_before,
+            "a classic seed plays no MenuAccept"
+        );
+    }
+
+    /// W4-g24 FINAL — `OnFinishedSettingSeed`'s classic-option arm
+    /// (`UIWorldCreation.cs:830-835`): a seed text naming a classic option
+    /// ("for the worthy") takes the ELSE branch's `SelectOption` +
+    /// `SoundEngine.PlaySound(24)` (`SoundID.Chat`, case 24 draw-free).
+    /// The arm is exclusive with the micro-seed MenuAccept: a joined
+    /// micro-seed text plays ONE tracked MenuAccept and NO Chat; a plain
+    /// numeric text plays neither (the `InternalSubmit` 10 is the
+    /// keyboard's own, `UIVirtualKeyboard.cs:975`, present on every submit).
+    #[test]
+    fn w4_g24_the_classic_option_seed_plays_the_chat_cue() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = world_creation_app();
+        let l = world_creation_layout(&app);
+        let seed_plate = Vec2::new(
+            l.seed_plate[0] + l.seed_plate[2] * 0.5,
+            l.seed_plate[1] + l.seed_plate[3] * 0.5,
+        );
+        app.audio.insert_test_cue("menu_accept");
+        let style = crate::audio::menu_accept_style();
+        // The classic-option text: one Chat play (:834), no MenuAccept.
+        app.mouse_pos = seed_plate;
+        app.handle_front_click();
+        let before = app.audio.played_count();
+        for c in "for the worthy".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(
+            app.audio.played_count(),
+            before + 2,
+            "the submit 10 + the classic-option 24 (:834)"
+        );
+        assert_eq!(
+            app.audio.tracked_count_for(&style),
+            0,
+            "the classic arm plays no MenuAccept"
+        );
+        // A joined micro-seed text: ONE MenuAccept, NO Chat (the arms are
+        // exclusive — the TryApplyingCopiedSeed success never reaches :834).
+        app.mouse_pos = seed_plate;
+        app.handle_front_click();
+        let before = app.audio.played_count();
+        for c in "pumpkinseason|5162020".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the submit 10 only — no Chat on the micro arm"
+        );
+        assert_eq!(app.audio.tracked_count_for(&style), 1, "one MenuAccept");
+        // A plain numeric text: the submit 10 only, neither arm fires.
+        app.mouse_pos = seed_plate;
+        app.handle_front_click();
+        let before = app.audio.played_count();
+        for c in "5162020".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(app.audio.played_count(), before + 1, "the submit 10 only");
+        assert_eq!(app.audio.tracked_count_for(&style), 1, "no new MenuAccept");
+        // The SINGLE (unjoined) micro-seed text (`:836-841`): the plain
+        // "pumpkinseason" submit plays ONE tracked MenuAccept — the
+        // CheckInputForSecretSeed arm the batch-1 joined-form gate missed.
+        app.mouse_pos = seed_plate;
+        app.handle_front_click();
+        let before = app.audio.played_count();
+        for c in "pumpkinseason".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(app.audio.played_count(), before + 1, "the submit 10 only");
+        assert_eq!(
+            app.audio.tracked_count_for(&style),
+            2,
+            "the single micro seed's Enable plays MenuAccept (:841)"
+        );
     }
 
     #[test]

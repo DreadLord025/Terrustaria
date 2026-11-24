@@ -150,6 +150,20 @@ fn finish_flight(p: &mut Projectile, world: &World) {
         let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
         let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
         if hit_x || hit_y {
+            // S1-E-21h d75 part 2 — `HandleMovement`'s 601 arm
+            // (`Projectile.cs:18084-18103`): the portal bolt's impact cue,
+            // gated on `alpha > 0` (the `netMode != 2` guard is the port's
+            // single-player fold): `ai[1] != 0` → Item114 (the blue portal),
+            // else Item115 (orange), at the PRE-move `base.position` (the
+            // C# plays before its `position += velocity` + Kill; the port's
+            // kill-without-step shape is the pre-existing flight deviation).
+            // `PortalHelper.TryPlacingPortal` stays unported.
+            if p.kind == CANNON_EXPLOSIVE && p.alpha > 0 {
+                let style = if p.ai[1] != 0.0 { 114 } else { 115 };
+                p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+            }
+            p.active = false;
+            p.time_left = 0;
             if p.kind == SAUCER_LASER || p.kind == SCUTLIX_LASER {
                 // `:18280-18284` — the latch + the last step + the restore.
                 p.ai[1] = 1.0;
@@ -894,6 +908,33 @@ mod tests {
         // vel (10, 0) → rot = atan2(0, 10) = 0.
         assert!(p.rot.abs() < 1e-6);
         assert_eq!(p.sprite_direction, 1);
+    }
+
+    /// S1-E-21h d75 part 2 — the portal bolt's impact cue
+    /// (`HandleMovement` `:18084-18103`): on the blocked tick, `alpha > 0`
+    /// plays Item114 (`ai[1] != 0`, the blue portal) or Item115 (orange)
+    /// at the PRE-move position, then the bolt dies; a fully faded bolt
+    /// (`alpha == 0`) dies cue-less.
+    #[test]
+    fn s1_e_21h_d75_p2_the_portal_bolt_impact_plays_its_pair() {
+        let mut w = air();
+        // The wall tile (101, 50) spans x 1616..1632; the bolt at x 1600
+        // flying right at 10 probes x 1610..1620 — the blocked hit.
+        let i = w.index(101, 50);
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        for (ai1, alpha, style) in [(0.0f32, 255, Some(115i32)), (1.0, 255, Some(114)), (0.0, 0, None)] {
+            let mut p = shot(CANNON_EXPLOSIVE);
+            p.ai[1] = ai1;
+            p.alpha = alpha;
+            step(&mut p, &w, None);
+            assert!(!p.active, "the impact kills");
+            assert_eq!(
+                p.wants_sound,
+                style.map(|s| (2, s, 1600.0, 800.0, 0.0)),
+                "ai1 {ai1} alpha {alpha}"
+            );
+        }
     }
 
     /// 270 (`:56056-56089` + `:56657-56698` + `:57597-57608`): the ai[1]

@@ -737,6 +737,28 @@ pub fn draw_hud(
     // `Player.hideVisibleAccessory` — the accessory visible/hidden ticks beside
     // the accessory column (`Main.cs:41425-41460`).
     hide_visible_accessory: &[bool; 10],
+    // `Player.hideMisc` + the super-cart flags — the misc-page ticks
+    // (`Main.cs:41226-41283`, W4-g21 batch 2 hosts 58/59).
+    hide_misc: &[bool; 2],
+    unlocked_super_cart: bool,
+    enabled_super_cart: bool,
+    // The quick-stack/sort buttons (`Main.cs:41833-41897`, W4-g21 batch 3).
+    stack_to_chests_mode: u8,
+    all_chest_stack_hover: &mut bool,
+    inventory_sort_hover: &mut bool,
+    // The hotbar-lock + builder-accessory icons (`Main.cs:42479-42596`,
+    // `:47575-47588`, W4-g21 batch 5 hosts 71/72/73).
+    hb_locked: bool,
+    unlocked_biome_torches: bool,
+    using_biome_torches: bool,
+    tile_replacement_enabled: bool,
+    info_acc_mech_show_wires: bool,
+    ruler_line: bool,
+    ruler_grid: bool,
+    auto_actuator: bool,
+    auto_paint: bool,
+    hotbar_lock_hover: &mut bool,
+    toggle_acc_hover: &mut i32,
     // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
     // the per-slot alpha (`Main.buffAlpha`), the cancel gate
     // (`Main.mouseRight && Main.mouseRightRelease`, `:43333`) and the
@@ -759,6 +781,10 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // `Main.cursorOverride` (`Main.cs:45269-45310`): the shift/alt hover
+    // cursor id (-1 = none) — the SELL (10) / TRASH (6) / transfer (8/9) /
+    // favourite (3) icons replace the normal cursor. W4-e19.
+    cursor_override: i32,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -929,7 +955,20 @@ pub fn draw_hud(
             // (`Player.cs:4276-4292`, W4-g87) — the slot-8 row joins the
             // columns once the unlock (or a stored item) shows it.
             inventory::ExtraAccessoryShow::of(player),
+            // The misc-page pet/light/super-cart ticks (`Main.cs:41226-41283`).
+            hide_misc,
+            unlocked_super_cart,
+            enabled_super_cart,
+            // The quick-stack/sort buttons (`Main.cs:41833-41897`).
+            stack_to_chests_mode,
+            all_chest_stack_hover,
+            inventory_sort_hover,
         );
+        // The buttons' hover-edge ticks (`DoStatefulTickSound`, `Main.cs:3244`)
+        // — played after the chest panel's audio borrow ends.
+        for _ in 0..hit.hover_ticks {
+            chest_panel.audio.play("Menu_Tick");
+        }
         open_hover = hit.hovered;
         open_housing = hit.housing;
         hide_pvp_icons = hit.hide_pvp_icons;
@@ -1034,7 +1073,47 @@ pub fn draw_hud(
         if !hide_pvp_icons {
             chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h, pvp, mouse_pos);
         }
-        chrome::draw_hotbar_lock(r, lookups, false);
+        // `Main.DrawHotbarLockIcon(num, num2, pushSideToolsUp)` (`Main.cs:41046`):
+        // `num = num2 = 0` in `DrawInventory` (`:41004-41005`), the push-up gate
+        // `totalDrawnIcons >= 10` (`:41042-41043`). W4-g21 batch 5 host 71.
+        let push_side_tools_up = chrome::builder_accs_count_to_show(
+            info_acc_mech_show_wires,
+            ruler_line,
+            ruler_grid,
+            auto_actuator,
+            auto_paint,
+            unlocked_biome_torches,
+        ) >= 10;
+        if chrome::draw_hotbar_lock(
+            r, lookups, push_side_tools_up, hb_locked, mouse_pos, hotbar_lock_hover,
+        ) {
+            chest_panel.audio.play("Menu_Tick"); // `:42515` → `:3244`
+        }
+        // `Main.DrawBuilderAccToggles`' block-replacement + torch-biome icons
+        // (`Main.cs:47575-47588`): the shared `toggleAccMouseOver` int latch
+        // (`DoStatefulTickSound(ref int, state)`, `:3249-3259`) — the block icon
+        // is state `num`, the torch icon `num + 1` (the wire/ruler/actuator
+        // icons before them are unported, so `num` starts at 0). W4-g21 batch 5
+        // hosts 72/73.
+        let mut acc_state = -1i32;
+        if chrome::draw_block_replace_icon(
+            r, lookups, push_side_tools_up, tile_replacement_enabled, mouse_pos,
+        ) {
+            acc_state = 0;
+        }
+        if unlocked_biome_torches
+            && chrome::draw_torch_biome_icon(
+                r, lookups, push_side_tools_up, using_biome_torches, mouse_pos,
+            )
+        {
+            acc_state = 1;
+        }
+        if *toggle_acc_hover != acc_state {
+            *toggle_acc_hover = acc_state;
+            if acc_state != -1 {
+                chest_panel.audio.play("Menu_Tick"); // `:47588` → `:3256`
+            }
+        }
         // `Main.DrawInventory`'s map-style icon row (`Main.cs:41055-41126`),
         // after `DrawHotbarLockIcon` (`:41046`) and before the crafting panel
         // (`:41706`).
@@ -1237,6 +1316,35 @@ pub fn draw_hud(
                 tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
                 None
             }
+            // `Main.cs:41294-41298`: the misc tick's mouse text is
+            // `Lang.inter[58 + num26]` — `num26 = hideMisc ? 2 : 1` for the
+            // pet/light rows, `enabledSuperCart ? 2 : 1` for the cart.
+            Some(inventory::HoverRef::HideMisc(m)) => {
+                let label = crate::lang::inter(if hide_misc[m] { 60 } else { 59 });
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
+                None
+            }
+            Some(inventory::HoverRef::SuperCart) => {
+                let label = crate::lang::inter(if enabled_super_cart { 60 } else { 59 });
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
+                None
+            }
+            // `Main.cs:41860-41863`: the quick-stack button's MouseText is the
+            // mode's label (`GameUI.QuickStackToNearby` / `SmartStackToNearby`).
+            Some(inventory::HoverRef::QuickStackButton) => {
+                let key = if stack_to_chests_mode == 0 {
+                    "GameUI.QuickStackToNearby"
+                } else {
+                    "GameUI.SmartStackToNearby"
+                };
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &crate::lang::text(key), screen, pulse);
+                None
+            }
+            // `Main.cs:41893-41896`: `GameUI.SortInventory`.
+            Some(inventory::HoverRef::SortButton) => {
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &crate::lang::text("GameUI.SortInventory"), screen, pulse);
+                None
+            }
             other => other.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0))),
         }
     } else {
@@ -1279,8 +1387,11 @@ pub fn draw_hud(
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
-    // hidden while the vanilla `Cursor_0` is on screen.
-    cursor::draw(r, lookups, cursor_state, mouse_pos);
+    // hidden while the vanilla `Cursor_0` is on screen. The override arm
+    // (`Main.cs:45269-45310`) replaces the normal cursor while an id is lit.
+    if !cursor::draw_override(r, lookups, cursor_state, mouse_pos, cursor_override) {
+        cursor::draw(r, lookups, cursor_state, mouse_pos);
+    }
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it
@@ -1300,6 +1411,12 @@ fn hover_item_for<'a>(
         // `Main.cs:41462-41465`: the tick replaces the slot's tooltip with
         // `Lang.inter[59]` / `[60]` ("Visible" / "Hidden"), so no item text.
         H::HideAccessory(_) => None,
+        // The misc-page ticks replace the tooltip too (`Main.cs:41294-41298`,
+        // `Lang.inter[58 + num26]`).
+        H::HideMisc(_) | H::SuperCart => None,
+        // The quick-stack/sort buttons carry no item (`Main.cs:41860-41863`,
+        // `:41893-41896` — the MouseText labels are drawn separately).
+        H::QuickStackButton | H::SortButton => None,
         H::Coin(i) => equip.coins.get(i),
         H::Ammo(i) => equip.ammo.get(i),
         H::Armor(i) => equip.armor.get(i),

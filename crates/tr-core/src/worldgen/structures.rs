@@ -506,15 +506,18 @@ fn put_hive(world: &mut World, x: i32, y: i32, kind: u16) {
     t.set_slope(0);
 }
 
-/// `Beehives` + `BeeLarvaInBeehives` (`WorldGen.cs:15927-16000`,
-/// `AddBeeLarva` `:32050-32068`): 1-8 hive domes in the underground jungle —
-/// the hive-block (225) shell with the honey pockets (the liquid 2) inside,
-/// roughly half carrying the larva (231) in the 3×4 clear centre.
+/// `Beehives` (`WorldGen.cs:15927-15976`): 1-8 hive domes in the underground
+/// jungle — the hive-block (225) shell with the honey pockets (the liquid 2)
+/// inside. The larva anchors ride the `larva` ledger (`GenVars.larvaX/Y`,
+/// `HiveBiome.CreateStandForLarva` `HiveBiome.cs:357-365`); the
+/// `BeeLarvaInBeehives` pass (`WorldGen.cs:20868-20900`, W4-d105 lane 5 #45)
+/// consumes them — the 3×4 clear centre + the 231 larva.
 pub(crate) fn pass_beehives(
     world: &mut World,
     spans: &super::biomes::BiomeSpans,
     rock_layer: f64,
     rng: &mut super::Rng,
+    larva: &mut Vec<(i32, i32)>,
 ) -> u32 {
     if spans.jungle_end <= spans.jungle_start {
         return 0;
@@ -570,34 +573,16 @@ pub(crate) fn pass_beehives(
                 }
             }
         }
-        // The larva in ~half the hives (`num5 = Next(5)` honey patches; the
-        // larva ride the hive centre — `AddBeeLarva`'s 3×4 clear + the 231).
+        // The larva anchor in ~half the hives — `HiveBiome.CreateStandForLarva`
+        // (`HiveBiome.cs:357-365`) records the centre into `GenVars.larvaX/Y`
+        // (clamped to the 5-border, the 100-entry cap); the
+        // `BeeLarvaInBeehives` pass places the 3×4 clear + the 231 later.
         if rng.range(0, 2) == 0 {
-            for dx in -1..=1 {
-                for dy in -2..=1 {
-                    let px = cx + dx;
-                    let py = cy + dy;
-                    if dy == 1 {
-                        let i = world.index(px, py);
-                        let wall = world.tiles[i].wall;
-                        world.tiles[i] = Tile {
-                            kind: TILE_HIVE,
-                            ..Default::default()
-                        };
-                        world.tiles[i].flags |= FLAG_ACTIVE;
-                        world.tiles[i].wall = wall;
-                    } else {
-                        let i = world.index(px, py);
-                        world.tiles[i] = Tile::default();
-                    }
-                }
+            let lx = cx.clamp(5, world.width - 5);
+            let ly = cy.clamp(5, world.height - 5);
+            if larva.len() < 100 {
+                larva.push((lx, ly));
             }
-            let i = world.index(cx, cy);
-            world.tiles[i] = Tile {
-                kind: TILE_LARVA,
-                ..Default::default()
-            };
-            world.tiles[i].flags |= FLAG_ACTIVE;
         }
         // The hive's honey patches (`WorldGen.cs:15946-15968`).
         super::mini_biomes::place_honey_patches_around(world, cx, cy, &mut protected, rng);
@@ -605,6 +590,78 @@ pub(crate) fn pass_beehives(
         placed += 1;
     }
     placed
+}
+
+/// `BeeLarvaInBeehives` (`WorldGen.cs:20868-20900`): the larva ledger the
+/// hive pass published (`GenVars.numLarva`/`larvaX`/`larvaY`) — each anchor
+/// gets the 3×4 clear centre (the three upper rows deactivated, the floor
+/// row set to hive 225 flat) and the `PlaceTile(231)` larva. The
+/// `Main.tileSolid[229/232/162] = true` writes (`:20872`/`:20897-20898`)
+/// are boot statics the port's generated `TILE_SOLID` table already carries
+/// (the hive 229, the spikes 232, the ice 162 are solid from boot), so they
+/// are no-ops here.
+pub(crate) fn pass_larva(world: &mut World, larva: &[(i32, i32)]) {
+    for &(x, y) in larva {
+        // `:20878-20894` — the 3×4 box.
+        for j in x - 1..=x + 1 {
+            for k in y - 2..=y + 1 {
+                if k != y + 1 {
+                    // The upper three rows: deactivate (the cell keeps its
+                    // wall/liquid — the C# `active(false)` only).
+                    if let Some(t) = world.tile_mut(j, k) {
+                        t.flags &= !FLAG_ACTIVE;
+                    }
+                } else {
+                    // The floor row: hive 225, flat.
+                    if let Some(t) = world.tile_mut(j, k) {
+                        t.flags |= FLAG_ACTIVE;
+                        t.kind = TILE_HIVE;
+                        t.set_slope(0);
+                        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                    }
+                }
+            }
+        }
+        // `:20895` — `PlaceTile(x, y, 231)`: the 3×3 larva object.
+        place_larva(world, x, y);
+    }
+}
+
+/// `WorldGen.PlaceTile`'s larva arm (`WorldGen.cs:59967-59970` → `Place3x3`
+/// `:53534-53633`, the 231 bottom-support group): the 3×3 clear box above
+/// the floor (`x-1..x+1`, `y-2..y`), the three floor cells
+/// `SolidTileAllowBottomSlope`, then the nine writes at `(x-1+k, y-2+l)`
+/// with `frameX k*18`, `frameY l*18`. The larva pass clears the box and
+/// sets the hive floor first, so the gates pass; the liquid gate
+/// (`:59454-59471` — 231 is NOT in the refusal list) passes every cell.
+fn place_larva(world: &mut World, x: i32, y: i32) {
+    // `:53541-53554` — the clear box.
+    for i in x - 1..x + 2 {
+        for j in y - 2..y + 1 {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                return;
+            }
+        }
+    }
+    // `:53555-53567` — the floor seats (`SolidTile2`, the 231 group's
+    // :53562 check; the hive floor is flat, so it reads solid).
+    for k in x - 1..x + 2 {
+        if !crate::edit::solid_tile2(world, k, y + 1) {
+            return;
+        }
+    }
+    // `:53594-53632` — the nine writes (style 0, num = -2).
+    for k in 0..3 {
+        for l in 0..3 {
+            if let Some(t) = world.tile_mut(x - 1 + k, y - 2 + l) {
+                t.flags |= FLAG_ACTIVE;
+                t.kind = TILE_LARVA;
+                t.frame_x = (k * 18) as i16;
+                t.frame_y = (l * 18) as i16;
+            }
+        }
+    }
+    crate::edit::square_tile_frame_gen(world, x, y);
 }
 
 /// `HellFort` (`WorldGen.cs:32683+`, the tile 75 / the wall 14 defaults):
@@ -1630,5 +1687,84 @@ mod tests {
             a.tiles.iter().any(|t| t.active() && matches!(t.kind, 185 | 186 | 187)),
             "a pile landed"
         );
+
+        }    /// A mud world with a hive-sized air pocket and a hive floor.
+    fn hive_world(width: i32, height: i32) -> World {
+        let mut w = World::new("larva".into(), width, height);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[TILE_LARVA as usize] = true;
+        for x in 0..width {
+            for y in 0..height {
+                let i = w.index(x, y);
+                w.tiles[i].kind = TILE_MUD;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+        w
+    /// `pass_larva` (`WorldGen.cs:20868-20900`): the anchor's 3×4 box — the
+    /// three upper rows cleared, the floor row hive 225, the 3×3 larva 231
+    /// object with the k*18 / l*18 frames.
+    fn the_larva_pass_places_the_3x3_object() {
+        let mut w = hive_world(200, 200);
+        // Clear the 3×4 box above the floor at (100, 101).
+        for j in 99..=101 {
+            for k in 98..=101 {
+                let i = w.index(j, k);
+                w.tiles[i].flags &= !FLAG_ACTIVE;
+        pass_larva(&mut w, &[(100, 100)]);
+        // The floor row (y 101) is hive 225.
+            let t = w.tile(j, 101).unwrap();
+            assert!(t.active() && t.kind == TILE_HIVE, "the floor at {j}");
+        // The 3×3 larva object at (99..101, 98..100).
+        for k in 0..3 {
+            for l in 0..3 {
+                let t = w.tile(99 + k, 98 + l).unwrap();
+                assert!(t.active() && t.kind == TILE_LARVA);
+                assert_eq!(t.frame_x, (k * 18) as i16);
+                assert_eq!(t.frame_y, (l * 18) as i16);
+    /// The empty ledger places nothing.
+    fn the_larva_pass_with_no_anchors_is_a_noop() {
+        let before = w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
+        pass_larva(&mut w, &[]);
+        let after = w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
+        assert_eq!(before, after);
+    /// The hive pass publishes the larva anchors into the ledger (the 1/2
+    /// roll), clamped to the 5-border; the Larva pass then places them.
+    fn the_hive_pass_publishes_the_larva_ledger() {
+        let spans = super::super::biomes::BiomeSpans {
+            jungle_start: 60,
+            jungle_end: 340,
+            dungeon_x: 40,
+        // Sweep seeds until the 1/2 larva rolls publish an anchor (the
+        // living-trees test's convention for roll-gated content).
+        let mut found = None;
+        for seed in 1..20u32 {
+            let mut w = hive_world(400, 300);
+            w.world_surface = 75.0;
+            w.rock_layer = 150.0;
+            let mut rng = crate::worldgen::noise::Rng::from_seed(seed);
+            let mut larva = Vec::new();
+            let placed = pass_beehives(&mut w, &spans, 150.0, &mut rng, &mut larva);
+            assert!(placed >= 1, "the hive placed: {placed}");
+            // Every anchor is inside the 5-border.
+            for &(x, y) in &larva {
+                assert!(x >= 5 && x <= w.width - 5);
+                assert!(y >= 5 && y <= w.height - 5);
+            // The larva tiles are NOT placed by the hive pass anymore —
+            // the Larva pass owns them.
+            let larva_tiles =
+                w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
+            assert_eq!(larva_tiles, 0, "the hive pass defers the larva placement");
+            if !larva.is_empty() {
+                found = Some((w, larva));
+                break;
+        let (mut w, larva) = found.expect("a seed in 1..20 published a larva anchor");
+        // Running the Larva pass places the objects. Each anchor
+        // contributes a whole 3×3 object or nothing (the Place3x3 gate is
+        // all-or-nothing; overlapping boxes can overwrite cells).
+        pass_larva(&mut w, &larva);
+        assert!(after > 0, "the larva pass placed the objects");
+        assert!(after <= larva.len() * 9);
     }
+
+// balance-close (union shared delimiter)
+}}}}}}}}}}}}}
 }

@@ -375,6 +375,7 @@ impl SoundPlayer {
     /// `find_active_sound` semantics) — the test seam the headless flows
     /// count plays through (no output device ever drains an entry).
     #[allow(dead_code)] // the reader is Audio::tracked_count_for's test seam
+    /// The pool-entry count of one style, NO `IsPlaying` filter (the
     pub fn count_style_entries(&self, style: &TrackedStyle) -> usize {
         self.tracked_sounds
             .pairs()
