@@ -2573,37 +2573,50 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if permanent_upgrades::minecart_powerup_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
-    if permanent_upgrades::pet_license_item_check(app, prev_mine_released && !prev_mine_down) {
     // W4-f33 — the Torch God's Favor permanent upgrade
     // (`ItemCheck_UseTorchGodsFavor`, `Player.cs:45226-45243`, the `:43600`
     // permanent-item seam — after the recall arms, BEFORE the boss spawners
-    // `:43603`, the C# `ItemCheck_OwnerOnlyCode` order). The mid-swing
-    // `ItemTimeIsZero && itemAnimation > 0 && !unlockedBiomeTorches` machine
-    // (the recall/boss-spawner shape); a started use consumes the tick.
+    // `:43603`, the C# `ItemCheck_OwnerOnlyCode` order). A started use
+    // consumes the tick.
     if crate::torch_god_favor_use::torch_gods_favor_item_check(
         app,
         prev_mine_released && !prev_mine_down,
     ) {
-    // W4-a6 — `ItemCheck_TryDestroyingDrones` (`Player.cs:45245-45272`,
-    // called at `:43592` ahead of the Use* cluster): the 5451/5738 remotes
-    // kill their owner's live drone mid-swing. Runs every tick (the gate is
-    // `controlUseItem && ItemTimeIsZero`, NOT the press edge) and never
-    // consumes the tick — the drones are weapons, the kill is not a use.
+        return;
+    }
+    // W4-a6 — `ItemCheck_TryDestroyingDrones` (`Player.cs:45245-45272`):
+    // runs every tick and never consumes it (the kill is not a use).
     crate::powerups::drone_destroy_check(app);
-    // W4-a6 — the permanent power-up consumables (`ItemCheck_UseLifeCrystal`
-    // / `UseManaCrystal` and the sibling `Use*` arms, `Player.cs:45192-45423`,
-    // the full `:43595-43607` ladder incl. the Demon Heart `:43598`, the
-    // Minecart Powerup `:43599` and the Pet Licenses `:43606`): the same
-    // mid-swing `ItemTimeIsZero && itemAnimation > 0` shape as the boss
-    // spawners below. The machine starts the swing on the press edge and
-    // grants when `item_time` reads zero inside the running swing; a started
-    // use consumes the tick like the boss arms. g87 keep-one EXECUTED
-    // (research/263 §6.5, a6 138 §12.3 SEALED): g87's three
-    // `permanent_upgrades` use arms + their dispatch calls dedup onto this
-    // single-seam machine — the CheckCanUse START refusal, the reuseDelay
-    // tail, the live AnyNPCs scan + the full GetItem walk are all folded
-    // here; g87's unique slot-8 UI/draw port rides ui/inventory.rs.
+    // W4-a6 — the single-seam permanent consumable machine
+    // (`ItemCheck_UseLifeCrystal`/`UseManaCrystal` and siblings,
+    // `Player.cs:45192-45423`, the full `:43595-43607` ladder). g87's three
+    // `permanent_upgrades` arms dedup onto this shape (research/263 §6.5),
+    // but the lane-specific arms below stay as the g88 keep-one wiring.
     if crate::powerups::powerup_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    // W4-g88 — the Life Crystal permanent upgrade (`ItemCheck_UseLifeCrystal`,
+    // `Player.cs:45306-45320`, the `:43595` slot BEFORE the fruit). The
+    // < 400 statLifeMax gate, +20/+20/+20, HealEffect(20),
+    // HandleSpecialEvent(0) — the vanilla no-op.
+    if crate::crystals::life_crystal_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    // W4-g88 — the Life Fruit permanent upgrade (`ItemCheck_UseLifeFruit`,
+    // `Player.cs:45290-45304`, the `:43596` slot between the Life Crystal
+    // and the Mana Crystal). Press edge starts the HoldUp swing, the grant
+    // fires at ItemTimeIsZero inside it, one fruit per press.
+    if crate::life_fruit::life_fruit_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    // W4-g88 — the Mana Crystal permanent upgrade (`ItemCheck_UseManaCrystal`,
+    // `Player.cs:45274-45288`, the `:43597` slot AFTER the fruit). The
+    // < 200 statManaMax gate, +20/+20/+20, ManaEffect(20) via the queue,
+    // HandleSpecialEvent(1) → STAR_POWER + the TOPPED_OFF 500/200 check.
+    if crate::crystals::mana_crystal_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    if permanent_upgrades::pet_license_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,

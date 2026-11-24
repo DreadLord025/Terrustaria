@@ -1065,11 +1065,9 @@ fn spawn_heal_text_on(app: &mut App, amount: i32, key: crate::app::RngKey) {
 /// `CombatText.NewText` position jitters (`CombatText.cs:88-89`) on the
 /// bare-`Main.rand` stand-in (`app.rngs.global()`, the S1-A-11 §4
 /// click convention), NOT the UpdatePlayers swap.
-pub(crate) fn spawn_heal_text_on(app: &mut App, amount: i32, rng: &mut tr_core::UnifiedRandom) {
-pub(crate) fn spawn_heal_text(app: &mut App, amount: i32) {
-/// bare-`Main.rand` stand-in (`app.rngs.global()`, the S1-A-11 §4 click
-/// convention), NOT the UpdatePlayers swap. (batch-L compose: f49's
-/// stream-KEY wrapper + f37's stream-REF core, one body.)
+/// (batch-L compose: f49's stream-KEY wrapper [`spawn_heal_text_on`] above
+/// + f37's stream-REF core here, ONE body — the duplicate declarations
+/// fused by an earlier merge are deduped).
 pub(crate) fn spawn_heal_text_with(app: &mut App, amount: i32, rng: &mut tr_core::UnifiedRandom) {
     let Some(p) = app.player.as_ref() else {
         return;

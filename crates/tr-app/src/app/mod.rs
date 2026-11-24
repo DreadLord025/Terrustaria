@@ -4464,6 +4464,72 @@ impl App {
                         p.x = saved.x;
                         p.y = saved.y;
                     }
+                    // W4-g88 — the v7 SUPERSET block (the persist.rs
+                    // module header's contract, the g89 reconciliation):
+                    // the life pair (`Player.LoadPlayer`'s `statLifeMax`
+                    // read + 500 clamp, `Player.cs:55220-55224`), the mana
+                    // pair (`:55226-55229`, clamp 200) and g89's aegis
+                    // flag (`:55256`). The permanent caps survive the
+                    // session. Applied BEFORE the hp clamp below so a
+                    // saved 405-life character keeps its 405 hp. Older
+                    // sidecars (None/false) keep the fresh defaults.
+                    if let Some((base, effective)) = saved.life_max {
+                        p.life_max_base = base;
+                        p.max_hp = effective;
+                    }
+                    if let Some((base, effective)) = saved.mana_max {
+                        p.mana_max_base = base;
+                        p.mana_max = effective;
+                    }
+                    p.used_aegis_fruit = saved.used_aegis_fruit;
+                    // W4-g89b fold: the Gummy Worm rides the unlock line's
+                    // SECOND token (`Player.cs:55259`; the +3 fishing row
+                    // `:12857-12860` — player.rs's S1-P-i35 consumer reads
+                    // the flag). Older sidecars load false.
+                    p.used_gummy_worm = saved.used_gummy_worm;
+                    // W4-g89c fold: the Ambrosia rides the unlock line's
+                    // THIRD token (v9, `Player.cs:55260`; the speed row
+                    // `:12861-12866` stays g89c's). Older sidecars load
+                    // false.
+                    p.used_ambrosia = saved.used_ambrosia;
+                    // W4-g88 v10 fold (the crystal tokens 4/5/6, g90b
+                    // `e76ee133` / a6 `f23385e5`): the Aegis Crystal
+                    // (`Player.cs:55255`, the +0.2 life-regen ramp
+                    // `:19113-19116`), the Arcane Crystal (`:55257`, the
+                    // mana rows `:19430-19433`/`:19453-19456`) and the
+                    // Galaxy Pearl (`:55258`, the +0.03 luck
+                    // `:29142-29145` — `update_luck` mirrors the flag
+                    // into `LuckState`). The consumers stay g90b/a6's;
+                    // this branch restores the carriers. Older sidecars
+                    // (v9 three-token lines) load all three false.
+                    p.used_aegis_crystal = saved.used_aegis_crystal;
+                    p.used_arcane_crystal = saved.used_arcane_crystal;
+                    p.used_galaxy_pearl = saved.used_galaxy_pearl;
+                    // W4-g90 fold: the permanent artisan-loaf unlock rides
+                    // the superset's FOURTH post-dye line
+                    // (`Player.ateArtisanBread`, `Player.cs:2048`; vanilla
+                    // persists it in the `.plr`, `:54779`/`:55245`). Older
+                    // sidecars load false. The +4 crafting reach consumer
+                    // (`craft.rs::tile_reach`, `:35671`) reads the flag.
+                    p.ate_artisan_bread = saved.ate_artisan_bread;
+                    // W4-g88 v11 fold (the f33 torch pair, `8a000407`):
+                    // the Torch God's Favor permanent unlock rides the
+                    // superset's LAST post-dye line (`Player.cs:54777` /
+                    // `:55241`, gate 229) so the biome torches resume
+                    // with the character. The builder toggle half
+                    // restores through the UsingBiomeTorches setter
+                    // (`builderAccStatus[11]`, `:3960-3963`). The use
+                    // arm (5043) + conversion consumers stay f33's.
+                    // Older sidecars load false/false.
+                    p.unlocked_biome_torches = saved.unlocked_biome_torches;
+                    p.set_using_biome_torches(saved.using_biome_torches);
+                    // The loadout block (sidecar v7, the g55 fold
+                    // `d2210b91`): the stored sets + index ride the Player
+                    // (`Player.cs:3200-3207`); the live share word rides
+                    // the App below. Older sidecars load empty/0.
+                    p.loadouts = saved.loadouts;
+                    p.current_loadout_index = saved.current_loadout_index;
+                    loaded_share_flags = saved.equip_share_flags;
                     p.hp = saved.hp.clamp(1, p.max_hp);
                     // W4-g87 — the Demon Heart / Super Cart permanent unlocks
                     // ride the sidecar's v7 `dh` line (the `.plr` halves are

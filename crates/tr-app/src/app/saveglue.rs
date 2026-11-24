@@ -339,6 +339,7 @@ impl App {
                     &kills,
                     // The live equip set's share flags ride the v7 loadout
                     // block (`Player.cs:3200-3207`).
+                    // block (`Player.cs:3200-3207`, the g55 fold).
                     self.equip_share_flags,
                 ) {
                     log::warn!("player save failed: {e}");

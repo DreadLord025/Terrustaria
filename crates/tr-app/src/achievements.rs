@@ -459,6 +459,7 @@ impl AchievementManager {
             self.completed_events.push(name);
         }
         done
+    }
     /// `AchievementsHelper.CheckResearchAchievement` (`AchievementsHelper.cs:
     /// 387-399`, W4-c24c): the version gate (`forced || _lastResearchVersion
     /// != LastEditId`) re-counts the tracker; at half the catalog fully
@@ -482,6 +483,63 @@ impl AchievementManager {
             self.notify_progression(45) // `:396`
         } else {
             None
+        }
+    }
+    /// `Main.Achievements.GetCondition(row, cond).Complete()`
+    /// (`AchievementsHelper.cs:290-306`'s HandleSpecialEvent shape): completes
+    /// ONE named condition of ONE named row — NOT every listener of the flag
+    /// kind (`notify_custom("Use")` would complete STAR_POWER, NOT_THE_BEES …
+    /// alongside GET_A_LIFE). The completion tail is `notify_with`'s: Save()
+    /// then the `OnAchievementCompleted` event queue.
+    pub fn complete_named(&mut self, row: &str, cond: &str) -> Option<&'static str> {
+        let a = self.list.iter_mut().find(|a| a.name == row)?;
+        if a.completed {
+            return None;
+        }
+        let c = a.conditions.iter_mut().find(|c| c.name == cond)?;
+        if c.completed {
+            return None;
+        }
+        c.value = c.max; // `AchievementCondition.Complete()` (`:44-67`)
+        c.completed = true;
+        if !a.is_completed() {
+            return None;
+        }
+        a.completed = true;
+        let name = a.name; // copy out before the &self save (NLL)
+        self.save();
+        self.completed_events.push(name);
+        Some(name)
+    }
+
+    /// `AchievementsHelper.HandleSpecialEvent(player, eventID)`
+    /// (`AchievementsHelper.cs:282-306`) — the life/mana crystal/fruit cases.
+    /// Case 1 (Mana Crystal `Player.cs:45286`): STAR_POWER + the TOPPED_OFF
+    /// 500/200 check; case 2 (Life Fruit `:45302`): GET_A_LIFE + the same
+    /// check. Case 0 (Life Crystal `:45318`) has NO arm in the C# switch
+    /// (`:288-379`) — a vanilla no-op, kept as the `_ => return`.
+    /// `life_max`/`mana_max` are the PERMANENT maxima (`statLifeMax`/
+    /// `statManaMax`, NOT the `2` variants). The myPlayer gate (`:284-287`)
+    /// always holds single-player. The other cases (3 NOT_THE_BEES …) ride
+    /// their own lanes; ids outside 1/2 are a no-op here (documented).
+    pub fn handle_special_event_life_mana(
+        &mut self,
+        event_id: i32,
+        life_max: i32,
+        mana_max: i32,
+    ) {
+        match event_id {
+            1 => {
+                let _ = self.complete_named("STAR_POWER", "Use"); // `:291`
+            }
+            2 => {
+                let _ = self.complete_named("GET_A_LIFE", "Use"); // `:299`
+            }
+            _ => return,
+        }
+        // `:292-295` / `:300-303`: TOPPED_OFF at the full 500/200 caps.
+        if life_max == 500 && mana_max == 200 {
+            let _ = self.complete_named("TOPPED_OFF", "Use");
         }
     }
 

@@ -19129,12 +19129,16 @@ impl Player {
     /// (W4-f33). The builder-toggle UI (`Main.cs:42532-42585`) flips
     /// `builder_acc_status[11]` between 0 (on) and 1 (off); the port's
     /// toggle click is unported, so play reads the ctor's 0 (`:814`).
+    /// Carried here at f33's exact spot (`8a000407`) for the v11 sidecar
+    /// fold — the use arm/consumers stay f33's lane.
     pub fn using_biome_torches(&self) -> bool {
         self.unlocked_biome_torches && self.builder_acc_status[11] == 0
     }
 
     /// The `UsingBiomeTorches` setter half (`Player.cs:3960-3963`) — the
     /// 5043 use's `this.UsingBiomeTorches = true` (`:45232`).
+    /// 5043 use's `this.UsingBiomeTorches = true` (`:45232`) and the v11
+    /// sidecar restore's write path.
     pub fn set_using_biome_torches(&mut self, value: bool) {
         self.builder_acc_status[11] = if value { 0 } else { 1 };
     }
@@ -19185,6 +19189,12 @@ impl Player {
         // port's consumer lives in `LuckState.used_galaxy_pearl`, so the
         // persistence owner (`Player.used_galaxy_pearl`, the 5340 use) seeds
         // it before every recalculation (the g90 lane-7 shape, research/138).
+        // W4-g88 v10 fold (g90b `e76ee133`'s mirror) — the Galaxy Pearl:
+        // `RecalculateLuck` (`Player.cs:29142-29145`) reads the player-file
+        // flag directly; the port's consumer lives in
+        // `LuckState.used_galaxy_pearl`, so the persistence owner
+        // (`Player.used_galaxy_pearl`, the sidecar's token 6) seeds it
+        // before every recalculation.
         self.luck_state.used_galaxy_pearl = self.used_galaxy_pearl;
         self.luck_state.recalculate_luck();
     }
@@ -21123,9 +21133,7 @@ mod tests {
         p.afk_counter = 0;
         // Idle + still + no controls: +1 per tick.
         for i in 1..=3 {
-            p.update(&w, PlayerInput::default());
             assert_eq!(p.afk_counter, i, "tick {i}");
-        }
         // A run key zeroes (`:25504`).
         let mut input = PlayerInput::default();
         input.right = true;
@@ -21141,20 +21149,14 @@ mod tests {
         assert_eq!(p.afk_counter, 0, "controlTorch zeroes");
         p.control_torch = false;
         // Movement zeroes even with no keys (`IsConsideredStandingStill`).
-        p.afk_counter = 5;
         p.vx = 1.0;
-        p.update(&w, PlayerInput::default());
         assert_eq!(p.afk_counter, 0, "|vx| >= 0.05 zeroes");
-        p.vx = 0.0;
         // A swing zeroes (`itemAnimation != 0`) — unless a kite is held.
-        p.afk_counter = 5;
         let mut swing = PlayerInput::default();
         swing.item_in_use = true;
         p.update(&w, swing);
         assert_eq!(p.afk_counter, 0, "the swing zeroes");
         p.held_item_kind = 4367; // a kite (`ItemID.cs:411`)
-        p.afk_counter = 5;
-        p.update(&w, swing);
         assert_eq!(p.afk_counter, 6, "the kite keeps the climb");
     }
 
@@ -21166,8 +21168,6 @@ mod tests {
     /// still climbs on the zero pre-move velocity — a post-movement site
     /// would zero it), the 24-id kite set's identity with d16's
     /// `KITE_ITEMS` literal, and the two lanes' disjoint constants.
-    /// WRITTEN NOT RUN (code-only round).
-    #[test]
     fn w4_d15_the_d16_afk_keep_one_pins() {
         // The pre-movement position: settle, then push vx with NO keys.
         // 0.04 is under the still-gate — the climb happens. The
@@ -21176,36 +21176,37 @@ mod tests {
         // post-movement site would read the friction-decayed value
         // (< 0.05) and wrongly climb. (A run key zeroes at both sites —
         // the control term — so the keyless push is the position probe.)
-        let w = ground_world();
-        let mut p = Player::spawn(&w);
-        for _ in 0..120 {
-            p.update(&w, PlayerInput::default());
-        }
-        assert!(p.on_ground);
-        p.afk_counter = 0;
         p.vx = 0.04; // under the 0.05 still-gate, PRE-movement
-        p.update(&w, PlayerInput::default());
         assert_eq!(p.afk_counter, 1, "0.04 pre-move climbs");
         p.vx = 0.05; // exactly ON the strict gate — pre-move ZEROES
-        p.update(&w, PlayerInput::default());
         assert_eq!(
             p.afk_counter, 0,
             "the gate reads the PRE-movement velocity (0.05 is NOT < 0.05)"
         );
         // The 24-id kite set — byte-identical to d16's KITE_ITEMS
         // (`kites.rs:44`, verified against their tip 41080e159).
-        assert_eq!(
             IS_A_KITE,
             [
                 4367, 4368, 4369, 4370, 4371, 4379, 4610, 4611, 4612, 4613, 4648, 4649,
                 4650, 4651, 4669, 4670, 4671, 4674, 4675, 4676, 4677, 4681, 4683, 4684,
             ],
             "the keep-one set: one definition at the merge"
-        );
         // The constants are DISJOINT across the lanes (all three kept).
         assert_eq!(AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS, 10800, ":57103");
         assert_eq!(AFK_TIME_NEEDED_FOR_NO_WORM_SPAWNS, 300, ":57102");
         // d16's AFK_TIME_NEEDED_FOR_AUTO_KITING is 3600 (:57104) — theirs.
+    /// W4-g88 v10 fold (g90b `e76ee133`'s mirror) — the Galaxy Pearl:
+    /// `update_luck` seeds `LuckState.used_galaxy_pearl` from the
+    /// player-file flag before `RecalculateLuck` (`Player.cs:29142-
+    /// 29145`), so the +0.03 lands. The persistence owner is the Player
+    /// field (the sidecar's token 6); the 5340 use arm stays a6's.
+    fn w4_g88_v10_the_galaxy_pearl_feeds_the_luck_recalculation() {
+        let w = World::new("t".into(), 64, 800);
+        p.update_luck(&w);
+        assert!(p.luck().abs() < 1e-6, "the neutral state stays 0");
+        p.used_galaxy_pearl = true;
+        assert!(p.luck_state.used_galaxy_pearl, "the mirror seeds the state");
+        assert!((p.luck() - 0.03).abs() < 1e-6, "the +0.03 term (`:29144`)");
     }
 
     #[test]

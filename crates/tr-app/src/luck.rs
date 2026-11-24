@@ -80,6 +80,13 @@ pub struct LuckState {
     /// `Player.used_galaxy_pearl` (the 5340 use path, the `.plr` slot
     /// `:54784`/`:55258`); the player's `update_luck` mirrors it here
     /// before every recalculation (the g90 lane-7 consumer split).
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`) — the C# persists it to the
+    /// player file (`:54784/:55258`). W4-g88 v10 fold: the persistence owner
+    /// is `Player.used_galaxy_pearl` (the sidecar unlock line's token 6,
+    /// g90b `e76ee133`'s shape); `update_luck` mirrors it here before every
+    /// recalculation (`:29142-29145`). The 5340 use arm is a6's
+    /// (`powerups::use_shimmer_permanent` sets this field directly — the
+    /// merger reconciles per research/138).
     pub used_galaxy_pearl: bool,
     /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — copied per
     /// tick from the S1-F-14 scheduler (`world_sim/player.rs`, W4-e26).
