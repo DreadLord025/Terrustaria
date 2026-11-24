@@ -219,8 +219,63 @@ pub(crate) fn not_ammo(kind: u16) -> bool {
 }
 
 /// `Item.PaintOrCoating` (`Item.cs:353-362`): `paint > 0 || paintCoating > 0`.
-fn paint_or_coating(kind: u16) -> bool {
+pub(crate) fn paint_or_coating(kind: u16) -> bool {
     registry::get(kind).is_some_and(|d| d.paint > 0 || d.paint_coating > 0)
+}
+
+/// `Player.FindPaintOrCoating` (`Player.cs:41927-41944`): the paint the held
+/// brush/roller applies (and the cursor preview shows, `Main.TryGetAmmo`
+/// `Main.cs:45134`). The FIRST stocked `PaintOrCoating` in the ammo slots
+/// 54..57 wins; else the first over the whole 0..58 carry range — grid
+/// 0..49, coins 50..53, then the ammo slots again. `None` = nothing
+/// selected. The port's split arrays (`App.inventory` + `EquipSlots`) keep
+/// the C# index order (`inv.rs`'s slot-numbering note).
+pub(crate) fn find_paint_or_coating(
+    inventory: &[ItemSlot; INV],
+    equip: &crate::inv::EquipSlots,
+) -> Option<ItemSlot> {
+    // `:41929-41935` — `for (int i = 54; i < 58; i++)`.
+    for s in equip.ammo.iter() {
+        if s.count > 0 && paint_or_coating(s.kind) {
+            return Some(*s);
+        }
+    }
+    // `:41936-41942` — `for (int j = 0; j < 58; j++)`.
+    for s in inventory
+        .iter()
+        .chain(equip.coins.iter())
+        .chain(equip.ammo.iter())
+    {
+        if s.count > 0 && paint_or_coating(s.kind) {
+            return Some(*s);
+        }
+    }
+    None
+}
+
+/// `Main.TryGetAmmo`'s brush/roller arm (`Main.cs:45117-45136`), the paint
+/// preview riding the cursor beside the held tool icon
+/// (`DrawInterface_40_InteractItemIcon` `:45093-45099`): the brush
+/// (1071/1543) offsets the preview by (22, 22), the roller (1072/1544) by
+/// (28, 28); the previewed item is `FindPaintOrCoating`'s pick. The C#
+/// out-defaults are `Color.White` / scale `0.8f` (`:45120-45121`); the draw
+/// site re-reads them through `ammoItem.GetAlpha(ammoColor)`
+/// (`:45096`; the spectre tools themselves ride the gFade alpha arm
+/// `Item.cs:49246-49252` — `Main.gFade` unported — while a previewed paint
+/// takes `GetAlpha`'s default arm, `Item.cs:49324-49339`, white at alpha 0).
+/// `None` for every other kind — the `FlexibleTileWand` arm (`:45137-45142`)
+/// is unported (no wand placement cycle).
+pub(crate) fn paint_tool_preview(
+    held_kind: u16,
+    inventory: &[ItemSlot; INV],
+    equip: &crate::inv::EquipSlots,
+) -> Option<(ItemSlot, [f32; 2])> {
+    let offset = match held_kind {
+        1071 | 1543 => [22.0, 22.0],
+        1072 | 1544 => [28.0, 28.0],
+        _ => return None,
+    };
+    Some((find_paint_or_coating(inventory, equip)?, offset))
 }
 
 /// `Item.FitsAmmoSlot` (`Item.cs:1369-1376`): the `GetItem` ammo pre-pass
@@ -1231,6 +1286,67 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
 mod tests {
     use super::*;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot { kind, name: "", count, prefix: 0 }
+    }
+
+    #[test]
+    fn w4_g79_find_paint_or_coating_prefers_the_ammo_slots() {
+        // `Player.cs:41927-41944`: the FIRST stocked PaintOrCoating in
+        // 54..57 wins over anything in the grid; else the first over 0..58.
+        let mut inv = [EMPTY_SLOT; INV];
+        let mut equip = crate::inv::EquipSlots::empty();
+        // Red Paint 1073 in grid slot 2, Glow Paint 4668 in ammo slot 1.
+        inv[2] = slot(1073, 50);
+        equip.ammo[1] = slot(4668, 99);
+        assert_eq!(
+            find_paint_or_coating(&inv, &equip).map(|s| s.kind),
+            Some(4668),
+            "the ammo-slot scan runs first"
+        );
+        // Ammo slot 0 beats ammo slot 1 (index order).
+        equip.ammo[0] = slot(5344, 1);
+        assert_eq!(find_paint_or_coating(&inv, &equip).map(|s| s.kind), Some(5344));
+        // An EMPTY ammo slot does not shadow the grid pick.
+        equip.ammo = [EMPTY_SLOT; crate::inv::AMMO];
+        assert_eq!(find_paint_or_coating(&inv, &equip).map(|s| s.kind), Some(1073));
+        // A zero-count grid slot is skipped; the coin row counts (index
+        // 50..53 before the ammo re-scan).
+        inv[2] = slot(1073, 0);
+        equip.coins[3] = slot(1074, 7);
+        assert_eq!(find_paint_or_coating(&inv, &equip).map(|s| s.kind), Some(1074));
+        // Nothing painted anywhere: None (the C#'s null).
+        equip.coins[3] = EMPTY_SLOT;
+        inv[9] = slot(8, 99); // torches are not PaintOrCoating
+        assert_eq!(find_paint_or_coating(&inv, &equip), None);
+    }
+
+    #[test]
+    fn w4_g79_the_brush_and_roller_preview_offsets_are_verbatim() {
+        // `Main.TryGetAmmo` (`Main.cs:45124-45135`): brush 1071/1543 at
+        // (22, 22), roller 1072/1544 at (28, 28); the previewed item is the
+        // FindPaintOrCoating pick; every other kind returns false.
+        let mut inv = [EMPTY_SLOT; INV];
+        let equip = crate::inv::EquipSlots::empty();
+        inv[0] = slot(1073, 50);
+        for (tool, offset) in [
+            (1071u16, [22.0, 22.0]),
+            (1543, [22.0, 22.0]),
+            (1072, [28.0, 28.0]),
+            (1544, [28.0, 28.0]),
+        ] {
+            let (item, off) =
+                paint_tool_preview(tool, &inv, &equip).expect("the tool previews its paint");
+            assert_eq!(item.kind, 1073);
+            assert_eq!(off, offset, "tool {tool}");
+        }
+        assert_eq!(paint_tool_preview(8, &inv, &equip), None, "a torch: no arm");
+        assert_eq!(paint_tool_preview(5324, &inv, &equip), None, "the wand arm unported");
+        // No paint in the inventory: the arm returns false (`:45135`).
+        inv[0] = EMPTY_SLOT;
+        assert_eq!(paint_tool_preview(1071, &inv, &equip), None);
+    }
 
     /// S1-E-21 wave A — the per-site cue selection: `Item.UseSound` rows
     /// (`Item.cs`'s `SetDefaults` cases + the `DefaultTo*` helpers) resolve

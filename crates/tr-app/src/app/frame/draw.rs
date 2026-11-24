@@ -362,6 +362,26 @@ impl App {
                     let mut light_rng = tr_core::tile_light::FastRandom::new(self.light_rng_seed);
                     light_rng.next_seed_in_place();
                     self.light_rng_seed = light_rng.seed;
+                    // W4-g78 — `Main.ShouldShowInvisibleBlocksAndWalls`
+                    // (`Main.cs:58023-58030`) via the landed scene scan
+                    // (`SceneMetrics.EchoMonolith`, tile 657 `frameY >= 54`)
+                    // and the player's `CanSeeInvisibleBlocks` (the 4409
+                    // Spectre Goggles / vanity-5345 grants). ONE per-frame
+                    // value feeds the light options (`LightingEngine.cs:124`),
+                    // the tile pass's `IsVisible`/case-541 row
+                    // (`TileDrawing.Update` `:379`) and the pylon/trophy
+                    // passes (`WallDrawing.Update` `:45`'s wall twin rides
+                    // the light params). `TR_SHOW_INVISIBLE=1` keeps pinning
+                    // it on for A/B shots. The perspective player is
+                    // `Main.LocalPlayer` (`SceneMetrics.AddPlayerEffects`
+                    // `:749`) — the sim player, dead or not.
+                    let show_invisible = crate::env::show_invisible()
+                        || tr_core::scene::should_show_invisible_blocks_and_walls(
+                            self.scene_metrics.echo_monolith,
+                            player
+                                .as_ref()
+                                .is_some_and(|p| p.can_see_invisible_blocks),
+                        );
                     let params = LightParams {
                         sky: sky_light,
                         // `TileLightScanner.cs:3245`:
@@ -390,14 +410,17 @@ impl App {
                         // mute the dial light while one ticks (0..=8, u8 on World).
                         sundial_cooldown: i32::from(world.sundial_cooldown),
                         moondial_cooldown: i32::from(world.moondial_cooldown),
-                        // `Main.jellyfishCageMode`: `Main.AnimateTiles` is not ported, so
-                        // every cage stays in mode 0.
-                        cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
+                        // `Main.jellyfishCageMode` (`Main.cs:66948`): the wired
+                        // critter-cage animator's mode bytes (W4-g34 union). The
+                        // scanner's jellyfish arm (`TileLightScanner.cs:714-768`)
+                        // brightens the cage while mode == 2; feeding the live
+                        // table keeps that pulse in step with the draw frames.
+                        cage_mode: self.cage_anim.jellyfish_mode,
                         rng_seed: self.light_rng_seed,
                         // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
-                        // false until the EchoMonolith / 4409-accessory systems land;
-                        // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
-                        draw_invisible_walls: crate::env::show_invisible(),
+                        // W4-g78 wired — the EchoMonolith scan + the 4409/5345
+                        // grants above; `TR_SHOW_INVISIBLE=1` still pins it on.
+                        draw_invisible_walls: show_invisible,
                     };
                     // `Main.essScale`'s drift (`Main.cs:62264-62277`), which
                     // the C# runs once per draw pass just before `DrawItems`
@@ -1027,10 +1050,44 @@ impl App {
                                     })
                                 })
                             });
-                            if any_animated {
+                            let base = if any_animated {
                                 self.tile_anim.anim_key()
                             } else {
                                 0
+                            };
+                            // W4-g34 union (research/197 §2.4): ALL 92
+                            // critter-cage ids animate through the SEPARATE
+                            // cage tables (`AnimateTiles_CritterCages`), not
+                            // `tileFrame`, and none is in `is_animated_kind`'s
+                            // gate set — so they need their own contribution.
+                            // Gated on ANY cage kind being active in the view
+                            // rect (the same convention); a cage-free view
+                            // keeps the pre-wiring key bit-for-bit. A
+                            // lane-2-only gate would leave the g33-half cages
+                            // (bunny 275, penguin, owl, ...) animating with a
+                            // stale key under the union wiring.
+                            let any_cage = (vy0..=vy1).any(|ty| {
+                                (vx0..=vx1).any(|tx| {
+                                    world.tile(tx, ty).is_some_and(|t| {
+                                        t.active()
+                                            && tr_core::drawdata_furniture::is_cage_kind(
+                                                t.kind,
+                                            )
+                                    })
+                                })
+                            });
+                            if any_cage {
+                                // Mix the cage key into the tile-animator key
+                                // with one more FNV round so the two inputs
+                                // cannot collide with a tile-only state.
+                                let mut h = base;
+                                for b in self.cage_anim.anim_key().to_le_bytes() {
+                                    h ^= b as u64;
+                                    h = h.wrapping_mul(0x0000_0100_0000_01b3);
+                                }
+                                h
+                            } else {
+                                base
                             }
                         },
                         net_key: {
@@ -1199,10 +1256,18 @@ impl App {
                             // inputs (plates 428, party 455, echo sight 541).
                             &self.wiring,
                             crate::world_events::party_is_up(&self.world_events),
-                            crate::env::show_invisible(),
+                            // W4-g78: `_shouldShowInvisibleBlocks` — the real
+                            // sight value (echo monolith / goggles), not the
+                            // bare env pin.
+                            show_invisible,
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-g34 union: the critter-cage animator's tables
+                            // + the `Main.critterCage` proximity flag the pass
+                            // raises (`TileDrawing.cs:474`/`:5672`).
+                            &self.cage_anim,
+                            &mut self.critter_cage,
                         );
                         *world_key = Some(key);
                     }
@@ -1246,7 +1311,7 @@ impl App {
                             global_time: anim_time % 3600.0,
                             pylon_counter: self.game_update_count % 64,
                             lens_counter: self.game_update_count % 40,
-                            show_invisible: crate::env::show_invisible(),
+                            show_invisible,
                         };
                         crate::render::pylons::draw_pylons_trophies_void(
                             renderer,
@@ -1324,9 +1389,33 @@ impl App {
                     });
                     if let Some(view) = wire_view {
                         crate::render::wires::draw_wires(
-                            renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
-                            &view,
+                            renderer, world, light, &style, draw_cam, world_zoom, screen, &view,
                         );
+                    }
+                    // S1-W4-g81 residuals — the Wire Kite's placement ghost
+                    // (`Main.cs:31620-31907`, drawLayer 5): the over-wire
+                    // cached projectile draws right after `DrawWires`
+                    // (`Main.cs:62303` → `:62315`), before the generic
+                    // projectile pass. The generic pass below skips 651
+                    // (the C#'s CacheProjDraws routes it out of the main
+                    // walk).
+                    if let Some(pl) = player.as_ref() {
+                        for p in projectiles.slots().iter().filter(|p| p.active) {
+                            if p.kind == crate::projectile::WIRE_KITE {
+                                crate::render::wire_kite::draw_wire_kite(
+                                    renderer,
+                                    lookups,
+                                    p,
+                                    self.wire_tool_mode,
+                                    pl.facing == 1,
+                                    draw_cam,
+                                    world_zoom,
+                                    screen,
+                                    world.width,
+                                    world.height,
+                                );
+                            }
+                        }
                     }
                     // `Main.cs:63276-63277` (`DoDraw_WallsTilesNPCs`): the Moon
                     // Lord's death drama pieces + blasts, after the walls and the
@@ -1582,6 +1671,76 @@ impl App {
                             );
                         }
                     } else if menu.is_none() && !crate::env::no_hud() && !fullscreen_map {
+                        // S1-W4-g81 residuals — `Main.DrawInterface_9_WireSelection`
+                        // (`Main.cs:46196-46204` → `WiresUI.HandleWiresUI`,
+                        // `WiresUI.cs:698-702`): the tool-mode radial's Update+Draw,
+                        // the interface layer between the town-house banners (7)
+                        // and the capture check (10) — under the inventory/hotbar/
+                        // cursor layers the `draw_hud` below carries. The petal
+                        // clicks XOR `wire_tool_mode`; the hover write folds into
+                        // the mine-suppression stand-in through `wires_radial.hovering`.
+                        {
+                            let held = inventory.get(*selected).copied().unwrap_or(crate::item::EMPTY_SLOT);
+                            let tool_mode_ui =
+                                ui::wires_ui::draw_tool_mode_ui(held.kind, held.count);
+                            let allow_actuators = ui::wires_ui::draw_tool_allow_actuators(
+                                held.kind,
+                                held.count,
+                                &mut self.wires_radial.last_actuator_enabled,
+                            );
+                            // The cursor-icon latch (`Player.cs:46756-46760`)
+                            // — the sim's per-update in-reach write (the
+                            // PLAYER field, the batch-H keep-one — g79's
+                            // paint gates share it; the icon ID stays 0 for
+                            // the wiring tools, so the `:130` ID gate never
+                            // trips — the g86 research/244 override system
+                            // owns the ID).
+                            let icon_enabled =
+                                player.as_ref().is_some_and(|p| p.cursor_item_icon_enabled);
+                            // The slot-surface hit tests over disjoint fields
+                            // (the destructure holds `renderer`/`lookups` —
+                            // a whole-`self` method call would conflict).
+                            let over_ui_slot = crate::app::clicks::slot_at_mouse_fields(
+                                self.mouse_pos,
+                                self.inventory_open,
+                                &self.hotbar_scales,
+                            )
+                            .is_some()
+                                || crate::app::clicks::coin_ammo_at_mouse_fields(
+                                    self.mouse_pos,
+                                    self.inventory_open,
+                                    self.bestiary_open,
+                                    lookups.ui_back.map_or(52.0, |b| b.width as f32),
+                                )
+                                .is_some()
+                                || self.wires_radial.hovering;
+                            let inp = ui::wires_ui::RadialInputs {
+                                mouse: self.mouse_pos,
+                                screen,
+                                held_kind: held.kind,
+                                held_count: held.count,
+                                dead: player.as_ref().is_some_and(|p| p.dead),
+                                mouse_item: self.mouse_item.count > 0,
+                                icon_enabled,
+                                chat_open: self.chat.open,
+                                mouse_interface: over_ui_slot,
+                                options_or_fancy: self.ingame_options.open
+                                    || self.bestiary_open
+                                    || self.achievements_open,
+                                right_press: self.place_down && !self.place_prev_down,
+                                left_press: self.mine_down && !self.mine_prev_down,
+                                no_throw: self.no_throw != 0,
+                                talking: self.talk_npc.is_some(),
+                            };
+                            self.wires_radial.update(tool_mode_ui, allow_actuators, &inp);
+                            self.wires_radial.draw(
+                                renderer,
+                                lookups,
+                                &mut self.wire_tool_mode,
+                                allow_actuators,
+                                &inp,
+                            );
+                        }
                         let craft_available = if self.crafting_open {
                             // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): the
                             // owned counts fold the inventory and the in-range
@@ -1666,6 +1825,35 @@ impl App {
                             .map_or(crate::bank::CHEST_CLOSED, |p| p.chest);
                         let (panel_chest_x, panel_chest_y) =
                             player.as_ref().map_or((0, 0), |p| (p.chest_x, p.chest_y));
+                        // S1-W4-g81 residuals — `DrawInterface_31_BuilderAccToggles`
+                        // (`Main.cs:45477-45480` → `DrawBuilderAccToggles(10, 77)`,
+                        // `:47353-47590`): the wire-channel cycle column + the
+                        // ruler/actuator/paint on/off rows + the block-replacer/
+                        // torch-swap side icons. The layer rides between the
+                        // hotbar (30) and the mouse text (33) — the port draws it
+                        // just before `draw_hud` (which carries 25/27/30/33+);
+                        // the column's own `playerInventory` gate is inside.
+                        // The click's sound-12 (`Main.cs:47413` etc.) plays here.
+                        if let Some(p) = player.as_mut() {
+                            let toggled = ui::builder_toggles::draw_builder_acc_toggles(
+                                renderer,
+                                lookups,
+                                p,
+                                &ui::builder_toggles::ToggleInputs {
+                                    mouse: self.mouse_pos,
+                                    screen,
+                                    left_press: self.mine_down && !self.mine_prev_down,
+                                    inventory_open: self.inventory_open,
+                                    pulse: ui::UiPulse {
+                                        text: self.mouse_text_color as f32 / 255.0,
+                                        cursor_scale: self.cursor.scale(),
+                                    },
+                                },
+                            );
+                            if toggled == Some(true) {
+                                self.audio.play("Menu_Tick");
+                            }
+                        }
                         ui::draw_hud(
                             renderer,
                             *camera,
@@ -1800,7 +1988,32 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // W4-g79 — the cursor interact-icon pass's world
+                            // (the biome hold-style conversions).
+                            world,
+                            // S1-W4-g81 — the 10-frame cache linger pair
+                            // (the batch-H keep-one compose).
+                            (self.item_icon_cache_kind, self.item_icon_cache_time),
                         );
+                        // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
+                        // (`Main.cs:45062` inside `DrawInterface_40`, the C#'s
+                        // only call site): the linger's per-draw decay, after
+                        // the icon pass read it. Inlined over disjoint fields —
+                        // the destructure holds `renderer`, a whole-`self`
+                        // method call would conflict (the `:46522-46540` body
+                        // verbatim).
+                        if self.item_icon_cache_time > 0 {
+                            let d = (self.item_icon_cache_pos - self.mouse_pos).length();
+                            if d != 0.0 {
+                                self.item_icon_cache_time -= 1;
+                            }
+                            if d > 4.0 {
+                                self.item_icon_cache_time = 0;
+                            }
+                            if self.item_icon_cache_kind != inventory[*selected].kind {
+                                self.item_icon_cache_time = 0;
+                            }
+                        }
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
                         // the interface layers draw.

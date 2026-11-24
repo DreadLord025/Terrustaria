@@ -102,7 +102,7 @@ const HELD_LIGHT_ALLOWED: bool = true;
 /// `Zones.temple` and the remix-world desert arm (`:40341`) reads the
 /// world's REMIX seed flag (S1-P-i42: both restored — the pre-fix port
 /// dropped them, so a temple/remix torch held the wrong colour).
-fn biome_torch_hold_style(
+pub(crate) fn biome_torch_hold_style(
     kind: u16,
     using_biome_torches: bool,
     zones: Zones,
@@ -156,6 +156,71 @@ fn biome_torch_hold_style(
     // surface gate above never fires there.
     if zones.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
         return 4383;
+    }
+    kind
+}
+
+/// `Player.BiomeCampfireHoldStyle` (`Player.cs:40403-40458`): the campfire
+/// 966's biome conversion under `UsingBiomeTorches` — the cursor icon pass
+/// (`DrawInterface_40_InteractItemIcon`, `Main.cs:45053`) reads it. The arm
+/// order is the C#'s verbatim; `ZoneShimmer` (`:40409`) and
+/// `ZoneUndergroundDesert` (`:40449`) read fields the port's `Zones` does
+/// not carry and are skipped in place (the `biome_torch_hold_style`
+/// precedent), the remaining arms keep their order.
+pub(crate) fn biome_campfire_hold_style(
+    kind: u16,
+    using_biome_torches: bool,
+    zones: Zones,
+    pos_y: f32,
+    world: &tr_core::world::World,
+) -> u16 {
+    // `:40405` — `!UsingBiomeTorches || itemType != 966` returns unchanged.
+    if !using_biome_torches || kind != 966 {
+        return kind;
+    }
+    // `:40413-40416` — the glowshroom arm comes BEFORE the temple/dungeon
+    // (the torch chain's order differs here).
+    if zones.glowshroom {
+        return 5299;
+    }
+    // `:40417-40420` — `ZoneLihzhardTemple` → the Jungle campfire 4694.
+    if zones.temple {
+        return 4694;
+    }
+    // `:40421-40424` — the dungeon arm.
+    if zones.dungeon {
+        return 3724;
+    }
+    // `:40425-40428` — below `Main.UnderworldLayer * 16` (`Main.cs:2790`:
+    // `maxTilesY - 200`).
+    let underworld_px = (world.height - 200) as f32 * TILE_PX;
+    if pos_y > underworld_px {
+        return 3047;
+    }
+    if zones.hallow {
+        return 4693; // `:40429-40432`
+    }
+    if zones.corrupt {
+        return 4691; // `:40433-40436`
+    }
+    if zones.crimson {
+        return 4692; // `:40437-40440`
+    }
+    if zones.snow {
+        return 3048; // `:40441-40444`
+    }
+    if zones.jungle {
+        return 4694; // `:40445-40448`
+    }
+    // `:40449-40452` — the surface-desert half reads the zone flag and the
+    // world-surface line like the C#; `ZoneUndergroundDesert` is unported
+    // (the `Zones` struct carries no such flag — documented skip).
+    if zones.desert && pos_y < world.world_surface as f32 * TILE_PX {
+        return 4689;
+    }
+    // `:40453-40456` — `ZoneDesert && Main.remixWorld`.
+    if zones.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        return 4689;
     }
     kind
 }
@@ -754,6 +819,39 @@ mod tests {
         z.snow = true;
         let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
         assert_eq!(lights[0].2, tr_core::tile_light::torch_color(0, &params()));
+    }
+
+    /// W4-g79 — `BiomeCampfireHoldStyle` (`Player.cs:40403-40458`): the
+    /// campfire 966's zone ladder, the glowshroom-before-temple order (the
+    /// torch chain differs), the underworld line and the unlock gate.
+    #[test]
+    fn w4_g79_the_biome_campfire_substitution_follows_the_zone_order() {
+        let w = World::new("t".into(), 64, 800);
+        let mut z = zones();
+        // No unlock: the plain campfire stays plain even in a biome.
+        assert_eq!(biome_campfire_hold_style(966, false, z, 176.0, &w), 966);
+        // A non-campfire kind never converts.
+        assert_eq!(biome_campfire_hold_style(8, true, z, 176.0, &w), 8);
+        // Snow → 3048 (the Snow campfire).
+        z.snow = true;
+        assert_eq!(biome_campfire_hold_style(966, true, z, 176.0, &w), 3048);
+        // Hallow shadows snow (`:40429` before `:40441`).
+        z.hallow = true;
+        assert_eq!(biome_campfire_hold_style(966, true, z, 176.0, &w), 4693);
+        // The glowshroom arm (`:40413`) shadows even the hallow.
+        z.glowshroom = true;
+        assert_eq!(biome_campfire_hold_style(966, true, z, 176.0, &w), 5299);
+        // Below the underworld line the Demon campfire 3047 wins over the
+        // hallow/snow but not the glowshroom/temple/dungeon above it.
+        let deep_y = (w.height - 100) as f32 * TILE_PX;
+        z.glowshroom = false;
+        assert_eq!(biome_campfire_hold_style(966, true, z, deep_y, &w), 3047);
+        // The dungeon arm (`:40421`) shadows the underworld.
+        z.dungeon = true;
+        assert_eq!(biome_campfire_hold_style(966, true, z, deep_y, &w), 3724);
+        // The temple arm (`:40417`) shadows the dungeon.
+        z.temple = true;
+        assert_eq!(biome_campfire_hold_style(966, true, z, deep_y, &w), 4694);
     }
 
     #[test]

@@ -1636,4 +1636,50 @@ mod tests {
         apply_tile_light(&w, &w.tiles[w.index(1, 1)], 1, 1, &mut rng, &p, &mut c);
         assert_eq!(c, [0.0; 3]);
     }
+
+    /// W4-g34 cage-light witness (WRITTEN NOT RUN — code-only mode): the
+    /// jellyfish cages' light follows `Main.jellyfishCageMode`
+    /// (`TileLightScanner.cs:714-768`) — mode 2 is the bright phase, every
+    /// other mode the dim one. The frame index is
+    /// `(x - frameX/18)/3 * ((y - frameY/18)/3) % cageFrames`; at the origin
+    /// cell (0,0) of a style-0 cage that is slot 0 of row `kind - 316`.
+    #[test]
+    fn jellyfish_cage_light_follows_the_mode_byte() {
+        let mut p = LightParams::default();
+        // Mode 0 (the fresh allocation): the dim colours, one per bowl kind.
+        close(lit(&tile(316, 0, 0), 0, 0, &p), [0.1, 0.2, 0.5]);
+        close(lit(&tile(317, 0, 0), 0, 0, &p), [0.05, 0.45, 0.1]);
+        close(lit(&tile(318, 0, 0), 0, 0, &p), [0.4, 0.1, 0.25]);
+        // Mode 2 on slot 0 of each row: the bright colours.
+        p.cage_mode[0][0] = 2;
+        p.cage_mode[1][0] = 2;
+        p.cage_mode[2][0] = 2;
+        close(lit(&tile(316, 0, 0), 0, 0, &p), [0.2, 0.3, 0.8]);
+        close(lit(&tile(317, 0, 0), 0, 0, &p), [0.2, 0.7, 0.3]);
+        close(lit(&tile(318, 0, 0), 0, 0, &p), [0.7, 0.2, 0.5]);
+        // Mode 1 / 3 are NOT the bright phase — they stay dim.
+        p.cage_mode[0][0] = 1;
+        close(lit(&tile(316, 0, 0), 0, 0, &p), [0.1, 0.2, 0.5]);
+        p.cage_mode[0][0] = 3;
+        close(lit(&tile(316, 0, 0), 0, 0, &p), [0.1, 0.2, 0.5]);
+    }
+
+    /// W4-g34 cage-light witness (WRITTEN NOT RUN): the mode slot is read at
+    /// the cage's ORIGIN-derived index, not the drawn cell — a non-origin
+    /// cell of the same cage reads the same slot (`TileLightScanner.cs:718-720`).
+    #[test]
+    fn jellyfish_cage_mode_slot_is_origin_derived() {
+        let mut p = LightParams::default();
+        p.cage_mode[0][0] = 2;
+        // Cell (1,1) of the origin-(0,0) cage: frameX/frameY 18, so
+        // num18 = 1-1 = 0, num19 = 1-1 = 0 → slot 0 (bright).
+        close(lit(&tile(316, 18, 18), 1, 1, &p), [0.2, 0.3, 0.8]);
+        // Slot 1 needs num18/3 * num19/3 == 1: origin (3,3) read at cell (6,6)
+        // has frameX/frameY 54 → num18 = 6-3 = 3, num19 = 6-3 = 3 → 1. Mode 2
+        // on slot 1 brightens only that cage; slot 0 stays dim.
+        p.cage_mode[0][0] = 0;
+        p.cage_mode[0][1] = 2;
+        close(lit(&tile(316, 54, 54), 6, 6, &p), [0.2, 0.3, 0.8]);
+        close(lit(&tile(316, 0, 0), 0, 0, &p), [0.1, 0.2, 0.5]);
+    }
 }

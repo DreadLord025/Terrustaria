@@ -829,6 +829,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DuckWhite
         | NpcKind::DuckWhite2 => &[31],
         // E8 merge: the c10 12-critter {31} tail dropped (d40/c8's rows above).
+        // W4-e21 — PartyBunny (540) debuff immunity: C# NPCID.cs:9127-9131 gives
+        // {31} (identical to Bunny 46, d34's arm above). The merged PartyBunny
+        // variant needs its own arm for match exhaustiveness; the e21 "no
+        // DebuffImmunitySets row" claim is corrected against the source here.
+        NpcKind::PartyBunny => &[31],
     }
 }
 

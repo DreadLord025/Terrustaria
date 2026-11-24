@@ -1762,6 +1762,9 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     39, 40, 41, 47, 48, // phase 2
     56, 57, 61, 62, 63, // phase 3
     67, 68, // phase 4 (merge-side: 64/69/70 dropped, g8-owned — 367 §1)
+    // W4-e21 — the Party Bunny's 7-row NPC_540 strip (46 is d34's phase-1
+    // row above — the sheet id is deduped).
+    540, // the Party Bunny
 ];
 
 /// W4-d37 — the NPCID 211-280 band's own sheets (the vanilla's
@@ -2916,6 +2919,70 @@ pub(crate) fn draw_npcs(
         let ty = (cy / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
+        // W4-g78 wiring — the behind-tiles black-out scan
+        // (`Main.cs:22922-22938`): BEFORE the tint chain, a behind-tiles
+        // NPC whose ±8 px box overlaps ANY zero-brightness cell paints
+        // BLACK (`Lighting.Brightness == 0f` — the raw light, NOT the
+        // brightness-scaled shade, so the port tests the raw `l` sum; the
+        // 113/114 Wall of Flesh pair is exempt). This is the C# order the
+        // tint chain then runs on (a blacked-out ichored NPC still goes
+        // yellow — the chain's ichor REPLACE lifts it).
+        let c = if behind_tiles
+            && !matches!(n.kind, NpcKind::WallOfFlesh | NpcKind::WallOfFleshEye)
+        {
+            let (bw, bh) = n.size();
+            let x0 = ((n.x - 8.0) / 16.0) as i32;
+            let x1 = ((n.x + bw + 8.0) / 16.0) as i32;
+            let y0 = ((n.y - 8.0) / 16.0) as i32;
+            let y1 = ((n.y + bh + 8.0) / 16.0) as i32;
+            let mut blacked = false;
+            for lx in x0..=x1 {
+                for ly in y0..=y1 {
+                    let b = light.get(lx, ly);
+                    if b[0] + b[1] + b[2] == 0.0 {
+                        blacked = true;
+                    }
+                }
+            }
+            if blacked { [0.0, 0.0, 0.0] } else { c }
+        } else {
+            c
+        };
+        // W4-g78 wiring — `Main.DrawNPC`'s `npcColor =
+        // rCurrentNPC.GetNPCColorTintedByBuffs(npcColor)` (`Main.cs:22939`):
+        // the 14-arm debuff tint chain (midas/ichor/poison/… — the family
+        // research/76 censused as MISSING) runs on the light colour BEFORE
+        // the per-kind draw tints. The C# colour is bytes (`Lighting.GetColor`
+        // `Lighting.cs:216-242`: `(int)(v * GlobalBrightness * 255)` clamp
+        // 255); the port's `shade` already applied the brightness + clamp,
+        // so the byte round-trip is the `pylons.rs::color_bytes` convention.
+        // MINIMAL-DELTA GATE (ANALYSIS): the round-trip runs ONLY when the
+        // chain is non-identity (a debuff flag armed AND canDisplayBuffs) —
+        // a clean NPC keeps the pre-wiring float shade bit-for-bit (the
+        // C#'s unconditional GetColor byte quantisation is a residual
+        // fidelity item, recorded). The chain is PURE (zero RNG); the G6
+        // `npc_key` hashes the tint-relevant buff bar (`npc.rs::render_key`
+        // → `npc_hunter_tint::tint_key`) so a gain/loss rebuilds the range.
+        // The Hunter floor's `hunter_active` input stays false until the
+        // contested `draw_npcs` tail threading lands (research/77 §2 —
+        // c39/d70 own the signature). The behind-tiles black-out scan
+        // (`Main.cs:22922-22938`) that PRECEDES the chain in C# is WIRED
+        // above (the same uncontested window).
+        let c = {
+            let f = crate::npc_hunter_tint::tint_flags_from_buffs(n);
+            if f.can_display_buffs && crate::npc_hunter_tint::tint_key(n) != 0 {
+                let bytes = [
+                    (c[0] * 255.0) as u8,
+                    (c[1] * 255.0) as u8,
+                    (c[2] * 255.0) as u8,
+                    255,
+                ];
+                let t = crate::npc_hunter_tint::npc_color_tinted_by_buffs(bytes, &f);
+                [t[0] as f32 / 255.0, t[1] as f32 / 255.0, t[2] as f32 / 255.0]
+            } else {
+                c
+            }
+        };
         // The width + the height: the Golem family's draw anchors the
         // frame off the box's bottom edge (the vanilla's
         // `position.Y + height + 4`, `Main.cs:25513`) and the Deerclops'
@@ -4583,6 +4650,13 @@ pub(crate) fn draw_npcs(
             }
             // E8 merge: the c10 12-critter draw tail dropped - d40's group arm
             // above owns them (the identical texture_net_id shape).
+            // W4-e21 — PartyBunny (540) draws its own 7-row sheet with the
+            // generic centred anchor — the small-kinds' shape. Bunny (46) is
+            // d34's arm above; this covers the merged PartyBunny variant.
+            NpcKind::PartyBunny => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;

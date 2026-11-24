@@ -100,11 +100,12 @@ impl Default for TileDrawData {
 /// `x % 2 == 0` sprite flip, both feed case 751/207 arithmetic), `frame_x`/
 /// `frame_y` the tile's framing, `tile_frame` the animation row
 /// `Main.tileFrame[kind]` (0 until the animator is ported — the vanilla t=0
-/// state), and `solid_above` is the caller's "solid tile above" probe — the
-/// tile at `(x, y - 1)` is active, in `TILE_SOLID` and not in
-/// `TILE_SOLID_TOP` (`render/tiles.rs:371-373`; the C# analogue is the
-/// `WorldGen.SolidTile(x, y - 1)` probe of case 4,
-/// TileDrawing.cs:4672-4679). World/engine-dependent
+/// state), and `solid_above` is the caller's `WorldGen.SolidTile(x, y - 1)`
+/// probe (`WorldGen.cs:70111-70132`): the tile at `(x, y - 1)` is active, in
+/// `TILE_SOLID`, not in `TILE_SOLID_TOP`, not half-brick, slope 0 and not
+/// actuated-inactive (a null tile is `true`). Fed from
+/// `drawdata_cases_a::solid_tile` (`render/tiles.rs`); the C# analogue is
+/// case 4's probe, TileDrawing.cs:4672-4679. World/engine-dependent
 /// sub-branches keep their unconditional static part; everything else is a
 /// documented deviation.
 pub fn draw_data(
@@ -660,8 +661,10 @@ pub fn draw_data(
             data.top = 2;
         }
         // `case 441 / 468` — FakeContainers: 18 px tall on the
-        // `tileFrameY == 18` row; the `tileFrameY` rewrite needs
-        // `Animation.GetTemporaryFrame` (5342-5356) — documented deviation.
+        // `tileFrameY == 18` row; the `tileFrameY` rewrite
+        // (`Animation.GetTemporaryFrame`, 5342-5356) is scaffolded in
+        // `drawdata_cases_b` (W4-g34, d63/d64 R13) — behaviour-neutral while
+        // the registry is empty.
         441 | 468 => {
             if fy == 18 {
                 data.height = 18;
@@ -706,8 +709,10 @@ pub fn draw_data(
             data.add_fr_y = (n34 * 54) as i16;
         }
         // `case 455` — PartyMonolith: addFrY 0, top 2; the extra row applies
-        // only while `BirthdayParty.PartyIsUp` (5397-5408), which the port
-        // treats as always false.
+        // only while `BirthdayParty.PartyIsUp` (5397-5408). The static table
+        // carries the party-down state; the live `drawdata_cases_b` arm feeds
+        // the real flag (W4-g34 doc-sweep: the old "always false" comment
+        // described the pre-wiring behaviour).
         455 => {
             data.add_fr_y = 0;
             data.top = 2;
@@ -797,11 +802,14 @@ pub fn draw_data(
             data.add_fr_y = (tile_frame * 36) as i16;
             data.top = 2;
         }
-        // `case 564` — PlasmaLamp: shares the 217/218 arm in C# (5523-5528)
-        // but the glow switch then unconditionally clears addFrY (6105-6113),
-        // so the net result is top 2 with no animation offset.
+        // `case 564` — PlasmaLamp: shares the 217/218 arm in C# (5523-5528):
+        // `addFrY = tileFrame * 36`, top 2. The glow switch's unconditional
+        // `addFrY = 0` (6112) is applied by `drawdata_cases_a` AFTER it reads
+        // the pre-clear row for the glow rect (6109) — W4-g34 deviation fix
+        // (d63 batch 4 / d64 R15): the clear must not ride here, or the rect
+        // loses the animation row.
         564 => {
-            data.add_fr_y = 0;
+            data.add_fr_y = (tile_frame * 36) as i16;
             data.top = 2;
         }
         // `case 219 / 220 / 642` — Extractinator family: animation row * 54,
@@ -863,8 +871,11 @@ pub fn draw_data(
             data.flip = flip_x;
         }
         // `case 428` — WeightedPressurePlate: top 4;
-        // `PressurePlateHelper.PressurePlatesPressed` would add addFrX 18 —
-        // the port treats plates as not pressed (TileDrawing.cs:5605-5611).
+        // `PressurePlateHelper.PressurePlatesPressed` adds addFrX 18 — the
+        // static table carries the not-pressed state; the live
+        // `drawdata_cases_b` arm feeds the real pressed flag
+        // (TileDrawing.cs:5605-5611; W4-g34 doc-sweep: the old "not pressed"
+        // comment described the pre-wiring behaviour).
         428 => {
             data.top += 4;
         }
@@ -1042,8 +1053,9 @@ pub fn draw_data(
         data.top = 2;
     }
     // The halfBrick epilogue (TileDrawing.cs:6045-6048) and the glow switch
-    // (6049-, except 564's addFrY reset handled above) live in the tile pass
-    // / TILE-DRAW-2 respectively.
+    // (6049-, including 564's addFrY reset, which rides drawdata_cases_a's
+    // delta after the rect reads the pre-clear row — W4-g34) live in the tile
+    // pass / TILE-DRAW-2 respectively.
 
     data
 }
@@ -1280,6 +1292,39 @@ pub fn cactus_source_y_offset(evil: bool, good: bool, crimson: bool) -> i32 {
 /// y%3) % 2 * 90` (TileDrawing.cs:1125-1131).
 pub fn cog_source_y_offset(x: i32, y: i32, tile_frame: i32) -> i32 {
     (tile_frame + x % 2 + y % 2 + x % 3 + y % 3) % 2 * 90
+}
+
+/// `Main.ConvertPaintIdToTileShaderIndex` (`Main.cs:58677-58696`): the paint
+/// id → `Main.tileShader` pass index every baked paint render target selects
+/// (`TilePaintSystemV2.cs:77`, the wall settings carry
+/// `UseWallShaderHacks = true`, `TreePaintSystemData.cs:220-224`; the player
+/// display dolls call it with both flags false, `PlayerDrawHelper.cs:55`).
+/// Illuminant (31) is pass 0 — drawn UNPAINTED, its glow rides the light
+/// path; negative (30) takes pass 43 on WALLS but pass 42 on tiles (the
+/// C#'s `&` is non-short-circuit, side-effect-free — same result as `&&`);
+/// ids ≥ 28 shift by +12; the grass special-group arm remaps the twelve
+/// basic hues 1..12 to 28..39 (the deep paints 13..24 keep their own pass).
+/// The passes themselves are compiled HLSL absent from the decompile — the
+/// port's `sprite.wgsl::paint_recolor` reconstruction stays the documented
+/// deviation (ANALYSIS "Paint and coatings"); this pins the pass SELECTION.
+pub fn convert_paint_id_to_tile_shader_index(
+    paint_index_on_tile: i32,
+    is_used_for_painting_grass: bool,
+    use_wall_shader_hacks: bool,
+) -> i32 {
+    if paint_index_on_tile == 31 {
+        return 0;
+    }
+    if (paint_index_on_tile == 30) & use_wall_shader_hacks {
+        return 43;
+    }
+    if paint_index_on_tile >= 28 {
+        return paint_index_on_tile + 12;
+    }
+    if is_used_for_painting_grass && (1..=12).contains(&paint_index_on_tile) {
+        return paint_index_on_tile + 27;
+    }
+    paint_index_on_tile
 }
 
 impl TileDrawData {
@@ -1870,9 +1915,12 @@ mod tests {
         assert_eq!((extr.top, extr.add_fr_y), (2, 216));
         // Kinds outside the switch keep the global default * 38.
         assert_eq!(dd(1, 0, 0, 0, 0, 3).add_fr_y, 114);
-        // Dirty: 564's glow-switch reset (TileDrawing.cs:6105-6113) zeroes the
-        // row that 217/218 keep.
-        assert_eq!(dd(564, 0, 0, 0, 0, 3).add_fr_y, 0);
+        // W4-g34: 564 shares the 217/218 first-switch arm (tileFrame * 36);
+        // the glow-switch reset (TileDrawing.cs:6112) now rides
+        // drawdata_cases_a's delta AFTER the rect reads the pre-clear row, so
+        // the static table keeps the row here (the old port folded the clear
+        // in and the glow rect lost it — d63 batch 4 / d64 R15).
+        assert_eq!(dd(564, 0, 0, 0, 0, 3).add_fr_y, 108);
         assert_eq!(dd(564, 0, 0, 0, 0, 3).top, 2);
         assert_eq!(dd(217, 0, 0, 0, 0, 3).add_fr_y, 108);
         assert_eq!(dd(218, 0, 0, 0, 0, 3).add_fr_y, 108);
@@ -2869,8 +2917,9 @@ mod tests {
     #[test]
     fn test_DW_4_2_solid_above_scope() {
         // The doc on `draw_data` must describe the caller's actual predicate
-        // (render/tiles.rs:371-373: active && TILE_SOLID && !TILE_SOLID_TOP),
-        // not claim solid_above *is* WorldGen.SolidTile.
+        // (W4-g34: the full WorldGen.SolidTile, fed from
+        // drawdata_cases_a::solid_tile), naming the solid/solid-top sets and
+        // the active flag.
         let src = include_str!("drawdata.rs");
         let doc = &src
             [src.find("/// `kind` is `Tile.type`").unwrap()..src.find("pub fn draw_data").unwrap()];
@@ -2879,6 +2928,10 @@ mod tests {
         assert!(
             doc.contains("TILE_SOLID_TOP"),
             "doc must state the solid-top exclusion"
+        );
+        assert!(
+            doc.contains("WorldGen.SolidTile"),
+            "doc must name the full C# predicate (W4-g34 deviation fix)"
         );
         // And the parameter is consumed only by the torch arm: flipping
         // solid_above changes nothing anywhere else
@@ -2957,5 +3010,43 @@ mod tests {
         );
         assert_eq!(dd(325, 0, 0, 0, 0, 0), DEFAULT); // no case
         assert_eq!(dd(655, 0, 0, 0, 0, 0), DEFAULT); // no case, not the 654 arm
+    }
+
+    #[test]
+    fn w4_g79_the_paint_shader_pass_selection_is_verbatim() {
+        // `Main.cs:58677-58696`, tile flags (false, false) — the
+        // `PlayerDrawHelper.cs:55` call shape.
+        let tile = |p| convert_paint_id_to_tile_shader_index(p, false, false);
+        // Illuminant 31 is pass 0 regardless of the flags (`:58679-58682`).
+        assert_eq!(tile(31), 0);
+        assert_eq!(convert_paint_id_to_tile_shader_index(31, true, true), 0);
+        // Negative 30: pass 42 on tiles (`>= 28` arm), pass 43 on walls
+        // (`:58683-58686`).
+        assert_eq!(tile(30), 42);
+        assert_eq!(convert_paint_id_to_tile_shader_index(30, false, true), 43);
+        assert_eq!(convert_paint_id_to_tile_shader_index(30, true, true), 43);
+        // Brown 28 / shadow 29 shift by +12 (`:58687-58690`).
+        assert_eq!(tile(28), 40);
+        assert_eq!(tile(29), 41);
+        assert_eq!(convert_paint_id_to_tile_shader_index(29, true, true), 41);
+        // The basic + deep hues keep their own ids without the grass flag.
+        for p in 0..=27 {
+            assert_eq!(tile(p), p, "tile pass {p}");
+        }
+        // The grass arm remaps ONLY 1..12 (`:58691-58694`) — deep 13..24
+        // keep their ids, 0/25..27 stay.
+        let grass = |p| convert_paint_id_to_tile_shader_index(p, true, false);
+        for p in 1..=12 {
+            assert_eq!(grass(p), p + 27, "grass pass {p}");
+        }
+        for p in [0, 13, 20, 24, 25, 26, 27] {
+            assert_eq!(grass(p), p, "grass keeps {p}");
+        }
+        // The wall settings (`TreePaintSystemData.cs:220-224`) never use
+        // special groups: every non-30/31 id passes through the same ladder.
+        let wall = |p| convert_paint_id_to_tile_shader_index(p, false, true);
+        for p in 0..=29 {
+            assert_eq!(wall(p), tile(p), "wall pass {p}");
+        }
     }
 }

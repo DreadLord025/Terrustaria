@@ -641,12 +641,27 @@ impl App {
                 ); // `:1886`
                 // `:1887-1893` — the Dead Man's Chest trips its wiring.
                 if is_rigged(&self.world, cx, cy) {
+                    // The §8.1 stamp: the rigged trip can shift a wired
+                    // door family (the peers ride the boxes too).
+                    crate::world_sim::wiring::stamp_wiring_entity_boxes(self);
                     self.wiring.hit_switch(&mut self.world, cx, cy);
                     // S1-E-21i — the trip's Mech-28 click: the host's
                     // positioned gate refuses (netMode 2), draw-free.
                     for (px, py) in self.wiring.take_switch_clicks() {
                         self.audio
                             .play_switch_click(px as f32, py as f32, self.rngs.global());
+                    }
+                    // W4-c42 — the rigged chest's wired door cues (the bare
+                    // stream, the switch-click precedent).
+                    for (open, px, py) in self.wiring.take_door_cues() {
+                        self.audio
+                            .play_door_sound(open, px as f32, py as f32, self.rngs.global());
+                    }
+                    // The §8.2 echoes: the MP relay attaches with the g48b
+                    // `19` codec lane (contract note); drained so the
+                    // queue never lingers across messages.
+                    for (n, x, y, d) in self.wiring.take_door_echoes() {
+                        self.send_door_toggle(n, x, y, d);
                     }
                     server.broadcast_except(
                         &S2c::HitSwitch(net::HitSwitch {
@@ -781,6 +796,9 @@ impl App {
             // `case 59` — a tripped switch: apply and relay to the others
             // (`MessageBuffer.cs:2682-2693`).
             C2s::HitSwitch(hs) => {
+                // The §8.1 stamp: the relayed trip can shift a wired door
+                // family (the peers ride the boxes too).
+                crate::world_sim::wiring::stamp_wiring_entity_boxes(self);
                 self.wiring
                     .hit_switch(&mut self.world, hs.x as i32, hs.y as i32); // `:2687`
                 // S1-E-21i — the click plays on the host's stream shape
@@ -789,6 +807,16 @@ impl App {
                 for (px, py) in self.wiring.take_switch_clicks() {
                     self.audio
                         .play_switch_click(px as f32, py as f32, self.rngs.global());
+                }
+                // W4-c42 — the trip's wired door cues (the bare stream, the
+                // switch-click precedent).
+                for (open, px, py) in self.wiring.take_door_cues() {
+                    self.audio
+                        .play_door_sound(open, px as f32, py as f32, self.rngs.global());
+                }
+                // The §8.2 echoes: the g48b codec-lane attach point.
+                for (n, x, y, d) in self.wiring.take_door_echoes() {
+                    self.send_door_toggle(n, x, y, d);
                 }
                 self.world_key = None;
                 server.broadcast_except(&S2c::HitSwitch(hs), id); // `:2691`
@@ -811,10 +839,14 @@ impl App {
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
             // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
+            // W4-f11 seam 8.2: the client's `19` wiring echo — the host's
+            // apply/relay dispatch (`MessageBuffer.cs:1299-1334`) is g48's
+            // `net_apply.rs::host_door_toggle` (union merge wires it).
             C2s::TogglePvp(_)
             | C2s::PlayerMana(_)
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
+            | C2s::DoorToggle(_)
             | C2s::SyncLoadout(_) => {}
             // S1-I-1 wave E: 51 MiscDataSync (`MessageBuffer.cs:2482-2530`
             // subject forcing + the kind ladder) + 61 SpawnBossInvader
@@ -1796,6 +1828,8 @@ impl App {
             // `case 59` — a peer tripped a switch: replay it locally
             // (`MessageBuffer.cs:2682-2693`).
             S2c::HitSwitch(hs) => {
+                // The §8.1 stamp: the replay can shift a wired door family.
+                crate::world_sim::wiring::stamp_wiring_entity_boxes(self);
                 self.wiring
                     .hit_switch(&mut self.world, hs.x as i32, hs.y as i32);
                 // S1-E-21i — the client's click replay: the message handler
@@ -1804,6 +1838,16 @@ impl App {
                 for (px, py) in self.wiring.take_switch_clicks() {
                     self.audio
                         .play_switch_click(px as f32, py as f32, self.rngs.global());
+                }
+                // W4-c42 — the replay's wired door cues (the bare stream).
+                for (open, px, py) in self.wiring.take_door_cues() {
+                    self.audio
+                        .play_door_sound(open, px as f32, py as f32, self.rngs.global());
+                }
+                // The §8.2 echoes: a client's `SendData` rides msg 19 to
+                // the host (the g48b attach point); drained either way.
+                for (n, x, y, d) in self.wiring.take_door_echoes() {
+                    self.send_door_toggle(n, x, y, d);
                 }
                 self.world_key = None;
             }
@@ -1882,6 +1926,10 @@ impl App {
             | S2c::DeadPlayer { .. }
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
+            // W4-f11 seam 8.2: the relayed `19` wiring echo — the client's
+            // apply dispatch (`MessageBuffer.cs:1307-1327`) is g48's
+            // `net_apply.rs::client_door_toggle` (union merge wires it).
+            | S2c::DoorToggle(_)
             | S2c::SyncLoadout(_) => {}
             // S1-I-1 wave E: 51's kind-2 rod-sound echo
             // (`MessageBuffer.cs:2500-2503` SoundID.Item1) — same wave, same
@@ -3006,6 +3054,39 @@ impl App {
         }
     }
 
+    /// One `NetMessage.SendData(19, -1, -1, null, action, x, y, direction)`
+    /// (research/95 §8.2 CLOSED send-half — the W4-f11 wiring arms' echoes,
+    /// `Wiring.cs:1450`/`:1458`/`:1465`/`:1480`/`:1485`): the host broadcasts
+    /// to every client, the client sends to the server; `SendData`'s own
+    /// `netMode == 0` return (`NetMessage.cs:83-86`) is the `Off` arm — the
+    /// SP fold. The wire direction byte is `number4 == 1f` → 1 else 0
+    /// (`NetMessage.cs:541`). The APPLY side (the 0/1 door + 2/3 trapdoor +
+    /// 4/5 gate dispatch and the normalised-direction relay,
+    /// `MessageBuffer.cs:1299-1334`) is g48's `net_apply.rs` — the union
+    /// merge re-points this send at its `DoorToggle` codec (byte-identical
+    /// bodies, keep-one). SEAL (research/133 §8.2): this fn is the ONE
+    /// send copy (g48 has none in production); at the union it takes the
+    /// c42 `door_echoes` TUPLE `(number, x, y, number4)` (the f11 engine
+    /// struct drops with §8.1) and the drain lands at ALL 14 c42 discard
+    /// sites, not just the wiring tick — the exact hunk is §8.2.
+    /// (Batch-H: the tuple-arg re-shape EXECUTED — the c42 `door_echoes`
+    /// `(number, x, y, number4)` straight off `take_door_echoes()`; the
+    /// per-site drains land with this merge, the g48 codec keep-one stays
+    /// its own lane's.)
+    pub(crate) fn send_door_toggle(&self, number: i32, x: i32, y: i32, number4: i32) {
+        let msg = net::DoorToggle {
+            action: number as u8,
+            x: x as i16,
+            y: y as i16,
+            direction: u8::from(number4 == 1),
+        };
+        match &self.net {
+            NetRole::Host(server) => server.broadcast(&S2c::DoorToggle(msg)),
+            NetRole::Client(client) => client.send(&C2s::DoorToggle(msg)),
+            NetRole::Off => {}
+        }
+    }
+
     /// `AchievementsHelper.NotifyNPCKilled`'s wire half
     /// (`AchievementsHelper.cs:200-217`): in MP the host sends `97` to every
     /// slot recorded in the dead NPC's `playerInteraction` (`:210-216`). The
@@ -3386,6 +3467,11 @@ fn npc_seed(
         | crate::npc::NpcKind::GoldGoldfish
         | crate::npc::NpcKind::Pupfish
         | crate::npc::NpcKind::Dolphin => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-e21 — the bunny pair (46/540): the surface critter plants its
+        // feet on the column surface like the swimmers' seed (the net state
+        // overwrites the position below).
+        crate::npc::NpcKind::Bunny
+        | crate::npc::NpcKind::PartyBunny => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // The worm segments: the net spawns each link standalone (the chain
         // links rebuild through the init — the head; a lone body/tail dies
         // finding no leader — the net-chain sync lands with the netglue

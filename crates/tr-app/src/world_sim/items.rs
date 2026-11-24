@@ -784,6 +784,34 @@ pub(crate) fn spawn_item_drop_px(
     }
 }
 
+/// The CENTRE-position variant — W4-g78's FIX-ONCE for the object-drop
+/// centre gap (research/375 §2). The C# `Check*` routines spawn through the
+/// obsolete rect overload (`Item.cs:49649-49652`: `center = (X + Width/2,
+/// Y + Height/2)`), so `Item.NewItem(…, x*16, y*16, 32, 32, …)` centres the
+/// 16×16 `WorldItem` box (`WorldItem.cs:138`) at `(x*16+16, y*16+16)`; the
+/// tile variant above fed the tile TOP-LEFT (+1 px), landing every object
+/// drop ~15 px left/up of the C# centre. This entry takes the CENTRE (the
+/// `ObjectDrop::spawn_center_px` conversion) and places the port's 14×14
+/// box at `centre − SIZE/2` — the same box-centre convention, no +1. The
+/// draws are byte-identical to [`spawn_item_drop_px`] (only the position
+/// differs). The per-cell / pot / tree / wall drops keep the tile variant
+/// (their own gap is the separate 16×16-family residual, research/375 §2).
+pub(crate) fn spawn_item_drop_centre(
+    items: &mut Vec<ItemDrop>,
+    rng: &mut UnifiedRandom,
+    kind: u16,
+    count: u32,
+    centre: Vec2,
+) {
+    spawn_item_drop_px(
+        items,
+        rng,
+        kind,
+        count,
+        centre - Vec2::splat(crate::item::SIZE * 0.5),
+    );
+}
+
 /// The field-wise pixel variant of [`spawn_item_drop_px`] — the call sites that
 /// already hold a borrow of one of the app's fields (the player, inside the
 /// fixed-step closure) and therefore cannot take the whole `&mut App`; the
@@ -1538,6 +1566,37 @@ mod spawn_rng_tests {
             expect,
             "four draws exactly: the triplet, then the prefix roll"
         );
+    }
+
+    /// W4-g78 FIX-ONCE (research/375 §2): the centre entry places the 14×14
+    /// box at `centre − SIZE/2` — a chest's (21) 32×32 rect at tile (10, 18)
+    /// centres the drop's box at (176, 304) exactly. The OLD top-left feed
+    /// landed the box centre at (168, 295) — 8 px left / 9 px up (the C#
+    /// WorldItem box is 16×16 centred on the rect centre; the port's 14×14
+    /// box keeps its own size, only the CENTRE is fixed here). The draws
+    /// stay byte-identical to the px entry (only the position differs).
+    #[test]
+    fn w4_g78_the_centre_spawn_lands_the_box_on_the_rect_centre() {
+        let mut items = Vec::new();
+        let mut rng = UnifiedRandom::new(777);
+        let mut twin = UnifiedRandom::new(777);
+        let centre = Vec2::new(176.0, 304.0);
+        spawn_item_drop_centre(&mut items, &mut rng, 48, 1, centre);
+        assert_eq!(items[0].center(), centre, "the box centres on the rect");
+        assert_eq!(items[0].pos, centre - Vec2::splat(crate::item::SIZE * 0.5));
+        // The draw-stream twin: the px entry at the derived top-left draws
+        // the SAME stream state (velocity/prefix identical).
+        let mut twin_items = Vec::new();
+        spawn_item_drop_px(
+            &mut twin_items,
+            &mut twin,
+            48,
+            1,
+            centre - Vec2::splat(crate::item::SIZE * 0.5),
+        );
+        assert_eq!(rng, twin);
+        assert_eq!(items[0].vel, twin_items[0].vel);
+        assert_eq!(items[0].prefix, twin_items[0].prefix);
     }
 
     /// The revenge coin-suck's faithful share shape

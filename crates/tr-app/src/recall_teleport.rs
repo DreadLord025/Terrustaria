@@ -102,7 +102,7 @@ use crate::player::{HEIGHT, WIDTH};
 use crate::registry;
 use crate::soundid::SOUND_STYLES;
 use crate::world_sim::editing::{bed_spawn_valid, break_tile, check_bed_spawn, start_swing_extras};
-use crate::world_sim::items::spawn_item_drop;
+use crate::world_sim::items::spawn_item_drop_px;
 
 /// `ItemID.MagicMirror` 50 / `CellPhone` 3124 / `IceMirror` 3199 /
 /// `Shellphone` 5358 (`ItemID.cs:1783`, `:7931`, `:8081`, `:12399`) — the
@@ -432,7 +432,16 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                             .map(|item| item as u16)
                             .or_else(|| registry::tile_drop(d.tile_kind, 0));
                         if let Some(id) = id {
-                            spawn_item_drop(&mut app.items, rng, id, 1, d.x, d.y);
+                            // The C# `Item.NewItem` rect centre (the g78
+                            // FIX-ONCE, `ObjectDrop::spawn_center_px`).
+                            let (px, py) = d.spawn_center_px();
+                            spawn_item_drop_px(
+                                &mut app.items,
+                                rng,
+                                id,
+                                1,
+                                Vec2::new(px, py),
+                            );
                         }
                     }
                     app.queue_map_ring(i, j);

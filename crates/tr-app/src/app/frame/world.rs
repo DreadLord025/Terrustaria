@@ -117,6 +117,10 @@ impl App {
     // trash cell (`Main.DrawInventory`'s `ItemSlot.Handle` sites).
     let over_ui_slot = self.slot_at_mouse().is_some()
         || self.coin_ammo_at_mouse().is_some()
+        // S1-W4-g81 residuals — the wiring radial's petal hover writes
+        // `player.mouseInterface = true` (`WiresUI.cs:499`); the port's
+        // draw-side state folds into the same suppression stand-in.
+        || self.wires_radial.hovering
         || (self.inventory_open && {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
@@ -440,8 +444,15 @@ impl App {
     let rng = self.rngs.global();
     let step = &mut self.tile_anim_step;
     let animator = &mut self.tile_anim;
+    // W4-g34: `AnimateTiles`' trailing `AnimateTiles_CritterCages()`
+    // (`Main.cs:19303`) — same 60 Hz tick, same `Main.rand` stream, gated
+    // on the `Main.critterCage` proximity flag the tile draw raised last
+    // frame (`TileDrawing.cs:474` clears it at the non-solid pass head).
+    let cage_anim = &mut self.cage_anim;
+    let critter_cage = self.critter_cage;
     step.tick(dt, |_| {
         animator.animate_tiles(wind, rng, false);
+        cage_anim.animate(critter_cage, rng);
     });
     step.cap_backlog();
     }

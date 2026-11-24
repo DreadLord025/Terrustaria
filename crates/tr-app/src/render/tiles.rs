@@ -67,17 +67,23 @@ pub(crate) struct DrawScratch {
     pub(crate) water_rects: Vec<[f32; 4]>,
 }
 
-/// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
-/// `DebugOptions.ShowInvisibleWalls` is on, so it contributes neither a sprite nor a
-/// black quad. (`tile.invisibleWall()` is checked too, but nothing in the original's
-/// code ever sets that bit, and our packed tile does not store it.)
+/// `WallID.EchoWall` (`WallID.cs:741`). `WallDrawing.DrawWalls` skips it
+/// unless `Main.ShouldShowInvisibleBlocksAndWalls()` grants sight
+/// (`WallDrawing.cs:91`'s `_shouldShowInvisibleWalls`, W4-g78 wired) —
+/// hidden, it contributes neither a sprite nor a black quad.
 pub(crate) const WALL_ECHO: u16 = 318;
 
-/// `WallDrawing.DrawWalls` draw test: a wall is visible when it exists and is not an
-/// echo wall.
+/// `WallDrawing.DrawWalls` draw test (`WallDrawing.cs:91`), verbatim:
+/// `wall <= 0 || (wall == 318 && !sight) || (tile.invisibleWall() && !sight)`.
+/// The `FullTile` cull is the caller's separate gate (`tile_hides_wall`).
+/// W4-g78: `show_invisible` is `Main.ShouldShowInvisibleBlocksAndWalls()`
+/// (`Main.cs:58023-58030`) — the Echo Monolith / Spectre Goggles grants;
+/// before this wave it was hardwired false.
 #[inline]
-pub(crate) fn wall_visible(wall: u16) -> bool {
-    wall != 0 && wall != WALL_ECHO
+pub(crate) fn wall_visible(wall: u16, invisible_wall: bool, show_invisible: bool) -> bool {
+    wall != 0
+        && (wall != WALL_ECHO || show_invisible)
+        && (!invisible_wall || show_invisible)
 }
 
 /// Vanilla stores light as bytes; a channel below `1/255` is zero. Such a cell is
@@ -325,6 +331,15 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-g34 union: the critter-cage animator's tables
+    // (`Main.*CageFrame`, `Main.cs:66902-66972`) — ALL 92 cage ids'
+    // `addFrY = Main.<table>[idx] * stride` rewrite
+    // (`TileDrawing.cs:5629-5907`) reads them through `cage_draw_data`'s
+    // `frame_of`. `critter_cage` is `Main.critterCage` (`Main.cs:1445`):
+    // cleared at the pass head (`TileDrawing.cs:474`), raised for every cage
+    // cell drawn (`:5672` etc.), read back by the caller for the animator gate.
+    cage_anim: &tr_core::critter_cage_anim::CritterCageAnimator,
+    critter_cage: &mut bool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -413,6 +428,10 @@ pub(crate) fn draw_tiles(
 
     let width = world.width as usize;
     let white = r.white_uv();
+    // `TileDrawing.Draw`'s non-solid-pass head clears `Main.critterCage`
+    // (`TileDrawing.cs:474`); the port's single row-major pass clears it
+    // here and the cage cells below re-raise it (W4-g34).
+    *critter_cage = false;
     let mut stats = TileDrawStats {
         lit_tiles: light.lit_tiles,
         light_ms,
@@ -512,13 +531,17 @@ pub(crate) fn draw_tiles(
         for ty in y0..=y1 {
             for tx in x0..=x1 {
                 let tile = &world.tiles[ty as usize * width + tx as usize];
-                if !wall_visible(tile.wall) {
+                if tile.wall == 0 {
                     continue;
                 }
-                let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
-                    continue;
-                };
+                // `WallDrawing.cs:91` evaluates `FullTile` BEFORE the echo
+                // gates. `FullTile` (`WallDrawing.cs:258-261`, W4-g78): a
+                // hidden Echo-coated block does NOT hide its wall — the wall
+                // draws behind it (the `invisibleBlock() &&
+                // !_shouldShowInvisibleWalls → return false` arm; the raw
+                // coating bit, NOT the IsVisible overrides).
                 if tile.active()
+                    && (!world.invisible_block(tx, ty) || show_invisible_blocks)
                     && tile_hides_wall(
                         lookups,
                         atlas,
@@ -532,15 +555,20 @@ pub(crate) fn draw_tiles(
                     stats.walls_culled += 1;
                     continue;
                 }
-                // `WallDrawing.cs:91`: Echo-coated walls are hidden unless the
-                // Echo Monolith or an Echo item grants sight (the port has
-                // neither yet, so they stay hidden; wall 318 is handled above).
-                if world.invisible_wall(tx, ty) {
+                // `WallDrawing.cs:91` (W4-g78): the echo wall 318 AND the
+                // Echo-coating bit both ride `ShouldShowInvisibleBlocksAndWalls`
+                // — the monolith/goggles sight lifts them together.
+                if !wall_visible(tile.wall, world.invisible_wall(tx, ty), show_invisible_blocks) {
                     continue;
                 }
-                // `WallDrawing.DrawWalls` skips black cells; the tile pass merges the
-                // fully covered ones into black rectangles.
-                if light_is_zero(light.get(tx, ty)) {
+                let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
+                    continue;
+                };
+                // `WallDrawing.DrawWalls` skips black cells (`:104-115`);
+                // the tile pass merges the fully covered ones into black
+                // rectangles. The shown echo wall is EXEMPT: `:100-103`
+                // repaints it white BEFORE the black test (W4-g78).
+                if light_is_zero(light.get(tx, ty)) && tile.wall != WALL_ECHO {
                     continue;
                 }
                 // The 32 px sprite is centred on the 16 px cell (`x*16 - 8`), like
@@ -555,7 +583,10 @@ pub(crate) fn draw_tiles(
                     ty,
                     anim_time,
                     world.wall_paint(tx, ty),
-                    world.fullbright_wall(tx, ty),
+                    // `WallDrawing.cs:96-103`: a Glow-coated wall AND the
+                    // echo wall 318 both sample white (W4-g78 — the shown
+                    // echo wall draws its sprite white, never black).
+                    world.fullbright_wall(tx, ty) || tile.wall == WALL_ECHO,
                 );
                 stats.walls += 1;
             }
@@ -651,9 +682,13 @@ pub(crate) fn draw_tiles(
                 // `Main.tileFrame[kind]` (`TileDrawing.cs:4533`), fed from
                 // the wired animator (S1-G-1f, `drawdata_anim.rs`).
                 let dd = if active && marker.is_none() && !is_tree {
-                    let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
-                        t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
-                    });
+                    // W4-g34 deviation fix (d61/d64 R3): case 4's probe is the
+                    // FULL `WorldGen.SolidTile(x, y - 1)` (`WorldGen.cs:70111-
+                    // 70132`) — active + solid + not-solid-top + not-half-brick
+                    // + slope 0 + not-inactive, null-true — not the old
+                    // three-clause subset. The exact predicate already lives
+                    // in `drawdata_cases_a::solid_tile` (the 518 probe).
+                    let solid_above = crate::drawdata_cases_a::solid_tile(world, tx, ty - 1);
                     // The animator arrays are `[TileID.Count]`
                     // (`Main.cs:66976-66977`); an out-of-range kind keeps the
                     // vanilla t=0 row (the `solid` probe below bounds-checks
@@ -710,6 +745,39 @@ pub(crate) fn draw_tiles(
                     ) {
                         dd = cased;
                     }
+                    // W4-g34 union (research/197 §2.2/§2.3): the critter-cage
+                    // rewrite — the C# FIRST GetTileDrawData switch's four
+                    // cage case groups (TileDrawing.cs:5629-5907, ALL 92
+                    // ids: g34's 50 + g33's 42), at the FIRST switch's
+                    // TAIL position: AFTER the static
+                    // table + slice B's delegated first-switch cases,
+                    // BEFORE slice A's SECOND switch (:6049-6507). The
+                    // 568/569/570/580 glow rects read `tileFrameY + addFrY`
+                    // POST-cage (:6085-6104), so the rewrite must land
+                    // before `apply_cases_a` builds them, and before the
+                    // source-rect resolve (:1007 reads the final
+                    // addFrX/addFrY). `cage_draw_data` REPLACES the static
+                    // cage arms with `top = 2` + the per-animal
+                    // `addFrY = Main.<table>[idx] * stride` read from the
+                    // wired cage animator (`AnimateTiles_CritterCages`,
+                    // `Main.cs:13511-16596`). The chest rewrite stays with
+                    // the chest lane (W4-d58's `:993` seam). The
+                    // `Main.critterCage = true` side effect (:5672 etc.)
+                    // rides the post-dd flag block below — the port's
+                    // fused-pass stand-in, one cell later in the same walk.
+                    if tr_core::drawdata_furniture::is_cage_kind(tile.kind) {
+                        if let Some(cage) = tr_core::drawdata_furniture::cage_draw_data(
+                            tile.kind,
+                            tx,
+                            ty,
+                            tile.frame_x,
+                            tile.frame_y,
+                            tr_core::drawdata_furniture::CAGE_FRAMES,
+                            |table, row, idx| cage_anim.frame_of(table, row, idx),
+                        ) {
+                            dd = cage;
+                        }
+                    }
                     // S1-F-9d slice A: the delegated static-case pass —
                     // LilyPad's liquid float (518), the oasis/sea-oats
                     // biome rows (530/529) and the SECOND GetTileDrawData
@@ -735,6 +803,17 @@ pub(crate) fn draw_tiles(
                 } else {
                     tr_core::drawdata::TileDrawData::default()
                 };
+
+                // `Main.critterCage = true` (`TileDrawing.cs:5672`/`:5781`/
+                // `:5838` etc.): every drawn cage cell raises the proximity
+                // flag that gates `AnimateTiles_CritterCages`. The port's
+                // single row-major pass raises it here for ANY cage kind;
+                // the caller reads it back after the pass and the animator
+                // consumes it on the next tick (the C# clears it at the
+                // non-solid pass head, `:474`).
+                if active && tr_core::drawdata_furniture::is_cage_kind(tile.kind) {
+                    *critter_cage = true;
+                }
 
                 // Resolve the drawn tile frame once; reused for opacity and drawing.
                 let mut tile_frame = None;
@@ -786,9 +865,31 @@ pub(crate) fn draw_tiles(
                 let flame_tile = active
                     && (tr_core::flame::tile_flame(tile.kind)
                         || tr_core::flame::has_glow_branch(tile.kind));
-                if light_is_zero(l)
-                    && !flame_tile
-                    && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
+                // W4-g78: a shown echo wall (318) draws WHITE
+                // (`WallDrawing.cs:100-103`, `Main.wallLight[318] = true`
+                // `Main.cs:10580` takes the flat-colour arm) — its dark cell
+                // is NOT black coverage, so the merge must not claim it.
+                let echo_wall_lit = tile.wall == WALL_ECHO && show_invisible_blocks;
+                // W4-g78: hidden Echo-coated cells paint NO black coverage —
+                // `DrawSingleTile`'s `DrawBlack` needs `flag2` (`:988`, the
+                // IsVisible veto) and `Main.DrawBlackTiles`' block/wall arms
+                // both carry `(!invisible… || flag)` (`Main.cs:58006-58007`).
+                // The port's merged rectangle is the fold of both passes, so
+                // the coverage test rides the same sight gates (the parallax
+                // shows through a hidden echo block in a dark cave, exactly
+                // like the C#).
+                let block_covers = active
+                    && tr_core::scene::tile_is_visible(
+                        tile.kind,
+                        tile.frame_y,
+                        world.invisible_block(tx, ty),
+                        show_invisible_blocks,
+                    );
+                let wall_covers = crate::env::walls_enabled()
+                    && tile.wall != 0
+                    && (!world.invisible_wall(tx, ty) || show_invisible_blocks)
+                    && (tile.wall != WALL_ECHO || show_invisible_blocks);
+                if light_is_zero(l) && !flame_tile && !echo_wall_lit && (block_covers || wall_covers)
                 {
                     if run_start < 0 {
                         run_start = tx;
@@ -839,11 +940,18 @@ pub(crate) fn draw_tiles(
                 let Some(tf) = tile_frame else {
                     continue;
                 };
-                // `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): an
-                // Echo-coated block is hidden unless the Echo Monolith or an
-                // Echo item grants sight (the port has neither yet, so the
-                // blocks stay hidden).
-                if world.invisible_block(tx, ty) {
+                // `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`),
+                // W4-g78: the shared verbatim port — the Echo-coating bit
+                // hides unless sight is granted (Echo Monolith / Spectre
+                // Goggles / vanity 5345), and the platform row 48 + the
+                // always-invisible kinds 541/631 ride the flag regardless
+                // of the coating bit (the pre-wave port missed all three).
+                if !tr_core::scene::tile_is_visible(
+                    tile.kind,
+                    tile.frame_y,
+                    world.invisible_block(tx, ty),
+                    show_invisible_blocks,
+                ) {
                     continue;
                 }
                 stats.visible += 1;
@@ -1182,7 +1290,39 @@ pub(crate) fn draw_tiles(
             wind,
             vine_wind_counter,
             &vine_roots,
+            show_invisible_blocks,
         );
+    }
+    // W4-g31 attach phase (UNION-CONTRACT-tilepass §8): the TR_TILEPASS
+    // SHADOW attach — the union's draw_layer/post_draw_tiles drivers run
+    // at the C# PostDrawTiles position (after the fused walk + the inline
+    // foliage/vine passes, before the NPC pass) over the same camera
+    // rect, PLAN-ONLY: no sprites pushed, a separate _rand stream (the
+    // fused pass's roll stream is never passed in), no shared state
+    // mutated, the G6 key untouched. Default
+    // OFF — unset the pin and zero union code runs here. The pixel
+    // binding (the fused loop split into the two draw_layer calls) is
+    // §8's merge script.
+    if crate::env::tilepass_shadow() {
+        let shadow_inputs = crate::render::tile_attach::ShadowInputs {
+            camera,
+            zoom,
+            screen,
+            // The fused pass's pinned-default convention (the
+            // HIGH_LIGHT/MEDIUM_LIGHT constants at :425): the adaptive
+            // App.gfx_quality.quality threads in at the pixel merge (§8).
+            gfx_quality: 0.5,
+            grass_counter: grass_wind_counter,
+            sunflower_counter: sunflower_wind_counter,
+            vine_counter: vine_wind_counter,
+            anim_time,
+            sparkle_seed,
+            disco: params.disco,
+        };
+        let shadow = crate::render::tile_attach::run_shadow(
+            world, wind, light, &shadow_inputs,
+        );
+        log::info!("TILEPASS shadow: {}", shadow.summary());
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
     draw_phase("npcs");
@@ -1873,6 +2013,165 @@ mod tests {
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
     }
 
+    /// W4-g78 draw-feed witness (WRITTEN NOT RUN): the tile pass's three
+    /// Echo gates read the ONE sight input — the wall layer
+    /// (`WallDrawing.cs:91`), the dark-coverage merge
+    /// (`Main.DrawBlackTiles` `:58006-58007`) and the per-cell `IsVisible`
+    /// (`TileDrawing.cs:983`) — and the per-cell gate is the shared
+    /// `scene::tile_is_visible` port (the row-48/541/631 overrides included),
+    /// not the bare coating bit the pre-wave pass read.
+    #[test]
+    fn w4_g78_the_echo_gates_ride_the_sight_input() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        // The wall layer: one wall_visible call with the coating bit + sight.
+        assert!(body.contains(
+            "wall_visible(tile.wall, world.invisible_wall(tx, ty), show_invisible_blocks)"
+        ));
+        // The per-cell gate: the shared IsVisible port, sight-fed.
+        assert_eq!(body.matches("tr_core::scene::tile_is_visible").count(), 2,
+            "the dark-coverage arm + the per-cell IsVisible gate");
+        assert!(body.contains("world.invisible_block(tx, ty),\n                        show_invisible_blocks,")
+            || body.contains("show_invisible_blocks,\n                ) {"));
+        // No bare-coating `continue` survives (the pre-wave gate).
+        assert!(!body.contains("if world.invisible_block(tx, ty) {"));
+        assert!(!body.contains("if world.invisible_wall(tx, ty) {"));
+        // The vine strips receive the same sight value.
+        assert!(body.contains("&vine_roots,\n            show_invisible_blocks,"));
+    }
+
+    /// W4-g78: the shown echo wall (318) draws WHITE and never merges into
+    /// black coverage — `WallDrawing.cs:100-103` (`color = Color.White` for
+    /// wall 318) + `Main.wallLight[318] = true` (`Main.cs:10580`) take the
+    /// flat-colour arm regardless of the cell light. The wall pass feeds
+    /// the white flag as `fullbright || kind == WALL_ECHO`.
+    #[test]
+    fn w4_g78_the_shown_echo_wall_feeds_white() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert!(
+            body.contains("world.fullbright_wall(tx, ty) || tile.wall == WALL_ECHO"),
+            "the echo wall rides the white-light flag (WallDrawing.cs:100-103)"
+        );
+        assert!(
+            body.contains("let echo_wall_lit = tile.wall == WALL_ECHO && show_invisible_blocks;"),
+            "a shown echo wall is never dark coverage"
+        );
+    /// W4-g34 union draw-feed witness (WRITTEN NOT RUN — code-only mode):
+    /// the cage rewrite covers ALL 92 ids (`is_cage_kind`, research/197
+    /// §2.2 — the g33 42 + g34 50 union) and reads the wired cage animator
+    /// through `cage_draw_data`'s `frame_of` (the C# `GetTileDrawData` cage
+    /// arms, `TileDrawing.cs:5629-5907`); the `Main.critterCage` flag is
+    /// cleared at the pass head (`:474`) and raised for every cage cell
+    /// (`:5672` etc.). The old `cage > glow` assertion is INVERTED by the
+    /// order witness below (research/197 §2.3 — f14's slice-B/A order).
+    #[test]
+    fn the_cage_rewrite_feeds_from_the_cage_animator() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        // The rewrite is gated on the FULL cage set and reads the animator.
+        assert!(
+            dd_block.contains("is_cage_kind(tile.kind)"),
+            "the rewrite covers all 92 cage ids (the union wiring)"
+        );
+        assert!(
+            dd_block.contains("cage_anim.frame_of(table, row, idx)"),
+            "the cage frame rides the wired animator's tables"
+        );
+        assert_eq!(
+            dd_block.matches("cage_draw_data(").count(),
+            1,
+            "exactly one live cage dispatch site"
+        );
+        // The proximity flag: cleared at the head, raised per cage cell.
+        assert!(
+            body.contains("*critter_cage = false;"),
+            "the pass head clears Main.critterCage (TileDrawing.cs:474)"
+        );
+        assert!(
+            body.contains("*critter_cage = true;"),
+            "a drawn cage cell raises Main.critterCage (TileDrawing.cs:5672)"
+        );
+        assert!(
+            body.contains("is_cage_kind(tile.kind)"),
+            "the flag covers EVERY cage kind (the animator is whole)"
+        );
+    }
+
+    /// W4-g34 composite-order witness (WRITTEN NOT RUN — f14's
+    /// `w4_f14_the_cage_post_pass_rides_the_first_switch_tail` adapted to
+    /// the direct `cage_draw_data` call, research/197 §2.3/§5): the cage
+    /// rewrite sits at the C# FIRST `GetTileDrawData` switch's tail
+    /// (TileDrawing.cs:5629-5907) — AFTER `draw_data` + slice B's
+    /// delegated first-switch cases and BEFORE slice A's SECOND switch,
+    /// whose 568/569/570/580 glow rects read `tileFrameY + addFrY`
+    /// POST-cage (`:6085-6104`), and BEFORE the source-rect resolve
+    /// (`:1007`). This REPLACES the old post-slice-A `cage > glow` pin
+    /// (the assertion INVERTS to glow > post-cage-read).
+    #[test]
+    fn the_cage_rewrite_rides_the_first_switch_tail() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        let table = dd_block.find("tr_core::drawdata::draw_data(").expect("the static table");
+        let cases_b = dd_block.find("crate::drawdata_cases_b::case_draw_data(").expect("slice B");
+        let cage = dd_block
+            .find("tr_core::drawdata_furniture::cage_draw_data(")
+            .expect("the cage rewrite");
+        let cases_a = dd_block
+            .find("crate::drawdata_cases_a::apply_cases_a")
+            .expect("slice A");
+        assert!(table < cases_b, "slice B follows the static table");
+        assert!(cases_b < cage, "the cage groups are the FIRST switch's tail");
+        assert!(
+            cage < cases_a,
+            "the SECOND switch's glow rects read the POST-cage addFrY (:6085-6104)"
+        );
+        // The gate precedes the rewrite and feeds the animator's tables.
+        let gate = dd_block.find("is_cage_kind(tile.kind)").unwrap();
+        assert!(gate < cage, "the cage-kind gate precedes the rewrite");
+        assert!(dd_block.contains("cage_anim.frame_of(table, row, idx)"));
+        // The source-rect resolve reads the final addFrX/addFrY (:1007).
+        assert!(cage < body.find("// Resolve the drawn tile frame once").unwrap());
+    }
+
+    /// W4-g34 union acceptance pin (WRITTEN NOT RUN — g33's
+    /// `wired_cage_rewrite_matches_the_static_arms_at_t0` retargeted to
+    /// `CritterCageAnimator`, research/197 §5): with the vanilla t=0 tables
+    /// the wired cage rewrite is byte-equal to the static arms for EVERY
+    /// one of the 92 cage ids — the union wiring changes no pixel until
+    /// the animator moves the tables.
+    #[test]
+    fn wired_cage_rewrite_matches_the_static_arms_at_t0() {
+        let a = tr_core::critter_cage_anim::CritterCageAnimator::new();
+        let cages: &[u16] = &[
+            275, 276, 277, 278, 279, 280, 281, 296, 297, 309, 358, 359, 413, 414, 542, 550, 551,
+            553, 554, 558, 559, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611,
+            612, 632, 640, 643, 644, 645, 710, 285, 286, 298, 299, 310, 339, 361, 362, 363, 364,
+            391, 392, 393, 394, 532, 533, 538, 544, 555, 556, 582, 619, 629, 282, 505, 543, 598,
+            568, 569, 570, 288, 289, 290, 291, 292, 293, 294, 295, 360, 580, 620, 521, 522, 523,
+            524, 525, 526, 527, 316, 317, 318,
+        ];
+        assert_eq!(cages.len(), 92);
+        for &kind in cages {
+            let static_arm = tr_core::drawdata::draw_data(kind, 13, 7, 18, 18, 0, false);
+            let wired = tr_core::drawdata_furniture::cage_draw_data(
+                kind, 13, 7, 18, 18,
+                tr_core::drawdata_furniture::CAGE_FRAMES,
+                |t, r, i| a.frame_of(t, r, i),
+            )
+            .unwrap();
+            assert_eq!(wired, static_arm, "kind {kind}");
+        }
+    }
+
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain
     // (`TileDrawing.cs:3578-3581` high arm, `:3634-3637` medium arm): the
     // slice averages the neighbourhood colour with the tile's own RAW light
@@ -2209,7 +2508,7 @@ mod tests {
             None,
         );
         // The dirt wall is visible (not 0, not the echo wall 318).
-        assert!(wall_visible(2), "WallID.DirtUnsafe draws");
+        assert!(wall_visible(2, false, false), "WallID.DirtUnsafe draws");
         // The vine cell does NOT hide its wall — the wall pass draws it.
         assert!(
             !tile_hides_wall(&mut lookups, Some(&atlas), 62, 0, 0, 0, false),

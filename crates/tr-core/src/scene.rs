@@ -313,6 +313,74 @@ pub mod thresholds {
     pub const DUNGEON_TILE: i32 = 250;
 }
 
+/// `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023-58030`): the
+/// Echo-sight gate every invisible-block/wall draw + light consumer reads
+/// (`TileDrawing.Update` `:379`, `WallDrawing.Update` `:45`,
+/// `LightingEngine.cs:124` / `LegacyLighting.cs:726`'s `DrawInvisibleWalls`,
+/// `Main.DrawBlackTiles` `:57981`). Verbatim: the Echo Monolith
+/// (`SceneMetrics.EchoMonolith`, tile 657 `frameY >= 54`,
+/// `SceneMetrics.cs:541-546`) wins outright; otherwise the perspective
+/// player's `CanSeeInvisibleBlocks` (the Spectre Goggles 4409 /
+/// vanity-worn Echo Monolith 5345 grants, `Player.cs:14549`/`:14216`).
+pub fn should_show_invisible_blocks_and_walls(
+    echo_monolith: bool,
+    can_see_invisible_blocks: bool,
+) -> bool {
+    if !echo_monolith {
+        return can_see_invisible_blocks;
+    }
+    true
+}
+
+/// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`), verbatim: the
+/// Echo-coating flag (`tile.invisibleBlock()` — the port's sparse
+/// `World.extras` bit) hides the cell unless sight is granted; the
+/// martian-conduit platform row 48 (`frameY / 18 == 48`) and the two
+/// always-invisible kinds (541 `TileID.EchoBlock`, 631
+/// `StinkbugHousingBlockerEcho`) ride the flag REGARDLESS of the coating
+/// bit. `show_invisible_blocks` is `_shouldShowInvisibleBlocks`
+/// (`TileDrawing.Update` `:379` = [`should_show_invisible_blocks_and_walls`]).
+pub fn tile_is_visible(
+    kind: u16,
+    frame_y: i16,
+    invisible_block: bool,
+    show_invisible_blocks: bool,
+) -> bool {
+    let mut flag = invisible_block;
+    match kind {
+        19 => {
+            if frame_y as i32 / 18 == 48 {
+                flag = true;
+            }
+        }
+        541 | 631 => flag = true,
+        _ => {}
+    }
+    if flag {
+        return show_invisible_blocks;
+    }
+    true
+}
+
+/// `Main.WallLightAt(i, j, showInvisibleWalls)` (`Main.cs:55169-55181`),
+/// verbatim: a `Main.wallLight[wall]` wall always lights the background
+/// cell; otherwise a HIDDEN Echo-coated wall counts as light (the
+/// `!showInvisibleWalls → return tile.invisibleWall()` arm — the coating
+/// lets the cave backdrop show through), and a shown one does not.
+/// W4-g78: the pure predicate; the `render/bg.rs::wall_light_at` consumer
+/// (which reads only the `WALL_LIGHT` table today) is contested by the
+/// W4-g70 bg-layers lane — the wiring (thread the frame's sight value into
+/// `draw_rock`/`should_draw_background_tile_at`) lands with that merge.
+pub fn wall_light_at(wall_is_light: bool, invisible_wall: bool, show_invisible: bool) -> bool {
+    if !wall_is_light {
+        if !show_invisible {
+            return invisible_wall;
+        }
+        return false;
+    }
+    true
+}
+
 /// `Main.wallDungeon` (`Main.cs:10596-10607`): the brick/background walls
 /// the dungeon zone requires behind the scan centre.
 pub fn is_dungeon_wall(wall: u16) -> bool {
@@ -2476,6 +2544,94 @@ pub fn is_desert_bg_style(bg_style: i32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- W4-g78: the Echo-sight gate + IsVisible (WRITTEN NOT RUN) ---
+
+    /// `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023-58030`):
+    /// the monolith wins outright; otherwise the perspective player's
+    /// `CanSeeInvisibleBlocks` decides; neither → hidden.
+    #[test]
+    fn w4_g78_the_sight_gate_is_monolith_or_goggles() {
+        assert!(!should_show_invisible_blocks_and_walls(false, false));
+        assert!(should_show_invisible_blocks_and_walls(false, true));
+        // The monolith alone grants even with no goggles worn.
+        assert!(should_show_invisible_blocks_and_walls(true, false));
+        assert!(should_show_invisible_blocks_and_walls(true, true));
+    }
+
+    /// `SceneMetrics.ScanOnScreenTiles`' 657 arm (`SceneMetrics.cs:541-546`):
+    /// tile 657 with `frameY >= 54` (the lit frame row) sets `EchoMonolith`;
+    /// the unlit row (frameY 0/18/36) and an inactive tile do not.
+    #[test]
+    fn w4_g78_the_echo_monolith_scan_reads_the_lit_frame_row() {
+        let mut w = crate::world::World::new("t".into(), 40, 40);
+        let put = |w: &mut crate::world::World, x: i32, y: i32, fy: i16, active: bool| {
+            let i = w.index(x, y);
+            w.tiles[i].kind = 657;
+            w.tiles[i].frame_y = fy;
+            if active {
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        };
+        // Unlit row: frameY 36 < 54 — no monolith.
+        put(&mut w, 10, 10, 36, true);
+        let mut m = SceneMetrics::new();
+        m.scan_on_screen_tiles(&w, (0, 0, 40, 40));
+        assert!(!m.echo_monolith, "the unlit 657 row grants nothing");
+        // Lit row: frameY 54 — the monolith arms.
+        put(&mut w, 10, 10, 54, true);
+        let mut m = SceneMetrics::new();
+        m.scan_on_screen_tiles(&w, (0, 0, 40, 40));
+        assert!(m.echo_monolith, "frameY >= 54 arms EchoMonolith");
+        // An inactive 657 never arms (`:458-461` skip).
+        let mut w2 = crate::world::World::new("t".into(), 40, 40);
+        put(&mut w2, 10, 10, 54, false);
+        let mut m = SceneMetrics::new();
+        m.scan_on_screen_tiles(&w2, (0, 0, 40, 40));
+        assert!(!m.echo_monolith);
+    }
+
+    /// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): the coating bit
+    /// hides unless sight; the platform row 48 and 541/631 ride the flag
+    /// REGARDLESS of the bit; every other kind with no coating always draws.
+    #[test]
+    fn w4_g78_is_visible_census() {
+        // Plain coated block: hidden without sight, shown with it.
+        assert!(!tile_is_visible(1, 0, true, false));
+        assert!(tile_is_visible(1, 0, true, true));
+        // Uncoated plain block: always visible.
+        assert!(tile_is_visible(1, 0, false, false));
+        // Platform row 48 (`frameY / 18 == 48` → frameY 864..881): the
+        // martian conduit is ALWAYS sight-gated, coating bit or not.
+        assert!(!tile_is_visible(19, 864, false, false));
+        assert!(tile_is_visible(19, 864, false, true));
+        // Other platform rows keep the coating-bit semantics.
+        assert!(tile_is_visible(19, 846, false, false));
+        assert!(!tile_is_visible(19, 846, true, false));
+        // 541 (EchoBlock) / 631 (StinkbugHousingBlockerEcho): always gated.
+        for k in [541u16, 631] {
+            assert!(!tile_is_visible(k, 0, false, false));
+            assert!(tile_is_visible(k, 0, false, true));
+            assert!(tile_is_visible(k, 0, true, true));
+        }
+    }
+
+    /// `Main.WallLightAt(i, j, showInvisibleWalls)` (`Main.cs:55169-55181`):
+    /// the wallLight table wins; else the hidden coating bit counts as
+    /// light, the shown one does not.
+    #[test]
+    fn w4_g78_wall_light_at_census() {
+        // wallLight table true: always, coating/sight irrelevant.
+        assert!(wall_light_at(true, false, false));
+        assert!(wall_light_at(true, true, true));
+        // No table light, no coating: never.
+        assert!(!wall_light_at(false, false, false));
+        assert!(!wall_light_at(false, false, true));
+        // Coated + hidden: the backdrop shows through (true).
+        assert!(wall_light_at(false, true, false));
+        // Coated + shown: the wall draws, so no backdrop light (false).
+        assert!(!wall_light_at(false, true, true));
+    }
 
     /// A metrics with only the given window counts set.
     fn metrics_with_counts(counts: &[(u16, u32)]) -> SceneMetrics {

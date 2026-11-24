@@ -987,6 +987,8 @@ impl NpcKind {
             // E8 merge: the 12-critter tail dropped - Worm rides c8@737,
             // the gold septet + the bait tail are d40's rows above (the
             // dup drops; c10's wiring composes onto the canonical kinds).
+            // W4-e21 — PartyBunny (540) port-local protocol id 237; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => 237,
         }
     }
 
@@ -1616,6 +1618,8 @@ impl NpcKind {
             // W4-c10 roster tail — the twelve critters' vanilla ids
             // (`to_u16` above).
             // E8 merge: the 12-critter tail dropped (c8/d40's arms above).
+            // W4-e21 — PartyBunny (540) port-local protocol id 237; Bunny (46) is the d34 arm above.
+            237 => NpcKind::PartyBunny,
             _ => return None,
         })
     }
@@ -2298,6 +2302,8 @@ impl NpcKind {
             | NpcKind::GoldGoldfish
             | NpcKind::Pupfish
             | NpcKind::Dolphin => "NPC_Hit_1",
+            // W4-e21 — PartyBunny (540) hit sound NPC_Hit_1; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => "NPC_Hit_1",
             NpcKind::DevourerHead => "NPC_Hit_1",
             NpcKind::GiantWormHead => "NPC_Hit_1",
             NpcKind::Merchant => "NPC_Hit_1",
@@ -2903,6 +2909,8 @@ impl NpcKind {
             | NpcKind::GoldGoldfish
             | NpcKind::Pupfish
             | NpcKind::Dolphin => "NPC_Killed_1",
+            // W4-e21 — PartyBunny (540) death sound NPC_Killed_1; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => "NPC_Killed_1",
             NpcKind::DevourerHead => "NPC_Killed_1",
             NpcKind::GiantWormHead => "NPC_Killed_1",
             NpcKind::Merchant => "NPC_Killed_1",
@@ -3814,6 +3822,8 @@ impl NpcKind {
             NpcKind::Duck | NpcKind::DuckWhite => 7,
             // E8 merge: the c10 12-critter aiStyle tail dropped - d40/c8's
             // rows above own them (the dup drops; the wiring composes).
+            // W4-e21 — PartyBunny (540) aiStyle 7; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => 7,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
@@ -4830,6 +4840,8 @@ impl NpcKind {
             NpcKind::CrimsonGoldfish => (18.0, 20.0),
             NpcKind::Arapaima => (74.0, 20.0),
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => (20.0, 18.0),
+            // W4-e21 — PartyBunny (540) 18x20 box; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => (18.0, 20.0),
             // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
             // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => (22.0, 22.0),
@@ -5408,6 +5420,8 @@ impl NpcKind {
             NpcKind::GoldGoldfish => 592,
             NpcKind::Pupfish => 607,
             NpcKind::Dolphin => 615,
+            // W4-e21 — PartyBunny (540) vanilla NPC.type 540; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => 540,
             // The Plantera minion family (S1-D-3-wire-plantera-minions):
             // `NPCID.FungiSpore` 261 / `PlanterasHook` 263 /
             // `PlanterasTentacle` 264 / `Spore` 265 (`ID/NPCID.cs:11199`/
@@ -6018,6 +6032,8 @@ impl NpcKind {
             NpcKind::Arapaima => 200,
             NpcKind::CrimsonGoldfish => 110,
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 5,
+            // W4-e21 — PartyBunny (540) lifeMax 5; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => 5,
             // The worms: the segment HP per family (`:8763`/`:8850`/`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 100,
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 30,
@@ -6664,6 +6680,8 @@ impl NpcKind {
             NpcKind::Arapaima => 75,
             NpcKind::CrimsonGoldfish => 31,
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 0,
+            // W4-e21 — PartyBunny (540) contact damage 0; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => 0,
             // The worms: the head hits hardest, the tail softest
             // (`:8763`'s 31/16/13, `:8850`'s 8/4/4, `:8903`'s 22/13/11).
             NpcKind::DevourerHead => 31,

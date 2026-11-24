@@ -50,9 +50,14 @@
 //!   <1 snap-to-zero (`:45709-45715`).
 //!
 //! RNG by construction (ANALYSIS "The light-item projectile family"):
-//! - The AI arms draw ZERO `Main.rand` (the dust spawns are skipped — the
-//!   pool has no dust layer, the frostmoon/ai026 precedent; the flare trail's
-//!   `Dust.NewDust` internal rolls go with them).
+//! - The AI arms draw ZERO `Main.rand` on the UNWIRED path (the dust spawns
+//!   are skipped — the pool has no dust layer, the frostmoon/ai026 precedent;
+//!   the flare trail's `Dust.NewDust` internal rolls go with them). With a
+//!   [`SpelunkerSpot`] attached (W4-g78, research/77 §1) the 473 head's
+//!   counter-wrap and the 1008 stuck arm draw the helper's `Next(4)` per
+//!   newly-checked spelunkable tile on the caller's UpdateProjectiles
+//!   stream — the `_tilesChecked.Add && Next(4)` short-circuit rolls
+//!   NOTHING for a repeat tile.
 //! - The movement's blocked-move prologue consumes exactly ONE `Next(3)`
 //!   (`:17948`, the FIRST operand of the `&&` — the ai026_c precedent): C#'s
 //!   left-to-right evaluation rolls it on EVERY blocked move even when the
@@ -70,7 +75,7 @@
 //! C# blocks and hand arithmetic.
 //!
 //! Deliberate skips (ANALYSIS): dust (the flare trail + the fairy's), sound
-//! (the fairy's Item28 `:45672`), the spelunker spot helper, `netUpdate`,
+//! (the fairy's Item28 `:45672`), `netUpdate`,
 //! the wet movement half (the slot carries no liquid-wet flags — the dry
 //! integrate stands, the `wet` stick branch folds dry), the inner
 //! `SlopeCollision` passes (`correctSlopeCollision` is false for these kinds
@@ -146,6 +151,42 @@ fn glowstick_flight(p: &mut Projectile) {
 /// models the persistent style in `local_ai[2]` (a spare slot — the C# 870
 /// never reads localAI[2]; the row keeps aiStyle 14 for the dispatch).
 fn glowstick_head(p: &mut Projectile, world: &World) {
+    glowstick_head_inner(p, world, None, &mut NoSpelunkerRng);
+}
+
+/// The W4-g78 spelunker attach context (research/77 §1): the pool-owned
+/// helper + the per-tick player/screen snapshot + the dust-request sink.
+/// `net_mode_ok` is the C# `Main.netMode != 2` gate (`Projectile.cs:24836` /
+/// `:27124`) — the WHOLE 473 counter block (not just the helper call) is
+/// server-skipped in C#; the unwired `None` path keeps the S1-P-i42
+/// unconditional counter (the documented SP form).
+pub(crate) struct SpelunkerSpot<'a> {
+    pub helper: &'a mut crate::spelunker_helper::SpelunkerProjectileHelper,
+    pub player_center: Option<Vec2>,
+    pub screen_width: f32,
+    pub net_mode_ok: bool,
+    pub out: &'a mut Vec<crate::spelunker_helper::SpelunkerDust>,
+}
+
+/// The `None`-attach head draws NOTHING through the helper (the 473 arm's
+/// counter is RNG-free), so the legacy path needs no stream — this zero
+/// type stands in without touching the callers' signatures.
+struct NoSpelunkerRng;
+impl tr_core::loot::DropRng for NoSpelunkerRng {
+    fn next_range(&mut self, _: i32, _: i32) -> i32 {
+        unreachable!("the unwired head draws no helper rolls")
+    }
+    fn next_float(&mut self) -> f32 {
+        unreachable!("the unwired head draws no helper rolls")
+    }
+}
+
+fn glowstick_head_inner(
+    p: &mut Projectile,
+    world: &World,
+    mut spot: Option<SpelunkerSpot<'_>>,
+    rng: &mut dyn tr_core::loot::DropRng,
+) {
     // `:24832-24835` — 870: `ai[1] > 0` flips the style to 170. The bounce
     // that SETS `ai[1] = 1` runs in HandleMovement AFTER the AI, so the flip
     // is observed on the NEXT tick's head — exactly the C#'s order.
@@ -154,13 +195,28 @@ fn glowstick_head(p: &mut Projectile, world: &World) {
         // NOT an early return: the flip tick still runs the 14 tail below
         // (and the 14 per-type heads — none of 473/53 matches 870 anyway).
     }
-    // `:24836-24847` — 473: the 10-tick spelunker counter. The
-    // `SpelunkerProjectileHelper.AddSpotToCheck` call is the documented skip
-    // (no ore-highlight layer); the counter is kept 1:1.
-    if p.kind == SPELUNKER_GLOWSTICK {
+    // `:24836-24847` — 473: the 10-tick spelunker counter. W4-g78 wiring:
+    // with a `SpelunkerSpot` attached the counter-wrap runs the C# distance
+    // gate + `AddSpotToCheck` (the helper's Next(4) draws ride the caller's
+    // UpdateProjectiles stream); the C# `Main.netMode != 2` gate wraps the
+    // WHOLE block (`:24836`). The unwired `None` path keeps the S1-P-i42
+    // unconditional counter (the SP form, the documented skip until the
+    // dispatch swap lands — research/77 §1.1).
+    if p.kind == SPELUNKER_GLOWSTICK && spot.as_ref().is_none_or(|s| s.net_mode_ok) {
         p.local_ai[0] += 1.0;
         if p.local_ai[0] >= 10.0 {
             p.local_ai[0] = 0.0;
+            if let Some(s) = spot.as_mut() {
+                let (cx, cy) = p.center();
+                let center = Vec2::new(cx, cy);
+                if crate::spelunker_helper::SpelunkerProjectileHelper::spot_in_range(
+                    center,
+                    s.player_center,
+                    s.screen_width,
+                ) {
+                    s.helper.add_spot_to_check(world, center, rng, s.out);
+                }
+            }
         }
     }
     // `:24911-24962` — 53: the stick scan. The box (`position`, 6x6) against
@@ -214,11 +270,25 @@ fn glowstick_head(p: &mut Projectile, world: &World) {
 /// is AI() → HandleMovement(); the port folds both here so the dispatch arm
 /// is a single call (the frostmoon precedent).
 pub(crate) fn glowstick_step(p: &mut Projectile, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+    glowstick_step_with_spot(p, world, rng, None);
+}
+
+/// The W4-g78 attach form (research/77 §1.1): the same tick with the
+/// pool-owned spelunker helper threaded to the 473 head. The dispatch
+/// swap (`projectile.rs`'s aiStyle-14 arm passes `Some(SpelunkerSpot { … })`
+/// from the pool fields the pass head fills) is the contested hunk — this
+/// variant is the landing target, compiled + witnessed here.
+pub(crate) fn glowstick_step_with_spot(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn tr_core::loot::DropRng,
+    spot: Option<SpelunkerSpot<'_>>,
+) {
     // The flip is observed at the head; the tick it happens on still runs
     // the 14 tail (the C# stays inside the entered arm).
     let flipped_this_tick =
         p.kind == FAIRY_GLOWSTICK && p.ai[1] > 0.0 && p.local_ai[2] == 0.0;
-    glowstick_head(p, world);
+    glowstick_head_inner(p, world, spot, rng);
     if !p.active {
         return;
     }
@@ -479,6 +549,19 @@ fn fairy_glowstick_hover(p: &mut Projectile, world: &World) {
 /// the dust-trail vector (the dust itself skipped), the flight/stick state
 /// machine, the rotation, then the movement ([`flare_movement`]).
 pub(crate) fn flare_step(p: &mut Projectile, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+    flare_step_with_spot(p, world, rng, None);
+}
+
+/// The W4-g78 attach form (research/77 §1.2): the 1008 Spelunker Flare's
+/// STUCK arm calls `AddSpotToCheck(base.Center)` EVERY stuck tick (no
+/// counter — `Projectile.cs:27124-27127`), gated `Main.netMode != 2` + the
+/// same `screenWidth + 480` distance gate as the 473 head.
+pub(crate) fn flare_step_with_spot(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn tr_core::loot::DropRng,
+    mut spot: Option<SpelunkerSpot<'_>>,
+) {
     // `:27051-27058` — the alpha −50 fade (the AI_001 head `:55592-55602`
     // also fades −25, but that is the aiStyle-1 path; the flare's own arm
     // here is −50).
@@ -513,12 +596,31 @@ pub(crate) fn flare_step(p: &mut Projectile, world: &World, rng: &mut dyn tr_cor
             p.local_ai[1] = 30.0;
         }
     } else {
-        // Stuck: a SolidCollision miss un-sticks (back to flight); the
-        // damage zeroes. The 1008 spelunker spot helper is the documented
-        // skip (`:27124-27127`).
+        // `:27119-27127` — Stuck: a SolidCollision miss un-sticks (back to
+        // flight); the 1008 spot check runs AFTER it and REGARDLESS of the
+        // un-stick (the C# `if` is a sibling, not an else — a flare that
+        // just un-stuck still checks its centre this tick); the damage
+        // zeroes. W4-g78 wiring: with a SpelunkerSpot attached the call is
+        // live behind the netMode + distance gates (the unwired `None`
+        // path keeps the S1-P-i42 skip — research/77 §1.2).
         if !flare_solid_collision(world, p.pos.x, p.pos.y, p.w, p.h) {
             p.local_ai[0] = 0.0;
             p.local_ai[1] = 30.0;
+        }
+        if p.kind == SPELUNKER_FLARE {
+            if let Some(s) = spot.as_mut() {
+                if s.net_mode_ok {
+                    let (cx, cy) = p.center();
+                    let center = Vec2::new(cx, cy);
+                    if crate::spelunker_helper::SpelunkerProjectileHelper::spot_in_range(
+                        center,
+                        s.player_center,
+                        s.screen_width,
+                    ) {
+                        s.helper.add_spot_to_check(world, center, rng, s.out);
+                    }
+                }
+            }
         }
         p.damage = 0;
     }
@@ -941,5 +1043,171 @@ mod tests {
             flare_step(&mut p, &w, &mut rng);
             assert!(rng.draws.is_empty(), "kind {k} drew in open air");
         }
+    }
+
+    // ---- the W4-g78 spelunker attach witnesses (research/77 §1) ----
+
+    /// A scripted stream handing back the Next(4) gate draws in order (the
+    /// spelunker_helper Scripted precedent) — the attach path's roll count
+    /// is pinned without a seed hunt.
+    struct SpotRng {
+        draws: Vec<i32>,
+        pos: usize,
+        ranges: Vec<(i32, i32)>,
+    }
+    impl tr_core::loot::DropRng for SpotRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            let d = self.draws[self.pos];
+            self.pos += 1;
+            d
+        }
+        fn next_float(&mut self) -> f32 {
+            unreachable!("the spot path draws no floats")
+        }
+    }
+
+    fn ore_world() -> World {
+        let mut w = World::new("t".into(), 80, 80);
+        let i = w.index(40, 40);
+        w.tiles[i].kind = 6; // copper ore — spelunkable
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        w
+    }
+
+    /// `Projectile.cs:24836-24847` — the 473 counter-wrap calls
+    /// AddSpotToCheck on the 10th tick ONLY, behind the distance gate; the
+    /// helper's Next(4) rides the caller's stream. Ticks 1-9 draw nothing.
+    #[test]
+    fn w4_g78_the_473_head_attaches_on_the_counter_wrap() {
+        let w = ore_world();
+        let mut p = glow(SPELUNKER_GLOWSTICK);
+        p.pos = Vec2::new(40.0 * 16.0, 40.0 * 16.0); // centre tile (40, 40)
+        p.vel = Vec2::ZERO;
+        let mut helper = crate::spelunker_helper::SpelunkerProjectileHelper::default();
+        let mut out = Vec::new();
+        let mut rng = SpotRng { draws: vec![0], pos: 0, ranges: vec![] };
+        for _ in 0..9 {
+            let spot = SpelunkerSpot {
+                helper: &mut helper,
+                player_center: Some(p.pos),
+                screen_width: 1280.0,
+                net_mode_ok: true,
+                out: &mut out,
+            };
+            glowstick_head_inner(&mut p, &w, Some(spot), &mut rng);
+        }
+        assert_eq!(rng.pos, 0, "ticks 1-9: no wrap, no rolls");
+        assert!(out.is_empty());
+        let spot = SpelunkerSpot {
+            helper: &mut helper,
+            player_center: Some(p.pos),
+            screen_width: 1280.0,
+            net_mode_ok: true,
+            out: &mut out,
+        };
+        glowstick_head_inner(&mut p, &w, Some(spot), &mut rng);
+        assert_eq!(p.local_ai[0], 0.0, "the counter wrapped");
+        assert_eq!(rng.ranges, vec![(0, 4)], "ONE Next(4) for the new ore");
+        assert_eq!(out.len(), 1, "the 0-roll spawned the 204 request");
+        assert_eq!(out[0].dust_type, 204);
+        assert_eq!(out[0].fade_in, 0.75);
+    }
+
+    /// `:24836` — `Main.netMode != 2` gates the WHOLE 473 block: on the
+    /// server the counter does not even tick (the C# skips the increment).
+    #[test]
+    fn w4_g78_the_server_skips_the_whole_473_block() {
+        let w = ore_world();
+        let mut p = glow(SPELUNKER_GLOWSTICK);
+        let mut helper = crate::spelunker_helper::SpelunkerProjectileHelper::default();
+        let mut out = Vec::new();
+        let mut rng = SpotRng { draws: vec![], pos: 0, ranges: vec![] };
+        for _ in 0..12 {
+            let spot = SpelunkerSpot {
+                helper: &mut helper,
+                player_center: Some(p.pos),
+                screen_width: 1280.0,
+                net_mode_ok: false,
+                out: &mut out,
+            };
+            glowstick_head_inner(&mut p, &w, Some(spot), &mut rng);
+        }
+        assert_eq!(p.local_ai[0], 0.0, "the counter never ticks on the server");
+        assert_eq!(rng.pos, 0);
+        assert!(out.is_empty());
+    }
+
+    /// `:27124-27127` — the 1008 stuck arm calls AddSpotToCheck EVERY stuck
+    /// tick (no counter); the position dedupe means the SECOND tick rolls
+    /// nothing (the helper's `_positionsChecked`), and the damage zeroes.
+    #[test]
+    fn w4_g78_the_1008_stuck_arm_checks_every_tick_deduped() {
+        let mut w = ore_world();
+        // The flare's 6x6 box at px (640, 640) sits INSIDE tile (40, 40):
+        // make that cell stone so SolidCollision keeps it stuck; move the
+        // ore to (41, 40) — still inside the ±30 window + radius.
+        let i = w.index(40, 40);
+        w.tiles[i].kind = 1;
+        let i = w.index(41, 40);
+        w.tiles[i].kind = 6;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = glow(SPELUNKER_FLARE);
+        p.pos = Vec2::new(40.0 * 16.0, 40.0 * 16.0);
+        p.vel = Vec2::ZERO;
+        p.local_ai[0] = 1.0; // stuck
+        p.local_ai[1] = 30.0;
+        let mut helper = crate::spelunker_helper::SpelunkerProjectileHelper::default();
+        let mut out = Vec::new();
+        let mut rng = SpotRng { draws: vec![0], pos: 0, ranges: vec![] };
+        let spot = SpelunkerSpot {
+            helper: &mut helper,
+            player_center: Some(Vec2::new(40.0 * 16.0, 40.0 * 16.0)),
+            screen_width: 1280.0,
+            net_mode_ok: true,
+            out: &mut out,
+        };
+        flare_step_with_spot(&mut p, &w, &mut rng, Some(spot));
+        assert_eq!(p.local_ai[0], 1.0, "the flare stays stuck on the stone");
+        assert_eq!(rng.pos, 1, "the first stuck tick scans");
+        assert_eq!(out.len(), 1);
+        assert_eq!(p.damage, 0, "the stuck arm zeroes the damage");
+        // The second stuck tick: the SAME centre is deduped — no rolls.
+        let spot = SpelunkerSpot {
+            helper: &mut helper,
+            player_center: Some(Vec2::new(40.0 * 16.0, 40.0 * 16.0)),
+            screen_width: 1280.0,
+            net_mode_ok: true,
+            out: &mut out,
+        };
+        flare_step_with_spot(&mut p, &w, &mut rng, Some(spot));
+        assert_eq!(rng.pos, 1, "the repeat position rolls nothing");
+        assert_eq!(out.len(), 1);
+    }
+
+    /// The distance gate at the attach seam: a player beyond
+    /// screenWidth + 480 px refuses the scan (no rolls, no dust) even on
+    /// the counter wrap.
+    #[test]
+    fn w4_g78_the_attach_distance_gate_refuses_far_players() {
+        let w = ore_world();
+        let mut p = glow(SPELUNKER_GLOWSTICK);
+        p.pos = Vec2::new(40.0 * 16.0, 40.0 * 16.0);
+        p.local_ai[0] = 9.0; // wraps this tick
+        let mut helper = crate::spelunker_helper::SpelunkerProjectileHelper::default();
+        let mut out = Vec::new();
+        let mut rng = SpotRng { draws: vec![], pos: 0, ranges: vec![] };
+        let spot = SpelunkerSpot {
+            helper: &mut helper,
+            // 2000 px away > 1280 + 480 = 1760.
+            player_center: Some(Vec2::new(40.0 * 16.0 + 2000.0, 40.0 * 16.0)),
+            screen_width: 1280.0,
+            net_mode_ok: true,
+            out: &mut out,
+        };
+        glowstick_head_inner(&mut p, &w, Some(spot), &mut rng);
+        assert_eq!(p.local_ai[0], 0.0, "the counter still wraps");
+        assert_eq!(rng.pos, 0, "the gate refused the scan");
+        assert!(out.is_empty());
     }
 }

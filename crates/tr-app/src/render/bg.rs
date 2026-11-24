@@ -1541,12 +1541,22 @@ mod underground_bg_tests {
 
     #[test]
     fn echo_walls_are_invisible_like_walldrawing() {
-        // `WallDrawing.DrawWalls` skips wall 318 (`WallID.EchoWall`) unless the debug
-        // "show invisible walls" option is on, so it neither draws nor paints black.
-        assert!(!wall_visible(0));
-        assert!(!wall_visible(WALL_ECHO));
-        assert!(wall_visible(1));
-        assert!(wall_visible(350));
+        // `WallDrawing.DrawWalls` (`WallDrawing.cs:91`) skips wall 318
+        // (`WallID.EchoWall`) and Echo-coated walls unless
+        // `ShouldShowInvisibleBlocksAndWalls` grants sight (W4-g78: the
+        // Echo Monolith / Spectre Goggles) — hidden, neither draws nor
+        // paints black; shown, both draw.
+        assert!(!wall_visible(0, false, false));
+        assert!(!wall_visible(WALL_ECHO, false, false));
+        assert!(wall_visible(1, false, false));
+        assert!(wall_visible(350, false, false));
+        // The Echo-coating bit hides ANY wall without sight.
+        assert!(!wall_visible(1, true, false));
+        // Sight lifts both the 318 kind and the coating bit.
+        assert!(wall_visible(WALL_ECHO, false, true));
+        assert!(wall_visible(1, true, true));
+        // Wall 0 never draws, sight or not.
+        assert!(!wall_visible(0, false, true));
     }
 
     #[test]

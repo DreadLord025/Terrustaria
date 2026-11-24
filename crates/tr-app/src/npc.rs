@@ -58,6 +58,16 @@ pub enum NpcKind {
     EaterOfSouls,
     /// `NPCID.Hornet` (42) — the jungle hover (`aiStyle 5`).
     Hornet,
+    /// `NPCID.Bunny` (46) — the passive surface critter (`aiStyle 7`, the
+    /// town-critter hop): 18x20, dmg 0, def 0, 5 HP, catchItem 2019,
+    /// NPCHit1/NPCDeath1 (`NPC.cs:9336-9347`); `npcFrameCount[46]` = 7
+    /// (`Main.cs:67088`). W4-e21: the bunny statue's plain spawn.
+    Bunny,
+    /// `NPCID.PartyBunny` (540) — the party bunny: the SAME `SetDefaults`
+    /// row as 46 (`NPC.cs:9336-9347`), `npcFrameCount[540]` = 7
+    /// (`Main.cs:67138`), its own NPC_540 sheet. W4-e21: the bunny statue
+    /// spawns it while `BirthdayParty.PartyIsUp` (`Wiring.cs:2304-2307`).
+    PartyBunny,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
     /// `NPCID.GoblinThief` (27) — the invasion runner (`NPC.cs`: 18×38,
@@ -2338,9 +2348,10 @@ pub struct Npc {
     /// drains it after the tick (the `wants_sphere` borrow-safe shape —
     /// `update_zombie` holds `&World` immutable). `open` is `flag28`
     /// (`ai[1] >= 10`): the drain plays the `KillTile(fail: true)` thud
-    /// on every bash and, when `open`, calls `edit::open_door` (a refusal
-    /// sets `ai[3] = num57`, `:60064`) + the `Door_Opened` cue. The tall
-    /// gate (388) `ShiftTallGate` is unported — the bash still counts.
+    /// on every bash and, when `open`, calls `edit::open_door` (door 10) or
+    /// `edit::shift_tall_gate` (gate 388, W4-g4 via the research/95 §3
+    /// re-point); a refusal sets `ai[3] = num57` (`:60064`/`:60077`) + the
+    /// `Door_Opened` cue.
     pub wants_door_bash: Option<(i32, i32, i32, bool)>,
     /// The King Slime's minion batch count (`AI_015` `:44233`'s
     /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).
@@ -5108,6 +5119,9 @@ impl Npc {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 1.0,
             // E8 merge: the c10 12-critter kb tail dropped (d40/c8's rows).
+            // W4-e21 — PartyBunny 540 writes no knockBackResist row, so the
+            // class default 1f stands (Bunny 46 is d34's arm above).
+            NpcKind::PartyBunny => 1.0,
             _ => 0.4,
         }
     }
@@ -5317,6 +5331,8 @@ impl Npc {
             NpcKind::Arapaima => 30,
             NpcKind::CrimsonGoldfish => 7,
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 0,
+            // W4-e21 — the PartyBunny (540): defense 0 (Bunny is d34's arm).
+            NpcKind::PartyBunny => 0,
             // The worms: the head 2/0/2, the body 6/4/4, the tail 10/6/8.
             NpcKind::DevourerHead => 2,
             NpcKind::DevourerBody => 6,
@@ -5989,6 +6005,8 @@ impl Npc {
             // above), Pufferfish/Orca (d43 lands later).
             NpcKind::Arapaima | NpcKind::CrimsonGoldfish => 500.0,
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 0.0,
+            // W4-e21 — PartyBunny 540: no value row (Bunny is d34's arm).
+            NpcKind::PartyBunny => 0.0,
             // The worms: the per-segment coin value (`:8763`'s 140, `:8850`'s
             // 40, `:8903`'s 800 — the body/tail rows carry the same value).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 140.0,
@@ -8860,6 +8878,12 @@ impl Npc {
             | NpcKind::DyeTrader
             | NpcKind::PartyGirl
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
+            // W4-e21 — the bunny pair (46/540, aiStyle 7): the town-critter
+            // hop rides the port's aiStyle-7 walker stand-in (`update_guide`,
+            // the Guide precedent); the faithful `AI_007_TownEntities`
+            // TownCritter arm (`NPC.cs:53730-53760`/`:54191-54194`) is the
+            // M4-NPC critter wave's (ANALYSIS "The bunny statue's pair").
+            NpcKind::Bunny | NpcKind::PartyBunny => self.update_guide(world, dt),
             NpcKind::QueenBee => {
                 unreachable!("aiStyle 43 rides the style axis (S1-D-3 W-3)")
             }
@@ -12802,6 +12826,41 @@ impl Npc {
                 // town machine — 26 rows).
                 self.humanoid_town_frame();
             }
+            // W4-e21 — the bunny pair's `case 46 : case 540` group
+            // (`NPC.cs:76851-76904`): grounded latches the sprite direction,
+            // the idle snaps to row 0, the hop walks the `|vx| + 1`
+            // accumulator advancing every >6 and wrapping at
+            // `Main.npcFrameCount[46/540]` = 7 (`Main.cs:67088`/`:67138`);
+            // the air pins row 4 rising / row 6 falling.
+            NpcKind::Bunny | NpcKind::PartyBunny => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 7 {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
             NpcKind::GolemHeadFree => {
                 // `FindFrame`'s case 249 (`NPC.cs:72963-72976`): the mouth
                 // row reads the STORED `localAI[0]` flag (the arm writes
@@ -16403,6 +16462,9 @@ impl Npc {
     /// one-tile obstacles. The chase/doors/talk arms land with their
     /// systems.
     fn update_guide(&mut self, world: &World, _dt: f32) {
+        // W4-e21: the kind's own box — every town NPC is 18x40 (the Guide's
+        // size, unchanged), but the bunny pair riding this stand-in is 18x20
+        // (`NPC.cs:9338-9339`), so the collision reads `self.kind.size()`.
         let (w, h) = self.kind.size();
         // The wander: a walking pace with the random turn every few
         // seconds (`ai[3]`'s idle timer shape).
@@ -25408,6 +25470,10 @@ impl Npc {
             NpcKind::DuckWhite => 733,
             NpcKind::DuckWhite2 => 734,
             // E8 merge: the c10 12-critter render_key tail dropped (d40/c8's keys).
+            // W4-e21 — PartyBunny 540's render-key term: the port-local
+            // protocol id 237 (Bunny 46 keeps d34's 270 above; `cs_id` stays
+            // the real 46/540 for the caps). 229/237 collision-free per e21.
+            NpcKind::PartyBunny => 237,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25439,6 +25505,15 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
     let mut h = npcs.len() as u32;
     for n in npcs {
         h = h.wrapping_mul(31).wrapping_add(n.render_key());
+        // W4-g78 wiring — the debuff-tint chain (`GetNPCColorTintedByBuffs`,
+        // `NPC.cs:91024-91141`) now tints the NPC draw colour at the
+        // `entities.rs` colour site (`Main.cs:22939`), so the tint-relevant
+        // buff bar is a draw input inside the cached world range: two
+        // frames differing only in an NPC's midas/ichor/poison/… state must
+        // not share a cached range (the d70 `moon_lord_strength` key-widen
+        // precedent). `tint_key` is zero for a clean bar, so buff-free
+        // worlds keep the pre-wiring key bit-for-bit.
+        h = h.wrapping_mul(31).wrapping_add(crate::npc_hunter_tint::tint_key(n));
     }
     h
 }
@@ -27693,6 +27768,73 @@ mod tests {
         assert!(shark.x > start + 10.0, "the shark closed in");
         let speed = (shark.vx * shark.vx + shark.vy * shark.vy).sqrt();
         assert!(speed > 1.0, "the chase reached speed ({speed})");
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_pair_rows_match_setdefaults() {
+        // `NPC.cs:9336-9347` — 46/540 share ONE row: 18x20, aiStyle 7, dmg 0,
+        // def 0, 5 HP, NPCHit1/NPCDeath1, catchItem 2019 (the catch work), no
+        // value/knockBackResist rows (the head's 0 / 1f, `:8544`/`:8533`).
+        for kind in [NpcKind::Bunny, NpcKind::PartyBunny] {
+            assert_eq!(kind.size(), (18.0, 20.0), "{kind:?} box");
+            assert_eq!(kind.ai_style(), 7, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} HitSound");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} DeathSound");
+            assert!(!kind.no_gravity(), "{kind:?} gravity");
+            // The Npc-level accessors (defense/value/kb read the kind tables).
+            let n = bare(kind);
+            assert_eq!(n.defense(), 0, "{kind:?} defense");
+            assert_eq!(n.value(), 0.0, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), 1.0, "{kind:?} kb (head default)");
+        }
+        assert_eq!(NpcKind::Bunny.cs_id(), 46);
+        assert_eq!(NpcKind::PartyBunny.cs_id(), 540);
+        // The protocol round-trip (the port-local 229/237 holes).
+        assert_eq!(NpcKind::from_u16(NpcKind::Bunny.to_u16()), Some(NpcKind::Bunny));
+        assert_eq!(
+            NpcKind::from_u16(NpcKind::PartyBunny.to_u16()),
+            Some(NpcKind::PartyBunny)
+        );
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_find_frame_hops_and_pins_the_air_rows() {
+        // `NPC.FindFrame`'s `case 46 : case 540` group (`NPC.cs:76851-76904`):
+        // grounded idle snaps to row 0; the grounded hop walks the `|vx| + 1`
+        // accumulator advancing every >6 and wrapping at 7; the air pins row 4
+        // rising / row 6 falling. Both kinds share the arm.
+        for kind in [NpcKind::Bunny, NpcKind::PartyBunny] {
+            let mut n = bare(kind);
+            // Grounded idle: vx 0, vy 0 → row 0, counter 0.
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.frame = 3;
+            n.frame_counter = 5.0;
+            n.find_frame();
+            assert_eq!(n.frame, 0, "{kind:?} idle row 0");
+            assert_eq!(n.frame_counter, 0.0, "{kind:?} idle counter reset");
+            // Grounded hop: vx 1 → counter += 2 each tick; after 4 ticks the
+            // counter passes 6 and the row advances.
+            n.vx = 1.0;
+            n.vy = 0.0;
+            n.frame = 0;
+            n.frame_counter = 0.0;
+            for _ in 0..4 {
+                n.find_frame();
+            }
+            assert!(n.frame >= 1, "{kind:?} the hop advanced ({})", n.frame);
+            // Rising: vy < 0 → row 4, counter 0.
+            n.vy = -2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 4, "{kind:?} rising row 4");
+            assert_eq!(n.frame_counter, 0.0);
+            // Falling: vy > 0 → row 6.
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 6, "{kind:?} falling row 6");
+        }
     }
 
     #[test]
@@ -30515,7 +30657,8 @@ mod tests {
         // + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 /
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
-    pub(super) const ALL_KINDS: [NpcKind; 512] = [
+    // + W4-e21's PartyBunny 540 = 513.
+    pub(super) const ALL_KINDS: [NpcKind; 513] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -31092,6 +31235,8 @@ mod tests {
         NpcKind::Snail,
         NpcKind::GlowingSnail,
         NpcKind::MagmaSnail,
+        // W4-e21 — the Party Bunny (540); Bunny 46 is d34's row above.
+        NpcKind::PartyBunny,
     ];
 
 
@@ -36200,8 +36345,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            512,
-            "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate)"
+            513,
+            "every decodable kind resolves (the wire roster's size - 512 (508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them)) + W4-e21's PartyBunny 540 (Bunny 46 is in the spine), L-B gate)"
         );
         assert!(
             covered > 43,

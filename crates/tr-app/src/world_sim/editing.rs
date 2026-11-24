@@ -29,10 +29,12 @@ mod sentry;
 // shimmer permanents/books/satchel (g89/g90), the Torch God (f33) and the
 // Artisan Loaf (g90) are the sibling lanes' — see the module header.
 mod permanent_upgrades;
+mod paint;
+use paint::use_paint_tool;
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
-const ONE_TICK_SECS: f32 = 1.0 / 60.0;
+pub(super) const ONE_TICK_SECS: f32 = 1.0 / 60.0;
 
 // ---------------------------------------------------------------------------
 // S1-P-i22 — the magic guns + tomes' use arms (`Player.ItemCheck_Shoot`,
@@ -312,7 +314,7 @@ fn shooter_use_anim_ticks(kind: u16, prefix: u16) -> i32 {
 /// whole animation — the C#'s `Item.useTime` stock is 100,
 /// `Item.cs:49028`-adjacent), and the vanilla value for the four `gunProj`
 /// placeholders.
-fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
+pub(super) fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
     gun_proj_row(kind).map_or_else(
         || {
             crate::prefix::prefixed_stats(kind, prefix)
@@ -331,14 +333,14 @@ fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
 /// decay by the frame's `dt`, so every window the roll chain reads is derived
 /// from these counts — never from a raw float compare against "eight ticks",
 /// which would drift with the frame time.
-fn ticks_of(secs: f32) -> i32 {
+pub(super) fn ticks_of(secs: f32) -> i32 {
     (secs * 60.0).round() as i32
 }
 
 /// `SetItemAnimation(int baseFrames, float multiplier)` (`Player.cs:4453-4461`):
 /// `val = (int)((float)baseFrames * multiplier)` — truncation, NOT rounding —
 /// floored at 1 when `baseFrames > 0`. Seconds out of the tick count.
-fn scaled_anim_secs(base_frames: i32, multiplier: f32) -> f32 {
+pub(super) fn scaled_anim_secs(base_frames: i32, multiplier: f32) -> f32 {
     let mut val = (base_frames as f32 * multiplier) as i32;
     if base_frames > 0 {
         val = val.max(1);
@@ -386,7 +388,7 @@ fn summoner_weapon_scales_with_attack_speed(kind: u16) -> bool {
 /// non-melee/summon/tile/wall branches. The tail (`:4496`) re-arms
 /// `reuseDelay = sItem.reuseDelay` — the caller applies it through
 /// [`arm_reuse_delay`].
-fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
+pub(super) fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
     let Some(def) = registry::get(held.kind) else {
         return crate::item::use_animation_secs_of(held.kind, held.prefix);
     };
@@ -446,7 +448,7 @@ fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
 /// with `spd`). The C# never decrements the lock per tick; `ApplyReuseDelay`
 /// (`:52835-52840`) consumes it whole at the next animation-zero head,
 /// converting it into a silent `itemAnimation = itemTime = reuseDelay` hold.
-fn arm_reuse_delay(app: &mut App, held: ItemSlot) {
+pub(super) fn arm_reuse_delay(app: &mut App, held: ItemSlot) {
     let rd = crate::prefix::prefixed_stats(held.kind, held.prefix)
         .map(|s| s.reuse_delay)
         .or_else(|| registry::get(held.kind).map(|d| d.reuse_delay))
@@ -461,7 +463,7 @@ fn arm_reuse_delay(app: &mut App, held: ItemSlot) {
 /// timers, so the unit rigs that drive `update_editing` alone see ONE use per
 /// press — the same stand-in the pre-i12 gates used). The reuse lock rides the
 /// same start (`:4496`).
-fn start_use_timers(app: &mut App, held: ItemSlot) {
+pub(super) fn start_use_timers(app: &mut App, held: ItemSlot) {
     app.swing_max = apply_item_animation_secs(app, held);
     app.swing = app.swing_max;
     start_swing_extras(app, held.kind);
@@ -708,7 +710,7 @@ fn limit_point_to_player_reachable_area(
 /// `x`/`y` are `tileRangeX/Y + TB` clamped by `TileReachLimit = 20`
 /// (`TileReachCheckSettings.cs:20-34`, `:81-85`). The port's player hitbox
 /// is `WIDTH`×`height` at `(p.x, p.y)` (`player.rs`).
-fn tile_in_reach_rect(p: &Player, tx: i32, ty: i32, range_x: i32, range_y: i32, tb: i32) -> bool {
+pub(super) fn tile_in_reach_rect(p: &Player, tx: i32, ty: i32, range_x: i32, range_y: i32, tb: i32) -> bool {
     let x = (range_x + tb).min(20);
     let y = (range_y + tb).min(20);
     let lx = (p.x / TILE_PX) as i32 - x;
@@ -725,7 +727,7 @@ fn tile_in_reach_rect(p: &Player, tx: i32, ty: i32, range_x: i32, range_y: i32, 
 /// `+1/+1` (`Player.cs:14954-14958`). The `TileReachLimit` clamp rides
 /// [`tile_in_reach_rect`]; the artisan bread's `TB = 4` is the placement
 /// path's (`Player.cs:35671`), not the mining reach's.
-fn mining_tile_range(app: &App) -> (i32, i32) {
+pub(super) fn mining_tile_range(app: &App) -> (i32, i32) {
     let Some(p) = app.player.as_ref() else {
         return (5, 3);
     };
@@ -1450,9 +1452,44 @@ fn try_pounding_tile_tick(
             app.world_key = None;
             app.pound_release = false;
         }
+        edit::PoundOutcome::TrackHammer => {
+            // `Player.cs:46056-46062` — `Minecart.FrameTrack(x, y, pound:
+            // true)` with mute FALSE (research-71 §3b.4): the app-side tables
+            // run the pound switch-cycle; the C# bool only feeds the
+            // SP-discarded `netMode == 1` SendData.
+            let fail_kill = crate::minecart::frame_track_hammer(&mut app.world, tx, ty);
+            if fail_kill {
+                // `Minecart.cs:1163-1166` — `(pound & flag4) && !mute` →
+                // `WorldGen.KillTile(i, j, fail: true)`. The 314 slice: the
+                // Item52 cue (`KillTile_PlaySounds`, `WorldGen.cs:66531-66533`
+                // — the style's `GetRandomPitch` NextFloat + the case-2 pitch
+                // draw ride the `UpdatePlayers` stream, the pound arm's
+                // convention), then the fail tail's `SquareTileFrame` wake
+                // (`:63735`; 314 is not shakeable/convertible, `:63711-63734`
+                // — the cascade's object drops ride the hammer-family
+                // precedent, discarded like `slope_tile`'s).
+                app.audio.play_place_sound(
+                    (2, 52),
+                    tx as f32 * TILE_PX,
+                    ty as f32 * TILE_PX,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+                let _ = edit::square_tile_frame_default(&mut app.world, tx, ty);
+                // `TileFrameImportant` case 314 (`WorldGen.cs:85290-85294`):
+                // the wake refits EVERY 3×3 track with `FrameTrack(pound:
+                // false)` (the SquareTileFrame walk, not just the hit cell);
+                // `HandleRopeEndFraming` is the rope-framing seam (the rope
+                // draw module reads the frames live — unported half).
+                crate::minecart::refit_tracks_around(&mut app.world, tx, ty);
+            }
+            app.queue_map_ring(tx, ty);
+            app.world_key = None;
+            // `:46310` — the latch clears on the 314 arm either way.
+            app.pound_release = false;
+        }
         edit::PoundOutcome::Framed | edit::PoundOutcome::Consumed => {
             // The frame arms carry no sound (`SendTileSquare` only); the
-            // Consumed seams (470/314) change nothing in the port. The
+            // Consumed seam (470) changes nothing in the port. The
             // frame writes replicate through `SendTileSquare` in the C# —
             // no port net kind yet (ANALYSIS); the local caches still wake.
             app.queue_map_ring(tx, ty);
@@ -1650,7 +1687,7 @@ fn rearm_axe_item_time(app: &mut App, held: ItemSlot) {
 /// The held item's `useTime` in ticks, prefix-aware (`Item.Prefix` scales
 /// `useTime`, `prefix.rs:400`). The mining `itemTime` re-arm reads it
 /// (`Player.cs:45779`).
-fn held_use_time_ticks(held: ItemSlot) -> i32 {
+pub(super) fn held_use_time_ticks(held: ItemSlot) -> i32 {
     if held.prefix != 0 {
         if let Some(s) = crate::prefix::prefixed_stats(held.kind, held.prefix) {
             return s.use_time;
@@ -1674,6 +1711,11 @@ fn sync_mine_crack_state(app: &mut App, tx: i32, ty: i32) {
 }
 
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
+    // (Batch-H keep-one: the g79 `MouseOversClear` head-clear moved to the
+    // ONE site at the `DoUpdateInWorld` head (`app/frame.rs`, the g81
+    // position — `Main.cs:17035` runs before the whole player pass); the
+    // C# clears `Player.cursorItemIconEnabled` once per update, the paint
+    // gates + the wiring/mining latch re-set it the same tick.)
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace-top] entered, screen={}x{}", screen.x, screen.y);
@@ -2192,6 +2234,36 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         eprintln!("[trace] past the reach gate");
     }
     let held = app.inventory[app.selected];
+    // S1-W4-g81 residuals — the wiring tools' cursor-icon latch
+    // (`Player.ItemCheck_UseWiringTools`, `Player.cs:46752-46760`): the
+    // tool in reach arms `cursorItemIconEnabled` + `ItemIconCacheUpdate`
+    // BEFORE the use gates — the icon shows while hovering, not only while
+    // placing. The reach is `IsInTileInteractionRange(Simple, tileBoost +
+    // blockRange)`; the port's `mining_tile_range` carries the same
+    // journey/accessory/Toolbox grants (blockRange has no port field — 0).
+    // The mining tools' twin latch (`:45620-45624`) rides the same seam.
+    {
+        let tool_kind = held.kind;
+        let is_wiring = matches!(tool_kind, 509 | 510 | 849 | 850 | 851 | 3612 | 3620 | 3625);
+        let is_mining = crate::registry::get(tool_kind)
+            .is_some_and(|d| d.pick > 0 || d.axe > 0 || d.hammer > 0);
+        if held.count > 0 && (is_wiring || is_mining) {
+            let tb = crate::registry::get(tool_kind).map_or(0, |d| d.tile_boost);
+            let (rx, ry) = mining_tile_range(app);
+            let in_reach = app.player.as_ref().is_some_and(|p| {
+                tile_in_reach_rect(p, tx, ty, rx, ry, tb)
+            });
+            if in_reach {
+                // The PLAYER field (the batch-H keep-one — the C# writes
+                // `Main.player[myPlayer].cursorItemIconEnabled`, the same
+                // flag g79's paint gates + the icon pass read).
+                if let Some(p) = app.player.as_mut() {
+                    p.cursor_item_icon_enabled = true;
+                }
+                app.item_icon_cache_update(tool_kind);
+            }
+        }
+    }
     #[cfg(test)]
     eprintln!(
         "[flow-dbg] reached: kind={} mine_down={}",
@@ -2564,6 +2636,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // starts while held).
         let drill_tool =
             registry::get(held.kind).is_some_and(|d| d.channel && (d.pick > 0 || d.axe > 0));
+        // S1-W4-g81 residuals — `Player.ItemCheck_CheckCanUse_Inner`
+        // (`Player.cs:52063-52066`): the Wire Kite (3611) refuses the use
+        // start while NO placement channel is selected (the ToolMode
+        // bitfield minus the Cutter). The `wireOperationsCooldown` gate
+        // (`:52075-52078`) is unported (no cooldown field — ANALYSIS).
+        if held.kind == 3611
+            && app.wire_tool_mode
+                & (tr_core::smart_cursor::multi_tool_mode::RED
+                    | tr_core::smart_cursor::multi_tool_mode::GREEN
+                    | tr_core::smart_cursor::multi_tool_mode::BLUE
+                    | tr_core::smart_cursor::multi_tool_mode::YELLOW
+                    | tr_core::smart_cursor::multi_tool_mode::ACTUATOR)
+                == 0
+        {
+            return;
+        }
         if app.attack_cd <= 0.0
             && app.reuse_delay <= 0.0
             && throw_ready
@@ -2774,6 +2862,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // (S1-P-i39 — the resync keep-both: this gate runs FIRST,
                 // the staff-buff grant below never sees a hook item.)
                 if crate::grapple::is_hook_projectile(proj) {
+                    return;
+                }
+                // S1-W4-g81 residuals — the Wire Kite's spawn
+                // (`Player.cs:49437`'s generic tail for 3611): the ghost
+                // spawns at the player centre with ZERO velocity (the
+                // aiStyle-125 arm rides it to the cursor on its first
+                // tick), damage 0 / knockback 0 (`Item.cs`'s 3611 row:
+                // damage -1 → GetWeaponDamage 0). The generic
+                // `fire_non_ammo_shot` would aim it at shootSpeed 10 —
+                // the kite is a channel hold, not a throw.
+                if held.kind == 3611 {
+                    let (cx, cy) = p.center();
+                    let owner = app.local_id as u8;
+                    app.projectiles.spawn_with_data_ai_owned(
+                        proj, owner, cx - 5.0, cy - 5.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0,
+                    );
+                    // `NewProjectile`'s `TryUpdateChannel` tail
+                    // (`Projectile.cs:11097-11100`) — the same-tick track
+                    // the generic path applies below (the early return
+                    // must not skip it).
+                    if let Some(p) = app.player.as_mut() {
+                        app.projectiles.apply_channel_tracks(p);
+                    }
                     return;
                 }
                 // S1-P-i25 — `Player.ItemCheck_ApplyPetBuffs`' summon-staff
@@ -5235,7 +5346,17 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             }
         }
     }
-    if app.place_down && !app.inventory_open && (starting || inside_swing) {
+    // W4-g79 — the paint-tool family (`Player.PlaceThing_Paintbrush` /
+    // `PlaceThing_PaintRoller` / `PlaceThing_PaintScraper`, `Player.cs:39586-
+    // 39588`): the brush/roller/scraper answer before the extractinator and
+    // the tile/wall routes. They place no tile/wall, so the generic place
+    // route never competes; the arm owns its own swing start + `ApplyItemTime`
+    // cadence (tileSpeed for the brush/scraper-tile, wallSpeed for the roller/
+    // scraper-wall) and returns whether the held item IS a paint tool (the
+    // place route below must not run under it).
+    if use_paint_tool(app, tx, ty, starting, inside_swing) {
+        // The paint arm owns the timers; nothing below re-arms them.
+    } else if app.place_down && !app.inventory_open && (starting || inside_swing) {
         // The extractinator arm first (`PlaceThing`'s order, `Player.cs:39586-39597`:
         // `PlaceThing_ItemInExtractinator` runs before the tile/wall routes). It
         // consumes the tick on its own terms — `ApplyItemTime` makes the swing
@@ -5617,6 +5738,19 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_y: t.frame_y,
         });
     app.queue_map_ring(tx, ty);
+    // W4-c42 final (§8.4 re-audit find): the C# `DestroyPlate` runs inside
+    // `KillTile_GetItemDrops` (`WorldGen.cs:65327`) at `:63863` — BEFORE
+    // the tile clear at `:63885` — so the release poke sees the LIVE
+    // plate (`HitSwitch`'s type-428 arm). The port cleared the cell first
+    // (kill_tile below) and the poke hit a dead tile: `hit_switch`'s
+    // active gate refused and the release never tripped. The poke moves
+    // ahead of the kill; its clicks/cues drain at the site tail below
+    // (the stage-stream contract, after the break sounds like the C#).
+    if hit.as_ref().is_some_and(|h| h.kind == 428) {
+        // The §8.1 stamp: the release poke trips the plate's wire line.
+        crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
+        app.wiring.destroy_plate(&mut app.world, tx, ty);
+    }
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
@@ -5702,13 +5836,15 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             &ctx,
         )
     };
-    for (id, count, x, y) in drops {
+    for (id, count, px, py) in drops {
         // The tile-break drops draw the same `UpdatePlayers` stream the
         // break rolls used (`Main.rand` = the active swap, `Main.cs:17754`).
         // No per-drop cue: the C# plays the break sound once, from
         // `KillTile_PlaySounds` (the table above), never per `Item.NewItem`.
+        // The positions are PIXELS (the object records carry the C# rect
+        // centre, the g78 FIX-ONCE) — spawn through the pixel seam.
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        spawn_item_drop(&mut app.items, rng, id, count, x, y);
+        super::items::spawn_item_drop_px(&mut app.items, rng, id, count, Vec2::new(px, py));
     }
     // `WorldGen.CheckPalmTree`'s canopy re-roll (`:54385-54388`): the palm
     // cells whose cell above is gone take a fresh canopy frame. The roll
@@ -5759,18 +5895,34 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     app.liquids.wake_around(&app.world, tx, ty, 3);
     // `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`, case 428 of
     // `KillTile_GetItemDrops`): a pressed weighted plate that is broken fires
-    // its switch once so the device releases. The pick break runs in
-    // `Player.ItemCheck` under the `UpdatePlayers` swap (`Main.cs:17754`), so
-    // the click's pitch draw rides that stream (the `HitSwitch` precedent,
-    // `doors.rs`). An unpressed plate is a no-op.
+    // its switch once so the device releases — the poke itself moved ABOVE
+    // the kill (the C# order: the drop pass runs before the clear, so the
+    // poke sees the live plate). The pick break runs in `Player.ItemCheck`
+    // under the `UpdatePlayers` swap (`Main.cs:17754`), so the click's
+    // pitch draw rides that stream (the `HitSwitch` precedent, `doors.rs`).
+    // An unpressed plate is a no-op (the poke's TryGetValue gate).
     if hit.as_ref().is_some_and(|h| h.kind == 428) {
-        app.wiring.destroy_plate(&mut app.world, tx, ty);
         for (px, py) in app.wiring.take_switch_clicks() {
             app.audio.play_switch_click(
                 px as f32,
                 py as f32,
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
+        }
+        // W4-c42 final (§8.4 drain-union finish): the release poke's wired
+        // door/trapdoor/gate cues ride the same UpdatePlayers stream —
+        // this site drained only the switch clicks before.
+        for (open, px, py) in app.wiring.take_door_cues() {
+            app.audio.play_door_sound(
+                open,
+                px as f32,
+                py as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+        // The §8.2 echoes: SP discards (the netMode-0 return).
+        for (n, x, y, d) in app.wiring.take_door_echoes() {
+            app.send_door_toggle(n, x, y, d);
         }
     }
     // `WorldGen.TileFrame`'s falling check (`WorldGen.cs:81380`): the tile
@@ -5907,10 +6059,14 @@ struct HitCell {
 /// `Item.NewItem` records (:86508/:49424/:43494/:47121/:57972), every pot
 /// event's `SpawnThingsFromPot` loot (:57011-57014), every cascade-killed
 /// herb's rolls (:65674-65698) and every 2x1 pile's loot block
-/// (:47130-47245). `(item, stack, x, y)` in spawn order, plus the Coin
-/// Portal projectile requests. Free of `App` — the RNG streams come in as
-/// parameters (`genRand` = the seeded `FastRandom` stand-in, `Main.rand` =
-/// the caller's `UnifiedRandom` stage stream).
+/// (:47130-47245). `(item, stack, px, py)` in spawn order — PIXEL positions
+/// (W4-g34, the g78 centre-gap FIX-ONCE): the object records resolve their
+/// C# `Item.NewItem` rect centre through [`edit::ObjectDrop::spawn_center_px`]
+/// (`Item.cs:49651`), every other record keeps the tile top-left pixel the
+/// port has always spawned (their rect-centre conversion is a separate
+/// lane). Plus the Coin Portal projectile requests. Free of `App` — the RNG
+/// streams come in as parameters (`genRand` = the seeded `FastRandom`
+/// stand-in, `Main.rand` = the caller's `UnifiedRandom` stage stream).
 fn break_drop_events(
     kill: &edit::TileKill,
     world: &World,
@@ -5919,23 +6075,33 @@ fn break_drop_events(
     axe_power: i32,
     main_rng: &mut UnifiedRandom,
     ctx: &DropCtx,
-) -> (Vec<(u16, u32, i32, i32)>, Vec<(i32, i32)>) {
-    let mut events = Vec::new();
+) -> (Vec<(u16, u32, f32, f32)>, Vec<(i32, i32)>) {
+    let mut events: Vec<(u16, u32, f32, f32)> = Vec::new();
+    // The tile-cell records' spawn point: the tile top-left pixel (the
+    // port's standing spawn for the per-cell/tree/pot/herb lanes).
+    let cell_px = |x: i32, y: i32| (x as f32 * TILE_PX, y as f32 * TILE_PX);
     // The hit cell's per-cell drop (`KillTile_DropItems` for the dying cell —
     // the C# `tileCache` carries the frames; captured pre-kill in
     // [`break_tile`]).
     if let Some(hit) = &hit {
-        events.extend(cell_drops(hit, staff_of_regrowth, main_rng, ctx));
+        for (id, count, x, y) in cell_drops(hit, staff_of_regrowth, main_rng, ctx) {
+            let (px, py) = cell_px(x, y);
+            events.push((id, count, px, py));
+        }
     }
     // The cascade's `Check*` records: the check's own `Item.NewItem` (the
     // sunflower's 63) or the object's item through `registry::tile_drop`.
+    // The spawn point is the C# rect CENTRE (`Item.cs:49651` — the 32x32
+    // furniture box centres +16/+16, the 16x16 door box +8/+8; the g78
+    // centre-gap FIX-ONCE, resolved once here for every check).
     for drop in &kill.object_drops {
         let id = drop
             .item
             .map(|item| item as u16)
             .or_else(|| registry::tile_drop(drop.tile_kind, 0));
         if let Some(id) = id {
-            events.push((id, 1, drop.x, drop.y));
+            let (px, py) = drop.spawn_center_px();
+            events.push((id, 1, px, py));
         }
     }
     // The killed tree cells' wood and acorns (`WorldGen.KillTile_GetTreeDrops`,
@@ -5950,12 +6116,14 @@ fn break_drop_events(
                 item,
             } => {
                 if *item != 0 {
-                    events.push((*item, 1, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((*item, 1, px, py));
                 }
                 // `if (tileCache.frameX <= 132 && tileCache.frameX >= 88)
                 // secondaryItem = 27;` (`:65239-65242`).
                 if (88..=132).contains(frame_x) {
-                    events.push((27, 1, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((27, 1, px, py));
                 }
             }
             edit::TreeDropEvent::Trunk {
@@ -5976,7 +6144,8 @@ fn break_drop_events(
                     &mut gen_stream,
                     main_rng,
                 ) {
-                    events.push((id, count, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((id, count, px, py));
                 }
             }
             edit::TreeDropEvent::Gem {
@@ -5990,17 +6159,20 @@ fn break_drop_events(
                 for (id, count) in
                     gem_tree_drops(*gem, *seed, *frame_x, *frame_y, main_rng)
                 {
-                    events.push((id, count, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((id, count, px, py));
                 }
             }
             edit::TreeDropEvent::Mushroom { x, y } => {
                 for (id, count) in mushroom_tree_drops(main_rng) {
-                    events.push((id, count, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((id, count, px, py));
                 }
             }
             edit::TreeDropEvent::Cactus { x, y } => {
                 // `case 80: dropItem = 276;` (`WorldGen.cs:64717-64719`).
-                events.push((276, 1, *x, *y));
+                let (px, py) = cell_px(*x, *y);
+                events.push((276, 1, px, py));
             }
         }
     }
@@ -6031,7 +6203,8 @@ fn break_drop_events(
             portals.push((event.x, event.y));
         }
         for (id, count) in loot {
-            events.push((id, count.max(1) as u32, event.x, event.y));
+            let (px, py) = cell_px(event.x, event.y);
+            events.push((id, count.max(1) as u32, px, py));
         }
     }
     // The cascade-killed herb cells: the per-cell herb rolls (`Main.rand`
@@ -6045,24 +6218,35 @@ fn break_drop_events(
             ctx,
             main_rng,
         ) {
-            events.push((id, count.max(1) as u32, herb.x, herb.y));
+            let (px, py) = cell_px(herb.x, herb.y);
+            events.push((id, count.max(1) as u32, px, py));
         }
     }
     // The broken piles' loot blocks: 185's 2x1 coin/ore table on the seeded
     // stream (`genRand` counts, `WorldGen.cs:47142-47245`), 187's
     // sword-in-stone roll on the item stream (`Main.rand.Next(30)`,
-    // `:49828-49839`).
+    // `:49828-49839`), 488's fallen-log wood stack on the seeded stream
+    // (`genRand.Next(10, 21)`, `:49553`).
     for pile in &kill.pile_events {
         if pile.kind == 187 {
             if let Some(id) = sword_pile_roll(pile.frame_x, main_rng) {
-                events.push((id, 1, pile.x, pile.y));
+                let (px, py) = cell_px(pile.x, pile.y);
+                events.push((id, 1, px, py));
             }
             continue;
         }
         let mut gen_stream =
             tr_core::tile_light::FastRandom::new(main_rng.next() as u64);
+        if pile.kind == 488 {
+            // `Item.NewItem(…, 9, WorldGen.genRand.Next(10, 21))` (:49553).
+            let count = gen_stream.next_range(10, 21).max(1) as u32;
+            let (px, py) = cell_px(pile.x, pile.y);
+            events.push((9, count, px, py));
+            continue;
+        }
         for (id, count) in pile_loot(pile.frame_x, &mut gen_stream) {
-            events.push((id, count.max(1) as u32, pile.x, pile.y));
+            let (px, py) = cell_px(pile.x, pile.y);
+            events.push((id, count.max(1) as u32, px, py));
         }
     }
     (events, portals)
@@ -6214,6 +6398,16 @@ fn cell_drops(
     let rolls: Vec<(u16, i32)> = match hit.kind {
         78 => vec![(222, 1)],
         380 => vec![((3215 + i32::from(hit.frame_y) / 18) as u16, 1)],
+        // `case 314: dropItem = Minecart.GetTrackItem(tileCache);`
+        // (`WorldGen.cs:64582-64584`, `Minecart.cs:1508-1517`): the track
+        // piece drops by its FRONT frame's type — 0 → 2340 Minecart Track,
+        // 1 → 2492 Pressure Track, 2 → 2739 Booster Track. The `by_tile`
+        // fallback would leak 2340 for every frame (the first placing item).
+        // Research-71 §6 census.
+        314 => match crate::minecart::track_item(hit.frame_x) {
+            0 => Vec::new(),
+            id => vec![(id, 1)],
+        },
         // S1-P-i30: the tree/cactus kinds drop through their per-cell kill
         // records (`TreeDropEvent`, resolved in `break_drop_events`) — the
         // hit cell included — so the generic per-cell arm must not double
@@ -6963,13 +7157,15 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                         .map(|item| item as u16)
                         .or_else(|| registry::tile_drop(drop.tile_kind, 0));
                     if let Some(id) = id {
-                        spawn_item_drop(
+                        // The C# `Item.NewItem` rect centre (the g78
+                        // FIX-ONCE, `ObjectDrop::spawn_center_px`).
+                        let (px, py) = drop.spawn_center_px();
+                        super::items::spawn_item_drop_px(
                             &mut app.items,
                             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                             id,
                             1,
-                            drop.x,
-                            drop.y,
+                            Vec2::new(px, py),
                         );
                     }
                 }
@@ -7568,6 +7764,14 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     if matches!(kind, 20 | 590 | 595 | 615) {
         let _ = app.achievements.notify_custom_int("Do", 1);
     }
+    if kind == 314 {
+        // `WorldGen.PlaceTile`'s `SquareTileFrame` tail (`:60261`) →
+        // `TileFrameImportant` case 314 (`:85290-85294`): the 3×3 wake refits
+        // every track through `FrameTrack(pound: false)` — the placed −1
+        // front takes its neighbourhood frame, and the neighbours re-fit
+        // against the new piece (research-71 §6 census).
+        crate::minecart::refit_tracks_around(&mut app.world, tx, ty);
+    }
     app.liquids.wake_around(&app.world, tx, ty, 3);
     // The placement cue: `tr_core::edit::place_tile_sound` is the
     // `WorldGen.PlaceTile` tail switch (`WorldGen.cs:60263-60282` — 127 →
@@ -7679,6 +7883,32 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
         2 => edit::break_wall(world, x, y),
         3 => {
             edit::place_wall(world, x, y, tile);
+            None
+        }
+        // W4-g79 — the paint broadcasts (`NetMessage.SendData(63/64)`,
+        // `WorldGen.cs:44127-44130`/`:44171-44174`/`:44219-44222`/`:44243-
+        // 44246`): the port's `request_edit` kinds 4..7 stand in for the
+        // 63/64 pair — 4 tile paint / 5 wall paint (`number7 = 0`), 6 tile
+        // coating / 7 wall coating (`number7 = 1f`). The replay is the
+        // `MessageBuffer.cs:2909-2948` arms' world writes; the receiver-side
+        // dust those arms play (`paintEffects: true` default) is not ported
+        // here — `apply_edit` is world-only, the same shape as the kill/place
+        // replays above. The host's `request_edit` carries the paint/coating
+        // bits in the `SectionRange` tile record regardless of kind.
+        4 => {
+            edit::paint_tile(world, x, y, tile as u8);
+            None
+        }
+        5 => {
+            edit::paint_wall(world, x, y, tile as u8);
+            None
+        }
+        6 => {
+            edit::paint_coat_tile(world, x, y, tile as u8);
+            None
+        }
+        7 => {
+            edit::paint_coat_wall(world, x, y, tile as u8);
             None
         }
         _ => None,
@@ -9062,7 +9292,7 @@ mod tests {
     fn drop_events(
         kill: &edit::TileKill,
         hit: Option<HitCell>,
-    ) -> (Vec<(u16, u32, i32, i32)>, Vec<(i32, i32)>) {
+    ) -> (Vec<(u16, u32, f32, f32)>, Vec<(i32, i32)>) {
         let mut main = tr_core::UnifiedRandom::new(0);
         break_drop_events(
             kill,
@@ -9214,7 +9444,9 @@ mod tests {
         });
         let (drops, portals) = drop_events(&kill, hit);
         assert!(portals.is_empty());
-        assert_eq!(drops, vec![(3, 1, 7, 12)]);
+        // The per-cell record keeps the tile top-left PIXEL (7*16, 12*16) —
+        // the g78 FIX-ONCE centres only the object records.
+        assert_eq!(drops, vec![(3, 1, 112.0, 192.0)]);
     }
 
     #[test]
@@ -9244,7 +9476,9 @@ mod tests {
         });
         let (drops, portals) = drop_events(&kill, hit);
         assert!(portals.is_empty());
-        assert_eq!(drops, vec![(36, 1, 10, 19)]);
+        // W4-g34 (the g78 FIX-ONCE): the bench record's C# 32x32 rect centre
+        // — (10*16+16, 19*16+16).
+        assert_eq!(drops, vec![(36, 1, 176.0, 320.0)]);
 
         let kill = edit::TileKill {
             kind: 1,
@@ -9265,7 +9499,11 @@ mod tests {
         });
         assert_eq!(
             drop_events(&kill, hit).0,
-            vec![(3, 1, 9, 17), (25, 1, 9, 18)],
+            // The legacy hit drop keeps the tile top-left pixel (9*16,
+            // 17*16); the open-door object drop centres its 16x16 rect
+            // (`DropDoorItem`, :69414) at (9*16+8, 18*16+8) — the g78
+            // FIX-ONCE.
+            vec![(3, 1, 144.0, 272.0), (25, 1, 152.0, 296.0)],
             "legacy hit drop plus the chained open-door object drop"
         );
     }
@@ -11777,6 +12015,90 @@ mod tests {
         assert!(app.pound_release, "the refused pound keeps the latch");
     }
 
+    /// W4-e20 research-71 §3b.4 — the track hammer arm
+    /// (`Player.cs:46056-46062` → `Minecart.FrameTrack(pound: true)`, mute
+    /// FALSE): a straight front with ONE left neighbour (mask 2, options
+    /// {3, 15, 23, 25}) pounds to the first same-type dead end — bumper 3 —
+    /// and the `(pound & flag4) && !mute` fail-kill (`Minecart.cs:1163-1166`)
+    /// fires: the Item52 cue draws EXACTLY ONE `Next(-6, 7)` pitch on the
+    /// caller's stream (`LegacySoundPlayer.cs:610-634` default arm; the
+    /// `GetRandomPitch` NextFloat rides the audio-only `sound_style_random`,
+    /// `SoundEngine.cs:99`). The latch clears (`:46310`). The cue pin runs
+    /// the seam directly on a fresh stream (the mining rig's swing draws
+    /// would mask the exact position); the press pin is behavioural.
+    #[test]
+    fn dw_e20_the_track_hammer_pounds_and_the_fail_kill_draws_the_item52_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut w = World::new("t".into(), 64, 800);
+        for (x, front) in [(30i32, 1i16), (29, 1)] {
+            let i = w.index(x, 260);
+            w.tiles[i] = Tile { kind: 314, frame_x: front, frame_y: -1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505; // the Copper Hammer
+        // The fail-kill cue's exact draw count, on the seam itself: one
+        // Next(-6, 7), nothing else (the twin mirrors only that draw). The
+        // rig's listener sits at (0, 0) — park it on the cell so the
+        // attenuation gate passes (the cue pin needs the audible path).
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (30.0 * TILE_PX + 8.0, 260.0 * TILE_PX + 8.0),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let mut rng = UnifiedRandom::new(11);
+        let mut twin = UnifiedRandom::new(11);
+        twin.next_range(-6, 7);
+        let cue = app.audio.play_place_sound(
+            (2, 52),
+            30.0 * TILE_PX,
+            260.0 * TILE_PX,
+            &mut rng,
+        );
+        assert_eq!(cue, Some("Item_52"), "the 314 fail cue is Item52");
+        assert_eq!(rng.peek(), twin.peek(), "exactly one Next(-6, 7) pitch draw");
+        // The press: the pound lands 1 → 3 and the latch clears.
+        app.mine_down = false;
+        mine_frames(&mut app, 2); // the release arms poundRelease (i12 latch)
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().frame_x, 3, "1 → 3, the dead-end bumper");
+        assert_eq!(app.world.tile(30, 260).unwrap().frame_y, -1);
+        assert!(!app.pound_release, "the 314 arm clears the latch");
+    }
+
+    /// W4-e20 research-71 §3b.4 — the unchanged pound draws NOTHING: an
+    /// isolated track (mask 0, options {0}) refuses at the count gate — one
+    /// same-type dead end, `through < 2 && dead_end < 2`
+    /// (`Minecart.cs:1069-1072`) — no write, `flag4` never reached, no
+    /// `KillTile(fail: true)`, no cue (`:1163`). The latch still clears
+    /// (`Player.cs:46310`). The no-cue condition is pinned at the module
+    /// seam (`frame_track_hammer == false`); the press is behavioural.
+    #[test]
+    fn dw_e20_the_unchanged_track_pound_is_draw_free() {
+        let mut w = World::new("t".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile { kind: 314, frame_x: 0, frame_y: -1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        // The seam itself reports NO fail-kill on the isolated front.
+        assert!(!crate::minecart::frame_track_hammer(&mut w, 30, 260));
+        assert_eq!(w.tile(30, 260).unwrap().frame_x, 0, "the count gate refused — no write");
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505;
+        app.mine_down = false;
+        mine_frames(&mut app, 2);
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().frame_x, 0);
+        assert!(!app.pound_release, "the latch clears either way");
+    }
+
     /// S1-P-i31 — the flatten player-push (`WorldGen.cs:80787-80795`): a
     /// player standing INSIDE the pounded cell rides to its top when the
     /// half brick clears (the un-half pound), the drop booked in gfxOffY.
@@ -12861,6 +13183,25 @@ mod tests {
         // Styles 2 and 6 have no window.
         assert!(!is_alchemy_plant_harvestable(2, 100, &day));
         assert!(!is_alchemy_plant_harvestable(6, 100, &day));
+    }
+
+    /// W4-e20 research-71 §6 census — the track break drop
+    /// (`WorldGen.cs:64582-64584` → `Minecart.GetTrackItem`
+    /// `Minecart.cs:1508-1517`): a pressure piece (front 21) drops 2492, a
+    /// booster (front 30) drops 2739, a plain rail (front 1) drops 2340 —
+    /// NOT the `by_tile` fallback's blanket 2340.
+    #[test]
+    fn dw_e20_the_track_break_drops_the_front_types_item() {
+        for (front, want) in [(1i16, 2340u16), (21, 2492), (30, 2739)] {
+            let mut w = World::new("t".into(), 64, 800);
+            let i = w.index(10, 19);
+            w.tiles[i] = Tile { kind: 314, frame_x: front, frame_y: -1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            let mut app = break_app(w, 0xABCD);
+            break_tile(&mut app, 10, 19);
+            let kinds: Vec<u16> = app.items.iter().map(|it| it.kind).collect();
+            assert!(kinds.contains(&want), "front {front} drops {want} in {kinds:?}");
+        }
     }
 
     // DW-3.2: the observable break path — mining a blooming herb drops the
@@ -18763,5 +19104,63 @@ mod wall_placement_tests {
                 None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
             }
         }
+    }
+
+    /// W4-c42 FINAL (§8.4 drain-union finish): breaking a PRESSED weighted
+    /// plate (428) fires `DestroyPlate` → the release poke trips the wire
+    /// line → a wired CLOSED trapdoor opens on the press and CLOSES again
+    /// on the release. The release cue must drain HERE on the UpdatePlayers
+    /// stream (the site drained only the switch clicks before — the cue
+    /// lingered into the next stage's drain). The ordering fix is the
+    /// observable: the C# poke runs inside `KillTile_GetItemDrops` BEFORE
+    /// the clear (`WorldGen.cs:63863`/`:63885`), so it sees the LIVE plate;
+    /// the port poked after the kill and the active gate refused the
+    /// release trip entirely (the trapdoor stayed open). WRITTEN NOT RUN.
+    #[test]
+    fn c42_the_broken_pressed_plate_drains_its_door_cues_in_pass() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 64, 64);
+        // The plate at (10, 20); the closed trapdoor 2×2 at columns 14/15,
+        // rows 19/20 — ONLY the (14, 20) body cell carries wire (a wire on
+        // both columns would re-shift the trapdoor mid-flood).
+        let i = w.index(10, 20);
+        w.tiles[i] = Tile { kind: 428, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        for row in 0..2i32 {
+            for col in 0..2i32 {
+                let k = w.index(14 + col, 19 + row);
+                w.tiles[k] = Tile {
+                    kind: 386,
+                    frame_x: (col * 18) as i16,
+                    frame_y: (row * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[k].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The red line: plate → row 20 → the trapdoor's left body cell.
+        for x in 10..=14 {
+            w.wires.set(x, 20, tr_core::wiring::WireColor::Red, true);
+        }
+        app.world = w;
+        // The plate is PRESSED (the release poke fires only then —
+        // `PressurePlateHelper.cs:94-101`'s TryGetValue gate). The press
+        // poke trips the line: the styleX-0 trapdoor opens DOWNWARD (the
+        // bottom row becomes 387, `WorldGen.cs:51453-51494`).
+        app.wiring.press_plate(&mut app.world, 10, 20);
+        assert_eq!(app.world.tile(14, 20).unwrap().kind, 387, "the press opened it");
+        let _ = app.wiring.take_door_cues();
+        let _ = app.wiring.take_switch_clicks();
+        for (n, x, y, d) in app.wiring.take_door_echoes() {
+            app.send_door_toggle(n, x, y, d);
+        }
+        break_tile(&mut app, 10, 20);
+        // The release poke closes the trapdoor (the 387 pair closes back
+        // to 386, `:51534-51592`) — the poke saw the LIVE plate (the
+        // ordering fix; the old post-kill poke never tripped).
+        assert_eq!(app.world.tile(14, 20).unwrap().kind, 386, "the release closed the trapdoor");
+        // The cue drained HERE — nothing lingers past the break.
+        assert!(app.wiring.take_door_cues().is_empty(), "the close cue drained in-pass");
+        assert!(app.wiring.take_door_echoes().is_empty(), "the §8.2 SP discard ran");
     }
 }
