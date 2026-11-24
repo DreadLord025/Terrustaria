@@ -837,7 +837,10 @@ mod tests {
             let t = w
                 .tile(c.x, c.y)
                 .expect("the record's anchor is inside the world");
-            if t.active() && (t.kind == 21 || t.kind == 341) {
+            // `TileID.Sets.BasicChest` = {21, 467} (`TileID.cs:570`) — the
+            // former 21||341 pair counted `LivingDemonFire` (`TileID.cs:1311`),
+            // never a chest (W4-a2 / P0-3).
+            if t.active() && (t.kind == 21 || t.kind == 467) {
                 survivors += 1;
             }
         }

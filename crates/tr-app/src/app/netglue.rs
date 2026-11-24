@@ -841,6 +841,26 @@ impl App {
             // `MessageBuffer.cs:4272-4275`) + 143 DD2 skip-wait
             // (`:4298-4303` AttemptToSkipWaitTime) — same wave, same parking.
             C2s::LucyPopup(_) | C2s::CrystalInvasionSkip => {}
+            // W4-d97 (S1-I-1 player-family second half): bodies + codecs in
+            // `net.rs`; the host relay arm (`MessageBuffer.cs:3657-3660`)
+            // and the apply+relay arm (`:3867-3885`) land with the send-path
+            // pass (S1-I-4).
+            C2s::NebulaLevelupRequest(_) | C2s::PlayerHurtV2(_) => {}
+            // W4-d97 batch 2: the host `KillMe`+`SendPlayerDeath` arm
+            // (`MessageBuffer.cs:3887-3903`) and the emote-bubble arm
+            // (`:3905-3918`, `EmoteID.Count` gate + 360-tick bubble) land
+            // with the send-path pass (S1-I-4).
+            C2s::PlayerDeathV2(_) | C2s::Emoji(_) => {}
+            // W4-d97 batch 3: the host luck apply+relay arm
+            // (`MessageBuffer.cs:4164-4193`, `RecalculateLuck` :4188) and
+            // the spectate arm (`:4361-4384`, `SetOrRequestSpectating` /
+            // the stop relay :4378) land with the send-path pass (S1-I-4).
+            C2s::UpdatePlayerLuckFactors(_) | C2s::SpectatePlayer(_) => {}
+            // W4-d97 batch 4: the shared team arm's 157 side — relay as 45,
+            // the team chat fan-out and the team-based-spawns tail
+            // (`MessageBuffer.cs:2342-2363`) land with the send-path pass
+            // (S1-I-4).
+            C2s::TeamChangeFromUi(_) => {}
         }
     }
 
@@ -1912,6 +1932,20 @@ impl App {
             // 141's relay (`MessageBuffer.cs:4278` CreateFromNet) — same
             // wave, same parking.
             S2c::LucyPopup(_) => {}
+            // W4-d97 (S1-I-1 player-family second half): bodies + codecs in
+            // `net.rs`; the client read sites — the team level-up fan
+            // (`MessageBuffer.cs:3662-3705`) and the quiet `Player.Hurt`
+            // replay (`:3879`) — land with the send-path pass (S1-I-4).
+            S2c::NebulaLevelupRequest(_) | S2c::PlayerHurtV2(_) => {}
+            // W4-d97 batch 2: the client `Player.KillMe` read site
+            // (`MessageBuffer.cs:3898`) lands with the send-path pass
+            // (S1-I-4). 120 Emoji has no S2c side — the host consumes it
+            // without relaying (`:3905-3918`).
+            S2c::PlayerDeathV2(_) => {}
+            // W4-d97 batch 3: the client luck-field apply (`:4180-4188`) and
+            // the peer-spectate apply (`MessageBuffer.cs:4380-4383`) land
+            // with the send-path pass (S1-I-4).
+            S2c::UpdatePlayerLuckFactors(_) | S2c::SpectatePlayer(_) => {}
         }
     }
 

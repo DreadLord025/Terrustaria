@@ -4,8 +4,12 @@
 //! state-change click disable.
 //!
 //! Screen-model ruling (plan §"Chosen Approach"): this is a **pure** port — no
-//! `UserInterface` object, no history/`GoBack` (dead code in 1.4.5.8: zero call
-//! sites), no gamepad. The machine holds the *timing* half of the C# and is fed
+//! `UserInterface` object, no gamepad. History/`GoBack` lives in
+//! `ui/state_stack.rs` (`UserInterface.cs:276-322`); its `GoBack` is verified
+//! dead code in 1.4.5.8 (2026-11-20 grep: all 8 `GoBack()` hits are screens'
+//! own private helpers, e.g. `UIWorldCreation.cs:670-674` →
+//! `Main.OpenWorldSelectUI()`, never `UserInterface.GoBack`). The machine holds
+//! the *timing* half of the C# and is fed
 //! element ids by its callers, so the screens keep drawing and hit-testing
 //! themselves (the immediate-mode shape of the rest of the `ui` kit).
 //!

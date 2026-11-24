@@ -1115,8 +1115,9 @@ mod chest_save_tests {
     }
 
     /// DW-2.2: the anchor cull — the vanilla `LoadChests`/`FixAgainstExploits`
-    /// validity sweep. A record whose `(x, y)` is not an active chest tile of
-    /// kind 21/341 in the loaded world is dropped, name and slots with it.
+    /// validity sweep. A record whose `(x, y)` is not an active `BasicChest`
+    /// tile of kind 21/467 (`TileID.cs:570`) in the loaded world is dropped,
+    /// name and slots with it.
     #[test]
     fn dw_2_2_a_record_with_a_missing_anchor_is_dropped() {
         let (ax, ay) = (55, 197);

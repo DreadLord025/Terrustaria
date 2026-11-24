@@ -534,6 +534,74 @@ mod s1_l12b_tests {
             assert!(sub(key).is_some(), "{key} must be set by the refresh");
         }
     }
+
+    /// The token pipeline end-to-end (S1-L-12b): the shared resolution fn
+    /// `text()` renders the shipped `{PlayerName}`/`{WorldName}` rows with the
+    /// refreshed live values instead of the literal tokens — `LegacyDialog.15`
+    /// ("...Right? {PlayerName}?") and `.337` ("{Angler} wants YOU as the
+    /// official {WorldName} errand monkey!").
+    #[test]
+    fn the_shared_text_fn_renders_the_global_tokens() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        a.player_name = "Belsin".into();
+        a.world.name = "Terra".into();
+        let mut angler = crate::npc::Npc::new(crate::npc::NpcKind::Angler, 100.0, 200.0, 1, 0.0);
+        angler.given_name = "Finn".into();
+        a.npcs.push(angler);
+        refresh_global_substitutions(&a);
+        let d15 = text("LegacyDialog.15");
+        assert!(d15.ends_with("Belsin?"), "got {d15:?}");
+        assert!(!d15.contains("{PlayerName}"));
+        assert_eq!(
+            text("LegacyDialog.337"),
+            "Finn wants YOU as the official Terra errand monkey!"
+        );
+        // The 12-culture fallback is preserved: switching to Russian reloads
+        // fallback-then-target and the SAME tokens render through the
+        // culture's own row (`ReloadLanguage`, LanguageManager.cs:101-116).
+        set_language(GameCulture::Russian);
+        let ru = text("LegacyDialog.337");
+        assert!(ru.contains("Finn") && ru.contains("Terra"), "got {ru:?}");
+        assert!(!ru.contains("{WorldName}") && !ru.contains("{Angler}"));
+        set_language(GameCulture::English);
+    }
+
+    /// `LocalizedText.ConditionsMet` / `GetValueIfConditionsMet`
+    /// (`LocalizedText.cs:35-45,70-78`) against the live substitution table:
+    /// the shipped conditional rows gate on the refreshed flags —
+    /// `BartenderChatter.Chatter_16` (`{?BloodMoon}`), `PrincessChatter.Chatter_9`
+    /// (`{?IceQueenDefeated}`, a constant-false producer) and
+    /// `LoadingTips_Keyboard.2` (`{?InputTriggerUI_TrashEnabled}` +
+    /// `{InputTriggerUI_Trash}`).
+    #[test]
+    fn the_condition_gate_reads_the_live_substitutions() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        a.world.blood_moon = false;
+        refresh_global_substitutions(&a);
+        assert!(!conditions_met("BartenderChatter.Chatter_16"));
+        assert_eq!(value_if_conditions_met("BartenderChatter.Chatter_16"), None);
+        // The seasonal producer stays false (the documented deviation), so
+        // the princess's ice-queen line never passes.
+        assert!(!conditions_met("PrincessChatter.Chatter_9"));
+        // Quick trash enabled by default -> the trash tip passes and formats
+        // its `{InputTriggerUI_Trash}` variable ("Ctrl").
+        assert!(conditions_met("LoadingTips_Keyboard.2"));
+        let tip = value_if_conditions_met("LoadingTips_Keyboard.2").unwrap();
+        assert!(tip.contains("Ctrl"), "got {tip:?}");
+        assert!(!tip.contains('{'));
+        a.world.blood_moon = true;
+        a.settings.quick_trash = true;
+        refresh_global_substitutions(&a);
+        assert!(conditions_met("BartenderChatter.Chatter_16"));
+        assert!(value_if_conditions_met("BartenderChatter.Chatter_16").is_some());
+        assert!(!conditions_met("LoadingTips_Keyboard.2"));
+        assert_eq!(value_if_conditions_met("LoadingTips_Keyboard.2"), None);
+        // A plain row and an unknown key both pass (no tokens).
+        assert!(conditions_met("ItemName.DirtBlock"));
+        assert!(conditions_met("No.Such.Key"));
+    }
 }
 
 #[cfg(test)]
@@ -646,6 +714,29 @@ pub fn text_format_with(key: &str, args: &[(&str, Substitution)]) -> String {
             .map(|(_, v)| v.clone())
             .or_else(|| m.substitution(name))
     })
+}
+
+/// `Language.GetText(key).ConditionsMet` (`LocalizedText.cs:35-45`,
+/// S1-L-12b): does the row's `{?Name}`/`{!Name}` gate pass against the live
+/// global substitutions? A row without tokens (or an unknown key, whose
+/// placeholder carries none) answers true. The loading tips' reroll loop
+/// (`GameTipsProvider.cs:37-49`) and `Lang.CreateDialogFilter`'s default
+/// (`Lang.cs:422-425`) are the C# consumers.
+pub fn conditions_met(key: &str) -> bool {
+    let mut m = manager().lock().unwrap();
+    let text = m.get_text(key).clone();
+    text.conditions_met(&|name| m.substitution(name))
+}
+
+/// `Language.GetText(key).GetValueIfConditionsMet(out text)`
+/// (`LocalizedText.cs:70-78`, S1-L-12b): `Some(formatted)` when every
+/// condition and variable of the row resolves through the global
+/// substitutions; `None` when the gate fails (the caller keeps its previous
+/// text — the Guide's help-text gate, `Main.cs:39254`).
+pub fn value_if_conditions_met(key: &str) -> Option<String> {
+    let mut m = manager().lock().unwrap();
+    let text = m.get_text(key).clone();
+    text.value_if_conditions_met(&|name| m.substitution(name))
 }
 
 /// `Language.GetTextValue("GameUI.<name>", args)` — the `GameUI` category

@@ -21,6 +21,22 @@
 //! the per-cell classification and every draw call through
 //! [`TilePassSeams`]. At the family merge the seams bind to the sibling
 //! modules; nothing here imports them (they are not on main yet).
+//! [`TilePassSeams`]. The siblings are landed on this branch by the
+//! union-exec (below); the driver still delegates through the trait —
+//! the wiring step supplies the binding impl, the witnesses keep the
+//! recorder.
+//!
+//! UNION-EXEC (docs/UNION-CONTRACT-tilepass.md, this branch): the g28
+//! pass-1 head folds in here — its stand-in registry, tuple
+//! `screen_draw_area`, `begin_draw_pass`, `draw_layer_skips`, layer
+//! constants, `POST_DRAW_ORDER` and vine crawls all DROP onto the g29/g30
+//! canonicals (contract §1.1); g28's real payload lives in
+//! `tr_render::quality_light` (landed on this branch). The
+//! `ShowUnbreakableWall && wall == 350` debug arm folds into the `:517`
+//! gate comment below (toggle fed `false`, both lanes' recorded
+//! deviation). g32's duplicated area/black-helper/post-order copies DROP
+//! onto this file (contract §1.3/§2); its framing flags fold onto
+//! [`ScreenDrawArea`].
 //!
 //! UNWIRED (the S1-G-1e / `special_tiles.rs:35` pattern): the `draw_tiles`
 //! seam is contested by the in-flight pass siblings. Intended call sites
@@ -93,6 +109,14 @@ pub(crate) struct ScreenDrawArea {
     pub last_tile_x: i32,
     pub first_tile_y: i32,
     pub last_tile_y: i32,
+    /// g32 fold (contract §2.1): `Main.sectionManager.AnyUnfinishedSections`
+    /// (`TileDrawing.cs:6574`) — the caller ran `SectionTileFrameWithCheck`
+    /// over the rect; a caller-fed flag for the wiring step (the port
+    /// frames outside the query, `tr_core::framing`).
+    pub needs_framing: bool,
+    /// g32 fold: `Main.sectionManager.AnyNeedRefresh` (`:6580`) —
+    /// `RefreshSections`, same caller-fed convention.
+    pub needs_refresh: bool,
 }
 
 /// `TileDrawing.GetScreenDrawArea` (`TileDrawing.cs:6549-6573`). The
@@ -108,6 +132,10 @@ pub(crate) fn get_screen_draw_area(
     off_screen_range: i32,
     max_tiles_x: i32,
     max_tiles_y: i32,
+    // g32 fold (contract §2.1): the section-framing flags ride out
+    // (`:6574-6585`) — caller-fed, the pure maths never reads them.
+    any_unfinished_sections: bool,
+    any_need_refresh: bool,
 ) -> ScreenDrawArea {
     // TileDrawing.cs:6553 — the offscreen pad, both axes.
     let pad = if use_offscreen_range {
@@ -142,6 +170,8 @@ pub(crate) fn get_screen_draw_area(
         last_tile_x,
         first_tile_y,
         last_tile_y,
+        needs_framing: any_unfinished_sections,
+        needs_refresh: any_need_refresh,
     }
 }
 
@@ -334,6 +364,12 @@ impl LegacySpecialPoints {
         self.points.clear();
     }
 }
+// UNION-EXEC (contract §1.3): g29's `LegacySpecialPoints` DROPS — the
+// storage canonical is g32's `tile_draw_pass::LegacyCaches` (all 8
+// dictionaries + the 1000-cap `legacy_points` list). The
+// `LEGACY_CLEAR_ORDER`/`layer_cache_clears` enums above stay the ORDER
+// canonical and bind step-by-step onto its fields/methods at wiring; the
+// cap witness rebinds (`w4_g29_legacy_points_append_and_cap` below).
 
 // ---------------------------------------------------------------------------
 // PostDrawTiles — TileDrawing.cs:414-442
@@ -518,6 +554,11 @@ pub(crate) fn render_target_layer_order() -> [bool; 2] {
     // Main.cs:57296-57297 / :57301-57305 — tileTarget then tile2Target.
     [true, false]
 }
+// UNION-EXEC (contract §1.3): g29's `render_target_layer_order` DROPS in
+// favour of g32's richer `tile_draw_pass::render_target_tile_order` (the
+// tile-phase granularity). Its gate notes fold there: the solid target is
+// gated on `!DebugOptions.hideTiles` (`Main.cs:57334`), the non-solid on
+// `!DebugOptions.hideTiles2` (`:57355`) — both fed true by the caller.
 
 // ---------------------------------------------------------------------------
 // The Draw orchestration driver — TileDrawing.cs:465-742
@@ -549,6 +590,11 @@ pub(crate) struct DrawLayerInputs {
     pub allow_emit_effects: bool,
     /// `ShouldSwayInWind`'s enabled input (g30's `sway_enabled`).
     pub sway_enabled: bool,
+    /// g32 fold (contract §2.1): `Main.sectionManager.AnyUnfinishedSections`
+    /// (`:6574`) — rides out on the returned [`ScreenDrawArea`].
+    pub any_unfinished_sections: bool,
+    /// g32 fold: `Main.sectionManager.AnyNeedRefresh` (`:6580`).
+    pub any_need_refresh: bool,
     pub preview_gate: PlacementPreviewGate,
     pub preview_is_kite: bool,
     pub preview_hold_style: i32,
@@ -645,6 +691,8 @@ pub(crate) fn draw_layer(
         inputs.off_screen_range,
         world.width,
         world.height,
+        inputs.any_unfinished_sections,
+        inputs.any_need_refresh,
     );
     seams.ensure_wind_grid_size(
         wind_area.last_tile_x - wind_area.first_tile_x,
@@ -668,6 +716,8 @@ pub(crate) fn draw_layer(
         inputs.off_screen_range,
         world.width,
         world.height,
+        inputs.any_unfinished_sections,
+        inputs.any_need_refresh,
     );
     // TileDrawing.cs:497 — a FRESH black helper per pass, Layer_Tiles.
     let mut black = DrawBlackHelper::new(LAYER_TILES, area.draw_offset);
@@ -685,6 +735,13 @@ pub(crate) fn draw_layer(
                 continue;
             };
             // TileDrawing.cs:517 — the active + layer gate.
+            // TileDrawing.cs:517 — the active + layer gate. The full C#
+            // predicate also carries `(DebugOptions.ShowUnbreakableWall &&
+            // tile.wall == 350)` (the g28 `draw_layer_skips` fold, contract
+            // §1.1): no port toggle exists — fed `false`, so the arm is
+            // dead and dropped from the expression (both lanes' recorded
+            // deviation; the g28 witness's wall-350 assertion folds into
+            // `w4_g29_cell_gate_and_solid_liquid_front_step`'s doc).
             if !tile.active() || is_tile_draw_layer_solid(tile.kind) != inputs.solid_layer {
                 continue;
             }
@@ -742,6 +799,8 @@ pub(crate) fn draw_liquid_behind_tiles(
         inputs.off_screen_range,
         world.width,
         world.height,
+        inputs.any_unfinished_sections,
+        inputs.any_need_refresh,
     );
     // TileDrawing.cs:449-451 — the same +4/-2 padding as Draw.
     let (x0, x1, y0, y1) = draw_loop_bounds(&area);
@@ -803,6 +862,8 @@ mod tests {
             screen_position: [320.0, 320.0],
             allow_emit_effects: true,
             sway_enabled: true,
+            any_unfinished_sections: false,
+            any_need_refresh: false,
             preview_gate: PlacementPreviewGate::default(),
             preview_is_kite: false,
             preview_hold_style: 0,
@@ -887,12 +948,12 @@ mod tests {
     /// firstY = 7, lastY = (832)/16 + 5 = 57.
     #[test]
     fn w4_g29_screen_area_pads_and_offset() {
-        let a = get_screen_draw_area(true, [320.0, 320.0], [320.0, 320.0], 192, 8400, 2400);
+        let a = get_screen_draw_area(true, [320.0, 320.0], [320.0, 320.0], 192, 8400, 2400, false, false);
         assert_eq!(a.draw_offset, [192.0, 192.0]);
         assert_eq!((a.first_tile_x, a.last_tile_x), (7, 54));
         assert_eq!((a.first_tile_y, a.last_tile_y), (7, 57));
         // useOffscreenRange = false (:6553): zero offset, no pad.
-        let b = get_screen_draw_area(false, [320.0, 320.0], [320.0, 320.0], 192, 8400, 2400);
+        let b = get_screen_draw_area(false, [320.0, 320.0], [320.0, 320.0], 192, 8400, 2400, false, false);
         assert_eq!(b.draw_offset, [0.0, 0.0]);
         assert_eq!((b.first_tile_x, b.last_tile_x), (19, 42));
         assert_eq!((b.first_tile_y, b.last_tile_y), (19, 45));
@@ -902,21 +963,42 @@ mod tests {
     /// both near edges, `maxTiles - 4` on both far edges (NOT - 3).
     #[test]
     fn w4_g29_screen_area_clamps_at_the_four_cell_border() {
-        let a = get_screen_draw_area(false, [-1000.0, -1000.0], [16.0, 16.0], 0, 100, 80);
+        let a = get_screen_draw_area(false, [-1000.0, -1000.0], [16.0, 16.0], 0, 100, 80, false, false);
         assert_eq!((a.first_tile_x, a.first_tile_y), (4, 4));
-        let b = get_screen_draw_area(false, [100000.0, 100000.0], [16.0, 16.0], 0, 100, 80);
+        let b = get_screen_draw_area(false, [100000.0, 100000.0], [16.0, 16.0], 0, 100, 80, false, false);
         assert_eq!((b.last_tile_x, b.last_tile_y), (96, 76));
         // The truncating cast on a negative quotient: (-8)/16 - 1 = -1.5
         // -> (int) = -1 (toward zero), then clamped to 4.
-        let c = get_screen_draw_area(false, [-8.0, 0.0], [16.0, 16.0], 0, 100, 80);
+        let c = get_screen_draw_area(false, [-8.0, 0.0], [16.0, 16.0], 0, 100, 80, false, false);
         assert_eq!(c.first_tile_x, 4);
+    }
+
+    /// Witness (g32 REBIND, contract §3): C# `(int)f` truncates toward
+    /// ZERO, not floor (`TileDrawing.cs:6554-6557`) — pos -100 + size 92
+    /// = -8 -> -0.5 -> `(int)(-0.5) = 0`, so last_x = 0+2 = 2 (floor would
+    /// give 1) and last_y = 0+5 = 5. The +2/+5 sit OUTSIDE the cast. The
+    /// g32 framing flags (`:6574-6585`) ride out on the area (the fold
+    /// from its `the_screen_area_truncates_and_clamps` DROP).
+    #[test]
+    fn w4_g32_the_area_cast_truncates_toward_zero() {
+        let a = get_screen_draw_area(false, [-100.0, -100.0], [92.0, 92.0], 0, 1000, 800, false, false);
+        assert_eq!(a.last_tile_x, 2, "trunc(-0.5)+2, NOT floor(-0.5)+2");
+        assert_eq!(a.last_tile_y, 5, "trunc(-0.5)+5");
+        assert_eq!(a.first_tile_x, 4, "(-6.25-1) trunc -7 -> clamp 4");
+        let c = get_screen_draw_area(false, [160.0, 160.0], [160.0, 128.0], 0, 20, 20, true, true);
+        assert_eq!(
+            (c.first_tile_x, c.last_tile_x, c.first_tile_y, c.last_tile_y),
+            (9, 16, 9, 16),
+            "a tiny world pins last to max-4 even when first > last (no reorder)"
+        );
+        assert!(c.needs_framing && c.needs_refresh, ":6574-6585 flags ride out");
     }
 
     /// Witness: the Draw loop bounds (`:504-506`) — rows firstY ..<
     /// lastY+4, columns firstX-2 ..< lastX+2 (the asymmetric padding).
     #[test]
     fn w4_g29_draw_loop_bounds_are_plus4_minus2() {
-        let a = get_screen_draw_area(false, [320.0, 320.0], [320.0, 320.0], 0, 8400, 2400);
+        let a = get_screen_draw_area(false, [320.0, 320.0], [320.0, 320.0], 0, 8400, 2400, false, false);
         let (x0, x1, y0, y1) = draw_loop_bounds(&a);
         assert_eq!((x0, x1), (a.first_tile_x - 2, a.last_tile_x + 2));
         assert_eq!((y0, y1), (a.first_tile_y, a.last_tile_y + 4));
@@ -926,12 +1008,42 @@ mod tests {
     /// Witness: the martian glow byte (`:498`) — (byte)(100 + 150*m):
     /// m=0 -> 100, m=1 -> 250, m=0.5 -> 175. The net40 wrap is spelled
     /// out: m=2 (unreachable, the updater clamps) -> (byte)400 = 144.
+    /// g32 fold (contract §3): the `[b, b, b, 0]` quad construction of
+    /// its dropped `martian_glow` — the `set_martian_glow` seam binding
+    /// builds the colour from this byte on all three channels, alpha 0.
     #[test]
     fn w4_g29_martian_glow_byte_truncates_and_wraps() {
         assert_eq!(martian_glow_byte(0.0), 100);
         assert_eq!(martian_glow_byte(1.0), 250);
         assert_eq!(martian_glow_byte(0.5), 175);
         assert_eq!(martian_glow_byte(2.0), 144);
+        // The g32 quad fold: `new Color(b, b, b, 0)` (:499).
+        let quad = |m: f32| {
+            let b = martian_glow_byte(m);
+            [b, b, b, 0]
+        };
+        assert_eq!(quad(0.0), [100, 100, 100, 0]);
+        assert_eq!(quad(0.5), [175, 175, 175, 0]);
+        assert_eq!(quad(1.0), [250, 250, 250, 0]);
+    }
+
+    /// Witness (g32 REBIND, contract §3): the strip flush applies
+    /// `- screenPosition + drawOffset` (`DrawBlackHelper.cs:34`) and a
+    /// row change breaks the strip even at the same x (`:19`).
+    /// Retargeted from g32's dropped `[f32;4]` helper onto `BlackStrip`.
+    #[test]
+    fn w4_g32_the_black_strip_offset_and_row_break() {
+        let mut h = DrawBlackHelper::new(LAYER_TILES, [192.0, 192.0]);
+        let sp = [32.0, 16.0];
+        assert_eq!(h.draw_black(5, 10, sp), None);
+        // Row change at the SAME x: flush the one-cell strip.
+        let s = h.draw_black(5, 11, sp).unwrap();
+        assert_eq!(s.position, [240.0, 336.0]);
+        assert_eq!(s.size, [16.0, 16.0]);
+        assert_eq!(s.layer, LAYER_TILES);
+        let s2 = h.end_strip(sp).unwrap();
+        assert_eq!(s2.position, [240.0, 352.0]);
+        assert_eq!(s2.size, [16.0, 16.0]);
     }
 
     /// Witness: `DrawBlackHelper.DrawBlack` (`DrawBlackHelper.cs:17-28`)
@@ -1004,21 +1116,23 @@ mod tests {
         );
     }
 
-    /// Witness: `AddSpecialLegacyPoint` (`:6606-6611`) appends without
-    /// dedup and caps at 1000 (`:70`, `:100-102`); the clear resets the
-    /// count (`:6621`).
+    /// Witness (REBIND, contract §1.3): `AddSpecialLegacyPoint`
+    /// (`:6606-6611`) appends without dedup and caps at 1000 (`:70`,
+    /// `:100-102`); the clear resets the count (`:6621`). Retargeted from
+    /// the dropped `LegacySpecialPoints` onto the g32 `LegacyCaches`
+    /// storage canonical.
     #[test]
     fn w4_g29_legacy_points_append_and_cap() {
-        let mut p = LegacySpecialPoints::default();
-        p.add(1, 2);
-        p.add(1, 2);
-        assert_eq!(p.points, vec![(1, 2), (1, 2)]);
+        let mut p = crate::render::tile_draw_pass::LegacyCaches::default();
+        p.add_special_legacy_point(1, 2);
+        p.add_special_legacy_point(1, 2);
+        assert_eq!(p.legacy_points, vec![(1, 2), (1, 2)]);
         for i in 0..(MAX_SPECIALS_LEGACY + 5) {
-            p.add(i as i32, 0);
+            p.add_special_legacy_point(i as i32, 0);
         }
-        assert_eq!(p.points.len(), MAX_SPECIALS_LEGACY);
-        p.clear();
-        assert!(p.points.is_empty());
+        assert_eq!(p.legacy_points.len(), MAX_SPECIALS_LEGACY);
+        p.clear_legacy_cached_draws();
+        assert!(p.legacy_points.is_empty());
     }
 
     /// Witness: `PostDrawTiles(false)`'s 12-step order (`:421-433`) —
@@ -1110,6 +1224,15 @@ mod tests {
         assert!(j_solid < j_npc);
         assert_eq!(detect.len(), plain.len());
         assert_eq!(render_target_layer_order(), [true, false]);
+        // The render-target witness rebinds to g32's richer phase order
+        // (contract §1.3): solid first, NO post passes.
+        assert_eq!(
+            crate::render::tile_draw_pass::render_target_tile_order(),
+            &[
+                crate::render::tile_draw_pass::FrameTileStep::DrawSolid,
+                crate::render::tile_draw_pass::FrameTileStep::DrawNonSolid,
+            ]
+        );
     }
 
     /// Witness: the Draw prologue/epilogue order (`:465-741`) on an
@@ -1183,6 +1306,15 @@ mod tests {
     /// prepends draw_tile_liquid_behind per cell; inactive cells and
     /// wrong-layer cells are skipped. The :509-514 null arm is the
     /// dense-array skip (out-of-bounds cells never call).
+    /// dense-array skip (out-of-bounds cells never call). The g28
+    /// `the_skip_gate_matches_the_layer_and_debug_arm` fold (contract
+    /// §3): the full C# gate also skips `ShowUnbreakableWall && wall ==
+    /// 350` — the toggle is fed false (no port counterpart), so ONLY
+    /// wall 350 with the toggle ON would skip (g28 asserted: wall 350 +
+    /// toggle → skip; wall 349 + toggle → draw; wall 350 + no toggle →
+    /// draw); the port expression drops the dead arm, the layer/active
+    /// assertions below are the surviving half (door-11 override rides
+    /// the g30 `the_solid_layer_override_beats_tile_solid` witness).
     #[test]
     fn w4_g29_cell_gate_and_solid_liquid_front_step() {
         let mut w = world(64, 64);
@@ -1224,6 +1356,11 @@ mod tests {
     /// Witness: `DrawLiquidBehindTiles` (`:444-463`) — the null-check-
     /// ONLY gate: an INACTIVE cell still gets the liquid call (unlike
     /// Draw's :517 gate), and the layer argument is always false.
+    /// Draw's :517 gate), and the layer argument is always false. The
+    /// g32 fold (contract §3, its dropped
+    /// `the_behind_liquid_walk_includes_inactive_cells`): out-of-bounds
+    /// rows are skipped (the dense-array stand-in for `tile != null`)
+    /// and the walk is row-major, y outer (`:449-451`).
     #[test]
     fn w4_g29_liquid_behind_tiles_has_no_active_gate() {
         let mut w = world(64, 64);
@@ -1237,6 +1374,25 @@ mod tests {
         draw_liquid_behind_tiles(&w, &inp, &mut r);
         assert!(r.log.contains(&"liquid 20,20".to_string()));
         assert!(!r.log.iter().any(|s| s.starts_with("cell ")));
+        // The g32 fold: on a tiny world the +4 row pad and the -4 far
+        // clamp cancel EXACTLY (y1 = maxTilesY), so the padded walk ends
+        // flush with the dense array — every call is in bounds, the
+        // first is the walk's top-left cell (row-major, y outer). The
+        // `tile != null` skip itself covers caller-fed areas (g32's
+        // hand-built fixture ran rows 8,9 OOB on an 8x8 world).
+        let small = world(8, 8);
+        let mut inp2 = inputs(true);
+        inp2.draw_to_screen = true;
+        inp2.scaled_position = [64.0, 64.0];
+        inp2.scaled_size = [16.0, 16.0];
+        let mut r2 = Recorder::default();
+        draw_liquid_behind_tiles(&small, &inp2, &mut r2);
+        // area: firstX = 64/16-1 = 3 -> clamp 4; lastX = (80)/16+2 = 7 ->
+        // clamp maxTiles-4 = 4; firstY 4, lastY = 5+5 = 10 -> clamp 4.
+        // bounds: x 2..6, y 4..8 — rows 4..7 in bounds, cols 2..5.
+        assert_eq!(r2.log.first().unwrap(), "liquid 2,4");
+        assert!(!r2.log.iter().any(|s| s.ends_with(",8")), "y1 exclusive at the edge");
+        assert_eq!(r2.log.len(), 16, "4 cols x 4 in-bounds rows");
     }
 
     /// Witness: the preview tail fires only through the gate (`:737-

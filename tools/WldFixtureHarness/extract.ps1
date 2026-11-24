@@ -7,8 +7,8 @@
 #
 #   powershell -File tools/WldFixtureHarness/extract.ps1
 #
-# Two — and only two — textual substitutions are made to the extracted bodies,
-# both documented in README.md:
+# One — and only one — textual substitution is made to the extracted bodies,
+# documented in README.md:
 #   * `DateTime.UtcNow`  -> `FixtureClock.UtcNow`   (a pinned clock; the vanilla
 #     writer stamps the wall clock, which a reproducible fixture cannot carry)
 # Everything else is byte-for-byte the decompiled method body.
@@ -169,23 +169,78 @@ $misc = @(
     @('CreativeUnlocksTracker',     'Terraria/GameContent/Creative/CreativeUnlocksTracker.cs',     'public void Save(BinaryWriter writer)', 'Terraria.GameContent.Creative'),
     @('TownRoomManager',            'Terraria/GameContent/TownRoomManager.cs',                     'public void Save(BinaryWriter writer)', 'Terraria.GameContent'),
     @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static void Save(BinaryWriter writer)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static void Load(BinaryReader reader, int version)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static void AddNPCKillBy(int npcType, int plr)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'private static void AddClaimableBanner(int banner)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'private static void AddKill(int banner)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static int BannerToItem(int banner)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static int NPCtoBanner(int i)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static int BannerToNPC(int i)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static int GetKillCount(int banner)', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static ushort[] GetClaimableBannerCounts()', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'public static void Clear()', 'Terraria.GameContent'),
+    @('BannerSystem',               'Terraria/GameContent/BannerSystem.cs',                        'static BannerSystem()', 'Terraria.GameContent'),
     @('DD2Event',                   'Terraria/GameContent/Events/DD2Event.cs',                     'public static void Save(BinaryWriter writer)', 'Terraria.GameContent.Events'),
     @('ExtraSpawnPointManager',     'Terraria/GameContent/ExtraSpawnPointManager.cs',              'public static void Write(BinaryWriter writer, bool networking = false)', 'Terraria.GameContent'),
     @('TreeTopsInfo',               'Terraria/GameContent/TreeTopsInfo.cs',                        'public void Save(BinaryWriter writer)', 'Terraria.GameContent'),
+    @('TreeTopsInfo',               'Terraria/GameContent/TreeTopsInfo.cs',                        'public void Load(BinaryReader reader, int loadVersion)', 'Terraria.GameContent'),
+    @('TreeTopsInfo',               'Terraria/GameContent/TreeTopsInfo.cs',                        'private void CopyExistingWorldInfo()', 'Terraria.GameContent'),
+    @('TreeTopsInfo',               'Terraria/GameContent/TreeTopsInfo.cs',                        'public int GetTreeStyle(int areaId)', 'Terraria.GameContent'),
+    # NetworkText: the construction path AddNPCKillBy's announcement reads
+    # (FromKey/FromLiteral + the substitution converter) plus ToString and its
+    # debug/exception helpers (DisplayMessage renders the announcement).
+    # Serialize/Deserialize are network-only and stay unextracted.
+    @('NetworkText',                'Terraria/Localization/NetworkText.cs',                        'private NetworkText(string text, Mode mode)', 'Terraria.Localization'),
+    @('NetworkText',                'Terraria/Localization/NetworkText.cs',                        'private static NetworkText[] ConvertSubstitutionsToNetworkText(object[] substitutions)', 'Terraria.Localization'),
+    @('NetworkText',                'Terraria/Localization/NetworkText.cs',                        'public static NetworkText FromLiteral(string text)', 'Terraria.Localization'),
+    @('NetworkText',                'Terraria/Localization/NetworkText.cs',                        'public static NetworkText FromKey(string key, params object[] substitutions)', 'Terraria.Localization'),
+    @('NetworkText',                'Terraria/Localization/NetworkText.cs',                        'public override string ToString()', 'Terraria.Localization'),
+    @('NetworkText',                'Terraria/Localization/NetworkText.cs',                        'private string ToDebugInfoString(string linePrefix = "")', 'Terraria.Localization'),
+    @('NetworkText',                'Terraria/Localization/NetworkText.cs',                        'private void SetToEmptyLiteral()', 'Terraria.Localization'),
+    @('Lang',                       'Terraria/Lang.cs',                                            'public static LocalizedText GetNPCName(int netID)', 'Terraria'),
+    # (FillNameCacheArray stays unextracted: it reflects over the FULL ID class's
+    # const fields; the shim Lang builds the cache directly - see Shims/Trackers.cs.)
+    @('NetworkText',                'Terraria/Localization/NetworkText.cs',                        'private enum Mode : byte', 'Terraria.Localization'),
     @('CraftingRequests',           'Terraria/GameContent/CraftingRequests.cs',                    'public static void SavePossibleRefunds(BinaryWriter writer)', 'Terraria.GameContent')
 )
 $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine($banner)
-[void]$sb.AppendLine("using System;`nusing System.Collections.Generic;`nusing System.IO;`nusing System.Linq;`nusing Microsoft.Xna.Framework;`n")
+[void]$sb.AppendLine("using System;`nusing System.Collections.Generic;`nusing System.IO;`nusing System.Linq;`nusing Microsoft.Xna.Framework;`nusing Terraria.Chat;`nusing Terraria.ID;`nusing Terraria.Localization;`nusing Terraria.Net;`n")
 foreach ($m in $misc) {
     $name=$m[0]; $src=Read-Src $m[1]; $sig=$m[2]; $ns=$m[3]
     [void]$sb.AppendLine("namespace $ns`n{")
-    $kw = if ($name -in 'BannerSystem','DD2Event','ExtraSpawnPointManager','CraftingRequests') { 'static partial class' } else { 'partial class' }
+    $kw = if ($name -in 'BannerSystem','DD2Event','ExtraSpawnPointManager','CraftingRequests','Lang') { 'static partial class' } else { 'partial class' }
     [void]$sb.AppendLine("public $kw $name`n{")
     [void]$sb.AppendLine((Substitute (Extract-Method $src $sig)))
     [void]$sb.AppendLine("}`n}")
 }
 Set-Content (Join-Path $out 'TrackerSave.cs') $sb.ToString() -NoNewline
+
+# ---- ChatHelper: the AddNPCKillBy announcement sink --------------------------
+# Only the four methods the kill-announcement chain reaches at netMode 0 /
+# dedServ false; DisplayMessage's UI writes become Main.NewTextMultiline /
+# chatOverhead shims (no serialized effect).
+$ch = Read-Src 'Terraria/Chat/ChatHelper.cs'
+$sb = [System.Text.StringBuilder]::new()
+[void]$sb.AppendLine($banner)
+[void]$sb.AppendLine("using System;`nusing System.Collections.Generic;`nusing Microsoft.Xna.Framework;`nusing Terraria.GameContent.NetModules;`nusing Terraria.GameContent.UI.Chat;`nusing Terraria.Localization;`nusing Terraria.Net;`n")
+[void]$sb.AppendLine("namespace Terraria.Chat;`n")
+[void]$sb.AppendLine("public static partial class ChatHelper`n{")
+foreach ($s in 'public static void BroadcastChatMessage(NetworkText text, Color color, int excludedPlayer = -1)','public static void BroadcastChatMessageAs(byte messageAuthor, NetworkText text, Color color, int excludedPlayer = -1)','public static void DisplayMessage(NetworkText text, Color color, byte messageAuthor)','private static bool ShouldCacheMessage()') {
+    [void]$sb.AppendLine((Extract-Method $ch $s)); [void]$sb.AppendLine()
+}
+[void]$sb.AppendLine("}")
+Set-Content (Join-Path $out 'ChatHelperSave.cs') $sb.ToString() -NoNewline
+
+# ---- NameTagHandler.GenerateTag (DisplayMessage's name tag) ------------------
+$nth = Read-Src 'Terraria/GameContent/UI/Chat/NameTagHandler.cs'
+$sb = [System.Text.StringBuilder]::new()
+[void]$sb.AppendLine($banner)
+[void]$sb.AppendLine("namespace Terraria.GameContent.UI.Chat;`n")
+[void]$sb.AppendLine("public partial class NameTagHandler`n{")
+[void]$sb.AppendLine((Extract-Method $nth 'public static string GenerateTag(string name)'))
+[void]$sb.AppendLine("}")
+Set-Content (Join-Path $out 'NameTagHandlerSave.cs') $sb.ToString() -NoNewline
 
 # ---- CreativePowerManager SaveToWorld / SaveToPlayer / Register / Initialize -
 $cpm = Read-Src 'Terraria/GameContent/Creative/CreativePowerManager.cs'

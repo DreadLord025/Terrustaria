@@ -467,6 +467,17 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // W4-f8 (S1-E-5 third NPC batch): the DD2 body
+                        // casts — `Utils.PlotTileLine(Top, Bottom, width,
+                        // CastLightOpen)` for the etherian skeletons
+                        // 566/567 (`NPC.cs:63542-63543`, AI_107's case
+                        // head) and the Dark Mages 564/565 (`:65828-
+                        // 65829`, AI_109's per-kind block). RAW position
+                        // (neither arm wraps netOffset), RNG-free — the
+                        // same draw-side feed precedent as above.
+                        for (x, y, rgb) in crate::npc_lights_c::dd2_body_cast_light(n, world) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                         // The small-kinds wiring wave (S1-D-3-wire-smallkinds):
                         // the BlazingWheel's centre light (`NPC.cs:24664` —
                         // the green term reads the pulsing `Main.mouseTextColor`)

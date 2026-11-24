@@ -75,12 +75,15 @@ pub(crate) fn platform_proper_top_frame(frame_x: i16) -> bool {
 }
 
 /// `WorldGen.TopEdgeCanBeAttachedTo` (`WorldGen.cs:70380-70398`).
-/// `pub(crate)`: the torch placement support gate (`WorldGen.PlaceTile`
+/// The torch placement support gate (`WorldGen.PlaceTile`
 /// case 4, `WorldGen.cs:59835`) reads the same below-platform test
 /// (`edit/place.rs::place_torch`). The C# carries `!tile.inActive()`
 /// (`:70389`) — S1-P-i42 restored it (the actuated platform has no top
 /// edge; `CheckTorch`'s below-platform arm now refuses it too).
-pub(crate) fn top_edge_can_be_attached_to(world: &World, x: i32, y: i32) -> bool {
+/// `pub`: the reverse-vine root crawl reads it (`TileDrawing.cs:770`,
+/// W4-g28 pass 1 / g30 pass 3 — identical visibility change, keep-one
+/// landed by the union-exec).
+pub fn top_edge_can_be_attached_to(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };
