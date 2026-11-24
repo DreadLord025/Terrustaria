@@ -52,6 +52,7 @@ pub(crate) use kill::{
     remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope,
     solid_tile_allow_left_slope, solid_tile_allow_right_slope, solid_tile_allow_top_slope,
     square_tile_frame_gen,
+};
 mod replace;
 // W4-g48 — the net-17 kind-21 `WorldGen.ReplaceTile` family
 // (`WorldGen.cs:62558-62775`), the smart-cursor block swap.
@@ -500,6 +501,7 @@ pub fn interact_at(
     // Bone Welder (`TileCountsAs` 699→13), but the buff arm wins the click first.
     if matches!(t.kind, 125 | 621 | 464 | 699 | 377 | 354 | 287) {
         return TileInteraction::BuffStation { kind: t.kind };
+    }
     // The station-buff arms (W4-e28 + W4-f34, `Player.cs:32594-32635`): the
     // C# chain tests the kind literals in this order before the dials —
     // 125 Crystal Ball → 29 (:32594-32599), 621 Slice of Cake → 192 for
@@ -526,6 +528,7 @@ pub fn interact_at(
             buff_type,
             buff_time,
         };
+    }
     // The monolith family (`Player.cs:32271-32277`, W4-c42 final — the g78
     // research/76 request): the nine kinds flip via `SwitchMonolith` on
     // right-click. The C# chain sits after the fountain (207) arm and
@@ -793,6 +796,7 @@ pub fn interact_at(
             }
         }
     }
+}
 }
 
 /// `PlayerSittingHelper.GetSittingTargetInfo` (`PlayerSittingHelper.cs:144-321`)
@@ -1713,7 +1717,6 @@ pub fn close_door(
 /// returns `false` without killing (`WorldGen.InWorld`, `:9688`).
 /// `pub`: the campfire light toggle (`wiring::try_toggle_light`) shares it.
 pub fn validate_tile_square(
-pub(crate) fn validate_tile_square(
     world: &mut World,
     x: i32,
     y: i32,
