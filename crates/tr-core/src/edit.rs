@@ -30,7 +30,10 @@ pub use hammer::{
     try_pound_tile, PoundOutcome,
 };
 mod paint;
-pub use paint::{paint_coat_tile, paint_coat_wall, paint_tile, paint_wall};
+pub use paint::{
+    paint_coat_tile as paint_coat_tile_opt, paint_coat_wall as paint_coat_wall_opt,
+    paint_tile as paint_tile_opt, paint_wall as paint_wall_opt,
+};
 mod replace;
 // W4-g48 — the net-17 kind-21 `WorldGen.ReplaceTile` family
 // (`WorldGen.cs:62558-62780`), the smart-cursor block swap. Two API shapes
@@ -51,7 +54,7 @@ pub use kill::{
 mod shift;
 // W4-c42 batch 2 — the wired trapdoor/tall-gate shifts (`WorldGen.cs:51447-
 // 51596`/`:51723-51775`), the `HitWireSingle` arms `Wiring.cs:1440-1460` call.
-pub use shift::{shift_tall_gate, shift_trapdoor};
+pub use shift::{shift_tall_gate as shift_tall_gate_wired, shift_trapdoor as shift_trapdoor_wired};
 pub(crate) use kill::{
     remove_tile, solid_tile2, solid_tile_allow_bottom_slope, solid_tile_allow_left_slope,
     solid_tile_allow_right_slope, solid_tile_allow_top_slope, square_tile_frame_gen,
@@ -1508,7 +1511,7 @@ pub fn open_door(
 /// (`Collision.cs:1359`). The `PlaySound(8)` cue is app-side (the drain plays
 /// it on the `UpdateNPCs` stream, the `open_door` convention). `drops`
 /// collects the validate-cleanup kills.
-pub fn shift_tall_gate(
+pub fn shift_tall_gate_with_drops(
     world: &mut World,
     x: i32,
     y: i32,
@@ -2537,7 +2540,7 @@ mod tests {
             w.tile_mut(10, y).unwrap().frame_y = fy;
         }
         let mut drops = Vec::new();
-        assert!(shift_tall_gate(&mut w, 10, 18, false, false, &no_blocker, &mut drops));
+        assert!(shift_tall_gate_with_drops(&mut w, 10, 18, false, false, &no_blocker, &mut drops));
     /// W4-g4 — `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the
     /// zombie door-bash drain's gate-388 open, re-pointed at the c42
     /// canonical body (research/95 §3 witness union — the richest unit
@@ -2556,7 +2559,7 @@ mod tests {
         }
         let mut drops = Vec::new();
         let mut cues = Vec::new();
-        assert!(shift_tall_gate(
+        assert!(shift_tall_gate_wired(
             &mut w, 10, 18, false, false, &no_blocker, &mut drops, None, &mut cues
         ));
         for y in 14..=18 {
@@ -2564,11 +2567,11 @@ mod tests {
             assert!(t.active() && t.kind == 389, "gate row {y} opens to 389");
         }
         // The open gate shifts back to closed (388) with `closing: true`.
-        assert!(shift_tall_gate(&mut w, 10, 18, true, false, &no_blocker, &mut drops));
+        assert!(shift_tall_gate_with_drops(&mut w, 10, 18, true, false, &no_blocker, &mut drops));
         // The cue queues at the ADJUSTED top centre (`:51762`).
         assert_eq!(cues, vec![(true, 10 * 16 + 16, 14 * 16 + 16)]);
         // The open gate shifts back to closed (388) with `closing: true`.
-        assert!(shift_tall_gate(
+        assert!(shift_tall_gate_wired(
             &mut w, 10, 18, true, false, &no_blocker, &mut drops, None, &mut cues
         ));
         for y in 14..=18 {
@@ -2576,24 +2579,24 @@ mod tests {
         }
         // A blocked cell refuses the shift (the occupancy gate).
         let blocked = |_: i32, _: i32| true;
-        assert!(!shift_tall_gate(&mut w, 10, 18, false, false, &blocked, &mut drops));
+        assert!(!shift_tall_gate_with_drops(&mut w, 10, 18, false, false, &blocked, &mut drops));
         assert_eq!(w.tile(10, 18).unwrap().kind, 388, "the blocked shift leaves the gate");
         // `forced` skips the occupancy gate.
-        assert!(shift_tall_gate(&mut w, 10, 18, false, true, &blocked, &mut drops));
+        assert!(shift_tall_gate_with_drops(&mut w, 10, 18, false, true, &blocked, &mut drops));
         assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
         // A non-gate cell refuses outright.
-        assert!(!shift_tall_gate(&mut w, 12, 18, false, false, &no_blocker, &mut drops));
-        assert!(!shift_tall_gate(
+        assert!(!shift_tall_gate_with_drops(&mut w, 12, 18, false, false, &no_blocker, &mut drops));
+        assert!(!shift_tall_gate_wired(
             &mut w, 10, 18, false, false, &blocked, &mut drops, None, &mut cues
         ));
         assert_eq!(w.tile(10, 18).unwrap().kind, 388, "the blocked shift leaves the gate");
         // `forced` skips the occupancy gate.
-        assert!(shift_tall_gate(
+        assert!(shift_tall_gate_wired(
             &mut w, 10, 18, false, true, &blocked, &mut drops, None, &mut cues
         ));
         assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
         // A non-gate cell refuses outright.
-        assert!(!shift_tall_gate(
+        assert!(!shift_tall_gate_wired(
             &mut w, 12, 18, false, false, &no_blocker, &mut drops, None, &mut cues
         ));
     }

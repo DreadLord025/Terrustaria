@@ -2729,7 +2729,7 @@ impl Wiring {
                 let mut skips = Vec::new();
                 let mut cues = Vec::new();
                 // `only_close_or_open: -1` — the C# default (both directions).
-                let ok = crate::edit::shift_trapdoor(
+                let ok = crate::edit::shift_trapdoor_wired(
                     world,
                     i,
                     j,
@@ -2747,7 +2747,7 @@ impl Wiring {
                 // (`:1446`): +1 above-success, −1 below-success, 0 both-fail.
                 let mut num66 = i32::from(ok);
                 if num66 == 0 {
-                    let ok2 = crate::edit::shift_trapdoor(
+                    let ok2 = crate::edit::shift_trapdoor_wired(
                         world,
                         i,
                         j,
@@ -2781,7 +2781,7 @@ impl Wiring {
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
                 let mut cues = Vec::new();
-                crate::edit::shift_tall_gate(
+                crate::edit::shift_tall_gate_wired(
                     world,
                     i,
                     j,
@@ -4119,7 +4119,7 @@ mod light_toggle_tests {
 /// the C# `bool?` — `None` skips the cell (out of world / null tile / the
 /// `CanDoWireStuffHere` refusal), `Some(false)` halts the whole walk (the
 /// resource ran dry), `Some(true)` continues.
-pub type MassStepOutcome = Option<bool>;
+pub type MassStepOutcomeAlt = Option<bool>;
 
 /// `Wiring.MassWireOperationStep` (`Wiring.cs:3329-3421`): one rectangle
 /// cell under the multi-tool mode bits (`crate::smart_cursor::multi_tool_mode`,
@@ -4138,7 +4138,7 @@ pub type MassStepOutcome = Option<bool>;
 /// `:3325-3326`): every successful `Kill*`'s `Item.NewItem` (530/849,
 /// `WorldGen.cs:58130`/`:58030`) lands in the cache instead of the world;
 /// the caller drops the totals at the player's centre after the walk.
-pub fn mass_wire_operation_step(
+pub fn mass_wire_operation_step_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -4212,7 +4212,7 @@ pub fn mass_wire_operation_step(
 /// endpoint — the Multicolor Wrench's single-cell click. The caller bills
 /// the `wires_left`/`actuators_left` decrements and drops the `cut_cache`
 /// totals (`Item.DropCache`, `:3325-3326`).
-pub fn mass_wire_operation_inner(
+pub fn mass_wire_operation_inner_alt(
     world: &mut World,
     ps: (i32, i32),
     pe: (i32, i32),
@@ -4313,7 +4313,7 @@ pub fn mass_wire_operation_inner(
 
 /// `Wiring.ToggleTorch` (`Wiring.cs:2903-2918`): the ±66 frameX flip; the
 /// OFF state is `frameX >= 66`. No SkipWire (the C# static has none).
-fn toggle_torch(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
+fn toggle_torch_alt(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
     let Some(t) = world.tile(x, y) else { return };
     let off = t.frame_x >= 66;
     if forced.is_none() || forced == Some(off) {
@@ -4325,7 +4325,7 @@ fn toggle_torch(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
 
 /// `Wiring.ToggleCandle` (`Wiring.cs:2920-2933`): the ±18 frameX flip on
 /// ONE cell (the C# writes only the clicked cell); OFF is `frameX > 0`.
-fn toggle_candle(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
+fn toggle_candle_alt(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
     let Some(t) = world.tile(x, y) else { return };
     let off = t.frame_x > 0;
     let delta: i16 = if off { -18 } else { 18 };
@@ -4339,7 +4339,7 @@ fn toggle_candle(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
 /// `Wiring.ToggleLamp` (`Wiring.cs:2935-2961`): the 1×3 floor lamp — the
 /// `frameY / 18` mod-3 anchor decode, the ±18 flip on all three cells;
 /// OFF is the clicked cell's `frameX > 0`. SkipWire ×3 (`:2952-2955`).
-fn toggle_lamp(
+fn toggle_lamp_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -4368,7 +4368,7 @@ fn toggle_lamp(
 /// the mod-3 row/column anchor, the ±54 flip keyed on the ANCHOR's
 /// `frameX % 108 > 0`; the early-return gate form. SkipWire 3×3
 /// (`:2988-2991`, per cell after its write).
-fn toggle_chandelier(
+fn toggle_chandelier_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -4408,7 +4408,7 @@ fn toggle_chandelier(
 /// ±36 frameY flip on the ACTIVE SAME-KIND cells keyed on the anchor's
 /// `frameY >= 36`; the early-return forced gate sits AFTER the validate
 /// (`:3016-3020`). SkipWire 3×2 (`:3030-3033`, per cell BEFORE its write).
-fn toggle_campfire(
+fn toggle_campfire_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -4451,7 +4451,7 @@ fn toggle_campfire(
 /// the anchor decode, the ±54 frameX flip on all six cells keyed on the
 /// anchor's `frameX >= 54`; the early-return gate form. SkipWire 3×2
 /// (`:3060-3063`, per cell BEFORE its write).
-fn toggle_fireplace(
+fn toggle_fireplace_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -4484,7 +4484,7 @@ fn toggle_fireplace(
 /// (95/100/126/173/564) — the mod-2 anchor, the ±36 frameX flip on the
 /// four cells keyed on the anchor's `frameX > 0`. SkipWire 2×2
 /// (`:2870-2873`).
-fn toggle_2x2_light(
+fn toggle_2x2_light_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -4518,7 +4518,7 @@ fn toggle_2x2_light(
 /// `Wiring.ToggleLampPost` (`Wiring.cs:2879-2901`): the 1×6 lamp post —
 /// `j - frameY / 18` top, the ±18 flip on all six cells; the early-return
 /// gate form. SkipWire per cell (`:2895-2898`, after its write).
-fn toggle_lamp_post(
+fn toggle_lamp_post_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -4546,7 +4546,7 @@ fn toggle_lamp_post(
 /// `Wiring.ToggleHangingLantern` (`Wiring.cs:2817-2841`): the 1×2 lantern
 /// — the mod-2 row anchor, the ±18 flip on both cells. SkipWire ×2
 /// (`:2833-2836`).
-fn toggle_hanging_lantern(
+fn toggle_hanging_lantern_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -4572,7 +4572,7 @@ fn toggle_hanging_lantern(
 
 /// `Wiring.ToggleHolidayLight` (`Wiring.cs:2800-2815`): the ±54 frameX
 /// flip; OFF is `frameX >= 54`. No SkipWire (the C# static has none).
-fn toggle_holiday_light(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
+fn toggle_holiday_light_alt(world: &mut World, x: i32, y: i32, forced: Option<bool>) {
     let Some(t) = world.tile(x, y) else { return };
     let off = t.frame_x >= 54;
     if forced.is_none() || forced == Some(off) {
@@ -4595,7 +4595,7 @@ fn toggle_holiday_light(world: &mut World, x: i32, y: i32, forced: Option<bool>)
 /// discarded here because no free-fn caller owns a flood skip set (the
 /// gun streams pass false; a future wired caller drains the vec — the
 /// §8.5 seam is structurally closed, only the sink is pending).
-pub fn try_toggle_light(
+pub fn try_toggle_light_alt(
     world: &mut World,
     x: i32,
     y: i32,
@@ -8590,7 +8590,7 @@ mod w4_c42_batch2_tests {
         closed_trapdoor(&mut w);
         let mut drops = Vec::new();
         let mut cues = Vec::new();
-        let ok = crate::edit::shift_trapdoor(
+        let ok = crate::edit::shift_trapdoor_wired(
             &mut w, 10, 20, true, 0, &|_, _| false,
             &|_, _, _| true, &mut drops, None, &mut cues,
         );
@@ -8602,7 +8602,7 @@ mod w4_c42_batch2_tests {
         put(&mut w2, 10, 20, 387, 0, 0);
         put(&mut w2, 11, 20, 387, 18, 0);
         let mut cues2 = Vec::new();
-        let ok2 = crate::edit::shift_trapdoor(
+        let ok2 = crate::edit::shift_trapdoor_wired(
             &mut w2, 10, 20, true, 1, &|_, _| false,
             &|_, _, _| true, &mut drops, None, &mut cues2,
         );
@@ -8610,7 +8610,7 @@ mod w4_c42_batch2_tests {
         assert!(w2.tile(10, 20).is_some_and(|t| t.active() && t.kind == 387));
         assert_eq!(cues2, vec![(false, 10 * 16, 20 * 16)]);
         // The default −1 still opens (the c42 arm's shape).
-        let ok3 = crate::edit::shift_trapdoor(
+        let ok3 = crate::edit::shift_trapdoor_wired(
             &mut w, 10, 20, true, -1, &|_, _| false,
             &|_, _, _| true, &mut drops, None, &mut cues,
         );
