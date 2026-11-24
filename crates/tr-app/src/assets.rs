@@ -524,6 +524,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_24",
         // The Desert Djinn (S1-E-5) — the 16-frame NPC_533 strip.
         "NPC_533",
+        // W4-g5 — the two casters' own sheets (NPC_172 3-frame, NPC_693
+        // 3-frame; `Main.npcFrameCount[172/693]` = 3, `Main.cs:67082`).
+        "NPC_172",
+        "NPC_693",
         "NPC_30",
         "NPC_25",
         "NPC_33",
@@ -2509,6 +2513,45 @@ pub const pub const BESTIARY_NPC_SHEET_IDS: [u16; 342] = [
 ];;
 
 
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
+        1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
+        60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
+        25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
+        11, 12, 13, 14, 15, 20, 18, 19, 38, 227,
+        228, 54, 4, 222, 35, 5, 113, 115, 143, 144,
+        145, 383, 520, 212, 216, 117, 118, 134, 127, 125,
+        126, 262, 266, 267, 26, 27, 28, 111, 471, 105,
+        107, 245, 246, 247, 249, 668, 36, 114, 128, 129,
+        130, 131, 399, 388, 381, 382, 390, 391, 392, 393,
+        394, 395, 491, 492, 552, 553, 554, 555, 556, 557,
+        561, 562, 563, 566, 567, 564, 551, 568, 550, 548,
+        422, 493, 507, 517, 406, 407, 423, 425, 429, 426,
+        427, 420, 421, 409, 410, 411, 415, 416, 417, 418,
+        412, 413, 414, 402, 518, 419, 424, 428, 405, 396,
+        397, 398, 400, 401, 368, 369, 376, 108, 106, 124, 123,
+        353, 354, 441, 588, 589, 633, 663, 207, 208,
+        // The Old One's Army's lane gate (M4-EVENT-18) — appended last so
+        // the earlier slots keep their indexes.
+        549,
+        // The Old One's Army's tier-2/3 families (M4-EVENT-19), appended
+        // after the lane gate so the earlier slots keep their indexes.
+        558, 559, 560, 565, 569, 570, 571,
+        572, 573, 574, 575, 576, 577,
+        // The Desert Djinn (S1-E-5) — appended last so the earlier slots
+        // keep their indexes.
+        533,
+        // The Queen Bee's volley minions (S1-D-3 W-3) — appended last so
+        // the earlier slots keep their indexes.
+        210, 211,
+        // The Tesla Turret (S1-F-13d) — appended last for the same reason.
+        387,
+        // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
+        // last so the earlier slots keep their indexes.
+        72, 250, 288,
+        // W4-g5 — the two casters' bestiary sheets, appended last so the
+        // earlier slots keep their indexes.
+        172, 693,
+    ];
 
 /// Precomputed texture information for every type present in the world.
 #[derive(Default)]
@@ -3463,6 +3506,9 @@ atlas.sheet("NPC_442").copied(),
                 // + the Lacewing's 3-row NPC_661 strip.
                 atlas.sheet("NPC_636").copied(),
                 atlas.sheet("NPC_661").copied(),
+                // W4-g5 — the two casters' bestiary sheets (3-frame strips).
+                atlas.sheet("NPC_172").copied(),
+                atlas.sheet("NPC_693").copied(),
             ],
 
 

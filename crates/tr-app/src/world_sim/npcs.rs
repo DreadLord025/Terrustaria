@@ -6567,6 +6567,31 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // shoot tick, `NPC.cs:21238`+): the update pass set `wants_sphere`,
     // this pass resolves it — the same borrow-safe shape as the minion
     // block below.
+    // W4-g5 — the Djinn's curse volley (`NPC.cs:21155`): the accepted
+    // tile's centre queues `wants_djinn_curse`; the 596 DesertDjinnCurse
+    // spawns with damage 0, knockback 1, zero velocity, `ai0 = target`
+    // (the aiStyle-107 homing reads it, `Projectile.cs:33653-33665`),
+    // owner `Main.myPlayer` (the sharknado-bolt precedent). The C#
+    // `NewProjectile` takes the CENTRE (`:10876-10877`); the port's spawn
+    // takes the top-left, so the 8×8 box re-centres here.
+    let mut curses = Vec::new();
+    for n in app.npcs.iter_mut() {
+        for (x, y, ai0) in n.wants_djinn_curse.drain(..) {
+            curses.push((x, y, ai0));
+        }
+    }
+    for (x, y, ai0) in curses {
+        let _ = app.projectiles.spawn_hostile_ai_owned(
+            crate::projectile::DJINN_CURSE,
+            app.local_id as u8,
+            Vec2::new(x - 4.0, y - 4.0),
+            Vec2::ZERO,
+            0,
+            1.0,
+            ai0,
+            0.0,
+        );
+    }
     let mut spheres = Vec::new();
     for n in app.npcs.iter_mut() {
         for (kind, sx, sy, ai3) in n.wants_sphere.drain(..) {
@@ -7143,6 +7168,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::HARPY_FEATHER
             || kind == crate::projectile::UNHOLY_TRIDENT_HOSTILE
             || kind == crate::projectile::SKULL
+            // W4-g5 — the Rune Wizard's RuneBlast (`NPC.cs:21272`'s
+            // `Main.projectile[num108].timeLeft = 300`).
+            || kind == crate::projectile::RUNE_BLAST
         {
             300
         } else {

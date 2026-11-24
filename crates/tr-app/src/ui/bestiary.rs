@@ -2593,6 +2593,9 @@ fn portrait_data(
             let w = s.map(|s| s.width as f32).unwrap_or(10.0);
             (sheet_i, h, w, h, white)
         }
+        // W4-g5 — the two casters' 18x40 `SetDefaults` box
+        // (`NPC.cs:11156-11157`/`:17725-17726`).
+        (NpcKind::RuneWizard | NpcKind::LibrarianSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
     }
 }
 

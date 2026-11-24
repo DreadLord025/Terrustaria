@@ -4179,6 +4179,10 @@ fn npc_seed(
         // (noGravity/noTileCollide); the `23` body overwrites the
         // position below (the hover arm's shape).
         crate::npc::NpcKind::EmpressOfLight | crate::npc::NpcKind::PrismaticLacewing => {
+        // W4-g5 — the two casters ride the hover ctor like the other
+        // casters (`spawn_hover`; aiStyle 8, the d38 precedent).
+        crate::npc::NpcKind::RuneWizard | crate::npc::NpcKind::LibrarianSkeleton => {
+        }
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
