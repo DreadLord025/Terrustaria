@@ -279,6 +279,17 @@ impl ApplicationHandler for App {
                                 KeyCode::Backspace => {
                                     self.journey.search.pop();
                                 }
+                                _ => {}
+                            }
+                            if let Some(text) = event.text.as_ref() {
+                                for ch in text.chars() {
+                                    if !ch.is_control() && self.journey.search.chars().count() < 50 {
+                                        self.journey.search.push(ch);
+                                    }
+                                }
+                            }
+                            return;
+                        }
                         // The bestiary search bar's input latch
                         // (`UISearchBar.DrawSelf:145-167`): while writing,
                         // Enter/Escape end the input (NOT the screen),
@@ -295,8 +306,6 @@ impl ApplicationHandler for App {
                             }
                             if let Some(text) = event.text.as_ref() {
                                 for ch in text.chars() {
-                                    if !ch.is_control() && self.journey.search.chars().count() < 50 {
-                                        self.journey.search.push(ch);
                                     if !ch.is_control() {
                                         self.bestiary_search_character(ch);
                                     }
@@ -309,8 +318,9 @@ impl ApplicationHandler for App {
                         // opens the chat.
                         if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) {
                             self.chat.open = true;
-
-        }                        // `DoUpdate_Enter_ToggleChat` + `DoUpdate_HandleChat`
+                            return;
+                        }
+                        // `DoUpdate_Enter_ToggleChat` + `DoUpdate_HandleChat`
                         // (`Main.cs:18264-18372`): the chat open/close/edit
                         // chain eats the keyboard before the world routes.
                         // Extracted like `world_key` so the chain (and its
@@ -506,6 +516,8 @@ impl ApplicationHandler for App {
                 }
                 // The secret-seeds list's wheel (W4-d85 row 12).
                 if self.secret_seeds_wheel(d.round() as i32) {
+                    return;
+                }
                 // `Main.DoScrollingInInventory`'s tail
                 // (`Main.cs:17453-17456`): `NewCraftingUI.Visible` sets
                 // `flag = false` — the classic crafting list never scrolls
@@ -667,6 +679,7 @@ impl ApplicationHandler for App {
                                 // `:3256`), g21's site.
                                 if let Some(cue) = m.take_cue() {
                                     self.audio.play(cue);
+                                }
                                 // Bug 17: the legacy menu's click tick —
                                 // `Main.DoStatefulTickSound` (`Main.cs:3244`,
                                 // `:3256`) / the settings rows' activation.
@@ -872,6 +885,7 @@ impl ApplicationHandler for App {
                     if hit != self.front_hover_hit {
                         if hit.is_some_and(|h| self.front_hit_sounds(h)) {
                             self.audio.play("Menu_Tick");
+                        }
                         if hit.is_some() {
                             self.audio.play_menu("Menu_Tick");
                         }
@@ -1377,6 +1391,8 @@ impl App {
                         // (`Player.cs:29111`).
                         self.audio.play(if open { "Menu_Open" } else { "Menu_Close" });
                     }
+                } else {
+                    self.try_open_fullscreen_map();
                 }
             }
             _ if self.is_map_bound(crate::input_map::MapAction::Style, code) => {
@@ -1388,10 +1404,11 @@ impl App {
                 // keys but the style row still runs after it; the port's
                 // press-edge `world_key` stands in for `releaseMapStyle`.
                 if !self.map.as_ref().is_some_and(|m| m.open) {
-                        m.set_open(false);
+                    self.audio.play("Menu_Tick");
+                    self.map_style += 1;
+                    if self.map_style > 2 {
+                        self.map_style = 0;
                     }
-                } else {
-                    self.try_open_fullscreen_map();
                 }
             }
             _ if self.is_map_bound(crate::input_map::MapAction::Style, code) => {
