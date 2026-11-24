@@ -80,6 +80,9 @@ mod npc_ai3_speeds;
 // S1-D-3z (zombie fighter audit): the AI_003 obstacle scan tail
 // (NPC.cs:59831-60284) + the Drippler's aiStyle-22 machine.
 mod npc_ai_fighter_scan;
+// W4-d22 (NPC aiStyle 3): the shared AI_003_Fighters core — the
+// walk/jump/fall/knockback/door-bash phases for the plain-walker family.
+mod npc_ai_style3;
 mod npc_ai_drippler;
 mod npc_ai_dungeon_shooter;
 // W4-c9: the gold town-critters' AI_007 wander/hop subset (GoldBunny 443 /

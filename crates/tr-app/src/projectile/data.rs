@@ -251,6 +251,12 @@ pub const QUEEN_BEE_STINGER: u16 = 719;
 /// velocity/damage/knockback; `Projectile.cs:10078-10086`: 10x10,
 /// aiStyle 200, alpha 255, penetrate -1, ignoreWater). W4-c10.
 pub const BIRD_DROPPINGS: u16 = 1080;
+/// `ProjectileID.Stinger` (55, `ProjectileID.cs`) — the Hornet's shot
+/// (`NPC.cs:50796`'s type 55, dmg `(int)(10*scale)`, the post-spawn
+/// `timeLeft = 300` `:50797`; `Projectile.cs:1375-1383`: 10×10, hostile,
+/// aiStyle 1, penetrate −1, tileCollide; the `flag3 = false` flight list
+/// `:55954` keeps the counter at rest — dead-straight, no gravity).
+pub const HORNET_STINGER: u16 = 55;
 /// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
 /// (`NPC.cs:26628`'s `num412`).
 pub const EYE_LASER: u16 = 83;
@@ -3881,6 +3887,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight), `tileCollide = true`; the stock 3600 life (the
             // AI_043 arm overrides to 300 post-spawn, `NPC.cs:30743`).
             QUEEN_BEE_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d22 — `Projectile.cs:1375-1383`: the Hornet's stinger
+            // (55): 10x10, hostile, `penetrate = -1`, aiStyle 1,
+            // `tileCollide = true`; the stock 3600 life (the AI_005 arm
+            // overrides to 300 post-spawn, `NPC.cs:50797`). It is on the
+            // `flag3 = false` flight-counter list (`:55954`), so it flies
+            // dead straight (no gravity) — the `ai_hornet_stinger` arm.
+            HORNET_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // S1-D-3 W-9 fishron wiring — `Projectile.cs:4676-4685`: the
             // Sharknado bolt (385): 30x30, aiStyle 65, penetrate -1,
             // alpha 255, timeLeft 300 (the stock tileCollide true).
