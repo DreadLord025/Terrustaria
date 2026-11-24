@@ -138,6 +138,7 @@ pub struct Style14Shot {
     pub vx: f32,
     pub vy: f32,
 }
+}
 
 /// `NPC.cs:23183`'s water-arm type list, verbatim order.
 const WATER_GROUP: [i32; 11] = [49, 51, 60, 62, 66, 93, 137, 150, 151, 152, 634];
@@ -182,6 +183,7 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     } else {
         target_closest(npc, env.world, env.players, true, 14, env.ticker);
     }
+    }
     // `:22899-23182` — the per-type approach arms (W4-d23: 158/226/660
     // landed); the else arm (`:23116-23182`) is the shared 0.1/4 X +
     // 0.04/1.5 Y.
@@ -194,9 +196,16 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     } else if net_id == 226 {
         flying_snake_approach(npc);
     } else if net_id == 660 {
+    target_closest(npc, env.world, env.players, true, 14, env.ticker);
+    // `:22899-23182` — the per-type approach arms: 158/226/660 unported;
+    // the else arm (`:23116-23182`) is the shared 0.1/4 X + 0.04/1.5 Y.
+    // W4-d43: the HeavenlySlime minion (660) rides its own 0.35/0.3/6/5
+    // approach (`NPC.cs:23038-23115`); every other kind the shared arm.
+    if net_id == 660 {
         queen_slime_minion_approach(npc);
     } else {
         generic_approach(npc);
+    }
     }
     // `:23183-23332` — the water group. NOTE the C# structure: the wet
     // lift is gated on `base.wet`, but the SECOND approach pass below is
@@ -268,6 +277,7 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
         {
             npc.wants_transform = Some(159);
         }
+    }
     }
     // `:23356-23409` — the drift cycle (`ai[1]`/`ai[2]`; 158's second
     // `ai[1]++` rides inside).
@@ -435,6 +445,7 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     }
     None
 }
+}
 
 /// `NPC.cs:22852-22875` — the collideX/collideY half-bounce with the
 /// direction-aware minimum speeds (X ±2, Y ±1).
@@ -467,6 +478,58 @@ pub fn bounce(npc: &mut Npc) {
 /// brake, cap ±1.5. The C#'s `(double)velocity.Y` comparisons promote the
 /// exact f32 values against exactly-representable ±1.5 — the f32
 /// comparison is identical.
+/// W4-d43 — the HeavenlySlime minion's own approach (`NPC.cs:23038-23115`,
+/// the `else if (this.type == 660)` arm): the 0.35 X accel / 0.3 Y accel and
+/// the 6 / 5 caps (the shared arm's 0.1/0.04/4/1.5 overridden at `:23044-23050`).
+pub fn queen_slime_minion_approach(npc: &mut Npc) {
+    let num225 = 0.35f32;
+    let num226 = 0.3f32;
+    let num227 = 6f32;
+    let num228 = 5f32;
+    if npc.facing == -1 && npc.vx > -num227 {
+        npc.vx -= num225;
+        if npc.vx > num227 {
+            npc.vx -= num225;
+        } else if npc.vx > 0.0 {
+            npc.vx += num225 * 0.5;
+        }
+        if npc.vx < -num227 {
+            npc.vx = -num227;
+        }
+    } else if npc.facing == 1 && npc.vx < num227 {
+        npc.vx += num225;
+        if npc.vx < -num227 {
+            npc.vx += num225;
+        } else if npc.vx < 0.0 {
+            npc.vx -= num225 * 0.5;
+        }
+        if npc.vx > num227 {
+            npc.vx = num227;
+        }
+    }
+    if npc.direction_y == -1 && npc.vy > -num228 {
+        npc.vy -= num226;
+        if npc.vy > num228 {
+            npc.vy -= num226;
+        } else if npc.vy > 0.0 {
+            npc.vy += num226 * 0.75;
+        }
+        if npc.vy < -num228 {
+            npc.vy = -num228;
+        }
+    } else if npc.direction_y == 1 && npc.vy < num228 {
+        npc.vy += num226;
+        if npc.vy < -num228 {
+            npc.vy += num226;
+        } else if npc.vy < 0.0 {
+            npc.vy -= num226 * 0.75;
+        }
+        if npc.vy > num228 {
+            npc.vy = num228;
+        }
+    }
+}
+
 pub fn generic_approach(npc: &mut Npc) {
     // `:23118-23149`.
     if npc.facing == -1 && npc.vx > -4.0 {
@@ -586,6 +649,7 @@ fn vampire_bat_approach(npc: &mut Npc, env: &Style14Env<'_>) {
         }
     }
 }
+}
 
 /// The FlyingSnake's approach (`NPC.cs:22971-23037`, W4-d23): X the
 /// generic shape at 0.2 accel / ±4 cap; Y the slower 0.1 accel with the
@@ -646,6 +710,7 @@ fn flying_snake_approach(npc: &mut Npc) {
             npc.vy = 2.5;
         }
     }
+}
 }
 
 /// The QueenSlimeMinionPurple's approach (`NPC.cs:23038-23115`, W4-d23):

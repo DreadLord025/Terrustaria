@@ -3031,7 +3031,370 @@ fn portrait_data(
                 .unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
-    }
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 30.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::PalworldCattivaDistressed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::PalworldFoxsparksDistressed, _) => (sheet_i, 18.0, 18.0, 18.0, white),
+        (NpcKind::OwlMimic, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::StatueMimic, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(38.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::MossZombie, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Orca, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 120.0, h, white)
+        }
+        (NpcKind::LibrarianSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TownSlimeCopper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::BoundTownSlimeOld, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::BoundTownSlimePurple, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::BoundTownSlimeYellow, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Pufferfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(16.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::TownSlimeOld, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TownSlimePurple, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TownSlimeRainbow, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TownSlimeRed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TownSlimeYellow, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::YellowCockatiel, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+        (NpcKind::GrayCockatiel, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::Shimmerfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        (NpcKind::TownSlimeGreen, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Stinkbug, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        (NpcKind::TownSlimeBlue, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::ScarletMacaw, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+        (NpcKind::BlueMacaw, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+        (NpcKind::Toucan, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+        (NpcKind::PirateGhost, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TorchGod, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(0.0);
+            (sheet_i, h, 0.0, h, white)
+        }
+        (NpcKind::ChaosBallTim, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(16.0);
+            (sheet_i, h, 16.0, h, white)
+        }
+        (NpcKind::VileSpitEaterOfWorlds, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(16.0);
+            (sheet_i, h, 16.0, h, white)
+        }
+        (NpcKind::GoldenSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::QueenSlimeBoss, _) => (sheet_i, 100.0, 114.0, 100.0, white),
+        (NpcKind::QueenSlimeMinionBlue, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::QueenSlimeMinionPink, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::QueenSlimeMinionPurple, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::EmpressButterfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        (NpcKind::GemBunnyAmber, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::HellButterfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        (NpcKind::Lavafly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        (NpcKind::MagmaSnail, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+        (NpcKind::TownBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 27.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemBunnyTopaz, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemBunnySapphire, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemBunnyEmerald, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemBunnyRuby, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemBunnyDiamond, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemSquirrelEmerald, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemSquirrelRuby, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemSquirrelDiamond, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemSquirrelAmber, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemBunnyAmethyst, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TownCat, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 28.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::TownDog, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 28.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemSquirrelAmethyst, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemSquirrelTopaz, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::GemSquirrelSapphire, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::RockGolem, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 21.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::MaggotZombie, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 22.0, h, white)
+        (NpcKind::SporeSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::HallowBoss, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(100.0);
+            (sheet_i, h, 100.0, h, white)
+        }
 
 /// `UIBestiaryEntryInfoPage`'s content for the selected entry: the
 /// `Portrait_Front` backdrop, the big portrait, the name (tier >= 1), the
@@ -3221,7 +3584,6 @@ fn draw_info_page(
             ty += 22.0;
         }
     }
-}
 }
 
 /// `UIText.IsWrapped`'s word wrap (`UIText.cs`'s `WordWrapping` pass): the

@@ -4550,6 +4550,91 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Cool Slime",
+        credit_id: "PalworldCattivaDistressed",
+        net_id: 695,
+        kind: NpcKind::PalworldCattivaDistressed,
+        variant: None,
+        quick_unlock: false,
+        name: "Cattiva",
+    },
+    BestiaryEntryDef {
+        credit_id: "PalworldFoxsparksDistressed",
+        net_id: 696,
+        kind: NpcKind::PalworldFoxsparksDistressed,
+        variant: None,
+        quick_unlock: false,
+        name: "Foxparks",
+    },
+    BestiaryEntryDef {
+        credit_id: "OwlMimic",
+        net_id: 689,
+        kind: NpcKind::OwlMimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Owl",
+    },
+    BestiaryEntryDef {
+        credit_id: "StatueMimic",
+        net_id: 690,
+        kind: NpcKind::StatueMimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Statue",
+    },
+    BestiaryEntryDef {
+        credit_id: "MossZombie",
+        net_id: 691,
+        kind: NpcKind::MossZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Moss Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "Orca",
+        net_id: 692,
+        kind: NpcKind::Orca,
+        variant: None,
+        quick_unlock: false,
+        name: "Orca",
+    },
+BestiaryEntryDef {
+        credit_id: "TownSlimeCopper",
+        net_id: 684,
+        variant: None,
+        quick_unlock: false,
+        name: "Squire Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "BoundTownSlimeOld",
+        net_id: 685,
+        kind: NpcKind::BoundTownSlimeOld,
+        variant: None,
+        quick_unlock: false,
+        name: "Old Shaking Chest",
+    },
+    BestiaryEntryDef {
+        credit_id: "BoundTownSlimePurple",
+        net_id: 686,
+        kind: NpcKind::BoundTownSlimePurple,
+        variant: None,
+        quick_unlock: false,
+        name: "Clumsy Balloon Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "BoundTownSlimeYellow",
+        net_id: 687,
+        kind: NpcKind::BoundTownSlimeYellow,
+        variant: None,
+        quick_unlock: false,
+        name: "Mystic Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "Pufferfish",
+        net_id: 688,
+        kind: NpcKind::Pufferfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Pufferfish",
     },
     BestiaryEntryDef {
         credit_id: "TownSlimeOld",
@@ -4593,21 +4678,260 @@ BestiaryEntryDef {
     },
     // W4-g10 lane 3 batch 2 — the copper slime (the populator's
     // `BestiaryEntry.TownNPC(684)` row, `BestiaryDatabaseNPCsPopulator.cs:843`).
-    BestiaryEntryDef {
-        credit_id: "TownSlimeCopper",
-        net_id: 684,
-        kind: NpcKind::TownSlimeCopper,
-        variant: None,
-        quick_unlock: false,
-        name: "Squire Slime",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "ArmedZombie",
         net_id: 430,
         kind: NpcKind::ArmedZombie,
         variant: None,
         quick_unlock: false,
         name: "Zombie",
+    BestiaryEntryDef {
+        credit_id: "YellowCockatiel",
+        net_id: 674,
+        kind: NpcKind::YellowCockatiel,
+        variant: None,
+        quick_unlock: false,
+        name: "Yellow Cockatiel",
+    },
+    BestiaryEntryDef {
+        credit_id: "GrayCockatiel",
+        net_id: 675,
+        kind: NpcKind::GrayCockatiel,
+        variant: None,
+        quick_unlock: false,
+        name: "Gray Cockatiel",
+    },
+BestiaryEntryDef {
+        credit_id: "Stinkbug",
+        net_id: 669,
+        kind: NpcKind::Stinkbug,
+        variant: None,
+        quick_unlock: false,
+        name: "Stinkbug",
+    },
+BestiaryEntryDef {
+        credit_id: "ScarletMacaw",
+        net_id: 671,
+        kind: NpcKind::ScarletMacaw,
+        variant: None,
+        quick_unlock: false,
+        name: "Scarlet Macaw",
+    },
+    BestiaryEntryDef {
+        credit_id: "BlueMacaw",
+        net_id: 672,
+        kind: NpcKind::BlueMacaw,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Macaw",
+    },
+    BestiaryEntryDef {
+        credit_id: "Toucan",
+        net_id: 673,
+        kind: NpcKind::Toucan,
+        variant: None,
+        quick_unlock: false,
+        name: "Toucan",
+    },
+    BestiaryEntryDef {
+        credit_id: "PirateGhost",
+        net_id: 662,
+        kind: NpcKind::PirateGhost,
+        variant: None,
+        quick_unlock: false,
+        name: "Pirate's Curse",
+    },
+    BestiaryEntryDef {
+        credit_id: "TorchGod",
+        net_id: 664,
+        kind: NpcKind::TorchGod,
+        variant: None,
+        quick_unlock: true,
+        name: "The Torch God",
+    },
+    BestiaryEntryDef {
+        credit_id: "ChaosBallTim",
+        net_id: 665,
+        kind: NpcKind::ChaosBallTim,
+        variant: None,
+        quick_unlock: false,
+        name: "Chaos Ball",
+    },
+BestiaryEntryDef {
+        credit_id: "GoldenSlime",
+        net_id: 667,
+        kind: NpcKind::GoldenSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Golden Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "QueenSlimeBoss",
+        net_id: 657,
+        kind: NpcKind::QueenSlimeBoss,
+        variant: None,
+        quick_unlock: true,
+        name: "Queen Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "QueenSlimeMinionBlue",
+        net_id: 658,
+        kind: NpcKind::QueenSlimeMinionBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Crystal Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "QueenSlimeMinionPink",
+        net_id: 659,
+        kind: NpcKind::QueenSlimeMinionPink,
+        variant: None,
+        quick_unlock: false,
+        name: "Bouncy Slime",
+    },
+BestiaryEntryDef {
+        credit_id: "GemBunnyAmber",
+        net_id: 652,
+        kind: NpcKind::GemBunnyAmber,
+        variant: None,
+        quick_unlock: false,
+        name: "Amber Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "HellButterfly",
+        net_id: 653,
+        kind: NpcKind::HellButterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Hell Butterfly",
+    },
+BestiaryEntryDef {
+        credit_id: "GemBunnyTopaz",
+        net_id: 647,
+        kind: NpcKind::GemBunnyTopaz,
+        variant: None,
+        quick_unlock: false,
+        name: "Topaz Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemBunnySapphire",
+        net_id: 648,
+        kind: NpcKind::GemBunnySapphire,
+        variant: None,
+        quick_unlock: false,
+        name: "Sapphire Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemBunnyEmerald",
+        net_id: 649,
+        kind: NpcKind::GemBunnyEmerald,
+        variant: None,
+        quick_unlock: false,
+        name: "Emerald Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemBunnyRuby",
+        net_id: 650,
+        kind: NpcKind::GemBunnyRuby,
+        variant: None,
+        quick_unlock: false,
+        name: "Ruby Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemBunnyDiamond",
+        net_id: 651,
+        kind: NpcKind::GemBunnyDiamond,
+        variant: None,
+        quick_unlock: false,
+        name: "Diamond Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemSquirrelEmerald",
+        net_id: 642,
+        kind: NpcKind::GemSquirrelEmerald,
+        variant: None,
+        quick_unlock: false,
+        name: "Emerald Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemSquirrelRuby",
+        net_id: 643,
+        kind: NpcKind::GemSquirrelRuby,
+        variant: None,
+        quick_unlock: false,
+        name: "Ruby Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemSquirrelDiamond",
+        net_id: 644,
+        kind: NpcKind::GemSquirrelDiamond,
+        variant: None,
+        quick_unlock: false,
+        name: "Diamond Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemSquirrelAmber",
+        net_id: 645,
+        kind: NpcKind::GemSquirrelAmber,
+        variant: None,
+        quick_unlock: false,
+        name: "Amber Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemBunnyAmethyst",
+        net_id: 646,
+        kind: NpcKind::GemBunnyAmethyst,
+        variant: None,
+        quick_unlock: false,
+        name: "Amethyst Bunny",
+    },
+BestiaryEntryDef {
+        credit_id: "GemSquirrelAmethyst",
+        net_id: 639,
+        kind: NpcKind::GemSquirrelAmethyst,
+        variant: None,
+        quick_unlock: false,
+        name: "Amethyst Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemSquirrelTopaz",
+        net_id: 640,
+        kind: NpcKind::GemSquirrelTopaz,
+        variant: None,
+        quick_unlock: false,
+        name: "Topaz Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "GemSquirrelSapphire",
+        net_id: 641,
+        kind: NpcKind::GemSquirrelSapphire,
+        variant: None,
+        quick_unlock: false,
+        name: "Sapphire Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "RockGolem",
+        net_id: 631,
+        kind: NpcKind::RockGolem,
+        variant: None,
+        quick_unlock: false,
+        name: "Rock Golem",
+    },
+    BestiaryEntryDef {
+        credit_id: "MaggotZombie",
+        net_id: 632,
+        kind: NpcKind::MaggotZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Maggot Zombie",
+    },
+BestiaryEntryDef {
+        credit_id: "SporeSkeleton",
+        net_id: 635,
+        kind: NpcKind::SporeSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Spore Skeleton",
     },
 ];
 
@@ -4623,6 +4947,7 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
         entry.quick_unlock,
         full,
     )
+    }
     }
     }
     }
@@ -5311,6 +5636,15 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::DuckWhite2 => NpcKind::DuckWhite,
         // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
         // CultistArcherBlue 379 (the try_entry twin above).
+        // W4-d43 — the Owl Mimic 689 is Hide=true (`NPCID.cs:755-761`'s
+        // NPCBestiaryDrawModifiers) and its kill credit folds onto the
+        // visible Owl 611 (`ContentSamples.cs:1054`:
+        // `npcBestiaryCreditIdsByNpcNetIds[689] = ...[611]`). It keeps its
+        // OWN ENTRIES row + cs_id 689 for the catch/release chain (the
+        // d33 BlackDragonfly precedent); `try_entry_for_npc` stays
+        // unfolded so the s1_f_3 cs_id==net invariant holds. The Owl 611
+        // kind rides d42's band — the fold resolves at the merge.
+        NpcKind::OwlMimic => NpcKind::Owl,
         other => other,
     };
     ENTRIES
@@ -5626,6 +5960,34 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ENTRIES.len());
+    }
+
+    /// W4-d43 retire — the Owl Mimic 689 is Hide=true and folds its kill
+    /// credit onto the visible Owl 611 (`ContentSamples.cs:1054`), the d33
+    /// hidden-dragonfly precedent: `entry_for_npc` folds, `try_entry_for_npc`
+    /// stays unfolded (the s1_f_3 cs_id==net invariant), the 689 entry keeps
+    /// its own row + cs_id for the catch/release chain, and 689 takes no
+    /// bestiary grid slot. The Owl 611 kind rides d42's band — the fold's
+    /// TARGET resolves at the merge (this witness pins the source side).
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_the_owl_mimic_folds_its_credit_and_takes_no_grid_slot() {
+        // The 689 entry keeps its OWN row (the catch/release chain keys it).
+        let own = try_entry_for_npc(NpcKind::OwlMimic, SlimeVariant::Blue)
+            .expect("the OwlMimic keeps its own unfolded entry");
+        assert_eq!(own.net_id, 689);
+        assert_eq!(own.credit_id, "OwlMimic");
+        assert_eq!(NpcKind::OwlMimic.cs_id(), 689);
+        // Hide=true (`NPCID.cs:755-761`) — no bestiary grid slot.
+        assert!(
+            !crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&689),
+            "the Hide=true OwlMimic takes no bestiary sheet slot"
+        );
+        // The world-draw sheet stays packed (only the grid slot drops).
+        assert!(
+            crate::assets::STATIC_SHEET_NAMES.contains(&"NPC_689"),
+            "the NPC_689 world sheet stays packed"
+        );
     }
 
     #[test]

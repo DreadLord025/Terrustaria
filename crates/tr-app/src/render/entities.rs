@@ -889,6 +889,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(TOWN_PET_SHEETS)
             .chain(CRITTER_SHEETS)
             .chain(SNAIL_SHEETS)
+            .chain(W4_D43_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1036,6 +1037,77 @@ fn deerclops_frame_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
         tex.uv[0] + du * (c + 1.0) + ox,
         tex.uv[1] + dv * (r + 1.0) + oy,
     ]
+}
+
+/// W4-d43 — the Queen Slime's 2x16 grid cell (`Main.cs:23632`'s
+/// `value.Frame(2, 16, num96 / num95, num96 % num95)`): NPC_657's 360x1952
+/// sheet is 2 columns x 16 rows of 180x122 cells (the `frame.Width = 180`
+/// override, `NPC.cs:66851`); the cell index rides `npc.frame` (0..31).
+fn queen_slime_frame_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
+    let span = (tex.uv[2] - tex.uv[0], tex.uv[3] - tex.uv[1]);
+    let (du, dv) = (span.0 / 2.0, span.1 / 16.0);
+    let (col, row) = (cell / 16, cell % 16);
+    let (c, r) = (col as f32, row as f32);
+    [
+        tex.uv[0] + du * c,
+        tex.uv[1] + dv * r,
+        tex.uv[0] + du * (c + 1.0),
+        tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+/// W4-d43 — the distressed Foxparks' 6x27 grid cell (`Main.cs:23832`'s
+/// `value.Frame(6, 27, frame.Y / 9, frame.Y % 9)`): NPC_696's 384x1242 sheet
+/// is 6 columns x 27 rows of 64x46 cells; the cell index rides `npc.frame`.
+fn foxparks_frame_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
+    let span = (tex.uv[2] - tex.uv[0], tex.uv[3] - tex.uv[1]);
+    let (du, dv) = (span.0 / 6.0, span.1 / 27.0);
+    let (col, row) = (cell / 9, cell % 9);
+    let (c, r) = (col as f32, row as f32);
+    [
+        tex.uv[0] + du * c,
+        tex.uv[1] + dv * r,
+        tex.uv[0] + du * (c + 1.0),
+        tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+/// W4-d43 — the Queen Slime's grid draw: the 180x122 cell at the generic
+/// centre anchor (the `Main.cs:23626` Bottom anchor + the wing/shader overlays
+/// are the documented draw-pass remainder; the cell quad is the body).
+fn queen_slime_draw<'a>(
+    tex: Option<&'a BgTex>,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(122.0, |t| t.h / 16.0);
+    let fw = tex.map_or(180.0, |t| t.w / 2.0);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
+    )
+}
+
+/// W4-d43 — the distressed Foxparks' grid draw: the 64x46 cell at the generic
+/// centre anchor (the `Main.cs:23828` Bottom anchor + the opacity ghost copies
+/// are the documented draw-pass remainder; the cell quad is the body).
+fn foxparks_draw<'a>(
+    tex: Option<&'a BgTex>,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(46.0, |t| t.h / 27.0);
+    let fw = tex.map_or(64.0, |t| t.w / 6.0);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
+    )
 }
 
 /// The humanoid walkers' draw: the sheet's real row (`t.h / count`, the
@@ -1378,6 +1450,9 @@ fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
 /// `case 694` Y terms ride here (W4-c3); its `num45` X term rides
 /// [`npc_anchor_nudge_x`] (the `:25511` X anchor).
 /// `694`-only offsets, the `469`/`467` ids) has no port kind.
+/// `469`/`357`/`467` ids) has no port kind. The `694` Water Bolt Mimic's
+/// `num45`/`num46` terms (`:23096-23113`) ride the c3 keeper at merge
+/// (research/343 §1 — d43's 694 variant retires onto c3's).
 fn npc_anchor_nudge(n: &Npc) -> f32 {
     use NpcKind::*;
     let mut num46 = 0.0;
@@ -1448,6 +1523,15 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         // `num46 = wet ? 6 : 10` (`:23072-23074`) arms RETIRE with the
         // kinds - d43's merge re-lands them verbatim (the keeper receipt
         // rides the chain-banner + research/148).
+        // `:23114-23116` — the Pufferfish 688's `num46 += 10`. The base
+        // arm was mis-keyed `DD2GoblinT1` (a copy-paste of the -2 row
+        // above); the W4-d43 Pufferfish kind exposes it — re-keyed to the
+        // real kind (the c4e research/148 keeper fold).
+        Pufferfish => num46 += 10.0,
+        // `:23071-23073` — the Orca 692's wet-dependent anchor: `num46`
+        // 10 dry / 6 wet (the c4e research/148 keeper fold; the W4-d43
+        // Orca kind exposes it).
+        Orca => num46 = if n.wet { 6.0 } else { 10.0 },
         // `:23077-23091` — the `num47` adds of the same switch.
         Plantera => num47 += 26.0,
         BrainOfCthulhu => num47 += 50.0 * n.scale,
@@ -2615,6 +2699,16 @@ pub(crate) const CRITTER_SHEETS: &[u32] = &[
 /// [`NpcAssets::npc_sheet`]. The snail trio 359/360/655 stays c9's —
 /// at merge the two consts union into c9's four-row SNAIL_SHEETS.
 pub(crate) const SNAIL_SHEETS: &[u32] = &[677];
+
+/// W4-d43 — the 631-696 kinds' own sheets (`TextureAssets.Npc[type]`), keyed by
+/// the vanilla net id in `NpcAssets::npc_sheets` (the SMALL_KIND_SHEETS shape).
+pub(crate) const W4_D43_SHEETS: &[u32] = &[
+    631, 632, 634, 635, 636, 637, 638, 639, 640, 641, 642, 643, 644, 645,
+    646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 656, 657, 658, 659,
+    660, 661, 662, 664, 665, 666, 667, 669, 670, 671, 672, 673, 674, 675,
+    676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686, 687, 688, 689,
+    690, 691, 692, 693, 694, 695, 696,
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -4645,6 +4739,190 @@ pub(crate) fn draw_npcs(
             NpcKind::Gastropod => generic_anchor(assets.npc_sheet(122), 11, n, w, h),
             NpcKind::IlluminantBat => generic_anchor(assets.npc_sheet(137), 4, n, w, h),
             NpcKind::PossessedArmor => humanoid_draw(assets.npc_sheet(140), 15, n, w, h),
+            NpcKind::RockGolem => {
+                scaled_anchor(assets.npc_sheet(631), npc_rows(631), n, w, h)
+            }
+            NpcKind::MaggotZombie => {
+                pumpkin_moon_draw(assets.npc_sheet(632), npc_rows(632), n, w, h)
+            }
+            NpcKind::SporeBat => {
+                pumpkin_moon_draw(assets.npc_sheet(634), npc_rows(634), n, w, h)
+            }
+            NpcKind::SporeSkeleton => {
+                pumpkin_moon_draw(assets.npc_sheet(635), npc_rows(635), n, w, h)
+            }
+            NpcKind::HallowBoss => {
+                pumpkin_moon_draw(assets.npc_sheet(636), npc_rows(636), n, w, h)
+            }
+            NpcKind::TownCat => {
+                pumpkin_moon_draw(assets.npc_sheet(637), npc_rows(637), n, w, h)
+            }
+            NpcKind::TownDog => {
+                pumpkin_moon_draw(assets.npc_sheet(638), npc_rows(638), n, w, h)
+            }
+            NpcKind::GemSquirrelAmethyst => {
+                pumpkin_moon_draw(assets.npc_sheet(639), npc_rows(639), n, w, h)
+            }
+            NpcKind::GemSquirrelTopaz => {
+                pumpkin_moon_draw(assets.npc_sheet(640), npc_rows(640), n, w, h)
+            }
+            NpcKind::GemSquirrelSapphire => {
+                pumpkin_moon_draw(assets.npc_sheet(641), npc_rows(641), n, w, h)
+            }
+            NpcKind::GemSquirrelEmerald => {
+                pumpkin_moon_draw(assets.npc_sheet(642), npc_rows(642), n, w, h)
+            }
+            NpcKind::GemSquirrelRuby => {
+                pumpkin_moon_draw(assets.npc_sheet(643), npc_rows(643), n, w, h)
+            }
+            NpcKind::GemSquirrelDiamond => {
+                pumpkin_moon_draw(assets.npc_sheet(644), npc_rows(644), n, w, h)
+            }
+            NpcKind::GemSquirrelAmber => {
+                pumpkin_moon_draw(assets.npc_sheet(645), npc_rows(645), n, w, h)
+            }
+            NpcKind::GemBunnyAmethyst => {
+                pumpkin_moon_draw(assets.npc_sheet(646), npc_rows(646), n, w, h)
+            }
+            NpcKind::GemBunnyTopaz => {
+                pumpkin_moon_draw(assets.npc_sheet(647), npc_rows(647), n, w, h)
+            }
+            NpcKind::GemBunnySapphire => {
+                pumpkin_moon_draw(assets.npc_sheet(648), npc_rows(648), n, w, h)
+            }
+            NpcKind::GemBunnyEmerald => {
+                pumpkin_moon_draw(assets.npc_sheet(649), npc_rows(649), n, w, h)
+            }
+            NpcKind::GemBunnyRuby => {
+                pumpkin_moon_draw(assets.npc_sheet(650), npc_rows(650), n, w, h)
+            }
+            NpcKind::GemBunnyDiamond => {
+                pumpkin_moon_draw(assets.npc_sheet(651), npc_rows(651), n, w, h)
+            }
+            NpcKind::GemBunnyAmber => {
+                pumpkin_moon_draw(assets.npc_sheet(652), npc_rows(652), n, w, h)
+            }
+            NpcKind::HellButterfly => {
+                pumpkin_moon_draw(assets.npc_sheet(653), npc_rows(653), n, w, h)
+            }
+            NpcKind::Lavafly => {
+                pumpkin_moon_draw(assets.npc_sheet(654), npc_rows(654), n, w, h)
+            }
+            NpcKind::MagmaSnail => {
+                pumpkin_moon_draw(assets.npc_sheet(655), npc_rows(655), n, w, h)
+            }
+            NpcKind::TownBunny => {
+                pumpkin_moon_draw(assets.npc_sheet(656), npc_rows(656), n, w, h)
+            }
+            NpcKind::QueenSlimeBoss => {
+                queen_slime_draw(assets.npc_sheet(657), n, w, h)
+            }
+            NpcKind::QueenSlimeMinionBlue => {
+                pumpkin_moon_draw(assets.npc_sheet(658), npc_rows(658), n, w, h)
+            }
+            NpcKind::QueenSlimeMinionPink => {
+                pumpkin_moon_draw(assets.npc_sheet(659), npc_rows(659), n, w, h)
+            }
+            NpcKind::QueenSlimeMinionPurple => {
+                pumpkin_moon_draw(assets.npc_sheet(660), npc_rows(660), n, w, h)
+            }
+            NpcKind::EmpressButterfly => {
+                pumpkin_moon_draw(assets.npc_sheet(661), npc_rows(661), n, w, h)
+            }
+            NpcKind::PirateGhost => {
+                pumpkin_moon_draw(assets.npc_sheet(662), npc_rows(662), n, w, h)
+            }
+            NpcKind::TorchGod => {
+                pumpkin_moon_draw(assets.npc_sheet(664), npc_rows(664), n, w, h)
+            }
+            NpcKind::ChaosBallTim => {
+                pumpkin_moon_draw(assets.npc_sheet(665), npc_rows(665), n, w, h)
+            }
+            NpcKind::VileSpitEaterOfWorlds => {
+                scaled_anchor(assets.npc_sheet(666), npc_rows(666), n, w, h)
+            }
+            NpcKind::GoldenSlime => {
+                pumpkin_moon_draw(assets.npc_sheet(667), npc_rows(667), n, w, h)
+            }
+            NpcKind::Stinkbug => {
+                pumpkin_moon_draw(assets.npc_sheet(669), npc_rows(669), n, w, h)
+            }
+            NpcKind::TownSlimeBlue => {
+                pumpkin_moon_draw(assets.npc_sheet(670), npc_rows(670), n, w, h)
+            }
+            NpcKind::ScarletMacaw => {
+                pumpkin_moon_draw(assets.npc_sheet(671), npc_rows(671), n, w, h)
+            }
+            NpcKind::BlueMacaw => {
+                pumpkin_moon_draw(assets.npc_sheet(672), npc_rows(672), n, w, h)
+            }
+            NpcKind::Toucan => {
+                pumpkin_moon_draw(assets.npc_sheet(673), npc_rows(673), n, w, h)
+            }
+            NpcKind::YellowCockatiel => {
+                pumpkin_moon_draw(assets.npc_sheet(674), npc_rows(674), n, w, h)
+            }
+            NpcKind::GrayCockatiel => {
+                pumpkin_moon_draw(assets.npc_sheet(675), npc_rows(675), n, w, h)
+            }
+                pumpkin_moon_draw(assets.npc_sheet(676), npc_rows(676), n, w, h)
+            }
+                pumpkin_moon_draw(assets.npc_sheet(677), npc_rows(677), n, w, h)
+            }
+            NpcKind::TownSlimeGreen => {
+                pumpkin_moon_draw(assets.npc_sheet(678), npc_rows(678), n, w, h)
+            }
+            NpcKind::TownSlimeOld => {
+                pumpkin_moon_draw(assets.npc_sheet(679), npc_rows(679), n, w, h)
+            }
+            NpcKind::TownSlimePurple => {
+                pumpkin_moon_draw(assets.npc_sheet(680), npc_rows(680), n, w, h)
+            }
+            NpcKind::TownSlimeRainbow => {
+                pumpkin_moon_draw(assets.npc_sheet(681), npc_rows(681), n, w, h)
+            }
+            NpcKind::TownSlimeRed => {
+                pumpkin_moon_draw(assets.npc_sheet(682), npc_rows(682), n, w, h)
+            }
+            NpcKind::TownSlimeYellow => {
+                pumpkin_moon_draw(assets.npc_sheet(683), npc_rows(683), n, w, h)
+            }
+            NpcKind::TownSlimeCopper => {
+                pumpkin_moon_draw(assets.npc_sheet(684), npc_rows(684), n, w, h)
+            }
+            NpcKind::BoundTownSlimeOld => {
+                pumpkin_moon_draw(assets.npc_sheet(685), npc_rows(685), n, w, h)
+            }
+            NpcKind::BoundTownSlimePurple => {
+                pumpkin_moon_draw(assets.npc_sheet(686), npc_rows(686), n, w, h)
+            }
+            NpcKind::BoundTownSlimeYellow => {
+                pumpkin_moon_draw(assets.npc_sheet(687), npc_rows(687), n, w, h)
+            }
+            NpcKind::Pufferfish => {
+                pumpkin_moon_draw(assets.npc_sheet(688), npc_rows(688), n, w, h)
+            }
+            NpcKind::OwlMimic => {
+                pumpkin_moon_draw(assets.npc_sheet(689), npc_rows(689), n, w, h)
+            }
+            NpcKind::StatueMimic => {
+                pumpkin_moon_draw(assets.npc_sheet(690), npc_rows(690), n, w, h)
+            }
+            NpcKind::MossZombie => {
+                pumpkin_moon_draw(assets.npc_sheet(691), npc_rows(691), n, w, h)
+            }
+            NpcKind::Orca => {
+                pumpkin_moon_draw(assets.npc_sheet(692), npc_rows(692), n, w, h)
+            }
+                pumpkin_moon_draw(assets.npc_sheet(693), npc_rows(693), n, w, h)
+            }
+                pumpkin_moon_draw(assets.npc_sheet(694), npc_rows(694), n, w, h)
+            NpcKind::PalworldCattivaDistressed => {
+                pumpkin_moon_draw(assets.npc_sheet(695), npc_rows(695), n, w, h)
+            }
+            NpcKind::PalworldFoxsparksDistressed => {
+                foxparks_draw(assets.npc_sheet(696), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             },
@@ -5320,7 +5598,6 @@ pub(crate) fn draw_npcs(
             // (`Main.cs:22669-22700`, `pumpking_blade_chain` below the
             // body arm — drawn ahead of the body quad, as the C#).
                 pumpkin_moon_draw(assets.npc_sheet(328), npc_rows(328), n, w, h)
-            }
             // W4-d25 STYLE-26 wiring: the gallopers' draw arms. **Sheet
             // deferral**: NPC_86/155 are NOT packed — the full-set
             // skyline measurement (tools/atlas_sim.js, the L-8b ref
@@ -5708,7 +5985,6 @@ pub(crate) fn draw_npcs(
                 scaled_anchor(assets.npc_sheet(355), npc_rows(355), n, w, h)
             }
                 scaled_anchor(assets.npc_sheet(356), npc_rows(356), n, w, h)
-            }
             NpcKind::Worm => {
                 pumpkin_moon_draw(assets.npc_sheet(357), npc_rows(357), n, w, h)
             }
@@ -5745,7 +6021,6 @@ pub(crate) fn draw_npcs(
                 pumpkin_moon_draw(assets.npc_sheet(365), npc_rows(365), n, w, h)
             }
                 pumpkin_moon_draw(assets.npc_sheet(366), npc_rows(366), n, w, h)
-            }
                 pumpkin_moon_draw(assets.npc_sheet(367), npc_rows(367), n, w, h)
             NpcKind::TruffleWorm => {
                 pumpkin_moon_draw(assets.npc_sheet(374), npc_rows(374), n, w, h)
@@ -5899,6 +6174,10 @@ pub(crate) fn draw_npcs(
         let flip_dir = n.sprite_dir;
         let uv = if n.kind == NpcKind::Deerclops {
             flip_uv(deerclops_frame_uv(tex, n.frame()), flip_dir < 0)
+        } else if n.kind == NpcKind::QueenSlimeBoss {
+            flip_uv(queen_slime_frame_uv(tex, n.frame()), flip_dir > 0)
+        } else if n.kind == NpcKind::PalworldFoxsparksDistressed {
+            flip_uv(foxparks_frame_uv(tex, n.frame()), flip_dir > 0)
         } else if n.kind == NpcKind::MoonLordHead {
             flip_uv(moon_lord_head_uv(tex, n.frame()), flip_dir > 0)
         } else if n.kind == NpcKind::WindyBalloon {
@@ -6054,6 +6333,17 @@ pub(crate) fn draw_npcs(
                     // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
+                    | NpcKind::HellButterfly
+                    | NpcKind::QueenSlimeMinionPurple
+                    | NpcKind::EmpressButterfly
+                    | NpcKind::PirateGhost
+                    | NpcKind::TorchGod
+                    | NpcKind::ScarletMacaw
+                    | NpcKind::BlueMacaw
+                    | NpcKind::Toucan
+                    | NpcKind::YellowCockatiel
+                    | NpcKind::GrayCockatiel
+                    | NpcKind::OwlMimic
                     | NpcKind::DungeonSpirit
                     // W4-c6 style-59 wiring: the blade's hover/dive/sweep
                     // aim rotation (`npc_ai_style59`'s atan2 + 1.57 writes,
@@ -7379,6 +7669,29 @@ mod anchor_tests {
         ] {
             assert_eq!(npc_anchor_nudge(&bare(kind)), 0.0, "{kind:?} no anchor row");
         }
+    }
+
+    /// W4-d43 retire — the c4e research/148 keeper folds: the Pufferfish
+    /// 688's `num46 += 10` (`Main.cs:23114-23116`, the base arm was
+    /// mis-keyed `DD2GoblinT1`) and the Orca 692's wet-dependent anchor
+    /// (`:23071-23073`, `num46` 10 dry / 6 wet). WRITTEN, NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_d43_the_pufferfish_and_orca_anchor_nudges() {
+        // The Pufferfish: +10 regardless of wet (the C# `num46 += 10`
+        // has no wet gate).
+        let mut puff = bare(NpcKind::Pufferfish);
+        assert_eq!(npc_anchor_nudge(&puff), 10.0, "the Pufferfish dry +10");
+        puff.wet = true;
+        assert_eq!(npc_anchor_nudge(&puff), 10.0, "the Pufferfish wet +10");
+        // The mis-keyed base arm must NOT fire on the DD2 goblin anymore.
+        assert_eq!(npc_anchor_nudge(&bare(NpcKind::DD2GoblinT1)), -2.0,
+            "the DD2GoblinT1 keeps only its own -2 row");
+        // The Orca: 10 dry / 6 wet (the C# `!wet ? 10 : 6`).
+        let mut orca = bare(NpcKind::Orca);
+        assert_eq!(npc_anchor_nudge(&orca), 10.0, "the Orca dry 10");
+        orca.wet = true;
+        assert_eq!(npc_anchor_nudge(&orca), 6.0, "the Orca wet 6");
     }
 
     /// The `halfSize` override's effect on the anchor: the EoC's 107 over its

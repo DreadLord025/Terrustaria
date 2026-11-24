@@ -1174,6 +1174,51 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // `DebuffImmunitySets` row `{ 677, SpecificallyImmuneTo: [31] }`
         // (`NPCID.cs:10015-10021`) — the poisoned-debuff immunity.
         // W4-d42 - the NPCID 620-624 immunity rows (`NPCID.cs:9395+`).
+            NpcKind::PalworldCattivaDistressed => &[31],
+            NpcKind::PalworldFoxsparksDistressed => &[31],
+            NpcKind::OwlMimic => &[31],
+            NpcKind::StatueMimic => &[],
+            NpcKind::MossZombie => &[],
+            NpcKind::Orca => &[31],
+            NpcKind::BoundTownSlimeOld => &[31],
+            NpcKind::BoundTownSlimePurple => &[],
+            NpcKind::BoundTownSlimeYellow => &[],
+            NpcKind::Pufferfish => &[31],
+            NpcKind::YellowCockatiel => &[31],
+            NpcKind::GrayCockatiel => &[31],
+            NpcKind::Stinkbug => &[31],
+            NpcKind::ScarletMacaw => &[31],
+            NpcKind::BlueMacaw => &[31],
+            NpcKind::Toucan => &[31],
+            NpcKind::PirateGhost => &[],
+            NpcKind::TorchGod => &[],
+            NpcKind::ChaosBallTim => &[31],
+            NpcKind::VileSpitEaterOfWorlds => &[31],
+            NpcKind::GoldenSlime => &[],
+            NpcKind::QueenSlimeBoss => &[20, 31],
+            NpcKind::QueenSlimeMinionBlue => &[20, 31],
+            NpcKind::QueenSlimeMinionPink => &[20, 31],
+            NpcKind::EmpressButterfly => &[31],
+            NpcKind::GemBunnyAmber => &[31],
+            NpcKind::HellButterfly => &[31],
+            NpcKind::GemBunnyTopaz => &[31],
+            NpcKind::GemBunnySapphire => &[31],
+            NpcKind::GemBunnyEmerald => &[31],
+            NpcKind::GemBunnyRuby => &[31],
+            NpcKind::GemBunnyDiamond => &[31],
+            NpcKind::GemSquirrelEmerald => &[31],
+            NpcKind::GemSquirrelRuby => &[31],
+            NpcKind::GemSquirrelDiamond => &[31],
+            NpcKind::GemSquirrelAmber => &[31],
+            NpcKind::GemBunnyAmethyst => &[31],
+            NpcKind::GemSquirrelAmethyst => &[31],
+            NpcKind::GemSquirrelTopaz => &[31],
+            NpcKind::GemSquirrelSapphire => &[31],
+            NpcKind::RockGolem => &[20, 24, 31, 323],
+            NpcKind::MaggotZombie => &[],
+            NpcKind::SporeBat => &[],
+            NpcKind::SporeSkeleton => &[20],
+            NpcKind::HallowBoss => &[31],
     }
 }
 
@@ -1246,6 +1291,8 @@ fn shimmer_immune(cs_id: u16) -> bool {
 /// pirate ship and the lane portal (W4-d41) are on the ported roster — the
 /// whip tag gate (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
+    // W4-d43: the bound town slimes (686/687) carry `ImmuneToWhips = true`
+    // (`NPCID.cs:10029-10043`).
     matches!(
         kind,
         NpcKind::MartianSaucer
@@ -1260,6 +1307,8 @@ pub fn whip_immune(kind: NpcKind) -> bool {
             // W4-d41 — the BlazingWheel 72's `ImmuneToWhips` row
             // (`NPCID.cs:6524-6529`) — the wheel is on the ported roster.
             | NpcKind::BlazingWheel
+            | NpcKind::BoundTownSlimePurple
+            | NpcKind::BoundTownSlimeYellow
     )
 }
 

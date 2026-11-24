@@ -4516,9 +4516,159 @@ fn npc_seed(
         | crate::npc::NpcKind::ChatteringTeethBomb
         | crate::npc::NpcKind::CultistArcherWhite
         | crate::npc::NpcKind::ArmedZombie => {
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::WaterBoltMimic
+        | crate::npc::NpcKind::PalworldCattivaDistressed
+        | crate::npc::NpcKind::PalworldFoxsparksDistressed => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::StatueMimic
+        | crate::npc::NpcKind::Orca => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::OwlMimic
+        | crate::npc::NpcKind::MossZombie
+        | crate::npc::NpcKind::LibrarianSkeleton => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::BoundTownSlimePurple
+        | crate::npc::NpcKind::Pufferfish => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::TownSlimeCopper
+        | crate::npc::NpcKind::BoundTownSlimeOld
+        | crate::npc::NpcKind::BoundTownSlimeYellow => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::TownSlimeOld
+        | crate::npc::NpcKind::TownSlimeYellow => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::YellowCockatiel
+        | crate::npc::NpcKind::GrayCockatiel
+        | crate::npc::NpcKind::Shimmerfly => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::ShimmerSlime
+        | crate::npc::NpcKind::TownSlimeGreen => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::ScarletMacaw
+        | crate::npc::NpcKind::BlueMacaw
+        | crate::npc::NpcKind::Toucan => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::Stinkbug
+        | crate::npc::NpcKind::TownSlimeBlue => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::PirateGhost
+        | crate::npc::NpcKind::TorchGod
+        | crate::npc::NpcKind::ChaosBallTim
+        | crate::npc::NpcKind::VileSpitEaterOfWorlds => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::GoldenSlime => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::QueenSlimeBoss
+        | crate::npc::NpcKind::QueenSlimeMinionPurple
+        | crate::npc::NpcKind::EmpressButterfly => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::QueenSlimeMinionBlue
+        | crate::npc::NpcKind::QueenSlimeMinionPink => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::HellButterfly
+        | crate::npc::NpcKind::Lavafly => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::GemBunnyAmber
+        | crate::npc::NpcKind::MagmaSnail
+        | crate::npc::NpcKind::TownBunny => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::GemBunnyTopaz
+        | crate::npc::NpcKind::GemBunnySapphire
+        | crate::npc::NpcKind::GemBunnyEmerald
+        | crate::npc::NpcKind::GemBunnyRuby
+        | crate::npc::NpcKind::GemBunnyDiamond => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::GemSquirrelEmerald
+        | crate::npc::NpcKind::GemSquirrelRuby
+        | crate::npc::NpcKind::GemSquirrelDiamond
+        | crate::npc::NpcKind::GemSquirrelAmber
+        | crate::npc::NpcKind::GemBunnyAmethyst => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        | crate::npc::NpcKind::GemSquirrelAmethyst
+        | crate::npc::NpcKind::GemSquirrelTopaz
+        | crate::npc::NpcKind::GemSquirrelSapphire => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::SporeBat
+        | crate::npc::NpcKind::HallowBoss => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::RockGolem
+        | crate::npc::NpcKind::MaggotZombie
+        | crate::npc::NpcKind::SporeSkeleton => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
     })
+}
 }
 }
 }

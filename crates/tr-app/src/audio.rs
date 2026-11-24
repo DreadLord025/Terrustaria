@@ -371,6 +371,15 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_40", 4),
     // W4-d41 — the sand poachers' NPCDeath19 (`NPC.cs:14942`).
     ("NPC_Killed_19", 4),
+    ("NPC_Killed_52", 4),
+    ("NPC_Hit_58", 3),
+    ("NPC_Killed_67", 4),
+    ("NPC_Killed_63", 4),
+    ("NPC_Killed_9", 4),
+    ("NPC_Killed_64", 4),
+    ("NPC_Hit_41", 3),
+    ("NPC_Killed_43", 4),
+    ("NPC_Killed_65", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),
@@ -654,6 +663,8 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // S1-E-21g — the EoW head's dig rumble (`SoundID.EOWDiggin`,
     // `SoundID.cs:1763`'s `CreateTrackable("eow_dig")`, one variation).
     "eow_dig",
+    "pal_cattiva_pain",
+    "pal_foxparks_pain",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
