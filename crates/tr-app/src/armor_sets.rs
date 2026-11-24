@@ -81,6 +81,12 @@ pub enum SetFlag {
     ShadowArmor,
     /// `Benefits.Crimson` (`:248-251`).
     CrimsonRegen,
+    /// `Benefits.SpectreHealing`'s `ghostHeal` flag (`:253-257`, W4-d6
+    /// residual) — the `magicDamage -= 0.4f` half rides tr-core SET_STATS.
+    SpectreHeal,
+    /// `Benefits.SpectreDamage` (`:259-262`) — `ghostHurt = true`; the 356
+    /// spawn consumer stays the documented M3-EQUIP skip.
+    SpectreHurt,
     /// `Benefits.Meteor` (`:264-267`).
     SpaceGun,
     /// `Benefits.Gladiator` (`:327-330`).
@@ -169,6 +175,27 @@ pub const SETS: &[ArmorSetRow] = &[
         legs: 794,
         primary: PrimaryPart::None,
         flags: &[SetFlag::CrimsonRegen],
+    },
+    // `:439` — Benefits.SpectreHealing (PartType.Head; the −40% magic
+    // damage half rides tr-core SET_STATS, W4-d6 residual).
+    ArmorSetRow {
+        name: "SpectreHealing",
+        text_key: "ArmorSetBonus.SpectreHealing",
+        head: 1503,
+        body: 1504,
+        legs: 1505,
+        primary: PrimaryPart::Head,
+        flags: &[SetFlag::SpectreHeal],
+    },
+    // `:440` — Benefits.SpectreDamage (PartType.Head).
+    ArmorSetRow {
+        name: "SpectreDamage",
+        text_key: "ArmorSetBonus.SpectreDamage",
+        head: 2189,
+        body: 1504,
+        legs: 1505,
+        primary: PrimaryPart::Head,
+        flags: &[SetFlag::SpectreHurt],
     },
     // `:441` — Benefits.Meteor.
     ArmorSetRow {
@@ -335,6 +362,11 @@ pub fn apply_armor_set_bonuses(p: &mut Player) {
             SetFlag::ShadowArmor => p.shadow_armor = true,
             // `:248-251` — Benefits.Crimson.
             SetFlag::CrimsonRegen => p.crimson_regen = true,
+            // `:253-257` — Benefits.SpectreHealing's ghostHeal (the
+            // magicDamage −0.4 half rides tr-core SET_STATS).
+            SetFlag::SpectreHeal => p.ghost_heal = true,
+            // `:259-262` — Benefits.SpectreDamage's ghostHurt.
+            SetFlag::SpectreHurt => p.ghost_hurt = true,
             // `:264-267` — Benefits.Meteor.
             SetFlag::SpaceGun => p.space_gun = true,
             // `:327-330` — Benefits.Gladiator.
@@ -625,6 +657,37 @@ mod tests {
         p.vampire_burning_in_sunlight = false;
         apply_armor_set_bonuses(&mut p);
         assert!(p.buffs.buff_immune[24]);
+    }
+
+    /// W4-d6 residual — `:439` + `:253-257`: the Spectre Hood set grants
+    /// `ghostHeal` and the −40% magic damage (tr-core SET_STATS). The Mask
+    /// set (`:440` + `:259-262`) grants `ghostHurt` instead — the two heads
+    /// never co-grant. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_spectre_sets_grant_their_ghost_flags_and_the_hood_damage_cut() {
+        let (w, mut p) = rig();
+        wear(&w, &mut p, 1503, 1504, 1505);
+        assert!(p.ghost_heal, "the hood set's ghostHeal (:255)");
+        assert!(!p.ghost_hurt, "the hood never grants ghostHurt");
+        // The pieces: robe +7% (:13686-13690), pants +8% (:13691-13696);
+        // the set: −40% (:256). 1 + 0.07 + 0.08 − 0.4 = 0.75.
+        assert!(
+            (p.magic_damage - 0.75).abs() < 1e-4,
+            "the −40% set cut lands once ({})",
+            p.magic_damage
+        );
+        // The mask set: ghostHurt, no heal, no cut (the mask piece's own
+        // +10% magic damage stands, ARMOR_STATS 2189).
+        let (w2, mut p2) = rig();
+        wear(&w2, &mut p2, 2189, 1504, 1505);
+        assert!(p2.ghost_hurt, "the mask set's ghostHurt (:261)");
+        assert!(!p2.ghost_heal);
+        assert!((p2.magic_damage - 1.25).abs() < 1e-4, "1 + 0.1 + 0.07 + 0.08");
+        // ResetEffects clears both (`Player.cs:18723-18724`); the seam
+        // re-grants per tick — a bare apply after a manual clear re-arms.
+        p.ghost_heal = false;
+        apply_armor_set_bonuses(&mut p);
+        assert!(p.ghost_heal);
     }
 
     /// `:438` + `:248-251` — Crimson: the flag and the regen-time add

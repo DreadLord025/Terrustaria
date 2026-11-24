@@ -377,6 +377,16 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (2275, 4256, 0),
         SetStats { mana_max: 60, ..stats() },
     ),
+    // `:439` Benefits.SpectreHealing — `magicDamage -= 0.4f` (`:253-257`;
+    // the `ghostHeal` flag half rides the app-side `armor_sets.rs` seam —
+    // its consumer is the PVE damage walk's heal-orb spawn, W4-d6 residual).
+    (
+        "SpectreHealing",
+        (1503, 1504, 1505),
+        SetStats { magic_damage: -0.4, ..stats() },
+    ),
+    // `:440` Benefits.SpectreDamage is flag-only (`ghostHurt`, `:259-262`)
+    // — no SET_STATS row, like Crimson/Meteor; the app seam's SETS carries it.
     // `:444` Benefits.Molten — `meleeDamage += 0.1f` (`:281-289`; the
     // `fireWalk` and the GATED `buffImmune[24]` halves ride the app-side
     // `armor_sets.rs` seam — the gate needs the player flag).

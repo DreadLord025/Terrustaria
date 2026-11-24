@@ -2441,6 +2441,11 @@ fn portrait_data(
             (sheet_i, h, 28.0, 22.0, white)
         }
         // E8 merge: the c10 12-critter portrait tail dropped (d40/c8's arms above).
+        // W4-d9 wiring (d40 rows): the dragon head's portrait box (the
+        // SetDefaults 32x32; the segments fold onto its entry). The 521
+        // squidhead's 60x60 box rides its own entry.
+        (NpcKind::CultistDragonHead, _) => (sheet_i, 32.0, 32.0, 32.0, white),
+        (NpcKind::AncientCultistSquidhead, _) => (sheet_i, 60.0, 60.0, 60.0, white),
     }
 }
 

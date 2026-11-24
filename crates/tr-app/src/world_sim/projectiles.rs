@@ -173,6 +173,19 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // read (`Projectile.cs:25512`), snapshotted off the held ItemDef.
         held_pick_positive: crate::registry::item(app.inventory[app.selected].kind)
             .is_some_and(|it| it.pick > 0),
+        // W4-d10 — `AI_099_1_Counterweights`'s channel push (`:67521`):
+        // the frame-head `UpdateMainMouse` snapshot (`PlayerInput.cs:
+        // 911-917`), already in the world-update zoom basis
+        // (`SetZoom_MouseInWorld`, `:2528-2542`). Drained per projectile
+        // tick — every sub-step reads the same per-tick delta, exactly
+        // like the C# reads the same `Main.mouseX/lastMouseX` pair.
+        mouse_delta: (app.mouse_tick_delta.x, app.mouse_tick_delta.y),
+        // W4-d10 — the yoyo-string accessory grants (`Player.cs:14710-
+        // 14754`, the `ApplyEquipFunctional` rows; `ResetEffects` clears
+        // per tick `:18435`/`:18439`). The yoyo arm's lifetime/range terms
+        // and the counterweight's radius/ghost split read them.
+        yoyo_string: app.player.as_ref().is_some_and(|p| p.yoyo_string),
+        magic_string: app.player.as_ref().is_some_and(|p| p.magic_string),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)
@@ -264,6 +277,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
     });
     app.projectiles.set_spear_owner(spear_owner);
+    // W4-d9 — the aiStyle-90 lantern's owner snapshot
+    // (`Projectile.cs:32389-32416`'s `Main.player[owner]` reads; the scan
+    // gate's `Main.myPlayer` centre folds onto the same owner — the port
+    // simulates only the local owner's slots single-player). The screen
+    // width rides `app.screen_size()` (the `Main.screenWidth` stand-in).
+    let lantern_owner = app.player.as_ref().map(|p| {
+        let (cx, cy) = p.center();
+        crate::projectile_ai_style90::LanternOwner {
+            center: Vec2::new(cx, cy),
+            direction: p.facing,
+            dead: p.dead,
+            magic_lantern: p.magic_lantern,
+        }
+    });
+    app.projectiles.set_lantern_owner(lantern_owner);
+    app.projectiles.set_screen_width(sw as i32);
 
     // S1-P-i35 — the bobber arm's per-tick player/world snapshot (`AI_061` +
     // `FishingCheck`'s `Main.player[owner]` reads, `Projectile.cs:53658+`).
@@ -332,10 +361,66 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
     });
     app.projectiles.set_bobber_inputs(bobber_inputs);
+    // W4-d7 F3 — the Companion Cube's darkness read (`Projectile.cs:49527-
+    // 49528`): the two `Lighting.GetColor` samples (the cube's centre tile +
+    // the owner's centre tile) as `Color.ToVector3()` lengths. `GetColor`
+    // (`Lighting.cs:216-242`) byte-quantizes `(int)(engineColor * GlobalBrightness
+    // * 255)` clamped to 255, then `ToVector3` divides by 255 — so the length is
+    // the brightness-scaled, byte-truncated colour. GlobalBrightness is 1.2
+    // (`Lighting.cs:91`), dropped to 1.0 by the Darkness debuff's `blind` flag
+    // (`:114`). Sampled from the live light map before the pass (the `set_disco`
+    // precedent); only when a cube is owned.
+    let cube_light = app.player.as_ref().and_then(|p| {
+        let cube = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == crate::projectile::COMPANION_CUBE && s.owner == 0)?;
+        let brightness = if p.blind { 1.0 } else { tr_core::lighting::GLOBAL_BRIGHTNESS };
+        // `Lighting.cs:224` precomputes `num = GlobalBrightness * 255f` ONCE,
+        // then `(int)(color.X * num)` — the multiply order matters for the
+        // byte truncation, so fold the scale first (not `v * b * 255`).
+        let scale = brightness * 255.0;
+        let len = |wx: f32, wy: f32| {
+            let c = app.light.get((wx / 16.0) as i32, (wy / 16.0) as i32);
+            let byte = |v: f32| ((v * scale) as i32).min(255) as f32 / 255.0;
+            let (r, g, b) = (byte(c[0]), byte(c[1]), byte(c[2]));
+            (r * r + g * g + b * b).sqrt()
+        };
+        let (pcx, pcy) = p.center();
+        Some((
+            len(cube.pos.x + cube.w * 0.5, cube.pos.y + cube.h * 0.5),
+            len(pcx, pcy),
+        ))
+    });
+    app.projectiles.set_cube_light(cube_light);
+    // W4-d7 F3 — the Storm Tigers' special-attack gem count
+    // (`ownedProjectileCounts[831]`, `Projectile.cs:49039`) + the
+    // `Main.timeForVisualEffects` draw clock (the state-5 cosine bob,
+    // `:49683`; the `anim_time * 60 % 216000` form, `frame/draw.rs:374`).
+    let gem_counts = app.player.as_ref().map_or((0, 0), |p| {
+        (p.owned_projectile_counts[831], p.owned_projectile_counts[970])
+    });
+    app.projectiles.set_tiger_gem_counts(gem_counts);
+    app.projectiles.set_time_for_visuals((app.anim_time * 60.0) % 216000.0);
     // `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll reads
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // W4-d1 — `Main.infectedSeed` as the PurificationPowder 10's spawn-time
+    // box growth reads it (`Projectile.cs:907-911`): the world's
+    // `SecretSeed.worldIsInfected` micro-seed flag (`WorldGen.cs:559-562`).
+    app.projectiles.set_infected_seed(
+        app.world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+    );
+    // W4-d3 — `Main.tileFrame[665]` as the aiStyle-25 1014 LifeCrystalBoulder's
+    // frame pin reads it (`Projectile.cs:26028`); the tile animator owns the
+    // row (`app.tile_anim`, S1-G-1f), the pool only reads it (the `set_disco`
+    // pattern).
+    let frame_665 = app.tile_anim.tile_frame[665];
+    app.projectiles.set_tile_frame_665(frame_665);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -387,8 +472,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(ctx) = golf_ctx {
         app.projectiles.set_golf_context(ctx);
     }
+    // W4-d3 — the boulder dust/gore lane's live seam (the W4-g64/g16 shapes):
+    // the frame's spawn ctx (`Main.screenPosition/width/height` + the gfx
+    // budget) captured BEFORE the step closure's field borrows, and the App's
+    // gore pool moved in for the step (the `golf_ctx` take/replace precedent).
+    let dust_spawn_ctx = app.spawn_ctx();
+    let gore_pool = std::mem::replace(&mut app.gore, tr_core::gore::GorePool::new());
+    app.projectiles.set_gore_pool(Some(gore_pool));
     app.projectile_step.tick(dt.min(0.25), |_| {
-        app.projectiles.update(
+        app.projectiles.update_dust(
             &mut app.world,
             &mut app.npcs,
             owner,
@@ -399,8 +491,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
             local_owner,
             hostile_local,
+            &mut app.dust,
+            &dust_spawn_ctx,
         );
     });
+    // W4-d3 — the gore pool writeback: the boulder Kill arms spawned into it.
+    if let Some(pool) = app.projectiles.take_gore_pool() {
+        app.gore = pool;
+    }
     app.projectile_step.cap_backlog();
     // S1-P-i55 — the golf context writeback: the arms mutated the clone
     // (RecordSwing / the cup scoring); the resolved state is authoritative
@@ -557,6 +655,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // 1.0). The by-name façade keeps the volume (the
             // play_chillet_sound precedent).
             app.audio.play_foxparks_flame(x, y, rng);
+        } else if id == 18 {
+            // W4-d1 retire — the falling-block forced placement's coin-pile
+            // tail (`WorldGen.cs:60273-60278`: the legacy Coins 18, the int
+            // overload — no draws, no pitch, `LegacySoundPlayer.cs:865-869`;
+            // the `place_tile_sound` table's 330-333 arm).
+            app.audio.play_place_sound((18, 1), x, y, rng);
         } else {
             // S1-E-21h f1 — the queue's sixth term (d77's `volumeScale`
             // seam, adopted from `9d35874a`): the id-0/13/4 int-overload
@@ -588,6 +692,33 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.vy = vy;
         n.worm_id = 1;
         app.npcs.push(n);
+    }
+    // W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn
+    // (`Projectile.cs:32346-32356`): the VANILLA ids 454/521 resolve through
+    // `kind_from_net_id` (the bestiary NET-id space, the
+    // `spawn_shimmer_release` precedent — NOT `from_u16`'s CS ids). The
+    // dragon head (454, the d40 rows) and the squidhead (521, ported from
+    // `NPC.cs:15768-15779`) now have port kinds. `NPC.NewNPC`'s Bottom =
+    // (X, Y) (`NPC.cs:80770`) — the spawn site subtracts the half-width +
+    // the full height (the shark-spawn precedent). The C# stores the
+    // returned NPC index into the marker's `ai[1]` (`:32350`/`:32354`);
+    // the port's compacted NPC vec re-derives indices each tick, so the
+    // write-back rides the current push index (the saucer host-link
+    // convention, `world_sim/npcs.rs`'s carrier pre-pass).
+    for (slot, npc_type, x, y) in app.projectiles.drain_ritual_npc_spawns() {
+        let Some((kind, slime)) = crate::npc::kind_from_net_id(npc_type as i32) else {
+            continue;
+        };
+        let (w, h) = kind.size();
+        let mut n = crate::npc::Npc::new(kind, x - w * 0.5, y - h, 1, 0.0);
+        n.slime = slime;
+        n.hp = n.max_hp;
+        n.net_update = true;
+        let idx = app.npcs.len();
+        app.npcs.push(n);
+        // The C#'s `this.ai[1] = NPC.NewNPC(...)` — the host-validity arm
+        // (`Projectile.cs:32362-32381`) reads the index next tick.
+        app.projectiles.set_ai1(slot, idx as f32);
     }
     // `AI_108`'s 578 bolt spawn (`Projectile.cs:33838-33841`): the lightning
     // marker resolves into the ritual bolt (580) with the marker's payload.
@@ -648,12 +779,71 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.net_update = true;
         app.npcs.push(n);
     }
+    // W4-d1 — the aiStyle-6 fertilizer cloud's sapling growth
+    // (`Projectile.cs:24213-24220`'s `AttemptToGrowTreeFromSapling` calls):
+    // the growth draws `WorldGen.genRand`, so the pool arm parked the
+    // requests and the pass resolves them on the `UpdateWorldGen` stream
+    // (the `palm_frame_rolls` deferral precedent, `world_sim/editing.rs`).
+    // The `treeHeightAddon` / `ignoreWalls` args park in the growth port
+    // today (`growth/trees.rs`, M5-SEED-1) — the request carries them.
+    for (x, y, underground, _addon) in app.projectiles.drain_sapling_grows() {
+        let _ = tr_core::growth::attempt_grow_tree_from_sapling(
+            &mut app.world,
+            x,
+            y,
+            underground,
+            app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+        );
+    }
     // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
     // case 19's playing guard refuses BEFORE the one pitch draw, on the
     // `UpdateProjectiles` stream (the C# plays inline mid-`AI_061`; the port
     // drains at the pass tail, the S1-E-21c convention).
     for (style, x, y) in app.projectiles.drain_splashes() {
         app.audio.play_splash_sound(style, x, y, rng);
+    }
+    // W4-d4 — the beach ball's `Game.BallBounceResult` broadcasts
+    // (`Projectile.cs:18605-18608`, the type-155 movement arm): the C#
+    // `ChatHelper.BroadcastChatMessage(..., ChatColors.ServerMessage)` runs
+    // inline mid-`HandleMovement`; the port drains the pool's queued lines
+    // at the pass tail (the golf cup-chat precedent).
+    for text in app.projectiles.drain_ball_chats() {
+        app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
+    }
+    // W4-d4 — the Mechanical Piranha's `SetDummyItemTime(5)`
+    // (`Projectile.cs:27528`): the C# calls it per active piranha per
+    // sub-step (idempotent); the port applies ONE dummy-item-time(5) when
+    // the pool flagged it. `SetDummyItemTime` (`Player.cs:4432-4441`):
+    // itemAnimation = itemTime = frames, itemTimeMax = frames + 1 — the
+    // port's swing is the animation, item_time the action cadence (the
+    // golf `PlayerWrites` dummy arm, `world_sim/projectiles.rs`).
+    if app.projectiles.drain_piranha_dummy() {
+        app.swing = 5.0 / 60.0;
+        app.swing_max = app.swing;
+        app.item_time = 5.0 / 60.0;
+    }
+    // W4-d10 — the Coin Portal's gold-coin fountain (`Projectile.cs:32932-
+    // 32933`): `Item.NewItem` of the Gold Coin 73 (stack 1, prefix 0) at
+    // the truncated centre with the arm's EXPLICIT velocity — the
+    // RotatedByRandom pair + the NextFloat speed already drew on the
+    // `UpdateProjectiles` stream inside the AI; the explicit-velocity arm
+    // (`Item.cs:49738-49741`) skips the scatter pair and prefix 0 rolls
+    // nothing, so this drain is stream-neutral. The 14×14 item box centres
+    // on the spawn point (`WorldItem.Center = center`, `Item.cs:49736`).
+    for (x, y, vx, vy) in app.projectiles.drain_coin_drops() {
+        app.items.push(crate::item::ItemDrop::new(
+            73,
+            1,
+            0,
+            x - crate::item::SIZE * 0.5,
+            y - crate::item::SIZE * 0.5,
+            vx,
+            vy,
+            0.0,
+        ));
+        if app.items.len() > 300 {
+            app.items.remove(0);
+        }
     }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
@@ -693,6 +883,167 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     glam::Vec2::new(cx, cy),
                 );
             }
+        }
+    }
+    // W4-d1 — the falling-block death placement's item drops
+    // (`Kill_ExplodeTiles`'s aiStyle-10 arm, `Projectile.cs:77562-77569`'s
+    // `Item.RequestNewItem`): the refused placement / occupied cell drops
+    // the block item at the parked pixel point. The C# queues the request
+    // under the `UpdateProjectiles` swap and `Main.UpdateItems` resolves
+    // it (`Item.NewItem`'s velocity/prefix draws ride the `UpdateItems`
+    // stream — the `drain_catches` convention).
+    for (item, x, y) in app.projectiles.drain_block_drops() {
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateItems),
+            item,
+            1,
+            glam::Vec2::new(x, y),
+        );
+    }
+    // W4-d6 — the aiStyle-60 slime walk's campfire-validate mismatch kills
+    // (`Wiring.ToggleCampFire` → `ValidateTileSquareIsActiveAndOfType`,
+    // `Wiring.cs:3012` → `WorldGen.cs:37891-37914`): the object drops spawn
+    // on the `UpdateProjectiles` stream (the walk ran inside the pool's
+    // update — the actuation-drops precedent, `world_sim/wiring.rs`).
+    for drop in app.projectiles.drain_light_drops() {
+        if let Some(id) = drop
+            .item
+            .map(|i| i as u16)
+            .or_else(|| crate::registry::tile_drop(drop.tile_kind, 0))
+        {
+            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, drop.x, drop.y);
+        }
+    }
+    // W4-d6 residual — the Spectre-heal orb spawns (`Projectile.ghostHeal`,
+    // `Projectile.cs:12095`): the damage walk queued `(owner, x, y, ai0,
+    // ai1)` per qualifying hit; the pass spawns each 298 CENTRED on the
+    // victim point (`NewProjectile`'s half-extent subtract,
+    // `Projectile.cs:10876-10877` — the c6 BladeShot precedent), zero
+    // velocity, damage 0, knockback 0. Draw-free (the 298 NewProjectile
+    // path rolls nothing — no spawn-roll case, no crit at spawn).
+    for (owner, x, y, ai0, ai1) in app.projectiles.drain_heal_orbs() {
+        let d = crate::projectile::proj_data(crate::projectile::SPIRIT_HEAL);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::SPIRIT_HEAL,
+            owner,
+            x - hw,
+            y - hh,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            ai0,
+            ai1,
+        );
+    }
+    // W4-d6 residual 5 — the Spectre-Mask damage-share spawns
+    // (`Projectile.ghostHurt`, `Projectile.cs:12060`): the damage walk
+    // queued `(owner, x, y, vx, vy, damage, ai0 target)` per qualifying hit
+    // (the direction rolls ran at the hit); the pass spawns each 356
+    // CENTRED on the victim point (the `NewProjectile` half-extent
+    // subtract), zero knockback, ai0 = the RAW npc index the style-59
+    // machine reads. Draw-free spawn (no 356 case in the switch).
+    for (owner, x, y, vx, vy, damage, ai0) in app.projectiles.drain_wraths() {
+        let d = crate::projectile::proj_data(crate::projectile::SPECTRE_WRATH);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::SPECTRE_WRATH,
+            owner,
+            x - hw,
+            y - hh,
+            vx,
+            vy,
+            damage,
+            0.0,
+            ai0,
+            0.0,
+        );
+    }
+    // W4-d6 residual 5 — the Vampire Knives' heal-orb spawns
+    // (`Projectile.vampireHeal`, `Projectile.cs:12104`): `(owner, x, y,
+    // ai0 owner, ai1 float share)` per qualifying 304 hit; the pass spawns
+    // each 305 centred on the victim, zero velocity, damage 0. Draw-free.
+    for (owner, x, y, ai0, ai1) in app.projectiles.drain_vampire_orbs() {
+        let d = crate::projectile::proj_data(crate::projectile::VAMPIRE_HEAL);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::VAMPIRE_HEAL,
+            owner,
+            x - hw,
+            y - hh,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            ai0,
+            ai1,
+        );
+    }
+    // W4-d6 residual 8 — the gun streams' Kill-splash dust
+    // (`Projectile.cs:74029-74147`): the death hook snapshotted the dying
+    // 358/406/1042 corpses (the velocity base already written); the drain
+    // emits the 50/40/50 dusts on the LIVE DustPool, the explicit gates +
+    // the `new_dust` internals on the `UpdateProjectiles` stream in C#
+    // order (the g65 gallop-dust pass-tail convention).
+    let gun_splashes = app.projectiles.drain_gun_splashes();
+    if !gun_splashes.is_empty() {
+        let ctx = app.spawn_ctx();
+        crate::projectile_gun_splash::drain(
+            gun_splashes,
+            &mut app.dust,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            &ctx,
+            &app.world,
+        );
+    }
+    // W4-d4 — `Kill()`'s world-drop drain (`Projectile.cs:77572-77615` the
+    // rope-coil refund ladder, `:77620-77623` the beach ball's return): the
+    // pool's death hook queued `(item, stack, base.Center, zero_velocity)`;
+    // each spawns an `Item.NewItem` WORLD drop at the recorded centre (NOT
+    // a bobber catch — no inventory hand-off). The COIL calls pass no
+    // velocity, so the C# draws the pair inline under `Kill()`
+    // (`Item.cs:49749-49750`: X = Next(-30,31)*0.1, Y = Next(-40,-15)*0.1 —
+    // none of the kinds is `ItemNoGravity`, `ItemID.cs:1320`); the BALL
+    // call passes `Vector2.Zero` (`:77622`) — the `velocity.HasValue` arm
+    // (`Item.cs:49738-49741`) sets (0,0) and draws NOTHING (the SEAL-VERIFY
+    // fix). `prefix: 0` draws nothing. The port defers the spawn to the
+    // pass tail on the `UpdateItems` stream (`Main.cs:17779` — the bobber
+    // overflow's recorded stream deviation). The `ReserveForLocalPlayer`
+    // ownership sets only `enemyGrabDelayTime` in netMode 0
+    // (`WorldItem.cs:295-305`), unported — the drop is player-grabbable
+    // immediately (the lucky-coin precedent).
+    for (item, stack, cx, cy, zero_velocity) in app.projectiles.drain_death_drops() {
+        if stack <= 0 {
+            continue;
+        }
+        let (vx, vy) = if zero_velocity {
+            (0.0, 0.0)
+        } else {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+            (
+                rng.next_range(-30, 31) as f32 * 0.1,
+                rng.next_range(-40, -15) as f32 * 0.1,
+            )
+        };
+        // `WorldItem.Center = center` (`Item.cs:49736`) — the port's 14×14
+        // drop box centred on the dead projectile's centre (the universal
+        // `ItemDrop` box deviation, the bug-net catch precedent).
+        let half = crate::item::SIZE * 0.5;
+        let drop = crate::item::ItemDrop::new(
+            item,
+            stack as u32,
+            0,
+            cx - half,
+            cy - half,
+            vx,
+            vy,
+            0.0,
+        );
+        app.items.push(drop);
+        if app.items.len() > 300 {
+            app.items.remove(0);
         }
     }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
@@ -807,6 +1158,275 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     }
                 }
             }
+        }
+    }
+    // W4-d3 — the aiStyle-25 boulder family's parked requests, drained at the
+    // pass tail (the `drain_mark_spawns` shape — the pool cannot borrow the
+    // App). The C# rolls the drops/bees and trips the switches inline under
+    // the `UpdateProjectiles` swap; the port defers the App-borrowing resolves
+    // here, keeping the rolls on this pass's stream (the stack/count/velocity
+    // rolls already ran in the kill hook / arm).
+    // The item drops (`Item.NewItem`, `Projectile.cs:74952`/`:74956`/`:75096`):
+    // the velocity/prefix draws ride the `UpdateItems` stream (`Main.cs:17779`
+    // — the bobber-catch precedent); the spawn point is the dying boulder's
+    // centre (`NewItem`'s `center` argument).
+    for (item, stack, x, y) in app.projectiles.drain_boulder_drops() {
+        if stack <= 0 {
+            continue;
+        }
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateItems),
+            item,
+            stack as u32,
+            Vec2::new(x, y),
+        );
+    }
+    // The 655 bee-hive death's bee spawns (`:75116-75118`): `NPC.NewNPC`'s
+    // Bottom placement (`NPC.cs:80769-80770` — the Queen-Bee volley precedent,
+    // `world_sim/npcs.rs:5507`), the rolled velocity kicks, `netUpdate`.
+    // `CanBeReplacedByOtherNPCs` has no port field — dropped (the volley's
+    // recorded fold).
+    let mut boulder_bees = Vec::new();
+    for (kind, x, y, vx, vy) in app.projectiles.drain_boulder_bees() {
+        let npc_kind = match kind {
+            210 => crate::npc::NpcKind::Bee,
+            211 => crate::npc::NpcKind::BeeSmall,
+            _ => unreachable!("the hive burst draws only 210/211"),
+        };
+        let (bw, bh) = npc_kind.size();
+        let mut bee = crate::npc::Npc::new(npc_kind, x - bw * 0.5, y - bh, 1, 0.0);
+        bee.hp = bee.max_hp;
+        bee.vx = vx;
+        bee.vy = vy;
+        bee.net_update = true;
+        boulder_bees.push(bee);
+    }
+    app.npcs.append(&mut boulder_bees);
+    // The `Collision.SwitchTiles` requests the arm parked (the `:17089`
+    // objType-3 plate scan, the `:19863`/`:17790` objType-4 pad calls). The
+    // scan's plate drops and Mech-28 clicks ride THIS pass's stream (the C#
+    // call sits inside `UpdateProjectiles`, `Main.cs:17775`); the `59` sends
+    // ride the outcome (the golf PadProbe precedent).
+    let boulder_switches: Vec<_> = app
+        .projectiles
+        .slots_mut()
+        .iter_mut()
+        .flat_map(|p| std::mem::take(&mut p.wants_boulder_switches))
+        .collect();
+    for (px, py, ox, oy, w, h, obj_type) in boulder_switches {
+        let outcome = crate::collision::switch_tiles(
+            &mut app.wiring,
+            &mut app.world,
+            px,
+            py,
+            ox,
+            oy,
+            w,
+            h,
+            obj_type,
+        );
+        if let Some((item, tx, ty)) = outcome.dropped {
+            crate::world_sim::items::spawn_item_drop_fields(
+                &mut app.items,
+                app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                item,
+                1,
+                tx,
+                ty,
+            );
+        }
+        app.send_switch_outcome(&outcome);
+        for (cx, cy) in app.wiring.take_switch_clicks() {
+            app.audio.play_switch_click(
+                cx as f32,
+                cy as f32,
+                app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            );
+        }
+    }
+}
+
+/// W4-d6 residual 7 — the 298-orb chain end-to-end (written, NOT run —
+/// code-only mode): the Spectre-Hood hit queues the intent, the pass-tail
+/// drain spawns the orb centred, and the armed style-52 dispatch flies it
+/// into the player for the contact heal (`Projectile.cs:28504-28532`).
+#[cfg(test)]
+mod w4_d6_heal_orb_chain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::{LOST_SOUL, SPIRIT_HEAL};
+
+    #[test]
+    fn w4_d6_the_hit_intent_drains_into_a_flying_orb_that_heals_on_contact() {
+        // The 8x8 fixture world, the player parked mid-world; a high-life
+        // zombie overlapping a Lost Soul shot. The hood flag + the missing
+        // health arm the ghostHeal spawn; the drained 298 homes at speed 4
+        // through the (v*15+d)/16 blend and heals on the <50f contact.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.local_id = 0;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        player.hp = 50;
+        player.max_hp = 100;
+        player.ghost_heal = true;
+        player.life_steal = 80.0;
+        app.player = Some(player);
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 56.0, 40.0, 1, 0.0);
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        app.npcs.push(npc);
+        // The magic shot overlapping the victim (the 12x12 soul box),
+        // flying right at 8 px/tick — it exits the 8x8 world (the
+        // out-of-world guard, no Kill) before the id-static 10-tick window
+        // expires, so exactly ONE hit lands and ONE orb spawns.
+        app.projectiles
+            .spawn_with_data_ai_owned(LOST_SOUL, 0, 58.0, 44.0, 8.0, 0.0, 100, 0.0, 0.0, 0.0);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The drain spawned the orb: centred on the POST-strike victim
+        // centre (the 6x6 half-extent subtract), ai0 = the local player
+        // (the missing-health scan), ai1 = the 0.2 float share.
+        let orb = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == SPIRIT_HEAL)
+            .expect("the drained 298 lives");
+        let n = &app.npcs[0];
+        let (nw, nh) = n.size();
+        assert_eq!(orb.ai[0], 0.0, "the target scan picked the local player");
+        let strike = 10_000 - n.hp;
+        assert!(strike > 0, "the hit landed");
+        // The drain runs at the pass TAIL, so the orb's first AI tick is
+        // the NEXT pass — this tick it holds the spawn velocity 0.
+        assert!(orb.vel.length() < 1e-6, "the drain spawns at rest");
+        let heal = orb.ai[1];
+        assert!((heal - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
+        // The next ticks: the armed 52 dispatch blends toward the player
+        // (the victim centre is ~15f from the player centre — inside the
+        // 50f contact radius, so the box overlap decides; the orb closes
+        // the last few px within a tick or two). Fly it home.
+        for _ in 0..40 {
+            update_projectiles(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            !app.projectiles
+                .slots()
+                .iter()
+                .any(|p| p.active && p.kind == SPIRIT_HEAL),
+            "the contact killed the orb (:28526)"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert!(p.hp > 50, "the contact healed");
+        assert!(p.hp <= 100, "the statLifeMax2 cap");
+    }
+}
+
+/// W4-d4 union — the `Kill()` world-drop drain's wire + stream contract
+/// (written, NOT run — code-only): the coil refund ladder
+/// (`Projectile.cs:77572-77615`) spawns `Item.NewItem` world drops at the
+/// recorded centre, TWO integer draws on the `UpdateItems` stream per drop
+/// (`Item.cs:49749-49750`); the beach ball's return (`:77620-77623`) passes
+/// `Vector2.Zero` — the `HasValue` arm draws NOTHING (the SEAL-VERIFY
+/// fix). Every other stage stream pristine.
+#[cfg(test)]
+mod w4_d4_death_drop_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::projectile::{ROPE_COIL, VINE_ROPE_COIL};
+    use tr_core::UnifiedRandom;
+
+    /// A coil hovering inside the 8×8-tile fixture world with the given
+    /// placed-count. `time_left = 1` expires it on the first pass tick
+    /// (the lifetime block) without any placement contact.
+    fn coil_app(kind: u16, placed: f32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let s = app
+            .projectiles
+            .spawn_with_data_ai(kind, 32.0, 32.0, 0.0, 0.0, 0, 0.0, 0.0, placed)
+            .unwrap();
+        app.projectiles.slots_mut()[s].time_left = 1;
+        app
+    }
+
+    /// The unplaced coil returns ONE coil item; the partially placed one
+    /// returns `10−ai[1]` rope items — both as WORLD drops at the coil's
+    /// centre, not inventory hand-offs (the C# `RequestNewItem`, not the
+    /// bobber's `GiveItemToPlayer`).
+    #[test]
+    fn w4_d4_union_the_coil_expiry_drains_the_refund_as_a_world_drop() {
+        let mut app = coil_app(ROPE_COIL, 0.0);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "one refund drop");
+        let d = &app.items[0];
+        assert_eq!((d.kind, d.count), (985, 1), "the coil item back (`:77576`)");
+        // The 14×14 box centred on (39, 39) — the coil's centre at death.
+        assert!((d.center().x - 39.0).abs() < 1e-3 && (d.center().y - 39.0).abs() < 1e-3);
+        assert_eq!(d.prefix, 0, "prefix: 0 (`:77576`)");
+        assert_eq!(d.grab_delay_time, 0, "netMode 0 sets no player delay");
+        // The velocity pair on the UpdateItems stream: X = Next(-30,31)*0.1,
+        // Y = Next(-40,-15)*0.1 (`Item.cs:49749-49750`), seed 0.
+        let mut expect = UnifiedRandom::new(0);
+        let vx = expect.next_range(-30, 31) as f32 * 0.1;
+        let vy = expect.next_range(-40, -15) as f32 * 0.1;
+        assert!((d.vel.x - vx).abs() < 1e-6 && (d.vel.y - vy).abs() < 1e-6);
+        assert_eq!(*app.rngs.stream(RngKey::UpdateItems), expect, "exactly two draws");
+        for key in RngKey::ALL {
+            if key != RngKey::UpdateItems {
+                assert_eq!(
+                    *app.rngs.stream(key),
+                    UnifiedRandom::new(0),
+                    "{} pristine",
+                    key.name()
+                );
+            }
+        }
+        // The partial refund: ai[1] = 4 → 6 vine-rope items (`:77591`).
+        let mut app2 = coil_app(VINE_ROPE_COIL, 4.0);
+        update_projectiles(&mut app2, 1.0 / 60.0);
+        assert_eq!(app2.items.len(), 1);
+        assert_eq!((app2.items[0].kind, app2.items[0].count), (2996, 6));
+        // The full budget drops nothing — the drain never runs.
+        let mut app3 = coil_app(ROPE_COIL, 10.0);
+        update_projectiles(&mut app3, 1.0 / 60.0);
+        assert!(app3.items.is_empty(), "10 placed → no refund");
+        for key in RngKey::ALL {
+            assert_eq!(*app3.rngs.stream(key), UnifiedRandom::new(0), "{} pristine", key.name());
+        }
+    }
+
+    /// The beach ball's zero-velocity death returns ONE Beach Ball (859)
+    /// at `base.Center` (`:77620-77623`) — the same drain, but the call
+    /// passes `Vector2.Zero` (`:77622`): the `velocity.HasValue` arm
+    /// (`Item.cs:49738-49741`) sets (0,0) and draws NOTHING (the
+    /// SEAL-VERIFY fix — the earlier two-draw pin misread the call).
+    #[test]
+    fn w4_d4_union_the_beach_ball_return_drains_on_the_items_stream() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.projectiles
+            .spawn_with_data(crate::projectile::BEACH_BALL, 32.0, 32.0, 0.0, 0.0, 0, 0.0);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "the ball returns");
+        let d = &app.items[0];
+        assert_eq!((d.kind, d.count), (859, 1), "`:77622`");
+        // The 44×44 ball's centre: (54, 54.1) — the death hook reads the
+        // post-integrate slot (the dry gravity tail's 0.1 dead-tick move,
+        // the pool-wide hook timing deviation).
+        assert!((d.center().x - 54.0).abs() < 1e-3 && (d.center().y - 54.1).abs() < 1e-3);
+        assert!(
+            d.vel.x == 0.0 && d.vel.y == 0.0,
+            "Vector2.Zero — the HasValue arm sets (0,0)"
+        );
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine — the explicit velocity draws nothing",
+                key.name()
+            );
         }
     }
 }
@@ -1619,3 +2239,64 @@ mod s1_p_i09_yoyo_snapshot_tests {
     }
 }
 })
+
+/// W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn drain
+/// (`Projectile.cs:32346-32356`): the VANILLA ids 454/521 resolve through
+/// `kind_from_net_id` into real NPC spawns (the d40 dragon rows + the
+/// ported 521 squidhead), and the returned NPC index writes back into the
+/// marker's `ai[1]` (the C#'s `this.ai[1] = NPC.NewNPC(...)`). WRITTEN, NOT
+/// RUN (code-only mode).
+#[cfg(test)]
+mod w4_d9_ritual_spawn_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::CULTIST_RITUAL;
+
+    /// A ritual marker parked at (40, 40) inside the 8x8-tile (128-px)
+    /// fixture world, with a live cultist host at NPC index 0. The
+    /// 300-tick spawn request is seeded directly (the AI arm's own
+    /// witness pins the 300-tick gate; this pins the DRAIN).
+    fn ritual_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut host = crate::npc::Npc::new(crate::npc::NpcKind::AncientCultist, 10.0, 10.0, 1, 0.0);
+        host.hp = host.max_hp;
+        app.npcs.push(host);
+        let slot = app.projectiles
+            .spawn_hostile_ai(CULTIST_RITUAL, Vec2::new(40.0, 40.0), Vec2::ZERO, 0, 0.0, 0.0, 0.0)
+            .expect("the 490 row spawns");
+        app.projectiles.slots_mut()[slot].wants_ritual_npc_spawn = Some((454, 60.0, 80.0));
+        app
+    }
+
+    #[test]
+    fn w4_d9_the_drain_spawns_the_dragon_head_and_writes_ai1() {
+        let mut app = ritual_app();
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The dragon head spawned at the Bottom convention: centre X 60,
+        // bottom Y 80 → top-left (60 - 16, 80 - 32) = (44, 48).
+        let dragon = app.npcs.iter().find(|n| n.kind == crate::npc::NpcKind::CultistDragonHead)
+            .expect("the 454 resolved through kind_from_net_id");
+        assert_eq!((dragon.x, dragon.y), (44.0, 48.0), "NPC.NewNPC's Bottom = (X, Y)");
+        assert_eq!(dragon.hp, dragon.max_hp, "the spawn is at full life");
+        // The marker's ai[1] carries the returned NPC index (the host-
+        // validity arm reads it next tick).
+        let marker = app.projectiles.slots().iter().find(|p| p.active && p.kind == CULTIST_RITUAL)
+            .expect("the marker lives (its host is valid)");
+        let idx = app.npcs.iter().position(|n| n.kind == crate::npc::NpcKind::CultistDragonHead).unwrap();
+        assert_eq!(marker.ai[1], idx as f32, "the ai[1] write-back");
+        assert!(marker.wants_ritual_npc_spawn.is_none(), "the intent drained");
+    }
+
+    #[test]
+    fn w4_d9_the_drain_spawns_the_squidhead_when_requested() {
+        let mut app = ritual_app();
+        let slot = app.projectiles.slots().iter().position(|p| p.active && p.kind == CULTIST_RITUAL).unwrap();
+        app.projectiles.slots_mut()[slot].wants_ritual_npc_spawn = Some((521, 60.0, 80.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The squidhead's 60x60 box: top-left (60 - 30, 80 - 60) = (30, 20).
+        let squid = app.npcs.iter().find(|n| n.kind == crate::npc::NpcKind::AncientCultistSquidhead)
+            .expect("the 521 resolved through kind_from_net_id");
+        assert_eq!((squid.x, squid.y), (30.0, 20.0));
+        assert_eq!(squid.hp, 2000, "the squidhead's lifeMax");
+    }
+}

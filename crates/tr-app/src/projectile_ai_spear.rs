@@ -125,8 +125,9 @@ fn kill(p: &mut Projectile) {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SpearOwner {
     /// `player.RotatedRelativePoint(player.MountedCenter)` (`:45860`) — the
-    /// spear's anchor. The port's `mounted_center()` folds to `center()` (no
-    /// mount offsets) and `rotated_relative_point` applies `fullRotation`.
+    /// spear's anchor. `mounted_center()` is LIVE (W4-d8 retire (1): the
+    /// HeightOffset family, `center()` unmounted) and
+    /// `rotated_relative_point` applies `fullRotation`.
     pub anchor: Vec2,
     /// `player.direction` (`:45861`).
     pub direction: i32,

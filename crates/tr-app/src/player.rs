@@ -804,6 +804,12 @@ pub struct Player {
     /// `Player.DeadlySphereMinion` (`Player.cs:1288`) — buff 161's flag, the
     /// chain's last arm (`:10957-10972`).
     pub deadly_sphere_minion: bool,
+    /// `Player.magicLantern` (`Player.cs:2082`) — the MagicLantern light
+    /// pet's keep-alive flag (the aiStyle-90 arm pins `timeLeft = 2` while
+    /// it stands, `Projectile.cs:32393-32396`). WIRED (W4-d9): the buff-152
+    /// arm grants it (`:11372`, `buff_effects_accessory.rs`), the reset
+    /// (`:18485`) rides the same pass's per-tick flag clears.
+    pub magic_lantern: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -2276,6 +2282,28 @@ pub struct Player {
     /// the ramp ×1.5 (`:19242-19245`), fed through `RegenInputs`.
     /// `ResetEffects` clears it (`:18722`).
     pub crimson_regen: bool,
+    /// `Player.ghostHeal` (`ArmorSetBonuses.cs:253-257`, W4-d6 residual):
+    /// the Spectre Hood set's on-hit heal-orb flag — the PVE damage walk's
+    /// `ghostHeal` spawn gate (`Projectile.cs:13818`). `ResetEffects` clears
+    /// it (`Player.cs:18723`).
+    pub ghost_heal: bool,
+    /// `Player.ghostHurt` (`ArmorSetBonuses.cs:259-262`): the Spectre Mask
+    /// set's on-hit Wrath flag — the PVE damage walk's `ghostHurt` spawn
+    /// gate (`Projectile.cs:13822-13825`, W4-d6 residual 5).
+    /// `ResetEffects` clears it (`Player.cs:18724`).
+    pub ghost_hurt: bool,
+    /// `Player.ghostDmg` (`Player.cs:1008`, stock 0): the ghostHurt spawn
+    /// budget — each 356 spawn adds the projectile's damage
+    /// (`Projectile.cs:12028`) and a budget above 1500 refuses further
+    /// spawns (`:12024`); `Player.Update` decays it 6.6666665/tick floored
+    /// at 0 (`:24460-24467`). NOT a `ResetEffects` flag — it persists.
+    pub ghost_dmg: f32,
+    /// `Player.lifeSteal` (`Player.cs:1006`, stock 99999f): the shared
+    /// heal-budget the `ghostHeal`/`vampireHeal` spawns drain
+    /// (`Projectile.cs:12072-12076`/`:12101-12103`); `Player.Update`
+    /// regens it +0.6/tick capped 80 (classic) or +0.5 capped 70 (expert)
+    /// (`:24468-24489`). NOT a `ResetEffects` flag — it persists.
+    pub life_steal: f32,
     /// `Player.ashWoodBonus` (`ArmorSetBonuses.cs:380-383`): the Ash Wood
     /// set's lava-hit halves (`Player.cs:27694-27702`). `ResetEffects`
     /// clears it (`:18325`).
@@ -2369,6 +2397,42 @@ pub struct Player {
     /// 14683`) — the lava-fishing gate (`Projectile.cs:20637`).
     /// `ResetEffects` clears it (`:18513`).
     pub acc_lava_fishing: bool,
+    /// `Player.yoyoString` (`Player.cs:882`): the string-colour accessories
+    /// (`currentItem.stringColor > 0`, `:14710-14713`), the Yoyo Bag 3366
+    /// (`:14728`) and the Magic Yoyo Bag 5541 (`:14752`) — the yoyo range
+    /// ×1.25+30 (`Projectile.cs:67882-67885`), the lifetime ×1.5 (`:67752-
+    /// 67755`) and the counterweight radius +25%+10 (`:67408-67411`).
+    /// `ResetEffects` clears it (`:18439`). W4-d10 (the M3-EQUIP-3 yoyo
+    /// lane — the flag + the AI reads; the equip-gate spawn lane landed
+    /// with the `Player.Counterweight` port, `counter_weight`/`yoyo_glove`
+    /// below).
+    pub yoyo_string: bool,
+    /// `Player.magicString` (`Player.cs:880`): the Magic String 5540
+    /// (`:14734-14737`) and the Magic Yoyo Bag 5541 (`:14753`) — the
+    /// `-1 → -3` ghost split + the 0.75-damage dropped twin
+    /// (`Projectile.cs:67635-67643` counterweight / `:68023-68031` yoyo).
+    /// `ResetEffects` clears it (`:18435`). W4-d10.
+    pub magic_string: bool,
+    /// `Player.counterWeight` (`Player.cs:876`): the counterweight
+    /// projectile kind the bag roll picks — the Yoyo Bag 3366 / Magic
+    /// Yoyo Bag 5541 roll `Next(7) == 0 → 1079` else `556 + Next(6)`
+    /// (`:14716-14726`/`:14740-14750`), the Strung Counterweight 5547
+    /// pins 1079 (`:14755-14758`), the plain counterweights 3309-3314
+    /// pin `556 + type - 3309` (`:14759-14762`). `ResetEffects` clears it
+    /// (`:18436`). The spawn lane `Player.Counterweight`
+    /// (`:12356-12415`) reads it. W4-d10.
+    pub counter_weight: i32,
+    /// `Player.vanityCounterWeight` (`Player.cs:878`): the vanity-slot
+    /// override — `ApplyEquipVanity` (`:14220-14223`) maps a social
+    /// 3309-3314 to `556 + type - 3309`; `Counterweight` spawns the
+    /// vanity kind over the functional one (`:12402-12405`).
+    /// `ResetEffects` clears it (`:18437`). W4-d10.
+    pub vanity_counter_weight: i32,
+    /// `Player.yoyoGlove` (`Player.cs:884`): the Yoyo Bag 3366 / Magic
+    /// Yoyo Bag 5541 / Yoyo Glove 3334 grant (`:14727`/`:14751`/
+    /// `:14763-14766`) — `Counterweight`'s second-yoyo arm
+    /// (`:12384-12393`). `ResetEffects` clears it (`:18434`). W4-d10.
+    pub yoyo_glove: bool,
     /// `Player.overrideFishingBobber` (`Player.cs:1106`): the glow-bobber
     /// accessory's projectile override (`UpdateFishingBobber`, `:36673-
     /// 36702`: items 5139-5146 → 986-993), read by `ItemCheck_Shoot`
@@ -2870,6 +2934,8 @@ impl Player {
             stardust_guardian: false,
             stardust_dragon: false,
             deadly_sphere_minion: false,
+            // W4-d9 — the MagicLantern keep-alive flag (the field block).
+            magic_lantern: false,
             x: sx,
             y: sy,
             prev_x: sx,
@@ -3191,6 +3257,13 @@ impl Player {
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
+            ghost_heal: false,
+            ghost_hurt: false,
+            // `Player.cs:1008` — the stock 0 (field default).
+            ghost_dmg: 0.0,
+            // `Player.cs:1006` — the stock lifeSteal budget (the first
+            // Update tick clamps it to the 80/70 cap, `:24474-24488`).
+            life_steal: 99999.0,
             ash_wood_bonus: false,
             frost_burn: false,
             magma_stone: false,
@@ -3206,6 +3279,13 @@ impl Player {
             acc_fishing_bobber: false,
             acc_fishing_line: false,
             acc_lava_fishing: false,
+            // W4-d10 — the yoyo-string family's spawn defaults (the C#
+            // bool fields default false; ResetEffects re-clears per tick).
+            yoyo_string: false,
+            magic_string: false,
+            counter_weight: 0,
+            vanity_counter_weight: 0,
+            yoyo_glove: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
             acc_sentry_backpack: false,
@@ -5301,24 +5381,106 @@ impl Player {
         }
     }
 
-    /// `Player.MountedCenter` (`Player.cs:3335-3343`):
-    /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
-    /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount
-    /// offsets (no mounts yet), so both fold to 0 and the vector equals
-    /// `center()` — kept as its own accessor so the flail chain anchor cites
-    /// the C# point and survives the mount port.
-    pub fn mounted_center(&self) -> (f32, f32) {
-        self.center()
+    /// The mount HeightOffset family (`Player.cs:3237-3335`, W4-d8 retire
+    /// (1)): `HeightOffsetVisual` = `Mount.PlayerOffset`,
+    /// `HeightOffsetHitboxCenter` = `Mount.PlayerOffsetHitbox`
+    /// (`-PlayerOffset + heightBoost`), `HeightOffsetBoost` =
+    /// `Mount.HeightBoost`, `HeightMapOffset` = `Mount.PlayerHeadOffset`,
+    /// `MountXOffset` = `Mount.PlayerXOFfset` — each 0 while unmounted. The
+    /// `portableStoolInfo.IsInUse` arms fold to 0 (the stool is unported —
+    /// the f3 PLAYER-MOVE-FAMILY 65-seam deferral). `BaseHeight`
+    /// (`:3335`) = `height - HeightOffsetBoost`.
+    #[allow(dead_code)] // the mount draw layer's read seam (PlayerDrawSet.cs:428)
+    pub fn height_offset_visual(&self) -> f32 {
+        self.mount.player_offset() as f32 // :3241-3244
+    }
+
+    /// `Player.ChangeDir(dir)` (`Player.cs:42091-42116`): the facing flip
+    /// plus the draw-state mirrors it carries — the composite-arm rotations
+    /// and `itemRotation` negate, `itemLocation.X` mirrors about the mounted
+    /// centre. The port keeps the facing + the two arm rotations +
+    /// itemRotation. The two folds are documented skips (W4-d4 DOC-SWEEP
+    /// census, `docs/research/161`):
+    /// * the pulley snap (`:42097-42110`) — the `pulley`/`pulley_dir` FIELDS
+    ///   exist, but no sim source sets them: the rope-climb machine
+    ///   (`Player.cs:19690-19746`, the only `pulley = true` writers) is
+    ///   unported, so the `pulley && pulleyDir == 2` arm is unreachable.
+    ///   Porting the snap now would be dead code — it lands with the rope
+    ///   movement (its `Main.cameraX` shift is draw-time in the port anyway).
+    /// * the `itemLocation.X` mirror (`:42115`) — `itemLocation` is not a
+    ///   Player field here; the draw recomputes it per frame from `facing`
+    ///   (`melee_swing::swing_item_placement` / `player_layers`), so the
+    ///   facing flip above already mirrors every subsequent frame's item
+    ///   position — the write is observationally folded into the flip.
+    /// W4-d4 — the Mechanical Piranha's `flag18` facing write
+    /// (`Projectile.cs:27537-27547`) calls it.
+    pub fn change_dir(&mut self, dir: i32) {
+        if dir == self.facing {
+            return;
+        }
+        self.facing = dir;
+        self.composite_back.rotation *= -1.0;
+        self.composite_front.rotation *= -1.0;
+        self.item_rotation *= -1.0;
     }
 
     /// `Player.MountedTop` (`Player.cs:3349-3360`):
+    pub fn height_offset_hitbox_center(&self) -> f32 {
+        self.mount.player_offset_hitbox() as f32 // :3257-3260
+    }
+
+    pub fn height_offset_boost(&self) -> i32 {
+        if self.mount.is_active() {
+            self.mount.data().map_or(0, |d| d.height_boost) // :3285-3288, :447
+        } else {
+            0
+        }
+    }
+
+    /// `Player.HeightMapOffset` (`:3297-3311`) — the head-draw lift
+    /// (`PlayerDrawHeadSet.cs:155`, the head layer's consumer).
+    #[allow(dead_code)] // the mount draw layer's read seam (PlayerDrawHeadSet.cs:155)
+    pub fn height_map_offset(&self) -> i32 {
+        if self.mount.is_active() {
+            self.mount.data().map_or(0, |d| d.player_head_offset) // :435-445
+        } else {
+            0
+        }
+    }
+
+    /// `Player.MountXOffset` (`:3269-3279`) — every 1.4.5.8 row's
+    /// `playerXOffset` is 0 (no `Mount.cs` assignment); the accessor keeps
+    /// the citation for the draw-set consumer (`PlayerDrawSet.cs:342`).
+    #[allow(dead_code)] // the mount draw layer's read seam (PlayerDrawSet.cs:342)
+    pub fn mount_x_offset(&self) -> f32 {
+        self.mount.data().map_or(0, |d| d.player_x_offset) as f32
+    }
+
+    pub fn base_height(&self) -> f32 {
+        self.height - self.height_offset_boost() as f32 // :3335
+    }
+
+    /// `Player.MountedCenter` (`Player.cs:3337-3347`):
+    /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`.
+    /// W4-d8 retire (1): the offsets are LIVE (the M2-MOUNT-1 growth already
+    /// writes `height = 42 + heightBoost`), so the mounted centre rides the
+    /// saddle anchor, not the grown box's centre. Unmounted it equals
+    /// `center()`. The setter (`:3343-3346`) has no C# caller in 1.4.5.8 —
+    /// not ported.
+    pub fn mounted_center(&self) -> (f32, f32) {
+        (
+            self.x + self.width * 0.5,
+            self.y + self.base_height() * 0.5 + self.height_offset_hitbox_center(),
+        )
+    }
+
+    /// `Player.MountedTop` (`Player.cs:3349-3371`):
     /// `(position.X + width/2, position.Y + HeightOffsetHitboxCenter)`, or
     /// `Bottom.Y - HeightOffsetHitboxCenter` under reversed gravity. The port
-    /// keeps `gravDir = 1` and `HeightOffsetHitboxCenter = 0` (no mount height
-    /// offsets), so both fold to the body's top-centre — kept as its own
-    /// accessor so the sentry-backpack reposition cites the C# point.
+    /// keeps `gravDir = 1` (no gravity potion), so only the positive branch
+    /// lands. The setter (`:3361-3370`) has no C# caller — not ported.
     pub fn mounted_top(&self) -> (f32, f32) {
-        (self.x + self.width * 0.5, self.y)
+        (self.x + self.width * 0.5, self.y + self.height_offset_hitbox_center())
     }
 
     /// S1-P-i35 — `Player.GetFishingConditions` (`Player.cs:42176-42206`)
@@ -5553,7 +5715,7 @@ impl Player {
     /// (`:12924-12927`). The `expertOnly` gate (`:14370-14373`) is unmodelled:
     /// `ItemDef` carries no `expert_only` and every ported grant kind is
     /// classic (deviation, docs/ANALYSIS.md "The UpdateEquip seam").
-    fn update_equips(&mut self) {
+    fn update_equips(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
         for m in 3..10 {
             if !self.is_item_slot_unlocked_and_usable(m) {
                 continue;
@@ -5566,7 +5728,24 @@ impl Player {
                 continue;
             }
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
-            self.apply_equip_functional(m, kind);
+            self.apply_equip_functional(m, kind, rng);
+        }
+        // W4-d10 — `UpdateEquips`' vanity loop (`Player.cs:13009-13015`,
+        // slots 13..20): `ApplyEquipVanity`'s counterweight row
+        // (`:14220-14223`): a social 3309-3314 maps to
+        // `vanityCounterWeight = 556 + type - 3309` — the spawn lane's
+        // visual override (`Counterweight` `:12402-12405`). Draw-free;
+        // the loop's other rows (info accs / shaders / werewolf) are
+        // unported families. The C# `type >= 3309 && currentItem.type
+        // <= 3314` reads the same field twice — kept as one range test.
+        for n in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(n) {
+                continue;
+            }
+            let kind = self.equipped[n];
+            if (3309..=3314).contains(&kind) {
+                self.vanity_counter_weight = 556 + kind as i32 - 3309;
+            }
         }
         // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
         // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
@@ -5696,6 +5875,16 @@ impl Player {
     /// voice and the rocket-sound cadence read them. `item_slot` is the C#
     /// `itemSlot` (the `hideVisibleAccessory` lookups).
     fn apply_equip_functional(&mut self, item_slot: usize, kind: u16) {
+    /// the C#'s grants; the visual half (`UpdateBootVisualEffects`/bobber/
+    /// voice, `:14378-14390`) and the `hideVisibleAccessory` gate are draw
+    /// seams, out of scope. `_item_slot` is the C# `itemSlot` (the visibility
+    /// lookups only).
+    fn apply_equip_functional(
+        &mut self,
+        _item_slot: usize,
+        kind: u16,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
         // S1-C-12 wave E — the combat/damage family has ONE grant path:
         // `accessory_combat::apply_combat_accessory` claims its kinds here
         // and the former inline arms (489/490/491/2998/935/897/936/1343/
@@ -5786,6 +5975,52 @@ impl Player {
                 self.fishing_skill += 10;
                 self.acc_lava_fishing = true;
             }
+            // W4-d10 — `ApplyEquipFunctional`'s yoyo-string rows
+            // (`Player.cs:14710-14766`), in the C#'s order: the
+            // string-colour accessories (`currentItem.stringColor > 0` —
+            // the 3293-3308 strings + the 43716, the `yoyo_string` module's
+            // `string_color_for_item` table `Item.cs:30220-30255`), the
+            // Yoyo Bag 3366, the Magic String 5540, the Magic Yoyo Bag
+            // 5541, the Strung Counterweight 5547, the plain
+            // counterweights 3309-3314 and the Yoyo Glove 3334. The bags
+            // roll the counterweight kind ONCE per equip pass while none
+            // is set (`:14716-14726`/`:14740-14750`): `Next(7) == 0` →
+            // 1079 (pink) else `556 + Next(6)` — TWO draws on the non-pink
+            // arm, ONE on the pink, ZERO once `counterWeight != 0` (an
+            // earlier slot's grant this tick holds). The draws ride the
+            // caller's `UpdatePlayers` stage stream (`Main.rand` at the
+            // equip pass), in slot order — the spawn lane
+            // (`Player.Counterweight` `:12356-12415`) consumes none.
+            k if crate::yoyo_string::string_color_for_item(k).is_some_and(|c| c > 0) => {
+                self.yoyo_string = true;
+            }
+            3366 => {
+                if self.counter_weight == 0 {
+                    if rng.next_range(0, 7) == 0 {
+                        self.counter_weight = 1079;
+                    } else {
+                        self.counter_weight = 556 + rng.next_range(0, 6);
+                    }
+                }
+                self.yoyo_glove = true;
+                self.yoyo_string = true;
+            }
+            5540 => self.magic_string = true,
+            5541 => {
+                if self.counter_weight == 0 {
+                    if rng.next_range(0, 7) == 0 {
+                        self.counter_weight = 1079;
+                    } else {
+                        self.counter_weight = 556 + rng.next_range(0, 6);
+                    }
+                }
+                self.yoyo_glove = true;
+                self.yoyo_string = true;
+                self.magic_string = true;
+            }
+            5547 => self.counter_weight = 1079,
+            3309..=3314 => self.counter_weight = 556 + kind as i32 - 3309,
+            3334 => self.yoyo_glove = true,
             // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
             53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
             857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
@@ -6496,6 +6731,37 @@ impl Player {
         if self.vy == 0.0 {
             self.mount.fatigue_recovery();
         }
+        // W4-d6 residual — `Player.Update`'s ghostDmg decay
+        // (`Player.cs:24460-24467`): −6.6666665/tick while positive, then
+        // the independent < 0 floor — the ghostHurt spawn budget the 356
+        // spawns drain upward (`Projectile.cs:12024-12028`).
+        if self.ghost_dmg > 0.0 {
+            self.ghost_dmg -= 6.6666665;
+        }
+        if self.ghost_dmg < 0.0 {
+            self.ghost_dmg = 0.0;
+        }
+        // W4-d6 residual — `Player.Update`'s lifeSteal regen
+        // (`Player.cs:24468-24489`): expert +0.5/tick capped 70, classic
+        // +0.6 capped 80 — the shared budget the ghostHeal/vampireHeal
+        // spawns drain (`Projectile.cs:12076`/`:12103`). The two `if`s are
+        // independent (a below-cap budget adds then re-checks; an over-cap
+        // one only clamps).
+        if self.buffs.expert_mode {
+            if self.life_steal < 70.0 {
+                self.life_steal += 0.5;
+            }
+            if self.life_steal > 70.0 {
+                self.life_steal = 70.0;
+            }
+        } else {
+            if self.life_steal < 80.0 {
+                self.life_steal += 0.6;
+            }
+            if self.life_steal > 80.0 {
+                self.life_steal = 80.0;
+            }
+        }
         // `Player.cs:9881-9913`: a mount-type buff re-affirms its mount every
         // tick (`SetMount` — the `Mount.cs:6198` same-type no-op guard makes
         // the re-call a no-op while it is already up) and holds
@@ -6800,6 +7066,10 @@ impl Player {
         self.magma_stone = false;
         self.catalyst_band = false;
         self.crimson_regen = false;
+        // W4-d6 residual — `ResetEffects`' Spectre pair (`Player.cs:18723-
+        // 18724`): the `armor_sets.rs` seam re-grants them per tick.
+        self.ghost_heal = false;
+        self.ghost_hurt = false;
         self.vampire_burning_in_sunlight = false;
         self.gills = false;
         self.mana_regen_buff = false;
@@ -6970,6 +7240,16 @@ impl Player {
         self.acc_fishing_bobber = false;
         self.acc_fishing_line = false;
         self.acc_lava_fishing = false;
+        // W4-d10 — `ResetEffects`' yoyo clears (`Player.cs:18434-18439`):
+        // the equip grants below re-derive all five per tick (the bags'
+        // kind roll re-rolls every tick the counterweight is unset). The
+        // `stringColor` sibling (`:18438`) is the item-table read, no
+        // player field (the `yoyo_string` module's table).
+        self.yoyo_glove = false;
+        self.magic_string = false;
+        self.counter_weight = 0;
+        self.vanity_counter_weight = 0;
+        self.yoyo_string = false;
         self.override_fishing_bobber = -1;
         // (Gate merge i35 ⨉ i41: the `canFloatInWater`/`noItems` clears run
         // ONCE, in the i41 mount-flag block above — `Player.cs:18332`/`:18687`.)
@@ -7689,7 +7969,8 @@ impl Player {
         self.accessory_life_regen = 0;
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
-        self.update_equips();
+        // The bags' counterweight kind roll draws the caller's stage stream.
+        self.update_equips(rng);
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -10547,11 +10828,26 @@ impl Player {
             self.run_acceleration /= 2.0;
             self.max_run_speed /= 2.0;
         }
+        // `Mount.UpdateEffects`'s Drill (8) case (`Mount.cs:5010-5015`,
+        // W4-d8 FINAL-PHASE (1)): no live 453 crosshair → the mining flag
+        // drops. The owned-count is this tick's recount (the
+        // `update_projectile_caches` seam ran ahead, `Player.cs:25565`).
+        if self.mount.kind() == 8 {
+            let crosshairs = self.owned_projectile_counts[crate::projectile::DRILL_MOUNT_CROSSHAIR as usize];
+            self.mount.drill_update_effects_gate(crosshairs);
+        }
         // `:26660-26663` (the roller skates), `:26665-26682` (the cart/OnTrack
-        // block — M2-MOUNT-3) and `:26683-26686` (`UpdateDrill` —
-        // M2-MOUNT-4) have no rows in this table yet; the ability counters
-        // still tick (`:26663`).
+        // block — M2-MOUNT-3) have no rows in this table yet; the ability
+        // counters still tick (`:26663`).
         self.mount.ability_recovery();
+        // `Player.cs:26683-26686` — the Drill's (8) `UpdateDrill` per-tick
+        // maintenance (W4-d8 FINAL-PHASE (1): the beam cooldowns + the diode
+        // lerp + the shared gate). The C# passes controlUp/controlDown,
+        // which the body never reads (the mining write's reach is
+        // cursor-driven) — the port's no-arg call is signature-equivalent.
+        if self.mount.kind() == 8 {
+            self.mount.update_drill();
+        }
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
@@ -13332,6 +13628,48 @@ mod tests {
         p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 20, "the 80-damage lava hit");
         assert!(p.buffs.find_buff_index(24).is_some(), "On Fire");
+    }
+
+    /// W4-d6 residual — `Player.Update`'s lifeSteal regen
+    /// (`Player.cs:24468-24489`): classic +0.6/tick capped 80, expert
+    /// +0.5 capped 70; the stock 99999 clamps on the first tick.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_life_steal_budget_regens_and_caps_per_difficulty() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.life_steal, 99999.0, "the :1006 stock");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.life_steal, 80.0, "the first tick clamps to the classic cap");
+        p.life_steal = 10.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.life_steal - 10.6).abs() < 1e-4, "the +0.6 classic regen");
+        p.buffs.expert_mode = true;
+        p.life_steal = 10.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.life_steal - 10.5).abs() < 1e-4, "the +0.5 expert regen");
+        p.life_steal = 69.8;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.life_steal, 70.0, "the expert cap clamps the overshoot");
+    }
+
+    /// W4-d6 residual 5 — `Player.Update`'s ghostDmg decay
+    /// (`Player.cs:24460-24467`): −6.6666665/tick while positive, the
+    /// independent < 0 floor; a zero budget stays zero. WRITTEN NOT RUN
+    /// (code-only).
+    #[test]
+    fn w4_d6_the_ghost_dmg_budget_decays_and_floors() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.ghost_dmg, 0.0, "the :1008 stock");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.ghost_dmg, 0.0, "zero stays zero (both ifs skip)");
+        p.ghost_dmg = 100.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.ghost_dmg - 93.333336).abs() < 1e-3, "the −6.6666665 decay");
+        p.ghost_dmg = 3.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.ghost_dmg, 0.0, "the < 0 floor clamps the overshoot");
     }
 
     /// M3-EQUIP-15 — the thorns rows and the reflection arithmetic.
@@ -17199,6 +17537,31 @@ mod tests {
         p.wings_logic = 22;
         p.update_frames(&w);
         assert_eq!(p.leg_frame, 0);
+    }
+
+    /// W4-d4 DOC-SWEEP item 5 — `Player.ChangeDir` (`Player.cs:42091-42116`):
+    /// the same-direction early return, then the facing flip + the three
+    /// rotation negates (compositeBackArm/compositeFrontArm/itemRotation).
+    /// The pulley snap and the itemLocation mirror are the documented folds
+    /// (no sim pulley source; itemLocation is draw-recomputed from facing).
+    #[test]
+    fn w4_d4_sweep_change_dir_flips_facing_and_negates_the_rotations() {
+        let (_w, mut p) = settled();
+        p.facing = 1;
+        p.composite_back.rotation = 0.4;
+        p.composite_front.rotation = -0.7;
+        p.item_rotation = 1.2;
+        // The same-direction call is a no-op (`:42093-42096`).
+        p.change_dir(1);
+        assert_eq!(p.facing, 1);
+        assert!((p.composite_back.rotation - 0.4).abs() < 1e-6, "no early flip");
+        assert!((p.item_rotation - 1.2).abs() < 1e-6);
+        // The flip negates all three rotations (`:42111-42114`).
+        p.change_dir(-1);
+        assert_eq!(p.facing, -1);
+        assert!((p.composite_back.rotation + 0.4).abs() < 1e-6);
+        assert!((p.composite_front.rotation - 0.7).abs() < 1e-6);
+        assert!((p.item_rotation + 1.2).abs() < 1e-6);
     }
 
     #[test]
@@ -21220,6 +21583,121 @@ mod tests {
         );
     }
 
+    /// W4-d10 — `ApplyEquipFunctional`'s yoyo-string grants (`Player.cs:
+    /// 14710-14754`): the string-colour accessories set `yoyoString`
+    /// (`currentItem.stringColor > 0`), the Yoyo Bag 3366 adds it, the
+    /// Magic String 5540 sets `magicString`, the Magic Yoyo Bag 5541 sets
+    /// both. `ResetEffects` (`:18435`/`:18439`) clears them every tick —
+    /// an unequipped slot drops the flags on the next update.
+    #[test]
+    fn w4_d10_the_yoyo_string_grants_and_the_tick_clears_them() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The Red String 3293 (stringColor 1) grants yoyoString only.
+        p.equipped[3] = 3293;
+        p.update(&w, PlayerInput::default());
+        assert!(p.yoyo_string, "the string accessory grants");
+        assert!(!p.magic_string, "no magicString from a plain string");
+        // The Magic String 5540 grants magicString only.
+        p.equipped[3] = 5540;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.yoyo_string, "the plain string's grant cleared");
+        assert!(p.magic_string, "the Magic String grants");
+        // The Magic Yoyo Bag 5541 grants both.
+        p.equipped[3] = 5541;
+        p.update(&w, PlayerInput::default());
+        assert!(p.yoyo_string && p.magic_string, "the bag grants both");
+        // The Yoyo Bag 3366 grants yoyoString + yoyoGlove + the rolled
+        // counterWeight kind (the spawn lane landed W4-d10).
+        p.equipped[3] = 3366;
+        p.update(&w, PlayerInput::default());
+        assert!(p.yoyo_string, "the Yoyo Bag grants yoyoString");
+        assert!(!p.magic_string, "the Yoyo Bag has no magicString");
+        assert!(p.yoyo_glove, "the bag grants the glove");
+        assert!(
+            p.counter_weight == 1079 || (556..=561).contains(&p.counter_weight),
+            "the bag rolled a kind: {}",
+            p.counter_weight
+        );
+        // Unequipped: ResetEffects clears both.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.yoyo_string && !p.magic_string, "the tick clears");
+        assert!(!p.yoyo_glove && p.counter_weight == 0, "the lane clears too");
+    }
+
+    /// W4-d10 — the bag's counterweight kind roll (`Player.cs:14716-14726`/
+    /// `:14740-14750`): `Next(7) == 0` → 1079 (ONE draw), else
+    /// `556 + Next(6)` (TWO draws, in that order); the `counterWeight == 0`
+    /// gate means a second bag in the same pass draws NOTHING. The
+    /// scripted stream pins the order (the DodgeRng fixture).
+    #[test]
+    fn w4_d10_the_bag_rolls_the_counterweight_kind_in_order() {
+        let w = ground_world();
+        // The pink arm: Next(7) == 0 → 1079, one draw.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3366;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        p.update_equips(&mut rng);
+        assert_eq!(p.counter_weight, 1079);
+        assert_eq!(rng.draws, vec![(0, 7)], "ONE draw on the pink arm");
+        // The colour arm: Next(7) = 1, Next(6) = 3 → 559, two draws.
+        let mut p2 = Player::spawn(&w);
+        p2.equipped[3] = 5541;
+        let mut rng2 = DodgeRng::with_rolls(&[1, 3]);
+        p2.update_equips(&mut rng2);
+        assert_eq!(p2.counter_weight, 559);
+        assert_eq!(rng2.draws, vec![(0, 7), (0, 6)], "the C# operand order");
+        assert!(p2.yoyo_glove && p2.yoyo_string && p2.magic_string, "5541 grants all");
+        // Two bags: the first roll holds, the second draws nothing
+        // (`counterWeight == 0` gate, `:14740`).
+        let mut p3 = Player::spawn(&w);
+        p3.equipped[3] = 3366;
+        p3.equipped[4] = 5541;
+        let mut rng3 = DodgeRng::with_rolls(&[0]);
+        p3.update_equips(&mut rng3);
+        assert_eq!(p3.counter_weight, 1079);
+        assert_eq!(rng3.draws, vec![(0, 7)], "the second bag skips the roll");
+        assert!(p3.magic_string, "the second bag still grants magicString");
+    }
+
+    /// W4-d10 — the pin rows + the vanity override: the Strung
+    /// Counterweight 5547 pins 1079 with NO draw (`:14755-14758`), the
+    /// plain 3309-3314 pin `556 + type - 3309` (`:14759-14762`), the Yoyo
+    /// Glove 3334 grants the glove alone (`:14763-14766`); the vanity
+    /// loop (`:13009-13015` → `ApplyEquipVanity` `:14220-14223`) maps a
+    /// social 3309-3314 to `vanityCounterWeight`.
+    #[test]
+    fn w4_d10_the_counterweight_pins_and_the_vanity_override() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 5547;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        p.update_equips(&mut rng);
+        assert_eq!(p.counter_weight, 1079, "the Strung Counterweight pin");
+        assert!(rng.draws.is_empty(), "the pin draws nothing");
+        assert!(!p.yoyo_glove, "5547 is no glove");
+        // The Red Counterweight 3313 → 560.
+        let mut p2 = Player::spawn(&w);
+        p2.equipped[3] = 3313;
+        p2.update_equips(&mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p2.counter_weight, 560);
+        // The glove alone.
+        let mut p3 = Player::spawn(&w);
+        p3.equipped[3] = 3334;
+        p3.update_equips(&mut DodgeRng::with_rolls(&[]));
+        assert!(p3.yoyo_glove);
+        assert_eq!(p3.counter_weight, 0, "the glove rolls no kind");
+        assert!(!p3.yoyo_string, "the glove grants no string");
+        // The vanity slot 13's Blue Counterweight 3310 → 557.
+        let mut p4 = Player::spawn(&w);
+        p4.equipped[3] = 5547;
+        p4.equipped[13] = 3310;
+        p4.update_equips(&mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p4.counter_weight, 1079);
+        assert_eq!(p4.vanity_counter_weight, 557, "the vanity override");
+    }
+
     #[test]
     fn s1_p_i41_the_empress_brooch_grants_and_the_tick_clears_it() {
         // `ApplyEquipFunctional` (`Player.cs:14771-14774`): the worn Empress
@@ -21235,12 +21713,12 @@ mod tests {
         // worn wings (1866, slot 22) re-derive the budget from the slot.
         assert!(p.set_mount(54, false));
         p.equipped[4] = 1866;
-        p.update_equips();
+        p.update_equips(&mut tr_core::UnifiedRandom::default());
         let budget = p.wing_time_max;
         assert!(budget > 0, "the worn wings set the budget");
         p.mount.reset_flight_time(0.0, budget);
         p.mount.flight();
-        p.update_equips();
+        p.update_equips(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.mount.fly_time(), budget, "the brooch refills the raptor");
         // Unequipped: the flag clears and the refill stops (the wing slot
         // still holds the budget; only the brooch flag went away). The tail
@@ -21250,7 +21728,7 @@ mod tests {
         assert!(!p.empress_brooch);
         p.mount.reset_flight_time(0.0, p.wing_time_max);
         p.mount.flight();
-        p.update_equips();
+        p.update_equips(&mut tr_core::UnifiedRandom::default());
         assert_eq!(
             p.mount.fly_time(),
             p.wing_time_max - 1,
@@ -23205,4 +23683,93 @@ mod s1_p_i27_tests {
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
     }
+}
+
+/// W4-d8 retire (1) — the mount HeightOffset family
+/// (`Player.cs:3237-3371`): the five accessors + `BaseHeight` +
+/// `MountedCenter`/`MountedTop`, LIVE over the M2-MOUNT-1 grown hitbox.
+/// WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d8_height_offset_tests {
+    use super::tests::ground_world;
+    use super::*;
+
+    /// The unmounted fold: every offset is 0, `BaseHeight` is the body
+    /// height, `MountedCenter == center`, `MountedTop` is the top-centre
+    /// (`:3249`/`:3265`/`:3277`/`:3293`/`:3309` — the no-mount returns).
+    #[test]
+    fn w4_d8_the_unmounted_offsets_fold_to_zero() {
+        let w = ground_world();
+        let p = Player::spawn(&w);
+        assert_eq!(p.height_offset_visual(), 0.0);
+        assert_eq!(p.height_offset_hitbox_center(), 0.0);
+        assert_eq!(p.height_offset_boost(), 0);
+        assert_eq!(p.height_map_offset(), 0);
+        assert_eq!(p.mount_x_offset(), 0.0);
+        assert_eq!(p.base_height(), p.height);
+        assert_eq!(p.mounted_center(), p.center());
+        assert_eq!(p.mounted_top(), (p.x + p.width * 0.5, p.y));
+    }
+
+    /// The Unicorn (10) at frame 0: `playerYOffsets[0] = 28`, heightBoost
+    /// 34 (`mount.rs` UNICORN row, `Mount.cs:1426`). The grown box is 76
+    /// tall; `BaseHeight = 76 − 34 = 42` (`:3335`),
+    /// `HeightOffsetHitboxCenter = −28 + 34 = 6` (`Mount.cs:431`), so
+    /// `MountedCenter.Y = y + 21 + 6 = y + 27` — NOT the grown box's
+    /// centre `y + 38`. `MountedTop.Y = y + 6`. `HeightMapOffset` is the
+    /// row's playerHeadOffset 34 (`Mount.cs:443`), `MountXOffset` 0 (no
+    /// row assigns playerXOffset).
+    #[test]
+    fn w4_d8_the_unicorn_offsets_ride_the_frame_and_boost() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        let top = p.y;
+        assert!(p.set_mount(10, false));
+        // The M2-MOUNT-1 growth: 42 + 34 = 76, bottom-anchored.
+        assert_eq!(p.height, 76.0);
+        assert_eq!(p.y, top - 34.0);
+        p.mount.test_set_frame(0);
+        assert_eq!(p.height_offset_visual(), 28.0, "playerYOffsets[0] (:419)");
+        assert_eq!(p.height_offset_hitbox_center(), 6.0, "−28 + 34 (:431)");
+        assert_eq!(p.height_offset_boost(), 34, "HeightBoost (:447)");
+        assert_eq!(p.height_map_offset(), 34, "playerHeadOffset (:443)");
+        assert_eq!(p.mount_x_offset(), 0.0);
+        assert_eq!(p.base_height(), 42.0, "76 − 34 (:3335)");
+        assert_eq!(p.mounted_center(), (p.x + 10.0, p.y + 27.0));
+        assert_eq!(p.mounted_top(), (p.x + 10.0, p.y + 6.0));
+        // Frame 3 lifts the saddle: playerYOffsets[3] = 30 → hitbox 4.
+        p.mount.test_set_frame(3);
+        assert_eq!(p.height_offset_visual(), 30.0);
+        assert_eq!(p.height_offset_hitbox_center(), 4.0);
+        assert_eq!(p.mounted_center().1, p.y + 25.0);
+        // A frame past totalFrames folds PlayerOffset to 0 (`:415-418`)
+        // but PlayerOffsetHitbox keeps the boost (`:431` reads it raw).
+        p.mount.test_set_frame(16);
+        assert_eq!(p.height_offset_visual(), 0.0);
+        assert_eq!(p.height_offset_hitbox_center(), 34.0);
+        // The dismount restores every fold.
+        assert!(p.dismount(&w, true));
+        assert_eq!(p.height_offset_boost(), 0);
+        assert_eq!(p.mounted_center(), p.center());
+    }
+
+    /// The Scutlix (9): flat `playerYOffsets = [16; 12]`, heightBoost 16
+    /// → `HeightOffsetHitboxCenter` is 0 on EVERY in-range frame — the
+    /// mounted centre rides `y + 21` (the C# saddle anchor sits exactly
+    /// where the unmounted centre did). The drill (8) heightBoost 20 with
+    /// `playerYOffsets[0] = 20` behaves the same.
+    #[test]
+    fn w4_d8_the_scutlix_flat_offsets_cancel_the_boost() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(9, false));
+        p.mount.test_set_frame(5);
+        assert_eq!(p.height_offset_visual(), 16.0);
+        assert_eq!(p.height_offset_hitbox_center(), 0.0, "−16 + 16");
+        assert_eq!(p.base_height(), 42.0);
+        assert_eq!(p.mounted_center(), (p.x + 10.0, p.y + 21.0));
+        assert_eq!(p.mounted_top(), (p.x + 10.0, p.y));
+        assert_eq!(p.height_map_offset(), 18, "the Scutlix head offset");
+    }
+}
 }

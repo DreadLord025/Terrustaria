@@ -224,7 +224,18 @@ pub(crate) mod world_events;
 mod projectile;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
+mod projectile_ai_guns;
+mod projectile_gun_splash;
 mod projectile_ai_moonlord;
+// W4-d9 — the five missing aiStyle 81-90 projectile arms (census: 82/83/84/
+// 85/88 were armed on main). One module per style; the rows land in
+// projectile/data.rs, the dispatch arms + on-hit/damage seams in
+// projectile.rs. Code-only mode — witness tests written not run.
+mod projectile_ai_style81;
+mod projectile_ai_style86;
+mod projectile_ai_style87;
+mod projectile_ai_style89;
+mod projectile_ai_style90;
 
 
 mod projectile_ai001_a;
@@ -256,12 +267,48 @@ mod projectile_ai_misc;
 // kinds (452/454/459/521/448/80, census research/160) + the 522 split shard's
 // AI arm.
 mod projectile_kill_hooks_a;
+// W4-d5: UNWIRED projectile aiStyle machines (research/156, was 26d) — the rows +
+// dispatch arms are the wiring round (the npc_ai_style25 precedent).
+mod projectile_ai_style41;
+mod projectile_ai_style42;
+mod projectile_ai_style43;
+mod projectile_ai_style46;
+mod projectile_ai_style49;
+// W4-d7: UNWIRED projectile aiStyle machines (research/167) — the rows +
+// dispatch arms are the wiring round (the d5 / npc_ai_style25 precedent).
+mod projectile_ai_style63;
+mod projectile_ai_style69;
+// W4-d10 — the aiStyles 91-100 census port: the nine missing styles +
+// the aiStyle-99 counterweight sub-arm (f19 F1). The rows land in
+// projectile/data.rs; the dispatch arms are wired in projectile.rs::update.
+// Code-only mode — witness tests written not run.
+mod projectile_ai_91_100;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in
 // projectile/data.rs; the dispatch arms (14-gate + 33) are wired in
 // projectile.rs::update. Code-only mode — witness tests written not run.
 mod projectile_ai_light_items;
+// W4-d2 — the aiStyle-11 light pets (the Shadow Orb 18 + the fairies
+// 72/86/87): the fairy head, the affirmative keep-alive pin and the
+// owner-center seek (`Projectile.cs:24371-24500`). The rows land in
+// projectile/data.rs; the dispatch arm (11) is wired in
+// projectile.rs::update. Code-only mode — witnesses written not run.
+mod projectile_ai_light_pets;
+// W4-d2 — the aiStyle-13 chain weapons (the Harpoon 23, Golem Fist 262,
+// Boxing Glove 271, Chain Knife 273, Chain Guillotine 481): the outbound
+// flight + per-type distance flips, the return seek + catch, the 262
+// hitbox burst, the itemRotation tail and the shared blocked-move return
+// (`Projectile.cs:24636-24829` + `:19512-19571`). The on-hit return +
+// StatusNPC debuffs ride projectile.rs::damage_pve. Code-only mode.
+mod projectile_ai_chain;
+// W4-d2 — the aiStyle-17 tombstones (43/201-205/527-531): the grounded
+// friction/spin/gravity, the FTW dead-roll disarm, the local-owner
+// tile-85 placement (CanPlace/Place + the Sign epitaph + Kill) and the
+// ×−0.75/×−0.7 bounce (`Projectile.cs:25316-25366` + `:19310-19320`).
+// The death spawn (DropTombstone's launch draws) is wired in death.rs.
+// Code-only mode.
+mod projectile_ai_tombstone;
 // S1-P-i55 golf: the two golf projectile AIs (721/739-752 aiStyle 149,
 // 722 aiStyle 150) + the club strike / tee placement / cup scoring,
 // reusing tr-core's golf.rs + golf_state.rs (code-only round — the
@@ -274,6 +321,22 @@ mod projectile_ai_darts;
 // Projectile.cs:39985-40017 + the HandleMovement :18921-18928 splat) —
 // the aiStyle-24/68 birds' poop shot.
 mod projectile_bird_droppings;
+// W4-d1: the aiStyle-6 powder/fertilizer cloud (10/11/463/1019/1051 —
+// Projectile.cs:24100-24228): the 0.95 decay + 180-tick kill, the one-shot
+// dust burst (the 1051's 50 Next(3) draws stay), the owner-gated Convert
+// tile scan (types 11/1/4) + the fertilizer sapling growth (genRand defers
+// to the pass). The rows + the dispatch arm are wired in projectile.rs.
+mod projectile_ai_powder;
+// W4-d1 wave 3: the aiStyle-10 falling-block family (AI_010,
+// Projectile.cs:57826-58100 — the sandfall kinds 31/39/40/56/67/71/179/241/
+// 812/411-414 + the DirtBall 17 + the player Mud Ball 1081 + the sandgun
+// balls 42/65/68/354, closing the S1-D-5 "42-row gap"). The dust-gate
+// draws stay, the channel aim-steer + gravity ladder + tile walk + the
+// HandleMovement blocked arms + the Kill_ExplodeTiles death placement
+// (item drops ride pending_block_drops → UpdateItems). W4-d1 retire: the
+// natural-fall spawner rides the data path (the frozen-tail carve-out is
+// retired — every served kind runs the arm + the death hook).
+mod projectile_ai_falling;
 // S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
 // arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
 // 279/283/284/285/286/287), pure per-kind fns behind the `covers` gate.
@@ -293,6 +356,20 @@ mod projectile_ai_empress;
 // S1-P-i35: the fishing bobber's AI_061 flight/bite machine + the FishingCheck
 // orchestration (the pure roll engine is tr_core::fishing).
 mod projectile_bobber;
+// W4-d3: the aiStyle-25 boulder family (`AI()`'s inline block
+// Projectile.cs:26015-26415 + HandleMovement's bounce ladder :18941-19277 +
+// the RainbowBoulder machine :20024-20315 + the Shimmer arm :22504-22515 +
+// the Kill hooks). The 13 kinds' rows land in projectile/data.rs; the
+// dispatch claim, the death-hook drain and the statue wiring are wired in
+// projectile.rs / world_sim (module doc + docs/ANALYSIS.md "The boulder
+// family (W4-d3)").
+mod projectile_ai_boulder;
+// W4-d4 × W4-g82 union (research/169): the rope-coil lane's EXTRAS — the
+// Kill() refund ladder (:77572-77615, WIRED at the pool's death hook + the
+// world-sim drain) and the trailing-chain placement preview
+// (Main.cs:28499-28669, the UNWIRED draw half — the g82b lane's contract).
+// d4's ai_rope_coil stays the single aiStyle-35 machine.
+mod projectile_rope_coil;
 // S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).

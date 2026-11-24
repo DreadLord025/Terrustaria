@@ -53,9 +53,10 @@
 //!   (`world_sim/player.rs`) and the composite arms are re-set by
 //!   `ApplyUseStyle`, so only the persistent `base.direction = dir`
 //!   (`:42111`) lands here.
-//! * `MountedCenter == center` and `ApplyItemPositionOffsetFromMount` is a
-//!   no-op without an active mount (`Player.cs:51387-51390`); the port's
-//!   `mounted_center` accessor already folds the height offsets.
+//! * `MountedCenter == center` only while UNMOUNTED (W4-d8 retire (1): the
+//!   `mounted_center` accessor now carries the live HeightOffset family,
+//!   `Player.cs:3237-3347`); `ApplyItemPositionOffsetFromMount` is a no-op
+//!   without an active mount (`Player.cs:51387-51390`).
 
 use glam::Vec2;
 use tr_core::{UnifiedRandom, World};

@@ -4068,6 +4068,44 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 1569 {
+        // W4-d6 residual 5 — `Player.cs:48157-48188`: the Vampire Knives'
+        // volley. The count: 4 base, +1 on `Next(2) == 0`, +1 on
+        // `Next(4) == 0`, +1 on `Next(8) == 0`, +1 on `Next(16) == 0` —
+        // the four count rolls run FIRST, in that order. Each knife: the
+        // aim velocity spread by `Next(-35, 36) * 0.05 * index` per axis
+        // (index 0 spreads nothing but still draws both), renormalised to
+        // `speed`, spawned at the shared point with the item's
+        // damage/knockback. The C# `return`s here — the generic tail never
+        // runs for the knives.
+        let mut count = 4;
+        if loot_rng.next_range(0, 2) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 4) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 8) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 16) == 0 {
+            count += 1;
+        }
+        for n in 0..count {
+            let spread = 0.05 * n as f32;
+            let mut vx = shot.x + loot_rng.next_range(-35, 36) as f32 * spread;
+            let mut vy = shot.y + loot_rng.next_range(-35, 36) as f32 * spread;
+            let k = fx_spd / (vx * vx + vy * vy).sqrt();
+            vx *= k;
+            vy *= k;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if held.kind == 1930 {
         // S1-P-i21 — `Player.cs:47647-47662` — the Razorpine's volley:
         // `2 + Next(3)` needles, each spread by `Next(-35, 36)
@@ -4175,6 +4213,53 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 1156 {
+        // W4-d4 sweep — `Player.cs:48365-48381` — the Piranha Gun's trio:
+        // recount the owner's active `HeldItem.shoot` (190) projectiles over
+        // the 1000-slot array, then spawn `3 - num` piranhas, each at the aim
+        // plus `Next(-40, 41) * 0.05` per axis (no renormalize). Draw order
+        // per piranha: spread X, spread Y. The channel-refill gate above
+        // (`:43545-43558`) only reaches this arm while the count is short,
+        // but the count is re-read here exactly like the C#.
+        let owner = app.local_id as u8;
+        let num = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.owner == owner && p.kind == proj)
+            .count() as i32;
+        for _ in 0..(3 - num) {
+            let vx = shot.x + loot_rng.next_range(-40, 41) as f32 * 0.05;
+            let vy = shot.y + loot_rng.next_range(-40, 41) as f32 * 0.05;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
+    } else if held.kind == 2623 {
+        // W4-d8 DOC-SWEEP (2) — `Player.cs:48393-48401` — the Bubble Gun's
+        // three-bubble volley: each bubble at the shared launch point with
+        // the aim plus `Next(-40, 41) * 0.1` per axis (no renormalize).
+        // Draw order per bubble: spread X, spread Y. The C# `return`s here
+        // (the generic tail never runs); the spawn source is
+        // `projectileSource_Item_WithPotentialAmmo` (`:47152` →
+        // `GetProjectileSource_Item_WithPotentialAmmo` `:9805-9808`, an
+        // `EntitySource_ItemUse_WithAmmo` — the port's spawn seam carries
+        // no source context, the i22 census convention).
+        for _ in 0..3 {
+            let vx = shot.x + loot_rng.next_range(-40, 41) as f32 * 0.1;
+            let vy = shot.y + loot_rng.next_range(-40, 41) as f32 * 0.1;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if tr_core::whip::is_whip(proj) {
         // S1-P-i24 — `Player.ItemCheck_Shoot`'s whip arm
         // (`Player.cs:48655-48690`): the 18 whip items fire
@@ -4203,6 +4288,104 @@ fn fire_non_ammo_shot(
             fx_kb,
             false,
         );
+    } else if held.kind == 3014 {
+        // W4-d9 wiring — `Player.ItemCheck_Shoot`'s ClingerStaff arm
+        // (`Player.cs:48591-48642`): the cursed-flame wall. The point
+        // walks from the spawn along the aim while the line of sight to
+        // it holds, clamped to the reachable cursor; the down/up tile
+        // scans find the ceiling/floor gap (≤30 tiles each, platforms +
+        // the planter box 380 break the down scan); the wall's height
+        // caps at 15 tiles and its top rides `ai0`, the height `ai1`
+        // (the aiStyle-87 arm pins them, `Projectile.cs:31903-31904`).
+        // No solid ceiling/floor → no spawn (`flag8`). The C# `return`s.
+        let mut point = spawn;
+        let target = limit_point_to_player_reachable_area(
+            Vec2::new(pcx, pcy),
+            world_pos,
+            &app.world,
+        );
+        // `:48597-48606` — the CanHitLine walk toward the clamped cursor.
+        while crate::projectile::can_hit_line(
+            &app.world, p.x, p.y, p.width, p.height, point.x, point.y, 1.0, 1.0,
+        ) {
+            point.x += shot.x;
+            point.y += shot.y;
+            if (point - target).length() < 20.0 + shot.x.abs() + shot.y.abs() {
+                point = target;
+                break;
+            }
+        }
+        // `:48607-48622` — the down scan: the first solid tile, or a
+        // platform / the planter box 380, stops it (≤30 tiles). The C#
+        // reuses `num151` as both the start row and the scan cursor;
+        // `num153` latches the start BEFORE the loop.
+        let mut flag8 = false;
+        let start_row = point.y as i32 / 16;
+        let col = point.x as i32 / 16;
+        let num153 = start_row;
+        let mut row = start_row;
+        let is_platform_or_planter = |w: &tr_core::World, x: i32, y: i32| {
+            w.tile(x, y).is_some_and(|t| {
+                t.active()
+                    && (tr_core::tiledata::SET_PLATFORMS.has(t.kind) || t.kind == 380)
+            })
+        };
+        while row < app.world.height - 10
+            && row - num153 < 30
+            && !crate::projectile::solid_tile(&app.world, col, row)
+        {
+            if is_platform_or_planter(&app.world, col, row) {
+                break;
+            }
+            row += 1;
+        }
+        // `:48619-48622` — no solid AND no platform/planter at the stop.
+        if !crate::projectile::solid_tile(&app.world, col, row)
+            && !is_platform_or_planter(&app.world, col, row)
+        {
+            flag8 = true;
+        }
+        // `:48623-48635` — the up scan from the original row (≤30 tiles),
+        // the gap height capped at 15 tiles, the wall top = floor − height.
+        let num154 = (row * 16) as f32;
+        let mut up = num153;
+        while up > 10
+            && num153 - up < 30
+            && !crate::projectile::solid_tile(&app.world, col, up)
+        {
+            up -= 1;
+        }
+        let mut num155 = num154 - (up * 16 + 16) as f32;
+        if num155 > (16 * 15) as f32 {
+            num155 = (16 * 15) as f32;
+        }
+        let ai3 = num154 - num155;
+        // `:48636` — the X snaps to the tile grid (truncating).
+        point.x = (point.x / 16.0) as i32 as f32 * 16;
+        // `:48637-48640` — the spawn: zero velocity, the class-scaled
+        // damage, ai0 = the wall top, ai1 = the height. NewProjectile
+        // centres the box (`Projectile.cs:10876-10877`); the port's seam
+        // takes the top-left, so the half-box subtracts (the aiStyle-87
+        // arm re-pins Y/height on its first tick).
+        if !flag8 {
+            let data = crate::projectile::proj_data(proj).unwrap();
+            let slot = app.projectiles.spawn_with_data_ai_owned(
+                proj,
+                app.local_id as u8,
+                point.x - data.w * 0.5,
+                point.y - data.h * 0.5,
+                0.0,
+                0.0,
+                raw as i32,
+                fx_kb,
+                ai3,
+                num155,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else {
         // The generic `Item.shoot` firing, with the two
         // per-item tweaks: the Crystal Storm's +/-0.04 spread
@@ -4223,6 +4406,33 @@ fn fire_non_ammo_shot(
             // PurpleLaser rides `ai0 = Main.rand.Next(3, 6)`
             // (the extraUpdates remap the rider reads).
             (loot_rng.next_range(3, 6) as f32, 0.0)
+        } else if proj == crate::projectile::WATER_GUN {
+            // W4-d6 residual — `NewProjectile`'s local-owner switch
+            // (`Projectile.cs:10914-10916`): `case 358: ai[1] =
+            // Main.rand.Next(10, 31) * 0.1f` — the aiStyle-60 accumulator's
+            // per-spawn step (1.0..3.0). The C# draw sits INSIDE
+            // NewProjectile on the same `UpdatePlayers` stream; the guns'
+            // generic tail carries no other draw (no spread/leaf/aqua
+            // seed), so the payload block is the exact stream position.
+            (0.0, loot_rng.next_range(10, 31) as f32 * 0.1)
+        } else if proj == crate::projectile::SLIME_GUN {
+            // `Projectile.cs:10917-10919`: `case 406: ai[1] =
+            // Main.rand.Next(10, 21) * 0.1f` (1.0..2.0).
+            (0.0, loot_rng.next_range(10, 21) as f32 * 0.1)
+        } else if held.kind == 5495 {
+            // `Player.cs:49124-49127` — the Shimmer Gun's per-item use arm
+            // passes `ai0: 0f, ai1: 1f` (the accumulator steps 1 per armed
+            // sub-tick); `NewProjectile`'s default arm assigns them
+            // verbatim (`:10920-10924` — 1042 has no spawn-roll case).
+            (0.0, 1.0)
+        } else if held.kind == 2880 {
+            // W4-d9 wiring — `Player.cs:49405-49408`: the InfluxWaver's
+            // `ai7 = -1f` → the spawn's `ai[0]` (the generic tail's
+            // `NewProjectile(..., ai7, ai8, ai9)`, `:49437`). The aiStyle-81
+            // arm's launch-fade leg reads `ai[0] == -1` (`Projectile.cs:
+            // 31005`); without the seed the wave would skip the fade and
+            // start mid-pulse. No RNG draw.
+            (-1.0, 0.0)
         } else {
             (0.0, 0.0)
         };
@@ -5295,7 +5505,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         // Channel items (the drills/chainsaws, the aimed spells, the Last Prism)
         // fire once per use and then the channel holds the projectile — the C#
         // keeps their `itemTime` armed via the channel/mining cadence, so they
-        // never reach a mid-swing re-fire. The port skips them here.
+        // never reach a mid-swing re-fire. The port skips them here (the
+        // Piranha Gun 1156 included — its `flag4` override, `Player.cs
+        // :43545-43558`, bypasses the animation/ItemTimeIsZero gate entirely;
+        // the dedicated channel-refill block above owns it, W4-d4 sweep).
         && !registry::get(held.kind).is_some_and(|d| d.channel)
     {
         // The per-item animation-window limits (`Player.cs:43491`/`:43502`/
@@ -5316,6 +5529,39 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     // `ApplyItemTime` (`Player.cs:47185-47194`): re-arm the cadence
                     // after EACH shot — the next volley shot fires `useTime` ticks
                     // later, for as long as the swing runs.
+                    app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
+                }
+            }
+        }
+    }
+    // W4-d4 sweep — `Player.cs:43545-43558`: the Piranha Gun's channel
+    // refill. `flag4 = (itemAnimation > 0 && ItemTimeIsZero) & flag`, then
+    // `type == 1156 && channel` recounts the owner's active `HeldItem.shoot`
+    // (190) projectiles over the 1000-slot array and forces `flag4 = true`
+    // while `num < 3` — INDEPENDENT of the animation/ItemTimeIsZero gate.
+    // The aiStyle-39 arm's `SetDummyItemTime(5)` (drained by the projectile
+    // pass) holds the timers at 5, so the generic volley gate above never
+    // fires for the gun; this block is its whole re-fire path. It runs every
+    // held tick while the channel is latched and the trio is short — a
+    // piranha killed mid-channel is replaced on the next use tick. The
+    // shoot arm itself tops the count back up to 3 (`:48365-48381`).
+    if held_weapon
+        && held.kind == 1156
+        && app.mine_down
+        && !app.inventory_open
+        && app.player.as_ref().is_some_and(|pl| pl.channel)
+    {
+        let in_flight = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.owner == app.local_id as u8 && p.kind == 190)
+            .count();
+        if in_flight < 3 {
+            if let (Some(proj), Some(def)) = (registry::projectile(held.kind), registry::get(held.kind)) {
+                if fire_non_ammo_shot(app, held, held_fx, world_pos, proj, def, screen) {
+                    // `ApplyItemTime` (`Player.cs:47185-47194`): the refill
+                    // shot re-arms the action cadence like every other shot.
                     app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
                 }
             }
@@ -5849,9 +6095,13 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             cell.frame_y = frame_y;
         }
     }
-    // The Coin Portal projectile of the pot loot (:57176-57182); the port
-    // has no 518 family yet — `spawn_with_data` declines it and the break
-    // still returns like the C# (recorded deviation, phase 5).
+    // The Coin Portal projectile of the pot loot (`WorldGen.cs:57176-57182`,
+    // `SpawnThingsFromPot`'s luck-0 arm — NOT the Coin Gun 905, which fires
+    // the coin projectiles 158 via `useAmmo = AmmoID.Coin`, `Item.cs:11824-
+    // 11841`). The 518 row + aiStyle-94 arm landed W4-d10 (`5c229707`): the
+    // spawn resolves now (the old no-row decline is closed). The C# gates
+    // `Main.netMode != 1` (not a client) — the port's single-player/host
+    // fold; the `GetClosestRollLuck` luck-0 roll rides `spawn_things_from_pot`.
     for (px, py) in portals {
         let _ = app.projectiles.spawn_with_data(
             518,
@@ -7280,6 +7530,80 @@ fn is_blocked_by_lava(create_tile: u16, place_style: i32, target: &tr_core::tile
     false
 }
 
+/// `Player.PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`),
+/// verbatim (the g82-extras union per research/169, ported from g82's
+/// `check_rope_usability`, `67c9a740`): when the held item places a rope
+/// AND the target is already a rope, walk DOWN the column (through ropes,
+/// track 314, platforms and planters 380) to find the first free cell —
+/// at most 5 consecutive non-rope cells (the `num2 > num` break,
+/// `:41520-41523`), reset by every rope cell. The chain (214) ignores lava
+/// (`flag`, `:41514`); every other rope stops above a lava cell (`:41515`
+/// — `Tile.lava()` is the header-bit test alone, NO liquid-amount check).
+/// The target moves only when the landing cell is free or cut/breakable
+/// (`:41540`). Returns `(can_use, new_target_y)`; `IsTileLoaded`
+/// (`:41530-41537`) is always true in the port's single-player world —
+/// the SendData(159) request arm skips with it, so `can_use` passes
+/// through unchanged (the C#'s only `return false` sits in that arm).
+fn check_rope_usability(
+    world: &World,
+    create_tile: u16,
+    can_use: bool,
+    target_x: i32,
+    target_y: i32,
+) -> (bool, i32) {
+    let mut y = target_y;
+    let gate = can_use
+        && td::TILE_ROPE.has(create_tile)
+        && world
+            .tile(target_x, target_y)
+            .is_some_and(|t| t.active() && td::TILE_ROPE.has(t.kind));
+    if !gate {
+        return (can_use, y);
+    }
+    let max_non_rope = 5;
+    let mut non_rope = 0;
+    let ignores_lava = create_tile == 214;
+    loop {
+        let Some(t) = world.tile(target_x, y) else { break };
+        let passable = t.active()
+            && (td::TILE_ROPE.has(t.kind)
+                || t.kind == 314
+                || td::SET_PLATFORMS.has(t.kind)
+                || t.kind == 380);
+        if !passable || y >= world.height - 5 {
+            break;
+        }
+        // :41515 — the lava gate reads the cell BELOW.
+        if !ignores_lava
+            && world
+                .tile(target_x, y + 1)
+                .is_some_and(|b| b.liquid_kind() == tr_core::tile::LiquidKind::Lava)
+        {
+            break;
+        }
+        if t.kind == 314 || td::SET_PLATFORMS.has(t.kind) || t.kind == 380 {
+            non_rope += 1;
+            if non_rope > max_non_rope {
+                break;
+            }
+        } else {
+            non_rope = 0;
+        }
+        y += 1;
+    }
+    // :41539-41543 — the landing cell must be free or cut/breakable.
+    let landing_ok = world.tile(target_x, y).is_some_and(|t| {
+        !t.active()
+            || tr_core::tileobject::tile_cut(t.kind)
+            || tr_core::tileobject::breakable_when_placing(t.kind)
+    });
+    if landing_ok {
+        (can_use, y)
+    } else {
+        (can_use, target_y)
+    }
+}
+
 /// The routing decision of `use_tile_item`: the legacy neighbour/overlap
 /// pre-checks (`can_place`) gate only kinds that do NOT ride the
 /// `TileObject.CanPlace` route — those are judged by the anchors inside the
@@ -7343,6 +7667,14 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     let Some(kind) = registry::place_tile(held.kind) else {
         return false;
     };
+    // W4-d4 union — `PlaceThing_Tiles_CheckRopeUsability`
+    // (`Player.cs:39726` → `:41506-41545`): the rope-on-rope down-column
+    // walk retargets `Player.tileTargetY` BEFORE the lava gate / the
+    // assorted cut rule / the placement read it (`:39727`'s `tile` re-read
+    // and `:39743`'s gate both see the moved target). The g82-extras union
+    // per research/169; `can_use` is the port's true (the C#'s only false
+    // return rides the unported `IsTileLoaded` arm).
+    let (_, ty) = check_rope_usability(&app.world, kind, true, tx, ty);
     // `Item.placeStyle` — the `CustomPlace(type, placeStyle)` gate reads it
     // (`Player.cs:39771`); the style-resolved sub-tile flag decides the route.
     let style = registry::place_style(held.kind);
@@ -7761,6 +8093,16 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 /// with `useWithoutTorchGodsFavor: true` (`Projectile.cs:29142`) — the same
 /// unconditional body (W4-d6 `5d81f2de`; the visibility lifted here so the
 /// d6 branch merges without a conflict, W4-f33).
+/// is the C#'s verbatim; `ZoneShimmer` (`:40240`) and `ZoneUndergroundDesert`
+/// (`:40280`) read fields the port's `Zones` does not carry and are skipped
+/// in place (the remaining arms keep their order, the
+/// `player_lights::biome_torch_hold_style` precedent). `ZoneLihzhardTemple`
+/// (`:40248`) rides `Zones.temple`; the remix desert arm (`:40284-40287`)
+/// reads the world's REMIX seed flag. The underworld arm reads
+/// `Main.UnderworldLayer * 16` = `(height - 200) * 16` (`Main.cs:2790`).
+/// `pub(crate)`: the aiStyle-60 Shimmer stream's torch conversion calls it
+/// with `useWithoutTorchGodsFavor: true` (`Projectile.cs:29142`) — the same
+/// unconditional body (W4-d6).
 pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
     let z = p.zones;
     // `:40240-40243` — the shimmer arm comes FIRST (the Aether torch).
@@ -8337,7 +8679,9 @@ fn thrust_stab_tick(
         remaining,
         frame_w,
         scale,
-        0.0, // mountOffset — HeightOffsetHitboxCenter stands at 0
+        // mountOffset — HeightOffsetHitboxCenter (W4-d8 retire (1): LIVE,
+        // `Player.cs:42604` captures it before ItemCheck; 0 unmounted).
+        p.height_offset_hitbox_center(),
         i32::from(held.kind),
     );
     let Some(hitbox) = crate::player::thrust_melee_hitbox(
@@ -8434,6 +8778,93 @@ mod tests {
         for kind in [127u16, 314, 330, 331, 332, 333] {
             assert!(!tr_core::tileobject::routes_through_tile_object(kind, 0));
         }
+    /// W4-d4 union item 2 — `PlaceThing_Tiles_CheckRopeUsability`
+    /// (`Player.cs:41506-41545`, the g82-extras union per research/169):
+    /// the rope-on-rope down-column walk. Written NOT run (code-only).
+    #[test]
+    fn w4_d4_union_the_usability_walk_descends_the_rope_column() {
+        let mut w = World::new("coil".into(), 64, 200);
+        set_tile(&mut w, 20, 20, 213);
+        set_tile(&mut w, 20, 21, 213);
+        // Free cell at 22 → the target moves there.
+        let (ok, y) = check_rope_usability(&w, 213, true, 20, 20);
+        assert!(ok);
+        assert_eq!(y, 22);
+        // A non-rope held tile never walks.
+        assert_eq!(check_rope_usability(&w, 1, true, 20, 20), (true, 20));
+        // A non-rope target never walks.
+        let mut w2 = World::new("coil".into(), 64, 200);
+        set_tile(&mut w2, 20, 20, 1);
+        assert_eq!(check_rope_usability(&w2, 213, true, 20, 20), (true, 20));
+        // can_use false passes straight through (`:41509`'s gate).
+        assert_eq!(check_rope_usability(&w, 213, false, 20, 20), (false, 20));
+    }
+
+    /// The 5-platform cap (`:41517-41523`) + the lava gate (`:41514-41515`):
+    /// six consecutive platforms trip `num2 > 5` and the walk stops AT the
+    /// sixth (not free/cut → target unchanged); lava below the next cell
+    /// holds a rope walk but the chain (214) ignores it. The lava test is
+    /// the header-bit alone — a lava-flagged cell with liquid 0 still gates.
+    #[test]
+    fn w4_d4_union_the_platform_cap_and_the_lava_gate() {
+        let mut w = World::new("coil".into(), 64, 200);
+        set_tile(&mut w, 20, 20, 213);
+        for y in 21..=26 {
+            set_tile(&mut w, 20, y, 19); // six platforms
+        }
+        // The 6th platform trips num2 > 5 → the walk stops AT it; the
+        // landing cell (a platform) is not free/cut → target unchanged.
+        let (_, y) = check_rope_usability(&w, 213, true, 20, 20);
+        assert_eq!(y, 20, "the capped walk never retargets onto a platform");
+        // Lava below the next cell stops a rope walk…
+        let mut w = World::new("coil".into(), 64, 200);
+        set_tile(&mut w, 20, 20, 213);
+        {
+            let t = w.tile_mut(20, 21).unwrap();
+            t.liquid = 255;
+            t.set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        }
+        let (_, y) = check_rope_usability(&w, 213, true, 20, 20);
+        assert_eq!(y, 20, "the lava gate holds the target");
+        // …but the chain (214) ignores lava and walks through to the free
+        // cell at 21 (the lava cell itself is inactive → landing ok).
+        let (_, y) = check_rope_usability(&w, 214, true, 20, 20);
+        assert_eq!(y, 21);
+        // The header-bit-only test: liquid 0 + the lava flag still gates
+        // (`Tile.lava()` reads `(bTileHeader & 0x60) == 32`, no amount).
+        let mut w = World::new("coil".into(), 64, 200);
+        set_tile(&mut w, 20, 20, 213);
+        w.tile_mut(20, 21)
+            .unwrap()
+            .set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let (_, y) = check_rope_usability(&w, 213, true, 20, 20);
+        assert_eq!(y, 20, "the bit alone gates, no liquid-amount term");
+    }
+
+    /// The `use_tile_item` wire (`Player.cs:39726` — the walk runs BEFORE
+    /// the lava gate / cut rule / placement): holding Rope (965 → tile 213)
+    /// over an existing rope column extends the column at the first free
+    /// cell below, consuming one item; a plain-block target never walks.
+    #[test]
+    fn w4_d4_union_the_rope_item_use_extends_the_column_below() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("coil".into(), 64, 200);
+        set_tile(&mut app.world, 10, 10, 213);
+        set_tile(&mut app.world, 10, 11, 213);
+        app.inventory[app.selected] = slot(965, 5);
+        assert!(use_tile_item(&mut app, 10, 10), "the extension places");
+        let t = *app.world.tile(10, 12).unwrap();
+        assert!(t.active() && t.kind == 213, "the rope landed at the first free cell");
+        assert!(app.world.tile(10, 10).unwrap().active(), "the clicked rope stands");
+        assert_eq!(app.inventory[app.selected].count, 4, "one rope consumed");
+        // A non-rope target: the walk never fires, the legacy pre-check
+        // refuses the occupied cell (the pre-union behaviour stands).
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = World::new("coil".into(), 64, 200);
+        set_tile(&mut app2.world, 10, 10, 1);
+        app2.inventory[app2.selected] = slot(965, 5);
+        assert!(!use_tile_item(&mut app2, 10, 10), "the occupied dirt refuses");
+        assert_eq!(app2.inventory[app2.selected].count, 5, "the item is kept");
     }
 
     /// S1-E-21 wave B: the placement-sound switch (`WorldGen.cs:60263-60282`)
@@ -14363,6 +14794,41 @@ mod tests {
     }
 
     #[test]
+    fn test_dw_5_1_the_bubble_gun_fires_the_three_bubble_volley() {
+        // W4-d8 DOC-SWEEP (2) — `Player.cs:48393-48401`: the Bubble Gun
+        // (2623, shoot 410, shootSpeed 15) fires THREE bubbles per use,
+        // each at the aim plus `Next(-40, 41) * 0.1` per axis — six
+        // `UpdatePlayers` range draws, X before Y per bubble. The C#
+        // `return`s (no generic tail); the bubbles carry the fused damage
+        // 70 (the magic class multiplier 1) and the item's knockback 3.
+        let mut app = staff_app(2623, "Bubble Gun");
+        fire_once(&mut app);
+        let bubbles: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bubbles.len(), 3, "the three-bubble volley (`:48395`)");
+        for b in &bubbles {
+            assert_eq!(b.kind, 410, "the Bubble Gun's Item.shoot (`Item.cs:25686`)");
+            assert_eq!(b.damage, 70, "the fused weapon damage");
+            // The aim is +X (the cursor sits right of the player): the
+            // base shot is (15, 0), the spread adds ±4 per axis.
+            assert!(
+                (b.vel.x - 15.0).abs() <= 4.0 && b.vel.y.abs() <= 4.0,
+                "the ±40×0.1 spread (`:48399`), v = {:?}",
+                b.vel
+            );
+        }
+        // The three spreads differ (the seed draws six distinct values).
+        assert!(
+            bubbles[0].vel != bubbles[1].vel || bubbles[1].vel != bubbles[2].vel,
+            "the per-bubble spread draws"
+        );
+    }
+
+    #[test]
     fn test_dw_5_2_the_channel_holds_the_aim_and_the_release_clears_it() {
         // `Player.cs:52958-52968` + `:52975-52981`: a `channel` item held
         // with the button down keeps the clamped aim on the player; the
@@ -15206,6 +15672,144 @@ mod tests {
         );
     }
 
+    /// W4-d4 DOC-SWEEP item 2 — the Beach Ball ITEM use (859, `ItemID.cs
+    /// :3401`; NOT 3060 — that is the Bone Rattle). `Item.cs:11439-11450`:
+    /// useStyle 1, shoot 155, shootSpeed 6, consumable, noUseGraphic,
+    /// noMelee, useTime/useAnimation 20 — no channel, no useAmmo, no
+    /// per-item `ItemCheck_Shoot` arm (the C# has no `type == 859` block),
+    /// so the throw rides the GENERIC non-ammo tail (`Player.cs:49437`):
+    /// the aim normalized to 6, the centre+10 spawn, damage −1 through
+    /// `GetWeaponDamage`'s `damage <= 0` early return (`:53424-53427`),
+    /// then the consumable decrement (`:43280-43326` — no ranged flag, so
+    /// no not-consume rolls). The projectile side is d4's landed
+    /// `beach_ball_step` (aiStyle 32, `d9324e5f`).
+    #[test]
+    fn w4_d4_sweep_the_beach_ball_item_throws_the_155_and_consumes() {
+        let mut app = staff_app(859, "Beach Ball");
+        seed_stream(&mut app, 0x8A11);
+        fire_once(&mut app);
+        let balls: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 155)
+            .collect();
+        assert_eq!(balls.len(), 1, "one beach ball per throw");
+        let b = balls[0];
+        assert!((b.vel.length() - 6.0).abs() < 0.05, "shootSpeed 6 (`Item.cs:11441`)");
+        assert_eq!(b.damage, -1, "the −1 damage passes through (`:53424`)");
+        assert_eq!(
+            app.inventory[app.selected].count, 0,
+            "the consumable decrements (`:43317-43320`)"
+        );
+        assert!(
+            !app.player.as_ref().unwrap().channel,
+            "the ball is not a channel item"
+        );
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(0x8A11, 0),
+            "no spawn-time draw (the generic tail carries none; crit is per-hit)"
+        );
+    }
+
+    /// W4-d4 verify item 4 — the BeachBall 859 / PiranhaGun 1156 ITEM rows
+    /// (the DOC-SWEEP census re-pinned against the generated table):
+    /// `Item.cs:11439-11450` (859: useStyle 1, shoot 155, shootSpeed 6,
+    /// consumable, useTime/useAnimation 20, value 20, 44×44, UseSound
+    /// Item1 = SOUND_STYLES index 126) and `Item.cs:14213-14230` (1156:
+    /// channel TRUE, useStyle 5, shoot 190, shootSpeed 14, ranged, damage
+    /// 40, kb 1, scale 1.1, rare 8, value sellPrice(0,20) = 1_000_000,
+    /// 30×10, UseSound Item10 = index 135). The generator carries both
+    /// (`python tools/GenItemData/gen.py --check` → check ok, 6196 rows);
+    /// noUseGraphic/noMelee are the generator's documented
+    /// not-provisioned flags (`gen.py:410`) — the port's melee lane never
+    /// swings a shoot-carrying useStyle-1/5 item, so the fold is
+    /// observationally inert. Written NOT run (code-only).
+    #[test]
+    fn w4_d4_verify_the_beach_ball_and_piranha_gun_item_rows() {
+        let b = registry::get(859).expect("the 859 row");
+        assert_eq!(b.projectile, Some(155), "`Item.cs:11442`");
+        assert_eq!(b.shoot_speed, 6.0, "`:11441`");
+        assert_eq!(b.use_style, 1, "`:11440`");
+        assert_eq!((b.use_time, b.use_animation), (20, 20), "`:11447-11448`");
+        assert!(b.consumable, "`:11445`");
+        assert!(!b.channel, "no channel write in the case");
+        assert_eq!((b.width, b.height), (44, 44), "`:11443-11444`");
+        assert_eq!(b.value, 20, "`:11451`");
+        assert_eq!(b.damage, -1, "the stock −1 (`Item.cs` field default)");
+        assert_eq!(b.use_sound, Some(126), "SoundID.Item1 (`:11446`, SOUND_STYLES[126])");
+        let g = registry::get(1156).expect("the 1156 row");
+        assert_eq!(g.projectile, Some(190), "`Item.cs:14223`");
+        assert_eq!(g.shoot_speed, 14.0, "`:14224`");
+        assert!(g.channel, "`:14214`");
+        assert_eq!(g.use_style, 5, "`:14215`");
+        assert_eq!((g.use_time, g.use_animation), (30, 30), "`:14216-14217`");
+        assert_eq!(g.damage, 40, "`:14221`");
+        assert_eq!(g.knock_back, 1.0, "`:14218`");
+        assert_eq!(g.scale, 1.1, "`:14222`");
+        assert!(g.ranged, "`:14228`");
+        assert_eq!(g.rare, 8, "`:14226`");
+        assert_eq!(g.value, 1_000_000, "sellPrice(0,20) (`:14227`)");
+        assert_eq!((g.width, g.height), (30, 10), "`:14219-14220`");
+        assert_eq!(g.use_sound, Some(135), "SoundID.Item10 (`:14225`, SOUND_STYLES[135])");
+        assert!(!g.consumable, "no consumable write in the case");
+    }
+
+    /// W4-d4 DOC-SWEEP item 3 — the Piranha Gun ITEM use (1156,
+    /// `ItemID.cs:3995`; NOT 3061 — that is the Architect Gizmo Pack).
+    /// `Item.cs:14213-14230`: channel TRUE, useStyle 5, shoot 190,
+    /// shootSpeed 14, ranged, noMelee, useTime/useAnimation 30. The C#
+    /// `ItemCheck_Shoot` arm (`Player.cs:48365-48381`) spawns `3 − num`
+    /// piranhas (the owner's active 190 recount), each at the aim plus
+    /// `Next(-40, 41) * 0.05` per axis. The channel-refill gate
+    /// (`:43545-43558`) re-fires whenever the trio is short. The
+    /// projectile side is d4's landed `piranha_step` (aiStyle 39,
+    /// `5771c1f0`). First press: the trio + the channel latch.
+    #[test]
+    fn w4_d4_sweep_the_piranha_gun_fires_a_trio_and_latches_the_channel() {
+        let mut app = staff_app(1156, "Piranha Gun");
+        seed_stream(&mut app, 0x91A2);
+        fire_once(&mut app);
+        let piranhas: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 190)
+            .collect();
+        assert_eq!(piranhas.len(), 3, "the trio (`:48372` 3 − 0)");
+        let aim = staff_aim(&app);
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+        let base = dir * 14.0; // shootSpeed 14
+        for p in &piranhas {
+            // The spread is at most 40 * 0.05 = 2.0 per axis.
+            assert!((p.vel.x - base.x).abs() <= 2.0 + 1e-3, "the X spread");
+            assert!((p.vel.y - base.y).abs() <= 2.0 + 1e-3, "the Y spread");
+        }
+        assert!(
+            app.player.as_ref().unwrap().channel,
+            "the channel latches (`StartChanneling`, `:52958`)"
+        );
+    }
+
+    /// W4-d4 DOC-SWEEP item 3 — the draw chain: per piranha the spread X
+    /// then spread Y (`Next(-40, 41)` each), 3 piranhas → 6 draws on the
+    /// `UpdatePlayers` stream (the resync spawn-crit conversion dropped the
+    /// throw-time crit). The count recount itself draws nothing.
+    #[test]
+    fn w4_d4_sweep_the_piranha_gun_draw_chain_is_seed_deterministic() {
+        let seed = 0x91A2_0007u32 as i32;
+        let mut app = staff_app(1156, "Piranha Gun");
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 6),
+            "2 draws per piranha × 3"
+        );
+    }
+
     // ---- S1-P-i21 (the i01 non-ammo volley tick): the ItemTimeIsZero re-fire ----
     // WRITTEN, NOT RUN (code-only mode). The C# fires `ItemCheck_Shoot` at every
     // `itemAnimation > 0 && ItemTimeIsZero` tick (`Player.cs:43544` → `:43568`),
@@ -15562,6 +16166,165 @@ mod tests {
         assert_eq!(a_seed, b_seed, "the seed is seed-stable");
         assert_eq!(a_stream, draws_after(seed, 1), "the LCG seed only (crit is per-hit)");
         assert_eq!(a_stream, b_stream, "the stream is seed-stable");
+    }
+
+    /// W4-d6 residual — the Water Gun (item 2272, `Item.cs:22876-22889`:
+    /// useStyle 5, useTime/useAnimation 20, damage 0, shoot 358, shootSpeed
+    /// 11, autoReuse, UseSound Item181) fires through the generic tail, and
+    /// `NewProjectile`'s local-owner switch rolls the accumulator step
+    /// `ai[1] = Next(10, 31) * 0.1f` (`Projectile.cs:10914-10916`). The roll
+    /// is the stream's FIRST and ONLY draw of the shot (no spread, no leaf
+    /// jitter, no aqua seed for the guns). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_water_gun_fires_with_the_newprojectile_ai1_roll() {
+        let mut app = staff_app(2272, "Water Gun");
+        let seed = 0x2A71;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1, "one stream per use");
+        assert_eq!(blobs[0].kind, crate::projectile::WATER_GUN, "Item.shoot 358");
+        assert!(
+            (blobs[0].vel.length() - 11.0).abs() < 0.05,
+            "shootSpeed 11 (|v|={})",
+            blobs[0].vel.length()
+        );
+        assert_eq!(blobs[0].damage, 0, "the :22882 damage 0");
+        // The roll: one Next(10, 31) draw, ai[1] = draw * 0.1 in [1.0, 3.0].
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let draw = probe.next_range(10, 31);
+        assert_eq!(blobs[0].ai[1], draw as f32 * 0.1, "the :10915 roll");
+        assert_eq!(blobs[0].ai[0], 0.0, "the case assigns no ai0");
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 1),
+            "exactly the one NewProjectile roll"
+        );
+    }
+
+    /// W4-d6 residual — the Slime Gun (item 2610, `Item.cs:25504-25517`:
+    /// useTime/useAnimation 12, damage 0, shoot 406, shootSpeed 8) rolls
+    /// `ai[1] = Next(10, 21) * 0.1f` (`Projectile.cs:10917-10919`).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_slime_gun_rolls_its_own_ai1_range() {
+        let mut app = staff_app(2610, "Slime Gun");
+        let seed = 0x51E7;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(blobs[0].kind, crate::projectile::SLIME_GUN, "Item.shoot 406");
+        assert!(
+            (blobs[0].vel.length() - 8.0).abs() < 0.05,
+            "shootSpeed 8 (|v|={})",
+            blobs[0].vel.length()
+        );
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let draw = probe.next_range(10, 21);
+        assert_eq!(blobs[0].ai[1], draw as f32 * 0.1, "the :10918 roll");
+        assert_eq!(stream_of(&mut app), draws_after(seed, 1));
+    }
+
+    /// W4-d6 residual — the Shimmer Gun (item 5495, `Item.cs:43313-43325`:
+    /// useTime/useAnimation 20, damage 0, shoot 1042, shootSpeed 10) has a
+    /// per-item use arm passing `ai0: 0f, ai1: 1f` (`Player.cs:49124-49127`);
+    /// 1042 has NO NewProjectile spawn-roll case, so the payload lands
+    /// verbatim and the shot spends NO draw. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_shimmer_gun_passes_ai1_one_and_spends_no_draw() {
+        let mut app = staff_app(5495, "Shimmer Gun");
+        let seed = 0x9D3;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(
+            blobs[0].kind,
+            crate::projectile::SHIMMER_GUN_STREAM,
+            "Item.shoot 1042"
+        );
+        assert!(
+            (blobs[0].vel.length() - 10.0).abs() < 0.05,
+            "shootSpeed 10 (|v|={})",
+            blobs[0].vel.length()
+        );
+        assert_eq!(blobs[0].ai[0], 0.0, "the :49126 ai0 0f");
+        assert_eq!(blobs[0].ai[1], 1.0, "the :49126 ai1 1f");
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 0),
+            "no spawn roll for 1042"
+        );
+    }
+
+    /// W4-d6 residual 5 — the Vampire Knives (item 1569, `Item.cs:15773`:
+    /// melee, damage 29, shoot 304, shootSpeed 15, kb 2.75) fire the
+    /// `Player.cs:48157-48188` volley: 4 base knives + one per taken
+    /// `Next(2)/Next(4)/Next(8)/Next(16)` gate (the four count rolls run
+    /// FIRST), then per knife two `Next(-35, 36)` spread draws scaled
+    /// `0.05 * index` and renormalised to speed. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_vampire_knives_volley_rolls_the_count_then_the_spreads() {
+        let mut app = staff_app(1569, "Vampire Knives");
+        let seed = 0x6B1D;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        // The twin stream: the four count gates, then 2 draws per knife.
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let mut count = 4;
+        for max in [2, 4, 8, 16] {
+            if probe.next_range(0, max) == 0 {
+                count += 1;
+            }
+        }
+        let knives: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(knives.len(), count as usize, "the :48159-48175 count");
+        // The base aim: +x at speed 15 (the cursor 80 px right, same row;
+        // meleeSpeed 1 leaves the speed alone).
+        let (shot_x, shot_y) = (15.0f32, 0.0f32);
+        for (n, k) in knives.iter().enumerate() {
+            assert_eq!(k.kind, crate::projectile::VAMPIRE_KNIFE, "Item.shoot 304");
+            assert_eq!(k.damage, 29, "the item damage through the melee x1");
+            // The spread pair per knife (index 0 draws but spreads 0),
+            // then the :48183-48184 renormalise.
+            let spread = 0.05 * n as f32;
+            let mut vx = shot_x + probe.next_range(-35, 36) as f32 * spread;
+            let mut vy = shot_y + probe.next_range(-35, 36) as f32 * spread;
+            let norm = 15.0 / (vx * vx + vy * vy).sqrt();
+            vx *= norm;
+            vy *= norm;
+            assert!(
+                (k.vel.x - vx).abs() < 1e-3 && (k.vel.y - vy).abs() < 1e-3,
+                "knife {n}: the spread + renormalise ({:?} vs {vx},{vy})",
+                k.vel
+            );
+        }
+        assert_eq!(
+            stream_of(&mut app),
+            probe,
+            "exactly 4 count draws + 2 per knife on UpdatePlayers"
+        );
     }
 
     /// The Bee Gun (item 1121) fires 1-5 bees (`Player.cs:48309-48332`):
@@ -17997,6 +18760,116 @@ mod use_loop_tests {
             .count();
         assert_eq!(live, 1, "the cap of 1 holds after the spawn");
     }
+
+    /// W4-d9 wiring — the MagicLantern 3043 USE path (`Player.cs:53242-
+    /// 53245`'s `ItemCheck_ApplyPetBuffs` grant + the generic `:49437`
+    /// shoot tail): the use grants buff 152 at 3600 ticks and spawns the
+    /// 492 light pet at the player centre + aim*10 with zero velocity
+    /// (shootSpeed 0), damage 0. The buff-152 arm's keep-alive + the
+    /// aiStyle-90 machine ride `buff_effects_accessory.rs` /
+    /// `projectile_ai_style90.rs`. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_magic_lantern_use_grants_the_buff_and_spawns() {
+        let mut app = app_with_staff(3043); // the Magic Lantern — shoot 492, buff 152
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        // The use-start grant (`Player.cs:53242-53245`): buff 152 at 3600.
+        let p = app.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(152).expect("the 152 grant");
+        assert_eq!(p.buffs.buff_time[i], 3600, "the ApplyPetBuffs 3600 grant");
+        // The generic shoot tail's 492 spawn: zero velocity (shootSpeed 0),
+        // damage 0, the row's box, the player-centre + aim*10 spawn point.
+        let slot = app.projectiles.slots().iter().find(|s| s.active && s.kind == 492)
+            .expect("the lantern spawned");
+        assert_eq!((slot.vel.x, slot.vel.y), (0.0, 0.0), "shootSpeed 0");
+        assert_eq!(slot.damage, 0);
+        assert_eq!((slot.w, slot.h), (18.0, 32.0), "the 492 row's box");
+        assert_eq!(slot.owner, 0, "the local owner");
+        let (cx, cy) = p.center();
+        // The cursor sits left of the player (the fixture's camera column
+        // 30 vs the player column 33) — the aim is (-1, 0), so the spawn
+        // point is the centre + (-10, 0).
+        assert_eq!((slot.pos.x, slot.pos.y), (cx - 10.0, cy));
+    }
+
+    /// W4-d9 wiring — the ClingerStaff 3014 USE path (`Player.cs:48591-
+    /// 48642`): the cursed-flame wall. A corridor fixture — the player at
+    /// column 33 row 297 (centre row 298), a stone floor at row 300 (the
+    /// app_with_staff floor) and a stone ceiling at row 290 over columns
+    /// 36-44; the cursor sits right at (648, 4773) so the aim is pure +X.
+    /// The point walks right to the cursor (col 40), the down scan finds
+    /// the floor (row 300), the up scan the ceiling (row 290): the gap is
+    /// 9 tiles = 144 px (≤ the 15-tile cap), the wall top = 4800 − 144 =
+    /// 4656. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_clinger_staff_use_spawns_the_wall_in_the_gap() {
+        let mut app = app_with_staff(3014); // the Clinger Staff — shoot 482, magic
+        // The ceiling over the wall region (the floor row 300 already rides
+        // app_with_staff). Rows 297-299 stay air so the CanHitLine walk holds.
+        for x in 36..=44 {
+            let t = app.world.tile_mut(x, 290).unwrap();
+            t.kind = 1;
+            t.flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        // The cursor right of the player, on the centre row → pure +X aim.
+        app.camera = Vec2::new(648.0, 4773.0);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app.projectiles.slots().iter().find(|s| s.active && s.kind == 482)
+            .expect("the wall spawned in the ceiling/floor gap");
+        // The aiStyle-87 payload: ai0 = the wall top, ai1 = the height.
+        assert_eq!(slot.ai[0], 4656.0, "the wall top (floor 4800 − gap 144)");
+        assert_eq!(slot.ai[1], 144.0, "the 9-tile gap height");
+        assert_eq!((slot.vel.x, slot.vel.y), (0.0, 0.0), "zero spawn velocity");
+        assert_eq!(slot.damage, 43, "the class-scaled magic damage");
+        // NewProjectile centres the 16x200 box on (640, 4773) → (632, 4673).
+        assert_eq!((slot.pos.x, slot.pos.y), (632.0, 4673.0));
+    }
+
+    /// W4-d9 wiring — the ClingerStaff's `flag8` refusal (`Player.cs:48619-
+    /// 48622`): with NO ceiling above the cursor column the up scan runs out
+    /// of solid tiles, the gap is unbounded → no wall spawns. WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_clinger_staff_refuses_without_a_ceiling() {
+        let mut app = app_with_staff(3014); // floor row 300 only, NO ceiling
+        app.camera = Vec2::new(648.0, 4773.0);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            !app.projectiles.slots().iter().any(|s| s.active && s.kind == 482),
+            "no ceiling → flag8 → no wall"
+        );
+    }
+
+    /// W4-d9 wiring — the InfluxWaver 2880 USE path (`Player.cs:49405-
+    /// 49408`'s `ai7 = -1f` → the generic `:49437` tail's `ai[0]`): the
+    /// melee wave spawns with the launch-fade seed the aiStyle-81 arm
+    /// reads (`Projectile.cs:31005`), the aim normalized to shootSpeed 11
+    /// (÷ meleeSpeed), the class-scaled melee damage. Progression: the
+    /// Martian Saucer 395 drop (`loot_db_gen.rs:1292`) + the Zenith 4956
+    /// recipe ingredient (`recipes_gen.rs:17780`) — the d19/d20 bands
+    /// carry the id/row, the use-path seed is this wiring. WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_influx_waver_use_seeds_the_launch_fade() {
+        let mut app = app_with_staff(2880); // the Influx Waver — shoot 451, melee
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app.projectiles.slots().iter().find(|s| s.active && s.kind == 451)
+            .expect("the wave spawned");
+        assert_eq!(slot.ai[0], -1.0, "the launch-fade seed (`:49407`)");
+        assert_eq!(slot.ai[1], 0.0);
+        assert_eq!(slot.damage, 100, "the class-scaled melee damage");
+        // The cursor sits left of the player → the aim is (-1, 0), the
+        // velocity -shootSpeed (11) on X at meleeSpeed 1.
+        assert_eq!((slot.vel.x, slot.vel.y), (-11.0, 0.0));
+        assert!(slot.melee, "the melee class flag");
+    }
 }
 
 /// S1-P-i26 — the sentry-summon USE path's integration witnesses: the two
@@ -19853,4 +20726,5 @@ mod wall_placement_tests {
         }
     }
 }
+}}}
 }}}

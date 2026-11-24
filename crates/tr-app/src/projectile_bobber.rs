@@ -465,7 +465,12 @@ pub(crate) fn kill_hook(p: &mut Projectile, level: i32, rng: &mut dyn DropRng) -
 /// `Collision.WetCollision` (`Collision.cs:1572-1651`) + `LavaCollision`
 /// (`:1653-1684`) folded into one probe: the inset rectangle for wet/honey/
 /// shimmer, the FULL box for lava. Writes the slot's four flags.
-fn probe_wet(p: &mut Projectile, world: &World) {
+/// `pub(crate)`: the aiStyle-25 boulder arm probes at its head the same way
+/// (the bobber's tick-head probe convention, W4-d3).
+/// `pub(crate)` since W4-d4: the beach-ball arm (aiStyle 32) reads the same
+/// probe at its tick head (the one-tick-lag convention, ANALYSIS "Fishing
+/// rod (S1-P-i35)").
+pub(crate) fn probe_wet(p: &mut Projectile, world: &World) {
     let (x, y, w, h) = (p.pos.x, p.pos.y, p.w, p.h);
     let wi = w as i32;
     let hi = h as i32;
@@ -530,6 +535,22 @@ fn intersects(ax: f32, ay: f32, aw: f32, ah: f32, bx: f32, by: f32, bw: f32, bh:
 /// Whether a kind is a fishing bobber (the aiStyle-61 dispatch gate).
 pub(crate) fn handles(kind: u16) -> bool {
     BOBBER_KINDS.contains(&kind)
+}
+
+/// `HandleMovement`'s aiStyle-61 blocked-move arm (`Projectile.cs:19615-19625`,
+/// W4-d7 F1): a blocked X reflects at 0.3 (`velocity.X = lastVelocity.X *
+/// -0.3`); a blocked Y reflects at 0.3 ONLY when `lastVelocity.Y > 1` (a slow
+/// rise/fall just stops). NO `Kill()` — the bobber bounces off the tile, it
+/// does not die on contact (the `kill_step` kill-on-tile stand-in this
+/// replaces). The wiring caller invokes it when the collision pass changed
+/// the velocity, with the pre-collision velocity.
+pub(crate) fn bobber_bounce(p: &mut Projectile, last_vel: glam::Vec2) {
+    if p.vel.x != last_vel.x {
+        p.vel.x = last_vel.x * -0.3;
+    }
+    if p.vel.y != last_vel.y && last_vel.y > 1.0 {
+        p.vel.y = last_vel.y * -0.3;
+    }
 }
 
 // --- S1-P-i35 witnesses (WRITTEN NOT RUN — code-only mode) -----------------
@@ -696,5 +717,34 @@ mod tests {
         p.wants_sound = None;
         sonar_bite_cues(&mut p, true, 2300, 586);
         assert_eq!(p.wants_sound, Some((42, 311, 480.0, 320.0, 0.0)));
+    /// W4-d7 F1 — the aiStyle-61 bounce (`:19615-19625`): a blocked X
+    /// reflects at 0.3; a blocked Y reflects at 0.3 only when
+    /// `lastVelocity.Y > 1`; NO Kill. The caller passes the pre-collision
+    /// velocity and the post-collision velocity already on the slot.
+    #[test]
+    fn w4_d7_f1_the_bobber_bounce_reflects_at_03() {
+        // Both axes blocked, fast fall: both reflect at 0.3.
+        let mut p = bobber(100.0, 100.0);
+        let last = glam::Vec2::new(4.0, 6.0);
+        p.vel = glam::Vec2::ZERO; // the collision stopped both axes
+        bobber_bounce(&mut p, last);
+        assert!((p.vel.x - -1.2).abs() < 1e-6, "4 * -0.3");
+        assert!((p.vel.y - -1.8).abs() < 1e-6, "6 * -0.3 (lastY > 1)");
+        assert!(p.active, "the bounce does NOT kill");
+        // A slow fall (lastY <= 1): the Y stays stopped, no reflect.
+        let mut p2 = bobber(100.0, 100.0);
+        let last2 = glam::Vec2::new(4.0, 0.5);
+        p2.vel = glam::Vec2::ZERO;
+        bobber_bounce(&mut p2, last2);
+        assert!((p2.vel.x - -1.2).abs() < 1e-6, "the X still reflects");
+        assert_eq!(p2.vel.y, 0.0, "lastY 0.5 <= 1 — the Y stays stopped");
+        // An unblocked axis is untouched.
+        let mut p3 = bobber(100.0, 100.0);
+        let last3 = glam::Vec2::new(4.0, 6.0);
+        p3.vel = glam::Vec2::new(4.0, 0.0); // only Y blocked
+        bobber_bounce(&mut p3, last3);
+        assert_eq!(p3.vel.x, 4.0, "the unblocked X holds");
+        assert!((p3.vel.y - -1.8).abs() < 1e-6, "the blocked Y reflects");
     }
+}
 }

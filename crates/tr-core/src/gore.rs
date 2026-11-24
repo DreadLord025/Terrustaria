@@ -68,6 +68,27 @@ impl GoreRng for UnifiedRandom {
     }
 }
 
+/// W4-g16 wiring — the pool also rolls on the update pass's ERASED stream
+/// (`&mut dyn DropRng`, the `ProjectilePool::update` signature): every
+/// method forwards to the identically shaped `DropRng` draw, so one
+/// `Sample()` step stays one step on the same stream (the `GoreRng for
+/// UnifiedRandom` precedent; `next_max`/`next_float_direction` are the
+/// stream-exact `DropRng` defaults, `loot.rs`).
+impl GoreRng for dyn crate::loot::DropRng {
+    fn next_max(&mut self, max: i32) -> i32 {
+        crate::loot::DropRng::next_max(self, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        crate::loot::DropRng::next_range(self, min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        crate::loot::DropRng::next_float(self)
+    }
+    fn next_float_direction(&mut self) -> f32 {
+        crate::loot::DropRng::next_float_direction(self)
+    }
+}
+
 /// The collision seam the update walk needs. The port's collision ports live
 /// in `tr-app` (`collision.rs`, `player.rs::wet_collision`), which `tr-core`
 /// cannot depend on — the App injects the probes once (the same seam the
@@ -312,7 +333,7 @@ impl GorePool {
     /// `Gore.NewGorePerfect` (`Gore.cs:1273-1279`): `NewGoreDirect`, then the
     /// position/velocity overwrite. Returns [`GORE_SENTINEL`] untouched on a
     /// refused spawn (the C# `Main.gore[600]` read).
-    pub fn new_gore_perfect<R: GoreRng>(
+    pub fn new_gore_perfect<R: GoreRng + ?Sized>(
         &mut self,
         rng: &mut R,
         world: &World,
@@ -332,7 +353,7 @@ impl GorePool {
 
     /// `Gore.NewGoreDirect` (`Gore.cs:1281-1284`): `NewGore`, then the slot
     /// reference (the returned index; [`GORE_SENTINEL`] when refused).
-    pub fn new_gore_direct<R: GoreRng>(
+    pub fn new_gore_direct<R: GoreRng + ?Sized>(
         &mut self,
         rng: &mut R,
         world: &World,
@@ -349,7 +370,7 @@ impl GorePool {
     /// sticky/timeLeft chain → per-type arms → out-of-world deactivate.
     /// Returns the slot index, or [`GORE_SENTINEL`]. Every roll hits the
     /// caller's stream (the RNG-order contract in the module docs).
-    pub fn new_gore<R: GoreRng>(
+    pub fn new_gore<R: GoreRng + ?Sized>(
         &mut self,
         rng: &mut R,
         world: &World,

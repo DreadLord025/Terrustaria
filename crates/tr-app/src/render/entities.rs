@@ -50,6 +50,15 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// W4-d6 residual 6 — the Spectre head vanity pair beyond the packed
+    /// 1..4 slots: `TextureAssets.ArmorHead[101]` (the Hood, item 1503)
+    /// and `[156]` (the Mask, item 2189) — `ArmorIDs.Head.SpectreHood/
+    /// SpectreMask` (`ArmorIDs.cs:249/:359`). Both are plain normal hats
+    /// (neither in `GetHairSettings`' fullHair/hatHair lists,
+    /// `Player.cs:16791-16904` — the hair stays suppressed), drawn by the
+    /// normal-hat branch's 52-px crop (`PlayerDrawLayers.cs:2254-2281`).
+    pub(crate) armor_head_spectre_hood: Option<BgTex>,
+    pub(crate) armor_head_spectre_mask: Option<BgTex>,
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
@@ -76,6 +85,8 @@ impl Default for PlayerAssets {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            armor_head_spectre_hood: None,
+            armor_head_spectre_mask: None,
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
         }
@@ -119,6 +130,10 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         shoes: sky_tex(atlas, "Player_0_12", None),
         hair: sky_tex(atlas, "Player_Hair_1", None),
         armor_head: armor_sheets("Armor_Head"),
+        // W4-d6 residual 6 — the Spectre head pair (`AssetInitializer.cs:
+        // 165-185` indexes by the armor slot: file number == slot).
+        armor_head_spectre_hood: sky_tex(atlas, "Armor_Head_101", None),
+        armor_head_spectre_mask: sky_tex(atlas, "Armor_Head_156", None),
         armor_body: {
             let mut body: [Option<BgTex>; 5] = [None; 5];
             for (slot, tex) in body.iter_mut().enumerate().skip(1) {
@@ -820,6 +835,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(GOLD_CRITTER_SHEETS)
             .chain(WATERFOWL_SHEETS)
             .chain(CRITTER_TAIL_SHEETS)
+            .chain(CULTIST_DRAGON_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1556,6 +1572,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::BoneThrowingSkeleton2 => 450,
         NpcKind::BoneThrowingSkeleton3 => 451,
         NpcKind::BoneThrowingSkeleton4 => 452,
+        // W4-d9 wiring (d40 rows): the dragon segments' bestiary credits
+        // fold onto the head (`entry_for_npc`), but their DRAW sheets are
+        // their own `TextureAssets.Npc[type]` (455-459) — the fishron-
+        // hazard precedent. The head 454 + the squidhead 521 keep their
+        // own net ids (no hand row needed).
         NpcKind::CultistDragonBody1 => 455,
         NpcKind::CultistDragonBody2 => 456,
         NpcKind::CultistDragonBody3 => 457,
@@ -1982,6 +2003,16 @@ pub(crate) const WATERFOWL_SHEETS: &[u32] = &[362, 363, 364, 365, 602, 603, 608,
 /// 445→13, 446→2, 447→6, 448→2, 484→2, 485/486/487→4.
 pub(crate) const CRITTER_TAIL_SHEETS: &[u32] =
     &[357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487];
+
+/// W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon's chain + the
+/// 521 squidhead draw their own sheets (`TextureAssets.Npc[type]`), keyed
+/// by the vanilla net id in [`NpcAssets::npc_sheet`] like the families.
+pub(crate) const CULTIST_DRAGON_SHEETS: &[u32] = &[
+    454, // the Phantasm Dragon head
+    455, 456, 457, 458, // the four body segments
+    459, // the tail
+    521, // the Ancient Vision (the squidhead)
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -2884,6 +2915,10 @@ fn npc_health_bar_scale(kind: NpcKind) -> f32 {
         | WyvernHead
         // W4-d42 - `Main.cs:45915`: 510/454/621 ride the 1.5 bar.
         | BloodEelHead
+        // W4-d9 wiring: `Main.cs:45915-45918` — `if (type == 510 || type
+        // == 454 || type == 621) scale = 1.5f` (the 454 dragon head; the
+        // 510/621 worm heads have no port kind).
+        | CultistDragonHead
         | AncientCultist => 1.5,
         _ => 1.0,
     }
@@ -4589,6 +4624,22 @@ pub(crate) fn draw_npcs(
             }
             // E8 merge: the c10 12-critter draw tail dropped - d40's group arm
             // above owns them (the identical texture_net_id shape).
+            // W4-d9 wiring (d40 rows): the Phantasm Dragon's chain draws
+            // its own sheets (`CULTIST_DRAGON_SHEETS`) at the vanilla row
+            // counts (`Main.npcFrameCount` 454 = 3, 455-459 = 1) with the
+            // generic centred anchor — the small-kinds shape. The 521
+            // squidhead's 4-row strip (`npcFrameCount[521]` = 4) rides the
+            // same arm.
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::AncientCultistSquidhead => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;

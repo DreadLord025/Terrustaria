@@ -127,6 +127,119 @@ pub fn pound_tile(
     true
 }
 
+/// `Tile.SmoothSlope` (`Tile.cs:792-865`, W4-d8 retire (1)): the
+/// neighbour-aware slope picker the Drill's `UseDrill` calls after every
+/// block pick (`Mount.cs:3119`, `applyToNeighbors: true, sync: true`).
+/// `apply_to_neighbors` smooths the four cardinals FIRST (each single-cell),
+/// then the cell itself — the C# recursion order. The `sync` arm
+/// (`:847-864`, NetMessage 17 sub-commands 23/7/14) is MP transport; the
+/// port's edit seams queue their own tile-sync, so the flag is carried for
+/// the citation but the sends ride the caller's net seam. The worldgen
+/// callers (`MarbleBiome.cs:150`, `GraniteBiome.cs:326`, `WorldGen.cs:16586`,
+/// `TrackGenerator.cs:114/117`, the dungeon pillars) keep their own lane
+/// copies until the g40 merge — THIS is the play-path (M2-MOUNT-4) seam.
+/// `generating` mirrors `WorldGen.isGeneratingOrLoadingWorld` (the C# reads
+/// the global inside `CanPoundTile`; the port threads it like `slope_tile`
+/// — the drill passes false, the g40 worldgen copies pass true; the merge
+/// keep-one dedupes onto THIS signature).
+pub fn smooth_slope(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    apply_to_neighbors: bool,
+    generating: bool,
+    chest_holds_items: impl Fn(i32, i32) -> bool + Copy,
+) {
+    if apply_to_neighbors {
+        // `:796-799` — right, left, below, above, each `applyToNeighbors: false`.
+        smooth_slope_one(world, x + 1, y, generating, chest_holds_items);
+        smooth_slope_one(world, x - 1, y, generating, chest_holds_items);
+        smooth_slope_one(world, x, y + 1, generating, chest_holds_items);
+        smooth_slope_one(world, x, y - 1, generating, chest_holds_items);
+    }
+    smooth_slope_one(world, x, y, generating, chest_holds_items);
+}
+
+/// The single-cell body (`Tile.cs:801-846`): the `CanPoundTile` +
+/// `SolidOrSlopedTile` gate, then the 4-neighbour mask → slope/half-brick
+/// switch. No RNG. `flag2` (a non-solid but non-empty tile above) vetoes
+/// the two top-slope arms WITHOUT falling through to the default — a
+/// pre-existing slope under a torch keeps its state.
+pub fn smooth_slope_one(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    generating: bool,
+    chest_holds_items: impl Fn(i32, i32) -> bool,
+) {
+    // `:802-805` — the pound gate.
+    if !can_pound_tile(world, x, y, generating, chest_holds_items)
+        || !solid_or_sloped_at(world, x, y)
+    {
+        return;
+    }
+    // `:806-811` — `flag` reads TileEmpty (absent OR actuated-off is empty),
+    // the other three read SolidOrSlopedTile.
+    let flag = !tile_empty_at(world, x, y - 1);
+    let flag2 = !solid_or_sloped_at(world, x, y - 1) && flag;
+    let flag3 = solid_or_sloped_at(world, x, y + 1);
+    let flag4 = solid_or_sloped_at(world, x - 1, y);
+    let flag5 = solid_or_sloped_at(world, x + 1, y);
+    let mask =
+        ((flag as i32) << 3) | ((flag3 as i32) << 2) | ((flag4 as i32) << 1) | (flag5 as i32);
+    let Some(t) = world.tile_mut(x, y) else {
+        return;
+    };
+    match mask {
+        // `:816-829` — the flag2 veto breaks without a write.
+        10 => {
+            if !flag2 {
+                t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                t.set_slope(3);
+            }
+        }
+        9 => {
+            if !flag2 {
+                t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                t.set_slope(4);
+            }
+        }
+        // `:830-837` — the two bottom ramps.
+        6 => {
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            t.set_slope(1);
+        }
+        5 => {
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            t.set_slope(2);
+        }
+        // `:838-841` — below-only: the half brick.
+        4 => {
+            t.set_slope(0);
+            t.flags |= crate::tile::FLAG_HALF_BRICK;
+        }
+        // `:842-845` — re-solidify.
+        _ => {
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            t.set_slope(0);
+        }
+    }
+}
+
+/// `WorldGen.SolidOrSlopedTile(x, y)` (`WorldGen.cs:69985-70023`,
+/// `includePlatforms: false`): active, solid, not solid-top, not actuated.
+fn solid_or_sloped_at(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind) && !t.inactive()
+    })
+}
+
+/// `WorldGen.TileEmpty` (`WorldGen.cs:69976-69983`): absent or actuated-off
+/// reads empty.
+fn tile_empty_at(world: &World, x: i32, y: i32) -> bool {
+    !world.tile(x, y).is_some_and(|t| t.active() && !t.inactive())
+}
+
 /// `Player.IsTilePoundable` (`Player.cs:45545-45556`): not a `tileHammer`
 /// tile, and either solid or one of the five special non-solids (314
 /// MinecartTrack, 424 WirePipe, 442 ProjectilePressurePad, 351 ChimneySmoke,
@@ -1016,5 +1129,131 @@ mod tests {
             try_pound_tile(&mut w, 10, 15, no_chest),
             PoundOutcome::Pounded { lift: true } // slope 4 → 0
         );
+    }
+
+    // ---- Tile.SmoothSlope (Tile.cs:792-865, W4-d8 retire (1)) -------------
+
+    /// The five mask arms + the default re-solidify (`Tile.cs:814-845`).
+    /// The lone stone at (10,15) sits in air: mask 0 → slope 0, no half.
+    /// Each neighbour added flips one mask bit; the arms are read at the
+    /// single-cell seam so the neighbour cascade cannot mask them.
+    #[test]
+    fn w4_d8_smooth_slope_maps_the_five_mask_arms() {
+        // mask 4 (below only): the half brick (`:838-841`).
+        let mut w = lone(1);
+        set_active(&mut w, 10, 16, 1);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        let t = w.tile(10, 15).unwrap();
+        assert!(t.half_brick() && t.slope() == 0, "mask 4 → half");
+        // mask 5 (below + right): slope 2 (`:834-837`).
+        set_active(&mut w, 11, 15, 1);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        let t = w.tile(10, 15).unwrap();
+        assert!(!t.half_brick() && t.slope() == 2, "mask 5 → slope 2");
+        // mask 6 (below + left): slope 1 (`:830-833`).
+        let mut w = lone(1);
+        set_active(&mut w, 10, 16, 1);
+        set_active(&mut w, 9, 15, 1);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 1, "mask 6 → slope 1");
+        // mask 9 (above + right): slope 4 (`:823-829`).
+        let mut w = lone(1);
+        set_active(&mut w, 10, 14, 1);
+        set_active(&mut w, 11, 15, 1);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 4, "mask 9 → slope 4");
+        // mask 10 (above + left): slope 3 (`:816-822`).
+        let mut w = lone(1);
+        set_active(&mut w, 10, 14, 1);
+        set_active(&mut w, 9, 15, 1);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 3, "mask 10 → slope 3");
+        // mask 0 (lone): the default re-solidify (`:842-845`) — a
+        // pre-sloped/half cell flattens.
+        let mut w = lone(1);
+        let i = w.index(10, 15);
+        w.tiles[i].set_slope(2);
+        w.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        let t = w.tile(10, 15).unwrap();
+        assert!(!t.half_brick() && t.slope() == 0, "the default flattens");
+    }
+
+    /// The flag2 veto (`:807`/`:817`/`:824`): a NON-solid but non-empty
+    /// tile above (a torch, kind 4) sets `flag` (bit 3) without
+    /// `SolidOrSlopedTile` — masks 9/10 break WITHOUT a write, so a
+    /// pre-existing slope under the torch survives (the default arm does
+    /// NOT run). A torch above with no side neighbour is mask 8 → the
+    /// default DOES flatten.
+    #[test]
+    fn w4_d8_smooth_slope_flag2_vetoes_the_top_arms_without_writing() {
+        // mask 10 with a torch above: slope 3 pre-set survives.
+        let mut w = lone(1);
+        set_active(&mut w, 10, 14, 4); // torch: active, not solid
+        set_active(&mut w, 9, 15, 1);
+        let i = w.index(10, 15);
+        w.tiles[i].set_slope(3);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 3, "the veto keeps it");
+        // mask 9 with the torch: slope 4 survives the same way.
+        let mut w = lone(1);
+        set_active(&mut w, 10, 14, 4);
+        set_active(&mut w, 11, 15, 1);
+        let i = w.index(10, 15);
+        w.tiles[i].set_slope(4);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 4, "the veto keeps it");
+        // mask 8 (torch above, no sides): the default flattens.
+        let mut w = lone(1);
+        set_active(&mut w, 10, 14, 4);
+        let i = w.index(10, 15);
+        w.tiles[i].set_slope(2);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 0, "mask 8 → default");
+        // An ACTUATED-OFF solid above reads TileEmpty (`:69976-69983`):
+        // flag false → bit 3 clear → mask 2 (left only) → default flatten.
+        let mut w = lone(1);
+        set_active(&mut w, 10, 14, 1);
+        let i = w.index(10, 14);
+        w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+        set_active(&mut w, 9, 15, 1);
+        let i = w.index(10, 15);
+        w.tiles[i].set_slope(3);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 0, "actuated above is empty");
+    }
+
+    /// The gate (`:802-805`) + the neighbour cascade order (`:794-800`):
+    /// a chest above refuses the whole cell; `apply_to_neighbors: true`
+    /// smooths right/left/below/above FIRST (each single-cell), then the
+    /// cell — the drill's post-pick call shape (`Mount.cs:3119`).
+    #[test]
+    fn w4_d8_smooth_slope_gates_and_cascades() {
+        // The pound gate: a chest above → no write.
+        let mut w = lone(1);
+        set_active(&mut w, 10, 14, 21);
+        let i = w.index(10, 15);
+        w.tiles[i].set_slope(2);
+        smooth_slope(&mut w, 10, 15, true, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 2, "the gate refuses");
+        // A solid-top platform (19) is not SolidOrSlopedTile → refused.
+        let mut w = lone(19);
+        smooth_slope_one(&mut w, 10, 15, false, no_chest);
+        assert_eq!(w.tile(10, 15).unwrap().slope(), 0);
+        // The cascade: a 3-wide floor row at y=16 with the picked cell's
+        // hole at (10,15) filled — after the smooth the row's inner cells
+        // carry slope states derived from their own neighbours.
+        let mut w = ground_world(); // solid from row 20
+        set_active(&mut w, 10, 19, 1); // one stone above the floor
+        smooth_slope(&mut w, 10, 19, true, false, no_chest);
+        // (10,19): below (10,20) solid, left/right air, above air → mask 4
+        // → the half brick.
+        let t = w.tile(10, 19).unwrap();
+        assert!(t.half_brick() && t.slope() == 0, "the picked cell halves");
+        // The below neighbour (10,20) was smoothed FIRST: above now holds
+        // the (pre-smooth, still full) stone, left/right/below solid →
+        // mask 15 → default → stays full.
+        let t = w.tile(10, 20).unwrap();
+        assert!(!t.half_brick() && t.slope() == 0, "the buried cell stays full");
     }
 }

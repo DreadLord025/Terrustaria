@@ -502,6 +502,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Armor_Head_2",
         "Armor_Head_3",
         "Armor_Head_4",
+        // W4-d6 residual 6 — the Spectre head vanity pair (slots 101/156,
+        // `ArmorIDs.cs:249/:359`; the hood/mask visual swap's sheets).
+        "Armor_Head_101",
+        "Armor_Head_156",
         "Armor_Legs_1",
         "Armor_Legs_2",
         "Armor_Legs_3",
@@ -1480,6 +1484,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_446",
         "NPC_447",
         "NPC_448",
+        // W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon's chain
+        // + the 521 squidhead's own sheets, keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`'s
+        // CULTIST_DRAGON_SHEETS).
         "NPC_454",
         "NPC_455",
         "NPC_456",
@@ -1566,6 +1574,7 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_485",
         "NPC_486",
         "NPC_487",
+        "NPC_521",
 ];
 
 
@@ -2166,6 +2175,7 @@ pub struct AmbienceTex {
 // + W4-c10's 8 waterfowl sheets (362-365/602/603/608/609; the
 // 12-critter tail dropped - d40/c8's slots above own them) = 328.
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2264,6 +2274,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
         // `bestiary_npc_sheets`'s exact order (the vec grew 181 → 189).
         362, 363, 364, 365, 602, 603, 608, 609,
         // E8 merge: the c10 12-critter slot tail dropped (d40/c8's slots above).
+        // W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon's head
+        // + the 521 squidhead's own bestiary entries — appended last so
+        // the earlier slots keep their indexes. The segments fold onto
+        // the head's credit (no own slots).
+        454, 521,
     ];
 
 
@@ -3270,6 +3285,11 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_603").copied(),
                 atlas.sheet("NPC_608").copied(),
                 atlas.sheet("NPC_609").copied(),
+                // W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon
+                // head's 3-row strip + the 521 squidhead's 4-row strip
+                // (the BESTIARY_NPC_SHEET_IDS tail).
+                atlas.sheet("NPC_454").copied(),
+                atlas.sheet("NPC_521").copied(),
             ],
 
 
@@ -4439,3 +4459,4 @@ mod tests {
         }
     }
 }
+]

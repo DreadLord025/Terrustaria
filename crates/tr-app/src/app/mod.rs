@@ -851,6 +851,22 @@ pub(crate) struct App {
     pub(crate) step_input_was: bool,
     pub(crate) mouse_down: bool,
     pub(crate) last_mouse: Vec2,
+    /// `Main.mouseX`/`Main.mouseY` at the previous `UpdateMainMouse`
+    /// (`PlayerInput.cs:911-917`: `lastMouseX = mouseX; mouseX =
+    /// PlayerInput.MouseX`) — the per-frame snapshot the W4-d10
+    /// counterweight channel delta reads (`Projectile.cs:67521`). Shifted
+    /// at the frame head beside the `step_input` pair (the same
+    /// `DoUpdate_HandleInput` region, `Main.cs:17158`).
+    pub(crate) mouse_tick_prev: Vec2,
+    /// `Main.mouseX - Main.lastMouseX` (and Y) in the world-update zoom
+    /// basis — `SetZoom_MouseInWorld` (`PlayerInput.cs:2528-2542`) scales
+    /// both screen offsets by `1 / RenderZoom`, so the delta is the raw
+    /// screen delta divided by the zoom (the per-component `(int)`
+    /// truncations differ from the scaled difference by at most 1 px).
+    /// Refreshed at the frame head; the counterweight channel push drains
+    /// it through `YoyoInputs::mouse_delta` at the projectile tick
+    /// (`Projectile.cs:67521`, the W4-d10 un-park).
+    pub(crate) mouse_tick_delta: Vec2,
     pub(crate) last_frame: Instant,
     pub(crate) frame_history: VecDeque<f32>,
     pub(crate) last_stats: tr_render::sprite::RenderStats,
@@ -4203,6 +4219,8 @@ impl App {
             step_input_was: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
+            mouse_tick_prev: Vec2::ZERO,
+            mouse_tick_delta: Vec2::ZERO,
             last_frame: Instant::now(),
             frame_history: VecDeque::with_capacity(256),
             last_stats: tr_render::sprite::RenderStats::default(),

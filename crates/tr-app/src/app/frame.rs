@@ -135,6 +135,17 @@ impl App {
                 self.mouse_back_held,
             ),
         );
+        // W4-d10 — `PlayerInput.UpdateMainMouse` (`PlayerInput.cs:911-917`,
+        // called from `UpdateInput` `:901` inside `DoUpdate_HandleInput`
+        // `Main.cs:17158`/`:18375`): `lastMouseX = mouseX` then the fresh
+        // sample. The world-update reads run in the `SetZoom_MouseInWorld`
+        // basis (`Main.cs:18380` → `PlayerInput.cs:2528-2542`): both screen
+        // offsets scale by `1/RenderZoom`, so the per-tick delta is the raw
+        // screen delta / zoom. The counterweight channel push
+        // (`Projectile.cs:67521`) drains `mouse_tick_delta` through
+        // `YoyoInputs` at the projectile tick.
+        self.mouse_tick_delta = (self.mouse_pos - self.mouse_tick_prev) / self.zoom;
+        self.mouse_tick_prev = self.mouse_pos;
         self.anim_time += dt;
         // `UserInterface.Update`'s lockout countdown
         // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
@@ -1620,6 +1631,28 @@ mod tests {
         ] {
             assert!(pause.contains(marker), "frame_focus_pause lost `{marker}`");
         }
+    }
+
+    /// W4-d10 — the frame head's `UpdateMainMouse` snapshot
+    /// (`PlayerInput.cs:911-917`): `mouse_tick_prev` takes the pre-shift
+    /// position, `mouse_tick_delta` is the raw screen delta divided by the
+    /// zoom (the `SetZoom_MouseInWorld` basis, `:2528-2542`). A still
+    /// pointer yields a zero delta — the counterweight push stays inert.
+    #[test]
+    fn w4_d10_the_frame_head_shifts_the_mouse_tick_delta() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let now = std::time::Instant::now();
+        app.zoom = 2.0;
+        app.mouse_pos = Vec2::new(100.0, 50.0);
+        app.mouse_tick_prev = Vec2::new(90.0, 40.0);
+        app.frame_head(now);
+        assert_eq!(app.mouse_tick_delta, Vec2::new(5.0, 5.0), "(10,10)/zoom 2");
+        assert_eq!(app.mouse_tick_prev, Vec2::new(100.0, 50.0), "the shift");
+        // The next frame with no motion: the delta zeroes (lastMouse catches
+        // up — the C# pair converges when the pointer rests).
+        app.frame_head(now);
+        assert_eq!(app.mouse_tick_delta, Vec2::ZERO, "a still pointer");
+        assert_eq!(app.mouse_tick_prev, Vec2::new(100.0, 50.0));
     }
 
     /// S1-B-8 DW-1.1 (behavioural half) — `frame_head` yields the pinned frame

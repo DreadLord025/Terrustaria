@@ -155,6 +155,12 @@ pub(crate) fn proj_light(
         r = 0.3;
         b = 0.25;
         g = 0.0;
+    } else if kind == SILVER_BULLET {
+        // W4-d1 SEAL — `:16343-16347` — 981: `num2 *= 0.7f; num3 *= 0.7f;`
+        // (its OWN arm — the 14/110/180/242/302 sibling below scales the
+        // blue by 0.1, the silver keeps 0.7 on both).
+        g *= 0.7;
+        b *= 0.7;
     } else if kind == MUSKET_BALL || kind == BULLET_SNOWMAN || kind == PIRATE_ARROW
         || kind == HIGH_VELOCITY_BULLET
     {

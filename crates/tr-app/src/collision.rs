@@ -679,6 +679,100 @@ pub fn solid_or_sloped_tile(t: &Tile, include_platforms: bool) -> bool {
     !t.inactive()
 }
 
+/// `Collision.AnyCollisionWithSpecificTiles` (`Collision.cs:2813-2913`):
+/// the swept box resolution against ONLY the tile kinds in
+/// `tiles_we_can_collide_with`. W4-d1 — `HandleMovement`'s 411-414 arm
+/// (`Projectile.cs:17601`) chains it after `TileCollision` with
+/// `TileID.Sets.Falling` and `evenActuated: true` (an actuated falling tile
+/// still stops a falling coin). No slope handling (the source has none);
+/// the half-brick shift is the source's (`:2856-2860`).
+pub fn any_collision_with_specific_tiles(
+    world: &World,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: f32,
+    height: f32,
+    tiles_we_can_collide_with: impl Fn(u16) -> bool,
+    even_actuated: bool,
+) -> [f32; 2] {
+    let mut result = vel;
+    let vector2 = [pos[0] + vel[0], pos[1] + vel[1]];
+    // `:2819-2842` — the −1/+2 box window, the `maxTilesY - 40` bottom.
+    let x0 = ((pos[0] / TILE_PX) as i32 - 1).max(0);
+    let x1 = (((pos[0] + width) / TILE_PX) as i32 + 2).min(world.width);
+    let y0 = ((pos[1] / TILE_PX) as i32 - 1).max(0);
+    let y1 = (((pos[1] + height) / TILE_PX) as i32 + 2).min(scan_bottom(world));
+    let mut num5 = -1i32;
+    let mut num6 = -1i32;
+    let mut num7 = -1i32;
+    let mut num8 = -1i32;
+    for i in x0..x1 {
+        for j in y0..y1 {
+            let Some(t) = world.tile(i, j) else { continue };
+            // `:2849` — the null/active/actuated/kind refusal.
+            if !t.active()
+                || (!even_actuated && t.flags & tr_core::tile::FLAG_INACTIVE != 0)
+                || !tiles_we_can_collide_with(t.kind)
+            {
+                continue;
+            }
+            let rx = i as f32 * TILE_PX;
+            let mut ry = j as f32 * TILE_PX;
+            let mut rh = TILE_PX;
+            if t.half_brick() {
+                ry += 8.0;
+                rh -= 8.0;
+            }
+            // `:2861-2864` — the destination box must overlap the tile.
+            if !(vector2[0] + width > rx)
+                || !(vector2[0] < rx + TILE_PX)
+                || !(vector2[1] + height > ry)
+                || !(vector2[1] < ry + rh)
+            {
+                continue;
+            }
+            let solid_top = td::TILE_SOLID_TOP.has(t.kind);
+            if pos[1] + height <= ry {
+                // `:2865-2873` — the top hit.
+                num7 = i;
+                num8 = j;
+                if num7 != num5 {
+                    result[1] = ry - (pos[1] + height);
+                }
+            } else if pos[0] + width <= rx && !solid_top {
+                // `:2874-2886` — the left flank.
+                num5 = i;
+                num6 = j;
+                if num6 != num8 {
+                    result[0] = rx - (pos[0] + width);
+                }
+                if num7 == num5 {
+                    result[1] = vel[1];
+                }
+            } else if pos[0] >= rx + TILE_PX && !solid_top {
+                // `:2887-2899` — the right flank.
+                num5 = i;
+                num6 = j;
+                if num6 != num8 {
+                    result[0] = rx + TILE_PX - pos[0];
+                }
+                if num7 == num5 {
+                    result[1] = vel[1];
+                }
+            } else if pos[1] >= ry + rh && !solid_top {
+                // `:2900-2909` — the underside (the +0.01 nudges).
+                num7 = i;
+                num8 = j;
+                result[1] = ry + rh - pos[1] + 0.01;
+                if num8 == num6 {
+                    result[0] = vel[0] + 0.01;
+                }
+            }
+        }
+    }
+    result
+}
+
 /// `Collision.IsClearSpotTest` (`Collision.cs:2534-2587`) with
 /// `checkCardinals = true`, `checkSlopes = false`, `gravDir = 1`: the four
 /// cardinal 16-px sweeps must all pass unimpeded. `Player.CanFitInSpaceWithSize`

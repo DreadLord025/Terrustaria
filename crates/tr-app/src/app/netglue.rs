@@ -5074,6 +5074,18 @@ fn npc_seed(
         | crate::npc::NpcKind::DuckWhite
         | crate::npc::NpcKind::DuckWhite2 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
         // E8 merge: the c10 12-critter seed tail dropped (d40/c8's seeds above).
+        // W4-d9 wiring (d40 rows): the dragon chain + the 521 squidhead's
+        // net seeds (the bare stats seed; the net state overwrites the
+        // position below — the wyvern family's shape).
+        crate::npc::NpcKind::CultistDragonHead
+        | crate::npc::NpcKind::CultistDragonBody1
+        | crate::npc::NpcKind::CultistDragonBody2
+        | crate::npc::NpcKind::CultistDragonBody3
+        | crate::npc::NpcKind::CultistDragonBody4
+        | crate::npc::NpcKind::CultistDragonTail
+        | crate::npc::NpcKind::AncientCultistSquidhead => {
+            crate::npc::Npc::new(kind, _x, y, 1, 0.0)
+        }
     })
 }
 

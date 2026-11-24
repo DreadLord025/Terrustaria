@@ -853,7 +853,17 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     push_part_h(
         &mut out,
         PlayerPart::Helmet,
-        a.armor_head.get(s.head_armor as usize).copied().flatten(),
+        // W4-d6 residual 6 — the Spectre head vanity pair resolves beyond
+        // the packed 1..4 array: slot 101 (the Hood, item 1503) and 156
+        // (the Mask, item 2189) — `TextureAssets.ArmorHead[head]`
+        // (`PlayerDrawLayers.cs:2267`), the same normal-hat branch (both
+        // ids sit in NEITHER `GetHairSettings` list, `Player.cs:16791-
+        // 16904`, so the hair stays suppressed exactly as the 1..4 hats).
+        match s.head_armor {
+            101 => a.armor_head_spectre_hood,
+            156 => a.armor_head_spectre_mask,
+            _ => a.armor_head.get(s.head_armor as usize).copied().flatten(),
+        },
         |t| flip_uv(helmet_uv(t, s.body_frame), flip),
         part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
@@ -2155,6 +2165,8 @@ mod tests {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            armor_head_spectre_hood: None,
+            armor_head_spectre_mask: None,
             mount_back: [Some(sheet()); crate::mount::MOUNT_COUNT],
             mount_front: [Some(sheet()); crate::mount::MOUNT_COUNT],
         }
@@ -2262,6 +2274,53 @@ mod tests {
         assert!(parts(&plain).contains(&PlayerPart::Shirt));
         assert!(parts(&plain).contains(&PlayerPart::Hair));
         assert!(!parts(&plain).contains(&PlayerPart::Helmet));
+    }
+
+    #[test]
+    fn w4_d6_the_spectre_hood_and_mask_swap_the_helmet_sheet() {
+        // W4-d6 residual 6 — `PlayerDrawLayers.cs:2267`:
+        // `TextureAssets.ArmorHead[drawPlayer.head]` — the Hood (item
+        // 1503, head slot 101) and the Mask (item 2189, slot 156) each
+        // draw their OWN sheet through the normal-hat branch; the
+        // registry's head_slot rows (`itemdata.rs`, generated from
+        // `Item.cs`'s equipType/equipSlot) carry the swap. Both ids sit
+        // in NEITHER GetHairSettings list (`Player.cs:16791-16904`) —
+        // the hair stays suppressed like the 1..4 metal hats.
+        assert_eq!(crate::registry::get(1503).unwrap().head_slot, 101);
+        assert_eq!(crate::registry::get(2189).unwrap().head_slot, 156);
+        let hood = BgTex { uv: [0.0, 0.0, 0.5, 1.0], w: 40.0, h: 1120.0 };
+        let mask = BgTex { uv: [0.5, 0.0, 1.0, 1.0], w: 40.0, h: 1120.0 };
+        let a = PlayerAssets {
+            armor_head_spectre_hood: Some(hood),
+            armor_head_spectre_mask: Some(mask),
+            ..fixture()
+        };
+        let helmet = |slot: i16| {
+            let s = PlayerCompositeState { head_armor: slot, ..state() };
+            body_layers(&s, &a)
+                .into_iter()
+                .find(|sp| sp.part == PlayerPart::Helmet)
+        };
+        let h = helmet(101).expect("the hood draws");
+        assert_eq!(h.uv, flip_uv(helmet_uv(&hood, 0), false), "the 101 sheet");
+        let m = helmet(156).expect("the mask draws");
+        assert_eq!(m.uv, flip_uv(helmet_uv(&mask, 0), false), "the 156 sheet");
+        assert_ne!(h.uv, m.uv, "the swap changes the pixels");
+        // The hair stays suppressed under both (the normal-hat branch).
+        for slot in [101, 156] {
+            let s = PlayerCompositeState { head_armor: slot, ..state() };
+            assert!(!parts(&body_layers(&s, &a)).contains(&PlayerPart::Hair));
+        }
+        // An unported slot beyond the packed array draws no helmet (the
+        // pre-fix behaviour for every non-1..4 id) — and a missing sheet
+        // is the same skip.
+        assert!(helmet(66).is_none(), "the robe's body slot is not a head");
+        let bare = PlayerAssets { armor_head_spectre_hood: None, ..fixture() };
+        let s = PlayerCompositeState { head_armor: 101, ..state() };
+        assert!(
+            !parts(&body_layers(&s, &bare)).contains(&PlayerPart::Helmet),
+            "a missing sheet skips the draw"
+        );
     }
 
     #[test]
@@ -3019,6 +3078,8 @@ mod player_draw_tests {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            armor_head_spectre_hood: None,
+            armor_head_spectre_mask: None,
             mount_back: std::array::from_fn(|_| None),
             mount_front: std::array::from_fn(|_| None),
         }

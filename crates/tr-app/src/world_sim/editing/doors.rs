@@ -248,6 +248,66 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         crate::projectile_ai_golf::cull_extra_golf_balls(&mut app.projectiles, owner, preferred, 0);
         return true;
     }
+    // W4-d8 DOC-SWEEP (5) — the firework fountain's right-click arm
+    // (`TileInteractionsUse`'s `type == 338` branch, `Player.cs:32355-
+    // 32377`): the anchor shifts UP one when the clicked cell's frameY is
+    // 18 (the fountain's bottom row), the pool dedupe (an active aiStyle-73
+    // shot anchored at the same tile skips the spawn), then ONE fountain
+    // of `419 + Next(4)` at `(x*16 + 8, y*16 + 2)`, zero velocity, damage
+    // 0, ai0/ai1 = the anchor tile. The `originatedFromActivableTile` flag
+    // (`:32375`) has no consumer in the 1.4.5.8 decompile (the field is
+    // written at 5 sites, read nowhere) — the port drops it (the census
+    // note). The click is consumed (`flag2 = true`) whether or not the
+    // dedupe passed. The wiring twin (`Wiring.cs:1522-1546`) already lives
+    // in tr-core's `firework_fountain` + the world_sim dedupe (decision
+    // D1); this is the proj-spawn side's own arm.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && t.kind == 338)
+    {
+        // `:32358-32362` — the anchor: the clicked cell, up one on the
+        // bottom row.
+        let mut anchor_y = ty;
+        if app.world.tile(tx, anchor_y).is_some_and(|t| t.frame_y == 18) {
+            anchor_y -= 1;
+        }
+        // `:32363-32371` — the dedupe scan: an active aiStyle-73 fountain
+        // anchored at (tx, anchor_y) blocks the spawn.
+        let already = app.projectiles.slots().iter().any(|p| {
+            p.active
+                && crate::projectile::FIREWORK_FOUNTAINS.contains(&p.kind)
+                && p.ai[0] == tx as f32
+                && p.ai[1] == anchor_y as f32
+        });
+        if !already {
+            // `:32374` — `419 + Main.rand.Next(4)` on the UpdatePlayers
+            // stream (the TileInteractionsUse ride, `Main.cs:17754`).
+            let kind = 419
+                + app
+                    .rngs
+                    .stream(crate::app::RngKey::UpdatePlayers)
+                    .next_range(0, 4) as u16;
+            // The C# passes the CENTRE; the port's seam takes the top-left
+            // — the fountain row's 4×4 half-box comes off (the golf-tee
+            // precedent above).
+            let (hw, hh) = crate::projectile::proj_data(kind)
+                .map_or((2.0, 2.0), |d| (d.w * 0.5, d.h * 0.5));
+            app.projectiles.spawn_with_data_ai_owned(
+                kind,
+                app.local_id as u8,
+                tx as f32 * 16.0 + 8.0 - hw,
+                anchor_y as f32 * 16.0 + 2.0 - hh,
+                0.0,
+                0.0,
+                0,
+                0.0,
+                tx as f32,
+                anchor_y as f32,
+            );
+        }
+        return true;
+    }
     // The Lihzahrd Altar arm (`TileInteractionsUse`'s `type == 237`
     // branch, `Player.cs:32755-32790`): the right-click on the altar
     // consumes the click and, with a Power Cell 1293 in the INVENTORY
@@ -2267,6 +2327,77 @@ mod tests {
             *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             rng_before,
             "the menu cues draw no gameplay RNG"
+    /// W4-d8 DOC-SWEEP (5) — the firework fountain's right-click arm
+    /// (`Player.cs:32355-32377`, WRITTEN NOT RUN): the anchor shifts up on
+    /// the bottom row (frameY 18), the dedupe blocks a second fountain on
+    /// the same anchor, the spawn rolls `419 + Next(4)` with ai0/ai1 = the
+    /// anchor tile, damage 0, zero velocity.
+    #[test]
+    fn w4_d8_the_fountain_right_click_spawns_and_dedupes() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 64, 200);
+        // A 2×2 fountain at (30, 30)-(31, 31): the top row frameY 0, the
+        // bottom row frameY 18 (the C# `frameY == 18` anchor shift).
+        for &(fx, fy) in &[(0i16, 0i16), (18, 0), (0, 18), (18, 18)] {
+            let x = 30 + (fx / 18) as i32;
+            let y = 30 + (fy / 18) as i32;
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind: 338, frame_x: fx, frame_y: fy, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 30.0 * 16.0;
+        player.y = 32.0 * 16.0;
+        app.player = Some(player);
+        // The click on the BOTTOM row (30, 31): the anchor shifts to 30.
+        assert!(interact_tile(&mut app, 30, 31), "the fountain consumes the click");
+        let shots: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(shots.len(), 1, "one fountain");
+        let f = shots[0];
+        assert!(
+            crate::projectile::FIREWORK_FOUNTAINS.contains(&f.kind),
+            "419 + Next(4), kind {}",
+            f.kind
+        );
+        assert_eq!((f.ai[0], f.ai[1]), (30.0, 30.0), "the shifted anchor");
+        assert_eq!(f.damage, 0, "the tile-interaction spawn passes Damage 0");
+        assert_eq!(f.vel, Vec2::ZERO, "the fountain sits still");
+        assert_eq!(f.time_left, 600, "the NewProjectile seed (`:11033-11048`)");
+        // The dedupe: a second click on the SAME anchor spawns nothing.
+        assert!(interact_tile(&mut app, 30, 30));
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the anchor dedupe (`:32363-32371`)"
+        );
+        // A click on the TOP row (31, 30) hits the same anchor (frameY 0,
+        // no shift) — still deduped.
+        assert!(interact_tile(&mut app, 31, 30));
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the top row shares the anchor"
+        );
+        // Kill the fountain: the next click spawns a fresh one.
+        for p in app.projectiles.slots_mut() {
+            if p.active {
+                p.active = false;
+                p.time_left = 0;
+            }
+        }
+        assert!(interact_tile(&mut app, 30, 31));
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the dead anchor frees the spawn"
         );
     }
 }
+})

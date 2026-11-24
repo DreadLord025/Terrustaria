@@ -2902,6 +2902,8 @@ pub(crate) mod front_flow_tests {
             step_input_was: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
+            mouse_tick_prev: Vec2::ZERO,
+            mouse_tick_delta: Vec2::ZERO,
             last_frame: Instant::now(),
             frame_history: VecDeque::new(),
             last_stats: tr_render::sprite::RenderStats::default(),
