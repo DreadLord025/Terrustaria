@@ -1244,14 +1244,23 @@ fn spawn_npc_at(
             let top = ctx.world.surface_of(x);
             return Npc::spawn_hover(ctx.world, x, top - 2, NpcKind::Drippler);
         }
-        // `:4646-4665`: the snow/ice tile arm — hardmode's 169/155 rolls,
-        // then the Eskimo default (161; all the port's zombie kind).
+        // `:4650-4667`: the snow/ice tile arm — hardmode's 169/155 rolls,
+        // then the Eskimo default (161). W4-d25 STYLE-26 wiring: the 155
+        // roll now spawns the Wolf kind (the aiStyle-26 galloper,
+        // `NPC.cs:10961-10973`) — the zombie stand-in is retired. The
+        // draw ORDER is unchanged (the 1/4 gate, then the 1/3 roll), so
+        // the stream fingerprint is byte-identical; only the spawned
+        // kind differs (the S1-D-3z blood-moon precedent). The 169
+        // (IceTortoise) roll keeps its zombie stand-in — unported. The
+        // `!blood_moon`-for-`!ZoneGraveyard` substitution is the
+        // pre-existing documented deviation (the graveyard flag is
+        // constants-off in the port's spawn ctx).
         if is_ices_snow(tile_kind) || tile_kind == 162 {
             if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next_max(4) == 0 {
                 return Npc::spawn_zombie(ctx.world, x);
             }
             if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next_max(3) == 0 {
-                return Npc::spawn_zombie(ctx.world, x);
+                return Npc::spawn_zombie_variant(ctx.world, x, NpcKind::Wolf);
             }
             let _ = rng.next_max(2); // the armed-expert split (unmodelled)
             return Npc::spawn_zombie(ctx.world, x);
@@ -5002,5 +5011,148 @@ mod tests {
         assert_eq!((rate.spawn_rate, rate.max_spawns), (360, 6));
         let rate = get_spawn_rate(&day, &mut UnifiedRandom::new(1));
         assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
+    }
+
+    // -----------------------------------------------------------------
+    // W4-d25 STYLE-26 wiring: the snow arm's 155 roll spawns the Wolf
+    // kind (`NPC.cs:4656-4658`), the zombie stand-in retired. WRITTEN,
+    // NOT RUN (code-only mode).
+    // -----------------------------------------------------------------
+
+    /// A ground_tall whose spawn column (210) reads an ice-snow tile at
+    /// the spawn row (`TileID.Sets.IcesSnow`, `TileID.cs:561` — 147 is the
+    /// snow block). `spawn_npc_at` reads `tile_kind` at `y / 16` = 295
+    /// (the outcome's spawn row), so the snow tile sits THERE — the arm's
+    /// gate is the spawn-position tile, not the ground far below.
+    fn snow_ground() -> World {
+        let mut w = ground_tall();
+        let i = w.index(210, 295);
+        w.tiles[i].kind = 147;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// The snow arm's kind picks: the 1/4 gate keeps its 169 zombie
+    /// stand-in, the 1/3 roll spawns the Wolf, the fallthrough is the
+    /// Eskimo zombie (`NPC.cs:4650-4667`). The blood-moon substitution
+    /// (the port's `!blood_moon`-for-`!ZoneGraveyard` deviation) gates
+    /// both hardmode rolls off.
+    #[test]
+    fn w4_d25_the_snow_arm_spawns_the_wolf_kind() {
+        let w = snow_ground();
+        let c = night_ctx_flags(&w, true, false);
+        let mut wolves = 0;
+        let mut zombies = 0;
+        let mut eyes = 0;
+        let mut other = 0;
+        for seed in 1..4000u64 {
+            match outcome(&c, seed) {
+                Some((NpcKind::Wolf, _)) => wolves += 1,
+                Some((NpcKind::Zombie, _)) => zombies += 1,
+                // The eye gate (:4549) fires BEFORE the snow arm.
+                Some((NpcKind::DemonEye, _)) | Some((NpcKind::WanderingEye, _)) => eyes += 1,
+                Some(_) => other += 1,
+                None => {}
+            }
+        }
+        assert!(wolves > 0, "the 1/3 roll spawns the Wolf");
+        assert!(zombies > 0, "the 169 stand-in + the Eskimo default");
+        assert!(eyes > 0, "the eye gate still fires ahead of the snow arm");
+        assert_eq!(other, 0, "the snow arm never leaves the ladder");
+        // The blood moon gates both hardmode rolls off — no wolves.
+        let blood = night_ctx_flags(&w, true, true);
+        for seed in 1..2000u64 {
+            assert!(
+                !matches!(outcome(&blood, seed), Some((NpcKind::Wolf, _))),
+                "the blood-moon gate holds at seed {seed}"
+            );
+        }
+        // Pre-hardmode: both rolls short-circuit — no wolves either.
+        let soft = night_ctx_flags(&w, false, false);
+        for seed in 1..2000u64 {
+            assert!(
+                !matches!(outcome(&soft, seed), Some((NpcKind::Wolf, _))),
+                "the hardmode gate holds at seed {seed}"
+            );
+        }
+    }
+
+    /// The stream parity: the Wolf replacement changed the spawned
+    /// KIND, not the draw order — the mirror replays the ladder's
+    /// rolls verbatim up to the wolf arm (the S1-D-3z blood-moon
+    /// precedent). On the snow column (hardmode, no blood moon, moon
+    /// phase 1 — the phase-0 2/3 zombie arm at `:4628` would eat the
+    /// wolf seeds), a wolf-producing call spends exactly: the
+    /// `GetZombieSettings` Next(7) (`NPC.cs:1284`), the probe arm's
+    /// Next(100)+Next(400) misses (`:4194`), the eye gate Next(6) miss
+    /// (`:4549` — phase 1 skips the phase-4 twin), the new-moon arm's
+    /// short-circuit (phase != 0, no draw), the hardmode 1/3 Next(3)
+    /// miss (`:4630`), then the snow arm's Next(4) miss + Next(3) hit
+    /// (`:4652`/`:4656`). The ctor draws nothing.
+    #[test]
+    fn w4_d25_the_wolf_replacement_keeps_the_stream_fingerprint() {
+        let mut w = snow_ground();
+        w.moon_phase = 1;
+        let c = night_ctx_flags(&w, true, false);
+        let mut checked = 0;
+        for seed in 1..8000u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let n = spawn_npc_at(&c, &mut rng, 210, 295 * 16, false, false, false);
+            if !matches!(n.map(|n| n.kind), Some(NpcKind::Wolf)) {
+                continue;
+            }
+            let mut mirror = UnifiedRandom::new(seed as i32);
+            let _ = mirror.next_max(7); // GetZombieSettings (:1284)
+            // The probe arm's short-circuit (:4194): a Next(100) hit
+            // skips the Next(400) — flag17 is false at x=210 (the 5%
+            // band), so either way no probe spawns.
+            if mirror.next_max(100) != 0 {
+                let _ = mirror.next_max(400);
+            }
+            assert_ne!(mirror.next_max(6), 0, "the eye gate missed (:4549)");
+            assert_ne!(mirror.next_max(3), 0, "the hardmode 1/3 missed (:4630)");
+            assert_ne!(mirror.next_max(4), 0, "the 169 gate missed (:4652)");
+            assert_eq!(mirror.next_max(3), 0, "the 155 roll hit (:4656)");
+            assert_eq!(rng, mirror, "the wolf call spends exactly the ladder's rolls");
+            checked += 1;
+        }
+        assert!(checked > 0, "wolf seeds exist for the parity pin");
+    }
+
+    /// The frozen A/B (the stand-in replacement contract): 500 ticks of
+    /// the sim's NPC update over a fixed pool — one Wolf at the snow
+    /// column — are deterministic (two runs byte-identical), and the
+    /// Wolf's machine draws NOTHING on the UpdateNPCs stream (the
+    /// style26 census: the 86/155/546 paths are RNG-free).
+    #[test]
+    fn w4_d25_the_wolf_pool_run_is_frozen_and_draw_free() {
+        let w = snow_ground();
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 260.0 * 16.0;
+        // Park the player DEEP underground: the Wolf chases its x but the
+        // boxes never overlap vertically, so the contact pass (the only
+        // RNG draw on the 86/155 path — `damage_var`) never fires and the
+        // 500-tick run stays draw-free. On the surface the Wolf would
+        // reach the player in ~140 ticks and draw contact variance.
+        p.y = 500.0 * 16.0;
+        let run = || -> (Vec<(f32, f32, f32, f32)>, UnifiedRandom) {
+            let mut n = Npc::spawn_zombie_variant(&w, 210, NpcKind::Wolf).expect("the wolf spawns");
+            n.hp = n.max_hp;
+            let mut rng = UnifiedRandom::new(26);
+            let mut trace = Vec::new();
+            for _ in 0..500 {
+                n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+                trace.push((n.x, n.y, n.vx, n.vy));
+            }
+            (trace, rng)
+        };
+        let (a, rng_a) = run();
+        let (b, rng_b) = run();
+        assert_eq!(a, b, "the 500-tick run is frozen");
+        assert_eq!(rng_a, rng_b, "the two runs draw identically");
+        let probe = UnifiedRandom::new(26);
+        assert_eq!(rng_a, probe, "the Wolf's 500 ticks draw NOTHING");
     }
 }

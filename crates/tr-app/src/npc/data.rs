@@ -1041,6 +1041,17 @@ impl NpcKind {
             // E8 merge: the 12-critter tail dropped - Worm rides c8@737,
             // the gold septet + the bait tail are d40's rows above (the
             // dup drops; c10's wiring composes onto the canonical kinds).
+            // W4-d25 STYLE-26 wiring: the Unicorn mirrors W4-d35 batch C
+            // (6ed8c22f) verbatim — protocol 440 (the vanilla 86 slot is
+            // the RayGunner's; the merge keep-one). The Wolf's vanilla
+            // 155 is PlanterasTentacle's protocol slot, so it takes the
+            // next-free port-local 355 (353 BlazingWheel, 354
+            // WebbedStylist; 355/356 free across the co-lanes).
+            NpcKind::Wolf => 772,
+            // W4-d25 STYLE-26 wiring (commit 2): the Tumbleweed keeps its
+            // vanilla id 546 (free across the co-lanes — g10 carries only
+            // the lang_tables display name, no NpcKind).
+            NpcKind::Tumbleweed => 546,
         }
     
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
@@ -1702,6 +1713,9 @@ impl NpcKind {
             // W4-c10 roster tail — the twelve critters' vanilla ids
             // (`to_u16` above).
             // E8 merge: the 12-critter tail dropped (c8/d40's arms above).
+            // W4-d25 STYLE-26 wiring (the to_u16 rows above).
+            772 => NpcKind::Wolf,
+            546 => NpcKind::Tumbleweed,
             _ => return None,
         })
     
@@ -2978,6 +2992,11 @@ impl NpcKind {
             NpcKind::Pixie => "NPC_Hit_5",
             NpcKind::ArmoredSkeleton => "NPC_Hit_2",
             NpcKind::Mummy => "NPC_Hit_1",
+            // W4-d25 STYLE-26 wiring: 86 NPCHit12 (`NPC.cs:9934`),
+            // 155 NPCHit1 (`:10969`), 546 NPCHit11 (`:15980`). The
+            // Unicorn row mirrors d35 (C).
+            NpcKind::Wolf => "NPC_Hit_1",
+            NpcKind::Tumbleweed => "NPC_Hit_11",
             _ => return None,
         })
     }
@@ -3626,6 +3645,11 @@ impl NpcKind {
             NpcKind::Pixie => "NPC_Killed_7",
             NpcKind::ArmoredSkeleton => "NPC_Killed_2",
             NpcKind::Mummy => "NPC_Killed_6",
+            // W4-d25 STYLE-26 wiring: 86 NPCDeath18 (`NPC.cs:9935`),
+            // 155 NPCDeath1 (`:10970`), 546 NPCDeath15 (`:15981`). The
+            // Unicorn row mirrors d35 (C).
+            NpcKind::Wolf => "NPC_Killed_1",
+            NpcKind::Tumbleweed => "NPC_Killed_15",
             _ => return None,
         })
     }
@@ -4537,6 +4561,10 @@ impl NpcKind {
             // four `this.aiStyle = 68;` rows of the SetDefaults census.
             // E8 merge: Seagull2/Grebe2's 68 rows are d42's above.
             NpcKind::Duck2 | NpcKind::DuckWhite2 => 68,
+            // W4-d25 STYLE-26 wiring: aiStyle 26 — `NPC.cs:9930` (86) /
+            // `:10965` (155) / `:15976` (546). The Unicorn row mirrors
+            // d35 (C).
+            NpcKind::Unicorn | NpcKind::Wolf | NpcKind::Tumbleweed => 26,
         }
     }
 
@@ -5475,6 +5503,11 @@ impl NpcKind {
             // (`:15396-15397`).
             NpcKind::VileSpit | NpcKind::VileSpitEoW => (16.0, 16.0),
             NpcKind::SolarFlare => (26.0, 26.0),
+            // W4-d25 STYLE-26 wiring: 86 46x42 (`NPC.cs:9928-9929`),
+            // 155 46x30 (`:10963-10964`), 546 30x30 (`:15974-15975`).
+            // The Unicorn row mirrors d35 (C).
+            NpcKind::Wolf => (46.0, 30.0),
+            NpcKind::Tumbleweed => (30.0, 30.0),
         }
     }
 
@@ -5640,6 +5673,12 @@ impl NpcKind {
             NpcKind::DuckWhite2 => 365,
             // E8 merge: Seagull/Grebe's cs_id rows are d42's above.
             // E8 merge: the c10 12-critter cs_id tail dropped (d40/c8's rows).
+            // W4-d25 STYLE-26 wiring: the vanilla `NPC.type` ids
+            // (`NPCID.cs:10849`/`:10987`/`:11769`) — the machine's type
+            // gates and the spawn rolls speak these, NOT the protocol ids
+            // (440/355; the Tumbleweed's 546 IS its protocol id).
+            NpcKind::Wolf => 155,
+            NpcKind::Tumbleweed => 546,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             // W4-d40: hand rows for the kinds with no bestiary entry
@@ -6712,6 +6751,11 @@ impl NpcKind {
             // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
             // `lifeMax = 1` (`NPC.cs:10333`/`:17425`/`:15401`).
             NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => 1,
+            // W4-d25 STYLE-26 wiring: 86 400 (`NPC.cs:9933`), 155 300
+            // (`:10968`), 546 50 (`:15979`). The Unicorn row mirrors
+            // d35 (C).
+            NpcKind::Wolf => 300,
+            NpcKind::Tumbleweed => 50,
         }
     }
 
@@ -7399,6 +7443,11 @@ impl NpcKind {
             NpcKind::Vampire => 80,
             NpcKind::FlyingSnake => 85,
             NpcKind::SporeBat => 13,
+            // W4-d25 STYLE-26 wiring: 86/155 dmg 65 (`NPC.cs:9931`/
+            // `:10966`), 546 dmg 30 (`:15977`). The Unicorn row mirrors
+            // d35 (C).
+            NpcKind::Unicorn | NpcKind::Wolf => 65,
+            NpcKind::Tumbleweed => 30,
         }
     }
 }

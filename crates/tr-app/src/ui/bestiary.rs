@@ -2560,6 +2560,12 @@ fn portrait_data(
         (NpcKind::ArmedTorchZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Seagull2 | NpcKind::Grebe2, _) => (sheet_i, 26.0, 22.0, 26.0, white),
         (NpcKind::BloodEelBody | NpcKind::BloodEelTail, _) => (sheet_i, 28.0, 28.0, 28.0, white),
+        // W4-d25 STYLE-26 wiring: the gallopers' portraits rest the
+        // `SetDefaults` box (the d35 (C) convention — the Unicorn row
+        // mirrors 6ed8c22f verbatim; the Wolf's 46x30 `NPC.cs:10963-10964`,
+        // the Tumbleweed's 30x30 `:15974-15975`).
+        (NpcKind::Wolf, _) => (sheet_i, 30.0, 46.0, 30.0, white),
+        (NpcKind::Tumbleweed, _) => (sheet_i, 30.0, 30.0, 30.0, white),
     }
 }
 

@@ -2210,6 +2210,35 @@ pub enum NpcKind {
     /// axis' 14 arm (the 0.35/0.3/6/5 approach `:23038-23115`). Unrowed
     /// — protocol id 409 (the vanilla 660 slot is free; the 400+ band).
     QueenSlimeMinionPurple,
+    /// `NPCID.Unicorn` (86, `NPCID.cs:10849`) — the Hallow galloper
+    /// (`aiStyle 26`): 46x42, dmg 65, def 30, 400 HP, kb 0.3, value 1000,
+    /// NPCHit12/NPCDeath18 (`NPC.cs:9926-9938`). W4-d25 WIRING: the
+    /// axis' 26 arm rides `npc_ai_style26::ai_style26` (the generic
+    /// 6/0.07 walk core — no type branch inside the machine). The rows
+    /// `NPCID.Wolf` (155, `NPCID.cs:10987`) — the hardmode snow-night
+    /// galloper (`aiStyle 26`): 46x30, dmg 65, def 30, 300 HP, kb 0.3,
+    /// value 1000, NPCHit1/NPCDeath1 (`NPC.cs:10961-10973`). W4-d25
+    /// WIRING: the axis' 26 arm rides `npc_ai_style26::ai_style26`
+    /// (the 155 hop-over `:62558-62564` + the 0.95 turnaround damping
+    /// `:62621-62631`). Protocol 355 is port-local (the vanilla 155
+    /// slot is PlanterasTentacle's). The NPC_155 sheet is DEFERRED
+    /// (8180 alone fits, but 8217 with NPC_86 overflows the full set).
+    Wolf,
+    /// `NPCID.Tumbleweed` (546, `NPCID.cs:11769`) — the sandstorm
+    /// tumbler (`aiStyle 26`): 30x30, dmg 30, def 6, 50 HP, kb 0.8,
+    /// value 100, NPCHit11/NPCDeath15 (`NPC.cs:15972-15984`). W4-d25
+    /// WIRING: the axis' 26 arm rides `npc_ai_style26::ai_style26`
+    /// (the num2=4 stuck bound + the same-type separation
+    /// `:62378-62408`, the FLOAT-centre hop + the (3,11) chirp
+    /// `:62565-62569`, the ZoneDesert despawn gate `:62570-62580`, the
+    /// wind-driven walk `:62703-62716`, the spriteDirection inversion
+    /// `:62865-62868` + the rotation tail `:62919-62923`). Protocol 546
+    /// is the vanilla id (free across the co-lanes). The sim pre-pass
+    /// stamps the wind/zone/sibling seams. The NPC_546 sheet is DEFERRED
+    /// (the full-set bound with NPC_86/155; the d35 precedent). The
+    /// natural sandstorm spawn (`NPC.cs:3949-4018`) is a documented
+    /// remainder — the desert zone-chain family is unported.
+    Tumbleweed,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2926,6 +2955,21 @@ pub struct Npc {
     /// `app.scene_metrics`. False until the sim stamps it (the solo/test
     /// path keeps the legacy zero-draw short-circuit).
     pub target_zone_graveyard: bool,
+    /// `Main.windSpeedTarget` pre-stamped by the sim (W4-d25 STYLE-26
+    /// wiring, the `wind_speed_current` convention) — the Tumbleweed's
+    /// wind-driven walk cap reads it (`NPC.cs:62703-62716`). The 86/155
+    /// paths never read it; 0 until the sim stamps it.
+    pub gallop_wind_speed_target: f32,
+    /// `Main.player[target].ZoneDesert` pre-stamped by the sim — the
+    /// Tumbleweed's despawn gate (`NPC.cs:62570-62580`). TRUE by default:
+    /// the 86/155 paths never read it, and a solo Tumbleweed outside the
+    /// sim keeps its machine's desert-gate witness default (the module
+    /// ctx fixture). The sim stamps the live scene value every tick.
+    pub gallop_zone_desert: bool,
+    /// `Main.player[target].ZoneSandstorm` pre-stamped by the sim — the
+    /// Tumbleweed's wind gate (`NPC.cs:62709-62712`: the cap term zeroes
+    /// outside the sandstorm). FALSE by default (the module ctx fixture).
+    pub gallop_zone_sandstorm: bool,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -2934,6 +2978,14 @@ pub struct Npc {
     /// tick (the Plantera hook-anchor carrier precedent); outside the
     /// sim it stays empty.
     pub twin_time_lefts: Vec<i32>,
+    /// The OTHER active same-type (546) NPCs' positions in slot order —
+    /// the Tumbleweed's separation scan (`NPC.cs:62382-62384`'s
+    /// `Main.npc` loop, `i != whoAmI && active && type == this.type`).
+    /// `Npc::update_rng` cannot see its siblings, so the sim's pre-pass
+    /// stamps this before each tick (the `twin_time_lefts` carrier
+    /// precedent); outside the sim it stays empty (the 86/155 paths
+    /// never read it — the separation is 546-only).
+    pub gallop_siblings: Vec<(f32, f32)>,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -4441,7 +4493,11 @@ impl Npc {
             wants_critter_light: None,
             frame_slope: 0,
             target_zone_graveyard: false,
+            gallop_wind_speed_target: 0.0,
+            gallop_zone_desert: true,
+            gallop_zone_sandstorm: false,
             twin_time_lefts: Vec::new(),
+            gallop_siblings: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -5285,6 +5341,11 @@ impl Npc {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 1.0,
             // E8 merge: the c10 12-critter kb tail dropped (d40/c8's rows).
+            // W4-d25 STYLE-26 wiring: 86/155 kb 0.3 (`NPC.cs:9936`/
+            // `:10971`), 546 kb 0.8 (`:15982`). The Unicorn row mirrors
+            // d35 (C).
+            NpcKind::Unicorn | NpcKind::Wolf => 0.3,
+            NpcKind::Tumbleweed => 0.8,
             _ => 0.4,
         }
     }
@@ -5977,6 +6038,11 @@ impl Npc {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0,
             // E8 merge: the c10 12-critter defense tail dropped (d40/c8's rows).
+            // W4-d25 STYLE-26 wiring: 86/155 def 30 (`NPC.cs:9932`/
+            // `:10967`), 546 def 6 (`:15978`). The Unicorn row mirrors
+            // d35 (C).
+            NpcKind::Unicorn | NpcKind::Wolf => 30,
+            NpcKind::Tumbleweed => 6,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6672,6 +6738,11 @@ impl Npc {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0.0,
             // E8 merge: the c10 12-critter value tail dropped (d40/c8's rows).
+            // W4-d25 STYLE-26 wiring: 86/155 value 1000 copper
+            // (`NPC.cs:9937`/`:10972`), 546 value 100 (`:15983`). The
+            // Unicorn row mirrors d35 (C).
+            NpcKind::Unicorn | NpcKind::Wolf => 1000.0,
+            NpcKind::Tumbleweed => 100.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -7325,6 +7396,32 @@ impl Npc {
             // request + double ai[1]++, the 156 trident shot. The kind
             // arms are the unreachable markers.
             14 => self.update_cave_bat(world, player, rng),
+            // `else if (this.aiStyle == 26) { this.AI_026_Unicorns(); }`
+            // (`NPC.cs:25631-25634` → the machine `:62366-62924`) — the
+            // unicorn/galloper family (SEVEN vanilla members). W4-d25
+            // census: the FOUR landed kinds ride their machines here
+            // UNCHANGED (verify-only — the S1-F-13b2/S1-D-4 W-10 unicorn
+            // machine and the M4-EVENT-9 410/423 stand-ins, their
+            // deviation notes ride those fns). W4-d25 WIRING: the
+            // Unicorn (86) + the Wolf (155) ride the verbatim
+            // `npc_ai_style26::ai_style26` core (RNG-free — the machine
+            // draws no `Main.rand` on these paths); the sim pre-pass
+            // stamps the 546 wind/zone seams (the Tumbleweed lands with
+            // its own commit). The caller owns the gravity + collision
+            // tail (`gallop_move_tail`, the npc_ai_unicorn convention).
+            26 => match self.kind {
+                NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
+                    crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+                }
+                NpcKind::StardustSpiderSmall => {
+                    self.update_stardust_spider_small(world, player, rng)
+                }
+                NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
+                NpcKind::Unicorn | NpcKind::Wolf | NpcKind::Tumbleweed => {
+                    self.ai_026_gallop_family(world, player)
+                }
+                _ => unreachable!("only the ported aiStyle-26 kinds reach the axis arm"),
+            },
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -7688,6 +7785,12 @@ impl Npc {
             // frost set (the aiStyle-25 chest's other C# kinds 85/629 are
             // unported). The bosses 344/345/346 (aiStyles 57/60/61) are
             // R41's row — NOT claimed here.
+            // W4-d25 verify-only census: the PresentMimic machine is
+            // unchanged (the S1-D-3 W-6 landing already faithful,
+            // `NPC.cs:25538-25630` with the 341 terms). The style's
+            // other TWO members (Mimic 85 / IceMimic 629) are ported
+            // verbatim in `npc_ai_style25.rs`, UNWIRED until their
+            // kinds land — the kind guard keeps this arm scoped.
             25 if self.kind == NpcKind::PresentMimic => {
                 crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
             }
@@ -8256,6 +8359,102 @@ impl Npc {
         // noTileCollide + noGravity — the raw `position += velocity`.
         self.x += self.vx;
         self.y += self.vy;
+    }
+
+    /// W4-d25 STYLE-26 wiring: the aiStyle-26 galloper arm — the Unicorn
+    /// (86), the Wolf (155) and the Tumbleweed (546) ride
+    /// `npc_ai_style26::ai_style26` (`AI_026_Unicorns`,
+    /// `NPC.cs:62366-62924`; the 86 path has NO type branch — the generic
+    /// 6/0.07 core; the 155 path adds the hop-over `:62558-62564` + the
+    /// 0.95 turnaround damping `:62621-62631`; the 546 path adds the
+    /// separation/wind-cap/desert-gate/rotation tail). RNG-free by
+    /// construction: the machine's only draws are the 315/423 arms (the
+    /// other modules'), so the caller's stream is untouched. The seam
+    /// feeds the session player as slot 0 (the S1-D-3p convention),
+    /// ticker 0 (the `EverLastingTicker` stand-in, the zombie convention);
+    /// the 546-only wind/zone/sibling inputs ride the sim pre-pass stamps
+    /// (the `twin_time_lefts` carrier convention). The chirp is 546-only;
+    /// the `wants_sound` drain is wired for all three (the 86/155 paths
+    /// emit nothing).
+    fn ai_026_gallop_family(&mut self, world: &World, player: &Player) {
+        // `Entity.wet` (`Collision.WetCollision`) — the walk gate's wet
+        // conjunct (`NPC.cs:62618`) and the case-86 sprite latch read
+        // it; the wrapper owns the stamp (the `update_cave_bat` shape).
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let players = [crate::npc_target::session_candidate(player)];
+        // The 546-only ctx inputs (`wind_speed_target` / `zone_desert` /
+        // `zone_sandstorm` / `siblings`) ride the sim pre-pass stamps (the
+        // `twin_time_lefts` carrier convention — the AI's `&World` borrow
+        // cannot reach `app.wind` / `app.scene_metrics` / the pool). The
+        // pre-pass stamps the session player's live desert/sandstorm
+        // zones + `Main.windSpeedTarget` + the same-type sibling scan
+        // before each tick. The 86/155 paths never read them; outside the
+        // sim they keep the ctor defaults (the module ctx fixture).
+        // The sibling list is cloned out of `self` first — the ctx borrows
+        // it while the machine takes `self` mutably (the Retinazer twin
+        // list precedent, `ai_030_retinazer`).
+        let siblings = self.gallop_siblings.clone();
+        let ctx = crate::npc_ai_style26::Ai26Ctx {
+            players: &players,
+            ticker: 0,
+            wind_speed_target: self.gallop_wind_speed_target,
+            zone_desert: self.gallop_zone_desert,
+            zone_sandstorm: self.gallop_zone_sandstorm,
+            siblings: &siblings,
+        };
+        let ty = self.kind.cs_id() as i32;
+        let fx = crate::npc_ai_style26::ai_style26(ty, self, world, &ctx);
+        // The 546 chirp (`SoundEngine.PlaySound(3, base.Center, 11)`,
+        // `NPC.cs:62568`) — the int overload: ONE pitch draw, no
+        // NextFloat (the `NpcSoundCue::NpcHit` path). The sim drains
+        // `wants_sound` AFTER the machine's own draws, in slot order.
+        for (ty, style, x, y) in fx.sounds {
+            debug_assert_eq!(ty, 3, "the module emits only the type-3 chirp");
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::NpcHit(style),
+                x,
+                y,
+            });
+        }
+        // The machine writes velocity + the step-up lift only — the
+        // caller owns the shared movement tail (`NPC.UpdateNPC`,
+        // `NPC.cs:90465-90493`), the npc_ai_unicorn convention.
+        self.gallop_move_tail(world);
+    }
+
+    /// `NPC.UpdateNPC`'s post-AI movement (`NPC.cs:90465-90493`): gravity
+    /// + the fall cap, then the axis-separated tile collision — the
+    /// `npc_ai_unicorn.rs::unicorn_step` tail (:497-521) transcribed for
+    /// the style26 callers (the port's GRAVITY/MAX_FALL seam, ANALYSIS).
+    /// Ends with the `oldPosition` latch (`NPC.cs:92605`) the stuck
+    /// block reads next tick (`unicorn_stuck_x`, the S1-F-13b2 slice-A
+    /// precedent — a fresh NPC's 0 default is the verbatim C#
+    /// `oldPosition` behaviour).
+    fn gallop_move_tail(&mut self, world: &World) {
+        let (w, h) = self.size();
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        let nx = self.x + self.vx;
+        if !crate::player::collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+        }
+        let ny = self.y + self.vy;
+        if !crate::player::collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+        }
+        self.unicorn_stuck_x = self.x;
     }
 
     /// S1-D-3 W-1: the aiStyle-27 family arm — the Wall of Flesh
@@ -9693,7 +9892,12 @@ impl Npc {
             // the drakomire mount + its rider, the sroller, the corite and
             // the selenian.
             NpcKind::StardustSpiderBig => self.update_stardust_spider_big(world, player, rng),
-            NpcKind::StardustSpiderSmall => self.update_stardust_spider_small(world, player, rng),
+            // W4-d25: aiStyle 26 rides the style axis (the M4-EVENT-9
+            // stand-in routes unchanged through the 26 arm) — this arm
+            // is an unreachable marker (the S1-D-3 W-1 precedent).
+            NpcKind::StardustSpiderSmall => {
+                unreachable!("aiStyle 26 rides the style axis (W4-d25)")
+            }
             NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
             NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
             // The drakomire's rider: aiStyle 75 rides the style axis
@@ -9725,7 +9929,12 @@ impl Npc {
             NpcKind::StardustCellSmall => self.update_stardust_cell(world, player, rng),
             NpcKind::StardustJellyfishBig => self.update_stardust_jellyfish(world, player, rng),
             NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
-            NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
+            // W4-d25: aiStyle 26 rides the style axis (the M4-EVENT-9
+            // stand-in routes unchanged through the 26 arm) — this arm
+            // is an unreachable marker (the S1-D-3 W-1 precedent).
+            NpcKind::NebulaBeast => {
+                unreachable!("aiStyle 26 rides the style axis (W4-d25)")
+            }
             NpcKind::VortexRifleman => self.update_vortex_rifleman(world, player, rng),
             // `:57681`: the soldier's walk speed is the 4-px cap. W4-d22:
             // the style axis claims it (the num83 row rides the ladder).
@@ -9970,12 +10179,22 @@ impl Npc {
             // `:25631-25634`) — S1-F-13b2 slice A: the named machine in
             // `npc_ai_unicorn.rs` (the stuck windows, the Horseman's
             // 480-tick pumpkin lob, the hop/walk/step-up/jump core). The
-            // other aiStyle-26 kinds keep their own routings below — this
-            // arm is kind-scoped, not a style-axis claim. The gallop dust
-            // (with its draws), the FindFrame 315/329 arms and the
-            // AddLight ride slice B (module docs + ANALYSIS).
+            // gallop dust (with its draws), the FindFrame 315/329 arms and
+            // the AddLight ride slice B (module docs + ANALYSIS).
+            // W4-d25: the style axis claims 26 for the whole family (the
+            // machine routes UNCHANGED through the axis arm — verify-only
+            // census), so this arm is an unreachable marker (the S1-D-3
+            // W-1 precedent).
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
-                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+                unreachable!("aiStyle 26 rides the style axis (W4-d25)")
+            }
+            // W4-d25 STYLE-26 wiring: the Unicorn (86) + the Wolf (155)
+            // + the Tumbleweed (546) ride the axis' 26 arm
+            // (`ai_026_gallop_family` → `npc_ai_style26::ai_style26`) —
+            // these arms are unreachable through `update_rng` (the
+            // S1-D-3 W-1 precedent).
+            NpcKind::Unicorn | NpcKind::Wolf | NpcKind::Tumbleweed => {
+                unreachable!("aiStyle 26 rides the style axis (W4-d25 STYLE-26 wiring)")
             }
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
@@ -14576,6 +14795,114 @@ impl Npc {
                 self.frame = 0;
                 if self.vy != 0.0 { self.frame = 2; }
                 else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d25 STYLE-26 wiring — `case 155` (`NPC.cs:74311-74374`):
+            // the Wolf's 13-row strip (`Main.npcFrameCount[155]` = 13,
+            // `Main.cs:67082`). The air rows 10/11 by the vy sign; the
+            // idle row 0; the |vx|<4 turnaround walks rows 0..2 on the
+            // >5 counter; the run rides the |vx|*0.4 accumulator, >8
+            // advances, the >9 wrap lands on 3. The bestiary-dummy
+            // floor (<3 → 3) is the icon path — unmodelled (the port's
+            // portrait reads row 0 off the sheet, the d35 convention).
+            NpcKind::Wolf => {
+                let mut row = self.frame;
+                if self.vy < 0.0 {
+                    row = 10;
+                } else if self.vy > 0.0 {
+                    row = 11;
+                } else if self.vx == 0.0 {
+                    row = 0;
+                    self.frame_counter = 0.0;
+                } else if ((self.facing > 0 && self.vx < 0.0)
+                    || (self.facing < 0 && self.vx > 0.0))
+                    && self.vx.abs() < 4.0
+                {
+                    self.sprite_dir = self.facing;
+                    if row > 2 {
+                        row = 0;
+                        self.frame_counter = 0.0;
+                    }
+                    if row < 2 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 5.0 {
+                            self.frame_counter = 0.0;
+                            row += 1;
+                        }
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                } else {
+                    self.sprite_dir = if self.vx < 0.0 { -1 } else { 1 };
+                    self.frame_counter += self.vx.abs() * 0.4;
+                    if row == 10 || row == 11 {
+                        row = 12;
+                        self.frame_counter = 0.0;
+                    } else if self.frame_counter > 8.0 {
+                        self.frame_counter -= 8.0;
+                        row += 1;
+                        if row > 9 {
+                            row = 3;
+                        }
+                    }
+                }
+                self.frame = row;
+            }
+            // W4-d25 STYLE-26 wiring — `case 86` (`NPC.cs:74404-74464`):
+            // the Unicorn's 16-row strip (`Main.npcFrameCount[86]` = 16).
+            // Grounded/wet latches the sprite (±2 deadband); the air row
+            // 15 zeroes the counter; the idle row 0; the |vx|<3 slow walk
+            // rides the >=6 counter over rows 1..8; the gallop rides the
+            // >=10 counter over rows 9..14 (both wraps snap into the band).
+            NpcKind::Unicorn => {
+                if self.vy == 0.0 || self.wet {
+                    if self.vx < -2.0 {
+                        self.sprite_dir = -1;
+                    } else if self.vx > 2.0 {
+                        self.sprite_dir = 1;
+                    } else {
+                        self.sprite_dir = self.facing;
+                    }
+                }
+                if self.vy != 0.0 {
+                    self.frame = 15;
+                    self.frame_counter = 0.0;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else if self.vx.abs() < 3.0 {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 9 {
+                            self.frame = 1;
+                        }
+                        if self.frame == 0 {
+                            self.frame = 1;
+                        }
+                    }
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter >= 10.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 15 {
+                            self.frame = 9;
+                        }
+                        if self.frame <= 8 {
+                            self.frame = 9;
+                        }
+                    }
+                }
+            }
+            // W4-d25 STYLE-26 wiring — the Tumbleweed (546) has NO
+            // `FindFrame` case (`NPC.cs:66684-77370` has no `case 546`):
+            // `Main.npcFrameCount[546]` = 1 (`Main.cs:67082`), the single
+            // frame never advances (the ForceBubble row-0 precedent).
+            // The rotation rides the machine's tail (`:62919-62923`), not
+            // the frame.
+            NpcKind::Tumbleweed => {
+                self.frame = 0;
             }
             // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
             // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
@@ -26937,6 +27264,13 @@ impl Npc {
             NpcKind::DuckWhite => 733,
             NpcKind::DuckWhite2 => 734,
             // E8 merge: the c10 12-critter render_key tail dropped (d40/c8's keys).
+            // W4-d25 STYLE-26 wiring: the protocol ids (to_u16's rows —
+            // 440 the Unicorn's d35-mirrored slot, 355 the Wolf's
+            // port-local one, 546 the Tumbleweed's vanilla id; the vanilla
+            // 86/155 collide with the RayGunner/PlanterasTentacle keys
+            // above). Injective either way.
+            NpcKind::Wolf => 772,
+            NpcKind::Tumbleweed => 546,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -32373,7 +32707,7 @@ mod tests {
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
     
-    pub(super) pub(super) const ALL_KINDS: [NpcKind; 523] = [
+    pub(super) pub(super) pub(super) const ALL_KINDS: [NpcKind; 525] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -32897,9 +33231,9 @@ mod tests {
         NpcKind::VampireBat,
         NpcKind::Vampire,
         NpcKind::VileSpitEoW,
+        NpcKind::Wolf,
+        NpcKind::Tumbleweed,
     ];;
-
-
 
     #[test]
     fn the_protocol_id_space_round_trips_every_kind() {
@@ -33281,7 +33615,7 @@ mod tests {
         // MERGE-SIDE re-pin (367 s1 step 6): the batch pins were
         // cumulative-on-branch; every batch test reads the SETTLED
         // roster (455 after d42 + d35's 33 = 488).
-        assert_eq!(ALL_KINDS.len(), 523);
+        assert_eq!(ALL_KINDS.len(), 525);
     }
 
     /// W4-c10 — the waterfowl family's `SetDefaults` rows pin against the
@@ -34066,7 +34400,7 @@ mod tests {
     fn w4_c7_the_firefly_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, w, h)
         let rows = [
-            (NpcKind::Firefly, 355u16, 10.0, 10.0),
+            (NpcKind::Firefly, 772u16, 10.0, 10.0),
             (NpcKind::LightningBug, 358, 12.0, 12.0),
             (NpcKind::Lavafly, 654, 10.0, 10.0),
             (NpcKind::Shimmerfly, 677, 10.0, 10.0),
@@ -38051,7 +38385,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            523,
+            525,
             concat!(
                 "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate)",
                 " UNION ",
@@ -38059,6 +38393,8 @@ mod s1_f_3_tests {
             )
             271,
             "every decodable kind resolves (the wire roster's size - 271 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-c6's PumpkingBlade)"
+            273,
+            "every decodable kind resolves (the wire roster's size - 273 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d25 STYLE-26 wiring's Unicorn/Wolf/Tumbleweed)"
         );
         assert!(
             covered > 43,
@@ -41817,6 +42153,9 @@ mod s1_d_2_tests {
         (NpcKind::Grubby, 66),
         (NpcKind::Sluggy, 66),
         (NpcKind::Buggy, 66),
+        // W4-d25 STYLE-26 wiring (`NPC.cs:9930`/`:10965`/`:15976`).
+        (NpcKind::Wolf, 26),
+        (NpcKind::Tumbleweed, 26),
     ];
 
     #[test]
@@ -48780,5 +49119,972 @@ mod w4_d24_style22_census_tests {
         let _want = mirror.next_range(-1, 2) as f32 * 1.5;
         m.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng2);
         assert_eq!(rng2, mirror, "exactly the one flee drift draw");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 25 slice).
+// WRITTEN, NOT RUN (code-only mode). 25 chest family: PresentMimic 341
+// LANDED + WIRED (S1-D-3 W-6, the kind-gated axis arm) -> verify-only;
+// Mimic 85 / IceMimic 629 MISSING -> ported verbatim in
+// npc_ai_style25.rs (UNWIRED, the module's own witnesses).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style25_census_tests {
+    use super::*;
+
+    /// The axis claims style 25 exactly once (the kind-gated
+    /// PresentMimic arm); the kind arm is the unreachable marker.
+    #[test]
+    fn w4_d25_the_axis_claims_style_25_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "25" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 25 claimed once");
+        assert!(src.contains("aiStyle 25's PresentMimic rides the style axis (S1-D-3 W-6)"));
+    }
+
+    /// The 25 claim is LIVE and draw-free: a disguised PresentMimic
+    /// tick through `update_rng` runs the frost module's idle arm —
+    /// the one-time +8 nudge + the forced ai[3] = 1 — and consumes NO
+    /// rand (`NPC.cs:25538-25630` has no `Next`; the walker tail is
+    /// the port's rand-free integration).
+    #[test]
+    fn w4_d25_the_present_mimic_rides_the_25_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 300.0;
+        w.snow_moon = true;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::PresentMimic, 100.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(25);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.x, 100.0 * TILE_PX + 8.0, "the one-time nudge (:25543)");
+        assert_eq!(n.ai[3], 1.0, "the 341 override (:25558-25561)");
+        assert_eq!(n.ai[0], 0.0, "the far untouched present stays disguised");
+        assert_eq!(rng, witness, "the mimic tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 26 slice).
+// WRITTEN, NOT RUN (code-only mode). 26 unicorn/galloper family
+// (`NPC.cs:25631-25634` → `AI_026_Unicorns` `:62366-62924`), SEVEN
+// vanilla members: the FOUR landed kinds (HeadlessHorseman 315 /
+// Hellhound 329 on `npc_ai_unicorn::unicorn_step`, StardustSpiderSmall
+// 410 / NebulaBeast 423 on their M4-EVENT-9 stand-ins) ride the
+// axis claim UNCHANGED (verify-only); the Unicorn 86 / Wolf 155 are
+// WIRED (the `w4_d25_style26_wiring_tests` module below); the
+// Tumbleweed 546 lands with the wiring's second commit.
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style26_census_tests {
+    use super::*;
+
+    /// A flat stone floor at row 100 (the `npc_ai_unicorn` tests' shape).
+    fn ground26() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.pumpkin_moon = true;
+        w
+    }
+
+    /// The axis claims style 26 exactly once; the four kind arms are
+    /// the unreachable markers (the S1-D-3 W-1 precedent).
+    #[test]
+    fn w4_d25_the_axis_claims_style_26_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "26" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 26 claimed once");
+        // The three kind arms carry the retirement marker (the
+        // 315/329 pair shares one arm) + this witness's own literal.
+        assert_eq!(
+            src.matches("aiStyle 26 rides the style axis (W4-d25)").count(),
+            4,
+            "315/329 + 410 + 423 kind arms are unreachable markers"
+        );
+    }
+
+    /// The kind-match arms are retired: calling `update_kind_ai`
+    /// directly on a style-26 kind panics (the Everscream precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d25_the_horseman_kind_arm_is_retired() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::HeadlessHorseman, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// Verify-only A/B: the axis routing is behaviour-identical to the
+    /// retired kind-arm routing — a Hellhound tick through `update_rng`
+    /// matches the same preamble + `unicorn_step` + tail run directly
+    /// (state AND stream), so the census moved the dispatch, not the
+    /// machine (S1-F-13b2/S1-D-4 W-10 unchanged).
+    #[test]
+    fn w4_d25_the_hellhound_rides_the_26_axis_unchanged() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut a = Npc::new(NpcKind::Hellhound, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
+        a.hp = a.max_hp;
+        let mut b = a.clone();
+        let mut rng_a = UnifiedRandom::new(26);
+        let mut rng_b = rng_a.clone();
+        // The axis path.
+        a.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng_a);
+        // The retired kind-arm path, spelled out (the `update_rng_dust`
+        // preamble + the gfxOffY decay + the machine + the tail).
+        b.update_preamble(1.0 / 60.0);
+        b.gfx_off_y =
+            crate::npc_ai_unicorn_b::gfx_off_y_decay(b.gfx_off_y, b.vx, b.step_speed);
+        crate::npc_ai_unicorn::unicorn_step(&mut b, &w, &p, &mut rng_b);
+        b.just_hit = false;
+        b.find_frame();
+        b.contact(&mut p, &mut rng_b);
+        assert_eq!((a.x, a.y, a.vx, a.vy), (b.x, b.y, b.vx, b.vy));
+        assert_eq!(a.ai, b.ai);
+        assert_eq!((a.facing, a.sprite_dir, a.frame), (b.facing, b.sprite_dir, b.frame));
+        assert_eq!(a.unicorn_stuck_x, b.unicorn_stuck_x);
+        assert_eq!(rng_a, rng_b, "the routing moves no draw");
+    }
+
+    /// The 410 stand-in rides the axis unchanged: the 240-tick fuse
+    /// fires the three-538 burst + the self-destruct with exactly SIX
+    /// `NextFloat` draws in the C# order (`NPC.cs:62489`, vx then vy
+    /// per shot) — the stream mirror pins the draw count/order.
+    #[test]
+    fn w4_d25_the_spider_burst_rides_the_26_axis_with_six_draws() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 20.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::StardustSpiderSmall, 60.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 239.0; // this tick increments to 240 → armed
+        let mut rng = UnifiedRandom::new(26);
+        let mut probe = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "the self-destruct (:62491-62493)");
+        assert_eq!(n.wants_hostile_shot.len(), 3, "the three-538 burst");
+        for s in &n.wants_hostile_shot {
+            assert_eq!(s.0, 538);
+            assert_eq!(s.5, 50);
+        }
+        // The mirror: (NextFloat-0.5)*2 then -4-10*NextFloat, x3.
+        for _ in 0..3 {
+            let _vx = (probe.next_float() - 0.5) * 2.0;
+            let _vy = -4.0 - 10.0 * probe.next_float();
+        }
+        assert_eq!(rng, probe, "exactly the six burst draws, in order");
+    }
+
+    /// The 423 stand-in rides the axis unchanged and draw-free on the
+    /// idle tick: `ai[1]` climbs, no charge inside the 180-tick gate,
+    /// the walker is RNG-free — the stream is untouched.
+    #[test]
+    fn w4_d25_the_nebula_beast_idle_rides_the_26_axis_draw_free() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::NebulaBeast, 60.0 * TILE_PX, 100.0 * TILE_PX - 44.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[1], 1.0, "the idle counter (:62544)");
+        assert_eq!(n.ai[2], 0.0, "no charge before the 180-tick gate");
+        assert!(n.wants_hostile_shot.is_empty());
+        assert_eq!(rng, witness, "the idle tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d25 — STYLE-26 WIRING witnesses (the Unicorn 86 + the Wolf 155).
+// WRITTEN, NOT RUN (code-only mode). The kinds land with their
+// SetDefaults rows (the Unicorn mirrors d35 batch C 6ed8c22f verbatim;
+// the Wolf's protocol id is port-local 355), the axis' 26 arm rides
+// `ai_026_gallop_family` → `npc_ai_style26::ai_style26` + the
+// gravity/collision tail, and the spawner's snow-arm 155 roll spawns
+// the Wolf kind (the zombie stand-in retired). The 315/329/410/423
+// routes are UNCHANGED (the census module above re-pins them).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style26_wiring_tests {
+    use super::*;
+
+    /// A flat stone floor at row 100 (the census module's shape).
+    fn ground26() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    /// The SetDefaults rows through the port's tables (`NPC.cs:9926-9938`
+    /// / `:10961-10973` / `:15972-15984`), the kind<->u16 round-trips (440
+    /// the d35-mirrored Unicorn slot, 355 the Wolf's port-local one, 546
+    /// the Tumbleweed's vanilla id), the sound rows, the DebuffImmunitySets
+    /// (`NPCID.cs:6599`/`:7041` null, `:9169` [31]) and the bestiary
+    /// entries (`BestiaryDatabaseNPCsPopulator.cs:1650`/`:1513`/`:1292`,
+    /// the en-US `NPCs.json:432`/`:93`/`:563` names).
+    #[test]
+    fn w4_d25_wiring_the_galloper_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, protocol id, w, h, dmg, def, life, kb, value)
+        for (kind, ty, proto, w, h, dmg, def, life, kb, value) in [
+            (NpcKind::Unicorn, 86u16, 709u16, 46.0, 42.0, 65, 30, 400, 0.3f32, 1000.0f32),
+            (NpcKind::Wolf, 155, 772, 46.0, 30.0, 65, 30, 300, 0.3, 1000.0),
+            (NpcKind::Tumbleweed, 546, 546, 30.0, 30.0, 30, 6, 50, 0.8, 100.0),
+        ] {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), 26, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} proto");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} decode");
+            // No alpha/noGravity/noTileCollide/behindTiles rows — the
+            // gravity + tile-collide walkers.
+            assert_eq!(shell.alpha, 0, "{kind:?} alpha");
+            assert!(!kind.no_gravity(), "{kind:?} noGravity");
+            assert!(!kind.behind_tiles(), "{kind:?} behindTiles");
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, ty as i32, "{kind:?} net");
+        }
+        assert_eq!(NpcKind::Unicorn.hit_sound(), Some("NPC_Hit_12"));
+        assert_eq!(NpcKind::Unicorn.death_sound(), Some("NPC_Killed_18"));
+        assert_eq!(NpcKind::Wolf.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Wolf.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::Tumbleweed.hit_sound(), Some("NPC_Hit_11"));
+        assert_eq!(NpcKind::Tumbleweed.death_sound(), Some("NPC_Killed_15"));
+        for kind in [NpcKind::Unicorn, NpcKind::Wolf] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune.iter().all(|&i| !i), "{kind:?} null entry");
+        }
+        // The Tumbleweed is SpecificallyImmuneTo[31] (Confused) only.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Tumbleweed);
+        assert!(b.buff_immune[31], "the Tumbleweed's Confused immunity");
+        assert_eq!(
+            b.buff_immune.iter().filter(|&&i| i).count(),
+            1,
+            "the Tumbleweed's only immunity is 31"
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Unicorn, SlimeVariant::Blue).name,
+            "Unicorn"
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Wolf, SlimeVariant::Blue).name,
+            "Wolf"
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Tumbleweed, SlimeVariant::Blue).name,
+            "Angry Tumbler"
+        );
+    }
+
+    /// The Unicorn's live axis tick: the generic 6/0.07 walk accel
+    /// (`NPC.cs:62717-62739` — no 155 damping, no 546 wind), the wet
+    /// stamp, the caller-owned gravity/collision tail and the
+    /// `unicorn_stuck_x` end-of-tick latch. RNG-free: the machine takes
+    /// no stream and the tick draws nothing (the module's census).
+    #[test]
+    fn w4_d25_wiring_the_unicorn_rides_the_26_axis_draw_free() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        // Far (>200 px) and BELOW the unicorn's centre: no proximity
+        // clear, no directionY<0 jump-probe pollution (the unicorn
+        // module's fixture convention).
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Unicorn, 60.0 * TILE_PX, 100.0 * TILE_PX - 42.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.on_ground = true;
+        n.sprite_dir = 1;
+        n.target = 0;
+        n.old_target = 0;
+        n.unicorn_stuck_x = n.x - 1.0; // moved last tick: no stuck arm
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.vx, 0.07, "the generic accel (:62735)");
+        assert!(!n.wet, "the dry floor");
+        // The tail: gravity 0.4 applied, the floor latch holds the body.
+        assert_eq!(n.y, 100.0 * TILE_PX - 42.0, "the floor latch");
+        assert_eq!(n.vy, 0.0);
+        assert!(n.on_ground);
+        assert_eq!(n.x, 60.0 * TILE_PX + 0.07, "the walk integrated");
+        assert_eq!(n.unicorn_stuck_x, n.x, "the end-of-tick latch (:92605)");
+        assert!(n.wants_sound.is_empty(), "the chirp is 546-only");
+        assert_eq!(rng, witness, "the wired tick draws nothing");
+    }
+
+    /// The Wolf's live axis tick: the 0.95 turnaround damping runs
+    /// BEFORE the shared accel (`NPC.cs:62621-62631`), then the hop-over
+    /// stays off (the player is far). Stream untouched.
+    #[test]
+    fn w4_d25_wiring_the_wolf_damps_the_turnaround_through_the_axis() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Wolf, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.on_ground = true;
+        n.sprite_dir = 1;
+        n.target = 0;
+        n.old_target = 0;
+        n.unicorn_stuck_x = n.x - 1.0;
+        n.vx = -2.0; // rolling LEFT while facing RIGHT
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.vx, -2.0f32 * 0.95 + 0.07, "the damp then the accel");
+        assert_eq!(n.vy, 0.0, "no hop at 1400+ px");
+        assert_eq!(rng, witness, "the wired tick draws nothing");
+    }
+
+    /// The kind-match arms are retired: calling `update_kind_ai`
+    /// directly on a galloper panics (the census module's precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d25_wiring_the_galloper_kind_arms_are_retired() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::Wolf, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// `FindFrame`'s `case 155` (`NPC.cs:74311-74374`): the air rows
+    /// 10/11, the idle 0, the |vx|<4 turnaround rows 0..2 on the >5
+    /// counter, the run's |vx|*0.4 accumulator with the >8 advance and
+    /// the >9 wrap to 3 — all inside the 13-row strip
+    /// (`Main.npcFrameCount[155]` = 13, `Main.cs:67082`).
+    #[test]
+    fn w4_d25_wiring_the_wolf_frames_walk_the_csharp_rows() {
+        let mut n = Npc::new(NpcKind::Wolf, 0.0, 0.0, 1, 0.0);
+        // The air rows by the vy sign.
+        n.vy = -1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 10, "the rise row (:74320)");
+        n.vy = 1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 11, "the fall row (:74324)");
+        // The landing: the run arm converts 10/11 -> 12 (:74357-74360).
+        n.vy = 0.0;
+        n.vx = 4.0;
+        n.find_frame();
+        assert_eq!(n.frame, 12, "the landing row");
+        assert_eq!(n.sprite_dir, 1, "the run faces the motion");
+        // The run: |vx|*0.4 = 2.0/tick (exact in f32), >8 advances every
+        // 5 ticks (2/4/6/8 hold, 10 - 8 = 2 carries). The >9 wrap lands
+        // on 3 (:74366-74369).
+        n.vx = 5.0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![12, 12, 12, 12, 3, 3, 3, 3, 3, 4, 4, 4]);
+        // The wrap: row 9 + advance -> 10 > 9 -> 3 (:74366-74369).
+        n.frame = 9;
+        n.frame_counter = 7.0;
+        n.find_frame();
+        assert_eq!(n.frame, 3, "the >9 wrap lands on 3");
+        // The idle.
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0);
+        assert_eq!(n.frame_counter, 0.0);
+        // The turnaround: facing away, |vx| < 4 — rows 0..2 on the >5
+        // counter, the sprite faces the direction (:74331-74351).
+        n.facing = -1;
+        n.vx = 2.0;
+        n.frame = 5;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the >2 reset");
+        assert_eq!(n.sprite_dir, -1, "the turnaround faces the direction");
+        // The reset tick spent counter 1; four more reach 5 (not > 5).
+        for _ in 0..4 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 0, "counter 5 holds the row");
+        n.find_frame();
+        assert_eq!(n.frame, 1, "the sixth tick advances");
+        // The row-2 park zeroes the counter (:74348-74351).
+        n.frame = 2;
+        n.frame_counter = 3.0;
+        n.find_frame();
+        assert_eq!(n.frame, 2);
+        assert_eq!(n.frame_counter, 0.0);
+    }
+
+    /// `FindFrame`'s `case 86` (`NPC.cs:74404-74464`): the grounded/wet
+    /// sprite latch (±2 deadband), the air row 15, the idle 0, the
+    /// |vx|<3 slow walk over rows 1..8 (>=6 counter) and the gallop over
+    /// rows 9..14 (>=10 counter) — all inside the 16-row strip
+    /// (`Main.npcFrameCount[86]` = 16).
+    #[test]
+    fn w4_d25_wiring_the_unicorn_frames_walk_the_csharp_rows() {
+        let mut n = Npc::new(NpcKind::Unicorn, 0.0, 0.0, 1, 0.0);
+        // The sprite latch: |vx| > 2 faces the motion, inside the
+        // deadband the direction stands (:74405-74418).
+        n.vx = 3.0;
+        n.facing = -1;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, 1, "the rightward gallop faces right");
+        n.vx = 1.0;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, -1, "the deadband keeps the direction");
+        // The air row (:74420-74424).
+        n.vy = -2.0;
+        n.find_frame();
+        assert_eq!(n.frame, 15);
+        assert_eq!(n.frame_counter, 0.0);
+        // The idle (:74426-74430).
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0);
+        // The slow walk: |vx| = 2 -> counter 2/tick, >=6 advances every
+        // 3 ticks; from row 0 the first advance lands on 1, the >=9
+        // wrap snaps to 1 (:74432-74448).
+        n.vx = 2.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..9 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![0, 0, 1, 1, 1, 2, 2, 2, 3]);
+        n.frame = 8;
+        n.frame_counter = 5.0;
+        n.find_frame();
+        assert_eq!(n.frame, 1, "the >=9 wrap snaps to 1");
+        // The gallop: |vx| = 5 -> counter 5/tick, >=10 advances every 2
+        // ticks; the <=8 floor snaps into the 9..14 band
+        // (:74450-74463).
+        n.vx = 5.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the first tick holds (5 < 10)");
+        n.find_frame();
+        assert_eq!(n.frame, 9, "the <=8 floor snaps to 9");
+        n.frame = 14;
+        n.frame_counter = 6.0;
+        n.find_frame();
+        assert_eq!(n.frame, 9, "the >=15 wrap snaps to 9");
+    }
+
+    /// The Tumbleweed's live axis tick: the wind-driven walk (the 0.92
+    /// sign damp + the 0.05 accel, the cap `4 + Lerp(0.6,1,|wind|) *
+    /// sign(wind) * direction * 3` zeroed outside the sandstorm,
+    /// `NPC.cs:62703-62716`), the rotation tail (`:62919-62923`), the
+    /// caller-owned gravity/collision tail. RNG-free: the machine takes
+    /// no stream and the tick draws nothing (the chirp is the hop-only
+    /// sound, drained separately). The sim pre-pass stamps the
+    /// wind/zone/sibling seams; this solo witness sets them directly.
+    #[test]
+    fn w4_d25_wiring_the_tumbleweed_rides_the_26_axis_draw_free() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        // Far (>200 px) and BELOW the tumbler's centre: no proximity
+        // clear, no directionY<0 jump-probe pollution.
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Tumbleweed, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.on_ground = true;
+        n.sprite_dir = 1;
+        n.target = 0;
+        n.old_target = 0;
+        n.unicorn_stuck_x = n.x - 1.0; // moved last tick: no stuck arm
+        // The sim pre-pass stamps: in the desert (no despawn), no
+        // sandstorm (the wind term zeroes -> the cap is 4), no wind.
+        n.gallop_zone_desert = true;
+        n.gallop_zone_sandstorm = false;
+        n.gallop_wind_speed_target = 0.0;
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        // The walk: sign(0) != facing(1) -> the 0.92 damp on vx=0 is 0,
+        // then the +0.05 accel. The cap is 4 (no sandstorm).
+        assert_eq!(n.vx, 0.05, "the 0.05 accel (:62716)");
+        assert!(!n.wet, "the dry floor");
+        // The tail: gravity 0.4 applied, the floor latch holds the body.
+        assert_eq!(n.y, 100.0 * TILE_PX - 30.0, "the floor latch");
+        assert_eq!(n.vy, 0.0);
+        assert!(n.on_ground);
+        assert_eq!(n.x, 60.0 * TILE_PX + 0.05, "the walk integrated");
+        assert_eq!(n.unicorn_stuck_x, n.x, "the end-of-tick latch (:92605)");
+        // The rotation tail: rotation += vx * 0.05, sprite = -direction.
+        assert_eq!(n.rotation, 0.05 * 0.05, "the rotation tail (:62920)");
+        assert_eq!(n.sprite_dir, -n.facing, "the sprite inversion (:62921)");
+        // The single frame never advances (no case 546).
+        assert_eq!(n.frame, 0, "the 1-row strip");
+        assert!(n.wants_sound.is_empty(), "no hop this tick (vx < 3)");
+        assert_eq!(rng, witness, "the wired tick draws nothing");
+    }
+
+    /// The Tumbleweed's separation (`NPC.cs:62378-62408`): a same-type
+    /// sibling inside the Manhattan `< width` window nudges vx/vy ∓0.05;
+    /// the grounded latch re-zeroes vy after. The sim pre-pass collects
+    /// the siblings; this solo witness sets `gallop_siblings` directly.
+    #[test]
+    fn w4_d25_wiring_the_tumbleweed_separates_from_siblings() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Tumbleweed, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.on_ground = true;
+        n.sprite_dir = 1;
+        n.target = 0;
+        n.old_target = 0;
+        n.unicorn_stuck_x = n.x - 1.0;
+        n.gallop_zone_desert = true;
+        // A sibling 10 px right + 5 px down: Manhattan 15 < width 30.
+        n.gallop_siblings = vec![(n.x + 10.0, n.y + 5.0)];
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        // vx: -0.05 (sibling right), then the walk's 0.92 sign damp
+        // (sign(-0.05) != facing) and the +0.05 accel.
+        assert_eq!(n.vx, -0.05f32 * 0.92 + 0.05, "the separation nudge + the walk");
+        // The grounded latch re-zeroed the vy nudge, then the tail's
+        // gravity 0.4 lands the body on the floor (vy 0).
+        assert_eq!(n.vy, 0.0, "the grounded latch + the floor");
+        assert_eq!(rng, witness, "the separation draws nothing");
+    }
+
+    /// The Tumbleweed's desert despawn gate (`NPC.cs:62570-62580`):
+    /// outside the desert, re-target, and if still outside:
+    /// EncourageDespawn(10), ai[3] = 30, the direction restored.
+    #[test]
+    fn w4_d25_wiring_the_tumbleweed_despawns_outside_the_desert() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Tumbleweed, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.on_ground = true;
+        n.sprite_dir = 1;
+        n.target = 0;
+        n.old_target = 0;
+        n.unicorn_stuck_x = n.x - 1.0;
+        n.despawn_timer = 600;
+        n.gallop_zone_desert = false; // outside the desert
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.despawn_timer, 10, "EncourageDespawn(10) (:62576)");
+        assert_eq!(n.ai[3], 30.0, "the wander window pinned (:62577)");
+        assert_eq!(n.facing, 1, "the pre-retarget direction restored (:62578)");
+        assert_eq!(rng, witness, "the despawn gate draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 27 slice).
+// WRITTEN, NOT RUN (code-only mode). 27 Wall of Flesh: the style's ONLY
+// member (113, `NPC.cs:10347`) — LANDED + WIRED (S1-D-3 W-1, the
+// faithful `npc_ai_style27::style27_step` behind `ai_027_wof_family`)
+// -> VERIFY-ONLY: the machine is unchanged; these witnesses re-pin the
+// axis claim + the classic draw census through the LIVE routing.
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style27_census_tests {
+    use super::*;
+
+    /// The axis claims style 27 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_27_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "27" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 27 claimed once");
+        assert!(src.contains("aiStyle 27 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// The kind arm is retired: `update_kind_ai` on the wall panics.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d25_the_wof_kind_arm_is_retired() {
+        let w = World::new("t".into(), 200, 400);
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::WallOfFlesh, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// Verify-only: the classic draw census rides the LIVE axis arm —
+    /// tick 1 draws `Next(1000)` + `Next(200)` (the roar, forced by the
+    /// pre-seeded cadence counter, `NPC.cs:25717-25719`) and emits the
+    /// ONE-TIME init (2 eyes + 11 Hungries, `:26041-26051`); tick 2
+    /// draws ONLY `Next(1000)` (the cadence reset keeps the roar gate
+    /// shut) and re-emits NOTHING. getGood/expert false: no other draws.
+    #[test]
+    fn w4_d25_the_wof_roar_and_one_shot_init_ride_the_27_axis() {
+        let w = World::new("t".into(), 200, 400);
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::WallOfFlesh, 100.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.local_ai[3] = 2000.0; // forces the roar on tick 1
+        let mut rng = UnifiedRandom::new(27);
+        let mut probe = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let d1 = probe.next_max(1000);
+        let d2 = probe.next_max(200);
+        assert!(d1 < 1000); // the mirror consumed both draws
+        assert_eq!(n.local_ai[3], -(d2 as f32), "the roar reset (:25719)");
+        assert_eq!(rng, probe, "tick 1: exactly the two roar draws");
+        assert_eq!(n.local_ai[0], 2.0, "the one-time init latch (:26042)");
+        assert_eq!(n.wof_spawns.len(), 13, "2 eyes + 11 Hungries, once");
+        assert_eq!(n.wof_spawns[0].npc_type, 114);
+        assert_eq!(n.wof_spawns[0].ai0, 1.0, "the top eye (:26044)");
+        assert_eq!(n.wof_spawns[1].ai0, -1.0, "the bottom eye (:26045)");
+        for i in 0..11 {
+            assert_eq!(n.wof_spawns[2 + i].npc_type, 115);
+            assert_eq!(
+                n.wof_spawns[2 + i].ai0,
+                i as f32 * 0.1 - 0.05,
+                "the Hungry ai0 ladder (:26048)"
+            );
+        }
+        // Tick 2: the cadence is negative — only the Next(1000) gate
+        // draw fires; the init never re-emits.
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let _d1b = probe.next_max(1000);
+        assert_eq!(rng, probe, "tick 2: exactly the one gate draw");
+        assert_eq!(n.local_ai[3], 1.0 - d2 as f32, "no second roar");
+        assert_eq!(n.wof_spawns.len(), 13, "no re-spawn (the W-1 fix)");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 28 slice).
+// WRITTEN, NOT RUN (code-only mode). 28 WoF Eye: the style's ONLY member
+// (114, `NPC.cs:10365`) — LANDED + WIRED (S1-D-3 W-1, the faithful
+// `npc_ai_style28::style28_step` behind `ai_028_wof_eye_family`) ->
+// VERIFY-ONLY: the machine is unchanged; RNG-free by construction (the
+// arm's `NPC.cs:26053-26208` block carries no `Next`).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style28_census_tests {
+    use super::*;
+
+    /// The axis claims style 28 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_28_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "28" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 28 claimed once");
+        assert!(src.contains("aiStyle 28 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// Verify-only: the eye mirrors the wall through the LIVE axis arm
+    /// and draws NOTHING — the literal X copy + the direction mirror
+    /// (`NPC.cs:26066-26068`), the life mirror (`:26061-26064`), the
+    /// INT band midpoint with the ±1 snap (`:26069-26083`): band
+    /// 1000..1600 → midpoint 1300; the top eye (ai0 = 1) rides
+    /// (1300 + 1000)/2 − 100/2 = 1100.
+    #[test]
+    fn w4_d25_the_eye_mirrors_the_wall_on_the_28_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.wof_present = true;
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
+        w.wof_x = 1000.0;
+        w.wof_dir = -1;
+        w.wof_draw_top = 1000;
+        w.wof_draw_bottom = 1600;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::WallOfFleshEye, 500.0, 1100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the top eye
+        let mut rng = UnifiedRandom::new(28);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.x, 1000.0, "the literal position.X copy (:26066)");
+        assert_eq!(n.facing, -1, "the wall direction mirror (:26067)");
+        assert_eq!(n.sprite_dir, -1, "spriteDirection = direction (:26068)");
+        assert_eq!(n.hp, 8000, "the life mirror (:26063)");
+        assert_eq!(n.y, 1100.0, "the INT band midpoint + the snap (:26069-26083)");
+        assert_eq!(n.vy, 0.0, "inside the ±1 band the velocity zeroes");
+        assert_eq!(rng, witness, "the eye tick draws nothing");
+        // The wall's death deactivates the eye (:26055-26059).
+        w.wof_present = false;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "no wall → the eye deactivates");
+        assert_eq!(rng, witness, "still draw-free");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 29 slice).
+// WRITTEN, NOT RUN (code-only mode). 29 Hungry: the style's ONLY member
+// (115, `NPC.cs:10382`) — LANDED + WIRED (S1-D-3 W-1, the faithful
+// `npc_ai_style29::style29_step` behind `ai_029_hungry_family`) ->
+// VERIFY-ONLY: the machine is unchanged; the W-1d AddLight tail
+// (`NPC.cs:26403`) lands on the draw-side feed (`npc_lights`' Hungry
+// row, the CenterTruncated anchor) in this slice. RNG-free by
+// construction (the arm carries no `Next`).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style29_census_tests {
+    use super::*;
+
+    /// The axis claims style 29 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_29_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "29" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 29 claimed once");
+        assert!(src.contains("aiStyle 29 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// Verify-only: the Hungry rides the LIVE axis arm draw-free — the
+    /// INTEGER half-width anchor (`NPC.cs:26280`, odd width 101 → 50),
+    /// the per-tick damage reset + the f64 hp ladder (`:26223-26250`),
+    /// the aim/sprite writes (`:26393-26402`), the strike-tick justHit
+    /// BEFORE the wall gate (`:26211-26219`) and the no-wall death.
+    #[test]
+    fn w4_d25_the_hungry_rides_the_29_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.wof_present = true;
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
+        w.wof_x = 1000.0;
+        w.wof_width = 101; // odd: the INTEGER half is 50, anchor 1050
+        w.wof_draw_top = 1000;
+        w.wof_draw_bottom = 1600;
+        let mut p = Player::spawn(&w);
+        p.x = 1200.0;
+        p.y = 1279.0;
+        let mut n = Npc::new(NpcKind::Hungry, 1050.0, 1300.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 0.5; // the band row: y2 = 1000 + 600*0.5 = 1300
+        let mut rng = UnifiedRandom::new(29);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        // Full hp: the damage reset, NO defense write, the approach.
+        assert_eq!(n.damage_override, None, "damage = defDamage (:26223)");
+        assert_eq!(n.defense(), 10, "the classic high tier writes no defense");
+        assert_eq!(n.vx, 0.1, "the aim (145, -15) accelerates +0.1 (:26305)");
+        assert_eq!(n.sprite_dir, 1, "the right-aim sprite flip (:26395)");
+        assert_eq!(n.rotation, (-15.0f64).atan2(145.0) as f32, "(:26396)");
+        assert_eq!(rng, witness, "the hungry tick draws nothing");
+        // The <50% tier through the live seam: 60 dmg / def 30.
+        w.wof_life = 3920;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.damage_override, Some(60), "(:26227/:26253)");
+        assert_eq!(n.defense(), 30, "(:26228)");
+        assert_eq!(rng, witness, "still draw-free");
+        // The strike tick: justHit arms the recoil BEFORE the gate, and
+        // the no-wall death still lands (:26211-26219). The update tail
+        // clears the flag (:90516).
+        w.wof_present = false;
+        n.just_hit = true;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[1], 10.0, "the recoil precedes the gate (:26211)");
+        assert_eq!(n.hp, 0, "no wall → the Hungry deactivates (:26217)");
+        assert!(!n.just_hit, "the tail cleared the strike flag (:90516)");
+        assert_eq!(rng, witness, "the whole census is draw-free");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 30 slice).
+// WRITTEN, NOT RUN (code-only mode). 30 Retinazer: the style's ONLY
+// member (125, `NPC.cs:10526`) — LANDED + WIRED (S1-D-3
+// wire-retinazer, the faithful `npc_ai_style30::retinazer_ai`; the
+// mislabeled `update_retinazer` retired) -> VERIFY-ONLY: the machine is
+// unchanged. RNG census: the every-tick `Next(5)` dust gate
+// (`:26460`) fires BEFORE the day flee (`:26486-26491`), so even the
+// flee tick draws exactly once.
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style30_census_tests {
+    use super::*;
+
+    /// The axis claims style 30 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 wire-retinazer).
+    #[test]
+    fn w4_d25_the_axis_claims_style_30_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "30" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 30 claimed once");
+        assert!(src.contains("aiStyle 30 rides the style axis (S1-D-3)"));
+    }
+
+    /// Verify-only: the Retinazer's day flee rides the LIVE axis arm —
+    /// the rise 0.04/tick + `EncourageDespawn(10)` (`NPC.cs:26488-26489`)
+    /// and EXACTLY ONE `Next(5)` draw: the dust gate (`:26460`) runs
+    /// before the flee return, the machine's dash/laser draws never
+    /// fire on this path. The integration tail still runs (the C#'s
+    /// `return` leaves `AI()` only).
+    #[test]
+    fn w4_d25_the_retinazer_day_flee_rides_the_30_axis_with_one_draw() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.day_time = true;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 90.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Retinazer, 60.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.despawn_timer = 600;
+        let mut rng = UnifiedRandom::new(30);
+        let mut probe = rng.clone();
+        let (x0, y0) = (n.x, n.y);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let _gate = probe.next_max(5);
+        assert_eq!(rng, probe, "exactly the one dust-gate draw (:26460)");
+        assert_eq!(n.vy, -0.04, "the flee rise (:26488)");
+        assert_eq!(n.despawn_timer, 10, "EncourageDespawn(10) (:26489)");
+        assert_eq!(n.y, y0 - 0.04, "the noTileCollide integration tail");
+        assert_eq!(n.x, x0, "no horizontal steer on the flee");
+        assert!(n.wants_hostile_shot.is_empty(), "the flee fires nothing");
     }
 }
