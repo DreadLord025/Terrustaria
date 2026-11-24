@@ -250,6 +250,15 @@ pub struct Wiring {
     /// registration at `:2065-2125`).
     in_pumps: Vec<(i32, i32)>,
     out_pumps: Vec<(i32, i32)>,
+    /// The `XferWater` post-transfer `SquareTileFrame` wakes
+    /// (`Wiring.cs:512`/`:516`/`:521`): every touched pump cell queues its
+    /// 3×3 reframe, whose `TileFrame` re-queues each wet cell through
+    /// `Liquid.AddWater` (`WorldGen.cs:81344-81346`). The engine has no
+    /// LiquidSystem handle, so the positions queue here and the app wiring
+    /// tick drains them into `LiquidSystem::wake_around(x, y, 1)` — the
+    /// settle pump picks the teleported liquid up on its next pass
+    /// (R-12-5 driver 4, the e21 pump/settle compose).
+    pump_wakes: Vec<(i32, i32)>,
     /// `Wiring.blockPlayerTeleportationForOneIteration` (`Wiring.cs:3126`).
     block_player_teleportation: bool,
     /// The per-tile toggles collected by the flood (`PixelBoxPass`,
@@ -789,6 +798,14 @@ impl Wiring {
     /// [`Self::actuation_drops`]).
     pub fn take_actuation_drops(&mut self) -> Vec<crate::edit::ObjectDrop> {
         std::mem::take(&mut self.actuation_drops)
+    }
+
+    /// Drains the `XferWater` post-transfer reframe wakes (see
+    /// [`Self::pump_wakes`]) — the app tick feeds each into
+    /// `LiquidSystem::wake_around(x, y, 1)` (the `SquareTileFrame` 3×3
+    /// `TileFrame` → `AddWater` chain, `WorldGen.cs:81344-81346`).
+    pub fn take_pump_wakes(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.pump_wakes)
     }
 
     /// Drains the teleport events computed by the last `TripWire`.
@@ -1684,7 +1701,8 @@ impl Wiring {
     /// `HitWireSingle`'s case 141 (`Wiring.cs:2035-2039`): the explosives —
     /// `KillTile(noItem)` and the 108 explosion (500 dmg, 10 knockback).
     fn explosives(&mut self, world: &mut World, i: i32, j: i32) {
-        crate::edit::kill_tile(world, i, j, true); // `:2037` — no item drop
+        // W4-g83: the cascade rides the wiring stream (the active genRand).
+        crate::edit::kill_tile(world, i, j, true, self.rand_mut()); // `:2037` — no item drop
         self.device_shots.push(DeviceShot {
             kind: 108,
             x: i as f32 * 16.0 + 8.0,
@@ -1702,7 +1720,8 @@ impl Wiring {
     /// `:289-292` and `HitWireSingle`'s case 210 `:2040-2042`): `KillTile(noItem)`
     /// and the 164 explosion (250 dmg, 10 knockback).
     fn explode_mine(&mut self, world: &mut World, i: i32, j: i32) {
-        crate::edit::kill_tile(world, i, j, true); // `:3077`
+        // W4-g83: the cascade rides the wiring stream (the active genRand).
+        crate::edit::kill_tile(world, i, j, true, self.rand_mut()); // `:3077`
         self.device_shots.push(DeviceShot {
             kind: 164,
             x: i as f32 * 16.0 + 8.0,
@@ -1840,8 +1859,11 @@ impl Wiring {
     /// its liquid into the type-matched out-pump tiles (an empty out tile
     /// adopts the in type), capped at 255; the in tile's liquid is RE-READ
     /// after each out transfer (`:506`) so the remainder flows into the next
-    /// out tile; the port's liquid sim reads the tiles next tick (the C#'s
-    /// `SquareTileFrame` wake).
+    /// out tile. The post-transfer `SquareTileFrame` wakes (`:512`/`:516`/
+    /// `:521`) queue into [`Self::pump_wakes`] — the app wiring tick drains
+    /// them into `LiquidSystem::wake_around`, the `TileFrame` → `AddWater`
+    /// chain (`WorldGen.cs:81344-81346`) that joins the teleported liquid
+    /// to the settle lists (R-12-5 driver 4).
     fn xfer_water(&mut self, world: &mut World) {
         for &(inx, iny) in &self.in_pumps {
             if !world.tile_active(inx, iny) {
@@ -1886,6 +1908,9 @@ impl Wiring {
                         out_tile.set_liquid_kind(in_type);
                     }
                 }
+                // `WorldGen.SquareTileFrame(num3, num4)` (`Wiring.cs:512`)
+                // — the out cell's reframe wake (R-12-5 driver 4).
+                self.pump_wakes.push((outx, outy));
                 {
                     let in_tile = world.tile_mut(inx, iny).unwrap();
                     in_tile.liquid = in_tile.liquid.saturating_sub(amount);
@@ -1893,10 +1918,15 @@ impl Wiring {
                     // tile (`Wiring.cs:513-516`).
                     if in_tile.liquid == 0 {
                         in_tile.clear_liquid_kind();
+                        self.pump_wakes.push((inx, iny));
                         break;
                     }
                 }
             }
+            // `WorldGen.SquareTileFrame(num, num2)` (`Wiring.cs:521`) —
+            // the in cell's tail reframe, even when nothing transferred
+            // or the emptied arm already queued it (the C# fires both).
+            self.pump_wakes.push((inx, iny));
         }
     }
 
@@ -2332,7 +2362,9 @@ impl Wiring {
                 if !actuator {
                     let next = if k >= 262 { k - 7 } else { k + 7 };
                     world.swap_tile_kind(i, j, next);
-                    let _ = crate::edit::square_tile_frame_default(world, i, j);
+                    // W4-g83: the wake's framing dispatch rides the wiring
+                    // stream (the active genRand of the wiring tick).
+                    let _ = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
                 }
                 // `return;` — outside the `!actuator` guard (`:1047`).
             }
@@ -2555,11 +2587,12 @@ impl Wiring {
             // the type swap + the wake.
             546 => {
                 world.swap_tile_kind(i, j, 557);
-                let _ = crate::edit::square_tile_frame_default(world, i, j);
+                // W4-g83: the wake rides the wiring stream (contract §2).
+                let _ = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
             }
             557 => {
                 world.swap_tile_kind(i, j, 546);
-                let _ = crate::edit::square_tile_frame_default(world, i, j);
+                let _ = crate::edit::square_tile_frame_default(world, i, j, self.rand_mut());
             }
             // The weighted pressure-plate's big frame shift (506, `:2503-
             // 2531`): the 2×3 anchor from `frameY / 18 % 3`, the active+same-
@@ -2999,7 +3032,10 @@ impl Wiring {
         if let Some(t) = world.tile_mut(i, j) {
             t.flags |= FLAG_INACTIVE;
         }
-        let drops = crate::edit::actuation_square_frame(world, i, j);
+        // W4-g83: the actuation wake's framing dispatch (the seaweed tip
+        // re-rolls) rides the wiring stream — the active genRand of the
+        // wiring tick (`Wiring.cs:3212` runs under the wiring `Main.rand`).
+        let drops = crate::edit::actuation_square_frame(world, i, j, self.rand_mut());
         self.actuation_drops.extend(drops);
     }
 
@@ -3009,7 +3045,7 @@ impl Wiring {
         if let Some(t) = world.tile_mut(i, j) {
             t.flags &= !FLAG_INACTIVE;
         }
-        let drops = crate::edit::actuation_square_frame(world, i, j);
+        let drops = crate::edit::actuation_square_frame(world, i, j, self.rand_mut());
         self.actuation_drops.extend(drops);
     }
 
@@ -3910,6 +3946,15 @@ mod teleport_tests {
         assert_eq!(out.liquid, 200, "the transfer landed in the out body");
         assert_eq!(out.liquid_kind(), LiquidKind::Water, "the type adopted");
         assert_eq!(w.tile(10, 10).unwrap().liquid, 0, "the in tile emptied");
+        // R-12-5 driver 4: the SquareTileFrame wakes queued in the C#'s
+        // call order — the out cell (`:512`), the emptied in cell
+        // (`:516`), the in tail (`:521`, fires even after the break).
+        assert_eq!(
+            wiring.take_pump_wakes(),
+            vec![(19, 10), (10, 10), (10, 10)],
+            "the three reframe sites in order"
+        );
+        assert!(wiring.take_pump_wakes().is_empty(), "the drain empties");
     }
 
     fn the_pump_registration_caps_at_19() {
@@ -5640,6 +5685,58 @@ mod device_tests {
         assert_eq!(shot.y, (20 * 16 + 2) as f32);
         assert_eq!(shot.ai0, 10.0, "the fountain's own column");
         assert_eq!(shot.ai1, 20.0, "the fountain's own row");
+    }
+
+    /// `WorldGen.SwitchFountain` (`WorldGen.cs:51150-51198`, W4-g73 closeout
+    /// chain witness): the wire trip's case 207 (`Wiring.cs:2018-2019`)
+    /// walks the 2x4 body from the frame-derived corner and flips every
+    /// fountain cell's frameY by 72 (the flowing/idle sheet halves). The
+    /// corner maths: frameX/18 mod-2 down to 0/1, frameY/18 minus 4 when
+    /// >= 4 (`:51155-51164`).
+    #[test]
+    fn the_water_fountain_trip_flips_the_2x4_body_frame() {
+        // The 2x4 fountain body at (10..11, 20..23); the tripped cell is
+        // the bottom-right (11, 23) — frameX 18 (col 1), frameY 54 (row 3):
+        // num3 = 1, num4 = 3 → corner (10, 20).
+        let mut w = world();
+        for x in 10..12 {
+            for y in 20..24 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 207,
+                    frame_x: ((x - 10) * 18) as i16,
+                    frame_y: ((y - 20) * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let si = w.index(8, 23);
+        w.tiles[si] = Tile { kind: 135, ..Default::default() };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        for x in 8..12 {
+            w.wires.set(x, 23, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 23, 1, 1);
+        // Every body cell jumped to the flowing half (+72).
+        for x in 10..12 {
+            for y in 20..24 {
+                assert_eq!(
+                    w.tile_frame_y(x, y),
+                    (y - 20) * 18 + 72,
+                    "cell ({x}, {y}) flips to the flowing sheet"
+                );
+            }
+        }
+        // The second trip flips back (frameY >= 72 → -72).
+        let mut wiring2 = Wiring::new();
+        wiring2.trip_wire(&mut w, 8, 23, 1, 1);
+        for x in 10..12 {
+            for y in 20..24 {
+                assert_eq!(w.tile_frame_y(x, y), (y - 20) * 18);
+            }
+        }
     }
 
     #[test]

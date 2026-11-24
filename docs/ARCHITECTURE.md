@@ -113,8 +113,11 @@ an agent needs before touching code.
   `Tile.checkingLiquid`; every 30 Hz call pumps one tenth of the list. Each cell falls
   into the cell below and levels out with up to six horizontal neighbours (the same
   averaging and edge rules as the C#), and entries retire after eight quiet passes.
-  `add_water` mirrors `AddWater` + the `LiquidBuffer` overflow queue; block edits call
-  `wake_around` so a broken dam starts flowing immediately.
+  `add_water` mirrors `AddWater` + the `LiquidBuffer` overflow queue — including the
+  5-tile border guard, the grate-546 carve-out and the inline liquid-death kill
+  (`Liquid.cs:1163`/`:1183-1206`, W4-g45 round 2; the death checks ride the
+  `tileobject` Tile-overload seam); block edits call `wake_around` so a broken dam
+  starts flowing immediately.
 - `liquid_draw.rs` — `LiquidRenderer.InternalPrepareDraw`: visible liquid levels
   (including seepage into empty cells), edge walls, `FrameOffset`, the source rectangle,
   waterfall-fade opacity, `IsSurfaceLiquid` and the half-brick visibility rule. The app

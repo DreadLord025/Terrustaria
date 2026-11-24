@@ -66,7 +66,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.eclipse);
     w.i32(0); // dungeonX — unowned
     w.i32(0); // dungeonY — unowned
-    w.boolean(false); // WorldGen.crimson — the evil flavour is unowned state
+    w.boolean(world.crimson); // WorldGen.crimson (`WorldFile.cs:1281`) — W4-g69
     write_downed_flags(w, world);
     // WorldFile.cs:1299-1305: the orbs, the meteor, the altar count, the
     // hardmode switch and the post-plantera party.
@@ -135,19 +135,20 @@ pub fn write(w: &mut Writer, world: &World) {
     }
     // WorldFile.cs:1342-1362: the dial fast-forward, the event bosses and
     // the lunar towers. `downedMartians`, the cultist/Moon Lord kills, the
-    // four tower downeds/actives and the apocalypse phase are World-owned;
-    // the seasonal bosses stay unowned (no port state). S1-D-3 W-9:
-    // `downedFishron` is World-owned now (the case-370 death flag).
+    // four tower downeds/actives and the apocalypse phase are World-owned.
+    // S1-D-3 W-9: `downedFishron` is World-owned now (the case-370 death
+    // flag); W4-c39 exec: the five seasonal bosses are World-owned too
+    // (the `NPC.cs:79210-79238` death arms, research/114 §0.2).
     w.boolean(world.fast_forward_to_dawn);
     w.boolean(world.downed_fishron); // downedFishron
     w.boolean(world.downed_martians);
     w.boolean(world.downed_ancient_cultist); // downedAncientCultist
     w.boolean(world.downed_moon_lord); // downedMoonlord
-    w.boolean(false); // downedHalloweenKing
-    w.boolean(false); // downedHalloweenTree
-    w.boolean(false); // downedChristmasIceQueen
-    w.boolean(false); // downedChristmasSantank
-    w.boolean(false); // downedChristmasTree
+    w.boolean(world.downed_halloween_king); // downedHalloweenKing
+    w.boolean(world.downed_halloween_tree); // downedHalloweenTree
+    w.boolean(world.downed_christmas_ice_queen); // downedChristmasIceQueen
+    w.boolean(world.downed_christmas_santank); // downedChristmasSantank
+    w.boolean(world.downed_christmas_tree); // downedChristmasTree
     w.boolean(world.downed_tower_solar); // downedTowerSolar
     w.boolean(world.downed_tower_vortex); // downedTowerVortex
     w.boolean(world.downed_tower_nebula); // downedTowerNebula
@@ -200,11 +201,13 @@ pub fn write(w: &mut Writer, world: &World) {
     for _ in 0..TREE_TOP_VARIATIONS {
         w.i32(0); // _variations
     }
-    // WorldFile.cs:1386-1391: the forced seasonal events (unowned), the four
+    // WorldFile.cs:1386-1391: the forced seasonal events, the four
     // pre-hardmode ore tiers (`World.ore_tiers`, `:1388-1391`) and the pets
-    // (unowned).
-    w.boolean(false); // forceHalloweenForToday
-    w.boolean(false); // forceXMasForToday
+    // (unowned). W4-f39: the `*ForToday` pair is World-owned (the moon-event
+    // temporary season, `Main.cs:10901-10937`); the C# saves it, so a `.wld`
+    // round trip keeps it.
+    w.boolean(world.force_halloween_for_today); // forceHalloweenForToday
+    w.boolean(world.force_xmas_for_today); // forceXMasForToday
     w.i32(world.ore_tiers.copper); // Copper
     w.i32(world.ore_tiers.iron); // Iron
     w.i32(world.ore_tiers.silver); // Silver
@@ -396,7 +399,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.blood_moon = r.u8()? != 0;
     world.eclipse = r.u8()? != 0;
     r.skip(2 * 4)?; // dungeonX/Y
-    r.skip(1)?; // WorldGen.crimson
+    world.crimson = r.bool()?; // WorldGen.crimson (`WorldFile.cs:2080`) — W4-g69
                 // WorldFile.cs:2084-2102 — the boss flags (with `downedSlimeKing` gated at 118).
     world.downed_eoc = r.bool()?; // downedBoss1
     world.downed_eow = r.bool()?; // downedBoss2
@@ -500,7 +503,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.downed_martians = r.bool()?;
     world.downed_ancient_cultist = r.bool()?; // downedAncientCultist
     world.downed_moon_lord = r.bool()?; // downedMoonlord
-    r.skip(5)?; // downedHalloweenKing .. downedChristmasTree
+    // W4-c39 exec: the seasonal bosses are World-owned now (the death
+    // arms landed, research/114 §0.2) — the five rows read back.
+    world.downed_halloween_king = r.bool()?; // downedHalloweenKing
+    world.downed_halloween_tree = r.bool()?; // downedHalloweenTree
+    world.downed_christmas_ice_queen = r.bool()?; // downedChristmasIceQueen
+    world.downed_christmas_santank = r.bool()?; // downedChristmasSantank
+    world.downed_christmas_tree = r.bool()?; // downedChristmasTree
     if version < 140 {
         return Ok(());
     }
@@ -588,7 +597,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     // WorldFile.cs:2244-2278 — forced seasons, ore tiers, pets, post-1.4 bosses, the
     // unlocked spawns and the combat books.
     if version >= 212 {
-        r.skip(2)?; // forceHalloweenForToday, forceXMasForToday
+        // W4-f39: the moon-event temporary season (`Main.cs:10901-10937`).
+        world.force_halloween_for_today = r.bool()?; // forceHalloweenForToday
+        world.force_xmas_for_today = r.bool()?; // forceXMasForToday
     }
     if version >= 216 {
         // WorldFile.cs:2344-2347 — the pre-hardmode quartet.

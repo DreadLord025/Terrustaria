@@ -37,3 +37,23 @@ pub const SHIMMER_POST_MOONLORD: &[u16] = &[1326, 779, 3031, 5364, 784, 782];
 /// `ItemID.Sets.CommonCoin` (`ItemID.cs:1318`) — the coins' shimmer merge
 /// (`WorldItem.GetShimmered`'s first arm, `WorldItem.cs:1696-1712`).
 pub const SHIMMER_COMMON_COIN: &[u16] = &[71, 72, 73, 74];
+
+/// `NPCID.Sets.ShimmerTransformToItem` (`NPCID.cs:10468`) — the NPC that
+/// shimmers into an ITEM (`NPC.GetShimmered`'s third arm, `NPC.cs:91566-91577`):
+/// the gem-critter family drops its gem, the Extractinator-bound moths drop
+/// amber, and the bound Wizard (448) drops the Rod of Discord (5341).
+/// Verbatim `CreateIntSet(-1, ...)` pairs, 15 entries + default -1.
+pub const SHIMMER_NPC_TRANSFORM_TO_ITEM: &[(u16, u16)] = &[
+    (651, 182), (644, 182), (650, 178), (643, 178), (649, 179), (642, 179),
+    (648, 177), (641, 177), (640, 180), (647, 180), (646, 181), (639, 181),
+    (652, 999), (645, 999), (448, 5341),
+];
+
+/// `NPCID.Sets.ShimmerTownTransform` (`NPCID.cs:10469`) — the town NPCs whose
+/// shimmer transform is the variant swap (`NPC.GetShimmered`'s fourth arm,
+/// `NPC.cs:91578-91591`: ai[0]=25, the state-25 emergence machine), NOT an
+/// NPC-type transform. Verbatim `CreateBoolSet(...)`, 29 entries.
+pub const SHIMMER_TOWN_TRANSFORM: &[u16] = &[
+    22, 17, 18, 227, 207, 633, 588, 208, 369, 353, 38, 20, 550, 19, 107, 228,
+    54, 124, 441, 229, 160, 108, 178, 209, 142, 663, 37, 453, 368,
+];

@@ -441,9 +441,9 @@ mod tests {
 
     #[test]
     fn a_dry_torch_item_lights_its_center_tile() {
-        // Id 1970 at world (160, 176) with the 14 px box: center x = 167,
-        // 167 / 16 = 10.4 -> tile 10; center y = 183, / 16 = 11.4 -> tile 11.
-        let (x, y, rgb) = item_light(&def(1970), Vec2::new(160.0, 176.0), 14.0, false, &params())
+        // Id 1970 at world (160, 176) with the 16 px box: center x = 168,
+        // 168 / 16 = 10.5 -> tile 10; center y = 184, / 16 = 11.5 -> tile 11.
+        let (x, y, rgb) = item_light(&def(1970), Vec2::new(160.0, 176.0), 16.0, false, &params())
             .expect("a dry 1970 emits light");
         assert_eq!((x, y), (10, 11));
         assert_eq!(rgb, [0.75, 0.0, 0.75]);
@@ -453,7 +453,7 @@ mod tests {
     fn a_wet_torch_item_goes_dark_while_a_water_torch_stays_lit() {
         let p = params();
         // 105 is gated on `!base.wet` (`WorldItem.cs:1366`).
-        assert!(item_light(&def(105), Vec2::ZERO, 14.0, true, &p).is_none());
+        assert!(item_light(&def(105), Vec2::ZERO, 16.0, true, &p).is_none());
 
         // 523 (Cursed Torch) also has a `type == 523` arm at `:1404`, but it is
         // **unreachable**: `createTile == 4` matches first at `:1375`, so the
@@ -461,7 +461,7 @@ mod tests {
         // skips the wet gate there, so a wet 523 still lights.
         let water = def(523);
         assert_eq!(water.tile, Some(TILE_TORCHES));
-        let lit = item_light(&water, Vec2::ZERO, 14.0, true, &p).expect("water torch stays lit");
+        let lit = item_light(&water, Vec2::ZERO, 16.0, true, &p).expect("water torch stays lit");
         // `placeStyle` 8 -> `TORCH_LIGHT[8]` = `[1.0, 1.6, 0.5]`.
         assert_eq!(lit.2, [1.0, 1.6, 0.5]);
     }
@@ -471,7 +471,7 @@ mod tests {
         // 8 is a `Torches` row but not a `WaterTorches` one, so `:1378`'s
         // `(!wet && Torches) || WaterTorches` fails under water.
         assert_eq!(def(8).tile, Some(TILE_TORCHES));
-        assert!(item_light(&def(8), Vec2::ZERO, 14.0, true, &params()).is_none());
+        assert!(item_light(&def(8), Vec2::ZERO, 16.0, true, &params()).is_none());
     }
 
     #[test]
@@ -484,12 +484,12 @@ mod tests {
         let mut p = params();
         p.demon_torch = 1.0;
         assert_eq!(
-            item_light(&def(433), Vec2::ZERO, 14.0, false, &p).unwrap().2,
+            item_light(&def(433), Vec2::ZERO, 16.0, false, &p).unwrap().2,
             [0.5, 0.3, 1.0]
         );
         p.demon_torch = 0.0;
         assert_eq!(
-            item_light(&def(433), Vec2::ZERO, 14.0, false, &p).unwrap().2,
+            item_light(&def(433), Vec2::ZERO, 16.0, false, &p).unwrap().2,
             [1.0, 0.3, 0.5]
         );
     }
@@ -503,7 +503,7 @@ mod tests {
         // `TORCH_LIGHT[placeStyle 1]` = `[0.0, 0.1, 1.3]`.
         let blue = def(427);
         assert_eq!(blue.tile, Some(TILE_TORCHES));
-        let got = item_light(&blue, Vec2::ZERO, 14.0, false, &params()).unwrap().2;
+        let got = item_light(&blue, Vec2::ZERO, 16.0, false, &params()).unwrap().2;
         assert_eq!(got, tr_core::tile_light::TORCH_LIGHT[1]);
         assert_ne!(got, [0.1, 0.2, 1.1], "not the shadowed 427..=432 arm");
     }
@@ -514,23 +514,23 @@ mod tests {
         // `TorchID.TorchColor`; style 0 is the plain 1/0.95/0.8 torch.
         let mut torch = def(8);
         torch.tile = Some(TILE_TORCHES);
-        let got = item_light(&torch, Vec2::ZERO, 14.0, false, &params()).unwrap().2;
+        let got = item_light(&torch, Vec2::ZERO, 16.0, false, &params()).unwrap().2;
         assert_eq!(got, [1.0, 0.95, 0.8]);
         // A non-torch `createTile == 4` item is dark: 784 has `tile: Some(4)`
         // but is absent from `ItemID.Sets.Torches` (`ItemID.cs:1371`).
-        assert!(item_light(&def(784), Vec2::ZERO, 14.0, false, &params()).is_none());
+        assert!(item_light(&def(784), Vec2::ZERO, 16.0, false, &params()).is_none());
     }
 
     #[test]
     fn the_right_edge_anchor_truncates_before_dividing() {
         // `:1541` uses `(int)Center.X / 16`, which differs from
         // `(int)(Center.X / 16)` for negative pixel positions.
-        let (x, _, _) = item_light(&def(1326), Vec2::new(-20.0, -20.0), 14.0, false, &params())
+        let (x, _, _) = item_light(&def(1326), Vec2::new(-20.0, -20.0), 16.0, false, &params())
             .expect("1326 lights");
-        // center = -13.0; `(int)-13 / 16` = -13 / 16 = 0 in Rust (truncating).
+        // center = -12.0; `(int)-12 / 16` = -12 / 16 = 0 in Rust (truncating).
         assert_eq!(x, 0);
         // The `(int)(v / 16)` form would floor to -1 instead.
-        let (x2, _, _) = item_light(&def(1970), Vec2::new(-20.0, -20.0), 14.0, false, &params())
+        let (x2, _, _) = item_light(&def(1970), Vec2::new(-20.0, -20.0), 16.0, false, &params())
             .expect("1970 lights");
         assert_eq!(x2, 0);
     }

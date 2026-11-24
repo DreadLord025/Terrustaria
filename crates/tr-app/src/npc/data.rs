@@ -987,6 +987,10 @@ impl NpcKind {
             // E8 merge: the 12-critter tail dropped - Worm rides c8@737,
             // the gold septet + the bait tail are d40's rows above (the
             // dup drops; c10's wiring composes onto the canonical kinds).
+            // Doc-sweep lane 36 — the ShimmerSlime keeps its vanilla id
+            // (676 is free in the protocol space; the 677 twin is
+            // W4-c7/c9's pushed claim). `NPCID.cs:12029`.
+            NpcKind::ShimmerSlime => 676,
         }
     }
 
@@ -1616,6 +1620,8 @@ impl NpcKind {
             // W4-c10 roster tail — the twelve critters' vanilla ids
             // (`to_u16` above).
             // E8 merge: the 12-critter tail dropped (c8/d40's arms above).
+            // Doc-sweep lane 36 — the ShimmerSlime's vanilla id (`to_u16`).
+            676 => NpcKind::ShimmerSlime,
             _ => return None,
         })
     }
@@ -2715,6 +2721,8 @@ impl NpcKind {
             // rows (`NPC.cs:13553`, `:14255`/`:14270`/`:14283`/`:14298`/
             // `:14311`/`:14326`/`:14340`, the `:14584` range row).
             // E8 merge: the 12-critter hit rows are c8/d40's above.
+            // Doc-sweep lane 36 — `SoundID.NPCHit1` (`NPC.cs:17576`).
+            NpcKind::ShimmerSlime => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -3321,6 +3329,8 @@ impl NpcKind {
             // squeak; every other critter `NPCDeath1`.
             // E8 merge: the GoldMouse NPCDeath4 + the 12-critter death
             // rows are d40/c8's above (the dup drops).
+            // Doc-sweep lane 36 — `SoundID.NPCDeath1` (`NPC.cs:17577`).
+            NpcKind::ShimmerSlime => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -4311,6 +4321,9 @@ impl NpcKind {
             // four `this.aiStyle = 68;` rows of the SetDefaults census.
             // E8 merge: Seagull2/Grebe2's 68 rows are d42's above.
             NpcKind::Duck2 | NpcKind::DuckWhite2 => 68,
+            // aiStyle 1 — doc-sweep lane 36, the ShimmerSlime
+            // (`NPC.cs:17570`), the shared slime family.
+            NpcKind::ShimmerSlime => 1,
         }
     }
 
@@ -5214,6 +5227,8 @@ impl NpcKind {
                 (28.0, 22.0)
             }
             // E8 merge: the c10 12-critter size tail dropped (d40/c8's rows).
+            // Doc-sweep lane 36 — 676 24x18 (`NPC.cs:17568-17569`).
+            NpcKind::ShimmerSlime => (24.0, 18.0),
         }
     }
 
@@ -6404,6 +6419,8 @@ impl NpcKind {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 5,
             // E8 merge: the c10 12-critter lifeMax tail dropped (d40/c8's rows).
+            // Doc-sweep lane 36 — 676 lifeMax 80 (`NPC.cs:17573`).
+            NpcKind::ShimmerSlime => 80,
         }
     }
 
@@ -7059,6 +7076,8 @@ impl NpcKind {
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0,
             // E8 merge: the c10 12-critter damage tail dropped (d40/c8's rows).
+            // Doc-sweep lane 36 — 676 damage 20 (`NPC.cs:17571`).
+            NpcKind::ShimmerSlime => 20,
         }
     }
 }

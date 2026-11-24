@@ -1035,6 +1035,13 @@ pub struct Player {
     /// update's grant pass reads (`UpdateEquips`, `Player.cs:12892`). Filled
     /// from `App.equip` per tick.
     pub equipped: [u16; 20],
+    /// `Player.eyebrellaCloud` (`Player.cs:2008`): the Eyebrella (5101) worn in
+    /// the head armor slot 0 or the vanity head slot 10 arms it
+    /// (`UpdateEquips`, `Player.cs:13083-13087`); `ResetEffects` clears it
+    /// (`:18461`). The `DrawPlayer_38_EyebrellaCloud` layer
+    /// (`PlayerDrawLayers.cs:4033`) reads it — the cloud draw is a render seam.
+    /// (g67 `356a1ac0` fold, research/134 R6.)
+    pub eyebrella_cloud: bool,
     /// `Player.dye[0..10]`'s kinds — `UpdateDyes`' input through
     /// `GetEffectiveDye` (`Player.cs:5742-5764`; the port has no loadouts, so
     /// the slot itself is the source). Filled from `App.equip` per tick next
@@ -1958,6 +1965,15 @@ pub struct Player {
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
+    /// The tick's queued Eyebrella drip (`Player.DoEyebrellaRainEffect`,
+    /// `Player.cs:14308-14331`): the spawn position the `UpdateEquips` arm
+    /// computed (the `Next(4)` gate + the mount head offset + the
+    /// `MountedCenter` window + the `SolidTile3`/liquid tile gate all ran in
+    /// the tick). The caller owns `Rain` and rolls `NewRainForced`'s scale +
+    /// frame draws on its stream with the live `windSpeedCurrent * 3, 9`
+    /// velocity — the `pending_sticky_dust` convention.
+    /// (g67 `356a1ac0` fold, research/134 R6.)
+    pending_eyebrella_rain: Option<Vec2>,
     /// `Player.channel` (`Player.cs:52958-52968`): a `channel` item is held
     /// and aiming — set by `StartChanneling`, cleared by `TryCancelChannel`
     /// (`:52975-52981`) and on the release. The aiStyle-9 magic spells (Magic
@@ -2675,6 +2691,7 @@ impl Player {
             accessory_life_regen: 0,
             swing_aim: 0.0,
             equipped: [0; 20],
+            eyebrella_cloud: false,
             dye_slots: [0; 10],
             misc_dye_slots: [0; 5],
             hide_misc: [false; 2],
@@ -2886,6 +2903,7 @@ impl Player {
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
             pending_sticky_kill: None,
+            pending_eyebrella_rain: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
             channel: false,
@@ -3472,6 +3490,71 @@ impl Player {
     /// owns `Main.dust`.
     pub(crate) fn take_sticky_dust(&mut self) -> Vec<StickyDust> {
         std::mem::take(&mut self.pending_sticky_dust)
+    }
+
+    /// Takes the tick's queued Eyebrella drip position
+    /// (`Player.DoEyebrellaRainEffect`, `Player.cs:14308-14331`) — the caller
+    /// owns `Rain` (`NewRainForced`, `Rain.cs:135-164`).
+    /// (g67 `356a1ac0` fold, research/134 R6.)
+    pub(crate) fn take_eyebrella_rain(&mut self) -> Option<Vec2> {
+        self.pending_eyebrella_rain.take()
+    }
+
+    /// `Player.DoEyebrellaRainEffect` (`Player.cs:14308-14331`): the Eyebrella
+    /// vanity drip. The `netMode == 2 || dedServ || mapFullscreen ||
+    /// !FocusHelper.AllowRain` gates fold into `allow_rain` (the caller derives
+    /// `window_focused && !game_paused && !map_fullscreen` — `FocusHelper.cs:57`
+    /// `AllowRain => GameplayActive`, `:11-21`); the `Next(4) != 0` cadence roll
+    /// rides the player's `UpdatePlayers` stream (the C# `Main.rand` inside
+    /// `Player.Update`). On a passed roll the spawn window is the mount head
+    /// offset + `MountedCenter - (0, height/2) + ((-0.5 + NextFloat()) *
+    /// (width + 18), -30)`; the tile must be in-world, not `SolidTile3` and dry
+    /// (`tile.liquid <= 0`). The position queues for `Rain.NewRainForced` (the
+    /// caller rolls its scale + frame draws with the live `wind*3, 9` velocity).
+    /// (g67 `356a1ac0` fold, research/134 R6.)
+    pub(crate) fn do_eyebrella_rain_effect(
+        &mut self,
+        world: &World,
+        allow_rain: bool,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:14310`: the cadence roll is the LAST short-circuit term — the
+        // focus/map gates refuse before any draw.
+        if !allow_rain || rng.next_range(0, 4) != 0 {
+            return;
+        }
+        // `:14314-14319`: the mount head offset, plus the Velociraptor (54)
+        // extra `(-14, 0) * Directions`.
+        let mut pos = self.apply_head_offset_from_mount(Vec2::ZERO);
+        if self.mount.is_active() && self.mount.kind() == 54 {
+            pos += Vec2::new(-14.0 * self.facing as f32, 0.0);
+        }
+        // `:14320`: the spawn window off `MountedCenter`.
+        let (mcx, mcy) = self.mounted_center();
+        let vector = Vec2::new(mcx, mcy)
+            - Vec2::new(0.0, self.height * 0.5)
+            + Vec2::new(
+                (-0.5 + rng.next_float()) * (self.width + 18.0),
+                -30.0,
+            )
+            + pos;
+        // `:14321-14329`: the in-world + non-solid + dry tile gate.
+        let num = (vector.x / 16.0) as i32;
+        let num2 = (vector.y / 16.0) as i32;
+        if !world.in_bounds(num, num2) {
+            return;
+        }
+        let Some(tile) = world.tile(num, num2) else {
+            return;
+        };
+        // `WorldGen.SolidTile3(tile)` (`WorldGen.cs:70474-70485`):
+        // `nactive() && tileSolid[type] && !tileSolidTop[type]`.
+        let solid3 = tr_core::tileobject::nactive(tile)
+            && tr_core::tiledata::TILE_SOLID.has(tile.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(tile.kind);
+        if !solid3 && tile.liquid == 0 {
+            self.pending_eyebrella_rain = Some(vector);
+        }
     }
 
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
@@ -5659,7 +5742,7 @@ impl Player {
     /// deterministically — nothing else).
     pub fn update(&mut self, world: &World, input: PlayerInput) {
         let mut scratch = tr_core::UnifiedRandom::default();
-        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch)
+        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch, true)
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -5687,6 +5770,11 @@ impl Player {
         // named stream; the dodge rolls and the lava `Hurt` inside the tick
         // draw from it (S1-A-10 — no new persistent stream).
         rng: &mut dyn tr_core::loot::DropRng,
+        // `FocusHelper.AllowRain && !Main.mapFullscreen` for the Eyebrella drip
+        // (`Player.cs:14310`): the caller derives `window_focused &&
+        // !game_paused && !map_fullscreen`. The `update` test wrapper passes
+        // true (focused, unpaused, map closed). (g67 `356a1ac0` fold, R6.)
+        allow_rain: bool,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
@@ -6002,6 +6090,10 @@ impl Player {
         self.space_gun = false;
         self.shadow_armor = false;
         self.frost_burn = false;
+        // `:18461`: `eyebrellaCloud = false` — the `UpdateEquips` Eyebrella arm
+        // (`:13083-13087`) re-arms it per tick from the head/vanity-head slots
+        // (g67 `356a1ac0` fold, research/134 R6).
+        self.eyebrella_cloud = false;
         // S1-P-i10 — `ResetEffects`' on-hit accessory flag clears
         // (`Player.cs:18608` catalystBand, `:18610` magmaStone): the
         // `apply_equip_functional` arms (1322/1343/6178/6185) re-grant
@@ -6487,6 +6579,12 @@ impl Player {
                 // (the port's positive bonus convention: a lower pickSpeed
                 // mines faster).
                 104 => self.pick_speed_bonus += 0.25,
+                // W4-c39 exec (research/114 §1h): the Sugar Rush (192) arm
+                // DROPPED — byte-identical to f34's/f41's; two `192 =>` arms
+                // in one match do not compile (research/70 drop 5 extends to
+                // this third copy). f34's single arm is the survivor; the
+                // full-tick witness below stays in the union (it tests the
+                // surviving arm unchanged). f41c `f1f95be4` is canonical.
                 // `:9956-9959` — Gills (4): `CheckDrowning` inverts the probe.
                 4 => self.gills = true,
                 // `:9964-9967` — ManaRegeneration (6): `manaRegenBuff = true`.
@@ -6817,6 +6915,15 @@ impl Player {
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // `UpdateEquips`' Eyebrella arm (`Player.cs:13083-13087`): the head
+        // armor slot 0 or the vanity head slot 10 wearing 5101 fires the drip
+        // and arms `eyebrellaCloud`. `GetEffectiveArmor`'s loadout-sharing
+        // fallback (`:5690-5710`) has no port (no loadouts) — the slot itself.
+        // (g67 `356a1ac0` fold, research/134 R6.)
+        if self.equipped[0] == 5101 || self.equipped[10] == 5101 {
+            self.do_eyebrella_rain_effect(world, allow_rain, rng);
+            self.eyebrella_cloud = true;
+        }
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -7664,6 +7771,15 @@ impl Player {
             self.respawn();
         }
 
+        // `Player.ItemCheck_ApplyHoldStyle`'s umbrella arm
+        // (`Player.cs:50476-50498`, via `ItemCheck` `:42846` at `:28285` — after
+        // `BordersMovement` `:28278`): a held Umbrella (946) / Tragic Umbrella
+        // (4707) at rest caps the fall at 2 px/tick (no `controlDown`) and
+        // refreshes the fall origin. The itemLocation/rotation half is the draw
+        // seam (`render/player_layers.rs`); this is the sim's velocity half.
+        // (g67 `01ba6c7a` fold, research/134 R7.)
+        self.umbrella_hold_slow_fall();
+
         // The immune purge runs near the end of the original update, after movement
         // and effects (`Player.cs:26012-26018`).
         self.buffs.purge_immune_buffs();
@@ -7680,6 +7796,35 @@ impl Player {
         // the tick — the double-tap reads the press edges against them.
         self.right_prev = input.right;
         self.left_prev = input.left;
+    }
+
+    /// `Player.ItemCheck_ApplyHoldStyle`'s umbrella arm (`Player.cs:50476-50498`):
+    /// a held Umbrella (946) / Tragic Umbrella (4707) — `holdStyle == 2`, the only
+    /// two style-3 items — at rest (`itemAnimation == 0`, `AnimatePlayerAndGetItemFrame`
+    /// `:43378-43385`) and not on a rope (`!pulley`, `:50474`) caps the fall at
+    /// 2 px/tick unless `controlDown` (`:50494-50497`) and refreshes the fall
+    /// origin (`:50481-50484`, `flag = !isDisplayDollOrInanimate` — a real player
+    /// is neither, so it always fires). The `gravDir == -1` mirror (`:50485-50493`)
+    /// has no ported gravity flip. The `CanVisuallyHoldItem` gate (`:50271`) blocks
+    /// the whole arm on the `DontHoldItems` mounts {55, 56, 61} (`Mount.cs:6572-6579`).
+    /// The itemLocation/rotation half is the draw seam (`render/player_layers.rs`).
+    /// (g67 `01ba6c7a` fold, research/134 R7.)
+    fn umbrella_hold_slow_fall(&mut self) {
+        let held = self.frame_inputs.item_type;
+        if (held != 946 && held != 4707)
+            || self.frame_inputs.hold_style != 2
+            || self.frame_inputs.swing_active
+            || self.pulley
+            || !self.frame_inputs.can_visually_hold
+        {
+            return;
+        }
+        // `:50481-50484`: the fall origin refreshes every umbrella-rest tick.
+        self.fall_start = (self.y / TILE_PX) as i32;
+        // `:50494-50497`: the fall cap (gravDir 1).
+        if self.vy > 2.0 && !self.control_down {
+            self.vy = 2.0;
+        }
     }
 
     /// `Mount.TryLanding` (`Mount.cs:4562-4568`): while the frame state is
@@ -13054,6 +13199,22 @@ mod tests {
         assert!((p.max_run_speed - 3.0 * 1.25).abs() < 1e-3);
     }
 
+    /// W4-c39 — Sugar Rush (192, the Slice of Cake's buff, `Player.cs:9935-9939`):
+    /// `pickSpeed -= 0.2f; moveSpeed += 0.2f`. The port's positive pick-bonus
+    /// convention mirrors the Mining (104) arm. KEPT in the witness union
+    /// (research/114 §1h): a third disjoint rig — the full `Player::update`
+    /// tick vs f34's grant/decrement and f41's rebase/expiry — it tests the
+    /// SURVIVING f34 `192 =>` arm unchanged (c39's third copy dropped).
+    #[test]
+    fn w4_c39_sugar_rush_adds_pick_and_move_speed() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(192, 7200);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.2).abs() < 1e-4, "moveSpeed +0.2: {}", p.move_speed);
+        assert!((p.pick_speed_bonus - 0.2).abs() < 1e-4, "pickSpeed -0.2: {}", p.pick_speed_bonus);
+    }
+
     #[test]
     fn s1_e_7a_gills_breathe_underwater_and_invert_on_the_good_world() {
         // `Player.cs:9958` + `:23226-23229`: the probe flips — underwater the
@@ -14272,6 +14433,7 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
@@ -14306,6 +14468,7 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(!p.mount.is_active(), "the mount dismounted");
     }
@@ -14330,6 +14493,7 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(p.mount.is_active(), "the mount stays mounted");
     }
@@ -14353,6 +14517,7 @@ mod tests {
                 false,
                 None,
                 &mut tr_core::UnifiedRandom::default(),
+                true,
             );
             // GrappleMovement refreshes the origin BEFORE the position
             // integrates — one row behind the current position, like the
@@ -14393,6 +14558,7 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(!p.grappling_active, "detached");
         assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
@@ -14423,6 +14589,7 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(!p.grappling_active, "detached");
         // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
@@ -14449,6 +14616,7 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(p.going_down_with_grapple, "the pull points down");
     }
@@ -14470,6 +14638,7 @@ mod tests {
             &[(crate::projectile::HOOK, below, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(p.going_down_with_grapple, "the down pull sets it");
         // Now an UP pull: the per-tick reset clears it, the up pull does not re-set.
@@ -14480,6 +14649,7 @@ mod tests {
             &[(crate::projectile::HOOK, above, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(!p.going_down_with_grapple, "the up pull leaves it cleared");
     }
@@ -14504,6 +14674,7 @@ mod tests {
             grapple,
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(p.vy < 0.0, "UP held grants the jump impulse: vy={}", p.vy);
         assert!(p.release_grappling_hooks, "the jump-off detaches");
@@ -14544,6 +14715,7 @@ mod tests {
             &[(crate::projectile::HOOK, center, 0.0)],
             false, false, false, None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(!p.sitting, "the grapple sits the player up");
         assert!(!p.sleeping, "the grapple wakes the player");
@@ -14582,6 +14754,7 @@ mod tests {
                 grapple,
                 false, false, false, None,
                 &mut tr_core::UnifiedRandom::default(),
+                true,
             );
         }
         assert!(p.going_down_with_grapple, "the pull points down");
@@ -18579,6 +18752,7 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            true,
         );
         assert!(p.mount_fishron_special_counter > 0.0);
         // The full tick leaves the mount in its air frame; the `+13.5` arm
@@ -21724,5 +21898,190 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    /// W4-g67 (folded `356a1ac0`, research/134 R6) —
+    /// `Player.DoEyebrellaRainEffect` (`Player.cs:14308-14331`): the
+    /// `Next(4) != 0` cadence (a passed roll queues the drip, a refused one
+    /// draws nothing more), the `allow_rain` gate precedes every draw, and the
+    /// spawn window is `MountedCenter - (0, height/2) + ((-0.5 + NextFloat()) *
+    /// (width + 18), -30)` over an open dry tile. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_eyebrella_drip_cadence_and_window() {
+        use tr_core::loot::DropRng;
+        let w = World::new("air".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.x = 320.0;
+        p.y = 400.0;
+        // Find a seed whose first Next(4) == 0 (the drip fires).
+        let mut fire_seed = None;
+        for s in 0..200i32 {
+            let mut r = tr_core::UnifiedRandom::new(s);
+            if r.next_range(0, 4) == 0 {
+                fire_seed = Some(s);
+                break;
+            }
+        }
+        let seed = fire_seed.expect("a seed with Next(4)==0 exists");
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        p.do_eyebrella_rain_effect(&w, true, &mut rng);
+        let pos = p.take_eyebrella_rain().expect("the passed roll queues a drip");
+        // The window: x in [center - (width+18)/2, center + (width+18)/2],
+        // y = center - height/2 - 30 (the NextFloat only moves X).
+        let (mcx, mcy) = p.mounted_center();
+        let half = (p.width + 18.0) * 0.5;
+        assert!(pos.x >= mcx - half - 1e-3 && pos.x <= mcx + half + 1e-3, "x window: {}", pos.x);
+        assert!((pos.y - (mcy - p.height * 0.5 - 30.0)).abs() < 1e-3, "y = {}", pos.y);
+        // A refused cadence (Next(4) != 0) queues nothing and draws only the roll.
+        let mut refuse_seed = None;
+        for s in 0..200i32 {
+            let mut r = tr_core::UnifiedRandom::new(s);
+            if r.next_range(0, 4) != 0 {
+                refuse_seed = Some(s);
+                break;
+            }
+        }
+        let mut rng = tr_core::UnifiedRandom::new(refuse_seed.unwrap());
+        let mut twin = tr_core::UnifiedRandom::new(refuse_seed.unwrap());
+        let _ = twin.next_range(0, 4);
+        p.do_eyebrella_rain_effect(&w, true, &mut rng);
+        assert!(p.take_eyebrella_rain().is_none(), "the refused roll queues nothing");
+        assert_eq!(rng.next_range(0, 1), twin.next_range(0, 1), "only the Next(4) drew");
+        // The allow_rain gate refuses BEFORE any draw.
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        let mut twin = tr_core::UnifiedRandom::new(seed);
+        p.do_eyebrella_rain_effect(&w, false, &mut rng);
+        assert!(p.take_eyebrella_rain().is_none());
+        assert_eq!(rng.next_range(0, 1), twin.next_range(0, 1), "no draw under the gate");
+    }
+
+    /// W4-g67 (folded `356a1ac0`) — the Eyebrella drip's tile gate
+    /// (`Player.cs:14323-14329`): a `SolidTile3` tile or a wet tile refuses the
+    /// spawn even on a passed roll. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_eyebrella_drip_refuses_solid_and_wet_tiles() {
+        use tr_core::loot::DropRng;
+        // A world whose every tile is solid stone (kind 1) — the spawn window
+        // lands on a SolidTile3 cell, so the drip refuses.
+        let mut solid = World::new("solid".into(), 64, 128);
+        for y in 0..128 {
+            for x in 0..64 {
+                let i = solid.index(x, y);
+                solid.tiles[i].kind = 1;
+                solid.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut p = Player::spawn(&solid);
+        p.x = 320.0;
+        p.y = 400.0;
+        let mut fire_seed = None;
+        for s in 0..200i32 {
+            let mut r = tr_core::UnifiedRandom::new(s);
+            if r.next_range(0, 4) == 0 {
+                fire_seed = Some(s);
+                break;
+            }
+        }
+        let mut rng = tr_core::UnifiedRandom::new(fire_seed.unwrap());
+        p.do_eyebrella_rain_effect(&solid, true, &mut rng);
+        assert!(p.take_eyebrella_rain().is_none(), "SolidTile3 refuses the drip");
+        // An open but WET tile also refuses (tile.liquid > 0).
+        let mut wet = World::new("wet".into(), 64, 128);
+        for y in 0..128 {
+            for x in 0..64 {
+                let i = wet.index(x, y);
+                wet.tiles[i].liquid = 255;
+            }
+        }
+        let mut q = Player::spawn(&wet);
+        q.x = 320.0;
+        q.y = 400.0;
+        let mut rng = tr_core::UnifiedRandom::new(fire_seed.unwrap());
+        q.do_eyebrella_rain_effect(&wet, true, &mut rng);
+        assert!(q.take_eyebrella_rain().is_none(), "a wet tile refuses the drip");
+    }
+
+    /// W4-g67 (folded `356a1ac0`) — the `UpdateEquips` Eyebrella arm
+    /// (`Player.cs:13083-13087`): the head slot 0 OR the vanity head slot 10
+    /// wearing 5101 arms `eyebrellaCloud`; `ResetEffects` (`:18461`) clears it
+    /// when neither slot wears it. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_eyebrella_cloud_arms_from_head_or_vanity_slot() {
+        let w = World::new("air".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        // Neither slot → the flag stays clear across a tick.
+        p.update(&w, PlayerInput::default());
+        assert!(!p.eyebrella_cloud);
+        // The vanity head slot 10 arms it.
+        p.equipped[10] = 5101;
+        p.update(&w, PlayerInput::default());
+        assert!(p.eyebrella_cloud, "the vanity head slot arms the cloud");
+        // Taking it off clears it on the next tick (ResetEffects).
+        p.equipped[10] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.eyebrella_cloud, "ResetEffects clears the cloud");
+        // The real head slot 0 arms it too.
+        p.equipped[0] = 5101;
+        p.update(&w, PlayerInput::default());
+        assert!(p.eyebrella_cloud, "the head armor slot arms the cloud");
+    }
+
+    /// W4-g67 (folded `01ba6c7a`, research/134 R7) — the umbrella held-item
+    /// slow-fall (`Player.ItemCheck_ApplyHoldStyle`, `Player.cs:50476-50498`):
+    /// a held Umbrella (946) / Tragic Umbrella (4707) at rest caps the fall at
+    /// 2 px/tick (no `controlDown`) and refreshes the fall origin; `controlDown`
+    /// releases the cap; a swing / rope / non-umbrella item takes no arm.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_umbrella_hold_caps_the_fall_at_2() {
+        let w = World::new("air".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.frame_inputs.item_type = 946;
+        p.frame_inputs.hold_style = 2;
+        p.frame_inputs.can_visually_hold = true;
+        p.frame_inputs.swing_active = false;
+        p.control_down = false;
+        p.pulley = false;
+        // A fast fall caps at 2 and the fall origin refreshes.
+        p.vy = 10.0;
+        p.y = 320.0;
+        p.fall_start = 0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 2.0, "the umbrella caps the fall at 2");
+        assert_eq!(p.fall_start, (320.0 / TILE_PX) as i32, "the fall origin refreshes");
+        // controlDown releases the cap.
+        p.vy = 10.0;
+        p.control_down = true;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 10.0, "controlDown falls through the cap");
+        p.control_down = false;
+        // The Tragic Umbrella (4707) shares the arm.
+        p.frame_inputs.item_type = 4707;
+        p.vy = 10.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 2.0, "4707 shares the umbrella arm");
+        // A swing (itemAnimation > 0) takes the use-style path, not the hold.
+        p.frame_inputs.item_type = 946;
+        p.frame_inputs.swing_active = true;
+        p.vy = 10.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 10.0, "a swing skips the hold arm");
+        p.frame_inputs.swing_active = false;
+        // A rope (pulley) skips the arm (`:50474`).
+        p.pulley = true;
+        p.vy = 10.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 10.0, "the pulley skips the hold arm");
+        p.pulley = false;
+        // A non-umbrella holdStyle-2 item takes no cap.
+        p.frame_inputs.item_type = 8; // any non-946/4707
+        p.vy = 10.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 10.0, "only the umbrella pair caps");
+        // An upward velocity is untouched (the cap is `vy > 2`).
+        p.frame_inputs.item_type = 946;
+        p.vy = -5.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, -5.0, "the rise is not capped");
     }
 }

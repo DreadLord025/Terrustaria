@@ -121,6 +121,14 @@ pub struct World {
     pub hallow_bg_style: u8,
     pub crimson_bg_style: u8,
     pub mushroom_bg_style: u8,
+    /// `WorldGen.crimson` (`WorldGen.cs:4158`) — the WORLD evil type: true
+    /// crimson, false corruption. Set at generation from `GenOptions.crimson`
+    /// (the UI pick / `roll_crimson`), persisted in the `.wld` flags block
+    /// (`WorldFile.cs:1281`/`:2080`) and the `.trwld` v18 tail. W4-g69: the
+    /// cloud lane's `RollRareCloud` type-36 gate (`Cloud.cs:196`,
+    /// `NPC.downedBoss2 && WorldGen.crimson`) reads it; the shop/lang/loot
+    /// consumers still fold their own defaults (their lanes' rows).
+    pub crimson: bool,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -144,6 +152,16 @@ pub struct World {
     /// text (`WorldFileData.SetSeed` + `CheckInputForSecretSeed`), because
     /// the C# stores no micro-seed bytes in the file.
     pub micro_seeds: crate::seeds::MicroSeedFlags,
+    /// `WorldGen.Skyblock.lowTiles` (`WorldGen.cs:3079`) — the skyblock
+    /// low-tile-density flag the scene thresholds read (`SceneMetrics
+    /// .SnowTileThreshold`/`DesertTileThreshold`, `SceneMetrics.cs:154-176`:
+    /// 300 when set, 1500 normal). Computed by [`World::scan_skyblock_low_tiles`]
+    /// (the `Skyblock.ScanTiles` + `Calculate` lowTiles arm, `WorldGen.cs:3210-
+    /// 3218`/`:3238-3265`) at world load (`WorldFile.cs:766`) and generation
+    /// completion. Field shape adopted from W4-f24's `SkyblockState.low_tiles`
+    /// (the runtime ledger lives on `World` here, not the generator state).
+    /// Folded from g67 `f8c4b659` (research/134 R5).
+    pub skyblock_low_tiles: bool,
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
@@ -235,6 +253,39 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// W4-f39: the five seasonal moon-boss downed flags (`NPC.cs:6371-6379`,
+    /// the `DoDeathEvents` cases `:79210-79238` — `SetEventFlagCleared` under
+    /// the running event's own flag). `downedHalloweenKing` (Pumpking 327,
+    /// game event 5), `downedHalloweenTree` (Mourning Wood 325, event 4),
+    /// `downedChristmasTree` (Everscream 344, event 21),
+    /// `downedChristmasIceQueen` (Ice Queen 345, event 20),
+    /// `downedChristmasSantank` (Santa-NK1 346, event 22). The C# saves them
+    /// (`WorldFile.cs:1347-1351`); the emote wheel's boss rows
+    /// (`UIEmotesMenu.cs:250-268`) and the help-text hints
+    /// (`Main.cs:39752-39757`) read them. NOTE: they do NOT gate the season
+    /// flags — `checkXMas`/`checkHalloween` read only the date + force flags.
+    /// W4-c39 receipt: the lantern-night event edges read the same flags
+    /// (ids 4/5/20/21/22 - research/114 s9's census; the default rows ARM).
+    pub downed_halloween_king: bool,
+    pub downed_halloween_tree: bool,
+    pub downed_christmas_tree: bool,
+    pub downed_christmas_ice_queen: bool,
+    pub downed_christmas_santank: bool,
+    /// W4-f39: `Main.xMas` / `Main.halloween` (`Main.cs:609`/`:611`) — the
+    /// resolved season flags, re-derived at every dawn by `checkXMas` /
+    /// `checkHalloween` (`Main.cs:65390-65391`) and at world load
+    /// (`WorldFile.cs:651-652`). Runtime-only: the C# does not save them
+    /// (they re-derive from the date + the saved force flags).
+    pub xmas: bool,
+    pub halloween: bool,
+    /// W4-f39: `Main.forceXMasForToday` / `Main.forceHalloweenForToday`
+    /// (`Main.cs:613`/`:615`) — the moon-event temporary season (wave >= 15),
+    /// re-derived at dawn by `CheckForMoonEventsStartingTemporarySeasons`
+    /// (`Main.cs:65389`). The C# saves them (`WorldFile.cs:1386-1387`) but
+    /// the port's moon event is itself runtime-only, so these ride the same
+    /// transient (ANALYSIS "The season/date gates").
+    pub force_xmas_for_today: bool,
+    pub force_halloween_for_today: bool,
     /// The Skeletron Prime head's centre + the present flag (the limbs'
     /// tether reads — the WoF write-through shape).
     pub prime_present: bool,
@@ -663,6 +714,15 @@ impl World {
             downed_golem: false,
             downed_fishron: false,
             downed_deerclops: false,
+            downed_halloween_king: false,
+            downed_halloween_tree: false,
+            downed_christmas_tree: false,
+            downed_christmas_ice_queen: false,
+            downed_christmas_santank: false,
+            xmas: false,
+            halloween: false,
+            force_xmas_for_today: false,
+            force_halloween_for_today: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
@@ -709,6 +769,7 @@ impl World {
             jungle_bg_style: 0,
             hallow_bg_style: 0,
             crimson_bg_style: 0,
+            crimson: false,
             mushroom_bg_style: 0,
             column_surface: Vec::new(),
             chunks_x: 0,
@@ -717,6 +778,7 @@ impl World {
             seed: 0,
             seeds: crate::seeds::SeedFlags::default(),
             micro_seeds: crate::seeds::MicroSeedFlags::default(),
+            skyblock_low_tiles: false,
             revision: 0,
             extras: std::collections::HashMap::new(),
             eclipse: false,
@@ -890,6 +952,47 @@ impl World {
             self.wave_kills = 0.0;
             self.wave_number = 0;
         }
+    }
+
+    /// W4-f39: `UpdateTime_StartDay`'s season trio (`Main.cs:65389-65391`):
+    /// `CheckForMoonEventsStartingTemporarySeasons()` then `checkXMas()` then
+    /// `checkHalloween()`, ahead of `stopMoonEvent` (`:65392`) — the moon
+    /// state is sampled BEFORE the caller's stop clears it. `(month, day)`
+    /// is the caller-pinned wall-clock date (the `FixtureClock` seam —
+    /// `tr_core::season::now_month_day()` at runtime, a fixed date in tests).
+    /// The `*Forever` flags are the endless micro seeds
+    /// (`WorldGen.cs:572-578`'s `InitializeSecretSeeds` writes). Draw-free.
+    pub fn refresh_seasons(&mut self, month: u32, day: u32) {
+        let force_halloween_forever = self
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        let force_xmas_forever = self
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        // `Main.cs:65389` — the temporary-season re-derivation reads the
+        // RUNNING event (the caller runs this before `stop_moon_event`).
+        let (h, x) = crate::season::moon_event_temporary_seasons(
+            self.pumpkin_moon,
+            self.snow_moon,
+            self.wave_number,
+            force_halloween_forever,
+            force_xmas_forever,
+        );
+        self.force_halloween_for_today = h;
+        self.force_xmas_for_today = x;
+        // `Main.cs:65390-65391` — the two checks, xMas first.
+        self.xmas = crate::season::check_xmas(
+            month,
+            day,
+            self.force_xmas_for_today,
+            force_xmas_forever,
+        );
+        self.halloween = crate::season::check_halloween(
+            month,
+            day,
+            self.force_halloween_for_today,
+            force_halloween_forever,
+        );
     }
 
     /// `NPC.GetMoonEventPointScalar` (`NPC.cs:78432-78440`): master 2.5 /
@@ -1112,6 +1215,33 @@ impl World {
             }
             self.column_surface[x as usize] = top;
         }
+    }
+
+    /// `WorldGen.Skyblock.ScanTiles` + `Calculate`'s lowTiles arm
+    /// (`WorldGen.cs:3238-3265` + `:3210-3218`): count the active tiles in the
+    /// 40-margin interior (`[40, maxTilesX-40) × [40, maxTilesY-40)`), then
+    /// `lowTiles = (count / (maxTilesX*maxTilesY)) < 0.1 && Main.skyblockWorld`.
+    /// The has*/no* ledger halves are W4-f24's generator-side `SkyblockState`;
+    /// only the runtime threshold flag lands here. Called at world load
+    /// (`WorldFile.cs:766`) and generation completion — the C# also recalculates
+    /// per save-column (`WorldGen.cs:71236`), a worldgen-time path.
+    /// (g67 `f8c4b659` fold, research/134 R5.)
+    pub fn scan_skyblock_low_tiles(&mut self) {
+        let mut current_active_tiles: i64 = 0;
+        let x_end = self.width - 40;
+        let y_end = self.height - 40;
+        for x in 40..x_end {
+            for y in 40..y_end {
+                if self.tiles[self.index(x, y)].active() {
+                    current_active_tiles += 1;
+                }
+            }
+        }
+        // `:3210-3218`: the fraction is f32 in the C# (`(float)count / (float)num`).
+        let num = (self.width as i64) * (self.height as i64);
+        let num2 = current_active_tiles as f32 / num as f32;
+        self.skyblock_low_tiles =
+            num2 < 0.1 && self.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK);
     }
 
     /// Recomputes chunk occupancy. Must be called after loading/framing and after any
@@ -1471,6 +1601,66 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    /// W4-g67 (folded `f8c4b659`) — `Skyblock.ScanTiles`/`Calculate`'s lowTiles
+    /// arm (`WorldGen.cs:3210-3218`/`:3238-3265`): the 40-margin interior active
+    /// count over `maxTilesX*maxTilesY`, `< 0.1` AND the skyblock seed.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_skyblock_low_tiles_census() {
+        // 100×100 world: interior [40,60)×[40,60) = 400 cells, num = 10000.
+        let mut w = super::World::new("sky".into(), 100, 100);
+        w.seeds |= crate::seeds::SeedFlags::SKYBLOCK;
+        // Empty interior → 0/10000 = 0 < 0.1 → lowTiles on a skyblock world.
+        w.scan_skyblock_low_tiles();
+        assert!(w.skyblock_low_tiles, "empty skyblock interior is low-tiles");
+        // The margin is excluded: a tile at x=39 (outside) never counts.
+        let i = w.index(39, 50);
+        w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        w.scan_skyblock_low_tiles();
+        assert!(w.skyblock_low_tiles, "the 40-margin band is not scanned");
+        // A 200×200 world: interior 120×120 = 14400 cells, num = 40000, so the
+        // 0.1 cut is 4000 active cells. Fill the interior whole → 0.36 ≥ 0.1.
+        let mut big = super::World::new("sky".into(), 200, 200);
+        big.seeds |= crate::seeds::SeedFlags::SKYBLOCK;
+        for y in 40..160 {
+            for x in 40..160 {
+                let i = big.index(x, y);
+                big.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        // 14400/40000 = 0.36 ≥ 0.1 → not low-tiles even on skyblock.
+        big.scan_skyblock_low_tiles();
+        assert!(!big.skyblock_low_tiles, "a dense interior is not low-tiles");
+        // Exactly at the cut: 4000 active cells / 40000 = 0.1 → NOT < 0.1.
+        // Row-major fill: cell k sits at (40 + k%120, 40 + k/120).
+        let mut edge = super::World::new("sky".into(), 200, 200);
+        edge.seeds |= crate::seeds::SeedFlags::SKYBLOCK;
+        let mut placed = 0;
+        'outer: for y in 40..160 {
+            for x in 40..160 {
+                let i = edge.index(x, y);
+                edge.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+                placed += 1;
+                if placed == 4000 {
+                    break 'outer;
+                }
+            }
+        }
+        edge.scan_skyblock_low_tiles();
+        assert!(!edge.skyblock_low_tiles, "0.1 exactly is not < 0.1");
+        // 3999 cells → 0.099975 < 0.1 → low-tiles. Clear the LAST placed cell
+        // (index 3999 in the row-major fill above).
+        let i = edge.index(40 + (3999 % 120), 40 + (3999 / 120));
+        edge.tiles[i].flags &= !crate::tile::FLAG_ACTIVE;
+        edge.scan_skyblock_low_tiles();
+        assert!(edge.skyblock_low_tiles, "just under the cut is low-tiles");
+        // A NON-skyblock world with an empty interior stays false (the
+        // `&& Main.skyblockWorld` term, `:3215`).
+        let mut classic = super::World::new("classic".into(), 100, 100);
+        classic.scan_skyblock_low_tiles();
+        assert!(!classic.skyblock_low_tiles, "classic worlds never low-tiles");
+    }
+
     #[test]
     fn surface_bg_style_tables_match_set_bg() {
         // Spot rows from `WorldGen.setBG`, including the `default:` rows and

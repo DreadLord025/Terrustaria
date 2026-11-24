@@ -293,7 +293,9 @@ pub fn apply_touch_damage(
     if SET_TOUCH_DAMAGE_DESTROY_TILE.has(hit.kind) {
         let frame_y = world.tile(hit.x, hit.y).map_or(0, |t| t.frame_y);
         let dropped = crate::registry::tile_drop(hit.kind, frame_y);
-        tr_core::edit::kill_tile(world, hit.x, hit.y, false);
+        // W4-g83: the thorn kill's framing dispatch rides the caller's
+        // ACTIVE genRand stream (the UpdatePlayers swap).
+        tr_core::edit::kill_tile(world, hit.x, hit.y, false, rng);
         outcome.destroyed = Some((hit.x, hit.y, dropped));
     }
     outcome

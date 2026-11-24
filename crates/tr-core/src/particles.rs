@@ -215,7 +215,8 @@ pub struct UpdateCtx {
 type WetProbe = Box<dyn Fn(&World, f32, f32, f32, f32) -> bool>;
 
 /// The `Main.dust` pool: 6001 slots (0..6000 scanned, 6000 the sentinel) plus
-/// the three C# statics (`Dust.cs:12-16`).
+/// the three C# statics (`Dust.cs:12-16`) and `Main.snowDust` (`Main.cs:621`,
+/// a Main static the type-76 arm feeds — W4-d130).
 pub struct DustPool {
     slots: Vec<Dust>,
     /// `Dust.dCount` — pool pressure for the cull margin (`Dust.cs:97`); the
@@ -225,6 +226,11 @@ pub struct DustPool {
     pub lava_bubbles: i32,
     /// `Dust.SandStormCount` (`Dust.cs:15`); its consumers are E-3.
     pub sand_storm_count: i32,
+    /// `Main.snowDust` (`Main.cs:621`): reset per `UpdateDust` head
+    /// (`Dust.cs:428`), `++` per live type-76 slot (`Dust.cs:1747`); the
+    /// snowfall budget reads it (`Main.cs:13057`). The shared tick's arm
+    /// maintains it (W4-d130).
+    pub snow_dust: i32,
     /// The blood gate; `disabled` defaults `true` (`ChildSafety.cs:33`).
     pub child_safety: ChildSafety,
     wet_probe: Option<WetProbe>,
@@ -249,6 +255,7 @@ impl DustPool {
             d_count: 0.0,
             lava_bubbles: 0,
             sand_storm_count: 0,
+            snow_dust: 0,
             child_safety: ChildSafety::default(),
             wet_probe: None,
         }
@@ -314,10 +321,12 @@ impl DustPool {
         // method doc); it exists for the verbatim post-loop ladder.
         let num = 0;
         // `:427-431` — the head resets. `Main.snowDust` is a `Main` static
-        // (`Main.cs:621`, read at `:13057`), not a `Dust` one: the pool does
-        // not carry it and nothing in the port consumes it.
+        // (`Main.cs:621`, read at `:13057`); the pool carries it since
+        // W4-d130 — the type-76 arm (`:1747`) feeds it, the snowfall budget
+        // reads it.
         self.lava_bubbles = 0;
         self.sand_storm_count = 0;
+        self.snow_dust = 0;
         let mut d_count = self.d_count;
         let bottom = ctx.screen_position.y + ctx.screen_height;
         for i in 0..DUST_SENTINEL {
@@ -2087,9 +2096,11 @@ mod tests {
         // The counters reset each pass.
         pool.lava_bubbles = 7;
         pool.sand_storm_count = 9;
+        pool.snow_dust = 11;
         tick(&mut pool, &mut rng, &t);
         assert_eq!(pool.lava_bubbles, 0);
         assert_eq!(pool.sand_storm_count, 0);
+        assert_eq!(pool.snow_dust, 0, "`Dust.cs:428` — the snowDust head reset");
     }
 
     /// DW-1.2 — the loop's `else` arm kills the past-budget slots, active or

@@ -148,6 +148,9 @@ pub fn generate_with_progress<'a>(
     let mut world = World::new(opts.name.clone(), width, height);
     world.seeds = opts.flags;
     world.micro_seeds = opts.micro_flags;
+    // `WorldGen.crimson` — the world evil type the passes generate with
+    // (W4-g69: the cloud RollRareCloud gate reads it at runtime).
+    world.crimson = opts.crimson;
     // The same boot the no-hook path runs (`generate_with_chest_stock`).
     pipeline::boot_statics(&mut world);
     let noise = Noise { seed: opts.seed };
@@ -156,6 +159,10 @@ pub fn generate_with_progress<'a>(
     streams.chest_stock = chest_stock;
     streams.progress = Some(progress);
     let outcome = pipeline::run(&mut world, &mut streams, opts, &noise, &config);
+    // The skyblock low-tiles census at generation completion (the load twin is
+    // `WorldFile.cs:766`; W4-g67 `f8c4b659` fold). A classic world reads false
+    // either way. Draw-free (no RNG), so the world-hash golden is unaffected.
+    world.scan_skyblock_low_tiles();
     (world, outcome)
 }
 
@@ -176,6 +183,9 @@ pub fn generate_with_chest_stock<'a>(
     // special-world identity the passes generated with.
     world.seeds = opts.flags;
     world.micro_seeds = opts.micro_flags;
+    // `WorldGen.crimson` — the world evil type (W4-g69, the cloud lane's
+    // RollRareCloud gate reads it; the shop/lang folds keep their rows).
+    world.crimson = opts.crimson;
     // The `Reset`-equivalent setup (vanilla runs `Reset` — the GenVars init
     // and the layout rolls — before `AddPasses`; it is not a pass):
     // the frame-important boot statics, the value noise and the three
@@ -189,6 +199,9 @@ pub fn generate_with_chest_stock<'a>(
     let mut streams = pipeline::Streams::new(opts.seed);
     streams.chest_stock = chest_stock;
     pipeline::run(&mut world, &mut streams, opts, &noise, &config);
+    // The skyblock low-tiles census at generation completion (W4-g67
+    // `f8c4b659` fold — the load twin is `WorldFile.cs:766`).
+    world.scan_skyblock_low_tiles();
     world
 }
 

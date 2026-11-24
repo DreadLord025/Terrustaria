@@ -208,10 +208,20 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    // W4-c39 exec (research/114 §1h): the FreeCake talk arm DROPPED — this
+    // was d120's collapse shape with a WORSE gift arm (the C#
+    // `GetOrDropItem` fills the inventory FIRST, `Player.cs:7193-7200`;
+    // c39 always world-dropped at the NPC centre). research/70 §3's ONE
+    // chain (f38 structure + f41 alive gate + d120/f41 gift-before-text
+    // order, single-slot fill, global stream) supersedes it — f41c
+    // `f1f95be4` is canonical. The `free_cake` field + its writers stay
+    // (the scheduler/dusk/clear-world sites); the gift chain lands with
+    // the surviving GetChat re-pin at the merge.
     // The context off the live state. The world flags the port does not
     // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
-    // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
-    // default off — each noted at its field.
+    // `LanternNight`, the remix world, the Moon Lord) default off — each
+    // noted at its field. `WorldGen.crimson` reads the LIVE `World.crimson`
+    // (W4-g69 doc-sweep).
     let day_time = app.world.day_time;
     let time = app.world.time;
     let blood_moon = app.world.blood_moon;
@@ -256,8 +266,12 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         storming: false,       // `Main.cloudAlpha`'s storm — no storm clock yet
         windy_day: false,      // `Main.IsItAHappyWindyDay` — no wind-day state
         zone_graveyard: false, // `Player.ZoneGraveyard` — the zone rides the biome pass
+        // W4-c39 exec (research/114 §1h): the live-feed hunks DROP — d120's
+        // superset ctx (research/70 drop 8) is the survivor at the merge.
         party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
-        crimson: false,        // `WorldGen.crimson` — the world-evil flag
+        // `WorldGen.crimson` — the LIVE world evil type (W4-g69 doc-sweep:
+        // `World.crimson`, the `.wld` flags byte + the `.trwld` v18 tail).
+        crimson: app.world.crimson,
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
@@ -718,10 +732,10 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
     app.world.angler_quest_turned_in = false;
     let gates = crate::angler::QuestGates {
         hard_mode: app.world.hard_mode,
-        // `WorldGen.crimson` — the port has no evil-kind field, so the
-        // corruption default stands (the crimson quest rows 2457/2463/
-        // 2477/2485 then re-roll exactly like a corruption world).
-        crimson: false,
+        // `WorldGen.crimson` (`Main.cs:3769-3817`) — the LIVE world evil
+        // type (W4-g69 doc-sweep): the crimson quest rows 2454/2457/2463/
+        // 2477/2485 re-roll per the world's own flavour.
+        crimson: app.world.crimson,
         downed_boss1: app.world.downed_eoc,
         downed_boss2: app.world.downed_eow,
         downed_boss3: app.world.downed_skeletron,
@@ -962,8 +976,22 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
-        crimson_world: false, // the port persists no world-evil type (see `shop.rs`)
+        // `WorldGen.crimson` — the live world evil type (W4-g69 doc-sweep).
+        crimson_world: app.world.crimson,
         travel_stock: app.world.travel_shop,
+        // W4-f39: the resolved season flags + the anniversary block's gates.
+        halloween: app.world.halloween,
+        xmas: app.world.xmas,
+        anniversary_not_ftw: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            && !app
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        zone_desert: app.scene_metrics.zone_desert,
+        downed_pirates: app.world.downed_pirates,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -2668,21 +2696,36 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         // `SetEventFlagCleared(ref NPC.downedX, n)` + the matching
         // `AchievementsHelper.NotifyProgressionEvent` (`Main.cs:64335-64354`):
         // goblins 10, frost 12, pirates 11, martians 13.
+        // `SetEventFlagCleared` (`NPC.cs:78759-78767`) arms the next lantern
+        // night on the FIRST clear (`OnGameEventClearedForTheFirstTime`'s
+        // default row, `:78773-78775`) — every invasion type lands there.
         match app.world.invasion_type {
             2 => {
+                // `Main.cs:64341` — `SetEventFlagCleared(ref downedFrost, 1)`.
+                let was_down = app.world.downed_frost;
                 app.world.downed_frost = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 1, !was_down);
                 let _ = app.notify_progression_net(12);
             }
             3 => {
+                // `Main.cs:64346` — `SetEventFlagCleared(ref downedPirates, 2)`.
+                let was_down = app.world.downed_pirates;
                 app.world.downed_pirates = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 2, !was_down);
                 let _ = app.notify_progression_net(11);
             }
             4 => {
+                // `Main.cs:64351` — `SetEventFlagCleared(ref downedMartians, 3)`.
+                let was_down = app.world.downed_martians;
                 app.world.downed_martians = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 3, !was_down);
                 let _ = app.notify_progression_net(13);
             }
             _ => {
+                // `Main.cs:64336` — `SetEventFlagCleared(ref downedGoblins, 0)`.
+                let was_down = app.world.downed_goblins;
                 app.world.downed_goblins = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 0, !was_down);
                 let _ = app.notify_progression_net(10);
             }
         }
@@ -3703,26 +3746,227 @@ fn invasion_spawn_pick(
 /// Returns whether a drop-owning spawn happened (the roster only covers the 85
 /// ported kinds — the shimmer slime 676, the shimmered town NPC 677 and the
 /// rainbow slime 681 wait for the M4-NPC roster).
-pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32) -> bool {
-    // S1-P-i36 repair: the C# `NPC.ReleaseNPC` types live in the vanilla
-    // `NPC.type` space (the bestiary NET id) — `NpcKind::from_u16` maps the
-    // port's internal protocol ids and would decode a wrong kind (55 is
-    // BrainOfCthulhu there, not the Goldfish).
+/// The 4986 arm's DIRECT `NPC.NewNPC` (`WorldItem.cs:1735` — no `ReleaseNPC`
+/// gate, no catchable whitelist, no budget): the Rainbow Slime 681 at the
+/// truncated `(int)Center.X + 4, (int)Center.Y`, `shimmerTransparency = 1f`.
+/// Returns whether a kind spawned (the roster gap returns false).
+pub(crate) fn spawn_shimmer_new_npc(app: &mut App, npc_type: u16, x: i32, y: i32) -> bool {
     let Some((kind, slime)) = crate::npc::kind_from_net_id(npc_type as i32) else {
-        // The roster gap: the C#'s `ReleaseNPC` still spawns, but the port has
-        // no model for the type — the arm's accounting still runs.
         return false;
     };
-    let mut npc = Npc::new(kind, x, y, 1, 0.0);
+    // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`, `Entity.cs:128-131`).
+    let (w, h) = kind.size();
+    let mut npc = Npc::new(kind, x as f32 - w * 0.5, y as f32 - h, 1, 0.0);
     npc.slime = slime;
     npc.shimmer_transparency = 1.0;
-    // `WorldItem.GetShimmered` releases through `NPC.ReleaseNPC`
-    // (`WorldItem.cs:1776`), whose every arm writes `releaseOwner = who`
-    // (`NPC.cs:80121+`) — the shimmer-released critter is NOT wild, so
-    // the 90-tick friendly window never arms (S1-P-i36).
-    npc.release_owner = app.local_id as u8;
+    // `NewNPC`'s `timeLeft = (int)(activeTime * 1.25)` (`NPC.cs:80772`,
+    // `activeTime = 750` `NPC.cs:95186`).
+    npc.despawn_timer = (750.0 * 1.25) as i32;
     app.npcs.push(npc);
     true
+}
+
+/// `NPC.Collision_WaterCollision`'s shimmer/honey contact
+/// (`NPC.cs:93052-93076`, W4-f47): the faithful `WetCollision` probe sets
+/// `shimmerWet`/`honeyWet` and, on shimmer, `TryAddingRepeatedBuff(353,
+/// 100)` (the Shimmering buff that drives the transparency ramp). Runs as
+/// a post-pass after the per-NPC AI step — timing-equivalent to the C#'s
+/// `UpdateCollision` position, because `UpdateNPC_BuffSetFlags` (which
+/// reads the buff into `shimmering`) and `UpdateNPC_UpdateGravity` (which
+/// reads `shimmerWet`) both run at the NEXT tick's head, ahead of the
+/// contact. The `!wet` clear (`:92527-92532`) folds in.
+pub(crate) fn shimmer_wet_contact_pass(app: &mut App) {
+    for n in app.npcs.iter_mut() {
+        if n.hp <= 0 {
+            continue;
+        }
+        let net_id = n.kind.net_id();
+        let style = n.kind.ai_style();
+        // `:93055` — the no-wet exemption list (the probe is skipped,
+        // wetCount zeroed, lava false). The port has no wetCount/lava
+        // fields on Npc; the skip just leaves the wet flags cleared.
+        let exempt = (net_id == 690 && n.ai[0] == 0.0)
+            || net_id == 72
+            || style == 21
+            || style == 67
+            || net_id == 376
+            || net_id == 579
+            || net_id == 541
+            || (style == 7 && n.ai[0] == 25.0);
+        if exempt {
+            // The C# skips the probe and zeroes wetCount/lava only — it
+            // does NOT write base.wet/shimmerWet/honeyWet here. The port
+            // leaves the per-arm wet cache and clears the kind flags (the
+            // shimmer contact must not fire for the exempt kinds).
+            n.shimmer_wet = false;
+            n.honey_wet = false;
+            continue;
+        }
+        let (w, h) = n.size();
+        let (wet, honey, shimmer) =
+            crate::npc_ai_slime::wet_collision(&app.world, n.x, n.y, w as i32, h as i32);
+        if honey {
+            n.honey_wet = true; // :93064-93067
+        }
+        if shimmer {
+            n.shimmer_wet = true; // :93068-93070
+            // :93071-93074 — netMode != 1 → TryAddingRepeatedBuff(353,100).
+            n.buffs.try_adding_repeated_buff(353, 100, 10);
+        }
+        if wet {
+            n.wet = true;
+        } else {
+            // :92527-92532 — !wet clears all three.
+            n.wet = false;
+            n.shimmer_wet = false;
+            n.honey_wet = false;
+        }
+    }
+}
+
+/// The `NPC.GetShimmered` drain (`NPC.cs:91517-91519` → `:91548-91592`,
+/// W4-f47): every NPC whose transparency ramp crossed 0.9 this tick
+/// (`wants_shimmer_transform`, armed in `update_preamble`) resolves its arm
+/// HERE, after the per-NPC pass — the arms transform / spawn / deactivate,
+/// they need the app wholesale (the shimmer item-chain's post-pass
+/// convention). Slot order = the C#'s `Main.npc[]` walk; the draws ride
+/// `UpdateNpcs` (`Main.cs:17767`).
+pub(crate) fn drain_shimmer_transforms(app: &mut App) {
+    let due: Vec<usize> = app
+        .npcs
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.wants_shimmer_transform && n.hp > 0)
+        .map(|(i, _)| i)
+        .collect();
+    if due.is_empty() {
+        return;
+    }
+    for i in due {
+        app.npcs[i].wants_shimmer_transform = false;
+        let net_id = app.npcs[i].kind.net_id();
+        let outcome = tr_core::shimmer::resolve_npc_shimmer(
+            net_id as u16,
+            app.npcs[i].spawned_from_statue,
+        );
+        let (cx, cy) = app.npcs[i].center();
+        let center = Vec2::new(cx, cy);
+        match outcome {
+            tr_core::shimmer::NpcShimmerOutcome::Nothing => {}
+            tr_core::shimmer::NpcShimmerOutcome::StatuePoof => {
+                // `:91550-91560` — ShimmerEffect + noSpawnCycle + the
+                // active=false poof (no loot, no death events: the port's
+                // despawn_timer 0 removal, the `:77993` convention).
+                crate::shimmer::shimmer_effect(app, center, RngKey::UpdateNpcs);
+                app.npc_no_spawn_cycle = true;
+                app.npcs[i].despawn_timer = 0;
+            }
+            tr_core::shimmer::NpcShimmerOutcome::TransformNpc { new_type } => {
+                // `:91561-91565` — Transform(target) THEN ShimmerEffect at
+                // the POST-transform Center (the bottom-anchored reposition
+                // moves it). The roster gap (676/677 etc.) leaves the NPC
+                // untouched but the effect still plays.
+                if let (Some((kind, slime)), Some(player)) = (
+                    crate::npc::kind_from_net_id(new_type as i32),
+                    app.player.as_ref(),
+                ) {
+                    app.npcs[i].transform_to_kind(&app.world, player, kind);
+                    app.npcs[i].slime = slime;
+                }
+                let (cx, cy) = app.npcs[i].center();
+                crate::shimmer::shimmer_effect(
+                    app,
+                    Vec2::new(cx, cy),
+                    RngKey::UpdateNpcs,
+                );
+            }
+            tr_core::shimmer::NpcShimmerOutcome::DropItem { item_type } => {
+                // `:91566-91577` — SpawnShimmeredItem(source, Center, 0,
+                // target) (stack defaults to 1) + ShimmerEffect +
+                // noSpawnCycle + active=false.
+                crate::shimmer::spawn_shimmered_item(
+                    app,
+                    center,
+                    0,
+                    item_type,
+                    1,
+                    RngKey::UpdateNpcs,
+                );
+                crate::shimmer::shimmer_effect(app, center, RngKey::UpdateNpcs);
+                app.npc_no_spawn_cycle = true;
+                app.npcs[i].despawn_timer = 0;
+            }
+            tr_core::shimmer::NpcShimmerOutcome::TownVariant => {
+                // `:91578-91591` — ai[0]=25, ai[1..3]=0, netUpdate,
+                // transparency 0.89, FindBuffIndex(353) → DelBuff. The
+                // state-25 emergence machine (npc_ai_town) takes over.
+                let n = &mut app.npcs[i];
+                n.ai = [25.0, 0.0, 0.0, 0.0];
+                n.net_update = true;
+                n.shimmer_transparency = 0.89;
+                n.buffs.remove_buff(353);
+            }
+        }
+    }
+    // The poof removals (`active = false` — no death events, the despawn
+    // retain's convention).
+    app.npcs.retain(|n| !n.despawn_expired());
+}
+
+/// `NPC.GetAvailableAmountOfNPCsToSpawnUpToSlot` (`NPC.cs:80635-80654`): the
+/// free-slot count up to `Main.maxNPCs` (200, `InitData.cs:9`), capped at the
+/// wanted amount. The port's `App::npcs` compacts (no fixed 200-slot array),
+/// so the free count is `200 - live` — the C# counts inactive slots, which
+/// is the same number when the roster is the live set.
+pub(crate) fn npc_spawn_budget(live: usize, want: u32) -> u32 {
+    if want == 0 {
+        return 0;
+    }
+    let free = 200usize.saturating_sub(live) as u32;
+    free.min(want)
+}
+
+/// `WorldItem.GetShimmered`'s release arm (`WorldItem.cs:1776`) through
+/// `NPC.ReleaseNPC` (`NPC.cs:80106-80167`, the `bug_net::release_npc` port —
+/// the type switch, the `CanReleaseNPCs` budget, the `releaseOwner` write),
+/// then the `shimmerTransparency = 1f` post-write (`:1779`). `style` is 0
+/// for a transform-map hit, else the item's `placeStyle` (`:1776`'s two
+/// arms). Returns whether a kind spawned (the roster gap / a refused gate
+/// returns false — the C# still consumes the stack unit, the caller does).
+pub(crate) fn spawn_shimmer_release_styled(
+    app: &mut App,
+    npc_type: u16,
+    x: i32,
+    y: i32,
+    style: i32,
+) -> bool {
+    let before = app.npcs.len();
+    // `NPC.ReleaseNPC(x, y, Type, Style, Main.myPlayer)` — the local player
+    // bypasses the `npcCatchable` whitelist (`NPC.cs:80113`). The 148
+    // penguin variant draw rides the caller's stream: `release_npc` reads
+    // `UpdatePlayers` (the bug-net use path, `Player.ItemCheck` under the
+    // `Main.cs:17754` swap), but the SHIMMER release runs under `UpdateItems`
+    // (`Main.cs:17779`) — the 148 draw is the only RNG in the switch, so the
+    // shimmer caller pre-draws it on `UpdateItems` and passes the resolved
+    // type (the 148 arm then draws nothing).
+    let resolved = if npc_type == 148 {
+        npc_type as i32
+            + app
+                .rngs
+                .stream(crate::app::RngKey::UpdateItems)
+                .next_range(0, 2)
+    } else {
+        npc_type as i32
+    };
+    crate::bug_net::release_npc(app, x, y, resolved, style, app.local_id as u8);
+    if app.npcs.len() > before {
+        // `:1777-1780` — `if (num5 >= 0) Main.npc[num5].shimmerTransparency
+        // = 1f`. The release pushed the new NPC last.
+        app.npcs.last_mut().unwrap().shimmer_transparency = 1.0;
+        true
+    } else {
+        false
+    }
 }
 
 /// The saucer/scutlix/dutchman carrier write-through PRE-pass (S1-D-8b's
@@ -4035,6 +4279,177 @@ fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> V
         out.push(m);
     }
     out
+}
+
+/// `Collision.SolidTiles(startX, endX, startY, endY)`
+/// (`Collision.cs:3455-3488`): out-of-bounds counts as SOLID, a null tile
+/// returns false, the per-tile test is
+/// `active && !inActive && tileSolid && !tileSolidTop`. The slime-fall
+/// validity scan's rect probe (the npc_ai_bat/town copies' shape).
+fn solid_tiles_rect(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
+    if x0 < 0 || x1 >= world.width || y0 < 0 || y1 >= world.height - 40 {
+        return true;
+    }
+    for x in x0..=x1 {
+        for y in y0..=y1 {
+            let Some(t) = world.tile(x, y) else {
+                return false;
+            };
+            if t.active()
+                && !t.inactive()
+                && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `Spawner.SlimeRainSpawns(player)` (`NPC.cs:5892-5955`) — the Slime
+/// Rain's sky-fall spawn, called from `SpawnNPC` (`:296-299`) under the
+/// `SpawnNPC` swap BEFORE the regular spawner. W4-f39's faithful port:
+///
+/// * the depth gate reads `player.position.Y` (the TOP, not the centre)
+///   against `worldSurface*16 + MaxWorldViewSize.Y/2` (`:5897`), and the
+///   crowd gate reads `player.nearbyActiveNPCs > 15f`;
+/// * `nearbyActiveNPCs` is the `CheckActive` slot sum (`NPC.cs:77902-
+///   77924`): the screen-rect enemies, one `npcSlots` each, but a type-1
+///   slime during the rain counts `npcSlots * slimeRainNPCSlots` (0.65,
+///   `Main.cs:66803`) — the discount that lets the event crowd the screen;
+/// * the denominator is `45 + (int)(450f * (nearby/15))` (`:5901`, the
+///   INTEGER truncation), expert `×0.85` (`:5902-5905`, the port is
+///   single-difficulty so the arm folds);
+/// * the sky window: x in `[Center.X - 1920, Center.X + 1920)`, y in
+///   `[Center.Y - 1200*1.5, Center.Y - 1200*0.75)` (`:5918-5923`), then
+///   `/16` to tiles;
+/// * the validity scan (`:5926`): `xt < 10 || xt > maxTilesX + 10` (the
+///   UPPER bound is `+10`, not `-10`), the y band
+///   `[worldSurface*0.3, worldSurface]`, `Collision.SolidTiles(xt-3,
+///   xt+3, yt-5, yt+2)` and the house-wall refusal
+///   (`Main.wallHouse[tile.wall]`);
+/// * the kind chain (`:5930-5953`): `Next(200)==0` → Pinky(-4); else the
+///   classic `Next(10)==0` → Purple(-7), `Next(5)<2` → Green(-3), else
+///   Blue(1). (The expert `Next(7)`/`Next(3)` arms fold — single-
+///   difficulty.) `NewNPC` places the BOTTOM at `(xt*16+8, yt*16)`
+///   (`:5954`, `NPC.cs:80770`'s `nPC.Bottom`).
+///
+/// The `CanSpawnEnemiesNear` dead-player gate (`NPC.cs:344-363`) is the
+/// caller's (`SpawnNPC` checks it before both arms); the port folds it
+/// here as the `player.dead` refusal. The journey spawn-rate slider
+/// (`:5906-5913`) and the Moon Lord proximity gate are port-absent.
+///
+/// The fn binds the persistent `SpawnNPC` stream itself (`Main.cs:17887`'s
+/// swap) — the regular spawner re-binds the same stream after this arm, so
+/// the draws advance across the two in C# order. The stream is copied out
+/// for the call (the body needs `&mut App` for the roster push, which the
+/// live `&mut app.rngs` borrow would block) and written back after EVERY
+/// path — the gate-miss and validity-refusal arms spend draws too, so the
+/// write-back covers them (the copy is the same subtractive state).
+fn slime_rain_spawns(app: &mut App) {
+    let mut rng = app.rngs.stream(RngKey::SpawnNpc).clone();
+    slime_rain_spawns_body(app, &mut rng);
+    *app.rngs.stream(RngKey::SpawnNpc) = rng;
+}
+
+/// The draw-taking body, split from the stream binding so the write-back
+/// in [`slime_rain_spawns`] covers every early-return path.
+fn slime_rain_spawns_body(app: &mut App, rng: &mut UnifiedRandom) {
+    let Some(player) = app.player.as_ref() else {
+        return;
+    };
+    if player.dead {
+        return;
+    }
+    let (pcx, pcy) = player.center();
+    let view_w = spawner::S_WIDTH; // `Main.MaxWorldViewSize.X` (1920)
+    let view_h = spawner::S_HEIGHT; // `Main.MaxWorldViewSize.Y` (1200)
+    // `player.nearbyActiveNPCs` (`NPC.cs:77902-77924`): the screen-rect
+    // slot sum. The rect is `sWidth/2 + width` / `sHeight/2 + height`
+    // around the NPC centre (`:77903`'s rectangle2); the port's
+    // half-screen fold is the regular spawner's convention. A type-1
+    // slime during the rain counts `npcSlots * 0.65` (`:77916-77918`);
+    // every other enemy counts its `npcSlots` (1 for the ported kinds).
+    let nearby: f32 = app
+        .npcs
+        .iter()
+        .filter(|n| {
+            let (cx, cy) = n.center();
+            (cx - pcx).abs() < view_w as f32 * 0.5 && (cy - pcy).abs() < view_h as f32 * 0.5
+        })
+        .map(|n| {
+            if n.kind == NpcKind::Slime {
+                // `slimeRainNPCSlots` (`Main.cs:66803`'s 0.65f) × the
+                // type-1 `npcSlots` (1f, `NPC.cs:8510`).
+                0.65
+            } else {
+                1.0
+            }
+        })
+        .sum();
+    // `:5897`: `position.Y > worldSurface*16 + y/2 || nearbyActiveNPCs >
+    // 15f` → return. `position.Y` is the player's TOP (`player.y`).
+    if (player.y as f64) > app.world.world_surface * 16.0 + (view_h / 2) as f64
+        || nearby > 15.0
+    {
+        return;
+    }
+    // `:5901`: `num2 = 45 + (int)(450f * (nearbyActiveNPCs / 15f))` — the
+    // f32 product truncates to int. The expert ×0.85 (`:5902-5905`) and
+    // the journey slider (`:5906-5913`) fold (single-difficulty, no
+    // creative powers).
+    let num2 = 45 + (450.0f32 * (nearby / 15.0)) as i32;
+    // `:5914`: `Main.rand.Next(num2) != 0 → return`.
+    if rng.next_max(num2) != 0 {
+        return;
+    }
+    // `:5918-5925`: the sky window in px, then `/16`.
+    let num3 = (pcx - view_w as f32) as i32;
+    let max_value = num3 + view_w * 2;
+    let min_value = (pcy as f64 - view_h as f64 * 1.5) as i32;
+    let max_value2 = (pcy as f64 - view_h as f64 * 0.75) as i32;
+    let xt = rng.next_range(num3, max_value) / TILE_PX as i32;
+    let yt = rng.next_range(min_value, max_value2) / TILE_PX as i32;
+    // `:5926`: the validity scan. The UPPER x bound is `maxTilesX + 10`
+    // (the C# lets the spawn sit past the right edge; the SolidTiles
+    // out-of-bounds arm then refuses it). The house-wall arm reads
+    // `Main.wallHouse[tile[xt, yt].wall]`.
+    if xt < 10
+        || xt > app.world.width + 10
+        || (yt as f64) < app.world.world_surface * 0.3
+        || (yt as f64) > app.world.world_surface
+        || solid_tiles_rect(&app.world, xt - 3, xt + 3, yt - 5, yt + 2)
+        || app
+            .world
+            .tile(xt, yt)
+            .is_some_and(|t| tr_core::housing::is_house_wall(t.wall))
+    {
+        return;
+    }
+    // `:5930-5953`: the kind chain. `Next(200)==0` → Pinky(-4); else the
+    // classic `Next(10)==0` → Purple(-7), `Next(5)<2` → Green(-3), else
+    // Blue. (The expert `Next(7)`/`Next(3)` arms fold.)
+    let variant = if rng.next_max(200) == 0 {
+        SlimeVariant::Pinky
+    } else if rng.next_max(10) == 0 {
+        SlimeVariant::Purple
+    } else if rng.next_max(5) < 2 {
+        SlimeVariant::Green
+    } else {
+        SlimeVariant::Blue
+    };
+    // `:5954`: `NewNPC(source, xt*16+8, yt*16, type)` — `NewNPC` sets
+    // `nPC.Bottom = (X, Y)` (`NPC.cs:80770`), so the slime's BOTTOM sits
+    // at the tile point; the port's `spawn_slime_sky` takes the top-left,
+    // hence the `-height` lift (the width centres on `xt*16+8`).
+    let scale = variant.stats().scale;
+    let (sw, sh) = NpcKind::Slime.size();
+    app.npcs.push(Npc::spawn_slime_sky(
+        xt as f32 * TILE_PX + 8.0 - sw * scale * 0.5,
+        yt as f32 * TILE_PX - sh * scale,
+        variant,
+    ));
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
@@ -4594,6 +5009,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // ess_scale stamp's one-frame convention — the sim runs ahead of the
     // draw that refreshes it).
     let app_light = &app.light;
+    // W4-f47 doc-sweep lane 36 — the state-25 emergence seam's inputs: the
+    // frame clock (the `Main.timeForVisualEffects` stand-in, ×60 in the
+    // closure) and the shared entity-light list; the progression-43 latch
+    // drains after the pass (the notify needs the app wholesale).
+    let app_anim_time = app.anim_time;
+    let mut shimmer_progression43 = false;
     // Limit the scope of borrows to just the tick closure
     {
         // W4-c8 sweep — the GoldWorm sparkle's light inputs, captured
@@ -5058,25 +5479,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // preamble + find_frame + contact tail match `update_rng`.
                     // S1-F-13c wiring: the non-75 kinds ride `update_rng_dust`
                     // so the Everscream/Santa dust arms reach the live pool.
-                    // W4-c7: the aiStyle-64 fireflies are a POOL step too
-                    // (the 677 threat scan reads `Main.npc[0..maxNPCs]` in
-                    // slot order, `NPC.cs:34120-34128`) — they run here on
-                    // the `UpdateNPCs` stream, ahead of the solo axis.
                     let style = npcs[i].kind.ai_style();
                     if style == 64 {
-                        // The shared `NPC.Update` preamble + the gfxOffY
-                        // decay (the style75 pooled wrapper's shape).
+                        // W4-c7: the aiStyle-64 fireflies are a POOL step too
+                        // (the 677 threat scan reads `Main.npc[0..maxNPCs]` in
+                        // slot order, `NPC.cs:34120-34128`) — they run here on
+                        // the `UpdateNPCs` stream, ahead of the solo axis.
                         npcs[i].update_preamble(step);
                         npcs[i].gfx_off_y = crate::npc_ai_unicorn_b::gfx_off_y_decay(
                             npcs[i].gfx_off_y,
                             npcs[i].vx,
                             npcs[i].step_speed,
                         );
-                        // The slot-ordered sibling views — the f32 threat
-                        // sum accumulates in this order. The firefly's own
-                        // view rides along: its `damage == 0` excludes it
-                        // (`:34123`), byte-identical to dropping it (the
-                        // module's documented fold).
                         let views: Vec<crate::npc_ai_style64::Ai64NpcView> = npcs
                             .iter()
                             .map(|n| crate::npc_ai_style64::Ai64NpcView {
@@ -5092,8 +5506,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         let ctx64 = crate::npc_ai_style64::Ai64Ctx {
                             players: &players,
                             npcs: &views,
-                            // The `EverLastingTicker` stand-in (the zombie
-                            // convention): 0 until the ticker migration.
                             ticker: 0,
                         };
                         let fx = crate::npc_ai_style64::ai_064_step(
@@ -5103,31 +5515,47 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                             &ctx64,
                             npcs_rng,
                         );
-                        // The glow request lands in the shared pair NOW,
-                        // at the C# call position (no RNG — the feed's
-                        // placement cannot move any stream).
                         if let Some((lx, ly, rgb)) = fx.light {
                             entity_lights.add(lx, ly, rgb);
                         }
-                        // The post-AI movement: the dead-band snap + the
-                        // noTileCollide/UpdateCollision split
-                        // (`NPC.cs:90473-90503`).
                         npcs[i].ai_064_integrate(world);
-                        // `NPC.UpdateNPC`'s tail (`:90511`/`:90516`): the
-                        // frame cycle, then the contact pass + justHit
-                        // clear (the `update_rng_dust` tail's order).
                         npcs[i].just_hit = false;
                         npcs[i].find_frame();
                         npcs[i].contact(player, npcs_rng);
                     } else if style != 75 {
-                        npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
-                        // W4-c8 — the aiStyle-66 flicker's AddLight request
-                        // lands in the shared pair NOW, at the C# call
-                        // position (`NPC.cs:34258`, inside `AI()`); no RNG
-                        // — the feed's placement cannot move any stream.
-                        // The solo axis queued it on `wants_ai_light`.
-                        for (lx, ly, rgb) in npcs[i].wants_ai_light.drain(..) {
-                            entity_lights.add(lx, ly, rgb);
+                        // W4-f47 doc-sweep lane 36 — the town state-25 shimmer
+                        // emergence seam (`NPC.cs:53187-53277`): the drain's
+                        // TownVariant arm set ai[0]=25; the emergence machine
+                        // runs at the NPC's slot turn INSTEAD of the dry walk.
+                        let shimmer25 = npcs[i].kind.is_town_npc_like()
+                            && npcs[i].ai[0] == 25.0
+                            && npcs[i].hp > 0;
+                        if shimmer25 {
+                            npcs[i].update_preamble(step);
+                            let tve = (app_anim_time as f64 * 60.0) % 216000.0;
+                            let progression43 = crate::npc_ai_town::town_shimmer_step(
+                                &mut npcs[i],
+                                world,
+                                player,
+                                tve,
+                                npcs_rng,
+                                dust,
+                                &dust_spawn_ctx,
+                                entity_lights,
+                            );
+                            if progression43 {
+                                shimmer_progression43 = true;
+                            }
+                            npcs[i].find_frame();
+                            npcs[i].contact(player, npcs_rng);
+                        } else {
+                            npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                            // W4-c8 — the aiStyle-66 flicker's AddLight request
+                            // lands in the shared pair NOW, at the C# call
+                            // position (`NPC.cs:34258`, inside `AI()`); no RNG.
+                            for (lx, ly, rgb) in npcs[i].wants_ai_light.drain(..) {
+                                entity_lights.add(lx, ly, rgb);
+                            }
                         }
                     } else {
                         npcs[i].update_preamble(step);
@@ -5335,6 +5763,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let switch = crate::collision::switch_tiles(
                 wiring, world, n.x, n.y, n.old_x, n.old_y, w as i32, h as i32,
                 2, // the NPC's objType (`NPC.cs:90504`)
+                // W4-g83: the plate kill's framing dispatch rides the
+                // UpdateNpcs stream (the active genRand of the NPC tick).
+                npcs_rng,
             );
             if let Some((item, x, y)) = switch.dropped {
                 // `WorldGen.KillTile`'s drop for the broken plate — the
@@ -5414,7 +5845,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let kind = app.world.tile(tx, ty).map(|t| t.kind);
         if kind == Some(10) {
             let mut drops = Vec::new();
-            let opened = tr_core::edit::open_door(&mut app.world, tx, ty, dir, &mut drops);
+            // W4-g83: the door-bash open's cleanup kills' framing dispatch
+            // rides the UpdateNpcs stream (the active genRand of the tick).
+            let opened = tr_core::edit::open_door(
+                &mut app.world,
+                tx,
+                ty,
+                dir,
+                &mut drops,
+                app.rngs.stream(RngKey::UpdateNpcs),
+            );
             if !opened {
                 // `:60062-60066` — the refusal: the idle counter jumps to
                 // num57 (60 for the zombie family), blocking the chase
@@ -5732,6 +6172,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
             app.audio.play_npc_death_sound(cue, npc.x, npc.y, rng);
         }
+        // W4-c39 exec (research/114 §1g): the party-hat death-gore block
+        // DROPPED — d55's `npc_hit_effect_a.rs::party_hat_block` is the
+        // canonical survivor (caller-gated `town_npc && hp <= 0 &&
+        // uses_party_hat`, the strike-stream RNG contract, the full
+        // normal/shimmer table). c39's block called the predicate on dead
+        // clones with the old baked `hp > 0` gate, so it NEVER fired, and
+        // its UpdateNpcs stream was the wrong one (the C# runs HitEffect
+        // inside StrikeNPC). Wiring d55's `hit_effect` into the strike path
+        // is its lane's declared follow-up — not a "temporary" c39 wire.
         // S1-E-21g — `NPC.HitEffect`'s EoC death arm (`NPC.cs:87275-87297`):
         // the type-4 kill plays the case-15 roar TWICE — the play sits
         // inside the `num567 < 2` gore loop (`:87289-87298`), after the
@@ -5779,8 +6228,61 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // at its position (`NewNPC(..., 249, base.whoAmI)`).
     for npc in &dead {
         match npc.kind {
+            // W4-c39 exec (research/114 §0.2) — the moon-event bosses'
+            // death arms (`NPC.cs:79210-79238`), the switch rows BEFORE
+            // the Golem's case 245. Each flag's first clear rides
+            // `SetEventFlagCleared`'s edge; the ids decide the lantern
+            // arm: Pumpking 327 → id 5 (the DEFAULT arm — ARMS), Mourning
+            // Wood 325 → id 4 (skip), Everscream 344 → id 21 (skip), Ice
+            // Queen 345 → id 20 (default — arms), SantaNK1 346 → id 22
+            // (skip). The C# gates each on its event flag
+            // (`Main.pumpkinMoon` / `Main.snowMoon`); the port's kinds
+            // only spawn inside their events, but the gate is kept 1:1.
+            NpcKind::Pumpking => {
+                if app.world.pumpkin_moon {
+                    // `NPC.cs:79213` — `SetEventFlagCleared(ref downedHalloweenKing, 5)`.
+                    let was_down = app.world.downed_halloween_king;
+                    app.world.downed_halloween_king = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 5, !was_down);
+                }
+            }
+            NpcKind::MourningWood => {
+                if app.world.pumpkin_moon {
+                    // `NPC.cs:79219` — `SetEventFlagCleared(ref downedHalloweenTree, 4)`.
+                    let was_down = app.world.downed_halloween_tree;
+                    app.world.downed_halloween_tree = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 4, !was_down);
+                }
+            }
+            NpcKind::Everscream => {
+                if app.world.snow_moon {
+                    // `NPC.cs:79225` — `SetEventFlagCleared(ref downedChristmasTree, 21)`.
+                    let was_down = app.world.downed_christmas_tree;
+                    app.world.downed_christmas_tree = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 21, !was_down);
+                }
+            }
+            NpcKind::IceQueen => {
+                if app.world.snow_moon {
+                    // `NPC.cs:79231` — `SetEventFlagCleared(ref downedChristmasIceQueen, 20)`.
+                    let was_down = app.world.downed_christmas_ice_queen;
+                    app.world.downed_christmas_ice_queen = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 20, !was_down);
+                }
+            }
+            NpcKind::SantaNK1 => {
+                if app.world.snow_moon {
+                    // `NPC.cs:79237` — `SetEventFlagCleared(ref downedChristmasSantank, 22)`.
+                    let was_down = app.world.downed_christmas_santank;
+                    app.world.downed_christmas_santank = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 22, !was_down);
+                }
+            }
             NpcKind::Golem => {
+                // `NPC.cs:79346` — `SetEventFlagCleared(ref downedGolemBoss, 6)`.
+                let was_down = app.world.downed_golem;
                 app.world.downed_golem = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 6, !was_down);
             }
             // S1-D-3 W-9 fishron wiring — `DoDeathEvents`'s case 370
             // (`NPC.cs:79348-79350`): `SetEventFlagCleared(ref
@@ -5788,10 +6290,48 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // flag-7 net message) rides the flag; the port's
             // notify_progression_net carries the WoF precedent's shape.
             NpcKind::DukeFishron => {
+                let was_down = app.world.downed_fishron;
                 app.world.downed_fishron = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 7, !was_down);
             }
             NpcKind::Deerclops => {
+                // `NPC.cs:79355` — `SetEventFlagCleared(ref downedDeerclops, 25)`.
+                let was_down = app.world.downed_deerclops;
                 app.world.downed_deerclops = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 25, !was_down);
+            }
+            // W4-f39: the seasonal moon-boss downed flags (`DoDeathEvents`'s
+            // cases 325/327/344/345/346, `NPC.cs:79210-79238`): each
+            // `SetEventFlagCleared(ref NPC.downedX, n)` rides the RUNNING
+            // event's own flag (`Main.pumpkinMoon` / `Main.snowMoon`). The
+            // game-event ids (4/5/20/21/22) fire no lantern night
+            // (`OnGameEventClearedForTheFirstTime`'s cases 4/21/22 break,
+            // `NPC.cs:78789-78792`; 5/20 hit the default but the port's
+            // lantern scheduler is the F-14 seam — the flag is the state).
+            NpcKind::Pumpking => {
+                if app.world.pumpkin_moon {
+                    app.world.downed_halloween_king = true;
+                }
+            }
+            NpcKind::MourningWood => {
+                if app.world.pumpkin_moon {
+                    app.world.downed_halloween_tree = true;
+                }
+            }
+            NpcKind::Everscream => {
+                if app.world.snow_moon {
+                    app.world.downed_christmas_tree = true;
+                }
+            }
+            NpcKind::IceQueen => {
+                if app.world.snow_moon {
+                    app.world.downed_christmas_ice_queen = true;
+                }
+            }
+            NpcKind::SantaNK1 => {
+                if app.world.snow_moon {
+                    app.world.downed_christmas_santank = true;
+                }
             }
             NpcKind::SolarTower => {
                 app.world.downed_tower_solar = true;
@@ -5826,8 +6366,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     }
                     app.world.lunar_apocalypse_is_up = false;
                 } else if !npc.moon_despawn_kill {
+                    let was_down = app.world.downed_moon_lord;
                     app.world.downed_moon_lord = true;
                     app.world.lunar_apocalypse_is_up = false;
+                    // `SetEventFlagCleared(ref downedMoonlord, 10)`'s case-10
+                    // row (`NPC.cs:78776-78779`) arms the lantern night too
+                    // (the credits roll is unported).
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 10, !was_down);
                 }
             }
             NpcKind::NebulaTower => {
@@ -5852,7 +6397,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // cultist's death clears its flag and raises the apocalypse
             // (`WorldGen.TriggerLunarApocalypse`).
             NpcKind::AncientCultist => {
+                // `NPC.cs:79394` — `SetEventFlagCleared(ref downedAncientCultist, 9)`.
+                let was_down = app.world.downed_ancient_cultist;
                 app.world.downed_ancient_cultist = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 9, !was_down);
                 // `WorldGen.TriggerLunarApocalypse` fires from `checkDead`
                 // under the `UpdateNPCs` swap (`NPC.cs:79393-79396`,
                 // `Main.cs:17767-17769`).
@@ -5886,6 +6434,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     );
                 }
                 app.world.downed_eow = true;
+                // `NPC.cs:79457` — `SetEventFlagCleared(ref downedBoss2, 14)`.
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 14, !was_down);
             }
             NpcKind::GolemHead => {
                 let mut free =
@@ -5898,27 +6448,69 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // The Slime Rain kill counter (`DoDeathEvents_AdvanceSlimeRain`,
-    // `NPC.cs:79078-79095`): the slime kills count toward 150 (75 after
+    // `NPC.cs:79080-79096`): the slime kills count toward 150 (75 after
     // the first King) while no King lives (`!AnyNPCs(50)`); at the
     // threshold `SpawnOnPlayer(50)` — the King — and the counter flips
-    // negative (`-num / 2`) for the next climb.
-    if app.world.slime_rain
-        && !app
-            .npcs
-            .iter()
-            .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
-    {
+    // negative (`-num / 2`) for the next climb. W4-f39: the C# re-checks
+    // `Main.slimeRain && slimeRainNPC[type] && !AnyNPCs(50)` PER DEATH
+    // (`:79082`) — a King spawned by an earlier death in this same tick
+    // closes the gate for every later death, and a King's own death
+    // (which stops the rain, `:79406-79409`) closes it too. The
+    // `slimeRainNPC[1]` filter (`Main.cs:8864`) is the port's `Slime`
+    // kind — every colour variant shares vanilla type 1.
+    if app.world.slime_rain {
         for npc in &dead {
             if npc.kind != NpcKind::Slime {
+                continue;
+            }
+            // `:79082`'s per-death gate: the rain still up AND no King in
+            // the live roster (the one this loop may have just pushed).
+            if !app.world.slime_rain
+                || app
+                    .npcs
+                    .iter()
+                    .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+            {
                 continue;
             }
             let threshold = if app.world.downed_slime_king { 75 } else { 150 };
             app.world.slime_rain_kills += 1;
             if app.world.slime_rain_kills >= threshold {
+                // `NPC.cs:79092`: `NPC.SpawnOnPlayer(closestPlayer.whoAmI,
+                // 50)` — the 500×50 off-screen scan (`NPC.cs:80475-80633`),
+                // NOT the surface-scan stand-in (which could refuse and
+                // leave the counter flipped with no King). W4-f39
+                // closeout: the real scan, on the `UpdateNPCs` stream
+                // (the death runs under the UpdateNPCs swap; the C#
+                // scan draws `Main.rand` live). The counter flips
+                // whether or not the scan finds a tile (`:79093` runs
+                // unconditionally after the call).
                 if let Some(p) = app.player.as_ref() {
-                    let xt = ((p.x / TILE_PX) as i32 + 12).clamp(2, app.world.width - 3);
-                    if let Some(k) = Npc::spawn_king_slime(&app.world, xt) {
+                    let pos = (p.x, p.y);
+                    let center = p.center();
+                    let mut rng = app.rngs.stream(RngKey::UpdateNpcs).clone();
+                    let king = spawner::spawn_king_slime_on_player(
+                        &app.world,
+                        pos,
+                        center,
+                        &mut rng,
+                    );
+                    *app.rngs.stream(RngKey::UpdateNpcs) = rng;
+                    if let Some(k) = king {
                         app.npcs.push(k);
+                        // `NewNPC`'s King-specific arm (`NPC.cs:80787-
+                        // 80790`): `Announcement.HasAwoken` with the
+                        // King's name (the `SpawnBoss` switch's case-50
+                        // silence `:80705` is redundant — NewNPC already
+                        // broadcast it).
+                        crate::chat::broadcast_death_text(
+                            &mut app.chat,
+                            &crate::lang::text_args(
+                                "Announcement.HasAwoken",
+                                &[crate::lang::npc_name(50)],
+                            ),
+                            crate::chat::COLOR_BOSS_OR_EVENT,
+                        );
                     }
                 }
                 app.world.slime_rain_kills = -threshold / 2;
@@ -5978,7 +6570,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // bestiary credit above.
         match npc.kind {
             NpcKind::KingSlime => {
+                // `NPC.cs:79416` — `SetEventFlagCleared(ref downedSlimeKing, 11)`.
+                let was_down = app.world.downed_slime_king;
                 app.world.downed_slime_king = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 11, !was_down);
                 // `NPC.cs:79405-79410` (case 50): the King's death while a
                 // slime rain is up calls `Main.StopSlimeRain()` and fires
                 // STICKY_SITUATION (progression 16).
@@ -5994,11 +6589,34 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let _ = app.notify_progression_net(16);
                 }
             }
-            NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
+            NpcKind::EyeOfCthulhu => {
+                // `NPC.cs:79441` — `SetEventFlagCleared(ref downedBoss1, 13)`.
+                let was_down = app.world.downed_eoc;
+                app.world.downed_eoc = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 13, !was_down);
+            }
+            // The EoW/Brain lantern trigger rides the FIRST death match above
+            // (the meteor arm, `:79450-79456`) — these duplicate flag writes
+            // see `was_down == true`, so no second arm is needed here.
             NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
-            NpcKind::QueenBee => app.world.downed_queen_bee = true,
-            NpcKind::TheDestroyer => app.world.downed_mech_boss1 = true,
-            NpcKind::SkeletronPrime => app.world.downed_mech_boss3 = true,
+            NpcKind::QueenBee => {
+                // `NPC.cs:79387` — `SetEventFlagCleared(ref downedQueenBee, 8)`.
+                let was_down = app.world.downed_queen_bee;
+                app.world.downed_queen_bee = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 8, !was_down);
+            }
+            NpcKind::TheDestroyer => {
+                // `NPC.cs:79476` — `SetEventFlagCleared(ref downedMechBoss1, 16)`.
+                let was_down = app.world.downed_mech_boss1;
+                app.world.downed_mech_boss1 = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 16, !was_down);
+            }
+            NpcKind::SkeletronPrime => {
+                // `NPC.cs:79469` — `SetEventFlagCleared(ref downedMechBoss3, 18)`.
+                let was_down = app.world.downed_mech_boss3;
+                app.world.downed_mech_boss3 = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 18, !was_down);
+            }
             // The Twins: the flag when BOTH eyes are dead (the vanilla
             // checks `!AnyNPCs(125) && !AnyNPCs(126)` after the death).
             NpcKind::Retinazer => {
@@ -6007,7 +6625,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     .iter()
                     .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0)
                 {
+                    // `NPC.cs:79426` — `SetEventFlagCleared(ref downedMechBoss2, 17)`.
+                    let was_down = app.world.downed_mech_boss2;
                     app.world.downed_mech_boss2 = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 17, !was_down);
                 }
             }
             NpcKind::Spazmatism => {
@@ -6016,24 +6637,45 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     .iter()
                     .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0)
                 {
+                    // `NPC.cs:79426` — `SetEventFlagCleared(ref downedMechBoss2, 17)`.
+                    let was_down = app.world.downed_mech_boss2;
                     app.world.downed_mech_boss2 = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 17, !was_down);
                 }
             }
-            NpcKind::Plantera => app.world.downed_plant_boss = true,
+            NpcKind::Plantera => {
+                // `NPC.cs:79433` — `SetEventFlagCleared(ref downedPlantBoss, 12)`.
+                let was_down = app.world.downed_plant_boss;
+                app.world.downed_plant_boss = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 12, !was_down);
+            }
             // The Brain: the vanilla shares `downedBoss2` with the EoW —
             // the port's `downed_eow` covers the shared flag.
             NpcKind::BrainOfCthulhu => app.world.downed_eow = true,
-            NpcKind::SkeletronHead => app.world.downed_skeletron = true,
+            NpcKind::SkeletronHead => {
+                // `NPC.cs:79463` — `SetEventFlagCleared(ref downedBoss3, 15)`.
+                let was_down = app.world.downed_skeletron;
+                app.world.downed_skeletron = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 15, !was_down);
+            }
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
                 // `WorldGen.cs:31701-31712`): `Main.hardMode = true` — the
                 // hardmode shop rows and the ores ride the flag — then
                 // ITS_HARD (progression 9), guarded by the `!hardMode`
                 // early-return so a repeat death cannot re-fire it.
+                let was_down = app.world.hard_mode;
                 if !app.world.hard_mode {
                     app.world.hard_mode = true;
                     let _ = app.notify_progression_net(9);
                 }
+                // `SetEventFlagCleared(ref eventFlag, 19)` (`NPC.cs:79490`):
+                // the hardmode flag's first clear arms the lantern night
+                // (the default row, `:78773-78775`). The `was_down` capture
+                // sits OUTSIDE the guard (the C# `:79484` pre-kill read),
+                // so the call runs unconditionally — a repeat death sees
+                // `first == false` and never re-arms.
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 19, !was_down);
             }
             _ => {}
         }
@@ -6568,6 +7210,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut shots = Vec::new();
     let mut ai_shots = Vec::new();
     let mut gallop_dust = Vec::new();
+    // W4-f47 keep-one 144 — the ShimmerSlime 676's dust requests carry the
+    // requester's netOffset (`NPC.cs:61148` adds it to the rolled position
+    // at the spawn).
+    let mut shimmer_slime_dust = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
         for shot in n.wants_hostile_shot.drain(..) {
             shots.push((i, shot));
@@ -6577,6 +7223,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         for d in n.wants_gallop_dust.drain(..) {
             gallop_dust.push(d);
+        }
+        for d in n.wants_shimmer_slime_dust.drain(..) {
+            shimmer_slime_dust.push((d, n.net_offset));
         }
     }
     for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
@@ -6691,6 +7340,48 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             slot.fade_in = 1.1;
             slot.no_gravity = true;
             slot.no_light = true;
+        }
+    }
+    // W4-f47 keep-one 144 — the ShimmerSlime 676's shimmer dust
+    // (`NPC.cs:61133-61148`): the arm-level gate + the 4 NextFloat rolls
+    // already rode the UpdateNPCs stream in-step (`ai_001_slimes`);
+    // `Dust.NewDustPerfect(pos, 306)` and its post-spawn writes run here
+    // on the SAME stream (the gallop-dust seam — the pool-internal draw
+    // placement after the tick's AI is the recorded deviation).
+    if !shimmer_slime_dust.is_empty() {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        // `Main.timeForVisualEffects` (`Main.cs:17162-17164`): anim_time
+        // is seconds — ×60 recovers the tick count, mod 216000 (the
+        // town state-25 seam's convention).
+        let tve = ((app.anim_time as f64 * 60.0) % 216000.0) as f32;
+        for (d, net_offset) in shimmer_slime_dust {
+            let idx = app.dust.new_dust_perfect(
+                rng,
+                &ctx,
+                &app.world,
+                Vec2::new(d.x, d.y),
+                306,
+                Some(Vec2::new(d.vx, d.vy)),
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            );
+            // `:61134-61148` — the post-spawn writes, sentinel included.
+            let slot = app.dust.slot_mut(idx);
+            slot.no_gravity = true;
+            slot.no_light_emittance = true;
+            slot.alpha = 127;
+            // `:61137-61138` — the hue: (tve/300 + jitter*0.1) mod 1,
+            // saturation 1, luminosity 0.65, then A = 0 (all f32 in C#).
+            let hue = ((tve / 300.0 + d.hue_jitter * 0.1) % 1.0) as f64;
+            let rgb = crate::ui::color::hsl_to_rgb(hue, 1.0, 0.65, 255);
+            slot.color = tr_core::particles::Color { r: rgb[0], g: rgb[1], b: rgb[2], a: 0 };
+            slot.scale = d.scale;
+            slot.fade_in = 0.9;
+            // `:61148` — the netOffset applies to the POSITION only (the
+            // velocity was derived pre-offset in-arm).
+            slot.position += net_offset;
         }
     }
     // S1-D-3 W-1 — the WoF's `NPC.NewNPC` drain (`NPC.cs:25712`,
@@ -6898,6 +7589,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // (one spawn call suppressed, `:80171-80174`). The adapter already
     // despawned the slot through the timer seam (the silent retain
     // below); the latch drains onto the App here.
+    // W4-f47 doc-sweep lane 36 — the state-25 completion's progression 43
+    // (`AchievementsHelper.NotifyProgressionEvent(43)`, `NPC.cs:53273`): the
+    // emergence seam latched it inside the pass; the notify needs the app
+    // wholesale, so it credits here (the notify is RNG-free).
+    if shimmer_progression43 {
+        let _ = app.notify_progression_net(43);
+    }
+    // W4-f47 — the NPC.GetShimmered drain (`NPC.cs:91517-91519`): the
+    // transparency ramp's 0.9 crossings resolve after the pass (the arms
+    // transform/spawn/poof — the shimmer item-chain's post-pass convention).
+    drain_shimmer_transforms(app);
+    // W4-f47 — the shimmer/honey wet contact (`NPC.cs:93052-93076`): the
+    // faithful probe + the buff-353 add, timing-equivalent at the post-pass
+    // (the flag/gravity readers run at the next tick's head).
+    shimmer_wet_contact_pass(app);
     // The saucer core's crew (`AI`'s aiStyle-76 init arm): the 2 turrets
     // 393, the 2 cannons 394 and the shell 392, each `ai[0]`-linked (the
     // port's link rides the write-through) with the seat `ai[1]`.
@@ -7227,86 +7933,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the first draw is the `Next(spawnRate)` gate (`NPC.cs:312-318`), so the
     // per-call LCG advance the splitmix bridge needed dies outright.
     let mut spawned = None;
-    if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
-        let mut rng = app.rngs.stream(RngKey::SpawnNpc);
-        // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
-        // — the pre-roll before the regular spawner (`:296-302`'s call
-        // order): the depth/crowd gates (the player below
-        // `worldSurface*16 + view/2` or the nearby count > 15 refuse),
-        // `Next(45 + 450 x (nearby/15))`, the sky window (x within +-1
-        // view width, y 0.75-1.5 view heights above), the validity scan
-        // (the bounds, the y band `[worldSurface x 0.3, worldSurface]`,
-        // the 7x8 solid-rect scan — the house-wall arm folds), the kind
-        // table (Blue; `Next(10)==0` Yellow; `Next(5) < 2` Green).
+    // `NPC.SpawnNPC`'s noSpawnCycle head (`NPC.cs:80171-80175`, W4-f47):
+    // the shimmer statue-poof / item-drop arms set the flag; ONE spawn
+    // cycle is skipped (the flag clears even when the timer/crowd gates
+    // would have refused anyway — the C# consumes it unconditionally).
+    let spawn_cycle_skipped = std::mem::replace(&mut app.npc_no_spawn_cycle, false);
+    if !spawn_cycle_skipped && app.npcs.len() < 200 && app.npc_timer <= 0.0 {
+        // The Slime Rain sky spawns (`Spawner.SlimeRainSpawns`,
+        // `NPC.cs:5892-5955`) — the pre-roll before the regular spawner
+        // (`SpawnNPC`'s `:296-299` call order, under the same `SpawnNPC`
+        // swap). W4-f39: the whole arm is the faithful port — the
+        // position.Y depth gate, the `nearbyActiveNPCs` slot sum (the
+        // 0.65 slime discount), the `45 + (int)(450f * (nearby/15))`
+        // denominator, the sky window, the `Collision.SolidTiles` +
+        // house-wall validity scan and the full four-arm kind chain
+        // (the `Next(200)` Pinky included). The fn binds the persistent
+        // `SpawnNPC` stream itself (the regular spawner re-binds it below
+        // — the same stream, the draws advance across the two arms).
         if app.world.slime_rain {
-            if let Some(player) = app.player.as_ref() {
-                let (pcx, pcy) = player.center();
-                let view_w = spawner::S_WIDTH as f32;
-                let view_h = spawner::S_HEIGHT as f32;
-                let nearby = app
-                    .npcs
-                    .iter()
-                    .filter(|n| {
-                        let (cx, cy) = n.center();
-                        (cx - pcx).abs() < view_w * 0.5 && (cy - pcy).abs() < view_h * 0.5
-                    })
-                    .count() as f32;
-                if !player.dead
-                    && (pcy as f64) <= app.world.world_surface * 16.0 + (view_h * 0.5) as f64
-                    && nearby <= 15.0
-                {
-                    let denom = 45.0 + 450.0 * (nearby / 15.0);
-                    // `Main.rand.Next(num2) != 0 → return` (`NPC.cs:5914`).
-                    if rng.next_max(denom as i32) == 0 {
-                        // `Next(num3, maxValue)` / `Next(minValue, maxValue2)`
-                        // in px, then `/ 16` (`NPC.cs:5922-5924`).
-                        let pcx_i = pcx as i32;
-                        let pcy_i = pcy as i32;
-                        let x_i = rng.next_range(pcx_i - view_w as i32, pcx_i + view_w as i32);
-                        let y_i = rng.next_range(
-                            pcy_i - (view_h * 1.5) as i32,
-                            pcy_i - (view_h * 0.75) as i32,
-                        );
-                        let xt = x_i / (TILE_PX as i32);
-                        let yt = y_i / (TILE_PX as i32);
-                        let solid = (0..7).any(|dx| {
-                            (0..8).any(|dy| {
-                                app.world
-                                    .tile(xt - 3 + dx as i32, yt - 5 + dy as i32)
-                                    .is_some_and(|t| {
-                                        t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
-                                    })
-                            })
-                        });
-                        if xt > 10
-                            && xt < app.world.width - 10
-                            && (yt as f64) >= app.world.world_surface * 0.3
-                            && (yt as f64) <= app.world.world_surface
-                            && !solid
-                        {
-                            // The classic chain (`NPC.cs:5944-5952`):
-                            // `Next(10) == 0` → Yellow(-7), `Next(5) < 2` →
-                            // Green(-3), else Blue. (The `Next(200) == 0`
-                            // -4 arm folds — the kind is unported.)
-                            let variant = if rng.next_max(10) == 0 {
-                                SlimeVariant::Yellow
-                            } else if rng.next_max(5) < 2 {
-                                SlimeVariant::Green
-                            } else {
-                                SlimeVariant::Blue
-                            };
-                            let scale = variant.stats().scale;
-                            let (sw, sh) = NpcKind::Slime.size();
-                            app.npcs.push(Npc::spawn_slime_sky(
-                                xt as f32 * TILE_PX + 8.0 - sw * scale * 0.5,
-                                yt as f32 * TILE_PX - sh * scale,
-                                variant,
-                            ));
-                        }
-                    }
-                }
-            }
+            slime_rain_spawns(app);
         }
+        let mut rng = app.rngs.stream(RngKey::SpawnNpc);
         // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
         // blocks the attempt (the journey and Moon Lord gates have no
         // sources yet).
@@ -7374,6 +8021,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.
                     moon_event: app.world.pumpkin_moon || app.world.snow_moon,
+                    // W4-f39: the resolved season flags the holiday spawn
+                    // arms read (`NPC.cs:4727-4735`/`:5644-5651`).
+                    halloween: app.world.halloween,
+                    xmas: app.world.xmas,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
@@ -7571,23 +8222,26 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
                 .seeds
                 .contains(tr_core::seeds::SeedFlags::SKYBLOCK),
             remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
-            // M5-SEED-2: `Main.forceHalloweenForever` / `Main.forceXMasForever`
-            // (`Main.cs:13168` / `:13135`), which `InitializeSecretSeeds`
-            // sets for the `endlessHalloween` / `endlessChristmas` micro seeds
-            // (`WorldGen.cs:572-578`) — the two feed `Main.halloween` /
-            // `Main.xMas` (`checkHalloween` / `checkXMas`), the flags
+            // W4-f39: `Main.halloween` / `Main.xMas` are the RESOLVED season
+            // flags now (`World.halloween`/`xmas`, re-derived at dawn + load
+            // by `checkHalloween`/`checkXMas` from the date window + the
+            // force flags). The endless micro seeds still feed them through
+            // `forceHalloweenForever`/`forceXMasForever` (`Main.cs:13168`/
+            // `:13135` ← `WorldGen.cs:572-578`), but the Oct/Dec calendar
+            // windows and the moon-event temporary season open them too.
             // `loot.rs`'s `HalloweenWeapons`/`HalloweenGoodieBagDrop`/
-            // `IsChristmas`/`XmasPresentDrop` conditions read (`loot.rs:1481-
-            // 1499`). A classic world leaves them off, so a world without the
-            // micro seeds drops exactly as before.
-            halloween: app
-                .world
-                .micro_seeds
-                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
-            xmas: app
-                .world
-                .micro_seeds
-                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+            // `IsChristmas`/`XmasPresentDrop` conditions read these.
+            halloween: app.world.halloween,
+            xmas: app.world.xmas,
+            // W4-g68: `Main.WindyEnoughForKiteDrops` (`Main.cs:2907`) — the
+            // kite-drop rows (`Cond::WindyEnoughForKiteDrops`, loot.rs:1719)
+            // read the live wind target through the wind-flag owner's getter
+            // (`wind.rs`, `|windSpeedTarget| >= _maxWind 0.4`).
+            windy: app.wind.windy_enough_for_kite_drops(),
+            // `WorldGen.crimson` — the world evil type (W4-g69 doc-sweep):
+            // `Conditions.IsCrimsonAndNotExpert`/`IsCorruptionAndNotExpert`
+            // (`loot.rs:1744-1745`) read the WORLD flag, not the player zone.
+            crimson_world: app.world.crimson,
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -7703,6 +8357,18 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
 
 #[cfg(test)]
 mod tests {
+    // W4-f39 census witnesses (written-not-run, code-only lane): the
+    // DoDeathEvents_AdvanceSlimeRain per-death gate, the 150/75 threshold
+    // + the negative-half hysteresis, and the King-death stop order.
+    #[path = "npcs_w4_f39.rs"]
+    mod npcs_w4_f39;
+
+    // W4-f39 census witnesses: the SlimeRainSpawns sky-fall arm — the
+    // depth/crowd gates, the 0.65 discount, the denominator, the kind
+    // chain and the validity scan.
+    #[path = "npcs_w4_f39_spawns.rs"]
+    mod npcs_w4_f39_spawns;
+
     use super::*;
     use tr_core::World;
 
@@ -8891,6 +9557,65 @@ mod tests {
         assert!(xmas.contains(&1869), "endlessChristmas drops the Present");
     }
 
+    /// W4-g69 doc-sweep — `spawn_loot`'s `LootFlags.crimson_world` reads the
+    /// LIVE `World.crimson` (`Conditions.IsCrimsonAndNotExpert`/
+    /// `IsCorruptionAndNotExpert`, `loot.rs:1744-1745`): the Eye of Cthulhu's
+    /// ore/seed rows split by the world flavour (`loot_db_gen.rs:1332-1335`
+    /// — 880/2171 crimson vs 56/59 corruption). Engine-level replay over
+    /// many streams; both halves must appear on their own world only.
+    #[test]
+    fn w4_g69_the_world_evil_splits_the_eye_loot() {
+        let drops_for = |crimson_world: bool| -> Vec<i32> {
+            let mut out = Vec::new();
+            for seed in 1..300u64 {
+                let mut rng = tr_core::tile_light::FastRandom::new(seed);
+                let mut info = tr_core::loot::DropAttemptInfo {
+                    rng: &mut rng,
+                    luck: 0.0,
+                    is_expert: false,
+                    is_master: false,
+                    active_players: 1,
+                    extra_gel: false,
+                    is_in_simulation: false,
+                    get_text_value: None,
+                    flags: tr_core::loot::LootFlags {
+                        crimson_world,
+                        ..Default::default()
+                    },
+                    npc: tr_core::loot::LootNpc {
+                        kind: 4,
+                        value: 1.0,
+                        life_max: 2800,
+                        ..Default::default()
+                    },
+                };
+                tr_core::loot::try_dropping(crate::loot_db::database(), 4, &mut info, &mut out);
+            }
+            let mut ids: Vec<i32> = out.iter().map(|r| r.item).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+        let corrupt = drops_for(false);
+        let crimson = drops_for(true);
+        assert!(
+            corrupt.contains(&56) && corrupt.contains(&59),
+            "a corruption world drops Demonite + Corrupt Seeds"
+        );
+        assert!(
+            !corrupt.contains(&880) && !corrupt.contains(&2171),
+            "no crimson rows on a corruption world"
+        );
+        assert!(
+            crimson.contains(&880) && crimson.contains(&2171),
+            "a crimson world drops Crimtane + Crimson Seeds"
+        );
+        assert!(
+            !crimson.contains(&56) && !crimson.contains(&59),
+            "no corruption rows on a crimson world"
+        );
+    }
+
     #[cfg(test)]
     mod voodoo_tests {
         use super::*;
@@ -9951,6 +10676,104 @@ mod pirate_invasion_tests {
             app.world.downed_golem,
             "the body's death is the fight's end"
         );
+    }
+
+    /// W4-c39 event 1 (exec RE-DERIVE, research/114 §1a) — the invasion-clear
+    /// tail of the first-clear trigger (`Main.cs:64335-64354`'s
+    /// `SetEventFlagCleared` rows, ids 0/1/2/3 — all the default arm): the
+    /// goblins' first win arms `NextNightIsLanternNight` through the
+    /// id-passing helper. The EoC-integration half of the original witness
+    /// DROPPED — f40's `w4_f40_the_first_boss_kill_arms_the_next_lantern_night`
+    /// is the surviving EoC rig (the union keeps ONE).
+    #[test]
+    fn w4_c39_the_invasion_clear_arms_the_next_lantern_night() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        assert!(!app.world_events.next_night_is_lantern_night);
+        // The invasion clear arms it (the goblins' first win, id 0).
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 0;
+        crate::world_sim::npcs::update_invasion_state(&mut app);
+        assert!(app.world.downed_goblins);
+        assert!(
+            app.world_events.next_night_is_lantern_night,
+            "the invasion clear's default row arms it (`Main.cs:64336`)"
+        );
+        // A repeat goblin win sees `was_down == true` — no re-arm.
+        app.world_events.next_night_is_lantern_night = false;
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 0;
+        crate::world_sim::npcs::update_invasion_state(&mut app);
+        assert!(
+            !app.world_events.next_night_is_lantern_night,
+            "a repeat clear never re-arms (`NPC.cs:78761-78766`)"
+        );
+    }
+
+    /// W4-c39 exec (research/114 §0.1/§0.2) — the moon-boss death arms wire
+    /// the id table live: Pumpking's (327, id 5 — the DEFAULT arm) first
+    /// kill ARMS the lantern night; Mourning Wood's (325, id 4 — a skip
+    /// row) first kill raises its flag but never arms. Both ride the
+    /// `Main.pumpkinMoon` gate (`NPC.cs:79210-79221`).
+    #[test]
+    fn w4_c39_pumpking_arms_and_mourning_wood_skips() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app.world.pumpkin_moon = true;
+        assert!(!app.world_events.next_night_is_lantern_night);
+        // Mourning Wood first: id 4 is a skip — the flag rises, no arm.
+        let mut wood = Npc::new(NpcKind::MourningWood, 30.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        wood.hp = 0;
+        app.npcs.push(wood);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_halloween_tree, "`NPC.cs:79219`");
+        assert!(
+            !app.world_events.next_night_is_lantern_night,
+            "id 4 skips the lantern arm (`NPC.cs:78789-78792`)"
+        );
+        // Pumpking: id 5 is the default arm — ARMS.
+        let mut king = Npc::new(NpcKind::Pumpking, 32.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        king.hp = 0;
+        app.npcs.push(king);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_halloween_king, "`NPC.cs:79213`");
+        assert!(
+            app.world_events.next_night_is_lantern_night,
+            "Pumpking's id 5 lands on the default arm (`NPC.cs:78773-78775`)"
+        );
+        // The event gate: outside the pumpkin moon neither flag rises.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = tr_core::World::new("t".into(), 64, 200);
+        let mut king2 = Npc::new(NpcKind::Pumpking, 32.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        king2.hp = 0;
+        app2.npcs.push(king2);
+        crate::world_sim::npcs::update_npcs(&mut app2, 1.0 / 60.0);
+        assert!(!app2.world.downed_halloween_king, "the `Main.pumpkinMoon` gate");
+        assert!(!app2.world_events.next_night_is_lantern_night);
     }
 }
 
@@ -18598,6 +19421,86 @@ mod dw3_tests {
         );
     }
 
+    /// W4-g69 doc-sweep — `resolve_angler_swap` reads the LIVE
+    /// `World.crimson` (`Main.cs:3769-3817`): on a crimson hardmode world
+    /// the 2454/2463 rows stay IN the pool and 2457/2485 re-roll; a
+    /// corruption world does the opposite. State pin: the twin replay over
+    /// the same `UpdateTime` stream lands on the same quest index.
+    #[test]
+    fn w4_g69_the_angler_swap_reads_the_live_world_evil() {
+        for crimson in [false, true] {
+            let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            a.world.crimson = crimson;
+            a.world.hard_mode = true; // opens the hardmode-gated fish
+            a.world.angler_swap_pending = true;
+            resolve_angler_swap(&mut a);
+            let gates = crate::angler::QuestGates {
+                hard_mode: true,
+                crimson,
+                downed_boss1: a.world.downed_eoc,
+                downed_boss2: a.world.downed_eow,
+                downed_boss3: a.world.downed_skeletron,
+                downed_slime_king: a.world.downed_slime_king,
+                downed_queen_bee: a.world.downed_queen_bee,
+                has_world_surface: true,
+            };
+            let mut twin_rngs = rng_seeded(&a);
+            let want =
+                crate::angler::angler_quest_swap(&gates, twin_rngs.stream(RngKey::UpdateTime));
+            assert_eq!(a.world.angler_quest as u16, want, "crimson={crimson}");
+            let item = crate::angler::QUEST_POOL[a.world.angler_quest as usize];
+            // Hardmode on: `2454` rejects only on crimson (`!hard || crimson`),
+            // `2463` only on corruption (`!hard || !crimson`).
+            if crimson {
+                assert!(
+                    item != 2454 && item != 2457 && item != 2485,
+                    "crimson rejects {item}"
+                );
+            } else {
+                assert!(
+                    item != 2463 && item != 2477,
+                    "corrupt rejects {item}"
+                );
+            }
+        }
+    }
+
+    /// W4-g69 doc-sweep — the shop-open seam feeds `ShopFlags.crimson_world`
+    /// from the LIVE `World.crimson` (`Chest.cs:1571-1594`/`:1665-1672`):
+    /// a crimson Dryad's blood-moon stock carries 2886/2171/4508 + 3218,
+    /// a corruption one 67/59/4504 + 3217.
+    #[test]
+    fn w4_g69_the_dryad_shop_open_reads_the_live_world_evil() {
+        for crimson in [false, true] {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            app.world.crimson = crimson;
+            app.world.blood_moon = true;
+            let dryad = Npc::new(NpcKind::Dryad, 100.0, 100.0, 100, 0.0);
+            app.npcs.push(dryad);
+            let (w, h) = app.npcs[0].size();
+            assert!(try_open_town_shop_at_cursor(
+                &mut app,
+                Vec2::new(100.0 + w * 0.5, 100.0 + h * 0.5)
+            ));
+            let ids: Vec<u16> = app.shop_stock.iter().map(|e| e.item).collect();
+            if crimson {
+                for id in [2886u16, 2171, 4508, 3218] {
+                    assert!(ids.contains(&id), "crimson row {id} missing");
+                }
+                for id in [67u16, 59, 4504, 3217] {
+                    assert!(!ids.contains(&id), "corruption row {id} leaked");
+                }
+            } else {
+                for id in [67u16, 59, 4504, 3217] {
+                    assert!(ids.contains(&id), "corruption row {id} missing");
+                }
+                for id in [2886u16, 4508, 3218] {
+                    assert!(!ids.contains(&id), "crimson row {id} leaked");
+                }
+            }
+        }
+    }
+
     /// DW-3.4: the angler turn-in's reward rolls ride `stream(UpdatePlayers)`
     /// (the `Player.ItemCheck` identity) — a handed-in quest fish advances
     /// UpdatePlayers and leaves the npcs/spawner streams untouched.
@@ -19235,6 +20138,54 @@ mod fishron_wiring_tests {
         assert!(app.npcs.iter().all(|n| n.kind != NpcKind::DukeFishron));
     }
 
+    // ---- W4-f39: the seasonal moon-boss downed flags (NPC.cs:79210-79238) ----
+
+    /// A dead moon boss of `kind` in an air world with the running event up;
+    /// one `update_npcs` tick resolves the death. Returns the world.
+    fn moon_boss_death(kind: NpcKind, pumpkin: bool, snow: bool) -> World {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = air();
+        app.world.pumpkin_moon = pumpkin;
+        app.world.snow_moon = snow;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        let mut boss = Npc::new(kind, 90.0 * 16.0, 90.0 * 16.0, 1, 0.0);
+        boss.hp = 0;
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        app.world
+    }
+
+    #[test]
+    fn w4_f39_the_pumpkin_bosses_raise_the_halloween_downeds_under_the_event() {
+        // `DoDeathEvents` cases 327/325 (`NPC.cs:79210-79221`): the flags ride
+        // `Main.pumpkinMoon`.
+        let w = moon_boss_death(NpcKind::Pumpking, true, false);
+        assert!(w.downed_halloween_king, "Pumpking → downedHalloweenKing");
+        let w = moon_boss_death(NpcKind::MourningWood, true, false);
+        assert!(w.downed_halloween_tree, "Mourning Wood → downedHalloweenTree");
+        // Without the event up the death raises nothing (the C# gate).
+        let w = moon_boss_death(NpcKind::Pumpking, false, false);
+        assert!(!w.downed_halloween_king, "no pumpkin moon, no flag");
+    }
+
+    #[test]
+    fn w4_f39_the_frost_bosses_raise_the_christmas_downeds_under_the_event() {
+        // `DoDeathEvents` cases 344/345/346 (`NPC.cs:79222-79238`): the flags
+        // ride `Main.snowMoon`.
+        let w = moon_boss_death(NpcKind::Everscream, false, true);
+        assert!(w.downed_christmas_tree, "Everscream → downedChristmasTree");
+        let w = moon_boss_death(NpcKind::IceQueen, false, true);
+        assert!(w.downed_christmas_ice_queen, "Ice Queen → downedChristmasIceQueen");
+        let w = moon_boss_death(NpcKind::SantaNK1, false, true);
+        assert!(w.downed_christmas_santank, "Santa-NK1 → downedChristmasSantank");
+        // The wrong event raises nothing.
+        let w = moon_boss_death(NpcKind::Everscream, true, false);
+        assert!(!w.downed_christmas_tree, "a pumpkin moon is not the snow gate");
+    }
+
     /// The shark spawn seam: the aiStyle-64 cloud's request becomes a
     /// live shark at the NewNPC bottom point with the cloud's velocity;
     /// the 386's presets (ai2 = width, ai3 = -1.5) ride AT THE SPAWN
@@ -19833,5 +20784,249 @@ mod w4_c10_tail_wiring_tests {
             assert_eq!(n.release_owner, app.local_id as u8, "the releaser owns it");
             assert_eq!(n.catchable_immunity, 90, "the ctor window (the tick zeroes it)");
         }
+    }
+}
+
+/// W4-f47 — the NPC shimmer-transform drain + the wet-contact pass
+/// witnesses (WRITTEN NOT RUN, code-only mode).
+#[cfg(test)]
+mod shimmer_transform_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use tr_core::tile::{Tile, FLAG_ACTIVE, LiquidKind};
+
+    /// A 64x200 world, dirt ground at y=120, a shimmer pool at x 28..32 /
+    /// y 118..119 (the contact fixture).
+    fn shimmer_world() -> tr_core::World {
+        let mut w = tr_core::World::new("shim".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 28..32 {
+            for y in 118..120 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = shimmer_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app
+    }
+
+    /// `NPC.cs:91561-91565` — the NPC-set arm transforms in place (the
+    /// blue slime 1 → the shimmer slime 676 is a roster gap, so the
+    /// zombie 3 → the skeleton 21 is the live witness).
+    #[test]
+    fn w4_f47_the_npc_set_arm_transforms_in_place() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        // Zombie net_id 3 → ShimmerTransformToNPC[3] = 21 (Skeleton).
+        assert_eq!(app.npcs[0].kind, NpcKind::Skeleton);
+        assert!(!app.npcs[0].wants_shimmer_transform, "the request drained");
+        assert!(!app.npc_no_spawn_cycle, "the transform arm does not skip spawns");
+    }
+
+    /// `NPC.cs:91550-91560` — the statue poof deactivates + skips one
+    /// spawn cycle, no loot.
+    #[test]
+    fn w4_f47_the_statue_poof_deactivates_and_skips_the_cycle() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.spawned_from_statue = true;
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        assert!(app.npcs.is_empty(), "the poof removed the NPC");
+        assert!(app.npc_no_spawn_cycle, "one spawn cycle skipped");
+        assert!(app.items.is_empty(), "no loot");
+    }
+
+    /// `NPC.cs:91578-91591` — the town arm zeroes the ai, sets 0.89 and
+    /// deletes buff 353 (the Guide 22 is in ShimmerTownTransform).
+    #[test]
+    fn w4_f47_the_town_arm_arms_state25_and_strips_the_buff() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.buffs.add_buff(353, 100);
+        n.ai = [1.0, 2.0, 3.0, 4.0];
+        n.wants_shimmer_transform = true;
+        app.npcs.push(n);
+        drain_shimmer_transforms(&mut app);
+        assert_eq!(app.npcs[0].ai, [25.0, 0.0, 0.0, 0.0]);
+        assert_eq!(app.npcs[0].shimmer_transparency, 0.89);
+        assert_eq!(app.npcs[0].buffs.find_buff_index(353), None);
+        assert!(app.npcs[0].net_update);
+    }
+
+    /// `NPC.cs:93068-93074` — the shimmer contact sets shimmerWet and
+    /// adds buff 353 (100 ticks); a dry NPC keeps neither.
+    #[test]
+    fn w4_f47_the_shimmer_contact_adds_buff_353() {
+        let mut app = app();
+        // In the pool (x 30 tiles, y 118).
+        let mut wet = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        wet.hp = wet.max_hp;
+        // Dry, far from the pool.
+        let mut dry = Npc::new(NpcKind::Zombie, 50.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        dry.hp = dry.max_hp;
+        app.npcs.push(wet);
+        app.npcs.push(dry);
+        shimmer_wet_contact_pass(&mut app);
+        assert!(app.npcs[0].shimmer_wet, "the pool contact");
+        assert_eq!(app.npcs[0].buffs.buff_time_of(353), 100);
+        assert!(!app.npcs[1].shimmer_wet);
+        assert_eq!(app.npcs[1].buffs.find_buff_index(353), None);
+    }
+
+    /// Doc-sweep lane 36 — the state-25 emergence seam is LIVE: a Guide
+    /// with ai[0]=25 rides `town_shimmer_step` inside `update_npcs` (the
+    /// dry `update_guide` walk never runs — the C# arm returns at
+    /// `:53277`), the ai[2] hold counts down on the UpdateNPCs stream,
+    /// and the completion credits progression 43 through the post-pass
+    /// latch. The witness drives the whole tick path, not the pure fn.
+    #[test]
+    fn w4_f47ds_the_state25_seam_runs_inside_update_npcs() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.home = Some((30, 120));
+        // The completion edge: ai1 74 → 75, transparency 1/60 → 0 dry.
+        n.ai = [25.0, 74.0, 0.0, 0.0];
+        n.shimmer_transparency = 1.0 / 60.0;
+        n.variation_index = 0;
+        app.npcs.push(n);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].ai, [0.0; 4], "the emergence completed");
+        assert_eq!(app.npcs[0].variation_index, 1, "the variant flipped");
+        assert_eq!(app.npcs[0].vy, -4.0, "the completion kick");
+        // The progression-43 latch drained post-pass (the achievement row).
+        let credited = app
+            .achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == "PROGRESSION_EVENT_43" && c.completed);
+        assert!(credited, "progression 43 credited through the seam");
+    }
+
+    /// The seam's gate: a DRY-walking Guide (ai[0]=0) never enters the
+    /// emergence machine — the tick rides the existing walk unchanged.
+    #[test]
+    fn w4_f47ds_the_seam_gate_leaves_the_dry_walk_alone() {
+        let mut app = app();
+        let mut n = Npc::new(NpcKind::Guide, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.home = Some((30, 120));
+        app.npcs.push(n);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].ai[0], 0.0, "no emergence state");
+        // The old walk moved it (the 0.5 px/tick stand-in until b3 lands).
+        assert_ne!(app.npcs[0].x, 30.0 * TILE_PX, "the dry walk ran");
+    }
+
+    /// W4-f47 keep-one 144 — the 676 dust drain end-to-end
+    /// (`NPC.cs:61133-61148`): a queued `ShimmerSlimeDust` request spawns
+    /// ONE dust 306 through the shared pool on the UpdateNPCs stream, with
+    /// the C# post-writes verbatim — noGravity, noLightEmittance, alpha
+    /// 127, the hue colour with A=0, the rolled scale, fadeIn 0.9 — and
+    /// the netOffset lands on the POSITION only. The allocator's own 6
+    /// draws (pos pair, vel pair, frame, scale) ride the stream after the
+    /// in-arm rolls (the gallop-dust placement convention).
+    #[test]
+    fn w4_f47_the_shimmer_slime_dust_drain_spawns_306_with_the_post_writes() {
+        use crate::app::RngKey;
+        use crate::npc::ShimmerSlimeDust;
+        let mut app = app();
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let mut n = Npc::new(NpcKind::ShimmerSlime, 30.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.net_offset = Vec2::new(2.0, -3.0);
+        n.wants_shimmer_slime_dust.push(ShimmerSlimeDust {
+            x: 484.0,
+            y: 1602.0,
+            vx: 0.3,
+            vy: -0.7,
+            hue_jitter: 0.5,
+            scale: 0.65,
+        });
+        app.npcs.push(n);
+        *app.rngs.stream(RngKey::UpdateNpcs) = UnifiedRandom::new(4242);
+        app.anim_time = 1.0; // tve = 60 → hue base 60/300 = 0.2
+        // Park the camera on the dust so the NewDust cull passes (the
+        // flow_app default camera sits at the origin).
+        app.camera = Vec2::new(484.0, 1602.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].wants_shimmer_slime_dust.is_empty(), "the queue drained");
+        let hits: Vec<_> = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 306)
+            .collect();
+        assert_eq!(hits.len(), 1, "one 306 spawned");
+        let d = hits[0];
+        assert!(d.no_gravity);
+        assert!(d.no_light_emittance);
+        assert_eq!(d.alpha, 127);
+        assert_eq!(d.scale, 0.65);
+        assert_eq!(d.fade_in, 0.9);
+        assert_eq!(d.velocity, Vec2::new(0.3, -0.7));
+        // The position: the rolled point + the netOffset (`:61148`).
+        assert_eq!(d.position, Vec2::new(486.0, 1599.0));
+        // The hue: (60/300 + 0.5*0.1) mod 1, sat 1, lum 0.65, A 0 — the
+        // same f32 arithmetic the drain runs (the f64 widening is inside
+        // hsl_to_rgb).
+        let hue = ((60.0f32 / 300.0 + 0.5f32 * 0.1) % 1.0) as f64;
+        let rgb = crate::ui::color::hsl_to_rgb(hue, 1.0, 0.65, 255);
+        assert_eq!((d.color.r, d.color.g, d.color.b, d.color.a), (rgb[0], rgb[1], rgb[2], 0));
+        // The allocator contract: a perfect spawn of the same inputs
+        // draws exactly 6 (the 0x0 box clamps to 5x5 → Next(1) twice, the
+        // velocity pair, the frame Next(3), the scale roll) — the in-arm
+        // gate draws are pinned by the npc_ai_slime witnesses; the drain
+        // adds only this shape on top of the tick's AI draws.
+        let mut probe_pool = tr_core::particles::DustPool::new();
+        let ctx = app.spawn_ctx();
+        let mut probe_rng = UnifiedRandom::new(7);
+        let mut probe_twin = UnifiedRandom::new(7);
+        probe_pool.new_dust_perfect(
+            &mut probe_rng,
+            &ctx,
+            &app.world,
+            Vec2::new(484.0, 1602.0),
+            306,
+            Some(Vec2::new(0.3, -0.7)),
+            0,
+            tr_core::particles::Color::default(),
+            1.0,
+        );
+        for _ in 0..2 {
+            let _ = probe_twin.next_max(1); // the 5x5 clamp: Next(5-4)
+        }
+        let _ = probe_twin.next_range(-20, 21);
+        let _ = probe_twin.next_range(-20, 21);
+        let _ = probe_twin.next_max(3);
+        let _ = probe_twin.next_range(-20, 21);
+        assert_eq!(probe_rng, probe_twin, "the perfect spawn draws exactly 6");
     }
 }

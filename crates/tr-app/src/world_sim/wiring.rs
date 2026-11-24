@@ -174,17 +174,17 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     // (only the anniversary/both-seasons arms draw) rides
                     // the wiring stream — `Main.rand` at the `HitWireSingle`
                     // site (the port's wiring-RNG stand-in, M7-WIRE-1).
+                    // W4-f39: the seasonal flags are the resolved
+                    // `Main.halloween`/`Main.xMas` (`World.halloween`/`xmas`)
+                    // — the date windows + the force flags, not the micro
+                    // seeds alone.
                     let kind = crate::world_sim::items::seasonal_pickup_kind(
                         item_id as u16,
                         app.world
                             .seeds
                             .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
-                        app.world
-                            .micro_seeds
-                            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
-                        app.world
-                            .micro_seeds
-                            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+                        app.world.halloween,
+                        app.world.xmas,
                         app.wiring.rand_mut(),
                     );
                     app.items.push(crate::item::ItemDrop {
@@ -194,6 +194,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         shimmered: false,
                         shimmer_pending: false,
                         shimmer_wet: false,
+                        wet: false,
+                        honey_wet: false,
+                        lava_wet: false,
+                        wet_count: 0,
+                        splash_due: None,
+                        repulsion_brake: false,
                         prefix: 0,
                         pos: Vec2::new(x as f32, y as f32),
                         vel: Vec2::ZERO,
@@ -241,6 +247,19 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // whole `app` into the closure would break its disjoint capture of
         // `app.wiring_step`'s receiver borrow.
         actuation_drops.extend(app.wiring.take_actuation_drops());
+        // R-12-5 driver 4 — the `XferWater` post-transfer `SquareTileFrame`
+        // wakes (`Wiring.cs:512`/`:516`/`:521`): each touched pump cell's
+        // 3×3 reframe re-queues its wet cells through `Liquid.AddWater`
+        // (`WorldGen.cs:81344-81346`), so pump-teleported liquid joins the
+        // settle lists and flows on the next `UpdateLiquid` pass. The
+        // engine queues the positions; the 3×3 walk is `wake_around(r=1)`
+        // (its dry/solid/checking guards are `AddWater`'s own). The C#
+        // reframe also re-derives neighbour frames — the pump bodies keep
+        // their frames (the transfer touches only liquid), so the liquid
+        // wake is the whole observable here.
+        for (px, py) in app.wiring.take_pump_wakes() {
+            app.liquids.wake_around(&mut app.world, app.wiring.rand_mut(), px, py, 1);
+        }
         // The trap emissions (`HitWireSingle`'s case 137): the spear's
         // proximity cap reads the pool, so the drain splits it from the
         // direct shots.
@@ -647,6 +666,62 @@ mod tests {
         update_wiring(app, 1.0 / 60.0);
     }
 
+    /// R-12-5 driver 4 (written, NOT run): the e21 pump/settle compose —
+    /// `XferWater`'s `SquareTileFrame` wakes (`Wiring.cs:512`/`:516`/`:521`
+    /// → `WorldGen.cs:81344-81346` `AddWater`) feed the teleported liquid
+    /// into the settle lists, and the runtime pump driver flows it on the
+    /// next pass. Without the wake seam the out-body water would sit
+    /// forever (no active entry owns it).
+    #[test]
+    fn r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows() {
+        let mut app = app_with(135, 0, 0); // any device rig; rebuilt below
+        // The pump rig on the 64×64 test world: in pump (10,10) over 200
+        // water, out pump (20,10), the switch (9,10), red wire between.
+        {
+            let w = &mut app.world;
+            let put = |w: &mut tr_core::world::World, x: i32, kind: u16, liquid: u8| {
+                let i = w.index(x, 10);
+                w.tiles[i] = Tile { kind, frame_x: 18, frame_y: 18, liquid, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+                w.wires.set(x, 10, tr_core::wiring::WireColor::Red, true);
+            };
+            put(w, 10, 142, 200);
+            put(w, 20, 143, 0);
+            put(w, 9, 135, 0);
+            for x in 11..20 {
+                w.wires.set(x, 10, tr_core::wiring::WireColor::Red, true);
+            }
+            // A floor two rows under the out body so the woken blob has
+            // a deterministic landing (the shaft-free open grid would
+            // fall it past the probe row).
+            for x in 0..64 {
+                let i = w.index(x, 12);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The fixture's LiquidSystem is sized for the 8×8 flow world —
+        // rebuild it for the swapped grid (the App::new construction).
+        app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
+        assert_eq!(app.liquids.active_len(), 0, "nothing queued before the trip");
+        app.wiring.trip_wire(&mut app.world, 9, 10, 1, 1);
+        assert_eq!(app.world.tile(19, 10).unwrap().liquid, 200, "the transfer landed");
+        assert_eq!(app.liquids.active_len(), 0, "the engine only queues the wakes");
+        update_wiring(&mut app, 1.0 / 60.0);
+        assert!(
+            app.liquids.active_len() > 0,
+            "the SquareTileFrame wake queued the out-body water"
+        );
+        // Two 60 Hz liquid ticks = one UpdateLiquid pass (the skipCount
+        // driver): the woken blob falls out of the pump body.
+        crate::world_sim::liquids::update_liquids(&mut app, 1.0 / 60.0);
+        crate::world_sim::liquids::update_liquids(&mut app, 1.0 / 60.0);
+        assert!(
+            app.world.tile(19, 11).unwrap().liquid > 0,
+            "the teleported water flows on the settle pass"
+        );
+    }
+
     fn npc_of(kind: crate::npc::NpcKind, x: f32, y: f32) -> crate::npc::Npc {
         let mut npc = crate::npc::Npc::new(kind, x, y, 1, 0.0);
         npc.hp = npc.max_hp;
@@ -781,6 +856,12 @@ mod tests {
                 shimmered: false,
                 shimmer_pending: false,
                 shimmer_wet: false,
+                wet: false,
+                honey_wet: false,
+                lava_wet: false,
+                wet_count: 0,
+                splash_due: None,
+                repulsion_brake: false,
                 prefix: 0,
                 pos: Vec2::new(160.0, 320.0),
                 vel: Vec2::ZERO,
@@ -811,10 +892,13 @@ mod tests {
     // ---- S1-P-i52 — the statue drops' seasonal remap (written, NOT run) ----
 
     /// `Item.NewItem`'s remap at the statue drain (`Item.cs:49668-49714`
-    /// via `Wiring.cs:2385`/`:2404`): the endless-Halloween world drops the
-    /// Candy Apple 1734 / Soul Cake 1735, the endless-Christmas world the
+    /// via `Wiring.cs:2385`/`:2404`): the Halloween season drops the
+    /// Candy Apple 1734 / Soul Cake 1735, the Christmas season the
     /// Candy Cane 1867 / Sugar Plum 1868 — deterministically, no wiring
-    /// draw. The classic world keeps 58/184 (the dw_4_3 pin).
+    /// draw. The classic out-of-season world keeps 58/184 (the dw_4_3 pin).
+    /// W4-f39: the remap reads the RESOLVED `World.halloween`/`xmas` (the
+    /// endless seed produces them via `forceHalloweenForever`); the test
+    /// sets the resolved flag the seed would yield.
     #[test]
     fn s1_p_i52_the_statue_drops_remap_under_the_seasonal_seeds() {
         for (statue_style, halloween_kind, xmas_kind) in
@@ -822,9 +906,7 @@ mod tests {
         {
             // Halloween alone.
             let mut app = app_with(105, statue_style * 36, 0);
-            app.world
-                .micro_seeds
-                .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+            app.world.halloween = true;
             let peek = app.wiring.rand_mut().peek();
             trip_and_tick(&mut app);
             assert_eq!(app.items.len(), 1);
@@ -832,9 +914,7 @@ mod tests {
             assert_eq!(app.wiring.rand_mut().peek(), peek, "the deterministic remap draws nothing");
             // Christmas alone.
             let mut app = app_with(105, statue_style * 36, 0);
-            app.world
-                .micro_seeds
-                .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+            app.world.xmas = true;
             let peek = app.wiring.rand_mut().peek();
             trip_and_tick(&mut app);
             assert_eq!(app.items[0].kind, xmas_kind, "style {statue_style} christmas");
@@ -850,12 +930,8 @@ mod tests {
     fn s1_p_i52_the_both_seasons_statue_drop_draws_once_on_the_wiring_stream() {
         use tr_core::unified_random::UnifiedRandom;
         let mut app = app_with(105, 37 * 36, 0);
-        app.world
-            .micro_seeds
-            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
-        app.world
-            .micro_seeds
-            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        app.world.halloween = true;
+        app.world.xmas = true;
         app.wiring.seed_rand(11);
         let mut twin = UnifiedRandom::new(11);
         let want = [1734u16, 1867][twin.next_max(2) as usize];
@@ -882,12 +958,8 @@ mod tests {
     #[test]
     fn s1_p_i52_the_capped_statue_spawn_draws_no_remap_roll() {
         let mut app = app_with(105, 37 * 36, 0);
-        app.world
-            .micro_seeds
-            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
-        app.world
-            .micro_seeds
-            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        app.world.halloween = true;
+        app.world.xmas = true;
         // Ten hearts on the ground at the anchor: the global cap refuses.
         for _ in 0..10 {
             app.items.push(crate::item::ItemDrop::new(

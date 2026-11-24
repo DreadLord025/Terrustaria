@@ -365,7 +365,18 @@ pub(crate) fn draw_background(
     // `Main.hellBlackBoxBottom` (`Main.cs:2463`): carried across frames — the black
     // box consumes the value the previous frame's magma pass produced.
     hell_black_box_bottom: &mut f32,
+    // `Main.shimmerAlpha` (`Main.cs:52800`): the SceneState ramp — 1 skips the
+    // whole pass (W4-e19 aether arm).
+    shimmer_alpha: f32,
 ) {
+    // `Main.cs:52800-52805`: full shimmer skips the pass (the aether's black
+    // backdrop replaces it) and zeroes `ugBackTransition`. The port pins
+    // `undergroundBackground` 0 (the cross-fade never runs — see
+    // `draw_background_update_background_styles`), so the zeroing is a no-op
+    // here; g72's live `UgBackState` merge must zero its transition on this arm.
+    if shimmer_alpha == 1.0 {
+        return;
+    }
     let Some(dirt) = sky.underground else {
         return;
     };
@@ -1099,6 +1110,44 @@ pub(crate) struct AmbiencePass<'a> {
     pub lookups: &'a crate::assets::Lookups,
     pub ctx: &'a crate::ambience::SkyDrawCtx<'a>,
     pub last: &'a mut f32,
+    /// W4-c39 exec (research/114 §1e): the `PartySky` balloon field + its
+    /// own depth tracker + the surface gate, threaded so each front-row
+    /// `DrawToDepth` boundary also draws the party band (the f40
+    /// `lantern_sky`/`lantern_last` shape).
+    pub event_skies: &'a crate::event_skies::EventSkies,
+    pub party_last: &'a mut f32,
+    pub party_surface_px: f32,
+    /// W4-f39: the SlimeSky rides the same depth boundaries (the c39
+    /// `draw_balloons_band` shape) — `None` outside the event.
+    pub slime_sky: Option<&'a crate::slime_sky::SlimeSky>,
+}
+
+/// W4-f39: one `SkyManager.DrawDepthRange` boundary for BOTH sandwich
+/// members — the ambient entities (`AmbientSky`) and the SlimeSky's
+/// falling slimes. The tracker moves once, exactly like the C# manager's
+/// `_lastDepth` (`SkyManager.cs:53-60`); the two draws share the band.
+pub(crate) fn draw_sandwich_band(r: &mut SpriteRenderer, p: &mut AmbiencePass<'_>, min_depth: f32) {
+    if *p.last <= min_depth {
+        return;
+    }
+    // The band is (min, last] BEFORE the tracker moves — the C# manager
+    // draws every active sky over the same range (`DrawDepthRange`).
+    let band_max = *p.last;
+    crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, min_depth, p.last);
+    if let Some(sky) = p.slime_sky {
+        let origin = p.ctx.camera - p.ctx.screen * 0.5 / p.ctx.zoom;
+        sky.draw_band(
+            r,
+            &p.lookups.slime_sky_sheets,
+            p.ctx.camera,
+            p.ctx.zoom,
+            p.ctx.screen,
+            origin,
+            p.ctx.color_of_the_skies,
+            min_depth,
+            band_max,
+        );
+    }
 }
 
 /// One row of a `DrawSurfaceBG_*` chain (`Main.cs:59986-61370`).
@@ -1346,7 +1395,9 @@ pub(crate) fn draw_front_trees(
     }
     for l in layers {
         if let Some(p) = ambience.as_deref_mut() {
-            crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, l.depth, p.last);
+            draw_sandwich_band(r, p, l.depth);
+            // W4-c39: the party balloons' band rides the same boundary.
+            draw_party_band_min(r, p, l.depth);
         }
         if let Some(t) = l.tex {
             let tex = background_frame(&t, l.frame_step, counter);
@@ -1370,8 +1421,32 @@ pub(crate) fn draw_front_trees(
     // The Snow/Mushroom chains close with `DrawToDepth(1f)`; the other biomes'
     // strata wait for the flush.
     if closes_with_one && let Some(p) = ambience.as_deref_mut() {
-        crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, 1.0, p.last);
+        draw_sandwich_band(r, p, 1.0);
+        // W4-c39: the party balloons' band rides the closing boundary too.
+        draw_party_band_min(r, p, 1.0);
     }
+}
+
+/// W4-c39 exec (research/114 §1e): one `DrawToDepth(min)` boundary for the
+/// `PartySky` balloon field — the `[min, party_last)` band, then the tracker
+/// advances (the `draw_range_min` shape, the f40 `lantern_sky` precedent).
+fn draw_party_band_min(r: &mut SpriteRenderer, p: &mut AmbiencePass<'_>, min_depth: f32) {
+    if *p.party_last <= min_depth {
+        return;
+    }
+    crate::event_skies::draw_balloons_band(
+        r,
+        p.event_skies,
+        p.lookups,
+        p.ctx.camera,
+        p.ctx.zoom,
+        p.ctx.screen,
+        p.ctx.color_of_the_skies,
+        p.party_surface_px,
+        min_depth,
+        *p.party_last,
+    );
+    *p.party_last = min_depth;
 }
 
 /// `Main.ComputeScAdj`: small vertical screen-space correction for backgrounds.

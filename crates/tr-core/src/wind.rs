@@ -15,9 +15,10 @@
 //!   replaces both; the *order* of the draws is the original one, so a seed
 //!   fully determines the history.
 //! * This module is the single-player/server branch. Client sync, the menu
-//!   pause, the creative-power freeze and Lantern Night are folded into
-//!   [`Wind::frozen`]; when frozen only the current speed still eases towards
-//!   the target, exactly as in `UpdateWeather`.
+//!   pause and the creative-power freeze fold into [`Wind::frozen`]; the
+//!   Lantern Night early-out has its own [`Wind::lanterns_up`] gate
+//!   (`Main.cs:58856-58859`). When either holds only the current speed still
+//!   eases towards the target, exactly as in `UpdateWeather`.
 //! * [`Wind::update_rain`] takes the real 0..1 `Main.maxRaining` intensity
 //!   (`Main.cs:58832`); the world tick feeds it per dayRate iteration.
 //! * `world_surface` defaults to +infinity, which is treated as "not
@@ -73,8 +74,14 @@ pub struct Wind {
     /// Player with `statLifeMax >= 120` exists (`flag`, `Main.cs:58863-58871`).
     /// While false the walk caps `|speed_target|` at 0.35.
     pub any_player_120_life: bool,
-    /// Creative wind freeze, Lantern Night, client/menu: skip the target walk.
+    /// Creative wind freeze, client/menu: skip the target walk
+    /// (`Main.cs:58850-58854`).
     pub frozen: bool,
+    /// `LanternNight.LanternsUp` (`Main.cs:58856-58859`): the lantern-night
+    /// early-out — its own return AFTER the creative-freeze gate, so the
+    /// drift still eases but the target walk (and the ±0.8 clamp behind it)
+    /// skips. Written per world tick from `WorldEvents` (W4-d130).
+    pub lanterns_up: bool,
     /// `Main._shouldUseWindyDayMusic` (`Main.cs:2903`, `Main.IsItAHappyWindyDay`):
     /// the sticky windy-day flag. The ambience gates for the Airship, Slime
     /// Balloons and the Lost Kite read it (`AmbienceServer.cs:62-66`).
@@ -111,6 +118,7 @@ impl Wind {
             sway_enabled: true,
             any_player_120_life: true,
             frozen: false,
+            lanterns_up: false,
             happy_windy_day: false,
             storming: false,
             wind_grid: WindGrid::new(),
@@ -121,7 +129,10 @@ impl Wind {
     /// windy-day / storm music flags. `cloud_alpha` is `Main.cloudAlpha`,
     /// `time` is `Main.time`, `day_time` is `Main.dayTime`. Inside the
     /// hysteresis bands both flags *hold* their previous value. The remixWorld
-    /// override (`:13022-13024`) belongs to a seed the port does not generate.
+    /// override (`:13021-13024`) is wired: a remix world clears the STORM flag
+    /// instead of the windy-day flag when the sky is not fully clear (W4-g68
+    /// final-phase missing-arm port; `remix_world` rides the seed flag,
+    /// `app/mod.rs:3407`).
     pub fn update_windy_day_state(&mut self, cloud_alpha: f32, time: f64, day_time: bool) {
         // `Main._minWind = 0.34f; _maxWind = 0.4f; _minRain = 0.4f;
         // _maxRain = 0.5f;` (`Main.cs:67224-67227`).
@@ -147,16 +158,32 @@ impl Wind {
             } else if cloud_alpha >= MAX_RAIN && self.speed_target.abs() >= MAX_WIND {
                 self.storming = true;
             }
-            // The original's remix branch (`:13022-13024`) would keep storming
-            // false; non-remix worlds clear the windy-day flag whenever the
-            // sky is not fully clear (`:13025-13027`).
-            self.happy_windy_day = false;
+            // The remix branch (`:13021-13024`): a remix world clears the
+            // STORM flag and leaves the windy-day flag alone; non-remix
+            // worlds clear the windy-day flag whenever the sky is not fully
+            // clear (`:13025-13027`).
+            if self.remix_world {
+                self.storming = false;
+            } else {
+                self.happy_windy_day = false;
+            }
         }
     }
 
     /// `NPC.TooWindyForButterflies` (`NPC.cs:6885`): a pure threshold on the
     /// wind *target*.
     pub fn too_windy_for_butterflies(&self) -> bool {
+        self.speed_target.abs() >= 0.4
+    }
+
+    /// `Main.WindyEnoughForKiteDrops` (`Main.cs:2907`):
+    /// `|windSpeedTarget| >= _maxWind` (`_maxWind = 0.4f`, `Main.cs:67226`).
+    /// The kite-drop loot condition (`loot.rs`'s
+    /// `Cond::WindyEnoughForKiteDrops`, the Wyvern/Harpy/Sand-Elemental
+    /// kite rows) reads it. Same 0.4 threshold as the butterfly gate, but a
+    /// distinct C# property — kept separate so a future `_maxWind` change
+    /// moves only this one.
+    pub fn windy_enough_for_kite_drops(&self) -> bool {
         self.speed_target.abs() >= 0.4
     }
 
@@ -192,8 +219,15 @@ impl Wind {
         }
 
         // `if (Main.netMode == 1 || (Main.netMode != 2 && Main.gameMenu)) return;`
-        // `if (!CreativePower...Enabled) { if (LanternNight.LanternsUp) return; ... }`
+        // `if (!CreativePower...Enabled) { ... }` — the port's client/menu and
+        // creative-freeze fold.
         if self.frozen {
+            return;
+        }
+        // `if (LanternNight.LanternsUp) return;` (`Main.cs:58856-58859`): the
+        // lantern night's OWN early-out inside the creative gate — the drift
+        // above ran, the target walk below (and its ±0.8 clamp) skips.
+        if self.lanterns_up {
             return;
         }
 
@@ -336,7 +370,15 @@ impl Wind {
 
     /// `WorldGen.InAPlaceWithWind` (`WorldGen.cs:86858-86879`): the region is
     /// at a wind-blown height and none of its cells holds liquid or a
-    /// wind-blocking wall.
+    /// wind-blocking wall. The C# wraps each cell read in `InWorld(x+i, y+j)`
+    /// (`:86868`, fluff 0 — `WorldGen.cs:9688-9695`): an OUT-OF-BOUNDS cell is
+    /// SKIPPED, not a refusal — only a null tile inside the world refuses
+    /// (`:86871-86874`). The port's `World::tile` returns `None` exactly for
+    /// out-of-bounds cells (the dense grid has no interior nulls), so the
+    /// `None` arm continues the scan (W4-g68 final-phase missing-arm port:
+    /// the old `return false` refused every probe that touched the world
+    /// edge — the sunflower's 2x5 window at the map border, the player's
+    /// `wind_here` at the edge).
     pub fn in_a_place_with_wind(&self, world: &World, x: i32, y: i32, w: i32, h: i32) -> bool {
         if !self.blows_at_height(y) {
             return false;
@@ -344,7 +386,9 @@ impl Wind {
         for i in 0..w {
             for j in 0..h {
                 let Some(tile) = world.tile(x + i, y + j) else {
-                    return false;
+                    // `InWorld` false (`:86868`): the cell is outside the
+                    // world — the C# skips it, the scan continues.
+                    continue;
                 };
                 if tile.liquid > 0
                     || (tile.wall > 0 && !wall_allows_wind(tile.wall))
@@ -812,6 +856,75 @@ mod tests {
     }
 
     #[test]
+    fn w4_c39_the_lanterns_up_freezes_the_wind_walk() {
+        // `Main.cs:58856-58859`: `if (LanternNight.LanternsUp) return;` —
+        // the lantern night skips the windCounter walk like the creative
+        // freeze, but on its own flag; the drift towards the target still
+        // runs (the early return sits after it).
+        let mut walking = Wind::new(11);
+        let mut lantern = Wind::new(11);
+        for w in [&mut walking, &mut lantern] {
+            w.counter = 1;
+            w.speed_current = 0.0;
+            w.speed_target = 0.3;
+        }
+        lantern.lanterns_up = true;
+        walking.update_rain(0.0);
+        lantern.update_rain(0.0);
+        assert_eq!(walking.counter, 0, "the plain walk decrements");
+        assert_eq!(lantern.counter, 1, "the lantern night returns first");
+        assert!(
+            lantern.speed_current > 0.0,
+            "the drift still eases towards the target"
+        );
+    }
+
+    /// W4-c39 final phase (research/114 §10) — the compose-verify against
+    /// d130's landed gate (`560a02ea`, research/83): the C# nests the
+    /// lantern check INSIDE the creative block (`Main.cs:58854-58859`),
+    /// so creative-frozen AND lanterns-up must behave exactly like either
+    /// alone: the drift ran, the walk + clamp skipped. The port's two
+    /// sequential returns (`frozen` then `lanterns_up`) compose to the
+    /// same truth table as d130's split — one flag survives the merge
+    /// under one name (f40 research/105 §4), the behaviour is pinned here.
+    #[test]
+    fn w4_c39_the_creative_and_lantern_freezes_compose_like_the_csharp_nest() {
+        let mut both = Wind::new(11);
+        let mut creative = Wind::new(11);
+        let mut lantern = Wind::new(11);
+        for w in [&mut both, &mut creative, &mut lantern] {
+            w.counter = 1;
+            w.speed_current = 0.0;
+            w.speed_target = 0.3;
+        }
+        both.frozen = true;
+        both.lanterns_up = true;
+        creative.frozen = true;
+        lantern.lanterns_up = true;
+        for w in [&mut both, &mut creative, &mut lantern] {
+            w.update_rain(0.0);
+        }
+        // All three: the drift eased identically, the walk never ran.
+        assert_eq!(both.counter, 1, "both gates: no decrement");
+        assert_eq!(
+            both.speed_current.to_bits(),
+            creative.speed_current.to_bits(),
+            "creative+lantern drifts exactly like creative alone"
+        );
+        assert_eq!(
+            both.speed_current.to_bits(),
+            lantern.speed_current.to_bits(),
+            "creative+lantern drifts exactly like lantern alone"
+        );
+        assert!(both.speed_current > 0.0, "the drift ran under both gates");
+        assert_eq!(both.speed_target, 0.3, "the target walk skipped");
+    }
+
+    #[test]
+    fn rain_increases_abs_current() {
+        let mut dry = Wind::new(7);
+
+    #[test]
     fn rain_increases_abs_current() {
         let mut dry = Wind::new(7);
         let mut wet = Wind::new(7);
@@ -834,6 +947,61 @@ mod tests {
         assert!((wet_negative.speed_current + expected).abs() < 1e-5);
         assert!(wet.speed_current.abs() > dry.speed_current.abs());
         assert!(wet_negative.speed_current.abs() > dry.speed_current.abs());
+    }
+
+    #[test]
+    fn lanterns_up_skips_the_target_walk_but_not_the_drift() {
+        // `Main.cs:58856-58859`: `LanternNight.LanternsUp` is its OWN early-out
+        // inside the creative gate — the drift above it ran, the windCounter
+        // walk below it (and the ±0.8 clamp behind the walk) skips. The port
+        // splits it out of `frozen` (W4-d130): a same-seed twin with the flag
+        // set must keep the counter, target and stream pinned while current
+        // still eases exactly like the twin's.
+        let mut open = Wind::new(0x1A2B);
+        let mut lanterns = Wind::new(0x1A2B);
+        lanterns.lanterns_up = true;
+        let mut creative = Wind::new(0x1A2B);
+        creative.frozen = true;
+        // Pin the counter one tick from firing so the open twin takes the
+        // walk on the very next tick.
+        for w in [&mut open, &mut lanterns, &mut creative] {
+            w.counter = 1;
+            w.speed_target = 0.4;
+            w.speed_current = 0.0;
+        }
+        let target_before = lanterns.speed_target;
+        let extreme_before = lanterns.extreme_counter;
+        for _ in 0..10 {
+            open.update_rain(0.0);
+            lanterns.update_rain(0.0);
+            creative.update_rain(0.0);
+            // The lantern twin behaves EXACTLY like the creative-frozen twin:
+            // the drift ran (both sit after `:58832-58849`), the walk skipped.
+            assert_eq!(
+                lanterns.speed_current.to_bits(),
+                creative.speed_current.to_bits()
+            );
+        }
+        // The open twin entered the walk on its first tick (counter 1 → 0 →
+        // ResetWindCounter re-rolls it into 900..2700); the lantern twin never
+        // did: counter, target and extreme counter pinned, stream untouched
+        // (the target delta can legitimately roll 0, so the counter reset is
+        // the observable).
+        assert!(
+            (900..=2700).contains(&open.counter),
+            "the open twin reset its counter: {}",
+            open.counter
+        );
+        assert_eq!(lanterns.speed_target, target_before);
+        assert_eq!(lanterns.counter, 1, "no decrement under the lanterns");
+        assert_eq!(lanterns.extreme_counter, extreme_before);
+        // And `frozen` (creative/client/menu) still short-circuits the same
+        // drift-then-skip shape: with both flags set nothing more happens.
+        lanterns.frozen = true;
+        let current_before = lanterns.speed_current;
+        lanterns.update_rain(0.0);
+        assert!(lanterns.speed_current != current_before, "the drift ran");
+        assert_eq!(lanterns.counter, 1);
     }
 
     #[test]
@@ -1054,6 +1222,91 @@ mod tests {
         assert!(!w.too_windy_for_butterflies());
         w.speed_target = -0.4;
         assert!(w.too_windy_for_butterflies());
+    }
+
+    /// W4-g68 final-phase — the remix branch of `UpdateWindyDayState`
+    /// (`Main.cs:13021-13027`): when the sky is NOT fully clear a remix world
+    /// clears the STORM flag and leaves the windy-day flag alone, while a
+    /// non-remix world clears the windy-day flag. Written, NOT run (code-only).
+    #[test]
+    fn w4_g68_the_remix_branch_clears_storm_not_windy_day() {
+        // Non-remix: rain >= 0.5 + wind >= 0.4 arms the storm, then the
+        // `:13025-13027` else clears the windy-day flag (storm stays).
+        let mut classic = Wind::new(1);
+        classic.speed_target = 0.45;
+        classic.happy_windy_day = true;
+        classic.update_windy_day_state(0.5, 20000.0, true);
+        assert!(classic.storming, "the storm band armed it");
+        assert!(!classic.happy_windy_day, "non-remix clears windy-day");
+
+        // Remix: the same band arms the storm, but `:13021-13024` clears the
+        // STORM flag instead and the windy-day flag is left untouched.
+        let mut remix = Wind::new(1);
+        remix.remix_world = true;
+        remix.speed_target = 0.45;
+        remix.happy_windy_day = true;
+        remix.update_windy_day_state(0.5, 20000.0, true);
+        assert!(!remix.storming, "remix clears the storm flag");
+        assert!(remix.happy_windy_day, "remix leaves windy-day alone");
+    }
+
+    /// W4-g68 final-phase — `Main.WindyEnoughForKiteDrops` (`Main.cs:2907`) is
+    /// a pure |windSpeedTarget| >= `_maxWind` (0.4) threshold, the same value
+    /// as the butterfly gate but a DISTINCT property (kept separate so a
+    /// future `_maxWind` change moves only this one). Written, NOT run.
+    #[test]
+    fn w4_g68_the_kite_drop_gate_is_a_pure_target_threshold() {
+        let mut w = Wind::new(1);
+        w.speed_target = 0.399999;
+        assert!(!w.windy_enough_for_kite_drops());
+        w.speed_target = 0.4;
+        assert!(w.windy_enough_for_kite_drops());
+        // The sign is irrelevant (Math.Abs), mirroring the butterfly gate.
+        w.speed_target = -0.4;
+        assert!(w.windy_enough_for_kite_drops());
+        // It reads the TARGET, not the current speed.
+        w.speed_target = 0.0;
+        w.speed_current = 0.9;
+        assert!(!w.windy_enough_for_kite_drops());
+    }
+
+    /// W4-g68 final-phase — `WorldGen.InAPlaceWithWind` (`WorldGen.cs:86858-
+    /// 86879`): an OUT-OF-BOUNDS cell is SKIPPED (`InWorld` false, `:86868`),
+    /// not a refusal — only an in-world liquid / wind-blocking wall refuses.
+    /// The old `return false` on `None` wrongly refused every probe touching
+    /// the map edge (the sunflower's 2x5 window, the player's `wind_here`).
+    /// Written, NOT run (code-only).
+    #[test]
+    fn w4_g68_in_a_place_with_wind_skips_out_of_bounds_cells() {
+        let mut w = Wind::new(1);
+        w.world_surface = 100.0; // y < 100 is wind-blown height
+        let mut world = World::new("t".into(), 20, 30);
+
+        // A 2x5 window whose right column hangs off the map edge (x=19..20,
+        // width 20): the out-of-bounds column is skipped, the in-bounds cells
+        // are dry + wall-free, so the probe PASSES (the old code refused).
+        assert!(
+            w.in_a_place_with_wind(&world, 19, 10, 2, 5),
+            "the edge column is skipped, not a refusal"
+        );
+        // Fully out of bounds on x: every cell skipped -> still passes.
+        assert!(w.in_a_place_with_wind(&world, 25, 10, 2, 5));
+
+        // An in-world liquid cell still refuses (`:86875`).
+        world.tile_mut(5, 10).unwrap().liquid = 10;
+        assert!(!w.in_a_place_with_wind(&world, 4, 10, 2, 1));
+        world.tile_mut(5, 10).unwrap().liquid = 0;
+
+        // An in-world wind-blocking wall still refuses; an AllowsWind wall
+        // (150) does not (`WallID.Sets.AllowsWind`, `:86875`).
+        world.tile_mut(5, 10).unwrap().wall = 1; // blocks
+        assert!(!w.in_a_place_with_wind(&world, 5, 10, 1, 1));
+        world.tile_mut(5, 10).unwrap().wall = 150; // allows wind
+        assert!(w.in_a_place_with_wind(&world, 5, 10, 1, 1));
+
+        // Below the wind-blown height the whole probe refuses up front
+        // (`DoesWindBlowAtThisHeight`, `:86860-86863`).
+        assert!(!w.in_a_place_with_wind(&world, 5, 150, 1, 1));
     }
 }
 

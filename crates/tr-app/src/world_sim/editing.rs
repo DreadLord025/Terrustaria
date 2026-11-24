@@ -19,6 +19,8 @@ use super::items::spawn_item_drop;
 
 mod wiring;
 pub(crate) use wiring::use_wiring_tool;
+mod buckets;
+pub(crate) use buckets::use_buckets;
 mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
@@ -952,7 +954,14 @@ fn convert_grass_tile(app: &mut App, tx: i32, ty: i32, kind: u16) {
     if let Some(t) = app.world.tile_mut(tx, ty) {
         t.kind = new_kind;
     }
-    let _ = edit::square_tile_frame_default(&mut app.world, tx, ty);
+    // W4-g83: the conversion wake's framing dispatch rides the UpdatePlayers
+    // stream (the active genRand of the player tick, contract §2).
+    let _ = edit::square_tile_frame_default(
+        &mut app.world,
+        tx,
+        ty,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     app.queue_map_ring(tx, ty);
     app.world_key = None;
 }
@@ -1402,7 +1411,15 @@ fn try_pounding_tile_tick(
             .iter()
             .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
     };
-    let outcome = edit::try_pound_tile(&mut app.world, tx, ty, holds);
+    // W4-g83: the pound cycle's reframe dispatch rides the UpdatePlayers
+    // stream (the active genRand of the player tick, contract §2).
+    let outcome = edit::try_pound_tile(
+        &mut app.world,
+        tx,
+        ty,
+        holds,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     match outcome {
         edit::PoundOutcome::Pounded { lift } => {
             // The SlopeTile/PoundTile Dig 0 cue (`WorldGen.cs:80782`/
@@ -1937,7 +1954,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let placed = edit::place_tile(&mut app.world, x, y, kind);
         if placed {
             app.queue_map_ring(x, y);
-            app.liquids.wake_around(&app.world, x, y, 3);
+            app.liquids.wake_around(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), x, y, 3);
             app.world_key = None;
         }
     }
@@ -2242,6 +2259,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_target = None;
         app.mine_timer = 0.0;
         return;
+    }
+    // `Player.ItemCheck_CheckCanUse_Inner`'s chlorophyte-extractinator gate
+    // (`Player.cs:52285-52292`, W4-f47): a `chlorophyteExtractinatorConsumable`
+    // item (Shadow Scale 86 / Tissue Sample 1329 / the junk trio 2337-2339)
+    // only uses over an ACTIVE extractinator tile (219/642) — the cursor cell
+    // (`screenTargetTileX/Y`) is the gate. Anywhere else the use refuses.
+    if held.count > 0 && tr_core::extract::chlorophyte_extractinator_consumable(held.kind) {
+        let over_extractinator = app
+            .world
+            .tile(tx, ty)
+            .is_some_and(|t| t.active() && (t.kind == 642 || t.kind == 219));
+        if !over_extractinator {
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+            return;
+        }
     }
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
     // `Player.ItemCheck`'s Snake Band repeat swing (`Player.cs:42711-42731`):
@@ -4344,6 +4377,21 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     pick > 0 && tr_core::tool::pick_can_mine(tile.kind, pick as i32, below_surface)
 }
 
+    // W4-g45 doc-sweep — the bucket/sponge family
+    // (`Player.ItemCheck_UseBuckets`, `Player.cs:46318-46504`, called at
+    // `:43575` BEFORE the melee-hitbox block `:43644`). The twelve kinds
+    // carry `damage = -1` and no pick/axe/hammer/createTile, so the C# never
+    // mines, melees or places with them — the arm consumes the tick (the
+    // bug-net precedent). The swing start + the reach-gated mid-swing action
+    // live in `buckets.rs`; the cursor here is the smart-cursor-repointed
+    // `tileTarget` (`Step_EmptyBuckets` already re-points the held 205 at the
+    // deep-liquid box, `smart_cursor.rs`).
+    if use_buckets(app, tx, ty) {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
+
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
     // `ItemCheck_MeleeHitNPCs` runs for every item with `damage > 0` and
     // `!noMelee` (`Player.cs:43648`) — the tools included, their damage
@@ -5617,7 +5665,15 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_y: t.frame_y,
         });
     app.queue_map_ring(tx, ty);
-    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
+    // W4-g83: the break cascade's framing dispatch rides the UpdatePlayers
+    // stream (the active genRand of the player tick, contract §2).
+    let Some(kill) = edit::kill_tile(
+        &mut app.world,
+        tx,
+        ty,
+        false,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    ) else {
         return;
     };
     // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
@@ -5756,7 +5812,7 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
         );
     }
     app.request_edit(tx, ty, 0, 0);
-    app.liquids.wake_around(&app.world, tx, ty, 3);
+    app.liquids.wake_around(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), tx, ty, 3);
     // `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`, case 428 of
     // `KillTile_GetItemDrops`): a pressed weighted plate that is broken fires
     // its switch once so the device releases. The pick break runs in
@@ -5835,6 +5891,28 @@ pub(crate) struct DropCtx {
     pub zone_crimson: bool,
     pub zone_corrupt: bool,
     pub zone_glowshroom: bool,
+}
+
+/// Resolves the `DelWater`/`WaterCheck` retirement-tail kills
+/// (`LiquidSystem::drain_edit_kills`) into item drops — the C# spawns them
+/// inline under the `UpdateLiquid` RNG swap (`WorldGen.cs:71529`), so the
+/// rolls ride the `UpdateLiquid` stream. No hit cell (the kills are the
+/// `Check*` cascade records, not a player break), no staff/axe bonus.
+pub(crate) fn resolve_liquid_edit_kills(app: &mut App, kills: Vec<edit::TileKill>) {
+    if kills.is_empty() {
+        return;
+    }
+    let ctx = drop_ctx(app);
+    for kill in &kills {
+        let (drops, _portals) = {
+            let main_rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
+            break_drop_events(kill, &app.world, None, false, 0, main_rng, &ctx)
+        };
+        for (id, count, x, y) in drops {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
+            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, count, x, y);
+        }
+    }
 }
 
 /// Builds [`DropCtx`] from the app state at the break moment.
@@ -6957,7 +7035,14 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                     t.liquid = 0;
                     t.flags &= !tr_core::tile::FLAG_LIQUID_LAVA;
                 }
-                for drop in tr_core::edit::square_tile_frame_default(&mut app.world, i, j) {
+                // W4-g83: the liquid-wipe wake rides the UpdatePlayers
+                // stream (contract §2).
+                for drop in tr_core::edit::square_tile_frame_default(
+                    &mut app.world,
+                    i,
+                    j,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                ) {
                     let id = drop
                         .item
                         .map(|item| item as u16)
@@ -6974,7 +7059,7 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                     }
                 }
                 app.request_edit(i, j, 0, 0);
-                app.liquids.wake_around(&app.world, i, j, 3);
+                app.liquids.wake_around(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), i, j, 3);
                 app.world_key = None;
             }
         }
@@ -7313,8 +7398,18 @@ fn flatten_torch_supports(app: &mut App, tx: i32, ty: i32) {
                     .iter()
                     .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
             };
+            // W4-g83: the flatten's reframe dispatch rides the UpdatePlayers
+            // stream (contract §2).
             if !td::SET_PLATFORMS.has(s.kind)
-                && tr_core::edit::slope_tile(&mut app.world, sx, sy, 0, false, holds)
+                && tr_core::edit::slope_tile(
+                    &mut app.world,
+                    sx,
+                    sy,
+                    0,
+                    false,
+                    holds,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                )
             {
                 app.audio.play_place_sound(
                     (0, 1),
@@ -7568,7 +7663,7 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     if matches!(kind, 20 | 590 | 595 | 615) {
         let _ = app.achievements.notify_custom_int("Do", 1);
     }
-    app.liquids.wake_around(&app.world, tx, ty, 3);
+    app.liquids.wake_around(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), tx, ty, 3);
     // The placement cue: `tr_core::edit::place_tile_sound` is the
     // `WorldGen.PlaceTile` tail switch (`WorldGen.cs:60263-60282` — 127 →
     // Item30, 314 → Item52, 330-333 → Coins, default Dig); the
@@ -7652,7 +7747,19 @@ fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
 /// on the receiver too; the caller plays the cue on the bare `Main.rand`
 /// stream (the message handler runs outside every swap, `Main.cs:16895`'s
 /// `NpcStrike` precedent — S1-E-21i).
-pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) -> Option<u16> {
+/// `rng` is the ACTIVE `genRand` stream of the message handler (W4-g83
+/// contract §2): the net replay runs outside every `SwapRandom`
+/// (`Main.cs:16895`'s NpcStrike precedent), so the caller passes the bare
+/// `Main.rand` stand-in (`rngs.global()`); the kill cascade's framing
+/// dispatch draws its seaweed tip re-rolls on it.
+pub(crate) fn apply_edit(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    kind: u8,
+    tile: u16,
+    rng: &mut tr_core::UnifiedRandom,
+) -> Option<u16> {
     match kind {
         0 => {
             // Vanilla suppresses item drops on the replication side
@@ -7663,7 +7770,7 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             // store is reachable from a bare world, so that case passes
             // (the store is empty until M3-CHEST-UI anyway).
             if tr_core::edit::can_kill_tile(world, x, y, |_, _| false) {
-                edit::kill_tile(world, x, y, true);
+                edit::kill_tile(world, x, y, true, rng);
             }
             None
         }
@@ -10774,6 +10881,7 @@ mod tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let rocket = app.projectiles.slots().iter().find(|p| p.active).unwrap();
         assert_eq!(rocket.damage, 95, ":47175 — the keep-damage list");
@@ -10810,6 +10918,7 @@ mod tests {
                 crate::projectile::YoyoInputs::default(),
                 crate::projectile::FlailInputs::default(),
                 &mut rng, 0, false,
+                &mut tr_core::UnifiedRandom::new(0),
             );
         }
         assert_eq!(
@@ -10821,6 +10930,7 @@ mod tests {
             crate::projectile::YoyoInputs::default(),
             crate::projectile::FlailInputs::default(),
             &mut rng, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (app.projectiles.slots()[slot].vel.y - 0.2).abs() < 1e-5,
@@ -10840,6 +10950,7 @@ mod tests {
             crate::projectile::YoyoInputs::default(),
             crate::projectile::FlailInputs::default(),
             &mut rng2, 0, false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let vy1 = app2.projectiles.slots()[slot2].vel.y;
         assert!(
@@ -16806,6 +16917,7 @@ mod use_loop_tests {
             &mut rng,
             local,
             host,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
@@ -17880,14 +17992,14 @@ mod item_mechanics {
         fast.update(&app.world, ONE_TICK_SECS);
         assert!((fast.vel.y - 7.0).abs() < 1e-6, "maxFall is 7, got {}", fast.vel.y);
         // Resting on the floor: the drop lies still, it never bounces.
-        let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - 14.0, 0.0, 0.0, 0.0);
+        let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - crate::item::SIZE, 0.0, 0.0, 0.0);
         for _ in 0..30 {
             rest.update(&app.world, ONE_TICK_SECS);
         }
         assert_eq!(rest.vel.y, 0.0, "no restitution off the ground");
         assert_eq!(rest.vel.x, 0.0, "friction settles the slide");
         assert!(
-            (rest.pos.y - (floor_top - 14.0)).abs() < 0.5,
+            (rest.pos.y - (floor_top - crate::item::SIZE)).abs() < 0.5,
             "the drop lies flush on the floor, at {}",
             rest.pos.y
         );
@@ -18763,5 +18875,481 @@ mod wall_placement_tests {
                 None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
             }
         }
+    }
+}
+
+/// W4-g45 doc-sweep — the bucket/sponge family
+/// (`Player.ItemCheck_UseBuckets`, `Player.cs:46318-46504`) witnesses. The
+/// twelve kinds were entirely unported before this pass (the S1-E-21f census
+/// deferred the five bucket splashes `:46374-46493`; research/11 listed
+/// buckets as an open ROADMAP item). The rig drives `update_editing` with the
+/// held bucket over a liquid cell; the action fires on the tick the head
+/// decay takes `itemTime` to zero mid-swing (the C# `ItemTimeIsZero` gate,
+/// `:46329`). Code-only mode: WRITTEN NOT RUN (no compiler invoked).
+#[cfg(test)]
+mod bucket_use_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::tile::{LiquidKind, Tile};
+
+    const SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    /// A 64×240 world (the liquid AddWater border is 5 tiles; the scene sits
+    /// at (30,120), well inside). The player parks three tiles right of the
+    /// cursor cell, the camera pinned so the screen-centre cursor points at
+    /// it, the audio listener at the camera so the splash draws are audible.
+    fn bucket_app(tx: i32, ty: i32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("buckets".into(), 64, 240);
+        app.world.frame_important = vec![false; td::TILE_COUNT];
+        app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
+        let mut player = Player::spawn(&app.world);
+        player.x = (tx + 3) as f32 * TILE_PX;
+        player.y = ty as f32 * TILE_PX;
+        app.player = Some(player);
+        app.camera = Vec2::new(tx as f32 * TILE_PX + 8.0, ty as f32 * TILE_PX + 8.0);
+        app.mouse_pos = Vec2::new(640.0, 360.0);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    fn wet(w: &mut World, x: i32, y: i32, amount: u8, kind: LiquidKind) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        w.tiles[i].set_liquid_kind(kind);
+        w.mark_chunk(x, y);
+    }
+
+    fn hold(app: &mut App, kind: u16, count: u32) {
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        };
+    }
+
+    fn ticks(app: &mut App, n: usize) {
+        for _ in 0..n {
+            update_editing(app, 1.0 / 60.0, SCREEN);
+        }
+    }
+
+    /// The Empty Bucket draws water into a Water Bucket (`:46370-46371`):
+    /// the target wipes, the stack burns one and the hand-back lands in the
+    /// now-air selected slot (the LAST bucket — a surviving stack takes the
+    /// GetOrDropItem deposit walk instead, the C# order). The 3×3 box over
+    /// 100 (`:46347`) passes on the 255 target alone.
+    #[test]
+    fn w4_g45_the_empty_bucket_draws_water_into_a_water_bucket() {
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 255, LiquidKind::Water);
+        hold(&mut app, 205, 1);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0, "the target wiped");
+        assert_eq!(app.inventory[app.selected].kind, 206, "the hand-back fills the air slot");
+        assert_eq!(app.inventory[app.selected].count, 1, "one bucket drawn");
+    }
+
+    /// The lava draw converts to the Lava Bucket (`:46359-46362`); the honey
+    /// draw to the Honey Bucket (`:46354-46357`).
+    #[test]
+    fn w4_g45_the_empty_bucket_converts_per_the_drawn_kind() {
+        for (kind, expect) in [(LiquidKind::Lava, 207u16), (LiquidKind::Honey, 1128)] {
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 255, kind);
+            hold(&mut app, 205, 1);
+            app.mine_down = true;
+            ticks(&mut app, 2);
+            assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0);
+            assert_eq!(app.inventory[app.selected].kind, expect, "the filled bucket");
+        }
+    }
+
+    /// The Empty Bucket refuses shimmer (`:46333`'s `!shimmer()` gate sends
+    /// 205 to the placement branch, which has no 205 arm — nothing happens).
+    #[test]
+    fn w4_g45_the_empty_bucket_refuses_shimmer() {
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 255, LiquidKind::Shimmer);
+        hold(&mut app, 205, 1);
+        app.mine_down = true;
+        ticks(&mut app, 20);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 255, "the shimmer stays");
+        assert_eq!(app.inventory[app.selected].kind, 205, "no conversion");
+        assert_eq!(app.inventory[app.selected].count, 1, "no consumption");
+    }
+
+    /// The box-sum minimum (`:46347`): a 3×3 box at exactly 100 refuses the
+    /// Empty Bucket; the Super Absorbant Sponge is exempt and draws the lone
+    /// cell without consuming its stack (`:46352`).
+    #[test]
+    fn w4_g45_the_box_minimum_gates_the_bucket_but_not_the_sponge() {
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 100, LiquidKind::Water);
+        hold(&mut app, 205, 1);
+        app.mine_down = true;
+        ticks(&mut app, 20);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 100, "the 100-box refuses 205");
+        // The sponge draws the same cell, keeps its stack. The rig drives
+        // update_editing alone — `attack_cd` decays in the npcs pass, so
+        // clear the stale start lock by hand for the second phase.
+        app.attack_cd = 0.0;
+        hold(&mut app, 3032, 1);
+        app.mine_down = true;
+        ticks(&mut app, 20);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0, "the sponge is exempt");
+        assert_eq!(app.inventory[app.selected].kind, 3032, "the sponge keeps its kind");
+        assert_eq!(app.inventory[app.selected].count, 1, "no consumption");
+    }
+
+    /// The partial-cell top-up (`:46389-46423`): a 200 target plus a 100
+    /// neighbour — the loop moves `min(100, 255-200) = 55` off the neighbour,
+    /// leaving 45 there, and re-types it to the drawn type.
+    #[test]
+    fn w4_g45_the_partial_target_tops_up_from_the_neighbours() {
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 200, LiquidKind::Water);
+        wet(&mut app.world, 31, 120, 100, LiquidKind::Water);
+        hold(&mut app, 205, 1);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0, "the target wiped");
+        assert_eq!(app.world.tile(31, 120).unwrap().liquid, 45, "55 moved into the draw");
+    }
+
+    /// The Water Bucket pours a full 255 water cell into an empty target and
+    /// hands back an Empty Bucket (`:46451-46469`) — the LAST bucket, so the
+    /// hand-back fills the now-air selected slot.
+    #[test]
+    fn w4_g45_the_water_bucket_pours_and_hands_back_an_empty() {
+        let mut app = bucket_app(30, 120);
+        hold(&mut app, 206, 1);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        let t = app.world.tile(30, 120).unwrap();
+        assert_eq!(t.liquid, 255, "a full cell poured");
+        assert_eq!(t.liquid_kind(), LiquidKind::Water);
+        assert_eq!(app.inventory[app.selected].kind, 205, "the empty hand-back");
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    /// The placement refusals (`:46427`): a >=200 cell or a non-top solid
+    /// (the grate 546 exempt) refuses the pour.
+    #[test]
+    fn w4_g45_the_pour_refuses_a_full_cell_and_a_solid() {
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 200, LiquidKind::Water);
+        hold(&mut app, 206, 1);
+        app.mine_down = true;
+        ticks(&mut app, 20);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 200, "the >=200 cell refuses");
+        // A solid stone cell refuses too.
+        let mut app = bucket_app(30, 120);
+        let i = app.world.index(30, 120);
+        app.world.tiles[i] = Tile { kind: 1, ..Default::default() };
+        app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        hold(&mut app, 206, 1);
+        app.mine_down = true;
+        ticks(&mut app, 20);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0, "the solid refuses");
+    }
+
+    /// The Bottomless Shimmer Bucket pours shimmer and keeps its stack
+    /// (`:46491-46502` — no consumption, no hand-back).
+    #[test]
+    fn w4_g45_the_bottomless_shimmer_bucket_pours_and_keeps_its_stack() {
+        let mut app = bucket_app(30, 120);
+        hold(&mut app, 5364, 1);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        let t = app.world.tile(30, 120).unwrap();
+        assert_eq!(t.liquid, 255);
+        assert_eq!(t.liquid_kind(), LiquidKind::Shimmer, "the shimmer type");
+        assert_eq!(app.inventory[app.selected].kind, 5364, "the bottomless keeps its kind");
+        assert_eq!(app.inventory[app.selected].count, 1, "no consumption");
+    }
+
+    /// The type gate (`:46453`): a Water Bucket refuses a cell already holding
+    /// lava (a different type); it pours into a same-type partial cell.
+    #[test]
+    fn w4_g45_the_pour_needs_an_empty_or_same_type_cell() {
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 100, LiquidKind::Lava);
+        hold(&mut app, 206, 1);
+        app.mine_down = true;
+        ticks(&mut app, 20);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid_kind(), LiquidKind::Lava, "the lava stays");
+        // A same-type partial cell takes the pour up to 255.
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 100, LiquidKind::Water);
+        hold(&mut app, 206, 1);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 255, "the same-type top-up");
+    }
+
+    /// The Lava/Honey Absorbant Sponges draw only their own kind (`:46333`):
+    /// 4872 draws lava, 5303 draws honey, neither touches water.
+    #[test]
+    fn w4_g45_the_typed_sponges_draw_only_their_kind() {
+        for (sponge, drawn, other) in [
+            (4872u16, LiquidKind::Lava, LiquidKind::Water),
+            (5303, LiquidKind::Honey, LiquidKind::Water),
+        ] {
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 150, drawn);
+            hold(&mut app, sponge, 1);
+            app.mine_down = true;
+            ticks(&mut app, 2);
+            assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0, "the own kind drew");
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 150, other);
+            hold(&mut app, sponge, 1);
+            app.mine_down = true;
+            ticks(&mut app, 20);
+            assert_eq!(app.world.tile(30, 120).unwrap().liquid, 150, "the other kind stays");
+        }
+    }
+
+    /// LIQUID FINAL sponge census — the Super Absorbant Sponge 3032 draws
+    /// water AND shimmer (`:46333`'s two 3032 arms) but refuses lava/honey
+    /// (the selector sends it to the placement branch, which has no 3032
+    /// arm). The shimmer draw wipes the amount but NOT the shimmer bit
+    /// (`:46377-46379` clears only lava/honey) — the dry cell keeps
+    /// `FLAG_LIQUID_SHIMMER`, so a later water pour onto it would need the
+    /// type gate. No separate "shimmer sponge" item exists (research/104
+    /// §6a: 4343 is PaperAirplaneA, a phantom premise).
+    #[test]
+    fn w4_g45_the_super_sponge_draws_water_and_shimmer_only() {
+        for kind in [LiquidKind::Water, LiquidKind::Shimmer] {
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 150, kind);
+            hold(&mut app, 3032, 1);
+            app.mine_down = true;
+            ticks(&mut app, 2);
+            let t = app.world.tile(30, 120).unwrap();
+            assert_eq!(t.liquid, 0, "3032 drew {kind:?}");
+            if kind == LiquidKind::Shimmer {
+                assert_ne!(
+                    t.flags & tr_core::tile::FLAG_LIQUID_SHIMMER,
+                    0,
+                    "the shimmer bit survives the wipe (:46378-46379)"
+                );
+            }
+            assert_eq!(app.inventory[app.selected].count, 1, "no consumption");
+        }
+        for kind in [LiquidKind::Lava, LiquidKind::Honey] {
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 150, kind);
+            hold(&mut app, 3032, 1);
+            app.mine_down = true;
+            ticks(&mut app, 20);
+            assert_eq!(app.world.tile(30, 120).unwrap().liquid, 150, "3032 refuses {kind:?}");
+        }
+    }
+
+    /// LIQUID FINAL sponge census — the Ultra Absorbant Sponge 5304 draws
+    /// EVERY kind (`:46333`'s bare `sItem.type == 5304` arm), box-min
+    /// exempt, no consumption. The 150-unit lone cell passes only because
+    /// 5304 is in the `:46347` exemption list.
+    #[test]
+    fn w4_g45_the_ultra_sponge_draws_every_kind() {
+        for kind in [
+            LiquidKind::Water,
+            LiquidKind::Lava,
+            LiquidKind::Honey,
+            LiquidKind::Shimmer,
+        ] {
+            let mut app = bucket_app(30, 120);
+            wet(&mut app.world, 30, 120, 150, kind);
+            hold(&mut app, 5304, 1);
+            app.mine_down = true;
+            ticks(&mut app, 2);
+            assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0, "5304 drew {kind:?}");
+            assert_eq!(app.inventory[app.selected].kind, 5304);
+            assert_eq!(app.inventory[app.selected].count, 1, "no consumption");
+        }
+    }
+
+    /// LIQUID FINAL stack-consume census — a FULL bucket stack splits: the
+    /// pour burns one (`:46461`), the selected slot keeps the surviving
+    /// stack (NOT IsAir), so the Empty-Bucket hand-back skips the
+    /// selected-slot arm (`:42152`) and rides GetOrDropItem's deposit walk
+    /// — the empty-hotbar arm lands it in slot 1 (`Player.cs:39365-39374`,
+    /// buckets are useStyle 1). The pickup side mirrors it: a 205 stack
+    /// burns one and the filled 206 lands in another slot.
+    #[test]
+    fn w4_g45_the_bucket_stack_splits_the_hand_back_into_another_slot() {
+        let mut app = bucket_app(30, 120);
+        hold(&mut app, 206, 3);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 255);
+        assert_eq!(app.inventory[0].kind, 206, "the surviving stack stays selected");
+        assert_eq!(app.inventory[0].count, 2, "one burned");
+        assert_eq!(app.inventory[1].kind, 205, "the hand-back split into slot 1");
+        assert_eq!(app.inventory[1].count, 1);
+        // The pickup mirror: 3 empties over a full water cell.
+        let mut app = bucket_app(30, 120);
+        wet(&mut app.world, 30, 120, 255, LiquidKind::Water);
+        hold(&mut app, 205, 3);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0);
+        assert_eq!(app.inventory[0].kind, 205);
+        assert_eq!(app.inventory[0].count, 2, "one empty burned");
+        assert_eq!(app.inventory[1].kind, 206, "the filled bucket split off");
+        assert_eq!(app.inventory[1].count, 1);
+    }
+
+    /// LIQUID FINAL stack-consume census — the hand-back's 58-slot partial
+    /// scan (`:42143-42151`) runs BEFORE the selected-slot/GetOrDropItem
+    /// arms: an existing partial 205 stack in slot 7 takes the hand-back
+    /// (5 → 6), no new slot appears.
+    #[test]
+    fn w4_g45_the_hand_back_merges_a_partial_stack_first() {
+        let mut app = bucket_app(30, 120);
+        app.inventory[7] = crate::item::ItemSlot {
+            kind: 205,
+            name: registry::name(205),
+            count: 5,
+            prefix: 0,
+        };
+        hold(&mut app, 206, 2);
+        app.mine_down = true;
+        ticks(&mut app, 2);
+        assert_eq!(app.inventory[7].count, 6, "the partial stack took the hand-back");
+        assert_eq!(app.inventory[0].kind, 206);
+        assert_eq!(app.inventory[0].count, 1);
+        assert_eq!(app.inventory[1].kind, 0, "no split slot");
+    }
+
+    /// LIQUID FINAL stack-consume census — ALL FOUR bottomless kinds keep
+    /// their stack and hand back nothing (`:46439/:46459/:46479` skip the
+    /// consume for 4820/3031/5302; 5364's arm has no consume at all). The
+    /// pre-existing witness pinned 5364 only; this closes the family.
+    #[test]
+    fn w4_g45_all_four_bottomless_buckets_keep_their_stack() {
+        for (kind, pour) in [
+            (3031u16, LiquidKind::Water),
+            (4820, LiquidKind::Lava),
+            (5302, LiquidKind::Honey),
+            (5364, LiquidKind::Shimmer),
+        ] {
+            let mut app = bucket_app(30, 120);
+            hold(&mut app, kind, 2);
+            app.mine_down = true;
+            ticks(&mut app, 2);
+            let t = app.world.tile(30, 120).unwrap();
+            assert_eq!(t.liquid, 255, "{kind} poured");
+            assert_eq!(t.liquid_kind(), pour, "{kind} type");
+            assert_eq!(app.inventory[0].kind, kind);
+            assert_eq!(app.inventory[0].count, 2, "{kind} consumed nothing");
+            assert!(
+                app.inventory[1..].iter().all(|s| s.kind == 0),
+                "{kind} handed nothing back"
+            );
+        }
+    }
+}
+
+
+/// W4-f47 — the chlorophyte-extractinator use gate (`Player.cs:52285-52292`)
+/// witnesses (WRITTEN NOT RUN, code-only mode).
+#[cfg(test)]
+mod extractinator_use_gate_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+    use glam::Vec2;
+
+    /// A 64x800 world, floor at row 300, the player + camera near column 30,
+    /// the cursor at the screen centre (tile 30, 297). `tile_kind` plants a
+    /// tile at the cursor cell (None leaves it empty).
+    fn gate_app(held: u16, tile_kind: Option<u16>) -> crate::app::App {
+        let mut w = tr_core::World::new("gate".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if let Some(kind) = tile_kind {
+            let i = w.index(30, 297);
+            w.tiles[i] = tr_core::tile::Tile { kind, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.local_id = 0;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 33.0 * 16.0;
+        player.y = 297.0 * 16.0;
+        app.player = Some(player);
+        app.camera = Vec2::new(30.0 * 16.0 + 8.0, 297.0 * 16.0 + 8.0);
+        app.mouse_pos = Vec2::new(400.0, 300.0);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: held,
+            name: crate::registry::name(held),
+            count: 5,
+            prefix: 0,
+        };
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 0.0,
+            ambient_volume: 0.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    /// Over an EMPTY cell the extractinator-consumable refuses the use: no
+    /// swing, the stack untouched.
+    #[test]
+    fn w4_f47_the_consumable_refuses_off_an_extractinator() {
+        let mut app = gate_app(86, None); // Shadow Scale, empty cursor cell
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert_eq!(app.swing, 0.0, "no swing started");
+        assert_eq!(app.inventory[app.selected].count, 5, "the stack untouched");
+    }
+
+    /// Over a STONE cell (not an extractinator) the same refusal.
+    #[test]
+    fn w4_f47_the_consumable_refuses_over_a_non_extractinator_tile() {
+        let mut app = gate_app(1329, Some(1)); // Tissue Sample over stone
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert_eq!(app.swing, 0.0, "no swing over stone");
+        assert_eq!(app.inventory[app.selected].count, 5);
+    }
+
+    /// Over the Chlorophyte Extractinator (642) the use passes the gate: the
+    /// trader arm fires (Shadow Scale → Tissue Sample), the swing starts and
+    /// the stack decrements. The port routes the extractinator through the
+    /// place path (`PlaceThing_ItemInExtractinator`, `use_extractinator`), so
+    /// the witness presses `place_down`.
+    #[test]
+    fn w4_f47_the_consumable_uses_over_the_extractinator() {
+        let mut app = gate_app(86, Some(642)); // Shadow Scale over 642
+        app.place_down = true;
+        app.place_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(app.swing > 0.0, "the swing started over the extractinator");
+        assert_eq!(app.inventory[app.selected].count, 4, "one traded");
+        assert!(app.items.iter().any(|d| d.kind == 1329), "the Tissue Sample dropped");
     }
 }

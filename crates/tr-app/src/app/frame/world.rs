@@ -192,16 +192,27 @@ impl App {
         day: self.world.day_time,
         underground: self.camera.y
             >= self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-        rain: self.rain.is_raining(),
+        // g67b IsItRaining fix: the music rain branches read
+        // `Main.cloudAlpha > 0` (`Main.cs:12859/:12880/:12932/:12973`),
+        // NOT the `Main.raining` event flag — the post-StopRain cloud ramp
+        // keeps the rain track until the clouds clear.
+        rain: self.rain.is_it_raining(),
         boss_music,
         clock: self.world.time,
         eclipse: self.world.eclipse
             && self.camera.y
                 < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+        // `flag24` (`Main.cs:12200`): the Slime Rain event track 48
+        // (`:12654-12657`) — the raw flag; the ladder arm applies the
+        // graveyard/blood-moon/surface gates (W4-f39 co-lane compose).
+        slime_rain: self.world.slime_rain,
         shimmer: self.scene_metrics.zone_shimmer,
         town_npcs: self.scene_metrics.town_npc_count,
         // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
-        cloud_alpha: self.rain.visual_alpha(),
+        // The RAW `Main.cloudAlpha` (`:11544`'s `num11` reads the unclamped
+        // static; the sky-tint `visual_alpha` clamp was a deviation —
+        // observable above 1 under a heavy storm / TR_RAIN pin, W4-d130).
+        cloud_alpha: self.rain.cloud_alpha(),
         zone_rain: self.scene_metrics.zone_rain,
         zone_snow: self.scene_metrics.zone_snow,
         surface_atmospherics: self.scene_metrics.surface_atmospherics,
@@ -218,6 +229,16 @@ impl App {
         underworld: self.camera.y > underworld_px,
         blood_moon: self.world.blood_moon,
         windy_music: self.wind.happy_windy_day,
+        // — the W4-f39 closeout inputs (`Main.cs:12200`/`:12654`/
+        // `:12982-12989`) —
+        slime_rain: self.world.slime_rain,
+        pumpkin_moon: self.world.pumpkin_moon,
+        snow_moon: self.world.snow_moon,
+        remix_world: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+        // `screenPosition.Y / 16 < worldSurface + 10`: the camera is the
+        // view centre, the C# screenPosition the top-left (`camera.rs`).
+        moon_tail_band: (self.camera.y - screen.y * 0.5) / TILE_PX
+            < self.world.world_surface as f32 + 10.0,
         // The biome chain (`:12686-12920`): the space band with
         // `num4 = maxTilesX / 4200`, the temple wall behind the scene
         // centre, the metrics zones, the mushroom bg style and the
@@ -254,7 +275,9 @@ impl App {
         rock_band_px: self.world.rock_layer as f32 * TILE_PX + screen.y * 0.5,
         jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
             + screen.y * 0.5,
-        quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
+        // g67b IsItRaining fix: the town quiet-sky gate reads
+        // `Main.cloudAlpha == 0` (`Main.cs:12670/:12674`), not the event flag.
+        quiet_sky: !self.rain.is_it_raining() && !self.wind.happy_windy_day,
         menu: false,
         menu_flags: Default::default(),
         music_box: self.scene_metrics.active_music_box,
@@ -282,11 +305,18 @@ impl App {
         {
             let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
             let wind_for_visuals = self.wind.speed_current;
+            // W4-g68 dust seam: the lava leaf's five-dust puff
+            // (`Gore.cs:1119-1122`) spawns into `Main.dust` on the same
+            // stage stream — the C# runs both inside
+            // `SwapRandom("UpdateGores")` (`Main.cs:17771-17774`).
+            let ctx = self.spawn_ctx();
+            let dust = &mut self.dust;
             self.gore.update(
                 rng,
                 &self.world,
                 &crate::gore_seam::AppGoreCollision,
                 wind_for_visuals,
+                Some((dust, &ctx)),
             );
         }
     }
@@ -495,7 +525,10 @@ impl App {
         pumpkin_moon: self.world.pumpkin_moon,
         snow_moon: self.world.snow_moon,
         hard_mode: self.world.hard_mode,
-        is_raining: self.rain.is_raining(),
+        // g67b IsItRaining fix: the scheduler's sunny/calm gates read
+        // `Main.IsItRaining` = `cloudAlpha > 0` (`Main.cs:2597`,
+        // `AmbienceServer.cs:32/:50`), NOT the event flag.
+        is_raining: self.rain.is_it_raining(),
         is_storming: self.wind.storming,
         happy_windy_day: self.wind.happy_windy_day,
         too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),
@@ -519,6 +552,62 @@ impl App {
     };
     ambience.update(dt, &ctx, ambience_rng);
                     }
+    // W4-f39 closeout: `SkyManager.Update` (`Main.cs:17139`) also walks
+    // the SlimeSky — the event's activation edges ride `World.slime_rain`
+    // (the port's stand-in for the `Activate`/`Deactivate` calls inside
+    // `StartSlimeRain`/`StopSlimeRain`), the update ×`max(1, dayRate)`.
+    // `Main.screenPosition.Y` is the unscaled view top (`camera.y -
+    // screenHeight/2`, the sky pass's convention).
+    {
+        let (sw, sh) = self.screen_size();
+        let sky_ctx = crate::slime_sky::SlimeSkyCtx {
+            screen_position_y: self.camera.y - sh * 0.5,
+            screen_height: sh,
+            max_tiles_x: self.world.width,
+            max_tiles_y: self.world.height,
+            world_surface: self.world.world_surface,
+        };
+        let _ = sw;
+        self.slime_sky.update(
+            dt,
+            self.world.slime_rain,
+            self.world.day_rate(),
+            &sky_ctx,
+        );
+    }
+    }
+
+    /// W4-c39 — `SkyManager.Update` (`Main.cs:17139`, `SkyManager.cs:24-46`):
+    /// the two event skies step `max(1, dayRate)` times per 60 Hz tick. The
+    /// lantern sky reads `LanternNight.LanternsUp`; the party sky's opacity
+    /// ramps toward the town-NPC presence (`SceneState.cs:106`). The
+    /// activation edges ride the schedulers' UpdateTime (weather.rs).
+    fn event_skies_phase(&mut self, dt: f32) {
+        self.phase("event_skies");
+        let lanterns_up = crate::world_events::lanterns_up(&self.world_events);
+        let wind = self.wind.speed_current;
+        let day_rate = self.world.day_rate();
+        let town_present = self.scene_metrics.town_npc_count > 0;
+        let sh = self.screen_size().1;
+        let ctx = crate::event_skies::SkyCtx {
+            screen_position_y: self.camera.y - sh * 0.5 / self.zoom,
+            screen_height: sh,
+            max_tiles_x: self.world.width,
+            max_tiles_y: self.world.height,
+            world_surface: self.world.world_surface,
+        };
+        self.event_skies.ramp_party_opacity(town_present);
+        // The 60 Hz accumulator (the ambience precedent): the sky update is
+        // a per-tick walk, not a per-frame one.
+        self.event_skies_accumulator += dt;
+        const STEP: f32 = 1.0 / 60.0;
+        while self.event_skies_accumulator >= STEP {
+            self.event_skies_accumulator -= STEP;
+            for _ in 0..day_rate.max(1) {
+                self.event_skies.update_lanterns(lanterns_up, wind, &ctx);
+                self.event_skies.update_party(day_rate, wind, &ctx);
+            }
+        }
     }
 
     /// S1-B-3 (batch review fix 1): the tile-edit and net halves ride the
@@ -660,6 +749,7 @@ impl App {
         self.windy_day_phase();
         if !paused {
             self.ambience_phase(dt);
+            self.event_skies_phase(dt);
         }
         if step_allowed {
             self.editing_net_phase(dt, screen);

@@ -417,7 +417,12 @@ fn world_is_infected(world: &mut World, rng: &mut super::Rng, micro: MicroSeedFl
 fn start_in_hardmode(world: &mut World, opts: &GenOptions) {
     world.hard_mode = true;
     let mut rng = crate::UnifiedRandom::new(opts.seed as i32);
-    spread::initialize_hard_mode(world, opts.crimson, &mut rng);
+    // W4-g69 retire sweep: `initialize_hard_mode` reads `world.crimson`
+    // (the C# `GERunner` reads the `WorldGen.crimson` static, `:76304`);
+    // the generation entries stamp it from `opts.crimson` before the
+    // pipeline runs, so the flavour is the same value the old explicit
+    // `opts.crimson` argument carried.
+    spread::initialize_hard_mode(world, &mut rng);
 }
 
 /// `DoPooEverywhere` (`WorldGen.cs:2966-2993`): the count-scaled

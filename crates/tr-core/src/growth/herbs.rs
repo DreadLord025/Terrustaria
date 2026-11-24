@@ -37,7 +37,9 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
         let water = t.liquid_kind() == crate::tile::LiquidKind::Water;
         let keep = (lava && stage == 5) || (water && (stage == 1 || stage == 4));
         if !keep {
-            crate::edit::kill_tile(world, x, y, false);
+            // W4-g83: the kill cascade's framing dispatch rides the caller's
+            // ACTIVE genRand stream (the growth tick's UpdateWorldGen).
+            crate::edit::kill_tile(world, x, y, false, rng);
             return;
         }
     }

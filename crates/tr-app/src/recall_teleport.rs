@@ -422,7 +422,14 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                     let idx = app.world.index(i, j);
                     app.world.tiles[idx].flags &= !FLAG_LIQUID_LAVA;
                     app.world.tiles[idx].liquid = 0;
-                    let drops = edit::square_tile_frame_default(&mut app.world, i, j);
+                    // W4-g83: the liquid-wipe wake's framing dispatch rides
+                    // the UpdatePlayers stream (contract §2).
+                    let drops = edit::square_tile_frame_default(
+                        &mut app.world,
+                        i,
+                        j,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     for d in drops {
                         // The Check*'s own Item.NewItem (the sunflower's 63)
@@ -552,6 +559,10 @@ pub(crate) fn spawn_recall(app: &mut App) {
     app.camera_state = state;
     // `:37677` UpdateBiomesIfMovedEnoughForBlackFade — the black fade is M6
     // cinematics (dropped). The unported Spawn tails are cited in the module doc.
+    // `:37569` Main.instantBGTransitionCounter = 10 (the local-player Spawn
+    // arm) — the instant-BG window forces the waterfall rescan
+    // (`Main.cs:61841`).
+    app.bg_instant = 10;
     app.player = Some(p);
 }
 

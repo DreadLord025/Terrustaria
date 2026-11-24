@@ -34,6 +34,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Tink_2", 21),
     ("Coins", 18),
     ("Item_27", 2),
+    // W4-f47 — `WorldItem.ShimmerEffect`'s cue (`SoundID.Item176`,
+    // `WorldItem.cs:1668`): the case-2 style-176 ×0.9 volume tweak.
+    ("Item_176", 2),
     // S1-E-21 wave D — the Moon Lord legs' fast-run footstep
     // (`Player.cs:35959-35964` swaps `hermesStepSound` to Item style 24).
     ("Item_24", 2),
@@ -45,6 +48,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_127", 2),
     ("Item_173", 2),
     ("Item_177", 2),
+    // W4-e19 — the shimmer transmute cue (`WorldItem.ShimmerEffect`,
+    // `WorldItem.cs:1668`: `SoundID.Item176 = (2, 176)`, `SoundID.cs:1560`).
+    ("Item_176", 2),
     ("NPC_Hit_25", 3),
     ("Item_1", 2),
     // S1-E-21f — the coin-pickup chime family (`SoundCoin[5]`,
@@ -623,6 +629,25 @@ pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
     SFX_CUES.iter().any(|(n, _)| *n == cue)
 }
 
+/// `SoundID.MenuAccept` (`SoundID.cs:1068`/:1710,
+/// `CreateTrackable("menu_accept")` — one variation, volume 1, no pitch
+/// variance, `SoundType.Sound`, uncapped): the tracked style the quit-path
+/// witnesses register their pool entry through (the W4-g24 doc-sweep seam,
+/// kept by the W4-g73 quit-stop keep-one; g24's `WorldGen.SecretSeed.Enable`
+/// caller rides the g24 branch, so the default build has no production
+/// reader here — the allow keeps it warning-clean until that merge).
+#[allow(dead_code)]
+pub fn menu_accept_style() -> crate::tracked_sound::TrackedStyle {
+    crate::tracked_sound::TrackedStyle {
+        cue: "menu_accept",
+        variations: 1,
+        volume: 1.0,
+        pitch_variance: 0.0,
+        sound_type: crate::tracked_sound::SoundType::Sound,
+        max_tracked_instances: 0,
+    }
+}
+
 /// S1-E-21 wave C — resolve an NPC hit/death cue name to its
 /// `LegacySoundStyle` row (`crate::soundid::SOUND_STYLES`): the legacy
 /// `NPC_Hit_N`/`NPC_Killed_N` asset maps to `NPCHitN`/`NPCDeathN`
@@ -698,6 +723,13 @@ pub struct Audio {
     /// The two `SoundInstanceLiquid[n]` stand-ins (`LegacySoundPlayer.cs:322`):
     /// 0 = the waterfall, 1 = the lavafall. `Some` while the loop plays.
     liquid_loops: [Option<rodio::Sink>; 2],
+    /// The live pan gains the playing liquid-loop sources read (the XNA
+    /// `Pan` write reaches the instance mid-play, `:1267`/`:1297`).
+    liquid_pans: [Option<LiquidPanGains>; 2],
+    /// The `StopWaterfallAmbienceAudio` call count (a test seam — the
+    /// headless Apps have no liquid sink, so the quit flows assert the
+    /// sentinel-stop pair through this; the W4-g24/g73 quit-stop keep-one).
+    liquid_ambience_stops: u64,
     /// The decoded SceneState ambient loops (`blizzard_strong_loop` /
     /// `blizzard_inside_building_loop`, from `Sounds/Custom/<name>.xnb` —
     /// the trackable path, `LegacySoundPlayer.cs:257`). The blizzard loops
@@ -850,6 +882,8 @@ impl Audio {
             cues,
             played: Default::default(),
             liquid_loops: [None, None],
+            liquid_pans: [None, None],
+            liquid_ambience_stops: 0,
             tracked: crate::tracked_sound::SoundPlayer::default(),
             sound_style_random: tr_core::unified_random::UnifiedRandom::new(1),
             liquid_cues,
@@ -2226,11 +2260,15 @@ impl Audio {
 
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
     /// two persistent liquid loops whose Volume/Pan update in place every ¼ s
-    /// tick (`Main.Ambience`, `Main.cs:13466-13515`). `volume <= 0` stops the
-    /// channel outright (the vanilla stops the instance; no fade). The pan is
-    /// baked at creation (a documented deviation — XNA re-pans the live
-    /// instance).
-    pub fn set_liquid_loop(&mut self, channel: usize, volume: f32, pan: f32) {
+    /// tick (`Main.Ambience`, `Main.cs:13466-13509`). `volume <= 0` stops the
+    /// channel outright (the vanilla stops the instance; no fade). The pan
+    /// rides shared per-loop gains (`liquid_pans`) so the live instance
+    /// re-pans exactly like XNA's `SoundInstanceLiquid[n].Pan = num3`
+    /// (`:1267`/`:1297`); `pitch` is the re-volume arm's
+    /// `Pitch = -0.2f` (case 34, `:1268`) / `-0f` (case 35, `:1298`) — XNA
+    /// octaves, so the sink's speed is `2^pitch` (the fresh-create arms pass
+    /// `None` and keep the default rate, `:1272-1275`/`:1302-1305`).
+    pub fn set_liquid_loop(&mut self, channel: usize, volume: f32, pan: f32, pitch: Option<f32>) {
         let Some((channels, rate, samples)) = self.liquid_cues.get(channel).cloned().flatten()
         else {
             return;
@@ -2246,23 +2284,89 @@ impl Audio {
         }
         if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
             sink.set_volume(volume);
+            // The live re-pan (`:1267`/`:1297`): the shared gains the
+            // playing source reads per sample.
+            if let Some(gains) = &self.liquid_pans[channel] {
+                gains.store_left(left);
+                gains.store_right(right);
+            }
+            if let Some(p) = pitch {
+                sink.set_speed(2.0f32.powf(p.clamp(-1.0, 1.0)));
+            }
             return;
         }
         // A fresh looped sink: the decoded PCM wrapped in an infinite repeat.
+        let gains = LiquidPanGains::new(left, right);
         let buf =
             rodio::buffer::SamplesBuffer::new(channels, rate, samples).convert_samples::<f32>();
-        let source = Panned {
+        let source = PannedShared {
             inner: buf.repeat_infinite(),
             channels,
-            left: left.max(right).max(0.0),
-            right: right.max(left).max(0.0),
+            gains: gains.clone(),
             channel: 0,
         };
         if let Ok(sink) = rodio::Sink::try_new(handle) {
             sink.append(source);
             sink.set_volume(volume);
             self.liquid_loops[channel] = Some(sink);
+            self.liquid_pans[channel] = Some(gains);
         }
+    }
+
+    /// `SoundInstanceLiquid[n] != null && State == Playing`
+    /// (`LegacySoundPlayer.cs:1264`/`:1294`): the re-volume arm's guard —
+    /// headless (no output device) nothing ever plays, the fresh-create
+    /// convention. A stopped-but-not-reaped sink reads as finished.
+    pub fn liquid_loop_playing(&self, channel: usize) -> bool {
+        self.liquid_loops
+            .get(channel)
+            .and_then(|s| s.as_ref())
+            .is_some_and(|sink| !sink.empty())
+    }
+
+    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`): the
+    /// `PlaySound(34, -1, -1, 0)` + `PlaySound(35, -1, -1, 0)` pair — the
+    /// sentinel stop arm of both liquid-loop cases (`LegacySoundPlayer.cs:
+    /// 1257-1262`/:1287-1292: `x == -1 || y == -1` ORs into the stop
+    /// condition BEFORE the volume walk matters and `Stop()`s the live
+    /// `SoundInstanceLiquid[n]` outright — no attenuation, no fade, no RNG:
+    /// the case bodies never reach a pitch draw). Called by `SaveAndQuit`
+    /// (`:6704`) and inlined by `JustQuit` (`:6631-6632`) BEFORE
+    /// `StopTrackedSounds`, so the loops die at the quit moment rather than
+    /// at the next ¼ s `Main.Ambience` re-volume tick. The port kills the
+    /// sinks DIRECTLY (the g24 shape — `set_liquid_loop(ch, 0.0)`'s stop arm
+    /// gates on the decoded cue + output handle first, so the headless
+    /// no-device path would never reach it); stopping a dead slot is a
+    /// no-op, the C# null/Playing guard's equivalent.
+    /// Keep-one (W4-g73 retire): the g24 doc-sweep `c3eccb77` and this
+    /// branch's closeout `4e7e3f58` both wired `:6704` — ONE seam survives
+    /// (this fn + the one `save_and_quit` call), g24's counter seam kept,
+    /// the closeout's route-through-`set_liquid_loop` body retired.
+    pub fn stop_waterfall_ambience(&mut self) {
+        self.liquid_ambience_stops += 1;
+        for channel in 0..2 {
+            if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
+                sink.stop();
+                self.liquid_loops[channel] = None;
+            }
+        }
+    }
+
+    /// The `StopWaterfallAmbienceAudio` call count (the headless test seam,
+    /// the `played_count` convention).
+    #[allow(dead_code)] // test-only reader on this branch (the quit witnesses)
+    pub fn liquid_ambience_stop_count(&self) -> u64 {
+        self.liquid_ambience_stops
+    }
+
+    /// `SoundEngine.StopTrackedSounds` (`SoundEngine.cs:151-157` →
+    /// `SoundPlayer.StopAll`, `SoundPlayer.cs:79-86`): every tracked
+    /// instance stops and the pool clears. The `!Main.dedServ &&
+    /// IsAudioSupported` gate is the port's always-true stand-in (the
+    /// headless pool still tracks entries). Called by `SaveAndQuit`
+    /// (`WorldGen.cs:6715`) and `JustQuit` (`:6646`).
+    pub fn stop_tracked_sounds(&mut self) {
+        self.tracked.stop_all();
     }
 
     /// `SoundEngine.PlayTrackedSound(SoundStyle)`'s global arm
@@ -2428,6 +2532,25 @@ impl Audio {
     ) -> Option<&crate::tracked_sound::ActiveSound> {
         self.tracked.find_active_sound(style)
     }
+
+    /// The pool-entry count of one tracked style (no `IsPlaying` filter —
+    /// the `find_active_sound` semantics) — the headless test seam: no
+    /// output device drains an entry, so the count is the number of plays
+    /// landed (the W4-g24 quit-path witnesses, kept by the keep-one).
+    #[allow(dead_code)] // test-only reader on this branch (the quit witnesses)
+    pub fn tracked_count_for(&self, style: &crate::tracked_sound::TrackedStyle) -> usize {
+        self.tracked.count_style_entries(style)
+    }
+
+    /// The test seam: register a silent one-sample cue under `name` so the
+    /// tracked/slot paths can run headless (the real decode needs the
+    /// retail Content junction; `Audio::new(None)` loads nothing). The
+    /// vanilla `SoundEngine.IsAudioSupported` gate is the port's
+    /// always-true headless stand-in — a registered cue plays.
+    #[cfg(test)]
+    pub(crate) fn insert_test_cue(&mut self, name: &'static str) {
+        self.cues.insert(name, (1, 22050, vec![0]));
+    }
 }
 
 fn load_sound(path: &Path) -> anyhow::Result<tr_content::Sound> {
@@ -2444,6 +2567,85 @@ struct Panned<S> {
     left: f32,
     right: f32,
     channel: u16,
+}
+
+/// The liquid loops' live pan gains — the XNA `SoundEffectInstance.Pan`
+/// write (`LegacySoundPlayer.cs:1267`/`:1297`) reaches the PLAYING source:
+/// the audio thread reads the atomics per sample while the ¼ s ambience
+/// tick stores the new `pan_gains` pair. `Arc` clones share one cell.
+#[derive(Clone)]
+struct LiquidPanGains {
+    left: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    right: std::sync::Arc<std::sync::atomic::AtomicU32>,
+}
+
+impl LiquidPanGains {
+    fn new(left: f32, right: f32) -> Self {
+        use std::sync::atomic::AtomicU32;
+        Self {
+            left: std::sync::Arc::new(AtomicU32::new(left.to_bits())),
+            right: std::sync::Arc::new(AtomicU32::new(right.to_bits())),
+        }
+    }
+
+    fn store_left(&self, v: f32) {
+        self.left.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn store_right(&self, v: f32) {
+        self.right.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn load(&self) -> (f32, f32) {
+        use std::sync::atomic::Ordering;
+        (
+            f32::from_bits(self.left.load(Ordering::Relaxed)),
+            f32::from_bits(self.right.load(Ordering::Relaxed)),
+        )
+    }
+}
+
+/// [`Panned`] with shared live gains — the liquid-loop source shape.
+struct PannedShared<S> {
+    inner: S,
+    channels: u16,
+    gains: LiquidPanGains,
+    channel: u16,
+}
+
+impl<S: Iterator<Item = f32>> Iterator for PannedShared<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        let sample = self.inner.next()?;
+        let (left, right) = self.gains.load();
+        let gain = match self.channel {
+            0 => left,
+            1 => right,
+            _ => 1.0,
+        };
+        self.channel = if self.channels == 0 {
+            0
+        } else {
+            (self.channel + 1) % self.channels
+        };
+        Some(sample * gain)
+    }
+}
+
+impl<S: Source<Item = f32>> Source for PannedShared<S> {
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 impl<S: Iterator<Item = f32>> Iterator for Panned<S> {
@@ -2494,9 +2696,10 @@ pub struct MusicEnv {
     /// Scene centre below the world surface (`SceneMetrics.Center.Y >= worldSurface*16
     /// + screenHeight/2`), i.e. the `Main.cs:12815` branch.
     pub underground: bool,
-    /// `Main.cloudAlpha > 0` (raining/storming).
-    /// `Main.cloudAlpha` (the rain coverage the volume follows).
+    /// `Main.cloudAlpha` — RAW, unclamped (the rain cue's `num11` at
+    /// `Main.cs:11544` reads the static itself, not the sky-tint clamp).
     pub cloud_alpha: f32,
+    /// `Main.cloudAlpha > 0` (raining/storming) — the music ladder's gate.
     pub rain: bool,
     // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
     /// `SceneMetrics.ZoneRain`.
@@ -2521,6 +2724,12 @@ pub struct MusicEnv {
     // `Main.cs:12187-12988`), in ladder order —
     /// `Main.eclipse` with the surface gate (`:12644`).
     pub eclipse: bool,
+    /// `Main.slimeRain` (`flag24`, `:12200`) — the Slime Rain track 48 arm
+    /// (`:12654-12657`): `flag24 && !ZoneGraveyard && (!bloodMoon || dayTime)
+    /// && Center.Y < worldSurface*16 + screenHeight/2`. Sits between the
+    /// eclipse arms and the remix-blood-moon arms (both port-absent), ahead
+    /// of the shimmer zone. (W4-f39 co-lane compose, d130 retire phase.)
+    pub slime_rain: bool,
     /// `SceneMetrics.ZoneShimmer` (`:12668`).
     pub shimmer: bool,
     /// `SceneMetrics.TownNPCCount` (`:12199`) — 0 until M4-TOWN lands.
@@ -2535,6 +2744,27 @@ pub struct MusicEnv {
     pub blood_moon: bool,
     /// `Main._shouldUseWindyDayMusic` (`:12961`).
     pub windy_music: bool,
+    // — the W4-f39 closeout inputs (the event tracks the census found
+    // missing from the ladder) —
+    /// `flag24 = Main.slimeRain` (`:12200`) — the SlimeRain track 48
+    /// (`:12654`), gated `!ZoneGraveyard && (!bloodMoon || dayTime)`
+    /// and the scene centre above the surface band.
+    pub slime_rain: bool,
+    /// `Main.pumpkinMoon` — the surface-gated tail override (`:12982`,
+    /// track 30). NOT an else-if arm: it runs AFTER the whole ladder,
+    /// even over the boss pick.
+    pub pumpkin_moon: bool,
+    /// `Main.snowMoon` — the tail's second override (`:12986`, track
+    /// 32), after the pumpkin one (snow wins if both are up).
+    pub snow_moon: bool,
+    /// `Main.remixWorld` — the moon tail's gate bypass (`:12982`/
+    /// `:12986`: the override applies at ANY depth on a remix world).
+    pub remix_world: bool,
+    /// The moon tail's depth gate (`:12982`): `screenPosition.Y / 16 <
+    /// worldSurface + 10`. The port's camera is the view CENTRE
+    /// (`camera.rs:114-117`), so the caller feeds
+    /// `(camera.y - screen.y/2) / 16 < worldSurface + 10`.
+    pub moon_tail_band: bool,
     // — the M6-AUDIO-2 inputs (`Main.cs:11076-11350`) —
     /// `SceneMetrics.ActiveMusicBox`: the box id playing, -1 = none.
     pub music_box: i32,
@@ -2709,6 +2939,13 @@ impl MusicSystem {
             if !self.wave_indices.contains_key(&(i as u32)) {
                 continue;
             }
+            // `Main.cs:11539-11605`: the switch's `case 28`/`case 45` arms
+            // are the AMBIENT cues below — the default `UpdateCommonTrack`
+            // path never touches them (the earlier port ran both, doubling
+            // the fade step; W4-d130 final).
+            if i == 28 || i == 45 {
+                continue;
+            }
             let mut volume = self.music_fade[i] * env.music_volume;
             if (62..=88).contains(&i) {
                 volume *= 0.9;
@@ -2725,27 +2962,27 @@ impl MusicSystem {
             }
         }
 
-        // `Main.cs:11527-11600`: the two ambience tracks ride the same pool —
-        // the rain loop (28) while ZoneRain and not ZoneSnow, the wind loop
-        // (45) while |windSpeed| >= 20/50 and SurfaceAtmospherics; the weather
-        // factor scales the system volume and shimmer mutes both.
-        if let Some(volume) = ambience_rain_volume(&env) {
-            self.update_common_track(true, 28, env.ambient_volume * volume);
+        // `Main.cs:11541-11594`: the two AMBIENT cues — the rain loop (28)
+        // while ZoneRain and not ZoneSnow, the wind loop (45) while
+        // |windSpeed| >= 20/50 and SurfaceAtmospherics. They ride
+        // `UpdateAmbientCueState`/`UpdateAmbientCueTowardStopping`
+        // (`LegacyAudioSystem.cs:216-277`), NOT the common-track pair: the
+        // system volume is `Main.ambientVolume * <weather factor>` and the
+        // fade is `Main.musicFade[i]` — the two multiply only at the sink
+        // (`SetVariable("Volume", trackVolume * systemVolume)`).
+        let rain_system = env.ambient_volume * ambience_rain_factor(&env);
+        if env.zone_rain && !env.zone_snow {
+            // `:11556-11558`: `UpdateAmbientCueState(i, allowMusic, ...)`.
+            self.update_ambient_cue_state(28, true, rain_system);
         } else {
-            self.update_common_track_toward_stopping(
-                28,
-                env.ambient_volume * ambience_rain_volume(&env).unwrap_or(0.0),
-                is_main_track_audible,
-            );
+            // `:11560-11562`: the 0.005 stopping speed.
+            self.update_ambient_cue_toward_stopping(28, 0.005, rain_system);
         }
-        if let Some(volume) = ambience_wind_volume(&env) {
-            self.update_common_track(true, 45, env.ambient_volume * volume);
+        let wind_system = env.ambient_volume * ambience_wind_factor(&env);
+        if ambience_wind_plays(&env) {
+            self.update_ambient_cue_state(45, true, wind_system);
         } else {
-            self.update_common_track_toward_stopping(
-                45,
-                env.ambient_volume * ambience_wind_volume(&env).unwrap_or(0.0),
-                is_main_track_audible,
-            );
+            self.update_ambient_cue_toward_stopping(45, 0.005, wind_system);
         }
     }
 
@@ -2770,8 +3007,10 @@ impl MusicSystem {
             .unwrap_or(self.last_music_played);
 
         // `if (Main.gameMenu)` (`Main.cs:12455-12532`) — the front-end
-        // ladder, an exclusive arm that returns. The vanilla's `netMode == 2`
-        // (`newMusic = 0`) tail is unreachable: the port is single-player.
+        // ladder, an exclusive arm that returns BEFORE the moon tail
+        // (the C# `return` at `:12531` skips it too). The vanilla's
+        // `netMode == 2` (`newMusic = 0`) tail is unreachable: the port
+        // is single-player.
         if env.menu {
             let flags = env.menu_flags;
             self.new_music = if flags.contains(tr_core::seeds::SeedFlags::DRUNK) {
@@ -2791,6 +3030,25 @@ impl MusicSystem {
             };
             return;
         }
+        self.decide_world_music(env);
+        // `:12982-12989` — the moon-event tail: two plain `if`s AFTER the
+        // whole else-if chain, so the event tracks override EVERY world
+        // pick including the bosses (the pumpking/ice-queen fight music
+        // 97/98 only plays once the view drops below the surface band).
+        // Gate: `screenPosition.Y/16 < worldSurface + 10 || remixWorld`.
+        // W4-f39 closeout: the port's early-return ladder kept these out
+        // of reach; the wrapper runs them verbatim.
+        if (env.moon_tail_band || env.remix_world) && env.pumpkin_moon {
+            self.new_music = 30;
+        }
+        if (env.moon_tail_band || env.remix_world) && env.snow_moon {
+            self.new_music = 32;
+        }
+    }
+
+    /// The world half of the ladder (`:12533-12980`) — every arm returns,
+    /// so the caller's moon tail (`:12982-12989`) runs over the pick.
+    fn decide_world_music(&mut self, env: MusicEnv) {
         if let Some(boss) = env.boss_music {
             // The boss-flag ladder (`:12560-12620`): the event tracks (DD2
             // 92, the frost/pumpkin moons 97/98, the mech bosses 34/24/57/58,
@@ -2805,6 +3063,19 @@ impl MusicSystem {
         // centre above `worldSurface * 16 + screenHeight/2`).
         if env.eclipse {
             self.new_music = 27;
+            return;
+        }
+        // `:12654-12657`: the Slime Rain event track 48 (`flag24`,
+        // `Main.slimeRain` at `:12200`) — `!ZoneGraveyard && (!bloodMoon ||
+        // dayTime)` and the surface gate. The remix-blood-moon arms between
+        // it and the shimmer zone (`:12658-12665`) are port-absent.
+        // (W4-f39 co-lane compose, d130 retire phase.)
+        if env.slime_rain
+            && !env.graveyard
+            && (!env.blood_moon || env.day)
+            && env.center_y < env.surface_band_px
+        {
+            self.new_music = 48;
             return;
         }
         // `:12668`: the shimmer zone.
@@ -3048,6 +3319,78 @@ impl MusicSystem {
         }
     }
 
+    /// `LegacyAudioSystem.UpdateAmbientCueState` (`LegacyAudioSystem.cs:216-248`)
+    /// — the rain/wind ambient cues' play half (`Main.cs:11558`/`:11586`).
+    /// `system_volume` = `Main.ambientVolume * <weather factor>`; the fade is
+    /// `Main.musicFade[i]`, the two multiply only at the sink. The zero-volume
+    /// arm stops the cue WITHOUT touching the fade (`:222-229`); a fresh start
+    /// plays at the CURRENT fade with no increment (`:230-236`); only the
+    /// already-playing arm steps +0.005 (`:242-247`). The `IsPaused &
+    /// gameIsActive → Resume` arm (`:237-241`) folds — the port never pauses
+    /// music sinks (the focus-pause deviation, research/32 D12); `gameIsActive`
+    /// is `FocusHelper.AllowMusic`, pinned true like the common-track callers.
+    fn update_ambient_cue_state(&mut self, i: usize, game_is_active: bool, system_volume: f32) {
+        let _ = game_is_active; // the Resume arm's only reader (folded)
+        // `:218-221`: `!WaveBank.IsPrepared || AudioTracks[i] == null` — the
+        // port's stand-in is the loaded cue index (no sink without it).
+        let has_track = self.wave_indices.contains_key(&(i as u32));
+        let (fade, action) =
+            ambient_cue_state_step(has_track, self.is_track_playing(i), self.music_fade[i], system_volume);
+        self.music_fade[i] = fade;
+        match action {
+            AmbientCueAction::NoTrack => {}
+            // `:222-229`: the zero system volume stops the live cue at once
+            // and leaves the fade where it was.
+            AmbientCueAction::StopKeepFade => {
+                if self.is_track_playing(i) {
+                    self.stop_track(i);
+                }
+            }
+            // `:230-236`: Reuse + Play at `trackVolume * system` — NO fade
+            // increment on the start frame.
+            AmbientCueAction::Start => self.start_track(i, fade * system_volume),
+            // `:242-247`: the +0.005 step already landed on the fade.
+            AmbientCueAction::SetVolume => {
+                if let Some(Some(sink)) = self.tracks.get(i) {
+                    sink.set_volume(fade * system_volume);
+                }
+            }
+            AmbientCueAction::ZeroFade | AmbientCueAction::StopZeroFade => unreachable!(),
+        }
+    }
+
+    /// `LegacyAudioSystem.UpdateAmbientCueTowardStopping`
+    /// (`LegacyAudioSystem.cs:250-277`) — the ambient cues' stop half
+    /// (`Main.cs:11562`/`:11590`, `stoppingSpeed` 0.005). NOT the common-track
+    /// stop: the fade decays UNCONDITIONALLY while playing (no
+    /// `isMainTrackAudible`/`curMusic == 0` gate), and a stopped cue zeroes
+    /// the fade (`:256-260`).
+    fn update_ambient_cue_toward_stopping(
+        &mut self,
+        i: usize,
+        stopping_speed: f32,
+        system_volume: f32,
+    ) {
+        let has_track = self.wave_indices.contains_key(&(i as u32));
+        let (fade, action) = ambient_cue_stop_step(
+            has_track,
+            self.is_track_playing(i),
+            self.music_fade[i],
+            stopping_speed,
+        );
+        self.music_fade[i] = fade;
+        match action {
+            AmbientCueAction::NoTrack | AmbientCueAction::ZeroFade => {}
+            AmbientCueAction::StopZeroFade => self.stop_track(i),
+            AmbientCueAction::SetVolume => {
+                if let Some(Some(sink)) = self.tracks.get(i) {
+                    sink.set_volume(fade * system_volume);
+                }
+            }
+            AmbientCueAction::StopKeepFade | AmbientCueAction::Start => unreachable!(),
+        }
+    }
+
     /// `AudioTracks[i].Reuse(); SetVariable("Volume"); Play()`.
     fn start_track(&mut self, i: usize, volume: f32) {
         let Some(handle) = self.handle.as_ref() else {
@@ -3244,6 +3587,67 @@ mod tests {
         assert_eq!(audio.play_roar(0, 0.0, 0.0), Some("Roar_0"));
     }
 
+    /// W4-g73 falls-adjacent — the liquid loops' live pan: the shared gains
+    /// the playing source reads update in place (the XNA
+    /// `SoundInstanceLiquid[n].Pan = num3` write,
+    /// `LegacySoundPlayer.cs:1267`/`:1297`), and the headless slot guard
+    /// reads not-playing (the fresh-create convention).
+    #[test]
+    fn the_liquid_loop_pan_gains_update_the_live_source() {
+        let gains = LiquidPanGains::new(1.0, 0.5);
+        let reader = gains.clone();
+        assert_eq!(reader.load(), (1.0, 0.5));
+        // The ¼ s re-pan stores reach the same cell the source reads.
+        let (left, right) = sound::pan_gains(-0.75);
+        gains.store_left(left);
+        gains.store_right(right);
+        assert_eq!(reader.load(), (left, right));
+        assert_eq!(reader.load(), (1.0, 0.25));
+        // The source shape applies the gains per channel.
+        let mut src = PannedShared {
+            inner: [1.0f32, 1.0, 1.0, 1.0].into_iter(),
+            channels: 2,
+            gains: reader,
+            channel: 0,
+        };
+        assert_eq!(src.next(), Some(1.0));
+        assert_eq!(src.next(), Some(0.25));
+        // Headless: no output device, so the slot never plays.
+        let audio = Audio::new(None);
+        assert!(!audio.liquid_loop_playing(0));
+        assert!(!audio.liquid_loop_playing(1));
+    }
+
+    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`) +
+    /// `StopTrackedSounds` (`:6646`/`:6715` → `SoundPlayer.StopAll`,
+    /// `SoundPlayer.cs:79-86`): the sentinel pair stops BOTH liquid
+    /// channels draw-free and the tracked pool empties. Headless there is
+    /// no sink, so the stop count is the witness seam; a tracked entry
+    /// registered through the test cue proves the pool drain. (The
+    /// W4-g24/g73 quit-stop keep-one: this supersedes the closeout's
+    /// `the_quit_stop_kills_both_liquid_loop_channels` — same stop, the
+    /// counter + RNG-neutral + drain assertions are the superset.)
+    #[test]
+    fn w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain() {
+        let mut audio = Audio::new(None);
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.liquid_ambience_stop_count(), 0);
+        audio.stop_waterfall_ambience();
+        audio.stop_waterfall_ambience();
+        assert_eq!(audio.liquid_ambience_stop_count(), 2, "each call counts");
+        assert!(!audio.liquid_loop_playing(0), "dead slots stay dead");
+        assert!(!audio.liquid_loop_playing(1));
+        assert_eq!(rng.peek(), peek, "the sentinel pair draws nothing");
+        // The tracked pool: one entry lands, StopAll clears it.
+        audio.insert_test_cue("menu_accept");
+        let style = menu_accept_style();
+        let _ = audio.play_tracked_global(style.clone());
+        assert_eq!(audio.tracked_count_for(&style), 1, "the entry landed");
+        audio.stop_tracked_sounds();
+        assert_eq!(audio.tracked_count_for(&style), 0, "StopAll cleared the pool");
+    }
+
     /// S1-E-21g — the int-overload peers draw exactly ONE case pitch on
     /// the passed stream and NO NextFloat; the style façades
     /// (`NPCDeath61`/`NPCDeath13`) add the audio-only NextFloat but the
@@ -3421,6 +3825,7 @@ mod tests {
             boss_music: None,
             clock: 27000.0,
             eclipse: false,
+            slime_rain: false,
             shimmer: false,
             town_npcs: 0,
             shadow_candle: false,
@@ -3428,6 +3833,11 @@ mod tests {
             underworld: false,
             blood_moon: false,
             windy_music: false,
+            slime_rain: false,
+            pumpkin_moon: false,
+            snow_moon: false,
+            remix_world: false,
+            moon_tail_band: false,
             music_box: -1,
             music_box_silence: false,
             space_band: false,
@@ -3453,6 +3863,59 @@ mod tests {
             menu: false,
             menu_flags: Default::default(),
         }
+    }
+
+    #[test]
+    fn w4_f39_compose_the_slime_rain_track_48_arm() {
+        // `Main.cs:12654-12657` (`flag24` = `Main.slimeRain`, `:12200`):
+        // track 48 sits AFTER the eclipse (27) and BEFORE the shimmer zone
+        // (91), gated `!ZoneGraveyard && (!bloodMoon || dayTime)` and the
+        // surface band. The King Slime boss scan (93) outranks it.
+        // WRITTEN NOT RUN (code-only, d130 retire compose).
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48, "the live slime rain plays track 48");
+        // The graveyard cut.
+        let mut m = system();
+        e.graveyard = true;
+        m.decide_new_music(e);
+        assert_ne!(m.new_music, 48, "ZoneGraveyard closes the arm");
+        e.graveyard = false;
+        // A night blood moon closes it; the day blood moon does not.
+        let mut m = system();
+        let mut night = env(false);
+        night.slime_rain = true;
+        night.blood_moon = true;
+        m.decide_new_music(night);
+        assert_ne!(m.new_music, 48, "the night blood moon closes the arm");
+        let mut m = system();
+        e.blood_moon = true; // day stays true
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48, "(!bloodMoon || dayTime) — day passes");
+        e.blood_moon = false;
+        // The surface gate: below worldSurface*16 + screenHeight/2 refuses.
+        let mut m = system();
+        e.center_y = e.surface_band_px; // NOT < — the strict edge
+        m.decide_new_music(e);
+        assert_ne!(m.new_music, 48, "the surface band is strict <");
+        e.center_y = 0.0;
+        // Ladder order: the eclipse beats it, it beats the shimmer zone.
+        let mut m = system();
+        e.eclipse = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 27, "the eclipse outranks the slime rain");
+        e.eclipse = false;
+        let mut m = system();
+        e.shimmer = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48, "the slime rain outranks the shimmer zone");
+        // The boss scan outranks everything.
+        let mut m = system();
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93, "the King's track outranks the event");
     }
 
     #[test]
@@ -3491,6 +3954,39 @@ mod tests {
         m.decide_new_music(e);
         // The underground pair alternates 4/31 (`Main.cs:12830`'s coin flip).
         assert!(matches!(m.new_music, 4 | 31));
+    }
+
+    /// W4-e19 aether census — the ZoneShimmer music gate (`Main.cs:12666-12669`,
+    /// `MusicID.Aether = 91`, `MusicID.cs:200`): the shimmer zone beats the
+    /// town/sandstorm/underworld/biome tail but loses to the eclipse and the
+    /// boss scan. The TOW ladder's 72 (`:11951-11953`) waits for the drunk-world
+    /// swap (`Main.cs:11055-11074`, unported — the port always runs the normal
+    /// ladder, ANALYSIS W4-e19 aether).
+    #[test]
+    fn w4_e19_the_aether_zone_picks_track_91_in_ladder_order() {
+        let mut m = system();
+        let mut e = env(true);
+        e.shimmer = true;
+        e.sandstorm = true;
+        e.underworld = true;
+        e.underground = true;
+        e.jungle = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 91, "the aether beats the tail");
+        // The eclipse outranks it (`:12644` before `:12666`).
+        let mut m = system();
+        let mut e = env(true);
+        e.shimmer = true;
+        e.eclipse = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 27);
+        // The boss scan outranks everything (`:12560`).
+        let mut m = system();
+        let mut e = env(true);
+        e.shimmer = true;
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93);
     }
 
     #[test]
@@ -3567,6 +4063,273 @@ mod tests {
         let mut m = system();
         m.decide_new_music(env(true));
         assert!(matches!(m.new_music, 1 | 18));
+    }
+
+    /// W4-d130 final — the rain ambience cue's weather factor
+    /// (`Main.cs:11543-11553`): `cloudAlpha/9*10*0.5 + 0.5`, the shimmer
+    /// mute, the 1-cap THEN `atmo^4`. The raw cloudAlpha matters: at 1.5
+    /// the unclamped factor caps at 1 where the old `visual_alpha` feed
+    /// capped the input at 1 first (0.5 + 1/9*5 = 1.055… → also 1 here,
+    /// but at alpha 0.81 the raw value is 0.95 and the clamp is identity —
+    /// the OBSERVABLE split is the shimmer arm below).
+    #[test]
+    fn the_rain_ambience_factor_matches_the_csharp_maths() {
+        let mut e = env(true);
+        e.atmo = 1.0;
+        // Dry sky: the 0.5 floor (`num10`).
+        assert!((ambience_rain_factor(&e) - 0.5).abs() < 1e-6);
+        // cloudAlpha 0.9: 0.9/9*10*0.5 + 0.5 = 1.0 exactly (the cap edge).
+        e.cloud_alpha = 0.9;
+        assert!((ambience_rain_factor(&e) - 1.0).abs() < 1e-6);
+        // RAW alpha 1.5 (a TR_RAIN pin): 1.5/9*5 + 0.5 = 1.333… → cap 1.
+        // The clamped feed would read 1.0 → 1.055… → cap 1: same HERE,
+        // but the shimmer arm below splits them.
+        e.cloud_alpha = 1.5;
+        assert!((ambience_rain_factor(&e) - 1.0).abs() < 1e-6);
+        // Shimmer 0.5 on RAW alpha 1.5: 1.333…*0.5 = 0.666… (UNDER the
+        // cap — the raw value survives); the old clamped feed gave
+        // 1.055…*0.5 = 0.527… — the observable deviation this fold fixes.
+        e.shimmer_alpha = 0.5;
+        let want = (1.5f32 / 9.0 * 10.0 * 0.5 + 0.5) * 0.5;
+        assert!((ambience_rain_factor(&e) - want).abs() < 1e-6);
+        assert!(want > 0.6, "the raw-alpha shimmer arm: {want}");
+        // The atmo^4 depth factor applies AFTER the cap (`:11553`).
+        e.shimmer_alpha = 0.0;
+        e.cloud_alpha = 0.9;
+        e.atmo = 0.5;
+        assert!((ambience_rain_factor(&e) - 0.0625).abs() < 1e-6);
+        // The zone gate picks State vs TowardStopping — it does NOT zero
+        // the factor (the C# computes num11 unconditionally, `:11544`).
+        e.zone_rain = false;
+        assert!(ambience_rain_factor(&e) > 0.0);
+    }
+
+    /// W4-d130 final — `UpdateAmbientCueState`
+    /// (`LegacyAudioSystem.cs:216-248`): the start frame plays at the
+    /// CURRENT fade with NO increment; only the already-playing arm steps
+    /// +0.005 (cap 1); the zero system volume stops WITHOUT touching the
+    /// fade; a missing track moves nothing.
+    #[test]
+    fn the_ambient_cue_state_start_does_not_increment_the_fade() {
+        use AmbientCueAction::*;
+        // No track: nothing moves, fade included (`:218-221`).
+        assert_eq!(ambient_cue_state_step(false, false, 0.4, 1.0), (0.4, NoTrack));
+        // The start frame (`:230-236`): fade 0 stays 0 — the cue plays at
+        // volume 0 and ramps from the NEXT frame (the common-track pair
+        // incremented BEFORE the start: the retired deviation).
+        assert_eq!(ambient_cue_state_step(true, false, 0.0, 1.0), (0.0, Start));
+        assert_eq!(ambient_cue_state_step(true, false, 0.4, 1.0), (0.4, Start));
+        // Playing: +0.005 per frame, capped at 1 (`:242-247`).
+        let (f, a) = ambient_cue_state_step(true, true, 0.4, 1.0);
+        assert_eq!(a, SetVolume);
+        assert!((f - 0.405).abs() < 1e-6);
+        assert_eq!(ambient_cue_state_step(true, true, 0.999, 1.0), (1.0, SetVolume));
+        assert_eq!(ambient_cue_state_step(true, true, 1.0, 1.0), (1.0, SetVolume));
+        // Zero system volume (`:222-229`): stop, KEEP the fade — a muted
+        // ambient slider does not reset the ramp (it resumes at the same
+        // fade when the slider returns).
+        assert_eq!(
+            ambient_cue_state_step(true, true, 0.4, 0.0),
+            (0.4, StopKeepFade)
+        );
+        assert_eq!(
+            ambient_cue_state_step(true, false, 0.4, 0.0),
+            (0.4, StopKeepFade)
+        );
+    }
+
+    /// W4-d130 final — `UpdateAmbientCueTowardStopping`
+    /// (`LegacyAudioSystem.cs:250-277`): the fade decays UNCONDITIONALLY
+    /// while playing (the common-track stop's `isMainTrackAudible` gate is
+    /// NOT this arm's), a stopped cue zeroes the fade, and the fade-out
+    /// takes exactly 200 frames from 1 at the 0.005 speed.
+    #[test]
+    fn the_ambient_cue_stop_fades_without_the_main_track_gate() {
+        use AmbientCueAction::*;
+        // Not playing → the fade zeroes, no sink touch (`:256-260`).
+        assert_eq!(ambient_cue_stop_step(true, false, 0.4, 0.005), (0.0, ZeroFade));
+        // Playing: -0.005 per frame regardless of the main track's state.
+        let (f, a) = ambient_cue_stop_step(true, true, 0.4, 0.005);
+        assert_eq!(a, SetVolume);
+        assert!((f - 0.395).abs() < 1e-6);
+        // The floor: the last step lands exactly 0 and STOPS (`:269-272`).
+        assert_eq!(
+            ambient_cue_stop_step(true, true, 0.005, 0.005),
+            (0.0, StopZeroFade)
+        );
+        assert_eq!(
+            ambient_cue_stop_step(true, true, 0.002, 0.005),
+            (0.0, StopZeroFade)
+        );
+        // The full fade-out: 1 → 0 in ~200 frames at the 0.005 speed (the
+        // rain stops, the loop keeps sounding for ~3⅓ s while the zone gate
+        // is down). The f32 subtraction residual can add one frame — the
+        // C# runs the SAME f32 arithmetic, so the count is the source's own.
+        let mut fade = 1.0f32;
+        let mut frames = 0;
+        loop {
+            let (f, a) = ambient_cue_stop_step(true, true, fade, 0.005);
+            fade = f;
+            frames += 1;
+            if a == StopZeroFade {
+                break;
+            }
+            assert!(frames < 400, "the fade must terminate");
+        }
+        assert!((199..=201).contains(&frames), "the ~200-frame fade: {frames}");
+        assert_eq!(fade, 0.0);
+        // No track: nothing moves (`:252-255`).
+        assert_eq!(ambient_cue_stop_step(false, true, 0.4, 0.005), (0.4, NoTrack));
+    }
+
+    /// W4-d130 final — the wind cue's gate + factor (`Main.cs:11569-11582`):
+    /// `|wind| >= 20/50 && SurfaceAtmospherics`, `|wind|*0.7 + 0.3` with the
+    /// shimmer mute, the 1-cap, the ×0.9 and `atmo^4`.
+    #[test]
+    fn the_wind_ambience_gate_and_factor() {
+        let mut e = env(true);
+        e.atmo = 1.0;
+        e.surface_atmospherics = true;
+        e.wind_speed = 0.4; // the 20/50 boundary — inclusive (`>=`).
+        assert!(ambience_wind_plays(&e));
+        e.wind_speed = 0.39;
+        assert!(!ambience_wind_plays(&e));
+        e.wind_speed = -0.4; // the abs() gate.
+        assert!(ambience_wind_plays(&e));
+        e.surface_atmospherics = false;
+        assert!(!ambience_wind_plays(&e));
+        // The factor at |wind| 0.4: 0.4*0.7 + 0.3 = 0.58, ×0.9 = 0.522.
+        e.wind_speed = 0.4;
+        assert!((ambience_wind_factor(&e) - 0.522).abs() < 1e-6);
+        // |wind| 1.0: 1.0 → cap 1 → ×0.9.
+        e.wind_speed = 1.0;
+        assert!((ambience_wind_factor(&e) - 0.9).abs() < 1e-6);
+        // Shimmer halves BEFORE the cap (`:11571-11578`).
+        e.shimmer_alpha = 0.5;
+        assert!((ambience_wind_factor(&e) - 0.45).abs() < 1e-6);
+    }
+
+    // — W4-f39 closeout witnesses (written-not-run, code-only lane): the
+    // event tracks the census found missing — flag24's SlimeRain 48
+    // (`Main.cs:12200`/`:12654`) and the surface-gated moon tail 30/32
+    // (`:12982-12989`). —
+
+    #[test]
+    fn w4_f39_slime_rain_plays_48_on_the_surface_band() {
+        // `:12654`: flag24 && !graveyard && (!bloodMoon || dayTime) &&
+        // centre above the surface band → 48.
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48, "the SlimeRain track");
+        // Night + blood moon closes the gate (the blood-moon tail wins).
+        let mut m = system();
+        let mut e = env(false);
+        e.slime_rain = true;
+        e.blood_moon = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 2, "blood moon outranks the rain at night");
+        // Night WITHOUT the blood moon keeps 48.
+        let mut m = system();
+        let mut e = env(false);
+        e.slime_rain = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48);
+        // The graveyard cut.
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        e.graveyard = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 53);
+        // Below the surface band the arm misses (the underground pair).
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        e.center_y = 1500.0; // > surface_band_px (1000)
+        e.underground = true;
+        m.decide_new_music(e);
+        assert!(matches!(m.new_music, 4 | 31));
+        // The eclipse still outranks the rain (`:12646` precedes `:12654`).
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        e.eclipse = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 27);
+        // The boss scan outranks both (King Slime's 93).
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93);
+    }
+
+    #[test]
+    fn w4_f39_the_moon_tail_overrides_the_whole_ladder_on_the_surface() {
+        // `:12982-12989`: two plain ifs AFTER the chain — the event
+        // tracks beat even the boss pick while the view is above
+        // `worldSurface + 10` tiles (the pumpking/ice-queen fight music
+        // only plays once the view drops below the band).
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = true;
+        e.pumpkin_moon = true;
+        e.boss_music = Some(97); // the pumpking's own track
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 30, "the surface tail beats the boss");
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = true;
+        e.snow_moon = true;
+        e.boss_music = Some(98);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 32);
+        // Snow runs after pumpkin — both up, snow wins (`:12986` last).
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = true;
+        e.pumpkin_moon = true;
+        e.snow_moon = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 32);
+        // Below the band the boss track keeps its slot.
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = false;
+        e.pumpkin_moon = true;
+        e.boss_music = Some(97);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 97);
+        // The remix world bypasses the band gate at ANY depth.
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = false;
+        e.remix_world = true;
+        e.snow_moon = true;
+        e.boss_music = Some(98);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 32);
+        // The menu ladder returns BEFORE the tail (`:12531`).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.moon_tail_band = true;
+        e.pumpkin_moon = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "the title track, not the event");
+        // The music box still wins over the tail (the override pass runs
+        // after `decide_new_music` returns — `:11076+`).
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = true;
+        e.pumpkin_moon = true;
+        e.music_box = 42;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 42);
     }
 
     #[test]
@@ -4601,33 +5364,104 @@ mod tests {
     }
 }
 
-/// `Main.cs:11528-11546`: the rain track's weather factor — `Some` while the
-/// rain zone is active and snow isn't.
-fn ambience_rain_volume(env: &MusicEnv) -> Option<f32> {
-    if !(env.zone_rain && !env.zone_snow) {
-        return None;
-    }
+/// `Main.cs:11543-11553`: the rain cue's weather factor `num11` —
+/// `cloudAlpha / 9 * 10 * 0.5 + 0.5`, the shimmer mute, the 1-cap, then
+/// `atmo^4`. Computed UNCONDITIONALLY in the C# (the stopping arm passes it
+/// too, `:11562`); the zone gate only picks State vs TowardStopping.
+/// `env.cloud_alpha` is the RAW `Main.cloudAlpha` — the sky-tint clamp is
+/// NOT this reader's (the `visual_alpha` feed was a deviation, W4-d130
+/// final: observable above 1 under a TR_RAIN pin / heavy storm).
+fn ambience_rain_factor(env: &MusicEnv) -> f32 {
     let num10 = 0.5;
     let mut num11 = env.cloud_alpha / 9.0 * 10.0 * num10 + (1.0 - num10);
     if env.shimmer_alpha > 0.0 {
         num11 *= 1.0 - env.shimmer_alpha;
     }
-    let v = (num11.min(1.0)) * env.atmo.powi(4);
-    Some(v)
+    (num11.min(1.0)) * env.atmo.powi(4)
 }
 
-/// `Main.cs:11562-11595`: the wind track's weather factor — `Some` while
-/// `|windSpeedCurrent| >= 20/50` and `SurfaceAtmospherics`.
-fn ambience_wind_volume(env: &MusicEnv) -> Option<f32> {
+/// `Main.cs:11582`: the wind cue's zone gate —
+/// `|windSpeedCurrent| >= 20/50 && SurfaceAtmospherics`.
+fn ambience_wind_plays(env: &MusicEnv) -> bool {
     let num8 = 20.0f32;
-    if env.wind_speed.abs() < num8 / 50.0 || !env.surface_atmospherics {
-        return None;
-    }
+    env.wind_speed.abs() >= num8 / 50.0 && env.surface_atmospherics
+}
+
+/// `Main.cs:11569-11581`: the wind cue's weather factor `num7` —
+/// `|wind| * 0.7 + 0.3`, the shimmer mute, the 1-cap, `* 0.9`, then
+/// `atmo^4`. Computed unconditionally, like the rain factor.
+fn ambience_wind_factor(env: &MusicEnv) -> f32 {
     let num6 = 0.7;
     let mut num7 = env.wind_speed.abs() * num6 + (1.0 - num6);
     if env.shimmer_alpha > 0.0 {
         num7 *= 1.0 - env.shimmer_alpha;
     }
-    let v = (num7.min(1.0)) * 0.9 * env.atmo.powi(4);
-    Some(v)
+    (num7.min(1.0)) * 0.9 * env.atmo.powi(4)
+}
+
+/// One `UpdateAmbientCueState`/`TowardStopping` outcome — the pure fade
+/// state machine (`LegacyAudioSystem.cs:216-277`) the `MusicSystem` methods
+/// apply to the sink. `(fade, action)`: the new `Main.musicFade[i]` and what
+/// the engine does with the cue.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum AmbientCueAction {
+    /// `:218-221`: no track — nothing moves (the fade included).
+    NoTrack,
+    /// `:222-229`: zero system volume — stop the live cue, keep the fade.
+    StopKeepFade,
+    /// `:230-236`: start at `fade * system` — NO fade increment.
+    Start,
+    /// `:242-247` / `:273-276`: set the sink to `fade * system`.
+    SetVolume,
+    /// `:256-260`: not playing — the fade zeroes, no sink touch.
+    ZeroFade,
+    /// `:269-272`: the fade ran out — stop.
+    StopZeroFade,
+}
+
+/// `LegacyAudioSystem.UpdateAmbientCueState`'s decision half
+/// (`LegacyAudioSystem.cs:216-248`), pure: `has_track` =
+/// `WaveBank.IsPrepared && AudioTracks[i] != null`, `playing` =
+/// `AudioTracks[i].IsPlaying`. The `IsPaused & gameIsActive → Resume` arm
+/// (`:237-241`) folds (the port never pauses music sinks — research/32 D12).
+fn ambient_cue_state_step(
+    has_track: bool,
+    playing: bool,
+    fade: f32,
+    system_volume: f32,
+) -> (f32, AmbientCueAction) {
+    if !has_track {
+        return (fade, AmbientCueAction::NoTrack);
+    }
+    if system_volume == 0.0 {
+        return (fade, AmbientCueAction::StopKeepFade);
+    }
+    if !playing {
+        return (fade, AmbientCueAction::Start);
+    }
+    ((fade + 0.005).min(1.0), AmbientCueAction::SetVolume)
+}
+
+/// `LegacyAudioSystem.UpdateAmbientCueTowardStopping`'s decision half
+/// (`LegacyAudioSystem.cs:250-277`), pure. The fade decays UNCONDITIONALLY
+/// while playing — no `isMainTrackAudible`/`curMusic == 0` gate (that is the
+/// COMMON-track stop's shape, `:320-352`, not this one).
+fn ambient_cue_stop_step(
+    has_track: bool,
+    playing: bool,
+    fade: f32,
+    stopping_speed: f32,
+) -> (f32, AmbientCueAction) {
+    if !has_track {
+        return (fade, AmbientCueAction::NoTrack);
+    }
+    if !playing {
+        return (0.0, AmbientCueAction::ZeroFade);
+    }
+    let fade = if fade > 0.0 { (fade - stopping_speed).max(0.0) } else { fade };
+    if fade <= 0.0 {
+        (0.0, AmbientCueAction::StopZeroFade)
+    } else {
+        (fade, AmbientCueAction::SetVolume)
+    }
 }

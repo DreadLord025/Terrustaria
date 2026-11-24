@@ -105,6 +105,16 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         }
         return;
     }
+    // The splash drain's cull ctx + water style (doc-sweep lane 36,
+    // `WorldItem.cs:886-954`/`:965-1033`) — computed BEFORE the mutable
+    // field borrows (whole-`app` reads). `Main.waterStyle` is the live
+    // biome style the `Dust.dustWater()` arm reads (`Dust.cs:402-418`);
+    // the TR_WATER_STYLE pin caps at 14 like the draw pass
+    // (`app/frame/draw.rs:734-737`).
+    let splash_ctx = app.spawn_ctx();
+    let splash_water_style = crate::env::water_style()
+        .map(|n| n.min(14) as i32)
+        .unwrap_or_else(|| crate::biome::calculate_water_style(&app.world, app.camera) as i32);
     let world = &app.world;
     let player = &mut app.player;
     let items = &mut app.items;
@@ -114,6 +124,9 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     // (the deposit walk borrows them; a whole-`equip` alias would collide).
     let coin_rows = &mut app.equip.coins;
     let audio = &mut app.audio;
+    // The splash arms draw `Main.rand` under the `UpdateItems` swap, so
+    // the RNG borrows stay per-call inside the step closure.
+    let dust = &mut app.dust;
     let mut voodoo: Option<(Vec2, u32)> = None;
     // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
     let mut shimmer_due: Vec<u32> = Vec::new();
@@ -632,6 +645,10 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             i += 1;
         }
         // --- `WorldItem.UpdateItem`'s physics half -------------------------
+        // The shimmered-repulsion scan runs PER-DROP below (the e19 KEEP
+        // slice form per 379 - the C# scan (WorldItem.cs:790-847) runs inside
+        // each drop's MoveInWorld on the LIVE velocities; the f47 whole-list
+        // pre-pass is superseded).
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
@@ -668,7 +685,33 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             let was_grabbed = drop.being_grabbed;
+            // `MoveInWorld`'s repulsion scan (`WorldItem.cs:790-847`, the
+            // e19 KEEP form per 379) runs at the head of the movement half,
+            // BEFORE the gravity add - the slice-level pass nudges the
+            // neighbours' live velocities (and this drop's own X) and parks
+            // the `flag` for the ?0.8 tail. A grabbed drop skips MoveInWorld
+            // entirely (`:425-435`), no scan. The clone re-reads its X
+            // afterwards - the scan wrote the slot.
+            if !was_grabbed && drop.shimmered {
+                drop.repulsion_brake = crate::item::ItemDrop::repel_shimmered(items, i);
+                drop.vel.x = items[i].vel.x;
+            }
             drop.update(world, step);
+            // Doc-sweep lane 36 - the splash arms (`WorldItem.cs:886-954`
+            // entry / `:965-1033` exit) run INSIDE MoveInWorld in the C#;
+            // the port latches them in `update` and drains here, same tick,
+            // same slot order, BEFORE the visual-effects draws (`:436` runs
+            // after `:413`'s MoveInWorld). All draws ride `UpdateItems`.
+            if drop.splash_due.is_some() {
+                drop.splash(
+                    dust,
+                    &splash_ctx,
+                    world,
+                    audio,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    splash_water_style,
+                );
+            }
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
             // it at `:436`, after the movement half, per live drop in
@@ -1101,10 +1144,12 @@ fn spawn_player_drop(
 /// `NextFromList` = `Next(len)` draw per remapped kind, `Utils.cs:1213-1216`),
 /// else halloween AND xMas (one `Next(2)`), else halloween alone (58→1734,
 /// 184→1735 — no draw) then xMas alone (58→1867, 184→1868 — no draw). Every
-/// other kind passes through untouched and draws NOTHING. The flags ride
-/// the port's standing seasonal stand-ins (`Main.halloween`/`Main.xMas` =
-/// the endless micro seeds, `world_sim/npcs.rs`'s loot-flag precedent; the
-/// calendar windows are unported).
+/// other kind passes through untouched and draws NOTHING. W4-f39: the flags
+/// ride the RESOLVED season statics (`Main.halloween`/`Main.xMas` =
+/// `World.halloween`/`xmas`, re-derived at dawn + load from the date windows
+/// + the force flags; the endless micro seeds feed them through
+/// `forceHalloweenForever`/`forceXMasForever`, `world_sim/npcs.rs`'s loot-flag
+/// precedent).
 pub fn seasonal_pickup_kind(
     kind: u16,
     tenth_anniversary: bool,
@@ -1194,8 +1239,9 @@ mod shimmer_tests {
         app
     }
 
-    /// A drop resting on the pool's floor, the 14x14 box overlapping the
-    /// shimmer row (pos y = 19*16 + 2), parked at x = 30 tiles — outside the
+    /// A drop resting on the pool's floor, the 16x16 box overlapping the
+    /// shimmer row (pos y = 19*16, flush on the 20-row floor — keep-one
+    /// 144), parked at x = 30 tiles — outside the
     /// 42 px pickup magnet of the player at x = 9 (`ItemUpdate`'s magnet,
     /// `item.rs:176-188`) but inside the coin-luck 1000 px window.
     fn resting_drop(kind: u16, count: u32) -> ItemDrop {
@@ -1204,7 +1250,7 @@ mod shimmer_tests {
             count,
             0,
             30.0 * TILE_PX,
-            19.0 * TILE_PX + 2.0,
+            19.0 * TILE_PX,
             0.0,
             0.0,
             0.0,
@@ -1217,12 +1263,14 @@ mod shimmer_tests {
     fn a_drop_in_shimmer_transforms_on_the_ninetieth_tick() {
         let mut app = shimmer_world();
         app.items.push(resting_drop(11, 3)); // Iron Ore → Tin Ore (the set)
-        // 90 ticks to cross 0.9 (`WorldItem.cs:528-535`).
-        // The ramp is the C#'s `+= 0.01f` accumulation, so the >0.9 crossing
-        // lands on the tick the accumulated f32 value passes 0.9 — the C# runs
-        // the same arithmetic (`WorldItem.cs:518-536`), so the tick count is
-        // identical there; the f32 undershoot at the 90th sum is the port's
-        // and the C#'s alike.
+        // Doc-sweep lane 36 re-pin (91 → 92): `UpdateShimmer` (`:403`) reads
+        // the PREVIOUS tick's `Entity.shimmerWet` — a fresh drop's flag is
+        // false, so tick 1 only PROBES (MoveInWorld `:875-877` sets it) and
+        // the ramp starts on tick 2. The old pre-update full-box re-probe
+        // started the ramp on tick 1 (the stale-by-design 91). The ramp
+        // itself is the C#'s `+= 0.01f` accumulation: the f32 undershoot at
+        // the 90th sum puts the >0.9 crossing on ramp-tick 91 = update-tick
+        // 92 (`WorldItem.cs:518-536`, the same arithmetic both sides).
         let mut ticks = 0;
         while !app.items[0].shimmered && ticks < 120 {
             update_items(&mut app, 1.0 / 60.0);
@@ -1231,7 +1279,7 @@ mod shimmer_tests {
         if std::env::var("SHIMMER_TRACE").is_ok() {
             eprintln!("transformed after {ticks} ticks");
         }
-        assert_eq!(ticks, 91, "the >0.9 crossing tick count");
+        assert_eq!(ticks, 92, "the >0.9 crossing tick count (one-tick probe lag)");
         let d = &app.items[0];
         assert!(d.shimmered, "the transform fired");
         assert_eq!(d.kind, 699); // Tin Ore
@@ -1386,9 +1434,233 @@ mod shimmer_tests {
         d.vel = Vec2::ZERO;
         app.items.push(d);
         let before = app.items[0].pos.y;
+        // W4-f47 re-derivation onto the faithful MoveInWorld: `wetVelocity`
+        // is captured at UpdateItem's head (`WorldItem.cs:379-384`) from the
+        // PRE-UpdateShimmer velocity (0 here), so the rise UpdateShimmer arms
+        // (`velocity.Y -= 0.05`, `:486-489`) does not integrate until the
+        // NEXT tick — the C#'s ref-wetVelocity lag. Tick 1 holds position
+        // but arms the rise velocity.
         update_items(&mut app, 1.0 / 60.0);
-        // The rise: `velocity.Y -= 0.05` while over shimmer (`WorldItem.cs:474-483`).
+        assert_eq!(app.items[0].pos.y, before, "tick 1 holds (pre-rise wetVelocity capture)");
+        assert!(app.items[0].vel.y < 0.0, "the rise velocity armed");
+        // Tick 2: wetVelocity = velocity * 0.375 (the shimmer scale, `:384`)
+        // integrates the rise (`ApplyMovement`, `:1076-1078`).
+        update_items(&mut app, 1.0 / 60.0);
         assert!(app.items[0].pos.y < before, "the item rises");
+    }
+
+
+    // --- W4-e19: the shared tail + the decraft spawn shape ----------------
+
+    #[test]
+    fn w4_e19_the_transform_tail_cuts_velocity_and_resets_shimmer_time() {
+        // `WorldItem.cs:1835-1845` — after the transform the surviving drop
+        // gets shimmerTime = 1, shimmerWet = true, velocity *= 0.1.
+        let mut app = shimmer_world();
+        let mut d = resting_drop(11, 3);
+        d.vel = Vec2::new(2.0, 3.0);
+        app.items.push(d);
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let d = &app.items[0];
+        assert!(d.shimmered);
+        assert_eq!(d.kind, 699);
+        // The tail set shimmerTime = 1 at the transform tick (the stack
+        // survived). The decay arm (`:538-545`) is NOT gated on `!shimmered`
+        // (a shimmered drop's ramp condition is false, so it falls to the
+        // decay), so the 1.0 dries 0.01/tick over the remaining ~28 ticks —
+        // it is below 1 but still positive (the GrabItems gate re-opens at 0).
+        assert!(d.shimmer_time < 1.0 && d.shimmer_time > 0.0,
+            "the tail reset then decayed: {}", d.shimmer_time);
+        assert!(d.shimmer_wet, "the tail set shimmerWet");
+        // The velocity was cut ×0.1 at the transform tick (2.0→0.2, 3.0→0.3),
+        // then the shimmered float damps/rises it; the X friction (×0.95/tick)
+        // decays 0.2 toward 0. The cut is verified by the magnitude bound.
+        assert!(d.vel.x.abs() <= 0.2, "the ×0.1 cut bound: {}", d.vel.x);
+    }
+
+    #[test]
+    fn w4_e19_the_transform_spawns_the_shimmer_effect_dust() {
+        // `WorldItem.cs:1846` → `ShimmerEffect` (`:1669-1688`): 20 dust 309.
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(11, 3));
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let n309 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 309).count();
+        assert!(n309 >= 20, "the ShimmerEffect burst: {n309} dust 309");
+    }
+
+    #[test]
+    fn w4_e19_the_decraft_spawns_shimmered_ingredients_at_the_center() {
+        // `WorldItem.cs:1825` → `SpawnShimmeredItem` (`:628-637`): the
+        // ingredient spawns shimmered (shimmerTime 1, shimmerWet) at the
+        // source's Centre with the alternating fan velocity, prefix 0.
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(3077, 60)); // Silk Rope → 2 Cobweb units
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let spawn = app.items.iter().find(|d| d.kind == 225).expect("the cobweb spawn");
+        assert!(spawn.shimmered, "the ingredient is shimmered");
+        assert!(spawn.shimmer_wet, "SpawnShimmeredItem sets shimmerWet");
+        assert_eq!(spawn.prefix, 0, "SpawnShimmeredItem passes prefix 0");
+        // The first spawn (n=0) has fan velocity (0 * (0%2*2-1), 0) = (0, 0);
+        // the X friction keeps 0 at 0 (the shimmered float only writes vel.Y).
+        assert_eq!(spawn.vel.x, 0.0, "the n=0 fan has no horizontal velocity");
+        // The source aired out (60 - 2*30 = 0).
+        assert!(!app.items.iter().any(|d| d.kind == 3077));
+    }
+
+    #[test]
+    fn w4_e19_the_coin_merge_does_not_recalculate_luck_eagerly() {
+        // `Player.cs:18090-18101` — AddCoinLuck sets coinLuck + luckNeedsSync
+        // only; RecalculateLuck runs on the per-tick UpdateLuck, NOT here.
+        // The port's add_coin_luck adds the merged stack without rebuilding
+        // `luck` (the old apply called recalculate_luck eagerly).
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(72, 4)); // Silver → 400 copper-equivalent
+        let luck_before = app.player.as_ref().unwrap().luck_state.luck;
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.luck_state.coin_luck, 400.0, "the merged stack fed coinLuck");
+        // `luck` is rebuilt by the luck pass, not the coin arm — the items
+        // pass alone does not touch it (no UpdateLuck in update_items).
+        assert_eq!(p.luck_state.luck, luck_before, "no eager RecalculateLuck");
+    }
+
+    // -----------------------------------------------------------------
+    // Keep-one 144 — the e19 lane's pass-level splash witnesses folded
+    // (7d3cb5e3's four, re-pinned at the 16 geometry; the unit-level
+    // draw-census twins live in item.rs's w4_f47ds block).
+    // -----------------------------------------------------------------
+
+    /// The entry splash (`WorldItem.cs:881-958`): a dry drop falling into
+    /// the shimmer pool arms `wetCount = 20` and bursts 10 dust 308 (the
+    /// `Next(6)` colour switch) through the shared pool, all on the
+    /// `UpdateItems` stream. The camera parks at the pool so the spawn
+    /// cull passes.
+    #[test]
+    fn w4_f47k1_the_shimmer_entry_splash_bursts_10_dust_308() {
+        let mut app = shimmer_world();
+        // The full dust budget (the flow_app default is 0 — every spawn
+        // would hit the >90% pressure band's Next(4) refusal).
+        app.gfx_quality.max_dust_to_draw = 6000;
+        // Above the pool (rows 18-19), dry, falling — parked at x = 30
+        // tiles (outside the player's grab magnet).
+        app.items.push(ItemDrop::new(
+            2, 1, 0, 30.0 * TILE_PX, 16.0 * TILE_PX, 0.0, 2.0, 0.0,
+        ));
+        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        let mut entered = false;
+        for _ in 0..30 {
+            update_items(&mut app, 1.0 / 60.0);
+            if app.items[0].wet {
+                entered = true;
+                break;
+            }
+        }
+        assert!(entered, "the drop reached the pool");
+        let n308 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        assert!(n308 >= 10, "the entry burst: {n308} dust 308");
+        // The cooldown armed 20 then decremented to 19 on the entry tick.
+        assert_eq!(app.items[0].wet_count, 19, "wetCount 20 - 1");
+        // The colours ride the four-colour switch only.
+        for d in app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308) {
+            assert!(
+                matches!(
+                    (d.color.r, d.color.g, d.color.b),
+                    (255, 255, 210) | (190, 245, 255) | (255, 150, 255) | (190, 175, 255)
+                ),
+                "the Next(6) palette: {:?}",
+                d.color
+            );
+            assert!(d.no_gravity, "the splash dust floats");
+        }
+    }
+
+    /// The exit splash (`:959-1035`): a wet drop lifted out of the pool
+    /// bursts again once the cooldown expired — the shimmer exit arm reads
+    /// the OLD shimmerWet (the latch snapshot keeps it past the dry clear).
+    #[test]
+    fn w4_f47k1_the_shimmer_exit_splash_after_the_cooldown() {
+        let mut app = shimmer_world();
+        app.gfx_quality.max_dust_to_draw = 6000;
+        // Resting IN the pool (the entry burst fires on tick 1).
+        app.items.push(resting_drop(2, 1));
+        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items[0].wet, "the entry latched");
+        let after_entry = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        // Let the cooldown expire (20 ticks), then lift the drop dry.
+        for _ in 0..25 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(app.items[0].wet_count, 0, "the cooldown drained");
+        app.items[0].pos.y = 10.0 * TILE_PX; // high above the pool — dry
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(!app.items[0].wet, "the exit cleared wet");
+        let after_exit = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        assert!(after_exit > after_entry, "the exit burst added dust 308");
+        assert_eq!(app.items[0].wet_count, 19, "the exit re-armed the cooldown");
+    }
+
+    /// The cooldown suppresses re-entry churn (`:883`/`:962`): a drop that
+    /// exits and re-enters within 20 ticks bursts ONCE.
+    #[test]
+    fn w4_f47k1_the_wet_count_suppresses_the_second_burst() {
+        let mut app = shimmer_world();
+        app.gfx_quality.max_dust_to_draw = 6000;
+        app.items.push(resting_drop(2, 1));
+        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        update_items(&mut app, 1.0 / 60.0); // entry burst
+        let n0 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        // Out and back in within the cooldown window.
+        app.items[0].pos.y = 10.0 * TILE_PX;
+        update_items(&mut app, 1.0 / 60.0); // exit edge, wetCount > 0 → no burst
+        app.items[0].pos.y = 19.0 * TILE_PX;
+        update_items(&mut app, 1.0 / 60.0); // re-entry, wetCount > 0 → no burst
+        let n1 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 308).count();
+        assert_eq!(n1, n0, "the cooldown suppressed both edges");
+    }
+
+    /// The water entry arm (`:930-939`): 10 `dustWater()` dust with the
+    /// scale MULTIPLY (×0.8) and alpha 100 — the water family, not 308.
+    #[test]
+    fn w4_f47k1_the_water_entry_splash_uses_the_water_style_dust() {
+        let mut app = shimmer_world();
+        app.gfx_quality.max_dust_to_draw = 6000;
+        // Replace the shimmer pool with water.
+        for x in 0..40 {
+            for y in 18..=19 {
+                let j = app.world.index(x, y);
+                app.world.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Water);
+            }
+        }
+        app.items.push(ItemDrop::new(
+            2, 1, 0, 30.0 * TILE_PX, 16.0 * TILE_PX, 0.0, 2.0, 0.0,
+        ));
+        app.camera = Vec2::new(30.0 * TILE_PX, 18.0 * TILE_PX);
+        for _ in 0..30 {
+            update_items(&mut app, 1.0 / 60.0);
+            if app.items[0].wet {
+                break;
+            }
+        }
+        assert!(app.items[0].wet, "the drop reached the water");
+        let ws = crate::env::water_style()
+            .map(|n| n.min(14) as i32)
+            .unwrap_or_else(|| crate::biome::calculate_water_style(&app.world, app.camera) as i32);
+        let want = tr_core::particles::dust_water(ws);
+        let hits: Vec<_> = app.dust.slots().iter().filter(|d| d.active && d.dust_type == want).collect();
+        assert!(hits.len() >= 10, "the water burst: {} dust {want}", hits.len());
+        for d in hits {
+            assert_eq!(d.alpha, 100, "the water arm sets alpha 100");
+            assert!(d.no_gravity);
+        }
     }
 }
 
@@ -1427,7 +1699,7 @@ mod rand_light_witness {
     }
 
     fn resting(kind: u16, tx: f32) -> ItemDrop {
-        let mut d = ItemDrop::new(kind, 1, 0, tx * TILE_PX, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        let mut d = ItemDrop::new(kind, 1, 0, tx * TILE_PX, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
         d.vel = Vec2::ZERO;
         d
     }
@@ -1980,9 +2252,9 @@ mod pickup_tests {
     fn nearby_world_drops_merge_in_the_items_pass() {
         let mut app = pickup_world();
         // Park the player far away (x = 10 tiles); the drops at x = 30.
-        let mut a = ItemDrop::new(9, 10, 0, 30.0 * TILE_PX, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        let mut a = ItemDrop::new(9, 10, 0, 30.0 * TILE_PX, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
         a.vel = Vec2::ZERO;
-        let mut b = ItemDrop::new(9, 7, 0, 30.0 * TILE_PX + 10.0, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        let mut b = ItemDrop::new(9, 7, 0, 30.0 * TILE_PX + 10.0, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
         b.vel = Vec2::ZERO;
         app.items.push(a);
         app.items.push(b);
@@ -2541,7 +2813,7 @@ mod drop_witness_tests {
         assert_eq!(d.grab_delay_time, crate::item::DEFAULT_GRAB_DELAY);
         assert_eq!(d.grab_delay_player, crate::item::GRAB_DELAY_LOCAL);
         // Rest the drop on the ground (floor y = 120 tiles = 1920 px, the
-        // 14 px box sits at 1906) with zero velocity, aged past the 0.35 s
+        // 16 px box sits at 1904) with zero velocity, aged past the 0.35 s
         // stand-in, and park the player's centre ON it — so only the
         // grab-delay gates the pickup, not range or age.
         {

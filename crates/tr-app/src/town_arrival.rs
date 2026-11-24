@@ -214,7 +214,14 @@ pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
         NpcKind::Zoologist => false,
         // `flag9`: every other town type resident (`:65944-65955`); the port
         // ships the unlock flag, the roster term needs the full type set.
-        NpcKind::Princess => w.unlocked_princess,
+        // W4-f39: the tenth-anniversary world (not getGood) forces flag9
+        // true (`Main.cs:65945-65948`), so the Princess arrives without the
+        // full roster there.
+        NpcKind::Princess => {
+            w.unlocked_princess
+                || (w.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+                    && !w.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY))
+        }
         NpcKind::TravellingMerchant => false,
         _ => false,
     }
@@ -336,6 +343,26 @@ mod tests {
     fn the_nurse_gate_is_the_life_maximum() {
         assert!(!spawn_allowed_nurse(100), "the starting 100 HP waits");
         assert!(spawn_allowed_nurse(120), "a life crystal opens it");
+    }
+
+    /// W4-f39: `Main.cs:65945-65948` — the tenth-anniversary world (not
+    /// getGood) forces the Princess's `flag9` true, so she arrives without
+    /// the full town roster; the getGood seed cancels it.
+    #[test]
+    fn w4_f39_the_anniversary_world_opens_the_princess_arrival() {
+        let mut w = World::new("t".into(), 50, 50);
+        let inv: [ItemSlot; 0] = [];
+        // A classic world: the Princess waits for the roster (closed here).
+        assert!(!condition_holds(NpcKind::Princess, &ctx(&w, &inv)));
+        // The anniversary seed opens her.
+        w.seeds.insert(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        assert!(condition_holds(NpcKind::Princess, &ctx(&w, &inv)));
+        // getGood cancels the anniversary term (`!Main.getGoodWorld`).
+        w.seeds.insert(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        assert!(!condition_holds(NpcKind::Princess, &ctx(&w, &inv)));
+        // The debug unlock still opens her regardless.
+        w.unlocked_princess = true;
+        assert!(condition_holds(NpcKind::Princess, &ctx(&w, &inv)));
     }
 
     /// `NPC.cs:7092-7115`: a bullet or a bullet-firing weapon.

@@ -191,7 +191,16 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     // borrows — the world write happens inside `interact_at`.
     let (player, npcs) = (&app.player, &app.npcs);
     let cell_blocked = |x: i32, y: i32| cell_blocked_by_entity(player.as_ref(), npcs, x, y);
-    let result = edit::interact_at(&mut app.world, tx, ty, direction, &cell_blocked);
+    // W4-g83: the door ops' cleanup kills' framing dispatch rides the
+    // UpdatePlayers stream (the active genRand of the player tick).
+    let result = edit::interact_at(
+        &mut app.world,
+        tx,
+        ty,
+        direction,
+        &cell_blocked,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     // The furniture interactions that touch the player/world state ahead of
     // the cue/drop mapping.
     if let edit::TileInteraction::BankOpen { bank } = result {
@@ -338,6 +347,10 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.world_key = None;
             return true;
         }
+        // W4-c39 exec (research/114 §1h): the CakeEat app arm DROPPED —
+        // f34's shared `StationBuff` arm is the survivor (the same unpitched
+        // Item_2 stand-in; f41's pitched seam stays research/70 §1f's
+        // recorded follow-up). f41c `f1f95be4` is canonical.
         edit::TileInteraction::StationInteract { kind } => {
             // `Player.cs:33279-33284` (the `TileInteractionsUse` tail): the
             // clicked tile's filter lands in `CraftingUI._lastFilter` via

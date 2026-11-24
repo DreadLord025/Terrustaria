@@ -24,6 +24,7 @@ mod buff_effects_accessory;
 mod bug_net;
 mod chat;
 mod chest;
+mod cloud;
 mod collision;
 mod combat_text;
 #[cfg(feature = "debug")]
@@ -64,6 +65,8 @@ mod net;
 mod npc;
 mod npc_scaling;
 mod npc_chat;
+mod party_hat;
+mod event_skies;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
@@ -217,6 +220,10 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-c39 exec (research/114 §1c): the duplicate `projectile_ai166` module
+// RETIRED — d17's in-file `ai_dove`/`dove_movement`/`dove_bounce` in
+// projectile.rs is canonical (the pool's module convention). c39's live
+// entity-light feed stays grafted in app/frame/draw.rs.
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in
@@ -267,6 +274,9 @@ mod recall_teleport;
 mod regen;
 mod research;
 mod sand;
+// W4-d130: the ambient snowfall (`Main.snowing()`, Main.cs:13032-13116) —
+// the type-76 dust spawn/AI/draw, the rain rig's flake approximation retired.
+mod snow;
 mod ambience;
 mod ambient_sound;
 mod capture;
@@ -287,6 +297,7 @@ mod tag_effects;
 mod settings;
 mod shop;
 mod shimmer;
+mod slime_sky;
 mod signs;
 mod sound;
 mod soundid;
@@ -334,7 +345,9 @@ fn main() -> Result<()> {
     let world_path = if let Some(p) = crate::env::world_path() {
         p
     } else {
-        match args.get(1) {
+        // The vanilla launch flags are `key=value` args (`Main.cs:5040+`),
+        // never world paths — skip them when picking the positional path.
+        match args.iter().skip(1).find(|a| !a.contains('=')) {
             Some(p) => PathBuf::from(p),
             None => app::latest_own_world().unwrap_or(app::terrstaria_world()?),
         }
@@ -357,7 +370,12 @@ fn main() -> Result<()> {
     // register the shipped resources and apply the saved culture before the
     // first menu draws. `TR_LANG` mirrors LaunchInitializer's `-lang` flag
     // (`LaunchInitializer.cs:120` sets the culture ahead of the config read).
-    let settings = settings::Settings::load();
+    let mut settings = settings::Settings::load();
+    // `Main.cs:5079-5083` — the `slowliquids=1` launch flag raises
+    // `Setting_UseReducedMaxLiquids` (no config.json key; the settings
+    // screens never write it). Applied ahead of `App::new` so the boot
+    // settle's `ReInit` cap (`Liquid.cs:98-101`) sees it.
+    settings.apply_launch_args(&args);
     let culture = crate::env::lang()
         .map(|name| tr_core::localization::GameCulture::from_name(&name))
         .unwrap_or_else(|| tr_core::localization::GameCulture::from_name(&settings.language));

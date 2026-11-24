@@ -9,17 +9,25 @@
 //! `npc.rs::update_guide` (`:7471`): a 240-tick fixed flip at a constant
 //! 0.5 px/tick with an invented −6.2 jump — a stand-in, not the C# arm.
 //!
-//! UNWIRED (code-only mode, the `npc_ai_caster.rs` precedent): the live
-//! dispatch still routes the town kinds through `update_guide`. The
-//! migration replaces that call with [`town_npc_ai`], drains
-//! [`TownShot`]/[`TownStrike`]/[`TownPartnerWrite`] through the NPC
-//! spawn/strike seams, implements the inline [`TownDoorOps`] trait over
-//! `tr_core::edit::{open_door, close_door}` (+ `ShiftTallGate` when it
-//! lands), registers the door latch fields on `Npc` (the C#'s
-//! `closeDoor`/`doorX`/`doorY`, `NPC.cs:6511-6513`) and applies
-//! [`HomeTileUpdate`] through `TownRooms` + message 60. The contested
-//! pieces stay untouched: the housing validation (`town.rs`), the chat
-//! selection (`npc_chat`), and the caster aiStyle-8 arm.
+//! WIRING SPLIT (doc-sweep lane 36, `docs/research/121-doc-sweep-shimmer.md`):
+//! the FULL aiStyle-7 migration (retire `update_guide`, the axis claim, the
+//! door latch, the generic `UpdateNPC` tail) is W4-b3's pushed phase 1
+//! (`task/W4-b3-npc-ai-town-wire` 96a5d88f) — this branch does NOT duplicate
+//! it. What THIS branch wires is the state-25 emergence seam only:
+//! [`town_shimmer_step`] (below) runs the W4-f47 emergence machine for a
+//! town NPC whose `ai[0] == 25` at its slot turn in `world_sim/npcs.rs`,
+//! draining [`ShimmerFx`] onto the dust pool / entity lights and crediting
+//! progression 43. The `drain_shimmer_transforms` TownVariant arm
+//! (`NPC.cs:91578-91591`) sets that state, so the shimmer→emergence chain is
+//! LIVE end-to-end on this branch while the dry walk stays `update_guide`
+//! until b3 lands. At the b3 merge the seam folds into b3's
+//! `ai_007_town_family` (its `town_npc_ai` call reaches the same
+//! `:53187` arm; the merge keeps ONE driver — the contract is documented
+//! in ANALYSIS 121). The rest of the migration (TownOutputs drain, real
+//! door ops, the live NPC list, `HomeTileUpdate` through `TownRooms` +
+//! message 60) stays b3's phase 2. The contested pieces stay untouched:
+//! the housing validation (`town.rs`), the chat selection (`npc_chat`),
+//! and the caster aiStyle-8 arm.
 //!
 //! SCOPE — the whole arm's STRUCTURE with the branches the port's town
 //! kinds take (the ten housed kinds + the eleven town-like sellers,
@@ -35,10 +43,11 @@
 //!   animation rolls ([`pet_idle_animation`], `:55750-55785`) and the
 //!   pet gates are ported as pure fns, unreachable until the pets land;
 //! * the SHIMMER state 25 (`:53187-53277`) + the shimmer teleport scan
-//!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): the state
-//!   is a cited skip (returns, draws shimmer dust — the dust task's);
-//! * the Old Man 37 / Clothier 54 / Santa 142 (`:53158-53161` +
-//!   the type arms), the Mechanic's owned-proj
+//!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): PORTED
+//!   (W4-f47 phase 2) and WIRED via [`town_shimmer_step`] (doc-sweep
+//!   lane 36) — the visuals drain onto the shared pool/lights;
+//! * the Old Man 37 / Clothier 54 / Santa 142 / the bound-NPC Transform
+//!   rows 362/364/602/608 (`:53158-53184`), the Mechanic's owned-proj
 //!   latch (`:53166-53179`) and the Angler's wet edge rescue
 //!   (`:53375-53391`): the kinds are ported but those arms ride systems
 //!   the port has not landed (dungeon home, owned proj
@@ -129,6 +138,7 @@
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::TargetCandidate;
+use glam::Vec2;
 use tr_core::tile::Tile;
 use tr_core::tiledata as td;
 use tr_core::{UnifiedRandom, World, TILE_PX};
@@ -627,6 +637,9 @@ pub struct TownEnv<'a> {
     pub breath: i32,
     /// `NPC.shimmering` (`NPC.cs:92141`) — the `:53296` home-stamp gate.
     pub shimmering: bool,
+    /// `Main.timeForVisualEffects` (`Main.cs:1181`, the double counter) —
+    /// the state-25 emergence light's hue (`NPC.cs:53232`).
+    pub time_for_visual_effects: f64,
 }
 
 /// `NPC.UpdateHomeTileState` (`NPC.cs:52904-52914`) — the home-tile
@@ -715,17 +728,36 @@ pub struct TownOutputs {
     /// `NPC.cs:53419-53422`) — applied through `NpcBuffs` by the caller
     /// (the arm cannot borrow the buff engine mutably twice).
     pub repeated_stink_buff: bool,
-    /// W4-c10 sweep (the W4-b3 co-lane seam) — the waterfowl takeoff
-    /// (`NPC.cs:53180-53184`): the walker 362/364/602/608 falling fast
-    /// (`velocity.Y > 4 || < -4`) or wet transforms into its swimming
-    /// form (`Transform(this.type + 1)`, the default ai0..3 = 0) and
-    /// the arm RETURNS. The arm cannot run `Transform` itself (the
-    /// player seam + the kind table live on the caller), so the NEW
-    /// vanilla type rides here (the `wants_transform` pattern); the
-    /// caller drains it through `Npc::transform_to_kind`. `Transform`
-    /// draws nothing and `TransformVisuals` is silent for the
-    /// waterfowl pairs (the `npc_transform_visuals.rs` census).
-    pub waterfowl_takeoff: Option<i32>,
+//!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): the state
+//!   is a cited skip (returns, draws shimmer dust — the dust task's);
+//! * the Old Man 37 / Clothier 54 / Santa 142 (`:53158-53161` +
+//!   the type arms), the Mechanic's owned-proj
+    /// W4-f47 — the state-25 emergence visuals (`NPC.cs:53228-53248`),
+    /// drained by the wiring onto the dust pool / entity lights (the
+    /// module's RNG-free convention: the draws already rode `rng`).
+    pub shimmer_fx: Vec<ShimmerFx>,
+    /// W4-f47 — the state-25 completion's progression 43
+    /// (`AchievementsHelper.NotifyProgressionEvent(43)`, `NPC.cs:53273`)
+    /// when the flipped variation is 1.
+    pub shimmer_town_progression: bool,
+}
+
+/// One state-25 visual request (`NPC.cs:53232-53247`). The positions /
+/// colours / scales are computed in-arm (the draws already spent); the
+/// wiring only spawns the dust / adds the light.
+#[derive(Clone, Copy, Debug)]
+pub enum ShimmerFx {
+    /// `Lighting.AddLight(Center, hslToRgb(tve/360 % 1, 0.6, 0.65) *
+    /// Remap(ai1, 30, 90, 0, 0.7))` (`:53232`) — the RGB is the byte
+    /// product / 255 (the `Color.ToVector3` convention).
+    Light { x: f32, y: f32, rgb: [f32; 3] },
+    /// `Dust.NewDustPerfect(pos, 309, (0,-2).RotatedBy(num5*2pi*0.11),
+    /// 0, default, 1.7 - |num5|*1.3)` (`:53235`).
+    Dust { x: f32, y: f32, vx: f32, vy: f32, scale: f32 },
+    /// `ParticleOrchestrator.RequestParticleSpawn(ShimmerBlock, ...)`
+    /// (`:53242-53246`) — the particle system is unported; the request is
+    /// recorded (position + movement vector) for the future seam.
+    Particle { x: f32, y: f32, mx: f32, my: f32 },
 }
 
 /// `AI_007_TownEntities_UpdateSavedStates` (`NPC.cs:52934-52963`).
@@ -1519,6 +1551,428 @@ pub fn town_stat_bonuses(
 /// the NPC's `Main.npc[]` slot. The generic UpdateNPC tail (gravity,
 /// integration, collision) is the caller's — this fn never integrates.
 #[allow(clippy::too_many_arguments)]
+/// `AI_007_TownEntities_Shimmer_TeleportToLandingSpot` +
+/// `ScanForBestSpotToLandOn` (`NPC.cs:55563-55641`): the four expanding
+/// scans (top 1..29 step 2, home 1..29, top 30-or-0..59 allowSolidTop,
+/// home 30..59), the first spot wins; a ≥560-px jump arms `ai[2] = 30`.
+/// `ShimmerHelper.FindSpotWithoutShimmer` is the tr-core port; the
+/// `IsSpotShimmerFree` probe (`ShimmerHelper.cs:67-82`) rides the closure.
+fn shimmer_teleport_to_landing_spot(npc: &mut Npc, world: &World, homeless: bool) {
+    let (w, h) = npc.size();
+    let top_x = (npc.x + w / 2.0) as i32 / 16;
+    let top_y = npc.y as i32 / 16;
+    let home = npc.home;
+    // `flag = homeless && (homeTileX == -1 || homeTileY == -1)` — the
+    // port folds the pair into `home: Option` (a homeless NPC keeps no
+    // home), so `homeless` alone is the flag.
+    let flag0 = homeless && home.is_none();
+    let spot_free = |px: f32, py: f32, allow_top: bool| -> bool {
+        shimmer_spot_free(world, px, py, w as i32, h as i32, allow_top)
+    };
+    let mut result: Option<(f32, f32)> = None;
+    // Scan 1 (`:55590-55598`): the top, expand 1..29 step 2.
+    let mut i = 1;
+    while i < 30 {
+        if let Some(p) = tr_core::shimmer::find_spot_without_shimmer(
+            top_x, top_y, i, flag0, w, h, &|px, py| spot_free(px, py, flag0),
+        ) {
+            result = Some(p);
+            break;
+        }
+        i += 2;
+    }
+    // Scan 2 (`:55599-55610`): the home, same window.
+    if result.is_none() {
+        if let Some((hx, hy)) = home {
+            let mut j = 1;
+            while j < 30 {
+                if let Some(p) = tr_core::shimmer::find_spot_without_shimmer(
+                    hx, hy, j, flag0, w, h, &|px, py| spot_free(px, py, flag0),
+                ) {
+                    result = Some(p);
+                    break;
+                }
+                j += 2;
+            }
+        }
+    }
+    // Scan 3 (`:55611-55625`): the top, expand (flag0 ? 30 : 0)..59,
+    // allowSolidTop forced true.
+    if result.is_none() {
+        let start = if flag0 { 30 } else { 0 };
+        let mut k = start;
+        while k < 60 {
+            if let Some(p) = tr_core::shimmer::find_spot_without_shimmer(
+                top_x, top_y, k, true, w, h, &|px, py| spot_free(px, py, true),
+            ) {
+                result = Some(p);
+                break;
+            }
+            k += 2;
+        }
+    }
+    // Scan 4 (`:55626-55639`): the home, 30..59, allowSolidTop true.
+    if result.is_none() {
+        if let Some((hx, hy)) = home {
+            let mut l = 30;
+            while l < 60 {
+                if let Some(p) = tr_core::shimmer::find_spot_without_shimmer(
+                    hx, hy, l, true, w, h, &|px, py| spot_free(px, py, true),
+                ) {
+                    result = Some(p);
+                    break;
+                }
+                l += 2;
+            }
+        }
+    }
+    if let Some((px, py)) = result {
+        let (ox, oy) = (npc.x, npc.y);
+        npc.x = px;
+        npc.y = py;
+        let (mx, my) = (px - ox, py - oy);
+        if (mx * mx + my * my).sqrt() >= 560.0 {
+            npc.ai[2] = 30.0; // the ShimmerTownNPCSend particle is the seam
+        }
+        npc.net_update = true;
+    }
+}
+
+/// `ShimmerHelper.IsSpotShimmerFree` (`ShimmerHelper.cs:67-82`): the body
+/// box must be solid-free, the 100-px column below it must HIT solid
+/// (allowSolidTop widens the support test), and the body+100 box must not
+/// touch shimmer liquid. `Collision.SolidCollision` (`:2700-2778`).
+fn shimmer_spot_free(world: &World, x: f32, y: f32, w: i32, h: i32, allow_top: bool) -> bool {
+    if solid_collision_box(world, x, y, w, h, false) {
+        return false;
+    }
+    if !solid_collision_box(world, x, y + h as f32, w, 100, allow_top) {
+        return false;
+    }
+    let (_, _, shimmer) = crate::npc_ai_slime::wet_collision(world, x, y, w, h + 100);
+    !shimmer
+}
+
+/// `Collision.SolidCollision(Position, Width, Height, acceptTopSurfaces)`
+/// (`Collision.cs:2735-2778`): active, not actuated; solid-not-top, OR
+/// (acceptTop) solid-top frameY==0 / platform proper-top-frame. The
+/// half-brick 8-px lift, strict overlap.
+fn solid_collision_box(world: &World, x: f32, y: f32, w: i32, h: i32, accept_top: bool) -> bool {
+    let x0 = ((x / 16.0) as i32 - 1).clamp(0, world.width - 1);
+    let x1 = (((x + w as f32) / 16.0) as i32 + 2).clamp(0, world.width - 1);
+    let y0 = ((y / 16.0) as i32 - 1).clamp(0, world.height - 40);
+    let y1 = (((y + h as f32) / 16.0) as i32 + 2).clamp(0, world.height - 40);
+    for i in x0..x1 {
+        for j in y0..y1 {
+            let Some(t) = world.tile(i, j) else { continue };
+            if !nactive(t) {
+                continue;
+            }
+            let mut flag = raw_solid(t.kind) && !raw_solid_top(t.kind);
+            if accept_top {
+                flag = if td::SET_PLATFORMS.has(t.kind) {
+                    flag || platform_proper_top_frame(t.frame_x)
+                } else {
+                    flag || (raw_solid_top(t.kind) && t.frame_y == 0)
+                };
+            }
+            if !flag {
+                continue;
+            }
+            let tx = (i * 16) as f32;
+            let mut ty = (j * 16) as f32;
+            let mut th = 16;
+            if t.half_brick() {
+                ty += 8.0;
+                th -= 8;
+            }
+            if x + w as f32 > tx && x < tx + 16.0 && y + h as f32 > ty && y < ty + th as f32 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.PlatformProperTopFrame` (`WorldGen.cs:70153-70165`):
+/// `frameX / 18` in 0..7, 12..16 or 25..26.
+fn platform_proper_top_frame(frame_x: i16) -> bool {
+    let num = frame_x as i32 / 18;
+    ((0..=7).contains(&num) || (12..=16).contains(&num)) || (25..=26).contains(&num)
+}
+
+/// `AI_007_TownEntities`' state 25 (`NPC.cs:53187-53277`, W4-f47): the
+/// shimmer emergence. ai[1]==0 zeroes vx + the landing-spot teleport;
+/// ai[2] is the teleport hold; ai[1] climbs, at ≥30 the transparency
+/// decays 1/60 per tick UNLESS wet (the WetCollision probe), velocity
+/// (0, -4*t); the hue light + the 309 dust + the 1/15 particle triple;
+/// at ai[1] ≥ 75 && t ≤ 0 the variant flips, the ai/localAI zero, the
+/// (0,-4) kick, Teleport(pos, 12) and progression 43 when variation 1.
+fn town_shimmer_state25(
+    npc: &mut Npc,
+    env: &TownEnv<'_>,
+    rng: &mut UnifiedRandom,
+    out: &mut TownOutputs,
+) {
+    let world = env.world;
+    let (w, h) = npc.size();
+    npc.dont_take_damage = true; // :53189
+    if npc.ai[1] == 0.0 {
+        npc.vx = 0.0; // :53192
+    }
+    // :53194-53197 — the wet flags clear (the port's NPC carries
+    // shimmer/honey; `wet` is the swimmer cache, cleared here too).
+    npc.shimmer_wet = false;
+    npc.honey_wet = false;
+    npc.wet = false;
+    // :53198-53201 — the client-only early return (netMode 1) is out.
+    if npc.ai[1] == 0.0 && npc.ai[2] < 1.0 {
+        shimmer_teleport_to_landing_spot(npc, world, env.homeless); // :53204
+    }
+    if npc.ai[2] > 0.0 {
+        npc.ai[2] -= 1.0; // :53208
+        if npc.ai[2] <= 0.0 {
+            npc.ai[1] = 1.0; // :53211
+        }
+        return; // :53213
+    }
+    npc.ai[1] += 1.0; // :53215
+    if npc.ai[1] >= 30.0 {
+        // :53218-53225 — the transparency decay gates on a FRESH
+        // WetCollision probe (not the cached wet flag).
+        let (wet, _, _) = crate::npc_ai_slime::wet_collision(world, npc.x, npc.y, w as i32, h as i32);
+        if !wet {
+            npc.shimmer_transparency = (npc.shimmer_transparency - 1.0 / 60.0).clamp(0.0, 1.0);
+        } else {
+            npc.ai[1] = 30.0;
+        }
+        npc.vx = 0.0;
+        npc.vy = -4.0 * npc.shimmer_transparency; // :53226
+    }
+    // :53228-53236 — the hitbox (Y+20, Height-20), the direction draw,
+    // the hue light and the conditional dust. The draws ride `rng` in
+    // the C# order: NextFloatDirection, then the NextFloat gate, then
+    // (on a hit) the rectangle pair + the circular pair.
+    let hb = (npc.x, npc.y + 20.0, w, h - 20.0);
+    let num5 = rng.next_float_direction(); // :53231
+    let (cx, cy) = (npc.x + w / 2.0, npc.y + h / 2.0);
+    let hue = (env.time_for_visual_effects as f32 / 360.0) % 1.0;
+    let rgb = crate::ui::color::hsl_to_rgb(hue as f64, 0.6, 0.65, 255);
+    let light_scale = shimmer_remap(npc.ai[1], 30.0, 90.0, 0.0, 0.7);
+    out.shimmer_fx.push(ShimmerFx::Light {
+        x: cx,
+        y: cy,
+        rgb: [
+            rgb[0] as f32 / 255.0 * light_scale,
+            rgb[1] as f32 / 255.0 * light_scale,
+            rgb[2] as f32 / 255.0 * light_scale,
+        ],
+    });
+    // :53233 — `NextFloat() > Remap(ai1, 30, 60, 1, 0.5)`.
+    let gate = shimmer_remap(npc.ai[1], 30.0, 60.0, 1.0, 0.5);
+    if rng.next_float() > gate {
+        // NextVector2FromRectangle(hitbox) + NextVector2Circular(8, 0)
+        // + (0, 4) — Utils.cs:1256-1268 (two + two NextFloat draws).
+        let rx = hb.0 + rng.next_float() * hb.2;
+        let ry = hb.1 + rng.next_float() * hb.3;
+        let ang = std::f32::consts::TAU * rng.next_float();
+        let rad = rng.next_float();
+        let (ux, uy) = (ang.cos(), ang.sin());
+        let px = rx + ux * 8.0 * rad;
+        let py = ry + uy * 0.0 * rad + 4.0;
+        // (0,-2).RotatedBy(num5 * 2pi * 0.11) — Utils.cs:1675-1684.
+        let rot = (num5 * std::f32::consts::TAU * 0.11) as f64;
+        let (rc, rs) = (rot.cos() as f32, rot.sin() as f32);
+        let (vx, vy) = (0.0 * rc - (-2.0) * rs, 0.0 * rs + (-2.0) * rc);
+        out.shimmer_fx.push(ShimmerFx::Dust {
+            x: px,
+            y: py,
+            vx,
+            vy,
+            scale: 1.7 - num5.abs() * 1.3,
+        });
+    }
+    // :53237-53248 — ai1 > 60 && Next(15) == 0 → three ShimmerBlock
+    // particles (the orchestrator is unported; the requests record).
+    if npc.ai[1] > 60.0 && rng.next_max(15) == 0 {
+        for _ in 0..3 {
+            let px = npc.x + rng.next_float() * w;
+            let py = npc.y + rng.next_float() * h;
+            let (dx, dy) = direction_to(cx, cy, px, py);
+            let sign = (rng.next_max(2) * 2 - 1) as f32;
+            let rot = (std::f32::consts::PI * 9.0 / 20.0 * sign) as f64;
+            let (rc, rs) = (rot.cos() as f32, rot.sin() as f32);
+            let mag = rng.next_float();
+            out.shimmer_fx.push(ShimmerFx::Particle {
+                x: px,
+                y: py,
+                mx: (dx * rc - dy * rs) * mag,
+                my: (dx * rs + dy * rc) * mag,
+            });
+        }
+    }
+    // :53249-53250 — TargetClosest + GetTargetData (the target centre).
+    let players: Vec<TargetCandidate> = env.players.iter().map(|p| p.candidate).collect();
+    crate::npc_target::target_closest(npc, world, &players, true, 7, 0);
+    let target_center = if npc.target >= 0 && (npc.target as usize) < env.players.len() {
+        let p = &env.players[npc.target as usize].candidate;
+        (p.x + p.width as f32 / 2.0, p.y + p.height as f32 / 2.0)
+    } else {
+        (cx, cy)
+    };
+    // :53251-53275 — the completion: ai1 ≥ 75 && t ≤ 0 (netMode != 1).
+    if npc.ai[1] >= 75.0 && npc.shimmer_transparency <= 0.0 {
+        npc.ai = [0.0; 4];
+        // :53257 — the Math.Sign call's result is DISCARDED (the C#
+        // computes it and drops it; no direction write).
+        let _ = (target_center.0 - cx).signum();
+        npc.vx = 0.0;
+        npc.vy = -4.0; // :53258
+        npc.local_ai = [0.0; 4];
+        npc.net_update = true;
+        npc.variation_index = if npc.variation_index != 1 { 1 } else { 0 }; // :53264
+        // :53266 — Teleport(position, 12): the position is UNCHANGED
+        // (the C# teleports to where it already stands — the effect +
+        // teleportTime latch are the visual seam, unported).
+        if npc.variation_index == 1 {
+            out.shimmer_town_progression = true; // :53273
+        }
+    }
+}
+
+/// `Utils.Remap` (`Utils.cs:345-348`) — the clamped lerp.
+fn shimmer_remap(v: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    let t = ((v - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
+    to_min + (to_max - to_min) * t
+}
+
+/// The state-25 emergence SEAM (doc-sweep lane 36, W4-f47): the world-sim
+/// slot loop calls this for a living town NPC whose `ai[0] == 25` — the
+/// state `drain_shimmer_transforms`' TownVariant arm sets
+/// (`NPC.cs:91578-91591`). It builds the solo classic [`TownEnv`] (the
+/// b3 adapter's fold: one session player, empty NPC list, the unported
+/// statics false), runs [`town_shimmer_state25`] on the caller's
+/// `UpdateNpcs` stream, and drains the visuals: the hue light onto the
+/// shared `EntityLights` (the `(int)(v/16)` truncation, the
+/// `npc_lights.rs` convention), the 309 dust via `NewDustPerfect` (the
+/// draws already rode `rng` in-arm — the perfect spawn's own 6 draws ride
+/// the same stream here, the C# `:53235` order), the particle requests
+/// stay recorded (the orchestrator is unported). Progression 43 credits
+/// through the caller's returned flag. Returns `true` when the state ran
+/// (the caller then skips the dry walk for this tick — the C# arm RETURNS
+/// at `:53277`).
+///
+/// MERGE CONTRACT (b3): when `task/W4-b3-npc-ai-town-wire` lands, its
+/// `ai_007_town_family` adapter reaches the same `:53187` arm through
+/// `town_npc_ai`; the merger keeps ONE driver — either this seam folds
+/// into the adapter's `TownOutputs` drain or the adapter's state-25 call
+/// is dropped in favour of this pre-pass. The draws are identical either
+/// way (the same in-arm order on the same stream); the b3 adapter's
+/// `shimmering: false` fold must become the NPC's live buff-353 flag.
+pub fn town_shimmer_step(
+    npc: &mut Npc,
+    world: &World,
+    player: &crate::player::Player,
+    time_for_visual_effects: f64,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+    lights: &mut crate::entity_lights::EntityLights,
+) -> bool {
+    if npc.ai[0] != 25.0 || npc.hp <= 0 || !npc.kind.is_town_npc_like() {
+        return false;
+    }
+    let players = [TownPlayer {
+        candidate: crate::npc_target::session_candidate(player),
+        // `Player.talkNPC` lives on the App — the solo seam reads nobody
+        // talking (the b3 phase-1 fold).
+        talk_npc: -1,
+        stinky: player.buffs.buff_type.contains(&120),
+        sitting: player.sitting,
+        can_be_talked_to: !player.dead && player.stealth == 0.0,
+    }];
+    let env = TownEnv {
+        world,
+        day_time: world.day_time,
+        raining: world.raining,
+        eclipse: world.eclipse,
+        slime_rain: world.slime_rain,
+        storming: false, // the wind/storm scan unported (the b3 fold)
+        net_mode: 0,
+        expert_mode: player.buffs.expert_mode,
+        master_mode: false,
+        players: &players,
+        npcs: &[],
+        dungeon_x: 0,
+        dungeon_y: 0,
+        combat_book: world.combat_book_was_used,
+        combat_book_two: false,
+        party_up: false,
+        skyblock_low_tiles: false,
+        infected_seed: world.seeds.contains(tr_core::seeds::SeedFlags::ZENITH),
+        only_shimmer_ocean: false,
+        x_mas: false,
+        town_damage_multiplier: 1.0,
+        downed_slime_king: world.downed_slime_king,
+        downed_boss1: world.downed_eoc,
+        downed_deerclops: world.downed_deerclops,
+        downed_boss2: world.downed_eow,
+        downed_boss3: world.downed_skeletron,
+        downed_queen_bee: world.downed_queen_bee,
+        hard_mode: world.hard_mode,
+        downed_queen_slime: world.downed_queen_slime,
+        downed_mech1: world.downed_mech_boss1,
+        downed_mech2: world.downed_mech_boss2,
+        downed_mech3: world.downed_mech_boss3,
+        downed_plant: world.downed_plant_boss,
+        downed_empress: false,
+        downed_fishron: world.downed_fishron,
+        downed_golem: world.downed_golem,
+        downed_cultist: world.downed_ancient_cultist,
+        homeless: npc.home.is_none(),
+        breath: 200,
+        // `NPC.shimmering` — the live buff-353 flag (the f47 NPC wiring).
+        shimmering: npc.shimmering,
+        time_for_visual_effects,
+    };
+    let mut out = TownOutputs::default();
+    town_shimmer_state25(npc, &env, rng, &mut out);
+    // The visual drain (the draws already spent in-arm; the perfect
+    // spawn's own NewDust draws ride the same stream at the C# `:53235`
+    // position — after the gate draws, before the particle triple).
+    // ORDER NOTE: the C# spawns each dust INLINE between the light and
+    // the particle roll; the port drains the whole list after the arm,
+    // so the dusts' NewDust draws land AFTER the particle draws of the
+    // same tick. The in-arm gate/direction draws keep their exact order;
+    // only the allocator's own draws shift within the tick (documented,
+    // ANALYSIS 121 — the same pool-pass convention as the item splash).
+    for fx in out.shimmer_fx {
+        match fx {
+            ShimmerFx::Light { x, y, rgb } => {
+                lights.add((x / 16.0) as i32, (y / 16.0) as i32, rgb);
+            }
+            ShimmerFx::Dust { x, y, vx, vy, scale } => {
+                dust.new_dust_perfect(
+                    rng,
+                    dust_ctx,
+                    world,
+                    Vec2::new(x, y),
+                    309,
+                    Some(Vec2::new(vx, vy)),
+                    0,
+                    tr_core::particles::Color::default(),
+                    scale,
+                );
+            }
+            ShimmerFx::Particle { .. } => {
+                // The orchestrator is unported — the request was recorded
+                // (the draws spent); nothing to spawn.
+            }
+        }
+    }
+    out.shimmer_town_progression
+}
+
 pub fn town_npc_ai(
     npc: &mut Npc,
     env: &TownEnv<'_>,
@@ -1641,11 +2095,12 @@ pub fn town_npc_ai(
     // `:53186` — dontTakeDamage = false every tick.
     npc.dont_take_damage = false;
 
-    // `:53187-53277` — the shimmer state 25: cited skip (the dust /
-    // particle / teleport-scan systems). The C# returns from the arm
-    // here while shimmering; the port keeps the state untouched.
+    // `:53187-53277` — the shimmer state 25 (W4-f47): the emergence
+    // machine. The visuals ride the `shimmer_fx` seam (the draws spend
+    // `rng` in-arm, the wiring spawns the dust/lights); the C# returns
+    // from the whole arm here.
     if npc.ai[0] == 25.0 {
-        npc.dont_take_damage = true;
+        town_shimmer_state25(npc, env, rng, out);
         return;
     }
 
@@ -3943,6 +4398,7 @@ mod tests {
             homeless: false,
             breath: 200,
             shimmering: false,
+            time_for_visual_effects: 0.0,
         }
     }
 
@@ -4576,5 +5032,111 @@ mod tests {
         assert!(src.contains("NPC.cs:55750-55785"));
         assert!(src.contains("ID/NPCID.cs:10466"));
         assert!(src.contains("Collision.cs:3694-3697"));
+    }
+
+    // -----------------------------------------------------------------
+    // W4-f47 — the state-25 shimmer emergence witnesses (WRITTEN NOT RUN)
+    // -----------------------------------------------------------------
+
+    /// `NPC.cs:53187-53213` — the ai[2] hold: the countdown decrements,
+    /// at zero ai[1] arms 1, and the arm RETURNS (no ai[1] climb, no
+    /// visuals). The wet flags clear every state-25 tick.
+    #[test]
+    fn w4_f47_state25_the_teleport_hold_counts_down_and_returns() {
+        let w = ground();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
+        let npcs: Vec<(usize, TownNpcView)> = Vec::new();
+        let e = env(&w, &players, &npcs);
+        let mut n = guide(60.0 * 16.0, 120.0 * 16.0 - 40.0, Some((60, 120)));
+        n.ai = [25.0, 0.0, 2.0, 0.0];
+        n.wet = true;
+        n.shimmer_wet = true;
+        let mut rng = UnifiedRandom::new(7);
+        let mut out = TownOutputs::default();
+        town_shimmer_state25(&mut n, &e, &mut rng, &mut out);
+        assert_eq!(n.ai[2], 1.0);
+        assert_eq!(n.ai[1], 0.0, "the hold returns before the climb");
+        assert!(!n.wet && !n.shimmer_wet, "the wet flags clear");
+        assert!(n.dont_take_damage);
+        assert!(out.shimmer_fx.is_empty(), "no visuals during the hold");
+        // The hold's last tick arms ai[1] = 1.
+        town_shimmer_state25(&mut n, &e, &mut rng, &mut out);
+        assert_eq!(n.ai[2], 0.0);
+        assert_eq!(n.ai[1], 1.0);
+        // The stream never moved (the hold draws nothing).
+        assert_eq!(rng, UnifiedRandom::new(7));
+    }
+
+    /// `NPC.cs:53215-53226` — the climb: below 30 no decay; at 30+ the
+    /// dry transparency decays 1/60 and the velocity is (0, -4*t); a
+    /// WET probe pins ai[1] at 30 (no decay).
+    #[test]
+    fn w4_f47_state25_the_climb_decays_dry_and_pins_wet() {
+        let mut w = ground();
+        // A shimmer pool at the Guide's feet (x 59..62, y 118..119).
+        for x in 59..63 {
+            for y in 118..120 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+            }
+        }
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
+        let npcs: Vec<(usize, TownNpcView)> = Vec::new();
+        let e = env(&w, &players, &npcs);
+        // Dry: stand ABOVE the pool (y 100 tiles), ai1 29 → 30.
+        let mut n = guide(60.0 * 16.0, 100.0 * 16.0, Some((60, 120)));
+        n.ai = [25.0, 29.0, 0.0, 0.0];
+        n.shimmer_transparency = 0.89;
+        let mut rng = UnifiedRandom::new(3);
+        let mut out = TownOutputs::default();
+        town_shimmer_state25(&mut n, &e, &mut rng, &mut out);
+        assert_eq!(n.ai[1], 30.0);
+        assert!((n.shimmer_transparency - (0.89 - 1.0 / 60.0)).abs() < 1e-6);
+        assert_eq!(n.vx, 0.0);
+        assert!((n.vy - (-4.0 * n.shimmer_transparency)).abs() < 1e-5);
+        // Wet: stand IN the pool — ai1 pins at 30, no decay.
+        let mut n2 = guide(60.0 * 16.0, 118.0 * 16.0, Some((60, 120)));
+        n2.ai = [25.0, 40.0, 0.0, 0.0];
+        n2.shimmer_transparency = 0.5;
+        let mut out2 = TownOutputs::default();
+        town_shimmer_state25(&mut n2, &e, &mut rng, &mut out2);
+        assert_eq!(n2.ai[1], 30.0, "the wet probe pins the climb");
+        assert_eq!(n2.shimmer_transparency, 0.5, "no decay while wet");
+    }
+
+    /// `NPC.cs:53251-53275` — the completion: ai1 ≥ 75 && t ≤ 0 zeroes
+    /// the ai/localAI, kicks (0,-4), flips the variation and credits
+    /// progression 43 when the flip lands on 1.
+    #[test]
+    fn w4_f47_state25_the_completion_flips_the_variant() {
+        let w = ground();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
+        let npcs: Vec<(usize, TownNpcView)> = Vec::new();
+        let e = env(&w, &players, &npcs);
+        let mut n = guide(60.0 * 16.0, 100.0 * 16.0, Some((60, 120)));
+        n.ai = [25.0, 74.0, 0.0, 0.0];
+        n.shimmer_transparency = 1.0 / 60.0; // one dry decay → ≤ 0
+        n.variation_index = 0;
+        n.local_ai = [1.0, 2.0, 3.0, 4.0];
+        let mut rng = UnifiedRandom::new(11);
+        let mut out = TownOutputs::default();
+        town_shimmer_state25(&mut n, &e, &mut rng, &mut out);
+        assert_eq!(n.ai, [0.0; 4], "the completion zeroes the ai");
+        assert_eq!(n.local_ai, [0.0; 4]);
+        assert_eq!(n.vx, 0.0);
+        assert_eq!(n.vy, -4.0);
+        assert_eq!(n.variation_index, 1);
+        assert!(out.shimmer_town_progression, "variation 1 credits 43");
+        assert!(n.net_update);
+        // The reverse flip: variation 1 → 0, no progression.
+        let mut n2 = guide(60.0 * 16.0, 100.0 * 16.0, Some((60, 120)));
+        n2.ai = [25.0, 80.0, 0.0, 0.0];
+        n2.shimmer_transparency = 0.0;
+        n2.variation_index = 1;
+        let mut out2 = TownOutputs::default();
+        town_shimmer_state25(&mut n2, &e, &mut rng, &mut out2);
+        assert_eq!(n2.variation_index, 0);
+        assert!(!out2.shimmer_town_progression);
     }
 }

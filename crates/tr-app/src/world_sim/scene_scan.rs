@@ -100,6 +100,10 @@ pub(crate) fn scan_scene_full(
     let mut metrics = SceneMetrics::new();
     metrics.center = center;
     metrics.tile_center = tile_center;
+    // The skyblock low-tiles flag the snow/desert thresholds read
+    // (`SceneMetrics.cs:154-176` via `WorldGen.Skyblock.lowTiles`;
+    // g67 `f8c4b659` fold, research/134 R5).
+    metrics.skyblock_low_tiles = world.skyblock_low_tiles;
     scan_tiles(world, &mut metrics);
     // `SceneMetrics.cs:338-341`: the visual-area pass runs only when the
     // settings carry the rect (`Main.cs:62540` always does).
@@ -396,6 +400,48 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         *zoom,
         app.gfx_quality.max_dust_to_draw,
     );
+    // `Main.snowing()` (`Main.cs:17238`, body `:13032-13116`): the ambient
+    // snowfall spawns right BEFORE `Sandstorm.EmitDust` in the C# — the port
+    // runs both in this slot (the spawn order between the two dust families
+    // only matters for the shared pool's slot scan). The budget reads the
+    // previous tick's `Main.snowDust` (`pool.snow_dust`, the shared tick's
+    // count). W4-d130.
+    let snow_inputs = crate::snow::SnowInputs {
+        // `Main.gamePaused` (`Main.cs:13040`) — g11's env field folded: the
+        // check is snowing's own first disjunct, the cluster gate redundant.
+        game_paused: app.game_paused,
+        scaled_position: *camera - screen * 0.5 / *zoom,
+        scaled_size: screen / *zoom,
+        cloud_alpha: rain.cloud_alpha(),
+        raining: rain.is_raining(),
+        wind_speed_current: wind.speed_current,
+        player_vy,
+        gfx_quality: app.gfx_quality.quality,
+        // `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`): the
+        // `npcsFoundForCheckActive[668]` read — `UpdateFoundActiveNPCs`
+        // (`NPC.cs:7229-7239`) sets it for any ACTIVE npc of type 668 (no
+        // near-screen filter despite the name; the port's `hp > 0` is the
+        // active flag, g11's census wording).
+        deerclops_near: npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::Deerclops),
+        remix_world: wind.remix_world,
+    };
+    let snow_dust = app.dust.snow_dust;
+    let snow_metrics = app.scene_metrics.clone();
+    // F1 (g11 research/83-addendum, adjudicated): the bare-`Main.rand`
+    // stand-in — `:17238` precedes every `SwapRandom` (they all live inside
+    // `DoUpdateInWorld`, `Main.cs:17280`→`:17732`), so the draws ride the
+    // shared global stream, not a private snow splitmix.
+    crate::snow::snowing(
+        &snow_metrics,
+        &snow_inputs,
+        snow_dust,
+        app.rngs.global(),
+        &ctx,
+        world,
+        &mut app.dust,
+    );
     app.sand.emit_dust(
         &app.scene_metrics,
         sandstorm.severity,
@@ -608,22 +654,29 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     }
     // `Main.tileColor` = the sky tint applied to tiles
     // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`), with the rain dim
-    // the frame applies (`frame.rs`'s `rain_dim`). Only the Noir formula
-    // reads it (no M1 activation path).
+    // the frame applies (`frame/draw.rs`'s `rain_dim` — W4-g69 doc-sweep: the
+    // same `1 - cloudAlpha * 0.9 * atmo` byte-truncated formula,
+    // `Main.cs:63546-63552`). Only the Noir formula reads it (no M1
+    // activation path).
     let quantised = (world.time / 60.0).floor() * 60.0;
     let c = crate::render::sky::color_of_the_skies(quantised, world.day_time, world.moon_phase);
-    let rain_dim = (1.0 - rain.visual_alpha() * 0.9).max(0.1);
-    let mut c = [c[0] * rain_dim, c[1] * rain_dim, c[2] * rain_dim];
+    let rain_alpha = rain.raw_alpha();
+    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
+    let mut c = crate::render::sky::rain_dim_sky(
+        c,
+        rain_alpha,
+        atmo,
+        world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+    );
     // `ModifyHorizonLight` (`Main.cs:63921`) — the same blend the frame's
     // light-map sky colour takes, so the filters see the tinted tileColor.
-    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
     crate::render::sky::modify_horizon_light(
         &mut c,
         world.moon_phase,
         world.day_time,
         (world.time / 60.0).floor() * 60.0,
         atmo,
-        rain.visual_alpha(),
+        rain_alpha,
     );
     let tile_color = crate::render::sky::tile_color(c);
     let inputs = crate::app::filters::SceneVisualInputs {

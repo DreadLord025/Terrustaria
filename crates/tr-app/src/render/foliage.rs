@@ -1,205 +1,319 @@
 //! `TileDrawing.DrawTrees`: canopy and branch sprites anchored to the
 //! transparent marker tiles of a tree, their `GetWindCycle` sway
 //! (`TileDrawing.cs:8137-8245`), and the ambient leaf gores of
-//! `TileDrawing.EmitTreeLeaves` (`TileDrawing.cs:7779-7891`) with the
-//! `Gore_UpdateLeaf` fall behaviour (`Gore.cs:1085-1209`).
+//! `TileDrawing.EmitTreeLeaves` (`TileDrawing.cs:7779-7891`).
+//!
+//! W4-g68: the leaf PHYSICS moved to the `GorePool` — every spawn goes
+//! through `Gore.NewGore*` and `Gore_UpdateLeaf` (`Gore.cs:1085-1209`,
+//! `tr_core::gore::GorePool::update_leaf`) ticks it in the `gores` phase
+//! like every other gore. The old private `LeafGore`/`tick_leaves` pair
+//! (a 400-cap Vec with its own fall/rest approximation) is retired.
+//! RNG: the gate draws ride the caller's `TileDrawing._rand` stream
+//! (`FastRandom`, pinned per frame like the sparkle draws); the
+//! `Main.rand` draws (`EmitTreeLeaves`' hallowed `Next(0, 28)` at
+//! `TileDrawing.cs:7884` and every `NewGore` internal roll) ride a
+//! `GoreRng` the caller injects — two streams, kept separate (the
+//! W4-d60 census precedent).
 use crate::assets;
 use glam::Vec2;
+use tr_core::gore::GorePool;
 use tr_core::lighting::{LightMap, LightStyle};
 use tr_core::tile_light::FastRandom;
 use tr_core::tiledata as td;
 use tr_core::wind;
-use tr_core::{tree, World, TILE_PX};
+use tr_core::{tree, UnifiedRandom, World, TILE_PX};
 use tr_render::SpriteRenderer;
 
-/// `TileDrawing.EmitTreeLeaves`' spawn, resolved at draw time by the tree scan.
-pub struct LeafSpawn {
-    /// World-pixel spawn point (the vector of `TileDrawing.cs:7835-7886`).
-    pub pos: Vec2,
-    /// The gore id (`WorldGen.GetTreeLeaf`'s `passStyle`).
-    pub style: u32,
+/// `WorldGen.SolidTile(Tile)` (`WorldGen.cs:69957-69974`): the STRICT test —
+/// a null tile counts solid; otherwise active, not framed off, solid, not a
+/// solid-top, not a half brick, not sloped. The 192 living-wood exemption is
+/// the post-worldgen `tileSolid[192] = false` (`WorldGen.cs:16607`), the
+/// `tr_core::gore::solid_tile` convention (kept local: that one is private).
+fn solid_tile(tile: Option<&tr_core::tile::Tile>) -> bool {
+    let Some(t) = tile else { return true };
+    t.active()
+        && !t.inactive()
+        && t.kind != 192
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
 }
 
-/// One ambient leaf: the port of a leaf gore (`GoreID` 910-925 &c.,
-/// `SpecialAI = 3`). `phase` is the gore's `velocity.Y` — a growing angle whose
-/// sine drives the horizontal sway — and `vel_x` the rest-phase drift.
-pub struct LeafGore {
-    pub pos: Vec2,
-    /// `velocity.Y`: the sway angle; >= 0 falling, < 0 at rest.
-    phase: f32,
-    /// `velocity.X`: the rest-phase drift (decays ×0.94 per tick).
-    vel_x: f32,
-    /// The sheet row: `SpriteFrame(32, 8).CurrentRow = rand(8)`.
-    row: u8,
-    /// `0.7f + Main.rand.NextFloat() * 0.6f` (`TileDrawing.cs:7889`).
-    scale: f32,
-    /// `rotation = vector4.ToRotation() + PI/2` (`Gore.cs:1200`).
-    rot: f32,
-    /// `Gore.goreTime = 600` (`Gore.cs:1350-1353`), then the alpha fade.
-    time_left: i32,
-    alpha: f32,
-    /// The gore id — picks the `Gore_<id>` sheet.
-    pub style: u32,
-}
-
-impl LeafGore {
-    /// Builds one leaf from an `EmitTreeLeaves` spawn.
-    pub(crate) fn from_spawn(spawn: LeafSpawn, rng: &mut FastRandom) -> Self {
-        Self::new(spawn.pos, spawn.style, rng)
-    }
-
-    /// `Gore.NewGore`'s leaf init (`Gore.cs:1390-1401`): the velocity becomes
-    /// `((rand - 0.5) * 1, rand * 2pi)` (the EmitTreeLeaves velocity argument
-    /// is discarded for leaf gores), the frame row is random, and
-    /// `sticky/timeLeft` = `Gore.goreTime` (600).
-    pub(crate) fn new(pos: Vec2, style: u32, rng: &mut FastRandom) -> Self {
-        Self {
-            pos,
-            phase: rng.next_float() * std::f32::consts::TAU,
-            vel_x: 0.0,
-            row: rng.next_range(0, 8) as u8,
-            scale: 0.7 + rng.next_float() * 0.6,
-            rot: 0.0,
-            time_left: 600,
-            alpha: 0.0,
-            style,
-        }
+/// `TileDrawing.EmitLivingTreeLeaf` (`TileDrawing.cs:7549-7556`): the
+/// below-spawn first, then the UNCONDITIONAL 1/2 sideways roll on
+/// `TileDrawing._rand` (the W4-d60 flagged deviation: the old inline arm
+/// gated the roll on a non-zero wind pick — retired with W4-g68).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_living_tree_leaf(
+    world: &World,
+    x: i32,
+    y: i32,
+    leaf_gore_type: i32,
+    wind: f32,
+    rand: &mut FastRandom,
+    main_rand: &mut UnifiedRandom,
+    gore: &mut GorePool,
+) {
+    emit_living_tree_leaf_below(world, x, y, leaf_gore_type, wind, main_rand, gore);
+    if rand.next_range(0, 2) == 0 {
+        emit_living_tree_leaf_sideways(world, x, y, leaf_gore_type, wind, main_rand, gore);
     }
 }
 
-/// `Gore_UpdateLeaf` (`Gore.cs:1085-1209`) for every leaf, one 60 Hz tick. The
-/// falling phase sways the leaf along a growing angle with the wind added
-/// above `worldSurface`; a solid or liquid probe switches it to the rest
-/// phase, where it drifts with the wind until the ground below frees up or
-/// the fade completes. The liquid-specific rest behaviour (honey freeze, lava
-/// burn-up) is not ported — leaves rest on liquid surfaces instead.
-pub fn tick_leaves(leaves: &mut Vec<LeafGore>, world: &World, wind_speed: f32) {
-    for l in leaves.iter_mut() {
-        let probe = [l.pos.x + 4.0, l.pos.y];
-        if l.phase >= 0.0 {
-            // The falling phase (`Gore.cs:1161-1208`).
-            l.phase += core::f32::consts::PI / 180.0;
-            let rotated = Vec2::new(-l.phase.sin(), l.phase.cos());
-            let mut v4 = Vec2::new(rotated.x, rotated.y.abs());
-            if l.pos.y < world.world_surface as f32 * 16.0 {
-                v4.x += wind_speed * 4.0;
-            }
-            let pre = v4;
-            // `Collision.TileCollision` + `Collision.SlopeCollision` on the 4x4
-            // probe box; the position is the resolved probe position re-anchored
-            // by `vector2 = (-4, 0)`, then moved by the residual velocity.
-            let tc = crate::collision::tile_collision(
+/// `EmitLivingTreeLeaf_Below` (`TileDrawing.cs:7558-7569`): the tile below
+/// must be open (not strict-solid, no liquid); a strong wind needs TWO open
+/// cells downwind. `NewGorePerfect` (zero velocity survives the spawn), the
+/// paint column is the leaf tile's `color()`.
+fn emit_living_tree_leaf_below(
+    world: &World,
+    x: i32,
+    y: i32,
+    leaf_gore_type: i32,
+    wind: f32,
+    main_rand: &mut UnifiedRandom,
+    gore: &mut GorePool,
+) {
+    let below = world.tile(x, y + 1);
+    if !solid_tile(below) && below.is_none_or(|t| t.liquid == 0) {
+        let left_open =
+            !solid_tile(world.tile(x - 1, y + 1)) && !solid_tile(world.tile(x - 2, y + 1));
+        let right_open =
+            !solid_tile(world.tile(x + 1, y + 1)) && !solid_tile(world.tile(x + 2, y + 1));
+        if (!(wind < -0.2) || left_open) && (!(wind > 0.2) || right_open) {
+            let n = gore.new_gore_perfect(
+                main_rand,
                 world,
-                probe,
-                [v4.x, v4.y],
-                4.0,
-                4.0,
-                false,
-                false,
+                Vec2::new((x * 16) as f32, (y * 16 + 16) as f32),
+                Vec2::ZERO,
+                leaf_gore_type,
+                1.0,
             );
-            v4 = Vec2::from(tc.vel);
-            let sc = crate::collision::slope_collision(world, probe, [v4.x, v4.y], 4.0, 4.0, false);
-            l.pos = Vec2::new(sc.pos[0] - 4.0, sc.pos[1]);
-            v4 = Vec2::from(sc.vel);
-            if v4 != pre {
-                // `if (vector4 != vector5) velocity.Y = -1f` (`Gore.cs:1176`).
-                l.phase = -1.0;
-            }
-            // The centre-in-liquid check (`Gore.cs:1180-1198`).
-            let centre = (Vec2::new(6.0, 6.0) + l.pos) / 16.0;
-            if world
-                .tile(centre.x as i32, centre.y as i32)
-                .is_some_and(|t| t.liquid > 0)
-            {
-                l.phase = -1.0;
-            }
-            l.pos += v4;
-            l.rot = v4.y.atan2(v4.x) + std::f32::consts::FRAC_PI_2;
-        } else {
-            // The rest phase (`Gore.cs:1090-1159`).
-            let point = ((Vec2::new(1.5, 1.5) + Vec2::from(probe)) / 16.0).floor();
-            let probe_tile = world.tile(point.x as i32, point.y as i32);
-            let in_liquid = probe_tile.is_some_and(|t| t.liquid > 0);
-            if in_liquid {
-                // `Gore.cs:1124-1131`: water drifts with the wind (frozen below
-                // the surface); honey/lava are not modelled.
-                l.vel_x = wind_speed;
-            }
-            if probe_tile.is_none_or(|t| !(t.active() && td::TILE_SOLID.has(t.kind))) && !in_liquid
-            {
-                // `Gore.cs:1133-1138`: the ground freed up — resume falling.
-                l.phase = 0.1;
-                l.time_left = 0;
-                l.alpha += 20.0;
-            }
-            let tc = crate::collision::tile_collision(
-                world,
-                probe,
-                [l.vel_x, -0.2],
-                3.0,
-                3.0,
-                false,
-                false,
-            );
-            if in_liquid {
-                l.rot = tc.vel[1].atan2(tc.vel[0]) + std::f32::consts::FRAC_PI_2;
-            }
-            l.vel_x = tc.vel[0] * 0.94;
-            if !in_liquid || l.vel_x.abs() < 0.01 {
-                l.vel_x = 0.0;
-            }
-            l.pos.x += l.vel_x;
+            gore.slot_mut(n).frame.current_column =
+                world.tile(x, y).map(|t| t.paint()).unwrap_or(0);
         }
-        // The fade (`Gore.cs:1055-1058`): 600 ticks, then 255 of alpha decay.
-        if l.time_left > 0 {
-            l.time_left -= 1;
-        } else {
-            l.alpha += 1.0;
-        }
-    }
-    leaves.retain(|l| l.alpha < 255.0);
-    if leaves.len() > 400 {
-        leaves.drain(..leaves.len() - 400);
     }
 }
 
-/// The leaf draw: the `Gore_<id>` sheets are 32-column (paint) × 8-row
-/// (variant) strips; the leaves draw in the always-rebuilt UI range like the
-/// rain, so the G6 world range stays unaffected.
-pub(crate) fn draw_leaves(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    light: &LightMap,
+/// `EmitLivingTreeLeaf_Sideways` (`TileDrawing.cs:7571-7592`): the downwind
+/// side (|wind| > 0.2), the −10 px left-shift quirk, paint column again.
+/// Runs even in dead wind (`num = 0`, the tile's own cell).
+fn emit_living_tree_leaf_sideways(
+    world: &World,
+    x: i32,
+    y: i32,
+    leaf_gore_type: i32,
+    wind: f32,
+    main_rand: &mut UnifiedRandom,
+    gore: &mut GorePool,
+) {
+    let num = if wind > 0.2 {
+        1
+    } else if wind < -0.2 {
+        -1
+    } else {
+        0
+    };
+    let side = world.tile(x + num, y);
+    if !solid_tile(side) && side.is_none_or(|t| t.liquid == 0) {
+        let num2 = if num == -1 { -10 } else { 0 };
+        let n = gore.new_gore_perfect(
+            main_rand,
+            world,
+            Vec2::new((x * 16 + 8 + 4 * num + num2) as f32, (y * 16 + 8) as f32),
+            Vec2::ZERO,
+            leaf_gore_type,
+            1.0,
+        );
+        gore.slot_mut(n).frame.current_column =
+            world.tile(x, y).map(|t| t.paint()).unwrap_or(0);
+    }
+}
+
+/// `TileDrawing.EmitLiquidDrops` (`TileDrawing.cs:7594-7674`): the drip
+/// gores under vine tips / stalactites / shimmer candles — called from the
+/// `TileDrawing.Draw` switch (`:688-694`, kinds 373/374/375/461/709, then
+/// `continue`), NOT from `DrawTiles_EmitParticles` (the W4-d60 deferral
+/// note; the g30 special-points driver records the cells, this is the
+/// emission body). W4-g68 ports the unclaimed arm.
+///
+/// RNG census (the two-stream rule): the gate `Next(num * 2)` rides
+/// `TileDrawing._rand` (`rand`); the `Gore.NewGore` internals ride
+/// `Main.rand` (`main_rand`) — the C# call runs outside every SwapRandom
+/// block (`Main.cs:17811-17812`). The gate short-circuits: a wet tile
+/// (`liquid != 0`) draws NOTHING.
+///
+/// `zone_corrupt`/`zone_crimson`/`zone_hallow` are the C#
+/// `Main.SceneMetrics.Zone*` reads of the 461 shimmer-candle arm — the
+/// caller passes the live scene metrics (three bools, not the whole
+/// struct, so the witness fixtures stay small).
+///
+/// **WIRED (W4-g68 wiring wave)** at [`emit_liquid_drops_area`] — the
+/// per-frame world pass in `frame/draw.rs` (the tile-cracks precedent),
+/// NOT the G6-cached `draw_tiles` range. The C# call site is the
+/// `TileDrawing.Draw` switch (`:693`); the g30 special-points driver's
+/// `liquid_drop_cells` is the tile-pass-attach CONTRACT for the same
+/// cells (UNION-CONTRACT-tilepass §5 d60 row, `task/W4-g31` tip
+/// `c3027a38`): g30 records `(x, y, kind)` during the classify walk, this
+/// body consumes them. Until the g-family lands on main the driver is
+/// absent, so the live seam rescans the draw area itself — the same cells
+/// the g30 registry would hold (kinds 373/374/375/461/709 are
+/// non-solid, `Draw`'s `solidLayer: false` pass). When g30 lands, the
+/// wiring wave swaps the rescan for the recorded cells; the emission
+/// body and its RNG order are unchanged either way.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_liquid_drops(
+    world: &World,
+    j: i32,
+    i: i32,
+    kind: u16,
+    water_style: i32,
+    zone_corrupt: bool,
+    zone_crimson: bool,
+    zone_hallow: bool,
+    rand: &mut UnifiedRandom,
+    main_rand: &mut UnifiedRandom,
+    gore: &mut GorePool,
+) {
+    // `:7596-7608`: the frequency per emitter kind.
+    let num: i32 = match kind {
+        374 => 120,
+        375 | 461 => 180,
+        _ => 60,
+    };
+    // `:7609-7612`: the wet-tile refusal precedes the roll (no draw), then
+    // the 1/(2*num) gate on `_rand` (`Next(num * 2)` — one stream step).
+    let wet = world.tile(i, j).is_some_and(|t| t.liquid != 0);
+    if wet || rand.next_max(num * 2) != 0 {
+        return;
+    }
+    // `:7613-7625`: the anti-cluster box — the tile rect widened ±34 px in
+    // X, −100/+300 in Y (Height = 400 from the −100 top); any live drip
+    // gore intersecting it refuses the spawn (the strict XNA `Intersects`).
+    let rect = (i * 16 - 34, j * 16 - 100, 16 + 68, 400);
+    for k in 0..tr_core::gore::GORE_SLOTS {
+        let g = gore.slot(k);
+        if g.active
+            && g.gore_type >= 0
+            && (g.gore_type as usize) < tr_core::gore_id::GORE_COUNT
+            && tr_core::gore_id::is_drip(g.gore_type as usize)
+        {
+            let b = (g.position.x as i32, g.position.y as i32, 16, 16);
+            if rect.0 < b.0 + b.2 && rect.0 + rect.2 > b.0 && rect.1 < b.1 + b.3 && rect.1 + rect.3 > b.1 {
+                return;
+            }
+        }
+    }
+    // `:7626-7671`: the drip type by water style, then the emitter overrides.
+    let position = Vec2::new((i * 16) as f32, (j * 16) as f32);
+    let mut drip_type = if water_style == 14 || water_style == 13 {
+        706
+    } else if water_style == 12 {
+        1147
+    } else if water_style > 1 {
+        706 + water_style - 1
+    } else {
+        706
+    };
+    match kind {
+        374 => drip_type = 716, // lava stalactite
+        375 => drip_type = 717, // honey stalactite
+        461 => {
+            // The shimmer candle: biome-tinted (`:7652-7667`), the LAST
+            // matching zone wins in C# order (corrupt → crimson → hallow).
+            drip_type = 943;
+            if zone_corrupt {
+                drip_type = 1160;
+            }
+            if zone_crimson {
+                drip_type = 1161;
+            }
+            if zone_hallow {
+                drip_type = 1162;
+            }
+        }
+        709 => drip_type = 1383, // the water candle
+        _ => {}
+    }
+    // `:7672-7673`: `NewGore(position, default, type)` then the velocity
+    // zeroing — the spawn's internal kick draws still fire.
+    let n = gore.new_gore(main_rand, world, position, Vec2::ZERO, drip_type, 1.0);
+    gore.slot_mut(n).velocity *= 0.0;
+}
+
+/// The W4-g68 wiring seam: the `TileDrawing.Draw` switch's drip arm
+/// (`TileDrawing.cs:688-694`) as a per-frame world pass — the tile-cracks
+/// precedent (`frame/draw.rs`, right after the cached tile range), so the
+/// emission cadence is per-DRAW like the C#, never per-G6-rebuild, and the
+/// `WorldFrameKey` stays untouched.
+///
+/// The C# walks `GetScreenDrawArea`'s rect per `Draw` call
+/// (`TileDrawing.cs:503-505`: rows `firstTileY..lastTileY+4` exclusive,
+/// cols `firstTileX-2..lastTileX+2` exclusive, area clamps 4 / max−4 at
+/// `:6558-6573`). The port's stand-in rect is the `draw_tiles` view rect
+/// (camera ± screen/2/zoom, ±1 tile) — the same convention the wind-grid
+/// `EnsureWindGridSize` port uses; the deviation is recorded in ANALYSIS.
+/// Row-major (y outer, x inner) like the C# loop, so the shared `_rand`
+/// gate draws fire in the C#'s order.
+///
+/// The layer filter: the five drip kinds are non-solid (no
+/// `Main.tileSolid` write, no `DrawTileInSolidLayer` row — `TileID.cs:516`
+/// lists only 11/470/475/78/579), so they ride the `solidLayer: false`
+/// `Draw` pass; the port's fused tile pass has no layer split, this scan
+/// IS that pass's drip arm. `tile.active()` is the `:517` gate (the
+/// actuated/inactive bit does NOT gate the C# emission — only `active()`).
+///
+/// RNG: `rand` is the App's PERSISTENT `TileDrawing._rand` stand-in
+/// (`TileDrawing.cs:104/:191` — one stream for the renderer's lifetime;
+/// the per-frame `FastRandom` pin in `draw_tiles` remains the leaf arm's
+/// documented determinism stand-in until the d60 wiring reconciles it).
+/// `main_rand` is the bare global `Main.rand` — the emission runs outside
+/// every `SwapRandom` block (`Main.cs:17811-17812`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_liquid_drops_area(
+    world: &World,
     camera: Vec2,
     zoom: f32,
     screen: Vec2,
-    leaves: &[LeafGore],
-) -> u32 {
-    let mut quads = 0;
-    for l in leaves {
-        let Some(uv) = lookups.leaf_uv(l.style, l.row) else {
-            continue;
-        };
-        let c = light.get((l.pos.x / TILE_PX) as i32, (l.pos.y / TILE_PX) as i32);
-        let a = (1.0 - l.alpha / 255.0).clamp(0.0, 1.0);
-        let to_screen = |p: Vec2| {
-            [
-                (p.x - camera.x) * zoom + screen.x * 0.5,
-                (p.y - camera.y) * zoom + screen.y * 0.5,
-            ]
-        };
-        // The frame size comes from the sheet: 32 columns × 8 rows.
-        let (fw, fh) = lookups.leaf_frame(l.style).unwrap_or((8.0, 8.0));
-        r.push_fx_sprite_rot(
-            to_screen(l.pos),
-            [fw * l.scale * zoom, fh * l.scale * zoom],
-            uv,
-            [c[0], c[1], c[2], a],
-            l.rot,
-        );
-        quads += 1;
+    water_style: i32,
+    zone_corrupt: bool,
+    zone_crimson: bool,
+    zone_hallow: bool,
+    rand: &mut UnifiedRandom,
+    main_rand: &mut UnifiedRandom,
+    gore: &mut GorePool,
+) {
+    let half = screen * 0.5 / zoom;
+    let x0 = (((camera.x - half.x) / TILE_PX).floor() as i32 - 1).clamp(4, world.width - 5);
+    let x1 = (((camera.x + half.x) / TILE_PX).ceil() as i32 + 1).clamp(4, world.width - 5);
+    let y0 = (((camera.y - half.y) / TILE_PX).floor() as i32 - 1).clamp(4, world.height - 5);
+    let y1 = (((camera.y + half.y) / TILE_PX).ceil() as i32 + 1).clamp(4, world.height - 5);
+    for ty in y0..=y1 {
+        for tx in x0..=x1 {
+            let Some(t) = world.tile(tx, ty) else {
+                continue;
+            };
+            // `:517`: active tiles only; the switch arm (`:688-694`) is
+            // the five drip kinds, then `continue` (no sprite here — the
+            // tile itself draws in the cached range).
+            if !t.active() || !matches!(t.kind, 373 | 374 | 375 | 461 | 709) {
+                continue;
+            }
+            emit_liquid_drops(
+                world,
+                ty,
+                tx,
+                t.kind,
+                water_style,
+                zone_corrupt,
+                zone_crimson,
+                zone_hallow,
+                rand,
+                main_rand,
+                gore,
+            );
+        }
     }
-    quads
 }
 
 /// `TileDrawing.DrawTrees`: canopy and branch sprites anchored to the transparent
@@ -219,7 +333,10 @@ pub(crate) fn draw_tree_foliage(
     wind: &tr_core::wind::Wind,
     tree_counter: f32,
     rng: &mut FastRandom,
-    spawns: &mut Vec<LeafSpawn>,
+    main_rand: &mut UnifiedRandom,
+    gore: &mut GorePool,
+    // `TileDrawing._isActiveAndNotPaused` (`TileDrawing.cs:7781-7784`).
+    emit_effects: bool,
     x0: i32,
     y0: i32,
     x1: i32,
@@ -323,7 +440,9 @@ pub(crate) fn draw_tree_foliage(
                         quads += 1;
                         // `EmitTreeLeaves(x, y, x, floorY3)` — the top's grass
                         // column is its own (`TileDrawing.cs:8114-8121`).
-                        emit_tree_leaves(world, wind, tx, ty, tx, rng, spawns);
+                        emit_tree_leaves(
+                            world, wind, tx, ty, tx, rng, main_rand, gore, emit_effects,
+                        );
                     }
                 }
                 tree::TreePart::BranchLeft => {
@@ -340,7 +459,9 @@ pub(crate) fn draw_tree_foliage(
                         // `EmitTreeLeaves(x, y, x + 1, floorY2)` — the grass
                         // column is the trunk to the right
                         // (`TileDrawing.cs:8159-8166`).
-                        emit_tree_leaves(world, wind, tx, ty, tx + 1, rng, spawns);
+                        emit_tree_leaves(
+                            world, wind, tx, ty, tx + 1, rng, main_rand, gore, emit_effects,
+                        );
                     }
                 }
                 tree::TreePart::BranchRight => {
@@ -355,7 +476,9 @@ pub(crate) fn draw_tree_foliage(
                         quads += 1;
                         // `EmitTreeLeaves(x, y, x - 1, floorY)` — the trunk to
                         // the left (`TileDrawing.cs:8207-8214`).
-                        emit_tree_leaves(world, wind, tx, ty, tx - 1, rng, spawns);
+                        emit_tree_leaves(
+                            world, wind, tx, ty, tx - 1, rng, main_rand, gore, emit_effects,
+                        );
                     }
                 }
             }
@@ -368,7 +491,11 @@ pub(crate) fn draw_tree_foliage(
 /// for one ambient leaf. `(tile_x, tile_y)` is the tree-part marker,
 /// `grass_x` the trunk column (`x`, `x+1` for a frameX-44 branch and `x-1` for
 /// a frameX-66 branch); the grass row is the ground tile the
-/// `GetCommonTreeFoliageData` walk found.
+/// `GetCommonTreeFoliageData` walk found. W4-g68: the spawn goes straight
+/// into the gore pool via `NewGoreDirect` — the `RandomVector2` velocity
+/// argument is discarded by the SpecialAI-3 leaf init (`Gore.cs:1393`) but
+/// its two `Main.rand` draws still fire (argument evaluation order).
+#[allow(clippy::too_many_arguments)]
 fn emit_tree_leaves(
     world: &World,
     wind: &tr_core::wind::Wind,
@@ -376,8 +503,14 @@ fn emit_tree_leaves(
     tile_y: i32,
     grass_x: i32,
     rng: &mut FastRandom,
-    spawns: &mut Vec<LeafSpawn>,
+    main_rand: &mut UnifiedRandom,
+    gore: &mut GorePool,
+    emit_effects: bool,
 ) {
+    if !emit_effects {
+        // `TileDrawing.cs:7781-7784`: `_isActiveAndNotPaused`.
+        return;
+    }
     let Some(marker) = world.tile(tile_x, tile_y) else {
         return;
     };
@@ -438,20 +571,28 @@ fn emit_tree_leaves(
     } else {
         pos += Vec2::new(-16.0, -16.0);
         if hallowed {
-            pos.y -= rng.next_range(0, 28) as f32 * 4.0;
+            // `Main.rand.Next(0, 28) * 4` (`TileDrawing.cs:7884`) — Main.rand,
+            // NOT `_rand` (the two-stream census).
+            pos.y -= main_rand.next_range(0, 28) as f32 * 4.0;
         }
     }
-    // `if (!WorldGen.SolidTile(vector.ToTileCoordinates()))`.
-    let tx = (pos.x / 16.0).floor() as i32;
-    let ty = (pos.y / 16.0).floor() as i32;
-    let solid = world
-        .tile(tx, ty)
-        .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind));
-    if !solid {
-        spawns.push(LeafSpawn {
-            pos,
-            style: pass_style as u32,
-        });
+    // `if (!WorldGen.SolidTile(vector.ToTileCoordinates()))` — the strict
+    // test (`WorldGen.cs:70111-70121`), `(int)x >> 4` tile coordinates.
+    let tx = (pos.x as i32) >> 4;
+    let ty = (pos.y as i32) >> 4;
+    if !solid_tile(world.tile(tx, ty)) {
+        // `Gore.NewGoreDirect(vector, Utils.RandomVector2(Main.rand, -2, 2),
+        // passStyle, 0.7f + Main.rand.NextFloat() * 0.6f)` (`:7889`): the
+        // argument draws fire in order — velocity X, velocity Y, then the
+        // scale roll — before `NewGore`'s own internals.
+        let num3 = 2.0_f32;
+        let vel = Vec2::new(
+            (num3 - -num3) * main_rand.next_float() + -num3,
+            (num3 - -num3) * main_rand.next_float() + -num3,
+        );
+        let scale = 0.7 + main_rand.next_float() * 0.6;
+        let n = gore.new_gore_direct(main_rand, world, pos, vel, pass_style, scale);
+        gore.slot_mut(n).frame.current_column = marker.paint();
     }
 }
 
@@ -812,5 +953,403 @@ mod tests {
         assert!((pos[1] - (320.0 + 16.0 + 2.0 - 98.0)).abs() < EPS);
         assert!(rot.abs() < EPS);
         assert_eq!(origin, [57.0, 98.0]);
+    }
+
+    // ---- W4-g68: the living-wood leaf shed (WRITTEN NOT RUN) ----
+
+    /// A 64x64 world with one active tile helper.
+    fn leaf_world() -> World {
+        World::new("leaf".into(), 64, 64)
+    }
+
+    fn place(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i].kind = kind;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    }
+
+    fn live_leaves(pool: &GorePool) -> Vec<usize> {
+        (0..tr_core::gore::GORE_SLOTS)
+            .filter(|&i| pool.slot(i).active)
+            .collect()
+    }
+
+    /// `EmitLivingTreeLeaf` (`TileDrawing.cs:7549-7556`): the below-spawn
+    /// fires first, the sideways `Next(2)` is UNCONDITIONAL — in dead wind
+    /// (`num = 0`) it probes the tile's own cell, which is a 192 leaf block
+    /// (walk-through), so BOTH gores spawn. The old inline arm gated the
+    /// sideways on a non-zero wind pick — the W4-d60 flagged deviation.
+    #[test]
+    fn w4_g68_dead_wind_sheds_below_and_sideways() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 192);
+        let mut pool = GorePool::new();
+        // Scan seeds for the sideways-hit roll; the gate stream is the
+        // caller's, so any seed with next_range(0,2)==0 exercises the arm.
+        let mut hit = None;
+        for seed in 0..64u64 {
+            let mut probe = FastRandom::new(seed);
+            if probe.next_range(0, 2) == 0 {
+                hit = Some(seed);
+                break;
+            }
+        }
+        let mut rand = FastRandom::new(hit.expect("a sideways-hit seed"));
+        let mut main_rand = UnifiedRandom::new(7);
+        emit_living_tree_leaf(&w, 10, 10, 910, 0.0, &mut rand, &mut main_rand, &mut pool);
+        let live = live_leaves(&pool);
+        assert_eq!(live.len(), 2, "below + sideways in dead wind");
+        // Below: (x*16, y*16+16); sideways num=0: (x*16+8, y*16+8).
+        let below = pool.slot(live[0]);
+        assert_eq!(below.position, Vec2::new(160.0, 176.0));
+        assert_eq!(below.gore_type, 910);
+        assert_eq!(below.velocity, Vec2::ZERO, "NewGorePerfect keeps zero");
+        let side = pool.slot(live[1]);
+        assert_eq!(side.position, Vec2::new(168.0, 168.0));
+        assert_eq!(side.velocity, Vec2::ZERO);
+    }
+
+    /// The sideways roll MISSES (`Next(2) == 1`): only the below-spawn.
+    #[test]
+    fn w4_g68_the_sideways_roll_can_miss() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 192);
+        let mut hit = None;
+        for seed in 0..64u64 {
+            let mut probe = FastRandom::new(seed);
+            if probe.next_range(0, 2) == 1 {
+                hit = Some(seed);
+                break;
+            }
+        }
+        let mut rand = FastRandom::new(hit.expect("a sideways-miss seed"));
+        let mut pool = GorePool::new();
+        let mut main_rand = UnifiedRandom::new(7);
+        emit_living_tree_leaf(&w, 10, 10, 910, 0.0, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 1, "only the below-spawn");
+    }
+
+    /// `EmitLivingTreeLeaf_Below` (`:7564`): a strong RIGHT wind needs the
+    /// two downwind cells (x+1, x+2 at y+1) open; one solid blocks the
+    /// below-spawn, but the sideways arm (its own probe at y) still fires.
+    #[test]
+    fn w4_g68_strong_wind_needs_two_open_downwind_cells() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 192);
+        place(&mut w, 12, 11, 1); // dirt at x+2, y+1 blocks the below arm
+        let mut pool = GorePool::new();
+        let mut main_rand = UnifiedRandom::new(7);
+        // Force the sideways roll to miss so only the below arm is tested.
+        let mut miss = None;
+        for seed in 0..64u64 {
+            let mut probe = FastRandom::new(seed);
+            if probe.next_range(0, 2) == 1 {
+                miss = Some(seed);
+                break;
+            }
+        }
+        let mut rand = FastRandom::new(miss.unwrap());
+        emit_living_tree_leaf(&w, 10, 10, 910, 0.5, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 0, "the blocked below arm sheds nothing");
+        // Open both cells: the below-spawn returns (fresh miss-seed stream
+        // so the sideways still stays out of the count).
+        let i = w.index(12, 11);
+        w.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
+        let mut rand = FastRandom::new(miss.unwrap());
+        emit_living_tree_leaf(&w, 10, 10, 910, 0.5, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 1);
+    }
+
+    /// The sideways left-shift quirk (`:7586-7590`): wind < −0.2 gives
+    /// `num = -1`, `num2 = -10` — position `x*16 + 8 − 4 − 10`.
+    #[test]
+    fn w4_g68_the_sideways_left_shift_quirk() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 192);
+        // Block the below arm (solid directly under) so only sideways fires.
+        place(&mut w, 10, 11, 1);
+        let mut hit = None;
+        for seed in 0..64u64 {
+            let mut probe = FastRandom::new(seed);
+            if probe.next_range(0, 2) == 0 {
+                hit = Some(seed);
+                break;
+            }
+        }
+        let mut rand = FastRandom::new(hit.unwrap());
+        let mut pool = GorePool::new();
+        let mut main_rand = UnifiedRandom::new(7);
+        emit_living_tree_leaf(&w, 10, 10, 910, -0.5, &mut rand, &mut main_rand, &mut pool);
+        let live = live_leaves(&pool);
+        assert_eq!(live.len(), 1);
+        assert_eq!(
+            pool.slot(live[0]).position,
+            Vec2::new((10 * 16 + 8 - 4 - 10) as f32, (10 * 16 + 8) as f32)
+        );
+    }
+
+    /// The paint column rides the gore frame (`:7566`/`:7590`):
+    /// `Frame.CurrentColumn = Main.tile[x, y].color()`.
+    #[test]
+    fn w4_g68_the_paint_column_rides_the_frame() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 192);
+        let i = w.index(10, 10);
+        w.tiles[i].set_paint(5);
+        let mut pool = GorePool::new();
+        let mut main_rand = UnifiedRandom::new(7);
+        emit_living_tree_leaf_below(&w, 10, 10, 910, 0.0, &mut main_rand, &mut pool);
+        let live = live_leaves(&pool);
+        assert_eq!(live.len(), 1);
+        assert_eq!(pool.slot(live[0]).frame.current_column, 5);
+    }
+
+    /// The below arm refuses a liquid cell (`:7561` `tile.liquid <= 0`).
+    #[test]
+    fn w4_g68_liquid_below_blocks_the_shed() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 192);
+        let i = w.index(10, 11);
+        w.tiles[i].liquid = 100;
+        let mut pool = GorePool::new();
+        let mut main_rand = UnifiedRandom::new(7);
+        emit_living_tree_leaf_below(&w, 10, 10, 910, 0.0, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 0);
+    }
+
+    /// `EmitTreeLeaves`' two-stream census (`TileDrawing.cs:7884`, `:7889`):
+    /// the hallowed height pick rolls `Main.rand`, NOT `_rand`; the spawn's
+    /// `RandomVector2` pair + scale roll + `NewGore` internals all ride
+    /// `Main.rand`. A forced frequency-1 gate isolates one spawn.
+    #[test]
+    fn w4_g68_emit_tree_leaves_rolls_main_rand_not_rand() {
+        // A forest tree top marker (kind 5, frameX 22, frameY 198) over
+        // grass (2) — passStyle 910, non-hallowed, so no height pick.
+        let mut w = leaf_world();
+        place(&mut w, 10, 20, 5);
+        let i = w.index(10, 20);
+        w.tiles[i].frame_x = 22;
+        w.tiles[i].frame_y = 198;
+        place(&mut w, 10, 24, 2); // the ground the walk finds
+        let mut wind = tr_core::wind::Wind::new(7);
+        wind.speed_current = 0.0;
+        wind.world_surface = f64::INFINITY;
+        // The gate: leaf_frequency(0) = 14000; find a FastRandom seed whose
+        // first next_range(0, 14000) == 0 so the spawn fires deterministically.
+        let mut gate_seed = None;
+        for seed in 0..200_000u64 {
+            let mut probe = FastRandom::new(seed);
+            if probe.next_range(0, wind::leaf_frequency(0.0)) == 0 {
+                gate_seed = Some(seed);
+                break;
+            }
+        }
+        let mut rng = FastRandom::new(gate_seed.expect("a gate-hit seed"));
+        let rng_before = rng.seed;
+        let mut main_rand = UnifiedRandom::new(7);
+        let main_before = main_rand.clone();
+        let mut pool = GorePool::new();
+        emit_tree_leaves(&w, &wind, 10, 20, 10, &mut rng, &mut main_rand, &mut pool, true);
+        // The gate consumed exactly one `_rand` draw; nothing else.
+        let mut twin = FastRandom::new(gate_seed.unwrap());
+        twin.next_range(0, wind::leaf_frequency(0.0));
+        assert_eq!(rng.seed, twin.seed, "_rand: only the gate draw");
+        assert_ne!(rng.seed, rng_before);
+        // Main.rand advanced (the spawn's rolls), and a leaf gore exists.
+        assert_ne!(main_rand, main_before, "Main.rand rolled the spawn");
+        let live = live_leaves(&pool);
+        assert_eq!(live.len(), 1);
+        assert_eq!(pool.slot(live[0]).gore_type, 910);
+        // The scale argument `0.7 + NextFloat()*0.6` is overwritten by the
+        // SpecialAI-3 arm? No — the leaf arm does NOT touch scale, so the
+        // spawn keeps the rolled scale in [0.7, 1.3).
+        let s = pool.slot(live[0]).scale;
+        assert!((0.7..1.3).contains(&s), "scale {s}");
+    }
+
+    /// The `_isActiveAndNotPaused` gate (`:7781-7784`): no draws, no spawn.
+    #[test]
+    fn w4_g68_the_paused_gate_draws_nothing() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 20, 5);
+        let mut wind = tr_core::wind::Wind::new(7);
+        wind.world_surface = f64::INFINITY;
+        let mut rng = FastRandom::new(3);
+        let before = rng.seed;
+        let mut main_rand = UnifiedRandom::new(7);
+        let main_before = main_rand.clone();
+        let mut pool = GorePool::new();
+        emit_tree_leaves(&w, &wind, 10, 20, 10, &mut rng, &mut main_rand, &mut pool, false);
+        assert_eq!(rng.seed, before, "the gate precedes every draw");
+        assert_eq!(main_rand, main_before);
+        assert_eq!(live_leaves(&pool).len(), 0);
+    }
+
+    // ---- W4-g68 deferred-4: EmitLiquidDrops (WRITTEN NOT RUN) ----
+
+    /// Find a `_rand` seed whose first `Next(max)` is 0 (the gate hit).
+    /// The gate stream is the persistent `UnifiedRandom` (`TileDrawing.
+    /// _rand`, `TileDrawing.cs:104/:191`), not the per-frame FastRandom pin.
+    fn gate_hit_seed(max: i32) -> i32 {
+        (0..200_000i32)
+            .find(|&s| UnifiedRandom::new(s).next_max(max) == 0)
+            .expect("a gate-hit seed within 200k")
+    }
+
+    /// The plain-vine drip (`TileDrawing.cs:7594-7674`): kind 373 rolls
+    /// `Next(120)` on `_rand`, spawns `NewGore((i*16, j*16), default, 706)`
+    /// on `Main.rand` (water style 0 → 706), then zeroes the velocity —
+    /// the drip sheet is 15 rows and lives 3× (`Gore.cs:1355-1360`).
+    #[test]
+    fn w4_g68_the_vine_tip_drips_water_gore_706() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 373);
+        let mut rand = UnifiedRandom::new(gate_hit_seed(120));
+        let mut main_rand = UnifiedRandom::new(7);
+        let mut pool = GorePool::new();
+        emit_liquid_drops(&w, 10, 10, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        let live = live_leaves(&pool);
+        assert_eq!(live.len(), 1);
+        let g = pool.slot(live[0]);
+        assert_eq!(g.gore_type, 706);
+        assert_eq!(g.position, Vec2::new(160.0, 160.0));
+        assert_eq!(g.velocity, Vec2::ZERO, "the post-spawn *= 0");
+        assert_eq!(g.frame.row_count, 15, "the IsDrip sheet");
+        assert_eq!(g.time_left, tr_core::gore::GORE_TIME_DEFAULT * 3);
+        assert!(g.behind_tiles);
+    }
+
+    /// The emitter overrides (`:7644-7671`): 374 → 716 (lava, `Next(240)`),
+    /// 375 → 717 (honey, `Next(360)`), 709 → 1383 (candle); the 461 shimmer
+    /// candle is 943 plain, biome-tinted 1160/1161/1162 with the LAST zone
+    /// in C# order winning (hallow over crimson over corrupt).
+    #[test]
+    fn w4_g68_the_drip_type_overrides_and_shimmer_zones() {
+        let mut w = leaf_world();
+        for (kind, gate, want) in [(374u16, 240, 716), (375, 360, 717), (709, 120, 1383)] {
+            place(&mut w, 10, 10, kind);
+            let mut rand = UnifiedRandom::new(gate_hit_seed(gate));
+            let mut main_rand = UnifiedRandom::new(7);
+            let mut pool = GorePool::new();
+            emit_liquid_drops(&w, 10, 10, kind, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+            let live = live_leaves(&pool);
+            assert_eq!(live.len(), 1, "kind {kind}");
+            assert_eq!(pool.slot(live[0]).gore_type, want, "kind {kind}");
+        }
+        place(&mut w, 10, 10, 461);
+        for (zones, want) in [
+            ((false, false, false), 943),
+            ((true, false, false), 1160),
+            ((false, true, false), 1161),
+            ((true, true, true), 1162), // hallow last
+        ] {
+            let mut rand = UnifiedRandom::new(gate_hit_seed(360));
+            let mut main_rand = UnifiedRandom::new(7);
+            let mut pool = GorePool::new();
+            emit_liquid_drops(&w, 10, 10, 461, 0, zones.0, zones.1, zones.2, &mut rand, &mut main_rand, &mut pool);
+            let live = live_leaves(&pool);
+            assert_eq!(live.len(), 1);
+            assert_eq!(pool.slot(live[0]).gore_type, want, "zones {zones:?}");
+        }
+        // Water styles (`:7628-7643`): 13/14 → 706, 12 → 1147, >1 → 705+style.
+        place(&mut w, 10, 10, 373);
+        for (style, want) in [(13, 706), (14, 706), (12, 1147), (5, 710)] {
+            let mut rand = UnifiedRandom::new(gate_hit_seed(120));
+            let mut main_rand = UnifiedRandom::new(7);
+            let mut pool = GorePool::new();
+            emit_liquid_drops(&w, 10, 10, 373, style, false, false, false, &mut rand, &mut main_rand, &mut pool);
+            let live = live_leaves(&pool);
+            assert_eq!(live.len(), 1);
+            assert_eq!(pool.slot(live[0]).gore_type, want, "style {style}");
+        }
+    }
+
+    /// The wet-tile refusal draws NOTHING (`:7609`'s `liquid != 0`
+    /// short-circuit precedes the `Next`), and the anti-cluster box
+    /// (`:7613-7625`) refuses a second drip near a live one: the box is
+    /// x−34..x+50, y−100..y+300 around the tile.
+    #[test]
+    fn w4_g68_wet_tiles_and_nearby_drips_refuse() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 373);
+        let i = w.index(10, 10);
+        w.tiles[i].liquid = 100;
+        let mut rand = UnifiedRandom::new(gate_hit_seed(120));
+        let before = rand.clone();
+        let mut main_rand = UnifiedRandom::new(7);
+        let main_before = main_rand.clone();
+        let mut pool = GorePool::new();
+        emit_liquid_drops(&w, 10, 10, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(rand, before, "the wet refusal precedes the roll");
+        assert_eq!(main_rand, main_before);
+        assert_eq!(live_leaves(&pool).len(), 0);
+        // Dry again: the first drip lands, the second (one tile right,
+        // inside the ±34 px box) refuses.
+        w.tiles[i].liquid = 0;
+        let mut rand = UnifiedRandom::new(gate_hit_seed(120));
+        emit_liquid_drops(&w, 10, 10, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 1);
+        let mut rand = UnifiedRandom::new(gate_hit_seed(120));
+        emit_liquid_drops(&w, 10, 11, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 1, "the box refuses the neighbour");
+        // Outside the box BELOW (the rect ends at y*16 + 300; row 30 starts
+        // at 480 > 460): a second drip lands. The C# argument order is
+        // (j=row, i=col).
+        let mut rand = UnifiedRandom::new(gate_hit_seed(120));
+        emit_liquid_drops(&w, 30, 10, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 2);
+    }
+
+    // ---- W4-g68 wiring wave: the per-frame area driver (WRITTEN NOT RUN) ----
+
+    /// The wiring seam (`TileDrawing.cs:688-694` via the `Draw` walk): the
+    /// area scan finds ONLY active drip-kind tiles, feeds them in row-major
+    /// order on the SHARED `_rand` stream, and the emission is per-call —
+    /// two calls roll two gates (the per-draw cadence, not per-rebuild).
+    #[test]
+    fn w4_g68_the_area_driver_scans_drip_kinds_row_major() {
+        let mut w = leaf_world();
+        // Two drip emitters in different rows/cols + decoys: an inactive
+        // 373, a non-drip kind, a wet 373 (its refusal still draws nothing).
+        place(&mut w, 12, 10, 373);
+        place(&mut w, 10, 12, 374);
+        place(&mut w, 14, 10, 373);
+        let i = w.index(14, 10);
+        w.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE; // inactive: skipped
+        place(&mut w, 11, 11, 1); // stone: not a drip kind
+        place(&mut w, 13, 12, 375);
+        let i = w.index(13, 12);
+        w.tiles[i].liquid = 200; // wet: the refusal precedes the roll
+        // The shared gate stream: seed so the FIRST Next(120) hits (the
+        // row-10 col-12 vine). The 374's Next(240) and the wet 375 draw
+        // whatever follows — the census pins the stream SHAPE, not luck.
+        let mut rand = UnifiedRandom::new(gate_hit_seed(120));
+        let mut main_rand = UnifiedRandom::new(7);
+        let mut pool = GorePool::new();
+        let cam = Vec2::new(11.0 * 16.0, 11.0 * 16.0);
+        let screen = Vec2::new(640.0, 480.0);
+        emit_liquid_drops_area(
+            &w, cam, 1.0, screen, 0, false, false, false,
+            &mut rand, &mut main_rand, &mut pool,
+        );
+        let live = live_leaves(&pool);
+        assert_eq!(live.len(), 1, "only the dry active vine hit its gate");
+        assert_eq!(pool.slot(live[0]).gore_type, 706);
+        assert_eq!(pool.slot(live[0]).position, Vec2::new(192.0, 160.0));
+        // The stream advanced past the first gate: the 374 (row 12) and
+        // the wet-375 refusal ordering rode the SAME stream — a twin that
+        // draws Next(120) then Next(240) matches (the wet tile draws
+        // NOTHING, so no third gate).
+        let mut twin = UnifiedRandom::new(gate_hit_seed(120));
+        twin.next_max(120);
+        twin.next_max(240);
+        assert_eq!(rand, twin, "row-major shared-stream order: 373 then 374, wet 375 draws nothing");
+        // A second call = a second draw: fresh gates on the SAME streams.
+        let before = rand.clone();
+        emit_liquid_drops_area(
+            &w, cam, 1.0, screen, 0, false, false, false,
+            &mut rand, &mut main_rand, &mut pool,
+        );
+        assert_ne!(rand, before, "the per-draw cadence re-rolls every call");
     }
 }

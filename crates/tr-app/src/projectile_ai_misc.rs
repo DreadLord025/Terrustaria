@@ -79,7 +79,16 @@ use crate::projectile::{
 /// box growth) feeds ONLY the skipped `Dust.NewDust` — it rolls nothing and
 /// writes no slot state, so the port keeps just the `ai[0]++` both branches
 /// share. ZERO `Main.rand` draws by construction.
-pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
+/// `gen_rng` is the ACTIVE `genRand` stream of the projectile pass (W4-g83
+/// contract §2 — the `UpdateProjectiles` swap): the cleanse's thorn/tree
+/// kills' framing dispatch draws its seaweed tip re-rolls on it. The arm's
+/// own census stays ZERO `Main.rand` draws (the conversion rolls nothing).
+pub(crate) fn ai_spray(
+    p: &mut Projectile,
+    world: &mut World,
+    local_owner: u8,
+    gen_rng: &mut tr_core::UnifiedRandom,
+) {
     // `:26788` — the solution flag (`ai[1] == 1` = the wider spray).
     let solution = p.ai[1] == 1.0;
     // `:26789-26825` — the per-kind (dust type, conversion type) ladder.
@@ -105,7 +114,7 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
         let tx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
         let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
         let size = if solution { 3 } else { 2 };
-        tr_core::spread::convert_cleanse(world, tx, ty, size);
+        tr_core::spread::convert_cleanse(world, tx, ty, size, gen_rng);
     }
     // `:26836-26839` — the 133-tick life cap (per sub-step).
     if p.time_left > 133 {
@@ -803,7 +812,7 @@ mod tests {
         let mut p = proj(145);
         p.vel = Vec2::new(-4.0, 0.0);
         p.time_left = 3600;
-        ai_spray(&mut p, &mut w, 0);
+        ai_spray(&mut p, &mut w, 0, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(w.tile(100, 50).unwrap().kind, 2, "the grass cleansed");
         assert_eq!(w.tile(101, 50).unwrap().kind, 1, "the stone cleansed");
         assert_eq!(p.time_left, 133, "the cap (`:26836-26839`)");
@@ -814,7 +823,7 @@ mod tests {
         put(&mut w2, 100, 50, 23);
         let mut p2 = proj(145);
         p2.owner = 1;
-        ai_spray(&mut p2, &mut w2, 0);
+        ai_spray(&mut p2, &mut w2, 0, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(w2.tile(100, 50).unwrap().kind, 23, "the owner gate");
         // The solution flag widens the disc to size 3 (`:26828-26832`) —
         // a cell at Manhattan 5 converts only under the flag.
@@ -822,7 +831,7 @@ mod tests {
         put(&mut w3, 103, 52, 23); // |3| + |2| = 5 < 6, outside size 2
         let mut p3 = proj(145);
         p3.ai[1] = 1.0;
-        ai_spray(&mut p3, &mut w3, 0);
+        ai_spray(&mut p3, &mut w3, 0, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(w3.tile(103, 52).unwrap().kind, 2, "the size-3 disc");
     }
 
@@ -1188,6 +1197,7 @@ mod tests {
             &mut rng,
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         let p = &pool.slots()[slot];
         assert!(!p.active, "the tile contact killed it");
@@ -1226,6 +1236,7 @@ mod tests {
             &mut tr_core::tile_light::FastRandom::new(7),
             0,
             false,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(pool.slots()[s145].ai[0], 3.0, "31: 3 sub-steps");
         assert_eq!(pool.slots()[s715].local_ai[0], 3.0, "147: 3 sub-steps");

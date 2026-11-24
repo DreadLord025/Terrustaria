@@ -324,7 +324,7 @@ mod tests {
         let blocked = |_: i32, _: i32| false;
         let mut world = app.world;
         assert!(matches!(
-            edit::interact_at(&mut world, tx, ty, 1, &blocked),
+            edit::interact_at(&mut world, tx, ty, 1, &blocked, &mut tr_core::UnifiedRandom::new(0)),
             edit::TileInteraction::Extractinator
         ));
     }

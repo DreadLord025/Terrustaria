@@ -43,11 +43,38 @@ pub(crate) fn is_snow_biome(world: &World, camera: Vec2) -> bool {
     false
 }
 
-/// `Main.CalculateWaterStyle`: the `Misc/water_*` style index for the biome under the
-/// camera. 0 is the forest default, 5 snow, 6 desert (12 underground desert), 13 ocean,
-/// 7 shallow cave, 8 deep cave; lava (1), honey (11) and shimmer (14) are per-liquid
-/// and never depend on the biome.
+/// `Main.CalculateWaterStyle` (`Main.cs:57388-57454`): the `Misc/water_*`
+/// style index for the biome under the camera. 0 is the forest default,
+/// 5 snow, 6 desert (12 underground desert), 13 ocean, 7 shallow cave,
+/// 8 deep cave; lava (1), honey (11) and shimmer (14) are per-liquid and
+/// never depend on the biome. This is the `ignoreFountains: true` arm —
+/// the capture path's caller (`CaptureBiome.cs:158`
+/// `CalculateWaterStyle(ignoreFountains: true)`); the draw/rain consumers
+/// use [`calculate_water_style_with_fountain`].
 pub(crate) fn calculate_water_style(world: &World, camera: Vec2) -> usize {
+    calculate_water_style_with_fountain(world, camera, -1)
+}
+
+/// `Main.CalculateWaterStyle(ignoreFountains: false)` — the fountain HEAD
+/// arm (`Main.cs:57390-57393`): `SceneMetrics.ActiveFountainColor >= 0`
+/// returns the fountain's colour outright, BEFORE the blood-moon and
+/// bgStyle arms (the port's camera-derived biome walk stands in for those,
+/// the recorded approximation). The colour comes from the tile-207
+/// flowing-frame scan (`SceneMetrics.cs:486-517`,
+/// `tr_core::scene::SceneMetrics::active_fountain_color` — the SwitchFountain
+/// frameY ±72 flip feeds it); -1 = no flowing fountain in the scan area.
+/// W4-g73 retire phase: the closeout's noted biome-lane gap, unclaimed by
+/// g46/g47 (their `biome.rs` is byte-identical to the pre-port version).
+pub(crate) fn calculate_water_style_with_fountain(
+    world: &World,
+    camera: Vec2,
+    active_fountain_color: i32,
+) -> usize {
+    // `Main.cs:57390-57393`: the head arm — any non-negative fountain
+    // colour wins over every biome arm below.
+    if active_fountain_color >= 0 {
+        return active_fountain_color as usize;
+    }
     let tile_y = camera.y / TILE_PX;
     if is_desert_biome(world, camera) {
         return if tile_y > world.world_surface as f32 { 12 } else { 6 };
@@ -226,6 +253,45 @@ mod water_style_tests {
         let w = test_world();
         assert_eq!(calculate_water_style(&w, cam(100, 150)), 13);
         assert_eq!(calculate_water_style(&w, cam(550, 150)), 13);
+    }
+
+    /// W4-g73 retire phase — the `CalculateWaterStyle` fountain HEAD arm
+    /// (`Main.cs:57390-57393`): `ActiveFountainColor >= 0` returns the
+    /// colour outright, BEFORE every biome arm. A desert camera (which
+    /// alone derives 6) reads the flowing fountain's colour instead; the
+    /// scene scan's tile-207 column table (`SceneMetrics.cs:486-517`)
+    /// supplies the values — 12 (underground-desert fountain, column 1)
+    /// and 9 (blood fountain, column 7) are colours no surface biome walk
+    /// ever produces, so the head arm is the only possible source.
+    #[test]
+    fn the_fountain_head_arm_outranks_every_biome_arm() {
+        let mut w = test_world();
+        put(&mut w, 300, 53); // inland desert: style 6 without a fountain
+        assert_eq!(calculate_water_style(&w, cam(300, 150)), 6);
+        for colour in [0, 12, 3, 5, 2, 10, 4, 9, 8, 6] {
+            assert_eq!(
+                calculate_water_style_with_fountain(&w, cam(300, 150), colour),
+                colour as usize,
+                "the :57390 head arm returns ActiveFountainColor verbatim"
+            );
+        }
+    }
+
+    /// The `ignoreFountains` boundary: -1 (no flowing fountain — the scan
+    /// reset, `SceneMetrics.cs:486`) falls through to the biome walk, and
+    /// the capture caller (`CaptureBiome.cs:158`,
+    /// `CalculateWaterStyle(ignoreFountains: true)`) never sees a fountain
+    /// colour even when one flows: the port's `calculate_water_style`
+    /// wrapper pins -1.
+    #[test]
+    fn no_fountain_falls_through_and_the_capture_path_ignores_fountains() {
+        let mut w = test_world();
+        put(&mut w, 300, 147); // snow: style 5
+        assert_eq!(calculate_water_style_with_fountain(&w, cam(300, 150), -1), 5);
+        // The ignoreFountains arm: the wrapper stays on the biome walk.
+        assert_eq!(calculate_water_style(&w, cam(300, 150)), 5);
+        // ...while the draw/rain consumers pick the fountain up.
+        assert_eq!(calculate_water_style_with_fountain(&w, cam(300, 150), 4), 4);
     }
 }
 

@@ -410,11 +410,21 @@ fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
 /// `WorldGen.Convert(i, j, conversionType, size)` (`WorldGen.cs:55067-55083`):
 /// the square walk with the Manhattan `< 6` gate. The port carries the type-0
 /// (cleanse) cell only — the spray's conversion type.
-pub fn convert_cleanse(world: &mut World, i: i32, j: i32, size: i32) {
+/// `rng` is the ACTIVE `genRand` stream of the caller's context (W4-g83
+/// contract §2): the Clentaminator spray runs under the `UpdateProjectiles`
+/// swap (`Main.cs:17775`), so the thorn/tree kills' framing dispatch draws
+/// its seaweed tip re-rolls on that stream.
+pub fn convert_cleanse(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    size: i32,
+    rng: &mut UnifiedRandom,
+) {
     for k in (i - size)..=(i + size) {
         for l in (j - size)..=(j + size) {
             if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
-                convert_cleanse_cell(world, k, l);
+                convert_cleanse_cell(world, k, l, rng);
             }
         }
     }
@@ -435,7 +445,7 @@ pub fn convert_cleanse(world: &mut World, i: i32, j: i32, size: i32) {
 /// compares against the unrolled band edges. The tree cross-conversion
 /// (`ConvertTreeAndGround`, `:54902+`) is unported — an invalid tree above a
 /// converted cell is killed, never re-typed.
-fn convert_cleanse_cell(world: &mut World, x: i32, y: i32) {
+fn convert_cleanse_cell(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) {
     let Some(t) = world.tile(x, y) else {
         return;
     };
@@ -525,7 +535,7 @@ fn convert_cleanse_cell(world: &mut World, x: i32, y: i32) {
         // `Convert_ActuallyConvertTile` (`:56312-56327`): active, different,
         // the tree-above validity check, then the write + re-frame.
         if active && kind != new_kind {
-            try_kill_invalid_tree_above(world, x, y, new_kind);
+            try_kill_invalid_tree_above(world, x, y, new_kind, rng);
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = new_kind;
             }
@@ -533,7 +543,8 @@ fn convert_cleanse_cell(world: &mut World, x: i32, y: i32) {
         }
     } else if kind == 32 || kind == 352 {
         // `:55656-55662` — the thorn bushes die (the netMode arm is MP-only).
-        let _ = crate::edit::kill_tile(world, x, y, false);
+        // W4-g83: the cascade rides the caller's ACTIVE genRand stream.
+        let _ = crate::edit::kill_tile(world, x, y, false, rng);
     }
 }
 
@@ -543,7 +554,13 @@ fn convert_cleanse_cell(world: &mut World, x: i32, y: i32) {
 /// test. The gem/vanity/ash profiles (`GrowTreeSettings.Profiles.
 /// TryGetFromTreeId`, `:3890-3928`) override the vanilla test; the
 /// `ConvertTreeAndGround` cross-conversion half is the documented skip.
-fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16) {
+fn try_kill_invalid_tree_above(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    new_floor: u16,
+    rng: &mut UnifiedRandom,
+) {
     if !in_world(world, x, y, 2) {
         return;
     }
@@ -581,7 +598,8 @@ fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16
         fits = new_floor == 633;
     }
     if !fits {
-        let _ = crate::edit::kill_tile(world, x, y - 1, false);
+        // W4-g83: the cascade rides the caller's ACTIVE genRand stream.
+        let _ = crate::edit::kill_tile(world, x, y - 1, false, rng);
     }
 }
 
@@ -667,15 +685,25 @@ pub fn gerunner(
     }
 }
 
-/// `WorldGen.initializeHardMode`'s runner half (`WorldGen.cs:31660-31666`):
+/// `WorldGen.initializeHardMode`'s runner half (`WorldGen.cs:31659-31660`):
 /// the hallow V on one side and the evil V on the other (the C# `GERunner(
-/// num3, 0, 3·num5, 5f)` good + `GERunner(num4, 0, −3·num5, 5f, good:
+/// num3, 0, 3·num5, 5f)` good + `GERunner(num4, 0, 3·−num5, 5f, good:
 /// false)`); the start xs sit ±`maxTilesX/7` off the middle.
-pub fn initialize_hard_mode(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
+///
+/// W4-g69 retire sweep: the evil flavour is `WorldGen.crimson` read LIVE
+/// inside `GERunner` (`WorldGen.cs:76304`) — the port reads `world.crimson`
+/// (the persisted/UI-picked field) instead of the old `corruption` bool the
+/// callers re-derived from the seed's high bit (the `roll_crimson` stand-in,
+/// which ignored the UI pick and the drunk dawn flip).
+pub fn initialize_hard_mode(world: &mut World, rng: &mut UnifiedRandom) {
     let offset = world.width / 7;
     // `num5 = ±1` (`WorldGen.cs:31585-31590`) — the velocity `3·num5` gives
     // the 3:5 V slope verbatim.
     let speed = 3.0;
+    // The evil side's flavour: the C# `GERunner` reads the `WorldGen.crimson`
+    // static at `:76304`; `convert_tile`/`convert_wall` take the OPPOSITE
+    // bool (`corruption = !crimson`).
+    let corruption = !world.crimson;
     // The hallow runner: the east side heading further east.
     gerunner(world, world.width / 2 + offset, speed, true, corruption, rng);
     // The evil runner: the west side heading further west.
@@ -788,8 +816,9 @@ mod runner_tests {
     fn initialize_hard_mode_runs_both_runners() {
         // The corruption world (the crimson world swaps the evil kinds).
         let mut w = world();
+        w.crimson = false;
         let mut rng = UnifiedRandom::new(11);
-        initialize_hard_mode(&mut w, true, &mut rng);
+        initialize_hard_mode(&mut w, &mut rng);
         let hallowed = w
             .tiles
             .iter()
@@ -804,8 +833,9 @@ mod runner_tests {
         assert!(corrupt > 200, "the evil V ({corrupt})");
         // The crimson world: the evil kinds swap (199/203/234).
         let mut w2 = world();
+        w2.crimson = true;
         let mut rng = UnifiedRandom::new(11);
-        initialize_hard_mode(&mut w2, false, &mut rng);
+        initialize_hard_mode(&mut w2, &mut rng);
         let crimson = w2
             .tiles
             .iter()

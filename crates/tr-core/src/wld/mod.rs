@@ -1610,6 +1610,8 @@ mod tests {
         world.hell_back_style = 2;
         world.blood_moon = true;
         world.eclipse = true;
+        // W4-g69: the world evil type rides the flags block (tail 10).
+        world.crimson = true;
         world.downed_eoc = true;
         world.downed_eow = true;
         world.downed_skeletron = true;
@@ -1689,6 +1691,15 @@ mod tests {
         world.bought_cat = true;
         world.bought_dog = true;
         world.bought_bunny = true;
+        // W4-f39: the five seasonal moon-boss downeds + the force-today pair
+        // round-trip at non-default values.
+        world.downed_halloween_king = true;
+        world.downed_halloween_tree = true;
+        world.downed_christmas_ice_queen = true;
+        world.downed_christmas_santank = true;
+        world.downed_christmas_tree = true;
+        world.force_halloween_for_today = true;
+        world.force_xmas_for_today = true;
         world
     }
 
@@ -1718,6 +1729,7 @@ mod tests {
         assert_eq!(got.moon_phase, want.moon_phase, "{context}: moon phase");
         assert_eq!(got.blood_moon, want.blood_moon, "{context}: blood moon");
         assert_eq!(got.eclipse, want.eclipse, "{context}: eclipse");
+        assert_eq!(got.crimson, want.crimson, "{context}: WorldGen.crimson");
         assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
@@ -1919,6 +1931,35 @@ mod tests {
         assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
         assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
         assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
+        // W4-f39: the seasonal moon-boss downeds + the force-today pair.
+        assert_eq!(
+            got.downed_halloween_king, want.downed_halloween_king,
+            "{context}: downedHalloweenKing"
+        );
+        assert_eq!(
+            got.downed_halloween_tree, want.downed_halloween_tree,
+            "{context}: downedHalloweenTree"
+        );
+        assert_eq!(
+            got.downed_christmas_ice_queen, want.downed_christmas_ice_queen,
+            "{context}: downedChristmasIceQueen"
+        );
+        assert_eq!(
+            got.downed_christmas_santank, want.downed_christmas_santank,
+            "{context}: downedChristmasSantank"
+        );
+        assert_eq!(
+            got.downed_christmas_tree, want.downed_christmas_tree,
+            "{context}: downedChristmasTree"
+        );
+        assert_eq!(
+            got.force_halloween_for_today, want.force_halloween_for_today,
+            "{context}: forceHalloweenForToday"
+        );
+        assert_eq!(
+            got.force_xmas_for_today, want.force_xmas_for_today,
+            "{context}: forceXMasForToday"
+        );
     }
 
     #[test]
@@ -2003,6 +2044,9 @@ mod tests {
             tail[11 + i] = u8::from(v);
         }
         tail[22] = u8::from(world.saved_goblin); // savedGoblin (`:1293`)
+        // W4-g69: `WorldGen.crimson` at tail offset 10 (2+8 — after the
+        // event pair and the dungeon anchor, `SaveWorldFlags:1281`).
+        tail[10] = u8::from(world.crimson);
         tail[25] = u8::from(world.downed_goblins); // downedGoblins (`:1296`)
         tail[27] = u8::from(world.downed_frost); // downedFrost (`:1297`)
         tail[28] = u8::from(world.downed_pirates); // downedPirates (`:1298`)
@@ -2047,6 +2091,14 @@ mod tests {
         tail[1890] = u8::from(world.downed_martians); // downedMartians (`:1344`)
         // The four tower downeds + four actives + the apocalypse phase, after
         // the five seasonal bosses (1893..1897): 1898..1906.
+        // W4-f39: the five seasonal moon-boss downeds are World-owned now
+        // (`WorldFile.cs:1347-1351`): king@1893, tree@1894, iceQueen@1895,
+        // santank@1896, christmasTree@1897.
+        tail[1893] = u8::from(world.downed_halloween_king);
+        tail[1894] = u8::from(world.downed_halloween_tree);
+        tail[1895] = u8::from(world.downed_christmas_ice_queen);
+        tail[1896] = u8::from(world.downed_christmas_santank);
+        tail[1897] = u8::from(world.downed_christmas_tree);
         tail[1898] = u8::from(world.downed_tower_solar); // (`:1352`)
         tail[1899] = u8::from(world.downed_tower_vortex); // (`:1353`)
         tail[1900] = u8::from(world.downed_tower_nebula); // (`:1354`)
@@ -2064,6 +2116,11 @@ mod tests {
         tail[2021] = u8::from(world.bought_cat); // boughtCat (`:1392`)
         tail[2022] = u8::from(world.bought_dog); // boughtDog (`:1393`)
         tail[2023] = u8::from(world.bought_bunny); // boughtBunny (`:1394`)
+        // W4-f39: the force-today pair sits right after the tree-top array
+        // (1939 combatBook + 7 lantern + 4+52 treeTops = 2002; the quartet
+        // ends at 2021, so the pair is at 2002..2003 — `WorldFile.cs:1386-1387`).
+        tail[2002] = u8::from(world.force_halloween_for_today);
+        tail[2003] = u8::from(world.force_xmas_for_today);
         // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
@@ -3496,6 +3553,8 @@ mod tests {
         let mut data = fixture();
         let tail_at = tail_offset_in_synthetic(&data, VER);
         let patch = |data: &mut Vec<u8>, off: usize, v: u8| data[tail_at + off] = v;
+        // W4-g69: WorldGen.crimson at tail 10 (`LoadWorldFlags:2080`).
+        patch(&mut data, 10, 1);
         patch(&mut data, 23, 1); // savedWizard (`:1294`)
         patch(&mut data, 24, 1); // savedMech (`:1295`)
         patch(&mut data, 110, 1); // savedAngler (`:1334`)
@@ -3516,6 +3575,7 @@ mod tests {
         patch(&mut data, 2030, 1); // unlockedPartyGirlSpawn (`:1401`)
         patch(&mut data, 2035, 1); // unlockedPrincessSpawn (`:1406`)
         let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.crimson, "WorldGen.crimson at tail 10");
         assert!(w.saved_wizard, "savedWizard at tail 23");
         assert!(w.saved_mech, "savedMech at tail 24");
         assert!(w.saved_angler, "savedAngler at tail 110");
