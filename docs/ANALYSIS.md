@@ -45452,3 +45452,43 @@ byte-identical to `Main.cs:67082-67153`; the bestiary sheet id/vec pair
 verified 190/190 aligned. The witness tests (8 djinn + 2 sandstorm-jump
 + 3 desert + 3 spawner) are WRITTEN, NOT RUN — **no cargo/rustc/tests/
 graphify invoked**.
+## The projectile aiStyles 81-90 band (W4-d9, code-only — SEALED)
+
+The band's five gap-styles (81 InfluxWaver 451 / 86 CultistBossIceMist 464 /
+87 ClingerStaff 482 / 89 CultistRitual 490 / 90 MagicLantern 492) are ported
+as sibling modules (`projectile_ai_styleNN.rs`, the style-55/72 precedent)
++ the `proj_data` rows + the pool dispatch arms, then wired through the
+five item-use / drain lanes (the 454/521 ritual summons, the MagicLantern
+3043 / ClingerStaff 3014 / InfluxWaver 2880 item uses, the IceMist 464
+local-owner drain). The five even styles (82/83/84/85/88 — the Moon Lord /
+pillar laser family) were already armed on main; d9 censused them and left
+them byte-identical. The full band table + the witness ledger (33 module +
+10 wiring = 43 WRITTEN NOT RUN) + the merge notes live in
+`docs/research/313-projectile-ai-81-90-final.md` (registry-number 313 per
+registry §8.1 row 6, chain 281→313).
+
+Deliberate deviations (the house skips, recorded per-module):
+* The dust bodies are the skipped visual layer; only the EXPLICIT
+  `Main.rand` draws are consumed, in C# order (the style-81/86/89/90
+  convention — `Dust.NewDust` internals are not drawn). The e3 STAGED
+  emitters activate at the d9 merge per the replace/add contract (313 §2):
+  81/86/89 REPLACE the kept draws, 87/90 ADD after the kept gates (the
+  style-90 per-cell `Next(4)` head stays d9's).
+* The lights (`:31864` ice-mist, `:32410` lantern) are the ProjLight seam's;
+  the `customData`/`shader` writes are the documented dropped fields.
+* The style-90 scan gate's `Main.player[Main.myPlayer].Center` folds onto
+  the owner snapshot (the port simulates only the local owner's slots
+  single-player, `Projectile.cs:17210`'s owner gate — owner == myPlayer).
+* The `tileSpelunker` bitset (`Main.cs:9420-9467`+`:9651`, 49 ids) is
+  hand-transcribed `TileSet::from_words` (the `SWAYS_IN_WIND_BASIC`
+  precedent — tiledata is GENERATED, never hand-edit). It is the CANONICAL
+  `IsTileSpelunkable` form: g78's + d13's copies delete to re-exports at
+  their merges, d56's tr-render copy is the crate-boundary exception
+  (313 §3, the g78 §4 keep-one verdict).
+
+The three unrowed kinds the even-style arms reference (537
+StardustSoldierLaser / 465 CultistBossLightningOrb / 466 its Arc) are
+recorded row-wave remainders, not d9 obligations (the all-tip `data.rs`
+scan found zero rows). Code-only throughout: no cargo/rustc/tests/
+rustfmt/graphify invoked; every census re-read against the cited C#
+windows, the seam signatures checked by read/grep.

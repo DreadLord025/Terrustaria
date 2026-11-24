@@ -1824,6 +1824,31 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: true,
         name: "Ancient Cultist",
     },
+    // W4-d9 wiring (the d40 7a88c61c dragon row, verbatim): the Phantasm
+    // Dragon's own entry (`BestiaryDatabaseNPCsPopulator.cs:1679` attaches
+    // the Dungeon spawn condition; the UI provider maps its credit onto
+    // 439 with quickUnlock, `:695` — the Sharkron precedent: the kill
+    // credit stays "CultistDragonHead", the entry is its own).
+    BestiaryEntryDef {
+        credit_id: "CultistDragonHead",
+        net_id: 454,
+        variant: None,
+        quick_unlock: false,
+        name: "Phantasm Dragon",
+    },
+    // W4-d9 wiring: the 521 squidhead's own entry (the d41 band's unrowed
+    // summon, ported here) — `BestiaryDatabaseNPCsPopulator.cs:1912`
+    // attaches the Dungeon spawn condition, `:696` maps the UI credit
+    // onto 439 with quickUnlock. The legacy name is "Ancient Vision"
+    // (`NPCID.cs:12540`'s LegacyNameToIdMap row).
+    BestiaryEntryDef {
+        credit_id: "AncientCultistSquidhead",
+        net_id: 521,
+        kind: NpcKind::AncientCultistSquidhead,
+        variant: None,
+        quick_unlock: false,
+        name: "Ancient Vision",
+    },
     BestiaryEntryDef {
         credit_id: "StardustTower",
         net_id: 493,
@@ -2979,15 +3004,7 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Skeleton Merchant",
     },
-    BestiaryEntryDef {
-        credit_id: "CultistDragonHead",
-        net_id: 454,
-        kind: NpcKind::CultistDragonHead,
-        variant: None,
-        quick_unlock: false,
-        name: "Phantasm Dragon",
-    },
-    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+// W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
     BestiaryEntryDef {
         credit_id: "Butcher",
         net_id: 460,
@@ -4603,6 +4620,14 @@ pub fn try_entry_for_npc(
         // Pumpking (the fishron-hazard precedent). The DRAW sheet stays
         // NPC_328 through `texture_net_id`'s own row.
         NpcKind::PumpkingBlade => NpcKind::Pumpking,
+        // W4-d9 wiring (d40 rows): the dragon segments' bestiary credit
+        // folds onto the head (`ContentSamples.cs`; the Hide=true variants
+        // have no own entry).
+        NpcKind::CultistDragonBody1
+        | NpcKind::CultistDragonBody2
+        | NpcKind::CultistDragonBody3
+        | NpcKind::CultistDragonBody4
+        | NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -4684,6 +4709,16 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // `texture_net_id`'s own rows.
         NpcKind::DetonatingBubble => NpcKind::DukeFishron,
         NpcKind::Sharkron2 => NpcKind::Sharkron,
+        // W4-d9 wiring (d40 rows): the dragon segments' bestiary credit
+        // folds onto the head (`ContentSamples.cs`; the Hide=true variants
+        // have no own entry). The head 454 + the squidhead 521 keep their
+        // OWN entries (the Sharkron precedent — the UI provider's
+        // {454,439}/{521,439} quickUnlock mapping is not the kill credit).
+        NpcKind::CultistDragonBody1
+        | NpcKind::CultistDragonBody2
+        | NpcKind::CultistDragonBody3
+        | NpcKind::CultistDragonBody4
+        | NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
         // The Force Bubble rides the Officer's row — the vanilla's bestiary
         // draw modifiers hide it (`NPCID.cs:3766-3770`'s `Hide = true`), so
         // it never has an entry of its own (the Sleeping Angler precedent;

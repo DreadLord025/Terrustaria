@@ -7337,6 +7337,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 shot.kind,
                 app.local_id as u8,
                 Vec2::new(shot.x, shot.y),
+        // W4-d9 wiring — the cultist boss's 464 ice-mist spawner
+        // (`NPC.cs:64914`): `NewProjectile(..., 464, dmg, 0f, Main.myPlayer,
+        // 0f, 1f)` spawns with the LOCAL owner (not the hostile 255 the
+        // generic drain folds to) and re-centres the 60×60 box on the
+        // request point (`Projectile.cs:10876-10877`). The aiStyle-86 arm
+        // reads the spawner form (`ai[1] == 1`) and hangs stationary,
+        // emitting the six-spoke mist children every 30 ticks. The
+        // fishron-bolt precedent (`spawn_hostile_ai_owned` + the half-box
+        // subtract); every other kind keeps the verbatim generic drain.
+        let slot = if shot.kind == crate::projectile::CULTIST_BOSS_ICE_MIST {
+            let row = crate::projectile::proj_data(shot.kind);
+            let (hw, hh) = row.map_or((30.0, 30.0), |d| (d.w * 0.5, d.h * 0.5));
+            app.projectiles.spawn_hostile_ai_owned(
+                shot.kind,
+                app.local_id as u8,
+                Vec2::new(shot.x - hw, shot.y - hh),
                 Vec2::new(shot.vx, shot.vy),
                 shot.damage,
                 0.0,
@@ -8332,6 +8348,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.npcs.push(n);
     }
     app.npc_timer = 1.0 / 60.0;
+}
 }
 
 /// The full NPC loot through the rule engine
@@ -14943,6 +14960,174 @@ mod cultist_tests {
         }
         w.compute_column_surface();
         w
+    }
+}
+
+/// W4-d9 wiring 5 — the IceMist 464 spawner's spawn-request path. The c1
+/// adapter (`npc_ai_cultist.rs`, `origin/task/W4-c1-cultist-ai-wire`) queues
+/// the boss's `HostileShotAi { kind: 464, ai0: 0, ai1: 1 }` (`NPC.cs:64914`);
+/// THIS branch owns the drain side: the `ai_shots` pass spawns it with the
+/// LOCAL owner (`Main.myPlayer`, not the generic hostile 255) and re-centres
+/// the 60×60 box, then the pool's aiStyle-86 dispatch runs the rotating
+/// spawner (the 30-tick mist children ride `wants_dart_spawns`). The c1
+/// adapter's own queue witness (`the_ice_mist_fires_at_four_and_ends_at_124`)
+/// pins the request; these two pin the drain + the pool leg. WRITTEN, NOT
+/// RUN (code-only mode).
+#[cfg(test)]
+mod w4_d9_ice_mist_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+    use crate::projectile::{FlailInputs, YoyoInputs};
+
+    /// A 300×200 air world — the mist hangs in the open at (2400, 1600),
+    /// the player far away at (1000, 800) so no contact pass interferes.
+    fn air_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("t".into(), 300, 200);
+        app.local_id = 0;
+        let mut player = Player::spawn(&app.world);
+        player.x = 1000.0;
+        player.y = 800.0;
+        app.player = Some(player);
+        app
+    }
+
+    #[test]
+    fn w4_d9_the_drain_spawns_the_spawner_with_the_local_owner() {
+        // `NPC.cs:64914` — `NewProjectile(..., 464, dmg, 0f, Main.myPlayer,
+        // 0f, 1f)`: the LOCAL owner (the generic drain's 255 would leave the
+        // spawner to the hostile-local gate only), the ai0=0/ai1=1 payload,
+        // the box re-centred on the request point (`Projectile.cs:10876-
+        // 10877`). The boss rides the stub's fade arm (ai0=-1) so the tick
+        // runs clean; the request is the c1 adapter's queue shape.
+        let mut app = air_app();
+        let mut boss = Npc::new(NpcKind::AncientCultist, 2300.0, 1500.0, 1, 0.0);
+        boss.hp = boss.max_hp;
+        boss.ai[0] = -1.0; // the spawn-in fade — no despawn, no attacks
+        app.npcs.push(boss);
+        app.npcs[0].wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+            kind: 464,
+            x: 2400.0,
+            y: 1600.0,
+            vx: 4.0,
+            vy: 0.0,
+            damage: 35,
+            ai0: 0.0,
+            ai1: 1.0,
+            scale: None,
+        });
+        update_npcs(&mut app, 1.0 / 60.0);
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 464)
+            .expect("the drain spawned the spawner");
+        assert_eq!(slot.owner, 0, "Main.myPlayer, not the hostile 255");
+        assert!(!slot.friendly, "the hostile shot (`:5356` hostile = true)");
+        assert_eq!(slot.ai[0], 0.0, "the trailing 0f spawn arg");
+        assert_eq!(slot.ai[1], 1.0, "the trailing 1f — the spawner form");
+        // NewProjectile centres the 60×60 box on (2400, 1600).
+        assert_eq!((slot.pos.x, slot.pos.y), (2370.0, 1570.0));
+        assert_eq!((slot.w, slot.h), (60.0, 60.0), "the 464 row's box");
+        assert_eq!(slot.damage, 35);
+        assert_eq!((slot.vel.x, slot.vel.y), (4.0, 0.0), "the fixed 4-speed");
+        assert!(!slot.tile_collide, "the row's tileCollide false (`:5357`)");
+        assert_eq!(slot.alpha, 255, "the row's alpha 255 (`:5359`)");
+        // The request drained exactly once.
+        assert!(app.npcs[0].wants_hostile_shot_ai.is_empty());
+    }
+
+    #[test]
+    fn w4_d9_the_drained_spawner_emits_the_thirty_tick_children() {
+        // The pool leg: the drained spawner (ai1=1, local owner) hangs
+        // stationary (`Projectile.cs:31865`'s return), ramps its alpha down
+        // 10/tick, steps the rotation PI/30 and emits one mist-form child
+        // (ai1=0) every 30 ticks at the rotation's unit vector (`:31858-
+        // 31862`); the 150-tick kill ends it (`:31853-31856`).
+        let mut app = air_app();
+        let mut world = app.world.clone();
+        let spawner = app
+            .projectiles
+            .spawn_hostile_ai_owned(
+                464,
+                0,
+                Vec2::new(2370.0, 1570.0),
+                Vec2::new(4.0, 0.0),
+                35,
+                0.0,
+                0.0,
+                1.0,
+            )
+            .expect("the spawner slot");
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let tick = |app: &mut App, world: &mut World, rng: &mut tr_core::tile_light::FastRandom| {
+            app.projectiles.update(
+                world,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                rng,
+                0,
+                true,
+            );
+        };
+        for _ in 0..30 {
+            tick(&mut app, &mut world, &mut rng);
+        }
+        let s = &app.projectiles.slots()[spawner];
+        assert_eq!(s.ai[0], 30.0, "the 30-tick counter");
+        assert_eq!((s.pos.x, s.pos.y), (2370.0, 1570.0), "the spawner hangs");
+        assert_eq!(s.alpha, 0, "255 − 30×10 clamps at 0");
+        // The first child: the mist form at the spawner's centre, the
+        // rotation's unit vector AFTER 29 steps (the spawn precedes the
+        // 30th rotation step, `:31858-31863`).
+        let children: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 464 && p.ai[1] == 0.0)
+            .collect();
+        assert_eq!(children.len(), 1, "one child at tick 30");
+        let c = children[0];
+        assert_eq!(c.owner, 0, "the child inherits the spawner's owner");
+        assert_eq!(c.damage, 35);
+        assert_eq!((c.pos.x, c.pos.y), (2370.0, 1570.0), "centre − half-box");
+        let ang = 29.0 * std::f32::consts::PI / 30.0;
+        assert!((c.vel.x - ang.cos()).abs() < 1e-3, "the rotation's unit X");
+        assert!((c.vel.y - ang.sin()).abs() < 1e-3, "the rotation's unit Y");
+        for _ in 30..60 {
+            tick(&mut app, &mut world, &mut rng);
+        }
+        let count = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 464 && p.ai[1] == 0.0)
+            .count();
+        assert_eq!(count, 2, "the second child at tick 60");
+        let s = &app.projectiles.slots()[spawner];
+        assert!(
+            (s.rot - 2.0 * std::f32::consts::PI).abs() < 1e-3,
+            "60 × PI/30 = one full turn"
+        );
+        // The 150-tick kill: children fired at 30/60/90/120; the first
+        // three's 45-tick mist lives have expired, the 120-tick child lives.
+        for _ in 60..150 {
+            tick(&mut app, &mut world, &mut rng);
+        }
+        assert!(!app.projectiles.slots()[spawner].active, "the 150-tick kill");
+        let live = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 464 && p.ai[1] == 0.0)
+            .count();
+        assert_eq!(live, 1, "only the 120-tick child outlives the spawner");
     }
 }
 

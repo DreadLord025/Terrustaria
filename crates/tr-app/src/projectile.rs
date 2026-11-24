@@ -847,6 +847,14 @@ pub struct Projectile {
     /// vec. B-6d: a Vec, not an Option — the 579 spawns TWO VortexAliens
     /// and the single Option overwrote the first.
     pub wants_mark_spawn: Vec<(u16, f32, f32, f32, f32)>,
+    /// W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn
+    /// (`Projectile.cs:32346-32356`): the (vanilla npc_type 454/521,
+    /// centre X, centre Y) request the world_sim resolves into the NPC
+    /// vec, THEN writes the returned NPC index back into the marker's
+    /// `ai[1]` (the C#'s `this.ai[1] = NPC.NewNPC(...)`, `:32350`/`:32354`
+    /// — the host-validity arm reads it). Separate from `wants_mark_spawn`
+    /// so the AI_103 mark drain keeps its verbatim shape.
+    pub wants_ritual_npc_spawn: Option<(u16, f32, f32)>,
     /// The 578's 580 spawn (`Projectile.cs:33838-33841`): the (x, y,
     /// vx, vy, ai0) payload the world_sim resolves into the pool.
     pub wants_ritual_bolt: Option<(f32, f32, f32, f32, f32)>,
@@ -1045,6 +1053,7 @@ impl Default for Projectile {
             bonus_tag_damage: 0,
             armor_penetration: 0,
             wants_mark_spawn: Vec::new(),
+            wants_ritual_npc_spawn: None,
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
@@ -14774,7 +14783,7 @@ pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
 /// non-actuated, solid, non-solidTop tile for a strict box overlap (the
 /// halfBrick shrinks the tile's top by 8). The falling star's `ai[1]` latch
 /// reads it (`Projectile.cs:23871`).
-fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+pub(crate) fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
     let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
     let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
@@ -15077,6 +15086,19 @@ pub struct ProjectilePool {
     /// churn). `None` = no player link: the aiStyle-19 arm holds the slot
     /// (the orphan guard, the yoyo precedent).
     spear_owner: Option<crate::projectile_ai_spear::SpearOwner>,
+    /// W4-d9 — the aiStyle-90 lantern's per-tick snapshot
+    /// (`Projectile.cs:32389-32416`'s `Main.player[owner]` reads + the
+    /// `Main.myPlayer` centre the scan gate reads — single-player folds
+    /// them onto one owner). The world-sim pass sets it through
+    /// [`ProjectilePool::set_lantern_owner`] (the `set_spear_owner`
+    /// precedent); `None` = no player link (the arm holds the slot).
+    lantern_owner: Option<crate::projectile_ai_style90::LanternOwner>,
+    /// W4-d9 — `Main.screenWidth` as the lantern's scan gate reads it
+    /// (`Projectile.cs:32416`). Fed per fixed step through
+    /// [`ProjectilePool::set_screen_width`] from `app.screen_size()`
+    /// (the `set_disco` precedent); the default mirrors the headless
+    /// 1280x720 fallback.
+    screen_width: i32,
     /// S1-P-i06 — the lances' channel-hold write-back (`SetDummyItemTime`,
     /// `Projectile.cs:45941`): the `itemAnimation`/`itemTime` value the arm
     /// asks the owner to re-arm this tick. The world-sim pass drains it after
@@ -15499,6 +15521,8 @@ impl ProjectilePool {
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
+            lantern_owner: None,
+            screen_width: 1280,
             pending_spear_hold: None,
             bobber_inputs: None,
             pending_splashes: Vec::new(),
@@ -15760,6 +15784,21 @@ impl ProjectilePool {
     /// pattern). `None` clears the link (the arm's orphan guard).
     pub fn set_spear_owner(&mut self, owner: Option<crate::projectile_ai_spear::SpearOwner>) {
         self.spear_owner = owner;
+    }
+
+    /// W4-d9 — the aiStyle-90 lantern's owner snapshot
+    /// (`Projectile.cs:32389-32416`). The world-sim pass builds it per fixed
+    /// step from the live player (the `set_spear_owner` pattern). `None`
+    /// clears the link (the dispatch's orphan guard).
+    pub fn set_lantern_owner(&mut self, owner: Option<crate::projectile_ai_style90::LanternOwner>) {
+        self.lantern_owner = owner;
+    }
+
+    /// W4-d9 — `Main.screenWidth` for the lantern's scan gate
+    /// (`Projectile.cs:32416`). The world-sim pass feeds `app.screen_size()`
+    /// per fixed step (the `set_disco` pattern).
+    pub fn set_screen_width(&mut self, width: i32) {
+        self.screen_width = width;
     }
 
     /// S1-P-i06 — drain the lances' channel-hold write-back
@@ -16720,6 +16759,21 @@ impl ProjectilePool {
         let mut out = Vec::new();
         for p in self.slots.iter_mut() {
             out.append(&mut p.wants_mark_spawn);
+        }
+        out
+    }
+
+    /// W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn
+    /// (`Projectile.cs:32346-32356`): the (slot, vanilla npc_type, centre
+    /// X, centre Y) requests the world_sim resolves into the NPC vec. The
+    /// slot rides along so the sim can write the returned NPC index back
+    /// into the marker's `ai[1]` (the C#'s `this.ai[1] = NPC.NewNPC(...)`).
+    pub fn drain_ritual_npc_spawns(&mut self) -> Vec<(usize, u16, f32, f32)> {
+        let mut out = Vec::new();
+        for (i, p) in self.slots.iter_mut().enumerate() {
+            if let Some((npc_type, x, y)) = p.wants_ritual_npc_spawn.take() {
+                out.push((i, npc_type, x, y));
+            }
         }
         out
     }
@@ -18674,6 +18728,96 @@ impl ProjectilePool {
                         85 => {
                             if let Some(p) = player.as_deref_mut() {
                                 self.slots[i].ai_moon_leech(&npcs[..], p);
+                            }
+                        }
+                        // W4-d9 — the aiStyle-81 InfluxWaver 451
+                        // (`Projectile.cs:31001-31213`): the four-leg melee
+                        // wave (launch fade / pulse / homing teleport /
+                        // strike decay). The movement is the type-451
+                        // HandleMovement bounce (`:18111-18117`).
+                        81 => {
+                            crate::projectile_ai_style81::ai_influx_waver(
+                                &mut self.slots[i],
+                                &npcs[..],
+                                rng,
+                            );
+                            crate::projectile_ai_style81::influx_waver_move(
+                                &mut self.slots[i],
+                                world,
+                            );
+                        }
+                        // W4-d9 — the aiStyle-86 CultistBossIceMist 464
+                        // (`Projectile.cs:31827-31900`): the rotating spawner
+                        // (ai[1]==1, the 30-tick child) or the six-spoke
+                        // expanding mist. The spawner returns before movement
+                        // (the C# `return` :31865); the mist's position unwind
+                        // cancels the kill_step add (net zero, UpdatePosition).
+                        86 => {
+                            let spawner = crate::projectile_ai_style86::ai_ice_mist(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            if !spawner {
+                                self.slots[i].kill_step(world);
+                            }
+                        }
+                        // W4-d9 — the aiStyle-87 ClingerStaff 482 wall
+                        // (`Projectile.cs:31901-31936`): the position/height
+                        // pins, the owner-facing direction, the keep-one
+                        // sibling kill. The owner centre rides the `owner`
+                        // snapshot (the C# `Main.player[owner].Center.X`).
+                        87 => {
+                            let owner_cx = owner.map(|(x, _)| x).unwrap_or(self.slots[i].pos.x);
+                            let sibling_kill =
+                                crate::projectile_ai_style87::clinger_staff_sibling_kill(
+                                    &self.slots,
+                                    i,
+                                );
+                            crate::projectile_ai_style87::ai_clinger_staff(
+                                &mut self.slots[i],
+                                owner_cx,
+                                sibling_kill,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d9 — the aiStyle-89 CultistRitual 490 marker
+                        // (`Projectile.cs:32262-32386`): the alpha ramp, the
+                        // dust bursts (draws consumed), the 300-tick
+                        // dragon/squid spawn request, the 320-tick kill, the
+                        // host-validity kill. The spawn carries the vanilla
+                        // 454/521; the drain resolves them through
+                        // kind_from_net_id and writes the NPC index back
+                        // into ai[1] (the W4-d9 wiring).
+                        89 => {
+                            let any_dragon =
+                                npcs.iter().any(|n| n.hp > 0 && n.kind.net_id() == 454);
+                            crate::projectile_ai_style89::ai_cultist_ritual(
+                                &mut self.slots[i],
+                                &npcs[..],
+                                any_dragon,
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d9 — the aiStyle-90 MagicLantern 492 light pet
+                        // (`Projectile.cs:32387-32514`): the owner-death
+                        // kill, the keep-alive, the tileCollide flip, the
+                        // 10-tick spelunker scan (the Next(4) draws
+                        // consumed), the hover accel + the rotation/frame
+                        // cycles. The `:32490` return exits AI() only —
+                        // Update still moves the slot, so kill_step runs
+                        // either way. The owner snapshot rides the
+                        // `set_lantern_owner` seam (no player → hold).
+                        90 => {
+                            if let Some(lo) = self.lantern_owner {
+                                crate::projectile_ai_style90::ai_magic_lantern(
+                                    &mut self.slots[i],
+                                    world,
+                                    lo,
+                                    self.screen_width,
+                                    rng,
+                                );
+                                self.slots[i].kill_step(world);
                             }
                         }
                         102 => {
@@ -23542,6 +23686,13 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
+        // W4-d9 — `Damage()`'s `Damage_CanDealDamage` gate (`Projectile.cs:
+        // 12497` → `:12448`): the 451's homing-band / ai[1]<5 window deals
+        // no damage. The other listed kinds' clauses are unported (their
+        // rows/AI are follow-ups); the 451 is the first rowed kind here.
+        if crate::projectile_ai_style81::influx_waver_refuses_damage(&self.slots[slot]) {
+            return;
+        }
         let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, center) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -23795,9 +23946,14 @@ impl ProjectilePool {
                 // (`:12654`): the projectile's damage box against the NPC's
                 // raw rect. `npc.getRect()` is exact (no +4 point-test pad).
                 let (nw, nh) = n.size();
-                proj_rect.intersects(tr_core::whip::Rect::new(
+                let target = tr_core::whip::Rect::new(
                     n.x as i32, n.y as i32, nw as i32, nh as i32,
-                ))
+                );
+                // W4-d9 — `Colliding`'s type-464 arm (`Projectile.cs:16095-
+                // 16108`): the mist form's six 30×30 spoke boxes OR the base
+                // rect (`:15888`). The spawner form keeps the base rect only.
+                proj_rect.intersects(target)
+                    || crate::projectile_ai_style86::ice_mist_colliding(p, target)
             };
             if !touches {
                 continue;
@@ -23842,6 +23998,14 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // W4-d9 — `Damage_PVE_Inner`'s type-482 clause (`Projectile.cs:
+            // 12951-12954`): the ClingerStaff halves its damage against
+            // aiStyle-6/37 NPCs (the flyers), after DamageVar.
+            dmg = crate::projectile_ai_style87::clinger_staff_damage(
+                &self.slots[slot],
+                &npcs[idx],
+                dmg,
+            );
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
             // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
@@ -24066,6 +24230,11 @@ impl ProjectilePool {
             // melee-only ones never fire for an arrow by construction.
             crate::special_arrows::status_npc(self.slots[slot].kind, &mut npcs[idx], rng);
             self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
+            // W4-d9 — `StatusNPC`'s type-482 arm (`Projectile.cs:11665-
+            // 11668`): the ClingerStaff's CursedInferno (39, 420).
+            if self.slots[slot].kind == CLINGER_STAFF {
+                crate::projectile_ai_style87::clinger_staff_status_npc(&mut npcs[idx]);
+            }
             let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
             let landed = Npc::strike_projectile(
                 npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
@@ -24298,6 +24467,16 @@ impl ProjectilePool {
                 if p.kind == SHADOWBEAM {
                     p.damage = (p.damage as f64 * 0.9) as i32;
                 }
+                // W4-d9 — `Damage_PVE_Inner`'s type-451 arm (`Projectile.cs:
+                // 14051-14065`): the on-hit ai[0] ladder (first hit adds
+                // penetrate, later hits subtract penetrate+1), ai[1] reset,
+                // netUpdate, then `keepIterating = false; return` — the walk
+                // stops and the penetrate decrement below is SKIPPED (the
+                // C# returns before `:14125`).
+                if p.kind == INFLUX_WAVER {
+                    crate::projectile_ai_style81::influx_waver_on_hit(p);
+                    break;
+                }
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
                     break;
@@ -24491,7 +24670,19 @@ impl ProjectilePool {
             && cx < player.x + crate::player::WIDTH
             && cy >= player.y
             && cy < player.y + crate::player::HEIGHT;
-        if !inside {
+        // W4-d9 — `Damage_EVP`'s `Colliding` (`Projectile.cs:14816`): the
+        // 464 mist form's six 30×30 spoke boxes OR the contact test. The
+        // other kinds keep the port's point-test stand-in.
+        let spoke_hit = crate::projectile_ai_style86::ice_mist_colliding(
+            p,
+            tr_core::whip::Rect::new(
+                player.x as i32,
+                player.y as i32,
+                crate::player::WIDTH as i32,
+                player.height as i32,
+            ),
+        );
+        if !inside && !spoke_hit {
             return;
         }
         // `Projectile.cs:14831-14835` — `int num3 = Main.DamageVar(this.damage,
@@ -32511,6 +32702,7 @@ mod phasmal_projectile_tests {
             net_update: false,
             ignore_water: false,
             wants_mark_spawn: Vec::new(),
+            wants_ritual_npc_spawn: None,
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
@@ -32924,6 +33116,7 @@ mod ritual_projectile_tests {
             net_update: false,
             ignore_water: false,
             wants_mark_spawn: Vec::new(),
+            wants_ritual_npc_spawn: None,
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,

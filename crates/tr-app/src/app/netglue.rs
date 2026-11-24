@@ -4284,8 +4284,17 @@ fn npc_seed(
         | crate::npc::NpcKind::FlyingAntlion => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        // W4-d9 wiring (d40 rows): the dragon chain + the 521 squidhead's
+        // net seeds (the bare stats seed; the net state overwrites the
+        // position below — the wyvern family's shape).
+        crate::npc::NpcKind::CultistDragonHead
+        | crate::npc::NpcKind::CultistDragonBody2
+        | crate::npc::NpcKind::CultistDragonBody3
+        | crate::npc::NpcKind::AncientCultistSquidhead => {
+            crate::npc::Npc::new(kind, _x, y, 1, 0.0)
         }
     })
+}
 }
 }
 

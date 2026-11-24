@@ -2682,6 +2682,10 @@ fn portrait_data(
                 .unwrap_or(22.0);
             (sheet_i, h, 30.0, h, white)
         }
+        // W4-d9 wiring (d40 rows): the dragon head's portrait box (the
+        // SetDefaults 32x32; the segments fold onto its entry). The 521
+        // squidhead's 60x60 box rides its own entry.
+        (NpcKind::AncientCultistSquidhead, _) => (sheet_i, 60.0, 60.0, 60.0, white),
     }
 
 /// `UIBestiaryEntryInfoPage`'s content for the selected entry: the

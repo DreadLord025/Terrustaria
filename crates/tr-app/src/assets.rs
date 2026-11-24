@@ -1454,6 +1454,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_446",
         "NPC_447",
         "NPC_448",
+        // W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon's chain
+        // + the 521 squidhead's own sheets, keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`'s
+        // CULTIST_DRAGON_SHEETS).
         "NPC_454",
         "NPC_455",
         "NPC_456",
@@ -1641,6 +1645,7 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_80",
         "NPC_580",
         "NPC_581",
+        "NPC_521",
 ];
 
 
@@ -2594,6 +2599,7 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 216] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 186] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2661,6 +2667,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
         // W4-f42 — the sandstorm debris + desert family (appended last so
         // the earlier slots keep their indexes).
         546, 61, 69, 78, 79, 630, 80, 580, 581,
+        // W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon's head
+        // + the 521 squidhead's own bestiary entries — appended last so
+        // the earlier slots keep their indexes. The segments fold onto
+        // the head's credit (no own slots).
+        454, 521,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -3693,6 +3704,11 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_80").copied(),
                 atlas.sheet("NPC_580").copied(),
                 atlas.sheet("NPC_581").copied(),
+                // W4-d9 wiring (the d40 dragon rows): the Phantasm Dragon
+                // head's 3-row strip + the 521 squidhead's 4-row strip
+                // (the BESTIARY_NPC_SHEET_IDS tail).
+                atlas.sheet("NPC_454").copied(),
+                atlas.sheet("NPC_521").copied(),
             ],
 
 

@@ -260,6 +260,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
     });
     app.projectiles.set_spear_owner(spear_owner);
+    // W4-d9 — the aiStyle-90 lantern's owner snapshot
+    // (`Projectile.cs:32389-32416`'s `Main.player[owner]` reads; the scan
+    // gate's `Main.myPlayer` centre folds onto the same owner — the port
+    // simulates only the local owner's slots single-player). The screen
+    // width rides `app.screen_size()` (the `Main.screenWidth` stand-in).
+    let lantern_owner = app.player.as_ref().map(|p| {
+        let (cx, cy) = p.center();
+        crate::projectile_ai_style90::LanternOwner {
+            center: Vec2::new(cx, cy),
+            direction: p.facing,
+            dead: p.dead,
+            magic_lantern: p.magic_lantern,
+        }
+    });
+    app.projectiles.set_lantern_owner(lantern_owner);
+    app.projectiles.set_screen_width(sw as i32);
 
     // S1-P-i35 — the bobber arm's per-tick player/world snapshot (`AI_061` +
     // `FishingCheck`'s `Main.player[owner]` reads, `Projectile.cs:53658+`).
@@ -496,6 +512,33 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.vy = vy;
         n.worm_id = 1;
         app.npcs.push(n);
+    }
+    // W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn
+    // (`Projectile.cs:32346-32356`): the VANILLA ids 454/521 resolve through
+    // `kind_from_net_id` (the bestiary NET-id space, the
+    // `spawn_shimmer_release` precedent — NOT `from_u16`'s CS ids). The
+    // dragon head (454, the d40 rows) and the squidhead (521, ported from
+    // `NPC.cs:15768-15779`) now have port kinds. `NPC.NewNPC`'s Bottom =
+    // (X, Y) (`NPC.cs:80770`) — the spawn site subtracts the half-width +
+    // the full height (the shark-spawn precedent). The C# stores the
+    // returned NPC index into the marker's `ai[1]` (`:32350`/`:32354`);
+    // the port's compacted NPC vec re-derives indices each tick, so the
+    // write-back rides the current push index (the saucer host-link
+    // convention, `world_sim/npcs.rs`'s carrier pre-pass).
+    for (slot, npc_type, x, y) in app.projectiles.drain_ritual_npc_spawns() {
+        let Some((kind, slime)) = crate::npc::kind_from_net_id(npc_type as i32) else {
+            continue;
+        };
+        let (w, h) = kind.size();
+        let mut n = crate::npc::Npc::new(kind, x - w * 0.5, y - h, 1, 0.0);
+        n.slime = slime;
+        n.hp = n.max_hp;
+        n.net_update = true;
+        let idx = app.npcs.len();
+        app.npcs.push(n);
+        // The C#'s `this.ai[1] = NPC.NewNPC(...)` — the host-validity arm
+        // (`Projectile.cs:32362-32381`) reads the index next tick.
+        app.projectiles.set_ai1(slot, idx as f32);
     }
     // `AI_108`'s 578 bolt spawn (`Projectile.cs:33838-33841`): the lightning
     // marker resolves into the ritual bolt (580) with the marker's payload.
@@ -1194,5 +1237,66 @@ mod s1_p_i09_yoyo_snapshot_tests {
         app.player.as_mut().unwrap().frozen = true;
         update_projectiles(&mut app, 1.0 / 60.0);
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
+    }
+}
+
+/// W4-d9 wiring — the aiStyle-89 ritual's 300-tick dragon/squid spawn drain
+/// (`Projectile.cs:32346-32356`): the VANILLA ids 454/521 resolve through
+/// `kind_from_net_id` into real NPC spawns (the d40 dragon rows + the
+/// ported 521 squidhead), and the returned NPC index writes back into the
+/// marker's `ai[1]` (the C#'s `this.ai[1] = NPC.NewNPC(...)`). WRITTEN, NOT
+/// RUN (code-only mode).
+#[cfg(test)]
+mod w4_d9_ritual_spawn_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::CULTIST_RITUAL;
+
+    /// A ritual marker parked at (40, 40) inside the 8x8-tile (128-px)
+    /// fixture world, with a live cultist host at NPC index 0. The
+    /// 300-tick spawn request is seeded directly (the AI arm's own
+    /// witness pins the 300-tick gate; this pins the DRAIN).
+    fn ritual_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut host = crate::npc::Npc::new(crate::npc::NpcKind::AncientCultist, 10.0, 10.0, 1, 0.0);
+        host.hp = host.max_hp;
+        app.npcs.push(host);
+        let slot = app.projectiles
+            .spawn_hostile_ai(CULTIST_RITUAL, Vec2::new(40.0, 40.0), Vec2::ZERO, 0, 0.0, 0.0, 0.0)
+            .expect("the 490 row spawns");
+        app.projectiles.slots_mut()[slot].wants_ritual_npc_spawn = Some((454, 60.0, 80.0));
+        app
+    }
+
+    #[test]
+    fn w4_d9_the_drain_spawns_the_dragon_head_and_writes_ai1() {
+        let mut app = ritual_app();
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The dragon head spawned at the Bottom convention: centre X 60,
+        // bottom Y 80 → top-left (60 - 16, 80 - 32) = (44, 48).
+        let dragon = app.npcs.iter().find(|n| n.kind == crate::npc::NpcKind::CultistDragonHead)
+            .expect("the 454 resolved through kind_from_net_id");
+        assert_eq!((dragon.x, dragon.y), (44.0, 48.0), "NPC.NewNPC's Bottom = (X, Y)");
+        assert_eq!(dragon.hp, dragon.max_hp, "the spawn is at full life");
+        // The marker's ai[1] carries the returned NPC index (the host-
+        // validity arm reads it next tick).
+        let marker = app.projectiles.slots().iter().find(|p| p.active && p.kind == CULTIST_RITUAL)
+            .expect("the marker lives (its host is valid)");
+        let idx = app.npcs.iter().position(|n| n.kind == crate::npc::NpcKind::CultistDragonHead).unwrap();
+        assert_eq!(marker.ai[1], idx as f32, "the ai[1] write-back");
+        assert!(marker.wants_ritual_npc_spawn.is_none(), "the intent drained");
+    }
+
+    #[test]
+    fn w4_d9_the_drain_spawns_the_squidhead_when_requested() {
+        let mut app = ritual_app();
+        let slot = app.projectiles.slots().iter().position(|p| p.active && p.kind == CULTIST_RITUAL).unwrap();
+        app.projectiles.slots_mut()[slot].wants_ritual_npc_spawn = Some((521, 60.0, 80.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The squidhead's 60x60 box: top-left (60 - 30, 80 - 60) = (30, 20).
+        let squid = app.npcs.iter().find(|n| n.kind == crate::npc::NpcKind::AncientCultistSquidhead)
+            .expect("the 521 resolved through kind_from_net_id");
+        assert_eq!((squid.x, squid.y), (30.0, 20.0));
+        assert_eq!(squid.hp, 2000, "the squidhead's lifeMax");
     }
 }
