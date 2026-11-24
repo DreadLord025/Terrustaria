@@ -1565,6 +1565,51 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // strips Extra_157/158/159/160/187 overflow +64..+214 and stay
         // deferred to the repack wave, research/309 §2).
         "Extra_188",
+        // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds' own sheets
+        // (`render/entities.rs`'s KIND_WIRE_1_SHEETS), keyed by the vanilla
+        // net id in `NpcAssets::npc_sheets`.
+        "NPC_61",
+        "NPC_63",
+        "NPC_64",
+        "NPC_69",
+        "NPC_70",
+        "NPC_75",
+        "NPC_82",
+        "NPC_83",
+        "NPC_84",
+        "NPC_85",
+        // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds' own sheets
+        // (`render/entities.rs`'s KIND_WIRE_2_SHEETS).
+        "NPC_103",
+        "NPC_122",
+        "NPC_164",
+        "NPC_165",
+        "NPC_169",
+        "NPC_174",
+        "NPC_177",
+        "NPC_179",
+        "NPC_182",
+        "NPC_195",
+        "NPC_196",
+        // W4-g8 lane 1 batch 3 — the CursedSkull + the bat/flyer family's
+        // own sheets (`render/entities.rs`'s KIND_WIRE_3_SHEETS).
+        "NPC_34",
+        "NPC_62",
+        "NPC_93",
+        "NPC_121",
+        "NPC_137",
+        "NPC_150",
+        "NPC_151",
+        "NPC_152",
+        "NPC_158",
+        "NPC_226",
+        // W4-g8 lane 1 batch 4 — the last three kinds' own sheets
+        // (`render/entities.rs`'s KIND_WIRE_4_SHEETS).
+        "NPC_221",
+        "NPC_48",
+        "NPC_156",
+        // W4-g8 machine round 3 — the Vampire 159's own sheet.
+        "NPC_159",
 ];
 
 
@@ -2514,6 +2559,7 @@ pub const pub const BESTIARY_NPC_SHEET_IDS: [u16; 342] = [
 
 
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 216] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2551,6 +2597,17 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         // W4-g5 — the two casters' bestiary sheets, appended last so the
         // earlier slots keep their indexes.
         172, 693,
+        // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds, appended last
+        // so the earlier slots keep their indexes.
+        61, 63, 64, 69, 70, 75, 82, 83, 84, 85,
+        // W4-g8 lane 1 batch 2 — appended last (same reason).
+        103, 122, 164, 165, 169, 174, 177, 179, 182, 195, 196,
+        // W4-g8 lane 1 batch 3 — appended last (same reason).
+        34, 62, 93, 121, 137, 150, 151, 152, 158, 226,
+        // W4-g8 lane 1 batch 4 — appended last (same reason).
+        221, 48, 156,
+        // W4-g8 machine round 3 — the Vampire 159 (appended last).
+        159,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -3509,6 +3566,50 @@ atlas.sheet("NPC_442").copied(),
                 // W4-g5 — the two casters' bestiary sheets (3-frame strips).
                 atlas.sheet("NPC_172").copied(),
                 atlas.sheet("NPC_693").copied(),
+                // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds' strips
+                // (the BESTIARY_NPC_SHEET_IDS tail, same order).
+                atlas.sheet("NPC_61").copied(),
+                atlas.sheet("NPC_63").copied(),
+                atlas.sheet("NPC_64").copied(),
+                atlas.sheet("NPC_69").copied(),
+                atlas.sheet("NPC_70").copied(),
+                atlas.sheet("NPC_75").copied(),
+                atlas.sheet("NPC_82").copied(),
+                atlas.sheet("NPC_83").copied(),
+                atlas.sheet("NPC_84").copied(),
+                atlas.sheet("NPC_85").copied(),
+                // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds' strips
+                // (the BESTIARY_NPC_SHEET_IDS tail, same order).
+                atlas.sheet("NPC_103").copied(),
+                atlas.sheet("NPC_122").copied(),
+                atlas.sheet("NPC_164").copied(),
+                atlas.sheet("NPC_165").copied(),
+                atlas.sheet("NPC_169").copied(),
+                atlas.sheet("NPC_174").copied(),
+                atlas.sheet("NPC_177").copied(),
+                atlas.sheet("NPC_179").copied(),
+                atlas.sheet("NPC_182").copied(),
+                atlas.sheet("NPC_195").copied(),
+                atlas.sheet("NPC_196").copied(),
+                // W4-g8 lane 1 batch 3 — the CursedSkull + the bat/flyer
+                // family's strips (the BESTIARY_NPC_SHEET_IDS tail).
+                atlas.sheet("NPC_34").copied(),
+                atlas.sheet("NPC_62").copied(),
+                atlas.sheet("NPC_93").copied(),
+                atlas.sheet("NPC_121").copied(),
+                atlas.sheet("NPC_137").copied(),
+                atlas.sheet("NPC_150").copied(),
+                atlas.sheet("NPC_151").copied(),
+                atlas.sheet("NPC_152").copied(),
+                atlas.sheet("NPC_158").copied(),
+                atlas.sheet("NPC_226").copied(),
+                // W4-g8 lane 1 batch 4 — the last three kinds' strips (the
+                // BESTIARY_NPC_SHEET_IDS tail).
+                atlas.sheet("NPC_221").copied(),
+                atlas.sheet("NPC_48").copied(),
+                atlas.sheet("NPC_156").copied(),
+                // W4-g8 machine round 3 — the Vampire 159's strip.
+                atlas.sheet("NPC_159").copied(),
             ],
 
 

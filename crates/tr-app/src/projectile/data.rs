@@ -963,6 +963,23 @@ pub const AQUA_SCEPTER: u16 = 22;
 pub const WATER_BOLT: u16 = 27;
 /// `ProjectileID.Flamelash` (34) — the channeled aimed spell.
 pub const FLAMELASH: u16 = 34;
+/// `ProjectileID.SandBallFalling` (31) — the Antlion's hostile sand spit
+/// (`NPC.cs:24462`/`:24477`), the aiStyle-10 falling ball the Antlion's
+/// ai[0]==2 override steers (`Projectile.cs:1131-1140`: 10x10, hostile,
+/// penetrate −1, knockBack 6). W4-g8 lane 1 batch 1.
+pub const SAND_BALL_FALLING: u16 = 31;
+/// `ProjectileID.PinkLaser` (84) — the Gastropod's hostile laser
+/// (`NPC.cs:24818`), the aiStyle-1 bullet (`Projectile.cs:1646-1659`:
+/// 4x4, hostile, penetrate 3, extraUpdates 2, timeLeft 600). W4-g8 lane 1.
+pub const PINK_LASER: u16 = 84;
+/// `ProjectileID.FrostBlastHostile` (128) — the IceElemental's hostile
+/// frost blast (`NPC.cs:24894`), the aiStyle-28 bolt (`Projectile.cs:2169-2179`:
+/// 14x14, hostile, penetrate −1, coldDamage). W4-g8 lane 1.
+pub const FROST_BLAST_HOSTILE: u16 = 128;
+/// `ProjectileID.WebSpit` (472) — the wall-crawler's expert web spit
+/// (`NPC.cs:29863`), the aiStyle-1 bullet (`Projectile.cs:5463-5473`:
+/// 8x8, hostile, penetrate −1, tileCollide, timeLeft 60). W4-g8 lane 1.
+pub const WEB_SPIT: u16 = 472;
 /// `ProjectileID.DemonSickle` (44) — the Demon/VoodooDemon's hostile sickle
 /// (`NPC.cs:23449`), the aiStyle-18 twin of the friendly DemonScythe 45
 /// (`Projectile.cs:1271-1282`: hostile, penetrate −1).
@@ -971,6 +988,10 @@ pub const DEMON_SICKLE: u16 = 44;
 /// (`NPC.cs:23428`, W4-d23): 14x14, aiStyle 1, hostile, penetrate −1,
 /// tileCollide true (`Projectile.cs:1207-1216` — the `aiStyle = 0` write
 /// at `:1211` is overwritten by the `aiStyle = 1` at `:1214`).
+/// `ProjectileID.HarpyFeather` (38) — the Harpy's hostile feather shot
+/// (`NPC.cs:23428`), the aiStyle-1 bullet (`Projectile.cs:1207-1216`:
+/// 14x14, hostile, penetrate −1, tileCollide; the arm writes aiStyle 0
+/// then 1 — the final 1 stands). W4-g8 machine round.
 pub const HARPY_FEATHER: u16 = 38;
 /// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
 pub const DEMON_SCYTHE: u16 = 45;
@@ -2818,6 +2839,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:1162-1173` — the flamelash: 32x32, aiStyle 9, `penetrate =
             // 2`, the local-NPC immunity with the 12-tick cooldown.
             FLAMELASH => (32.0, 32.0, 9, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
+            // `:1207-1216` — the harpy feather (the Harpy 48's hostile shot,
+            // `NPC.cs:23428`): 14x14, aiStyle 1 (the arm writes 0 then 1 —
+            // the final 1 stands), hostile, `penetrate = -1`, tileCollide;
+            // the spawn site overrides `timeLeft = 300` (`NPC.cs:23429`).
+            HARPY_FEATHER => (14.0, 14.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `:1271-1282` — the demon sickle (the Demon/VoodooDemon's
             // hostile shot, `NPC.cs:23449`): 48x48, aiStyle 18, alpha 100,
             // `penetrate = -1`, `scale = 0.9f`; the spawn site overrides
@@ -3366,6 +3392,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // knockBack (8 / 6) is dropped — the spawner's input wins.
             42 => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             65 | 68 | 354 => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+            // W4-g8 lane 1 batch 1 — the Antlion's SandBallFalling (31,
+            // `Projectile.cs:1131-1140`): 10x10, aiStyle 10, penetrate −1,
+            // the stock tileCollide; the `ai[0] = 2` + `timeLeft = 300`
+            // overrides ride the NPC shot drain (`NPC.cs:24463-24464`).
+            SAND_BALL_FALLING => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-g8 lane 1 batch 2 — the Gastropod's PinkLaser (84,
+            // `Projectile.cs:1646-1659`): 4x4, aiStyle 1, penetrate 3,
+            // extraUpdates 2, timeLeft 600; the IceElemental's FrostBlast
+            // (128, `:2169-2179`): 14x14, aiStyle 28, penetrate −1, the
+            // stock tileCollide + 3600 life.
+            PINK_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, RESET_STATE),
+            FROST_BLAST_HOSTILE => (14.0, 14.0, 28, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-g8 lane 1 batch 2 — the wall-crawler's WebSpit (472,
+            // `Projectile.cs:5463-5473`): 8x8, aiStyle 1, penetrate −1,
+            // tileCollide, timeLeft 60 (the expert spit, constants-off).
+            WEB_SPIT => (8.0, 8.0, 1, -1, 60, 0, true, false, false, RESET_STATE),
             // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
             // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
             // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever

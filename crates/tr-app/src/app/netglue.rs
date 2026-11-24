@@ -4048,6 +4048,22 @@ fn npc_seed(
         // W4-d35 (B): the 82/83/84 flyers ride the hover ctor
         // (the net state overwrites the position below).
         crate::npc::NpcKind::Wraith
+        // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds. The grounded
+        // walkers (the Antlion 69, the Mimic 85) plant their feet on the
+        // column surface (the cave-walker ctor); the noGravity flyers
+        // (Vulture 61, the jellies 63/64, the Spike Ball 70, the Pixie 75,
+        // the Wraith 82, the possessed weapons 83/84) ride the hover ctor
+        // (the Poltergeist/Drippler precedent — the machine takes over on
+        // the first tick).
+        crate::npc::NpcKind::Antlion | crate::npc::NpcKind::Mimic => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::Vulture
+        | crate::npc::NpcKind::BlueJellyfish
+        | crate::npc::NpcKind::PinkJellyfish
+        | crate::npc::NpcKind::SpikeBall
+        | crate::npc::NpcKind::Pixie
+        | crate::npc::NpcKind::Wraith
         | crate::npc::NpcKind::CursedHammer
         | crate::npc::NpcKind::EnchantedSword => {
             let y = (y / TILE_PX) as i32;
@@ -4185,6 +4201,47 @@ fn npc_seed(
         }
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-g8 lane 1 batch 2 — the grounded walkers (the WallCreeper 164,
+        // the Nymph 196, the LostGirl 195) plant their feet on the column
+        // surface; the noGravity flyers (the GreenJellyfish 103, the
+        // Gastropod 122, the WallCreeperWall 165, the IceElemental 169, the
+        // Herpling 174 / Derpling 177 hoppers, the CrimsonAxe 179, the
+        // FloatyGross 182) ride the hover ctor.
+        crate::npc::NpcKind::WallCreeper
+        | crate::npc::NpcKind::Nymph
+        | crate::npc::NpcKind::LostGirl => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::GreenJellyfish
+        | crate::npc::NpcKind::Gastropod
+        | crate::npc::NpcKind::WallCreeperWall
+        | crate::npc::NpcKind::IceElemental
+        | crate::npc::NpcKind::Herpling
+        | crate::npc::NpcKind::Derpling
+        | crate::npc::NpcKind::CrimsonAxe
+        | crate::npc::NpcKind::FloatyGross => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-g8 lane 1 batch 3 — the CursedSkull 34 + the nine aiStyle-14
+        // bat/flyer family members ride the hover ctor (the noGravity
+        // flyers — the bat family's cave-flier shape).
+        crate::npc::NpcKind::CursedSkull
+        | crate::npc::NpcKind::FlyingSnake => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-g8 lane 1 batch 4 — the Squid 221 (noGravity swimmer) + the
+        // Harpy 48 / RedDevil 156 (noGravity flyers) ride the hover ctor.
+        | crate::npc::NpcKind::RedDevil => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-g8 machine round 3 — the Vampire 159 (the aiStyle-3 fighter)
+        // plants its feet on the column surface (the cave-walker ctor).
+        crate::npc::NpcKind::Vampire => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
     })
 }

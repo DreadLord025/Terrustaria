@@ -18,6 +18,17 @@
 //! `:23333-23345` + feather shot `:23416-23436` (type 38, damage 15, speed
 //! 6), 156's trident shot `:23458-23484` (type 115, damage 80, the ±50
 //! jitters + the velocity×5 origin + the ×100 muzzle offset).
+//! `:17342`). The port models four of them: CaveBat 49, JungleBat 51,
+//! Hellbat 60, VoodooDemon 66 (`npc/data.rs::ai_style`). This module ports
+//! the whole arm's STRUCTURE with the branches those four types take; the
+//! one remaining unported type's branch (660's 0.35/0.3/6/5 approach
+//! `:23038-23115`) is a cited skip — it lands with its kind.
+//! 48's wet arm `:23333-23345` + feather shot `:23416-23436`, 156's
+//! trident shot `:23458-23484`, 158's surface flee + 7-cap approach
+//! `:22899-22970` + Transform(159) `:23346-23355` + double `ai[1]++`
+//! `:23357-23360`, and 226's velocity-sign facing `:22876-22894` + 4/2.5
+//! approach `:22971-23037` landed with the W4-g8 machine round (the
+//! Harpy/RedDevil/VampireBat/FlyingSnake wirings).
 //!
 //! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
 //! `npc.rs::update_cave_bat` routes the family kinds through [`bat_ai`],
@@ -25,6 +36,10 @@
 //! `TargetCandidate`/`players_wet` slices, drains [`Style14Shot`] into
 //! `wants_hostile_shot` (type 44, damage 21; the sim's timed-shot pass
 //! applies the `timeLeft = 300` write, `NPC.cs:23450`), and integrates
+//! `wants_hostile_shot` (the Demon/VoodooDemon sickle: type 44, damage 21;
+//! the Harpy feather: type 38, damage 15; the RedDevil trident: type 115,
+//! damage 80 — W4-g8; the sim's timed-shot pass applies the `timeLeft = 300`
+//! write, `NPC.cs:23429`/`:23450`/`:23478`), and integrates
 //! through the no-gravity `integrate_flyer_collision` stand-in
 //! (`UpdateCollision`, `NPC.cs:92523-92580`). The distrust-verbatim audit
 //! re-read the whole arm against `NPC.cs:22849-23486` at the wiring —
@@ -48,6 +63,21 @@
 //! stream position for each case (written, NOT run — code-only mode).
 // WIRED by the S1-D-3 bat/fish reconcile (`update_cave_bat`'s migration);
 // the full 17-type family by W4-d23.
+//! RNG by construction: the ONLY `Main.rand` draws on the ported paths are
+//! the shot arms'. VoodooDemon/Demon (62/66): two `Next(-100, 101)` aim
+//! jitters, X first then Y (`NPC.cs:23446-23447`), on the shot ticks
+//! `ai[0] == 20/40/60/80` with `Collision.CanHit`; otherwise ONE
+//! `Next(300)` reset roll per tick, drawn only when the firing-distance
+//! flag holds (the C# `&&` short-circuits, `:23453`). Harpy (48, W4-g8):
+//! the same two `Next(-100, 101)` jitters on `ai[0] == 30/60/90`
+//! (`:23425-23426`), else ONE `Next(400)` reset roll behind flag24
+//! (`:23432`). RedDevil (156, W4-g8): two `Next(-50, 51)` jitters on
+//! `ai[0] == 20/40/60/80/100` (`:23469-23470`), else ONE `Next(250)` reset
+//! roll behind flag24 (`:23481`). The bat kinds
+//! (49/51/60) draw nothing. `TargetClosest` is RNG-free (the Manhattan
+//! scan, `NPC.cs:77652-77781`). The witness tests below pin the stream
+//! position for each case (written, NOT run — code-only mode).
+// WIRED by the S1-D-3 bat/fish reconcile (`update_cave_bat`'s migration).
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
@@ -91,6 +121,17 @@ pub struct Style14Shot {
     /// The `ProjectileID` type — 38 / 44 / 115.
     pub kind: u16,
     /// The `NewProjectile` damage argument — 15 / 21 / 80.
+/// `NPC.cs:23428-23429` (the Harpy feather: type 38, damage 15, W4-g8) /
+/// `:23449-23450` (the Demon/VoodooDemon sickle: type 44, damage 21) /
+/// `:23477-23478` (the RedDevil trident: type 115, damage 80, W4-g8):
+/// knockback 0, owner `Main.myPlayer`, spawned at the NPC centre with the
+/// jittered aim (the trident offsets by velocity*5 + aim*100); the caller
+/// sets `timeLeft = 300`. The pure module never touches the pool.
+/// (`DemonSickleShot` pre-W4-g8 — generalized when the Harpy's feather
+/// landed on the same seam.)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Style14Shot {
+    pub kind: u16,
     pub damage: i32,
     pub x: f32,
     pub y: f32,
@@ -107,6 +148,8 @@ const WATER_GROUP: [i32; 11] = [49, 51, 60, 62, 66, 93, 137, 150, 151, 152, 634]
 /// `no_gravity` field; `update_hover`'s convention). Returns the
 /// Harpy's feather / the Demon's sickle / the RedDevil's trident on the
 /// shoot tick, else `None`.
+/// Harpy's feather / the VoodooDemon's sickle / the RedDevil's trident
+/// shot request on the shoot tick, else `None`.
 pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> Option<Style14Shot> {
     let net_id = npc.kind.net_id();
     // `:22852-22875` — the tile-bounce clamps.
@@ -118,6 +161,16 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
         let num223 = if npc.vx < 0.0 { -1 } else { 1 };
         let num224 = if npc.vy < 0.0 { -1 } else { 1 };
         target_closest(npc, env.world, env.players, true, 14, env.ticker);
+    // `:22876-22898` — type 226 latches its velocity-sign facing BEFORE
+    // TargetClosest, and keeps it when the target is not hittable (W4-g8:
+    // the FlyingSnake landed); every other type runs `TargetClosest`
+    // (`:22897`), faceTarget default true, aiStyle 14.
+    if net_id == 226 {
+        // `:22878-22887` — num223/num224 = the velocity signs (0 → +1).
+        let num223 = if npc.vx < 0.0 { -1 } else { 1 };
+        let num224 = if npc.vy < 0.0 { -1 } else { 1 };
+        target_closest(npc, env.world, env.players, true, 14, env.ticker);
+        // `:22889-22893` — the blocked sight line keeps the latched signs.
         let p = &env.players[npc.target as usize];
         let (w, h) = npc.size();
         if !crate::projectile::can_hit(
@@ -132,6 +185,10 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     // `:22899-23182` — the per-type approach arms (W4-d23: 158/226/660
     // landed); the else arm (`:23116-23182`) is the shared 0.1/4 X +
     // 0.04/1.5 Y.
+    // `:22899-23182` — the per-type approach arms. 158's surface flee +
+    // 7-cap approach and 226's 4/2.5 approach landed with W4-g8 (the
+    // VampireBat/FlyingSnake); 660 unported; the else arm
+    // (`:23116-23182`) is the shared 0.1/4 X + 0.04/1.5 Y.
     if net_id == 158 {
         vampire_bat_approach(npc, env);
     } else if net_id == 226 {
@@ -166,6 +223,10 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
         }
     }
     // `:23333-23345` — type 48's wet arm (W4-d23: the Harpy landed).
+    // `:23333-23345` — type 48's wet arm (W4-g8: the Harpy landed). NOT in
+    // WATER_GROUP — the Harpy gets ONE generic approach pass above, then
+    // this lift (the 0.95 down-damp, the −0.5 ascent, the −4 cap, the
+    // second TargetClosest — the water-group shape verbatim).
     if net_id == 48 && npc.wet {
         if npc.vy > 0.0 {
             npc.vy *= 0.95;
@@ -185,6 +246,20 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
         let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
         let num229 = p.x + p.width as f32 * 0.5 - cx;
         let num230 = p.y + p.height as f32 * 0.5 - cy;
+    // `:23346-23355` — type 158's Transform(159) (W4-g8: the VampireBat
+    // landed). The host-path gate: the target's centre within 200 px,
+    // the NPC's bottom above the player's bottom, and a clear sight line
+    // — then the bat becomes the Vampire. The request rides the NPC's
+    // `wants_transform` seam (the vanilla type 159); the sim's drain
+    // applies `transform_to_kind` after the tick (the aiStyle-75
+    // precedent). The C# transforms IN-TICK; the port's one-tick-later
+    // drain is the established request-seam granularity (ANALYSIS).
+    if net_id == 158 && env.net_mode != 1 {
+        let p = &env.players[npc.target as usize];
+        let (cx, cy) = npc.center();
+        let num229 = p.x + p.width as f32 * 0.5 - cx;
+        let num230 = p.y + p.height as f32 * 0.5 - cy;
+        let (w, h) = npc.size();
         if (num229 * num229 + num230 * num230).sqrt() < 200.0
             && npc.y + h < p.y + p.height as f32
             && crate::projectile::can_hit(
@@ -196,6 +271,7 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     }
     // `:23356-23409` — the drift cycle (`ai[1]`/`ai[2]`; 158's second
     // `ai[1]++` rides inside).
+    // `:23356-23409` — the drift cycle (`ai[1]`/`ai[2]`).
     drift(npc, env);
     // `:23410-23413` — the client stops here.
     if env.net_mode == 1 {
@@ -208,6 +284,9 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     let pcy = p.y + p.height as f32 / 2.0;
     let flag24 = global_firing_distance_check(cx, cy, pcx, pcy);
     // `:23416-23436` — type 48's feather shot (W4-d23: the Harpy landed).
+    // `:23416-23436` — type 48's feather shot (W4-g8: the Harpy landed).
+    // The 30/60/90 cadence, the 6f aim speed, the two `Next(-100, 101)`
+    // jitters (X first), and the 400 + Next(400) reset gate.
     if net_id == 48 {
         npc.ai[0] += 1.0;
         if npc.ai[0] == 30.0 || npc.ai[0] == 60.0 || npc.ai[0] == 90.0 {
@@ -217,6 +296,8 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
             ) {
                 // `:23423-23427` — the 6-speed jittered aim; the X jitter
                 // draws BEFORE the Y jitter (`:23425-23426`).
+                // `:23423-23427` — the 6f-normalised jittered aim; the X
+                // jitter draws BEFORE the Y jitter (`:23425-23426`).
                 let num235 = 6f32;
                 let num236 = pcx - cx + rng.next_range(-100, 101) as f32;
                 let num237 = pcy - cy + rng.next_range(-100, 101) as f32;
@@ -234,6 +315,8 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
             }
         } else if flag24 && npc.ai[0] >= (400 + rng.next_max(400)) as f32 {
             // `:23432-23435` — the reset roll (the `&&` short-circuit).
+            // `:23432-23435` — the reset roll; the `&&` short-circuit
+            // keeps the draw out of the out-of-view ticks.
             npc.ai[0] = 0.0;
         }
     }
@@ -312,6 +395,43 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     } else if flag24 && npc.ai[0] >= (250 + rng.next_max(250)) as f32 {
         // `:23481-23484` — the reset roll.
         npc.ai[0] = 0.0;
+    // `:23458-23484` — type 156's trident shot (W4-g8: the RedDevil
+    // landed). The 20/40/60/80/100 cadence, the 0.2-scale ±50 jittered
+    // aim, the velocity*5 spawn offset + the aim*100 muzzle push, and
+    // the 250 + Next(250) reset gate. Type 115 (UnholyTridentHostile),
+    // damage 80 (`num249`/`num250`, `:23474-23475`).
+    if net_id == 156 {
+        npc.ai[0] += 1.0;
+        if npc.ai[0] == 20.0 || npc.ai[0] == 40.0 || npc.ai[0] == 60.0 || npc.ai[0] == 80.0 || npc.ai[0] == 100.0 {
+            let (w, h) = npc.size();
+            if crate::projectile::can_hit(
+                env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+            ) {
+                // `:23467-23473` — the 0.2-scale jittered aim; the X
+                // jitter draws BEFORE the Y jitter (`:23469-23470`),
+                // ±50 (not the sickle's ±100).
+                let num245 = 0.2f32;
+                let mut num246 = pcx - cx + rng.next_range(-50, 51) as f32;
+                let mut num247 = pcy - cy + rng.next_range(-50, 51) as f32;
+                let num248 = num245 / (num246 * num246 + num247 * num247).sqrt();
+                num246 *= num248;
+                num247 *= num248;
+                // `:23476-23478` — the spawn centre rides velocity*5, the
+                // muzzle pushes aim*100; NewProjectile(115, 80, 0f),
+                // timeLeft 300 is the caller's write.
+                return Some(Style14Shot {
+                    kind: crate::projectile::UNHOLY_TRIDENT_HOSTILE,
+                    damage: 80,
+                    x: cx + npc.vx * 5.0 + num246 * 100.0,
+                    y: cy + npc.vy * 5.0 + num247 * 100.0,
+                    vx: num246,
+                    vy: num247,
+                });
+            }
+        } else if flag24 && npc.ai[0] >= (250 + rng.next_max(250)) as f32 {
+            // `:23481-23484` — the reset roll behind the firing flag.
+            npc.ai[0] = 0.0;
+        }
     }
     None
 }
@@ -406,6 +526,21 @@ fn vampire_bat_approach(npc: &mut Npc, env: &Style14Env<'_>) {
         npc.facing *= -1;
     }
     // `:22906-22937`.
+/// The VampireBat's approach (`NPC.cs:22899-22970`, W4-g8): the
+/// surface-flee gate (above `worldSurface`, daytime, no eclipse →
+/// directionY −1 + the X facing flip, `:22901-22905`), then the 7-cap
+/// X/Y approach (0.2 accel, the opposite-side 0.1 double-add, the 0.05
+/// near-zero brake — the generic arm's shape at ±7 instead of ±4/±1.5).
+fn vampire_bat_approach(npc: &mut Npc, env: &Style14Env<'_>) {
+    // `:22901-22905` — `(double)position.Y < worldSurface * 16.0 &&
+    // Main.IsItDay() && !Main.eclipse`. The port's `IsItDay` stand-in is
+    // `world.day_time` (the remix half is unported, the npc_ai
+    // convention).
+    if (npc.y as f64) < env.world.world_surface * 16.0 && env.world.day_time && !env.world.eclipse {
+        npc.direction_y = -1;
+        npc.facing *= -1;
+    }
+    // `:22906-22937` — the X approach, cap ±7.
     if npc.facing == -1 && npc.vx > -7.0 {
         npc.vx -= 0.2;
         if npc.vx > 4.0 {
@@ -428,6 +563,7 @@ fn vampire_bat_approach(npc: &mut Npc, env: &Style14Env<'_>) {
         }
     }
     // `:22938-22969`.
+    // `:22938-22969` — the Y approach, cap ±7.
     if npc.direction_y == -1 && npc.vy > -7.0 {
         npc.vy -= 0.2;
         if npc.vy > 4.0 {
@@ -458,6 +594,14 @@ fn vampire_bat_approach(npc: &mut Npc, env: &Style14Env<'_>) {
 /// f32 comparison is identical, the generic arm's note).
 fn flying_snake_approach(npc: &mut Npc) {
     // `:22973-23004`.
+/// The FlyingSnake's approach (`NPC.cs:22971-23037`, W4-g8): the 4-cap X
+/// (0.2 accel, the opposite-side 0.1 double-add, the 0.05 near-zero brake)
+/// and the 2.5-cap Y (0.1 accel, the 0.05 double-add, the 0.03 brake). The
+/// Y comparisons are DOUBLE-promoted in the C# (`(double)velocity.Y`) —
+/// the f32 values compare identically against the exactly-representable
+/// ±2.5 (the generic_approach convention).
+fn flying_snake_approach(npc: &mut Npc) {
+    // `:22973-23004` — the X approach, cap ±4.
     if npc.facing == -1 && npc.vx > -4.0 {
         npc.vx -= 0.2;
         if npc.vx > 4.0 {
@@ -480,6 +624,7 @@ fn flying_snake_approach(npc: &mut Npc) {
         }
     }
     // `:23005-23036`.
+    // `:23005-23036` — the Y approach, cap ±2.5.
     if npc.direction_y == -1 && npc.vy > -2.5 {
         npc.vy -= 0.1;
         if npc.vy > 2.5 {
@@ -612,6 +757,7 @@ pub fn hellbat_approach(npc: &mut Npc) {
 
 /// The drift cycle (`NPC.cs:23356-23409`): `ai[1]++` (158's second
 /// increment, W4-d23), the >200 gate with the
+/// increment landed with W4-g8), the >200 gate with the
 /// dry-target + line-of-sight reset, the per-type accel/cap rows
 /// (48/62/66: 0.12/0.07/3/1.25; else 0.2/0.1/4/1.5), the >1000 wrap, the
 /// `ai[2]` vertical/horizontal shove and the ±300 wrap.
@@ -620,6 +766,8 @@ fn drift(npc: &mut Npc, env: &Style14Env<'_>) {
     npc.ai[1] += 1.0; // `:23356`.
     // `:23357-23360` — 158's second increment (W4-d23: the VampireBat
     // counts twice per tick).
+    // `:23357-23360` — type 158's SECOND increment (W4-g8: the
+    // VampireBat's drift counter climbs twice per tick).
     if net_id == 158 {
         npc.ai[1] += 1.0;
     }
@@ -1044,5 +1192,426 @@ mod tests {
         );
         // The truncation: a .9 centre floors before the rect is built.
         assert!(global_firing_distance_check(1909.0, 1000.0, 1000.9, 1000.0));
+    }
+
+    /// W4-g8 machine round — `NPC.cs:23425-23428`: the Harpy's feather
+    /// shot tick (ai[0] 29 → 30) draws exactly two `Next(-100, 101)`
+    /// jitters, X FIRST then Y, and the aim is the 6f-normalised jittered
+    /// vector; the request is type 38 / damage 15 at the centre.
+    #[test]
+    fn w4_g8_s14_the_harpy_feather_draws_x_then_y() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 29.0; // ++ → 30, the first feather tick.
+        let mut rng = UnifiedRandom::new(12345);
+        let mut witness = UnifiedRandom::new(12345);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).expect("the feather tick fires");
+        let (cx, cy) = n.center();
+        let pcx = 1100.0 + 10.0;
+        let pcy = 1000.0 + 21.0;
+        let dx = pcx - cx + witness.next_range(-100, 101) as f32;
+        let dy = pcy - cy + witness.next_range(-100, 101) as f32;
+        let s = 6f32 / (dx * dx + dy * dy).sqrt();
+        assert_eq!(shot.kind, crate::projectile::HARPY_FEATHER, "type 38 (:23428)");
+        assert_eq!(shot.damage, 15, "damage 15 (:23428)");
+        assert_eq!((shot.x, shot.y), (cx, cy));
+        assert_eq!(shot.vx, dx * s, "the X jitter draws first");
+        assert_eq!(shot.vy, dy * s);
+        assert_eq!(rng.peek(), witness.peek(), "exactly two draws, X then Y");
+        assert_eq!(n.ai[0], 30.0);
+    }
+
+    /// `NPC.cs:23432` — the Harpy's reset roll: ONE `Next(400)` per tick
+    /// when the firing-distance flag holds and the tick is not a feather
+    /// value. ai[0] 350 → 351 < 400 + roll, so no reset, but the draw lands.
+    #[test]
+    fn w4_g8_s14_the_harpy_reset_roll_draws_once_in_range() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 350.0;
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_max(400);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_none());
+        assert_eq!(n.ai[0], 351.0, "351 < 400 + {} — no reset", roll);
+        assert_eq!(rng.peek(), witness.peek(), "exactly one Next(400)");
+    }
+
+    /// `NPC.cs:23432`'s `&&` short-circuit — out of the firing window the
+    /// Harpy's roll is never drawn: the stream does not move.
+    #[test]
+    fn w4_g8_s14_the_harpy_out_of_view_draws_nothing() {
+        let w = air();
+        let players = [cand(6000.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 350.0;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.ai[0], 351.0);
+        assert_eq!(rng.peek(), before, "flag24 false → no draw");
+    }
+
+    /// `NPC.cs:23419-23421` — a feather-value tick with a blocked line of
+    /// sight draws NOTHING (the else-if reset roll is not evaluated).
+    #[test]
+    fn w4_g8_s14_the_harpy_blocked_feather_tick_draws_nothing() {
+        let w = walled();
+        let players = [cand(1300.0, 979.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 29.0; // → 30, but the wall blocks CanHit.
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_none(), "no line of sight, no feather");
+        assert_eq!(n.ai[0], 30.0);
+        assert_eq!(rng.peek(), before, "the shot set skips the reset roll");
+    }
+
+    /// `NPC.cs:23333-23345` — the Harpy's wet lift: the 0.95 down-damp,
+    /// the −0.5 ascent, the −4 cap, the second TargetClosest. The Harpy
+    /// is NOT in WATER_GROUP — ONE generic approach pass, then the lift
+    /// (the bat's two-pass shape does not apply).
+    #[test]
+    fn w4_g8_s14_the_harpy_wet_arm_lifts_once() {
+        let w = air();
+        // Player left + above → facing −1, directionY −1; vy ≤ −1.5 keeps
+        // the approach passes silent so the cap is directly observable.
+        let players = [cand(900.0, 900.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.wet = true;
+        n.vy = -3.9; // −0.5 → −4.4 → cap −4.
+        let mut rng = UnifiedRandom::new(1);
+        assert!(bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).is_none());
+        assert_eq!(n.vy, -4.0, "the −4 ascent cap");
+        assert_eq!(n.target_rect, (900, 900, 20, 42), "the wet arm re-runs TargetClosest (:23344)");
+        // The descending case: ONE generic pass (−0.04, then the >1.5
+        // opposite-side −0.05), then the damp + lift: 2 − 0.04 − 0.05 =
+        // 1.91; ×0.95 = 1.8145, −0.5 = 1.3145. No second pass (the Harpy
+        // is outside WATER_GROUP — the bat's 1.3045 does not apply).
+        let mut n2 = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n2.wet = true;
+        n2.vy = 2.0;
+        bat_ai(&mut n2, &env(&w, &players, &wet), &mut rng);
+        assert!(near(n2.vy, 1.3145), "one pass + damp/lift, not two passes: {}", n2.vy);
+    }
+
+    /// `NPC.cs:23418` — the client (netMode 1) returns before the feather
+    /// arm: ai[0] never increments on the Harpy either.
+    #[test]
+    fn w4_g8_s14_the_harpy_client_returns_before_the_feather() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::Harpy, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 29.0;
+        let mut e = env(&w, &players, &wet);
+        e.net_mode = 1;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert!(bat_ai(&mut n, &e, &mut rng).is_none());
+        assert_eq!(n.ai[0], 29.0, "the client never counts the feather timer");
+        assert_eq!(rng.peek(), before);
+    }
+
+    /// W4-g8 machine round — `NPC.cs:23469-23477`: the RedDevil's trident
+    /// shot tick (ai[0] 19 → 20) draws exactly two `Next(-50, 51)`
+    /// jitters (NOT the sickle's ±100), X FIRST then Y; the aim is the
+    /// 0.2-normalised vector and the spawn rides centre + velocity*5 +
+    /// aim*100. Type 115 / damage 80 (`:23474-23475`).
+    #[test]
+    fn w4_g8_s14_the_reddevil_trident_draws_x_then_y_with_the_muzzle_push() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 19.0; // ++ → 20, the first trident tick.
+        let (cx, cy) = n.center();
+        let mut rng = UnifiedRandom::new(12345);
+        let mut witness = UnifiedRandom::new(12345);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).expect("the trident tick fires");
+        // The approach pass ran before the shot arm: facing 1 → vx 0.1,
+        // directionY −1 → vy −0.04; bat_ai does not integrate, so the
+        // post-call velocity IS the shot-time velocity.
+        assert!(near(n.vx, 0.1));
+        assert!(near(n.vy, -0.04));
+        let pcx = 1100.0 + 10.0;
+        let pcy = 1000.0 + 21.0;
+        let dx = pcx - cx + witness.next_range(-50, 51) as f32;
+        let dy = pcy - cy + witness.next_range(-50, 51) as f32;
+        let s = 0.2f32 / (dx * dx + dy * dy).sqrt();
+        let (ax, ay) = (dx * s, dy * s);
+        assert_eq!(shot.kind, crate::projectile::UNHOLY_TRIDENT_HOSTILE, "type 115 (:23475)");
+        assert_eq!(shot.damage, 80, "damage 80 (:23474)");
+        assert_eq!(shot.x, cx + n.vx * 5.0 + ax * 100.0, "velocity*5 + aim*100 (:23476-23477)");
+        assert_eq!(shot.y, cy + n.vy * 5.0 + ay * 100.0);
+        assert_eq!((shot.vx, shot.vy), (ax, ay), "the 0.2-normalised aim");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two draws, X then Y");
+        assert_eq!(n.ai[0], 20.0);
+    }
+
+    /// `NPC.cs:23463` — the trident's FIFTH cadence value (100) fires too
+    /// (the sickle stops at 80).
+    #[test]
+    fn w4_g8_s14_the_reddevil_fifth_cadence_tick_fires() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 99.0; // ++ → 100, the last trident tick.
+        let mut rng = UnifiedRandom::new(3);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_some(), "ai[0] == 100 is a shot value (:23463)");
+        assert_eq!(n.ai[0], 100.0);
+    }
+
+    /// `NPC.cs:23481` — the RedDevil's reset roll: ONE `Next(250)` per
+    /// tick behind the firing flag on a non-shot tick. ai[0] 200 → 201
+    /// < 250 + roll always, so no reset, but the draw lands.
+    #[test]
+    fn w4_g8_s14_the_reddevil_reset_roll_draws_once_in_range() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 200.0;
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _roll = witness.next_max(250);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_none());
+        assert_eq!(n.ai[0], 201.0, "201 < 250 + roll — no reset");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one Next(250)");
+    }
+
+    /// `NPC.cs:23481`'s `&&` short-circuit — out of the firing window the
+    /// RedDevil's roll is never drawn.
+    #[test]
+    fn w4_g8_s14_the_reddevil_out_of_view_draws_nothing() {
+        let w = air();
+        let players = [cand(6000.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 200.0;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.ai[0], 201.0);
+        assert_eq!(rng.peek(), before, "flag24 false → no draw");
+    }
+
+    /// `NPC.cs:23463-23465` — a trident-value tick with a blocked line of
+    /// sight draws NOTHING (the else-if reset roll is not evaluated).
+    #[test]
+    fn w4_g8_s14_the_reddevil_blocked_trident_tick_draws_nothing() {
+        let w = walled();
+        let players = [cand(1300.0, 979.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 19.0; // → 20, but the wall blocks CanHit.
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_none(), "no line of sight, no trident");
+        assert_eq!(n.ai[0], 20.0);
+        assert_eq!(rng.peek(), before, "the shot set skips the reset roll");
+    }
+
+    /// W4-g8 machine round — `NPC.cs:22906-22969`: the VampireBat's 7-cap
+    /// approach (0.2 accel, NOT the generic 0.1/0.04). Underground (the
+    /// air world's surface is row 30 = 480 px, the bat at 1000 is below)
+    /// the flee gate stays shut: facing 1 → vx 0.2, directionY −1 →
+    /// vy −0.2 in ONE pass (158 is outside WATER_GROUP).
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_approaches_at_the_seven_cap() {
+        let w = air();
+        let players = [cand(900.0, 900.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        assert!(bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).is_none());
+        // Player left + above → facing −1, directionY −1.
+        assert!(near(n.vx, -0.2), "the 0.2 X accel: {}", n.vx);
+        assert!(near(n.vy, -0.2), "the 0.2 Y accel: {}", n.vy);
+        // The cap: vx −6.9 → −7.1 → clamp −7.
+        let mut n2 = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, -1, 0.0);
+        n2.vx = -6.9;
+        n2.vy = -7.0; // at the cap, the Y arm is a no-op.
+        bat_ai(&mut n2, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n2.vx, -7.0, "the −7 X cap (:22917-22920)");
+    }
+
+    /// `NPC.cs:22901-22905` — the surface flee: above worldSurface on a
+    /// non-eclipse day, directionY flips to −1 and the X facing INVERTS
+    /// (the bat flees the player horizontally while climbing).
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_flees_the_daylight_surface() {
+        let mut w = air();
+        w.world_surface = 200.0; // 3200 px — the bat at 1000 is above.
+        w.day_time = true;
+        w.eclipse = false;
+        // Player right + below → TargetClosest facing 1, directionY 1;
+        // the flee gate flips facing to −1 and directionY to −1.
+        let players = [cand(1100.0, 1100.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.facing, -1, "the flee inverts the X facing (:22904)");
+        assert_eq!(n.direction_y, -1, "the flee climbs (:22903)");
+        assert!(near(n.vx, -0.2), "the approach follows the flipped facing");
+        assert!(near(n.vy, -0.2), "and the flipped directionY");
+        // An eclipse keeps the bat hunting (no flee).
+        w.eclipse = true;
+        let mut n2 = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        bat_ai(&mut n2, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n2.facing, 1, "the eclipse gates the flee (:22901)");
+        assert_eq!(n2.direction_y, 1);
+    }
+
+    /// `NPC.cs:23346-23355` — the Transform(159) gate: the target's centre
+    /// within 200 px, the bat's bottom above the player's bottom, and a
+    /// clear sight line → `wants_transform = Some(159)`.
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_transforms_within_200px() {
+        let w = air();
+        // Player centre (1110, 1021); bat centre (1011, 1011): dist ~100
+        // < 200; bat bottom 1022 < player bottom 1042. Clear air.
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.wants_transform, Some(159), "the bat becomes the vampire (:23353)");
+        // Beyond 200 px: no transform.
+        let far = [cand(1400.0, 1000.0)];
+        let mut n2 = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        bat_ai(&mut n2, &env(&w, &far, &wet), &mut rng);
+        assert_eq!(n2.wants_transform, None, "the 200px gate (:23351)");
+        // A wall blocks the sight line: no transform.
+        let ww = walled();
+        let blocked = [cand(1300.0, 979.0)];
+        let mut n3 = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        bat_ai(&mut n3, &env(&ww, &blocked, &wet), &mut rng);
+        assert_eq!(n3.wants_transform, None, "the CanHit gate (:23351)");
+    }
+
+    /// `NPC.cs:23357-23360` — the VampireBat's drift counter climbs TWICE
+    /// per tick (the second `ai[1]++`).
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_drift_counts_twice() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        n.ai[1] = 0.0;
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.ai[1], 2.0, "the double increment (:23356 + :23359)");
+        // A plain bat counts once.
+        let mut bat = Npc::new(NpcKind::CaveBat, 1000.0, 1000.0, 1, 0.0);
+        bat_ai(&mut bat, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(bat.ai[1], 1.0, "the single increment for the other types");
+    }
+
+    /// `NPC.cs:23410-23413` — the client (netMode 1) never transforms:
+    /// the `:23346` gate reads `Main.netMode != 1`.
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_client_never_transforms() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        let mut e = env(&w, &players, &wet);
+        e.net_mode = 1;
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &e, &mut rng);
+        assert_eq!(n.wants_transform, None, "the client keeps the bat form");
+    }
+
+    /// W4-g8 machine round — `NPC.cs:22973-23036`: the FlyingSnake's 4/2.5
+    /// approach (0.2 X accel / 0.1 Y accel, NOT the generic 0.1/0.04).
+    /// Facing −1 / directionY −1 (player left + above) → vx −0.2, vy −0.1
+    /// in ONE pass (226 is outside WATER_GROUP).
+    #[test]
+    fn w4_g8_s14_the_flying_snake_approaches_at_the_four_and_two_half_caps() {
+        let w = air();
+        let players = [cand(900.0, 900.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        assert!(bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).is_none());
+        assert!(near(n.vx, -0.2), "the 0.2 X accel: {}", n.vx);
+        assert!(near(n.vy, -0.1), "the 0.1 Y accel: {}", n.vy);
+        // The caps: vx −3.9 → −4.1 → clamp −4; vy −2.4 → −2.5 (at cap).
+        let mut n2 = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, -1, 0.0);
+        n2.vx = -3.9;
+        n2.vy = -2.4;
+        n2.direction_y = -1;
+        bat_ai(&mut n2, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n2.vx, -4.0, "the −4 X cap (:22985-22987)");
+        assert_eq!(n2.vy, -2.5, "the −2.5 Y cap (:23016-23018)");
+    }
+
+    /// `NPC.cs:22876-22894` — the FlyingSnake latches its velocity-sign
+    /// facing BEFORE TargetClosest and keeps it when the sight line is
+    /// blocked. Moving left + up (vx −1, vy −1) with a wall between it and
+    /// the player: the facing stays −1/−1 (the latched signs), NOT the
+    /// player's direction.
+    #[test]
+    fn w4_g8_s14_the_flying_snake_keeps_the_velocity_facing_when_blocked() {
+        let w = walled();
+        // Player to the RIGHT (1300) — TargetClosest would face +1, but
+        // the wall blocks CanHit, so the latched velocity signs stand.
+        let players = [cand(1300.0, 979.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        n.vx = -1.0; // moving left → num223 = −1.
+        n.vy = -1.0; // moving up → num224 = −1.
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.facing, -1, "the latched X sign survives the blocked CanHit (:22891)");
+        assert_eq!(n.direction_y, -1, "the latched Y sign (:22892)");
+    }
+
+    /// `NPC.cs:22889` — with a CLEAR sight line the FlyingSnake faces the
+    /// player normally (the latched signs are discarded).
+    #[test]
+    fn w4_g8_s14_the_flying_snake_faces_the_player_when_hittable() {
+        let w = air();
+        // Player to the right + below, clear air → facing +1, directionY +1.
+        let players = [cand(1100.0, 1100.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        n.vx = -1.0; // moving left — the latch would be −1...
+        n.vy = -1.0;
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.facing, 1, "CanHit true → TargetClosest's facing stands");
+        assert_eq!(n.direction_y, 1);
+    }
+
+    /// `NPC.cs:22880-22887` — a stationary FlyingSnake (vx 0, vy 0) latches
+    /// +1/+1 (the C#'s `num223 = 1` default; only `< 0` flips to −1).
+    #[test]
+    fn w4_g8_s14_the_flying_snake_zero_velocity_latches_positive() {
+        let w = walled();
+        let players = [cand(1300.0, 979.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::FlyingSnake, 1000.0, 1000.0, 1, 0.0);
+        n.vx = 0.0;
+        n.vy = 0.0;
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.facing, 1, "0 is not < 0 → num223 stays 1 (:22878-22883)");
+        assert_eq!(n.direction_y, 1, "num224 stays 1 (:22884-22887)");
     }
 }

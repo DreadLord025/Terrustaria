@@ -1078,6 +1078,37 @@ impl NpcKind {
             // LibrarianSkeleton's 693 is free (vanilla).
             NpcKind::RuneWizard => 827,
             NpcKind::LibrarianSkeleton => 693,
+            // W4-g8 lane 1 batch 1 — the d22-d33 UNWIRED machines' kinds.
+            // E8 EXECUTED (d37 research/108 S0-S4, the g8 move-table): the
+            // 17 OWNED kinds renumber to the port-local 745-761 band (the
+            // 354-387 corridor is d37/d42's — g8 was the squatter); the 17
+            // DUPLICATE kinds keep their pushed ids as DROP-PENDING rows
+            // (the canonical owners d34/d35/d37 land via their lanes; the
+            // keep-one drops the g8 row at merge — the axis wirings ALL
+            // stay, the machine-wiring lane's whole point). The vanilla
+            // `NPC.type` rides `cs_id`/the bestiary `net_id` unchanged.
+            NpcKind::PinkJellyfish => 745, // E8: 356 -> 745 (cs 64)
+            NpcKind::Antlion => 746, // E8: 357 -> 746 (cs 69)
+            NpcKind::SpikeBall => 747, // E8: 358 -> 747 (cs 70)
+            // W4-g8 lane 1 batch 2 — E8: the owned kinds move to 748-756.
+            NpcKind::WallCreeper => 748, // E8: 366 -> 748 (cs 164)
+            NpcKind::WallCreeperWall => 749, // E8: 367 -> 749 (cs 165)
+            NpcKind::IceElemental => 750, // E8: 368 -> 750 (cs 169)
+            NpcKind::Herpling => 751, // E8: 369 -> 751 (cs 174)
+            NpcKind::Derpling => 752, // E8: 370 -> 752 (cs 177)
+            NpcKind::CrimsonAxe => 753, // E8: 371 -> 753 (cs 179)
+            NpcKind::FloatyGross => 754, // E8: 372 -> 754 (cs 182)
+            NpcKind::LostGirl => 755, // E8: 373 -> 755 (cs 195)
+            NpcKind::Nymph => 756, // E8: 374 -> 756 (cs 196)
+            // W4-g8 lane 1 batch 3 — E8: the owned bats move to 757-760.
+            // W4-g8 lane 1 batch 4 — E8: RedDevil moves to 761.
+            // W4-g8 machine round 3 — the Vampire 159 census row (the
+            // VampireBat's Transform target). E8 COLLISION FIX: the pushed
+            // 388 is d37's RustyArmoredBonesAxe (the 354-399 corridor); the
+            // Vampire takes 762, the first free id above the S4 CORE max
+            // 766 (d37 SEAL fbb948172 line 1408-1411: only 762 + 788-789
+            // were free in d36's old band; 788-790 are RESERVED for d39's
+            // 3 unclaimed kinds — `_d37_seal_final.json` carries no 762).
         }
     
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
@@ -1754,6 +1785,27 @@ impl NpcKind {
             // W4-g5 — the two unclaimed aiStyle-8 casters (`to_u16` above).
             827 => NpcKind::RuneWizard,
             693 => NpcKind::LibrarianSkeleton,
+            // W4-g8 lane 1 batch 1 — E8 EXECUTED: the owned kinds decode
+            // from 745-761; the DROP-PENDING dups keep their pushed ids
+            // until the merge keep-one (see `to_u16`'s E8 note).
+            745 => NpcKind::PinkJellyfish, // E8: 356 -> 745
+            746 => NpcKind::Antlion, // E8: 357 -> 746
+            747 => NpcKind::SpikeBall, // E8: 358 -> 747
+            // W4-g8 lane 1 batch 2 — E8: the owned kinds decode 748-756.
+            748 => NpcKind::WallCreeper, // E8: 366 -> 748
+            749 => NpcKind::WallCreeperWall, // E8: 367 -> 749
+            750 => NpcKind::IceElemental, // E8: 368 -> 750
+            751 => NpcKind::Herpling, // E8: 369 -> 751
+            752 => NpcKind::Derpling, // E8: 370 -> 752
+            753 => NpcKind::CrimsonAxe, // E8: 371 -> 753
+            754 => NpcKind::FloatyGross, // E8: 372 -> 754
+            755 => NpcKind::LostGirl, // E8: 373 -> 755
+            756 => NpcKind::Nymph, // E8: 374 -> 756
+            // W4-g8 lane 1 batch 3 — E8: the owned bats decode 757-760.
+            // W4-g8 lane 1 batch 4 — E8: RedDevil decodes from 761.
+            // W4-g8 machine round 3 — the Vampire 159 census row (E8
+            // COLLISION FIX: 388 is d37's RustyArmoredBonesAxe; 762 —
+            // 788-790 stay reserved for d39's 3 unclaimed kinds).
             _ => return None,
         })
     
@@ -3064,6 +3116,42 @@ impl NpcKind {
             // W4-g5 — the two casters' `HitSound` rows: `SoundID.NPCHit2`
             // (`NPC.cs:11162`/`:17729`).
             NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Hit_2",
+            // W4-g8 lane 1 batch 1 — the `HitSound` rows: 61 NPCHit28
+            // (`NPC.cs:9563`), 63/64 NPCHit25 (`:9591`/`:9605`), 69 NPCHit31
+            // (`:9674`), 70 NPCHit1 (`:9689`), 75 NPCHit5 (`:9781`), 82
+            // NPCHit54 (`:9862`), 83/84/85 NPCHit4 (`:9887`/`:9900`/`:9913`).
+            NpcKind::Vulture => "NPC_Hit_28",
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => "NPC_Hit_25",
+            NpcKind::Antlion => "NPC_Hit_31",
+            NpcKind::SpikeBall => "NPC_Hit_1",
+            NpcKind::CursedHammer | NpcKind::EnchantedSword | NpcKind::Mimic => "NPC_Hit_4",
+            // W4-g8 lane 1 batch 2 — the `HitSound` rows: 103 NPCHit25
+            // (`NPC.cs:10225`), 122/174/182/195/196 NPCHit1 (`:10488`/
+            // `:11203`/`:11326`/`:11500`/`:11514`), 164/165 NPCHit29
+            // (`:11067`/`:11082`), 169 NPCHit5 (`:11122`), 177 NPCHit22
+            // (`:11247`), 179 NPCHit4 (`:11274`).
+            NpcKind::Gastropod | NpcKind::Herpling | NpcKind::FloatyGross
+            | NpcKind::LostGirl | NpcKind::Nymph => "NPC_Hit_1",
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => "NPC_Hit_29",
+            NpcKind::IceElemental => "NPC_Hit_5",
+            NpcKind::Derpling => "NPC_Hit_22",
+            NpcKind::CrimsonAxe => "NPC_Hit_4",
+            // W4-g8 lane 1 batch 3 — the `HitSound` rows: 34 NPCHit2
+            // (`NPC.cs:9158`), 62 NPCHit21 (`:9576`), 93/121/137/150/151/
+            // 152/158 NPCHit1 (`:10056`/`:10474`/`:10743`/`:10894`/`:10909`/
+            // `:10925`/`:15475`), 226 NPCHit23 (`:11920`).
+            NpcKind::CursedSkull => "NPC_Hit_2",
+            NpcKind::Demon => "NPC_Hit_21",
+            NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
+            | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
+            | NpcKind::VampireBat => "NPC_Hit_1",
+            // W4-g8 lane 1 batch 4 — the `HitSound` rows: 221/48 NPCHit1
+            // (`NPC.cs:11849`/`:9368`), 156 NPCHit21 (`:10983`).
+            NpcKind::Squid | NpcKind::Harpy => "NPC_Hit_1",
+            NpcKind::RedDevil => "NPC_Hit_21",
+            // W4-g8 machine round 3 — the Vampire 159's NPCHit1
+            // (`NPC.cs:15489`).
+            NpcKind::Vampire => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -3730,6 +3818,44 @@ impl NpcKind {
             // W4-g5 — the two casters' `DeathSound` rows: `SoundID.NPCDeath2`
             // (`NPC.cs:11163`/`:17730`).
             NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Killed_2",
+            // W4-g8 lane 1 batch 1 — the `DeathSound` rows: 61 NPCDeath31
+            // (`NPC.cs:9564`), 63/64 NPCDeath28 (`:9592`/`:9606`), 69
+            // NPCDeath34 (`:9675`), 70 NPCDeath1 (`:9690`), 75 NPCDeath7
+            // (`:9783`), 82 NPCDeath52 (`:9863`), 83/84/85 NPCDeath6
+            // (`:9888`/`:9901`/`:9914`).
+            NpcKind::Vulture => "NPC_Killed_31",
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => "NPC_Killed_28",
+            NpcKind::Antlion => "NPC_Killed_34",
+            NpcKind::SpikeBall => "NPC_Killed_1",
+            NpcKind::CursedHammer | NpcKind::EnchantedSword | NpcKind::Mimic => "NPC_Killed_6",
+            // W4-g8 lane 1 batch 2 — the `DeathSound` rows: 103 NPCDeath28
+            // (`NPC.cs:10226`), 122/174/195 NPCDeath1 (`:10490`/`:11204`/
+            // `:11501`), 164/165 NPCDeath32 (`:11068`/`:11083`), 169
+            // NPCDeath7 (`:11124`), 177 NPCDeath25 (`:11248`), 179
+            // NPCDeath6 (`:11275`), 182/196 NPCDeath2 (`:11327`/`:11515`).
+            NpcKind::Gastropod | NpcKind::Herpling | NpcKind::LostGirl => "NPC_Killed_1",
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => "NPC_Killed_32",
+            NpcKind::IceElemental => "NPC_Killed_7",
+            NpcKind::Derpling => "NPC_Killed_25",
+            NpcKind::CrimsonAxe => "NPC_Killed_6",
+            NpcKind::FloatyGross | NpcKind::Nymph => "NPC_Killed_2",
+            // W4-g8 lane 1 batch 3 — the `DeathSound` rows: 34 NPCDeath2
+            // (`NPC.cs:9159`), 62 NPCDeath24 (`:9578`), 93/150/151/152
+            // NPCDeath4 (`:10058`/`:10896`/`:10911`/`:10927`), 121
+            // NPCDeath1 (no row, the head default), 137/158 NPCDeath6
+            // (`:10745`/`:15477`), 226 NPCDeath26 (`:11922`).
+            NpcKind::CursedSkull => "NPC_Killed_2",
+            NpcKind::Demon => "NPC_Killed_24",
+            NpcKind::GiantBat | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox => "NPC_Killed_4",
+            NpcKind::Slimer => "NPC_Killed_1",
+            NpcKind::IlluminantBat | NpcKind::VampireBat => "NPC_Killed_6",
+            // W4-g8 lane 1 batch 4 — the `DeathSound` rows: 221/48
+            // NPCDeath1 (`NPC.cs:11850`/`:9370`), 156 NPCDeath24 (`:10985`).
+            NpcKind::Squid | NpcKind::Harpy => "NPC_Killed_1",
+            NpcKind::RedDevil => "NPC_Killed_24",
+            // W4-g8 machine round 3 — the Vampire 159's NPCDeath6
+            // (`NPC.cs:15490`).
+            NpcKind::Vampire => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -4394,14 +4520,12 @@ impl NpcKind {
             | NpcKind::ArmoredSkeleton
             | NpcKind::Mummy => 3,
             // aiStyle 22 - W4-d35 (A; NPC.cs :9772).
-            NpcKind::Pixie => 22,
             // aiStyle 24 - W4-d35 (A; NPC.cs :9747).
             NpcKind::Bird => 24,
             // aiStyle 3 - W4-d35 (B; NPC.cs :9812, :9825).
             NpcKind::DarkMummy
             | NpcKind::LightMummy => 3,
             // aiStyle 22 - W4-d35 (B; NPC.cs :9852).
-            NpcKind::Wraith => 22,
             // aiStyle 23 - W4-d35 (B; NPC.cs :9879, :9892).
             NpcKind::CursedHammer
             | NpcKind::EnchantedSword => 23,
@@ -4410,9 +4534,7 @@ impl NpcKind {
             // aiStyle 6 - W4-d35 (C; NPC.cs :10076).
             NpcKind::DiggerHead => 6,
             // aiStyle 14 - W4-d35 (C; NPC.cs :10047).
-            NpcKind::GiantBat => 14,
             // aiStyle 25 - W4-d35 (C; NPC.cs :9905).
-            NpcKind::Mimic => 25,
             // aiStyle 26 - W4-d35 (C; NPC.cs :9926).
             NpcKind::Unicorn => 26,
             // aiStyle 6 - W4-d35 (D; NPC.cs :10094, :10113, :10132, :10150, :10168).
@@ -4429,7 +4551,6 @@ impl NpcKind {
             // aiStyle 16 - W4-d35 (E; NPC.cs :10202).
             NpcKind::AnglerFish => 16,
             // aiStyle 18 - W4-d35 (E; NPC.cs :10216).
-            NpcKind::GreenJellyfish => 18,
             // aiStyle 2 - W4-d35 (F; NPC.cs :10393).
             NpcKind::TheHungryII => 2,
             // aiStyle 3 - W4-d35 (F; NPC.cs :10313, :10453).
@@ -4438,28 +4559,20 @@ impl NpcKind {
             // aiStyle 9 - W4-d35 (F; NPC.cs :10326).
             NpcKind::VileSpit => 9,
             // aiStyle 14 - W4-d35 (F; NPC.cs :10466).
-            NpcKind::Slimer => 14,
             // aiStyle 3 - W4-d35 (G; NPC.cs :10763).
             NpcKind::PossessedArmor => 3,
             // aiStyle 14 - W4-d35 (G; NPC.cs :10735).
-            NpcKind::IlluminantBat => 14,
             // aiStyle 22 - W4-d35 (G; NPC.cs :10479).
-            NpcKind::Gastropod => 22,
             NpcKind::DungeonSpirit => 56,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults aiStyle rows).
             NpcKind::AngryBones => 3,   // :9112
-            NpcKind::CursedSkull => 10, // :9154
             NpcKind::OldMan => 7,       // :9203
             NpcKind::ManEater => 13,    // :9299
             NpcKind::Bunny => 7,        // :9340
             NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 6, // :9230/:9247/:9265
             NpcKind::CorruptBunny => 3,  // :9352
-            NpcKind::Harpy => 14,        // :9364
             NpcKind::Snatcher => 13,         // :9480
             NpcKind::CorruptGoldfish => 16,  // :9494
-            NpcKind::Vulture => 17,          // :9558
-            NpcKind::Demon => 14,            // :9572
-            NpcKind::BlueJellyfish => 18,    // :9587
             NpcKind::Crab => 3,              // :9644
             NpcKind::DungeonGuardian => 11,  // :9656
             // W4-d38 b7 — SetDefaults aiStyle rows.
@@ -4550,7 +4663,6 @@ impl NpcKind {
             // aiStyle 13 — the fungi bulbs (`NPC.cs:12338`/`:12354`).
             NpcKind::FungiBulb | NpcKind::GiantFungiBulb => 13,
             // aiStyle 14 — the flying snake (`NPC.cs:11916`).
-            NpcKind::FlyingSnake => 14,
             // aiStyle 16 — the blood feeder (`NPC.cs:12111`).
             NpcKind::BloodFeeder => 16,
             // aiStyle 18 — the squid/blood jelly/fungo fish (`NPC.cs:11845`/
@@ -4663,6 +4775,35 @@ impl NpcKind {
             // `AI_065_Butterflies`' 661 branch).
             NpcKind::EmpressOfLight => 120,
             NpcKind::PrismaticLacewing => 65,
+            // W4-g8 lane 1 batch 1 — the d22-d33 machines' `SetDefaults`
+            // aiStyle rows: 61 17 (`NPC.cs:9558`), 63/64 18 (`:9587`/
+            // `:9601`), 69 19 (`:9670`), 70 20 (`:9685`), 75/82 22
+            // (`:9777`/`:9858`), 83/84 23 (`:9883`/`:9896`), 85 25
+            // (`:9909`).
+            NpcKind::Antlion => 19,
+            NpcKind::SpikeBall => 20,
+            // W4-g8 lane 1 batch 2 — the `SetDefaults` aiStyle rows: 103 18
+            // (`NPC.cs:10221`), 122/169/182 22 (`:10484`/`:11118`/`:11322`),
+            // 164 3 (`:11063`), 165 40 (`:11078`), 174/177 41 (`:11199`/
+            // `:11243`), 179 23 (`:11270`), 195 42 (`:11496`), 196 3
+            // (`:11510`).
+            NpcKind::WallCreeper => 3,
+            NpcKind::WallCreeperWall => 40,
+            NpcKind::Herpling | NpcKind::Derpling => 41,
+            NpcKind::CrimsonAxe => 23,
+            NpcKind::LostGirl => 42,
+            NpcKind::Nymph => 3,
+            // W4-g8 lane 1 batch 3 — the `SetDefaults` aiStyle rows: 34 10
+            // (`NPC.cs:9154`), 62/93/121/137/150/151/152/158/226 14
+            // (`:9572`/`:10052`/`:10470`/`:10739`/`:10890`/`:10905`/
+            // `:10921`/`:15471`/`:11916`).
+            NpcKind::Demon | NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
+            | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
+            // W4-g8 lane 1 batch 4 — the `SetDefaults` aiStyle rows: 221 18
+            // (`NPC.cs:11845`), 48/156 14 (`:9364`/`:10979`).
+            // W4-g8 machine round 3 — the Vampire 159's aiStyle 3
+            // (`NPC.cs:15485`, the AI_003 fighter).
+            NpcKind::Vampire => 3,
         }
     }
 
@@ -4840,6 +4981,12 @@ impl NpcKind {
             // The Vampire (159, W4-d23) — the 159/349 spin arm's 6f cap
             // (`NPC.cs:57409-57438`, the `npc_ai3_speeds` ladder's own
             // arm); the row is the cap pin the walker family reads.
+            // W4-g8 lane 1 batch 2 — the Nymph 196 + the WallCreeper 164
+            // ride the cap-2 group (`NPC.cs:57554-57578`, ±2f, accel 0.07).
+            NpcKind::Nymph | NpcKind::WallCreeper => 2.0,
+            // W4-g8 machine round 3 — the Vampire 159 rides the cap-6
+            // spin arm (`NPC.cs:57403-57440`, ±6f, accel 0.07, the 0.95
+            // turn brake — `npc_ai3_speeds.rs`'s 159 row).
             NpcKind::Vampire => 6.0,
             _ => return None,
         })
@@ -5619,6 +5766,37 @@ impl NpcKind {
             // W4-g5 — the two casters' `SetDefaults` boxes: 172 18x40
             // (`NPC.cs:11156-11157`), 693 18x40 (`:17725-17726`).
             NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => (18.0, 40.0),
+            // W4-g8 lane 1 batch 1 — the `SetDefaults` boxes: 61 36x36
+            // (`NPC.cs:9556-9557`), 63/64 26x26 (`:9585-9586`/`:9599-9600`),
+            // 69 24x24 (`:9668-9669`), 70 34x34 (`:9683-9684`), 75 20x20
+            // (`:9775-9776`), 82 24x44 (`:9856-9857`), 83/84 40x40
+            // (`:9881-9882`/`:9894-9895`), 85 24x24 (`:9907-9908`).
+            NpcKind::Antlion => (24.0, 24.0),
+            NpcKind::SpikeBall => (34.0, 34.0),
+            // W4-g8 lane 1 batch 2 — the `SetDefaults` boxes: 103 26x26
+            // (`NPC.cs:10219-10220`), 122 20x20 (`:10482-10483`), 164 50x20
+            // (`:11061-11062`), 165 36x36 (`:11076-11077`), 169 18x40
+            // (`:11116-11117`), 174 52x26 (`:11197-11198`), 177 58x44
+            // (`:11241-11242`), 179 40x40 (`:11268-11269`), 182 24x62
+            // (`:11320-11321`), 195/196 18x40 (`:11494-11495`/`:11508-11509`).
+            NpcKind::WallCreeper => (50.0, 20.0),
+            NpcKind::WallCreeperWall => (36.0, 36.0),
+            NpcKind::IceElemental => (18.0, 40.0),
+            NpcKind::Herpling => (52.0, 26.0),
+            NpcKind::Derpling => (58.0, 44.0),
+            NpcKind::CrimsonAxe => (40.0, 40.0),
+            NpcKind::FloatyGross => (24.0, 62.0),
+            NpcKind::LostGirl | NpcKind::Nymph => (18.0, 40.0),
+            // W4-g8 lane 1 batch 3 — the `SetDefaults` boxes: 34 26x28
+            // (`NPC.cs:9152-9153`), 62 28x48 (`:9570-9571`), 93/137 26x20
+            // (`:10050-10051`/`:10737-10738`), 121 40x30 (`:10468-10469`),
+            // 150/151/158 22x22 (`:10888-10889`/`:10903-10904`/`:15469-15470`),
+            // 152 38x34 (`:10919-10920`), 226 34x50 (`:11914-11915`).
+            // W4-g8 lane 1 batch 4 — the `SetDefaults` boxes: 221 26x26
+            // (`NPC.cs:11843-11844`), 48 24x34 (`:9362-9363`), 156 28x48
+            // (`:10977-10978`).
+            // W4-g8 machine round 3 — the Vampire 159's 18x40 box
+            // (`NPC.cs:15483-15484`).
         }
     }
 
@@ -5701,19 +5879,13 @@ impl NpcKind {
             // W4-d35 (A): the 73/74/75/77/78 vanilla NPC.type rows.
             NpcKind::GoblinScout => 73,
             NpcKind::Bird => 74,
-            NpcKind::Pixie => 75,
             NpcKind::ArmoredSkeleton => 77,
             NpcKind::Mummy => 78,
             // W4-d35 (B): the 79/80/82/83/84 vanilla NPC.type rows.
             NpcKind::DarkMummy => 79,
             NpcKind::LightMummy => 80,
-            NpcKind::Wraith => 82,
-            NpcKind::CursedHammer => 83,
-            NpcKind::EnchantedSword => 84,
             // W4-d35 (C): the 85/86/93/94/95 vanilla NPC.type rows.
-            NpcKind::Mimic => 85,
             NpcKind::Unicorn => 86,
-            NpcKind::GiantBat => 93,
             NpcKind::Corruptor => 94,
             NpcKind::DiggerHead => 95,
             // W4-d35 (D): the 98 vanilla NPC.type rows.
@@ -5721,17 +5893,13 @@ impl NpcKind {
             // W4-d35 (E): the 101/102/103/104/109 vanilla NPC.type rows.
             NpcKind::Clinger => 101,
             NpcKind::AnglerFish => 102,
-            NpcKind::GreenJellyfish => 103,
             NpcKind::Werewolf => 104,
             NpcKind::Clown => 109,
             // W4-d35 (F): the 110/116/120/121 vanilla NPC.type rows.
             NpcKind::SkeletonArcher => 110,
             NpcKind::TheHungryII => 116,
             NpcKind::ChaosElemental => 120,
-            NpcKind::Slimer => 121,
             // W4-d35 (G): the 122/137/140 vanilla NPC.type rows.
-            NpcKind::Gastropod => 122,
-            NpcKind::IlluminantBat => 137,
             NpcKind::PossessedArmor => 140,
             NpcKind::BlazingWheel => 72,
             NpcKind::AngryNimbus => 250,
@@ -5740,7 +5908,6 @@ impl NpcKind {
             // W4-d34 kinds 1-70: the vanilla `NPC.type` rows (the AI arms'
             // type gates + the statue caps read these, not the protocol ids).
             NpcKind::AngryBones => 31,
-            NpcKind::CursedSkull => 34,
             NpcKind::OldMan => 37,
             NpcKind::ManEater => 43,
             NpcKind::Bunny => 46,
@@ -5750,12 +5917,8 @@ impl NpcKind {
             // (the head's 39; the s1_f_3 cs_id==net_id invariant, the
             // Destroyer precedent).
             NpcKind::CorruptBunny => 47,
-            NpcKind::Harpy => 48,
             NpcKind::Snatcher => 56,
             NpcKind::CorruptGoldfish => 57,
-            NpcKind::Vulture => 61,
-            NpcKind::Demon => 62,
-            NpcKind::BlueJellyfish => 63,
             NpcKind::Crab => 67,
             NpcKind::DungeonGuardian => 68,
             // W4-c3 (the style-10 family): the vanilla `NPC.type` ids
@@ -5957,6 +6120,32 @@ impl NpcKind {
             // hazards' L-B gate fix, the destroyer precedent). The vanilla
             // type 328 rides `to_u16`/`texture_net_id`; the machine reads
             // its own kind (the aiStyle-59 axis).
+            // W4-g8 lane 1 batch 1 — the vanilla `NPC.type` ids the AI
+            // machines' type gates read (`NPCID.cs:10799`/`:10803`/
+            // `:10805`/`:10815`/`:10817`/`:10827`/`:10841`/`:10843`/
+            // `:10845`/`:10847`). The protocol ids are port-local — E8
+            // moved the owned kinds to 745-761 (the dups stay drop-pending).
+            NpcKind::PinkJellyfish => 64,
+            NpcKind::Antlion => 69,
+            NpcKind::SpikeBall => 70,
+            // W4-g8 lane 1 batch 2 — the vanilla `NPC.type` ids
+            // (`NPCID.cs:10883`/`:10921`/`:11005`/`:11007`/`:11015`/
+            // `:11025`/`:11031`/`:11035`/`:11041`/`:11067`/`:11069`).
+            NpcKind::WallCreeper => 164,
+            NpcKind::WallCreeperWall => 165,
+            NpcKind::IceElemental => 169,
+            NpcKind::Herpling => 174,
+            NpcKind::Derpling => 177,
+            NpcKind::CrimsonAxe => 179,
+            NpcKind::FloatyGross => 182,
+            NpcKind::LostGirl => 195,
+            NpcKind::Nymph => 196,
+            // W4-g8 lane 1 batch 3 — the vanilla `NPC.type` ids
+            // (`NPCID.cs:10745`/`:10801`/`:10863`/`:10919`/`:10951`/
+            // `:10977`/`:10979`/`:10981`/`:10993`/`:11129`).
+            // W4-g8 lane 1 batch 4 — the vanilla `NPC.type` ids
+            // (`NPCID.cs:11119`/`:10773`/`:10987`).
+            // W4-g8 machine round 3 — the Vampire 159 (`NPCID.cs:10995`).
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -6043,6 +6232,13 @@ impl NpcKind {
             // W4-d42 - the humanoid-group case list carries 630
             // (`NPC.cs:68618`), 16 rows (`Main.npcFrameCount[630]`).
             NpcKind::BloodMummy => 16,
+            // W4-g8 lane 1 batch 2 — the Nymph 196 rides the humanoid-group
+            // case list (`NPC.cs:68576`) on its 14-frame strip
+            // (`Main.npcFrameCount[196]` = 14).
+            NpcKind::Nymph => 14,
+            // W4-g8 machine round 3 — the Vampire 159 rides the
+            // humanoid-group case list (`NPC.cs:68569`) on its 15-frame
+            // strip (`Main.npcFrameCount[159]` = 15, `Main.cs:67100`).
             _ => 1,
         }
     }
@@ -6144,6 +6340,9 @@ impl NpcKind {
                 | NpcKind::TruffleWormDigger
                 // The Clinger's `behindTiles = true` row (`NPC.cs:10190`,
                 // W4-d23 — the family's only behind-tiles member).
+                // W4-g8 lane 1 batch 1 — the Antlion's `behindTiles = true`
+                // row (`NPC.cs:9678`); it fires from behind the sand.
+                | NpcKind::Antlion
         )
     }
 
@@ -6282,14 +6481,11 @@ impl NpcKind {
             // 660 120 (`:17345`).
             NpcKind::Harpy | NpcKind::GiantBat => 100,
             NpcKind::Demon | NpcKind::QueenSlimeMinionPurple => 120,
-            NpcKind::Slimer => 60,
-            NpcKind::IlluminantBat => 200,
             NpcKind::IceBat => 30,
             NpcKind::Lavabat => 160,
             NpcKind::GiantFlyingFox => 220,
             NpcKind::RedDevil => 600,
             NpcKind::VampireBat | NpcKind::Vampire => 750,
-            NpcKind::FlyingSnake => 260,
             NpcKind::SporeBat => 16,
             // `SetDefaults` case 6: 40; case 42: 48; case 23: 26.
             NpcKind::EaterOfSouls => 40,
@@ -6662,19 +6858,13 @@ impl NpcKind {
             // W4-d35 (A): the 73/74/75/77/78 lifeMax rows.
             NpcKind::GoblinScout => 80,
             NpcKind::Bird => 5,
-            NpcKind::Pixie => 150,
             NpcKind::ArmoredSkeleton => 260,
             NpcKind::Mummy => 130,
             // W4-d35 (B): the 79/80/82/83/84 lifeMax rows.
             NpcKind::DarkMummy => 180,
             NpcKind::LightMummy => 200,
-            NpcKind::Wraith => 160,
-            NpcKind::CursedHammer => 200,
-            NpcKind::EnchantedSword => 200,
             // W4-d35 (C): the 85/86/93/94/95 lifeMax rows.
-            NpcKind::Mimic => 500,
             NpcKind::Unicorn => 400,
-            NpcKind::GiantBat => 100,
             NpcKind::Corruptor => 230,
             NpcKind::DiggerHead => 200,
             // W4-d35 (D): the 96/97/98/99/100 lifeMax rows.
@@ -6686,7 +6876,6 @@ impl NpcKind {
             // W4-d35 (E): the 101/102/103/104/109 lifeMax rows.
             NpcKind::Clinger => 320,
             NpcKind::AnglerFish => 90,
-            NpcKind::GreenJellyfish => 120,
             NpcKind::Werewolf => 350,
             NpcKind::Clown => 800,
             // W4-d35 (F): the 110/112/116/120/121 lifeMax rows.
@@ -6694,26 +6883,18 @@ impl NpcKind {
             NpcKind::VileSpit => 1,
             NpcKind::TheHungryII => 80,
             NpcKind::ChaosElemental => 370,
-            NpcKind::Slimer => 60,
             // W4-d35 (G): the 122/137/140 lifeMax rows.
-            NpcKind::Gastropod => 220,
-            NpcKind::IlluminantBat => 200,
             NpcKind::PossessedArmor => 260,
             NpcKind::DungeonSpirit => 200,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults lifeMax).
             NpcKind::AngryBones => 80,   // :9115
-            NpcKind::CursedSkull => 40,  // :9157
             NpcKind::OldMan => 250,      // :9206
             NpcKind::ManEater => 110,    // :9302
             NpcKind::Bunny => 5,         // :9343
             NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 300, // :9234/:9251/:9269
             NpcKind::CorruptBunny => 70,   // :9355
-            NpcKind::Harpy => 100,         // :9367
             NpcKind::Snatcher => 60,          // :9483
             NpcKind::CorruptGoldfish => 100,  // :9497
-            NpcKind::Vulture => 40,           // :9561
-            NpcKind::Demon => 120,            // :9575
-            NpcKind::BlueJellyfish => 34,     // :9590
             NpcKind::Crab => 40,              // :9647
             NpcKind::DungeonGuardian => 9999, // :9659
             // W4-d38 b7 — SetDefaults lifeMax rows.
@@ -6761,9 +6942,7 @@ impl NpcKind {
             // W4-d37 — the NPCID 211-280 band's `SetDefaults` lifeMax rows
             // (the `this.lifeMax = N;` cites in `npc.rs`'s enum).
             NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::SeaSnail => 40,
-            NpcKind::Squid => 30,
             NpcKind::FlyingFish => 20,
-            NpcKind::FlyingSnake => 260,
             NpcKind::Pirate => 250,
             NpcKind::GoldfishWalker => 5,
             NpcKind::HornetFatty => 50,
@@ -6901,6 +7080,37 @@ impl NpcKind {
             // (`NPC.cs:11161`), 693 70 (`:17728`).
             NpcKind::RuneWizard => 600,
             NpcKind::LibrarianSkeleton => 70,
+            // W4-g8 lane 1 batch 1 — the `lifeMax` rows: 61 40
+            // (`NPC.cs:9561`), 63 34 (`:9590`), 64 70 (`:9604`), 69 45
+            // (`:9673`), 70 100 (`:9688`), 75 150 (`:9780`), 82 160
+            // (`:9861`), 83/84 200 (`:9886`/`:9899`), 85 500 (`:9912`).
+            // The Mimic's pre-hardmode 300 fold (`:9922`) rides the spawn
+            // resolver (`world.hard_mode`), not this hardmode table.
+            NpcKind::PinkJellyfish => 70,
+            NpcKind::Antlion => 45,
+            NpcKind::SpikeBall => 100,
+            // W4-g8 lane 1 batch 2 — the `lifeMax` rows: 103 120
+            // (`NPC.cs:10224`), 122 220 (`:10487`), 164/165 80 (`:11066`/
+            // `:11081`), 169 200 (`:11121`), 174 220 (`:11202`), 177 300
+            // (`:11246`), 179 200 (`:11273`), 182 240 (`:11325`), 195 250
+            // (`:11499`), 196 300 (`:11513`).
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => 80,
+            NpcKind::IceElemental => 200,
+            NpcKind::Herpling => 220,
+            NpcKind::Derpling => 300,
+            NpcKind::CrimsonAxe => 200,
+            NpcKind::FloatyGross => 240,
+            NpcKind::LostGirl => 250,
+            NpcKind::Nymph => 300,
+            // W4-g8 lane 1 batch 3 — the `lifeMax` rows: 34 40
+            // (`NPC.cs:9157`), 62 120 (`:9575`), 93 100 (`:10055`), 121 60
+            // (`:10473`), 137 200 (`:10742`), 150 30 (`:10893`), 151 160
+            // (`:10908`), 152 220 (`:10924`), 158 750 (`:15474`), 226 260
+            // (`:11919`).
+            // W4-g8 lane 1 batch 4 — the `lifeMax` rows: 221 30
+            // (`NPC.cs:11848`), 48 100 (`:9367`), 156 600 (`:10982`).
+            // W4-g8 machine round 3 — the Vampire 159's 750
+            // (`NPC.cs:15488`).
         }
     }
 
@@ -7345,19 +7555,13 @@ impl NpcKind {
             // W4-d35 (A): the 73/74/75/77/78 damage rows.
             NpcKind::GoblinScout => 20,
             NpcKind::Bird => 0,
-            NpcKind::Pixie => 55,
             NpcKind::ArmoredSkeleton => 40,
             NpcKind::Mummy => 50,
             // W4-d35 (B): the 79/80/82/83/84 damage rows.
             NpcKind::DarkMummy => 60,
             NpcKind::LightMummy => 55,
-            NpcKind::Wraith => 65,
-            NpcKind::CursedHammer => 80,
-            NpcKind::EnchantedSword => 80,
             // W4-d35 (C): the 85/86/93/94/95 damage rows.
-            NpcKind::Mimic => 80,
             NpcKind::Unicorn => 65,
-            NpcKind::GiantBat => 45,
             NpcKind::Corruptor => 60,
             NpcKind::DiggerHead => 45,
             // W4-d35 (D): the 96/97/98/99/100 damage rows.
@@ -7369,7 +7573,6 @@ impl NpcKind {
             // W4-d35 (E): the 101/102/103/104/109 damage rows.
             NpcKind::Clinger => 70,
             NpcKind::AnglerFish => 80,
-            NpcKind::GreenJellyfish => 80,
             NpcKind::Werewolf => 70,
             NpcKind::Clown => 60,
             // W4-d35 (F): the 110/112/116/120/121 damage rows.
@@ -7377,15 +7580,11 @@ impl NpcKind {
             NpcKind::VileSpit => 65,
             NpcKind::TheHungryII => 30,
             NpcKind::ChaosElemental => 40,
-            NpcKind::Slimer => 45,
             // W4-d35 (G): the 122/137/140 damage rows.
-            NpcKind::Gastropod => 60,
-            NpcKind::IlluminantBat => 75,
             NpcKind::PossessedArmor => 55,
             NpcKind::DungeonSpirit => 70,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults damage).
             NpcKind::AngryBones => 26,   // :9113
-            NpcKind::CursedSkull => 35,  // :9155
             NpcKind::OldMan => 10,       // :9204
             NpcKind::ManEater => 34,     // :9300
             NpcKind::Bunny => 0,         // :9341
@@ -7393,12 +7592,8 @@ impl NpcKind {
             NpcKind::BoneSerpentBody => 20,   // :9249
             NpcKind::BoneSerpentTail => 16,   // :9267
             NpcKind::CorruptBunny => 20,      // :9353
-            NpcKind::Harpy => 25,             // :9365
             NpcKind::Snatcher => 25,          // :9481
             NpcKind::CorruptGoldfish => 30,   // :9495
-            NpcKind::Vulture => 15,           // :9559
-            NpcKind::Demon => 32,             // :9573
-            NpcKind::BlueJellyfish => 25,     // :9588
             NpcKind::Crab => 20,              // :9645
             NpcKind::DungeonGuardian => 9999, // :9657
             // W4-d38 b7 — SetDefaults damage rows.
@@ -7447,7 +7642,6 @@ impl NpcKind {
             // (the `this.damage = N;` cites in `npc.rs`'s enum).
             NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::SeaSnail | NpcKind::Squid => 20,
             NpcKind::FlyingFish => 9,
-            NpcKind::FlyingSnake => 85,
             NpcKind::Pirate => 10,
             NpcKind::GoldfishWalker => 0,
             NpcKind::HornetFatty => 22,
@@ -7577,16 +7771,12 @@ impl NpcKind {
             // (`:10906`), 152 80 (`:10922`), 156 50 (`:10980`), 158 60
             // (`:15472`), 159 80 (`:15486`), 226 85 (`:11917`), 634 13
             // (`:17167`), 660 50 (`:17343`).
-            NpcKind::Harpy => 25,
-            NpcKind::Demon => 32,
             NpcKind::GiantBat | NpcKind::Slimer => 45,
-            NpcKind::IlluminantBat => 75,
             NpcKind::IceBat => 18,
             NpcKind::Lavabat | NpcKind::RedDevil | NpcKind::QueenSlimeMinionPurple => 50,
             NpcKind::GiantFlyingFox => 80,
             NpcKind::VampireBat => 60,
             NpcKind::Vampire => 80,
-            NpcKind::FlyingSnake => 85,
             NpcKind::SporeBat => 13,
             // W4-d25 STYLE-26 wiring: 86/155 dmg 65 (`NPC.cs:9931`/
             // `:10966`), 546 dmg 30 (`:15977`). The Unicorn row mirrors
@@ -7609,6 +7799,37 @@ impl NpcKind {
             // (`NPC.cs:11159`), 693 18 (`:17727`).
             NpcKind::RuneWizard => 200,
             NpcKind::LibrarianSkeleton => 18,
+            // W4-g8 lane 1 batch 1 — the `damage` rows: 61 15
+            // (`NPC.cs:9559`), 63 25 (`:9588`), 64 30 (`:9602`), 69 10
+            // (`:9671`), 70 32 (`:9686`), 75 55 (`:9778`), 82 65
+            // (`:9859`), 83/84 80 (`:9884`/`:9897`), 85 80 (`:9910`).
+            // The Mimic's pre-hardmode 30 fold (`:9920`) rides the spawn
+            // resolver (`world.hard_mode`).
+            NpcKind::PinkJellyfish => 30,
+            NpcKind::Antlion => 10,
+            NpcKind::SpikeBall => 32,
+            // W4-g8 lane 1 batch 2 — the `damage` rows: 103 80
+            // (`NPC.cs:10222`), 122 60 (`:10485`), 164/165 30 (`:11064`/
+            // `:11079`), 169 55 (`:11119`), 174 65 (`:11200`), 177 80
+            // (`:11244`), 179 80 (`:11271`), 182 65 (`:11323`), 195 10
+            // (`:11497`), 196 35 (`:11511`).
+            NpcKind::WallCreeper | NpcKind::WallCreeperWall => 30,
+            NpcKind::IceElemental => 55,
+            NpcKind::Herpling => 65,
+            NpcKind::Derpling => 80,
+            NpcKind::CrimsonAxe => 80,
+            NpcKind::FloatyGross => 65,
+            NpcKind::LostGirl => 10,
+            NpcKind::Nymph => 35,
+            // W4-g8 lane 1 batch 3 — the `damage` rows: 34 35
+            // (`NPC.cs:9155`), 62 32 (`:9573`), 93 45 (`:10053`), 121 45
+            // (`:10471`), 137 75 (`:10740`), 150 18 (`:10891`), 151 50
+            // (`:10906`), 152 80 (`:10922`), 158 60 (`:15472`), 226 85
+            // (`:11917`).
+            // W4-g8 lane 1 batch 4 — the `damage` rows: 221 20
+            // (`NPC.cs:11846`), 48 25 (`:9365`), 156 50 (`:10980`).
+            // W4-g8 machine round 3 — the Vampire 159's 80
+            // (`NPC.cs:15486`).
         }
     }
 }

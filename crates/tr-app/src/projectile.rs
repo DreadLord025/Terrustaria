@@ -27218,7 +27218,6 @@ mod tests {
             "extraUpdates = 2 with timeLeft = 11 must die on frame 4"
         );
     }
-}
 #[cfg(test)]
 mod falling_tests {
     use super::*;

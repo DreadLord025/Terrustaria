@@ -154,11 +154,17 @@
 //! the 356-only `ai[2]-1` colour-row offset never fires for 444) landed
 //! in `npc.rs::find_frame`. The 356/653/661 trio stays the d39/d43
 //! roster lanes (the 661 fade/despawn + dust arms keep their seams).
+//! UNWIRED (the style66/67/68 precedent): none of the four kinds has
+//! an `NpcKind` yet — the roster lanes (W4-d39/d40/d43) own them; the
+//! style-axis `65 =>` claim + the FindFrame case 356/444/653/661
+//! (`NPC.cs:72739-72772` — the 7-tick flap cycle, `rotation = vx*0.3`,
+//! the 356-only `ai[2]-1` colour-row offset) land with that wave.
 //!
 //! See docs/ANALYSIS.md "The butterfly family (W4-d30 aiStyle-65,
 //! code-only)".
 
 #![allow(dead_code)] // the 356/653/661 arms keep their seams (the d39/d43 roster lanes)
+#![allow(dead_code)] // UNWIRED — the kinds + axis claim are the roster wave (W4-d39/d40/d43)
 
 use crate::npc::Npc;
 use crate::npc_ai_style64::{rect_distance, Ai64NpcView};

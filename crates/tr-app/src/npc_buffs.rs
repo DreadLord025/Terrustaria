@@ -928,6 +928,31 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (`NPCID.cs:7119-7125` the RuneWizard, `:10060-10066` the
         // LibrarianSkeleton).
         NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => &[20, 31],
+        // W4-g8 lane 1 batch 1 — the `Sets.DebuffImmunitySets` rows
+        // (`NPCID.cs:6075+`): 61/63/64/69 `[31]`, 70 `[20, 24, 31, 39, 70,
+        // 395, 323]`, 83/84 `[20, 24, 31, 323]`, 75/85 `[20, 31]`. The
+        // Wraith 82's row is `ImmuneToAllBuffsThatAreNotWhips = true` — the
+        // mask loop is unmodelled, so it rides `&[]` (the Force Bubble /
+        // saucer family's documented gap above).
+        NpcKind::SpikeBall => &[20, 24, 31, 39, 70, 395, 323],
+        // W4-g8 lane 1 batch 2 — the `Sets.DebuffImmunitySets` rows: 103/
+        // 174/177/195 `[31]`, 122/182 `[20, 31]`, 164/165 `[20]`, 169
+        // `[20, 31, 44, 324]`, 179 `[20, 24, 31, 323]`; 196 has no row
+        // (the null-row else-branch, no immunity).
+        NpcKind::WallCreeper | NpcKind::WallCreeperWall => &[20],
+        NpcKind::IceElemental => &[20, 31, 44, 324],
+        NpcKind::CrimsonAxe => &[20, 24, 31, 323],
+        NpcKind::Nymph => &[],
+        // W4-g8 lane 1 batch 3 — the `Sets.DebuffImmunitySets` rows: 34
+        // `[20, 31]`, 62 `[24, 31, 153, 323]`, 121/137 `[20]`, 150
+        // `[44, 324]`, 151 `[24, 323]`; 93/152/158/226 have no row (the
+        // null-row else-branch, no immunity).
+        NpcKind::GiantBat | NpcKind::GiantFlyingFox | NpcKind::VampireBat | NpcKind::FlyingSnake => &[],
+        // W4-g8 lane 1 batch 4 — the `Sets.DebuffImmunitySets` rows: 48/221
+        // `[31]`, 156 `[24, 31, 153, 323]`.
+        // W4-g8 machine round 3 — 159 has a null row (`NPCID.cs:7057`
+        // `{ 159, null }`, the else-branch: no immunity).
+        NpcKind::Vampire => &[],
     }
 }
 

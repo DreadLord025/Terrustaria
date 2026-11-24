@@ -3497,6 +3497,36 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Bird",
+    // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds. The automated
+    // populator registers every non-town, non-Hide enemy by its vanilla
+    // net id (`BestiaryDatabaseNPCsPopulator.cs:851-868`); the Spike Ball
+    // 70 is `Hide = true` (`NPCID.cs:1711-1715`) so it folds onto no entry
+    // of its own — but `entry_for_npc` still needs a row to resolve, so it
+    // carries one here (the BlazingWheel 72 precedent, also Hide=true).
+BestiaryEntryDef {
+        credit_id: "PinkJellyfish",
+        net_id: 64,
+        kind: NpcKind::PinkJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Pink Jellyfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Antlion",
+        net_id: 69,
+        kind: NpcKind::Antlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion",
+    },
+    BestiaryEntryDef {
+        credit_id: "SpikeBall",
+        net_id: 70,
+        kind: NpcKind::SpikeBall,
+        variant: None,
+        quick_unlock: false,
+        name: "Spike Ball",
+    }
     },
     BestiaryEntryDef {
         credit_id: "Pixie",
@@ -3630,6 +3660,10 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Angler Fish",
     },
+    // W4-g8 lane 1 batch 2 — the d22-d33 machines' kinds. The WallCreeper
+    // 164 is `Hide = true` (`NPCID.cs`'s draw modifiers) so it folds onto
+    // the WallCreeperWall's credit in `entry_for_npc`, but it still needs a
+    // row to resolve (the Spike Ball precedent).
     BestiaryEntryDef {
         credit_id: "GreenJellyfish",
         net_id: 103,
@@ -3695,6 +3729,81 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Gastropod",
     },
     BestiaryEntryDef {
+        credit_id: "WallCreeper",
+        net_id: 164,
+        kind: NpcKind::WallCreeper,
+        variant: None,
+        quick_unlock: false,
+        name: "Wall Creeper",
+    },
+    BestiaryEntryDef {
+        credit_id: "WallCreeperWall",
+        net_id: 165,
+        kind: NpcKind::WallCreeperWall,
+        variant: None,
+        quick_unlock: false,
+        name: "Wall Creeper",
+    },
+    BestiaryEntryDef {
+        credit_id: "IceElemental",
+        net_id: 169,
+        kind: NpcKind::IceElemental,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Elemental",
+    },
+    BestiaryEntryDef {
+        credit_id: "Herpling",
+        net_id: 174,
+        kind: NpcKind::Herpling,
+        variant: None,
+        quick_unlock: false,
+        name: "Herpling",
+    },
+    BestiaryEntryDef {
+        credit_id: "Derpling",
+        net_id: 177,
+        kind: NpcKind::Derpling,
+        variant: None,
+        quick_unlock: false,
+        name: "Derpling",
+    },
+    BestiaryEntryDef {
+        credit_id: "CrimsonAxe",
+        net_id: 179,
+        kind: NpcKind::CrimsonAxe,
+        variant: None,
+        quick_unlock: false,
+        name: "Crimson Axe",
+    },
+    BestiaryEntryDef {
+        credit_id: "FloatyGross",
+        net_id: 182,
+        kind: NpcKind::FloatyGross,
+        variant: None,
+        quick_unlock: false,
+        name: "Floaty Gross",
+    },
+    BestiaryEntryDef {
+        credit_id: "LostGirl",
+        net_id: 195,
+        kind: NpcKind::LostGirl,
+        variant: None,
+        quick_unlock: false,
+        name: "Lost Girl",
+    },
+    BestiaryEntryDef {
+        credit_id: "Nymph",
+        net_id: 196,
+        kind: NpcKind::Nymph,
+        variant: None,
+        quick_unlock: false,
+        name: "Nymph",
+    },
+    // W4-g8 lane 1 batch 3 — the CursedSkull + the nine bat/flyer family
+    // members. The VampireBat 158 is `Hide = true` (it folds onto the
+    // Vampire 159 in the vanilla) but still needs a row to resolve.
+BestiaryEntryDef {
         credit_id: "IlluminantBat",
         net_id: 137,
         kind: NpcKind::IlluminantBat,
@@ -3828,11 +3937,13 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     },
     BestiaryEntryDef {
         credit_id: "LavaBat",
+        credit_id: "Lavabat",
         net_id: 151,
         kind: NpcKind::Lavabat,
         variant: None,
         quick_unlock: false,
         name: "Lava Bat",
+        name: "Lavabat",
     },
     BestiaryEntryDef {
         credit_id: "GiantFlyingFox",
@@ -3862,6 +3973,10 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // (the fighter walker), NOT a style-14 member; it lands here because
     // the transform pair is one unit (the bat flees the surface by day,
     // the vampire walks it by night — `:58843-58851` transforms back).
+// W4-g8 lane 1 batch 4 — the last three ≤230 d22-d33 machine members.
+// W4-g8 machine round 3 — the VampireBat's Transform(159) target
+    // (`BestiaryDatabaseNPCsPopulator.cs:1465` gives 159 its own Eclipse
+    // info row; the legacy name "Vampire" maps to 158, `NPCID.cs:12301`).
     BestiaryEntryDef {
         credit_id: "Vampire",
         net_id: 159,

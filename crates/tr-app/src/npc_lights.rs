@@ -55,6 +55,36 @@ pub(crate) fn npc_light(
     height: f32,
     ai0: f32,
 ) -> Option<(i32, i32, [f32; 3])> {
+    // W4-g8 lane 1 batch 1 — the possessed weapons' per-type glow at the
+    // INTEGER-half centre (`NPC.cs:25239-25250`, the aiStyle-23 arm's
+    // head): `(int)((position.X + (float)(width / 2)) / 16f)` — the width
+    // halves as an INTEGER before the add, unlike `XAnchor::Center`'s float
+    // half. 83 CursedHammer (0.2, 0.05, 0.3), 84 EnchantedSword
+    // (0.05, 0.2, 0.3); the `npc_ai_style23::ai_style23` light return is the
+    // same triple, fed here draw-side (the static-table shape).
+    let weapon_rgb = match kind {
+        NpcKind::CursedHammer => [0.2, 0.05, 0.3],
+        NpcKind::EnchantedSword => [0.05, 0.2, 0.3],
+        // W4-g8 lane 1 batch 2 — the CrimsonAxe 179 (`NPC.cs:25245`).
+        NpcKind::CrimsonAxe => [0.3, 0.15, 0.05],
+        _ => {
+            return npc_light_anchor(kind, pos, width, height);
+        }
+    };
+    let lx = ((pos.x + (width as i32 / 2) as f32) / 16.0) as i32;
+    let ly = ((pos.y + (height as i32 / 2) as f32) / 16.0) as i32;
+    Some((lx, ly, weapon_rgb))
+}
+
+/// The anchor-table light tail (the aiStyle-8 casters' `NPC.cs:21280-21373`
+/// chain) — split out so the integer-half weapons above keep their own
+/// centre form.
+fn npc_light_anchor(
+    kind: NpcKind,
+    pos: Vec2,
+    width: f32,
+    height: f32,
+) -> Option<(i32, i32, [f32; 3])> {
     let (anchor, rgb) = match kind {
         // `:21280-21300` — the sorcerer/Tim (29/45) and Dark Caster (32)
         // arms spawn dust only; no light. The Rune Wizard (172) is the

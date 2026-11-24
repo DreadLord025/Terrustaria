@@ -1269,6 +1269,16 @@ fn play_npc_sound_request(
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
         }
+        // W4-g8 lane 1 — the Antlion's Item5 spit (`NPC.cs:24449`) and the
+        // Pixie's case-27 wing-hum chirp (`NPC.cs:24853`): the same façades
+        // as the Item8/14/34 cues above (the case-2 / case-27 pitch draws
+        // ride the caller's UpdateNPCs stream).
+        NpcSoundCue::Item5 => {
+            audio.play_npc_item_cue(5, req.x, req.y, rng);
+        }
+        NpcSoundCue::PixieChirp => {
+            audio.play_pixie(req.x, req.y, rng);
+        }
     }
 }
 
@@ -4774,6 +4784,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             n.gallop_zone_desert = zone_desert;
             n.gallop_zone_sandstorm = zone_sandstorm;
             n.gallop_siblings = siblings;
+    // W4-g8 lane 1 batch 1 — the Mimic's pre-hardmode `SetDefaults` fold
+    // (`NPC.cs:9918-9924`): on a pre-hardmode world the chest trap spawns
+    // dmg 30 / def 12 / 300 HP / value 200 (`Item.buyPrice(0, 2)`), not the
+    // hardmode 80/30/500/100000 the kind table carries. The fold is a
+    // SPAWN-time decision (the C# runs it inside `SetDefaults`); the port
+    // applies it once at the NPC's first tick (ai all-zero, the fresh
+    // `Npc::new` state) via the override seams + the hp rescale. RNG-free.
+    if !app.world.hard_mode {
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::Mimic && n.ai == [0.0; 4] && n.local_ai == [0.0; 4] {
+                let ratio = n.hp as f32 / n.max_hp as f32;
+                n.max_hp = 300;
+                n.hp = (300.0 * ratio) as i32;
+                n.damage_override = Some(30);
+                n.defense_override = Some(12);
+                n.value_override = Some(200.0);
+            }
+            }
+            }
         }
     }
     let player = &mut app.player;
@@ -7156,6 +7185,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`NPC.cs:23429`) + the RedDevil's trident (`:23478` — the
         // W4-d23 style-14 wiring's `Style14Shot` drain) and the
         // Skeletron head's spin-shot Skull (`NPC.cs:22013` - B-1).
+        // the Harpy's feather (`NPC.cs:23429` — W4-g8 machine round),
+        // the VoodooDemon's DemonSickle (`NPC.cs:23450` — the S1-D-3 bat
+        // reconcile's `bat_ai` shot drain), the RedDevil's trident
+        // (`NPC.cs:23478` — W4-g8 machine round) and the Skeletron head's
+        // spin-shot Skull (`NPC.cs:22013` - B-1).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
@@ -7166,6 +7200,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::HORNET_STINGER
             || kind == crate::projectile::DEMON_SICKLE
             || kind == crate::projectile::HARPY_FEATHER
+            || kind == crate::projectile::HARPY_FEATHER
+            || kind == crate::projectile::DEMON_SICKLE
             || kind == crate::projectile::UNHOLY_TRIDENT_HOSTILE
             || kind == crate::projectile::SKULL
             // W4-g5 — the Rune Wizard's RuneBlast (`NPC.cs:21272`'s
@@ -7314,6 +7350,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             300,
             0.0,
         );
+        // W4-g8 lane 1 batch 1 — the Antlion's SandBall `timeLeft = 300`
+        // override (`NPC.cs:24464`/`:24479`): the ai[0]=2 payload already
+        // rode `spawn_hostile_ai`; the life override lands here (the
+        // Horseman scale's post-spawn-write shape).
+        if shot.kind == crate::projectile::SAND_BALL_FALLING {
+            if let Some(slot) = slot {
+                app.projectiles.slots_mut()[slot].time_left = 300;
+            }
+        }
     }
     // The Horseman's gallop dust (`NPC.cs:62431-62437`, S1-D-4 W-10):
     // the arm-level gate + jitter draws already rode the UpdateNPCs
@@ -7574,6 +7619,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // 602→603 / 608→609. The b3 adapter's drain wiring queues the
     // request; until it lands the walkers ride `waterfowl_walker_step`'s
     // in-place gate (both paths run the same `transform_to_kind`).
+    // The Transform requests drained in place — `NPC.Transform`
+    // (`:81084-81114`): the bottom-anchored reposition, the SetDefaults
+    // swap, TargetClosest and the integer life rescale. The aiStyle-75
+    // carrier-gone fallbacks (`NPC.cs:36056-36063`: 390 → 382 RayGunner,
+    // 416 → 518 SolarSpearman) and the W4-g8 VampireBat 158 ↔ Vampire 159
+    // eclipse pair (`NPC.cs:23353` / `:58850`).
     {
         let player_ref = app.player.as_ref();
         let world_ref = &app.world;
@@ -7596,6 +7647,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // the aiStyle-14 axis arm) and the walker's
                         // >300px Transform(158) back (`:58843-58851`,
                         // the update tail).
+                        // W4-g8 machine round 3 — the VampireBat 158 ↔
+                        // Vampire 159 eclipse pair (`NPC.cs:23353` /
+                        // `:58850`): the bat becomes the vampire within
+                        // 200 px, the vampire returns to the bat beyond
+                        // 300 px.
                         159 => NpcKind::Vampire,
                         158 => NpcKind::VampireBat,
                         _ => continue,

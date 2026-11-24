@@ -198,6 +198,22 @@ const SFX_CUES: &[(&str, u32)] = &[
     // W4-d40: the roster wave's NPC hit/death cues (the `Sounds/NPC_*.xnb`
     // assets ship with the content; the S1-E-21 bank-gap close).
     ("NPC_Hit_15", 3),
+    // W4-g8 lane 1 batch 1 — the d22-d33 kinds' hit cues: the Vulture's
+    // NPCHit28 (`NPC.cs:9563`), the Antlion's NPCHit31 (`:9674`), the
+    // Pixie's NPCHit5 (`:9781`), the Wraith's NPCHit54 (`:9862`). The
+    // jellies' NPCHit25 (`:9591`/`:9605`) is already above; the weapons'/
+    // Mimic's NPCHit4 (`:9887`/`:9900`/`:9913`) and the Spike Ball's
+    // NPCHit1 (`:9689`) are in the wave-A bank.
+    ("NPC_Hit_5", 3),
+    ("NPC_Hit_28", 3),
+    ("NPC_Hit_31", 3),
+    ("NPC_Hit_54", 3),
+    // W4-g8 lane 1 batch 2 — the WallCreeper's NPCHit29 (`NPC.cs:11067`/
+    // `:11082`) and the Derpling's NPCHit22 (`:11247`).
+    ("NPC_Hit_29", 3),
+    ("NPC_Hit_22", 3),
+    // W4-g8 lane 1 batch 3 — the FlyingSnake's NPCHit23 (`NPC.cs:11920`).
+    ("NPC_Hit_23", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -286,6 +302,23 @@ const SFX_CUES: &[(&str, u32)] = &[
     // death cue (`NPC.cs:17197` `SoundID.NPCDeath65`) — d43's batch-1
     // row kept verbatim; the d125 roster's `death_sound` arm reads it.
     ("NPC_Killed_65", 4),
+    // W4-g8 lane 1 batch 1 — the d22-d33 kinds' death cues: the Pixie's
+    // NPCDeath7 (`NPC.cs:9783`), the jellies' NPCDeath28 (`:9592`/`:9606`),
+    // the Vulture's NPCDeath31 (`:9564`), the Antlion's NPCDeath34
+    // (`:9675`), the Wraith's NPCDeath52 (`:9863`). The weapons'/Mimic's
+    // NPCDeath6 (`:9888`/`:9901`/`:9914`) and the Spike Ball's NPCDeath1
+    // (`:9690`) are in the wave-A bank.
+    ("NPC_Killed_7", 4),
+    ("NPC_Killed_28", 4),
+    ("NPC_Killed_31", 4),
+    ("NPC_Killed_34", 4),
+    ("NPC_Killed_52", 4),
+    // W4-g8 lane 1 batch 2 — the WallCreeper's NPCDeath32 (`NPC.cs:11068`/
+    // `:11083`) and the Derpling's NPCDeath25 (`:11248`).
+    ("NPC_Killed_32", 4),
+    ("NPC_Killed_25", 4),
+    // W4-g8 lane 1 batch 3 — the FlyingSnake's NPCDeath26 (`NPC.cs:11922`).
+    ("NPC_Killed_26", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),
