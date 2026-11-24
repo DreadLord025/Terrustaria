@@ -1646,6 +1646,17 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_580",
         "NPC_581",
         "NPC_521",
+        // W4-d39 (research/125) — the Butterfly's own sheet, keyed by
+        // the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s CRITTER_SHEETS); the scorpion pair +
+        // the grasshopper likewise.
+        "NPC_356",
+        "NPC_366",
+        "NPC_367",
+        "NPC_377",
+        "NPC_378",
+        "NPC_379",
+        "NPC_380",
 ];
 
 
@@ -2600,6 +2611,7 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 186] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 187] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2672,6 +2684,12 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         // the earlier slots keep their indexes. The segments fold onto
         // the head's credit (no own slots).
         454, 521,
+        // W4-d39 (research/125) — the Butterfly + the scorpion pair +
+        // the grasshopper + the teeth bomb + the blue archer, appended
+        // last for the same reason (the parallel `bestiary_npc_sheets`
+        // vec below). The white archer's NPC_380 is a DRAW sheet only
+        // (the Hide=true fold rides 379's entry — no portrait slot).
+        356, 366, 367, 377, 378, 379,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -3709,6 +3727,14 @@ atlas.sheet("NPC_442").copied(),
                 // (the BESTIARY_NPC_SHEET_IDS tail).
                 atlas.sheet("NPC_454").copied(),
                 atlas.sheet("NPC_521").copied(),
+                // W4-d39 (research/125) — the four new strips, in
+                // BESTIARY_NPC_SHEET_IDS' appended order.
+                atlas.sheet("NPC_356").copied(),
+                atlas.sheet("NPC_366").copied(),
+                atlas.sheet("NPC_367").copied(),
+                atlas.sheet("NPC_377").copied(),
+                atlas.sheet("NPC_378").copied(),
+                atlas.sheet("NPC_379").copied(),
             ],
 
 

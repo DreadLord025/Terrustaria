@@ -862,6 +862,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FAIRY_BALLOON_SHEETS)
             .chain(DESERT_SHEETS)
             .chain(CULTIST_DRAGON_SHEETS)
+            .chain(CRITTER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1726,6 +1727,10 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::BoneSerpentBody => 40,
         NpcKind::BoneSerpentTail => 41,
 
+        // W4-d39: the white archer's bestiary credit folds onto 379
+        // (Hide=true), but its DRAW sheet is its own NPC_380 (the
+        // Sharkron2 precedent).
+        NpcKind::CultistArcherWhite => 380,
         // S1-F-13d: the Force Bubble's bestiary credit folds onto the
         // Officer (Hide=true), but its DRAW sheet is its own NPC_384
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
@@ -2424,6 +2429,19 @@ pub(crate) const CULTIST_DRAGON_SHEETS: &[u32] = &[
     455, 456, 457, 458, // the four body segments
     459, // the tail
     521, // the Ancient Vision (the squidhead)
+];
+
+/// W4-d39 (research/125) — the band 351-420's unclaimed kinds' own
+/// sheets (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`.
+pub(crate) const CRITTER_SHEETS: &[u32] = &[
+    356, // the Butterfly
+    366, // the black Scorpion
+    367, // the brown Scorpion
+    377, // the Grasshopper
+    378, // the Chattering Teeth Bomb
+    379, // the blue Cultist Archer
+    380, // the white Cultist Archer (the Hide fold's own DRAW sheet)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -5337,6 +5355,41 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d39 (research/125) — the Butterfly draws its own sheet
+            // (`CRITTER_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[356]` = 24
+            // (`Main.cs:67082`) with the generic centred anchor
+            // (`Main.cs:25511-25516`). The scale rides `n.scale` (the
+            // AI's ai[3] latch) via `scaled_anchor` (the stardust cells'
+            // convention); the Butterfly rotates (the whitelist below).
+            NpcKind::Butterfly => {
+                scaled_anchor(assets.npc_sheet(356), npc_rows(356), n, w, h)
+            }
+            // W4-d39 — the scorpion pair (4 rows) + the grasshopper
+            // (2 rows), unscaled (`SetDefaults` writes no scale row).
+            NpcKind::ScorpionBlack => {
+                pumpkin_moon_draw(assets.npc_sheet(366), npc_rows(366), n, w, h)
+            }
+            NpcKind::Scorpion => {
+                pumpkin_moon_draw(assets.npc_sheet(367), npc_rows(367), n, w, h)
+            }
+            NpcKind::Grasshopper => {
+                pumpkin_moon_draw(assets.npc_sheet(377), npc_rows(377), n, w, h)
+            }
+            // W4-d39 batch 3 — the teeth bomb (4 rows; the explosion's
+            // 160x160 box rides `size_override`, the frame height stays
+            // the SHEET's row height) + the archer pair (12 rows each,
+            // their OWN sheets — the white's bestiary fold does not
+            // fold the draw, the Sharkron2 precedent).
+            NpcKind::ChatteringTeethBomb => {
+                pumpkin_moon_draw(assets.npc_sheet(378), npc_rows(378), n, w, h)
+            }
+            NpcKind::CultistArcherBlue => {
+                pumpkin_moon_draw(assets.npc_sheet(379), npc_rows(379), n, w, h)
+            }
+            NpcKind::CultistArcherWhite => {
+                pumpkin_moon_draw(assets.npc_sheet(380), npc_rows(380), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -5625,6 +5678,10 @@ pub(crate) fn draw_npcs(
                     // rotation += vx * 0.05), the Vulture's flight tilt
                     // (`:73540`, vx * 0.1), the Antlion's aim (`:24421`),
                     // the FlyingAntlion's tilt (`:30996`, vx * 0.1).
+                    // W4-d39: the Butterfly's vx*0.3 tilt
+                    // (`NPC.cs:72745`) — the C#'s generic draw rotates
+                    // every NPC by `npc.rotation` (`Main.cs:26632`).
+                    | NpcKind::Butterfly
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
@@ -6479,6 +6536,9 @@ mod anchor_tests {
         // W4-f42 — the sandstorm debris + desert family: every kind's draw
         // sheet must be packed (the same M4-NPC-3v guard).
         for &id in DESERT_SHEETS {
+        // S1-D-3ff d39 wave 1 — the critter band's sheets are packed too
+        // (the M4-NPC-3v audit, critter edition).
+        for &id in CRITTER_SHEETS {
             let name = format!("NPC_{id}");
             assert!(
                 packed(&name),
@@ -6904,6 +6964,7 @@ mod anchor_tests {
             );
         }
     }
+}
 }
 }
 

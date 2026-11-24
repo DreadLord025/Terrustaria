@@ -1144,6 +1144,19 @@ impl NpcKind {
             // protocol space). The 521 squidhead (the d41 band, unrowed —
             // ported here from `NPC.cs:15768-15779`) keeps 521 too.
             NpcKind::AncientCultistSquidhead => 521,
+            // W4-d39 (research/125 §3 + 108 R7): the band 351-420's
+            // unclaimed kinds take the port-local 817-826 corridor
+            // (R7 re-pin; the original 781-804 guidance was superseded
+            // by the R4-R6 small-lane moves) — vanilla 356 sits inside
+            // d37's pushed 354-399 protocol band, so vanilla-free
+            // numbering is NOT available here.
+            NpcKind::Butterfly => 817,
+            NpcKind::ScorpionBlack => 818,
+            NpcKind::Scorpion => 819,
+            NpcKind::Grasshopper => 820,
+            NpcKind::ChatteringTeethBomb => 821,
+            NpcKind::CultistArcherBlue => 822,
+            NpcKind::CultistArcherWhite => 823,
         }
     
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
@@ -1863,6 +1876,14 @@ impl NpcKind {
             // W4-d9 wiring: the vanilla ids (`to_u16` above) — the d40
             // dragon rows + the ported 521 squidhead.
             521 => NpcKind::AncientCultistSquidhead,
+            // W4-d39: the port-local 817+ band (`to_u16` above, 108 R7).
+            817 => NpcKind::Butterfly,
+            818 => NpcKind::ScorpionBlack,
+            819 => NpcKind::Scorpion,
+            820 => NpcKind::Grasshopper,
+            821 => NpcKind::ChatteringTeethBomb,
+            822 => NpcKind::CultistArcherBlue,
+            823 => NpcKind::CultistArcherWhite,
             _ => return None,
         })
     
@@ -3245,6 +3266,18 @@ impl NpcKind {
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
             NpcKind::AncientCultistSquidhead => "NPC_Hit_1",
+            // W4-d39: the Butterfly's `SoundID.NPCHit1` row
+            // (`NPC.cs:13539`); the scorpion pair `:13669`, the
+            // grasshopper `:13819`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => "NPC_Hit_1",
+            // W4-d39 batch 3: the teeth bomb (`NPC.cs:13834`) + the
+            // archer pair (`:13847`) — NPCHit1.
+            NpcKind::ChatteringTeethBomb
+            | NpcKind::CultistArcherBlue
+            | NpcKind::CultistArcherWhite => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -3986,6 +4019,18 @@ impl NpcKind {
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
             NpcKind::AncientCultistSquidhead => "NPC_Killed_6",
+            // W4-d39: the Butterfly's `SoundID.NPCDeath1` row
+            // (`NPC.cs:13540`); the scorpion pair `:13670`, the
+            // grasshopper `:13820`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => "NPC_Killed_1",
+            // W4-d39 batch 3: the teeth bomb (`NPC.cs:13835`) + the
+            // archer pair (`:13848`) — NPCDeath1.
+            NpcKind::ChatteringTeethBomb
+            | NpcKind::CultistArcherBlue
+            | NpcKind::CultistArcherWhite => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -4307,6 +4352,8 @@ impl NpcKind {
             | NpcKind::CultistDragonBody3
             | NpcKind::CultistDragonTail
             | NpcKind::AncientCultistSquidhead => true,
+            // W4-d39: the Butterfly's `noGravity` row (`NPC.cs:13542`).
+            NpcKind::Butterfly => true,
             _ => false,
         }
     }
@@ -5008,6 +5055,16 @@ impl NpcKind {
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
             NpcKind::AncientCultistSquidhead => 86,
+            // W4-d39: the Butterfly's `SetDefaults` row — 356 aiStyle 65
+            // (`NPC.cs:13535`); the scorpion pair 7 (`:13665`), the
+            // grasshopper 1 (`:13815`).
+            NpcKind::Butterfly => 65,
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => 7,
+            NpcKind::Grasshopper => 1,
+            // W4-d39 batch 3: the teeth bomb 41 (`NPC.cs:13830`), the
+            // archer pair 3 (`:13843`).
+            NpcKind::ChatteringTeethBomb => 41,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 3,
         }
     }
 
@@ -6035,6 +6092,17 @@ impl NpcKind {
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
             NpcKind::AncientCultistSquidhead => (60.0, 60.0),
+            // W4-d39: the Butterfly's `SetDefaults` box — 356 10x10
+            // (`NPC.cs:13533-13534`); the scorpion pair 26x18
+            // (`:13663-13664`), the grasshopper 14x10 (`:13813-13814`).
+            NpcKind::Butterfly => (10.0, 10.0),
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => (26.0, 18.0),
+            NpcKind::Grasshopper => (14.0, 10.0),
+            // W4-d39 batch 3: the teeth bomb 20x26 (`NPC.cs:13828-
+            // 13829` — the explosion's 160x160 resize rides
+            // `size_override`), the archer pair 18x40 (`:13841-13842`).
+            NpcKind::ChatteringTeethBomb => (20.0, 26.0),
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => (18.0, 40.0),
         }
     }
 
@@ -7412,6 +7480,17 @@ impl NpcKind {
             | NpcKind::CultistDragonBody3
             | NpcKind::CultistDragonTail => 10000,
             NpcKind::AncientCultistSquidhead => 2000,
+            // W4-d39: the Butterfly's `lifeMax = 5` row
+            // (`NPC.cs:13538`); the scorpion pair `:13668`, the
+            // grasshopper `:13818`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => 5,
+            // W4-d39 batch 3: the teeth bomb 200 (`NPC.cs:13833`), the
+            // archer pair 210 (`:13846`).
+            NpcKind::ChatteringTeethBomb => 200,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 210,
         }
     }
 
@@ -8159,6 +8238,17 @@ impl NpcKind {
             | NpcKind::CultistDragonBody2
             | NpcKind::CultistDragonBody3
             NpcKind::AncientCultistSquidhead => 90,
+            // W4-d39: the Butterfly's `damage = 0` row
+            // (`NPC.cs:13536`); the scorpion pair `:13665`, the
+            // grasshopper `:13816`.
+            NpcKind::Butterfly
+            | NpcKind::ScorpionBlack
+            | NpcKind::Scorpion
+            | NpcKind::Grasshopper => 0,
+            // W4-d39 batch 3: the teeth bomb 120 (`NPC.cs:13831`), the
+            // archer pair 45 (`:13844`).
+            NpcKind::ChatteringTeethBomb => 120,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 45,
         }
     }
 }

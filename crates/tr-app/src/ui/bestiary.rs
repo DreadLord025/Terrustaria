@@ -2686,6 +2686,48 @@ fn portrait_data(
         // SetDefaults 32x32; the segments fold onto its entry). The 521
         // squidhead's 60x60 box rides its own entry.
         (NpcKind::AncientCultistSquidhead, _) => (sheet_i, 60.0, 60.0, 60.0, white),
+        // W4-d39 (research/125) — the Butterfly's portrait: the sheet's
+        // own row height over `Main.npcFrameCount[356]` = 24
+        // (`Main.cs:67082`), the frame width the sheet's own. The 24-row
+        // sheet is 8 colour bands × 3 flap rows — the portrait shows
+        // band 0's flap.
+        (NpcKind::Butterfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 24.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        // W4-d39 — the scorpion pair's 4-row strips + the grasshopper's
+        // 2-row strip (`Main.npcFrameCount[366/367]` = 4, `[377]` = 2;
+        // `Main.cs:67082`), the frame width the sheet's own.
+        (NpcKind::ScorpionBlack | NpcKind::Scorpion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::Grasshopper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+        // W4-d39 batch 3 — the teeth bomb's 4-row strip + the archer's
+        // 12-row strip (`Main.npcFrameCount[378]` = 4, `[379]` = 12;
+        // `Main.cs:67082`). The white archer folds onto 379's entry
+        // (the Hide=true exclusion) — its portrait is the blue's.
+        (NpcKind::ChatteringTeethBomb, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
     }
 
 /// `UIBestiaryEntryInfoPage`'s content for the selected entry: the

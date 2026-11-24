@@ -4182,6 +4182,68 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Windy Balloon",
+    // W4-d39 (research/125) — the Butterfly (356). The populator's
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` registers it as a
+    // `BestiaryEntry.Critter` (`CountsAsACritter`: lifeMax <= 5 && damage
+    // == 0, `NPC.cs:6887-6896`); the credit id is the NPCID field name
+    // (`GetBestiaryCreditId`'s IdDictionary reflection) and the name rides
+    // `Lang.GetNPCName` (en-US NPCs.json:316). The info row is
+    // `BestiaryDatabaseNPCsPopulator.cs:1028`.
+    BestiaryEntryDef {
+        credit_id: "Butterfly",
+        net_id: 356,
+        kind: NpcKind::Butterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Butterfly",
+    },
+    // W4-d39 — the scorpion pair (366/367) + the grasshopper (377), the
+    // same automated Critter registration; the info rows are
+    // `BestiaryDatabaseNPCsPopulator.cs:1100`/`:1071`/`:902`. Both
+    // scorpions display "Scorpion" (en-US NPCs.json:327-328).
+    BestiaryEntryDef {
+        credit_id: "ScorpionBlack",
+        net_id: 366,
+        kind: NpcKind::ScorpionBlack,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Scorpion",
+        net_id: 367,
+        kind: NpcKind::Scorpion,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Grasshopper",
+        net_id: 377,
+        kind: NpcKind::Grasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Grasshopper",
+    },
+    // W4-d39 batch 3 — the teeth bomb (378, the BloodMoon-tagged enemy,
+    // populator :1146) + the blue cultist archer (379, the Dungeon-
+    // tagged enemy, populator :1522). The white archer (380) is a
+    // Hide=true exclusion — NO entry (the fold above rides 379).
+    BestiaryEntryDef {
+        credit_id: "ChatteringTeethBomb",
+        net_id: 378,
+        kind: NpcKind::ChatteringTeethBomb,
+        variant: None,
+        quick_unlock: false,
+        name: "Chattering Teeth Bomb",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistArcherBlue",
+        net_id: 379,
+        kind: NpcKind::CultistArcherBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Cultist Archer",
     },
 ];
 
@@ -4197,6 +4259,7 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
         entry.quick_unlock,
         full,
     )
+    }
 }
 
 /// W4-c8 final — `NPC.CountsAsACritter` (`NPC.cs:6887-6897`): the
@@ -4628,6 +4691,10 @@ pub fn try_entry_for_npc(
         | NpcKind::CultistDragonBody3
         | NpcKind::CultistDragonBody4
         | NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
+        // W4-d39: the white cultist archer (380) is a Hide=true exclusion
+        // (`NPCID.cs:3735`, the populator's `GetExclusions`) — it folds
+        // onto the blue archer's 379 entry (the Sharkron2 precedent).
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -4804,6 +4871,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         | NpcKind::GreenDragonfly
         | NpcKind::OrangeDragonfly
         | NpcKind::YellowDragonfly => NpcKind::RedDragonfly,
+        // W4-d39: the white cultist archer (380) is a Hide=true exclusion
+        // (`NPCID.cs:3735`) — it rides the blue archer's 379 row (the
+        // Sharkron2 precedent). The DRAW sheet stays NPC_380 through
+        // `texture_net_id`'s own row.
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES
