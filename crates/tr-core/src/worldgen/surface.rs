@@ -2753,3 +2753,226 @@ mod fallen_log_tests {
         assert_eq!(rng_a.next_u32(), rng_b.next_u32(), "only the count roll drew");
     }
 }
+
+
+/// The `Spreading Grass` pass's classic arm
+/// (`WorldGen.cs:18237-18351`, W4-d104 pass 31 — the full pass name is
+/// `SpreadingGrassOnSurfaceSunflowersEvilsOnSurfaceAndLavaCleanup`): the
+/// two surface sweeps. The remix arm (`:18352-18443` — the surface-layer
+/// grass, the sunflowers, the evil Convert band, the hive/lava cleanup)
+/// is the remix-seed lane's (d107). The classic arm draws NO RNG — the
+/// step still takes its own `pass_rng("Spreading Grass")` stream slot so
+/// the remix arm lands without a ledger shift.
+///
+/// Sweep 1 (`:18242-18313`): over the ±50-margin columns down to
+/// `worldSurface`, the jungle-grass 60 spreads to adjacent dirt (grass
+/// over open air, mud under a cover), and the stone/snow/ore cells take
+/// the ±3-box's biome flavour (the sand 53 latch, the 59/60/147/161/
+/// 199/23 picks, the open-air-above `flag` gate, the evil cover veto and
+/// the jungle-band grass/mud split).
+///
+/// Sweep 2 (`:18314-18351`): over the ±10-margin columns, the FIRST
+/// surface dirt cell (the `flag2` open-sky latch, reset by any wall-less
+/// air cell) takes the LIVE `SpreadGrass(num3, num4)` call (`:18334`) —
+/// the defaults `dirt: 0, grass: 2, repeat: true` (`:75146`), so the
+/// bounded 3×3 recursion fires. The `repeat: false` call at `:18339` is
+/// ONLY the unreachable `catch` fallback (SpreadGrass carries its own
+/// try/catch `:75148/:75254` and never throws) — research/86 §6.1. The
+/// column scan breaks past `worldSurfaceHigh`.
+pub(crate) fn pass_spreading_grass(
+    world: &mut World,
+
+
+// --- Surface Ore and Stone (W4-d104 pass 32) --------------------------------
+
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70132`) — the patch
+/// scans' floor predicate; a null tile reads solid.
+fn solid_tile_patch(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
+}
+
+
+/// `Main.tileDungeon` (`Main.cs:7992-7997`) — the patch scans' dungeon
+/// veto.
+fn tile_dungeon(kind: u16) -> bool {
+    matches!(kind, 41 | 43 | 44 | 677 | 678 | 679)
+}
+
+
+// --- Place Fallen Log (W4-d104 pass 33) --------------------------------------
+
+/// `Skyblock.denySomeGeneration` (`WorldGen.cs:3133-3147`): a skyblock
+/// world denies the pass unless one of the surface-shape seeds is on
+/// (then it allows), else `!extraLivingTrees`.
+pub(crate) fn deny_some_generation(world: &World) -> bool {
+    if !world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return false;
+    }
+    let m = world.micro_seeds;
+    let surface_shape = m.contains(crate::seeds::MicroSeedFlags::WORLD_IS_FROZEN)
+        || m.contains(crate::seeds::MicroSeedFlags::SURFACE_IS_DESERT)
+        || m.contains(crate::seeds::MicroSeedFlags::SURFACE_IS_MUSHROOMS)
+        || m.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)
+        || m.contains(crate::seeds::MicroSeedFlags::HALLOW_ON_THE_SURFACE)
+        || m.contains(crate::seeds::MicroSeedFlags::NO_INFECTION)
+        || m.contains(crate::seeds::MicroSeedFlags::EXTRA_FLOATING_ISLANDS)
+        || m.contains(crate::seeds::MicroSeedFlags::EXTRA_LIQUID);
+    if surface_shape {
+        return false;
+    }
+    !m.contains(crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES)
+}
+
+
+/// `WorldGen.OreHelper` (`WorldGen.cs:10228-10240`): the ±1 box's stone
+/// 1 / snow 40 cells retype to dirt around every ore write.
+fn ore_helper(world: &mut World, x: i32, y: i32) {
+    for i in (x - 1)..=(x + 1) {
+        for j in (y - 1)..=(y + 1) {
+            if let Some(t) = world.tile_mut(i, j) {
+                if t.kind == 1 || t.kind == 40 {
+                    t.kind = 0;
+                }
+            }
+        }
+    }
+}
+
+
+/// `WorldGen.OrePatch` (`WorldGen.cs:10579-10705`): the surface ore vein
+/// — the copper/iron tier roll, the drop scan, the grass-triplet + wall
+/// vetoes, the ±10×+7..+30 body scan, the `Next(2)` sink, the seed write,
+/// the `Next(8, 13)`-bounded vein walk (the per-step x/y drift + the
+/// 1-in-3 extra sink + the 1-in-4 side pocket), then the drifting-blob
+/// carve/ore pass (`num7` rounds of the ±4·num6 box, the per-cell
+/// `num8`/`num9` radii with the 1-in-8 double).
+fn ore_patch(
+    world: &mut World,
+
+
+/// `WorldGen.StonePatch` (`WorldGen.cs:10242-10324`): the surface stone
+/// blob — the same drop/grass/wall/body gates (the body scan adds the
+/// 199/23 evil veto), then the drifting-blob retype (the solid cells →
+/// stone 1) with the pile decor on the stone-floor air cells (the 186
+/// large pile `Next(7, 13)` style + the two 185 small piles).
+fn stone_patch(world: &mut World, x: i32, y: i32, world_surface: f64, rng: &mut Rng) -> bool {
+    let mut num = y;
+    while !solid_tile_patch(world, x, num) {
+        num += 1;
+        if num as f64 > world_surface {
+            return false;
+        }
+    }
+    let grass_at = |world: &World, px: i32| {
+        world
+            .tile(px, num)
+            .is_some_and(|t| crate::tiledata::SET_GRASS.has(t.kind))
+    };
+    if !grass_at(world, x) || !grass_at(world, x - 1) || !grass_at(world, x + 1) {
+        return false;
+    }
+    if world.tile(x, num).map(|t| t.wall).unwrap_or(0) > 0 {
+        return false;
+    }
+    for i in (x - 10)..=(x + 10) {
+        for j in (num + 7)..=(num + 30) {
+            let bad = world.tile(i, j).is_none_or(|t| {
+                !t.active()
+                    || tile_dungeon(t.kind)
+                    || crate::tiledata::SET_CLOUDS.has(t.kind)
+                    || crate::tiledata::SET_CONVERSION_SAND.has(t.kind)
+                    || t.wall == 0
+                    || t.kind == 199
+                    || t.kind == 23
+            });
+            if bad {
+                return false;
+            }
+        }
+    }
+    let (mut cx, mut cy) = (x as f64, num as f64);
+    let mut vel_x = rng.next_f64() * 0.6 - 0.3;
+    let mut vel_y = rng.next_f64() * 0.5 + 0.5;
+    let mut num2 = rng.range(13, 18) as f64;
+    let mut num3 = rng.range(13, 19);
+    if rng.range(0, 3) == 0 {
+        num2 += rng.range(0, 3) as f64;
+    }
+    if rng.range(0, 3) == 0 {
+        num3 += rng.range(0, 3);
+    }
+    while num3 > 0 {
+        num3 -= 1;
+        let reach = (num2 as i32) * 4;
+        for k in (x - reach)..=(x + reach) {
+            for l in (num - reach)..=(num + reach) {
+                let mut num4 = num2 * (0.7 + rng.next_f64() * 0.6) * 0.3;
+                if rng.range(0, 8) == 0 {
+                    num4 *= 2.0;
+                }
+                let (dx, dy) = (cx - k as f64, cy - l as f64);
+                let dist = (dx * dx + dy * dy).sqrt();
+                // The pile decor (`:10294-10306`): the air cell over a
+                // stone floor with solid flanks.
+                let pile_seat = dist < num4 * 2.0
+                    && !world.tile(k, l).is_some_and(|t| t.active())
+                    && world.tile(k, l + 1).is_some_and(|t| t.active() && t.kind == 1)
+                    && rng.range(0, 7) == 0
+                    && solid_tile_patch(world, k - 1, l + 1)
+                    && solid_tile_patch(world, k + 1, l + 1);
+                if pile_seat {
+                    if rng.range(0, 3) != 0 {
+                        // `PlaceTile(k, l, 186, style: Next(7, 13))` —
+                        // the `Place3x2` route (`:59993-60002`).
+                        super::evil::place_3x2(world, k, l, 186, rng.range(7, 13));
+                    }
+                    if rng.range(0, 3) != 0 {
+                        super::spider_gem_moss::place_small_pile(
+                            world, k, l, rng.range(0, 6), 1,
+                        );
+                    }
+                    super::spider_gem_moss::place_small_pile(
+                        world, k, l, rng.range(0, 6), 0,
+                    );
+                }
+                if dist < num4 {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        if crate::tiledata::TILE_SOLID.has(t.kind) {
+                            t.kind = 1;
+                        }
+                    }
+                }
+            }
+        }
+        cx += vel_x;
+        cy += vel_y;
+        vel_x += rng.next_f64() * 0.2 - 0.1;
+        vel_y += rng.next_f64() * 0.2 - 0.1;
+        vel_x = vel_x.clamp(-0.3, 0.3);
+        vel_y = vel_y.clamp(0.5, 1.0);
+    }
+    true
+}
+
+
+/// The `Surface Ore and Stone` pass (`WorldGen.cs:18447-18511`, W4-d104
+/// pass 32): the ore-patch scatter (`Next(width*5/4200, width*10/4200)`
+/// attempts, each a `width/420`-budget retry over the beach-excluded,
+/// centre-excluded [0.48, 0.52] column band, the `worldSurfaceLow..
+/// worldSurface` row, the ±200 spacing from the recorded ore patches)
+/// then the stone-patch scatter (`Next(1, width*7/4200)` attempts, the
+/// [0.47, 0.53] centre band, the ±100 spacing). The `GenVars.orePatchX/
+/// numOrePatch` ledger (`GenVars.cs:240-244`, `maxOrePatch = 50` `:461`)
+/// rides the caller's slice — the record only fires below `maxOrePatch -
+/// 1` (`:18475`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pass_surface_ore_and_stone(
+    world: &mut World,

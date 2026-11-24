@@ -218,6 +218,25 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:15721 (W4-g36 A4 — the same LivingTrees message).
         "wood tree walls" => PassMessage::Key("WorldGeneration.LivingTrees"),
+        // WorldGen.cs:17863 (Floating Island Houses, W4-d104).
+        "floating island houses" => PassMessage::Key("WorldGeneration.FloatingIslandHouses"),
+        // WorldGen.cs:17879 (Quick Cleanup, W4-d104).
+        "quick cleanup" => PassMessage::Key("WorldGeneration.QuickCleanup"),
+        // WorldGen.cs:18191 — Lang.gen[36] (Hellforge, W4-d104).
+        "hellforge" => PassMessage::Gen(36),
+        // WorldGen.cs:18241 — Lang.gen[37] (Spreading Grass, W4-d104).
+        "spreading grass" => PassMessage::Gen(37),
+        // WorldGen.cs:18451 — the pass sets only progress.Set(1.0), no
+        // message (Surface Ore and Stone, W4-d104): absent from the table.
+        // WorldGen.cs:18524 — Lang.gen[85] (Place Fallen Log, W4-d104).
+        "place fallen log" => PassMessage::Gen(85),
+        // WorldGen.cs:18663 — Lang.gen[34] (Traps, W4-d104; the noTraps
+        // Lang.gen[91] arm is the seed lane's).
+        "traps" => PassMessage::Gen(34),
+        // WorldGen.cs:18792 — Lang.gen[89] (Piles, W4-d104).
+        "piles" => PassMessage::Gen(89),
+        // WorldGen.cs:19460 — the Spawn Point pass sets only
+        // progress.Set(1.0), no message (W4-d104): absent from the table.
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.

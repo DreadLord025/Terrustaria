@@ -4021,3 +4021,141 @@ mod tests {
         }
     }
 }
+
+
+/// `WorldGen.PlaceTile(i, j, 77)` (`WorldGen.cs:59342-60295`), the slice
+/// the Hellforge pass runs — the g37 B7 PlaceTile route grafted onto this
+/// lane's correctly-ordered pass (research/86 §6.2; g37 research/75 §2.7
+/// recommended the graft, its own slot ordering was the bug). The arms
+/// that bind for kind 77:
+/// - `:59345` the gen-time existing-488 veto;
+/// - `:59373` the entry gate `forced || EmptyTile || !tileSolid[77]` —
+///   `Main.tileSolid[77]` is FALSE (no `Main.cs` assignment; the port's
+///   generated `TILE_SOLID` bit 77 is 0), so the entry ALWAYS admits,
+///   even over an active solid cell (the Place3x2 body scan then
+///   refuses); `Collision.EmptyTile` reduces to `!active` at gen time;
+/// - `:59454-59471` the liquid gate — 77 is neither a torch nor in the
+///   refusal list, so liquid never vetoes;
+/// - `:59473-59476` the inactive-cell `Clear(Tile|TilePaint|Slope)`
+///   (`Tile.cs:744-790` — type/active/frames zeroed, paint + coatings +
+///   slope + halfBrick cleared; wall, liquid, wiring, actuator survive);
+/// - `:59477-59482` the `ResetsHalfBrickPlacementAttempt[77]` arm (the
+///   set is default-true, `TileID.cs:497` — 77 is NOT in the false
+///   list): an active non-frame-important cell loses halfBrick + frames
+///   even when the placement then fails;
+/// - `:60079-60083` the 77 dispatch → `Place3x2` + `SquareTileFrame`;
+/// - `:60255-60262` the tail: `TruncatesWalls[77]` is false
+///   (`TileID.cs:595`), the second `SquareTileFrame` runs, `result` =
+///   the centre cell ended active. The sound/dust block is gen-inert.
+/// Returns the C# `result`; the pass itself checks `type == 77`.
+fn place_tile_hellforge(world: &mut World, x: i32, y: i32) -> bool {
+    // `:59345`: during generation an existing fallen log blocks placement.
+    if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 488) {
+        return false;
+    }
+    // `:59349` (`77 < TileID.Count`) and `:59354` (bounds).
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return false;
+    }
+    let active_here = world.tile(x, y).is_some_and(|t| t.active());
+    // `:59373`: `forced(false) || EmptyTile || !tileSolid[77]` — the
+    // third disjunct always admits (77 is non-solid); ported verbatim.
+    let entry = !active_here || !crate::tiledata::TILE_SOLID.has(TILE_HELLFORGE);
+    if !entry {
+        return false;
+    }
+    // `:59375-59453`: the grass/moss/coral/drip guards — other kinds.
+    // `:59454-59471`: the liquid gate passes for 77 (see the doc).
+    if !active_here {
+        // `:59473-59476`: `Clear(Tile | TilePaint | Slope)`.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = 0;
+            t.flags &= !FLAG_ACTIVE;
+            t.frame_x = 0;
+            t.frame_y = 0;
+            t.set_paint(0);
+            t.flags &= !crate::tile::FLAG_FULLBRIGHT;
+            t.set_slope(0);
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        }
+        world.set_invisible_block(x, y, false);
+    } else if !world
+        .tile(x, y)
+        .is_some_and(|t| crate::tileobject::frame_important(t.kind))
+    {
+        // `:59477-59482`: `ResetsHalfBrickPlacementAttempt[77]` is true —
+        // an active non-frame-important cell loses halfBrick + frames.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            t.frame_y = 0;
+            t.frame_x = 0;
+        }
+    }
+    // `:60079-60083`: the 77 dispatch — `Place3x2` + `SquareTileFrame`.
+    super::evil::place_3x2(world, x, y, TILE_HELLFORGE, 0);
+    crate::edit::square_tile_frame_gen(world, x, y);
+    // `:60255-60262`: the tail re-frame + result (`TruncatesWalls[77]`
+    // is false — no `SquareWallFrame`).
+    if world.tile(x, y).is_some_and(|t| t.active()) {
+        crate::edit::square_tile_frame_gen(world, x, y);
+        return true;
+    }
+    false
+}
+
+
+/// The `Hellforge` pass (`WorldGen.cs:18187-18234`, W4-d104 pass 30):
+/// `maxTilesX / 200` forges, each a retry loop — the `Next(1, maxTilesX)`
+/// column + the `Next(maxTilesY - 250, maxTilesY - 30)` row, the wall
+/// 13/14 (the hell-house brick walls) gate, the drop to the first active
+/// cell (`j < maxTilesY - 20` bound), then `PlaceTile(num3, j - 1, 77)`
+/// (the full PlaceTile route — [`place_tile_hellforge`], the g37 B7
+/// graft). The 10000-failure valve ends the retry. The C#'s `try/catch`
+/// covers the out-of-bounds reads — the port's bounds-checked `tile`
+/// reads stand in (a miss counts as a failure). The slot stays AFTER
+/// `hell forts` (the wall-14 producer, `AddHellHouses` `:13840` inside
+/// Underworld `:13645`) — g37's before-hell-forts slot never fires
+/// (research/86 §1 B7 / §6.2).
+pub(crate) fn pass_hellforge(world: &mut World, rng: &mut super::Rng) -> u32 {
+    let num = world.width / 200;
+    // The sub-vanilla guard (the g37 graft): the C#
+    // `Next(maxTilesY - 250, maxTilesY - 30)` band goes negative below
+    // height 250 (the C# throws); a zero count draws nothing.
+    if world.height <= 250 || num <= 0 {
+        return 0;
+    }
+    let mut placed = 0u32;
+    for _ in 0..num {
+        let mut flag = false;
+        let mut num2 = 0;
+        while !flag {
+            let num3 = rng.range(1, world.width);
+            let mut j = rng.range(world.height - 250, world.height - 30);
+            let wall = world.tile(num3, j).map(|t| t.wall).unwrap_or(0);
+            if wall == 13 || wall == 14 {
+                // The drop scan (`:18205-18208`): the first active cell,
+                // bounded by `maxTilesY - 20`.
+                while !world.tile(num3, j).is_some_and(|t| t.active()) && j < world.height - 20 {
+                    j += 1;
+                }
+                j -= 1;
+                // `PlaceTile(num3, j, 77)` — the full route (the entry
+                // gate, the Clear arm, the halfBrick reset, the Place3x2
+                // dispatch + the SquareTileFrame calls).
+                place_tile_hellforge(world, num3, j);
+                if world.tile(num3, j).is_some_and(|t| t.kind == TILE_HELLFORGE) {
+                    flag = true;
+                    placed += 1;
+                } else {
+                    num2 += 1;
+                    if num2 >= 10000 {
+                        flag = true;
+                    }
+                }
+            }
+            // The C#'s wall-miss arm draws again with no failure count
+            // (only the place-failure and the catch arms bump `num2`).
+        }
+    }
+    placed
+}

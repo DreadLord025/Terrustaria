@@ -114,6 +114,7 @@ const NON_SOLID_SAVE_SLOPES: [i32; 8] = [131, 351, 336, 340, 342, 341, 343, 344]
 /// Shared with the Tile Cleanup pass's whole-world slope clear (W4-d106 R3,
 /// `cleanup.rs` — the generated `SET_SAVE_SLOPES` bitset is empty because the
 /// C# fills the set at runtime).
+/// Shared with the Quick Cleanup pass (W4-d104 pass 29, `:17953`).
 pub(crate) fn save_slopes(kind: i32) -> bool {
     (kind >= 0 && TILE_SOLID.has(kind as u16)) || NON_SOLID_SAVE_SLOPES.contains(&kind)
 }

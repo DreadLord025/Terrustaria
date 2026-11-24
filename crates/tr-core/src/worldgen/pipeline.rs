@@ -67,6 +67,7 @@ use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
 use super::wall_variety;
 use super::water_chests;
+use super::traps;
 use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
@@ -541,6 +542,9 @@ pub(crate) struct GenVars {
     pub(crate) snow_bottom: i32,
     pub(crate) snow_min_x: Vec<i32>,
     pub(crate) snow_max_x: Vec<i32>,
+    /// `GenVars.orePatchX` (`GenVars.cs:240-244`, reset `WorldGen.cs:8323`) - the
+    /// Surface Ore and Stone pass's +/-200/+-100 spacing ledger (W4-d104 pass 32).
+    pub(crate) ore_patch_x: Vec<i32>,
 }
 
 impl Default for GenVars {
@@ -619,6 +623,7 @@ impl Default for GenVars {
             snow_bottom: 0,
             snow_min_x: Vec::new(),
             snow_max_x: Vec::new(),
+            ore_patch_x: Vec::new(),
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1884,6 +1889,31 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // A4. RNG-free (the C# body draws nothing), so the insertion shifts
     // no step's ledger.
     step!("wood tree walls", "Wood Tree Walls", step_wood_tree_walls),
+    // The vanilla Quick Cleanup slot (`WorldGen.cs:17875`): right after
+    // Floating Island Houses, before Pots (`:17996`, the port's earlier
+    // `pots` step — a pre-scaffold deviation) — W4-d104 pass 29. The
+    // sweep's only draws are the beach sand drip's per-check `Next(4, 7)`
+    // on the fresh `pass_rng("Quick Cleanup")` stream.
+    step!("quick cleanup", "Quick Cleanup", step_quick_cleanup),
+    // The vanilla Hellforge slot (`WorldGen.cs:18187`): after Quick
+    // Cleanup (`:17875`), before Spreading Grass (`:18237`) — W4-d104
+    // pass 30. The retry draws ride the fresh `pass_rng("Hellforge")`
+    // stream.
+    step!("hellforge", "Hellforge", step_hellforge),
+    // The vanilla Spreading Grass slot (`WorldGen.cs:18237`): after
+    // Hellforge (`:18187`), before Surface Ore and Stone (`:18447`) —
+    // W4-d104 pass 31. The classic arm draws no RNG; the remix arm is the
+    // seed lane's.
+    step!("spreading grass", "Spreading Grass", step_spreading_grass),
+    // The vanilla Surface Ore and Stone slot (`WorldGen.cs:18447`): after
+    // Spreading Grass (`:18237`), before Place Fallen Log (`:18513`) —
+    // W4-d104 pass 32. The scatter draws ride the fresh
+    // `pass_rng("Surface Ore and Stone")` stream.
+    step!(
+        "surface ore and stone",
+        "Surface Ore and Stone",
+        step_surface_ore_and_stone
+    ),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     // The vanilla Settle Liquids Again slot (`WorldGen.cs:21246`): after the
@@ -3834,6 +3864,117 @@ fn step_floating_island_houses(
     );
 }
 
+/// The `Quick Cleanup` pass (`WorldGen.cs:17875-17993`, W4-d104 pass 29):
+/// the full-world tidy sweep on the fresh `pass_rng("Quick Cleanup")`
+/// stream. The `Skyblock.denyAllGeneration` gate (`:3131`) rides here.
+fn step_quick_cleanup(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    micro_finish::pass_quick_cleanup(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Quick Cleanup"),
+    );
+}
+
+/// The `Hellforge` pass (`WorldGen.cs:18187-18234`, W4-d104 pass 30):
+/// the hell-house forges on the fresh `pass_rng("Hellforge")` stream.
+/// The `Skyblock.denyAllGeneration` gate rides here.
+fn step_hellforge(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    structures::pass_hellforge(world, &mut streams.pass_rng("Hellforge"));
+}
+
+/// The `Spreading Grass` pass (`WorldGen.cs:18237-18446`, W4-d104 pass
+/// 31): the classic surface sweeps. The `Skyblock.denyAllGeneration` +
+/// `notTheBees && !remix && !tenthAnniversary` gate (`:18239`) rides
+/// here. The classic arm draws no RNG — the stream slot is the remix
+/// arm's future home.
+fn step_spreading_grass(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let not_the_bees = opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    if not_the_bees && !remix && !anniversary {
+        return;
+    }
+    let (world_surface, surface_high) = {
+        let l = gv.layers();
+        (l.world_surface, l.surface_high)
+    };
+    surface::pass_spreading_grass(
+        world,
+        world_surface,
+        surface_high,
+        gv.jungle_min_x,
+        gv.jungle_max_x,
+    );
+}
+
+/// The `Surface Ore and Stone` pass (`WorldGen.cs:18447-18511`, W4-d104
+/// pass 32): the ore/stone patch scatters on the fresh
+/// `pass_rng("Surface Ore and Stone")` stream. The
+/// `Skyblock.denyAllGeneration` gate rides here.
+fn step_surface_ore_and_stone(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let (surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_low, l.world_surface)
+    };
+    let copper = world.ore_tiers.copper as u16;
+    let iron = world.ore_tiers.iron as u16;
+    surface::pass_surface_ore_and_stone(
+        world,
+        surface_low,
+        world_surface,
+        copper,
+        iron,
+        &mut gv.ore_patch_x,
+        &mut streams.pass_rng("Surface Ore and Stone"),
+    );
+}
+
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -4311,7 +4452,7 @@ fn step_stalac(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -4366,7 +4507,8 @@ fn step_world_tail(
 ) {
     // Not a vanilla pass — the generate() tail writes plus the final two rng
     // draws. They MUST stay the last rng-consuming step
-    // (`worldgen_rolls_hell_back_style` pins the order).
+    // (`worldgen_rolls_hell_back_style` pins the order). The spawn moved
+    // to its own `Spawn Point` step (W4-d104 pass 36).
     let layers = gv.layers();
     world.world_surface = layers.world_surface;
     world.rock_layer = layers.rock_layer;
@@ -5331,7 +5473,7 @@ mod tests {
         // `granite` (vanilla `:12757` / `:12839`) тАФ same order, same
         // streams, +1 row.
         // W4-d102: + `silt`/`webs`/`slush`/`mountain caves`/`gems`/`clean up dirt`/`dirt rock wall runner` (7 rows).
-        assert_eq!(names.len(), 111);
+        assert_eq!(names.len(), 115);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -5917,6 +6059,42 @@ mod tests {
         assert!(cpos("Moss") == cpos("Gem Caves") + 1);
         assert!(cpos("Temple") == cpos("Moss") + 1);
         assert!(cpos("Webs And Honey") < cpos("Glowing Mushrooms and Jungle Plants"));
+    }
+
+    /// W4-d104 pass 28: `floating island houses` sits between the
+    /// `living trees` block and `trees` (Planting Trees,
+    /// `WorldGen.cs:19940`); the vanilla chain carries Floating Island
+    /// Houses (`:17859`) before Planting Trees too.
+    #[test]
+    fn w4_d104_28_the_island_houses_step_sits_before_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("floating island houses"), pos("living trees") + 1);
+        assert_eq!(pos("floating island houses") + 1, pos("quick cleanup"));
+        assert_eq!(pos("quick cleanup") + 1, pos("hellforge"));
+        assert_eq!(pos("hellforge") + 1, pos("spreading grass"));
+        assert_eq!(pos("spreading grass") + 1, pos("surface ore and stone"));
+        assert_eq!(pos("surface ore and stone") + 1, pos("place fallen log"));
+        assert_eq!(pos("place fallen log") + 1, pos("traps"));
+        assert_eq!(pos("traps") + 1, pos("piles"));
+        assert_eq!(pos("piles") + 1, pos("spawn point"));
+        assert!(pos("spawn point") < pos("trees"));
+        assert!(pos("floating islands") < pos("floating island houses"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Floating Islands") < cpos("Floating Island Houses"));
+        assert!(cpos("Floating Island Houses") < cpos("Planting Trees"));
+        // W4-d104 pass 29: Quick Cleanup follows the houses in the chain.
+        assert_eq!(cpos("Quick Cleanup"), cpos("Floating Island Houses") + 1);
+        // W4-d104 pass 30: Hellforge follows Quick Cleanup (Pots sits
+        // between in vanilla but executed earlier — the pre-scaffold
+        // deviation the lane doc records).
+        assert!(cpos("Hellforge") > cpos("Quick Cleanup"));
+        assert!(cpos("Hellforge") < cpos("Planting Trees"));
     }
 
     /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's

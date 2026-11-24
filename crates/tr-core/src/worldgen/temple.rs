@@ -1035,7 +1035,7 @@ fn outer_templed_sweeps(world: &mut World, b: Bounds) {
 /// `frameX = 54 * (style / 36) + Next(3) * 18` (the swing variant). The
 /// Lihzahrd door is style 11 (frameY 594/612/630). `false` = refused — no
 /// door (the vanilla no-anchor case).
-fn place_temple_door(world: &mut World, x: i32, y: i32, style: i32, rng: &mut super::Rng) -> bool {
+pub(crate) fn place_temple_door(world: &mut World, x: i32, y: i32, style: i32, rng: &mut super::Rng) -> bool {
     let tile_solid_at = |world: &World, x: i32, y: i32| {
         world
             .tile(x, y)

@@ -1874,6 +1874,11 @@ mod tests {
     /// `worldgen/desert.rs`). W4-c33d: the probe is a POSITIONAL read only —
     /// the stocking's flag12 is style/main based (`:36176`), so the probe
     /// no longer gates any loot row; this witness pins the probe itself.
+    /// The sky probe reads wall 73 — the pre-W4-d104 island houses wrote
+    /// `WALL_CLOUD` = 73; the faithful `IslandHouse` port writes the
+    /// vanilla sunplate wall 82 (`worldgen/island_houses.rs`), so the
+    /// probe's live writer is the loaded-world path — the fixture plants
+    /// the wall directly.
     #[test]
     fn the_sky_probe_reads_the_cloud_wall() {
         let mut w = rig();
@@ -2640,6 +2645,10 @@ mod tests {
         // The cycle itself moved to the site (`islands.rs::island_house`,
         // `GenVars.skyIslandHouseCount`); the hook inserts the site's pick
         // (`main_item`) into slot 0 — the walk order rides the same table.
+        // The cycle itself moved to the site (`island_houses.rs`'s
+        // `IslandHouse` port, `GenVars.skyIslandHouseCount` — W4-d104); the
+        // hook inserts the site's pick (`main_item`) into slot 0 — the walk
+        // order rides the same table.
         let mut stock = ChestStock::new(0x5EED, false);
         let mut stock2 = ChestStock::new(0x5EED, false);
         let mut mains = Vec::new();
