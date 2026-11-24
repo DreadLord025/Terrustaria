@@ -170,6 +170,15 @@ impl ApplicationHandler for App {
                                     let text = self.chat.text.clone();
                                     let is_client = self.is_client();
                                     let before = self.chat.messages.len();
+                                    // `Main.cs:18355`: `ChatManager.
+                                    // DebugCommands.Process` runs BEFORE the
+                                    // chat command processor — a handled
+                                    // debug command (`/hh`) skips the send.
+                                    if self.try_debug_command(&text) {
+                                        self.chat.text.clear();
+                                        self.chat.open = false;
+                                        return;
+                                    }
                                     if is_client {
                                         self.send_chat_message("", &text);
                                     } else {
@@ -237,6 +246,32 @@ impl ApplicationHandler for App {
                                 for ch in text.chars() {
                                     if !ch.is_control() {
                                         self.chat.text.push(ch);
+                                    }
+                                }
+                            }
+                            return;
+                        }
+                        // The Journey search box's text input
+                        // (`UISearchBar.DrawSelf`, `UISearchBar.cs:145-167`:
+                        // `Main.GetInputText` while `IsWritingText`) — the
+                        // port's chat-style `event.text` seam. Enter/Escape
+                        // stop the input (`:156-164`), Backspace trims, the
+                        // printable text appends (the 50-char cap,
+                        // `UISearchBar.cs:63`).
+                        if self.journey.search_writing {
+                            match code {
+                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape => {
+                                    self.journey.search_writing = false;
+                                }
+                                KeyCode::Backspace => {
+                                    self.journey.search.pop();
+                                }
+                                _ => {}
+                            }
+                            if let Some(text) = event.text.as_ref() {
+                                for ch in text.chars() {
+                                    if !ch.is_control() && self.journey.search.chars().count() < 50 {
+                                        self.journey.search.push(ch);
                                     }
                                 }
                             }
@@ -335,6 +370,35 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // `UIDebugCommandsList`'s list wheel (W4-d85) — the same
+                // `UIList.ScrollWheel` arm as the achievements overlay.
+                if self.debug_commands_open {
+                    self.pointer.queue_scroll(d.round() as i32);
+                    if matches!(
+                        self.pointer.scroll_wheel(Some(SCROLL_UI)),
+                        Some(PointerEvent::ScrollWheel { .. })
+                    ) {
+                        self.scroll_debug_commands(d.round() as i32);
+                    }
+                    return;
+                }
+                // `UIDebugLoadoutsList`'s list wheel (W4-d85 row 8).
+                if self.debug_loadouts_open {
+                    self.pointer.queue_scroll(d.round() as i32);
+                    if matches!(
+                        self.pointer.scroll_wheel(Some(SCROLL_UI)),
+                        Some(PointerEvent::ScrollWheel { .. })
+                    ) {
+                        self.scroll_debug_loadouts(d.round() as i32);
+                    }
+                    return;
+                }
+                // The Journey duplication grid's list scroll (W4-c24) —
+                // `UIList.ScrollWheel` (`UIList.cs:107-114`), before the
+                // hotbar cycle claims the notch.
+                if self.journey_wheel(d.round() as i32) {
+                    return;
+                }
                 // `UIList.ScrollWheel` through `UserInterface.Update`'s wheel
                 // arm (`:219-222`): while a list screen is live the `UIList`
                 // under the pointer owns the notch — `ViewPosition -=
@@ -342,6 +406,15 @@ impl ApplicationHandler for App {
                 // the accumulator whatever the hit, so the hotbar arm below
                 // never sees a front-screen wheel.
                 if self.front_wheel(d.round() as i32) {
+                    return;
+                }
+                // `UIReportsPage`'s log wheel (W4-d85) — the page's own
+                // `UIList` + attach-on-overflow scrollbar.
+                if self.reports_wheel(d.round() as i32) {
+                    return;
+                }
+                // The secret-seeds list's wheel (W4-d85 row 12).
+                if self.secret_seeds_wheel(d.round() as i32) {
                     return;
                 }
                 if self.map.as_ref().is_some_and(|m| m.open) {
@@ -445,6 +518,24 @@ impl ApplicationHandler for App {
                                     self.handle_achievements_clicks();
                                     return;
                                 }
+                                if pressed && self.debug_commands_open {
+                                    self.ui_left_press = true;
+                                    self.handle_debug_commands_clicks();
+                                    return;
+                                }
+                                if pressed && self.debug_loadouts_open {
+                                    self.ui_left_press = true;
+                                    self.handle_debug_loadouts_clicks();
+                                    return;
+                                }
+                                // `IssueReportsIndicator.Draw`'s click arm
+                                // (`IssueReportsIndicator.cs:64-68`): the
+                                // menu-tail button draws over the rows
+                                // (`Main.cs:51886`), so its hover takes the
+                                // press first — `OpenReportsMenu` + `Hide`.
+                                if pressed && self.issue_indicator_click() {
+                                    return;
+                                }
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
                                 // Bug 17: the legacy menu's click tick —
@@ -458,6 +549,13 @@ impl ApplicationHandler for App {
                             return;
                         }
                         if self.front.is_some() {
+                            // The indicator draws over the 888 screens too
+                            // (`DrawMenu`'s tail, `Main.cs:51886` — after
+                            // `MenuUI.Draw` at `:51063`), so its hover takes
+                            // the press before the card table.
+                            if pressed && self.issue_indicator_click() {
+                                return;
+                            }
                             // The 888 screens are click-driven: the press
                             // routes through the card-hit table (`Main.
                             // MouseUI`'s click while `MenuUI` is live). The
@@ -491,6 +589,25 @@ impl ApplicationHandler for App {
                             // the machine's `LastClicked` compares.
                             let hit = self.front_hit();
                             if pressed {
+                                // `IngameFancyUI.Draw`'s `GUIChatDraw` arm
+                                // (`:212-215`): the sign dialog keeps drawing
+                                // (and clicking — `DrawButtons`' inline
+                                // `mouseLeft && mouseLeftRelease`,
+                                // `NPCChatPanel.cs:150-154`) while the ctx-1
+                                // keyboard is up. The dialog's Save/Close
+                                // take the press before the keyboard's own
+                                // click table (the rects never overlap —
+                                // the dialog sits at y≈100, the keys at
+                                // y≈270+). W4-f22.
+                                if self.sign_editing() {
+                                    self.ui_left_press = true;
+                                    self.handle_npc_chat_clicks();
+                                    let consumed = !self.ui_left_press;
+                                    self.ui_left_press = false;
+                                    if consumed {
+                                        return;
+                                    }
+                                }
                                 if !self.pointer.clicks_disabled() {
                                     self.pointer_event = self.pointer.press(
                                         now,
@@ -695,6 +812,13 @@ impl App {
                 } else if self.bestiary_open {
                     self.bestiary_open = false;
                     self.bestiary_selected = None;
+                } else if self.debug_commands_open {
+                    // The overlay's Escape closes it (`IngameFancyUI`'s
+                    // GoBack — the port's Escape stand-in, the achievements
+                    // overlay's M6-ACH-2 pattern).
+                    self.close_debug_commands();
+                } else if self.debug_loadouts_open {
+                    self.close_debug_loadouts();
                 } else if self.emotes.menu_open {
                     self.emotes.close();
                 } else if self.map.as_ref().is_some_and(|m| m.open) {
@@ -704,6 +828,11 @@ impl App {
                     if let Some(m) = self.map.as_mut() {
                         m.set_open(false);
                     }
+                } else if self.player.as_ref().is_some_and(|p| p.sign >= 0) {
+                    // `Player.ToggleInv`'s sign arm (`Player.cs:5017-5020`):
+                    // `CloseSign()` — sound 11, the dialog closes, no
+                    // inventory toggle (W4-f22).
+                    crate::signs::close_sign(self, false);
                 } else {
                     self.inventory_open = !self.inventory_open;
                 }
@@ -728,6 +857,9 @@ impl App {
                 log::info!("light mode: {}", self.light_mode.label());
             }
             KeyCode::F9 => self.save_world(),
+            // `ToggleCreativeMenu` (`PlayerInput.cs:2087`, default `C`) →
+            // `Player.ToggleCreativeMenu` (`Player.cs:5091-5105`).
+            KeyCode::KeyC => self.toggle_creative_menu_key(),
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
                 // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
                 // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only

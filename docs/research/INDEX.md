@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -49,7 +49,7 @@ per `docs/superpowers` agreements).
 | 27 | Mounts / pets / minecart / grapple | `27-mounts-pets-vehicles.md` | в¬њ |
 | 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | в¬њ |
 | 29 | Town NPCs (housing/happiness/pylon) | `29-town-npc-housing.md` | в¬њ |
-| 30 | Achievements / bestiary | `30-achievements-bestiary.md` | в¬њ |
+| 30 | Achievements / bestiary | `30-achievements-bestiary.md` | ✅ **W4-c36 RETIRE FINAL-FINAL** (the d43r DEAD-pre-work probe + the HIGH slime-8 seed, the all-357-tip 180-condition FINAL census — 17 no-path rows, the 5043 keep-f33 drop-hunk, the achievement-family merger-bible; RETIRE (1)-(4)) |
 | 31 | Golf / ball physics | `31-golf-ball-physics.md` | в¬њ |
 | 32 | Sound / audio engine | `32-sound-audio.md` | в¬њ |
 | 33 | Localization | `33-localization.md` | в¬њ |
@@ -122,6 +122,15 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 | 204 | Cage critter items census + break-drop cascade + SEAL (W4-g34: the 92-kind union, the d105 Chillet port, the g78 centre-gap FIX-ONCE, the cage-family bible) — renumbered 68→204 per registry §3 at the batch-H merge (f37 keeps 68) | `204-cage-critter-items-census.md` | ✅ SEALED |
 | 232 | The f11 unique folds EXECUTED on the c42 union (the fold receipt: per-hunk landing table, KEEP-shape verification, the adapted witness ledger) — renumbered 133-fold-receipt→232 per registry §3 at the batch-H merge (f11 keeps 133) | `232-fold-receipt.md` | ✅ |
 | 185 | DrawData wiring lane 1 (W4-g33: the critter-cage animator + draw wire scope record + the limitations register; renumbered 65→185 per registry §3 at the batch-H merge — the g33 module/wiring dropped per research/197 §6, the g34 union is the keep-one) | `185-drawdata-wiring-lane1.md` | ✅ |
+| 344 | The Journey family FINAL (W4-c24: the research/duplication/powers UI + sim wiring, the tracker save, c24c's sacrifice tooltip row + TRASH_COMPACTOR + growth rate, the swap carry; the JOURNEY-SEAL receipts + the merger keep-one table; registry **344** per research/150 §8.7 FROZEN table — renumber chain 308→344, the 308 self-pick SUPERSEDED, g13 KEEPS 308) | `344-journey-family-final.md` | ✅ FINAL (code-only) |
+| 314 | W4-c25 RETIRE FINAL: keyboard-text-field census + the f22 sign co-lane keep-both compose-verify (re-confirmed at f22 tip c727ebc02) + the KEYBOARD-FAMILY bible SEALED (registry §8.1 ROUND 4 FINAL: chain 281→314, d54 a15cb634b — the 281-block self-pick race) | `314-c25-keyboard-text-field-final.md` | ✅ SEALED |
+| W4-f12-sweep | The FULL 270-id UpdateBuffs stat-arm census (C# case-list vs every ownership set; 10 gaps closed inline; the nebula-twin f49 one-writer contract + the buff-321 d115 keep-one note; the final-phase g27 cross-verify appended) | `W4-f12-sweep-census.md` | ✅ set-diff EMPTY |
+| W4-f12-final | The buff-HUD final census (icon draw / tooltip lines / time display / debuff cancel / g27 canonical; the 94/396 tooltip arms restored, the icon-text font/scale/tint fixed; ANALYSIS "The buff-HUD final census") | `W4-f12-sweep-census.md` + ANALYSIS | ✅ 5 witnesses written not run |
+| W4-f12-closeout | The 5-item buff closeout (f49d status NOT-landed → the exact fold_orb bridge hunk published; the animation census — no Main.buffFrame exists, 400 static icons, Ice Barrier 62 the one wired frame anim; the stack-source census COMPLETE — xN is projectile counts, re-grant semantics per-buff; the FINAL keep-one re-sweep script — set-diff EMPTY + TWO NEW f50 cross-tree dups ruled (Panic-63 inline, the beetle/solar ladder re-derivation); ANALYSIS "The buff closeout") | `W4-f12-closeout.md` + `tools/w4_f12_closeout_sweep.py` | ✅ 4 witnesses written not run, script run green |
+| W4-f12-retire | The retire receipts (f50 tip ff56e6e51 retired NOTHING → both dup rulings RE-FLAGGED with exact drop-hunks :7010-7013 / :4606-4708+:4582+:7451-lift+:6203-6205-flag-fix + the two witness retargets; f49 6c0ee2aa2 R3-exec still NOT landed → both-halves bridge/deletion ranges pinned; d73 33c38000a ancestor + blob-identical boosters, sweep re-run set-diff EMPTY; the ONE-paragraph BUFF merger-instruction — f12-canonical + g27-orbs + d115-321-folds + f50-drops + f49-bridge) | `W4-f12-closeout.md` "RETIRE phase" | ✅ receipts recorded, script re-run green |
+| 376 | Buff-HUD family FINAL census + bible (W4-c26 compose: the landed census, the f12/d72 compose rulings — one buff_tooltip / buff_icon_text kept / placeholder kept / the retail Game.json fixture correction; the buffFrame NONEXISTENT ledger — zero hits tree-wide, 400 static icons, the full C#-facts table; the family C#→Rust map; the open cross-tree merge obligations) — renumbered 64→376 per registry §10 (64 = d64's round-1 winner) | `376-buff-hud-family.md` | ✅ FINAL, witnesses written not run |
+| 362 | W4-g55 LOADOUT-REST FINAL: the loadout-family declaration + the persist/net compose census (the death sweep + angler scan + share-hint disable LANDED; the f44/g88/g87 compose confirmed; the net-147 apply g55 keep-one over g51's stub; code-only retire; renamed 334→362 per registry-150 §9.2) | `362-g55-loadout-family-final.md` | ✅ |
+| 333 | The housing-relocation family bible (W4-d119 FINAL: the d118/d119/g44/f43/f45/f38/d43/c41 merger map, the g44e §5 mutual receipt CONSUMED, the 678-flag8 gate compose, the walker-seam re-verify; renumbered 304→333 per registry 150 §9 UNIFIED FINAL — d50-§7.4-KEEPS-304; code-only) | `333-housing-relocation-family-bible.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

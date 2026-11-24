@@ -621,6 +621,14 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Main.player[id].CurrentLoadoutIndex` + `hideVisibleAccessory` as the
+    /// `147 SyncLoadout` body carries them (`NetMessage.cs:1624-1628`,
+    /// `MessageBuffer.cs:4328-4343`). The port does not simulate a remote
+    /// player's equipment swap (no per-peer `EquipmentLoadout` arrays), so the
+    /// peer's loadout is stored-not-simulated on the render snapshot; the
+    /// local player's own `147` runs the real swap (`player.rs`). `None` until
+    /// the first `147` arrives.
+    pub loadout: Option<SyncLoadout>,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four

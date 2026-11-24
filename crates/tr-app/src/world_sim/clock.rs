@@ -128,12 +128,27 @@ pub(crate) fn advance_time_with_events(
     if was_day && !app.world.day_time && eclipse_was_up {
         let _ = app.notify_progression_net(3);
     }
+    // W4-c36 — `UpdateTime_StartNight`'s natural blood-moon start fires
+    // progression 4 beside the flag set (`Main.cs:65348-65353`: the
+    // NotifyProgressionEvent + the Lang.misc[8] broadcast the caller rides).
+    // No shipped row listens on id 4 (`AchievementInitializer` never calls
+    // `Create(4)`) — the wire is the faithful no-op, like the C#'s.
+    if blood_moon_started {
+        let _ = app.notify_progression_net(4);
+    }
     if !was_day && app.world.day_time {
         if blood_moon_was_up {
             let _ = app.notify_progression_net(5);
         }
         // `Main.cs:65374`'s dawn row.
         let _ = app.notify_progression_net(1);
+        // W4-c36 — `UpdateTime_StartDay`'s natural eclipse start fires
+        // progression 2 right after the flag set (`Main.cs:65420-65425`),
+        // before the Lang.misc[20] broadcast. No shipped row listens on
+        // id 2 either — the faithful no-op wire.
+        if eclipse_started {
+            let _ = app.notify_progression_net(2);
+        }
     }
     // The event schedulers' draws ride the same UpdateTime stream the
     // boundary rolls consumed (S1-A-10: one stream, the C#'s
@@ -142,6 +157,11 @@ pub(crate) fn advance_time_with_events(
     if was_day && !app.world.day_time {
         // StartNight: the eclipse row cleared above, then the world clear.
         app.world.eclipse = false;
+        // `Main.cs:65222` — `NPC.freeCake = false` on EVERY dusk (W4-d120):
+        // the cake gift only lives for the party day it was earned on; the
+        // FreeCakeDialogue's talk arm (`world_sim/npcs.rs`) consumes it
+        // before then, else the latch dies here.
+        app.world_events.free_cake = false;
         // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
         // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
         // S1-F-14.
@@ -632,5 +652,28 @@ mod tests {
         w.time = 16200.0;
         advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
         assert!(!w.day_time, "midnight is the middle of the night");
+    }
+
+    /// W4-d120 — `Main.cs:65222`: every dusk clears `NPC.freeCake`, so the
+    /// Party Girl's cake gift only lives for the party day it was earned on
+    /// (`BirthdayParty.cs:106` sets it at dawn). The dawn boundary must NOT
+    /// clear it — the morning party sets it on that same tick.
+    #[test]
+    fn dusk_clears_the_free_cake_latch() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = true;
+        app.world.time = 53999.0;
+        app.world_events.free_cake = true;
+        advance_time_with_events(&mut app, 5.0, false);
+        assert!(!app.world.day_time, "dusk ran");
+        assert!(!app.world_events.free_cake, "`Main.cs:65222` clears the latch");
+        // The dawn side leaves it alone (the morning party may set it).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = false;
+        app.world.time = 32399.0;
+        app.world_events.free_cake = true;
+        advance_time_with_events(&mut app, 5.0, false);
+        assert!(app.world.day_time, "dawn ran");
+        assert!(app.world_events.free_cake, "StartDay keeps the latch");
     }
 }

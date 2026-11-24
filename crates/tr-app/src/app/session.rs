@@ -151,6 +151,80 @@ impl App {
         }
     }
 
+    /// `UICharacterListItem.OnFinishedSettingName`'s `_data.Rename(newName)`
+    /// (`:208-214` -> `PlayerFileData.Rename`, `IO/PlayerFileData.cs:207-214`):
+    /// the trimmed name lands on the card's `.plr` through the read-modify-
+    /// write (`player_file::rename_player_file` — the port has no live
+    /// `Player` per card, so the file IS the rename target, research/19 M1).
+    /// The session stand-in IS the live player (`PlayerFileData.Rename` sets
+    /// `Player.name`), so its rename lands on `player_name`/`session_draft`
+    /// and survives the `OpenCharacterSelectUI` re-list. A `TR_FAKE_CHARS`
+    /// fake renames in memory only — the re-list rebuilds it (the same shape
+    /// as the fake erase). A failed write keeps the old name and notices
+    /// (the port's `front_hint`, the vanilla `FancyErrorPrinter` dialog is
+    /// out of scope).
+    pub(crate) fn rename_player_entry(&mut self, index: Option<usize>, new_name: &str) {
+        let Some(i) = index else {
+            return;
+        };
+        let (path, old_name) = match self.players.get(i) {
+            Some(e) => (e.path.clone(), e.name.clone()),
+            None => return,
+        };
+        if let Some(path) = path {
+            if let Err(e) = crate::player_file::rename_player_file(&path, new_name) {
+                log::warn!("character rename failed: {e}");
+                self.front_hint = Some(format!("renaming failed: {e}"));
+                return;
+            }
+            if let Some(entry) = self.players.get_mut(i) {
+                entry.name = new_name.to_string();
+            }
+        } else if old_name == self.session_entry().name {
+            // The live-player arm (`PlayerFileData.cs:209-212`): the session
+            // character's name is the App's `player_name`/creation draft.
+            self.player_name = new_name.to_string();
+            if let Some(draft) = self.session_draft.as_mut() {
+                draft.name = new_name.to_string();
+            }
+            if let Some(entry) = self.players.get_mut(i) {
+                entry.name = new_name.to_string();
+            }
+        } else if let Some(entry) = self.players.get_mut(i) {
+            entry.name = new_name.to_string();
+        }
+    }
+
+    /// `UIWorldListItem.OnFinishedSettingName`'s `_data.Rename(newDisplayName)`
+    /// (`:427-432` -> `WorldFileData.Rename` -> `WorldGen.RenameWorld`,
+    /// `IO/WorldFileData.cs:444-453`, `WorldGen.cs:6721-6753`): the trimmed
+    /// name lands in the world file's header (`save_list::rename_world` —
+    /// the load-rename-save chain's port, the file keeps its stem). The
+    /// in-memory card mirrors the write; the caller's `menuMode = 6` reopen
+    /// re-lists from the rewritten header. A failed write keeps the old name
+    /// and notices (the C#'s `loadFailed` arm re-lists without writing,
+    /// `WorldGen.cs:6735-6743`).
+    pub(crate) fn rename_world_entry(&mut self, index: Option<usize>, new_name: &str) {
+        let Some(i) = index else {
+            return;
+        };
+        let path = match self.worlds.get(i) {
+            Some(e) => e.path.clone(),
+            None => return,
+        };
+        if let Some(path) = path {
+            if !ui::save_list::rename_world(&path, new_name) {
+                log::warn!("world rename failed: {}", path.display());
+                self.front_hint =
+                    Some("renaming failed: the world file could not be rewritten".into());
+                return;
+            }
+        }
+        if let Some(entry) = self.worlds.get_mut(i) {
+            entry.name = new_name.to_string();
+        }
+    }
+
     /// `UIWorldLoad.Update`'s Inventory-abort arm (`UIWorldLoad.cs:54-58`):
     /// `QueuedAbort = true` once (the `!QueuedAbort` gate) + sound 11. The
     /// key path calls this on the Inventory press edge; the flag reaches
@@ -267,6 +341,13 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
         // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
         last_saved_binary: 0,
+        // The Journey research pairs: a fresh character has none.
+        research: Vec::new(),
+        powers: crate::player_file::CreativePowersSave::written_fresh(),
+        // A freshly-created character is on loadout 0 with three empty sets
+        // (`Player.cs:3200-3207`).
+        current_loadout_index: 0,
+        loadouts: Default::default(),
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

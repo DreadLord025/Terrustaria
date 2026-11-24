@@ -1256,6 +1256,9 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     // count toward the same world counter).
     world.shadow_orb_smashed = true;
     world.shadow_orb_count += 1;
+    // W4-c36 — `:54331`: the smash fires progression 7 (SMASHING_POPPET);
+    // the app's break seam drains the flag into the manager.
+    world.orb_smash_notify_pending = true;
     Some(CheckPlan {
         drop: Some(crate::edit::ObjectDrop {
             tile_kind: kind,
@@ -5600,12 +5603,16 @@ mod tests {
         let _ = kill;
         assert!(w.shadow_orb_smashed, "the smash flag");
         assert_eq!(w.shadow_orb_count, 1, "the shared counter");
+        // W4-c36 — `:54331`: the smash queues the progression-7 notify.
+        assert!(w.orb_smash_notify_pending, "the SMASHING_POPPET notify");
+        w.orb_smash_notify_pending = false;
         // A second hit on the already-broken object does not re-flag.
         let _ = super::kill_tile(&mut w, 100, 100, true);
         assert_eq!(
             w.shadow_orb_count, 1,
             "the broken object holds its single count"
         );
+        assert!(!w.orb_smash_notify_pending, "no second notify");
         // The tiles are gone.
         assert!(!w.tile(100, 100).unwrap().active());
     }

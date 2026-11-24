@@ -88,6 +88,61 @@ pub use pumpkins::{grow_pumpkin, halloween_pumpkins, place_pumpkin};
 /// `TileID.Sets.CanGrowCrystalShards` (`TileID.cs:585`).
 pub const CAN_GROW_CRYSTAL_SHARDS: [u16; 5] = [117, 116, 164, 402, 403];
 
+/// The `WorldGen.TrySpawningTownNPC` walker seam (W4-d119 escalation 1): the
+/// two growth walkers' inactive-tile arms (`WorldGen.cs:72497` overground /
+/// `:73807` underground) call `TrySpawningTownNPC`, which in the C# runs
+/// `SpawnTownNPC` INLINE. The port's walkers are pure tr-core world fns with
+/// no NPC store, so the gate's verdict rides out as a spawn-request intent:
+/// the walker pushes `(x, y)` onto [`TownSpawnWalker::requests`] and the app
+/// drains the queue at the `UpdateWorldGen` slot, running the full
+/// `crate::town_spawn::spawn_town_npc` there (the wiring statue-spawns
+/// `take_statue_spawns` event-queue precedent). `None` keeps a pure world
+/// walk NPC-free (every tr-core growth test passes `None`).
+pub struct TownSpawnWalker<'a> {
+    /// `Main.invasionType` (`:74871`).
+    pub invasion_type: i32,
+    /// `Main.eclipse` (`:74871`).
+    pub eclipse: bool,
+    /// `WorldGen.npcSpawnDelay` (`:4238`) — the `++` counter, reset on fire.
+    pub npc_spawn_delay: &'a mut i32,
+    /// `WorldGen.npcSpawnPeriod` (`:4240`) — `20 * GetWorldUpdateRate()`,
+    /// re-armed every `UpdateWorld` head (`:71549`).
+    pub npc_spawn_period: i32,
+    /// The shared spawn-request queue the app drains (one `(x, y)` per fire).
+    pub requests: &'a mut Vec<(i32, i32)>,
+}
+
+/// `WorldGen.TrySpawningTownNPC` (`WorldGen.cs:74869-74882`), gate half.
+/// Verbatim: `Main.invasionType <= 0 && !Main.eclipse &&
+/// ++WorldGen.npcSpawnDelay >= WorldGen.npcSpawnPeriod` (`:74871`), the
+/// counter resets on fire (`:74873`), and the ONE `Main.rand.Next(4)` draw
+/// only when the picked tile's wall is 34 (`:74874` short-circuit — a
+/// non-34 wall draws NOTHING). On fire the `(x, y)` intent is queued; the
+/// `tileSolid[379]` window + `SpawnTownNPC` (`:74876-74879`) are the app
+/// drain's (the generated `TILE_SOLID` base table already carries 379).
+pub fn try_spawning_town_npc(
+    world: &World,
+    x: i32,
+    y: i32,
+    ts: &mut TownSpawnWalker<'_>,
+    rng: &mut UnifiedRandom,
+) {
+    // `:74871`: the invasion/eclipse guard BEFORE the counter increment.
+    if ts.invasion_type > 0 || ts.eclipse {
+        return;
+    }
+    *ts.npc_spawn_delay += 1;
+    if *ts.npc_spawn_delay < ts.npc_spawn_period {
+        return;
+    }
+    *ts.npc_spawn_delay = 0;
+    // `:74874`: `Main.tile[x, y].wall != 34 || Main.rand.Next(4) == 0`.
+    let wall = world.tile(x, y).map(|t| t.wall).unwrap_or(0);
+    if wall != 34 || rng.next_max(4) == 0 {
+        ts.requests.push((x, y));
+    }
+}
+
 /// `GetWorldUpdateRate` (`WorldGen.cs:72020-72030`): `min(dayRate, 24)`,
 /// 0 while the time freezes.
 pub fn world_update_rate(day_rate: i32, freeze_time: bool) -> i32 {
@@ -700,6 +755,25 @@ pub fn update_world_overground_tile(
     wind_speed: f32,
     rng: &mut UnifiedRandom,
 ) {
+    update_world_overground_tile_ts(world, x, y, day_time, raining, max_raining, wind_speed, rng, None)
+}
+
+/// [`update_world_overground_tile`] with the `TrySpawningTownNPC` walker seam
+/// (W4-d119 escalation 1): `ts` carries the gate's statics + the shared
+/// spawn-request queue. `None` keeps the pure world walk (the landed
+/// behaviour — every tr-core test passes `None`).
+#[allow(clippy::too_many_arguments)]
+pub fn update_world_overground_tile_ts(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    day_time: bool,
+    raining: bool,
+    max_raining: f32,
+    wind_speed: f32,
+    rng: &mut UnifiedRandom,
+    ts: Option<&mut TownSpawnWalker<'_>>,
+) {
     let kind = world.tile(x, y).map(|t| (t.active(), t.kind));
     let Some((active, kind)) = kind else {
         return;
@@ -708,6 +782,13 @@ pub fn update_world_overground_tile(
         // The beach-shells arm (`:72073`): an inactive beach cell under the
         // surface grows a shell pile behind the wind/rain odds.
         grow_shell_pile(world, x, y, wind_speed, max_raining, raining, rng);
+        // `WorldGen.cs:72491-72498` — the inactive-tile `else`: the web arm
+        // (`:72493-72496`, wall 62 + no liquid) then `TrySpawningTownNPC`
+        // (`:72497`). The web arm is parked (the overground slice); the
+        // town-NPC gate rides the seam.
+        if let Some(ts) = ts {
+            try_spawning_town_npc(world, x, y, ts, rng);
+        }
         return;
     }
     // `:72063-72067`: the tombstone arm — a grave cell rolls
@@ -923,6 +1004,28 @@ pub fn update_world(
     wind_speed: f32,
     rng: &mut UnifiedRandom,
 ) -> u32 {
+    update_world_ts(
+        world, day_rate, raining, freeze_time, allowed_to_spread, day_time,
+        max_raining, wind_speed, rng, None,
+    )
+}
+
+/// [`update_world`] with the `TrySpawningTownNPC` walker seam (W4-d119
+/// escalation 1): `ts` threads the gate's statics + the shared spawn-request
+/// queue through both pick loops. `None` keeps the pure world walk.
+#[allow(clippy::too_many_arguments)]
+pub fn update_world_ts(
+    world: &mut World,
+    day_rate: i32,
+    raining: bool,
+    freeze_time: bool,
+    allowed_to_spread: bool,
+    day_time: bool,
+    max_raining: f32,
+    wind_speed: f32,
+    rng: &mut UnifiedRandom,
+    mut ts: Option<&mut TownSpawnWalker<'_>>,
+) -> u32 {
     let rate = world_update_rate(day_rate, freeze_time);
     if rate == 0 {
         return 0;
@@ -944,7 +1047,7 @@ pub fn update_world(
         }
         let x = rng.next_range(10, world.width - 10);
         let y = rng.next_range(10, world.world_surface as i32 - 1);
-        update_world_overground_tile(
+        update_world_overground_tile_ts(
             world,
             x,
             y,
@@ -953,6 +1056,7 @@ pub fn update_world(
             max_raining,
             wind_speed,
             rng,
+            ts.as_deref_mut(),
         );
         picks += 1;
     }
@@ -963,7 +1067,7 @@ pub fn update_world(
         // The underground dispatcher (`UpdateWorld_UndergroundTile`
         // `:73214-73614`) replaces the overground parity call; the dyed/
         // moss/oyster arms inside it park (ANALYSIS).
-        update_world_underground_tile(
+        update_world_underground_tile_ts(
             world,
             x,
             y,
@@ -972,6 +1076,7 @@ pub fn update_world(
             day_time,
             raining,
             rng,
+            ts.as_deref_mut(),
         );
         picks += 1;
     }
@@ -1109,6 +1214,87 @@ pub(crate) mod test_fixtures {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+
+    /// W4-d119 escalation 1 — `WorldGen.TrySpawningTownNPC`
+    /// (`WorldGen.cs:74869-74882`): the delay counter gates the queue push;
+    /// the ONE `Next(4)` draw fires only on a wall-34 tile (the short-circuit);
+    /// the invasion/eclipse guards skip before the counter increment.
+    #[test]
+    fn the_walker_gate_counts_and_draws_only_on_wall_34() {
+        let mut w = World::new("t".into(), 200, 200);
+        // A wall-34 cell and a wall-0 cell, both inactive (the walker arms).
+        let i34 = w.index(100, 100);
+        w.tiles[i34].wall = 34;
+        let mut delay = 0;
+        let mut requests: Vec<(i32, i32)> = Vec::new();
+        let mut rng = UnifiedRandom::new(7);
+        let pristine = rng.clone();
+        // 19 sub-period calls on the wall-0 cell: no push, no draw.
+        for _ in 0..19 {
+            let mut ts = TownSpawnWalker {
+                invasion_type: 0,
+                eclipse: false,
+                npc_spawn_delay: &mut delay,
+                npc_spawn_period: 20,
+                requests: &mut requests,
+            };
+            try_spawning_town_npc(&w, 101, 100, &mut ts, &mut rng);
+        }
+        assert!(requests.is_empty());
+        assert_eq!(rng, pristine, "a non-34 wall draws nothing");
+        // The 20th fires with no draw (wall 0).
+        {
+            let mut ts = TownSpawnWalker {
+                invasion_type: 0,
+                eclipse: false,
+                npc_spawn_delay: &mut delay,
+                npc_spawn_period: 20,
+                requests: &mut requests,
+            };
+            try_spawning_town_npc(&w, 101, 100, &mut ts, &mut rng);
+        }
+        assert_eq!(requests, vec![(101, 100)]);
+        assert_eq!(delay, 0, "the counter reset");
+        assert_eq!(rng, pristine);
+        requests.clear();
+        // Wall 34 draws the Next(4) on the fire tick.
+        for _ in 0..19 {
+            let mut ts = TownSpawnWalker {
+                invasion_type: 0,
+                eclipse: false,
+                npc_spawn_delay: &mut delay,
+                npc_spawn_period: 20,
+                requests: &mut requests,
+            };
+            try_spawning_town_npc(&w, 100, 100, &mut ts, &mut rng);
+        }
+        {
+            let mut ts = TownSpawnWalker {
+                invasion_type: 0,
+                eclipse: false,
+                npc_spawn_delay: &mut delay,
+                npc_spawn_period: 20,
+                requests: &mut requests,
+            };
+            try_spawning_town_npc(&w, 100, 100, &mut ts, &mut rng);
+        }
+        let mut twin = UnifiedRandom::new(7);
+        let _ = twin.next_max(4);
+        assert_eq!(rng, twin, "exactly one Next(4) on the wall-34 fire");
+        // The invasion/eclipse guards skip before the counter.
+        let before = delay;
+        for (inv, ecl) in [(1, false), (0, true)] {
+            let mut ts = TownSpawnWalker {
+                invasion_type: inv,
+                eclipse: ecl,
+                npc_spawn_delay: &mut delay,
+                npc_spawn_period: 20,
+                requests: &mut requests,
+            };
+            try_spawning_town_npc(&w, 101, 100, &mut ts, &mut rng);
+        }
+        assert_eq!(delay, before);
+    }
 
     /// The underground vine arms (`:73310-73470`): the jungle grass with the
     /// vine below it grows the vine one row down at the 1/5 arm, behind the
@@ -1660,9 +1846,10 @@ pub(super) mod tests {
 /// Parked (documented in ANALYSIS): the 655 life-fruit kill (the NPC store),
 /// `plantDye` (and its `Main.rand.Next(2500)`/`Next(10000)` head rolls),
 /// the 444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
-/// `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the net sides,
-/// and the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer
-/// stream carries every draw).
+/// `CountNearBlocksTypes` have no ports), the net sides, and the C#'s dual
+/// `genRand`/`Main.rand` streams (the port's per-consumer stream carries
+/// every draw). `TrySpawningTownNPC` rides the [`TownSpawnWalker`] seam
+/// (`_ts` variant, W4-d119 escalation 1).
 pub fn update_world_underground_tile(
     world: &mut World,
     i: i32,
@@ -1672,6 +1859,25 @@ pub fn update_world_underground_tile(
     day_time: bool,
     raining: bool,
     rng: &mut UnifiedRandom,
+) {
+    update_world_underground_tile_ts(
+        world, i, j, wall_dist, allowed_to_spread, day_time, raining, rng, None,
+    )
+}
+
+/// [`update_world_underground_tile`] with the `TrySpawningTownNPC` walker seam
+/// (W4-d119 escalation 1). `None` keeps the pure world walk.
+#[allow(clippy::too_many_arguments)]
+pub fn update_world_underground_tile_ts(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    wall_dist: i32,
+    allowed_to_spread: bool,
+    day_time: bool,
+    raining: bool,
+    rng: &mut UnifiedRandom,
+    ts: Option<&mut TownSpawnWalker<'_>>,
 ) {
     // The clamped box (`:73216-73231`).
     let min_i = (i - 1).max(10);
@@ -1689,11 +1895,14 @@ pub fn update_world_underground_tile(
     }
     if !active {
         // The hard-mode infection arm (`:73252`) and the tail `else`'s web arm
-        // (`:73803-73806`: wall 62, no liquid). The dye/seaweed, 444/396 and
-        // town-NPC arms park.
+        // (`:73803-73806`: wall 62, no liquid). The dye/seaweed and 444/396
+        // arms park; the town-NPC gate (`:73807`) rides the seam.
         crate::spread::hard_update_world(world, i, j, false, allowed_to_spread, rng);
         if world.tile(i, j).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
             grow_web(world, i, j, rng);
+        }
+        if let Some(ts) = ts {
+            try_spawning_town_npc(world, i, j, ts, rng);
         }
         return;
     }

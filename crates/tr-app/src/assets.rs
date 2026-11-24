@@ -411,6 +411,21 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_274",
         "Extra_290",
         "Extra_291",
+        // W4-g55: the loadout-button sheet (`TextureAssets.Extra[259]`,
+        // `Main.DrawLoadoutButtons:41950`) — a 3x3 grid (frameX = idle/active/
+        // hover, frameY = the loadout index).
+        "Extra_259",
+        // W4-g55: the loadout-share corner badges (`ItemSlot.cs:2733-2746`):
+        // Extra_310..312 = "this live item is shared FROM loadout 1/2/3"
+        // (`num18 = CurrentLoadoutIndex`), Extra_313..315 = "this air slot is
+        // filled BY a shared item from loadout 1/2/3" (`num16 =
+        // sharedFromLoadout`). Single-frame sheets drawn at the slot corner.
+        "Extra_310",
+        "Extra_311",
+        "Extra_312",
+        "Extra_313",
+        "Extra_314",
+        "Extra_315",
         // S1-L-8b: the `TextureAssets.GlowMask` strips the mount rows name —
         // SpookyWood 283 (`Mount.cs:1980`), WoF goat 284 (`:2095`), LavaShark
         // 285 (`:2187`), Bat 370 (`:2474`). They load as `Images/Glow_{id}`
@@ -879,13 +894,41 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/ChestCraft_3",
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
+        // The Journey menu (W4-c24): the powers-menu toggle button + hover
+        // border (`CreativeUI.cs:77-78`), the power-strip icons
+        // (`CreativePowersHelper.GetIconImage:103`) and the research window's
+        // slot plate / piston strip / cog trio (`UICreativeInfiniteItemsDisplay
+        // .cs:219-230`, `:320-322`).
+        "UI/Creative/Journey_Toggle",
+        "UI/Creative/Journey_Toggle_MouseOver",
+        "UI/Creative/Infinite_Powers",
+        "UI/Creative/Infinite_Tabs_B",
+        "UI/Creative/Research_Slots",
+        "UI/Creative/Research_FramedPistons",
+        "UI/Creative/Research_GearA",
+        "UI/Creative/Research_GearB",
+        "UI/Creative/Research_GearC",
+        // The piston spark (`UICreativeInfiniteItemsDisplay.cs:219`) and the
+        // BLUE search magnifier (`UIWrappedSearchBar.cs:97` — the duplication
+        // window keeps the Blue theme).
+        "UI/Creative/Research_Spark",
+        "UI/Bestiary/Button_Search",
         "Text_Back",
+        // W4-f28: the yoyo tooltip's OneDropLogo (`TextureAssets.OneDropLogo`,
+        // `AssetInitializer.cs:310` — `Images/OneDropLogo`): the 5-copy
+        // shadow + tinted logo the tooltip draws over the yoyo row's " "
+        // placeholder (`Main.cs:20408-20439`).
+        "OneDropLogo",
         // S1-E-10b: the town-chatter bubble (`TextureAssets.Chat`,
         // `Main.DrawNPCChatBubble` `Main.cs:43158`) and the dialogue
         // panel's back splices (`TextureAssets.ChatBack`,
         // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
         "Chat",
         "Chat_Back",
+        // W4-f22: the placed-sign bubble (`TextureAssets.Chat2`,
+        // `Main.DrawInterface_19_SignTileBubble` `Main.cs:45739-45760`;
+        // `AssetInitializer.cs:564`).
+        "Chat2",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -1042,6 +1085,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/ButtonCloudActive",
         "UI/ButtonCloudInactive",
         "UI/Divider",
+        // W4-d85 FINAL: the issue-report indicator's button pair
+        // (`IssueReportsIndicator.cs:41-42`).
+        "UI/Workshop/IssueButton",
+        "UI/Workshop/IssueButton_Outline",
         "UI/InnerPanelBackground",
         "UI/PlayerBackground",
         "UI/IconCrimson",
@@ -1104,6 +1151,20 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/WorldCreation/PreviewSizeSmall",
         "UI/WorldCreation/PreviewSizeMedium",
         "UI/WorldCreation/PreviewSizeLarge",
+        // W4-d85: the Advanced tab's seed-option icons
+        // (`AWorldGenerationOption.cs:61` — `Images/UI/WorldCreation/{KeyName}`)
+        // and the secret-seed button's icon (`UIWorldCreationAdvanced.cs:182`).
+        "UI/WorldCreation/Seed_Normal",
+        "UI/WorldCreation/Seed_NotTheBees",
+        "UI/WorldCreation/Seed_Drunk",
+        "UI/WorldCreation/Seed_Celebration",
+        "UI/WorldCreation/Seed_TheConstant",
+        "UI/WorldCreation/Seed_ForTheWorthy",
+        "UI/WorldCreation/Seed_NoTraps",
+        "UI/WorldCreation/Seed_Remix",
+        "UI/WorldCreation/Seed_Everything",
+        "UI/WorldCreation/Seed_Skyblock",
+        "UI/WorldCreation/Seed_Secret",
         "UI/VK_Shift",
         "UI/VK_Backspace",
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
@@ -2352,6 +2413,15 @@ pub struct Lookups {
     /// `Images/Extra_211` (`TextureAssets.Extra[211]`): the torch-biome
     /// swap toggle's 4-frame sheet (`Main.cs:42573-42574`). S1-W4-g81.
     pub extra_211: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[259]`: the loadout-button sheet
+    /// (`Main.DrawLoadoutButtons`, `Main.cs:41950`) — `Frame(3, 3, frameX, i)`,
+    /// frameX 0 idle / 1 active / 2 hover-overlay, frameY the loadout index.
+    pub extra_259: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[310..=315]`: the loadout-share corner badges
+    /// (`ItemSlot.cs:2733-2746`). Index 0..2 = the live-item badges
+    /// (`Clamp(310 + CurrentLoadoutIndex, 310, 312)`), index 3..5 = the
+    /// shared-ghost badges (`Clamp(313 + sharedFromLoadout, 313, 315)`).
+    pub loadout_share_badges: [Option<tr_render::SheetRect>; 6],
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -2409,6 +2479,11 @@ pub struct Lookups {
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
     pub ui_inv_bg13: Option<tr_render::SheetRect>,
+    /// `Images/OneDropLogo` (`TextureAssets.OneDropLogo`,
+    /// `AssetInitializer.cs:310`): the yoyo tooltip's logo — the 5-copy
+    /// shadow + tinted draw over the yoyo row's " " placeholder
+    /// (`Main.cs:20408-20439`).
+    pub one_drop_logo: Option<tr_render::SheetRect>,
     /// `Inventory_Back3`: misc-equip slot frame (`ItemSlot.cs:2280`).
     pub ui_back3: Option<tr_render::SheetRect>,
     /// `Inventory_Back4`: reforge/guide/crafting slot frame (`ItemSlot.cs:2286`).
@@ -2460,6 +2535,34 @@ pub struct Lookups {
     pub ui_infinite_icons: Option<tr_render::SheetRect>,
     /// `UI/Creative/Infinite_Tabs_B_2`: the filter-strip button frames.
     pub ui_infinite_tabs_b2: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Journey_Toggle`: the powers-menu toggle button
+    /// (`CreativeUI.cs:77`).
+    pub ui_journey_toggle: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Journey_Toggle_MouseOver`: its hover border
+    /// (`CreativeUI.cs:78`).
+    pub ui_journey_toggle_hover: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Infinite_Powers`: the 21x1 power-icon strip
+    /// (`CreativePowersHelper.cs:90-104`).
+    pub ui_infinite_powers: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Infinite_Tabs_B`: the BLUE filter-strip frames
+    /// (`UICreativeItemsInfiniteFilteringOptions.cs:46` — the duplication
+    /// window keeps the default Blue theme, unlike crafting's Cyan).
+    pub ui_infinite_tabs_b: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_Slots`: the research window's slot plate
+    /// (`UICreativeInfiniteItemsDisplay.cs:221`).
+    pub ui_research_slots: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_FramedPistons`: the 1x9 piston frame strip
+    /// (`UICreativeInfiniteItemsDisplay.cs:229-230`).
+    pub ui_research_pistons: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_GearA/B/C`: the research cogs, big → small
+    /// (`UICreativeInfiniteItemsDisplay.cs:320-322`).
+    pub ui_research_gears: [Option<tr_render::SheetRect>; 3],
+    /// `UI/Creative/Research_Spark`: the piston particle
+    /// (`UICreativeInfiniteItemsDisplay.cs:219`).
+    pub ui_research_spark: Option<tr_render::SheetRect>,
+    /// `UI/Bestiary/Button_Search`: the BLUE-theme search magnifier
+    /// (`UIWrappedSearchBar.cs:97` — the duplication window's search bar).
+    pub ui_search_icon_blue: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Button_Search_2`: the search-bar icon button
     /// (`UIWrappedSearchBar.cs:100`).
     pub ui_search_icon: Option<tr_render::SheetRect>,
@@ -2532,6 +2635,10 @@ pub struct Lookups {
     /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
     /// splices (`NPCChatPanel.cs:71-72`).
     pub ui_chat_back: Option<tr_render::SheetRect>,
+    /// `Images/Chat2` (`TextureAssets.Chat2`, `AssetInitializer.cs:564`):
+    /// the placed-sign bubble (`Main.DrawInterface_19_SignTileBubble`,
+    /// `Main.cs:45739-45760`). W4-f22.
+    pub ui_sign_bubble: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2563,6 +2670,12 @@ pub struct Lookups {
     pub card_cloud: [Option<tr_render::SheetRect>; 2],
     /// `UI/Divider` 8x4 (`UICharacterListItem.cs:52`).
     pub ui_divider: Option<tr_render::SheetRect>,
+    /// `UI/Workshop/IssueButton` (`IssueReportsIndicator.cs:41`) — the
+    /// menu-tail issue-report button (W4-d85 FINAL).
+    pub ui_issue_button: Option<tr_render::SheetRect>,
+    /// `UI/Workshop/IssueButton_Outline` (`IssueReportsIndicator.cs:42`) —
+    /// the hover outline over the button.
+    pub ui_issue_button_outline: Option<tr_render::SheetRect>,
     /// `UI/InnerPanelBackground` 24x27 — the card info panels (`:53`, `DrawPanel`
     /// `:310-315` splices it 8/8/8/8).
     pub ui_inner_panel: Option<tr_render::SheetRect>,
@@ -2636,6 +2749,13 @@ pub struct Lookups {
     pub wc_preview_evil: [Option<tr_render::SheetRect>; 3],
     /// `PreviewSizeSmall/Medium/Large` 76x76 (`:60-62`).
     pub wc_preview_size: [Option<tr_render::SheetRect>; 3],
+    /// W4-d85: the Advanced tab's seed-option icons, in the
+    /// `WorldGenerationOptions` registration order
+    /// (`AWorldGenerationOption.cs:61`, `UIWorldCreationAdvanced.cs:241-250`).
+    pub wc_seed_icons: [Option<tr_render::SheetRect>; 10],
+    /// `UI/WorldCreation/Seed_Secret` — the secret-seed button's icon
+    /// (`UIWorldCreationAdvanced.cs:182`).
+    pub wc_seed_secret: Option<tr_render::SheetRect>,
     /// `UI/VK_Shift` 26x26 (`UIVirtualKeyboard.cs:171`).
     pub vk_shift: Option<tr_render::SheetRect>,
     /// `UI/VK_Backspace` 54x26 (`UIVirtualKeyboard.cs:172`).
@@ -2786,6 +2906,10 @@ impl Lookups {
             info_icon_13: atlas.sheet("UI/InfoIcon_13").copied(),
             block_replace_0: atlas.sheet("UI/BlockReplace_0").copied(),
             extra_211: atlas.sheet("Extra_211").copied(),
+            extra_259: atlas.sheet("Extra_259").copied(),
+            loadout_share_badges: std::array::from_fn(|i| {
+                atlas.sheet(&format!("Extra_{}", 310 + i)).copied()
+            }),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
@@ -2801,6 +2925,7 @@ impl Lookups {
             builder_acc: atlas.sheet("UI/BuilderIcons").copied(),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
+            one_drop_logo: atlas.sheet("OneDropLogo").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
             ui_back4: atlas.sheet("Inventory_Back4").copied(),
             ui_back5: atlas.sheet("Inventory_Back5").copied(),
@@ -2827,6 +2952,19 @@ impl Lookups {
             }),
             ui_infinite_icons: atlas.sheet("UI/Creative/Infinite_Icons").copied(),
             ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
+            ui_journey_toggle: atlas.sheet("UI/Creative/Journey_Toggle").copied(),
+            ui_journey_toggle_hover: atlas.sheet("UI/Creative/Journey_Toggle_MouseOver").copied(),
+            ui_infinite_powers: atlas.sheet("UI/Creative/Infinite_Powers").copied(),
+            ui_infinite_tabs_b: atlas.sheet("UI/Creative/Infinite_Tabs_B").copied(),
+            ui_research_slots: atlas.sheet("UI/Creative/Research_Slots").copied(),
+            ui_research_pistons: atlas.sheet("UI/Creative/Research_FramedPistons").copied(),
+            ui_research_gears: [
+                atlas.sheet("UI/Creative/Research_GearA").copied(),
+                atlas.sheet("UI/Creative/Research_GearB").copied(),
+                atlas.sheet("UI/Creative/Research_GearC").copied(),
+            ],
+            ui_research_spark: atlas.sheet("UI/Creative/Research_Spark").copied(),
+            ui_search_icon_blue: atlas.sheet("UI/Bestiary/Button_Search").copied(),
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
             ui_emote_button: atlas.sheet("UI/Emotes").copied(),
             ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
@@ -3237,6 +3375,7 @@ atlas.sheet("NPC_442").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_chat_bubble: atlas.sheet("Chat").copied(),
             ui_chat_back: atlas.sheet("Chat_Back").copied(),
+            ui_sign_bubble: atlas.sheet("Chat2").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
@@ -3258,6 +3397,8 @@ atlas.sheet("NPC_442").copied(),
             card_cloud: ["UI/ButtonCloudActive", "UI/ButtonCloudInactive"]
                 .map(|n| atlas.sheet(n).copied()),
             ui_divider: atlas.sheet("UI/Divider").copied(),
+            ui_issue_button: atlas.sheet("UI/Workshop/IssueButton").copied(),
+            ui_issue_button_outline: atlas.sheet("UI/Workshop/IssueButton_Outline").copied(),
             ui_inner_panel: atlas.sheet("UI/InnerPanelBackground").copied(),
             ui_player_background: atlas.sheet("UI/PlayerBackground").copied(),
             ui_world_icon: atlas.sheet("UI/IconCrimson").copied(),
@@ -3356,6 +3497,20 @@ atlas.sheet("NPC_442").copied(),
                 "UI/WorldCreation/PreviewSizeLarge",
             ]
             .map(|n| atlas.sheet(n).copied()),
+            wc_seed_icons: [
+                "UI/WorldCreation/Seed_Normal",
+                "UI/WorldCreation/Seed_NotTheBees",
+                "UI/WorldCreation/Seed_Drunk",
+                "UI/WorldCreation/Seed_Celebration",
+                "UI/WorldCreation/Seed_TheConstant",
+                "UI/WorldCreation/Seed_ForTheWorthy",
+                "UI/WorldCreation/Seed_NoTraps",
+                "UI/WorldCreation/Seed_Remix",
+                "UI/WorldCreation/Seed_Everything",
+                "UI/WorldCreation/Seed_Skyblock",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_seed_secret: atlas.sheet("UI/WorldCreation/Seed_Secret").copied(),
             vk_shift: atlas.sheet("UI/VK_Shift").copied(),
             vk_backspace: atlas.sheet("UI/VK_Backspace").copied(),
             minimap_frames: std::array::from_fn(|i| {
@@ -4222,6 +4377,23 @@ mod tests {
         assert!(lookups.npc_heads[0].is_none(), "the query cell has no head");
     }
 
+    /// W4-d85 FINAL — the issue-report indicator's button pair reaches the
+    /// atlas (`IssueReportsIndicator.cs:41-42`'s two `Main.Assets.Request`
+    /// names); the draw reads the sheet's own size (`value.Frame()`), so the
+    /// pin is presence + non-zero, not a hand-copied dimension.
+    #[test]
+    fn the_issue_indicator_button_pair_packs() {
+        let (_, lookups) = content_lookups();
+        let button = lookups
+            .ui_issue_button
+            .expect("UI/Workshop/IssueButton must reach the atlas");
+        let outline = lookups
+            .ui_issue_button_outline
+            .expect("UI/Workshop/IssueButton_Outline must reach the atlas");
+        assert!(button.width > 0 && button.height > 0, "a real button sheet");
+        assert!(outline.width > 0 && outline.height > 0, "a real outline sheet");
+    }
+
     #[test]
     fn coin_and_shuriken_fallbacks_resolve_from_enumerated_sheets() {
         let (_, lookups) = content_lookups();
@@ -4284,6 +4456,23 @@ mod tests {
             );
             assert!(w > 0.0 && h > 0.0);
         }
+    }
+
+    /// W4-f28 — the yoyo tooltip's OneDropLogo packs
+    /// (`TextureAssets.OneDropLogo`, `AssetInitializer.cs:310`): the sheet
+    /// the 5-copy shadow + tinted draw reads (`Main.cs:20408-20439`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f28_the_one_drop_logo_packs() {
+        assert!(
+            STATIC_SHEET_NAMES.contains(&"OneDropLogo"),
+            "the static half must name the sheet"
+        );
+        let (_, lookups) = content_lookups();
+        let sheet = lookups
+            .one_drop_logo
+            .expect("Images/OneDropLogo must pack for the yoyo tooltip");
+        assert!(sheet.width > 0 && sheet.height > 0, "the logo has a size");
     }
 
     /// S1-G-12b: the FULL sheet set — the current enumeration PLUS the two

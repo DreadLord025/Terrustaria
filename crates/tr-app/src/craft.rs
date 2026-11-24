@@ -793,6 +793,97 @@ pub(crate) fn meets_environment(recipe: &Recipe, adj: &Adjacent, zones: &Zones) 
         && (!recipe.need_graveyard || zones.graveyard)
 }
 
+/// `Recipe.PlayerMeetsEnvironmentConditions`' missing-object LIST form
+/// (`Recipe.cs:322-358` with `missingObjects` non-null): each failed gate
+/// appends its name via `AddMissing` (`:360-364`) in the C#'s check order —
+/// the station, then water/honey/lava, then the snow/graveyard zones, then
+/// the Torch God's Favor. `needMechdusa` (`:349-352`) adds NOTHING (no
+/// `AddMissing` call — the vanilla's own omission). The station name is
+/// `GetRequiredTileName` (`:16751-16754`): the map legend row of
+/// `TileToLookup(tile, GetRequiredTileStyle(tile))` — the style is 1 for the
+/// Demon Altar 26 in a crimson world, else 0 (`:16738-16749`). The port
+/// folds the `TileCountsAs` chains into `stations`; each listed station is
+/// checked in order, the same walk `meets_environment` gates on.
+pub(crate) fn missing_environment(
+    recipe: &Recipe,
+    adj: &Adjacent,
+    zones: &Zones,
+    gates: &Gates,
+    crimson: bool,
+) -> Vec<String> {
+    let mut missing = Vec::new();
+    for &t in recipe.stations {
+        if !adj.tiles.iter().any(|&k| satisfies_station(t, k)) {
+            // `GetRequiredTileStyle`: only tile 26 splits by the world evil.
+            let style = if t == 26 && crimson { 1 } else { 0 };
+            missing.push(crate::lang::map_object_name_for_tile(t, style));
+        }
+    }
+    if recipe.need_water && !adj.water {
+        missing.push(crate::lang::inter(53));
+    }
+    if recipe.need_honey && !adj.honey {
+        missing.push(crate::lang::inter(58));
+    }
+    if recipe.need_lava && !adj.lava {
+        missing.push(crate::lang::inter(56));
+    }
+    if recipe.need_snow && !zones.snow {
+        missing.push(crate::lang::inter(123));
+    }
+    if recipe.need_graveyard && !zones.graveyard {
+        missing.push(crate::lang::inter(124));
+    }
+    // `:349-352` — needMechdusa fails silently (no AddMissing).
+    if recipe.need_torch_gods_favor && !gates.unlocked_biome_torches {
+        missing.push(crate::lang::inter(125));
+    }
+    missing
+}
+
+/// `NewCraftingUI.GetReasonForRecipeNotAvailable` (`NewCraftingUI.cs:530-539`):
+/// the environment list joined with ", " behind `Lang.inter[22]`
+/// ("Required objects:"), else `GameUI.NotEnoughMaterials`.
+pub(crate) fn reason_not_available(
+    recipe: &Recipe,
+    adj: &Adjacent,
+    zones: &Zones,
+    gates: &Gates,
+    crimson: bool,
+) -> String {
+    let missing = missing_environment(recipe, adj, zones, gates, crimson);
+    if !missing.is_empty() {
+        return format!("{} {}", crate::lang::inter(22), missing.join(", "));
+    }
+    crate::lang::game_ui("NotEnoughMaterials")
+}
+
+/// `NewCraftingUI.AddTooltipLines` (`NewCraftingUI.cs:541-549`): while the
+/// crafting panel is visible, ONE row — the hovered unavailable recipe's
+/// reason in (255, 140, 160). The C#'s `_missingRequirementsTooltipText`
+/// is set by `HandleCraftSlot` (`:524-527`) when the hovered/selected
+/// RecipeEntry's `availableIndex < 0` (`:31`) and reset each `DrawChildren`
+/// (`:432`); the port's grid lists craftable recipes only (no persistent
+/// `_recipeListLookup`), so the seam takes the reason precomputed by the
+/// caller and appends it after the shop lines (`Main.cs:20363-20366`).
+/// `hover_is_air` covers the `!hoverItem.IsAir` half of the `:543` gate.
+pub(crate) fn add_crafting_tooltip_lines(
+    reason: Option<&str>,
+    hover_is_air: bool,
+    lines: &mut Vec<(String, [f32; 4])>,
+) {
+    // `:543` — `_instance == null || (text != null && !hoverItem.IsAir)`:
+    // with the panel open the second arm is the live one.
+    if let Some(text) = reason {
+        if !hover_is_air {
+            lines.push((
+                text.to_string(),
+                [1.0, 140.0 / 255.0, 160.0 / 255.0, 1.0],
+            ));
+        }
+    }
+}
+
 /// `Recipe.CollectedEnoughItemsToCraft` (`Recipe.cs:275-283`) /
 /// `HowManyTimesCanRecipeBeCrafted` (`:290-311`): every requirement's folded
 /// count reaches its stack.
@@ -3256,5 +3347,100 @@ mod tests {
         assert_eq!(got, want);
         assert!(got <= 9, "the discount never exceeds the stack");
         assert_eq!(rng.peek(), ref_rng.peek(), "exactly 9 draws");
+    }
+
+    // --- W4-f28: the crafting-context tooltip rows -------------------------
+    // (`NewCraftingUI.AddTooltipLines` / `GetReasonForRecipeNotAvailable`,
+    // `NewCraftingUI.cs:530-549`; `Recipe.PlayerMeetsEnvironmentConditions`'
+    // missing-object list form, `Recipe.cs:322-364`). WRITTEN NOT RUN
+    // (code-only mode).
+
+    /// The environment list names each failed gate in the C#'s check order
+    /// (`Recipe.cs:325-356`): the station's map-legend name first, then
+    /// Water/Honey/Lava, then Cold Weather/Ecto Mist, then Torch God's
+    /// Favor. `needMechdusa` adds nothing (`:349-352` — no AddMissing).
+    #[test]
+    fn w4_f28_the_missing_environment_lists_the_gates_in_order() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        // The Glass Bowl 2243 row: one Glass 170 at the Furnace 17.
+        let bowl = recipe_by_create(2243);
+        assert_eq!(bowl.stations, &[17]);
+        let missing = missing_environment(bowl, &dry_adj(), &Zones::default(), &Gates::default(), false);
+        assert_eq!(missing, vec![crate::lang::map_object_name_for_tile(17, 0)]);
+        // With the furnace adjacent the list empties.
+        let mut adj = dry_adj();
+        adj.tiles.push(17);
+        assert!(missing_environment(bowl, &adj, &Zones::default(), &Gates::default(), false).is_empty());
+        // A synthetic multi-gate recipe walks the C#'s order.
+        let r = Recipe {
+            stations: &[17],
+            need_water: true,
+            need_honey: true,
+            need_lava: true,
+            need_snow: true,
+            need_graveyard: true,
+            need_torch_gods_favor: true,
+            need_mechdusa: true,
+            ..BASE
+        };
+        let missing = missing_environment(&r, &dry_adj(), &Zones::default(), &Gates::default(), false);
+        assert_eq!(
+            missing,
+            vec![
+                crate::lang::map_object_name_for_tile(17, 0),
+                crate::lang::inter(53),
+                crate::lang::inter(58),
+                crate::lang::inter(56),
+                crate::lang::inter(123),
+                crate::lang::inter(124),
+                crate::lang::inter(125),
+            ],
+            "the Mechdusa gate adds no name"
+        );
+        // The Demon Altar 26's style splits by the world evil
+        // (`GetRequiredTileStyle`, `Recipe.cs:16738-16749`).
+        let altar = Recipe { stations: &[26], ..BASE };
+        let corrupt = missing_environment(&altar, &dry_adj(), &Zones::default(), &Gates::default(), false);
+        let crimson = missing_environment(&altar, &dry_adj(), &Zones::default(), &Gates::default(), true);
+        assert_eq!(corrupt, vec![crate::lang::map_object_name_for_tile(26, 0)]);
+        assert_eq!(crimson, vec![crate::lang::map_object_name_for_tile(26, 1)]);
+    }
+
+    /// `GetReasonForRecipeNotAvailable` (`NewCraftingUI.cs:530-539`): the
+    /// environment list joins behind `Lang.inter[22]`; with no missing
+    /// objects the row is `GameUI.NotEnoughMaterials`.
+    #[test]
+    fn w4_f28_the_reason_picks_the_environment_or_the_materials_row() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let bowl = recipe_by_create(2243);
+        let reason = reason_not_available(bowl, &dry_adj(), &Zones::default(), &Gates::default(), false);
+        assert_eq!(
+            reason,
+            format!("{} {}", crate::lang::inter(22), crate::lang::map_object_name_for_tile(17, 0))
+        );
+        let mut adj = dry_adj();
+        adj.tiles.push(17);
+        assert_eq!(
+            reason_not_available(bowl, &adj, &Zones::default(), &Gates::default(), false),
+            crate::lang::game_ui("NotEnoughMaterials")
+        );
+    }
+
+    /// `AddTooltipLines` (`NewCraftingUI.cs:541-549`): ONE row in
+    /// (255, 140, 160), appended last; the air hover suppresses it.
+    #[test]
+    fn w4_f28_the_crafting_row_appends_pink_and_skips_air() {
+        let mut lines = vec![("name".to_string(), [1.0; 4])];
+        add_crafting_tooltip_lines(Some("Not enough materials"), false, &mut lines);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1].0, "Not enough materials");
+        assert_eq!(lines[1].1, [1.0, 140.0 / 255.0, 160.0 / 255.0, 1.0]);
+        // The air hover (`!hoverItem.IsAir`, `:543`) appends nothing.
+        let mut lines = vec![("name".to_string(), [1.0; 4])];
+        add_crafting_tooltip_lines(Some("Not enough materials"), true, &mut lines);
+        assert_eq!(lines.len(), 1);
+        // No reason (the recipe is available / no hover) appends nothing.
+        add_crafting_tooltip_lines(None, false, &mut lines);
+        assert_eq!(lines.len(), 1);
     }
 }

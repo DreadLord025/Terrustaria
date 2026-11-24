@@ -237,7 +237,36 @@ Submit/Cancel, and the 50-key `UITextPanel` grid whose origin `(542, 282)` is an
 fit — 10·48 + 9·4 = 516 and 5·37 + 4·4 = 201 fill the panel inner exactly. The grid
 layer is kept behind `TR_VK_GRID=1`. Rename caps: 20 characters for players, 27 for
 worlds (`Click_SetName`, `UIWorldCreation.cs:693`); `allowEmpty` differs per caller
-(Create passes `false`).
+(Create passes `false`). The card Rename buttons' Submit WRITES (W4-f22): the
+character rename splices the `.plr` name field (`player_file::rename_player_file`,
+`PlayerFileData.Rename`) and the world rename splices the `.trwld` header
+(`save_list::rename_world`, `WorldGen.RenameWorldCallBack`); the session stand-in
+renames in memory, a failed write notices through `front_hint` — ANALYSIS "The card
+renames (W4-f22)". The keyboard also serves the **sign editor** (context 1, W4-f22):
+`Context::Sign` parks the textbox/label off-screen (`-5000`, `UIVirtualKeyboard.cs:176`
+— the text edits in the NPCChatPanel dialog, see "Sign editor" below), the submit
+label reads `UI.Save` (`:291`/`:327`), the submit gate is always-valid (`:621`), and
+the bottom row (`bottom_row`, `BuildSpaceBarArea` `:444-489`) swaps the 6-wide space
+bar for a 3-wide space + the `UI.EnterButton` newline key (2-wide space + x-shifted
+newline while the cancel cache holds) + the `UI.RestoreButton` at `(6, 4, 2)`. The
+sign text cap is **1200** (`IngameFancyUI.cs:145` — `signs::SIGN_MAX_TEXT_LENGTH`,
+NOT 500). ANALYSIS "The sign keyboard (W4-f22)".
+
+**Text-entry bindings (W4-c25)** — the same module carries the field-less text-entry
+layer for the crafting search box and the chest rename (the i43 `edited_chest_name`
+seam's text source): `TextField` ports `UITextBox`'s editable state (caret `_cursor`,
+`Write` insert-at-caret, `SetText` cap+clamp, `Backspace`, `CursorLeft/Right`,
+`UITextBox.cs:11-78`), `get_input_text` ports `Main.GetInputText`
+(`Main.cs:20010-20121`: Ctrl+Z/X/C/V, Shift+Del/Ins, the typed-char queue, the
+Enter/Escape flags) with `BackspaceRepeat` for the held-Backspace machine
+(`:20089-20107`, banker's `Math.Round`), and `sanitize_clipboard_text` ports ReLogic's
+paste filter (`Clipboard.cs:21-32`). Pure bindings — no `UIElement`, no draw, no App
+wiring yet; the consumers attach in their own tasks. Note: the 1.4.5.8 decompilation
+has no `UITextField.cs` — these three sources ARE the text field's semantics; there
+is no ranged selection (copy/cut operate on the whole string). **SEALED** — the
+retire FINAL (`docs/research/314-c25-keyboard-text-field-final.md`) records the
+f22 keep-both compose (the sign editor keeps the `KeyboardState` path; the search
+keeps c24's event.text stand-in) and the keyboard-family bible.
 
 ### Credits and legacy confirms (`menu/`)
 
@@ -474,6 +503,15 @@ wrong); favorited slots swap their background to the gold `Inventory_Back10`
 (`ItemSlot.cs:2149-2156`, packed as `lookups.ui_back10`, tint still
 `Main.inventoryBack`; `Inventory_Back17`/`_19` are the gamepad-highlight and
 loadout variants — neither surface is ported) and shift-transfer refuses them.
+**The loadout system (W4-g55) is ported** — the three buttons beside the armour
+column (`Main.DrawLoadoutButtons`, `Main.cs:41935-41991`, `ui/loadout.rs` on
+`Extra_259`), the equipment-slot tint following `CurrentLoadoutIndex`'s
+`LoadoutSlotColors` row + the 30-frame change flash, and the Alt+click
+loadout-share toggle (`ToggleLoadoutShare`, `ItemSlot.cs:879-912`) with the
+air-slot shared ghost icon. The `Inventory_Back17` gamepad-highlight variant
+stays unported; the `Extra_310-315` share badges are a recorded skip (ANALYSIS
+"The loadout system (W4-g55)"). The swap itself is `Player.TrySwitchingLoadout`
+(`Player.cs:5661-5682`); the `.plr`/`.trplayer` v7 carriers persist it.
 The coin (ctx 1) and ammo (ctx 2) rows are click surfaces too
 (`Main.cs:41752-41782` handle every cell they draw): left runs the shared
 action-0 move behind `PickItemMovementAction`'s gate (coins 71-74 only; the
@@ -502,6 +540,56 @@ the game UI under `InGameUI`) — the full list is in `docs/ANALYSIS.md` →
 Screenshots: `TR_CHEST` stages a stocked style-0 chest on the spawn plateau and opens
 the panel deterministically (the `TR_INV`/`TR_CRAFT` presence-flag pattern); double
 runs are SHA256-equal.
+
+### Sign editor (`signs.rs`, `Sign.cs` + `IngameFancyUI.cs`)
+
+The sign text field (W4-f22) rides the town-chatter dialog: right-clicking a sign
+tile (`Player.cs:32693-32724` — the `world_sim/editing/doors.rs` arm + the
+open-inventory click route) opens the record through `Sign.ReadSign`
+(`Sign.cs:24-60`, the frame-decoded 2-wide origin, the create-if-missing slot) and
+`Player.OpenSign` (`Player.cs:33542-33551` — `CloseAll(quiet)`'s live pieces, sound
+10, `npcChatText = sign.text`); the NPCChatPanel draws the text read-only with a
+Close + **Edit** row (`Lang.inter[48]`, `NPCInteractions.Actions.OpenSign`
+`NPCInteractions.cs:15-42`). A re-click on the open sign closes it; the MP client
+asks the host with `46` and the `47` answer opens it (`MessageBuffer.cs:2366-2405`,
+the S1-E-27 ids — the client-open arm is W4-f22).
+
+Edit opens `IngameFancyUI.OpenVirtualKeyboard(1)` (`IngameFancyUI.cs:86-145`):
+sound 12, the ctx-1 keyboard with the `UI.EnterMessage` label, the sign text
+prefill, `allowEmpty: false` and **maxLength 1200** (the census pin — NOT 500).
+The keyboard's own textbox is parked off-screen (`-5000`,
+`UIVirtualKeyboard.cs:176`); the text edits in the dialog, which draws UNDER the
+keyboard (`IngameFancyUI.Draw`'s `GUIChatDraw` arm, `:212-215`) with the 20-tick
+edit caret (`NPCChatPanel.cs:254-261`). The live keyboard text syncs into
+`npcChatText` per frame (`CopyTextToSign`, `:1049-1059`). Physical Enter appends
+a newline (`:751-754`); the submit rides the **Save** button / the dialog's Save
+row (`Lang.inter[47]`) — `Main.SubmitSignText` (`Main.cs:40694-40704`): sound 12,
+`Sign.TextSign`, the netMode-1 client sends `47`. Cancel (`Main.InputTextSignCancel`,
+`:19817-19826`) parks the live draft in the cancel cache; re-opening shows the
+**Restore** key (`UIVirtualKeyboard.cs:1039-1047`) which spends it. The sign closes
+on walk-away (the `Simple` reach region, `Player.cs:27504-27518`), death
+(`:17014`), Escape (`ToggleInv`'s sign arm, `:5017-5020`) or the dialog's Close
+(`CloseNPCChatOrSign`'s `CloseSign(quiet)` half).
+
+The hover surfaces (W4-f22 follow-up, 2026-11-21): hovering a sign tile latches
+`Main.signBubble`/`signX`/`signY`/`signHover` (`Player.cs:32098-32115`,
+`signs::sign_hover_scan` + `mouse_overs_clear` per player tick). The placed-sign
+bubble (`DrawInterface_19_SignTileBubble`, `Main.cs:45739-45760`,
+`ui/npc_chat.rs::draw_sign_bubble`) draws the `Chat2` sheet over the sign under the
+world→UI zoom transform — flipped horizontally + shifted `−8 − width` when the sign
+sits right of the player, `+8` otherwise, lifted `−22`, tinted `mouseTextColor ×4`.
+The signHover tooltip (`Main.cs:42940-42986`, `ui/tooltip.rs::draw_sign_hover_tooltip`)
+prints the text preview at the cursor as the LAST interface layer
+(`DrawInterface_39_MouseOver`): the 460 px/10-line wrap, the `mouse + 16` origin +
+opaque-box `(8, 2)` offset, the on-screen clamps and the four-way ±2 px border,
+gated on `!mouseText && !mouseInterface`. Breaking a sign kills its record
+(`WorldGen.cs:43686-43689`, `signs::kill_broken_sign_record` in `break_tile`); the
+open/hover indices remap through the dense-store splice and the lazy `sign_tick`
+closes the dialog + editor. Tombstones (tile 85) are `tileSign` kinds with NO
+read-only difference — the epitaph (the d2 sweep's `misc_text` write) reads through
+the same path. Deviations (the sim pause, the screenHeight>700 gate, the final
+IME/clrInput/blockKey skip, the unreachable gravDir flip, the no-source-scroll
+1200 cap): ANALYSIS "The sign keyboard (W4-f22)".
 
 ### Minimap frame (`ui/minimap.rs`, `MinimapFrame.cs`)
 
@@ -592,6 +680,105 @@ settings toggle. Deviations: the shielded `DrawFancyBar` overload
 caller) — the full list is in `docs/ANALYSIS.md` →
 "Minimap frame and boss bar (P4)".
 
+### The Journey powers menu (W4-c24, `ui/journey.rs` + `app/journey_clicks.rs`)
+
+`CreativeUI` (`GameContent/Creative/CreativeUI.cs`) +
+`UICreativePowersMenu` (`UI/States/UICreativePowersMenu.cs`) +
+`UICreativeInfiniteItemsDisplay` (`UI/Elements/`). The toggle button
+(`Journey_Toggle`, at (28, 267), +52·inventoryScale on screens under 650 px
+while open, `CreativeUI.cs:104-111`) draws for every Journey player
+(difficulty 3, unblocked — talking/chest block, the visible crafting panel
+unblocks, `:47-65`); `C` toggles (`Player.ToggleCreativeMenu`,
+`Player.cs:5091-5105`). The window lives at Left 80 / Top 314, 480 wide
+(`UICreativePowersMenu.cs:151-158`); the main strip (Left 20, 48 wide, 44 px
+pitch, `PowerStripUIElement.cs:17-40`) carries the duplication/research/
+time/weather/personal category buttons + StopBiomeSpread + the
+difficulty slider.
+
+* **Research page** (`UICreativeInfiniteItemsDisplay.cs:207-287`): the
+  170×170 panel, the symmetric cog trio (speeds 2·num / 1.1428572·num /
+  −num, num = 0.05·(1+lerp²·2), `:330-340`), the `Research_Slots` plate +
+  9-frame piston strip (`:341-346`), 15 sparks at timeLeft 56
+  (`NextVector2Circular(4,3)`, sound 63) and the completion chime (64) at
+  40, the context-30 sacrifice slot (no background,
+  `ItemSlot.cs:2261-2263`), the `(have/needed)` / `???` / `X` progress text
+  (`:404-434`) and the Research confirm button. Shift-click on an inventory
+  slot swaps + sacrifices in one press (`ItemSlot.cs:815-820`).
+* **Duplication page** (`:165-205`): the Blue-theme search bar + filter
+  strip (`Infinite_Tabs_B`, the shared `craft_filter::FilterBoard`), the
+  grid of every kind with research progress (`ForEachItemWithResearchProgress`)
+  sorted newly-researched → fully-researched → alphabetical
+  (`SortingSteps.cs:84-147`), 44 px cells at scale 3465/4095
+  (`UIDynamicItemCollection.cs:40`), contexts 29 (fully, `(53,69,127)`) /
+  34 (partial, `(25,44,65,180)·0.9`) on `Inventory_Back18`
+  (`ItemSlot.cs:2253-2259`). Left click on a fully-researched cell fills
+  the cursor with a max stack (action 5, `ItemSlot.cs:1242-1251`); right
+  click picks one per paced frame without draining (`:1717-1746`).
+* **Power strips** (Phase 3): FreezeTime + the four clock buttons + the
+  time-rate slider (x1..x24, banker's-rounded remap,
+  `CreativePowers.cs:877-880`), Godmode + Far Placement Range, and the
+  weather strip's chrome. The counts/positions ride
+  `UICreativePowersMenu.cs:314-369`.
+* **Weather sliders** (wiring pass): the wind panel (132×180,
+  `CreativePowers.cs:1179-1309`) — the slider sets current+target at once
+  (`Lerp(-0.8, 0.8, cache)`), the read-back is the unclamped target lerp;
+  the West/None/East hover texts (`CreativePowers.WindWest/WindNone/
+  WindEast`) + the mph E/W labels (`GameUI.EastWind`/`WestWind`). The
+  rain panel (132×180, `:1311-1439`) reads the live `cloudAlpha`, sets
+  `StartRain`/`StopRain` instant with the strength override; the
+  Monsoon/Drizzle/ClearSky hover texts. FreezeRain/FreezeWind toggles
+  gate `UpdateTime`'s rain arms / the wind target walk.
+* **Spawn-rate slider** (77×180, `SpawnRateSliderPerPlayerPower`,
+  `:1573-1737`): the x0.1..10 remap (no rounding), the exact-zero
+  "Disabled" state (`NPCSpawnRateSliderEnemySpawnsDisabled`) gating both
+  spawn paths, the `GetSpawnRate` Journey arm after the caps.
+* **Difficulty slider** (82×180, `DifficultySliderPower`, `:1002-1177`):
+  the four indication icons (Master/Expert/Normal/Creative,
+  `wc_difficulty_icons`, clicks force caches 1/0.66/0.33/0 + sound 12),
+  the two-segment remap + banker's 1/20 steps → the NPC `ScaleStats`
+  one-shot scale at the first sim tick (`npc.rs`).
+* **Search bar** (`UISearchBar.cs`/`UIWrappedSearchBar.cs`): the
+  duplication page's text field is live — click writes (the chat-style
+  `event.text` seam, 50-char cap), Enter/Escape stop, Backspace pops,
+  right-click/outside-click cancel; the grid filters by the `BySearch`
+  tooltip-line scan.
+* **Tracker save**: the research counts + the per-player powers
+  (godmode/far-placement/spawn-rate) persist to the `.plr` through the
+  W4-f44 seam (`player_file.rs`'s research/powers tail,
+  `research.rs::save_pairs`/`load_pairs`, `app/saveglue.rs::
+  save_player_plr`); CharPlay hydrates them (`app/flow.rs`).
+* **Sacrifice tooltip row** (c24c, `Main.cs:21318-21333`): every
+  whitelisted slot hover (grid/coins/ammo/bank/trash/shop/crafting/
+  journey-grid, the 17-context set) on a difficulty-3 session appends
+  "Research {N} more to unlock duplication" in the Journey pink while
+  the kind is partial (`ui/tooltip.rs`, `TooltipContext.slot_context/
+  journey_difficulty/research`; `ui/mod.rs::hover_context`). The
+  duplication search scan keeps context -1, so the row never matches a
+  search.
+* **TRASH_COMPACTOR** (c24c, `AchievementsHelper.cs:387-399`): at half
+  the catalog fully researched, progression 45 fires — the tracker's
+  `LastEditId` version gate skips unchanged recounts; the world-enter
+  check is forced, the player tick re-checks every step
+  (`achievements.rs::check_research`).
+* **Growth freeze/rate** (c24c, `WorldGen.cs:72020-72028`): FreezeTime
+  stops the growth loops entirely (rate 0 returns before every pick);
+  ModifyTimeRate scales them (the dial keeps the tiles at 1, the
+  all-asleep ×5 rides the target).
+* **The swap carry** (c24 seal, `Main.cs:66208-66216` —
+  `ActivePlayerFileData` survives `LoadWorld`): the CharPlay-hydrated
+  per-character Journey state (research counts, the three per-player
+  powers, the spawn-rate cache, the session difficulty + name) rides
+  `swap_world`'s `App::new` reset (`app/mod.rs`); the per-world powers
+  re-load from the new world's section. The family FINAL + the
+  JOURNEY-SEAL receipts: `docs/research/344-journey-family-final.md`
+  (renumber chain 308→344 per registry-150 §8.7 FROZEN).
+
+Deviations (docs/ANALYSIS.md): the `ByCreativeSortingId` middle sort step
+falls through to alphabetical (no generated group table); the
+teammate-unlock notification is unported; the difficulty scale's
+expert-hardmode/money/getGood/defense arms are documented skips; the
+search text rides the event seam, not the c25 keyboard bindings.
+
 ## Deviations
 
 * The framework ports the **flat/event halves** of `UIElement`/`UserInterface`:
@@ -660,8 +847,12 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   splices, the 460 px/10-line wrapped text at `+(20,20)` stepping 30 px and
   the always-present Close button (`Lang.inter[52]`, hover scale 1.2, sound
   12 on the hover edge, sound 11 + `talkNPC = -1` on the click). The
-  right-click open rides `world_sim::npcs::talk_to_npc`. Deferred: the other
-  interaction buttons, the portrait, the corner item, the sign/IME blinker,
+  right-click open rides `world_sim::npcs::talk_to_npc`. The sign half landed
+  W4-f22 (the `sign != -1` gate, the Edit/Save interaction row, the edit caret —
+  see "Sign editor" above); the retire phase landed the dynamic interaction
+  layout (`ceil(count/4)` lines + the 22 px row y-step, `NPCChatPanel.cs:174`/
+  `:106`) for the merge lane's >4-button rows. Deferred: the other
+  interaction buttons, the portrait, the corner item, the IME composition,
   the Dryad Stardew override and the gamepad arms — `docs/ANALYSIS.md` →
   "Town chatter UI (S1-E-10b)".
 

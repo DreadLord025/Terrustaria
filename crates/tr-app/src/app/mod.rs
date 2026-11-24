@@ -6,12 +6,14 @@
 //! `loop.rs`, the frame orchestrator `frame.rs`. (A7: extracted from
 //! `main.rs`.)
 
+pub(crate) mod achievement_hooks;
 pub(crate) mod capture_driver;
 pub(crate) mod clicks;
 pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
+pub(crate) mod journey_clicks;
 mod r#loop;
 pub(crate) mod net_npc_sync;
 pub(crate) mod netglue;
@@ -167,6 +169,30 @@ pub(crate) struct App {
     /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
     /// and `Close` resets it to −1 (`:267`).
     pub(crate) npc_chat_last_hovered: i32,
+    /// `UIVirtualKeyboard._cancelCacheSign` (`UIVirtualKeyboard.cs:28`,
+    /// static ctor `:1084`): the sign editor's cancelled text —
+    /// `CacheCanceledInput(1)` parks it (`:1031-1037`), the restore key
+    /// spends it (`RestoreCanceledInput`, `:1039-1047`). W4-f22.
+    pub(crate) sign_cancel_cache: String,
+    /// `NPCChatPanel.textBlinkerCount/State` (`NPCChatPanel.cs:254-261`) —
+    /// the sign-edit caret's blinker, advanced only while the edit text
+    /// draws (the chest editor owns its own, `App.text_blinker`). W4-f22.
+    pub(crate) sign_text_blinker: ui::chest::TextBlinker,
+    /// `Main.signHover` (`Main.cs:2049`, init -1 `:67189`): the hovered
+    /// sign's record index — the bubble-latch scan sets it
+    /// (`Player.cs:32108-32111`), `MouseOversClear` (`Main.cs:46511`)
+    /// clears it per update, `DrawMouseOver` (`:42940-42986`) prints the
+    /// text preview. W4-f22.
+    pub(crate) sign_hover: i32,
+    /// `Main.signBubble` (`Main.cs:2079`): the placed-sign bubble latch —
+    /// `Player.cs:32105` sets it whenever a sign tile is hovered in reach,
+    /// `MouseOversClear` (`Main.cs:46512`) clears it. W4-f22.
+    pub(crate) sign_bubble: bool,
+    /// `Main.signX/signY` (`Main.cs:2081`/`:2083`): the bubble anchor in
+    /// world pixels — `(origin.x*16 + 16, origin.y*16)` (`Player.cs:
+    /// 32106-32107`). W4-f22.
+    pub(crate) sign_x: i32,
+    pub(crate) sign_y: i32,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -182,6 +208,23 @@ pub(crate) struct App {
     pub(crate) next_npc_uid: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
+    /// `Main._gameModeDifficultyOverride` (`Main.cs:359`,
+    /// `UpdateCreativeGameModeOverride` `:17294-17305`): the Journey
+    /// difficulty slider's NPC strength multiplier, re-derived once per
+    /// game update (`DoUpdate`, `:16847`). `None` outside a Journey world —
+    /// `Main.Difficulty` then answers the world's own GameMode (the port is
+    /// single-difficulty classic, so 1.0).
+    pub(crate) game_mode_difficulty_override: Option<f32>,
+    /// `Main.LocalPlayerCreativeTracker.ItemSacrifices`
+    /// (`ItemsSacrificedUnlocksTracker.cs`) — the research counts (W4-c24).
+    /// The `.plr` `creativeTracker` block (`Player.cs:54911`/`:55696-55699`)
+    /// carries them through `research::save_pairs`/`load_pairs` (the W4-f44
+    /// serialization seam's `research: Vec<(String, i32)>` shape).
+    pub(crate) research: crate::research::ResearchTracker,
+    /// `Main.CreativeMenu` (`CreativeUI.cs`) + `UICreativePowersMenu`'s state
+    /// (W4-c24): the toggle, the open category, the sacrifice slot and the
+    /// research animation.
+    pub(crate) journey: ui::journey::JourneyMenu,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
     /// Compiled only with the `debug` feature (see `tr-app/Cargo.toml`).
@@ -254,6 +297,30 @@ pub(crate) struct App {
     /// `ItemSlot.dyeSwapCounter` (`ItemSlot.cs:3549-3564`): the round-robin
     /// slot `DyeSwap` starts its empty scan from and advances past.
     pub(crate) dye_swap_counter: usize,
+    /// The LIVE equip set's loadout-share flags — `Item.favorited` over
+    /// `Player.armor[0..20]` then `Player.dye[0..10]` (bit `i` = armor slot
+    /// `i`, bit `20 + j` = dye slot `j`). In the equip contexts the flag is
+    /// the share toggle (`ItemSlot.canLoadoutShareAt`, `ItemSlot.cs:395-399`),
+    /// not the grid favourite (`App.favorite_slots` owns those). Swaps with
+    /// the stored sets on a loadout change (`EquipmentLoadout.Swap`).
+    pub(crate) equip_share_flags: u32,
+    /// `ItemSlot._lastTimeForVisualEffectsThatLoadoutWasChanged`
+    /// (`ItemSlot.cs:312`, `RecordLoadoutChange` `:2794-2797`): the
+    /// `Main.timeForVisualEffects` stamp of the last loadout swap — the
+    /// equipment-slot white flash decays over 30 frames from it
+    /// (`GetColorByLoadout`, `:2786`). `f32::NEG_INFINITY` = never changed.
+    pub(crate) loadout_change_time: f32,
+    /// `Main.loadoutMouseOver` (`Main.cs:41990`'s `DoStatefulTickSound` ref):
+    /// the hovered loadout button index, -1 = none — the 12 cue fires on a
+    /// change onto a button (`Main.cs:3249-3259`).
+    pub(crate) loadout_mouse_over: i32,
+    /// `Main.clientPlayer`'s loadout item-array snapshot — the
+    /// `clientCloneLoadouts` half of `Player.clientClone`
+    /// (`Player.cs:54522-54531`, the c28 `ClientClone` carries the scalar
+    /// half). `TrySwitchingLoadout`'s tail clones the swapped sets into it
+    /// (`:5670`) so the next `TrySyncingMyPlayer` array diff
+    /// (`Main.cs:17557-17575`) sees them as already-synced.
+    pub(crate) loadout_clone: crate::loadout::LoadoutClone,
     pub(crate) selected: usize,
     /// `Player.selectedItemState` (`Player.cs:414-568`) — the buffered /
     /// overridden halves of the selection machine (S1-P-i54); the live
@@ -304,9 +371,26 @@ pub(crate) struct App {
     /// `WorldGen.prioritizedTownNPCType` (`Main.cs:65542-66116`) — the town
     /// NPC arrival gates (M4-TOWN-1b).
     pub(crate) town_arrival: crate::town_arrival::ArrivalState,
+    /// `WorldGen.homelessSpawnTimeout`/`LastFoundHouse`/`npcSpawnDelay`/
+    /// `npcSpawnPeriod`/`canSpawn`/`currentlyTryingToUseAlternateHousingSpot`
+    /// (`WorldGen.cs:4244`/`:4320`/`:4238`/`:4240`/`:4282`/`:4322`) — the
+    /// homeless-arrival + SpawnTownNPC statics (W4-d119 phase 2).
+    pub(crate) town_spawn: crate::town_spawn::TownSpawnStatics,
+    /// The growth walkers' `TrySpawningTownNPC` spawn-request queue (W4-d119
+    /// escalation 1): the pure tr-core walkers push `(x, y)` intents
+    /// (`WorldGen.cs:72497`/`:73807`'s inline `SpawnTownNPC` calls) and
+    /// `world_sim/growth.rs` drains them at the `UpdateWorldGen` slot.
+    pub(crate) town_spawn_requests: Vec<(i32, i32)>,
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
+    /// `Player.pendingItemReuse` (`Player.cs:1460`): the fourth member of
+    /// `UsingOrReusingItem` (`:4068-4078`). Set when a non-autoReuse swing's
+    /// animation decrements to 0 with the use button held and the release
+    /// latch forced (`:42819-42822`), cleared at the top of the next
+    /// `ItemCheck` (`:42597`) or when the held slot airs out (`:42824-42828`).
+    /// The loadout-swap gate (`:5663`) reads it through `UsingOrReusingItem`.
+    pub(crate) pending_item_reuse: bool,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1, the full
     /// 137-row initializer table with M6-ACH-2).
     pub(crate) achievements: achievements::AchievementManager,
@@ -316,6 +400,42 @@ pub(crate) struct App {
     pub(crate) achievements_open: bool,
     /// The list's scroll, in px (`UIList._scrollPosition`'s stand-in).
     pub(crate) achievements_scroll: f32,
+    /// `UIDebugCommandsList`'s overlay state (W4-d85 row 7) — opened by the
+    /// `/hh` debug command (`ToolkitDebugCommands.cs:42-47` →
+    /// `IngameFancyUI.OpenUIState`), gated on `DebugOptions.enableDebugCommands`
+    /// (the port's `TR_DEBUG_COMMANDS` pin).
+    pub(crate) debug_commands_open: bool,
+    /// The wrapped search bar's contents (`_searchString`).
+    pub(crate) debug_commands_search: String,
+    /// The commands list's `UIScrollbar.ViewPosition`.
+    pub(crate) debug_commands_scroll: f32,
+    /// `UIDebugLoadoutsList`'s overlay state (W4-d85 row 8) — opened by
+    /// `/loadouts` (`ToolkitDebugCommands.cs:884-889`). The entries load
+    /// at the open (`PopulateLoadouts`, `UIDebugLoadoutsList.cs:134-145`).
+    pub(crate) debug_loadouts_open: bool,
+    pub(crate) debug_loadouts: Vec<ui::debug_loadouts::LoadoutEntry>,
+    /// The loadouts search bar's contents — seeded from the static
+    /// `_lastSearch` at the open (`:85`).
+    pub(crate) debug_loadouts_search: String,
+    /// `UIDebugLoadoutsList._lastSearch` (`:20`) — static across opens.
+    pub(crate) debug_loadouts_last_search: String,
+    pub(crate) debug_loadouts_scroll: f32,
+    /// The Advanced tab's Everything-icon glitch walker
+    /// (`WorldSeedOption_Everything.ProvideUIElement`'s closure state) —
+    /// fresh per `UIWorldCreationAdvanced` ctor, ticked once per UI update
+    /// while the screen is live (W4-d85 doc-sweep).
+    pub(crate) world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch,
+    /// `Main.IssueReporter` (`Main.cs:2169`, created `:10832`) — the
+    /// general issue log the reports page reads (`OpenReportsMenu`,
+    /// `:52352-52363`). Empty in the port: the only non-Steam producer is
+    /// the resource-pack music failure, which has no pipeline here.
+    pub(crate) issue_reporter: ui::reports::GeneralIssueReporter,
+    /// `Main.IssueReporterIndicator` (`Main.cs:1813`, created `:67043`) —
+    /// the menu-tail button that opens the reports page
+    /// (`IssueReportsIndicator.cs:10-80`, drawn at `Main.cs:51886`).
+    /// Never shows in the port: its only non-Steam trigger is the same
+    /// resource-pack music failure (W4-d85 FINAL).
+    pub(crate) issue_indicator: ui::reports::IssueIndicator,
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
@@ -860,6 +980,12 @@ pub(crate) struct App {
     /// `Main.DiscoR/G/B` and the `Main.DiscoStyle` cycle (`DoUpdate_AnimateDiscoRGB`).
     pub(crate) disco: [u8; 3],
     pub(crate) disco_style: u8,
+    /// `Main.masterColor` / `Main.masterColorDir` (`Main.cs:1235-1237`,
+    /// `DoUpdate_AnimateCursorColors` `:18225-18235`): the master-rarity
+    /// name pulse the tooltip's −13 colour reads (W4-f28). Init 1f / 1
+    /// (`Main.Initialize`, `:66833-66834`).
+    pub(crate) master_color: f32,
+    pub(crate) master_color_dir: i32,
     /// `TileLightScanner._random` seed; advanced once per frame like `NextSeed()`.
     pub(crate) light_rng_seed: u64,
     pub(crate) anim_time: f32,
@@ -1480,6 +1606,103 @@ impl App {
         world_sim::player::update_player(self, dt);
     }
 
+    /// `Player.TrySwitchingLoadout` (`Player.cs:5661-5682`) over the live App
+    /// state: the swap core runs on `Player` + `App.equip`, then the local
+    /// tails fire — `Main.mouseLeftRelease = false` (`:5671`),
+    /// `ItemSlot.RecordLoadoutChange` (`:5672`), `SoundEngine.PlaySound(12)`
+    /// (`:5673`) and `NetMessage.TrySendData(147)` (`:5674`, the
+    /// `send_sync_loadout` MP push). `UsingOrReusingItem` (`:4068-4078`) is
+    /// summarised from the port's swing/reuse/channel timers (`App.swing` =
+    /// itemAnimation > 0, `App.reuse_delay` = reuseDelay > 0, `Player.channel`)
+    /// plus the `pendingItemReuse` latch (`App.pending_item_reuse`, `:4074` —
+    /// the fourth member, armed at the animation-zero tick of a held
+    /// non-autoReuse swing, `world_sim/editing.rs`). The `clientCloneLoadouts`
+    /// (`:5670`) and particle (`:5675-5679`) tails are the clone/visual systems'.
+    pub(crate) fn try_switching_loadout(&mut self, index: usize) -> bool {
+        let using_or_reusing = self.swing > 0.0
+            || self.reuse_delay > 0.0
+            || self.pending_item_reuse
+            || self.player.as_ref().is_some_and(|p| p.channel);
+        let ok = match self.player.as_mut() {
+            Some(p) => p.try_switching_loadout(
+                index,
+                &mut self.equip.armor,
+                &mut self.equip.dye,
+                &mut self.equip_share_flags,
+                using_or_reusing,
+            ),
+            None => false,
+        };
+        if ok {
+            // `clientCloneLoadouts(Main.clientPlayer)` (`:5670`): the swapped
+            // sets clone into the client-clone snapshot so the next
+            // `TrySyncingMyPlayer` array diff sees them as already-synced.
+            if let Some(p) = self.player.as_ref() {
+                self.loadout_clone = crate::loadout::LoadoutClone::clone_from(
+                    &self.equip.armor,
+                    &self.equip.dye,
+                    self.equip_share_flags,
+                    &p.loadouts,
+                );
+            }
+            self.ui_left_press = false; // `Main.mouseLeftRelease = false` (`:5671`)
+            // `RecordLoadoutChange` (`:5672`): stamp the visual clock.
+            self.loadout_change_time = (self.anim_time * 60.0) % 216000.0;
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:5673`)
+            // `NetMessage.TrySendData(147, -1, -1, null, whoAmI, loadoutIndex)`
+            // (`:5674`): the MP push (no-op while `NetRole::Off`).
+            self.send_sync_loadout(index);
+        }
+        ok
+    }
+
+    /// `ItemSlot.ToggleLoadoutShare` (`ItemSlot.cs:879-889`): flip the equip
+    /// slot's share flag (`Item.favorited` in the `canLoadoutShareAt` contexts)
+    /// + `PlaySound(12)`; turning it ON clears the same slot's share in every
+    /// stored loadout (`ClearSlotShareInOtherLoadouts`, `:891-912`). `context`
+    /// 8/9/10/11 index `Player.armor`, 12 `Player.dye`; `idx` is the array
+    /// index. Returns `true` when the toggle ran (the caller plays the cue).
+    pub(crate) fn toggle_loadout_share(&mut self, context: i32, idx: usize) -> bool {
+        if !crate::ui::loadout::can_loadout_share_at(context) {
+            return false;
+        }
+        let is_dye = context == 12;
+        let cap = if is_dye { crate::inv::DYE } else { crate::inv::ARMOR };
+        if idx >= cap {
+            return false;
+        }
+        let bit = if is_dye { crate::inv::ARMOR + idx } else { idx };
+        let now_on = self.equip_share_flags & (1 << bit) == 0;
+        if now_on {
+            self.equip_share_flags |= 1 << bit;
+            // `Player.Settings.DisableLoadoutShareHint` (`ItemSlot.cs:886` →
+            // `Player.cs:394-401`): the turn-ON arm clears the hint flag and
+            // re-saves the config (only when it was still true).
+            if self.settings.show_loadout_share_hint {
+                self.settings.show_loadout_share_hint = false;
+                let _ = self.settings.save();
+            }
+            // `ClearSlotShareInOtherLoadouts` (`:891-912`): the stored sets'
+            // same-slot share clears (the live set is not in `Loadouts`).
+            if let Some(p) = self.player.as_mut() {
+                for loadout in p.loadouts.iter_mut() {
+                    loadout.set_shared(bit, false);
+                }
+            }
+        } else {
+            self.equip_share_flags &= !(1 << bit);
+        }
+        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:883`)
+        true
+    }
+
+    /// The equip slot's live share flag (`Item.favorited` in the
+    /// `canLoadoutShareAt` contexts) — the draw's shared-item overlay reads it.
+    pub(crate) fn equip_slot_shared(&self, context: i32, idx: usize) -> bool {
+        let bit = if context == 12 { crate::inv::ARMOR + idx } else { idx };
+        bit < 30 && self.equip_share_flags & (1 << bit) != 0
+    }
+
     /// `Main.mouseNPC`'s per-frame lifecycle
     /// (`DrawInterface_38_MouseCarriedObject`, `Main.cs:45182-45211` +
     /// `DrawInterface_25`'s closed-inventory clear, `:45664-45667`):
@@ -1637,6 +1860,16 @@ impl App {
         let menu_flags = match &self.front {
             Some(FrontScreen::WorldCreation(draft)) => {
                 tr_core::seeds::SeedFlags::from_seed_text(&draft.seed)
+            }
+            // W4-d85: the Advanced tab carries the toggled option flags
+            // too (`Main.UpdateAudio_DecideOnNewMusic` reads the live
+            // `WorldGen.drunkWorldGen` statics the toggles write).
+            Some(FrontScreen::WorldCreationAdvanced(draft)) => {
+                tr_core::seeds::SeedFlags::from_seed_text(&draft.seed) | draft.option_flags()
+            }
+            Some(FrontScreen::SecretSeedsList(state)) => {
+                tr_core::seeds::SeedFlags::from_seed_text(&state.draft.seed)
+                    | state.draft.option_flags()
             }
             _ => tr_core::seeds::SeedFlags::default(),
         };
@@ -2453,6 +2686,17 @@ impl App {
         // pump queues empty on every world load — no armed timer or device
         // cooldown crosses worlds (W4-f11 lifecycle census, fold-133).
         self.wiring.clear_all();
+        // W4-c24c — `Player.OnEnterWorld`'s tail (`Player.cs:325`): the
+        // research-achievement recount runs forced on the world-enter, so a
+        // loaded tracker already past half the catalog grants TRASH_COMPACTOR
+        // without waiting for a new sacrifice.
+        let _ = self.achievements.check_research(&self.research, true);
+        // W4-c36 — `AchievementsHelper.Initialize` (`AchievementsHelper.cs:
+        // 89-92`) arms `OnPlayerEnteredWorld` on `Player.Hooks.OnEnterWorld`;
+        // the port's world-entry tail is this fn (every install route calls
+        // it). The sweep (`:94-198`) feeds the pickup rows and completes the
+        // stat/equip flags off the loaded character.
+        crate::app::achievement_hooks::on_player_entered_world(self);
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -2566,6 +2810,21 @@ impl App {
             // The generation job is started by `finish_creating_world`
             // before the hop (`WorldGen.CreateNewWorld`, `:6607-6625`).
             FrontScreen::WorldLoad(_) => {}
+            // `UIReportsPage.OnInitialize` builds the page (`:43-46`);
+            // the scroll's `GoToBottom` is set by the opener
+            // (`open_reports`), not here — the Back hop re-enters the
+            // parked screen, never the reports page itself.
+            FrontScreen::Reports(_) => {}
+            // The Advanced tab + seeds list build their pages in the ctor
+            // (`UIWorldCreationAdvanced.cs:53-60`,
+            // `UIWorldCreationAdvancedSecretSeedsList.cs:41-46`) — the
+            // draft rode in from the flow row; no re-list. The Advanced
+            // ctor's `ProvideUIElement` closures start their glitch state
+            // at 0 (`WorldSeedOption_Everything.cs:76-78`).
+            FrontScreen::WorldCreationAdvanced(_) => {
+                self.world_advanced_glitch = ui::world_creation_advanced::EverythingGlitch::default();
+            }
+            FrontScreen::SecretSeedsList(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
@@ -2610,6 +2869,7 @@ impl App {
             state,
             back,
             tail,
+            rename_index: None,
         })));
     }
 
@@ -2645,8 +2905,32 @@ impl App {
         }
     }
 
-    /// The submit tail. The rename tail keeps Task 6's notice (no `.plr`
-    /// writer, spec §9.4); the creator's naming tails run
+    /// `Main.editSign` (`Main.cs:1745`) — the port's editor is exactly "the
+    /// sign keyboard session is open" (`IngameFancyUI.cs:95` sets it, the
+    /// submit/cancel closures clear it). W4-f22.
+    pub(crate) fn sign_editing(&self) -> bool {
+        matches!(
+            self.front.as_ref(),
+            Some(FrontScreen::Keyboard(s)) if s.tail == KeyboardTail::SignEdit
+        )
+    }
+
+    /// `CopyTextToSign` (`UIVirtualKeyboard.cs:1049-1059`) — the live
+    /// keyboard text while the sign editor is open (the per-tick
+    /// `Main.npcChatText` sync), "" otherwise.
+    pub(crate) fn sign_edit_text(&self) -> &str {
+        match self.front.as_ref() {
+            Some(FrontScreen::Keyboard(s)) if s.tail == KeyboardTail::SignEdit => {
+                s.state.text.as_str()
+            }
+            _ => "",
+        }
+    }
+
+    /// The submit tail. The card-rename tails run `OnFinishedSettingName`
+    /// (`UICharacterListItem.cs:208-214` / `UIWorldListItem.cs:427-432` —
+    /// the `.plr`/world-file read-modify-write, research/19 M1); the
+    /// creator's naming tails run
     /// `OnFinishedNaming` (`:1684-1689`: the trimmed name lands in the draft,
     /// `SetState(this)` restores the screen) and `OnFinishedNamingAndCreating`
     /// (`:1696-1702`: the same, then `FinishCreatingCharacter`). The chest
@@ -2659,17 +2943,39 @@ impl App {
         let name = session.state.text.trim().to_string();
         // The chest submit reads the live untrimmed text — the C# submit
         // closure ignores its trimmed argument (`UIVirtualKeyboard.cs:363`,
-        // `Main.npcChatText`'s sync `:1061-1067`).
-        let chest_text = session.state.text.clone();
+        // `Main.npcChatText`'s sync `:1061-1067`). The sign submit is the
+        // same shape (`CopyTextToSign`, `:1049-1059` — `Main.SubmitSignText`
+        // reads `Main.npcChatText`, not the closure's `s`).
+        let live_text = session.state.text.clone();
         let back = session.back.clone();
+        // `RenameButtonClick`'s `this._data` — the card the keyboard belongs
+        // to (`UICharacterListItem.cs:196-206`, `UIWorldListItem.cs:415-425`).
+        let rename_index = session.rename_index;
+        let tail = session.tail;
         // `InternalSubmit`'s cue (`SoundEngine.PlaySound(10)`,
         // `UIVirtualKeyboard.cs:975`) — the callers' `TextIsValidForSubmit`
         // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
         // `CanSubmit`).
         self.audio.play("Menu_Open");
-        match session.tail {
+        match tail {
             KeyboardTail::Rename => {
-                self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
+                // `UICharacterListItem.OnFinishedSettingName` (`:208-214`):
+                // `Main.menuMode = 10` (the saving pass-through), `_data.Rename`
+                // (`PlayerFileData.cs:207-214` — the `.plr` read-modify-write),
+                // then `OpenCharacterSelectUI`'s re-list.
+                self.rename_player_entry(rename_index, &name);
+                self.enter_front(back.expect("the rename tail is built with a back screen"));
+            }
+            KeyboardTail::WorldRename => {
+                // `UIWorldListItem.OnFinishedSettingName` (`:427-432`):
+                // `Main.menuMode = 10` + `_data.Rename` -> `WorldGen.RenameWorld`
+                // (`WorldGen.cs:6721-6753`); the rename callback's `menuMode = 6`
+                // (`WorldFileData.cs:448-451`) reopens the world select — the
+                // port's world file keeps its stem (the vanilla
+                // `GetWorldPathFromName` move is the cloud path's, `:433`), so
+                // the re-list re-reads the rewritten header.
+                self.rename_world_entry(rename_index, &name);
+                self.audio.play("Menu_Open"); // `GetRenameCallback:473` — sound 10
                 self.enter_front(back.expect("the rename tail is built with a back screen"));
             }
             KeyboardTail::Name => {
@@ -2697,13 +3003,41 @@ impl App {
                 }
                 self.enter_front(back);
             }
-            // `OnFinishedSettingSeed` (`:817-831`): the trimmed seed lands
-            // (`TryApplyingCopiedSeed`'s secret-seed paths are the out-of-
-            // scope Advanced tab, plan Uncertainty 4).
+            // `OnFinishedSettingSeed` (`:817-898`): the trimmed seed lands;
+            // a classic option text selects the option (sound 24, `:834`),
+            // a micro-seed text joins the entered list and re-enables the
+            // parked ones (`:836-842`); the special-seed ring particles
+            // are not drawn (W4-d85 deviation).
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
-                if let FrontScreen::WorldCreation(draft) = &mut back {
+                let draft = match &mut back {
+                    FrontScreen::WorldCreation(draft)
+                    | FrontScreen::WorldCreationAdvanced(draft) => Some(draft),
+                    _ => None,
+                };
+                if let Some(draft) = draft {
                     draft.seed = name;
+                    // `GetOptionFromSeedText` (`:829`) + `SelectOption`.
+                    if let Some(option) = tr_core::seeds::option_for_seed_text(&draft.seed) {
+                        draft.is_special_seed_text = true;
+                        draft.select_option(option);
+                        self.audio.play("Chat"); // `SoundEngine.PlaySound(24)` (`:834`)
+                    } else {
+                        draft.is_special_seed_text = false;
+                    }
+                    // `CheckInputForSecretSeed` (`:836-842`): a new micro
+                    // seed joins the entered list, `EnableSecretSeedOptions`
+                    // re-enables the parked texts, then `ClearSeedText`
+                    // (`:887`) blanks the box.
+                    if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some()
+                        && !draft.secret_texts.contains(&draft.seed)
+                    {
+                        let text = draft.seed.clone();
+                        draft.secret_texts.push(text);
+                        draft.enable_secret_seed_options(true);
+                        draft.seed.clear();
+                        draft.is_special_seed_text = false;
+                    }
                 }
                 self.enter_front(back);
             }
@@ -2724,7 +3058,31 @@ impl App {
             // (`IngameFancyUI.cs:148-156`) — the name lands, the keyboard
             // closes back into gameplay.
             KeyboardTail::ChestRename => {
-                crate::chest::rename_submit(self, &chest_text);
+                crate::chest::rename_submit(self, &live_text);
+            }
+            // `Main.SubmitSignText` + `Close(quiet: true)`
+            // (`IngameFancyUI.cs:137-140`) — the live text lands on the
+            // record, the netMode-1 client sends `47`, the keyboard closes
+            // back into gameplay (W4-f22).
+            KeyboardTail::SignEdit => {
+                crate::signs::submit_sign_text(self, &live_text);
+            }
+            // `SubmitVirtualText` (`UIWrappedSearchBar.cs:184-188`): the
+            // trimmed text lands in the search bar and the list returns
+            // (`SetState(this)`); the list rebuilds its rows from the new
+            // contents (`searchbar_OnSearchContentsChanged`).
+            KeyboardTail::DebugCommandSearch => {
+                self.debug_commands_search = name;
+                self.debug_commands_scroll = 0.0;
+                self.front = None;
+            }
+            // The loadouts twin — `SubmitVirtualText` trims first
+            // (`UIWrappedSearchBar.cs:186`), then
+            // `searchbar_OnSearchContentsChanged` latches `_lastSearch`
+            // (`:94`) with the trimmed contents.
+            KeyboardTail::DebugLoadoutSearch => {
+                self.set_debug_loadouts_search(name);
+                self.front = None;
             }
         }
     }
@@ -2740,6 +3098,12 @@ impl App {
             return;
         };
         let is_chest = session.tail == KeyboardTail::ChestRename;
+        let is_sign = session.tail == KeyboardTail::SignEdit;
+        let live_text = session.state.text.clone();
+        let is_debug_search = matches!(
+            session.tail,
+            KeyboardTail::DebugCommandSearch | KeyboardTail::DebugLoadoutSearch
+        );
         let back = session.back.clone();
         // `Cancel`'s cue (`SoundEngine.PlaySound(11)`,
         // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
@@ -2748,6 +3112,19 @@ impl App {
         self.audio.play("Menu_Close");
         if is_chest {
             crate::chest::rename_cancel(self);
+            return;
+        }
+        if is_sign {
+            // `Main.InputTextSignCancel` + `Close(quiet: true)`
+            // (`IngameFancyUI.cs:141-144`): the cancel cache parks the live
+            // text, `npcChatText` re-reads the stored record (W4-f22).
+            crate::signs::input_text_sign_cancel(self, &live_text);
+            return;
+        }
+        if is_debug_search {
+            // `GoBackFromVirtualKeyboard` (`UIWrappedSearchBar.cs:190-197`):
+            // the list returns with its contents unchanged.
+            self.front = None;
             return;
         }
         self.enter_front(back.expect("the cancel tail is built with a back screen"));
@@ -2768,6 +3145,34 @@ impl App {
     pub(crate) fn keyboard_backspace(&mut self) {
         if let Some(FrontScreen::Keyboard(session)) = self.front.as_mut() {
             session.state.backspace();
+        }
+    }
+
+    /// `CopyTextToSign`/`CopyTextToChest` (`UIVirtualKeyboard.cs:789-796`,
+    /// `:1049-1067`): the DrawSelf tail syncs the live keyboard text into
+    /// `Main.npcChatText` every frame — the sign half only while the record
+    /// is live (`sign >= 0 && Main.sign[sign] != null`, `:1053-1057`). The
+    /// dialog draw reads `npcChatText`, so the edit shows through it.
+    pub(crate) fn keyboard_sync_chat_text(&mut self) {
+        let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else {
+            return;
+        };
+        let tail = session.tail;
+        let text = session.state.text.clone();
+        match tail {
+            KeyboardTail::SignEdit => {
+                let live = self
+                    .player
+                    .as_ref()
+                    .is_some_and(|p| p.sign >= 0 && (p.sign as usize) < self.world.signs.len());
+                if live {
+                    self.npc_chat_text = text; // `:1056`
+                }
+            }
+            KeyboardTail::ChestRename => {
+                self.npc_chat_text = text; // `:1065`
+            }
+            _ => {}
         }
     }
 
@@ -2856,6 +3261,26 @@ impl App {
         let post = self.post.take();
         let noise_tex = self.noise_tex.take();
         let water_mask = self.water_mask.take();
+        // W4-c24 seal — `Main.ActivePlayerFileData` survives `Main.LoadWorld`
+        // (`Main.cs:66208-66216`: `SelectPlayer` → `data.SetAsActive` caches
+        // the hydrated Player; the world load never re-opens the `.plr`).
+        // The Journey per-CHARACTER state rides the App reset: the research
+        // counts (`Player.creativeTracker`, `Player.cs:794` — the CharPlay
+        // hydration's `load_pairs`), the three per-player powers
+        // (`CreativePowerManager.LoadToPlayer`'s set, `:197-215` — Godmode 5
+        // / FarPlacement 11 / SpawnRate 14), the spawn-rate slider cache and
+        // the session difficulty stand-in + name. The per-WORLD powers are
+        // NOT carried — `App::new` re-loads them from the new world's
+        // section (`LoadFromWorld`, `CreativePowerManager.cs:139-151`).
+        let carried_research = std::mem::take(&mut self.research);
+        let carried_draft = self.session_draft.take();
+        let carried_name = self.player_name.clone();
+        let carried_spawn_cache = self.journey.spawn_rate_cache;
+        let carried_godmode = self.creative_powers.god_mode();
+        let carried_far = self.creative_powers.far_placement_range();
+        let carried_spawn = self
+            .creative_powers
+            .slider(crate::creative::PowerId::SpawnRate);
         // The fresh App carries the new world's state (clouds, sky, stars,
         // player, npcs, town rooms, chests, liquids, rain, wind, atmo,
         // bestiary, the loader pins) exactly as App::new built it at boot.
@@ -2868,6 +3293,26 @@ impl App {
             font_atlas,
             lookups,
             atlas_stats,
+        );
+        // W4-c24 seal — the carried per-character halves land back (the
+        // `ActivePlayerFileData` survival above). The per-player powers
+        // overwrite ONLY their three registry rows; every per-world row
+        // keeps the new world's loaded state.
+        self.research = carried_research;
+        self.session_draft = carried_draft;
+        self.player_name = carried_name;
+        self.journey.spawn_rate_cache = carried_spawn_cache;
+        self.creative_powers.set(
+            crate::creative::PowerId::Godmode,
+            crate::creative::PowerState::Toggle(carried_godmode),
+        );
+        self.creative_powers.set(
+            crate::creative::PowerId::FarPlacementRange,
+            crate::creative::PowerState::Toggle(carried_far),
+        );
+        self.creative_powers.set(
+            crate::creative::PowerId::SpawnRate,
+            crate::creative::PowerState::Slider(carried_spawn),
         );
         // The fresh manager loaded its conditions in `App::new`; re-bind its
         // `_savePath` (`AchievementManager.cs:41-55`) exactly as boot did.
@@ -3007,6 +3452,9 @@ impl App {
         let mut armor_kinds = [0u16; 3];
         // `Player.dye[0..10]`'s item kinds (sidecar v6), same restore path.
         let mut dye_kinds = [0u16; 10];
+        // The live equip set's share word (sidecar v7); older sidecars load 0.
+        // The stored sets + index ride the Player directly in the restore below.
+        let mut loaded_share_flags = 0u32;
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
             0 => ItemSlot {
                 kind: 2, // ItemID.DirtBlock
@@ -3084,6 +3532,11 @@ impl App {
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
+                    // The loadout block (sidecar v7): the stored sets + index
+                    // ride the Player; the live share word rides the App.
+                    p.loadouts = saved.loadouts;
+                    p.current_loadout_index = saved.current_loadout_index;
+                    loaded_share_flags = saved.equip_share_flags;
                     for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                         inventory[i] = ItemSlot {
                             kind: *kind,
@@ -3684,6 +4137,12 @@ impl App {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            sign_cancel_cache: String::new(),
+            sign_text_blinker: ui::chest::TextBlinker::default(),
+            sign_hover: -1, // `Main.cs:67189`
+            sign_bubble: false,
+            sign_x: 0,
+            sign_y: 0,
             gpu: None,
             renderer: None,
             post: None,
@@ -3748,6 +4207,9 @@ impl App {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
+            game_mode_difficulty_override: None,
+            research: crate::research::ResearchTracker::default(),
+            journey: ui::journey::JourneyMenu::default(),
             #[cfg(feature = "debug")]
             debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
@@ -3838,6 +4300,10 @@ impl App {
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             dye_swap_counter: 0,
+            equip_share_flags: loaded_share_flags,
+            loadout_change_time: f32::NEG_INFINITY,
+            loadout_mouse_over: -1,
+            loadout_clone: crate::loadout::LoadoutClone::default(),
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
@@ -3888,6 +4354,19 @@ impl App {
             // categories all start on (`InitializePage`'s `SetState(true)`).
             achievements_open: crate::env::achievements_open(),
             achievements_scroll: 0.0,
+            // `TR_DEBUG_COMMANDS_LIST` opens the debug list for the shot runs
+            // (the vanilla opens on `/hh` only).
+            debug_commands_open: crate::env::debug_commands_list_open(),
+            debug_commands_search: String::new(),
+            debug_commands_scroll: 0.0,
+            debug_loadouts_open: false, // the tail below runs the real opener
+            debug_loadouts: Vec::new(),
+            debug_loadouts_search: String::new(),
+            debug_loadouts_last_search: String::new(),
+            debug_loadouts_scroll: 0.0,
+            world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
+            issue_reporter: ui::reports::GeneralIssueReporter::default(),
+            issue_indicator: ui::reports::IssueIndicator::default(),
             // The filter bits default to all-on (`SetState(value: true)`);
             // a shot run can pin a single category through the bitmask.
             achievements_categories: {
@@ -3913,7 +4392,10 @@ impl App {
             },
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
+            town_spawn: crate::town_spawn::TownSpawnStatics::default(),
+            town_spawn_requests: Vec::new(),
             reuse_delay: 0.0,
+            pending_item_reuse: false,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern). An open chest closes it
@@ -4127,6 +4609,10 @@ impl App {
             // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
             disco: [255, 0, 0],
             disco_style: 0,
+            // `Main.masterColor = 1f; Main.masterColorDir = 1`
+            // (Main.Initialize, `Main.cs:66833-66834`).
+            master_color: 1.0,
+            master_color_dir: 1,
             light_rng_seed: world_seed | 1,
             anim_time: 0.0,
             has_liquids,
@@ -4254,6 +4740,11 @@ impl App {
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
             app.preset_ui(preset);
+        }
+        // `TR_DEBUG_LOADOUTS_LIST` opens the loadouts overlay through the
+        // real opener (the ctor's `PopulateLoadouts` reads the dir).
+        if crate::env::debug_loadouts_list_open() {
+            app.open_debug_loadouts();
         }
         app
     }
@@ -5319,6 +5810,99 @@ pub(crate) mod tr_hooks {
         assert!(app.menu.is_none() && app.front.is_none());
         assert!(app.static_sheets.is_some() && app.fonts_cache.is_some());
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// W4-c24 seal — `Main.ActivePlayerFileData` survives `Main.LoadWorld`
+    /// (`Main.cs:66208-66216`): the CharPlay-hydrated per-character Journey
+    /// state (the research counts, the three per-player powers, the
+    /// spawn-rate cache, the session difficulty + name) rides `swap_world`'s
+    /// `App::new` reset; the per-WORLD powers come from the new world's
+    /// section, not the old App. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_c24_the_character_journey_state_rides_the_world_swap() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(content) = find_content_dir() else {
+            eprintln!("no assets/Content junction: skipping the swap carry");
+            return;
+        };
+        assets::set_content_dir(content.clone());
+        let dir = std::env::temp_dir().join(format!("tr-c24-carry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut paths = Vec::new();
+        for name in ["Alpha", "Beta"] {
+            let path = dir.join(format!("{name}.trwld"));
+            let mut w = World::new(name.into(), 64, 64);
+            w.compute_column_surface();
+            save::save(&path, &w, &save::WorldSide::default()).unwrap();
+            paths.push(path);
+        }
+        let (world, sections) = load_world(&paths[0]).unwrap();
+        let (atlas, font_atlas, lookups, stats) = build_atlas_reusing_static(
+            &world,
+            &content.join("Images"),
+            &mut None,
+            &mut None,
+        )
+        .expect("boot atlas");
+        let mut app = App::new(
+            settings::Settings::default(),
+            world,
+            sections,
+            paths[0].clone(),
+            atlas,
+            font_atlas,
+            lookups,
+            stats,
+        );
+        // The CharPlay hydration's landed state (app/flow.rs's read arm).
+        app.research.register_sacrifice(8, 100); // Torch, fully
+        app.research.register_sacrifice(2, 37); // Dirt, partial
+        app.session_draft = Some(ui::char_creation::NewPlayerDraft {
+            name: "Hydra".into(),
+            difficulty: 3,
+            ..Default::default()
+        });
+        app.player_name = "Hydra".into();
+        app.creative_powers.set(
+            crate::creative::PowerId::Godmode,
+            crate::creative::PowerState::Toggle(true),
+        );
+        app.creative_powers.set(
+            crate::creative::PowerId::FarPlacementRange,
+            crate::creative::PowerState::Toggle(true),
+        );
+        app.creative_powers.set(
+            crate::creative::PowerId::SpawnRate,
+            crate::creative::PowerState::Slider(0.75),
+        );
+        app.journey.spawn_rate_cache = 0.75;
+        // The old world's per-world FreezeTime ON — the new world's section
+        // carries none, so the swap must NOT carry it across.
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeTime,
+            crate::creative::PowerState::Toggle(true),
+        );
+        app.swap_world(&paths[1]).expect("the swap");
+        // The per-character halves survived (`ActivePlayerFileData`).
+        assert_eq!(app.research.sacrificed(8), 100);
+        assert_eq!(app.research.sacrificed(2), 37);
+        assert!(app.research.is_fully_researched(8));
+        assert_eq!(app.active_player_difficulty(), 3);
+        assert_eq!(app.player_name, "Hydra");
+        assert!(app.creative_powers.god_mode());
+        assert!(app.creative_powers.far_placement_range());
+        assert!((app.creative_powers.slider(crate::creative::PowerId::SpawnRate) - 0.75).abs() < 1e-6);
+        assert!((app.journey.spawn_rate_cache - 0.75).abs() < 1e-6);
+        // The per-world power re-loaded from the new world (off), not carried.
+        assert!(!app.creative_powers.toggle(crate::creative::PowerId::FreezeTime));
+        // The world-enter forced research check ran on the carried tracker
+        // (Player.cs:325) — a 2-row tracker stays far from the half threshold.
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "TRASH_COMPACTOR" && a.completed),
+            "the carried tracker is far from half the catalog"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -18,16 +18,22 @@ pub(crate) mod coin_slot;
 pub mod color;
 pub mod crafting;
 pub mod cursor;
+pub mod debug_commands;
+pub mod debug_loadouts;
 pub mod ingame_options;
 pub mod housing;
 pub(crate) mod interact_icon;
 pub mod inventory;
+pub mod journey;
+pub mod loadout;
 pub mod keyboard;
+pub mod manage_controls;
 pub mod minimap;
 pub mod notifications;
 pub(crate) mod npc_chat;
 pub mod panel;
 pub mod pointer;
+pub mod reports;
 pub mod resources;
 pub mod save_list;
 pub mod sliders;
@@ -35,11 +41,16 @@ pub mod select_hit;
 pub mod slot;
 pub mod text;
 pub mod tooltip;
+pub mod tooltip_lines2;
+pub(crate) mod tooltip_sets;
 pub mod uistate;
+pub mod secret_seeds_list;
 pub mod world_creation;
+pub mod world_creation_advanced;
 pub(crate) mod world_load;
 pub mod world_select;
 pub mod wires_ui;
+pub mod workshop_publish_info;
 
 use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
@@ -688,6 +699,12 @@ pub fn draw_hud(
     emotes_state: &crate::emotes::EmoteSystem,
     ingame_options: Option<(&Settings, &ingame_options::IngameOptions)>,
     shop: Option<(&[crate::shop::ShopEntry], f32, bool)>,
+    // W4-f28 — the shop price row's session inputs
+    // (`Main.MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448-20555`):
+    // `ItemSlot.ShiftInUse` (the bulk-buy display stack) and the
+    // `Main.shopSellbackHelper` memo (the sell-row refund). `None` while no
+    // shop is open — the tooltip appends no price row then.
+    shop_tooltip: Option<ShopTooltipState<'_>>,
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
     bank: Option<(&[ItemSlot], i32)>,
@@ -727,6 +744,51 @@ pub fn draw_hud(
     // the `(kind, time)` pair the verification left (the batch-H keep-one
     // compose — g79's module draws, g81's cache feeds the linger arm).
     icon_cache: (u16, i32),
+    // The sign dialog half (W4-f22): `GUIChatDraw`'s gate
+    // (`Main.cs:46713` — `(npcChatText != "" || sign != -1) && !editChest`),
+    // `CanHoldConversation`'s sign arm (`NPCChatPanel.cs:276-283`), the
+    // `OpenSign` interaction's `Main.editSign` label switch
+    // (`NPCInteractions.cs:22-29`) and the panel's own caret blinker
+    // (`NPCChatPanel.cs:254-261`).
+    sign_open: bool,
+    edit_sign: bool,
+    chest_editing: bool,
+    sign_blinker: &mut chest::TextBlinker,
+    // `Main.signBubble`/`signX`/`signY` (`Main.cs:2079-2083`) — the
+    // placed-sign bubble anchor (`DrawInterface_19_SignTileBubble`,
+    // `Main.cs:45739-45760`). `None` while the latch is clear. W4-f22.
+    sign_bubble_anchor: Option<(i32, i32)>,
+    // `Main.signHover`'s record text (`Main.cs:42940-42986`) — the hover
+    // tooltip's preview. `None` while no sign is hovered. W4-f22.
+    sign_hover_text: Option<&str>,
+    // The Journey powers menu (W4-c24) — `CreativeUI.Draw`
+    // (`Main.cs:41704`): the toggle button draws for every Journey player
+    // (difficulty 3, unblocked), the window while `Enabled`. The weather
+    // tuple carries the live values the wind/rain sliders read
+    // (`GetSliderValueInner`, `CreativePowers.cs:1193-1196`/`:1332-1335`).
+    journey: Option<(
+        &journey::JourneyMenu,
+        &crate::research::ResearchTracker,
+        &crate::creative::CreativePowers,
+        // (windSpeedTarget, cloudAlpha, maxRaining)
+        (f32, f32, f32),
+    )>,
+    // `Player.CurrentLoadoutIndex` (`Player.cs:3207`) — the equipment-slot
+    // palette + the loadout buttons' active frame.
+    current_loadout: usize,
+    // The loadout-change flash factor (`ItemSlot.GetColorByLoadout:2786-2791`).
+    loadout_flash: f32,
+    // `Main.loadoutMouseOver` (`Main.cs:41990`) — the hovered-button latch the
+    // `DoStatefulTickSound` 12 cue reads and writes.
+    loadout_mouse_over: &mut i32,
+    // The LIVE equip set's share word (`App.equip_share_flags`) — the
+    // Extra_310-312 badge on a non-air shared slot (`ItemSlot.cs:2485-2488`).
+    equip_share_flags: u32,
+    // W4-f28 — the tooltip's world/session gates (`Main.expertMode`, the
+    // downed latches, the seed flags, `Main.npcShop`, the master/disco
+    // colour animators): the second-half rows read them through
+    // `TooltipContext.world`.
+    tooltip_world: tooltip_lines2::TooltipWorld,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -795,12 +857,38 @@ pub fn draw_hud(
     // the same world→UI transform as the emotes (`DrawNPCChatBubble`,
     // `Main.cs:43135-43161`).
     npc_chat::draw_bubble(r, lookups, npcs, player, camera, zoom, screen, mouse_pos, pulse);
+    // `DrawInterface_19_SignTileBubble` (`Main.cs:44804-44808`,
+    // `:45739-45760`): the placed-sign bubble rides the same world→UI
+    // transform, BEFORE the dialog (layer 19 < 23). W4-f22.
+    npc_chat::draw_sign_bubble(
+        r,
+        lookups,
+        player,
+        camera,
+        zoom,
+        screen,
+        sign_bubble_anchor,
+        pulse,
+    );
     // `DrawInterface_23_NPCSignsDialog` (`Main.cs:45713-45716`) →
-    // `GUIChatDraw` → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
-    // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
-    // `:276-283`; the sign half is unported).
-    if talk_npc.is_some() {
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+    // `GUIChatDraw` (`:46709-46716`: `(npcChatText != "" || sign != -1) &&
+    // !editChest`) → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
+    // dialogue panel while `CanHoldConversation` holds — `talkNPC >= 0`
+    // OR a sign is open (`:276-283`). W4-f22: the sign half draws through
+    // the same panel — the read display, the Edit/Save interaction and
+    // the edit caret.
+    if (talk_npc.is_some() || sign_open) && !chest_editing {
+        npc_chat::draw_panel(
+            r,
+            lookups,
+            screen,
+            npc_chat_text,
+            pulse,
+            mouse_pos,
+            sign_open,
+            edit_sign,
+            sign_blinker,
+        );
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
@@ -844,6 +932,13 @@ pub fn draw_hud(
     }
 
     let mut open_hover: Option<inventory::HoverRef> = None;
+    // W4-f28 — the hovered shop stock row (`Main.cs:41811-41814`'s
+    // `ItemSlot.Handle` context-15 hover); set by the shop draw block.
+    let mut shop_hover: Option<&crate::shop::ShopEntry> = None;
+    // `Main.LocalPlayer.chest` (`Player.cs:2876`) — the favourite rows'
+    // bank-blocked notice (`Main.cs:20659`); captured before `chest::draw`
+    // moves the panel state.
+    let open_chest = chest_panel.chest;
     // `Main.mouseItem.IsAir` (`Main.cs:41430`): every accessory tick draw and hit
     // is gated on the cursor holding nothing.
     let mouse_item_is_air = mouse_item.kind == 0 || mouse_item.count == 0;
@@ -854,10 +949,51 @@ pub fn draw_hud(
     // PVP/team icons (`Main.cs:42053-42056`); the C# clears it at the top of
     // `DrawNPCHousesInUI` and reads it in `DrawPVPIcons`, which runs after.
     let mut hide_pvp_icons = false;
+    // The hovered loadout button's `UI.LoadoutN` mouse text
+    // (`Main.DrawLoadoutButtons:41972`), printed instead of an item tooltip.
+    let mut loadout_hover_text: Option<String> = None;
     if inventory_open {
+        // `GetEffectiveArmor`/`GetEffectiveDye` (`Player.cs:5690-5764`): the
+        // shared item + its source loadout for each AIR equip slot (the ghost
+        // icon + the Extra_313-315 badge). A live slot returns itself
+        // (`sharedFromLoadout == None`), so only the genuinely shared ones
+        // carry `Some`.
+        let shared_armor: [Option<(ItemSlot, usize)>; 20] = std::array::from_fn(|i| {
+            player.and_then(|p| {
+                let (item, from) = p.get_effective_armor(i);
+                from.map(|f| (item, f))
+            })
+        });
+        let shared_dye: [Option<(ItemSlot, usize)>; 10] = std::array::from_fn(|i| {
+            player.and_then(|p| {
+                let (item, from) = p.get_effective_dye(i);
+                from.map(|f| (item, f))
+            })
+        });
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
         // ammo columns, the equipment/vanity/dye columns (or the misc-equip page),
         // the trash slot and the "Inventory"/"Coins"/"Ammo" labels.
+        // `Main.DoStatefulTickSound(ref Main.loadoutMouseOver, state)`
+        // (`Main.cs:41990`, `:3249-3259`): the 12 cue fires when the hovered
+        // button changes onto a button (not on leaving to -1). The hover is
+        // probed before the draw so the audio borrow precedes `chest_panel`'s
+        // move into `chest::draw` below.
+        let loadout_hover = if equip_page == 0 {
+            loadout::button_hit(
+                screen.x,
+                inventory::equip_page_base_y(screen.y, m_h),
+                [mouse_pos.x, mouse_pos.y],
+            )
+            .map_or(-1, |i| i as i32)
+        } else {
+            -1
+        };
+        if *loadout_mouse_over != loadout_hover {
+            *loadout_mouse_over = loadout_hover;
+            if loadout_hover != -1 {
+                chest_panel.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+            }
+        }
         let hit = inventory::draw(
             r,
             lookups,
@@ -882,10 +1018,18 @@ pub fn draw_hud(
             // (`Player.cs:4276-4292`, W4-g87) — the slot-8 row joins the
             // columns once the unlock (or a stored item) shows it.
             inventory::ExtraAccessoryShow::of(player),
+            current_loadout,
+            loadout_flash,
+            &shared_armor,
+            &shared_dye,
+            equip_share_flags,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;
         hide_pvp_icons = hit.hide_pvp_icons;
+        if hit.loadout_hover >= 0 {
+            loadout_hover_text = Some(loadout::hover_label(hit.loadout_hover as usize));
+        }
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
         let num20 = 174.0 + m_h;
         // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
@@ -935,6 +1079,16 @@ pub fn draw_hud(
                     );
                 }
             }
+            // W4-f28 — the shop cell hover (`Main.cs:41811-41814`):
+            // `ItemSlot.Handle(shop.item, 15, slot)` runs `MouseHover`,
+            // which stamps `Main.HoverItem` (context 15 sets `buy = true`,
+            // `ItemSlot.cs:3195-3197`). The port's tooltip layer reads the
+            // cell here — the same inclusive-edge hit the click path uses
+            // (`shop_slot_at_mouse`, clicks.rs:408).
+            let cell = lookups.ui_back.map_or(52.0, |b| b.width as f32);
+            shop_hover = inventory::shop_slot_at(mouse_pos, cell)
+                .and_then(|idx| stock.get(idx))
+                .filter(|e| e.stack > 0);
         }
         // The reforge menu (`Main.DrawInventory`'s inline block,
         // `Main.cs:41557-41685`): the (50, 270) input slot, the (120, 310)
@@ -1042,6 +1196,20 @@ pub fn draw_hud(
                     pulse,
                     tooltip::TooltipContext {
                         player,
+                        // `ItemSlot.MouseHover(22)` (`Main.cs:42258`): the
+                        // crafting-material context (the e16 map, research/128
+                        // §4.3) - the Journey sacrifice row whitelists 22
+                        // (`Main.cs:21318`, W4-c24c).
+                        flags: tooltip_lines2::HoverFlags {
+                            context: 22,
+                            ..Default::default()
+                        },
+                        world: tooltip_lines2::TooltipWorld {
+                            npc_shop: shop.is_some(),
+                            ..tooltip_world
+                        },
+                        difficulty: journey.map_or(0, |_| 3),
+                        research: journey.map(|(_, t, _, _)| t),
                         ..Default::default()
                     },
                     // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` — the
@@ -1076,6 +1244,28 @@ pub fn draw_hud(
             );
             x += advance;
         }
+    }
+    // `Main.cs:41704`: `Main.CreativeMenu.Draw` runs at `DrawInventory`'s
+    // tail (the port draws it after the inventory/hotbar block; the crafting
+    // panel never coexists — opening the powers menu closes crafting,
+    // `CreativeUI.cs:206`).
+    let mut journey_hover: Option<journey::Hover> = None;
+    if let Some((jm, tracker, powers, (wind_target, cloud_alpha, max_raining))) = journey {
+        journey_hover = Some(journey::draw(
+            r,
+            lookups,
+            screen,
+            mouse_pos,
+            jm,
+            tracker,
+            powers,
+            inventory_open,
+            pulse,
+            wind_target,
+            cloud_alpha,
+            max_raining,
+            player,
+        ));
     }
     // Selected item name, centred on x=236 at y=0 like the original
     // (`GUIHotbarDrawInner`, `Main.cs:43593-43595`): `FontAssets.MouseText` at
@@ -1185,10 +1375,31 @@ pub fn draw_hud(
     // `mouseNPCType > -1` returns) + `DrawInterface_38`'s
     // `Main.mouseText = false` (`:45222`): no hover text while a housing
     // head rides the cursor.
-    let hover_item: Option<&ItemSlot> = if mouse_npc.carried() {
+    // W4-f28 — the shop grid's hover wins over the inventory panels under
+    // it: the C# runs `ItemSlot.Handle(shop.item, 15, slot)` AFTER the grid
+    // passes (`Main.cs:41814`), so its `MouseHover` stamp is the last
+    // `Main.HoverItem` write. The shop cell's instance is the stock row
+    // (the kind default + the sold-in prefix/stack).
+    let shop_hover_slot = shop_hover.map(|e| ItemSlot {
+        kind: e.item,
+        name: crate::itemdata::ITEMS[e.item as usize].name,
+        count: e.stack,
+        prefix: e.prefix,
+    });
+    let hover_item: Option<(i32, &ItemSlot)> = if mouse_npc.carried() {
         None
-    } else if pvp_hover_text.is_some() || housing_hover_text.is_some() {
+    } else if pvp_hover_text.is_some()
+        || housing_hover_text.is_some()
+        || loadout_hover_text.is_some()
+    {
         None
+    } else if journey_hover.as_ref().is_some_and(|h| h.text_drawn) {
+        // A journey `MouseTextNoOverride` line already owns the hover text
+        // (`Main.mouseText` set, `Main.cs:20162`'s pending-text gate).
+        None
+    } else if shop_hover_slot.is_some() {
+        // The shop grid's context-15 stamp (`ItemSlot.cs:3195-3197`).
+        shop_hover_slot.as_ref().map(|item| (15, item))
     } else if inventory_open {
         match open_hover {
             // `Main.cs:41462-41465`: the hovered tick shows `Lang.inter[58 +
@@ -1203,27 +1414,152 @@ pub fn draw_hud(
                 tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
                 None
             }
-            other => other.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0))),
+            other => other.and_then(|h| {
+                hover_item_for(equip, inventory, h, bank.map(|b| b.0))
+                    .map(|item| (hover_context(h), item))
+            }),
         }
     } else {
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
-            .map(|i| &inventory[i])
+            // The closed hotbar draws context 13 (`GUIHotbarDrawInner`) —
+            // outside the sacrifice row's whitelist (`Main.cs:21318`).
+            .map(|i| (13, &inventory[i]))
     };
     // `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
     // held item's own crit, which the tooltip's crit row subtracts
     // (`Main.cs:20701`).
     let held_crit = crate::registry::get(inventory[selected].kind).map_or(0, |d| d.crit);
+    // The journey grid's hovered cell (`UICreativeItemGrid.cs:22-29`): the
+    // freshly-defaulted item becomes `Main.HoverItem` — it beats the panel
+    // hover (the grid draws after the inventory). Its tooltip context is the
+    // grid's own (`DrawSlot`, `:21`): 29 fully researched, 34 partial.
+    let journey_item = journey_hover.as_ref().and_then(|h| h.item);
+    let hover_item = journey_item
+        .as_ref()
+        .map(|item| {
+            let ctx = journey_hover.as_ref().map_or(34, |h| h.context);
+            (ctx, item)
+        })
+        .or(hover_item);
+    // W4-f28 — the hovered instance's `ItemSlot.MouseHover` stamps
+    // (`ItemSlot.cs:3183-3198`) + the full HoverRef→context map (the e16
+    // salvage, research/128 §4.3): context 8 stamps wornArmor, 9/11 stamp
+    // social; the grid/coin/ammo favourites ride `App.favorite_slots`
+    // under the vanilla slot numbering (`inv::coin_slot_index` /
+    // `ammo_slot_index` — coins 50-53, ammo 54-57).
+    let hover_flags = {
+        let mut f = tooltip_lines2::HoverFlags::default();
+        if shop_hover_slot.is_some() {
+            // The shop grid's context-15 stamp (`ItemSlot.cs:3195-3197`).
+            f.context = 15;
+        } else if inventory_open {
+            match open_hover {
+                Some(inventory::HoverRef::Grid(i)) => {
+                    f.context = 0;
+                    f.favorited = favorites.contains(&i);
+                }
+                Some(inventory::HoverRef::Coin(i)) => {
+                    f.context = 1;
+                    f.favorited = favorites.contains(&crate::inv::coin_slot_index(i));
+                }
+                Some(inventory::HoverRef::Ammo(i)) => {
+                    f.context = 2;
+                    f.favorited = favorites.contains(&crate::inv::ammo_slot_index(i));
+                }
+                Some(inventory::HoverRef::Armor(i)) => {
+                    // `Main.cs:41396-41496`: armour 0-2 ctx 8, accessories
+                    // 3-9 ctx 10; vanity 10-12 ctx 9, vanity accessories
+                    // 13-19 ctx 11 — the stamps ride the context
+                    // (`ItemSlot.cs:3186-3194`).
+                    f.context = match i {
+                        0..=2 => 8,
+                        3..=9 => 10,
+                        10..=12 => 9,
+                        _ => 11,
+                    };
+                    f.worn_armor = f.context == 8;
+                    f.social = matches!(f.context, 9 | 11);
+                }
+                Some(inventory::HoverRef::Dye(_)) => f.context = 12,
+                Some(inventory::HoverRef::MiscEquip(i)) => {
+                    // `Main.cs:41199-41215`: pet 19, light 20, minecart 18,
+                    // mount 17, grapple 16 — the port's MISC_CONTEXT order
+                    // (`ui/inventory.rs:379`).
+                    f.context = [19, 20, 18, 17, 16][i.min(4)];
+                }
+                Some(inventory::HoverRef::MiscDye(_)) => f.context = 33,
+                Some(inventory::HoverRef::Trash) => f.context = 6,
+                Some(inventory::HoverRef::Bank(_)) => f.context = 4,
+                _ => {}
+            }
+        } else {
+            // The closed hotbar: context 13, the grid favourites apply.
+            f.context = 13;
+            if let Some(i) =
+                tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
+            {
+                f.favorited = favorites.contains(&i);
+            }
+        }
+        f
+    };
+    // W4-f28 — the shop price row's context (`AddShopLines`,
+    // `Main.cs:20448-20555`): every hover under an open shop appends the
+    // row; the shop grid's context-15 stamp sets `buy = true`
+    // (`ItemSlot.cs:3195-3197`), the stock row's buyOnce/isAShopItem flags
+    // ride the entry. The inventory hovers keep `buy = false` (the SELL
+    // row) and price their own instance (no shop flags, no override).
+    let shop_lines = shop_tooltip.map(|st| {
+        let entry = shop_hover;
+        crate::shop::ShopLineContext {
+            buy: entry.is_some(),
+            buy_once: entry.map_or(false, |e| e.buy_once),
+            is_a_shop_item: entry.map_or(false, |e| e.is_a_shop_item),
+            // Filled by `item_tooltip_lines` from the prefixed instance.
+            instance_value: 0,
+            shop_custom_price: entry.and_then(|e| e.shop_custom_price),
+            shift_in_use: st.shift_in_use,
+            discount_available: shop.map_or(false, |(_, _, d)| d),
+            price_adjustment: shop.map_or(1.0, |(_, m, _)| m),
+            sellback_amount: match (entry, hover_item) {
+                (Some(e), _) => st.sellback.get_amount(e.item, e.prefix),
+                (None, Some((_, h))) => st.sellback.get_amount(h.kind, h.prefix),
+                _ => 0,
+            },
+        }
+    });
     tooltip::draw_item_tooltip(
         r,
         lookups,
         mouse_pos,
-        hover_item,
+        hover_item.map(|(_, item)| item),
         screen,
         pulse,
         tooltip::TooltipContext {
-            prefix: hover_item.map_or(0, |h| h.prefix),
+            prefix: hover_item.map_or(0, |(_, h)| h.prefix),
             player,
             held_crit,
+            // W4-c24c - the Journey sacrifice row (`Main.cs:21318`) reads the
+            // hovered context through `flags.context` (the W4-f28 compose);
+            // the journey grid cell overrides it, the panel hovers keep the
+            // HoverFlags map. The difficulty + tracker gate the row.
+            flags: tooltip_lines2::HoverFlags {
+                context: hover_item.map_or(-1, |(ctx, _)| ctx),
+                ..hover_flags
+            },
+            world: tooltip_lines2::TooltipWorld {
+                npc_shop: shop.is_some(),
+                ..tooltip_world
+            },
+            difficulty: journey.map_or(0, |_| 3),
+            research: journey.map(|(_, t, _, _)| t),
+            inventory: Some(&inventory[..]),
+            has_coin_gun: has_coin_gun(inventory, equip),
+            held_kind: inventory[selected].kind,
+            open_chest,
+            show_loadout_share_hint: ingame_options
+                .map_or(true, |(s, _)| s.show_loadout_share_hint),
+            shop_lines,
             ..Default::default()
         },
         ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
@@ -1232,6 +1568,9 @@ pub fn draw_hud(
         tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
     }
     if let Some(text) = housing_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
+    }
+    if let Some(text) = loadout_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
@@ -1243,6 +1582,107 @@ pub fn draw_hud(
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
     // hidden while the vanilla `Cursor_0` is on screen.
     cursor::draw(r, lookups, cursor_state, mouse_pos);
+
+    // `DrawInterface_39_MouseOver` -> `DrawMouseOver`'s sign arm
+    // (`Main.cs:44904-44908`, `:42940-42986`): the hovered sign's text
+    // preview, the LAST interface layer (after the cursor). The gate
+    // (`:42940`): no earlier mouse text (`!Main.mouseText` — the port's
+    // hover-text producers above), a live hovered record, and
+    // `!mouseInterface` (the pointer over a UI panel suppresses it). The
+    // port's `mouseInterface` stand-in is the pointer-over-panel test: the
+    // open inventory grid / shop grid / chest panel / dialog box under the
+    // cursor, plus the fullscreen bestiary (the C# sets the flag from the
+    // per-cell `ItemSlot.Handle` hits, `Main.cs:41811-41813`; the port
+    // folds it to the panel rects). W4-f22.
+    let mouse_text_drawn = hover_item.is_some_and(|(_, h)| h.count > 0)
+        || pvp_hover_text.is_some()
+        || housing_hover_text.is_some();
+    let panel_w = lookups.ui_back.map_or(52.0, |b| b.width as f32);
+    let over_inventory_grid = inventory_open
+        && mouse_pos.x >= 20.0
+        && mouse_pos.x <= 20.0 + 10.0 * 56.0 * 0.85
+        && mouse_pos.y >= 20.0
+        && mouse_pos.y <= 20.0 + 5.0 * 56.0 * 0.85;
+    let over_shop_grid = shop.is_some()
+        && inventory::shop_slot_at(mouse_pos, panel_w).is_some();
+    let over_dialog = (talk_npc.is_some() || sign_open)
+        && !chest_editing
+        && in_rect(
+            mouse_pos,
+            npc_chat::panel_rect(
+                lookups,
+                screen,
+                npc_chat_text,
+                npc_chat::interaction_count(sign_open),
+            ),
+        );
+    let mouse_interface =
+        over_inventory_grid || over_shop_grid || chest_panel.chest >= 0 || bestiary_open || over_dialog;
+    if let Some(text) = sign_hover_text.filter(|_| !mouse_text_drawn && !mouse_interface) {
+        tooltip::draw_sign_hover_tooltip(
+            r,
+            lookups,
+            mouse_pos,
+            text,
+            screen,
+            pulse,
+            ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
+        );
+    }
+}
+
+/// The hovered panel's `ItemSlot.Draw` context (`ItemSlot.MouseHover`,
+/// `ItemSlot.cs:3184`) — the Journey sacrifice row's whitelist gate reads it
+/// (`Main.cs:21318`). The contexts are the port's draw-site numbers
+/// (`ui/slot.rs`'s covered set): grid/hotbar 0, coins 1, ammo 2, bank 4,
+/// trash 6, armour 8/10, vanity 9/11, dye 12, misc equips 16-20, misc dyes
+/// 33. The button/tick hovers never reach here (their tooltip arms return
+/// before the item pick).
+fn hover_context(hit: inventory::HoverRef) -> i32 {
+    use inventory::HoverRef as H;
+    match hit {
+        H::Grid(_) => 0,
+        H::Coin(_) => 1,
+        H::Ammo(_) => 2,
+        H::Bank(_) => 4,
+        H::Trash => 6,
+        H::Armor(i) => {
+            // The draw-site picks (`inventory.rs:716`/`:767`, `Main.cs:
+            // 41409-41414`/`:41482-41485`): head/body/legs 0..2 → 8, the
+            // accessories 3..9 → 10; vanity 10..12 → 9, 13..19 → 11. None
+            // of 8..11 is whitelisted by the sacrifice row (`:21318`).
+            match i {
+                0..=2 => 8,
+                3..=9 => 10,
+                10..=12 => 9,
+                _ => 11,
+            }
+        }
+        H::Dye(_) => 12,
+        H::MiscEquip(i) => 16 + i as i32,
+        H::MiscDye(_) => 33,
+        H::BankButton(_) | H::HideAccessory(_) => -1,
+    }
+}
+
+/// `Player.HasItem(905)` (`Player.cs:55894-55904`): the Coin Gun scan over
+/// the full 58 carry slots — the grid PLUS the coin/ammo rows
+/// (`inv::INV_SLOTS` = 50 + 4 + 4). The C# keeps all 58 in one array; the
+/// port splits them, so the scan walks the three (`research/128 §4.4` —
+/// the old `.take(58)` over the 50-slot grid slice never reached 50-57).
+fn has_coin_gun(inventory: &[ItemSlot; INV], equip: &inv::EquipSlots) -> bool {
+    let carries = |s: &ItemSlot| s.count > 0 && s.kind == 905;
+    inventory.iter().any(carries)
+        || equip.coins.iter().any(carries)
+        || equip.ammo.iter().any(carries)
+}
+
+/// W4-f28 — the shop price row's session inputs (`draw_hud`'s
+/// `shop_tooltip` param): `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`)
+/// and the `Main.shopSellbackHelper` memo (`Main.cs:1775`).
+pub struct ShopTooltipState<'a> {
+    pub shift_in_use: bool,
+    pub sellback: &'a crate::shop::SellbackHelper,
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it
@@ -1275,6 +1715,36 @@ fn hover_item_for<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-f28 salvage (research/128 §4.4): `Player.HasItem(905)`
+    /// (`Player.cs:55894-55904`) scans 58 slots — the grid plus the coin
+    /// (50-53) and ammo (54-57) rows. A Coin Gun parked in a coin or ammo
+    /// cell must satisfy the coin-damage gate; the old `.take(58)` over
+    /// the 50-slot grid slice missed them. An empty stack never counts.
+    #[test]
+    fn w4_f28_the_coin_gun_scan_covers_the_coin_and_ammo_rows() {
+        let grid: [ItemSlot; INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let mut equip = inv::EquipSlots::empty();
+        assert!(!has_coin_gun(&grid, &equip), "no coin gun anywhere");
+        // Coin cell 50 (`inv::coin_slot_index(0)`).
+        equip.coins[0] = ItemSlot { kind: 905, name: "", count: 1, prefix: 0 };
+        assert!(has_coin_gun(&grid, &equip), "the coin row is slot 50");
+        assert_eq!(crate::inv::coin_slot_index(0), 50);
+        // Ammo cell 57 (`inv::ammo_slot_index(3)`).
+        equip.coins[0] = ItemSlot { kind: 0, name: "", count: 0, prefix: 0 };
+        equip.ammo[3] = ItemSlot { kind: 905, name: "", count: 1, prefix: 0 };
+        assert!(has_coin_gun(&grid, &equip), "the ammo row is slot 57");
+        assert_eq!(crate::inv::ammo_slot_index(3), 57);
+        // stack == 0 does not count (`inventory[i].stack > 0`).
+        equip.ammo[3].count = 0;
+        assert!(!has_coin_gun(&grid, &equip));
+        // The grid arm still works.
+        let mut grid = grid;
+        grid[25] = ItemSlot { kind: 905, name: "", count: 1, prefix: 0 };
+        assert!(has_coin_gun(&grid, &equip));
+        assert_eq!(crate::inv::INV_SLOTS, 58);
+    }
 
     /// The corner chat's row anchor (`RemadeChatMonitor.cs:83`):
     /// `(88, screenHeight - 30 - 28 - row*22)` — x=88, the newest row 58 px

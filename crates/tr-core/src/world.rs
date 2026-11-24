@@ -387,6 +387,11 @@ pub struct World {
     /// (a crimson heart = the Brain, a shadow orb = the Eater of Worlds)
     /// summons the boss (`:54294-54321`).
     pub shadow_orb_count: i32,
+    /// W4-c36 — `WorldGen.CheckOrb`'s achievement tail (`WorldGen.cs:54331`):
+    /// every completed orb/heart smash fires progression 7 (SMASHING_POPPET).
+    /// The core kill plan sets the flag; the app's break seam drains it into
+    /// the manager (the core carries no achievement system).
+    pub orb_smash_notify_pending: bool,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
     /// raises it, the win/loss clears it.
@@ -739,6 +744,7 @@ impl World {
             altars_smashed: 0,
             shadow_orb_smashed: false,
             shadow_orb_count: 0,
+            orb_smash_notify_pending: false,
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,
@@ -937,7 +943,10 @@ impl World {
     /// kill's wave, the points added, the advance when the requirement is met
     /// and non-zero. The wave-text broadcast and the
     /// `ReportInvasionProgress` bar are UI/MP — out. Draws nothing.
-    fn moon_event_kill_walk(&mut self, npc_type: u16, points: fn(u16) -> f32) {
+    /// W4-c36: returns true when the advance lands ON wave 15 — the C# fires
+    /// progression 14 (frost, `:78569-78572`) / 15 (pumpkin, `:78703-78706`)
+    /// inside the wave-text branch; the caller notifies.
+    fn moon_event_kill_walk(&mut self, npc_type: u16, points: fn(u16) -> f32) -> bool {
         // `MoonEventRequiredPointsPerWaveLookup[NPC.waveNumber]` — the C# index
         // runs 0..20 (the start's 1 and the stop's 0 are both valid, the table
         // has 21 rows); an out-of-range wave reads the terminal 0 rather than
@@ -954,26 +963,30 @@ impl World {
             // requirement right after for the broadcast (out of scope).
             self.wave_kills = 0.0;
             self.wave_number += 1;
+            return self.wave_number == 15;
         }
+        false
     }
 
     /// `NPC.CheckProgressFrostMoon` (`NPC.cs:78445-78586`) on the kill of
     /// `npc_type` — self-gates on `Main.snowMoon`, so a kill under any other
-    /// state (or another event's family) scores nothing.
-    pub fn report_frost_moon_kill(&mut self, npc_type: u16) {
+    /// state (or another event's family) scores nothing. Returns true when
+    /// the walk advanced onto wave 15 (the progression-14 hook).
+    pub fn report_frost_moon_kill(&mut self, npc_type: u16) -> bool {
         if !self.snow_moon {
-            return;
+            return false;
         }
-        self.moon_event_kill_walk(npc_type, Self::frost_moon_points);
+        self.moon_event_kill_walk(npc_type, Self::frost_moon_points)
     }
 
     /// `NPC.CheckProgressPumpkinMoon` (`NPC.cs:78588-78719`) on the kill of
-    /// `npc_type` — self-gates on `Main.pumpkinMoon`.
-    pub fn report_pumpkin_moon_kill(&mut self, npc_type: u16) {
+    /// `npc_type` — self-gates on `Main.pumpkinMoon`. Returns true when the
+    /// walk advanced onto wave 15 (the progression-15 hook).
+    pub fn report_pumpkin_moon_kill(&mut self, npc_type: u16) -> bool {
         if !self.pumpkin_moon {
-            return;
+            return false;
         }
-        self.moon_event_kill_walk(npc_type, Self::pumpkin_moon_points);
+        self.moon_event_kill_walk(npc_type, Self::pumpkin_moon_points)
     }
 
     /// `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`): the
@@ -1064,6 +1077,17 @@ impl World {
     /// `NPC.downedMechBossAny` — any of the three mech bosses down.
     pub fn downed_mech_boss_any(&self) -> bool {
         self.downed_mech_boss1 || self.downed_mech_boss2 || self.downed_mech_boss3
+    }
+
+    /// `DD2Event.DownedInvasionAnyDifficulty` (`DD2Event.cs:89-99`):
+    /// T1 ‖ T2 ‖ T3 — the getter returns true when either of the first two
+    /// tiers is down, else the T3 latch. `Player.cs:24450-24453` copies it
+    /// into the .plr `downedDD2EventAnyDifficulty` flag the crystal-gear
+    /// tooltip reads (`Main.cs:21000`); the win sentinel `dd2_won` is the
+    /// WRONG granularity (research/128 §4.2 — a T1 win already satisfies
+    /// the getter while `dd2_won` only latches the current invasion).
+    pub fn downed_dd2_any(&self) -> bool {
+        self.dd2_downed_t1 || self.dd2_downed_t2 || self.dd2_downed_t3
     }
 
     /// `Main.Sundialing` (`Main.cs:6169-6181`), single-player branch: arm the
@@ -1471,6 +1495,28 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    /// W4-f28 salvage (research/128 §4.2): `DD2Event.DownedInvasionAnyDifficulty`
+    /// (`DD2Event.cs:89-99`) is T1 ‖ T2 ‖ T3 — each single tier satisfies it,
+    /// and the `dd2_won` sentinel (the CURRENT invasion's win) never feeds it.
+    #[test]
+    fn w4_f28_the_dd2_any_getter_is_the_three_tier_disjunction() {
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(!w.downed_dd2_any());
+        for tier in 0..3 {
+            let mut w = World::new("t".into(), 40, 40);
+            match tier {
+                0 => w.dd2_downed_t1 = true,
+                1 => w.dd2_downed_t2 = true,
+                _ => w.dd2_downed_t3 = true,
+            }
+            assert!(w.downed_dd2_any(), "tier {tier} alone satisfies the getter");
+        }
+        // A won CURRENT invasion with no tier latch is NOT the getter's
+        // input (`dd2_won` latches at DD2Event.cs:483 and resets on start).
+        w.dd2_won = true;
+        assert!(!w.downed_dd2_any());
+    }
+
     #[test]
     fn surface_bg_style_tables_match_set_bg() {
         // Spot rows from `WorldGen.setBG`, including the `default:` rows and
@@ -1717,6 +1763,40 @@ mod tests {
             (w.wave_kills, w.total_invasion_points, w.wave_number),
             (0.0, 0.0, 0)
         );
+    }
+
+    /// W4-c36 — the wave-15 hook (`NPC.cs:78569-78572`/`:78703-78706`): the
+    /// walk returns true exactly when the advance lands ON wave 15 — the
+    /// caller fires progression 14 (frost) / 15 (pumpkin).
+    #[test]
+    fn w4_c36_the_wave_fifteen_advance_returns_the_hook() {
+        // Wave 14's requirement is 675; a 150-point kill at 600 advances
+        // onto 15 → the hook fires once.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        w.wave_number = 14;
+        w.wave_kills = 600.0;
+        assert!(w.report_frost_moon_kill(345), "the 150-point kill clears wave 14");
+        assert_eq!(w.wave_number, 15);
+        // The next advance (15 → 16, requirement 850) fires nothing.
+        w.wave_kills = 800.0;
+        assert!(!w.report_frost_moon_kill(345));
+        assert_eq!(w.wave_number, 16);
+        // The pumpkin twin.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_pumpkin_moon();
+        w.wave_number = 14;
+        w.wave_kills = 600.0;
+        assert!(w.report_pumpkin_moon_kill(327), "the 150-point pumpking");
+        assert_eq!(w.wave_number, 15);
+        w.wave_kills = 800.0;
+        assert!(!w.report_pumpkin_moon_kill(327));
+        // A non-advancing kill at wave 14 fires nothing.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        w.wave_number = 14;
+        assert!(!w.report_frost_moon_kill(349), "4 points hold wave 14");
+        assert_eq!(w.wave_number, 14);
     }
 
     /// DW-1.3: the `requirement == 0` terminal waves never advance — wave 20

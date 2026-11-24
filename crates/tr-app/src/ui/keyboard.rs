@@ -65,6 +65,15 @@ pub fn enter_seed() -> String { crate::lang::text("UI.EnterSeed") }
 /// `Language.GetText("UI.EnterNewName")` — the chest-rename keyboard's label
 /// (`IngameFancyUI.cs:100`).
 pub fn enter_new_name() -> String { crate::lang::text("UI.EnterNewName") }
+/// `Language.GetText("UI.EnterMessage")` — the sign keyboard's label
+/// (`IngameFancyUI.cs:96`).
+pub fn enter_message() -> String { crate::lang::text("UI.EnterMessage") }
+/// `Language.GetText("UI.EnterButton")` — the sign context's newline key
+/// (`UIVirtualKeyboard.cs:461`).
+pub fn enter_button() -> String { crate::lang::text("UI.EnterButton") }
+/// `Language.GetText("UI.RestoreButton")` — the cancel-cache restore key
+/// (`UIVirtualKeyboard.cs:475`).
+pub fn restore_button() -> String { crate::lang::text("UI.RestoreButton") }
 /// `Language.GetText("UI.Save")` — the desktop submit pair's label for the
 /// sign/chest contexts (`(this._editingSign || this._editingChest) ?
 /// Language.GetText("UI.Save") : Language.GetText("UI.Submit")`,
@@ -116,22 +125,28 @@ const SILVER: [u8; 4] = [192, 192, 192, 255];
 // --- Model --------------------------------------------------------------------
 
 /// The ctor's `inputMode` — the static `KeyboardContext` (`:159`, `:161`,
-/// `:147-157`). The port serves the text keyboards (0) and the chest rename
-/// (2); the sign context (1) stays out (the sign editor is not ported).
+/// `:147-157`). The port serves the text keyboards (0), the sign editor (1)
+/// and the chest rename (2).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Context {
     /// `inputMode = 0` — the character/world-name keyboards.
     #[default]
     Text = 0,
+    /// `inputMode = 1` — the sign editor (`IngameFancyUI.cs:136-145`).
+    Sign = 1,
     /// `inputMode = 2` — the chest rename (`IngameFancyUI.cs:147-156`).
     Chest = 2,
 }
 
 impl Context {
-    /// `this._editingChest = this._keyboardContext == 2` (`:167`). The sign
-    /// twin (`_editingSign`, `:166`) is context 1's and stays out.
+    /// `this._editingChest = this._keyboardContext == 2` (`:167`).
     pub fn editing_chest(self) -> bool {
         self == Context::Chest
+    }
+
+    /// `this._editingSign = this._keyboardContext == 1` (`:166`).
+    pub fn editing_sign(self) -> bool {
+        self == Context::Sign
     }
 }
 
@@ -248,6 +263,323 @@ pub fn write_str(state: &mut KeyboardState, s: &str) {
     state.text = state.text.chars().chain(s.chars()).take(state.max_length).collect();
 }
 
+// --- Text-entry bindings (W4-c25) ------------------------------------------------
+//
+// The field-less text-entry layer the crafting search box and the chest rename
+// consume: a faithful port of the C# text field's semantics. NOTE: the 1.4.5.8
+// decompilation has no `UITextField.cs` — the caret/selection/backspace/repeat/
+// maxlen/paste semantics live in three places, all ported here:
+//   * `UITextBox.cs` — the caret (`_cursor`), `Write` (insert at caret),
+//     `SetText` (the `Utils.TrimUserString` cap + caret clamp), `Backspace`,
+//     `CursorLeft`/`CursorRight`;
+//   * `Main.GetInputText` (`Main.cs:20010-20115`) — the physical-keyboard edit
+//     pass: Ctrl+Z/X/C/V and Shift+Del/Ins, the typed-char filter, the Enter/
+//     Escape flags and the held-Backspace repeat machine (`:20089-20107`);
+//   * `ReLogic.OS.Base.Clipboard.SanitizeClipboardText`
+//     (`Clipboard.cs:21-32`) — the paste filter.
+// There is no ranged selection anywhere in those sources: the "selection" is
+// the whole string (copy/cut operate on the entire text, `Main.cs:20037`,
+// `:20042`, `:20055`). Pure bindings — no `UIElement`, no draw, no App wiring.
+
+/// The text field — `UITextBox`'s editable state (`UITextBox.cs:11-78`) minus
+/// the draw: the string, the caret and the max length. `max_length` defaults
+/// to 20 (`_maxLength = 20`, `:15`); the crafting search passes 50
+/// (`UISearchBar.cs:63`), the chest rename 20 (`Chest.cs:70` — the keyboard
+/// session's [`Request::max_length`]).
+#[derive(Clone, Debug, PartialEq)]
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+pub struct TextField {
+    /// `Text` — the `UITextPanel<string>` payload (`UITextBox.cs:9`).
+    pub text: String,
+    /// `_cursor` (`:11`) — a UTF-16 code-unit index in the C#, a `char` index
+    /// here (the port's strings are `char`-indexed; a documented mapping).
+    pub cursor: usize,
+    /// `_maxLength` (`:15`), set through `SetTextMaxLength` (`:51-54`).
+    pub max_length: usize,
+}
+
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+impl TextField {
+    /// `new UITextBox(text, ...)` + `SetTextMaxLength` — the ctor runs
+    /// `SetText`, so the initial text is trimmed and the caret lands at the
+    /// end (`UITextBox.cs:44-49`, `Utils.TrimUserString`).
+    pub fn new(text: &str, max_length: usize) -> Self {
+        let text = trim_user_string(text, max_length);
+        let cursor = text.chars().count();
+        Self { text, cursor, max_length }
+    }
+
+    /// `Write` (`UITextBox.cs:38-42`): insert at the caret, advance the caret
+    /// by the inserted length, then `SetText` re-trims to the max length and
+    /// clamps the caret (`:44-49`). A write past the cap swallows the overflow
+    /// exactly like the C# (insert first, trim after).
+    pub fn write(&mut self, s: &str) {
+        let at = self.cursor.min(self.text.chars().count());
+        self.text = self
+            .text
+            .chars()
+            .take(at)
+            .chain(s.chars())
+            .chain(self.text.chars().skip(at))
+            .collect();
+        self.cursor = at + s.chars().count();
+        self.set_text(&self.text.clone());
+    }
+
+    /// `SetText` (`UITextBox.cs:44-49`): `Utils.TrimUserString` to the max
+    /// length, then `_cursor = Math.Min(Text.Length, _cursor)`.
+    pub fn set_text(&mut self, text: &str) {
+        self.text = trim_user_string(text, self.max_length);
+        self.cursor = self.cursor.min(self.text.chars().count());
+    }
+
+    /// `SetTextMaxLength` (`UITextBox.cs:51-54`) — the setter only stores the
+    /// cap; the NEXT `SetText`/`Write` enforces it (the C# does not re-trim on
+    /// the setter itself).
+    pub fn set_max_length(&mut self, max_length: usize) {
+        self.max_length = max_length;
+    }
+
+    /// `Backspace` (`UITextBox.cs:56-62`): a no-op at caret 0, else
+    /// `SetText(TrimLastCharacter(Text))` — the C# trims the string's tail
+    /// regardless of where the caret sits (the caret is pinned to the end by
+    /// `DrawSelf` every frame, `:86`); the caret clamp in `SetText` follows.
+    pub fn backspace(&mut self) {
+        if self.cursor != 0 {
+            let trimmed = trim_last_character(&self.text);
+            self.set_text(&trimmed);
+        }
+    }
+
+    /// `CursorLeft` (`UITextBox.cs:64-70`).
+    pub fn cursor_left(&mut self) {
+        if self.cursor != 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    /// `CursorRight` (`UITextBox.cs:72-78`).
+    pub fn cursor_right(&mut self) {
+        if self.cursor < self.text.chars().count() {
+            self.cursor += 1;
+        }
+    }
+}
+
+/// `Utils.TrimUserString` (`Utils.cs:2839-2850`): cap to `length` UTF-16 code
+/// units, dropping a dangling high surrogate at the cut. The port counts
+/// `char`s (its string index unit) and never splits a scalar, so the
+/// surrogate guard has no reachable arm — same visible behaviour.
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+pub fn trim_user_string(s: &str, length: usize) -> String {
+    if s.chars().count() <= length {
+        return s.to_string();
+    }
+    s.chars().take(length).collect()
+}
+
+/// `Utils.TrimLastCharacter` (`Utils.cs:2852-2855`).
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+pub fn trim_last_character(s: &str) -> String {
+    trim_user_string(s, s.chars().count().saturating_sub(1))
+}
+
+/// `Clipboard.SanitizeClipboardText` (`ReLogic.OS.Base/Clipboard.cs:21-32`):
+/// keep chars `>= ' '` except DEL, plus `'\n'` when `allow_newline`
+/// (`MultiLineValue`, the sign path; the single-line `Value` strips it).
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+pub fn sanitize_clipboard_text(text: &str, allow_newline: bool) -> String {
+    text.chars()
+        .filter(|&c| (c >= ' ' && c != '\u{7f}') || (allow_newline && c == '\n'))
+        .collect()
+}
+
+/// What one `GetInputText` pass reports — the `Main.inputTextEnter` /
+/// `Main.inputTextEscape` flags (`Main.cs:20020-20021`, `:20071-20078`) plus
+/// the edited string. Neither flag set means keep editing.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+pub struct InputTextResult {
+    /// The edited string (`GetInputText`'s return, `Main.cs:20114`).
+    pub text: String,
+    /// `Main.inputTextEnter` — a `13` in the typed queue (`:20071-20074`).
+    pub enter: bool,
+    /// `Main.inputTextEscape` — a `27` in the queue (`:20075-20078`) or the
+    /// non-Windows Escape edge (`:20063-20066`).
+    pub escape: bool,
+}
+
+/// The per-frame physical-keyboard snapshot `GetInputText` reads — the
+/// `Main.inputText`/`oldInputText` pair (`Main.cs:1897-1899`, the edge tests
+/// `IsKeyDown && !old.IsKeyDown`) plus the typed-char queue
+/// (`Main.keyInt`/`keyString`, `:20067-20083`). The App fills it from winit;
+/// the bindings stay OS-free.
+#[derive(Clone, Debug, Default)]
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+pub struct InputKeys {
+    /// Control held this frame (`PressingControl`, `:20029`).
+    pub control: bool,
+    /// Alt held this frame (`!PressingAlt` gates the Ctrl arm, `:20029`).
+    pub alt: bool,
+    /// Shift held this frame (`PressingShift`, `:20051`).
+    pub shift: bool,
+    /// Backspace held this frame (`Keys.Back`, `:20089`).
+    pub backspace: bool,
+    /// Backspace held last frame (`oldInputText.IsKeyDown(Back)`).
+    pub backspace_old: bool,
+    /// The Z/X/C/V/Insert/Delete press edges (`:20031-20059`) — `true` only on
+    /// the down-edge frame (`IsKeyDown && !old.IsKeyDown`).
+    pub z_pressed: bool,
+    pub x_pressed: bool,
+    pub c_pressed: bool,
+    pub v_pressed: bool,
+    pub insert_pressed: bool,
+    pub delete_pressed: bool,
+    /// The typed-character queue (`Main.keyInt[i]`, `:20069`): 13 Enter,
+    /// 27 Escape, `>= 32 && != 127` printable appends. The caller passes the
+    /// platform's char codes (winit's `ReceivedCharacter`/`Ime` text).
+    pub typed: Vec<u32>,
+}
+
+/// The held-Backspace repeat machine — `Main.backSpaceRate`/`backSpaceCount`
+/// (`Main.cs:1841-1843`, driven at `:20089-20107`). Seeds are the C# statics'
+/// defaults (0/0) so the first held frame repeats immediately, exactly like
+/// the source's first `GetInputText` call.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+pub struct BackspaceRepeat {
+    /// `backSpaceRate` — starts 0, reset to 7 on release (`:20105`).
+    rate: f32,
+    /// `backSpaceCount` — starts 0, reset to 15 on release (`:20106`).
+    count: i32,
+}
+
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+impl BackspaceRepeat {
+    /// One frame of `:20089-20107`: while Backspace stays held, the rate
+    /// decays 0.05/frame (floored at 0) and a repeat fires when the counter
+    /// runs out, reloading it with `Math.Round(rate)` — .NET's default is
+    /// banker's rounding (`MidpointRounding.ToEven`). Released resets 7/15.
+    /// Returns `flag` — the repeat-fire bit the backspace gate ORs with the
+    /// press edge (`:20108`).
+    pub fn step(&mut self, held: bool, held_old: bool) -> bool {
+        let mut fire = false;
+        if held && held_old {
+            self.rate -= 0.05;
+            if self.rate < 0.0 {
+                self.rate = 0.0;
+            }
+            if self.count <= 0 {
+                self.count = round_to_even(self.rate);
+                fire = true;
+            }
+            self.count -= 1;
+        } else {
+            self.rate = 7.0;
+            self.count = 15;
+        }
+        fire
+    }
+}
+
+/// `Math.Round(float)` — banker's rounding (`MidpointRounding.ToEven`), the
+/// `(int)` cast's truncation after (`Main.cs:20098`).
+fn round_to_even(v: f32) -> i32 {
+    let floor = v.floor();
+    let frac = v - floor;
+    let rounded = if frac > 0.5 {
+        floor + 1.0
+    } else if frac < 0.5 {
+        floor
+    } else if (floor as i64) % 2 == 0 {
+        floor
+    } else {
+        floor + 1.0
+    };
+    rounded as i32
+}
+
+/// `Main.GetInputText` (`Main.cs:20010-20115`) over a [`TextField`] — the
+/// physical-keyboard edit pass, in the source's order: the Ctrl arm
+/// (Z clears, X copies+clears, C/Insert copies, V pastes; `:20029-20048`),
+/// else the Shift arm (Delete copies+clears, Insert pastes; `:20051-20062`)
+/// and the typed-char queue (`:20067-20083`); then the append (`:20086`) and
+/// the Backspace edge/repeat trim (`:20089-20112`). The clipboard rides the
+/// caller-supplied `clipboard` string (the App reads `ui::clipboard`); copy
+/// side-effects come back as the second return value so the binding stays
+/// pure. `allow_multi_line` selects `MultiLineValue` vs `Value` sanitization
+/// (`PasteTextIn`, `:20117-20121`). The max-length cap applies at the end
+/// through `SetText` (`UITextBox.cs:44-49`) — the consumers' boxes all cap
+/// (search 50, chest 20), so the pass lands through [`TextField::set_text`].
+/// Returns the flags+text and, when a copy/cut fired, the string to write to
+/// the OS clipboard (`Platform.Get<IClipboard>().Value = oldString`).
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
+pub fn get_input_text(
+    field: &mut TextField,
+    keys: &InputKeys,
+    repeat: &mut BackspaceRepeat,
+    clipboard: &str,
+    allow_multi_line: bool,
+) -> (InputTextResult, Option<String>) {
+    let old_string = field.text.clone();
+    let mut text = old_string.clone();
+    let mut new_keys = String::new();
+    let mut result = InputTextResult::default();
+    let mut copy_out = None;
+    if keys.control && !keys.alt {
+        // `:20031-20047` — the else-if chain: one shortcut per frame.
+        if keys.z_pressed {
+            text = String::new();
+        } else if keys.x_pressed {
+            copy_out = Some(old_string.clone());
+            text = String::new();
+        } else if keys.c_pressed || keys.insert_pressed {
+            copy_out = Some(old_string.clone());
+        } else if keys.v_pressed {
+            new_keys = sanitize_clipboard_text(clipboard, allow_multi_line);
+        }
+    } else {
+        if keys.shift {
+            // `:20053-20061` — two independent ifs (not else-if).
+            if keys.delete_pressed {
+                copy_out = Some(old_string.clone());
+                text = String::new();
+            }
+            if keys.insert_pressed {
+                new_keys = sanitize_clipboard_text(clipboard, allow_multi_line);
+            }
+        }
+        // `:20067-20083` — the typed queue.
+        for &code in &keys.typed {
+            if code == 13 {
+                result.enter = true;
+            } else if code == 27 {
+                result.escape = true;
+            } else if code >= 32 && code != 127 {
+                if let Some(c) = char::from_u32(code) {
+                    new_keys.push(c);
+                }
+            }
+        }
+    }
+    text += &new_keys; // `:20086`
+    // The Backspace machine (`:20089-20107`) then the trim gate (`:20108`):
+    // the press edge OR the repeat fire, and only a non-empty string trims.
+    // The `ChatManager.ParseMessage` snippet arm (`:20110-20111`) is chat
+    // markup ([i:...] etc.) — none of the text-field consumers produce it, so
+    // the plain `TrimLastCharacter` arm is the live one (documented).
+    let fire = repeat.step(keys.backspace, keys.backspace_old);
+    if ((keys.backspace && !keys.backspace_old) || fire) && !text.is_empty() {
+        text = trim_last_character(&text);
+    }
+    // The consumers' `SetText` cap (`UITextBox.cs:44-49` via
+    // `UISearchBar.SetContents` `:80-81` / the keyboard's `this.Text = text`
+    // `UIVirtualKeyboard.cs:778-788`): trim + caret clamp.
+    field.set_text(&text);
+    result.text = field.text.clone();
+    (result, copy_out)
+}
+
 // --- The label tables ----------------------------------------------------------
 
 /// The three label tables (`SetKeyState`, `:562-570`) — 40 characters in the
@@ -319,8 +651,14 @@ pub struct Layout {
 /// `UIState`'s `GetInnerDimensions`). `show_gamepad_hints` picks which layer
 /// `DrawSelf` keeps alive (`:684-726`): with it, `outerLayer1` and the
 /// textbox/label sit at their unshifted pixel tops; without it, `outerLayer2`
-/// and the `+50` shift (`:716-725`).
-pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
+/// and the `+50` shift (`:716-725`). `context` feeds the sign offset
+/// `num3 = -5000 * _editingSign.ToInt()` (`:176`): the sign context parks
+/// the textbox/label far off-screen — the sign text edits in the
+/// `NPCChatPanel` dialog instead (`IngameFancyUI.Draw`'s `GUIChatDraw`,
+/// `:212-215`), so the keyboard shows only its key layer.
+pub fn layout(screen: Vec2, show_gamepad_hints: bool, context: Context) -> Layout {
+    // `num3` (`:176`) — -5000 for the sign context, 0 otherwise.
+    let sign_offset = if context.editing_sign() { -5000.0 } else { 0.0 };
     let root = [0.0, 0.0, screen.x, screen.y];
     // `outerLayer1` == `outerLayer2` — the identical initializer (`:180-195`).
     let layer = uistate::resolve(
@@ -372,12 +710,12 @@ pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
     // layer is the live one.
     let shift = if show_gamepad_hints { 0.0 } else { 50.0 };
     // The textbox (`:210-218`): `Top.Pixels = num5 + num2 - 10 + num3` with
-    // `num5 = -50`, `num2 = 270`, `num3 = 0` (the sign offset is context 1
-    // only, `:176`) -> 210.
+    // `num5 = -50`, `num2 = 270`, `num3` the sign offset (`:176`) -> 210
+    // (or -4790 while editing a sign).
     let textbox = uistate::resolve(
         root,
         Style::px(0.0),
-        Style::px(210.0 + shift),
+        Style::px(210.0 + shift + sign_offset),
         Style::px(516.0), // `num4` (`:214`)
         Style::px(37.0),  // `:217`
         0.5,              // `this._textBox.HAlign = 0.5f` (`:213`)
@@ -387,11 +725,12 @@ pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
         root[2],
         [0.0; 4],
     );
-    // The label (`:408-425`): `Top.Pixels = num5 - 37 - 4 + num2 + num3` -> 179.
+    // The label (`:408-425`): `Top.Pixels = num5 - 37 - 4 + num2 + num3` -> 179
+    // (or -4821 while editing a sign).
     let label = uistate::resolve(
         root,
         Style::px(0.0),
-        Style::px(179.0 + shift),
+        Style::px(179.0 + shift + sign_offset),
         Style::px(516.0), // `Width.Pixels = num4` (`:413`)
         Style::px(37.0),  // `:422`
         0.5,              // `HAlign = 0.5f` (`:410`)
@@ -560,10 +899,10 @@ pub fn submit_colors(valid: bool, hovered: bool) -> ([u8; 4], [u8; 4]) {
 /// `TextIsValidForSubmit` (`:615-626`) with the custom validator unset: a
 /// trimmed-empty string submits iff `_allowEmpty` — but only while neither
 /// editor flag holds (`!this._editingSign && !this._editingChest`), so the
-/// chest context (2) is **always** valid and the text context (0) falls back
-/// to `allowEmpty`.
+/// sign (1) and chest (2) contexts are **always** valid and the text
+/// context (0) falls back to `allowEmpty`.
 pub fn text_valid_for(text: &str, allow_empty: bool, context: Context) -> bool {
-    if text.trim().is_empty() && !context.editing_chest() {
+    if text.trim().is_empty() && !context.editing_chest() && !context.editing_sign() {
         return allow_empty;
     }
     true
@@ -589,6 +928,12 @@ pub enum Click {
     Symbol,
     /// The space bar (`:452-457`).
     Space,
+    /// The sign context's newline key (`UI.EnterButton`, `:459-470`): sound
+    /// 12 + `_textBox.Write("\n")`.
+    Newline,
+    /// The cancel-cache restore key (`UI.RestoreButton`, `:473-488`): sound
+    /// 12 + `RestoreCanceledInput` + the bottom row rebuilds.
+    Restore,
     /// The backspace key (`:391-397`).
     Backspace,
     /// Submit — reported even when the text is invalid; the *handler* re-checks
@@ -600,22 +945,65 @@ pub enum Click {
     None,
 }
 
+/// The bottom row's space/enter/restore widths (`BuildSpaceBarArea`,
+/// `:444-489`): `flag = CanRestore()` (the sign context's
+/// `_cancelCacheSign.Length > 0`, `:504-515`), `x = flag ? 4 : 5`,
+/// `num = (flag && _editingSign) ? 2 : 3`. The space bar is
+/// `(2, 4, _editingSign || (_editingChest && flag) ? num : 6)`; the sign
+/// context adds the newline key at `(x, 4, num)` and a non-empty cancel
+/// cache adds the restore key at `(6, 4, 2)`. The text context keeps the
+/// historical 6-wide space bar with no extra keys. Answers
+/// `(space [x, y, w], enter Option<[x, y, w]>, restore visible)`.
+pub fn bottom_row(context: Context, can_restore: bool) -> ([usize; 3], Option<[usize; 3]>, bool) {
+    let x = if can_restore { 4 } else { 5 };
+    let num = if can_restore && context.editing_sign() { 2 } else { 3 };
+    let space_w = if context.editing_sign() || (context.editing_chest() && can_restore) {
+        num
+    } else {
+        6
+    };
+    let enter = context.editing_sign().then_some([x, 4, num]);
+    (
+        [2, 4, space_w],
+        enter,
+        can_restore && (context.editing_sign() || context.editing_chest()),
+    )
+}
+
 /// The layer's hit-test — the same [`key_rect`] geometry the draw replays
 /// (Review Focus 2). The visible layer's buttons only: `outerLayer1`'s grid
 /// and bottom row plus the small Submit/Cancel pair while
 /// `show_gamepad_hints` holds (`:684-704`), just the big pair of
-/// `outerLayer2` otherwise (`:705-726`).
-pub fn click_at(state: &KeyboardState, l: &Layout, show_gamepad_hints: bool, mouse: Vec2) -> Click {
+/// `outerLayer2` otherwise (`:705-726`). `can_restore` is the sign/chest
+/// cancel cache's non-empty state (`CanRestore`, `:504-515`) — it re-shapes
+/// the bottom row exactly as the draw does.
+pub fn click_at(
+    state: &KeyboardState,
+    l: &Layout,
+    show_gamepad_hints: bool,
+    mouse: Vec2,
+    context: Context,
+    can_restore: bool,
+) -> Click {
     if show_gamepad_hints {
-        // The bottom row first (`:228`, `:263`, `:452`, `:391`).
+        // The bottom row first (`:228`, `:263`, `:452`, `:391`, `:459-488`).
         if in_rect(mouse, key_rect(l.grid_origin, 0, 4, 1)) {
             return Click::Shift;
         }
         if in_rect(mouse, key_rect(l.grid_origin, 1, 4, 1)) {
             return Click::Symbol;
         }
-        if in_rect(mouse, key_rect(l.grid_origin, 2, 4, 6)) {
+        let (space, enter, restore) = bottom_row(context, can_restore);
+        if in_rect(mouse, key_rect(l.grid_origin, space[0], space[1], space[2])) {
             return Click::Space;
+        }
+        if let Some([ex, ey, ew]) = enter {
+            if in_rect(mouse, key_rect(l.grid_origin, ex, ey, ew)) {
+                return Click::Newline;
+            }
+        }
+        if restore && in_rect(mouse, key_rect(l.grid_origin, 6, 4, 2)) {
+            return Click::Restore;
         }
         if in_rect(mouse, key_rect(l.grid_origin, 8, 4, 2)) {
             return Click::Backspace;
@@ -776,6 +1164,7 @@ pub fn draw(
     show_gamepad_hints: bool,
     mouse: Vec2,
     frame: u64,
+    can_restore: bool,
 ) {
     // The textbox (`UITextBox.DrawSelf`, `UITextBox.cs:80-108`): a transparent
     // panel (`:211-212`) so only the text shows, centred, with the caret.
@@ -890,8 +1279,11 @@ pub fn draw(
             SYMBOL_BUTTON_LABEL,
             [1.0; 4],
         );
-        // The space bar (`:452-457`): the `UI.SpaceButton` label, 6 keys wide.
-        let space_rect = key_rect(l.grid_origin, 2, 4, 6);
+        // The bottom row's space/enter/restore trio (`BuildSpaceBarArea`,
+        // `:444-489`): the widths follow `CanRestore()` + the context.
+        let (space, enter, restore) = bottom_row(request.context, can_restore);
+        // The space bar (`:452-457`): the `UI.SpaceButton` label.
+        let space_rect = key_rect(l.grid_origin, space[0], space[1], space[2]);
         let (bg, border) = key_colors(false, in_rect(mouse, space_rect));
         draw_panel_text(
             r,
@@ -904,6 +1296,38 @@ pub fn draw(
             &space(),
             [1.0; 4],
         );
+        // The sign context's newline key (`:459-470`): `UI.EnterButton`.
+        if let Some([ex, ey, ew]) = enter {
+            let enter_rect = key_rect(l.grid_origin, ex, ey, ew);
+            let (bg, border) = key_colors(false, in_rect(mouse, enter_rect));
+            draw_panel_text(
+                r,
+                lookups,
+                enter_rect,
+                [0.0, 12.0, 0.0, 12.0],
+                bg,
+                border,
+                KEY_TEXT_SCALE,
+                &enter_button(),
+                [1.0; 4],
+            );
+        }
+        // The restore key (`:473-488`): `UI.RestoreButton`, (6, 4, 2).
+        if restore {
+            let restore_rect = key_rect(l.grid_origin, 6, 4, 2);
+            let (bg, border) = key_colors(false, in_rect(mouse, restore_rect));
+            draw_panel_text(
+                r,
+                lookups,
+                restore_rect,
+                [0.0, 12.0, 0.0, 12.0],
+                bg,
+                border,
+                KEY_TEXT_SCALE,
+                &restore_button(),
+                [1.0; 4],
+            );
+        }
         // The backspace key (`:391-407`): the `VK_Backspace` icon at
         // `ImageScale 0.92`, 2 keys wide.
         let backspace_rect = key_rect(l.grid_origin, 8, 4, 2);
@@ -923,7 +1347,13 @@ pub fn draw(
         // The small pair: Submit carries `ValidateText`'s colours (`:298`,
         // `:585-613`), Cancel is `StyleKey(external: true)`'d — the border
         // stays the `UIPanel` default Black (`:315`, `:634-636`'s `!external`).
-        let valid = text_valid(&state.text, request.allow_empty);
+        // The label is `UI.Save` for the sign/chest contexts (`:291`).
+        let valid = text_valid_for(&state.text, request.allow_empty, request.context);
+        let submit_label = if request.context.editing_sign() || request.context.editing_chest() {
+            submit_save()
+        } else {
+            submit()
+        };
         let (bg, border) = submit_colors(valid, in_rect(mouse, l.submit));
         draw_panel_text(
             r,
@@ -933,7 +1363,7 @@ pub fn draw(
             bg,
             border,
             KEY_TEXT_SCALE,
-            &submit(),
+            &submit_label,
             if valid { [1.0; 4] } else { color::tint(GRAY) },
         );
         let (bg, border) = if in_rect(mouse, l.cancel) {
@@ -957,7 +1387,7 @@ pub fn draw(
         // false (`:329`, `:369`), so they are text: Silver at 0.72, White at
         // 0.85 while hovered (`:334-343`, `:370-379`). The submit label is
         // `UI.Save` for the sign/chest contexts (`:327`).
-        let submit_label = if request.context.editing_chest() {
+        let submit_label = if request.context.editing_chest() || request.context.editing_sign() {
             submit_save()
         } else {
             submit()
@@ -1000,7 +1430,7 @@ mod tests {
     fn layout_matches_the_source_table_at_1600x900() {
         // The desktop layer (`show_gamepad_hints == false`) — the screen the
         // port always shows (Review Focus 6).
-        let l = layout(SCREEN, false);
+        let l = layout(SCREEN, false, Context::Text);
         // outerLayer: Width 516+8+16 = 540, Top 270, Height 266, HAlign .5
         // (`:181-185`) -> x = 800 - 270 = 530.
         assert_eq!(l.layer, [530.0, 270.0, 540.0, 266.0]);
@@ -1025,7 +1455,7 @@ mod tests {
         // The gamepad layer (`show_gamepad_hints == true`): the tops lose the
         // +50 and the small 37-tall pair sits at the layer's bottom
         // (`:291-326`).
-        let g = layout(SCREEN, true);
+        let g = layout(SCREEN, true, Context::Text);
         assert_eq!(g.textbox, [542.0, 210.0, 516.0, 48.96]);
         assert_eq!(g.label, [542.0, 179.0, 516.0, 37.0]);
         // Submit: W 216, H 37, HAlign 1 + VAlign 1 of the 540x266 layer
@@ -1263,7 +1693,7 @@ mod tests {
 
     #[test]
     fn click_at_maps_every_visible_key_centre() {
-        let l = layout(SCREEN, true);
+        let l = layout(SCREEN, true, Context::Text);
         let mut state = KeyboardState::new(&Request {
             label: String::new(),
             initial: String::new(),
@@ -1276,47 +1706,346 @@ mod tests {
         // the live `KeyState`, so pin Default first.
         state.set_key_state(KeyState::Default);
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 0, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 0, 1)), Context::Text, false),
             Click::Char('1')
         );
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 9, 3, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 9, 3, 1)), Context::Text, false),
             Click::Char('?')
         );
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 4, 2, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 4, 2, 1)), Context::Text, false),
             Click::Char('g')
         );
         // The labels follow the live `KeyState` (`:574-577`).
         state.set_key_state(KeyState::Shift);
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 1, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 1, 1)), Context::Text, false),
             Click::Char('Q')
         );
         state.set_key_state(KeyState::Symbol);
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 3, 1, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 3, 1, 1)), Context::Text, false),
             Click::Char('$')
         );
         state.set_key_state(KeyState::Default);
         // The bottom row (`:228`, `:263`, `:452`, `:391`).
-        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 4, 1))), Click::Shift);
-        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 1, 4, 1))), Click::Symbol);
-        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 2, 4, 6))), Click::Space);
-        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 8, 4, 2))), Click::Backspace);
+        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 4, 1)), Context::Text, false), Click::Shift);
+        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 1, 4, 1)), Context::Text, false), Click::Symbol);
+        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 2, 4, 6)), Context::Text, false), Click::Space);
+        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 8, 4, 2)), Context::Text, false), Click::Backspace);
         // The small pair (`:313`, `:326`) — Submit reports even when invalid;
         // the handler re-checks (`:358-365`).
-        assert_eq!(click_at(&state, &l, true, centre(l.submit)), Click::Submit);
-        assert_eq!(click_at(&state, &l, true, centre(l.cancel)), Click::Cancel);
-        assert_eq!(click_at(&state, &l, true, Vec2::new(100.0, 100.0)), Click::None);
+        assert_eq!(click_at(&state, &l, true, centre(l.submit), Context::Text, false), Click::Submit);
+        assert_eq!(click_at(&state, &l, true, centre(l.cancel), Context::Text, false), Click::Cancel);
+        assert_eq!(click_at(&state, &l, true, Vec2::new(100.0, 100.0), Context::Text, false), Click::None);
 
         // The desktop layer: only the big pair answers (`:366`, `:390`); the
         // hidden grid is dead.
-        let d = layout(SCREEN, false);
-        assert_eq!(click_at(&state, &d, false, centre(key_rect(d.grid_origin, 0, 0, 1))), Click::None);
-        assert_eq!(click_at(&state, &d, false, centre(d.submit)), Click::Submit);
-        assert_eq!(click_at(&state, &d, false, centre(d.cancel)), Click::Cancel);
-        assert_eq!(click_at(&state, &d, false, Vec2::new(100.0, 100.0)), Click::None);
+        let d = layout(SCREEN, false, Context::Text);
+        assert_eq!(click_at(&state, &d, false, centre(key_rect(d.grid_origin, 0, 0, 1)), Context::Text, false), Click::None);
+        assert_eq!(click_at(&state, &d, false, centre(d.submit), Context::Text, false), Click::Submit);
+        assert_eq!(click_at(&state, &d, false, centre(d.cancel), Context::Text, false), Click::Cancel);
+        assert_eq!(click_at(&state, &d, false, Vec2::new(100.0, 100.0), Context::Text, false), Click::None);
+    }
+
+    // --- Text-entry bindings (W4-c25) — hand-derived from `UITextBox.cs`,
+    // `Main.cs:20010-20121`, `Utils.cs:2839-2855`, ReLogic `Clipboard.cs:21-32`.
+
+    #[test]
+    fn text_field_ctor_trims_and_pins_the_caret() {
+        // `UITextBox.cs:44-49` — the ctor's SetText trims to `_maxLength` and
+        // the caret lands at the (trimmed) end.
+        let f = TextField::new("0123456789", 4);
+        assert_eq!(f.text, "0123");
+        assert_eq!(f.cursor, 4);
+        let e = TextField::new("", 20);
+        assert_eq!(e.cursor, 0);
+        assert_eq!(e.max_length, 20); // `_maxLength = 20` (`:15`)
+    }
+
+    #[test]
+    fn text_field_write_inserts_at_the_caret_and_caps() {
+        // `Write` (`:38-42`): Insert(_cursor), caret += len, SetText re-trims.
+        let mut f = TextField::new("ac", 20);
+        f.cursor_left(); // caret 1
+        f.write("b");
+        assert_eq!(f.text, "abc");
+        assert_eq!(f.cursor, 2);
+        // The cap swallows the overflow AFTER the insert (`:40` then `:46`).
+        let mut g = TextField::new("abcd", 4);
+        g.cursor = 0;
+        g.write("XY");
+        assert_eq!(g.text, "XYab");
+        assert_eq!(g.cursor, 2); // min(4, 0+2)
+        // A write at the end of a full box is fully swallowed.
+        let mut h = TextField::new("abcd", 4);
+        h.write("z");
+        assert_eq!(h.text, "abcd");
+        assert_eq!(h.cursor, 4);
+    }
+
+    #[test]
+    fn text_field_backspace_and_cursor_edges() {
+        // `Backspace` (`:56-62`): caret 0 is a no-op; else trim the tail and
+        // clamp the caret. `CursorLeft`/`Right` (`:64-78`) clamp at 0/len.
+        let mut f = TextField::new("abc", 20);
+        f.cursor_left();
+        f.cursor_left();
+        f.cursor_left();
+        f.cursor_left(); // clamped at 0
+        assert_eq!(f.cursor, 0);
+        f.backspace(); // no-op at caret 0
+        assert_eq!(f.text, "abc");
+        f.cursor_right();
+        f.backspace();
+        assert_eq!(f.text, "ab");
+        assert_eq!(f.cursor, 1);
+        f.cursor_right();
+        f.cursor_right(); // clamped at len
+        assert_eq!(f.cursor, 2);
+        f.backspace();
+        f.backspace();
+        f.backspace(); // empty is a no-op
+        assert_eq!(f.text, "");
+        assert_eq!(f.cursor, 0);
+    }
+
+    #[test]
+    fn set_max_length_stores_without_retrimming() {
+        // `SetTextMaxLength` (`UITextBox.cs:51-54`) only stores the cap; the
+        // next SetText/Write enforces it (the C# setter does not re-trim).
+        let mut f = TextField::new("abcdef", 20);
+        f.set_max_length(3);
+        assert_eq!(f.text, "abcdef", "the setter itself does not trim");
+        f.set_text(&f.text.clone());
+        assert_eq!(f.text, "abc");
+        assert_eq!(f.cursor, 3);
+    }
+
+    #[test]
+    fn trim_helpers_match_utils() {
+        // `Utils.TrimUserString` (`Utils.cs:2839-2850`) /
+        // `TrimLastCharacter` (`:2852-2855`).
+        assert_eq!(trim_user_string("abc", 5), "abc");
+        assert_eq!(trim_user_string("abc", 2), "ab");
+        assert_eq!(trim_user_string("abc", 0), "");
+        assert_eq!(trim_last_character("abc"), "ab");
+        assert_eq!(trim_last_character(""), "");
+    }
+
+    #[test]
+    fn sanitize_clipboard_filters_control_chars() {
+        // `Clipboard.SanitizeClipboardText` (`Clipboard.cs:21-32`): >= ' '
+        // except DEL; '\n' only with allowNewLine.
+        assert_eq!(sanitize_clipboard_text("a\tb\nc\u{7f}d", false), "abcd");
+        assert_eq!(sanitize_clipboard_text("a\tb\nc\u{7f}d", true), "ab\ncd");
+        assert_eq!(sanitize_clipboard_text("\r\n", true), "\n");
+    }
+
+    #[test]
+    fn backspace_repeat_matches_the_rate_machine() {
+        // `Main.cs:20089-20107`, statics seeded 0/0 (`:1841-1843`).
+        let mut r = BackspaceRepeat::default();
+        // The press frame resets 7/15 and does not fire the repeat bit (the
+        // press edge is the caller's OR arm).
+        assert!(!r.step(true, false));
+        // 15 held frames drain the counter without firing.
+        for _ in 0..15 {
+            assert!(!r.step(true, true));
+        }
+        // Frame 16 of the hold: count hit 0 -> fire, reload round(7-0.05*16)
+        // = round(6.2) = 6, then decrement to 5.
+        assert!(r.step(true, true));
+        for _ in 0..5 {
+            assert!(!r.step(true, true));
+        }
+        assert!(r.step(true, true)); // the next reload fires 6 frames later
+        // Release resets 7/15 (`:20105-20106`).
+        assert!(!r.step(false, true));
+        assert!(!r.step(true, false));
+        for _ in 0..15 {
+            assert!(!r.step(true, true));
+        }
+        assert!(r.step(true, true));
+        // Banker's rounding (`Math.Round` default ToEven).
+        assert_eq!(round_to_even(6.5), 6);
+        assert_eq!(round_to_even(7.5), 8);
+        assert_eq!(round_to_even(6.2), 6);
+    }
+
+    #[test]
+    fn get_input_text_types_and_flags() {
+        // The typed queue (`Main.cs:20067-20083`): >= 32 && != 127 appends,
+        // 13/27 set the flags, controls are dropped.
+        let mut f = TextField::new("ab", 20);
+        let mut r = BackspaceRepeat::default();
+        let keys = InputKeys {
+            typed: vec!['c' as u32, 9, 127, 13, 27],
+            ..Default::default()
+        };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "abc");
+        assert!(res.enter);
+        assert!(res.escape);
+        assert!(copy.is_none());
+        // The press edge trims one char (`:20108`), even on the flag frame.
+        let keys = InputKeys { backspace: true, ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "ab");
+        assert!(!res.enter, "the flags reset every pass (`:20020-20021`)");
+    }
+
+    #[test]
+    fn get_input_text_ctrl_and_shift_arms() {
+        let mut r = BackspaceRepeat::default();
+        // Ctrl+Z clears (`:20031-20034`).
+        let mut f = TextField::new("abc", 20);
+        let keys = InputKeys { control: true, z_pressed: true, ..Default::default() };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "");
+        assert!(copy.is_none());
+        // Ctrl+X copies the OLD string and clears (`:20035-20039`).
+        let mut f = TextField::new("abc", 20);
+        let keys = InputKeys { control: true, x_pressed: true, ..Default::default() };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "");
+        assert_eq!(copy.as_deref(), Some("abc"));
+        // Ctrl+C copies without clearing (`:20040-20043`); Alt kills the arm.
+        let mut f = TextField::new("abc", 20);
+        let keys = InputKeys { control: true, c_pressed: true, ..Default::default() };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "abc");
+        assert_eq!(copy.as_deref(), Some("abc"));
+        let keys = InputKeys { control: true, alt: true, z_pressed: true, ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "abc");
+        // Ctrl+V pastes sanitized (`:20044-20047`, `PasteTextIn` `:20117`).
+        let mut f = TextField::new("a", 20);
+        let keys = InputKeys { control: true, v_pressed: true, ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "b\tc\nd", false);
+        assert_eq!(res.text, "abcd");
+        // Shift+Delete cuts, Shift+Insert pastes (`:20053-20061`) — two
+        // independent ifs, so one frame can cut then paste.
+        let mut f = TextField::new("old", 20);
+        let keys = InputKeys {
+            shift: true,
+            delete_pressed: true,
+            insert_pressed: true,
+            ..Default::default()
+        };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "new", false);
+        assert_eq!(copy.as_deref(), Some("old"));
+        assert_eq!(res.text, "new");
+        // The paste rides the max-length cap (the consumers' SetText).
+        let mut f = TextField::new("", 4);
+        let keys = InputKeys { control: true, v_pressed: true, ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "abcdef", false);
+        assert_eq!(res.text, "abcd");
+        // Multi-line paste keeps '\n' (`MultiLineValue`).
+        let mut f = TextField::new("", 20);
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "a\nb", true);
+        assert_eq!(res.text, "a\nb");
+    }
+
+    // --- SEAL witnesses (W4-c25 retire, research/281) — WRITTEN NOT RUN.
+    // The chat/sign/text-input compose boundary: the sign editor keeps the
+    // KeyboardState path (f22's lane), the search box keeps c24's event.text
+    // seam until a consumer attaches; these pin the c25 half's contract at
+    // the exact seams those consumers will wire to. All three tests call
+    // ONLY c25-half symbols (no layout/click_at/draw/Context::Sign) so they
+    // compose verbatim into the f22 merge (research/281 §2).
+
+    #[test]
+    fn seal_sign_enter_appends_the_newline_outside_get_input_text() {
+        // `UIVirtualKeyboard.DrawSelf` (`UIVirtualKeyboard.cs:750-754`):
+        // `GetInputText(this.Text, this._editingSign)` — the pass itself
+        // never inserts '\n' for code 13 (only the flag, `Main.cs:20071-
+        // 20074`); the sign arm appends it AFTER, then `this.Text = text`
+        // (`:782`) re-trims at the 1200 cap (`IngameFancyUI.cs:145`).
+        let mut f = TextField::new("line one", 1200);
+        let mut r = BackspaceRepeat::default();
+        let keys = InputKeys { typed: vec![13], ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", true);
+        assert!(res.enter);
+        assert_eq!(res.text, "line one", "13 sets the flag, never a char");
+        // The sign consumer's append + the SetText cap.
+        f.write("\n");
+        assert_eq!(f.text, "line one\n");
+        // A full 1200 box swallows the newline (insert first, trim after —
+        // `UITextBox.cs:40` then `:46`).
+        let mut full = TextField::new(&"x".repeat(1200), 1200);
+        full.write("\n");
+        assert_eq!(full.text.chars().count(), 1200);
+        assert!(!full.text.ends_with('\n'));
+    }
+
+    #[test]
+    fn seal_textfield_at_the_pinned_caret_matches_keyboardstate() {
+        // The sign session edits through `KeyboardState`/`write_str` (f22's
+        // signs.rs opens `KeyboardState::new`, the physical Enter's newline
+        // rides `write_str`), NOT the caret field: `UITextBox.DrawSelf`
+        // pins `_cursor = Text.Length` every frame (`UITextBox.cs:86`), so
+        // at the pinned caret the two halves agree char-for-char — the
+        // keep-both compose (research/281 §2) has no behavioural seam.
+        let req = Request {
+            label: String::new(),
+            initial: "stored".into(),
+            allow_empty: false,
+            max_length: 1200, // `IngameFancyUI.cs:145`'s sign cap
+            context: Context::Text,
+        };
+        let mut state = KeyboardState::new(&req);
+        let mut field = TextField::new("stored", 1200);
+        // Append (the sign dialog's typing / `CopyTextToSign`'s source).
+        write_str(&mut state, " text");
+        field.write(" text");
+        assert_eq!(state.text, field.text);
+        // Backspace at the pinned caret (`UITextBox.cs:86`'s per-frame pin).
+        for _ in 0..3 {
+            state.backspace();
+            field.cursor = field.text.chars().count();
+            field.backspace();
+            assert_eq!(state.text, field.text);
+        }
+        // The physical Enter's newline (`:751-754`).
+        write_str(&mut state, "\n");
+        field.write("\n");
+        assert_eq!(state.text, field.text);
+        assert!(state.text.ends_with('\n'));
+        // The 1200 cap agrees on overflow (f22's signs.rs witness pins the
+        // write_str 1300→1200 arm; this pins the TextField twin).
+        let big = "x".repeat(1300);
+        write_str(&mut state, &big);
+        field.write(&big);
+        assert_eq!(state.text.chars().count(), 1200);
+        assert_eq!(field.text, state.text);
+    }
+
+    #[test]
+    fn seal_search_box_seam_matches_the_50_cap_and_stop_flags() {
+        // `UISearchBar.DrawSelf` (`UISearchBar.cs:145-167`): GetInputText
+        // over actualContents, Enter/Escape ToggleTakingText (`:156-164`),
+        // SetContents ALWAYS runs (`:165`) — the cap applies on the flag
+        // frame too (`SetText`, `:80-81`; MaxInputLength 50, `:63`). The
+        // c24 stand-in (app/loop.rs's search_writing arm) stops on the
+        // flags and caps at 50; the binding reproduces both, plus the
+        // queue-order append the stand-in's per-char push also keeps.
+        let mut f = TextField::new(&"a".repeat(49), 50);
+        let mut r = BackspaceRepeat::default();
+        let keys = InputKeys { typed: vec!['b' as u32, 'c' as u32, 13], ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert!(res.enter, "the stop flag fires on the same frame");
+        assert_eq!(
+            res.text,
+            "a".repeat(49) + "b",
+            "the 50 cap trims 'c' even on the Enter frame (`:165`)"
+        );
+        // Escape keeps the text (the seam stops without reverting).
+        let keys = InputKeys { typed: vec![27], ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert!(res.escape);
+        assert_eq!(res.text.chars().count(), 50);
     }
 
     #[test]
@@ -1324,5 +2053,108 @@ mod tests {
         // `new Color(23, 33, 69) * 0.7f` (`:206`).
         assert_eq!(PANEL_BG, color::mul([23, 33, 69, 255], 0.7));
         assert_eq!(PANEL_BG, [16, 23, 48, 178]);
+    }
+
+    /// W4-f22 — `num3 = -5000 * _editingSign.ToInt()` (`UIVirtualKeyboard.cs:
+    /// 176`): the sign context parks the textbox and label 5000 px above
+    /// their normal tops (the text edits in the NPCChatPanel dialog instead,
+    /// `IngameFancyUI.cs:212-215`); the key layer itself does not move.
+    #[test]
+    fn sign_context_parks_the_textbox_and_label_offscreen() {
+        let t = layout(SCREEN, false, Context::Text);
+        let s = layout(SCREEN, false, Context::Sign);
+        assert_eq!(s.textbox[1], t.textbox[1] - 5000.0, "260 - 5000 = -4740");
+        assert_eq!(s.label[1], t.label[1] - 5000.0, "229 - 5000 = -4771");
+        assert_eq!(s.textbox[0], t.textbox[0], "the x/width/height stay");
+        assert_eq!(s.textbox[3], t.textbox[3]);
+        assert_eq!(s.layer, t.layer, "the key layer does not move");
+        assert_eq!(s.panel, t.panel);
+        assert_eq!(s.submit, t.submit);
+        assert_eq!(s.grid_origin, t.grid_origin);
+        // The gamepad layer shifts the same way (`:716-725`'s +50 is absent).
+        let g = layout(SCREEN, true, Context::Sign);
+        assert_eq!(g.textbox[1], 210.0 - 5000.0);
+        assert_eq!(g.label[1], 179.0 - 5000.0);
+        // The chest context keeps the historical geometry.
+        assert_eq!(layout(SCREEN, false, Context::Chest), t);
+    }
+
+    /// W4-f22 — `TextIsValidForSubmit` (`:615-626`): the `_editingSign` gate
+    /// makes the sign context always valid, even for an empty text with
+    /// `allowEmpty: false` (the sign open passes exactly that pair,
+    /// `IngameFancyUI.cs:145`).
+    #[test]
+    fn sign_context_is_always_valid_for_submit() {
+        assert!(text_valid_for("", false, Context::Sign));
+        assert!(text_valid_for("   ", false, Context::Sign));
+        assert!(text_valid_for("hi", false, Context::Sign));
+        // The text context keeps the allowEmpty fallback.
+        assert!(!text_valid_for("", false, Context::Text));
+        assert!(text_valid_for("", true, Context::Text));
+    }
+
+    /// W4-f22 — `BuildSpaceBarArea` (`:444-489`): the sign row without a
+    /// cancel cache is space (2,4,3) + enter (5,4,3); with one it is space
+    /// (2,4,2) + enter (4,4,2) + restore (6,4,2). The text context keeps the
+    /// 6-wide space bar and no extras.
+    #[test]
+    fn sign_bottom_row_follows_the_restore_flag() {
+        assert_eq!(
+            bottom_row(Context::Sign, false),
+            ([2, 4, 3], Some([5, 4, 3]), false)
+        );
+        assert_eq!(
+            bottom_row(Context::Sign, true),
+            ([2, 4, 2], Some([4, 4, 2]), true)
+        );
+        assert_eq!(bottom_row(Context::Text, false), ([2, 4, 6], None, false));
+        assert_eq!(bottom_row(Context::Text, true), ([2, 4, 6], None, false));
+        // The chest row only shrinks with a cache (`_editingChest & flag`).
+        assert_eq!(bottom_row(Context::Chest, false), ([2, 4, 6], None, false));
+        assert_eq!(bottom_row(Context::Chest, true), ([2, 4, 3], None, true));
+    }
+
+    /// W4-f22 — the sign row's click map: the newline key answers
+    /// `Click::Newline`, the restore key `Click::Restore`, and the shrunk
+    /// space bar keeps its own rect.
+    #[test]
+    fn sign_bottom_row_clicks_map_to_newline_and_restore() {
+        let l = layout(SCREEN, true, Context::Sign);
+        let state = KeyboardState::new(&Request {
+            label: String::new(),
+            initial: String::new(),
+            allow_empty: false,
+            max_length: 1200,
+            context: Context::Sign,
+        });
+        let centre = |rect: [f32; 4]| Vec2::new(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5);
+        // No cache: space (2,4,3), enter (5,4,3).
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 2, 4, 3)), Context::Sign, false),
+            Click::Space
+        );
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 5, 4, 3)), Context::Sign, false),
+            Click::Newline
+        );
+        // The old 6-wide space bar's tail columns are dead now (the enter
+        // key owns 5..8; column 8+ is backspace).
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 8, 4, 2)), Context::Sign, false),
+            Click::Backspace
+        );
+        // With a cache: space (2,4,2), enter (4,4,2), restore (6,4,2).
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 2, 4, 2)), Context::Sign, true),
+            Click::Space
+        );
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 4, 4, 2)), Context::Sign, true),
+            Click::Newline
+        );
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 6, 4, 2)), Context::Sign, true),
+            Click::Restore
+        );
     }
 }

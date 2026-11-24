@@ -834,6 +834,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // variant needs its own arm for match exhaustiveness; the e21 "no
         // DebuffImmunitySets row" claim is corrected against the source here.
         NpcKind::PartyBunny => &[31],
+        // W4-d120 — all five carry `SpecificallyImmuneTo {31}` (the
+        // Confused debuff; `NPCID.cs`'s DebuffImmunitySets rows for
+        // 142/160/178/209/579).
+        NpcKind::SantaClaus
+        | NpcKind::Truffle
+        | NpcKind::Steampunker
+        | NpcKind::Cyborg
+        => &[31],
     }
 }
 

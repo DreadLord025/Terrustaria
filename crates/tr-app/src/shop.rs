@@ -1508,6 +1508,175 @@ pub fn can_bulk_buy(entry: &ShopEntry, shift_in_use: bool) -> bool {
     (entry.is_a_shop_item || entry.buy_once) && shift_in_use
 }
 
+/// The price row's DISPLAY stack (`ItemSlot.EstimateDisplayStack`,
+/// `ItemSlot.cs:3150-3162`): `buyOnce ? 1 : stack`, × the bulk-buy amount
+/// while Shift is in use on a bulkable row. The bulk-craft arm (`:3157-3160`)
+/// belongs to the crafting contexts (22/42/41), never the shop's 15.
+pub fn estimate_display_stack(entry: &ShopEntry, shift_in_use: bool) -> u32 {
+    display_stack(entry.buy_once, entry.is_a_shop_item, entry.stack, shift_in_use)
+}
+
+/// [`estimate_display_stack`] over the instance fields (the tooltip's
+/// hover is not always a `ShopEntry` — the inventory hovers under an open
+/// shop price their own instance).
+fn display_stack(buy_once: bool, is_a_shop_item: bool, stack: u32, shift_in_use: bool) -> u32 {
+    let num = if buy_once { 1 } else { stack };
+    if (is_a_shop_item || buy_once) && shift_in_use {
+        num * if buy_once { 10u32.min(stack) } else { 10 }
+    } else {
+        num
+    }
+}
+
+/// One shop-tooltip price row: the text and its coin-tier colour
+/// (`Main.MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448-20555`).
+pub struct ShopPriceLine {
+    pub text: String,
+    pub color: [f32; 4],
+}
+
+/// The price-row inputs the hover carries (`AddShopLines`' reads off
+/// `hoverItem` + the session): `buy` is the `Item.buy` stamp — context 15
+/// (the shop grid) sets it true (`ItemSlot.cs:3195-3197`), every other
+/// context leaves it false, so the inventory hovers under an open shop
+/// print the SELL row. `instance_value` is the hover's CURRENT value (the
+/// prefixed instance); `shop_custom_price` is `Item.shopCustomPrice` (the
+/// stock rows' override, `GetStoreValue` — `Item.cs:49901-49908`).
+#[derive(Clone, Copy)]
+pub struct ShopLineContext {
+    pub buy: bool,
+    pub buy_once: bool,
+    pub is_a_shop_item: bool,
+    pub instance_value: i32,
+    pub shop_custom_price: Option<i32>,
+    pub shift_in_use: bool,
+    pub discount_available: bool,
+    pub price_adjustment: f32,
+    /// `Main.shopSellbackHelper.GetAmount(hoverItem)` (`Main.cs:20478`).
+    pub sellback_amount: u32,
+}
+
+/// `Main.MouseText_DrawItemTooltip_AddShopLines` (`Main.cs:20448-20555`):
+/// the shop-context price row. `npc_shop` is `Main.npcShop > 0`. The gates
+/// (`:20450-20453`): no shop / negative value / the coin kinds 71-74 append
+/// nothing. The custom-currency arm (`:20456-20460`, `shopSpecialCurrency
+/// != -1`) needs the `CustomCurrencyManager` — unported; the port's stock
+/// carries no special-currency rows (the Tavernkeep's medal rows are gated
+/// off, see `get_item_expected_price`'s doc), so the arm is a documented
+/// skip.
+pub fn add_shop_lines(
+    kind: u16,
+    stack: u32,
+    npc_shop: bool,
+    ctx: ShopLineContext,
+) -> Option<ShopPriceLine> {
+    // `:20450` — `Main.npcShop <= 0 || hoverItem.value < 0 ||
+    // (hoverItem.type >= 71 && hoverItem.type <= 74)`.
+    if !npc_shop || ctx.instance_value < 0 || (71..=74).contains(&kind) {
+        return None;
+    }
+    // `:20454` — `GetItemExpectedPrice` reads `GetStoreValue` (the
+    // shopCustomPrice override wins over the instance value).
+    let store = get_store_value(ctx.instance_value, ctx.shop_custom_price);
+    let (calc_for_selling, calc_for_buying) = get_item_expected_price(
+        store,
+        ctx.buy_once,
+        ctx.is_a_shop_item,
+        ctx.discount_available,
+        ctx.price_adjustment,
+    );
+    // `:20455` — the display value (the `display_price_row` pick).
+    let num = if ctx.is_a_shop_item || ctx.buy_once {
+        calc_for_buying
+    } else {
+        calc_for_selling
+    };
+    if num > 0 {
+        // `:20468` — `num6 = num * ItemSlot.EstimateDisplayStack(hoverItem)`.
+        let mut num6 =
+            num * display_stack(ctx.buy_once, ctx.is_a_shop_item, stack, ctx.shift_in_use) as i64;
+        // `:20469-20483` — the SELL side (`!hoverItem.buy`): the per-unit
+        // fifth (min 1) × the instance stack, plus the sellback correction
+        // `(-num7 + calcForBuying) * min(amount, stack)`.
+        if !ctx.buy {
+            let num7 = (num / 5).max(1);
+            num6 = num7 * stack as i64;
+            if ctx.sellback_amount > 0 {
+                num6 += (-num7 + calc_for_buying) * ctx.sellback_amount.min(stack) as i64;
+            }
+        }
+        // `:20484-20487` — the `< 1` clamp.
+        if num6 < 1 {
+            num6 = 1;
+        }
+        // `:20488-20506` — the platinum/gold/silver/copper split.
+        let (num2, num3, num4, num5) = split_coins(num6);
+        // `:20507-20522` — the tier text, each with its trailing space.
+        let mut text = String::new();
+        if num2 > 0 {
+            text += &format!("{} {} ", num2, crate::lang::inter(15));
+        }
+        if num3 > 0 {
+            text += &format!("{} {} ", num3, crate::lang::inter(16));
+        }
+        if num4 > 0 {
+            text += &format!("{} {} ", num4, crate::lang::inter(17));
+        }
+        if num5 > 0 {
+            text += &format!("{} {} ", num5, crate::lang::inter(18));
+        }
+        // `:20523-20530` — tip[49] "Sell price:" / tip[50] "Buy price:".
+        let label = if ctx.buy { crate::lang::tip(50) } else { crate::lang::tip(49) };
+        Some(ShopPriceLine {
+            text: format!("{} {}", label, text),
+            color: coin_tier_color(num2, num3, num4),
+        })
+    } else if kind != 3817 {
+        // `:20549-20554` — the value-0 row: tip[51] "No value" in grey,
+        // except the Defender Medal 3817 (its custom-currency price).
+        Some(ShopPriceLine {
+            text: crate::lang::tip(51),
+            color: [120.0 / 255.0, 120.0 / 255.0, 120.0 / 255.0, 1.0],
+        })
+    } else {
+        None
+    }
+}
+
+/// The platinum/gold/silver/copper split (`Main.cs:20488-20506`).
+fn split_coins(mut num6: i64) -> (i64, i64, i64, i64) {
+    let mut num2 = 0i64;
+    let mut num3 = 0i64;
+    let mut num4 = 0i64;
+    if num6 >= 1_000_000 {
+        num2 = num6 / 1_000_000;
+        num6 -= num2 * 1_000_000;
+    }
+    if num6 >= 10_000 {
+        num3 = num6 / 10_000;
+        num6 -= num3 * 10_000;
+    }
+    if num6 >= 100 {
+        num4 = num6 / 100;
+        num6 -= num4 * 100;
+    }
+    let num5 = if num6 >= 1 { num6 } else { 0 };
+    (num2, num3, num4, num5)
+}
+
+/// The highest tier's colour (`Main.cs:20531-20546`).
+fn coin_tier_color(num2: i64, num3: i64, num4: i64) -> [f32; 4] {
+    if num2 > 0 {
+        [220.0 / 255.0, 220.0 / 255.0, 198.0 / 255.0, 1.0]
+    } else if num3 > 0 {
+        [224.0 / 255.0, 201.0 / 255.0, 92.0 / 255.0, 1.0]
+    } else if num4 > 0 {
+        [181.0 / 255.0, 192.0 / 255.0, 193.0 / 255.0, 1.0]
+    } else {
+        [246.0 / 255.0, 138.0 / 255.0, 96.0 / 255.0, 1.0]
+    }
+}
+
 /// The C# `Math.Round`'s default = the banker's rounding (the damage.rs
 /// convention).
 fn round_half_to_even(v: f32) -> i32 {
@@ -2357,5 +2526,124 @@ mod s1_p_i44_tests {
         };
         assert!(can_bulk_buy(&shop_item, true));
         assert_eq!(bulk_buy_amount(&shop_item), 10);
+    }
+
+    // --- W4-f28: the shop-tooltip price rows --------------------------------
+    // (`Main.MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448-20555`).
+    // WRITTEN NOT RUN (code-only mode).
+
+    fn line_ctx(buy: bool) -> ShopLineContext {
+        ShopLineContext {
+            buy,
+            buy_once: false,
+            is_a_shop_item: false,
+            instance_value: 0,
+            shop_custom_price: None,
+            shift_in_use: false,
+            discount_available: false,
+            price_adjustment: 1.0,
+            sellback_amount: 0,
+        }
+    }
+
+    /// The head gates (`Main.cs:20450`): no shop / negative value / the
+    /// coin kinds 71-74 append nothing; the value-0 row prints tip[51]
+    /// "No value" in grey except the Defender Medal 3817 (`:20549`).
+    #[test]
+    fn w4_f28_the_shop_line_gates() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut ctx = line_ctx(true);
+        ctx.instance_value = 500;
+        // No shop: nothing.
+        assert!(add_shop_lines(88, 1, false, ctx).is_none());
+        // The coin kinds: nothing (they price through the coin slots).
+        for kind in 71..=74u16 {
+            assert!(add_shop_lines(kind, 1, true, ctx).is_none());
+        }
+        // Negative value: nothing.
+        ctx.instance_value = -1;
+        assert!(add_shop_lines(88, 1, true, ctx).is_none());
+        // Value 0: the grey "No value" row; the Defender Medal is exempt.
+        ctx.instance_value = 0;
+        let row = add_shop_lines(88, 1, true, ctx).expect("the no-value row");
+        assert_eq!(row.text, crate::lang::tip(51));
+        assert_eq!(row.color, [120.0 / 255.0, 120.0 / 255.0, 120.0 / 255.0, 1.0]);
+        assert!(add_shop_lines(3817, 1, true, ctx).is_none());
+    }
+
+    /// The BUY row (`Main.cs:20461-20547`): the shop hover's context-15
+    /// stamp prices the buying value × the display stack; the tier split
+    /// and the highest tier's colour; the trailing spaces stay.
+    #[test]
+    fn w4_f28_the_buy_row_splits_the_coin_tiers() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut ctx = line_ctx(true);
+        // 1 platinum 2 gold 3 silver 4 copper = 1_020_304.
+        ctx.instance_value = 1_020_304;
+        let row = add_shop_lines(88, 1, true, ctx).expect("the buy row");
+        assert_eq!(
+            row.text,
+            format!(
+                "{} 1 {} 2 {} 3 {} 4 {} ",
+                crate::lang::tip(50),
+                crate::lang::inter(15),
+                crate::lang::inter(16),
+                crate::lang::inter(17),
+                crate::lang::inter(18)
+            )
+        );
+        assert_eq!(row.color, [220.0 / 255.0, 220.0 / 255.0, 198.0 / 255.0, 1.0]);
+        // Gold-only: the gold colour.
+        ctx.instance_value = 20_000;
+        let row = add_shop_lines(88, 1, true, ctx).expect("the gold row");
+        assert_eq!(row.color, [224.0 / 255.0, 201.0 / 255.0, 92.0 / 255.0, 1.0]);
+        // Silver-only / copper-only.
+        ctx.instance_value = 300;
+        let row = add_shop_lines(88, 1, true, ctx).expect("the silver row");
+        assert_eq!(row.color, [181.0 / 255.0, 192.0 / 255.0, 193.0 / 255.0, 1.0]);
+        ctx.instance_value = 4;
+        let row = add_shop_lines(88, 1, true, ctx).expect("the copper row");
+        assert_eq!(row.color, [246.0 / 255.0, 138.0 / 255.0, 96.0 / 255.0, 1.0]);
+        // The Shift bulk-buy: an isAShopItem row × 10 (`EstimateDisplayStack`).
+        // 50 × 10 = 500 = 5 silver (the bulk crosses the tier).
+        ctx.instance_value = 50;
+        ctx.is_a_shop_item = true;
+        ctx.shift_in_use = true;
+        let row = add_shop_lines(88, 1, true, ctx).expect("the bulk row");
+        assert_eq!(
+            row.text,
+            format!("{} 5 {} ", crate::lang::tip(50), crate::lang::inter(17))
+        );
+    }
+
+    /// The SELL row (`Main.cs:20469-20483`): the non-shop hover under an
+    /// open shop prices the per-unit fifth × the stack, plus the sellback
+    /// memo's bought-price correction; tip[49] prefixes.
+    #[test]
+    fn w4_f28_the_sell_row_refunds_the_memo() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut ctx = line_ctx(false);
+        // 500 copper: the fifth is 100, × stack 3 = 300 (3 silver).
+        ctx.instance_value = 500;
+        let row = add_shop_lines(88, 3, true, ctx).expect("the sell row");
+        assert_eq!(
+            row.text,
+            format!("{} 3 {} ", crate::lang::tip(49), crate::lang::inter(17))
+        );
+        // The memo: 2 units bought at 500 each refund (−100 + 500) × 2 =
+        // +800 → 1100 = 11 silver.
+        ctx.sellback_amount = 2;
+        let row = add_shop_lines(88, 3, true, ctx).expect("the memoed sell row");
+        assert_eq!(
+            row.text,
+            format!("{} 11 {} ", crate::lang::tip(49), crate::lang::inter(17))
+        );
+        // The memo caps at the stack (`Math.Min(amount, item.stack)`).
+        ctx.sellback_amount = 99;
+        let row = add_shop_lines(88, 3, true, ctx).expect("the capped memo");
+        assert_eq!(
+            row.text,
+            format!("{} 15 {} ", crate::lang::tip(49), crate::lang::inter(17))
+        );
     }
 }

@@ -409,6 +409,12 @@ fn fishing_check(p: &mut Projectile, world: &World, inputs: &BobberInputs, rng: 
                 if res.net_update {
                     p.net_update = true;
                 }
+                // W4-c36 — `:20798-20801`: the lava-fishing achievement
+                // queues for the world-sim drain (the pool carries no
+                // manager — the `wants_splash` convention).
+                if res.lava_fishing_achievement {
+                    p.wants_lava_fishing_achievement = true;
+                }
                 // The sonar popup + cue (`:20746-20751`/`:20762-20766`) are
                 // skipped draw/audio seams (module doc); the flag rides.
             }

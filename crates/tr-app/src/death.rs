@@ -64,9 +64,11 @@ fn try_drop_single_item(
 /// carry: the starter tools (3507 Copper Shortsword, 3506 Copper Axe, 3509
 /// Copper Pickaxe) `TurnToAir` instead (`:54322-54325`), everything else in
 /// the inventory, then armor, dye, miscEquips, miscDyes drops
-/// (`:54319-54350`); the loadout sweep (`:54351-54355`) is unported (no
-/// loadout system), and the starter re-grant into slots 0/1/2
-/// (`:54356-54361`, `Prefix(-1)` = the natural spawn roll) closes the pass.
+/// (`:54319-54350`); the loadout sweep (`:54351-54355`,
+/// `EquipmentLoadout.TryDroppingItems` `EquipmentLoadout.cs:82-92`) drops every
+/// stored set's armor then dye (W4-g55 loadout-rest), and the starter re-grant
+/// into slots 0/1/2 (`:54356-54361`, `Prefix(-1)` = the natural spawn roll)
+/// closes the pass.
 fn drop_items(app: &mut App, x: f32, y: f32, gems_only: bool) {
     // `:54304` — the trash airs first.
     app.equip.trash = crate::item::EMPTY_SLOT;
@@ -162,6 +164,30 @@ fn drop_items(app: &mut App, x: f32, y: f32, gems_only: bool) {
         if slot.count > 0 {
             try_drop_single_item(app, slot.kind, slot.count, slot.prefix, x, y);
             app.equip.misc_dyes[i] = crate::item::EMPTY_SLOT;
+        }
+    }
+    // `:54351-54355`: the loadout sweep — each stored set's Armor[20] then
+    // Dye[10] drops through `EquipmentLoadout.TryDroppingItems`
+    // (`EquipmentLoadout.cs:82-92`, the same `TryDroppingSingleItem` walk).
+    // The C# iterates `this.Loadouts` in set order 0/1/2; the live set is NOT
+    // in `Loadouts` (it rides `App.equip`, dropped above). The share word
+    // clears with the items — `TurnToAir`'s `SetDefaults(0)` resets
+    // `favorited` (`Item.cs:49047`). The snapshot-then-write-back shape keeps
+    // the drop ORDER (set 0 armor→dye, set 1, set 2) while `try_drop_single_item`
+    // borrows the whole App.
+    let loadouts = app.player.as_ref().map(|p| p.loadouts);
+    if let Some(mut loadouts) = loadouts {
+        for loadout in loadouts.iter_mut() {
+            for slot in loadout.armor.iter_mut().chain(loadout.dye.iter_mut()) {
+                if slot.count > 0 {
+                    try_drop_single_item(app, slot.kind, slot.count, slot.prefix, x, y);
+                    *slot = crate::item::EMPTY_SLOT;
+                }
+            }
+            loadout.favorited = 0;
+        }
+        if let Some(p) = app.player.as_mut() {
+            p.loadouts = loadouts;
         }
     }
     // `:54356-54361`: the starter tools return — shortsword, pickaxe, axe
@@ -414,6 +440,20 @@ pub fn slain_message(player_name: &str) -> String {
 /// (`Player.cs:54373` → `Item.cs:49651`). The npcs-pass caller hands the
 /// pre-death position, not the centre.
 pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
+    // W4-c36 — `KillMe`'s achievement head (`Player.cs:38822-38828`): a trap
+    // debuff source fires WATCH_YOUR_STEP ("Hit"), and a death inside the
+    // rigged-chest window fires DIE_TO_DEAD_MANS_CHEST ("Do"). Both run
+    // BEFORE the drops (the C# order — the hooks precede `DropItems`).
+    let (trap, deadmans) = app
+        .player
+        .as_ref()
+        .map_or((false, false), |p| (p.trap_debuff_source, p.deadmans_chest_death_frames > 0));
+    if trap {
+        let _ = app.achievements.complete_condition("WATCH_YOUR_STEP", "Hit");
+    }
+    if deadmans {
+        let _ = app.achievements.complete_condition("DIE_TO_DEAD_MANS_CHEST", "Do");
+    }
     // `KillMe` `:38863`: `DropItems(difficulty == 0 || difficulty == 3)` —
     // softcore/journey gems-only, mediumcore/hardcore the whole carry. The
     // difficulty rides the session draft (`App::active_player_difficulty`,
@@ -598,6 +638,30 @@ mod revenge_tests {
         assert_eq!(value_to_coins(10_050), format!("1 {} 50 {}", crate::lang::text("Currency.Gold").to_lowercase(), crate::lang::text("Currency.Copper").to_lowercase()));
         assert_eq!(value_to_coins(1_010_050), format!("1 {} 1 {} 50 {}", crate::lang::text("Currency.Platinum").to_lowercase(), crate::lang::text("Currency.Gold").to_lowercase(), crate::lang::text("Currency.Copper").to_lowercase()));
         assert_eq!(value_to_coins(2_000_000), format!("2 {}", crate::lang::text("Currency.Platinum").to_lowercase()));
+    }
+
+    /// W4-c36 — `KillMe`'s achievement head (`Player.cs:38822-38828`): the
+    /// trap-debuff death fires WATCH_YOUR_STEP, the rigged-chest window
+    /// fires DIE_TO_DEAD_MANS_CHEST; a plain death fires neither.
+    #[test]
+    fn w4_c36_the_death_hooks_fire_the_trap_and_rigged_rows() {
+        let done = |app: &crate::app::App, name: &str| {
+            app.achievements.list.iter().any(|a| a.name == name && a.completed)
+        };
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.trap_debuff_source = true;
+        p.deadmans_chest_death_frames = 600;
+        app.player = Some(p);
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
+        assert!(done(&app, "WATCH_YOUR_STEP"));
+        assert!(done(&app, "DIE_TO_DEAD_MANS_CHEST"));
+        // A plain death fires neither.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
+        assert!(!done(&app, "WATCH_YOUR_STEP"));
+        assert!(!done(&app, "DIE_TO_DEAD_MANS_CHEST"));
     }
 
     #[test]
@@ -872,6 +936,68 @@ mod revenge_tests {
         assert_eq!(app.items[0].count, 2);
         assert_eq!(app.mouse_item.count, 0);
         assert!(!app.inventory.iter().any(|s| s.kind == 1522));
+    }
+
+    /// W4-g55 loadout-rest — the mediumcore loadout sweep
+    /// (`Player.cs:54351-54355`, `EquipmentLoadout.TryDroppingItems`
+    /// `EquipmentLoadout.cs:82-92`): every stored set's Armor then Dye drops
+    /// in set order 0/1/2, the slots air out and the share word clears
+    /// (`TurnToAir`'s `SetDefaults(0)` resets `favorited`, `Item.cs:49047`).
+    /// The live set (App.equip) is NOT in Loadouts — it dropped in the
+    /// earlier armor/dye walk. The drop draws ride the same UpdatePlayers
+    /// stream, two per stack, BEFORE the starter re-grant's Prefix rolls.
+    #[test]
+    fn w4_g55_mediumcore_death_sweeps_the_stored_loadouts() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut draft = crate::ui::char_creation::NewPlayerDraft::new();
+        draft.difficulty = 1; // mediumcore — the whole-carry walk
+        app.session_draft = Some(draft);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // Loadout 0 stores an Iron Helmet (armor 0) + Red Dye (dye 0), shared
+        // head; loadout 2 stores an Ancient Iron Helmet (armor 1). Loadout 1
+        // stays empty. The live set is air (nothing extra drops above).
+        let p = app.player.as_mut().unwrap();
+        p.loadouts[0].armor[0] = crate::item::ItemSlot {
+            kind: 90, name: crate::registry::name(90), count: 1, prefix: 0,
+        };
+        p.loadouts[0].dye[0] = crate::item::ItemSlot {
+            kind: 1007, name: crate::registry::name(1007), count: 1, prefix: 0,
+        };
+        p.loadouts[0].set_shared(0, true);
+        p.loadouts[2].armor[1] = crate::item::ItemSlot {
+            kind: 954, name: crate::registry::name(954), count: 1, prefix: 0,
+        };
+        app.coins = 0;
+        // The drop draws: set 0 armor(90) + dye(1007), set 2 armor(954) —
+        // 3 stacks × two draws, then the three Prefix(-1) re-grant rolls,
+        // then the tombstone roll (0 coins — no rich gate).
+        let mut expect = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        for _ in 0..3 {
+            expect.next_range(-20, 21);
+            expect.next_range(-20, 1);
+        }
+        let _ = crate::prefix::roll_prefix(3507, -1, &mut expect);
+        let _ = crate::prefix::roll_prefix(3509, -1, &mut expect);
+        let _ = crate::prefix::roll_prefix(3506, -1, &mut expect);
+        let mut tvx = expect.next_range(-35, 36) as f32 * 0.1;
+        while tvx >= -2.0 && tvx <= 2.0 {
+            tvx += expect.next_range(-30, 31) as f32 * 0.1;
+        }
+        expect.next_max(6);
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
+        // The three stored items dropped in set order: 90, 1007, 954.
+        let kinds: Vec<u16> = app.items.iter().map(|d| d.kind).collect();
+        assert_eq!(kinds, vec![90, 1007, 954], "set 0 armor→dye, then set 2 armor");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.loadouts[0].armor[0].count, 0, "the stored head aired");
+        assert_eq!(p.loadouts[0].dye[0].count, 0, "the stored dye aired");
+        assert_eq!(p.loadouts[2].armor[1].count, 0, "set 2's head aired");
+        assert_eq!(p.loadouts[0].favorited, 0, "the share word cleared with the items");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            expect,
+            "the loadout drop draws ride the same stream before the re-grant"
+        );
     }
 }
 

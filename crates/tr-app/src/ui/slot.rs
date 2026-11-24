@@ -44,6 +44,9 @@ fn context_texture_index(context: i32, index: i32) -> u8 {
         // `ItemSlot.cs:2264-2277` / `:2298-2302`: crafting contexts 41/42/43 end up
         // on `Inventory_Back18` (42/43 start on `_4` and are then overridden).
         41 | 42 | 43 => 7,
+        // `ItemSlot.cs:2253-2259`: the Journey duplication grid — 29 (fully
+        // researched) and 34 (partial) both ride `Inventory_Back18`.
+        29 | 34 => 7,
         // `ItemSlot.Draw`'s context-15 arm (`ItemSlot.cs:2250-2252`): the
         // shop cells ride `Inventory_Back6`.
         15 => 10,
@@ -310,6 +313,20 @@ pub(crate) fn draw_item_icon(
     r.push_ui_sprite([center.0 - w * 0.5, center.1 - h * 0.5], [w, h], uv, tint);
 }
 
+/// `UIItemIcon.DrawSelf` (`UIItemIcon.cs:21-25`): `ItemSlot.DrawItemIcon(
+/// item, 31, sb, dimensions.Center(), item.scale, 32f, White)` — the debug
+/// loadout rows' 32 px preview icons (W4-d85). The item's own `scale` is
+/// the `ItemDef.scale` the registry carries.
+pub(crate) fn draw_item_icon_32(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &ItemSlot,
+    center: (f32, f32),
+) {
+    let scale = crate::registry::get(item.kind).map(|d| d.scale).unwrap_or(1.0);
+    draw_item_icon(r, lookups, item, center, scale, [1.0; 4]);
+}
+
 /// `ItemSlot.cs:2490-2498`: the empty-equipment glyph — `Extra_54`,
 /// `Frame(3, 7, num15 % 3, num15 / 3)`, shrunk 2 px, drawn centred on
 /// `position + value.Size() / 2 * inventoryScale` in `White * 0.35`.
@@ -433,7 +450,10 @@ fn draw_slot_flagged(
     // draw no background at all — the mouse item rides on them — but still centre
     // on `InventoryBack.Size()`.
     let cell = back.map(|b| b.width as f32).unwrap_or(52.0);
-    let no_background = matches!(context, 14 | 21 | 37);
+    // `ItemSlot.cs:2261-2263`: context 30 (the Journey sacrifice slot) sets
+    // `flag3 = !flag2` — with no gamepad highlight it draws no background at
+    // all, like the mouse-item contexts.
+    let no_background = matches!(context, 14 | 21 | 30 | 37);
     if !no_background {
         if let Some(uv) = lookups.hud_uv(back.as_ref()) {
             r.push_ui_sprite([x, y], [cell * scale, cell * scale], uv, tint);
@@ -493,6 +513,79 @@ fn draw_slot_flagged(
     }
 }
 
+/// `ItemSlot.Draw`'s share-badge corner draw (`ItemSlot.cs:2733-2746`):
+/// `spriteBatch.Draw(value12, position, value12.Frame(), Color.White *
+/// (0.7f * num17), 0f, Vector2.Zero, 1f * inventoryScale, ...)` — the sheet's
+/// whole frame at the slot's top-left `position`, native size times
+/// `inventoryScale`, white at `0.7 * num17` (`num17` is the pre-0.6 itemFade,
+/// 1 outside the fade animations — so 0.7 for both the live-item badge
+/// `num18 != -1` and the shared-ghost badge `num16 != -1`).
+pub(crate) fn share_badge_draw(
+    sheet: &SheetRect,
+    x: f32,
+    y: f32,
+    scale: f32,
+) -> ([f32; 2], [f32; 2], [f32; 4]) {
+    (
+        [x, y],
+        [sheet.width as f32 * scale, sheet.height as f32 * scale],
+        [1.0, 1.0, 1.0, 0.7],
+    )
+}
+
+/// Draw one share badge (`Extra_310..315`, the `lookups.loadout_share_badges`
+/// table) at the slot corner through [`share_badge_draw`].
+pub(crate) fn draw_share_badge(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    badge: usize,
+    x: f32,
+    y: f32,
+    scale: f32,
+) {
+    let Some(sheet) = lookups.loadout_share_badges.get(badge).and_then(|s| s.as_ref()) else {
+        return;
+    };
+    let (pos, size, tint) = share_badge_draw(sheet, x, y, scale);
+    let (uv, _, _) = super::chrome::sheet_frame(sheet, lookups.atlas_size);
+    r.push_ui_sprite(pos, size, uv, tint);
+}
+
+/// `ItemSlot.Draw`'s shared-loadout overlay (`ItemSlot.cs:2474-2488` +
+/// `:2740-2746`): an AIR equip slot whose item is shared from another loadout
+/// draws that item's icon at 0.6 fade (no empty glyph — `num15 = -1`), plus
+/// the sharing loadout's corner badge (`num16 = sharedFromLoadout` →
+/// `Clamp(313 + num16, 313, 315)`, drawn at `0.7 * num17` where `num17` is the
+/// pre-0.6 fade). `shared` is the effective item, `from_loadout` the sharing
+/// set's index.
+pub(crate) fn draw_shared_item(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    shared: &ItemSlot,
+    from_loadout: usize,
+    x: f32,
+    y: f32,
+    scale: f32,
+) {
+    if shared.count == 0 {
+        return;
+    }
+    let cell = lookups.ui_back.map(|b| b.width as f32).unwrap_or(52.0);
+    let center = (x + cell * 0.5 * scale, y + cell * 0.5 * scale);
+    // `itemFade *= 0.6f` (`:2483`) then `DrawItemIcon(..., itemFade)` (`:2515`).
+    draw_item_icon(r, lookups, shared, center, scale, [1.0, 1.0, 1.0, 0.6]);
+    // `:2740-2746` — the ghost's badge rides `num17` (the fade captured
+    // BEFORE the 0.6 multiply, `:2481`), so it stays at 0.7 alpha.
+    draw_share_badge(
+        r,
+        lookups,
+        super::loadout::share_badge_index(from_loadout, true),
+        x,
+        y,
+        scale,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,6 +605,26 @@ mod tests {
             (a.0 - b.0).abs() < 1e-4 && (a.1 - b.1).abs() < 1e-4,
             "{a:?} != {b:?}"
         );
+    }
+
+    /// W4-g55 — the share-badge draw geometry (`ItemSlot.cs:2738`/`:2745`):
+    /// the sheet's whole frame at the slot `position`, `1f * inventoryScale`
+    /// size, `Color.White * (0.7f * num17)` — `num17` is 1 outside the fade
+    /// animations, so both badges draw at 0.7 alpha (the ghost badge's fade
+    /// was captured BEFORE the 0.6 multiply, `:2481`).
+    #[test]
+    fn w4_g55_the_share_badge_draws_at_the_corner_in_white_07() {
+        let sheet = SheetRect {
+            x: 64,
+            y: 128,
+            width: 20,
+            height: 20,
+            plain_frame: (0, 0),
+        };
+        let (pos, size, tint) = share_badge_draw(&sheet, 500.0, 200.0, 0.85);
+        assert_eq!(pos, [500.0, 200.0], "position, no centring offset");
+        assert_eq!(size, [17.0, 17.0], "native 20 px * inventoryScale 0.85");
+        assert_eq!(tint, [1.0, 1.0, 1.0, 0.7], "Color.White * 0.7");
     }
 
     #[test]

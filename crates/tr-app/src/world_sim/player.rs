@@ -206,6 +206,12 @@ fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
     if kind == 2216 || kind == 3061 || kind == 5126 {
         p.auto_paint = true;
     }
+    // `:12825-12828` — the Guide to Critter Companions (4767) and its
+    // upgrade (5323) arm `dontHurtCritters` (the Inferno aura's critter
+    // refusal reads it, `Player.cs:20515`).
+    if kind == 4767 || kind == 5323 {
+        p.dont_hurt_critters = true;
+    }
 }
 
 /// The summon-cap half of `Player.UpdateEquips` (M4-PROJ-8 phase 2): the
@@ -404,6 +410,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
         app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
     );
+    // `Main.MouseOversClear` (`Main.cs:17035` -> `:46511-46512`) + the sign
+    // hover scan (`Player.LookForTileInteractions` -> the long-distance
+    // arm's `tileSign` block, `Player.cs:32098-32115`) — W4-f22: the
+    // bubble/tooltip latches re-derive every player tick.
+    crate::signs::mouse_overs_clear(app);
+    crate::signs::sign_hover_scan(app, mouse_world);
     // S1-P-i27 — `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`), copied
     // out before the player borrow (the rest-target command reads it).
     let reversed_armor_bonuses = app.settings.reversed_armor_bonuses;
@@ -963,6 +975,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         for i in 0..20 {
             p.equipped[i] = app.equip.armor[i].kind;
             p.equipped_prefix[i] = app.equip.armor[i].prefix;
+            // The live items for the `GetEffectiveArmor` share scan
+            // (`Player.cs:5690-5710`).
+            p.armor_items[i] = app.equip.armor[i];
         }
         // `:22676-22679` — the Track Hook hands the player to the equipped
         // cart mount (the misc-equip 2) when it is a cart row; the wooden
@@ -989,10 +1004,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.void_vault_enabled = holds_lens;
         }
         // `Player.dye`/`miscDyes`' kinds snapshot — `UpdateDyes`' input
-        // through `GetEffectiveDye` (`Player.cs:5742-5764`; no loadouts in
-        // the port, the slot itself is the source).
+        // through `GetEffectiveDye` (`Player.cs:5742-5764`): an air live slot
+        // takes the first shared loadout dye, else the slot itself.
         for i in 0..10 {
-            p.dye_slots[i] = app.equip.dye[i].kind;
+            p.dye_items[i] = app.equip.dye[i];
+            p.dye_slots[i] = p.get_effective_dye(i).0.kind;
         }
         for i in 0..5 {
             p.misc_dye_slots[i] = app.equip.misc_dyes[i].kind;
@@ -1247,6 +1263,103 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
+            // W4-f12 — the `UpdateBuffs` frame WIRING: one slot-ordered pass
+            // over the buff bar in the exact C# `else if` chain order, driving
+            // the gathered wave modules + the canonical g27 orb module
+            // (keep-one) and folding their accumulators onto the live fields.
+            // Runs AFTER the summon pass (which owns the keep-alives + the
+            // 110/150/348 cap rows) and BEFORE the accessory pass (which owns
+            // the pets/imbues); the wiring skips those ids (no double grant).
+            // The frame head/tails (`:9857-9864`, `:12046-12067`) ride along.
+            {
+                let dont_starve = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+                let remix = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+                let held_item_type = app.inventory[app.selected].kind as i32;
+                let day_time = app.world.day_time;
+                // `WorldGen.SolidTile3` (`WorldGen.cs:70465-70483`) — the
+                // LOOSEST solid test (actuated tiles stay solid); the 1-tile
+                // border refusal maps to the out-of-bounds `None`.
+                let solid3 = |x: i32, y: i32| -> bool {
+                    if x < 1 || x >= app.world.width - 1 || y < 1 || y >= app.world.height - 1 {
+                        return false;
+                    }
+                    let Some(t) = app.world.tile(x, y) else {
+                        return false;
+                    };
+                    t.active()
+                        && !t.inactive()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                };
+                let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+                    day_time,
+                    dont_starve,
+                    remix,
+                    solid3: &solid3,
+                    held_item_type,
+                };
+                crate::buff_frame_wiring::update_buff_frame(
+                    p,
+                    &mut app.projectiles,
+                    &app.world,
+                    &inputs,
+                );
+                // Drain the frame's emote / Hungry-sound requests onto the
+                // live seams (`EmoteBubble.MakeLocalPlayerEmote`,
+                // `SoundEngine.PlaySound(SoundID.Hungry)`).
+                for emote in p.pending_frame_emotes.drain(..) {
+                    app.emotes.new_bubble(emote);
+                }
+                for _ in 0..p.pending_hungry_sounds {
+                    app.audio.play("hungry");
+                }
+                p.pending_hungry_sounds = 0;
+                // W4-f12 gap 2 — the Inferno aura's NPC damage ring
+                // (`Player.cs:10224-10238`): the roster scan the wiring
+                // deferred. Runs right after the frame fold set `p.inferno`
+                // / the cadence gate; the strike requests drain onto the
+                // hit-sound + probe seams below (the C# order: combat text
+                // inside the scan, sound + HitEffect after the strike).
+                let damage_tick = p.inferno_counter % 60 == 0;
+                let strikes = crate::buff_inferno_aura::inferno_aura_scan(
+                    p,
+                    &mut app.npcs,
+                    damage_tick,
+                    &app.scene_metrics,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.combat_texts,
+                    app.lookups.combat_text_font.as_ref(),
+                );
+                for s in strikes {
+                    // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`):
+                    // the kind's `HitSound` at `base.position`, the pitch
+                    // draw on the same `UpdatePlayers` stream.
+                    let (nx, ny) = (app.npcs[s.idx].x, app.npcs[s.idx].y);
+                    if let Some(cue) = app.npcs[s.idx].kind.hit_sound() {
+                        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        app.audio.play_npc_hit_sound(cue, nx, ny, rng);
+                    }
+                    // `StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+                    // the Destroyer body's probe gate rides the strike's
+                    // stream (the melee/proj precedent).
+                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                        &mut app.npcs[s.idx], probe_rng, false,
+                    ) {
+                        app.npcs[s.idx].wants_probe = Some(anchor);
+                    }
+                }
+                // `Player.cs:25605`: `wolfAcc = false` — the C# clears the
+                // flag AFTER `UpdateBuffs` read it (the `:11895` Werewolf
+                // gate); the port's buff scan is this wiring, so the clear
+                // rides here, not inside `update_with_grapple` (clearing it
+                // there would starve the scan). The next tick's equip pass
+                // re-arms it from the worn charm/shell.
+                p.wolf_acc = false;
+            }
             // S1-E-7 wave C: the accessory/set-bonus buff arms
             // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the
             // same `UpdateBuffs` slot chain, in its own module so waves A/B
@@ -1261,6 +1374,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // draw order are unchanged.
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
+            // W4-c36 — `Player.cs:25567-25572` (`UpdateBuffs`' tail, the
+            // myPlayer arm): with neither OnFire (24) nor Poisoned (20)
+            // running, the trap-debuff source clears — a trap death only
+            // counts while its debuff lingers. The `hp > 0` gate keeps the
+            // flag for the death seam: the port latches `dead` in the LATER
+            // npcs pass (`on_player_death` reads the flag), so a lethal
+            // trap hit this tick must survive the clear (the C# `KillMe`
+            // runs synchronously inside the hit, before any clear).
+            let burning_or_poisoned = p
+                .buffs
+                .active_types()
+                .iter()
+                .any(|&b| b == 20 || b == 24);
+            if !burning_or_poisoned && p.hp > 0 {
+                p.trap_debuff_source = false;
+            }
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port
@@ -1703,6 +1832,62 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         });
         app.player_step.drop_backlog();
+        // W4-c24c — `Player.Update`'s local-player armor tail
+        // (`Player.cs:25703`): `AchievementsHelper.CheckResearchAchievement()`
+        // every tick. The port drains it after the player borrow like the
+        // HandleRunning float below (the C# fires both inside `Player.Update`);
+        // the version gate inside skips the recount while the tracker is
+        // unchanged; at half the catalog it fires progression 45
+        // (TRASH_COMPACTOR).
+        let _ = app.achievements.check_research(&app.research, false);
+        // W4-c36 — `Player.UpdateBiomes`' reach/biome tail (`Player.cs:
+        // 16732-16776`) + `BordersMovement`'s reads (`:24099`/`:24125`):
+        // the per-tick wall/zone/depth checks fire the named reach rows.
+        // The pairs resolve after the player borrow releases the manager.
+        let reach_rows = if let Some(p) = app.player.as_mut() {
+            crate::app::achievement_hooks::reach_check(
+                p,
+                &app.world,
+                app.scene_metrics.zone_graveyard,
+            )
+        } else {
+            Vec::new()
+        };
+        for (row, cond) in reach_rows {
+            let _ = app.achievements.complete_condition(row, cond);
+        }
+        // W4-c36 — the fall-damage LUCKY_BREAK drain (`Player.cs:25354-25357`/
+        // `:25371-25374`): the bare player tick queued the event-8 test.
+        if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_lucky_break)) {
+            let _ = app.achievements.complete_condition("LUCKY_BREAK", "Hit");
+        }
+        // W4-c36 DOC-SWEEP — `Mount.SetMount`'s coffin-cart arm
+        // (`Mount.cs:6301-6304`): the Coffin Minecart (MountID 38) mount
+        // queued progression 32 (ROLLIN_IN_YOUR_GRAVE).
+        if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_grave_cart)) {
+            let _ = app.notify_progression_net(32);
+        }
+        // W4-c36 — `Mount.UpdateEffects` case 10 (`Mount.cs:4955-4958`): the
+        // Unicorn mount swinging the Rainbow Gun 1260 fires
+        // HandleSpecialEvent(5) → RAINBOWS_AND_UNICORNS ("Use").
+        let unicorn_rainbow = app.player.as_ref().is_some_and(|p| {
+            p.mount.is_active() && p.mount.kind() == 10
+        });
+        if unicorn_rainbow && app.swing > 0.0 && app.inventory[app.selected].kind == 1260 {
+            let _ = app.achievements.complete_condition("RAINBOWS_AND_UNICORNS", "Use");
+        }
+        // W4-c36 — `ArmorSetBonuses.Benefits.Bee` (`ArmorSetBonuses.cs:23-30`):
+        // the completed Bee set (2361/2362/2363) fires HandleSpecialEvent(3)
+        // → NOT_THE_BEES ("Use") while the Bee Gun 1121 swings
+        // (`itemAnimation > 0 && inventory[selectedItem].type == 1121`).
+        // The C# runs it inside `UpdateArmorSets` (`Player.cs:25685`); the
+        // port reads the same tick's post-update state here.
+        let bee_set = app.player.as_ref().is_some_and(|p| {
+            p.equipped[0] == 2361 && p.equipped[1] == 2362 && p.equipped[2] == 2363
+        });
+        if bee_set && app.swing > 0.0 && app.inventory[app.selected].kind == 1121 {
+            let _ = app.achievements.complete_condition("NOT_THE_BEES", "Use");
+        }
         if run_pixels > 0.0 {
             // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
             // (`AchievementsHelper.cs:420-423`): grounded, unmounted running
@@ -1772,6 +1957,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    crate::signs::sign_tick(app); // the sign range close (`Player.cs:27504-27518`) + the editSign gate (`Main.cs:17389-17394`), W4-f22
     if map_open {
         app.update_map_input();
     }
@@ -2225,6 +2411,66 @@ mod tests {
         );
     }
 
+    /// W4-f12 gap 3 — the full-seam werewolf chain: the Moon Charm (485)
+    /// arms `wolfAcc` (`Player.cs:15182-15189`), the `:25601-25604` night
+    /// grant (inside `update_with_grapple`'s merman tail) adds buff 28, the
+    /// wiring's wave-E status arm then reads the LIVE flag and grants the
+    /// stat block (`:11895-11904`), and the `:25605` clear rides AFTER the
+    /// scan. The port's seam order (grant before scan) lands the effect on
+    /// the SAME tick as the grant — a one-tick lead over the C#'s steady
+    /// state (recorded); from tick 2 the two agree. Day breaks: the buff dies.
+    #[test]
+    fn w4_f12_moon_charm_werewolf_chain_through_the_seam() {
+        let mut app = ammo_app();
+        app.world.day_time = false; // night
+        app.equip.armor[3] = slot(485); // Moon Charm
+        // Tick 1: the night grant adds buff 28, then the wiring arms the
+        // werewolf effect from the live flag; the clear rides after.
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.were_wolf, "the wiring's status arm grants the effect (`:11898`)");
+        assert!(p.buffs.find_buff_index(28).is_some(), "the night grant (`:25603`)");
+        assert!(!p.wolf_acc, "the `:25605` clear rides after the scan");
+        assert_eq!(p.melee_crit, 4 + 2, "`:11899`");
+        assert_eq!(p.stat_defense, 3, "`:11902`");
+        // Tick 2: the buff persists (TimeLeftDoesNotDecrease), the effect
+        // re-arms from the re-granted flag — the steady state.
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(28).is_some(), "the buff stays pinned");
+        assert!(p.were_wolf);
+        // Day breaks: the wiring's day gate deletes the buff (`:11905-11909`).
+        app.world.day_time = true;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(28).is_none(), "the day gate deletes");
+        assert!(!p.were_wolf);
+    }
+
+    /// W4-f12 gap 2 — the Inferno aura through the seam: the buff arms, the
+    /// ring spreads Hellfire to a nearby zombie, and on the 60-tick cadence
+    /// the strike lands (the combat text + the life drop).
+    #[test]
+    fn w4_f12_inferno_aura_through_the_seam() {
+        let mut app = ammo_app();
+        let p = app.player.as_mut().unwrap();
+        p.buffs.add_buff(116, 14400); // Inferno potion
+        // Arm the cadence counter so the NEXT tick's increment lands on 60
+        // (`:24595-24598` increments, then `:10218` reads `% 60 == 0`) — one
+        // deterministic strike tick instead of 60 (no player drift).
+        p.inferno_counter = 59;
+        let (cx, cy) = p.center();
+        // A zombie inside the 200px ring.
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Zombie, cx - 10.0, cy - 10.0, 1, 0.0,
+        ));
+        let hp0 = app.npcs[0].hp;
+        tick_ammo(&mut app);
+        assert!(app.npcs[0].buffs.has_buff(323), "Hellfire spreads (`:10231`)");
+        assert!(app.npcs[0].hp < hp0, "the cadence strike landed");
+        assert!(!app.combat_texts.is_empty(), "the combat text spawned");
+    }
+
     /// DW-3.3 (the buff half) — the three buff-granted flags (16 Archery,
     /// 93 Ammo Box, 112 Ammo Reservation; `Player.cs:10018`, `:10080`,
     /// `:10195`) derive from the buff slots, and the clear drops them when the
@@ -2475,6 +2721,37 @@ mod tests {
         let before = app.audio.played_count();
         update_player(&mut app, 1.0 / 60.0);
         assert_eq!(app.audio.played_count(), before, "no item, no UseSound");
+    }
+
+    /// W4-c36 DOC-SWEEP — `Mount.SetMount`'s coffin-cart arm
+    /// (`Mount.cs:6301-6304`): mounting the Coffin Minecart (38) queues
+    /// progression 32 and the player pass drains it into ROLLIN_IN_YOUR_GRAVE;
+    /// a non-coffin mount never queues, and the same-type re-mount is the
+    /// `:6198` no-op (no second event). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_the_coffin_cart_mount_completes_rollin_in_your_grave() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        // A non-coffin mount (the Unicorn) queues nothing.
+        app.player.as_mut().unwrap().set_mount(10, false);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "ROLLIN_IN_YOUR_GRAVE" && a.completed),
+            "the unicorn is not the coffin cart"
+        );
+        // The coffin cart (38) queues the drain.
+        app.player.as_mut().unwrap().set_mount(38, false);
+        assert!(app.player.as_ref().unwrap().pending_grave_cart);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart, "drained");
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "ROLLIN_IN_YOUR_GRAVE" && a.completed),
+            "progression 32 completes the row"
+        );
+        // The same-type re-mount never reaches the arm (`:6198` guard).
+        app.player.as_mut().unwrap().set_mount(38, false);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart, "the no-op guard");
     }
 
     /// S1-L-10c — `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount

@@ -306,6 +306,12 @@ pub struct AchievementManager {
     /// the queue into the notification tracker + the chat/sound subscriber
     /// (`App::drain_achievement_completions`).
     pub completed_events: Vec<&'static str>,
+    /// `AchievementsHelper._lastResearchVersion` (`AchievementsHelper.cs:24`):
+    /// the tracker `LastEditId` the last `CheckResearchAchievement` saw — the
+    /// half-research gate only re-counts when the tracker changed
+    /// (`:389-392`). A static in the C#, an instance field here (one manager
+    /// per App, the same lifetime).
+    last_research_version: u32,
 }
 
 impl AchievementManager {
@@ -321,6 +327,7 @@ impl AchievementManager {
                 .collect(),
             save_path: None,
             completed_events: Vec::new(),
+            last_research_version: 0,
         }
     }
 
@@ -423,10 +430,79 @@ impl AchievementManager {
         }
     }
 
+    /// `AchievementsHelper.CheckResearchAchievement` (`AchievementsHelper.cs:
+    /// 387-399`, W4-c24c): the version gate (`forced || _lastResearchVersion
+    /// != LastEditId`) re-counts the tracker; at half the catalog fully
+    /// researched (`fullyResearchedItems >= allItems / 2`, integer divide)
+    /// progression event 45 fires — `TRASH_COMPACTOR`
+    /// (`AchievementInitializer.cs:435-437`). The per-tick caller is
+    /// `Player.Update`'s local-player armor tail (`Player.cs:25703`); the
+    /// forced caller is the world-enter (`Player.cs:325`).
+    pub fn check_research(
+        &mut self,
+        tracker: &crate::research::ResearchTracker,
+        forced: bool,
+    ) -> Option<&'static str> {
+        let edit = tracker.last_edit_id();
+        if !forced && self.last_research_version == edit {
+            return None; // `:390` — nothing changed since the last count
+        }
+        self.last_research_version = edit; // `:392`
+        let (full, all) = tracker.count_fully_researched(); // `:393`
+        if full >= all / 2 {
+            self.notify_progression(45) // `:396`
+        } else {
+            None
+        }
+    }
+
     /// The `CustomFlagCondition` hook shape (`AchievementsHelper.cs:347`'s
     /// `GetCondition("I_AM_LOOT", "Peek").Complete()`).
+    ///
+    /// W4-c36: this broadcast form completes EVERY row listening on the flag
+    /// — the C# hooks never broadcast; they name ONE row's condition through
+    /// [`Self::complete_condition`]. Kept for the event-shape callers; the
+    /// `HandleSpecialEvent`/`HandleOnEquip`/`OnPlayerEnteredWorld` sites use
+    /// the row-targeted form.
     pub fn notify_custom(&mut self, flag: &'static str) -> Option<&'static str> {
         self.notify(CondKind::Custom(flag))
+    }
+
+    /// `Main.Achievements.GetCondition(name, conditionName).Complete()`
+    /// (`AchievementManager.cs:214-222` + `AchievementCondition.cs:37-47`):
+    /// complete ONE named condition of ONE row — the shape every
+    /// `AchievementsHelper.HandleSpecialEvent` arm (`AchievementsHelper.cs:
+    /// 282-380`), `HandleOnEquip` (`:239-280`) and `OnPlayerEnteredWorld`
+    /// (`:94-198`) uses. `Complete()` is idempotent and sets the tracker to
+    /// its maximum; the row completes (save + event, `AchievementManager.cs:
+    /// 180-187`) only when its LAST condition closes. An unknown row or
+    /// condition name is a no-op (the C# `GetCondition` would throw; the
+    /// port's callers name shipped rows only).
+    pub fn complete_condition(&mut self, row: &str, cond: &str) -> Option<&'static str> {
+        let a = self.list.iter_mut().find(|a| a.name == row)?;
+        if a.completed {
+            return None;
+        }
+        {
+            let c = a.conditions.iter_mut().find(|c| c.name == cond)?;
+            if c.completed {
+                return None;
+            }
+            // `AchievementCondition.Complete()` (`:37-47`): the tracker jumps
+            // to its max, the fraction clears, the flag latches.
+            c.value = c.max;
+            c.frac = 0.0;
+            c.completed = true;
+        }
+        if a.is_completed() {
+            a.completed = true;
+            let name = a.name;
+            self.save();
+            self.completed_events.push(name);
+            Some(name)
+        } else {
+            None
+        }
     }
 
     /// `((CustomIntCondition)Main.Achievements.GetCondition(row, name)).Value++`
@@ -706,12 +782,57 @@ mod tests {
         assert_eq!(m.notify_progression(1), Some("YOU_CAN_DO_IT"));
         // An event id no row listens for is a no-op.
         assert_eq!(m.notify_progression(0), None);
-        // BOOK_WORM's row exists even though its notify site is blocked on
-        // S1-F-15 (`kills_needed_for`); the manager surface still dispatches.
+        // BOOK_WORM (progression 29 — `AchievementInitializer.cs:378-380`;
+        // there is no "bullseye" row). The old S1-F-15 tier-4 denominator
+        // bug is FIXED on main (`kills_needed_for` falls back to the 50
+        // default), so the gate is no longer blocked — the remaining
+        // early-100% deviation is the town/critter provider fold (c37's
+        // provider-enum task), not the ladder.
         assert_eq!(m.notify_progression(29), Some("BOOK_WORM"));
         // I_AM_LOOT rides the `Peek` CustomFlag (`:347`).
         assert_eq!(m.notify_custom("Peek"), Some("I_AM_LOOT"));
         assert_eq!(m.notify_custom("Nope"), None);
+    }
+
+    /// W4-c24c — `CheckResearchAchievement` (`AchievementsHelper.cs:387-399`):
+    /// the version gate skips the recount while the tracker is unchanged, the
+    /// half-catalog threshold fires progression 45 (`TRASH_COMPACTOR`), and
+    /// the completed row never re-fires.
+    #[test]
+    fn the_research_achievement_fires_at_half_the_catalog() {
+        let mut m = AchievementManager::registry();
+        let mut t = crate::research::ResearchTracker::default();
+        // A fresh tracker: the per-tick gate skips (version 0 == the initial
+        // `_lastResearchVersion` 0); the world-enter check is forced (`:325`).
+        assert_eq!(m.check_research(&t, false), None);
+        assert_eq!(m.check_research(&t, true), None, "forced counts, threshold far");
+        // One registered sacrifice bumps the version — the recount runs, the
+        // threshold is nowhere near.
+        t.register_sacrifice(8, 1);
+        assert_eq!(m.check_research(&t, false), None);
+        // Unchanged tracker: the gate skips even the forced=false recount.
+        assert_eq!(m.check_research(&t, false), None);
+        // Fill half the catalog (the integer-divide threshold, `:394`).
+        let (_, all) = t.count_fully_researched();
+        let need = all / 2;
+        let mut filled = 0u32;
+        for id in 0..crate::itemdata::NAMES.len() as u16 {
+            if filled >= need {
+                break;
+            }
+            if let Some(cap) = crate::research::sacrifice_cap(id) {
+                t.register_sacrifice(id, cap);
+                filled += 1;
+            }
+        }
+        assert_eq!(m.check_research(&t, false), Some("TRASH_COMPACTOR"));
+        assert!(m
+            .list
+            .iter()
+            .any(|a| a.name == "TRASH_COMPACTOR" && a.completed));
+        // The completed row never re-fires (`notify`'s completed skip); the
+        // forced recount runs but stays silent.
+        assert_eq!(m.check_research(&t, true), None);
     }
 
     /// `CustomIntCondition.Value` (`CustomIntCondition.cs:15-32`): the setter
@@ -902,6 +1023,51 @@ mod tests {
         // The queue drained — a repeat kill fires nothing.
         assert_eq!(m.notify(CondKind::NpcKilled(50)), None);
         assert!(m.take_completed_events().is_empty());
+    }
+
+    /// W4-c36: `GetCondition(row, cond).Complete()` names ONE row — the
+    /// `HandleSpecialEvent` arms never broadcast. A "Use" completion on
+    /// DRINK_BOTTLED_WATER_WHILE_DROWNING must leave STAR_POWER/GET_A_LIFE/
+    /// TOPPED_OFF open (the old `notify_custom("Use")` closed all four).
+    #[test]
+    fn the_row_targeted_complete_closes_only_the_named_row() {
+        let mut m = AchievementManager::registry();
+        assert_eq!(
+            m.complete_condition("DRINK_BOTTLED_WATER_WHILE_DROWNING", "Use"),
+            Some("DRINK_BOTTLED_WATER_WHILE_DROWNING")
+        );
+        for open in ["STAR_POWER", "GET_A_LIFE", "TOPPED_OFF", "NOT_THE_BEES"] {
+            assert!(
+                !m.list.iter().any(|a| a.name == open && a.completed),
+                "{open} stays open"
+            );
+        }
+        // Idempotent: a second Complete() fires no event (`AchievementCondition
+        // .cs:39`'s `!_isCompleted` guard).
+        m.take_completed_events();
+        assert_eq!(
+            m.complete_condition("DRINK_BOTTLED_WATER_WHILE_DROWNING", "Use"),
+            None
+        );
+        assert!(m.take_completed_events().is_empty());
+        // Unknown row/condition names are no-ops.
+        assert_eq!(m.complete_condition("NO_SUCH_ROW", "Use"), None);
+        assert_eq!(m.complete_condition("STAR_POWER", "Nope"), None);
+        // The angler's flag row completes by name; the four `Finish` counters
+        // are untouched by it.
+        assert_eq!(
+            m.complete_condition("SERVANT_IN_TRAINING", "Finish"),
+            Some("SERVANT_IN_TRAINING")
+        );
+        let slave = m.list.iter().find(|a| a.name == "GOOD_LITTLE_SLAVE").unwrap();
+        assert_eq!(slave.conditions[0].value, 0);
+        // A multi-condition row completes only when its LAST condition closes
+        // (`Achievement.OnConditionComplete`, `Achievement.cs:93-108`).
+        assert_eq!(m.complete_condition("DUNGEON_HEIST", "ITEM_PICKUP_327"), None);
+        assert_eq!(
+            m.complete_condition("DUNGEON_HEIST", "PROGRESSION_EVENT_19"),
+            Some("DUNGEON_HEIST")
+        );
     }
 
     #[test]

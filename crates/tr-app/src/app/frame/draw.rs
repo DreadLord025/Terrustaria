@@ -259,6 +259,7 @@ impl App {
                     menu,
                     front,
                     front_hint,
+                    issue_indicator,
                     settings,
                     remote_players,
                     map,
@@ -336,6 +337,15 @@ impl App {
                     if self.mouse_text_color <= 190 {
                         self.mouse_text_color_dir = 1;
                     }
+                    // `Main.DoUpdate_AnimateCursorColors`' master-colour half
+                    // (`Main.cs:18225-18235`): ±0.05 per frame, the direction
+                    // flips at the [0, 1] bounds — the −13 master-rarity
+                    // tooltip name pulse (W4-f28).
+                    (self.master_color, self.master_color_dir) =
+                        ui::tooltip_lines2::advance_master_color(
+                            self.master_color,
+                            self.master_color_dir,
+                        );
                     // `Main.mouseColor = Main.selColor` runs every frame the colour
                     // screen is open (`Main.cs:50324`), and `CursorColor`
                     // (`Main.cs:52490`) reads that static, so the tint follows the
@@ -1654,8 +1664,33 @@ impl App {
                             scroll: self.front_scroll,
                             vk_grid: self.vk_grid,
                             frame_count: *frame_count,
+                            sign_cancel_cache: &self.sign_cancel_cache,
+                            everything_glitch: self.world_advanced_glitch,
                         };
                         front.draw(&mut d);
+                        // `IngameFancyUI.Draw`'s sign-dialog arm
+                        // (`IngameFancyUI.cs:212-215`): while the ctx-1
+                        // keyboard is up, `GUIChatDraw` still draws — the
+                        // sign text edits in the NPCChatPanel dialog (the
+                        // keyboard's own textbox is parked off-screen,
+                        // `UIVirtualKeyboard.cs:176`). W4-f22.
+                        if self.sign_editing() {
+                            let sign_open = self.player.as_ref().is_some_and(|p| p.sign >= 0);
+                            ui::npc_chat::draw_panel(
+                                renderer,
+                                lookups,
+                                screen,
+                                &self.npc_chat_text,
+                                ui::UiPulse {
+                                    text: self.mouse_text_color as f32 / 255.0,
+                                    cursor_scale: 1.0,
+                                },
+                                self.mouse_pos,
+                                sign_open,
+                                true,
+                                &mut self.sign_text_blinker,
+                            );
+                        }
                         // The port's not-ported notice for the front screens
                         // (ours, like `Menu.hint` — not in the original).
                         if let Some(hint) = front_hint {
@@ -1903,6 +1938,14 @@ impl App {
                                     self.discount_available,
                                 )
                             }),
+                            // W4-f28 — the shop price row's session inputs:
+                            // `ItemSlot.ShiftInUse` (the pressed-codes set,
+                            // the clicks.rs:41 shape) + the sellback memo.
+                            self.shop_npc.map(|_| ui::ShopTooltipState {
+                                shift_in_use: self.keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
+                                    || self.keys.contains(&winit::keyboard::KeyCode::ShiftRight),
+                                sellback: &self.shop_sellback,
+                            }),
                             // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
                             // + the statics) — the plan-amendment insertion
                             // (#10): the disjoint `App` fields the panel reads
@@ -1985,7 +2028,8 @@ impl App {
                                 ty: self.mouse_npc_type,
                             },
                             // The town-chatter UI (S1-E-10b) — the panel
-                            // draws while the talk latch holds.
+                            // draws while the talk latch holds; the sign
+                            // half (W4-f22) rides the same panel.
                             self.talk_npc,
                             &self.npc_chat_text,
                             // W4-g79 — the cursor interact-icon pass's world
@@ -1994,6 +2038,91 @@ impl App {
                             // S1-W4-g81 — the 10-frame cache linger pair
                             // (the batch-H keep-one compose).
                             (self.item_icon_cache_kind, self.item_icon_cache_time),
+                            // `GUIChatDraw`'s sign gate + the panel's own
+                            // blinker (`Main.cs:46713`, `NPCChatPanel.cs:
+                            // 254-261`).
+                            self.player.as_ref().is_some_and(|p| p.sign >= 0),
+                            self.sign_editing(),
+                            chest_editing,
+                            &mut self.sign_text_blinker,
+                            // `Main.signBubble`/`signX`/`signY` — the
+                            // placed-sign bubble anchor (W4-f22).
+                            self.sign_bubble.then_some((self.sign_x, self.sign_y)),
+                            // `Main.signHover`'s record text — the hover
+                            // tooltip's preview (W4-f22). Reads the
+                            // destructured `world` binding (the `self.world`
+                            // field is already borrowed by the draw site).
+                            (self.sign_hover >= 0)
+                                .then(|| {
+                                    world
+                                        .signs
+                                        .get(self.sign_hover as usize)
+                                        .map(|s| s.text.as_str())
+                                })
+                                .flatten(),
+                            // The Journey powers menu (W4-c24) —
+                            // `CreativeUI.Draw`'s gate (`CreativeUI.cs:98-102`):
+                            // the difficulty-3 player, unblocked.
+                            (self.active_player_difficulty() == 3
+                                && !ui::journey::blocked(
+                                    self.talk_npc.is_some(),
+                                    panel_chest >= 0,
+                                    self.crafting_open,
+                                ))
+                                .then(|| {
+                                    (
+                                        &self.journey,
+                                        &self.research,
+                                        &self.creative_powers,
+                                        (
+                                            self.wind.speed_target,
+                                            self.rain.cloud_alpha(),
+                                            self.rain.max_raining(),
+                                        ),
+                                    )
+                                }),
+                            // `Player.CurrentLoadoutIndex` (`Player.cs:3207`) +
+                            // the loadout-change flash (`ItemSlot.cs:2786-2791`)
+                            // + the hovered-button latch (`Main.cs:41990`).
+                            player.as_ref().map_or(0, |p| p.current_loadout_index),
+                            ui::inventory::loadout_flash(
+                                self.loadout_change_time,
+                                (self.anim_time * 60.0) % 216000.0,
+                                settings.flashy_effects_interface,
+                            ),
+                            &mut self.loadout_mouse_over,
+                            self.equip_share_flags,
+                            // W4-f28 — the tooltip's world/session gates.
+                            ui::tooltip_lines2::TooltipWorld {
+                                expert_mode: player
+                                    .as_ref()
+                                    .map_or(false, |p| p.buffs.expert_mode),
+                                downed_plant_boss: world.downed_plant_boss,
+                                // `DD2Event.DownedInvasionAnyDifficulty`
+                                // (`DD2Event.cs:89-99`) = T1 ‖ T2 ‖ T3 —
+                                // `Player.cs:24450-24453` latches it into
+                                // the .plr flag; NOT the `dd2_won` sentinel
+                                // (research/128 §4.2: a T1 win already
+                                // satisfies the getter).
+                                downed_dd2_any: world.downed_dd2_any(),
+                                tenth_anniversary: world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+                                get_good_world: world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                                // `SpecialSeedFeatures.Mechdusa`
+                                // (`SpecialSeedFeatures.cs:119-129`).
+                                mechdusa: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                                    && world
+                                        .seeds
+                                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                                // `Main.npcShop > 0` — filled at the draw site
+                                // from the shop panel's presence.
+                                npc_shop: false,
+                                master_color: self.master_color,
+                                disco: self.disco,
+                            },
                         );
                         // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
                         // (`Main.cs:45062` inside `DrawInterface_40`, the C#'s
@@ -2076,6 +2205,56 @@ impl App {
                             &self.achievements_categories,
                             self.mouse_pos,
                             menu.is_some(),
+                        );
+                    }
+                    // `UIDebugCommandsList` (W4-d85 row 7): the same overlay
+                    // treatment — the state draws over whatever the frame
+                    // rendered (`IngameFancyUI.OpenUIState`).
+                    if self.debug_commands_open {
+                        let is_client = self.is_client();
+                        ui::debug_commands::draw_screen(
+                            renderer,
+                            lookups,
+                            screen,
+                            &self.debug_commands_search,
+                            self.debug_commands_scroll,
+                            self.mouse_pos,
+                            is_client,
+                        );
+                    }
+                    // `UIDebugLoadoutsList` (W4-d85 row 8) — the twin overlay.
+                    if self.debug_loadouts_open {
+                        ui::debug_loadouts::draw_screen(
+                            renderer,
+                            lookups,
+                            screen,
+                            &self.debug_loadouts,
+                            &self.debug_loadouts_search,
+                            self.debug_loadouts_scroll,
+                            self.mouse_pos,
+                        );
+                    }
+                    // `Main.IssueReporterIndicator.Draw` (`Main.cs:51886`,
+                    // `DrawMenu`'s tail right before `DrawCursor` — AFTER the
+                    // 888 `MenuUI.Draw` at `:51063`, the legacy rows and the
+                    // fancy-UI overlays, so it covers both menu regimes):
+                    // the issue-report button slides in from the right edge
+                    // while a report needs attention (`IssueReportsIndicator.
+                    // cs:45-79`). The percent ticks once per DRAWN frame here
+                    // — the C# advances it inside Draw, not Update. Never
+                    // shows in the port (no producer), the exact vanilla
+                    // state on a pack-free, no-Steam install.
+                    if (menu.is_some() || front.is_some()) && issue_indicator.tick_draw() {
+                        ui::reports::draw_indicator(
+                            renderer,
+                            lookups,
+                            screen,
+                            issue_indicator.display_up_percent,
+                            self.mouse_pos,
+                            ui::UiPulse {
+                                text: self.mouse_text_color as f32 / 255.0,
+                                cursor_scale: self.cursor.scale(),
+                            },
                         );
                     }
                     // `DrawInterface_13_AchievementCompletePopups`

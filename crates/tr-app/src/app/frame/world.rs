@@ -28,6 +28,11 @@ impl App {
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
+    // The debug commands overlay (`UIDebugCommandsList`, W4-d85) — an
+    // `IngameFancyUI` state like the bestiary; its clicks consume the press
+    // before the chest/crafting/inventory handlers see it.
+    self.handle_debug_commands_clicks();
+    self.handle_debug_loadouts_clicks();
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.
@@ -36,9 +41,13 @@ impl App {
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest
     // slot, the shift transfer or a chest tile took it.
-    if !self.handle_chest_clicks() && !self.handle_crafting_clicks() {
+    if !self.handle_chest_clicks() && !self.handle_crafting_clicks() && !self.handle_journey_clicks() {
         self.handle_inventory_clicks();
     }
+    // The Journey menu's per-frame tail (W4-c24): the animation tick, the
+    // hover cues and the close rules (`CreativeUI.Update`/`Draw`,
+    // `Main.cs:17497`/`:45643-45664`).
+    self.journey_tick();
     // `Main.cs:62466-62473` — the stack-split decay, after the
     // interface's MouseUI pass.
     self.decay_stack_split();
@@ -85,6 +94,16 @@ impl App {
     /// filter's `RecipeFilterHack` gate).
     fn world_step_head(&mut self) {
     self.game_update_count = self.game_update_count.wrapping_add(1);
+    // `Main.UpdateCreativeGameModeOverride` (`Main.cs:16847` → `:17294-
+    // 17305`): once per game update, the Journey difficulty slider's
+    // strength becomes `Main._gameModeDifficultyOverride`; outside a
+    // Journey world it clears (the world's own GameMode answers). The
+    // port's Journey stand-in is the session difficulty (the same one
+    // `journey_available` reads — a Journey character only joins a
+    // Journey world, `UIWorldSelect.cs:177-180`).
+    self.game_mode_difficulty_override = self
+        .creative_powers
+        .game_mode_difficulty_override(self.active_player_difficulty() == 3);
     // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
     // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
     self.stepper.drawn_this_update = false;

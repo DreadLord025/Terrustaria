@@ -835,6 +835,20 @@ impl App {
                     })); // `:2573`
                 }
             }
+            // `case 147` — a client switched loadout (`MessageBuffer.cs:
+            // 4328-4343`): the host forces the subject to the sender
+            // (`:4330-4333`), runs `TrySwitchingLoadout` + the accessory-
+            // visibility read (`:4336-4337`), then relays to the OTHERS
+            // (`:4338-4341`, `ignoreClient = num68`). The port does not
+            // simulate a remote player's equipment swap (no per-peer
+            // `EquipmentLoadout` arrays), so the loadout index + visibility
+            // bits are stored-not-simulated on the peer snapshot; the local
+            // player's own `147` runs the real swap (`player.rs`).
+            C2s::SyncLoadout(mut l) => {
+                l.player_id = id as u8; // `:4332`
+                self.remote_players.entry(id).or_default().loadout = Some(l);
+                server.broadcast_except(&S2c::SyncLoadout(l), id); // `:4340`
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1772,8 +1786,9 @@ impl App {
                 }
             }
             // `case 47` — a sign's text (`MessageBuffer.cs:2376-2405`): the
-            // record is rewritten and, when the sender is us, the editor
-            // opens (unported — S1-E-26 records the gap).
+            // record is rewritten and, when the sender byte is us and bit 0
+            // of the flags is clear, the sign opens (`:2400-2403` —
+            // `Main.LocalPlayer.OpenSign(num58)`, W4-f22).
             S2c::SignData(sd) => {
                 if sd.sign < 0 || sd.sign >= crate::signs::MAX_SIGNS {
                     return; // `:2384`
@@ -1785,6 +1800,15 @@ impl App {
                     sd.y as i32,
                     sd.text.clone(),
                 );
+                // `:2400-2403` — the client's open arm: sender == myPlayer,
+                // the record survived `TextSign` (a dead tile spliced it),
+                // and `!bitsByte5[0]`.
+                if sd.sender as u32 == self.local_id
+                    && (sd.sign as usize) < self.world.signs.len()
+                    && sd.flags & 1 == 0
+                {
+                    crate::signs::open_sign(self, sd.sign as i32);
+                }
             }
             // `case 50` — a player's buff ids (`MessageBuffer.cs:2454-2480`):
             // ours is skipped (`:2461-2464`), a peer's lands in its record
@@ -1910,6 +1934,83 @@ impl App {
                     }
                 }
             }
+            // `case 147`'s client half (`MessageBuffer.cs:4336-4337`):
+            // `TrySwitchingLoadout` + `ReadAccessoryVisibility` on
+            // `Main.player[num68]`. The LOCAL player runs the real swap core
+            // (`player.rs`, the same `EquipmentLoadout` two-swap) then unpacks
+            // the visibility bits (`MessageBuffer.cs:4494-4501`, bit i per
+            // slot); the swap gate's `whoAmI != Main.myPlayer` arm passes for
+            // a network-applied switch (`Player.cs:5663`). A peer's loadout is
+            // stored-not-simulated on the render snapshot (no per-peer
+            // equipment arrays).
+            S2c::SyncLoadout(l) => {
+                if l.player_id as u32 == self.local_id {
+                    let idx = l.loadout as usize;
+                    if let Some(p) = self.player.as_mut() {
+                        // `:4336` — the swap core only (the local tails —
+                        // clone/12 cue/147/particles — are the `myPlayer`
+                        // arm's, `:5668-5680`, and a network apply is not it).
+                        p.try_switching_loadout(
+                            idx,
+                            &mut self.equip.armor,
+                            &mut self.equip.dye,
+                            &mut self.equip_share_flags,
+                            false,
+                        );
+                        // `:4337` — ReadAccessoryVisibility.
+                        for i in 0..p.hide_visible_accessory.len() {
+                            p.hide_visible_accessory[i] = (l.hide_accessory & (1 << i)) != 0;
+                        }
+                    }
+                } else {
+                    self.remote_players
+                        .entry(l.player_id as u32)
+                        .or_default()
+                        .loadout = Some(l);
+                }
+            }
+            // `case 60` — an NPC's household change (`MessageBuffer.cs:2695-2739`,
+            // W4-d119 phase 3). The client writes homeless + homeTileX/Y on
+            // its NPC copy (`:2708-2713`), then the town-only book arms
+            // (`:2719-2729`): status 1 = `TownManager.KickOut(type)`,
+            // status 2 = `SetRoom(type, x, y)`. The host arms (`:2731-2738`
+            // `WorldGen.kickOut`/`moveRoom`) need the C2s kick-out/move-room
+            // senders (the housing-banner UI's net legs, unported) — the
+            // port's host never receives a 60 today; recorded, not invented.
+            S2c::NpcHouse(h) => {
+                // `:2700-2704`: `num258 >= Main.maxNPCs` boots the sender —
+                // a server-sent frame cannot boot anyone on the client; the
+                // port's slot-keyed store drops an out-of-range slot below.
+                let slot = h.npc as u32;
+                let Some(npc) = self.net_npcs.get_mut(&slot) else {
+                    return;
+                };
+                // `:2706`: `isLikeATownNPC` is read BEFORE the writes.
+                let is_town = npc.kind.is_town_npc_like();
+                // `:2708-2713`: the client's homeless + home-tile writes.
+                // The port's `home` Option conflates the two — status 1
+                // (homeless) clears it, every other status stores the pair
+                // (the C# writes homeTileX/Y unconditionally on the client).
+                npc.home = if h.status == 1 {
+                    None
+                } else {
+                    Some((h.home_x as i32, h.home_y as i32))
+                };
+                self.net_npcs_dirty = true;
+                // `:2715-2718`: a non-town NPC stops here.
+                if !is_town {
+                    return;
+                }
+                // `:2719-2729`: the client's TownManager book.
+                let net_id = npc.kind.net_id();
+                match h.status {
+                    1 => self.town_rooms.kick_out(net_id),
+                    2 => self
+                        .town_rooms
+                        .set_room(net_id, h.home_x as i32, h.home_y as i32),
+                    _ => {}
+                }
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1919,7 +2020,6 @@ impl App {
             S2c::TogglePvp(_)
             | S2c::PlayerMana(_)
             | S2c::TeamChange(_)
-            | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
             | S2c::RevengeMarker(_)
@@ -1984,6 +2084,24 @@ impl App {
             hp: hp.clamp(0, i16::MAX as i32) as i16,
             max_hp: max_hp.clamp(0, i16::MAX as i32) as i16,
         });
+        // `MessageBuffer.cs:253` — the join push's `147 SyncLoadout`: the
+        // current loadout index + the accessory-visibility mask, ahead of the
+        // `5` inventory arrays (`:254-272`).
+        let (loadout, hide) = self
+            .player
+            .as_ref()
+            .map(|p| {
+                (
+                    p.current_loadout_index as u8,
+                    accessory_visibility_mask(&p.hide_visible_accessory),
+                )
+            })
+            .unwrap_or((0, 0));
+        client.send(&C2s::SyncLoadout(net::SyncLoadout {
+            player_id: me,
+            loadout,
+            hide_accessory: hide,
+        }));
         // The 59 grid slots, in `PlayerItemSlotID.Inventory0..58` order.
         for (i, slot) in self.inventory.iter().enumerate() {
             client.send(&C2s::Inventory {
@@ -3031,6 +3149,32 @@ impl App {
         }
     }
 
+    /// `Player.TrySwitchingLoadout`'s `147` send (`Player.cs:5674` →
+    /// `NetMessage.cs:1624-1628`): `(byte)whoAmI + (byte)loadoutIndex` + the
+    /// `hideVisibleAccessory` ushort (`WriteAccessoryVisibility`,
+    /// `NetMessage.cs:1882-1893`, bit i per slot). On a client it goes to the
+    /// server (`TrySendData(147, -1, -1, ...)`); on the host it broadcasts to
+    /// every client (the host's own switch reaches the peers the same way the
+    /// relayed client switch does, `MessageBuffer.cs:4340`). `number` is the
+    /// local player's id, `number2` the new loadout index.
+    pub(crate) fn send_sync_loadout(&self, loadout: usize) {
+        let hide = self
+            .player
+            .as_ref()
+            .map(|p| accessory_visibility_mask(&p.hide_visible_accessory))
+            .unwrap_or(0);
+        let msg = net::SyncLoadout {
+            player_id: self.local_id as u8,
+            loadout: loadout as u8,
+            hide_accessory: hide,
+        };
+        match &self.net {
+            NetRole::Host(server) => server.broadcast(&S2c::SyncLoadout(msg)),
+            NetRole::Client(client) => client.send(&C2s::SyncLoadout(msg)),
+            NetRole::Off => {}
+        }
+    }
+
     /// A local switch trip in MP — the C#'s `NetMessage.SendData(59, -1, -1,
     /// null, i, j)` (`Collision.cs:3304`/`:3318`/`:3324`/`:3347`,
     /// `Player.cs:32178`, `:32226`, `:32340`): on a client it goes to the
@@ -3256,6 +3400,20 @@ impl App {
 
 /// `PlayerItemSlotID`'s M6-NET-1 subset (`Terraria/ID/PlayerItemSlotID.cs`) —
 /// the slot arithmetic the C# inventory messages use.
+/// `NetMessage.WriteAccessoryVisibility` (`NetMessage.cs:1882-1893`): the
+/// `hideVisibleAccessory` `bool[10]` (`Player.cs:1708`) packed into one
+/// `ushort` — bit `i` set when slot `i` is hidden. The reader unpacks it
+/// (`MessageBuffer.ReadAccessoryVisibility`, `:4494-4501`).
+fn accessory_visibility_mask(hide: &[bool; 10]) -> u16 {
+    let mut num = 0u16;
+    for (i, &hidden) in hide.iter().enumerate() {
+        if hidden {
+            num |= 1 << i;
+        }
+    }
+    num
+}
+
 mod player_item_slot {
     /// The 1:1 `PlayerItemSlotID` block arithmetic the inventory messages use
     /// (`Terraria/ID/PlayerItemSlotID.cs`); the 59 grid slots are sent as
@@ -3394,7 +3552,12 @@ fn npc_seed(
         | crate::npc::NpcKind::Princess
         | crate::npc::NpcKind::DyeTrader
         | crate::npc::NpcKind::PartyGirl
-        | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
+        | crate::npc::NpcKind::GoblinTinkerer
+        // W4-d120 — the four town kinds seed like the town roster.
+        | crate::npc::NpcKind::SantaClaus
+        | crate::npc::NpcKind::Truffle
+        | crate::npc::NpcKind::Steampunker
+        | crate::npc::NpcKind::Cyborg => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
@@ -3439,7 +3602,9 @@ fn npc_seed(
         | crate::npc::NpcKind::BoundWizard
         | crate::npc::NpcKind::BoundMechanic
         | crate::npc::NpcKind::WebbedStylist
-        | crate::npc::NpcKind::SleepingGolfer => {
+        | crate::npc::NpcKind::SleepingGolfer
+        // W4-d120 — the bound Tavernkeep seeds like the bound forms.
+        | crate::npc::NpcKind::BartenderUnconscious => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::EaterOfSouls
@@ -4535,6 +4700,95 @@ mod handshake_tests {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert!(relayed > 0, "the relayed inventory slots");
+    }
+
+    /// W4-g55 `147 SyncLoadout` — `WriteAccessoryVisibility`
+    /// (`NetMessage.cs:1882-1893`) packs `bool[10]` bit-i-per-slot into one
+    /// ushort, and the reader (`MessageBuffer.cs:4494-4501`) unpacks it back.
+    #[test]
+    fn w4_g55_the_accessory_visibility_mask_round_trips() {
+        let mut hide = [false; 10];
+        hide[0] = true;
+        hide[3] = true;
+        hide[9] = true;
+        let mask = accessory_visibility_mask(&hide);
+        assert_eq!(mask, (1 << 0) | (1 << 3) | (1 << 9));
+        // The unpack (`:4497-4500`): bit i -> slot i.
+        let mut back = [false; 10];
+        for (i, slot) in back.iter_mut().enumerate() {
+            *slot = (mask & (1 << i)) != 0;
+        }
+        assert_eq!(back, hide);
+        assert_eq!(accessory_visibility_mask(&[false; 10]), 0);
+    }
+
+    /// W4-g55 `147 SyncLoadout` — a local `TrySwitchingLoadout` sends the `147`
+    /// (`Player.cs:5674`); the host forces the subject to the sender
+    /// (`MessageBuffer.cs:4332`) and stores the peer's loadout
+    /// (stored-not-simulated — no per-peer equipment arrays).
+    #[test]
+    fn w4_g55_a_client_loadout_switch_reaches_the_host_snapshot() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        client_app.player.as_mut().unwrap().hide_visible_accessory[2] = true;
+        // The client switches to loadout 1 (the swap core + the 147 send).
+        assert!(client_app.try_switching_loadout(1));
+        assert_eq!(client_app.player.as_ref().unwrap().current_loadout_index, 1);
+        let me = client_app.local_id as u32;
+        let mut stored = None;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            stored = host_app.remote_players.get(&me).and_then(|p| p.loadout);
+            if stored.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let l = stored.expect("the host stored the client's 147");
+        assert_eq!(l.player_id, me as u8, "the subject forced to the sender");
+        assert_eq!(l.loadout, 1, "the new loadout index");
+        assert_eq!(l.hide_accessory, 1 << 2, "slot 2 hidden rides the mask");
+    }
+
+    /// W4-g55 `147 SyncLoadout`'s client half (`MessageBuffer.cs:4336-4337`):
+    /// the LOCAL player runs the real swap core then unpacks the visibility
+    /// bits; the swap gate's `whoAmI != Main.myPlayer` arm passes for a
+    /// network-applied switch (`Player.cs:5663`).
+    #[test]
+    fn w4_g55_the_local_147_runs_the_swap_and_unpacks_visibility() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // Loadout 1 stores an Ancient Iron Helmet; the live set is air-headed.
+        client_app.player.as_mut().unwrap().loadouts[1].armor[0] = crate::item::ItemSlot {
+            kind: 954,
+            name: crate::registry::name(954),
+            count: 1,
+            prefix: 0,
+        };
+        let me = client_app.local_id as u8;
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::SyncLoadout(net::SyncLoadout {
+                    player_id: me,
+                    loadout: 1,
+                    hide_accessory: 0b1001, // slots 0 and 3 hidden
+                })),
+            );
+        }
+        client_app.net = role;
+        let p = client_app.player.as_ref().unwrap();
+        assert_eq!(p.current_loadout_index, 1, "the swap core ran");
+        assert_eq!(client_app.equip.armor[0].kind, 954, "loadout 1's head is live");
+        assert!(p.hide_visible_accessory[0], "bit 0 hid slot 0");
+        assert!(!p.hide_visible_accessory[1]);
+        assert!(p.hide_visible_accessory[3], "bit 3 hid slot 3");
+        assert!(!p.hide_visible_accessory[4]);
     }
 
     #[test]
@@ -5838,5 +6092,101 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+
+    /// W4-d119 phase 3 — `case 60` (`MessageBuffer.cs:2695-2739`): the
+    /// client's household writes. Status 2 stores the home pair + the
+    /// TownManager room; status 1 clears both (the KickOut arm). The frame
+    /// goes through the real decode path (`client_event`).
+    #[test]
+    fn the_60_household_frame_writes_the_client_home_and_book() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A Guide on the host, streamed to the client's slot-keyed store.
+        let mut guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 48.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        host_app.npcs.clear();
+        host_app.npcs.push(guide);
+        host_app.net_npc_gen.insert(0, (22, 1));
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(client_app.net_npcs.contains_key(&0), "the 23 push delivered the Guide");
+        // Status 2: SetRoom — the home pair + the book entry.
+        let frame = S2c::NpcHouse(net::NpcHouse {
+            npc: 0,
+            home_x: 65,
+            home_y: 106,
+            status: 2,
+        })
+        .encode();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..]))
+            .expect("the 60 body decodes");
+        if let NetRole::Client(client) = &client_app.net {
+            client_app.client_event(client, net::ClientEvent::Frame(msg));
+        }
+        assert_eq!(
+            client_app.net_npcs[&0].home,
+            Some((65, 106)),
+            "the client's home tiles landed (`:2710-2712`)"
+        );
+        assert_eq!(
+            client_app.town_rooms.has_room(22),
+            Some((65, 106)),
+            "the SetRoom book arm (`:2725-2727`)"
+        );
+        // Status 1: KickOut — homeless + the book entry dropped.
+        let frame = S2c::NpcHouse(net::NpcHouse {
+            npc: 0,
+            home_x: 0,
+            home_y: 0,
+            status: 1,
+        })
+        .encode();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
+        if let NetRole::Client(client) = &client_app.net {
+            client_app.client_event(client, net::ClientEvent::Frame(msg));
+        }
+        assert_eq!(client_app.net_npcs[&0].home, None, "the KickOut homeless write");
+        assert_eq!(client_app.town_rooms.has_room(22), None, "the KickOut book arm (`:2721-2723`)");
+    }
+
+    /// W4-d119 phase 3 — `case 60`'s non-town gate (`MessageBuffer.cs:2715-2718`):
+    /// a non-town NPC gets the home write but NO TownManager book arm; an
+    /// unknown slot is a no-op (the port's store has no fixed 200 array).
+    #[test]
+    fn the_60_non_town_npc_skips_the_book_arms() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut slime = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 100.0, 48.0, 1, 0.0);
+        slime.hp = slime.max_hp;
+        host_app.npcs.clear();
+        host_app.npcs.push(slime);
+        host_app.net_npc_gen.insert(0, (0, 1));
+        pump(&mut host_app, &mut client_app, 20);
+        let frame = S2c::NpcHouse(net::NpcHouse {
+            npc: 0,
+            home_x: 10,
+            home_y: 20,
+            status: 2,
+        })
+        .encode();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
+        if let NetRole::Client(client) = &client_app.net {
+            client_app.client_event(client, net::ClientEvent::Frame(msg));
+        }
+        // The home write is unconditional on the client (`:2708-2713`)...
+        assert_eq!(client_app.net_npcs[&0].home, Some((10, 20)));
+        // ...but `isLikeATownNPC` false breaks before the book (`:2715-2718`).
+        assert!(client_app.town_rooms.rooms().is_empty(), "no book arm for a slime");
+        // An unknown slot: the store lookup misses, nothing panics.
+        let frame = S2c::NpcHouse(net::NpcHouse {
+            npc: 199,
+            home_x: 1,
+            home_y: 2,
+            status: 2,
+        })
+        .encode();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
+        if let NetRole::Client(client) = &client_app.net {
+            client_app.client_event(client, net::ClientEvent::Frame(msg));
+        }
+        assert!(!client_app.net_npcs.contains_key(&199));
     }
 }

@@ -53,6 +53,46 @@ pub(crate) enum FrontScreen {
     /// (`worldGenCallback`'s `menuMode = 6`, `WorldGen.cs:6599-6602` →
     /// `Main.cs:49468-49472`).
     WorldLoad(Box<ui::world_load::WorldLoadState>),
+    /// W4-d85's `UIReportsPage` (`UIReportsPage.cs:16`) — the Workshop
+    /// issue-log screen `Main.OpenReportsMenu` opens (`Main.cs:52352-
+    /// 52363`). The payload carries the reporters' log (empty in the
+    /// port — no issue-report pipeline), the live scroll (the ctor's
+    /// `GoToBottom`, `:124`) and the Back target (`_previousUIState` +
+    /// `_menuIdToGoBackTo`, `:36-41`).
+    Reports(Box<ReportsState>),
+    /// W4-d85's `UIWorldCreationAdvanced` (`UIWorldCreationAdvanced.cs:16`)
+    /// — the Advanced seed tab `ClickAdvancedSeedMenu` opens
+    /// (`UIWorldCreation.cs:505-511`). The payload is the shared draft
+    /// (the C#'s `_creationState` reference — the toggles write through).
+    WorldCreationAdvanced(ui::world_creation::NewWorldDraft),
+    /// W4-d85's `UIWorldCreationAdvancedSecretSeedsList`
+    /// (`UIWorldCreationAdvancedSecretSeedsList.cs:17`) — the unlocked
+    /// micro-seed toggles. The payload carries the shared draft and the
+    /// list's own `UIScrollbar.ViewPosition`.
+    SecretSeedsList(Box<SecretSeedsState>),
+}
+
+/// The `UIWorldCreationAdvancedSecretSeedsList` payload — the shared
+/// draft plus the screen's scroll (`_scrollbar`, `:27`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SecretSeedsState {
+    pub(crate) draft: ui::world_creation::NewWorldDraft,
+    pub(crate) scroll: f32,
+}
+
+/// The `UIReportsPage` payload — the screen's own state
+/// (`UIReportsPage.cs:18-34`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ReportsState {
+    /// The merged reporter log (`PopulateLogs`'s time-ordered rows).
+    pub(crate) reports: Vec<ui::reports::Report>,
+    /// `UIScrollbar.ViewPosition` — `GoToBottom` at the open.
+    pub(crate) scroll: f32,
+    /// `_previousUIState` — the front screen Back returns to.
+    pub(crate) back_front: Option<FrontScreen>,
+    /// `_menuIdToGoBackTo` — the legacy page Back returns to when the
+    /// reports opened over a menu page (`Main.menuMode` at the open).
+    pub(crate) back_page: Option<menu::Page>,
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -69,19 +109,33 @@ pub(crate) struct KeyboardSession {
     pub(crate) request: ui::keyboard::Request,
     pub(crate) state: ui::keyboard::KeyboardState,
     pub(crate) back: Option<FrontScreen>,
-    /// Which submit tail runs — the rename notice (Task 6) or the character
-    /// creator's naming flows (`Click_Naming` -> `OnFinishedNaming`,
+    /// Which submit tail runs — the card renames (research/19 M1) or the
+    /// character creator's naming flows (`Click_Naming` -> `OnFinishedNaming`,
     /// `UICharacterCreation.cs:1659-1689`; `Click_NamingAndCreating` ->
     /// `OnFinishedNamingAndCreating` -> `FinishCreatingCharacter`, `:1668-1702`).
     pub(crate) tail: KeyboardTail,
+    /// The card index the rename tails write back to — `RenameButtonClick`'s
+    /// `this._data` (`UICharacterListItem.cs:196-206`, `UIWorldListItem.cs:
+    /// 415-425`): the keyboard belongs to ONE card, so the submit does not
+    /// search the list by name (`App.players`/`App.worlds` index). `None` on
+    /// every non-rename session.
+    pub(crate) rename_index: Option<usize>,
 }
 
 /// The keyboard's on-submit behaviour (`UIVirtualKeyboard.cs:86`'s event pair).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum KeyboardTail {
-    /// The card renames: the port has no `.plr` writer, so Submit notices
-    /// (Task 6's documented deviation).
+    /// The character-card rename (`UICharacterListItem.OnFinishedSettingName`,
+    /// `:208-214`): the trimmed name lands through `PlayerFileData.Rename`
+    /// (`IO/PlayerFileData.cs:207-214` — the `.plr` read-modify-write,
+    /// research/19 M1), then `OpenCharacterSelectUI` re-lists.
     Rename,
+    /// The world-card rename (`UIWorldListItem.OnFinishedSettingName`,
+    /// `:427-432`): the trimmed name lands through `WorldFileData.Rename` ->
+    /// `WorldGen.RenameWorld` (`IO/WorldFileData.cs:444-453`,
+    /// `WorldGen.cs:6721-6753` — the world file's header rewrite), then the
+    /// rename callback's `menuMode = 6` reopens the world select.
+    WorldRename,
     /// `Click_Naming` (`:1659-1666`): the name lands in the draft, the
     /// creation screen returns.
     Name,
@@ -93,8 +147,9 @@ pub(crate) enum KeyboardTail {
     /// world draft, the creation screen returns.
     WorldName,
     /// `OpenSeedInputMenu`'s submit (`:702-708` -> `OnFinishedSettingSeed`,
-    /// `:817-831` minus the secret-seed paths): the trimmed seed lands in the
-    /// draft, the creation screen returns.
+    /// `:817-898`): the trimmed seed lands in the draft, the classic-option
+    /// select + micro-seed enable arms run (W4-d85; the ring particles stay
+    /// unported), the creation screen (or Advanced tab) returns.
     WorldSeed,
     /// `Click_NamingAndCreating` with an empty name (`UIWorldCreation.cs:
     /// 710-719`): the name lands, then `FinishCreatingWorld` runs.
@@ -104,6 +159,23 @@ pub(crate) enum KeyboardTail {
     /// `ChestUI.RenameChestCancel` + `Close(quiet: true)` — both tails land
     /// back in gameplay.
     ChestRename,
+    /// The sign editor (`IngameFancyUI.cs:136-145`): submit runs
+    /// `Main.SubmitSignText` + `Close(quiet: true)` (`Main.cs:40694-40704`
+    /// — sound 12, `Sign.TextSign`, the netMode-1 `47` send), cancel runs
+    /// `Main.InputTextSignCancel` + `Close(quiet: true)` (`:19817-19826` —
+    /// the cancel cache parks the live text, `npcChatText` re-reads the
+    /// stored record). Both tails land back in gameplay. W4-f22.
+    SignEdit,
+    /// The debug commands list's search bar (`UIWrappedSearchBar.cs:171-197`):
+    /// submit runs `SubmitVirtualText` (`SetContents(text.Trim())` +
+    /// `GoBackFromVirtualKeyboard` — `SetState(this)` restores the list),
+    /// cancel restores the list unchanged. Both tails land back on the
+    /// overlay (`back: None` — the overlay lives on the App, not the flow).
+    DebugCommandSearch,
+    /// The loadouts list's search bar — the same `UIWrappedSearchBar`
+    /// pair, plus the static `_lastSearch` latch
+    /// (`UIDebugLoadoutsList.cs:94`).
+    DebugLoadoutSearch,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -152,6 +224,22 @@ pub(crate) enum FlowClick {
     /// world select takes over (the vanilla tail is the out-of-scope
     /// `UIWorldLoad` flow, spec §9.4).
     WorldCreate,
+    /// `UIReportsPage.GoBackClick` (`UIReportsPage.cs:206-211`):
+    /// `MenuUI.SetState(_previousUIState)` + sound 11 + `menuMode =
+    /// _menuIdToGoBackTo` — the parked front screen or legacy page returns.
+    ReportsBack,
+    /// `ClickAdvancedSeedMenu` (`UIWorldCreation.cs:505-511`): the seed
+    /// icon opens the Advanced tab over the live draft.
+    WorldAdvancedOpen,
+    /// `UIWorldCreationAdvanced.GoBack` (`UIWorldCreationAdvanced.cs:
+    /// 475-481`): sound 11, the base creation screen returns.
+    WorldAdvancedBack,
+    /// `SecretSeedButton_OnLeftClick` (`:206-211`): sound 12, the
+    /// secret-seeds list opens.
+    SecretSeedsOpen,
+    /// `UIWorldCreationAdvancedSecretSeedsList.GoBack` (`:386-391`):
+    /// sound 11, the Advanced tab returns.
+    SecretSeedsBack,
     /// The confirm pages' Yes row (`selectedMenu == 1`, `Main.cs:49431`,
     /// `:49681`, `:49454`).
     ConfirmYes,
@@ -226,6 +314,49 @@ pub(crate) fn next_flow_state(
         // Mode 40 No: `menuMode = 888` + `SetState(BackupConfirmationState)`
         // (`:49460-49467`) — the exact parked screen returns.
         FlowClick::ConfirmNo if page == Some(P::ConfirmDiscard) => (backup, None, None),
+        // `UIReportsPage.GoBackClick` (`:206-211`): the parked state
+        // returns — the front screen when one was live, else the legacy
+        // page id (`_menuIdToGoBackTo`; the port parks the `menu::Page`).
+        FlowClick::ReportsBack => match front {
+            Some(FrontScreen::Reports(state)) => (state.back_front, backup, state.back_page),
+            other => (other, backup, page),
+        },
+        // `ClickAdvancedSeedMenu` (`UIWorldCreation.cs:505-511`): the
+        // draft rides into the Advanced tab (the C# keeps the reference).
+        FlowClick::WorldAdvancedOpen => match front {
+            Some(FrontScreen::WorldCreation(draft)) => {
+                (Some(FrontScreen::WorldCreationAdvanced(draft)), backup, page)
+            }
+            other => (other, backup, page),
+        },
+        // `UIWorldCreationAdvanced.GoBack` (`:475-481`): the base screen
+        // returns with the toggled draft.
+        FlowClick::WorldAdvancedBack => match front {
+            Some(FrontScreen::WorldCreationAdvanced(draft)) => {
+                (Some(FrontScreen::WorldCreation(draft)), backup, page)
+            }
+            other => (other, backup, page),
+        },
+        // `SecretSeedButton_OnLeftClick` (`:206-211`): the seeds list
+        // opens over the same draft.
+        FlowClick::SecretSeedsOpen => match front {
+            Some(FrontScreen::WorldCreationAdvanced(draft)) => (
+                Some(FrontScreen::SecretSeedsList(Box::new(SecretSeedsState {
+                    draft,
+                    scroll: 0.0,
+                }))),
+                backup,
+                page,
+            ),
+            other => (other, backup, page),
+        },
+        // `UIWorldCreationAdvancedSecretSeedsList.GoBack` (`:386-391`).
+        FlowClick::SecretSeedsBack => match front {
+            Some(FrontScreen::SecretSeedsList(state)) => {
+                (Some(FrontScreen::WorldCreationAdvanced(state.draft)), backup, page)
+            }
+            other => (other, backup, page),
+        },
         // Any other combination is a no-op (a click kind its screen never
         // sends); the state passes through unchanged.
         _ => (front, backup, page),
@@ -246,6 +377,12 @@ pub(crate) enum TrUiPreset {
     Keyboard,
     /// S1-E-17's loading screen (`UIWorldLoad`).
     WorldLoad,
+    /// W4-d85's reports page (`UIReportsPage`).
+    Reports,
+    /// W4-d85's Advanced seed tab (`UIWorldCreationAdvanced`).
+    WorldAdvanced,
+    /// W4-d85's secret-seeds list (`UIWorldCreationAdvancedSecretSeedsList`).
+    SecretSeeds,
     /// menuMode 3000.
     Credits,
     /// menuMode 5.
@@ -267,6 +404,9 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
         "worldnew" => TrUiPreset::WorldNew,
         "vk" => TrUiPreset::Keyboard,
         "worldload" => TrUiPreset::WorldLoad,
+        "reports" => TrUiPreset::Reports,
+        "worldadvanced" => TrUiPreset::WorldAdvanced,
+        "secretseeds" => TrUiPreset::SecretSeeds,
         "credits" => TrUiPreset::Credits,
         "delplayer" => TrUiPreset::DelPlayer,
         "delworld" => TrUiPreset::DelWorld,
@@ -308,6 +448,12 @@ pub(crate) struct FrontDraw<'a> {
     pub(crate) vk_grid: bool,
     /// The caret's `UITextBox._frameCount`.
     pub(crate) frame_count: u64,
+    /// `UIVirtualKeyboard._cancelCacheSign` (`App.sign_cancel_cache`) — the
+    /// sign context's `CanRestore` read (`:504-515`). W4-f22.
+    pub(crate) sign_cancel_cache: &'a str,
+    /// The Advanced tab's Everything-icon glitch state
+    /// (`App.world_advanced_glitch` — the `ProvideUIElement` closure).
+    pub(crate) everything_glitch: ui::world_creation_advanced::EverythingGlitch,
 }
 
 /// The five front screens' behaviour surface — the C# `UIState` shape: the
@@ -462,8 +608,12 @@ impl FrontScreenBehaviours for FrontScreen {
                 // layer by default (`ShowGamepadHints` is false without a
                 // gamepad), the 50-key grid under `TR_VK_GRID=1` (Review
                 // Focus 6). `frame_count` is the caret's
-                // `UITextBox._frameCount`.
-                let l = ui::keyboard::layout(d.screen, d.vk_grid);
+                // `UITextBox._frameCount`. The sign context parks the
+                // textbox/label off-screen (`:176`) and its bottom row
+                // follows the cancel cache (`CanRestore`, `:504-515`).
+                let can_restore = session.request.context.editing_sign()
+                    && !d.sign_cancel_cache.is_empty();
+                let l = ui::keyboard::layout(d.screen, d.vk_grid, session.request.context);
                 ui::keyboard::draw(
                     d.renderer,
                     d.lookups,
@@ -473,6 +623,7 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.vk_grid,
                     d.mouse,
                     d.frame_count,
+                    can_restore,
                 );
             }
             FrontScreen::WorldLoad(state) => {
@@ -487,6 +638,46 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.lookups,
                     state,
                     d.screen,
+                );
+            }
+            FrontScreen::Reports(state) => {
+                // `UIReportsPage.Draw` (`:226-230`, minus the gamepad snap
+                // points): the panel, the header, the log rows + the
+                // attach-on-overflow scrollbar, Back.
+                ui::reports::draw_screen(
+                    d.renderer,
+                    d.lookups,
+                    d.screen,
+                    &state.reports,
+                    state.scroll,
+                    d.mouse,
+                );
+            }
+            FrontScreen::WorldCreationAdvanced(draft) => {
+                // `UIWorldCreationAdvanced.Draw` (`:496-501`, minus the
+                // gamepad points and DrawSeedSystems). The Everything
+                // icon's frame state rides the draw env (the App ticks it
+                // per UI update, `frame.rs`).
+                ui::world_creation_advanced::draw_screen(
+                    d.renderer,
+                    d.lookups,
+                    draft,
+                    d.screen,
+                    d.mouse,
+                    d.everything_glitch,
+                );
+            }
+            FrontScreen::SecretSeedsList(state) => {
+                // `UIWorldCreationAdvancedSecretSeedsList.Draw`
+                // (`:431-436`, minus the gamepad points and the particle
+                // systems).
+                ui::secret_seeds_list::draw_screen(
+                    d.renderer,
+                    d.lookups,
+                    &state.draft,
+                    d.screen,
+                    state.scroll,
+                    d.mouse,
                 );
             }
         }
@@ -553,8 +744,8 @@ impl FrontScreenBehaviours for FrontScreen {
                     // opens over the card's name — `Lang.menu[45]` "Enter
                     // Character Name:", `allowEmpty: true`, the ctor's
                     // 20-character cap (`:199`, `UIVirtualKeyboard.cs:159`).
-                    // There is no `.plr` writer to rename into (spec §9.4),
-                    // so Submit stays the not-ported notice (Task 6's flow).
+                    // Submit runs `OnFinishedSettingName`'s `.plr` rename
+                    // (`KeyboardTail::Rename`, research/19 M1).
                     Some(ui::char_select::CardAction::Rename(i)) => {
                         let name = app
                             .players
@@ -571,6 +762,11 @@ impl FrontScreenBehaviours for FrontScreen {
                             },
                             FrontScreen::CharSelect,
                         );
+                        // `this._data` rides the session — the submit writes
+                        // back to THIS card, not a name search.
+                        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+                            session.rename_index = Some(i);
+                        }
                         None
                     }
                     // `DeleteButtonClick` (`:242-254`): parks the target, then
@@ -826,10 +1022,13 @@ impl FrontScreenBehaviours for FrontScreen {
                         ui::world_creation::Click::Name => nav = Nav::Name(draft.clone()),
                         // `Click_SetSeed` -> `OpenSeedInputMenu` (`:697-708`):
                         // "UI.EnterSeed", `allowEmpty: true`, no cap (the
-                        // source's `int.MaxValue`); the icon's Advanced-tab
-                        // click degrades to the same keyboard (plan
-                        // Uncertainty 4).
+                        // source's `int.MaxValue`).
                         ui::world_creation::Click::Seed => nav = Nav::Seed(draft.clone()),
+                        // `ClickAdvancedSeedMenu` (`:505-511`): the
+                        // Advanced tab opens over the live draft (W4-d85).
+                        ui::world_creation::Click::AdvancedSeed => {
+                            flow = Some(FlowClick::WorldAdvancedOpen);
+                        }
                         // `Click_NamingAndCreating` (`:710-724`): an empty
                         // name opens the naming keyboard (`allowEmpty: false`,
                         // 27), a filled one finishes (`:722`).
@@ -965,7 +1164,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             .get(i)
                             .map(|w| w.name.clone())
                             .unwrap_or_default();
-                        app.open_keyboard(
+                        app.open_keyboard_with_tail(
                             ui::keyboard::Request {
                                 label: ui::keyboard::enter_world_name(),
                                 initial: name,
@@ -973,8 +1172,14 @@ impl FrontScreenBehaviours for FrontScreen {
                                 max_length: 27,
                                 context: ui::keyboard::Context::Text,
                             },
-                            FrontScreen::WorldSelect,
+                            Some(FrontScreen::WorldSelect),
+                            KeyboardTail::WorldRename,
                         );
+                        // `this._data` rides the session (`UIWorldListItem.cs:
+                        // 415-425`) — the submit rewrites THIS world's header.
+                        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+                            session.rename_index = Some(i);
+                        }
                         None
                     }
                     // `DeleteButtonClick` (`:346-358`): parks the target, then
@@ -1005,8 +1210,17 @@ impl FrontScreenBehaviours for FrontScreen {
                 let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() else {
                     return None;
                 };
-                let l = ui::keyboard::layout(screen, app.vk_grid);
-                match ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse) {
+                let can_restore = session.request.context.editing_sign()
+                    && !app.sign_cancel_cache.is_empty();
+                let l = ui::keyboard::layout(screen, app.vk_grid, session.request.context);
+                match ui::keyboard::click_at(
+                    &session.state,
+                    &l,
+                    app.vk_grid,
+                    mouse,
+                    session.request.context,
+                    can_restore,
+                ) {
                     ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
                     // The shift button: `(keyState != Shift) ? Shift : Default`
                     // (`:250-254`).
@@ -1030,6 +1244,19 @@ impl FrontScreenBehaviours for FrontScreen {
                     }
                     // `PressSpace` writes without the Shift unlatch (`:491-502`).
                     ui::keyboard::Click::Space => ui::keyboard::write_str(&mut session.state, " "),
+                    // The sign newline key (`:462-467`): sound 12 +
+                    // `_textBox.Write("\n")` — no Shift unlatch, no submit.
+                    ui::keyboard::Click::Newline => {
+                        app.audio.play("Menu_Tick");
+                        ui::keyboard::write_str(&mut session.state, "\n");
+                    }
+                    // The restore key (`:476-484`): sound 12 +
+                    // `RestoreCanceledInput(1)` — the cache returns to the
+                    // box and empties (the row rebuilds without it).
+                    ui::keyboard::Click::Restore => {
+                        app.audio.play("Menu_Tick");
+                        crate::signs::restore_canceled_sign_input(app);
+                    }
                     // The backspace key pops (`:392-397`).
                     ui::keyboard::Click::Backspace => session.state.backspace(),
                     // The desktop pair's handler checks the validation first
@@ -1056,6 +1283,115 @@ impl FrontScreenBehaviours for FrontScreen {
             // `Click_*`); the abort rides the Inventory trigger in Update
             // (`:54-58`), the port's key path below.
             FrontScreen::WorldLoad(_) => None,
+            // `UIReportsPage`'s one handler: the Back panel
+            // (`GoBackClick`, `:206-211`). The log rows are read-only.
+            FrontScreen::Reports(_) => {
+                if ui::reports::back_hit(screen, mouse) {
+                    Some(FlowClick::ReportsBack)
+                } else {
+                    None
+                }
+            }
+            FrontScreen::WorldCreationAdvanced(_) => {
+                // The Advanced tab's click table (`UIWorldCreationAdvanced`'s
+                // handlers through the draft): the randomize icon, the seed
+                // plate, the option grid, the secret cell, Apply. The hit
+                // resolves under a short borrow; the handlers re-borrow.
+                let click = {
+                    let Some(FrontScreen::WorldCreationAdvanced(draft)) = app.front.as_ref() else {
+                        return None;
+                    };
+                    ui::world_creation_advanced::click_at(draft, screen, mouse)
+                };
+                match click {
+                    // `ClickRandomizeSeed` (`:441-445`) → `RandomizeSeed`
+                    // (`UIWorldCreation.cs:532-539`): `Main.rand.Next()` —
+                    // the bare global stand-in (the front end runs outside
+                    // every swap).
+                    ui::world_creation_advanced::Click::Randomize => {
+                        let seed = app.rngs.global().next().to_string();
+                        if let Some(FrontScreen::WorldCreationAdvanced(draft)) = app.front.as_mut() {
+                            draft.seed = seed;
+                            draft.is_special_seed_text = false;
+                        }
+                        None
+                    }
+                    // `Click_SetSeed` → `OpenSeedInputMenu` (`:447-450`):
+                    // the same keyboard the base screen opens, returning
+                    // to the Advanced tab (`GoBackHere` → `_goBackTarget`).
+                    ui::world_creation_advanced::Click::Seed => {
+                        let Some(front) = app.front.clone() else {
+                            return None;
+                        };
+                        app.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::enter_seed(),
+                                initial: String::new(),
+                                allow_empty: true,
+                                max_length: usize::MAX,
+                                context: ui::keyboard::Context::Text,
+                            },
+                            Some(front),
+                            KeyboardTail::WorldSeed,
+                        );
+                        None
+                    }
+                    // `ClickSeedOption` (`:255-260`): the toggle runs the
+                    // Enabled cascades; sound 12 (`GroupOptionButton.
+                    // LeftMouseDown`, `:253-257`).
+                    ui::world_creation_advanced::Click::Option(i) => {
+                        app.audio.play("Menu_Tick");
+                        if let Some(FrontScreen::WorldCreationAdvanced(draft)) = app.front.as_mut() {
+                            draft.toggle_seed_option(tr_core::seeds::OPTION_TABLE[i].id);
+                        }
+                        None
+                    }
+                    // `SecretSeedButton_OnLeftClick` (`:206-211`).
+                    ui::world_creation_advanced::Click::SecretSeeds => {
+                        Some(FlowClick::SecretSeedsOpen)
+                    }
+                    // `Click_GoBack` → `GoBack` (`:470-481`): sound 11 +
+                    // the base creation screen.
+                    ui::world_creation_advanced::Click::Apply => {
+                        Some(FlowClick::WorldAdvancedBack)
+                    }
+                    ui::world_creation_advanced::Click::None => None,
+                }
+            }
+            FrontScreen::SecretSeedsList(_) => {
+                let (rows, attached, scroll) = {
+                    let Some(FrontScreen::SecretSeedsList(state)) = app.front.as_ref() else {
+                        return None;
+                    };
+                    let rows = ui::secret_seeds_list::interface_rows(&state.draft);
+                    let root = ui::secret_seeds_list::root_rect(screen);
+                    let panel = ui::secret_seeds_list::panel_rect(&root);
+                    let inner = ui::secret_seeds_list::list_container_inner(&panel);
+                    let attached = ui::secret_seeds_list::content_height(rows.len()) > inner[3];
+                    (rows, attached, state.scroll)
+                };
+                let click = ui::secret_seeds_list::click_at(
+                    screen,
+                    mouse,
+                    rows.len(),
+                    scroll,
+                    attached,
+                );
+                match click {
+                    // `ClickSecretSeed` (`:219-236`): the toggle + sound 12.
+                    ui::secret_seeds_list::Click::Row(i) => {
+                        app.audio.play("Menu_Tick");
+                        let row = rows[i].clone();
+                        if let Some(FrontScreen::SecretSeedsList(state)) = app.front.as_mut() {
+                            ui::secret_seeds_list::toggle_row(&mut state.draft, &row);
+                        }
+                        None
+                    }
+                    // `GoBack` (`:386-391`): sound 11 + the Advanced tab.
+                    ui::secret_seeds_list::Click::Apply => Some(FlowClick::SecretSeedsBack),
+                    ui::secret_seeds_list::Click::None => None,
+                }
+            }
         }
     }
 
@@ -1065,7 +1401,10 @@ impl FrontScreenBehaviours for FrontScreen {
             // `Main.GetInputText` edits its text every frame
             // (`UIVirtualKeyboard.cs:750-788`), Enter submits through
             // `CanSubmit` (`:763-766`) and Escape runs the cancel
-            // (`:771-774`'s `TryEscapingMenu`).
+            // (`:771-774`'s `TryEscapingMenu`). The SIGN context's Enter
+            // appends a newline instead (`:751-754` — `text += "\n"`, the
+            // multi-line sign edit); the submit rides the Save button or
+            // the dialog's Save interaction.
             FrontScreen::Keyboard(_) => {
                 if let Some(text) = event.text.as_ref() {
                     for ch in text.chars() {
@@ -1078,7 +1417,11 @@ impl FrontScreenBehaviours for FrontScreen {
                     PhysicalKey::Code(KeyCode::Backspace) => app.keyboard_backspace(),
                     PhysicalKey::Code(KeyCode::Escape) => app.keyboard_cancel(),
                     PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
-                        app.keyboard_enter()
+                        if app.sign_editing() {
+                            app.keyboard_character('\n'); // `:751-754`
+                        } else {
+                            app.keyboard_enter();
+                        }
                     }
                     _ => {}
                 }
@@ -1099,7 +1442,34 @@ impl FrontScreenBehaviours for FrontScreen {
             }
             // The other screens take no keys: the world controls stay parked
             // while a front screen is live (the gamepad snap points are out
-            // of scope, §J.3).
+            // of scope, §J.3). The W4-d85 screens' `IHaveBackButtonCommand`
+            // Escape arms run through the same Back hops their Apply/Back
+            // panels use (the port's Escape stand-in, the keyboard's
+            // `TryEscapingMenu` pattern).
+            FrontScreen::Reports(_) => {
+                if matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                    app.audio.play("Menu_Close");
+                    if let Some(front) = app.front.clone() {
+                        app.apply_front_flow(front, FlowClick::ReportsBack);
+                    }
+                }
+            }
+            FrontScreen::WorldCreationAdvanced(_) => {
+                if matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                    app.audio.play("Menu_Close");
+                    if let Some(front) = app.front.clone() {
+                        app.apply_front_flow(front, FlowClick::WorldAdvancedBack);
+                    }
+                }
+            }
+            FrontScreen::SecretSeedsList(_) => {
+                if matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                    app.audio.play("Menu_Close");
+                    if let Some(front) = app.front.clone() {
+                        app.apply_front_flow(front, FlowClick::SecretSeedsBack);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1116,6 +1486,159 @@ impl App {
             FrontScreen::WorldSelect => Some((self.worlds.len(), front.header())),
             _ => None,
         }
+    }
+
+    /// `Main.OpenReportsMenu` (`Main.cs:52352-52363`): the reporters'
+    /// merged log (`Main.IssueReporter` + the Steam Workshop reporter
+    /// when live — the port's `Workshop == null` arm passes only the
+    /// general log), the current front/menu state parked as the Back
+    /// target, `menuMode = 888` + `SetState(state)`. The scrollbar starts
+    /// at the bottom (`GoToBottom`, `UIReportsPage.cs:124`) over the
+    /// MERGED rows' content height.
+    pub(crate) fn open_reports(&mut self) {
+        let back_front = self.front.clone();
+        let back_page = self.menu.as_ref().map(|m| m.page);
+        let reports = ui::reports::merged_reports(self.issue_reporter.get_reports(), None);
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let container = ui::reports::container_rect(screen);
+        let panel = ui::reports::panel_rect(&container);
+        let log = ui::reports::log_rect(&panel);
+        let line_h = ui::text::line_height(&self.lookups);
+        // The content height: the wrapped rows, or the single
+        // initial-message row when the log is empty (`PopulateLogs`).
+        let heights: Vec<f32> = if reports.is_empty() {
+            vec![line_h]
+        } else {
+            let list = ui::reports::list_rect(&log, false);
+            let wrap_w = list[2] - 20.0;
+            reports
+                .iter()
+                .map(|rep| {
+                    let lines = ui::reports::wrap_line_count(&rep.text, wrap_w, &self.lookups);
+                    ui::reports::row_height(lines, &self.lookups)
+                })
+                .collect()
+        };
+        let content = ui::reports::content_height(&heights);
+        let scroll = ui::reports::go_to_bottom(log[3], content);
+        self.enter_front(FrontScreen::Reports(Box::new(ReportsState {
+            reports,
+            scroll,
+            back_front,
+            back_page,
+        })));
+    }
+
+    /// The secret-seeds list's wheel (`UIList.ScrollWheel` through the
+    /// attach-on-overflow scrollbar, `Recalculate` `:343-361`).
+    pub(crate) fn secret_seeds_wheel(&mut self, delta: i32) -> bool {
+        if !matches!(self.front, Some(FrontScreen::SecretSeedsList(_))) {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
+        let Some(FrontScreen::SecretSeedsList(state)) = self.front.as_mut() else {
+            return false;
+        };
+        let rows = ui::secret_seeds_list::interface_rows(&state.draft).len();
+        let root = ui::secret_seeds_list::root_rect(screen);
+        let panel = ui::secret_seeds_list::panel_rect(&root);
+        let inner = ui::secret_seeds_list::list_container_inner(&panel);
+        let content = ui::secret_seeds_list::content_height(rows);
+        if ui::secret_seeds_list::wheel_target(screen, mouse, rows) {
+            state.scroll = ui::char_select::scroll_wheel(state.scroll, delta, inner[3], content);
+        }
+        true
+    }
+
+    /// `IssueReportsIndicator.AttemptLettingPlayerKnow`
+    /// (`IssueReportsIndicator.cs:20-25`) — the producer-side notify: the
+    /// show latch + the `DD2_ExplosiveTrapExplode` cue. The C#'s callers are
+    /// the resource-pack music failure (`LegacyAudioSystem.cs:118`) and the
+    /// Steam reporter's notify event (`WorkshopSocialModule.cs:42-46`);
+    /// neither pipeline exists in the port, so this seam is reached only by
+    /// a future producer (or a test) — the indicator stays hidden exactly
+    /// as vanilla on a pack-free, no-Steam install.
+    pub(crate) fn issue_report_notify(&mut self) {
+        self.issue_indicator.attempt_letting_player_know();
+        self.audio.play_issue_report_notify();
+    }
+
+    /// The indicator's click (`IssueReportsIndicator.Draw`, `:64-68`):
+    /// `OpenUI` (`:33-37` — `Main.OpenReportsMenu`) + `Hide` (`:27-31`).
+    /// The C# reads `Main.mouseLeft` (the HELD flag) inside the hover, so
+    /// the port fires on the press event while the button is hovered and
+    /// the menu regime is live — the draw site is `DrawMenu`'s tail
+    /// (`Main.cs:51886`), which covers BOTH the legacy pages and the 888
+    /// front screens (`MenuUI.Draw` at `:51063` precedes it). Returns
+    /// whether the click landed.
+    pub(crate) fn issue_indicator_click(&mut self) -> bool {
+        if (self.menu.is_none() && self.front.is_none())
+            || self.issue_indicator.display_up_percent == 0.0
+        {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let center = ui::reports::indicator_center(screen, self.issue_indicator.display_up_percent);
+        let Some(sheet) = self.lookups.ui_issue_button else {
+            return false;
+        };
+        let size = Vec2::new(sheet.width as f32, sheet.height as f32);
+        if !ui::reports::indicator_hit(center, size, self.mouse_pos) {
+            return false;
+        }
+        self.open_reports();
+        self.issue_indicator.hide();
+        true
+    }
+
+    /// `UIReportsPage`'s wheel (`UIList.ScrollWheel` through
+    /// `UserInterface.Update`'s arm): the log's scrollbar owns the notch
+    /// while the page is live; the accumulator is consumed whatever the
+    /// hit (`:222`). The scroll lives on the screen payload, not
+    /// `front_scroll` (the reports list's `SetView` is the log height).
+    pub(crate) fn reports_wheel(&mut self, delta: i32) -> bool {
+        if !matches!(self.front, Some(FrontScreen::Reports(_))) {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
+        let container = ui::reports::container_rect(screen);
+        let panel = ui::reports::panel_rect(&container);
+        let log = ui::reports::log_rect(&panel);
+        // The content height needs the wrapped line counts — the draw's
+        // wrap runs at the list's inner width; the bitmap fallback's 8 px
+        // line height keeps the headless math font-free. The wrap width
+        // uses the detached list (the attach flip changes it by 15 px —
+        // the C# re-wraps on Recalculate; the port approximates with the
+        // detached width, documented).
+        let list = ui::reports::list_rect(&log, false);
+        let wrap_w = list[2] - 20.0;
+        let line_h = ui::text::line_height(&self.lookups);
+        let Some(FrontScreen::Reports(state)) = self.front.as_mut() else {
+            return false;
+        };
+        let heights: Vec<f32> = if state.reports.is_empty() {
+            vec![line_h]
+        } else {
+            state
+                .reports
+                .iter()
+                .map(|rep| {
+                    let lines = ui::reports::wrap_line_count(&rep.text, wrap_w, &self.lookups);
+                    ui::reports::row_height(lines, &self.lookups)
+                })
+                .collect()
+        };
+        let content = ui::reports::content_height(&heights);
+        if ui::reports::wheel_target(screen, mouse, log[3], content) {
+            state.scroll = ui::char_select::scroll_wheel(state.scroll, delta, log[3], content);
+        }
+        true
     }
 
     /// The two list screens' live layout: `Recalculate`'s result plus the
@@ -1262,6 +1785,9 @@ impl App {
                 FlowClick::CharBack
                     | FlowClick::WorldBack
                     | FlowClick::WorldCreateBack
+                    | FlowClick::ReportsBack
+                    | FlowClick::WorldAdvancedBack
+                    | FlowClick::SecretSeedsBack
                     | FlowClick::ConfirmNo
             ) {
                 self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
@@ -1278,11 +1804,47 @@ impl App {
     /// (`menuMode = 5` / `= 0`) clear the 888 side (`Main.cs:51066-51069`'s
     /// else branch) and the legacy page goes live instead of hiding under the
     /// front screen.
-    fn apply_front_flow(&mut self, front: FrontScreen, click: FlowClick) {
+    pub(crate) fn apply_front_flow(&mut self, front: FrontScreen, click: FlowClick) {
         let delete_index = match click {
             FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
             _ => None,
         };
+        // `UICharacterListItem.PlayGame` (`:256-261`) → `SelectPlayer`: the
+        // card's `.plr` is the active player. The port's CharPlay was
+        // routing-only (spec §9.4); the Journey research counts ride the
+        // same file (`Player.cs:54911`'s creativeTracker block), so the
+        // card's file is read here and its research pairs hydrate the
+        // tracker — the W4-f44 seam's `PlayerFile.research` shape. The
+        // favourites hydrate too (BUG-03's card→session half).
+        if let FlowClick::CharPlay(i) = click {
+            if let Some(path) = self.players.get(i).and_then(|p| p.path.clone()) {
+                if let Ok(file) = crate::player_file::read_player_file(&path) {
+                    self.research.load_pairs(&file.research);
+                    self.hydrate_favorites(file.inv_favorites);
+                    self.player_name = file.name.clone();
+                    // The per-player powers hydrate the registry
+                    // (`CreativePowerManager.LoadToPlayer`'s effect).
+                    self.creative_powers.set(
+                        crate::creative::PowerId::Godmode,
+                        crate::creative::PowerState::Toggle(file.powers.godmode),
+                    );
+                    self.creative_powers.set(
+                        crate::creative::PowerId::FarPlacementRange,
+                        crate::creative::PowerState::Toggle(file.powers.far_placement),
+                    );
+                    self.creative_powers.set(
+                        crate::creative::PowerId::SpawnRate,
+                        crate::creative::PowerState::Slider(file.powers.spawn_rate),
+                    );
+                    self.journey.spawn_rate_cache = file.powers.spawn_rate;
+                    // The session difficulty stand-in follows the card
+                    // (`Main.ActivePlayerFileData.Player.difficulty`).
+                    if let Some(draft) = self.session_draft.as_mut() {
+                        draft.difficulty = file.difficulty;
+                    }
+                }
+            }
+        }
         // `UIWorldListItem.PlayGame` (`:360-374`) → `Main.LoadWorld`: the
         // card's file is parked on the App, and the flow's launch arm closes
         // both screens. The frame loop performs the swap at the next boundary
@@ -1428,6 +1990,215 @@ pub(crate) mod front_flow_tests {
     use tr_core::liquid::LiquidSystem;
 
     use crate::menu::Page as P;
+
+    /// W4-d85 row 10 — `UIReportsPage.GoBackClick` (`:206-211`): the
+    /// parked front screen returns; a legacy-page open returns the page.
+    #[test]
+    fn w4_d85_the_reports_back_returns_the_parked_state() {
+        let state = ReportsState {
+            reports: Vec::new(),
+            scroll: 0.0,
+            back_front: Some(FrontScreen::WorldSelect),
+            back_page: None,
+        };
+        let (front, backup, page) = next_flow_state(
+            Some(FrontScreen::Reports(Box::new(state))),
+            None,
+            None,
+            FlowClick::ReportsBack,
+        );
+        assert_eq!(front, Some(FrontScreen::WorldSelect));
+        assert!(backup.is_none());
+        assert!(page.is_none());
+        // The legacy-page arm (`_menuIdToGoBackTo`).
+        let state = ReportsState {
+            reports: Vec::new(),
+            scroll: 0.0,
+            back_front: None,
+            back_page: Some(P::Main),
+        };
+        let (front, _, page) = next_flow_state(
+            Some(FrontScreen::Reports(Box::new(state))),
+            None,
+            None,
+            FlowClick::ReportsBack,
+        );
+        assert!(front.is_none());
+        assert_eq!(page, Some(P::Main));
+    }
+
+    /// W4-d85 row 10 — the Back panel's hit box at 1600x900
+    /// (`UIReportsPage.cs:125-130`: W 240 centred, y 805..855).
+    #[test]
+    fn w4_d85_the_reports_back_click_routes() {
+        let state = ReportsState {
+            reports: Vec::new(),
+            scroll: 0.0,
+            back_front: Some(FrontScreen::WorldSelect),
+            back_page: None,
+        };
+        let front = FrontScreen::Reports(Box::new(state));
+        let mut app = flow_app(Some(front.clone()), vec![], vec![]);
+        let screen = Vec2::new(1600.0, 900.0);
+        assert_eq!(
+            front.click(&mut app, screen, Vec2::new(800.0, 820.0), false),
+            Some(FlowClick::ReportsBack)
+        );
+        assert_eq!(front.click(&mut app, screen, Vec2::new(800.0, 400.0), false), None);
+    }
+
+    /// W4-d85 FINAL — the indicator's notify → click → open chain
+    /// (`IssueReportsIndicator.cs:20-25/:64-68` → `Main.OpenReportsMenu`):
+    /// the notify latches the show + plays the cue, the hovered click opens
+    /// the reports page over the parked menu and hides the indicator; an
+    /// unhovered or hidden click does nothing.
+    #[test]
+    fn w4_d85_the_indicator_click_opens_the_reports_and_hides() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.menu = Some(menu::Menu::new(app.settings.clone(), "p".into()));
+        // The notify: the latch + the cue (the played-count seam).
+        let before = app.audio.played_count();
+        app.issue_report_notify();
+        assert!(app.issue_indicator.should_be_showing);
+        assert_eq!(app.audio.played_count(), before + 1, "the notify cue played");
+        // The percent must be up for the button to draw/click — one drawn
+        // frame's tick (`Draw`, `:48`).
+        assert!(!app.issue_indicator_click(), "percent 0 — nothing draws yet");
+        app.issue_indicator.tick_draw();
+        assert_eq!(app.issue_indicator.display_up_percent, 1.0);
+        // The slid-in centre at the headless 1280x720: (1240, 640). The
+        // headless Lookups carry no sheet, so the hit box is absent — pin
+        // a 34x34 sheet stand-in for the geometry (the retail size is
+        // decoded at runtime; the box maths is size-driven).
+        app.lookups.ui_issue_button = Some(tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 34,
+            height: 34,
+            plain_frame: (0, 0),
+        });
+        app.mouse_pos = Vec2::new(640.0, 360.0);
+        assert!(!app.issue_indicator_click(), "off the button — no open");
+        assert!(app.menu.is_some(), "the menu stays live");
+        app.mouse_pos = Vec2::new(1240.0, 640.0);
+        assert!(app.issue_indicator_click(), "the hovered click lands");
+        assert!(matches!(app.front, Some(FrontScreen::Reports(_))), "the reports page opened");
+        assert!(app.menu.is_none(), "the menu parked (OpenReportsMenu's 888)");
+        assert!(!app.issue_indicator.should_be_showing, "Hide ran");
+        assert_eq!(app.issue_indicator.display_up_percent, 0.0, "the percent snapped");
+        // The Back target is the parked menu page (`_menuIdToGoBackTo`).
+        let Some(FrontScreen::Reports(state)) = app.front.as_ref() else {
+            panic!("the reports page is live");
+        };
+        assert!(state.back_front.is_none());
+        assert_eq!(state.back_page, Some(menu::Page::Main));
+    }
+
+    /// W4-d85 FINAL — the indicator over a FRONT screen (`DrawMenu`'s tail
+    /// draws after `MenuUI.Draw`, `Main.cs:51063`→`:51886`): the click opens
+    /// the reports page with the live screen as the parked Back target
+    /// (`OpenReportsMenu`'s `Main.MenuUI.CurrentState`).
+    #[test]
+    fn w4_d85_the_indicator_over_a_front_screen_parks_it_as_back() {
+        let mut app = flow_app(Some(FrontScreen::WorldSelect), vec![], vec![]);
+        app.issue_report_notify();
+        app.issue_indicator.tick_draw();
+        app.lookups.ui_issue_button = Some(tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 34,
+            height: 34,
+            plain_frame: (0, 0),
+        });
+        app.mouse_pos = Vec2::new(1240.0, 640.0);
+        assert!(app.issue_indicator_click());
+        let Some(FrontScreen::Reports(state)) = app.front.as_ref() else {
+            panic!("the reports page opened over the front screen");
+        };
+        assert_eq!(state.back_front, Some(FrontScreen::WorldSelect));
+        assert!(state.back_page.is_none());
+        // The in-world regime (no menu, no front) never draws the indicator —
+        // `DrawMenu` does not run (`Main.cs:62249`'s gameMenu branch).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.issue_report_notify();
+        app.issue_indicator.tick_draw();
+        app.lookups.ui_issue_button = Some(tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 34,
+            height: 34,
+            plain_frame: (0, 0),
+        });
+        app.mouse_pos = Vec2::new(1240.0, 640.0);
+        assert!(!app.issue_indicator_click(), "no menu regime — no click");
+        assert!(app.front.is_none());
+    }
+
+    /// W4-d85 rows 11-12 — the Advanced-tab hops carry the draft through:
+    /// base → Advanced (`ClickAdvancedSeedMenu`), Advanced → base
+    /// (`GoBack`), Advanced → seeds list → Advanced.
+    #[test]
+    fn w4_d85_the_advanced_hops_carry_the_draft() {
+        let mut draft = ui::world_creation::NewWorldDraft::new(0, 0);
+        draft.seed = "fortheworthy".into();
+        draft.toggle_seed_option(tr_core::seeds::SeedOptionId::Drunk);
+        let (front, _, _) = next_flow_state(
+            Some(FrontScreen::WorldCreation(draft.clone())),
+            None,
+            None,
+            FlowClick::WorldAdvancedOpen,
+        );
+        assert_eq!(front, Some(FrontScreen::WorldCreationAdvanced(draft.clone())));
+        // The seeds-list hop.
+        let (front, _, _) = next_flow_state(front, None, None, FlowClick::SecretSeedsOpen);
+        let Some(FrontScreen::SecretSeedsList(state)) = front.clone() else {
+            panic!("the seeds list opened");
+        };
+        assert_eq!(state.draft, draft);
+        assert_eq!(state.scroll, 0.0);
+        // Back to the Advanced tab, then to the base screen.
+        let (front, _, _) = next_flow_state(front, None, None, FlowClick::SecretSeedsBack);
+        assert_eq!(front, Some(FrontScreen::WorldCreationAdvanced(draft.clone())));
+        let (front, _, _) = next_flow_state(front, None, None, FlowClick::WorldAdvancedBack);
+        assert_eq!(front, Some(FrontScreen::WorldCreation(draft)));
+    }
+
+    /// W4-d85 row 11 — an option click toggles through the draft and the
+    /// Apply panel routes back; the seed plate opens the keyboard with
+    /// the Advanced tab as the return target. Geometry at the headless
+    /// 1280x720: root (390, 202, 500, 400), info (400, 210, 480, 278),
+    /// list (424, 254, 432, 140).
+    #[test]
+    fn w4_d85_the_advanced_click_table_toggles_and_routes() {
+        let draft = ui::world_creation::NewWorldDraft::new(0, 0);
+        let front = FrontScreen::WorldCreationAdvanced(draft);
+        let mut app = flow_app(Some(front.clone()), vec![], vec![]);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // Option 0 (Normal) centre (454, 287): toggling Normal off leaves
+        // every option off (the subscriber re-derives Normal = all-off →
+        // true, so the flip is a no-op — the C#'s own behaviour).
+        let _ = front.click(&mut app, screen, Vec2::new(454.0, 287.0), false);
+        // Option 2 (Drunk) centre: x = 424 + 372*2/5 + 30 = 602.8.
+        let _ = front.click(&mut app, screen, Vec2::new(602.0, 287.0), false);
+        let Some(FrontScreen::WorldCreationAdvanced(d)) = app.front.as_ref() else {
+            panic!("the tab stays live");
+        };
+        assert!(d.options_enabled[2], "Drunk toggled on");
+        assert!(!d.options_enabled[0], "Normal cleared");
+        // Apply routes back (y = 202 + 400 - 93 = 509..559).
+        assert_eq!(
+            front.click(&mut app, screen, Vec2::new(640.0, 520.0), false),
+            Some(FlowClick::WorldAdvancedBack)
+        );
+        // The seed plate opens the keyboard returning to the tab.
+        let _ = front.click(&mut app, screen, Vec2::new(700.0, 220.0), false);
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the keyboard opened");
+        };
+        assert_eq!(session.tail, KeyboardTail::WorldSeed);
+        assert!(matches!(session.back, Some(FrontScreen::WorldCreationAdvanced(_))));
+    }
 
     #[test]
     fn the_flow_table_routes_every_front_hop() {
@@ -1648,6 +2419,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             })
         };
         let fronts = [
@@ -2022,10 +2794,70 @@ pub(crate) mod front_flow_tests {
         let c0 = ui::world_select::card_layout(l.list, 0, false);
         app.mouse_pos = centre(c0.rename);
         front_press(&mut app);
-        assert!(
-            matches!(app.front, Some(FrontScreen::Keyboard(_))),
-            "Rename opens the world-naming keyboard"
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("Rename opens the world-naming keyboard");
+        };
+        // `UIWorldListItem.cs:419`: `Lang.menu[48]`, the card's name,
+        // `allowEmpty: true`, the 27 cap; `this._data` rides the session.
+        assert_eq!(session.request.label, ui::keyboard::enter_world_name());
+        assert_eq!(session.request.initial, "W1");
+        assert!(session.request.allow_empty);
+        assert_eq!(session.request.max_length, 27);
+        assert_eq!(session.tail, KeyboardTail::WorldRename);
+        assert_eq!(session.rename_index, Some(0));
+        assert_eq!(session.back, Some(FrontScreen::WorldSelect));
+    }
+
+    #[test]
+    fn world_rename_submit_rewrites_the_file_and_reopens_the_select() {
+        // `OnFinishedSettingName` (`UIWorldListItem.cs:427-432`) ->
+        // `WorldGen.RenameWorldCallBack` (`WorldGen.cs:6727-6753`): the header
+        // name is rewritten, the callback's sound 10 + `menuMode = 6` reopen
+        // the world select, whose `OnActivate` re-list reads the new name.
+        let dir = crate::test_world_helpers::test_scratch("flow-world-rename");
+        let path = dir.join("w1.trwld");
+        tr_core::save::save(
+            &path,
+            &World::new("W1".into(), 8, 8),
+            &tr_core::save::WorldSide::default(),
+        )
+        .unwrap();
+        let mut w = world_entry("W1");
+        w.path = Some(path.clone());
+        let request = ui::keyboard::Request {
+            label: ui::keyboard::enter_world_name(),
+            initial: "W1".into(),
+            allow_empty: true,
+            max_length: 27,
+            context: ui::keyboard::Context::Text,
+        };
+        let state = ui::keyboard::KeyboardState::new(&request);
+        let mut app = flow_app(
+            Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
+                request,
+                state,
+                back: Some(FrontScreen::WorldSelect),
+                tail: KeyboardTail::WorldRename,
+                rename_index: Some(0),
+            }))),
+            vec![],
+            vec![w],
         );
+        app.keyboard_character('Z');
+        let before = app.audio.played_count();
+        app.keyboard_submit();
+        assert_eq!(app.front, Some(FrontScreen::WorldSelect));
+        assert!(app.menu.is_none(), "the invariant holds");
+        assert!(
+            app.audio.played_count() >= before + 2,
+            "the submit cue (10) + the rename callback's cue (10, :473)"
+        );
+        // The file's header carries the trimmed typed name; the stem stays.
+        let raw = std::fs::read(&path).unwrap();
+        let (world, _) = tr_core::save::parse(&raw).unwrap();
+        assert_eq!(world.name, "W1Z");
+        assert!(path.exists(), "the file keeps its stem");
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
@@ -2147,12 +2979,26 @@ pub(crate) mod front_flow_tests {
             achievements_open: crate::env::achievements_open(),
             achievements_scroll: 0.0,
             achievements_categories: [true; 4],
+            debug_commands_open: false,
+            debug_commands_search: String::new(),
+            debug_commands_scroll: 0.0,
+            debug_loadouts_open: false,
+            debug_loadouts: Vec::new(),
+            debug_loadouts_search: String::new(),
+            debug_loadouts_last_search: String::new(),
+            debug_loadouts_scroll: 0.0,
+            world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
+            issue_reporter: ui::reports::GeneralIssueReporter::default(),
+            issue_indicator: ui::reports::IssueIndicator::default(),
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
+            town_spawn: crate::town_spawn::TownSpawnStatics::default(),
+            town_spawn_requests: Vec::new(),
             reuse_delay: 0.0,
+            pending_item_reuse: false,
             window: None,
             gpu: None,
             renderer: None,
@@ -2187,6 +3033,12 @@ pub(crate) mod front_flow_tests {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            sign_cancel_cache: String::new(),
+            sign_text_blinker: crate::ui::chest::TextBlinker::default(),
+            sign_hover: -1, // `Main.cs:67189`
+            sign_bubble: false,
+            sign_x: 0,
+            sign_y: 0,
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,
@@ -2205,6 +3057,9 @@ pub(crate) mod front_flow_tests {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
+            game_mode_difficulty_override: None,
+            research: crate::research::ResearchTracker::default(),
+            journey: ui::journey::JourneyMenu::default(),
             #[cfg(feature = "debug")]
             debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
@@ -2222,6 +3077,10 @@ pub(crate) mod front_flow_tests {
             // back into `equip_page` every frame.
             equip_page_selected: 0,
             dye_swap_counter: 0,
+            equip_share_flags: 0,
+            loadout_change_time: f32::NEG_INFINITY,
+            loadout_mouse_over: -1,
+            loadout_clone: crate::loadout::LoadoutClone::default(),
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
@@ -2418,6 +3277,8 @@ pub(crate) mod front_flow_tests {
             demon_torch_dir: 1.0,
             disco: [255, 0, 0],
             disco_style: 0,
+            master_color: 1.0,
+            master_color_dir: 1,
             light_rng_seed: 1,
             anim_time: 0.0,
             has_liquids: false,
@@ -2557,6 +3418,10 @@ pub(crate) mod front_flow_tests {
                 inventory,
                 inv_favorites: 0,
                 last_saved_binary: 0,
+                research: Vec::new(),
+                powers: crate::player_file::CreativePowersSave::written_fresh(),
+                current_loadout_index: 0,
+                loadouts: Default::default(),
             },
         )
         .unwrap();
@@ -2898,8 +3763,8 @@ pub(crate) mod front_flow_tests {
     #[test]
     fn world_creation_seed_click_opens_the_seed_keyboard() {
         // `OpenSeedInputMenu` (`UIWorldCreation.cs:697-708`): "UI.EnterSeed",
-        // `allowEmpty: true`, `int.MaxValue`; the seed plate and the icon
-        // both route here (the Advanced tab is out of scope).
+        // `allowEmpty: true`, `int.MaxValue`; the seed plate routes here
+        // (the icon opens the Advanced tab since W4-d85).
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = world_creation_app();
@@ -3112,6 +3977,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             }))),
             vec![entry("Bob", false)],
             vec![],
@@ -3144,6 +4010,9 @@ pub(crate) mod front_flow_tests {
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, 20);
         assert_eq!(session.back, Some(FrontScreen::CharSelect));
+        // `this._data` rides the session — the submit writes card 0.
+        assert_eq!(session.rename_index, Some(0));
+        assert_eq!(session.tail, KeyboardTail::Rename);
         // The state seeds from the request (`UIVirtualKeyboard.cs:429-433`) —
         // a non-empty start stays Default.
         assert_eq!(session.state.text, "Bob");
@@ -3157,7 +4026,7 @@ pub(crate) mod front_flow_tests {
         // `_cancelAction` -> `GoBackHere` (`:214-216`): the reopen, no notice.
         let mut app = keyboard_app();
         let (sw, sh) = app.screen_size();
-        let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
+        let l = ui::keyboard::layout(Vec2::new(sw, sh), false, ui::keyboard::Context::Text);
         app.mouse_pos = Vec2::new(
             l.cancel[0] + l.cancel[2] * 0.5,
             l.cancel[1] + l.cancel[3] * 0.5,
@@ -3169,13 +4038,31 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
-    fn keyboard_submit_reopens_with_the_not_ported_notice() {
-        // The rename tail (`:205-213`) reopens the screen; the port's rename
-        // itself is the notice (no save-file writer, spec §9.4).
+    fn keyboard_submit_renames_the_card_and_reopens() {
+        // The rename tail (`UICharacterListItem.OnFinishedSettingName`,
+        // `:208-214`): the trimmed name lands on the parked card
+        // (`rename_index` — `this._data`), then `OpenCharacterSelectUI`
+        // reopens. The seam write itself:
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("Bob", false)],
+            vec![],
+        );
+        app.rename_player_entry(Some(0), "  Bobby  ".trim());
+        assert_eq!(app.players[0].name, "Bobby", "the trimmed name lands");
+        assert!(app.front_hint.is_none(), "the rename writes, no notice");
+        // The full submit tail: the keyboard closes back to the char select
+        // (the re-list rebuilds the disk-less fake from `TR_FAKE_CHARS`, the
+        // same shape as the fake erase — the disk-backed rename persists
+        // through the `.plr` write, witnessed in `player_file::tests`).
         let mut app = keyboard_app();
+        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+            session.rename_index = Some(0);
+            session.state.text = "Bobby".into();
+        }
         app.keyboard_submit();
         assert_eq!(app.front, Some(FrontScreen::CharSelect));
-        assert!(app.front_hint.is_some(), "the submit tail notices");
+        assert!(app.menu.is_none(), "the invariant holds");
     }
 
     #[test]
@@ -3196,6 +4083,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             }))),
             vec![],
             vec![],
@@ -3272,12 +4160,13 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: None,
                 tail: KeyboardTail::ChestRename,
+                rename_index: None,
             }))),
             vec![],
             vec![],
         );
         let (sw, sh) = app.screen_size();
-        let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
+        let l = ui::keyboard::layout(Vec2::new(sw, sh), false, ui::keyboard::Context::Chest);
         app.mouse_pos = Vec2::new(
             l.submit[0] + l.submit[2] * 0.5,
             l.submit[1] + l.submit[3] * 0.5,

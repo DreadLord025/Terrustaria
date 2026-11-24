@@ -2450,6 +2450,14 @@ fn portrait_data(
             (sheet_i, h, 28.0, 22.0, white)
         }
         // E8 merge: the c10 12-critter portrait tail dropped (d40/c8's arms above).
+        // W4-d120 — the four town kinds' portraits rest the town twin's
+        // 48x38 box (the Merchant precedent); the bound Tavernkeep folds
+        // onto the Tavernkeep's entry (never drawn alone) — its arm keeps
+        // the match exhaustive at the flat 34x8 box.
+        (NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg, _) => {
+            (sheet_i, 48.0, 38.0, 48.0, white)
+        }
+        (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
     }
 }
 
