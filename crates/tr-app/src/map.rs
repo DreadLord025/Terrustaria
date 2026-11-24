@@ -82,10 +82,6 @@ pub fn overlay_scale_clamp(screen_w: f32, world_w: i32, render_zoom: f32, propos
     let s = if proposed < floor { floor } else { proposed }; // `:55551-55554`
     let cap = 16.0 * render_zoom;
     if s > cap { cap } else { s } // `:55555-55558`
-/// `[screen_w / world_w, 16 * RenderZoom]` (`RenderZoom` is the port's
-/// in-game zoom, 1.0..2.0).
-pub fn overlay_scale_clamp(screen_w: f32, world_w: i32, render_zoom: f32, proposed: f32) -> f32 {
-    proposed.clamp(screen_w / world_w as f32, 16.0 * render_zoom)
 }
 
 /// `Main.cs:55398-55413`: X into `10..=maxTilesX-10`, Y into `10..=maxTilesY-19`.

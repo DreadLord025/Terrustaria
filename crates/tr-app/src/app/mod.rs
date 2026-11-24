@@ -1,5 +1,3 @@
-{
-// balance-open (union shared delimiter)
 //! The App — the port of `Terraria.Main`'s instance state (the C# statics,
 //! one struct) plus the `main` bootstrap that builds it: the world load, the
 //! atlas and the starting entities. The remaining `impl App` glue that has
@@ -2111,6 +2109,7 @@ mod frame_key {
             "no per-world cage reset or warm-up (:8387-8395 covers tileFrame only)"
         );
         assert!(enter.contains("self.tile_anim.reset();"), "the tileFrame reset stays");
+    }
     /// W4-d58 key-coverage witness: the chest lid frames feed the chest
     /// rewrite inside the cached world range (`CacheSpecialDraws_Part2`,
     /// `TileDrawing.cs:4309-4320`), so two frames that differ only in a
@@ -2835,22 +2834,6 @@ impl App {
         let (sw, sh) = self.screen_size();
         let map_binds = self.map_binds.clone();
         let held = |action: crate::input_map::MapAction| {
-    /// `Player.cs:24909-24965` — the NOT-fullscreen map-key block: the
-    /// MapZoomIn/Out and MapAlphaUp/Down triggers step the minimap
-    /// (`mapStyle == 1`, ×1.025/×0.975, ±0.015) or the overlay
-    /// (`mapStyle == 2`, ×1.05/×0.95, ±0.015), and the MapStyle trigger
-    /// (Tab) cycles `Main.mapStyle` 0→1→2→0 with sound 12 on the
-    /// `releaseMapStyle` press latch. Runs once per player tick while the
-    /// map is enabled and NOT fullscreen (the fullscreen arm lives in
-    /// [`Self::update_map_input`]); the clamps are the draw-side ones
-    /// (`Main.cs:55515-55530` / `:55550-55566`).
-    pub(crate) fn update_map_style_keys(&mut self) {
-        if !self.settings.map_enabled || self.map.as_ref().is_some_and(|m| m.open) {
-            return;
-        }
-        let (sw, _) = self.screen_size();
-        let map_binds = self.map_binds.clone();
-        let bound = |action: crate::input_map::MapAction| {
             self.keys.iter().any(|k| {
                 map_binds[action.index()].as_str() == crate::input_map::key_name(*k)
             })
@@ -2892,6 +2875,29 @@ impl App {
             m.overlay_scale =
                 map::overlay_scale_clamp(sw, self.world.width, render_zoom, m.overlay_scale);
             m.overlay_alpha = map::map_alpha_clamp(m.overlay_alpha);
+        }
+    }
+
+    /// `Player.cs:24909-24965` — the NOT-fullscreen map-key block: the
+    /// MapZoomIn/Out and MapAlphaUp/Down triggers step the minimap
+    /// (`mapStyle == 1`, ×1.025/×0.975, ±0.015) or the overlay
+    /// (`mapStyle == 2`, ×1.05/×0.95, ±0.015), and the MapStyle trigger
+    /// (Tab) cycles `Main.mapStyle` 0→1→2→0 with sound 12 on the
+    /// `releaseMapStyle` press latch. Runs once per player tick while the
+    /// map is enabled and NOT fullscreen (the fullscreen arm lives in
+    /// [`Self::update_map_input`]); the clamps are the draw-side ones
+    /// (`Main.cs:55515-55530` / `:55550-55566`).
+    pub(crate) fn update_map_style_keys(&mut self) {
+        if !self.settings.map_enabled || self.map.as_ref().is_some_and(|m| m.open) {
+            return;
+        }
+        let (sw, _) = self.screen_size();
+        let map_binds = self.map_binds.clone();
+        let bound = |action: crate::input_map::MapAction| {
+            self.keys.iter().any(|k| {
+                map_binds[action.index()].as_str() == crate::input_map::key_name(*k)
+            })
+        };
         let zoom_in = bound(crate::input_map::MapAction::ZoomIn);
         let zoom_out = bound(crate::input_map::MapAction::ZoomOut);
         let alpha_up = bound(crate::input_map::MapAction::AlphaUp);
@@ -3288,17 +3294,6 @@ impl App {
             self.discount_available,
             self.shopping_settings.price_adjustment,
         ) as u64;
-        if self.coins < price {
-        // `Player.BuyItem`'s custom-currency arm (`Player.cs:35402-35405`)
-        // spends the medal wallet (`CustomCurrencySingleCoin.TryPurchasing`
-        // over the bank's 3817 stacks) — the wallet is unported, so a
-        // medal row refuses here rather than charging the coin purse
-        // (the recorded CustomCurrencyManager gap).
-        if entry.shop_special_currency != -1 {
-            return false;
-        }
-        let price =
-            crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
         // `Player.BuyItem`'s custom-currency arm (`Player.cs:35402-35405`)
         // → `CustomCurrencyManager.BuyItem` (`CustomCurrencyManager.cs:
         // 69-119`): the medal wallet counts the inventory (minus the coin
@@ -4634,8 +4629,6 @@ impl App {
         // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
         // `CanSubmit`).
         self.audio.play("Menu_Open");
-        match tail {
-        self.audio.play_menu("Menu_Open");
         match session.tail {
             KeyboardTail::Rename => {
                 // `UICharacterListItem.OnFinishedSettingName` (`:208-214`):
@@ -4686,7 +4679,8 @@ impl App {
             // a classic option text selects the option (sound 24, `:834`),
             // a micro-seed text joins the entered list and re-enables the
             // parked ones (`:836-842`); the special-seed ring particles
-            // are not drawn (W4-d85 deviation).
+            // are not drawn (W4-d85 deviation). The g24 `a9774d2a` cue arms
+            // folded onto this body (W4-g24 FINAL over W4-g22's probe).
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
                 let draft = match &mut back {
@@ -4703,6 +4697,19 @@ impl App {
                         self.audio.play("Chat"); // `SoundEngine.PlaySound(24)` (`:834`)
                     } else {
                         draft.is_special_seed_text = false;
+                        // `:836-841` — the SINGLE (unjoined) micro-seed text:
+                        // `CheckInputForSecretSeed` resolves it and
+                        // `Enable(secretSeed)` plays the same tracked
+                        // MenuAccept (`WorldGen.cs:539`). The joined form
+                        // took the first arm above; this one covers the
+                        // plain "pumpkinseason" submit the batch-1 arm
+                        // missed (`resolve_seed_text` counts only the
+                        // `|`-prefixed parts). Stateless once-per-submit,
+                        // the batch-1 convention.
+                        if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some() {
+                            self.audio
+                                .play_tracked_global(crate::audio::menu_accept_style());
+                        }
                     }
                     // `CheckInputForSecretSeed` (`:836-842`): a new micro
                     // seed joins the entered list, `EnableSecretSeedOptions`
@@ -4716,55 +4723,16 @@ impl App {
                         draft.enable_secret_seed_options(true);
                         draft.seed.clear();
                         draft.is_special_seed_text = false;
-
-        }
-        }
-        }            // `OnFinishedSettingSeed` (`:817-842`): the trimmed seed lands.
-            // W4-g24 — `SecretSeed.Enable`'s cue (`WorldGen.cs:537-540`):
-            // the first secret seed the text unlocks plays the tracked
-            // `SoundID.MenuAccept` — `TryApplyingCopiedSeed`'s Enable loop
-            // flips `playSound` false after the first (`WorldFileData.cs:
-            // 268-272`), and the plain-text arm (`:836-841`) enables at most
-            // one. The port is stateless (no `seed.Enabled` session cache),
-            // so every submit with a micro seed plays once — the
-            // first-enable-per-entry semantics of a fresh creation screen.
-            // W4-g24 FINAL — the classic-option arm's 24 (`:830-835`):
-            // `GetOptionFromSeedText` resolves the ELSE-branch text (the
-            // `TryApplyingCopiedSeed` join failed), `SelectOption` runs and
-            // `SoundEngine.PlaySound(24)` (`SoundID.Chat`, `SoundID.cs:70`,
-            // case 24 draw-free — `LegacySoundPlayer.cs:957-962`). Cue
-            // only: the `_isSpecialSeedText`/`SelectOption` draft-state
-            // half is the d85 Advanced-tab surface (its `WorldSeed` arm
-            // carries `option_for_seed_text` + `select_option`; the
-            // created world's flags already ride `resolve_seed_text`'s
-            // classic half) — keep-one note in research/146 §3.
-                if let FrontScreen::WorldCreation(draft) = &mut back {
-                    // The merge keep-one (W4-g24 FINAL over W4-g22's
-                    // seed_flags probe): g24's three-arm resolution is the
-                    // faithful `OnFinishedSettingSeed` shape — the joined
-                    // micro-seed `TryApplyingCopiedSeed` arm, the
-                    // classic-option Chat (24) arm and the single-secret
-                    // `Enable` MenuAccept arm.
-                    let (micro, _, _) = tr_core::seeds::resolve_seed_text(&draft.seed);
-                    if micro.count() > 0 {
+                        // W4-g24 — `SecretSeed.Enable`'s cue (`WorldGen.cs:537-540`):
+                        // the first secret seed the text unlocks plays the
+                        // tracked `SoundID.MenuAccept` (`TryApplyingCopiedSeed`'s
+                        // Enable loop flips `playSound` false after the first,
+                        // `WorldFileData.cs:268-272`). The port is stateless
+                        // (no `seed.Enabled` session cache), so every submit
+                        // with a micro seed plays once — the first-enable-per-
+                        // entry semantics of a fresh creation screen.
                         self.audio
                             .play_tracked_global(crate::audio::menu_accept_style());
-                    } else if tr_core::seeds::option_for_seed_text(&draft.seed).is_some() {
-                        // `:834` — the classic-option text plays Chat (24).
-                        // The else-if mirrors the C#'s branch exclusivity:
-                        // a joined micro-seed text took the `TryApplying-
-                        // CopiedSeed` success arm, never the 24.
-                        self.audio.play("Chat"); // `SoundEngine.PlaySound(24)`
-                    } else if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some() {
-                        // `:836-841` — the SINGLE (unjoined) micro-seed
-                        // text: `CheckInputForSecretSeed` resolves it and
-                        // `Enable(secretSeed)` plays the same tracked
-                        // MenuAccept (`WorldGen.cs:539`). The joined form
-                        // took the first arm above; this one covers the
-                        // plain "pumpkinseason" submit the batch-1 arm
-                        // missed (`resolve_seed_text` counts only the
-                        // `|`-prefixed parts). Stateless once-per-submit,
-                        // the batch-1 convention.
                     }
                 }
                 self.enter_front(back);
@@ -5632,23 +5600,21 @@ impl App {
             // keep the vanilla-gen arrival: one homeless Guide at the spawn
             // point, which the look-for-home tick re-houses within seconds.
             if npcs.is_empty() {
-                if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
+                if let Some(mut guide) = Npc::spawn_guide(&world, world.spawn_x) {
+                    // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt`
+                    // (`NPC.cs:80769`/`:80839-80856`): the starter Guide names
+                    // himself at spawn — two `genRand` draws through the legacy
+                    // profile (`npc_names.rs`). The C# `Main.rand` is the
+                    // worldgen stream here; the legacy profile rolls variation
+                    // 0 and never draws it, so the seed stand-in is inert.
+                    let mut main_rand = tr_core::unified_random::UnifiedRandom::new(world.seed as i32);
+                    crate::npc_names::give_town_unique_data(
+                        &mut guide,
+                        &mut main_rand,
+                        &mut world.frame_rng,
+                    );
                     npcs.push(guide);
                 }
-            if let Some(mut guide) = Npc::spawn_guide(&world, world.spawn_x) {
-                // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt`
-                // (`NPC.cs:80769`/`:80839-80856`): the starter Guide names
-                // himself at spawn — two `genRand` draws through the legacy
-                // profile (`npc_names.rs`). The C# `Main.rand` is the
-                // worldgen stream here; the legacy profile rolls variation
-                // 0 and never draws it, so the seed stand-in is inert.
-                let mut main_rand = tr_core::unified_random::UnifiedRandom::new(world.seed as i32);
-                crate::npc_names::give_town_unique_data(
-                    &mut guide,
-                    &mut main_rand,
-                    &mut world.frame_rng,
-                );
-                npcs.push(guide);
             }
         } else {
             for rec in &sections.native.npcs {
@@ -7043,6 +7009,7 @@ impl App {
             let _ = app.liquids.drain_merge_events();
             let load_kills = app.liquids.drain_edit_kills();
             world_sim::editing::resolve_liquid_edit_kills(&mut app, load_kills);
+        }
         // W4-f45 — `SetOngoingToTemps:163-176`: the cultist delay, the party
         // quad + celebrant list and the lantern quad restore the schedulers'
         // live state from the flags block (the save snapshots them in
