@@ -1,11 +1,11 @@
-//! The `.plr` character file reader/writer — `Player.LoadPlayer`/
+//! The `.plr` character file reader/writer тАФ `Player.LoadPlayer`/
 //! `Player.SavePlayer` (`Player.cs:55058`, `:54736`), stamped release **326**
 //! (`InternalSavePlayerFile` writes the literal 326, `Player.cs:54738`).
 //!
 //! The vanilla files are AES-128-CBC encrypted with the fixed key
-//! `"h3y_gUyZ"` in UTF-16-LE (`Player.cs:796-798` — the key doubles as the
+//! `"h3y_gUyZ"` in UTF-16-LE (`Player.cs:796-798` тАФ the key doubles as the
 //! IV). `InternalSavePlayerFile` uses a bare `new RijndaelManaged()`
-//! (`Player.cs:54734-54736`) — its default `Padding` is **PKCS7**, so
+//! (`Player.cs:54734-54736`) тАФ its default `Padding` is **PKCS7**, so
 //! `cryptoStream.FlushFinalBlock()` (`:54742`) appends 1..16 bytes of value
 //! `16 - len % 16` (a full block when already aligned). The `PaddingMode.None`
 //! at `Player.cs:55074` is the *read* path only (it decrypts whole blocks and
@@ -16,7 +16,7 @@
 //!
 //! **S1-J-5 increment 3: the full `Serialize`.** `Player.Serialize`
 //! (`Player.cs:54750-54933`) is now ported end-to-end: through `hideInfo`
-//! (`:54893`, increments 1-2) plus the tail (`:54894-54933`) — angler
+//! (`:54893`, increments 1-2) plus the tail (`:54894-54933`) тАФ angler
 //! quests, the DpadRadial bindings, `builderAccStatus[12]`, the bartender
 //! log, `dead` (+ the conditional respawn timer), the save timestamp, the
 //! golfer score, the creative tracker, the temporary item slots, the
@@ -27,14 +27,55 @@
 //! [`PlayerFileWrite::last_saved_binary`] exactly like the `.wld` writer's
 //! CreationTime policy (ANALYSIS "The C#-written golden fixture").
 //!
-//! **Default-value policy.** The port models only the character-card state
+//! **Default-value policy.** The port models the character-card state
 //! (name, difficulty, appearance, life/mana, the 58-slot inventory and its
-//! favourited bits). Every other field written so far is emitted with the
-//! value a *fresh vanilla player* carries — the `Player` ctor
-//! (`Player.cs:56036-56096`) and the field initializers — never omitted:
-//! omission shifts every later section and breaks byte-comparability. The
-//! reader walks the same span with the C# `Deserialize` version gates
-//! (`Player.cs:55134-55764`), consuming (and dropping) unmodelled fields.
+//! favourited bits) plus, since W4-f44, EVERY per-player payload the `.plr`
+//! carries: phases 1-2 added the loadouts, the void vault, the research
+//! pairs, the equip/dye tails, the hide flags and the creative powers;
+//! phase 3 completes the set тАФ playtime/hairDye/team, the three banks, the
+//! buffs, the spawn points, the quest/death counters, the temp slots, the
+//! super-cart byte, the voice pair, the refunds and the dialogues. The
+//! writer's `Default` still emits the value a *fresh vanilla player*
+//! carries тАФ the `Player` ctor (`Player.cs:56036-56096`) and the field
+//! initializers тАФ never omitted: omission shifts every later section and
+//! breaks byte-comparability (the golden.plr parity pins it). The reader
+//! walks the same span with the C# `Deserialize` version gates
+//! (`Player.cs:55134-55764`), capturing every field verbatim.
+//!
+//! **W4-f44 phase 2: the equip/dye tails + the Journey unlocks.** The three
+//! equipment tails the reader used to drop are captured verbatim on BOTH
+//! models: `armor[20]`/`dye[10]` as `(type, prefix[, favorited >= 322])`
+//! pairs (`Serialize:54812-54823` / `Deserialize:55306-55340`), the
+//! interleaved `miscEquips[5]`/`miscDyes[5]` `(type, prefix)` pairs
+//! (`:54831-54837` / `:55420-55447`) and the accessory-hide tails тАФ
+//! `hideVisibleAccessory[10]`'s two BitsBytes (`:54758-54769` /
+//! `:55171-55183`), `hideMisc` (`:54770` / `:55192-55195`) and `hideInfo[13]`
+//! (`:54890-54893` / `:55616-55623`). The Journey side gains the
+//! per-player creative powers `CreativePowerManager.SaveToPlayer` writes
+//! (`:54913` / `:55706-55709`, ids 5/11/14 тАФ `CreativePowers.cs:705-707`/
+//! `:744-746`/`:1717-1719`), completing the research payload phase 1 started.
+//!
+//! **W4-f44 phase 3: the remainder.** Every field the writer used to emit
+//! at fresh defaults now rides both models verbatim: playtime/hairDye/team
+//! (`:54754-54757`), bank/bank2/bank3 (`:54838-54855`), the compacted buffs
+//! with the full `Main.buffNoSave` table (`:54864-54876`), the spawn points
+//! (`:54877-54888`), angler/dpad/builderAcc (with the < 210 / < 249 fixups)
+//! /bartender/dead+respawnTimer/golfer (`:54894-54910`), the temp slots
+//! (`:54912`), the super-cart byte with the < 253 cart-derive (`:54914-54918`),
+//! the voice pair with the 1..4 clamp + the < 280 Male-derive
+//! (`:54924-54925`), the refunds (`:54926`) and the deduped dialogues
+//! (`:54927-54932`). See `docs/ANALYSIS.md` "W4-f44 phase 3".
+//!
+//! **W4-f44 verify-sweep.** The full Serialize/Deserialize walk audit
+//! (`docs/research/99-plr-complete-audit.md`) found and fixed: the playtime
+//! gate 138 and the misc < 136 slot-1 skip (both variable inside the accepted
+//! [135, 326] range); the shared `netDefaults`/`stack`/`Prefix` air policy
+//! (`air_checked_triple`/`air_checked_pair` тАФ an out-of-band id airs id+prefix
+//! while the file's stack rides, the favourited bool rides, and a type-0 slot
+//! with a nonzero prefix byte airs the prefix); and the previously-unmodelled
+//! unlock/seed header block (`extraAccessory`, the torch pair, artisan bread,
+//! the six used-upgrades, the DD2 downed flag, taxMoney, the death counters),
+//! `hbLocked` and the save timestamp's read side тАФ all now ride both models.
 //!
 //! **Backward compat.** The port's own pre-S1-J-5 files were a *subset* mirror
 //! stamped release 279 (truncated after the inventory, missing `team` /
@@ -44,17 +85,6 @@
 //! [`read_legacy_port_subset`] and the increment-1/2 truncation retries in
 //! [`read_player_bytes`] keep them loadable as documented port-only shims
 //! (see `docs/ANALYSIS.md`).
-//!
-//! **W4-c43: the SavePlayer envelope.** `InternalSavePlayerFile`
-//! (`Player.cs:54725-54742`) completes: an existing `.plr` is copied to
-//! `<path>.bak` before the write (`:54730-54733`), and the metadata revision
-//! rides [`PlayerFileWrite::revision`] (`:54739` writes the loaded
-//! `playerFile.Metadata` verbatim — `Write`, not `IncrementAndWrite`). The
-//! reader keeps `lastTimePlayerWasSaved` ([`PlayerFile::last_saved_binary`],
-//! the >= 202 gate `Deserialize:55687-55691`) and runs the
-//! `LoadPlayer:55096-55098` fallback — a zero stamp reads the file's mtime
-//! (`tr_core::clock::file_mtime_binary`; the port has no cloud saves, so the
-//! `!cloudSave` arm is the only one).
 
 use std::path::{Path, PathBuf};
 
@@ -83,7 +113,9 @@ const FILE_TYPE_PLAYER: u64 = 3;
 /// The section set this port writes: the current vanilla release **326**
 /// (`Player.InternalSavePlayerFile` writes the literal `326`,
 /// `Player.cs:54738`). S1-J-5 raised this from the old subset's 279; the
-/// emitted span currently runs through `hideInfo` (`Serialize:54893`).
+/// emitted span is the FULL `Serialize` (`Player.cs:54750-54933`) тАФ the
+/// verify-sweep audit (`docs/research/99-plr-complete-audit.md`) pins every
+/// field's offset.
 const RELEASE: i32 = 326;
 
 /// The release the port's *pre-S1-J-5* subset writer stamped. Those files are
@@ -101,13 +133,92 @@ const ITEM_ID_COUNT: i32 = 6196;
 /// `skinVariant` clamp ceiling (`LoadPlayer_LastMinuteFixes`, `Player.cs:55830`).
 const PLAYER_VARIANT_COUNT: i32 = 12;
 
-/// The read `.plr` — the character-card state the port models. The reader
-/// walks `Deserialize` (`Player.cs:55134`) through `hideInfo`
-/// (`:55616-55623`) with the C# version gates, consuming and dropping every
-/// field the port does not model; the tail past `:55623` is a later round.
+/// `Main.buffNoSave` (`Main.cs:8969-9073` + the mount loop `:9206-9213`): the
+/// buff types the save writes as (0, 0) instead of their live values
+/// (`Serialize:54866-54870`). The explicit set, the 173..=181 range
+/// (`:9070-9073`), and every `BuffID.Sets.MountType != -1` buff
+/// (`ID/BuffID.cs:169`). `buffNoSave[0]` is false, so a padded empty slot
+/// writes its (0, 0) unchanged.
+fn buff_no_save(id: i32) -> bool {
+    const SET: [i32; 91] = [
+        20, 22, 23, 24, 28, 30, 31, 34, 35, 37, 38, 39, 43, 44, 46, 47, 156, 149, 48, 58, 59,
+        60, 62, 63, 64, 67, 68, 69, 70, 395, 72, 80, 87, 158, 146, 147, 215, 88, 89, 94, 95,
+        96, 97, 98, 99, 100, 103, 119, 120, 125, 126, 133, 134, 135, 139, 140, 137, 144, 161,
+        163, 164, 170, 171, 172, 182, 187, 188, 194, 195, 196, 197, 198, 199, 205, 213, 214,
+        263, 271, 322, 320, 321, 325, 335, 150, 93, 159, 29, 348, 366, 353, 355,
+    ];
+    // The tail of the explicit block (`:9060-9069`).
+    const TAIL: [i32; 10] = [385, 386, 389, 390, 393, 394, 397, 398, 399, 400];
+    // The mount buffs (`BuffID.Sets.MountType`, `ID/BuffID.cs:169` тАФ the
+    // CreateIntSet keys; `Main.cs:9206-9213` marks each no-save).
+    const MOUNTS: [i32; 66] = [
+        90, 118, 128, 129, 130, 131, 132, 141, 142, 143, 162, 166, 168, 184, 193, 208, 210,
+        212, 220, 222, 224, 226, 228, 230, 231, 233, 235, 237, 239, 241, 243, 245, 247, 249,
+        251, 253, 255, 265, 269, 272, 275, 276, 277, 278, 279, 280, 281, 282, 283, 305, 318,
+        338, 342, 346, 370, 374, 377, 378, 379, 380, 381, 384, 387, 388, 391, 392,
+    ];
+    SET.contains(&id) || TAIL.contains(&id) || MOUNTS.contains(&id) || (173..=181).contains(&id)
+}
+
+/// The read `.plr` тАФ the character-card state plus the per-player payloads
+/// the port models. The reader walks the full `Deserialize`
+/// (`Player.cs:55134-55762`) with the C# version gates, consuming and
+/// dropping every field the port does not model.
 pub struct PlayerFile {
     pub name: String,
     pub difficulty: u8,
+    /// `PlayerFileData.GetPlayTime().Ticks` (`Serialize:54754` writes the
+    /// TimeSpan ticks; `Deserialize:55150-55157` reads them at >= 138 into
+    /// `data.SetPlayTime`, else `TimeSpan.Zero`). W4-f44 ph3 carries them.
+    pub play_time_ticks: i64,
+    /// `Player.hairDye` (`Serialize:54756` / `Deserialize:55163-55166`,
+    /// gate 82) тАФ the hair-dye item slot id, 0 = none.
+    pub hair_dye: u8,
+    /// `Player.team` (`Serialize:54757` writes `(byte)team` /
+    /// `Deserialize:55167-55170`, gate 283) тАФ 0 = no team.
+    pub team: u8,
+    /// `Player.extraAccessory` (`Serialize:54776` / `Deserialize:55235-55238`,
+    /// gate 125) тАФ the Demon Heart's sixth accessory slot. The verify-sweep
+    /// rides it (it used to be read-dropped / written fresh).
+    pub extra_accessory: bool,
+    /// `Player.unlockedBiomeTorches` (`Serialize:54777` /
+    /// `Deserialize:55241`, gate 229) тАФ the Torch God's Favor permanent.
+    pub unlocked_biome_torches: bool,
+    /// The `:54778` / `:55242` bool тАФ the `UsingBiomeTorches` PROPERTY, not
+    /// a field: the read lands on the setter (`Player.cs:3960-3963`,
+    /// `builderAccStatus[11] = !value`), the getter recomputes
+    /// `unlocked && builderAccStatus[11] == 0` (`:3954-3958`). This field is
+    /// the file-verbatim byte; the effective state rides
+    /// `builder_acc_status[11]` (the final re-diff fix).
+    pub using_biome_torches: bool,
+    /// `Player.ateArtisanBread` (`Serialize:54779` /
+    /// `Deserialize:55243-55246`, gate 256 inside the 229 block).
+    pub ate_artisan_bread: bool,
+    /// The six one-use upgrade flags `usedAegisCrystal`/`usedAegisFruit`/
+    /// `usedArcaneCrystal`/`usedGalaxyPearl`/`usedGummyWorm`/`usedAmbrosia`
+    /// (`Serialize:54781-54786` / `Deserialize:55253-55261`, gate 260),
+    /// in file order.
+    pub used_upgrades: [bool; 6],
+    /// `Player.downedDD2EventAnyDifficulty` (`Serialize:54787` /
+    /// `Deserialize:55263-55266`, gate 182).
+    pub downed_dd2_any_difficulty: bool,
+    /// `Player.taxMoney` (`Serialize:54788` / `Deserialize:55267-55270`,
+    /// gate 128) тАФ the Tax Collector's stored coin.
+    pub tax_money: i32,
+    /// `Player.numberOfDeathsPVE` / `numberOfDeathsPVP`
+    /// (`Serialize:54789-54790` / `Deserialize:55271-55278`, gate 254).
+    pub deaths_pve: i32,
+    pub deaths_pvp: i32,
+    /// `Player.hbLocked` (`Serialize:54889` / `Deserialize:55612-55615`,
+    /// gate 16) тАФ the hotbar lock. The verify-sweep rides it.
+    pub hb_locked: bool,
+    /// `Player.lastTimePlayerWasSaved` (`Serialize:54909` writes
+    /// `DateTime.UtcNow.ToBinary()` / `Deserialize:55687-55691`, gate 202,
+    /// 0 below) тАФ the read side of the write's `last_saved_binary`. A zero
+    /// file stamp is replaced by the file's mtime on the DISK read
+    /// (`LoadPlayer:55096-55099`, [`read_player_file`]); the byte-level walk
+    /// keeps the raw value.
+    pub last_saved_binary: i64,
     pub skin_variant: u8,
     pub hair: i32,
     pub life: i32,
@@ -123,87 +234,214 @@ pub struct PlayerFile {
     pub shoe_color: [u8; 3],
     /// The 58 inventory slots as `(id, stack, prefix)`; `id == 0` = empty.
     pub inventory: [(i32, i32, u8); 58],
-    /// `Item.favorited`'s per-slot bits for the inventory — bit `i` is
+    /// `Item.favorited`'s per-slot bits for the inventory тАФ bit `i` is
     /// `inventory[i].favorited` (`Player.cs:54820-54824`'s write,
     /// `:55340-55362`'s read at release >= 114). The armour and dye
-    /// favourites ride the same shape at release >= 322 (`:55315`/`:55336`)
-    /// but have no port UI, so they are consumed and dropped.
+    /// favourites ride the per-slot bool at release >= 322
+    /// (`:55315`/`:55336`) тАФ W4-f44 ph2 captures them on `armor`/`dye`.
     pub inv_favorites: u64,
     pub is_favorite: bool,
     pub revision: u32,
-    /// W4-e10 — `Player.voiceVariant` (`Player.cs:1346`): the hurt-voice
-    /// family, read at release >= 280 (`:55730`) and clamped 1..4 by
-    /// `LoadPlayer_LastMinuteFixes` (`:55831`); below 280 the gender default
-    /// `(Male ? 1 : 2)` (`:55735`).
-    pub voice_variant: i32,
-    /// W4-e10 — `Player.voicePitchOffset` (`Player.cs:1348`): read at release
-    /// >= 281 (`:55740`), else 0 (`:55736`/`:55744`).
-    pub voice_pitch_offset: f32,
-    /// `Player.unlockedBiomeTorches` (`Player.cs:2046`, save `:54777` /
-    /// load `:55241` at release >= 229) — the Torch God's Favor permanent
-    /// unlock (W4-f33). Older releases carry no unlock block; false.
-    pub unlocked_biome_torches: bool,
-    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3963` — the
-    /// `builderAccStatus[11] == 0` property, save `:54778` / load `:55242`).
-    /// The builder-toggle half of the pair; the use arm sets both.
-    pub using_biome_torches: bool,
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, read `:55722`, clamped
+    /// to `0..Loadouts.Length-1`). The port has no loadout-switch UI, but the
+    /// index rides the file so a vanilla character's selection survives.
+    pub current_loadout: i32,
+    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`, `EquipmentLoadout.cs:8-18`),
+    /// read at release >= 262 (`:55720-55727`). Persisted verbatim so the
+    /// stored equipment is not lost on a port re-save.
+    pub loadouts: [LoadoutData; 3],
+    /// `Player.voidVaultInfo` (`Player.cs:1590`, a `BitsByte`; bit 0 is
+    /// `IsVoidVaultEnabled`, `:3900-3910`). Read at >= 199 (`:55501-55504`).
+    pub void_vault_info: u8,
+    /// `Player.buffType`/`buffTime` (`Player.cs:1510-1512`, maxBuffs = 44
+    /// `:57106`) тАФ the COMPACTED live pairs: the `Deserialize` zero-type arm
+    /// (`:55593-55597`) shrinks the target so only non-zero buffs remain,
+    /// in file order. The write pads back to 44 with (0, 0) and zeroes the
+    /// `Main.buffNoSave` types (`Serialize:54864-54876`).
+    pub buffs: Vec<(i32, i32)>,
+    /// `Player.spX/spY/spI/spN` (`Player.cs:2484-2488`, int[200]/string[200])
+    /// тАФ the bed spawn points, up to 200 `(x, y, worldId, worldName)` records
+    /// (`Serialize:54877-54888` writes until the first null spN then the -1
+    /// sentinel; `Deserialize:55600-55611` reads until spX == -1).
+    pub spawn_points: Vec<(i32, i32, i32, String)>,
+    /// `Player.bank` (the piggy bank's 40 slots, `Chest.cs:142-144` maxItems),
+    /// each `(type, stack, prefix)` тАФ read at >= 58 (`Deserialize:55449-55456`;
+    /// the < 58 arm reads 20, `:55464-55471`). The read is
+    /// `netDefaults`/`stack`/`Prefix` with NO `TurnToAir`: an out-of-range id
+    /// airs id+prefix (`Item.cs:48670-48688` then `Prefix` no-ops on air
+    /// `:515-518`) while the stack rides; the legacy -1..-48 ids ride verbatim
+    /// like the equip tails.
+    pub bank: [(i32, i32, u8); 40],
+    /// `Player.bank2` (the safe), the same shape (`:55457-55462` / `:55472-55477`).
+    pub bank2: [(i32, i32, u8); 40],
+    /// `Player.bank3` (the defender's forge), read at >= 182 (`:55479-55487`).
+    pub bank3: [(i32, i32, u8); 40],
+    /// `Player.bank4` (the Void Bag's 40 slots, `Player.cs:1591`), each
+    /// `(type, stack, prefix, favorited)` тАФ read at >= 198 with the favourited
+    /// bool gated >= 255 (`:55488-55500`). An out-of-band id airs id+prefix
+    /// while the stack + favourited ride (`Item.DeserializeFrom`,
+    /// `Item.cs:49923-49933`, the verify-sweep audit).
+    pub bank4: [(i32, i32, u8, bool); 40],
     /// `Player.creativeTracker.ItemSacrifices`' `(persistentId, count)` pairs
     /// (`ItemsSacrificedUnlocksTracker.cs:157-169`), the Journey research the
-    /// `.plr` carries (`Player.cs:54911`/`:55696-55699`). The W4-f44 seam's
-    /// shape — the tracker hydrates through `research::load_pairs`.
+    /// `.plr` carries per-player (`:54911` save / `:55696-55699` load).
     pub research: Vec<(String, i32)>,
+    /// `Player.armor[20]` (`Player.cs:1488`) as `(type, prefix, favorited)` тАФ
+    /// the write carries NO stack (`Serialize:54812-54817`); the favourited
+    /// bool is gated >= 322 on read (`Deserialize:55313-55316`). An
+    /// out-of-range type airs through `SetDefaults` (`Item.cs:48671-48674`)
+    /// and `Prefix` no-ops on air (`Item.cs:515-518`) тАФ id+prefix air, the
+    /// favorited bit rides. Legacy ids -1..-48 (`Item.netDefaults`,
+    /// `:1213-1360`) ride verbatim so a re-save round-trips the bytes.
+    pub armor: [(i32, u8, bool); 20],
+    /// `Player.dye[10]`, the same `(type, prefix, favorited)` shape
+    /// (`Serialize:54818-54823` / `Deserialize:55330-55339`).
+    pub dye: [(i32, u8, bool); 10],
+    /// `Player.miscEquips[5]` + `Player.miscDyes[5]` interleaved per slot тАФ
+    /// `(equip type, equip prefix, dye type, dye prefix)`
+    /// (`Serialize:54831-54837` / `Deserialize:55420-55447`, the >= 136 arm).
+    /// No stack, no favorited тАФ the pet/light-pet/mount/cart/hook pairs.
+    pub misc: [(i32, u8, i32, u8); 5],
+    /// `Player.hideVisibleAccessory[10]` (`Player.cs:1708`) тАФ the two
+    /// BitsBytes' bits flattened (`Serialize:54758-54769` /
+    /// `Deserialize:55171-55183`, gate 124): bits 0..7 then bits 8..9.
+    pub hide_visible_accessory: [bool; 10],
+    /// `Player.hideMisc` (`Player.cs:1710`, a BitsByte; the pet/light-pet
+    /// hide bits 0/1, `:17344`/`:17353`) тАФ `Serialize:54770` /
+    /// `Deserialize:55192-55195`, gate 119.
+    pub hide_misc: u8,
+    /// `Player.hideInfo[13]` (`Player.cs:812`) тАФ the info-accessory visibility
+    /// toggles (`Serialize:54890-54893` / `Deserialize:55616-55623`, gate 115).
+    pub hide_info: [bool; 13],
     /// The Journey per-player creative powers (`CreativePowerManager
-    /// .LoadToPlayer`, `CreativePowerManager.cs:197-215`): Godmode (id 5),
-    /// FarPlacementRange (id 11), SpawnRate (id 14). The W4-f44 seam's
-    /// shape — the App hydrates them on Play.
+    /// .LoadToPlayer`, `CreativePowerManager.cs:197-215`): Godmode (id 5)
+    /// and FarPlacementRange (id 11) toggles + the SpawnRate slider (id 14),
+    /// read at >= 220 (`Deserialize:55706-55709`). A fresh non-Journey player
+    /// has all three reset (`ResetPowersForPlayer`, `:211-214`).
     pub powers: CreativePowersSave,
-    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, `Deserialize:55722`'s
-    /// `Utils.Clamp(.., 0, Loadouts.Length - 1)`). The port clamps to 0..2.
-    pub current_loadout_index: usize,
-    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`, `Deserialize:55723-55726`):
-    /// the three stored equipment sets. Files below release 262 (and the
-    /// port's inc1/inc2 truncation retries) carry none — they load as three
-    /// fresh `EquipmentLoadout()`s, exactly the C# `else` (no read) arm.
-    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
+    /// `Player.anglerQuestsFinished` (`Player.cs:1910`) тАФ `Serialize:54894` /
+    /// `Deserialize:55624-55627`, gate 98.
+    pub angler_quests_finished: i32,
+    /// `Player.DpadRadial.Bindings[4]` (`Player.cs:800`, the Dpad4 ctor sets
+    /// all -1 `:618-621`) тАФ `Serialize:54895-54898` / `Deserialize:55628-55634`,
+    /// gate 162.
+    pub dpad_bindings: [i32; 4],
+    /// `Player.builderAccStatus[12]` (`Player.cs:814`,
+    /// `BuilderAccToggleIDs.Count = 12`; the ctor's `[0] = 1` `:56092`) тАФ
+    /// `Serialize:54899-54902` / `Deserialize:55635-55673`: the count gates
+    /// 8/10/11/12 at 164/167/197/230, then the < 210 `[0] = 1` and the
+    /// < 249 inventory-3611 `[1] = 1` fixups (state-only, no extra bytes).
+    pub builder_acc_status: [i32; 12],
+    /// `Player.bartenderQuestLog` (`Player.cs:1914`) тАФ `Serialize:54903` /
+    /// `Deserialize:55675-55678`, gate 181.
+    pub bartender_quest_log: i32,
+    /// `Player.dead` (`Serialize:54904` / `Deserialize:55679-55686`, gate 200)
+    /// тАФ the respawnTimer rides ONLY when dead.
+    pub dead: bool,
+    /// `Player.respawnTimer` (`Player.cs:1636`) тАФ read with the
+    /// `Utils.Clamp(0, 60000)` (`:55684`) when dead; written verbatim only
+    /// when dead (`:54905-54908`).
+    pub respawn_timer: i32,
+    /// `Player.golferScoreAccumulated` (`Player.cs:1912`) тАФ `Serialize:54910`
+    /// / `Deserialize:55692-55695`, gate 206.
+    pub golfer_score: i32,
+    /// `Player._temporaryItemSlots[4]` (`Player.cs:3223`, a null-able
+    /// `Item[4]`) тАФ the mouse / creative-menu / guide / reforge global slots
+    /// (`SaveTemporaryItemSlotContents:54935-54959` /
+    /// `LoadTemporaryItemSlotContents:54962-54985`): one BitsByte over the
+    /// four `!IsAir` flags, then an `Item.DeserializeFrom` triple per set
+    /// bit. `None` = the slot is air (no payload).
+    pub temp_slots: [Option<(i32, i32, u8)>; 4],
+    /// The super-cart BitsByte (`Serialize:54914-54918`): bit 0
+    /// `unlockedSuperCart` (`Player.cs:2052`, fresh false), bit 1
+    /// `enabledSuperCart` (`:2054`, fresh **true**) тАФ so a fresh save is 2.
+    /// Read at >= 253 (`Deserialize:55710-55715`); below 253 the unlock is
+    /// derived from `HasItemInAnyInventory(3353)` (`:55716-55719`) and the
+    /// enabled bit keeps its field default true.
+    pub super_cart: u8,
+    /// `Player.voiceVariant` (`Serialize:54924` writes `(byte)voiceVariant` /
+    /// `Deserialize:55728-55731`, gate 280; the ctor sets 1 `Player.cs:56045`).
+    /// `LoadPlayer_LastMinuteFixes` clamps it to 1..4 (`:55831`). Below 280
+    /// it derives from `Male ? 1 : 2` (`:55735`, `PlayerVariantID.Sets.Male`
+    /// = {0,1,2,3,8,10}, `ID/PlayerVariantID.cs:20`).
+    pub voice_variant: u8,
+    /// `Player.voicePitchOffset` (`Player.cs:1348`, `Serialize:54925` /
+    /// `Deserialize:55738-55741`, gate 281; below 281 it is 0f `:55742-55745`).
+    pub voice_pitch_offset: f32,
+    /// `Player._pendingRefunds` (`Deserialize:55746-55754`, gate 300) /
+    /// `CraftingRequests.SavePossibleRefunds` (`Serialize:54926` ->
+    /// `CraftingRequests.cs:353-362`): the sum of consumed items over the
+    /// pending crafts, as `(type, stack, prefix)` triples
+    /// (`Item.Serialize`/`DeserializeFrom`, no favourited). A fresh queue is
+    /// empty тЖТ count 0.
+    pub refunds: Vec<(i32, i32, u8)>,
+    /// `Player.oneTimeDialoguesSeen` (`Player.cs:3209`, a `HashSet<string>`)
+    /// тАФ `Serialize:54927-54932` writes count + the strings /
+    /// `Deserialize:55755-55762` (gate 310) reads count + strings, `.Add`
+    /// deduping. The port keeps first-occurrence order (the HashSet's
+    /// practical enumeration order for an add-only set).
+    pub dialogues: Vec<String>,
 }
 
-/// The Journey per-player creative powers (`CreativePowerManager
-/// .LoadToPlayer`, `CreativePowerManager.cs:197-215`): `GodmodePower` id 5
-/// (`CreativePowers.cs:692-728`), `FarPlacementRangePower` id 11
-/// (`:730-767`), `SpawnRateSliderPerPlayerPower` id 14 (`:1573-1737`).
-/// The W4-f44 seam's shape.
+/// The three `IPersistentPerPlayerContent` powers the `.plr` carries
+/// (`CreativePowerManager.Initialize`, `CreativePowerManager.cs:86-105`):
+/// `GodmodePower` id 5 (`CreativePowers.cs:692-728`), `FarPlacementRangePower`
+/// id 11 (`:730-767`) and `SpawnRateSliderPerPlayerPower` id 14 (`:1573+`).
+/// Each Save writes one bool / one bool / one f32 (`:705-707`/`:744-746`/
+/// `:1717-1719`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CreativePowersSave {
     pub godmode: bool,
     pub far_placement: bool,
-    /// The raw [0,1] `_sliderCurrentValueCache` (`:1719`).
     pub spawn_rate: f32,
 }
 
 impl Default for CreativePowersSave {
-    /// The read-side reset state (`CreativePowerManager.cs:211-214` →
-    /// `ResetDataForNewPlayer`): Godmode false, FarPlacement true
-    /// (`CreativePowers.cs:736`), SpawnRate 0.5 (`:1580`'s
-    /// `_sliderDefaultValue`).
+    /// The reset defaults: Godmode `_defaultToggleState` false,
+    /// FarPlacementRange true (`CreativePowers.cs:736`), SpawnRate
+    /// `_sliderDefaultValue` 0.5 (`:1580`) тАФ `ResetDataForNewPlayer`
+    /// (`:710-713`/`:749-752`/`:1722-1725`) seeds these before the Load.
+    /// The golden fixture's WRITTEN bytes are (false, false, 0f) тАФ the
+    /// harness's non-Journey `ResetPowersForPlayer` state тАФ so the
+    /// *writer's* default stays [`CreativePowersSave::written_fresh`].
     fn default() -> Self {
         CreativePowersSave { godmode: false, far_placement: true, spawn_rate: 0.5 }
     }
 }
 
 impl CreativePowersSave {
-    /// The *writer's* fresh default — the live manager state a Classic
-    /// session saves (`CreativePowers.cs:707`/`:746`/`:1719`'s
-    /// `_sliderCurrentValueCache` at its ctor 0, not the reset default).
-    /// The W4-f44 seam's `written_fresh`.
+    /// The bytes a fresh non-Journey vanilla save writes: the harness pins
+    /// (false, false, 0f) in `golden.plr` тАФ `SaveToPlayer` runs on the power
+    /// manager's live `_perPlayerIsEnabled`/`_sliderCurrentValueCache`
+    /// state (`CreativePowers.cs:707`/`:746`/`:1719`), which a Classic
+    /// character's session never touches (the toggles start disabled and
+    /// the slider cache starts 0f). The *saved-field* reset defaults
+    /// (false/true/0.5) are the read side's тАФ see [`Default`].
     pub fn written_fresh() -> Self {
         CreativePowersSave { godmode: false, far_placement: false, spawn_rate: 0.0 }
     }
-    /// `Player.lastTimePlayerWasSaved` (`Player.cs:55687-55691`'s read at
-    /// release >= 202, the `LoadPlayer:55096-55098` mtime fallback when the
-    /// stored value is 0). `PlayerFileData.LastPlayed` is
-    /// `DateTime.FromBinary` of it (`PlayerFileData.cs:38`). 0 only when the
-    /// file predates the field AND its mtime cannot be read.
-    pub last_saved_binary: i64,
+}
+
+/// One `EquipmentLoadout`'s persisted slots (`EquipmentLoadout.cs:8-18`):
+/// `Armor[20]` + `Dye[10]` as `Item.Serialize(writeFavorite: true)` records
+/// `(type, stack, prefix, favorited)` (`Item.cs:49910-49919`), then `Hide[10]`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoadoutData {
+    pub armor: [(i32, i32, u8, bool); 20],
+    pub dye: [(i32, i32, u8, bool); 10],
+    pub hide: [bool; 10],
+}
+
+impl Default for LoadoutData {
+    /// A fresh `EquipmentLoadout` (`EquipmentLoadout.cs:14-19`): every slot a
+    /// `new Item()` = `(0, 0, 0, false)`, every hide false.
+    fn default() -> Self {
+        LoadoutData {
+            armor: [(0, 0, 0, false); 20],
+            dye: [(0, 0, 0, false); 10],
+            hide: [false; 10],
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -233,7 +471,7 @@ impl std::fmt::Display for PlayerFileError {
     }
 }
 
-/// The AES-128-CBC decrypt with the vanilla key/IV — the read-side envelope
+/// The AES-128-CBC decrypt with the vanilla key/IV тАФ the read-side envelope
 /// (`Player.cs:55073-55076`): `Padding = PaddingMode.None`, whole blocks
 /// only; any trailing PKCS7 padding stays in the output and is simply never
 /// read (`Deserialize` stops at the logical field end).
@@ -253,13 +491,13 @@ pub fn cbc_decrypt(data: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The AES-128-CBC encrypt with **PKCS7** padding — the write-side envelope
+/// The AES-128-CBC encrypt with **PKCS7** padding тАФ the write-side envelope
 /// of `InternalSavePlayerFile` (`Player.cs:54734-54742`): a bare
 /// `RijndaelManaged` defaults to `PaddingMode.PKCS7`, and
 /// `cryptoStream.FlushFinalBlock()` appends `n = 16 - len % 16` bytes of
 /// value `n` (a FULL extra block when the plaintext is already aligned).
-/// The read path's `PaddingMode.None` (`:55074`) never strips anything —
-/// `Deserialize` stops at the logical field end — so [`cbc_decrypt`] leaves
+/// The read path's `PaddingMode.None` (`:55074`) never strips anything тАФ
+/// `Deserialize` stops at the logical field end тАФ so [`cbc_decrypt`] leaves
 /// the padding in place, exactly like the C# reader.
 pub fn cbc_encrypt(data: &[u8]) -> Vec<u8> {
     let cipher = Aes128::new((&ENCRYPTION_KEY).into());
@@ -285,20 +523,51 @@ pub fn cbc_encrypt(data: &[u8]) -> Vec<u8> {
 pub fn read_player_file(path: &Path) -> Result<PlayerFile, PlayerFileError> {
     let raw = std::fs::read(path)?;
     let plain = cbc_decrypt(&raw);
-    // The `LoadPlayer:55098` fallback's clock source, captured before the
-    // walk (the read itself never touches the file again).
-    let mtime = tr_core::clock::file_mtime_binary(path);
-    read_player_bytes_at(&plain, mtime)
+    let mut file = read_player_bytes(&plain)?;
+    // `LoadPlayer:55096-55099`: a zero lastTimePlayerWasSaved falls back to
+    // the file's last-write time (`File.GetLastWriteTimeUtc(path).ToBinary()`,
+    // local files only тАФ the port has no cloud saves). `PlayerFileData.LastPlayed`
+    // (`PlayerFileData.cs:38`) reads through it. The port's own writer stamps 0
+    // ("unknown"), so every port-written character rides this fallback.
+    if file.last_saved_binary == 0 {
+        if let Some(binary) = last_write_time_binary(path) {
+            file.last_saved_binary = binary;
+        }
+    }
+    Ok(file)
+}
+
+/// `File.GetLastWriteTimeUtc(path).ToBinary()` for the zero-stamp fallback
+/// above тАФ the DateTime binary encoding: the UTC ticks in the low 62 bits,
+/// kind bits 62-63 = 01 (`DateTimeKind.Utc`). `None` on an unreadable clock.
+fn last_write_time_binary(path: &Path) -> Option<i64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let secs = modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    Some(unix_secs_to_utc_binary(secs)?)
+}
+
+/// `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) for the production save
+/// callers тАФ the wall clock is the ONE field the byte-level writers keep
+/// caller-owned (the golden fixture pins its FixtureClock value), so this
+/// helper lives beside the codec, not inside it.
+pub fn utc_now_binary() -> i64 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    unix_secs_to_utc_binary(secs).unwrap_or(0)
+}
+
+/// Unix seconds тЖТ the DateTime binary encoding (UTC ticks low 62 bits,
+/// kind bits 01). 621355968000000000 = DateTime(1970-01-01).Ticks. Whole
+/// seconds only тАФ the C# carries sub-second precision; the port's stamp and
+/// mtime fallback pin seconds (the field's consumers read dates, not ticks).
+fn unix_secs_to_utc_binary(secs: u64) -> Option<i64> {
+    let ticks = (secs as i64).checked_mul(10_000_000)?.checked_add(621_355_968_000_000_000)?;
+    Some(ticks | (1i64 << 62))
 }
 
 fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
-    read_player_bytes_at(plain, None)
-}
-
-fn read_player_bytes_at(
-    plain: &[u8],
-    path_mtime: Option<i64>,
-) -> Result<PlayerFile, PlayerFileError> {
     let mut r = Reader::new(plain);
     let version = r.i32().ok_or(PlayerFileError::Truncated("version"))?;
     if version < 135 {
@@ -327,7 +596,7 @@ fn read_player_bytes_at(
     let favorite_bits = r.u64().ok_or(PlayerFileError::Truncated("fav"))?;
     let is_favorite = favorite_bits == 1;
     match read_player_fields(&mut r, version, revision, is_favorite, 3) {
-        Ok(f) => Ok(with_mtime_fallback(f, path_mtime)),
+        Ok(f) => Ok(f),
         // The port's own pre-S1-J-5 subset files are stamped 279 but are
         // truncated after the inventory and miss `hideMisc`; the C# gates
         // cannot read them. Retry with the port-only shim so old saves load.
@@ -336,24 +605,22 @@ fn read_player_bytes_at(
             r2.skip(4 + 20)
                 .ok_or(PlayerFileError::Truncated("legacy"))?;
             read_legacy_port_subset(&mut r2, revision, is_favorite)
-                .map(|f| with_mtime_fallback(f, path_mtime))
         }
         // The port's own S1-J-5 increment-1/2 files are stamped 326 but end
         // early: inc1 at `voidVaultInfo` (`Serialize:54863`), inc2 at
         // `hideInfo` (`:54893`). The C# `Deserialize` would run off the end;
         // retry at each shallower depth so those dev characters still load
-        // (port-only shims, same pattern as the 279 one above — see
+        // (port-only shims, same pattern as the 279 one above тАФ see
         // `docs/ANALYSIS.md`).
         Err(PlayerFileError::Truncated(_)) if version == RELEASE => {
             let mut r2 = Reader::new(plain);
             r2.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc1"))?;
             match read_player_fields(&mut r2, version, revision, is_favorite, 1) {
-                Ok(f) => Ok(with_mtime_fallback(f, path_mtime)),
+                Ok(f) => Ok(f),
                 Err(PlayerFileError::Truncated(_)) => {
                     let mut r3 = Reader::new(plain);
                     r3.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc2"))?;
                     read_player_fields(&mut r3, version, revision, is_favorite, 2)
-                        .map(|f| with_mtime_fallback(f, path_mtime))
                 }
                 Err(e) => Err(e),
             }
@@ -362,27 +629,50 @@ fn read_player_bytes_at(
     }
 }
 
-/// `LoadPlayer:55096-55098`: a zero `lastTimePlayerWasSaved` (a pre-202 file,
-/// or a port subset that never reached the field) falls back to
-/// `File.GetLastWriteTimeUtc(playerPath).ToBinary()` — the local-file arm
-/// (`!cloudSave`; the port has no cloud saves).
-fn with_mtime_fallback(mut file: PlayerFile, path_mtime: Option<i64>) -> PlayerFile {
-    if file.last_saved_binary == 0 {
-        if let Some(stamp) = path_mtime {
-            file.last_saved_binary = stamp;
-        }
-    }
-    file
+/// The bank-slot triple, captured as `(type, stack, prefix)` тАФ the bank slots
+/// (`Deserialize:55449-55487`'s `netDefaults(id); stack; Prefix(byte)` read
+/// order). For an out-of-range id `netDefaults`тЖТ`SetDefaults` airs the item
+/// (`Item.cs:48670-48688`: type 0, stack 0, prefix 0); the read then overwrites
+/// `stack` with the file's value and `Prefix` no-ops on air (`CanHavePrefixes`
+/// false, `:515-518`) so the prefix stays 0 тАФ id+prefix air, stack rides. The
+/// legacy -1..-48 ids ride verbatim (the card model carries no item-defaults
+/// tables); anything outside those bands airs like `SetDefaults` does (the
+/// ph2 equip policy). There is no `TurnToAir` in the bank read path.
+fn read_bank_item(r: &mut Reader, what: &'static str) -> Result<(i32, i32, u8), PlayerFileError> {
+    let id = r.i32().ok_or(PlayerFileError::Truncated(what))?;
+    let stack = r.i32().ok_or(PlayerFileError::Truncated(what))?;
+    let prefix = r.u8().ok_or(PlayerFileError::Truncated(what))?;
+    Ok(air_checked_triple(id, stack, prefix))
 }
 
-/// One `Item.DeserializeFrom(reader, readFavorite: false)` record
-/// (`Item.cs:49921-49934`): `i32 type, i32 stack, u8 prefix`. Used for the
-/// temporary-slot / refund items the port consumes and drops.
-fn read_item_triple(r: &mut Reader, what: &'static str) -> Result<(), PlayerFileError> {
-    r.i32().ok_or(PlayerFileError::Truncated(what))?;
-    r.i32().ok_or(PlayerFileError::Truncated(what))?;
-    r.u8().ok_or(PlayerFileError::Truncated(what))?;
-    Ok(())
+/// The shared `netDefaults`/`stack`/`Prefix` air policy for the triple reads
+/// (banks, bank4, loadouts, temp slots, refunds тАФ the verify-sweep audit,
+/// `docs/research/99-plr-complete-audit.md`). C# `netDefaults(id)`
+/// (`Item.cs:1211-1367`): ids -1..-48 map to real items (the port keeps them
+/// verbatim per the ph2 policy); any OTHER negative has no switch case and
+/// leaves the fresh air item; ids >= `ItemID.Count` air through `SetDefaults`
+/// (`Item.cs:48671-48674`, `:48685-48688`). The stack read then OVERWRITES the
+/// aired stack (`Item.cs:49924` / `Player.cs:55359`), and `Prefix` no-ops on
+/// the air item (`CanHavePrefixes` false, `Item.cs:515-518`) тАФ including a
+/// type-0 slot carrying a nonzero prefix byte. So: an aired id keeps the
+/// file's stack but airs the prefix; a live id rides verbatim.
+fn air_checked_triple(id: i32, stack: i32, prefix: u8) -> (i32, i32, u8) {
+    if (1..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+        (id, stack, prefix)
+    } else {
+        (0, stack, 0)
+    }
+}
+
+/// The equip-pair flavour of [`air_checked_triple`] (no stack in the card
+/// model): armor/dye/misc air id+prefix together; the favorited bool is read
+/// unconditionally by the caller and rides (`Player.cs:55315`/`:55337`).
+fn air_checked_pair(id: i32, prefix: u8) -> (i32, u8) {
+    if (1..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+        (id, prefix)
+    } else {
+        (0, 0)
+    }
 }
 
 /// The full `Player.Deserialize` walk (`Player.cs:55134-55764`) for a file at
@@ -391,7 +681,7 @@ fn read_item_triple(r: &mut Reader, what: &'static str) -> Result<(), PlayerFile
 /// are always true in the accepted range and are read unconditionally (the
 /// gate is cited); gates that can vary within the range are kept.
 /// `depth` is the port-only truncation-retry selector for the port's own
-/// pre-inc3 files — never below 3 for genuine vanilla files:
+/// pre-inc3 files тАФ never below 3 for genuine vanilla files:
 /// 1 = stop at `voidVaultInfo` (`:55504`, the inc1 files),
 /// 2 = stop at `hideInfo` (`:55623`, the inc2 files),
 /// 3 = the full `Deserialize` walk through the dialogues (`:55762`).
@@ -405,28 +695,38 @@ fn read_player_fields(
     if version > 326 {
         return Err(PlayerFileError::LaterVersion(version));
     }
-    // The Journey research pairs (`Player.cs:55696-55699`'s creativeTracker
-    // block) — collected here, carried on the PlayerFile below.
-    let mut research: Vec<(String, i32)> = Vec::new();
-    // The per-player creative powers (`CreativePowerManager.LoadToPlayer`,
-    // `:55706-55709`) — the W4-f44 seam's `powers` field.
-    let mut powers = CreativePowersSave::default();
+    // The per-player tail the walk captures as it goes тАФ created up-front so
+    // the header fields land on it too; defaults for the sections a shallower
+    // port-only depth (or an older release gate) never reaches.
+    let mut tail = PlayerTail::default();
     let name = r.cs_string().ok_or(PlayerFileError::Truncated("name"))?;
     let difficulty = r.u8().ok_or(PlayerFileError::Truncated("difficulty"))?; // gate 17
-    let _play_time = r.u64().ok_or(PlayerFileError::Truncated("playtime"))?; // gate 138
+    // playTime ticks (`:55150-55157`, gate 138) тАФ W4-f44 ph3 rides them.
+    // The gate can vary inside the accepted [135, 326] range: a genuine
+    // 135..137 file carries NO playtime i64 (`SetPlayTime(TimeSpan.Zero)`),
+    // the verify-sweep audit caught the unconditional read desyncing those.
+    if version >= 138 {
+        tail.play_time_ticks = r.u64().ok_or(PlayerFileError::Truncated("playtime"))? as i64;
+    }
     let mut hair = r.i32().ok_or(PlayerFileError::Truncated("hair"))?;
     if hair >= 228 {
         hair = 0; // `:55159-55162`
     }
-    let _hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?; // gate 82
+    // hairDye (`:55163-55166`, gate 82).
+    tail.hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?;
     if version >= 283 {
-        let _team = r.u8().ok_or(PlayerFileError::Truncated("team"))?; // `:55167-55170`
+        tail.team = r.u8().ok_or(PlayerFileError::Truncated("team"))?; // `:55167-55170`
     }
-    // hideVisibleAccessory: two BitsBytes (`:55171-55183`, gate 124).
-    r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
-    r.u8().ok_or(PlayerFileError::Truncated("hide2"))?;
-    // hideMisc (`:55192-55195`, gate 119) — the byte the old subset omitted.
-    let _hide_misc = r.u8().ok_or(PlayerFileError::Truncated("hideMisc"))?;
+    // hideVisibleAccessory: two BitsBytes (`:55171-55183`, gate 124) тАФ
+    // W4-f44 ph2 captures the ten bits (`Serialize:54758-54769`'s order).
+    let hide1 = r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
+    let hide2 = r.u8().ok_or(PlayerFileError::Truncated("hide2"))?;
+    let mut hide_visible_accessory = [false; 10];
+    for (i, slot) in hide_visible_accessory.iter_mut().enumerate() {
+        *slot = if i < 8 { hide1 & (1 << i) != 0 } else { hide2 & (1 << (i - 8)) != 0 };
+    }
+    // hideMisc (`:55192-55195`, gate 119) тАФ the byte the old subset omitted.
+    let hide_misc = r.u8().ok_or(PlayerFileError::Truncated("hideMisc"))?;
     let mut skin_variant = r.u8().ok_or(PlayerFileError::Truncated("skin"))?; // gate 107
     if version < 161 && skin_variant == 7 {
         skin_variant = 9; // `:55215-55218`
@@ -438,34 +738,39 @@ fn read_player_fields(
     let mut mana_max = r.i32().ok_or(PlayerFileError::Truncated("manaMax"))?;
     mana_max = mana_max.min(200); // `:55227-55230`
     mana = mana.min(400); // `:55231-55234`
-    // The unlock/seed bools (`:55235-55262`).
-    let _extra = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
-    // W4-f33 — the biome-torch pair (`:55241-55242`): the Torch God's Favor
-    // permanent unlock + the UsingBiomeTorches builder toggle.
-    let mut unlocked_biome_torches = false;
-    let mut using_biome_torches = false;
+    // The unlock/seed bools (`:55235-55262`) тАФ the verify-sweep rides them
+    // (they used to be consumed-and-dropped / written fresh).
+    tail.extra_accessory = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
     if version >= 229 {
-        unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
-        using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
+        tail.unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
+        // `:55242` reads into the UsingBiomeTorches SETTER
+        // (`Player.cs:3960-3963`): `builderAccStatus[11] = !value` тАФ the
+        // bool has no field of its own. The raw byte still rides
+        // `using_biome_torches` (file-verbatim transport); the live state
+        // is slot 11. The builder-array read (`:55635-55653`, count 12 at
+        // >= 230) runs LATER and overwrites slot 11 from the file тАФ the
+        // C# order; below 230 the setter's value stands (final re-diff).
+        tail.using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
+        tail.builder_acc_status[11] = i32::from(!tail.using_biome_torches);
         if version >= 256 {
-            r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
+            tail.ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
         }
         if version >= 324 {
-            r.boolean().ok_or(PlayerFileError::Truncated("extra324"))?; // `:55247-55250`
+            r.boolean().ok_or(PlayerFileError::Truncated("extra324"))?; // `:55247-55250` тАФ the dead slot, read-dropped
         }
         if version >= 260 {
-            for _ in 0..6 {
-                r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+            for slot in tail.used_upgrades.iter_mut() {
+                *slot = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
             }
         }
     }
     if version >= 182 {
-        r.boolean().ok_or(PlayerFileError::Truncated("dd2"))?;
+        tail.downed_dd2_any_difficulty = r.boolean().ok_or(PlayerFileError::Truncated("dd2"))?;
     }
-    let _tax = r.i32().ok_or(PlayerFileError::Truncated("tax"))?; // gate 128
+    tail.tax_money = r.i32().ok_or(PlayerFileError::Truncated("tax"))?; // gate 128
     if version >= 254 {
-        r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
-        r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
+        tail.deaths_pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
+        tail.deaths_pvp = r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
     }
     let mut colors = [[0u8; 3]; 7];
     for color in colors.iter_mut() {
@@ -474,20 +779,37 @@ fn read_player_fields(
         }
     }
     // The armor: 20 slots x (id, prefix[, favorited >= 322]) (`:55306-55318`).
-    for _ in 0..20 {
-        r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+    // W4-f44 ph2: captured verbatim тАФ an out-of-range type airs through
+    // `SetDefaults` (`Item.cs:48671-48674`); `Prefix` then no-ops on the air
+    // item (`CanHavePrefixes` false, `Item.cs:515-518`) so the prefix airs
+    // too, but favorited is set unconditionally (`:55315`) and rides.
+    let mut armor = [(0i32, 0u8, false); 20];
+    for slot in armor.iter_mut() {
+        let id = r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
+        let prefix = r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+        let mut fav = false;
         if version >= 322 {
-            r.boolean().ok_or(PlayerFileError::Truncated("armorFav"))?;
+            fav = r.boolean().ok_or(PlayerFileError::Truncated("armorFav"))?;
         }
+        // The legacy negative ids -1..-48 map to real items (`Item
+        // .netDefaults`, `Item.cs:1213-1360`); the port keeps the id verbatim
+        // so a re-save round-trips the bytes (a legacy file's mapping needs
+        // the item-defaults tables the card model does not carry). Anything
+        // outside those bands airs like `SetDefaults` does.
+        let (id, prefix) = air_checked_pair(id, prefix);
+        *slot = (id, prefix, fav);
     }
     // The dye: 10 slots x (id, prefix[, favorited >= 322]) (`:55319-55340`).
-    for _ in 0..10 {
-        r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+    let mut dye = [(0i32, 0u8, false); 10];
+    for slot in dye.iter_mut() {
+        let id = r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
+        let prefix = r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+        let mut fav = false;
         if version >= 322 {
-            r.boolean().ok_or(PlayerFileError::Truncated("dyeFav"))?;
+            fav = r.boolean().ok_or(PlayerFileError::Truncated("dyeFav"))?;
         }
+        let (id, prefix) = air_checked_pair(id, prefix);
+        *slot = (id, prefix, fav);
     }
     // The inventory: 58 slots (`:55341-55367`); a type at/above ItemID.Count
     // reads the empty-slot triple and drops it.
@@ -507,42 +829,80 @@ fn read_player_fields(
             // gate 114
             inv_favorites |= 1 << i;
         }
-        *slot = (id, stack, prefix);
+        // The air policy (`Item.netDefaults`/`Prefix`, the verify-sweep
+        // audit): a negative below -48 or a type-0 slot airs the prefix;
+        // the stack rides (`Player.cs:55358-55360`).
+        *slot = air_checked_triple(id, stack, prefix);
     }
-    // `Player.Loadouts` / `CurrentLoadoutIndex` — read at >= 262 below; files
-    // below that (and the inc1/inc2 retries) keep three fresh sets, index 0.
-    let mut current_loadout_index = 0usize;
-    let mut loadouts = [crate::loadout::EquipmentLoadout::default(); 3];
     // --- the post-inventory tail the old subset never reached -------------
     // miscEquips + miscDyes: 5 x (equip id/prefix, dye id/prefix)
-    // (`:55420-55447`, gates 117/136 both true here).
-    for _ in 0..5 {
-        r.i32().ok_or(PlayerFileError::Truncated("miscEquip"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("miscEquipPrefix"))?;
-        r.i32().ok_or(PlayerFileError::Truncated("miscDye"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("miscDyePrefix"))?;
+    // (`:55387-55447`, gate 117). The < 136 arm reads only FOUR pairs тАФ
+    // slot 1 is skipped (`num10 != 1`, `:55391-55393`), so a genuine 135
+    // file carries 4 pairs mapping to slots 0/2/3/4 (the verify-sweep
+    // audit; >= 136 reads all five, `:55420-55447`). W4-f44 ph2 captures
+    // the interleaved pairs verbatim (`Serialize:54831-54837`'s order).
+    let mut misc = [(0i32, 0u8, 0i32, 0u8); 5];
+    for (i, slot) in misc.iter_mut().enumerate() {
+        if version < 136 && i == 1 {
+            continue; // `:55393` тАФ no bytes for slot 1 below 136
+        }
+        let eq_id = r.i32().ok_or(PlayerFileError::Truncated("miscEquip"))?;
+        let eq_prefix = r.u8().ok_or(PlayerFileError::Truncated("miscEquipPrefix"))?;
+        let dye_id = r.i32().ok_or(PlayerFileError::Truncated("miscDye"))?;
+        let dye_prefix = r.u8().ok_or(PlayerFileError::Truncated("miscDyePrefix"))?;
+        let (eq_id, eq_prefix) = air_checked_pair(eq_id, eq_prefix);
+        let (dye_id, dye_prefix) = air_checked_pair(dye_id, dye_prefix);
+        *slot = (eq_id, eq_prefix, dye_id, dye_prefix);
     }
-    // bank + bank2: 40 slots x (id, stack, prefix) each (`:55449-55462`, gate 58).
-    for _ in 0..80 {
-        read_item_triple(r, "bank")?;
+    // bank + bank2: 40 slots x (id, stack, prefix) each (`:55449-55462`,
+    // gate 58; the < 58 arm reads 20 тАФ outside the accepted [135, 326]
+    // range, cited). W4-f44 ph3: the slots ride verbatim.
+    for slot in tail.bank.iter_mut() {
+        *slot = read_bank_item(r, "bank")?;
+    }
+    for slot in tail.bank2.iter_mut() {
+        *slot = read_bank_item(r, "bank2")?;
     }
     if version >= 182 {
-        for _ in 0..40 {
-            read_item_triple(r, "bank3")?; // `:55479-55487`
+        for slot in tail.bank3.iter_mut() {
+            *slot = read_bank_item(r, "bank3")?; // `:55479-55487`
         }
     }
+    // `Player.bank4` тАФ the Void Bag's 40 slots (`:55488-55500`); the C#
+    // `netDefaults(type)` airs a type >= ItemID.Count inside
+    // `Item.DeserializeFrom` (`Item.cs:49923`), then the stack read
+    // OVERWRITES the aired stack (`:49924`), `Prefix` no-ops on air
+    // (`:49925` тЖТ `:515-518`) and the favourited bool rides (`:49928`);
+    // the final `type >= Count тЖТ TurnToAir` check (`:49930-49933`) sees
+    // type 0 and no-ops. So an aired slot keeps stack + favorited тАФ
+    // the verify-sweep audit corrected the old whole-slot drop.
+    let mut bank4 = [(0i32, 0i32, 0u8, false); 40];
     if version >= 198 {
-        for _ in 0..40 {
-            read_item_triple(r, "bank4")?; // `:55488-55500`
+        for slot in bank4.iter_mut() {
+            let id = r.i32().ok_or(PlayerFileError::Truncated("bank4"))?;
+            let stack = r.i32().ok_or(PlayerFileError::Truncated("bank4Stack"))?;
+            let prefix = r.u8().ok_or(PlayerFileError::Truncated("bank4Prefix"))?;
+            let mut fav = false;
             if version >= 255 {
-                r.boolean().ok_or(PlayerFileError::Truncated("bank4Fav"))?;
+                fav = r.boolean().ok_or(PlayerFileError::Truncated("bank4Fav"))?;
             }
+            let (id, stack, prefix) = air_checked_triple(id, stack, prefix);
+            *slot = (id, stack, prefix, fav);
         }
     }
+    let mut void_vault_info = 0u8;
     if version >= 199 {
-        let _void_vault = r.u8().ok_or(PlayerFileError::Truncated("voidVault"))?;
+        void_vault_info = r.u8().ok_or(PlayerFileError::Truncated("voidVault"))?;
         // `:55501-55504`
     }
+    // Fold the fields captured after the tail's creation point into it.
+    tail.void_vault_info = void_vault_info;
+    tail.bank4 = bank4;
+    tail.armor = armor;
+    tail.dye = dye;
+    tail.misc = misc;
+    tail.hide_visible_accessory = hide_visible_accessory;
+    tail.hide_misc = hide_misc;
     if depth <= 1 {
         // The port-only retry for increment-1 files (see `read_player_bytes`).
         return Ok(finish_player_file(
@@ -559,20 +919,15 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
-            None, // the inc1 files stop before the voice pair
-            research,
-            powers,
-            current_loadout_index,
-            loadouts,
-            0, // the inc1 files end before the timestamp field
+            tail,
         ));
     }
     // --- S1-J-5 increment 2: buffs through hideInfo (`:55578-55623`) ------
     // buffs (`:55578-55599`, gate 11): the slot count is 10 below 74, 22,
     // and 44 at >= 252 (`Player.maxBuffs`, `Player.cs:57106`). The zero-type
     // compaction (`num28--; num27--`, `:55593-55597`) still consumes exactly
-    // `count` (type, time) pairs — each iteration advances either the read
-    // index or shrinks the target. The port models no buffs; drop them.
+    // `count` (type, time) pairs тАФ each iteration advances either the read
+    // index or shrinks the target. W4-f44 ph3: the compacted live pairs ride.
     if version >= 11 {
         let mut count: i32 = if version < 74 { 10 } else { 22 };
         if version >= 252 {
@@ -581,31 +936,36 @@ fn read_player_fields(
         let mut i: i32 = 0;
         while i < count {
             let buff_type = r.i32().ok_or(PlayerFileError::Truncated("buffType"))?;
-            r.i32().ok_or(PlayerFileError::Truncated("buffTime"))?;
+            let buff_time = r.i32().ok_or(PlayerFileError::Truncated("buffTime"))?;
             if buff_type == 0 {
                 i -= 1;
                 count -= 1;
+            } else {
+                tail.buffs.push((buff_type, buff_time));
             }
             i += 1;
         }
     }
     // spawn points (`:55600-55611`, ungated): up to 200 records, each
-    // (spX, spY, spI, spN); spX == -1 is the end sentinel.
+    // (spX, spY, spI, spN); spX == -1 is the end sentinel. W4-f44 ph3: the
+    // records ride verbatim (an spX of -1 inside a record ends the read,
+    // exactly like the C# loop тАФ no special case).
     for _ in 0..200 {
         let sp_x = r.i32().ok_or(PlayerFileError::Truncated("spawnX"))?;
         if sp_x == -1 {
             break;
         }
-        r.i32().ok_or(PlayerFileError::Truncated("spawnY"))?;
-        r.i32().ok_or(PlayerFileError::Truncated("spawnI"))?;
-        r.cs_string().ok_or(PlayerFileError::Truncated("spawnN"))?;
+        let sp_y = r.i32().ok_or(PlayerFileError::Truncated("spawnY"))?;
+        let sp_i = r.i32().ok_or(PlayerFileError::Truncated("spawnI"))?;
+        let sp_n = r.cs_string().ok_or(PlayerFileError::Truncated("spawnN"))?;
+        tail.spawn_points.push((sp_x, sp_y, sp_i, sp_n));
     }
     if version >= 16 {
-        r.boolean().ok_or(PlayerFileError::Truncated("hbLocked"))?; // `:55612-55615`
+        tail.hb_locked = r.boolean().ok_or(PlayerFileError::Truncated("hbLocked"))?; // `:55612-55615`
     }
     if version >= 115 {
-        for _ in 0..13 {
-            r.boolean().ok_or(PlayerFileError::Truncated("hideInfo"))?; // `:55616-55623`
+        for hide in tail.hide_info.iter_mut() {
+            *hide = r.boolean().ok_or(PlayerFileError::Truncated("hideInfo"))?; // `:55616-55623`
         }
     }
     if depth <= 2 {
@@ -624,27 +984,24 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
-            None, // the inc2 files stop before the voice pair
-            research,
-            powers,
-            current_loadout_index,
-            loadouts,
-            0, // the inc2 files end before the timestamp field
+            tail,
         ));
     }
     // --- S1-J-5 increment 3: the Deserialize tail (`:55624-55762`) --------
     if version >= 98 {
-        r.i32().ok_or(PlayerFileError::Truncated("angler"))?; // `:55624-55627`
+        tail.angler_quests_finished =
+            r.i32().ok_or(PlayerFileError::Truncated("angler"))?; // `:55624-55627`
     }
     if version >= 162 {
-        for _ in 0..4 {
-            r.i32().ok_or(PlayerFileError::Truncated("dpad"))?; // `:55628-55634`
+        for binding in tail.dpad_bindings.iter_mut() {
+            *binding = r.i32().ok_or(PlayerFileError::Truncated("dpad"))?; // `:55628-55634`
         }
     }
     if version >= 164 {
         // The builderAccStatus count gate (`:55635-55653`): 8, then 10 at
-        // 167, 11 at 197, 12 at 230. The < 210 / < 249 fixups (`:55654-55673`)
-        // mutate state only — no extra bytes.
+        // 167, 11 at 197, 12 at 230. W4-f44 ph3: the slots ride; the
+        // < 210 / < 249 fixups (`:55654-55673`) mutate state only тАФ no
+        // extra bytes.
         let mut count = 8;
         if version >= 167 {
             count = 10;
@@ -655,36 +1012,43 @@ fn read_player_fields(
         if version >= 230 {
             count = 12;
         }
-        for _ in 0..count {
-            r.i32().ok_or(PlayerFileError::Truncated("builderAcc"))?;
+        for slot in tail.builder_acc_status[..count].iter_mut() {
+            *slot = r.i32().ok_or(PlayerFileError::Truncated("builderAcc"))?;
+        }
+        if version < 210 {
+            tail.builder_acc_status[0] = 1; // `:55654-55657`
+        }
+        if version < 249 {
+            // `:55658-55673`: the Terraprisma-in-inventory check (3611).
+            if inventory.iter().any(|(id, _, _)| *id == 3611) {
+                tail.builder_acc_status[1] = 1;
+            }
         }
     }
     if version >= 181 {
-        r.i32().ok_or(PlayerFileError::Truncated("bartender"))?; // `:55675-55678`
+        tail.bartender_quest_log =
+            r.i32().ok_or(PlayerFileError::Truncated("bartender"))?; // `:55675-55678`
     }
     if version >= 200 {
-        // dead + the conditional respawnTimer (`:55679-55686`).
-        if r.boolean().ok_or(PlayerFileError::Truncated("dead"))? {
-            r.i32().ok_or(PlayerFileError::Truncated("respawn"))?;
+        // dead + the conditional respawnTimer (`:55679-55686`); the timer
+        // reads through `Utils.Clamp(0, 60000)` (`:55684`).
+        tail.dead = r.boolean().ok_or(PlayerFileError::Truncated("dead"))?;
+        if tail.dead {
+            let timer = r.i32().ok_or(PlayerFileError::Truncated("respawn"))?;
+            tail.respawn_timer = timer.clamp(0, 60000);
         }
     }
-    // `:55687-55691`: lastTimePlayerWasSaved resets to 0, then the >= 202
-    // gate reads the stored stamp.
-    let mut last_saved_binary = 0i64;
     if version >= 202 {
-        last_saved_binary = r.u64().ok_or(PlayerFileError::Truncated("lastSaved"))? as i64;
+        tail.last_saved_binary = r.u64().ok_or(PlayerFileError::Truncated("lastSaved"))? as i64; // `:55688-55691`
     }
     if version >= 206 {
-        r.i32().ok_or(PlayerFileError::Truncated("golfer"))?; // `:55692-55695`
+        tail.golfer_score = r.i32().ok_or(PlayerFileError::Truncated("golfer"))?; // `:55692-55695`
     }
     if version >= 218 {
         // creativeTracker.Load -> CreativeUnlocksTracker.Load
         // (`CreativeUnlocksTracker.cs:14-17`) -> ItemsSacrificedUnlocksTracker
         // .Load (`ItemsSacrificedUnlocksTracker.cs:171-186`): the >= 282 bool
-        // then the (string, i32) sacrifice pairs — the Journey research
-        // counts (`Player.cs:55696-55699`). The pairs ride the PlayerFile
-        // (the W4-f44 seam's `research` field); the tracker hydrates from
-        // them on Play (`research::load_pairs`).
+        // then the (string, i32) sacrifice pairs. Consumed and dropped.
         if version >= 282 {
             r.boolean().ok_or(PlayerFileError::Truncated("sacrFlag"))?;
         }
@@ -692,16 +1056,23 @@ fn read_player_fields(
         for _ in 0..n {
             let key = r.cs_string().ok_or(PlayerFileError::Truncated("sacrKey"))?;
             let val = r.i32().ok_or(PlayerFileError::Truncated("sacrVal"))?;
-            research.push((key, val));
+            tail.research.push((key, val));
         }
     }
     if version >= 214 {
         // LoadTemporaryItemSlotContents (`Player.cs:54962-54985`): one
         // BitsByte, then an Item.DeserializeFrom triple per set bit 0..3.
+        // W4-f44 ph3: the slots ride; the triple airs id+prefix on an
+        // out-of-band id while the stack rides (`air_checked_triple`, the
+        // verify-sweep audit тАФ the aired `netDefaults` is overwritten by
+        // the stack read, `Item.cs:49923-49925`).
         let bits = r.u8().ok_or(PlayerFileError::Truncated("tempSlots"))?;
-        for i in 0..4 {
+        for (i, slot) in tail.temp_slots.iter_mut().enumerate() {
             if bits & (1 << i) != 0 {
-                read_item_triple(r, "tempItem")?;
+                let id = r.i32().ok_or(PlayerFileError::Truncated("tempItem"))?;
+                let stack = r.i32().ok_or(PlayerFileError::Truncated("tempItem"))?;
+                let prefix = r.u8().ok_or(PlayerFileError::Truncated("tempItem"))?;
+                *slot = Some(air_checked_triple(id, stack, prefix));
             }
         }
     }
@@ -711,9 +1082,10 @@ fn read_player_fields(
         // powers: Godmode (5) / FarPlacementRange (11) read one bool
         // (`CreativePowers.cs:705-707`/`:744-746` shape), SpawnRate (14) one
         // f32 (`:1717-1719` shape). An unknown id BREAKS the loop in the C#
-        // (`:203-206`) — mirror that instead of guessing a payload size.
-        // The values ride the PlayerFile's `powers` field (the W4-f44 seam);
-        // the App hydrates them on Play.
+        // (`:203-206`) тАФ mirror that instead of guessing a payload size.
+        // W4-f44 ph2: the loaded values ride the tail; the C# then resets
+        // them for non-Journey characters (`difficulty != 3`, `:211-214`)
+        // after the whole walk тАФ mirrored in `finish_player_file`.
         loop {
             let more = r.boolean().ok_or(PlayerFileError::Truncated("powerFlag"))?;
             if !more {
@@ -722,14 +1094,15 @@ fn read_player_fields(
             let id = r.u16().ok_or(PlayerFileError::Truncated("powerId"))?;
             match id {
                 5 => {
-                    powers.godmode = r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
+                    tail.powers.godmode =
+                        r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
                 }
                 11 => {
-                    powers.far_placement =
+                    tail.powers.far_placement =
                         r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
                 }
                 14 => {
-                    powers.spawn_rate =
+                    tail.powers.spawn_rate =
                         r.f32().ok_or(PlayerFileError::Truncated("powerSlider"))?;
                 }
                 _ => break, // `CreativePowerManager.cs:203-206`
@@ -737,84 +1110,99 @@ fn read_player_fields(
         }
     }
     if version >= 253 {
-        r.u8().ok_or(PlayerFileError::Truncated("superCart"))?; // `:55710-55715`
+        tail.super_cart = r.u8().ok_or(PlayerFileError::Truncated("superCart"))?; // `:55710-55715`
+    } else {
+        // `:55716-55719`: the unlock derives from `HasItemInAnyInventory(3353)`
+        // (`:55931-55970`, `HasItem` needs stack > 0 `:55906-55916`); the
+        // enabled bit keeps its field default true (`:2054`). The equip
+        // arrays carry no stack in the card model, so a non-air equip slot
+        // stands in for stack > 0 (documented in ANALYSIS).
+        let has_cart = inventory.iter().any(|(id, stack, _)| *id == 3353 && *stack > 0)
+            || tail.armor.iter().any(|(id, _, _)| *id == 3353)
+            || tail.dye.iter().any(|(id, _, _)| *id == 3353)
+            || tail.misc.iter().any(|(eq, _, dye, _)| *eq == 3353 || *dye == 3353)
+            || tail.bank.iter().chain(tail.bank2.iter()).chain(tail.bank3.iter())
+                .any(|(id, stack, _)| *id == 3353 && *stack > 0)
+            || tail.bank4.iter().any(|(id, stack, _, _)| *id == 3353 && *stack > 0);
+        tail.super_cart = u8::from(has_cart) | 2;
     }
     if version >= 262 {
         // CurrentLoadoutIndex + the three loadouts (`:55720-55727`);
         // EquipmentLoadout.Deserialize (`EquipmentLoadout.cs:47-61`):
         // 20 armor + 10 dye x (type, stack, prefix[, favorited >= 322])
-        // then Hide[10] bools. The index clamps to 0..2 (`Utils.Clamp`,
-        // `:55722`); a type at/above ItemID.Count turns the slot to air
-        // (`Item.DeserializeFrom:49930-49933`).
+        // then Hide[10] bools. `Item.DeserializeFrom` airs id+prefix on an
+        // out-of-band type while the stack + favourited ride
+        // (`air_checked_triple`, the verify-sweep audit тАФ `Item.cs:49923-49933`).
         let idx = r.i32().ok_or(PlayerFileError::Truncated("loadoutIdx"))?;
-        current_loadout_index = idx.clamp(0, 2) as usize;
-        for loadout in loadouts.iter_mut() {
-            for slot in 0..30 {
+        // `Utils.Clamp(idx, 0, Loadouts.Length - 1)` (`:55722`).
+        tail.current_loadout = idx.clamp(0, 2);
+        for loadout in tail.loadouts.iter_mut() {
+            for slot in loadout.armor.iter_mut().chain(loadout.dye.iter_mut()) {
                 let id = r.i32().ok_or(PlayerFileError::Truncated("loadoutItem"))?;
-                let stack = r.i32().ok_or(PlayerFileError::Truncated("loadoutStack"))?;
-                let prefix = r.u8().ok_or(PlayerFileError::Truncated("loadoutPrefix"))?;
-                let favorited = if version >= 322 {
-                    r.boolean()
-                        .ok_or(PlayerFileError::Truncated("loadoutFav"))?
-                } else {
-                    false
-                };
-                let item = if id <= 0 || id >= ITEM_ID_COUNT || stack <= 0 {
-                    crate::item::EMPTY_SLOT
-                } else {
-                    crate::item::ItemSlot {
-                        kind: id as u16,
-                        name: crate::registry::name(id as u16),
-                        count: stack as u32,
-                        prefix: prefix as u16,
-                    }
-                };
-                if slot < crate::inv::ARMOR {
-                    loadout.armor[slot] = item;
-                } else {
-                    loadout.dye[slot - crate::inv::ARMOR] = item;
+                let stack = r
+                    .i32()
+                    .ok_or(PlayerFileError::Truncated("loadoutStack"))?;
+                let prefix = r
+                    .u8()
+                    .ok_or(PlayerFileError::Truncated("loadoutPrefix"))?;
+                let mut fav = false;
+                if version >= 322 {
+                    fav = r.boolean().ok_or(PlayerFileError::Truncated("loadoutFav"))?;
                 }
-                loadout.set_shared(slot, favorited);
+                let (id, stack, prefix) = air_checked_triple(id, stack, prefix);
+                *slot = (id, stack, prefix, fav);
             }
             for hide in loadout.hide.iter_mut() {
-                *hide = r
-                    .boolean()
-                    .ok_or(PlayerFileError::Truncated("loadoutHide"))?;
+                *hide = r.boolean().ok_or(PlayerFileError::Truncated("loadoutHide"))?;
             }
         }
     }
-    // W4-e10 — the voice pair (`:55728-55745`). Below 280 the C# clamps
-    // skinVariant and defaults the voice to the gender pick + 0 pitch
-    // (`:55733-55737`); the skinVariant clamp also runs in
-    // `LoadPlayer_LastMinuteFixes` (`finish_player_file`), so only the voice
-    // default is needed here.
-    let voice_variant = if version >= 280 {
-        r.u8().ok_or(PlayerFileError::Truncated("voice"))? as i32 // `:55730`
+    if version >= 280 {
+        tail.voice_variant = r.u8().ok_or(PlayerFileError::Truncated("voice"))?; // `:55728-55731`
     } else {
-        if crate::ui::char_creation::is_male(skin_variant as i32) { 1 } else { 2 } // `:55735`
-    };
-    let voice_pitch_offset = if version >= 281 {
-        r.f32().ok_or(PlayerFileError::Truncated("voicePitch"))? // `:55740`
+        // `:55732-55737`: the skinVariant clamp (done in finish_player_file),
+        // then voiceVariant = Male ? 1 : 2. `Male` reads
+        // `PlayerVariantID.Sets.Male[skinVariant]` (`Player.cs:3405-3410`,
+        // the set {0,1,2,3,8,10}, `ID/PlayerVariantID.cs:20`); the variant is
+        // clamped first exactly like `:55734`.
+        let variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1);
+        let male = matches!(variant, 0 | 1 | 2 | 3 | 8 | 10);
+        tail.voice_variant = if male { 1 } else { 2 };
+        tail.voice_pitch_offset = 0.0;
+    }
+    if version >= 281 {
+        tail.voice_pitch_offset =
+            r.f32().ok_or(PlayerFileError::Truncated("voicePitch"))?; // `:55738-55741`
     } else {
-        0.0 // `:55736`/`:55744`
-    };
+        tail.voice_pitch_offset = 0.0; // `:55742-55745`
+    }
     if version >= 300 {
-        // _pendingRefunds (`:55746-55754`): count + Item.DeserializeFrom triples.
+        // _pendingRefunds (`:55746-55754`): count + Item.DeserializeFrom
+        // triples. W4-f44 ph3: the triples ride; an out-of-band id airs
+        // id+prefix while the stack rides (`air_checked_triple`, the
+        // verify-sweep audit тАФ `Item.cs:49923-49933`).
         let n = r.i32().ok_or(PlayerFileError::Truncated("refundCount"))?;
         for _ in 0..n {
-            read_item_triple(r, "refundItem")?;
+            let id = r.i32().ok_or(PlayerFileError::Truncated("refundItem"))?;
+            let stack = r.i32().ok_or(PlayerFileError::Truncated("refundItem"))?;
+            let prefix = r.u8().ok_or(PlayerFileError::Truncated("refundItem"))?;
+            tail.refunds.push(air_checked_triple(id, stack, prefix));
         }
     }
     if version >= 310 {
-        // oneTimeDialoguesSeen (`:55755-55762`): count + strings.
+        // oneTimeDialoguesSeen (`:55755-55762`): count + strings. W4-f44
+        // ph3: the strings ride; `.Add` on the HashSet dedupes, so the port
+        // keeps first occurrences only.
         let n = r.i32().ok_or(PlayerFileError::Truncated("dialogueCount"))?;
         for _ in 0..n {
-            r.cs_string()
-                .ok_or(PlayerFileError::Truncated("dialogue"))?;
+            let key = r.cs_string().ok_or(PlayerFileError::Truncated("dialogue"))?;
+            if !tail.dialogues.contains(&key) {
+                tail.dialogues.push(key);
+            }
         }
     }
-    // `LoadPlayer_LastMinuteFixes` (`:55830-55831`) clamps skinVariant +
-    // voiceVariant (done in `finish_player_file`).
+    // `LoadPlayer_LastMinuteFixes` (`:55830`) clamps skinVariant to the
+    // variant set (done in `finish_player_file`).
     Ok(finish_player_file(
         name,
         difficulty,
@@ -829,22 +1217,120 @@ fn read_player_fields(
         inv_favorites,
         is_favorite,
         revision,
-        Some((voice_variant, voice_pitch_offset)),
-        unlocked_biome_torches,
-        using_biome_torches,
-        research,
-        powers,
-        current_loadout_index,
-        loadouts,
-        last_saved_binary,
+        tail,
     ))
 }
 
+/// The per-player payloads the walk captures past the character-card state тАФ
+/// the void vault (bank4 + the info byte), the Journey research pairs and the
+/// three equipment loadouts, plus (W4-f44 ph2) the armor/dye/misc equip tails,
+/// the hide flags and the creative powers. Defaults for the sections a
+/// shallower port-only depth (or an older release gate) never reaches.
+struct PlayerTail {
+    play_time_ticks: i64,
+    hair_dye: u8,
+    team: u8,
+    extra_accessory: bool,
+    unlocked_biome_torches: bool,
+    using_biome_torches: bool,
+    ate_artisan_bread: bool,
+    used_upgrades: [bool; 6],
+    downed_dd2_any_difficulty: bool,
+    tax_money: i32,
+    deaths_pve: i32,
+    deaths_pvp: i32,
+    hb_locked: bool,
+    last_saved_binary: i64,
+    buffs: Vec<(i32, i32)>,
+    spawn_points: Vec<(i32, i32, i32, String)>,
+    current_loadout: i32,
+    loadouts: [LoadoutData; 3],
+    void_vault_info: u8,
+    bank: [(i32, i32, u8); 40],
+    bank2: [(i32, i32, u8); 40],
+    bank3: [(i32, i32, u8); 40],
+    bank4: [(i32, i32, u8, bool); 40],
+    research: Vec<(String, i32)>,
+    armor: [(i32, u8, bool); 20],
+    dye: [(i32, u8, bool); 10],
+    misc: [(i32, u8, i32, u8); 5],
+    hide_visible_accessory: [bool; 10],
+    hide_misc: u8,
+    hide_info: [bool; 13],
+    powers: CreativePowersSave,
+    angler_quests_finished: i32,
+    dpad_bindings: [i32; 4],
+    builder_acc_status: [i32; 12],
+    bartender_quest_log: i32,
+    dead: bool,
+    respawn_timer: i32,
+    golfer_score: i32,
+    temp_slots: [Option<(i32, i32, u8)>; 4],
+    super_cart: u8,
+    voice_variant: u8,
+    voice_pitch_offset: f32,
+    refunds: Vec<(i32, i32, u8)>,
+    dialogues: Vec<String>,
+}
+
+impl Default for PlayerTail {
+    /// The fresh defaults тАФ a manual impl because `bank4` is a 40-element
+    /// array and std's derived array `Default` stops at 32
+    /// (`core::array::array_impl_default!{32, ...}`).
+    fn default() -> Self {
+        PlayerTail {
+            play_time_ticks: 0,
+            hair_dye: 0,
+            team: 0,
+            extra_accessory: false,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
+            ate_artisan_bread: false,
+            used_upgrades: [false; 6],
+            downed_dd2_any_difficulty: false,
+            tax_money: 0,
+            deaths_pve: 0,
+            deaths_pvp: 0,
+            hb_locked: false,
+            last_saved_binary: 0,
+            buffs: Vec::new(),
+            spawn_points: Vec::new(),
+            current_loadout: 0,
+            loadouts: Default::default(),
+            void_vault_info: 0,
+            bank: [(0, 0, 0); 40],
+            bank2: [(0, 0, 0); 40],
+            bank3: [(0, 0, 0); 40],
+            bank4: [(0, 0, 0, false); 40],
+            research: Vec::new(),
+            armor: [(0, 0, false); 20],
+            dye: [(0, 0, false); 10],
+            misc: [(0, 0, 0, 0); 5],
+            hide_visible_accessory: [false; 10],
+            hide_misc: 0,
+            hide_info: [false; 13],
+            powers: CreativePowersSave::default(),
+            angler_quests_finished: 0,
+            dpad_bindings: [-1; 4], // the Dpad4 ctor (`Player.cs:618-621`)
+            // The ctor's `builderAccStatus[0] = 1` (`Player.cs:56092`).
+            builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            bartender_quest_log: 0,
+            dead: false,
+            respawn_timer: 0,
+            golfer_score: 0,
+            temp_slots: [None; 4],
+            // `enabledSuperCart = true` (`Player.cs:2054`) тЖТ 0b10 = 2.
+            super_cart: 2,
+            voice_variant: 1, // the ctor (`Player.cs:56045`)
+            voice_pitch_offset: 0.0,
+            refunds: Vec::new(),
+            dialogues: Vec::new(),
+        }
+    }
+}
+
 /// The shared tail of both walk depths: the `LoadPlayer_LastMinuteFixes`
-/// skinVariant + voiceVariant clamps (`Player.cs:55830-55831`) and the
-/// `PlayerFile` assembly. `voice` is `None` for the shallow retry depths
-/// (the inc1/inc2 files stop before the voice pair) — the gender default
-/// `(Male ? 1 : 2)` + 0 pitch stands in (`:55735-55736`).
+/// skinVariant clamp (`Player.cs:55830`) and the `PlayerFile` assembly.
 #[allow(clippy::too_many_arguments)]
 fn finish_player_file(
     name: String,
@@ -860,34 +1346,36 @@ fn finish_player_file(
     inv_favorites: u64,
     is_favorite: bool,
     revision: u32,
-    voice: Option<(i32, f32)>,
-    unlocked_biome_torches: bool,
-    using_biome_torches: bool,
-    last_saved_binary: i64,
+    tail: PlayerTail,
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
-    // `:55831` — `Utils.Clamp(voiceVariant, 1, 4)`; the shallow depths carry
-    // no voice pair, so the gender default stands in (`:55735`).
-    let (voice_variant, voice_pitch_offset) = voice.unwrap_or_else(|| {
-        (
-            if crate::ui::char_creation::is_male(skin_variant as i32) { 1 } else { 2 },
-            0.0,
-        )
-    });
-    let voice_variant = voice_variant.clamp(1, 4);
-    research: Vec<(String, i32)>,
-    powers: CreativePowersSave,
-    current_loadout_index: usize,
-    loadouts: [crate::loadout::EquipmentLoadout; 3],
-) -> PlayerFile {
-    let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
-    // `CreativePowerManager.LoadToPlayer` (`CreativePowerManager.cs:211-214`):
-    // after the load the C# RESETS the powers for non-Journey characters
-    // (`difficulty != 3` → `ResetDataForNewPlayer`, the ctor defaults).
-    let powers = if difficulty != 3 { CreativePowersSave::default() } else { powers };
+    // `LoadPlayer_LastMinuteFixes` (`:55831`): voiceVariant clamps to 1..4.
+    let voice_variant = (tail.voice_variant as i32).clamp(1, 4) as u8;
+    // CreativePowerManager.LoadToPlayer (`CreativePowerManager.cs:211-214`):
+    // a non-Journey character (difficulty != 3) has the loaded powers RESET
+    // after the walk тАФ Godmode false / FarPlacement true / SpawnRate 0.5
+    // (`ResetDataForNewPlayer`, `CreativePowers.cs:710-713`/`:749-752`/
+    // `:1722-1725` -> the ctor defaults). Only Journey keeps the loaded state.
+    let powers = if difficulty != 3 { CreativePowersSave::default() } else { tail.powers };
     PlayerFile {
         name,
         difficulty,
+        play_time_ticks: tail.play_time_ticks,
+        hair_dye: tail.hair_dye,
+        team: tail.team,
+        extra_accessory: tail.extra_accessory,
+        unlocked_biome_torches: tail.unlocked_biome_torches,
+        using_biome_torches: tail.using_biome_torches,
+        ate_artisan_bread: tail.ate_artisan_bread,
+        used_upgrades: tail.used_upgrades,
+        downed_dd2_any_difficulty: tail.downed_dd2_any_difficulty,
+        tax_money: tail.tax_money,
+        deaths_pve: tail.deaths_pve,
+        deaths_pvp: tail.deaths_pvp,
+        hb_locked: tail.hb_locked,
+        last_saved_binary: tail.last_saved_binary,
+        buffs: tail.buffs,
+        spawn_points: tail.spawn_points,
         skin_variant,
         hair,
         life,
@@ -905,15 +1393,34 @@ fn finish_player_file(
         inv_favorites,
         is_favorite,
         revision,
-        voice_variant,
-        voice_pitch_offset,
-        unlocked_biome_torches,
-        using_biome_torches,
-        research,
+        current_loadout: tail.current_loadout,
+        loadouts: tail.loadouts,
+        void_vault_info: tail.void_vault_info,
+        bank: tail.bank,
+        bank2: tail.bank2,
+        bank3: tail.bank3,
+        bank4: tail.bank4,
+        research: tail.research,
+        armor: tail.armor,
+        dye: tail.dye,
+        misc: tail.misc,
+        hide_visible_accessory: tail.hide_visible_accessory,
+        hide_misc: tail.hide_misc,
+        hide_info: tail.hide_info,
         powers,
-        current_loadout_index,
-        loadouts,
-        last_saved_binary,
+        angler_quests_finished: tail.angler_quests_finished,
+        dpad_bindings: tail.dpad_bindings,
+        builder_acc_status: tail.builder_acc_status,
+        bartender_quest_log: tail.bartender_quest_log,
+        dead: tail.dead,
+        respawn_timer: tail.respawn_timer,
+        golfer_score: tail.golfer_score,
+        temp_slots: tail.temp_slots,
+        super_cart: tail.super_cart,
+        voice_variant,
+        voice_pitch_offset: tail.voice_pitch_offset,
+        refunds: tail.refunds,
+        dialogues: tail.dialogues,
     }
 }
 
@@ -921,7 +1428,7 @@ fn finish_player_file(
 /// [`read_player_fields`] but *without* the `hideMisc` byte, stopping right
 /// after the 58-slot inventory. Those files were never valid vanilla 279 files
 /// (the C# would read `hideMisc` then run off the end), so this is a port-only
-/// backward-compat shim, not a C# gate — see `docs/ANALYSIS.md`.
+/// backward-compat shim, not a C# gate тАФ see `docs/ANALYSIS.md`.
 fn read_legacy_port_subset(
     r: &mut Reader,
     revision: u32,
@@ -929,15 +1436,21 @@ fn read_legacy_port_subset(
 ) -> Result<PlayerFile, PlayerFileError> {
     let name = r.cs_string().ok_or(PlayerFileError::Truncated("name"))?;
     let difficulty = r.u8().ok_or(PlayerFileError::Truncated("difficulty"))?;
-    let _play_time = r.u64().ok_or(PlayerFileError::Truncated("playtime"))?;
+    // W4-f44 ph3: the subset's playtime/hairDye ride (it has no team byte).
+    let play_time_ticks = r.u64().ok_or(PlayerFileError::Truncated("playtime"))? as i64;
     let mut hair = r.i32().ok_or(PlayerFileError::Truncated("hair"))?;
     if hair >= 228 {
         hair = 0;
     }
-    let _hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?;
+    let hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?;
     // The old writer emitted the two hide BitsBytes but no hideMisc.
-    r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
-    r.u8().ok_or(PlayerFileError::Truncated("hide2"))?;
+    // W4-f44 ph2: the ten hide bits ride (same order as the full walk).
+    let hide1 = r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
+    let hide2 = r.u8().ok_or(PlayerFileError::Truncated("hide2"))?;
+    let mut hide_visible_accessory = [false; 10];
+    for (i, slot) in hide_visible_accessory.iter_mut().enumerate() {
+        *slot = if i < 8 { hide1 & (1 << i) != 0 } else { hide2 & (1 << (i - 8)) != 0 };
+    }
     let mut skin_variant = r.u8().ok_or(PlayerFileError::Truncated("skin"))?;
     if skin_variant == 7 {
         skin_variant = 9; // release 279 < 161
@@ -949,31 +1462,43 @@ fn read_legacy_port_subset(
     let mut mana_max = r.i32().ok_or(PlayerFileError::Truncated("manaMax"))?;
     mana_max = mana_max.min(200);
     mana = mana.min(400);
-    // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
-    // the 11 bools the old subset writer emitted (no 324 dead slot). The
-    // biome-torch pair is bools 2-3 (W4-f33: the Torch God's Favor unlock).
-    let mut unlock_bools = [false; 11];
-    for b in unlock_bools.iter_mut() {
-        *b = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 тАФ
+    // the 11 bools the old subset writer emitted (no 324 dead slot).
+    // The verify-sweep rides them (the full walk's order, all gates true
+    // at the subset's effective 279 shape).
+    let extra_accessory = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let ate_artisan_bread = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let mut used_upgrades = [false; 6];
+    for slot in used_upgrades.iter_mut() {
+        *slot = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
     }
-    let unlocked_biome_torches = unlock_bools[1];
-    let using_biome_torches = unlock_bools[2];
-    let _tax = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
-    let _pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
-    let _pvp = r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
+    let downed_dd2_any_difficulty = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    let tax_money = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
+    let deaths_pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
+    let deaths_pvp = r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
     let mut colors = [[0u8; 3]; 7];
     for color in colors.iter_mut() {
         for b in color.iter_mut() {
             *b = r.u8().ok_or(PlayerFileError::Truncated("color"))?;
         }
     }
-    for _ in 0..20 {
-        r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+    // The subset's armour/dye pairs (no favourited bool at 279) тАФ W4-f44
+    // ph2 captures them with the same air policy as the full walk.
+    let mut armor = [(0i32, 0u8, false); 20];
+    for slot in armor.iter_mut() {
+        let id = r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
+        let prefix = r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+        let (id, prefix) = air_checked_pair(id, prefix);
+        *slot = (id, prefix, false);
     }
-    for _ in 0..10 {
-        r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+    let mut dye = [(0i32, 0u8, false); 10];
+    for slot in dye.iter_mut() {
+        let id = r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
+        let prefix = r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+        let (id, prefix) = air_checked_pair(id, prefix);
+        *slot = (id, prefix, false);
     }
     let mut inventory = [(0i32, 0i32, 0u8); 58];
     let mut inv_favorites: u64 = 0;
@@ -990,16 +1515,28 @@ fn read_legacy_port_subset(
         if r.boolean().ok_or(PlayerFileError::Truncated("invFav"))? {
             inv_favorites |= 1 << i;
         }
-        *slot = (id, stack, prefix);
+        *slot = air_checked_triple(id, stack, prefix);
     }
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
-    // The legacy 279 subset carries no voice pair: the gender default + 0
-    // pitch (`Player.cs:55735-55736`), the same stand-in the shallow retry
-    // depths use.
-    let voice_variant = if crate::ui::char_creation::is_male(skin_variant as i32) { 1 } else { 2 };
     Ok(PlayerFile {
         name,
         difficulty,
+        play_time_ticks,
+        hair_dye,
+        team: 0, // the subset shape has no team byte
+        extra_accessory,
+        unlocked_biome_torches,
+        using_biome_torches,
+        ate_artisan_bread,
+        used_upgrades,
+        downed_dd2_any_difficulty,
+        tax_money,
+        deaths_pve,
+        deaths_pvp,
+        hb_locked: false, // the subset files end after the inventory
+        last_saved_binary: 0,
+        buffs: Vec::new(), // the subset files end after the inventory
+        spawn_points: Vec::new(),
         skin_variant,
         hair,
         life,
@@ -1017,18 +1554,41 @@ fn read_legacy_port_subset(
         inv_favorites,
         is_favorite,
         revision,
-        voice_variant,
-        voice_pitch_offset: 0.0,
-        unlocked_biome_torches,
-        using_biome_torches,
-        // The legacy subset stops before the creativeTracker block — no
-        // research pairs (the port-only shim, ANALYSIS).
-        research: Vec::new(),
-        powers: CreativePowersSave::default(),
-        // The 279 subset predates loadouts (release 262) — three fresh sets.
-        current_loadout_index: 0,
+        // The subset files end after the inventory тАФ the per-player tail was
+        // never written; the fresh defaults stand in (the back-compat gate).
+        current_loadout: 0,
         loadouts: Default::default(),
-        last_saved_binary: 0, // the subset never reached the timestamp field
+        void_vault_info: 0,
+        bank: [(0, 0, 0); 40],
+        bank2: [(0, 0, 0); 40],
+        bank3: [(0, 0, 0); 40],
+        bank4: [(0, 0, 0, false); 40],
+        research: Vec::new(),
+        // W4-f44 ph2: the subset carries armour/dye + the hide BitsBytes;
+        // everything past the inventory is fresh defaults.
+        armor,
+        dye,
+        misc: [(0, 0, 0, 0); 5],
+        hide_visible_accessory,
+        hide_misc: 0,
+        hide_info: [false; 13],
+        powers: CreativePowersSave::default(),
+        angler_quests_finished: 0,
+        dpad_bindings: [-1; 4],
+        // The subset never wrote the builder array; the ctor default
+        // stands, EXCEPT slot 11 which the :55242-equivalent bool's SETTER
+        // owns (`Player.cs:3960-3963`, the full walk's fix rides here too).
+        builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, i32::from(!using_biome_torches)],
+        bartender_quest_log: 0,
+        dead: false,
+        respawn_timer: 0,
+        golfer_score: 0,
+        temp_slots: [None; 4],
+        super_cart: 2,
+        voice_variant: 1,
+        voice_pitch_offset: 0.0,
+        refunds: Vec::new(),
+        dialogues: Vec::new(),
     })
 }
 
@@ -1038,6 +1598,39 @@ fn read_legacy_port_subset(
 pub struct PlayerFileWrite {
     pub name: String,
     pub difficulty: u8,
+    /// `PlayerFileData.GetPlayTime().Ticks` (`:54754`) тАФ the play time the
+    /// caller carries (0 = a fresh character, `TimeSpan.Zero`).
+    pub play_time_ticks: i64,
+    /// `Player.hairDye` (`:54756`), default 0 = no dye.
+    pub hair_dye: u8,
+    /// `(byte)Player.team` (`:54757`), default 0 = no team.
+    pub team: u8,
+    /// `Player.extraAccessory` (`:54776`), default false (ctor `:56076`).
+    pub extra_accessory: bool,
+    /// `Player.unlockedBiomeTorches` (`:54777`), default false.
+    pub unlocked_biome_torches: bool,
+    /// The raw `:54778` byte. The writer IGNORES it тАФ the C# writes the
+    /// `UsingBiomeTorches` GETTER (`unlocked && builderAccStatus[11] == 0`,
+    /// `Player.cs:3954-3958`); drive the toggle through
+    /// `builder_acc_status[11]` (0 = using, 1 = disabled). Kept for the
+    /// f33-lane fold's field-shape parity; a reader's file-verbatim carry.
+    pub using_biome_torches: bool,
+    /// `Player.ateArtisanBread` (`:54779`), default false (ctor `:56077`).
+    pub ate_artisan_bread: bool,
+    /// The six one-use upgrade flags (`:54781-54786`, ctor `:56078-56083`),
+    /// in file order: AegisCrystal, AegisFruit, ArcaneCrystal, GalaxyPearl,
+    /// GummyWorm, Ambrosia. Default all false.
+    pub used_upgrades: [bool; 6],
+    /// `Player.downedDD2EventAnyDifficulty` (`:54787`), default false.
+    pub downed_dd2_any_difficulty: bool,
+    /// `Player.taxMoney` (`:54788`), default 0.
+    pub tax_money: i32,
+    /// `Player.numberOfDeathsPVE` / `numberOfDeathsPVP` (`:54789-54790`),
+    /// default 0.
+    pub deaths_pve: i32,
+    pub deaths_pvp: i32,
+    /// `Player.hbLocked` (`:54889`), default false (`Player.cs:1436`).
+    pub hb_locked: bool,
     pub skin_variant: u8,
     pub hair: i32,
     pub life: i32,
@@ -1052,55 +1645,117 @@ pub struct PlayerFileWrite {
     pub pants_color: [u8; 3],
     pub shoe_color: [u8; 3],
     pub inventory: [(i32, i32, u8); 58],
-    /// `Item.favorited`'s per-inventory-slot bits — bit `i` is slot `i`'s
+    /// `Item.favorited`'s per-inventory-slot bits тАФ bit `i` is slot `i`'s
     /// (`Player.cs:54820-54824`). The App's `favorite_slots` flatten to it.
     pub inv_favorites: u64,
-    /// `DateTime.UtcNow.ToBinary()` at save time (`Player.cs:54909`) — the
+    /// `DateTime.UtcNow.ToBinary()` at save time (`Player.cs:54909`) тАФ the
     /// one wall-clock field in `Serialize`. The port does not track a clock,
     /// so the caller stamps it (0 = the port's historical "unknown" stamp);
     /// the golden-fixture test pins the harness's `FixtureClock` value
-    /// (2026-11-18T00:00:00Z, kind Utc → kind bits 01, no offset).
+    /// (2026-11-18T00:00:00Z, kind Utc тЖТ kind bits 01, no offset).
     pub last_saved_binary: i64,
-    /// W4-e10 — `Player.voiceVariant` (`Player.cs:1346`), written as a byte at
-    /// `:54924`. The creation draft's picked variant (ctor default 1).
-    pub voice_variant: i32,
-    /// W4-e10 — `Player.voicePitchOffset` (`Player.cs:1348`), written as an
-    /// f32 at `:54925`. The creation draft's pitch (default 0).
-    pub voice_pitch_offset: f32,
-    /// `Player.unlockedBiomeTorches` (`Player.cs:54777`) — the Torch God's
-    /// Favor permanent unlock (W4-f33). A fresh character is false.
-    pub unlocked_biome_torches: bool,
-    /// `Player.UsingBiomeTorches` (`Player.cs:54778`) — the builder-toggle
-    /// half (`builderAccStatus[11] == 0`); the use arm sets both.
-    pub using_biome_torches: bool,
+    /// `Player.CurrentLoadoutIndex` (`:54919`) тАФ clamped to 0..2 on write
+    /// like the load clamp (`:55722`).
+    pub current_loadout: i32,
+    /// `Player.Loadouts[3]` (`:54920-54923`, `EquipmentLoadout.Serialize`,
+    /// `EquipmentLoadout.cs:31-45`).
+    pub loadouts: [LoadoutData; 3],
+    /// `Player.voidVaultInfo` (`:54863`) тАФ bit 0 the vault-enabled flag.
+    pub void_vault_info: u8,
+    /// `Player.buffType`/`buffTime`'s live pairs (`:54864-54876`) тАФ the write
+    /// pads to maxBuffs = 44 with (0, 0) and zeroes the `Main.buffNoSave`
+    /// types; a fresh player has none.
+    pub buffs: Vec<(i32, i32)>,
+    /// `Player.spX/spY/spI/spN`'s bed spawn points (`:54877-54888`) тАФ the
+    /// write emits up to 200 records then the -1 sentinel; a fresh player's
+    /// spN[200] is all null, so only the sentinel is written.
+    pub spawn_points: Vec<(i32, i32, i32, String)>,
+    /// `Player.bank`'s 40 slots (`:54838-54843`) тАФ the piggy bank.
+    pub bank: [(i32, i32, u8); 40],
+    /// `Player.bank2`'s 40 slots (`:54844-54849`) тАФ the safe.
+    pub bank2: [(i32, i32, u8); 40],
+    /// `Player.bank3`'s 40 slots (`:54850-54855`) тАФ the defender's forge.
+    pub bank3: [(i32, i32, u8); 40],
+    /// `Player.bank4`'s 40 slots (`:54856-54862`).
+    pub bank4: [(i32, i32, u8, bool); 40],
     /// The Journey research pairs (`:54911` -> `ItemsSacrificedUnlocksTracker
-    /// .Save`, `ItemsSacrificedUnlocksTracker.cs:157-169`): the
-    /// `(persistentId, count)` strings the creativeTracker block carries.
-    /// The W4-f44 seam's shape — a fresh character has none (the default).
+    /// .Save`, `ItemsSacrificedUnlocksTracker.cs:157-169`).
     pub research: Vec<(String, i32)>,
+    /// `Player.armor[20]` as `(type, prefix, favorited)` (`:54812-54817`) тАФ
+    /// no stack; the favourited bool is unconditional at 326.
+    pub armor: [(i32, u8, bool); 20],
+    /// `Player.dye[10]`, the same shape (`:54818-54823`).
+    pub dye: [(i32, u8, bool); 10],
+    /// `Player.miscEquips[5]` + `Player.miscDyes[5]` interleaved per slot тАФ
+    /// `(equip type, equip prefix, dye type, dye prefix)` (`:54831-54837`).
+    pub misc: [(i32, u8, i32, u8); 5],
+    /// `Player.hideVisibleAccessory[10]` тАФ the two BitsBytes (`:54758-54769`).
+    pub hide_visible_accessory: [bool; 10],
+    /// `Player.hideMisc` BitsByte (`:54770`).
+    pub hide_misc: u8,
+    /// `Player.hideInfo[13]` (`:54890-54893`).
+    pub hide_info: [bool; 13],
     /// The Journey per-player creative powers (`:54913` ->
     /// `CreativePowerManager.SaveToPlayer`, `CreativePowerManager.cs:183-195`).
-    /// Defaults to [`CreativePowersSave::written_fresh`] — the live manager
-    /// state a Classic session saves (the W4-f44 seam's writer default).
+    /// Defaults to [`CreativePowersSave::written_fresh`] тАФ the non-Journey
+    /// live state the golden fixture pinned.
     pub powers: CreativePowersSave,
-    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, `Serialize:54919`).
-    /// The caller passes the live index; a fresh character is 0.
-    pub current_loadout_index: usize,
-    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`, `Serialize:54920-54923`):
-    /// the three stored equipment sets, each `EquipmentLoadout.Serialize`
-    /// (`EquipmentLoadout.cs:31-45`). A fresh character carries three empty
-    /// sets — the 310-zero-byte block the golden fixture pins.
-    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
+    /// `Player.anglerQuestsFinished` (`:54894`), default 0.
+    pub angler_quests_finished: i32,
+    /// `Player.DpadRadial.Bindings[4]` (`:54895-54898`), default all -1.
+    pub dpad_bindings: [i32; 4],
+    /// `Player.builderAccStatus[12]` (`:54899-54902`), default `[1, 0..]`.
+    pub builder_acc_status: [i32; 12],
+    /// `Player.bartenderQuestLog` (`:54903`), default 0.
+    pub bartender_quest_log: i32,
+    /// `Player.dead` (`:54904`) тАФ the respawnTimer is written only when dead.
+    pub dead: bool,
+    /// `Player.respawnTimer` (`:54905-54908`, written verbatim when dead).
+    pub respawn_timer: i32,
+    /// `Player.golferScoreAccumulated` (`:54910`), default 0.
+    pub golfer_score: i32,
+    /// `(byte)Player.voiceVariant` (`:54924`), default 1 (the ctor `:56045`).
+    pub voice_variant: u8,
+    /// `Player.voicePitchOffset` (`:54925`), default 0f.
+    pub voice_pitch_offset: f32,
+    /// `Player._temporaryItemSlots[4]` (`:54912` ->
+    /// `SaveTemporaryItemSlotContents:54935-54959`): `Some(triple)` writes
+    /// the slot's bit + payload, `None` = air. A fresh save is all-`None`.
+    pub temp_slots: [Option<(i32, i32, u8)>; 4],
+    /// The super-cart BitsByte (`:54914-54918`): bit 0 unlockedSuperCart,
+    /// bit 1 enabledSuperCart тАФ a fresh save is 2 (enabled true, `:2054`).
+    pub super_cart: u8,
+    /// `CraftingRequests.SavePossibleRefunds` (`:54926` ->
+    /// `CraftingRequests.cs:353-362`): the consumed-item triples over the
+    /// pending crafts. A fresh queue is empty тЖТ count 0, no payloads.
+    pub refunds: Vec<(i32, i32, u8)>,
+    /// `Player.oneTimeDialoguesSeen` (`:54927-54932`): count + the strings.
+    /// A fresh HashSet is empty тЖТ count 0. The write dedupes like the set.
+    pub dialogues: Vec<String>,
 }
 
 impl Default for PlayerFileWrite {
-    /// The fresh-vanilla defaults (`Player` ctor + the field initializers) —
-    /// the W4-f44 seam's default split: the writer's fresh state carries no
-    /// research pairs; a fresh character is on loadout 0 with three empty sets.
+    /// The fresh-vanilla defaults for every field тАФ the same values the
+    /// pre-model writer hardcoded (the module-level default-value policy).
     fn default() -> Self {
-        Self {
+        PlayerFileWrite {
             name: String::new(),
             difficulty: 0,
+            play_time_ticks: 0,
+            hair_dye: 0,
+            team: 0,
+            extra_accessory: false,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
+            ate_artisan_bread: false,
+            used_upgrades: [false; 6],
+            downed_dd2_any_difficulty: false,
+            tax_money: 0,
+            deaths_pve: 0,
+            deaths_pvp: 0,
+            hb_locked: false,
+            buffs: Vec::new(),
+            spawn_points: Vec::new(),
             skin_variant: 0,
             hair: 0,
             life: 100,
@@ -1117,23 +1772,40 @@ impl Default for PlayerFileWrite {
             inventory: [(0, 0, 0); 58],
             inv_favorites: 0,
             last_saved_binary: 0,
-            research: Vec::new(),
-            powers: CreativePowersSave::written_fresh(),
-            current_loadout_index: 0,
+            current_loadout: 0,
             loadouts: Default::default(),
+            void_vault_info: 0,
+            bank: [(0, 0, 0); 40],
+            bank2: [(0, 0, 0); 40],
+            bank3: [(0, 0, 0); 40],
+            bank4: [(0, 0, 0, false); 40],
+            research: Vec::new(),
+            armor: [(0, 0, false); 20],
+            dye: [(0, 0, false); 10],
+            misc: [(0, 0, 0, 0); 5],
+            hide_visible_accessory: [false; 10],
+            hide_misc: 0,
+            hide_info: [false; 13],
+            powers: CreativePowersSave::written_fresh(),
+            angler_quests_finished: 0,
+            dpad_bindings: [-1; 4],
+            builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            bartender_quest_log: 0,
+            dead: false,
+            respawn_timer: 0,
+            golfer_score: 0,
+            temp_slots: [None; 4],
+            super_cart: 2,
+            voice_variant: 1, // the ctor (`Player.cs:56045`)
+            voice_pitch_offset: 0.0,
+            refunds: Vec::new(),
+            dialogues: Vec::new(),
         }
     }
-    /// `PlayerFileData.Metadata.Revision` (`InternalSavePlayerFile:54739`
-    /// writes the loaded metadata verbatim — `Write`, not
-    /// `IncrementAndWrite`). A fresh character's `FromCurrentSettings`
-    /// revision is 0 (`PlayerFileData.cs:53`); a re-save carries the loaded
-    /// file's counter so it never resets. The `.trfav` sidecar keeps the
-    /// favourite bit outside this struct (see `favorite_marker_path`).
-    pub revision: u32,
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54742`): release 326, the
-/// `FileMetadata`, then the FULL `Serialize` (`Player.cs:54750-54933`) —
+/// `FileMetadata`, then the FULL `Serialize` (`Player.cs:54750-54933`) тАФ
 /// S1-J-5 increment 3. Encrypted like `:54736`'s CryptoStream with the
 /// default PKCS7 padding flushed by `FlushFinalBlock` (`:54742`).
 pub fn write_player_bytes(file: &PlayerFileWrite) -> Vec<u8> {
@@ -1145,7 +1817,7 @@ pub fn write_player_bytes(file: &PlayerFileWrite) -> Vec<u8> {
 /// (`Player.cs:54750-54933`).
 ///
 /// Every field the port does not model is written at its fresh-vanilla default
-/// (the `Player` ctor `:56036-56096` + the field initializers), never omitted —
+/// (the `Player` ctor `:56036-56096` + the field initializers), never omitted тАФ
 /// see the module-level default-value policy. The single caller-supplied
 /// unmodelled value is the save timestamp ([`PlayerFileWrite::last_saved_binary`]).
 pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
@@ -1153,47 +1825,61 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(RELEASE); // `InternalSavePlayerFile:54738` writes the literal 326.
                     // `FileMetadata.Write` (`FileMetadata.cs:22-27`).
     w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
-    w.u32(file.revision); // `InternalSavePlayerFile:54739` — `Metadata.Write`
-                          // carries the loaded counter (`FromCurrentSettings:40` = 0 for a fresh
-                          // character; a re-save caller threads the read revision back).
+    w.u32(0); // the revision (`FromCurrentSettings:40` = 0; `Write`, not Increment)
               // `FileMetadata.Write`'s favourites flags (`FileMetadata.cs:26`): the bit
-              // is dead in the vanilla too — `IsFavorite` is only ever set `false`
+              // is dead in the vanilla too тАФ `IsFavorite` is only ever set `false`
               // (`FileMetadata.cs:41`) and the live state sits in `favorites.json`
               // (`IO/FavoritesFile.cs:27-36`). The port's carrier is the `<stem>.trfav`
               // sidecar beside this file ([`favorite_marker_path`]), which this writer
-              // never opens — so re-saving a character cannot clear its star.
+              // never opens тАФ so re-saving a character cannot clear its star.
     w.u64(0); // the favorites (see the sidecar above)
 
     // --- Player.Serialize (`Player.cs:54752-54893`) ------------------------
     w.cs_string(&file.name); // `:54752`
     w.u8(file.difficulty); // `:54753`
-    w.u64(0); // `:54754` playTime.Ticks — the port tracks no play time (Zero)
+    w.u64(file.play_time_ticks as u64); // `:54754` playTime.Ticks (fresh Zero)
     w.i32(file.hair); // `:54755`
-    w.u8(0); // `:54756` hairDye (default 0)
-    w.u8(0); // `:54757` (byte)team (`Player.cs:1430`, default 0 = none)
-    w.u8(0); // `:54758-54763` hideVisibleAccessory[0..8] BitsByte
-    w.u8(0); // `:54764-54769` hideVisibleAccessory[8..10] BitsByte
-    w.u8(0); // `:54770` hideMisc BitsByte (`Player.cs:1710` = `(byte)0`)
+    w.u8(file.hair_dye); // `:54756` hairDye (default 0)
+    w.u8(file.team); // `:54757` (byte)team (`Player.cs:1430`, default 0 = none)
+
+    // `:54758-54763` hideVisibleAccessory[0..8] BitsByte тАФ the caller's bits
+    // (W4-f44 ph2); a fresh player's are all false.
+    let mut hide1 = 0u8;
+    for (i, hide) in file.hide_visible_accessory[..8].iter().enumerate() {
+        hide1 |= u8::from(*hide) << i;
+    }
+    w.u8(hide1);
+    // `:54764-54769` hideVisibleAccessory[8..10] BitsByte.
+    let mut hide2 = 0u8;
+    for (i, hide) in file.hide_visible_accessory[8..].iter().enumerate() {
+        hide2 |= u8::from(*hide) << i;
+    }
+    w.u8(hide2);
+    w.u8(file.hide_misc); // `:54770` hideMisc BitsByte (`Player.cs:1710` = 0 fresh)
     w.u8(file.skin_variant); // `:54771`
     w.i32(file.life); // `:54772`
     w.i32(file.life_max); // `:54773`
     w.i32(file.mana); // `:54774`
     w.i32(file.mana_max); // `:54775`
-    w.boolean(false); // `:54776` extraAccessory (ctor `:56076`)
-    w.boolean(file.unlocked_biome_torches); // `:54777` unlockedBiomeTorches (W4-f33)
-    w.boolean(file.using_biome_torches); // `:54778` UsingBiomeTorches (W4-f33)
-    w.boolean(false); // `:54779` ateArtisanBread (ctor `:56077`)
+    // The unlock/seed block (`:54776-54790`) тАФ the verify-sweep rides the
+    // caller's values (they used to be hardcoded fresh false/0). The 324
+    // dead slot (`:54780`) stays the hardcoded `false` the C# writes.
+    w.boolean(file.extra_accessory); // `:54776` (ctor `:56076`)
+    w.boolean(file.unlocked_biome_torches); // `:54777`
+    // `:54778` writes the UsingBiomeTorches GETTER (`Player.cs:3954-3958`):
+    // `unlocked && builderAccStatus[11] == 0` тАФ NOT the raw bool field.
+    // A locked character writes false even when slot 11 is 0 (the ctor
+    // state); an unlocked+disabled one (slot 11 == 1) writes false too.
+    w.boolean(file.unlocked_biome_torches && file.builder_acc_status[11] == 0); // `:54778`
+    w.boolean(file.ate_artisan_bread); // `:54779` (ctor `:56077`)
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
-    w.boolean(false); // `:54781` usedAegisCrystal (ctor `:56078`)
-    w.boolean(false); // `:54782` usedAegisFruit (`:56079`)
-    w.boolean(false); // `:54783` usedArcaneCrystal (`:56080`)
-    w.boolean(false); // `:54784` usedGalaxyPearl (`:56081`)
-    w.boolean(false); // `:54785` usedGummyWorm (`:56082`)
-    w.boolean(false); // `:54786` usedAmbrosia (`:56083`)
-    w.boolean(false); // `:54787` downedDD2EventAnyDifficulty
-    w.i32(0); // `:54788` taxMoney
-    w.i32(0); // `:54789` numberOfDeathsPVE
-    w.i32(0); // `:54790` numberOfDeathsPVP
+    for used in file.used_upgrades {
+        w.boolean(used); // `:54781-54786` (ctor `:56078-56083`)
+    }
+    w.boolean(file.downed_dd2_any_difficulty); // `:54787`
+    w.i32(file.tax_money); // `:54788` taxMoney
+    w.i32(file.deaths_pve); // `:54789` numberOfDeathsPVE
+    w.i32(file.deaths_pvp); // `:54790` numberOfDeathsPVP
     for color in [
         file.hair_color, // `:54791-54793`
         file.skin_color, // `:54794-54796`
@@ -1207,19 +1893,20 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
             w.u8(b);
         }
     }
-    // armor[20]: type, prefix, favorited (`:54812-54817`) — no stack. Fresh
+    // armor[20]: type, prefix, favorited (`:54812-54817`) тАФ no stack. Fresh
     // armor is all `new Item()` (type 0, prefix 0, favorited false); the
     // favourited bool is unconditional at 326 (reader gate >= 322, `:55313`).
-    for _ in 0..20 {
-        w.i32(0);
-        w.u8(0);
-        w.boolean(false);
+    // W4-f44 ph2: the caller's slots ride verbatim.
+    for (id, prefix, fav) in file.armor {
+        w.i32(id);
+        w.u8(prefix);
+        w.boolean(fav);
     }
     // dye[10]: type, prefix, favorited (`:54818-54823`).
-    for _ in 0..10 {
-        w.i32(0);
-        w.u8(0);
-        w.boolean(false);
+    for (id, prefix, fav) in file.dye {
+        w.i32(id);
+        w.u8(prefix);
+        w.boolean(fav);
     }
     // inventory[58]: type, stack, prefix, favorited (`:54824-54830`).
     for (i, (id, stack, prefix)) in file.inventory.iter().enumerate() {
@@ -1229,86 +1916,106 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
         w.boolean(file.inv_favorites & (1 << i) != 0);
     }
     // miscEquips[5] + miscDyes[5] interleaved: type, prefix each
-    // (`:54831-54837`) — no stack, no favorited. Fresh `Item()`s are air
-    // (ctor `:56064-56071`).
-    for _ in 0..5 {
-        w.i32(0);
-        w.u8(0);
-        w.i32(0);
-        w.u8(0);
+    // (`:54831-54837`) тАФ no stack, no favorited. Fresh `Item()`s are air
+    // (ctor `:56064-56071`). W4-f44 ph2: the caller's pairs ride verbatim.
+    for (eq_id, eq_prefix, dye_id, dye_prefix) in file.misc {
+        w.i32(eq_id);
+        w.u8(eq_prefix);
+        w.i32(dye_id);
+        w.u8(dye_prefix);
     }
     // bank / bank2 / bank3: 40 x (type, stack, prefix) each
     // (`:54838-54855`); `Chest.CreateBank`'s maxItems = 40 (`Chest.cs:142-144`,
-    // `:191`), filled with empty `Item`s (ctor `:56056-56058`).
-    for _ in 0..3 {
-        for _ in 0..40 {
-            w.i32(0);
-            w.i32(0);
-            w.u8(0);
+    // `:191`), filled with empty `Item`s (ctor `:56056-56058`). W4-f44 ph3:
+    // the caller's slots ride verbatim (a fresh player's are all-air).
+    for bank in [&file.bank, &file.bank2, &file.bank3] {
+        for (id, stack, prefix) in bank.iter() {
+            w.i32(*id);
+            w.i32(*stack);
+            w.u8(*prefix);
         }
     }
     // bank4 (the void bag): 40 x (type, stack, prefix, favorited)
     // (`:54856-54862`); the favourited bool reads at >= 255 (`:55495`).
-    for _ in 0..40 {
-        w.i32(0);
-        w.i32(0);
-        w.u8(0);
-        w.boolean(false);
+    // The caller's slots ride verbatim (a fresh player's are all-air).
+    for (id, stack, prefix, fav) in file.bank4 {
+        w.i32(id);
+        w.i32(stack);
+        w.u8(prefix);
+        w.boolean(fav);
     }
     // voidVaultInfo: one BitsByte (`:54863`), default 0 (`Player.cs:1590`);
-    // read at >= 199 (`Deserialize:55501-55504`).
-    w.u8(0);
+    // read at >= 199 (`Deserialize:55501-55504`). Bit 0 is IsVoidVaultEnabled
+    // (`Player.cs:3900-3910`).
+    w.u8(file.void_vault_info);
     // --- S1-J-5 increment 2: buffs through hideInfo (`:54864-54893`) ------
     // buffs: maxBuffs = 44 (`Player.cs:57106`) x (buffType, buffTime)
-    // (`:54864-54876`). Fresh buffType/buffTime are all-zero (`:1510-1512`)
-    // and `Main.buffNoSave[0]` is false, so the else arm writes the (0, 0)
-    // pair — byte-identical to the no-save arm.
-    for _ in 0..44 {
-        w.i32(0); // buffType[i]
-        w.i32(0); // buffTime[i]
+    // (`:54864-54876`). W4-f44 ph3: the caller's live pairs ride in order;
+    // `Main.buffNoSave` types write (0, 0) (`:54866-54870`), the remaining
+    // slots pad with the fresh all-zero buffType/buffTime (`:1510-1512`).
+    for i in 0..44 {
+        let (buff_type, buff_time) = file.buffs.get(i).copied().unwrap_or((0, 0));
+        if buff_no_save(buff_type) {
+            w.i32(0);
+            w.i32(0);
+        } else {
+            w.i32(buff_type);
+            w.i32(buff_time);
+        }
     }
-    // spawn points (`:54877-54888`): spN is a fresh null string[200]
-    // (`Player.cs:2488`), so the first iteration writes the -1 sentinel
-    // and breaks — one i32, no coordinates.
-    w.i32(-1);
-    // hbLocked (`:54889`): default false (`Player.cs:1436`).
-    w.boolean(false);
+    // spawn points (`:54877-54888`): up to 200 (spX, spY, spI, spN) records;
+    // the -1 sentinel is written at the first null spN and the loop breaks.
+    // With all 200 slots non-null the loop writes 200 records and NO sentinel
+    // (it exits on the bound, `:54877`). A fresh spN[200] is all null
+    // (`Player.cs:2488`), so only the sentinel is written. W4-f44 ph3: the
+    // caller's records ride verbatim.
+    let spawn_count = file.spawn_points.len().min(200);
+    for (x, y, world_id, world_name) in file.spawn_points.iter().take(200) {
+        w.i32(*x);
+        w.i32(*y);
+        w.i32(*world_id);
+        w.cs_string(world_name);
+    }
+    if spawn_count < 200 {
+        w.i32(-1);
+    }
+    // hbLocked (`:54889`): default false (`Player.cs:1436`) тАФ the
+    // verify-sweep rides the caller's flag.
+    w.boolean(file.hb_locked);
     // hideInfo[13] (`:54890-54893`): a fresh `bool[13]` (`Player.cs:812`),
-    // all false.
-    for _ in 0..13 {
-        w.boolean(false);
+    // all false тАФ W4-f44 ph2: the caller's toggles ride verbatim.
+    for hide in file.hide_info {
+        w.boolean(hide);
     }
     // --- S1-J-5 increment 3: the Serialize tail (`:54894-54933`) ----------
-    w.i32(0); // `:54894` anglerQuestsFinished (`Player.cs:1910`, default 0)
-              // `:54895-54898` DpadRadial.Bindings[4] (`Player.cs:800`): the Dpad4
-              // ctor sets all four to -1 (`Player.cs:618-621`).
-    for _ in 0..4 {
-        w.i32(-1);
+    w.i32(file.angler_quests_finished); // `:54894` anglerQuestsFinished (`:1910`)
+    // `:54895-54898` DpadRadial.Bindings[4] (`Player.cs:800`): the Dpad4
+    // ctor sets all four to -1 (`Player.cs:618-621`) тАФ the caller's ride.
+    for binding in file.dpad_bindings {
+        w.i32(binding);
     }
     // `:54899-54902` builderAccStatus[12] (`Player.cs:814`,
     // `BuilderAccToggleIDs.Count = 12`, `Player.cs:47-75`): a fresh int[12]
-    // with the ctor's `builderAccStatus[0] = 1` (`:56092`, the ruler-line
-    // toggle starts ON); every other slot keeps the int-array default 0.
-    // Slot 11 is the UsingBiomeTorches backing (`Player.cs:3960-3963`): the
-    // ctor never writes it (stays 0), the use arm's `UsingBiomeTorches =
-    // true` keeps it 0, and a `false` toggle would write 1 (W4-f33 — the
-    // port's fresh character is locked, so the slot stays at the ctor 0).
-    w.i32(1);
-    for _ in 0..11 {
-        w.i32(0);
+    // with the ctor's `builderAccStatus[0] = 1` (`:56092`) тАФ the caller's ride.
+    for status in file.builder_acc_status {
+        w.i32(status);
     }
-    w.i32(0); // `:54903` bartenderQuestLog (`Player.cs:1914`, default 0)
-              // `:54904-54908` dead (default false); the respawnTimer is written ONLY
-              // when dead — a fresh save emits the single bool.
-    w.boolean(false);
-    // `:54909` DateTime.UtcNow.ToBinary() — the wall-clock field, carried
+    w.i32(file.bartender_quest_log); // `:54903` bartenderQuestLog (`:1914`)
+    // `:54904-54908` dead; the respawnTimer is written ONLY when dead тАФ
+    // a fresh save emits the single bool.
+    w.boolean(file.dead);
+    if file.dead {
+        w.i32(file.respawn_timer);
+    }
+    // `:54909` DateTime.UtcNow.ToBinary() тАФ the wall-clock field, carried
     // by the caller (see `PlayerFileWrite::last_saved_binary`).
     w.u64(file.last_saved_binary as u64);
-    w.i32(0); // `:54910` golferScoreAccumulated (`Player.cs:1912`, default 0)
+    w.i32(file.golfer_score); // `:54910` golferScoreAccumulated (`:1912`)
               // `:54911` creativeTracker.Save -> CreativeUnlocksTracker.Save
               // (`CreativeUnlocksTracker.cs:9-12`) -> ItemsSacrificedUnlocksTracker.Save
-              // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag,
-              // the sacrifice-pair count, then the (persistentId, count) pairs — the
+              // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag
+              // (`AnyNewUnlocksFromTeammates`, always written false) then the
+              // sacrifice-pair count + the (persistentId, count) pairs тАФ the
               // Journey research the caller carries (a fresh tracker has none).
     w.boolean(false);
     w.i32(file.research.len() as i32);
@@ -1318,17 +2025,29 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     }
     // `:54912` SaveTemporaryItemSlotContents (`Player.cs:54935-54959`): one
     // BitsByte over mouseItem / CreativeMenu.GetItemByIndex(0) / guideItem /
-    // reforgeItem IsAir — the port models none of the four global slots, so
-    // all air → 0, no item payloads.
-    w.u8(0);
+    // reforgeItem IsAir, then an Item.Serialize triple per set bit. W4-f44
+    // ph3: the caller's slots ride; a fresh save is all-air тЖТ 0, no payloads.
+    let mut temp_bits = 0u8;
+    for (i, slot) in file.temp_slots.iter().enumerate() {
+        if slot.is_some() {
+            temp_bits |= 1 << i;
+        }
+    }
+    w.u8(temp_bits);
+    for slot in file.temp_slots.iter().flatten() {
+        w.i32(slot.0);
+        w.i32(slot.1);
+        w.u8(slot.2);
+    }
     // `:54913` CreativePowerManager.SaveToPlayer
     // (`CreativePowerManager.cs:183-195`): for each registered power that is
     // IPersistentPerPlayerContent, `true` + the u16 id + its Save. The
     // registration order (`Initialize`, `:86-105`) gives GodmodePower id 5
-    // (`IsEnabledForPlayer(Main.myPlayer)`, `CreativePowers.cs:705-707`),
-    // FarPlacementRangePower id 11 (`:744-746`), SpawnRateSliderPerPlayerPower
-    // id 14 (`_sliderCurrentValueCache`, `:1717-1719`). Then the `false`
-    // terminator. The values ride the caller's `powers` field.
+    // (`IsEnabledForPlayer(Main.myPlayer)`, `CreativePowers.cs:705-707` тАФ
+    // fresh false), FarPlacementRangePower id 11 (`:744-746` тАФ fresh false),
+    // SpawnRateSliderPerPlayerPower id 14 (`_sliderCurrentValueCache`,
+    // `:1717-1719` тАФ fresh 0f). Then the `false` terminator. W4-f44 ph2:
+    // the caller's live power state rides (the default is `written_fresh`).
     w.boolean(true);
     w.u16(5);
     w.boolean(file.powers.godmode);
@@ -1341,46 +2060,60 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.boolean(false);
     // `:54914-54918` the super-cart BitsByte: bit0 unlockedSuperCart
     // (`Player.cs:2052`, default false), bit1 enabledSuperCart
-    // (`Player.cs:2054`, default **true**) → 0b10 = 2.
-    w.u8(2);
-    // `:54919` CurrentLoadoutIndex (`Player.cs:3207`); `:54920-54923`
-    // Loadouts[3].Serialize (`Player.cs:3200-3204`; `EquipmentLoadout.cs:31-45`):
-    // Armor[20] + Dye[10] each Item.Serialize(writeFavorite: true) =
-    // (type, stack, prefix, favorited) — a fresh `Item()` is (0, 0, 0, false)
-    // (`EquipmentLoadout.cs:14-19`) — then Hide[10] bools. The live sets ride
-    // the caller's carrier; three empty sets reproduce the golden 310-zero block.
-    w.i32(file.current_loadout_index as i32);
+    // (`Player.cs:2054`, default **true**) тЖТ a fresh save is 0b10 = 2.
+    // W4-f44 ph3: the caller's byte rides verbatim.
+    w.u8(file.super_cart);
+    // `:54919` CurrentLoadoutIndex (`Player.cs:3207`, default 0) тАФ the load
+    // clamp is 0..Loadouts.Length-1 (`:55722`); the writer clamps the same.
+    w.i32(file.current_loadout.clamp(0, 2));
+    // `:54920-54923` Loadouts[3].Serialize (`Player.cs:3200-3204`;
+    // `EquipmentLoadout.cs:31-45`): Armor[20] + Dye[10] each
+    // Item.Serialize(writeFavorite: true) = (type, stack, prefix, favorited)
+    // тАФ fresh `Item()`s are (0, 0, 0, false) (`EquipmentLoadout.cs:14-19`) тАФ
+    // then Hide[10] bools. The caller's slots ride verbatim.
     for loadout in &file.loadouts {
-        for slot in 0..30 {
-            let item = loadout.item_at(slot);
-            w.i32(item.kind as i32);
-            w.i32(item.count as i32);
-            w.u8(item.prefix.min(u8::MAX as u16) as u8);
-            w.boolean(loadout.is_shared(slot));
+        for (id, stack, prefix, fav) in loadout.armor.iter().chain(loadout.dye.iter()) {
+            w.i32(*id);
+            w.i32(*stack);
+            w.u8(*prefix);
+            w.boolean(*fav);
         }
         for hide in loadout.hide {
             w.boolean(hide);
         }
     }
-    // W4-e10 — `:54924` (byte)voiceVariant / `:54925` voicePitchOffset: the
-    // creation draft's picked pair (ctor defaults 1 / 0f, `Player.cs:56045`/
-    // `:1348`). The byte cast mirrors `(byte)newPlayer.voiceVariant`.
-    w.u8(file.voice_variant as u8);
-    w.f32(file.voice_pitch_offset);
+    w.u8(file.voice_variant); // `:54924` (byte)voiceVariant (ctor 1, `:56045`)
+    w.f32(file.voice_pitch_offset); // `:54925` voicePitchOffset (`:1348`)
     // `:54926` CraftingRequests.SavePossibleRefunds
-                // (`CraftingRequests.cs:353-362`): the sum of consumed items over _pendingCrafts
-                // — a fresh queue is empty → count 0, no item payloads.
-    w.i32(0);
-    // `:54927-54932` oneTimeDialoguesSeen (`Player.cs:3209`): a fresh empty
-    // HashSet → count 0, no strings.
-    w.i32(0);
+    // (`CraftingRequests.cs:353-362`): the sum of consumed items over
+    // _pendingCrafts, each Item.Serialize (no favourited). W4-f44 ph3: the
+    // caller's triples ride; a fresh queue is empty тЖТ count 0, no payloads.
+    w.i32(file.refunds.len() as i32);
+    for (id, stack, prefix) in &file.refunds {
+        w.i32(*id);
+        w.i32(*stack);
+        w.u8(*prefix);
+    }
+    // `:54927-54932` oneTimeDialoguesSeen (`Player.cs:3209`): a HashSet тЖТ
+    // count + the strings. W4-f44 ph3: the caller's strings ride, deduped
+    // first-occurrence like the set; a fresh HashSet is empty тЖТ count 0.
+    let mut seen: Vec<&str> = Vec::new();
+    for key in &file.dialogues {
+        if !seen.contains(&key.as_str()) {
+            seen.push(key);
+        }
+    }
+    w.i32(seen.len() as i32);
+    for key in seen {
+        w.cs_string(key);
+    }
     w.into_inner()
 }
 
 /// `PlayerFileData.CreateAndSave` (`Player.cs:54560`): the write to
 /// `Players/<name>.plr`.
 /// The favourite marker beside a character's `.plr`: `<stem>.trfav` in the
-/// same directory — the port's stand-in for `Main.LocalFavoriteData`
+/// same directory тАФ the port's stand-in for `Main.LocalFavoriteData`
 /// (`Main.cs:66548`), keyed by the file name like `IO/FavoritesFile.cs:34`.
 /// The same carrier the world uses (`ui/save_list.rs:219`), so the star never
 /// rides a file the engine re-writes wholesale (`writer` below rebuilds the
@@ -1411,28 +2144,15 @@ pub fn set_favorite_marker(path: &Path, favorite: bool) -> std::io::Result<()> {
 
 pub fn write_player_file(path: &Path, file: &PlayerFileWrite) -> Result<(), PlayerFileError> {
     // `Player.SavePlayer` (`Player.cs:54740-54744`) streams through
-    // `FileUtilities.WriteAllBytes` after the path's directory exists — the
+    // `FileUtilities.WriteAllBytes` after the path's directory exists тАФ the
     // Players dir may not exist yet on a first run.
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
-    }
-    // `InternalSavePlayerFile:54730-54733`: an existing file is copied to
-    // `<path>.bak` BEFORE the new bytes land (`FileUtilities.Copy(path,
-    // path + ".bak")`). A failed copy is not fatal in the port — the C#
-    // throws into `FancyErrorPrinter`, but the vanilla save still matters
-    // more than its backup; the primary write below is the contract.
-    if path.exists() {
-        let bak = std::path::PathBuf::from(format!("{}.bak", path.display()));
-        if let Err(e) = std::fs::copy(path, &bak) {
-            log::warn!("player .bak copy failed: {e}");
-        }
     }
     std::fs::write(path, write_player_bytes(file))?;
     Ok(())
 }
 
-/// `<path>.bak` — the string CONCATENATION the C# uses everywhere
-/// (`Player.cs:54732`/`:38799`/`:55873`): `Belsin.plr.bak`, NOT a
 /// `with_extension` swap. The `SavePlayer` backup copy (`:54732`,
 /// `FileUtilities.Copy(path, path + ".bak")`) and the corrupt-load restore
 /// (`LoadPlayer`, `:55873-55875`, `FileUtilities.Move(file + ".bak", file)`)
@@ -1449,13 +2169,13 @@ pub fn backup_path(path: &Path) -> PathBuf {
 /// `Main.ActivePlayerFileData.Path` (`Main.cs:2857`); the `Exists`-then-
 /// `Delete` pair runs on the `.plr` first, then `<path>.bak` (`:38795-38802`).
 /// `FileUtilities.Delete` without `forceDeleteFile` routes to
-/// `IPathService.MoveToRecycleBin` (`FileUtilities.cs:23-37`) — the port
+/// `IPathService.MoveToRecycleBin` (`FileUtilities.cs:23-37`) тАФ the port
 /// deletes outright, the same deviation `save_list::erase_player` documents
-/// (no recycle-bin API). The cloud arm (`IsCloudSave`) has no port carrier —
+/// (no recycle-bin API). The cloud arm (`IsCloudSave`) has no port carrier тАФ
 /// the path is always local. The caller owns the
-/// `!ServerSideCharacter` gate (`:38792` — the port has no server-side
+/// `!ServerSideCharacter` gate (`:38792` тАФ the port has no server-side
 /// characters) and the `Main.ActivePlayerFileData = new PlayerFileData()`
-/// reset (`:38803`). A delete error is logged, not propagated — the C#
+/// reset (`:38803`). A delete error is logged, not propagated тАФ the C#
 /// `File.Delete` throw would crash the death tick; the port keeps dying.
 pub fn kill_player_files(path: &Path) {
     for target in [path.to_path_buf(), backup_path(path)] {
@@ -1465,17 +2185,19 @@ pub fn kill_player_files(path: &Path) {
             }
         }
     }
+}
+
 /// `PlayerFileData.Rename` (`IO/PlayerFileData.cs:207-214`) for a card the
 /// port has no live `Player` for: the trimmed name lands on the stored
 /// character and `Player.SavePlayer` re-writes the file. The vanilla mutates
 /// `Player.name` then serializes the WHOLE live player; the port models only
 /// the card state, so the write is a read-modify-write splice: decrypt
 /// (`LoadPlayer:55073-55076`), replace ONLY `Serialize`'s first field
-/// (`Player.cs:54752`'s name string — the byte right after the 4-byte
+/// (`Player.cs:54752`'s name string тАФ the byte right after the 4-byte
 /// release + the 20-byte `FileMetadata`), keep every other byte (including
 /// the unmodelled tail the writer would default), re-encrypt with the
 /// write-side PKCS7 envelope (`:54734-54742`). The `.bak` copy is
-/// `InternalSavePlayerFile:54730-54733` — the previous file before the
+/// `InternalSavePlayerFile:54730-54733` тАФ the previous file before the
 /// overwrite. `Player.GetFileData` skips files that cannot load
 /// (`Player.cs:55862-55881`), so the read gate runs first.
 pub fn rename_player_file(path: &Path, new_name: &str) -> Result<(), PlayerFileError> {
@@ -1486,7 +2208,7 @@ pub fn rename_player_file(path: &Path, new_name: &str) -> Result<(), PlayerFileE
     let spliced = rename_plaintext_name(&plain, new_name)
         .ok_or(PlayerFileError::Truncated("rename name field"))?;
     // `InternalSavePlayerFile:54730-54733`: `FileUtilities.Copy(path, path +
-    // ".bak")` when the file exists — it does (the read above succeeded).
+    // ".bak")` when the file exists тАФ it does (the read above succeeded).
     let mut bak = path.as_os_str().to_os_string();
     bak.push(".bak");
     std::fs::write(PathBuf::from(bak), &raw)?;
@@ -1495,7 +2217,7 @@ pub fn rename_player_file(path: &Path, new_name: &str) -> Result<(), PlayerFileE
 }
 
 /// The name-field splice [`rename_player_file`] runs: `Serialize`'s first
-/// field (`Player.cs:54752`) sits at offset 24 — the `i32` release
+/// field (`Player.cs:54752`) sits at offset 24 тАФ the `i32` release
 /// (`InternalSavePlayerFile:54738`) plus the 20-byte `FileMetadata`
 /// (`FileMetadata.cs:22-27`: u64 magic + u32 revision + u64 favorites). The
 /// 7-bit-length-prefixed string is replaced whole; every later byte keeps
@@ -1521,7 +2243,7 @@ mod tests {
     // `assets/test/golden.plr` is written by the REAL decompiled
     // `Player.Serialize` (Player.cs:54750+) through `tools/WldFixtureHarness`,
     // with the real AES-CBC envelope. The fixture exposed FILE_TYPE_PLAYER=1
-    // (Map) where the C# enum says Player=3 — the reader rejected every real
+    // (Map) where the C# enum says Player=3 тАФ the reader rejected every real
     // vanilla character. Read parity only; the .plr writer stays S1-J-5's.
     #[test]
     fn s1_j_3_the_csharp_plr_fixture_reads() {
@@ -1571,92 +2293,8 @@ mod tests {
             inventory,
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             last_saved_binary: 0,
-            voice_variant: 1,
-            voice_pitch_offset: 0.0,
-            unlocked_biome_torches: false,
-            using_biome_torches: false,
-            research: Vec::new(),
-            powers: crate::player_file::CreativePowersSave::written_fresh(),
-            current_loadout_index: 0,
-            loadouts: Default::default(),
-            revision: 0,
+            ..Default::default()
         }
-    }
-
-    // --- The card rename (research/19 M1, W4-f22) -----------------------------
-
-    #[test]
-    fn rename_rewrites_only_the_name_field_and_baks_the_previous_file() {
-        // `PlayerFileData.Rename` (`IO/PlayerFileData.cs:207-214`): the name
-        // lands, `Player.SavePlayer` re-writes, `InternalSavePlayerFile:54730-
-        // 54733` copies the previous file to `.bak`. Every OTHER field keeps
-        // its value — the splice never re-defaults the unmodelled tail.
-        let dir = crate::test_world_helpers::test_scratch("plr-rename");
-        let path = dir.join("Belsin.plr");
-        write_player_file(&path, &sample()).unwrap();
-        let before = read_player_file(&path).unwrap();
-        rename_player_file(&path, "Zephyra").unwrap();
-        let after = read_player_file(&path).unwrap();
-        assert_eq!(after.name, "Zephyra");
-        // The rest of the card state is untouched.
-        assert_eq!(after.difficulty, before.difficulty);
-        assert_eq!(after.hair, before.hair);
-        assert_eq!(after.inventory, before.inventory);
-        assert_eq!(after.inv_favorites, before.inv_favorites);
-        assert_eq!(after.hair_color, before.hair_color);
-        assert_eq!(after.revision, before.revision);
-        // The `.bak` is the pre-rename file (`:54732`).
-        let bak = dir.join("Belsin.plr.bak");
-        assert_eq!(read_player_file(&bak).unwrap().name, "Belsin");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn rename_splice_keeps_every_byte_past_the_name_field() {
-        // The plaintext witness: only `Serialize`'s first field changes; the
-        // bytes before it (release + FileMetadata) and after it (the whole
-        // remaining Serialize walk) are byte-identical.
-        let plain = serialize_plaintext(&sample());
-        let spliced = rename_plaintext_name(&plain, "A Much Longer Name Than Before").unwrap();
-        let mut r = Reader::new(&plain);
-        r.skip(4 + 20).unwrap();
-        let name_start = r.pos();
-        r.cs_string().unwrap();
-        let name_end = r.pos();
-        assert_eq!(&spliced[..name_start], &plain[..name_start]);
-        let mut r2 = Reader::new(&spliced);
-        r2.skip(4 + 20).unwrap();
-        assert_eq!(r2.cs_string().unwrap(), "A Much Longer Name Than Before");
-        let tail_start = r2.pos();
-        assert_eq!(&spliced[tail_start..], &plain[name_end..]);
-        // A truncated buffer refuses instead of mis-splicing.
-        assert!(rename_plaintext_name(&plain[..25], "X").is_none());
-    }
-
-    #[test]
-    fn rename_refuses_a_file_the_listing_would_skip() {
-        // `Player.GetFileData`'s null-on-failure skip (`Player.cs:55862-55881`)
-        // gates the rename too — garbage is not renamed, nothing is written.
-        let dir = crate::test_world_helpers::test_scratch("plr-rename-bad");
-        let path = dir.join("junk.plr");
-        std::fs::write(&path, b"unreadable").unwrap();
-        assert!(rename_player_file(&path, "X").is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), b"unreadable");
-        assert!(!dir.join("junk.plr.bak").exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn rename_round_trips_a_multibyte_name_through_the_7bit_length() {
-        // The keyboard allows any text (`Lang.menu[45]`, no charset gate); a
-        // >127-byte name exercises the multi-byte 7-bit length prefix on both
-        // the write (`Writer::cs_string`) and the read walk.
-        let long = "Ы".repeat(80); // 160 UTF-8 bytes -> a 2-byte length prefix
-        let plain = serialize_plaintext(&sample());
-        let spliced = rename_plaintext_name(&plain, &long).unwrap();
-        let file = read_player_bytes(&spliced).unwrap();
-        assert_eq!(file.name, long);
-        assert_eq!(file.inventory, sample().inventory);
     }
 
     #[test]
@@ -1665,7 +2303,7 @@ mod tests {
         // the AES-CBC layer and the release-326 section walk.
         let bytes = write_player_bytes(&sample());
         assert_eq!(bytes.len() % 16, 0, "the CBC padding aligns the file");
-        // `read_player_bytes` takes the decrypted body — the CBC layer is
+        // `read_player_bytes` takes the decrypted body тАФ the CBC layer is
         // `read_player_file`'s job, so peel it here.
         let file = match read_player_bytes(&cbc_decrypt(&bytes)) {
             Ok(f) => f,
@@ -1688,76 +2326,10 @@ mod tests {
             1 << 0 | 1 << 2,
             "the per-slot favourited bits ride the release-326 inventory walk"
         );
-        // W4-e10 — the voice pair round-trips (`:54924-54925` write,
-        // `:55730`/`:55740` read).
-        assert_eq!(file.voice_variant, 1);
-        assert_eq!(file.voice_pitch_offset, 0.0);
-    }
-
-    /// W4-e10 — the picked voice pair survives a save/load at the C# offsets
-    /// (`Player.cs:54924-54925` write, `:55730`/`:55740` read, the
-    /// `LoadPlayer_LastMinuteFixes` clamp `:55831`).
-    #[test]
-    fn w4_e10_the_voice_pair_round_trips_at_the_csharp_offsets() {
-        let mut w = sample();
-        w.voice_variant = 3;
-        w.voice_pitch_offset = -0.5;
-        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&w))).unwrap();
-        assert_eq!(file.voice_variant, 3);
-        assert_eq!(file.voice_pitch_offset, -0.5);
-        // The byte cast: variant 2 (female) rides the same u8 slot.
-        w.voice_variant = 2;
-        w.voice_pitch_offset = 0.75;
-        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&w))).unwrap();
-        assert_eq!(file.voice_variant, 2);
-        assert_eq!(file.voice_pitch_offset, 0.75);
-    }
-
-    /// W4-e10 — `LoadPlayer_LastMinuteFixes` clamps voiceVariant to 1..4
-    /// (`Player.cs:55831`): a 0 byte clamps up to 1, a 200 byte clamps down
-    /// to 4 (the picker only offers 1..3, but a hand-edited file can carry
-    /// anything).
-    #[test]
-    fn w4_e10_the_loaded_voice_variant_clamps_to_1_through_4() {
-        // Build a release-326 body, then patch the voice byte at its offset.
-        // The voice pair sits 9 bytes before the plaintext end (voice 1 +
-        // pitch 4 + refunds 4 + dialogues 4 = 13; the variant is the first).
-        let plain = serialize_plaintext(&sample());
-        let voice_off = plain.len() - 13;
-        for (byte, expect) in [(0u8, 1i32), (200u8, 4i32), (3u8, 3i32)] {
-            let mut patched = plain.clone();
-            patched[voice_off] = byte;
-            let file = read_player_bytes(&patched).unwrap();
-            assert_eq!(file.voice_variant, expect, "byte {byte} clamps to {expect}");
-        }
-    }
-
-    /// W4-e10 — below release 280 the voice pair is absent: the reader
-    /// defaults voiceVariant to the gender pick `(Male ? 1 : 2)` and the
-    /// pitch to 0 (`Player.cs:55733-55737`). Truncate the 13-byte voice+
-    /// refunds+dialogues tail off a release-326 body and restamp it 279.
-    #[test]
-    fn w4_e10_below_280_the_voice_defaults_to_the_gender_pick() {
-        let plain = serialize_plaintext(&sample());
-        // sample() is skin_variant 0 (male) -> the default variant is 1.
-        let mut lo = plain[..plain.len() - 13].to_vec();
-        lo[..4].copy_from_slice(&279i32.to_le_bytes());
-        let file = read_player_bytes(&lo).unwrap();
-        assert_eq!(file.voice_variant, 1);
-        assert_eq!(file.voice_pitch_offset, 0.0);
-        // A female body (skin_variant 4) defaults to variant 2.
-        let mut female = sample();
-        female.skin_variant = 4;
-        let plain_f = serialize_plaintext(&female);
-        let mut lo_f = plain_f[..plain_f.len() - 13].to_vec();
-        lo_f[..4].copy_from_slice(&279i32.to_le_bytes());
-        let file_f = read_player_bytes(&lo_f).unwrap();
-        assert_eq!(file_f.voice_variant, 2);
-        assert_eq!(file_f.voice_pitch_offset, 0.0);
     }
 
     /// `Item.favorited`'s bitfield round-trips (`Player.cs:54820-54824`'s
-    /// write order — type, stack, prefix, favorited): toggling two slots,
+    /// write order тАФ type, stack, prefix, favorited): toggling two slots,
     /// saving and loading leaves the same two starred (BUG-03). Before this
     /// the writer emitted a hardcoded `false` and the reader dropped it, so
     /// every reload lost the stars.
@@ -1782,42 +2354,600 @@ mod tests {
         assert_eq!(file.inv_favorites, (1 << 1) | (1 << 57));
         // The set bit lands on the slot the C# reads it for.
         assert_eq!(file.inventory[1], (3, 50, 0));
-        // The empty slots read false — their favourited byte is consumed with
+        // The empty slots read false тАФ their favourited byte is consumed with
         // the rest of the triple (`:55363`).
         assert_eq!(file.inventory[30], (0, 0, 0));
     }
 
-    /// W4-f33 — the Torch God's Favor biome-torch pair round-trips the
-    /// release-326 `.plr` (`Player.cs:54777-54778` write / `:55241-55242`
-    /// read, the 229+ unlock block's first two bools): the permanent unlock
-    /// + the UsingBiomeTorches toggle survive a save + load, and the
-    /// surrounding unlock bools stay aligned (the inventory after the block
-    /// reads unchanged).
+    /// W4-f44 ph3: playTime ticks / hairDye / team round-trip and sit at the
+    /// `Serialize:54754-54757` offsets (right after difficulty, before hair).
     #[test]
-    fn w4_f33_the_biome_torch_pair_round_trips_the_plr() {
+    fn the_header_fields_round_trip() {
         let written = PlayerFileWrite {
-            unlocked_biome_torches: true,
-            using_biome_torches: true,
+            play_time_ticks: 123_456_789_012,
+            hair_dye: 7,
+            team: 3,
             ..sample()
         };
-        let bytes = write_player_bytes(&written);
-        let file = read_player_bytes(&cbc_decrypt(&bytes)).expect("the unlock file reads");
-        assert!(file.unlocked_biome_torches, "the :54777 bool survived");
-        assert!(file.using_biome_torches, "the :54778 bool survived");
-        // The walk stayed aligned through the unlock block — the fields
-        // AFTER it match the sample's.
-        assert_eq!(file.inventory, sample().inventory);
-        assert_eq!(file.inv_favorites, sample().inv_favorites);
-        // The fresh sample writes false and reads false.
-        let plain_file =
-            read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
-        assert!(!plain_file.unlocked_biome_torches);
-        assert!(!plain_file.using_biome_torches);
+        let plain = serialize_plaintext(&written);
+        // The byte offsets: 24 prologue + name(1 len + 6 chars) + difficulty.
+        let mut r = Reader::new(&plain);
+        r.skip(24).unwrap();
+        assert_eq!(r.cs_string().unwrap(), "Belsin");
+        assert_eq!(r.u8().unwrap(), 0); // difficulty `:54753`
+        assert_eq!(r.u64().unwrap(), 123_456_789_012); // playTime `:54754`
+        assert_eq!(r.i32().unwrap(), 0); // hair `:54755`
+        assert_eq!(r.u8().unwrap(), 7); // hairDye `:54756`
+        assert_eq!(r.u8().unwrap(), 3); // team `:54757`
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.play_time_ticks, 123_456_789_012);
+        assert_eq!(file.hair_dye, 7);
+        assert_eq!(file.team, 3);
+        // A fresh write keeps the golden zeros (`:54754-54757`).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: the one-time dialogues round-trip as count + strings,
+    /// deduped first-occurrence on both sides (the HashSet `.Add`); a fresh
+    /// set is count 0.
+    #[test]
+    fn the_dialogues_round_trip_deduped() {
+        let dialogues = vec!["First".to_string(), "Second".to_string(), "Third".to_string()];
+        let written = PlayerFileWrite { dialogues: dialogues.clone(), ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The dialogue count is the 4 bytes before the strings, at the end.
+        let mut total = 4usize;
+        for key in &dialogues {
+            total += 1 + key.len(); // the 7-bit length prefix + ASCII bytes
+        }
+        let count_at = plain.len() - total;
+        assert_eq!(
+            i32::from_le_bytes(plain[count_at..count_at + 4].try_into().unwrap()),
+            3
+        );
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.dialogues, dialogues);
+        // Duplicates collapse on write (the HashSet cannot hold them).
+        let written = PlayerFileWrite {
+            dialogues: vec!["A".into(), "B".into(), "A".into(), "C".into(), "B".into()],
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.dialogues, vec!["A", "B", "C"]);
+        // A file that somehow carries duplicates: the read `.Add` dedupes.
+        let mut w = Writer::new();
+        let base = serialize_plaintext(&sample());
+        // Replace the trailing dialogue count 0 with 3 + "A","A","B".
+        w.bytes(&base[..base.len() - 4]);
+        w.i32(3);
+        w.cs_string("A");
+        w.cs_string("A");
+        w.cs_string("B");
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.dialogues, vec!["A", "B"]);
+        // Fresh: count 0 (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(fresh.dialogues.is_empty());
+    }
+
+    /// W4-f44 ph3: the crafting refunds round-trip as count + triples; an
+    /// over-count id airs id+prefix (the stack rides); a fresh queue is count 0.
+    #[test]
+    fn the_refunds_round_trip_as_count_and_triples() {
+        let refunds = vec![(757, 1, 81), (2, 999, 0), (3507, 1, 0)];
+        let written = PlayerFileWrite { refunds: refunds.clone(), ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The refunds sit after the voice pair, before the dialogues. Walk
+        // to them: the tail's fixed prefix is 1425 - 4 dialogues - (4 + 9*n)
+        // refunds... simpler: read back and also pin the count bytes by
+        // locating the dialogue count at the very end.
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.refunds, refunds);
+        // The last 4 bytes are the dialogue count (0); the 4 before the
+        // refund payloads are the refund count.
+        let n = refunds.len();
+        let refund_count_at = plain.len() - 4 - (9 * n) - 4;
+        assert_eq!(
+            i32::from_le_bytes(plain[refund_count_at..refund_count_at + 4].try_into().unwrap()),
+            n as i32
+        );
+        // An over-count id airs id+prefix while the stack rides
+        // (`Item.DeserializeFrom`, `Item.cs:49923-49925` тАФ the verify-sweep
+        // audit: the aired netDefaults stack is overwritten by the read,
+        // Prefix no-ops on air).
+        let written = PlayerFileWrite {
+            refunds: vec![(ITEM_ID_COUNT + 2, 7, 9), (8, 99, 0)],
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.refunds, vec![(0, 7, 0), (8, 99, 0)]);
+        // Fresh: count 0, no payloads (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(fresh.refunds.is_empty());
+    }
+
+    /// W4-f44 ph3: the voice pair round-trips; the read clamps the variant
+    /// to 1..4 (`:55831`); a pre-280 file derives the variant from the
+    /// skinVariant's Male set and zeroes the pitch.
+    #[test]
+    fn the_voice_pair_round_trips_clamps_and_derives() {
+        let written = PlayerFileWrite {
+            voice_variant: 3,
+            voice_pitch_offset: -0.25,
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.voice_variant, 3);
+        assert_eq!(file.voice_pitch_offset, -0.25);
+        // The clamp: 0 тЖТ 1, 9 тЖТ 4 (`Utils.Clamp(1, 4)`, `:55831`).
+        for (raw, want) in [(0u8, 1u8), (5, 4), (255, 4), (2, 2)] {
+            let written = PlayerFileWrite { voice_variant: raw, ..sample() };
+            let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+            assert_eq!(file.voice_variant, want);
+        }
+        // A pre-280 body: hand-built at 279's gates (no team < 283, no 324
+        // bool, no armour/dye favourites < 322, no bank4 favourites < 255,
+        // no tracker flag < 282, no voice bytes) тАФ ends after the loadouts.
+        fn body_279(skin_variant: u8) -> Vec<u8> {
+            let mut w = Writer::new();
+            w.i32(279);
+            w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+            w.u32(0);
+            w.u64(0);
+            w.cs_string("Belsin");
+            w.u8(0); // difficulty
+            w.u64(0); // playtime
+            w.i32(0); // hair
+            w.u8(0); // hairDye тАФ no team at 279
+            w.bytes(&[0, 0]); // hide BitsBytes
+            w.u8(0); // hideMisc
+            w.u8(skin_variant);
+            for v in [100, 100, 20, 20] {
+                w.i32(v);
+            }
+            for _ in 0..11 {
+                w.boolean(false); // extra + torch pair + bread + 6 unlocks + dd2
+            }
+            w.i32(0); // tax
+            w.i32(0); // deathsPVE (254)
+            w.i32(0); // deathsPVP (254)
+            w.bytes(&[0; 21]); // colors
+            for _ in 0..30 {
+                w.i32(0); // armor + dye pairs, no favourited (< 322)
+                w.u8(0);
+            }
+            for _ in 0..58 {
+                w.bytes(&[0; 10]); // inventory triples + favourited
+            }
+            for _ in 0..5 {
+                w.bytes(&[0; 10]); // misc pairs
+            }
+            for _ in 0..120 {
+                w.bytes(&[0; 9]); // bank + bank2 + bank3 triples
+            }
+            for _ in 0..40 {
+                w.bytes(&[0; 10]); // bank4 with favourited (>= 255)
+            }
+            w.u8(0); // voidVaultInfo (199)
+            for _ in 0..44 {
+                w.i32(0); // buffs (>= 252)
+                w.i32(0);
+            }
+            w.i32(-1); // spawn sentinel
+            w.boolean(false); // hbLocked
+            w.bytes(&[0; 13]); // hideInfo
+            w.i32(0); // angler
+            for _ in 0..4 {
+                w.i32(-1); // dpad
+            }
+            for i in 0..12 {
+                w.i32(i32::from(i == 0)); // builderAcc (>= 230)
+            }
+            w.i32(0); // bartender
+            w.boolean(false); // dead
+            w.u64(0); // timestamp
+            w.i32(0); // golfer (206)
+            w.i32(0); // tracker count (218) тАФ no flag (< 282)
+            w.u8(0); // temp-slot BitsByte (214)
+            w.boolean(false); // powers terminator (220)
+            w.u8(2); // superCart (253)
+            w.i32(0); // CurrentLoadoutIndex (262)
+            for _ in 0..3 {
+                for _ in 0..30 {
+                    w.bytes(&[0; 9]); // loadout items, no favourited (< 322)
+                }
+                w.bytes(&[0; 10]); // Hide[10]
+            }
+            w.into_inner() // the 279 file ends before the voice bytes
+        }
+        // Male variants {0,1,2,3,8,10} тЖТ 1; female {4,5,6,7,9,11} тЖТ 2.
+        for variant in [0u8, 1, 2, 3, 8, 10] {
+            let file = read_player_bytes(&body_279(variant)).unwrap();
+            assert_eq!(file.voice_variant, 1, "variant {variant} is Male");
+            assert_eq!(file.voice_pitch_offset, 0.0);
+        }
+        for variant in [4u8, 5, 6, 7, 9, 11] {
+            let file = read_player_bytes(&body_279(variant)).unwrap();
+            assert_eq!(file.voice_variant, 2, "variant {variant} is female");
+            assert_eq!(file.voice_pitch_offset, 0.0);
+        }
+    }
+
+    /// W4-f44 ph3: the super-cart BitsByte round-trips verbatim; a pre-253
+    /// file derives the unlock from a 3353 in any inventory (stack > 0) and
+    /// keeps the enabled default true.
+    #[test]
+    fn the_super_cart_byte_rides_and_the_legacy_unlock_derives() {
+        for byte in [0u8, 1, 2, 3, 0xFF] {
+            let written = PlayerFileWrite { super_cart: byte, ..sample() };
+            let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+            assert_eq!(file.super_cart, byte);
+        }
+        // The fresh default is 2 (enabled true, unlocked false).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert_eq!(fresh.super_cart, 2);
+        // A pre-253 body, hand-built at its own gates (no team < 283, no
+        // bread/unlock-block < 256/260, no 324 bool, no deaths < 254, no
+        // armour/dye favourites < 322, no bank4 favourites < 255, no
+        // tracker flag < 282) тАФ ends right before the superCart byte.
+        fn body_252(inventory: [(i32, i32, u8); 58]) -> Vec<u8> {
+            let mut w = Writer::new();
+            w.i32(252);
+            w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+            w.u32(0);
+            w.u64(0);
+            w.cs_string("Belsin");
+            w.u8(0); // difficulty
+            w.u64(0); // playtime
+            w.i32(0); // hair
+            w.u8(0); // hairDye тАФ no team at 252
+            w.bytes(&[0, 0]); // hide BitsBytes
+            w.u8(0); // hideMisc
+            w.u8(0); // skinVariant
+            for v in [100, 100, 20, 20] {
+                w.i32(v);
+            }
+            w.boolean(false); // extraAccessory (125)
+            w.boolean(false); // unlockedBiomeTorches (229)
+            w.boolean(false); // UsingBiomeTorches (229)
+            w.boolean(false); // dd2 (182)
+            w.i32(0); // tax (128) тАФ no deaths at 252
+            w.bytes(&[0; 21]); // colors
+            for _ in 0..30 {
+                w.i32(0); // armor + dye pairs, no favourited (< 322)
+                w.u8(0);
+            }
+            for (id, stack, prefix) in inventory {
+                w.i32(id);
+                w.i32(stack);
+                w.u8(prefix);
+                w.boolean(false);
+            }
+            for _ in 0..5 {
+                w.bytes(&[0; 10]); // misc pairs
+            }
+            for _ in 0..120 {
+                w.bytes(&[0; 9]); // bank + bank2 + bank3 triples
+            }
+            for _ in 0..40 {
+                w.bytes(&[0; 9]); // bank4, no favourited (< 255)
+            }
+            w.u8(0); // voidVaultInfo (199)
+            for _ in 0..44 {
+                w.i32(0); // buffs: 44 at 252 (>= 252)
+                w.i32(0);
+            }
+            w.i32(-1); // spawn sentinel
+            w.boolean(false); // hbLocked
+            w.bytes(&[0; 13]); // hideInfo
+            w.i32(0); // angler (98)
+            for _ in 0..4 {
+                w.i32(-1); // dpad (162)
+            }
+            for i in 0..12 {
+                w.i32(i32::from(i == 0)); // builderAcc: 12 at 252 (>= 230)
+            }
+            w.i32(0); // bartender (181)
+            w.boolean(false); // dead (200)
+            w.u64(0); // timestamp (202)
+            w.i32(0); // golfer (206)
+            w.i32(0); // tracker count (218) тАФ no flag (< 282)
+            w.u8(0); // temp-slot BitsByte (214)
+            w.boolean(false); // powers terminator (220) тАФ the 252 file ends here
+            w.into_inner()
+        }
+        let file = read_player_bytes(&body_252([(0, 0, 0); 58])).unwrap();
+        assert_eq!(file.super_cart, 2); // no 3353 anywhere тЖТ unlock false
+        // With a 3353 (stack 1) in inventory slot 10: unlock true тЖТ 3.
+        let mut inv = [(0i32, 0i32, 0u8); 58];
+        inv[10] = (3353, 1, 0);
+        let file = read_player_bytes(&body_252(inv)).unwrap();
+        assert_eq!(file.super_cart, 3);
+        // A zero-stack 3353 does NOT count (`HasItem` needs stack > 0).
+        inv[10] = (3353, 0, 0);
+        let file = read_player_bytes(&body_252(inv)).unwrap();
+        assert_eq!(file.super_cart, 2);
+    }
+
+    /// W4-f44 ph3: the four temporary item slots round-trip through the
+    /// BitsByte + per-set-bit triples; air slots carry no payload.
+    #[test]
+    fn the_temp_slots_round_trip_through_the_bits_byte() {
+        // Bits 0 and 2 set (mouse + guide), 1 and 3 air.
+        let written = PlayerFileWrite {
+            temp_slots: [Some((757, 1, 81)), None, Some((2, 999, 0)), None],
+            ..sample()
+        };
+        let plain = serialize_plaintext(&written);
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.temp_slots, [Some((757, 1, 81)), None, Some((2, 999, 0)), None]);
+        // All four set: the BitsByte is 0x0F and four triples follow.
+        let written = PlayerFileWrite {
+            temp_slots: [Some((1, 1, 0)), Some((2, 2, 0)), Some((3, 3, 0)), Some((4, 4, 0))],
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.temp_slots, [Some((1, 1, 0)), Some((2, 2, 0)), Some((3, 3, 0)), Some((4, 4, 0))]);
+        // An over-count id airs id+prefix, the stack rides
+        // (`Item.cs:49923-49925`, the verify-sweep audit).
+        let written = PlayerFileWrite {
+            temp_slots: [Some((ITEM_ID_COUNT + 1, 5, 9)), None, None, None],
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.temp_slots[0], Some((0, 5, 0)));
+        // Fresh: the lone 0 BitsByte, no payloads (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert_eq!(fresh.temp_slots, [None; 4]);
+    }
+
+    /// W4-f44 ph3: angler/dpad/builderAcc/bartender/dead/golfer round-trip;
+    /// the respawnTimer rides only when dead and clamps on read.
+    #[test]
+    fn the_quest_and_death_fields_round_trip() {
+        let written = PlayerFileWrite {
+            angler_quests_finished: 42,
+            dpad_bindings: [3, -1, 17, 0],
+            builder_acc_status: [0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1],
+            bartender_quest_log: 7,
+            dead: true,
+            respawn_timer: 1234,
+            golfer_score: -50,
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.angler_quests_finished, 42);
+        assert_eq!(file.dpad_bindings, [3, -1, 17, 0]);
+        assert_eq!(file.builder_acc_status, [0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1]);
+        assert_eq!(file.bartender_quest_log, 7);
+        assert!(file.dead);
+        assert_eq!(file.respawn_timer, 1234);
+        assert_eq!(file.golfer_score, -50);
+        // Alive: no respawnTimer bytes тАФ the read keeps the default 0.
+        let alive = PlayerFileWrite { dead: false, respawn_timer: 999, ..sample() };
+        let plain = serialize_plaintext(&alive);
+        let file = read_player_bytes(&plain).unwrap();
+        assert!(!file.dead);
+        assert_eq!(file.respawn_timer, 0);
+        // The clamp: `Utils.Clamp(0, 60000)` (`:55684`).
+        let over = PlayerFileWrite { dead: true, respawn_timer: 99999, ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&over))).unwrap();
+        assert_eq!(file.respawn_timer, 60000);
+        let under = PlayerFileWrite { dead: true, respawn_timer: -5, ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&under))).unwrap();
+        assert_eq!(file.respawn_timer, 0);
+        // The fresh defaults keep the golden bytes (builderAcc [0]=1, dpad -1).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert_eq!(fresh.dpad_bindings, [-1; 4]);
+        assert_eq!(fresh.builder_acc_status, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert!(!fresh.dead);
+    }
+
+    /// The < 210 builderAcc[0] = 1 fixup and the < 249 inventory-3611
+    /// builderAcc[1] = 1 fixup (`Deserialize:55654-55673`): state-only, the
+    /// byte stream stays aligned. The 205 body is hand-built at its own
+    /// gates (no team/unlock-block/deaths/favourites, 22 buffs, 11 builder
+    /// slots, ends after the timestamp) тАФ the same pattern as the legacy
+    /// subset witness.
+    #[test]
+    fn the_builder_acc_legacy_fixups_apply_without_extra_bytes() {
+        fn body_205(inventory: [(i32, i32, u8); 58]) -> Vec<u8> {
+            let mut w = Writer::new();
+            w.i32(205);
+            w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+            w.u32(0);
+            w.u64(0);
+            w.cs_string("Belsin");
+            w.u8(0); // difficulty
+            w.u64(0); // playtime
+            w.i32(0); // hair
+            w.u8(0); // hairDye тАФ no team at 205 (< 283)
+            w.bytes(&[0, 0]); // hide BitsBytes
+            w.u8(0); // hideMisc
+            w.u8(0); // skinVariant
+            for v in [100, 100, 20, 20] {
+                w.i32(v);
+            }
+            w.boolean(false); // extraAccessory (125) тАФ no 229 block at 205
+            w.boolean(false); // dd2 (182)
+            w.i32(0); // tax (128) тАФ no deaths at 205 (< 254)
+            w.bytes(&[0; 21]); // colors
+            for _ in 0..30 {
+                w.i32(0); // armor + dye pairs, no favourited (< 322)
+                w.u8(0);
+            }
+            for (id, stack, prefix) in inventory {
+                w.i32(id);
+                w.i32(stack);
+                w.u8(prefix);
+                w.boolean(false);
+            }
+            for _ in 0..5 {
+                w.bytes(&[0; 10]); // misc pairs
+            }
+            for _ in 0..120 {
+                w.bytes(&[0; 9]); // bank + bank2 + bank3 triples
+            }
+            for _ in 0..40 {
+                w.bytes(&[0; 9]); // bank4, no favourited (< 255)
+            }
+            w.u8(0); // voidVaultInfo (199)
+            for _ in 0..22 {
+                w.i32(0); // buffs: 22 at 205 (< 252)
+                w.i32(0);
+            }
+            w.i32(-1); // spawn sentinel
+            w.boolean(false); // hbLocked
+            w.bytes(&[0; 13]); // hideInfo
+            w.i32(0); // angler (98)
+            for _ in 0..4 {
+                w.i32(-1); // dpad (162)
+            }
+            for _ in 0..11 {
+                w.i32(0); // builderAcc: 11 at 205 (>= 197, < 230)
+            }
+            w.i32(0); // bartender (181)
+            w.boolean(false); // dead (200)
+            w.u64(0); // timestamp (202) тАФ the 205 file ends here
+            w.into_inner()
+        }
+        // builderAcc[0] reads 0 from the file; 205 < 210 forces it to 1.
+        let file = read_player_bytes(&body_205([(0, 0, 0); 58])).unwrap();
+        assert_eq!(file.builder_acc_status[0], 1);
+        // 205 < 249 and no 3611 in the inventory: [1] stays 0.
+        assert_eq!(file.builder_acc_status[1], 0);
+        assert_eq!(file.builder_acc_status[11], 0); // the 12th slot never read
+        // The same body with a 3611 in inventory slot 5: [1] forced to 1.
+        let mut inv = [(0i32, 0i32, 0u8); 58];
+        inv[5] = (3611, 1, 0);
+        let file = read_player_bytes(&body_205(inv)).unwrap();
+        assert_eq!(file.builder_acc_status[0], 1);
+        assert_eq!(file.builder_acc_status[1], 1);
+        assert_eq!(file.inventory[5], (3611, 1, 0));
+    }
+
+    /// W4-f44 ph3: spawn points round-trip in order, the write emits the
+    /// records then the -1 sentinel, and the 200-record cap holds.
+    #[test]
+    fn the_spawn_points_round_trip_with_the_sentinel() {
+        let points = vec![
+            (100, 200, 7, "Alpha".to_string()),
+            (0, 0, 0, String::new()), // an empty world name still rides
+            (4000, 1200, 3, "Beta".to_string()),
+        ];
+        let written = PlayerFileWrite { spawn_points: points.clone(), ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The spawn block starts at 2402 + 352 buffs = 2754.
+        let mut r = Reader::new(&plain);
+        r.skip(2754).unwrap();
+        assert_eq!(r.i32().unwrap(), 100);
+        assert_eq!(r.i32().unwrap(), 200);
+        assert_eq!(r.i32().unwrap(), 7);
+        assert_eq!(r.cs_string().unwrap(), "Alpha");
+        assert_eq!(r.i32().unwrap(), 0);
+        assert_eq!(r.i32().unwrap(), 0);
+        assert_eq!(r.i32().unwrap(), 0);
+        assert_eq!(r.cs_string().unwrap(), "");
+        assert_eq!(r.i32().unwrap(), 4000);
+        assert_eq!(r.i32().unwrap(), 1200);
+        assert_eq!(r.i32().unwrap(), 3);
+        assert_eq!(r.cs_string().unwrap(), "Beta");
+        assert_eq!(r.i32().unwrap(), -1); // the sentinel `:54881`
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.spawn_points, points);
+        // The 200 cap: record 201 never reaches the file (`:54877`).
+        let many: Vec<_> = (0..205).map(|i| (i, i, 0, format!("W{i}"))).collect();
+        let written = PlayerFileWrite { spawn_points: many.clone(), ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.spawn_points.len(), 200);
+        assert_eq!(file.spawn_points[199], many[199]);
+        // A fresh write is the lone sentinel (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(fresh.spawn_points.is_empty());
+    }
+
+    /// W4-f44 ph3: buffs round-trip through the compaction read and the
+    /// padded write; `Main.buffNoSave` types zero on write; an over-long
+    /// list truncates to maxBuffs = 44 (the C# array bound).
+    #[test]
+    fn the_buffs_round_trip_compacted_and_no_save_types_zero() {
+        // Interleaved zero padding: the read compaction keeps only the live
+        // pairs in file order (`:55589-55598`).
+        let buffs = vec![(26, 3600), (113, 60), (1, 999)];
+        let written = PlayerFileWrite { buffs: buffs.clone(), ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.buffs, buffs);
+        // A no-save type (20, `Main.cs:8969`) writes (0, 0) тАФ the read drops
+        // it via the zero-type compaction; its neighbours survive.
+        let written = PlayerFileWrite { buffs: vec![(26, 60), (20, 500), (113, 7)], ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The buffs start at 2402 (24 + 87 header + 120 + 60 + 580 + 50 +
+        // 1080 + 400 + 1 vault).
+        let mut r = Reader::new(&plain);
+        r.skip(2402).unwrap();
+        assert_eq!((r.i32().unwrap(), r.i32().unwrap()), (26, 60));
+        assert_eq!((r.i32().unwrap(), r.i32().unwrap()), (0, 0)); // no-save 20
+        assert_eq!((r.i32().unwrap(), r.i32().unwrap()), (113, 7));
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.buffs, vec![(26, 60), (113, 7)]);
+        // The 173..=181 range is no-save too (`Main.cs:9070-9073`).
+        // The range's neighbours outside the set stay savable (172/182 are
+        // explicit no-save entries themselves, `Main.cs:9032-9033`).
+        assert!(buff_no_save(173) && buff_no_save(181) && !buff_no_save(169) && !buff_no_save(183));
+        // Over-long list: only the first 44 slots exist (`:54864`).
+        let long: Vec<(i32, i32)> = (0..50).map(|i| (i + 500, i)).collect();
+        let written = PlayerFileWrite { buffs: long.clone(), ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.buffs.len(), 44);
+        assert_eq!(file.buffs[43], long[43]);
+    }
+
+    /// W4-f44 ph3: the piggy bank / safe / forge slots round-trip, the write
+    /// span is byte-faithful at the `:54838-54855` offsets, and an over-count
+    /// id airs id+prefix while the stack rides (no desync).
+    #[test]
+    fn the_banks_round_trip_and_stay_byte_faithful() {
+        let mut bank = [(0i32, 0i32, 0u8); 40];
+        bank[0] = (757, 1, 81); // a prefixed sword
+        bank[39] = (2, 999, 0); // dirt at the last slot
+        let mut bank2 = [(0i32, 0i32, 0u8); 40];
+        bank2[7] = (-15, 3, 0); // a legacy id rides verbatim
+        let mut bank3 = [(0i32, 0i32, 0u8); 40];
+        bank3[12] = (3507, 1, 57);
+        let written = PlayerFileWrite { bank, bank2, bank3, ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The bank span: 24 prologue + 87 header + 120 armor + 60 dye +
+        // 580 inventory + 50 misc = 921; 3 x 40 x 9 = 1080 bytes.
+        let mut r = Reader::new(&plain);
+        r.skip(921).unwrap();
+        for (id, stack, prefix) in bank.iter().chain(bank2.iter()).chain(bank3.iter()) {
+            assert_eq!(r.i32().unwrap(), *id);
+            assert_eq!(r.i32().unwrap(), *stack);
+            assert_eq!(r.u8().unwrap(), *prefix);
+        }
+        // bank4 (all-air here) follows immediately.
+        assert_eq!(r.take(10).unwrap(), &[0; 10]);
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.bank, bank);
+        assert_eq!(file.bank2, bank2);
+        assert_eq!(file.bank3, bank3);
+        // An over-count id airs id+prefix, the stack rides (`SetDefaults`
+        // `Item.cs:48670-48688` then `Prefix` no-ops on air `:515-518`); the
+        // later slots stay aligned.
+        let mut over = [(0i32, 0i32, 0u8); 40];
+        over[0] = (ITEM_ID_COUNT + 5, 42, 9);
+        over[1] = (8, 99, 0);
+        let written = PlayerFileWrite { bank: over, ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.bank[0], (0, 42, 0));
+        assert_eq!(file.bank[1], (8, 99, 0));
+        assert_eq!(file.bank3, [(0, 0, 0); 40]);
     }
 
     /// The 322+ armour/dye favourited bytes are version-gated on read: a
     /// vanilla file below 322 carries no favourited bool per armour/dye pair,
-    /// a >= 322 one does — the walk must stay aligned either way.
+    /// a >= 322 one does тАФ the walk must stay aligned either way.
     #[test]
     fn the_armor_and_dye_favorites_are_version_gated() {
         // The port's own release-326 file carries the 30 favourited bytes.
@@ -1839,13 +2969,13 @@ mod tests {
         w.bytes(&plain[4..24]);
         w.cs_string(&name);
         // difficulty..hairDye: 1 + 8 + 4 + 1 = 14 bytes; then the 283+ team
-        // byte is absent at 321? No — 321 >= 283, so keep it: 15 bytes.
+        // byte is absent at 321? No тАФ 321 >= 283, so keep it: 15 bytes.
         let head = r.take(15).unwrap();
         w.bytes(head);
         // hide BitsBytes (2) + hideMisc (1) + skinVariant (1) + stats (16) +
-        // the unlock block: 12 bools incl. the 324 slot? 321 < 324 — strip it.
+        // the unlock block: 12 bools incl. the 324 slot? 321 < 324 тАФ strip it.
         w.bytes(r.take(2 + 1 + 1 + 16).unwrap());
-        // extra, bt1, bt2, bread (4 bools) — then the 324 dead bool is absent
+        // extra, bt1, bt2, bread (4 bools) тАФ then the 324 dead bool is absent
         // at 321, then the six unlocks + dd2 (7 bools).
         w.bytes(r.take(4).unwrap());
         r.u8().unwrap(); // drop the 324 dead bool
@@ -1858,7 +2988,24 @@ mod tests {
             w.bytes(r.take(5).unwrap());
             r.u8().unwrap();
         }
-        // The rest (inventory onward) is identical.
+        // The rest (inventory onward) is identical UP TO the loadouts: the
+        // three EquipmentLoadouts also carry a favourited byte per item at
+        // >= 322 (`EquipmentLoadout.Deserialize:51`/`:55`), so a genuine 321
+        // file has none of those 90 bytes either тАФ strip them too.
+        // inventory 58 x 10 + misc 5 x 10 + banks 120 x 9 + bank4 40 x 10 +
+        // vault 1 + buffs 352 + spawn sentinel 4 + hbLocked 1 + hideInfo 13 +
+        // angler 4 + dpad 16 + builder 48 + bartender 4 + dead 1 + stamp 8 +
+        // golfer 4 + tracker flag 1 + tracker count 4 + temp bits 1 +
+        // powers 16 + supercart 1 + loadout idx 4 = 2593 bytes to the loadouts.
+        w.bytes(r.take(2593).unwrap());
+        for _ in 0..3 {
+            for _ in 0..30 {
+                w.bytes(r.take(9).unwrap()); // (type, stack, prefix), no fav
+                r.u8().unwrap(); // drop the loadout favourited byte
+            }
+            w.bytes(r.take(10).unwrap()); // Hide[10]
+        }
+        // voice + refunds + dialogues are identical.
         w.bytes(r.take(plain.len() - r.pos()).unwrap());
         let lo = w.into_inner();
         let file321 = match read_player_bytes(&lo) {
@@ -1954,7 +3101,7 @@ mod tests {
         // buffs `:54864-54876`: 44 (maxBuffs, `:57106`) x (0, 0) pairs.
         assert_eq!(r.take(44 * 8).unwrap(), vec![0u8; 44 * 8].as_slice());
         // spawn points `:54877-54888`: fresh spN[0] == null (`:2488`) writes
-        // the -1 sentinel and breaks — exactly one i32.
+        // the -1 sentinel and breaks тАФ exactly one i32.
         assert_eq!(r.i32().unwrap(), -1);
         // hbLocked `:54889`: false (`:1436`).
         assert_eq!(r.u8().unwrap(), 0);
@@ -2011,7 +3158,7 @@ mod tests {
         let mut port_tail = plain[plain.len() - tail_len..].to_vec();
         assert_eq!(port_tail.len(), 1425);
         // The one unowned field: the sample's timestamp is 0, the fixture's
-        // is the pinned FixtureClock — splice the fixture's 8 bytes in at
+        // is the pinned FixtureClock тАФ splice the fixture's 8 bytes in at
         // tail offset 443 (370 buffs..hideInfo + 4 angler + 16 dpad +
         // 48 builder + 4 bartender + 1 dead) before comparing.
         port_tail[443..451].copy_from_slice(&fixture[2845..2853]);
@@ -2024,7 +3171,7 @@ mod tests {
 
     /// S1-J-5 inc3: with the fixture's player values and the harness's pinned
     /// clock, the port's writer reproduces the C#-written `golden.plr`
-    /// BYTE-FOR-BYTE — the full 3827-byte plaintext AND the PKCS7 envelope
+    /// BYTE-FOR-BYTE тАФ the full 3827-byte plaintext AND the PKCS7 envelope
     /// (13 bytes of 0x0D, `FlushFinalBlock`, `Player.cs:54742`).
     #[test]
     fn golden_plr_writer_matches_the_csharp_fixture_byte_for_byte() {
@@ -2053,24 +3200,13 @@ mod tests {
             inventory,
             inv_favorites: 1 << 3,
             // FixtureClock.UtcNow.ToBinary() (Shims/FixtureClock.cs):
-            // 2026-11-18T00:00:00Z, DateTimeKind.Utc → kind bits 01, no
+            // 2026-11-18T00:00:00Z, DateTimeKind.Utc тЖТ kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.
             last_saved_binary: 0x48DF_4506_E391_C000,
-            // The harness's fresh player: voiceVariant 1 (ctor `:56045`),
-            // voicePitchOffset 0 — the fixture's `:54924-54925` bytes.
-            voice_variant: 1,
-            voice_pitch_offset: 0.0,
-            unlocked_biome_torches: false,
-            using_biome_torches: false,
-            research: Vec::new(),
-            powers: CreativePowersSave::written_fresh(),
-            // The harness's player is on loadout 0 with three empty sets —
-            // the golden fixture's 310-zero-byte loadout block.
-            current_loadout_index: 0,
-            loadouts: Default::default(),
-            // The harness's fresh `FromCurrentSettings` metadata
-            // (`PlayerFileData.cs:53`): revision 0.
-            revision: 0,
+            // The harness's player is fresh тАФ the per-player tail stays at
+            // the vanilla defaults (all-air loadouts/bank4, vault off, no
+            // research), which is what the C# fixture wrote.
+            ..Default::default()
         };
         let plain = serialize_plaintext(&file);
         let fixture_raw = include_bytes!("../../../assets/test/golden.plr");
@@ -2170,8 +3306,8 @@ mod tests {
         w.u8(s.difficulty);
         w.u64(0);
         w.i32(s.hair);
-        w.u8(0); // hairDye — no team byte at the old shape
-        w.bytes(&[0, 0]); // hide BitsBytes — no hideMisc
+        w.u8(0); // hairDye тАФ no team byte at the old shape
+        w.bytes(&[0, 0]); // hide BitsBytes тАФ no hideMisc
         w.u8(s.skin_variant);
         w.i32(s.life);
         w.i32(s.life_max);
@@ -2280,7 +3416,7 @@ mod tests {
 
     #[test]
     fn the_metadata_carries_the_player_type() {
-        // FileMetadata.Read: the top byte of the magic word is the FileType —
+        // FileMetadata.Read: the top byte of the magic word is the FileType тАФ
         // the player files carry 3 (FileType.cs:8; the port once stamped 1).
         let bytes = write_player_bytes(&sample());
         let plain = cbc_decrypt(&bytes);
@@ -2306,7 +3442,7 @@ mod tests {
 
     #[test]
     fn the_vanilla_key_is_the_utf16_of_h3y_guyz() {
-        // Player.cs:798: `UnicodeEncoding().GetBytes("h3y_gUyZ")` — UTF-16-LE,
+        // Player.cs:798: `UnicodeEncoding().GetBytes("h3y_gUyZ")` тАФ UTF-16-LE,
         // 8 chars x 2 bytes = the 128-bit key.
         let expected: [u8; 16] = [
             b'h', 0, b'3', 0, b'y', 0, b'_', 0, b'g', 0, b'U', 0, b'y', 0, b'Z', 0,
@@ -2314,210 +3450,822 @@ mod tests {
         assert_eq!(ENCRYPTION_KEY, expected);
     }
 
-    /// W4-g55 — the three loadouts + the index round-trip through the
-    /// release-326 `Serialize`/`Deserialize` (`Player.cs:54919-54923` /
-    /// `:55720-55727`, `EquipmentLoadout.cs:31-61`): a stored armor piece, a
-    /// dye, a share flag and a hide flag all survive, and the index clamps.
+    // --- W4-f44: the per-player payloads (loadouts / void vault / research) --
+
+    /// A file carrying all three per-player payloads round-trips them: the
+    /// loadout index + slots (`:54919-54923` / `:55720-55727`), the void
+    /// vault's bank4 + info byte (`:54856-54863` / `:55488-55504`) and the
+    /// Journey research pairs (`:54911` / `:55696-55699`).
     #[test]
-    fn w4_g55_the_loadouts_round_trip_through_the_plr() {
+    fn the_per_player_tail_round_trips() {
         let mut file = sample();
-        file.current_loadout_index = 2;
-        // Loadout 1 stores an Iron Helmet (armor 0) + Red Dye (dye 0), shares
-        // the head (bit 0) and hides accessory 3.
-        file.loadouts[1].armor[0] = crate::item::ItemSlot {
-            kind: 90,
-            name: crate::registry::name(90),
-            count: 1,
-            prefix: 0,
-        };
-        file.loadouts[1].dye[0] = crate::item::ItemSlot {
-            kind: 1007,
-            name: crate::registry::name(1007),
-            count: 1,
-            prefix: 0,
-        };
-        file.loadouts[1].set_shared(0, true);
-        file.loadouts[1].hide[3] = true;
+        file.current_loadout = 2;
+        file.loadouts[2].armor[3] = (908, 1, 81, true); // Lava Waders, warding, starred
+        file.loadouts[2].dye[0] = (1007, 1, 0, false);
+        file.loadouts[2].hide[4] = true;
+        file.loadouts[0].armor[0] = (89, 1, 0, false); // a second loadout keeps its own
+        file.void_vault_info = 1; // IsVoidVaultEnabled (`Player.cs:3900-3910`)
+        file.bank4[0] = (71, 250, 0, true); // copper coins, starred
+        file.bank4[39] = (2, 999, 0, false);
+        file.research = vec![("Torch".into(), 100), ("DirtBlock".into(), 37)];
         let bytes = write_player_bytes(&file);
-        let read = read_player_bytes(&cbc_decrypt(&bytes)).unwrap();
-        assert_eq!(read.current_loadout_index, 2);
-        assert_eq!(read.loadouts[1].armor[0].kind, 90);
-        assert_eq!(read.loadouts[1].dye[0].kind, 1007);
-        assert!(read.loadouts[1].is_shared(0), "the head share flag survived");
-        assert!(!read.loadouts[1].is_shared(20), "the dye share stayed off");
-        assert!(read.loadouts[1].hide[3]);
-        assert!(!read.loadouts[1].hide[4]);
-        // The other two sets stay empty.
-        assert_eq!(read.loadouts[0], crate::loadout::EquipmentLoadout::default());
-        assert_eq!(read.loadouts[2], crate::loadout::EquipmentLoadout::default());
+        let read = read_player_bytes(&cbc_decrypt(&bytes)).expect("the tail file must read");
+        assert_eq!(read.current_loadout, 2);
+        assert_eq!(read.loadouts[2].armor[3], (908, 1, 81, true));
+        assert_eq!(read.loadouts[2].dye[0], (1007, 1, 0, false));
+        assert!(read.loadouts[2].hide[4]);
+        assert!(!read.loadouts[2].hide[3]);
+        assert_eq!(read.loadouts[0].armor[0], (89, 1, 0, false));
+        assert_eq!(read.loadouts[1], LoadoutData::default(), "the untouched loadout stays fresh");
+        assert_eq!(read.void_vault_info, 1);
+        assert_eq!(read.bank4[0], (71, 250, 0, true));
+        assert_eq!(read.bank4[39], (2, 999, 0, false));
+        assert_eq!(read.bank4[1], (0, 0, 0, false));
+        assert_eq!(read.research, vec![("Torch".into(), 100), ("DirtBlock".into(), 37)]);
+        // The card state is unaffected by the tail.
+        assert_eq!(read.inventory, file.inventory);
+        assert_eq!(read.inv_favorites, file.inv_favorites);
     }
 
-    /// W4-g55 — `Deserialize:55722` clamps the index to `0..Loadouts.Length-1`;
-    /// an out-of-range stored index reads back clamped, not raw.
+    /// The write side is byte-faithful: with a non-default tail the plaintext
+    /// differs from the fresh file ONLY inside the three payload spans, and
+    /// the fresh-default write still reproduces the C# golden fixture
+    /// byte-for-byte (the default-value policy holds).
     #[test]
-    fn w4_g55_the_loadout_index_clamps_on_read() {
+    fn the_tail_write_is_byte_faithful() {
+        let fresh = serialize_plaintext(&sample());
         let mut file = sample();
-        file.current_loadout_index = 7; // out of range — the writer stores it raw
-        let bytes = write_player_bytes(&file);
-        let read = read_player_bytes(&cbc_decrypt(&bytes)).unwrap();
-        assert_eq!(read.current_loadout_index, 2, "Utils.Clamp(.., 0, 2)");
+        file.void_vault_info = 1;
+        let with_vault = serialize_plaintext(&file);
+        assert_eq!(fresh.len(), with_vault.len(), "the info byte swaps in place");
+        // voidVaultInfo's offset: hideInfo ends at 2772 (the golden-layout
+        // witness), the inc2 tail is 1055 bytes and the buffs..hideInfo block
+        // 370 тАФ so the inc1 cut is 2402 and the info byte sits at 2401.
+        let diffs: Vec<usize> = fresh
+            .iter()
+            .zip(with_vault.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(diffs, vec![2401], "exactly the voidVaultInfo byte moved");
+        // The load clamp: an out-of-range index writes clamped (`:55722`).
+        file = sample();
+        file.current_loadout = 9;
+        let clamped = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(clamped.current_loadout, 2);
+        file.current_loadout = -3;
+        let clamped = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(clamped.current_loadout, 0);
     }
 
-    /// W4-g55 — a fresh character's loadout block is the golden 310-zero-byte
-    /// shape: three empty sets, index 0 (`EquipmentLoadout.cs:14-19`). The
-    /// full-file byte parity with the C# fixture is pinned by
-    /// `golden_plr_writer_matches_the_csharp_fixture_byte_for_byte`.
+    /// Back-compat: the C# golden fixture (a fresh player) reads the tail as
+    /// the fresh defaults тАФ all-air loadouts/bank4, vault off, no research тАФ
+    /// through the same walk that now captures them.
     #[test]
-    fn w4_g55_a_fresh_character_loadout_block_is_all_zero() {
-        let plain = serialize_plaintext(&sample());
-        // The loadout index sits 4 bytes before the 930-byte loadout block,
-        // which ends 13 bytes before the plaintext end (voice 1 + pitch 4 +
-        // refunds 4 + dialogues 4 = 13).
-        let block_start = plain.len() - 13 - 930;
-        assert_eq!(&plain[block_start - 4..block_start], &[0, 0, 0, 0]);
-        assert_eq!(&plain[block_start..block_start + 930], &[0u8; 930][..]);
-    // --- W4-c43: the SavePlayer envelope + the timestamp round-trip ---------
-
-    /// `InternalSavePlayerFile:54730-54733`: an existing `.plr` is copied to
-    /// `<path>.bak` before the new bytes land; a first save writes no `.bak`.
-    #[test]
-    fn w4_c43_a_re_save_copies_the_previous_plr_into_the_bak() {
-        let dir = crate::test_world_helpers::test_scratch("w4-c43-plr-bak");
-        let path = dir.join("Belsin.plr");
-        let bak = dir.join("Belsin.plr.bak");
-        write_player_file(&path, &sample()).unwrap();
-        assert!(!bak.exists(), "a first save has no .bak");
-        let first = std::fs::read(&path).unwrap();
-        // The re-save changes the inventory so the two files differ.
-        let mut second = sample();
-        second.inventory[5] = (757, 1, 81); // Terra Blade, Legendary
-        second.revision = 7;
-        write_player_file(&path, &second).unwrap();
-        assert_eq!(std::fs::read(&bak).unwrap(), first, ".bak = the previous file");
-        let now = read_player_file(&path).unwrap();
-        assert_eq!(now.inventory[5], (757, 1, 81));
-        let _ = std::fs::remove_dir_all(&dir);
+    fn the_golden_fixture_tail_reads_fresh() {
+        let plain = cbc_decrypt(include_bytes!("../../../assets/test/golden.plr"));
+        let file = read_player_bytes(&plain).expect("the C# fixture must read");
+        assert_eq!(file.current_loadout, 0);
+        assert_eq!(file.loadouts, Default::default());
+        assert_eq!(file.void_vault_info, 0);
+        assert_eq!(file.bank4, [(0, 0, 0, false); 40]);
+        assert!(file.research.is_empty());
+        // W4-f44 ph2: the equip/dye/hide tails + the powers read fresh too.
+        assert_eq!(file.armor, [(0, 0, false); 20]);
+        assert_eq!(file.dye, [(0, 0, false); 10]);
+        assert_eq!(file.misc, [(0, 0, 0, 0); 5]);
+        assert_eq!(file.hide_visible_accessory, [false; 10]);
+        assert_eq!(file.hide_misc, 0);
+        assert_eq!(file.hide_info, [false; 13]);
+        // A Classic fixture (difficulty 0): the loaded (false, false, 0f)
+        // is RESET by `LoadToPlayer` (`CreativePowerManager.cs:211-214`).
+        assert_eq!(file.powers, CreativePowersSave::default());
+        // W4-f44 ph3: the remainder reads fresh too.
+        assert_eq!(file.play_time_ticks, 0);
+        assert_eq!(file.hair_dye, 0);
+        assert_eq!(file.team, 0);
+        assert_eq!(file.bank, [(0, 0, 0); 40]);
+        assert_eq!(file.bank2, [(0, 0, 0); 40]);
+        assert_eq!(file.bank3, [(0, 0, 0); 40]);
+        assert!(file.buffs.is_empty());
+        assert!(file.spawn_points.is_empty());
+        assert_eq!(file.angler_quests_finished, 0);
+        assert_eq!(file.dpad_bindings, [-1; 4]);
+        assert_eq!(file.builder_acc_status, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(file.bartender_quest_log, 0);
+        assert!(!file.dead);
+        assert_eq!(file.respawn_timer, 0);
+        assert_eq!(file.golfer_score, 0);
+        assert_eq!(file.temp_slots, [None; 4]);
+        assert_eq!(file.super_cart, 2); // enabled true (`:2054`)
+        assert_eq!(file.voice_variant, 1); // the ctor (`:56045`)
+        assert_eq!(file.voice_pitch_offset, 0.0);
+        assert!(file.refunds.is_empty());
+        assert!(file.dialogues.is_empty());
+        // The verify-sweep: the header's unlock/counter block reads fresh,
+        // and the timestamp's READ side now surfaces the fixture's
+        // FixtureClock stamp (the write default stays 0).
+        assert!(!file.extra_accessory && !file.hb_locked);
+        assert_eq!(file.used_upgrades, [false; 6]);
+        assert_eq!((file.tax_money, file.deaths_pve, file.deaths_pvp), (0, 0, 0));
+        assert_eq!(file.last_saved_binary, 0x48DF_4506_E391_C000u64 as i64);
     }
 
-    /// `InternalSavePlayerFile:54739` writes `playerFile.Metadata` verbatim —
-    /// the loaded revision rides a re-save (`FileMetadata.Write`, not
-    /// `IncrementAndWrite`); a fresh character's is 0.
+    /// Back-compat gates: the port-only shallow retries (inc1 at the vault
+    /// byte, inc2 at hideInfo) still load, and carry the sections they reached
+    /// тАФ inc1 has bank4 + the vault byte but no research/loadouts; inc2 the
+    /// same; the legacy 279 subset has none of the tail.
     #[test]
-    fn w4_c43_the_metadata_revision_rides_the_write() {
+    fn the_shallow_retries_keep_their_reached_tail() {
         let mut file = sample();
-        file.revision = 41;
+        file.void_vault_info = 1;
+        file.bank4[7] = (8, 99, 0, true);
+        file.research = vec![("Torch".into(), 100)];
+        file.loadouts[1].armor[2] = (90, 1, 0, false);
+        file.armor[0] = (89, 81, true);
+        file.hide_info[2] = true;
+        // W4-f44 ph3: fields before / between / after the two cuts.
+        file.team = 2;
+        file.bank[3] = (757, 1, 81);
+        file.buffs = vec![(26, 3600)];
+        file.spawn_points = vec![(100, 200, 7, "Alpha".into())];
+        file.angler_quests_finished = 42;
         let plain = serialize_plaintext(&file);
-        assert_eq!(u32::from_le_bytes(plain[12..16].try_into().unwrap()), 41);
-        let read = read_player_bytes(&plain).unwrap();
-        assert_eq!(read.revision, 41, "the reader keeps the counter");
-        // The default stays 0 — the golden fixture's fresh metadata.
-        let plain0 = serialize_plaintext(&sample());
-        assert_eq!(u32::from_le_bytes(plain0[12..16].try_into().unwrap()), 0);
+        // inc1: cut after the voidVaultInfo byte (offset 2402).
+        let inc1 = read_player_bytes(&plain[..2402]).expect("inc1 reads");
+        assert_eq!(inc1.void_vault_info, 1);
+        assert_eq!(inc1.bank4[7], (8, 99, 0, true));
+        assert!(inc1.research.is_empty(), "inc1 never reached the research");
+        assert_eq!(inc1.loadouts, Default::default());
+        // W4-f44 ph2: the armor/hide BitsBytes sit BEFORE the cut тАФ captured.
+        assert_eq!(inc1.armor[0], (89, 81, true));
+        assert_eq!(inc1.hide_info, [false; 13], "inc1 never reached hideInfo");
+        // W4-f44 ph3: team/bank sit before the cut; buffs/spawn/angler after.
+        assert_eq!(inc1.team, 2);
+        assert_eq!(inc1.bank[3], (757, 1, 81));
+        assert!(inc1.buffs.is_empty(), "inc1 never reached the buffs");
+        assert!(inc1.spawn_points.is_empty());
+        assert_eq!(inc1.angler_quests_finished, 0);
+        // inc2: cut after hideInfo (offset 2772).
+        let inc2 = read_player_bytes(&plain[..2772]).expect("inc2 reads");
+        assert_eq!(inc2.void_vault_info, 1);
+        assert_eq!(inc2.bank4[7], (8, 99, 0, true));
+        assert!(inc2.research.is_empty());
+        assert_eq!(inc2.loadouts, Default::default());
+        assert_eq!(inc2.armor[0], (89, 81, true));
+        assert!(inc2.hide_info[2], "inc2 reached hideInfo");
+        assert_eq!(
+            inc2.powers,
+            CreativePowersSave::default(),
+            "inc2 never reached the powers; the non-Journey reset stands"
+        );
+        // W4-f44 ph3: buffs + spawn points sit between the cuts тАФ captured;
+        // the angler counter sits after the inc2 cut тАФ fresh default.
+        assert_eq!(inc2.buffs, vec![(26, 3600)]);
+        assert_eq!(inc2.spawn_points, vec![(100, 200, 7, "Alpha".to_string())]);
+        assert_eq!(inc2.angler_quests_finished, 0);
     }
 
-    /// `Serialize:54909`'s stamp round-trips through `Deserialize:55688-55691`
-    /// (`PlayerFileData.LastPlayed`, `PlayerFileData.cs:38`), and the C#
-    /// fixture's pinned clock reads back exactly.
+    /// An over-count item type in bank4/loadouts airs id+prefix after the
+    /// full record is consumed, while the STACK and FAVOURITED ride
+    /// (`Item.DeserializeFrom`, `Item.cs:49923-49933` тАФ netDefaults airs,
+    /// the stack read overwrites, Prefix no-ops on air, the final
+    /// type >= Count check sees type 0 and no-ops; the verify-sweep audit).
+    /// The walk stays aligned and the later sections still read.
     #[test]
-    fn w4_c43_the_save_timestamp_round_trips() {
+    fn over_count_tail_items_air_without_desyncing() {
         let mut file = sample();
-        file.last_saved_binary = 0x48DF_4506_E391_C000; // the FixtureClock stamp
+        file.bank4[0] = (ITEM_ID_COUNT, 5, 0, true); // >= Count тЖТ id+prefix air
+        file.loadouts[0].dye[9] = (ITEM_ID_COUNT + 10, 1, 3, true); // тЖТ air
+        file.loadouts[2].armor[19] = (89, 1, 0, false); // a real item AFTER the aired one
+        file.research = vec![("Torch".into(), 100)];
         let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
-        assert_eq!(read.last_saved_binary, file.last_saved_binary);
-        // The real C#-written fixture carries the same stamp.
-        let fixture = read_player_bytes(&cbc_decrypt(include_bytes!(
-            "../../../assets/test/golden.plr"
-        )))
-        .unwrap();
-        assert_eq!(fixture.last_saved_binary, 0x48DF_4506_E391_C000u64 as i64);
+        assert_eq!(read.bank4[0], (0, 5, 0, true), "stack + favorited ride the aired slot");
+        assert_eq!(read.loadouts[0].dye[9], (0, 1, 0, true));
+        assert_eq!(read.loadouts[2].armor[19], (89, 1, 0, false));
+        assert_eq!(
+            read.research,
+            vec![("Torch".into(), 100)],
+            "the tail past the loadouts still reads"
+        );
     }
 
-    /// `LoadPlayer:55096-55098`: a zero stored stamp falls back to the file's
-    /// mtime (`File.GetLastWriteTimeUtc(path).ToBinary()`); a non-zero stamp
-    /// is never replaced.
+    // --- W4-f44 phase 2: the equip/dye tails + the Journey powers -----------
+
+    /// The three equipment tails + the hide flags round-trip: armor[20] /
+    /// dye[10] `(type, prefix, favorited)` (`:54812-54823` / `:55306-55340`),
+    /// the interleaved misc pairs (`:54831-54837` / `:55420-55447`), the two
+    /// hide BitsBytes (`:54758-54769` / `:55171-55183`), hideMisc (`:54770`)
+    /// and hideInfo[13] (`:54890-54893` / `:55616-55623`).
     #[test]
-    fn w4_c43_a_zero_stamp_falls_back_to_the_file_mtime() {
-        let dir = crate::test_world_helpers::test_scratch("w4-c43-plr-mtime");
-        let path = dir.join("Old.plr");
-        // The sample's stamp is 0 — the port's historical "unknown" value.
-        write_player_file(&path, &sample()).unwrap();
-        let read = read_player_file(&path).unwrap();
-        let mtime = tr_core::clock::file_mtime_binary(&path).unwrap();
-        assert_eq!(read.last_saved_binary, mtime, "the mtime fallback fires");
-        assert_ne!(mtime & (0x4000_0000_0000_0000u64 as i64), 0, "Utc kind");
-        // A stored stamp wins over the mtime.
-        let mut stamped = sample();
-        stamped.last_saved_binary = 0x48DF_4506_E391_C000;
-        write_player_file(&path, &stamped).unwrap();
-        let read = read_player_file(&path).unwrap();
-        assert_eq!(read.last_saved_binary, 0x48DF_4506_E391_C000u64 as i64);
-        let _ = std::fs::remove_dir_all(&dir);
+    fn the_equip_and_hide_tails_round_trip() {
+        let mut file = sample();
+        file.armor[0] = (89, 81, true); // Gold Helmet, warding, starred
+        file.armor[19] = (2326, 0, false); // the last slot rides too
+        file.dye[0] = (1007, 0, true);
+        file.dye[9] = (3041, 0, false);
+        file.misc[0] = (3060, 0, 1121, 0); // pet + its dye
+        file.misc[4] = (3224, 0, 0, 0); // the hook slot, no dye
+        file.hide_visible_accessory =
+            [true, false, true, false, false, false, false, true, true, false];
+        file.hide_misc = 0b11; // pet + light-pet hidden (`:17344`/`:17353`)
+        file.hide_info[0] = true;
+        file.hide_info[12] = true;
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.armor[0], (89, 81, true));
+        assert_eq!(read.armor[19], (2326, 0, false));
+        assert_eq!(read.armor[1], (0, 0, false));
+        assert_eq!(read.dye[0], (1007, 0, true));
+        assert_eq!(read.dye[9], (3041, 0, false));
+        assert_eq!(read.misc[0], (3060, 0, 1121, 0));
+        assert_eq!(read.misc[4], (3224, 0, 0, 0));
+        assert_eq!(read.misc[1], (0, 0, 0, 0));
+        assert_eq!(read.hide_visible_accessory, file.hide_visible_accessory);
+        assert_eq!(read.hide_misc, 0b11);
+        assert!(read.hide_info[0] && read.hide_info[12] && !read.hide_info[1]);
+        // The card state + the phase-1 tail are unaffected.
+        assert_eq!(read.inventory, file.inventory);
+        assert_eq!(read.loadouts, Default::default());
     }
 
-    /// The version gates around the timestamp: a release-201 file (below the
-    /// >= 202 gate) carries no stamp — the walk must stay aligned and the
-    /// field reads 0. Built by stripping every post-201 gate from the port's
-    /// own 326 stream (the same surgery the 321 favourites test runs): team
-    /// (283), bread (256), the 324 bool, the six unlocks (260), the death
-    /// pair (254), the 30 armour/dye favourites (322), the 40 bank4
-    /// favourites (255), 22 buff pairs (252), the 12th builderAccStatus
-    /// (230), the stamp (202) and the whole post-stamp tail (206+).
+    /// The write side is byte-faithful: non-default equip/hide values move
+    /// ONLY their documented byte spans, and the fresh-default write still
+    /// reproduces the C# golden fixture byte-for-byte.
     #[test]
-    fn w4_c43_the_timestamp_is_version_gated() {
+    fn the_equip_tail_write_is_byte_faithful() {
+        let fresh = serialize_plaintext(&sample());
+        let mut file = sample();
+        file.hide_visible_accessory[9] = true; // the second BitsByte, bit 1
+        let with_hide = serialize_plaintext(&file);
+        // Offset walk (golden-layout witness): 24 prologue + 7 name + 1 diff
+        // + 8 playtime + 4 hair + 1 hairDye + 1 team = 46, hide1 at 46,
+        // hide2 at 47.
+        let diffs: Vec<usize> = fresh
+            .iter()
+            .zip(with_hide.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(diffs, vec![47], "exactly hideVisibleAccessory[8..10]'s byte");
+        assert_eq!(with_hide[47], 0b10);
+        // hideMisc at 48.
+        file = sample();
+        file.hide_misc = 3;
+        let with_misc = serialize_plaintext(&file);
+        let diffs: Vec<usize> = fresh
+            .iter()
+            .zip(with_misc.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(diffs, vec![48]);
+        // The golden parity is untouched (the defaults emit the old bytes).
+        let golden = serialize_plaintext(&PlayerFileWrite {
+            name: "Golden".into(),
+            hair: 1,
+            hair_color: [215, 90, 55],
+            skin_color: [255, 125, 90],
+            eye_color: [105, 90, 75],
+            shirt_color: [175, 165, 140],
+            undershirt_color: [160, 180, 215],
+            pants_color: [255, 230, 175],
+            shoe_color: [160, 105, 60],
+            inventory: {
+                let mut inv = [(0, 0, 0); 58];
+                inv[0] = (3507, 1, 0);
+                inv[1] = (3509, 1, 0);
+                inv[2] = (3506, 1, 0);
+                inv[3] = (2, 50, 0);
+                inv
+            },
+            inv_favorites: 1 << 3,
+            last_saved_binary: 0x48DF_4506_E391_C000,
+            ..Default::default()
+        });
+        let fixture = cbc_decrypt(include_bytes!("../../../assets/test/golden.plr"));
+        assert_eq!(golden.as_slice(), &fixture[..3827]);
+    }
+
+    /// Out-of-range equip ids air WITHOUT desyncing: the C# `netDefaults`
+    /// airs the id, `Prefix` no-ops on air (`Item.cs:515-518`) but favorited
+    /// is set unconditionally (`:55315`); the misc `>= ItemID.Count` arm
+    /// drops the prefix byte (`:55425-55439`). The legacy -1..-48 ids ride
+    /// verbatim (`Item.netDefaults`, `Item.cs:1213-1360`).
+    #[test]
+    fn over_count_equip_items_air_without_desyncing() {
+        let mut file = sample();
+        file.armor[0] = (ITEM_ID_COUNT, 81, true); // id+prefix air, fav rides
+        file.armor[1] = (-48, 0, false); // the legacy band rides verbatim
+        file.armor[2] = (-49, 5, false); // below the band тЖТ air
+        file.dye[0] = (ITEM_ID_COUNT + 7, 0, false);
+        file.misc[0] = (ITEM_ID_COUNT, 9, 1121, 0); // equip airs, dye rides
+        file.armor[19] = (89, 0, false); // a real item AFTER the aired ones
+        file.research = vec![("Torch".into(), 100)];
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.armor[0], (0, 0, true), "air id+prefix, favorited rides");
+        assert_eq!(read.armor[1], (-48, 0, false));
+        assert_eq!(read.armor[2], (0, 0, false));
+        assert_eq!(read.dye[0], (0, 0, false));
+        assert_eq!(read.misc[0], (0, 0, 1121, 0), "the misc arm drops the aired prefix");
+        assert_eq!(read.armor[19], (89, 0, false));
+        assert_eq!(read.research, vec![("Torch".into(), 100)], "the walk stayed aligned");
+    }
+
+    /// The Journey powers: a Journey character (difficulty 3) keeps the
+    /// loaded Godmode/FarPlacement/SpawnRate (`CreativePowerManager.cs:197-210`);
+    /// a non-Journey one has them RESET to the ctor defaults after the load
+    /// (`:211-214` тАФ `ResetDataForNewPlayer`, `CreativePowers.cs:710-713`/
+    /// `:749-752`/`:1722-1725`).
+    #[test]
+    fn the_creative_powers_load_and_reset_by_difficulty() {
+        let mut file = sample();
+        file.difficulty = 3; // Journey
+        file.powers = CreativePowersSave { godmode: true, far_placement: false, spawn_rate: 0.25 };
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.powers, file.powers, "Journey keeps the loaded powers");
+        file.difficulty = 0; // Classic тАФ the same bytes reset on load
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.powers, CreativePowersSave::default());
+        assert_eq!(
+            read.powers,
+            CreativePowersSave { godmode: false, far_placement: true, spawn_rate: 0.5 }
+        );
+    }
+
+    /// An unknown power id BREAKS the load loop (`CreativePowerManager.cs:203-206`)
+    /// тАФ the remaining bytes belong to the next section, so the super-cart
+    /// byte + loadouts still read at their own offsets.
+    #[test]
+    fn an_unknown_power_id_breaks_the_loop_like_the_csharp() {
+        // Hand-splice the powers span: (true, 99) then STOP тАФ no payload for
+        // the unknown id; the next byte is the super-cart BitsByte (2).
         let plain = serialize_plaintext(&sample());
-        let mut r = Reader::new(&plain);
-        r.skip(24).unwrap(); // version + FileMetadata
-        let name = r.cs_string().unwrap();
+        // The powers span starts after the temp-slot byte. Offsets from the
+        // golden-layout witness: buffs at 2402, the inc3 tail 1425 bytes;
+        // powers sit 370+4+16+48+4+1+8+4+5+1 = 461 into it тЖТ 2863.
+        let powers_at = 2402 + 461;
         let mut w = Writer::new();
-        w.i32(201);
-        w.bytes(&plain[4..24]);
-        w.cs_string(&name);
-        // difficulty..hairDye: 1 + 8 + 4 + 1 = 14 bytes; the 283 team byte drops.
-        w.bytes(r.take(14).unwrap());
-        r.u8().unwrap(); // team (>= 283)
-        // hide BitsBytes (2) + hideMisc (1) + skinVariant (1) + stats (16).
-        w.bytes(r.take(2 + 1 + 1 + 16).unwrap());
-        // extra, bt1, bt2; then bread (256), the 324 bool, six unlocks (260).
-        w.bytes(r.take(3).unwrap());
-        r.u8().unwrap(); // bread
-        r.u8().unwrap(); // the 324 dead slot
-        for _ in 0..6 {
-            r.u8().unwrap(); // the six used* unlocks
-        }
-        w.bytes(r.take(1).unwrap()); // dd2
-        // tax (128); the PVE/PVP death pair is >= 254 — absent at 201.
-        w.bytes(r.take(4).unwrap());
-        r.take(8).unwrap();
-        w.bytes(r.take(21).unwrap()); // colours
-        for _ in 0..30 {
-            // armour/dye pairs: keep (id, prefix), drop the 322 favourite.
-            w.bytes(r.take(5).unwrap());
-            r.u8().unwrap();
-        }
-        // inventory (580) + misc (50) + banks 1-3 (1080) are gate-stable.
-        w.bytes(r.take(580 + 50 + 1080).unwrap());
-        for _ in 0..40 {
-            // bank4: keep the triple, drop the 255 favourite.
-            w.bytes(r.take(9).unwrap());
-            r.u8().unwrap();
-        }
-        w.bytes(r.take(1).unwrap()); // voidVaultInfo (>= 199)
-        // buffs: 22 pairs at 201 (< 252), the other 22 drop.
-        w.bytes(r.take(22 * 8).unwrap());
-        r.take(22 * 8).unwrap();
-        // spawn sentinel + hbLocked + hideInfo[13].
-        w.bytes(r.take(4 + 1 + 13).unwrap());
-        w.bytes(r.take(4 + 16).unwrap()); // angler (98) + dpad (162)
-        // builderAccStatus: 11 at 201 (>= 197, < 230).
-        w.bytes(r.take(11 * 4).unwrap());
-        r.take(4).unwrap();
-        w.bytes(r.take(4 + 1).unwrap()); // bartender (181) + dead (200)
-        // The stamp (202) and the whole 206+ tail are absent at 201.
-        let lo = w.into_inner();
-        let read = read_player_bytes(&lo).expect("the 201 file reads");
-        assert_eq!(read.name, "Belsin");
-        assert_eq!(read.last_saved_binary, 0, "no stamp below 202");
+        w.bytes(&plain[..powers_at]);
+        w.boolean(true);
+        w.u16(99); // an id the manager never registered тЖТ break
+        w.bytes(&plain[powers_at + 16..]); // skip the old 16-byte span, keep superCart onward
+        let read = read_player_bytes(&w.into_inner()).expect("the break keeps the walk aligned");
+        assert_eq!(read.powers, CreativePowersSave::default(), "nothing loaded, the reset stands");
+        assert_eq!(read.current_loadout, 0);
+        assert_eq!(read.loadouts, Default::default());
         assert_eq!(read.inventory, sample().inventory);
-        assert_eq!(read.inv_favorites, sample().inv_favorites);
+    }
+
+    /// The legacy 279 subset shim captures the armour/dye pairs + the hide
+    /// BitsBytes it carries (W4-f44 ph2), with the fresh defaults for the
+    /// sections the subset never wrote.
+    #[test]
+    fn the_legacy_subset_keeps_its_equip_and_hide_state() {
+        let s = sample();
+        let mut w = Writer::new();
+        w.i32(279);
+        w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+        w.u32(0);
+        w.u64(0);
+        w.cs_string(&s.name);
+        w.u8(s.difficulty);
+        w.u64(0);
+        w.i32(s.hair);
+        w.u8(0);
+        w.bytes(&[0b101, 0b10]); // hide bits 0/2 + bit 9
+        w.u8(s.skin_variant);
+        w.i32(s.life);
+        w.i32(s.life_max);
+        w.i32(s.mana);
+        w.i32(s.mana_max);
+        for _ in 0..11 {
+            w.boolean(false);
+        }
+        w.i32(0);
+        w.i32(0);
+        w.i32(0);
+        for color in [
+            s.hair_color,
+            s.skin_color,
+            s.eye_color,
+            s.shirt_color,
+            s.undershirt_color,
+            s.pants_color,
+            s.shoe_color,
+        ] {
+            w.bytes(&color);
+        }
+        // armour[0] = (89, 81), the rest air; dye[3] = (1007, 0).
+        w.i32(89);
+        w.u8(81);
+        for _ in 0..19 {
+            w.i32(0);
+            w.u8(0);
+        }
+        for i in 0..10 {
+            w.i32(if i == 3 { 1007 } else { 0 });
+            w.u8(0);
+        }
+        for (i, (id, stack, prefix)) in s.inventory.iter().enumerate() {
+            w.i32(*id);
+            w.i32(*stack);
+            w.u8(*prefix);
+            w.boolean(s.inv_favorites & (1 << i) != 0);
+        }
+        let file = read_player_bytes(&w.into_inner()).expect("the legacy subset reads");
+        assert_eq!(file.armor[0], (89, 81, false), "no favourited bool at 279");
+        assert_eq!(file.dye[3], (1007, 0, false));
+        assert!(file.hide_visible_accessory[0] && file.hide_visible_accessory[2]);
+        assert!(file.hide_visible_accessory[9] && !file.hide_visible_accessory[8]);
+        assert_eq!(file.hide_misc, 0, "the subset never wrote hideMisc");
+        assert_eq!(file.hide_info, [false; 13]);
+        assert_eq!(file.powers, CreativePowersSave::default());
+        assert_eq!(file.inventory, s.inventory);
+    }
+
+    // --- W4-f44 verify-sweep: the found-gap witnesses -----------------------
+    // (docs/research/99-plr-complete-audit.md)
+
+    /// The verify-sweep's newly-modelled header fields round-trip: the
+    /// unlock/seed block (`Serialize:54776-54790`), hbLocked (`:54889`) and
+    /// the save timestamp's read side (`:54909` / `:55688-55691`). They used
+    /// to be read-dropped and written fresh тАФ a vanilla character's Demon
+    /// Heart slot, torch unlock, upgrade flags, tax coin, death counters,
+    /// hotbar lock and last-saved stamp were lost on a port re-save.
+    #[test]
+    fn the_unlock_and_counter_header_fields_round_trip() {
+        let written = PlayerFileWrite {
+            extra_accessory: true,
+            unlocked_biome_torches: true,
+            using_biome_torches: true,
+            ate_artisan_bread: true,
+            used_upgrades: [true, false, true, false, true, true],
+            downed_dd2_any_difficulty: true,
+            tax_money: 123456,
+            deaths_pve: 7,
+            deaths_pvp: 3,
+            hb_locked: true,
+            last_saved_binary: 0x48DF_4506_E391_C000,
+            ..sample()
+        };
+        let plain = serialize_plaintext(&written);
+        // The unlock block sits at offset 66 (24 prologue + 7 name + 1 diff
+        // + 8 playtime + 4 hair + 1 hairDye + 1 team + 2 hide + 1 hideMisc
+        // + 1 skin + 16 stats). Pin the bytes: extra, bt1, bt2, bread,
+        // dead-324 false, the six upgrades, dd2, tax, deaths.
+        assert_eq!(&plain[66..70], &[1, 1, 1, 1]);
+        assert_eq!(plain[70], 0, "the dead 324 slot stays hardcoded false");
+        assert_eq!(&plain[71..77], &[1, 0, 1, 0, 1, 1]);
+        assert_eq!(plain[77], 1); // dd2
+        assert_eq!(i32::from_le_bytes(plain[78..82].try_into().unwrap()), 123456);
+        assert_eq!(i32::from_le_bytes(plain[82..86].try_into().unwrap()), 7);
+        assert_eq!(i32::from_le_bytes(plain[86..90].try_into().unwrap()), 3);
+        // hbLocked at 2758 (spawn sentinel ends 2758 per the golden layout:
+        // buffs 2402..2754, sentinel 2754..2758).
+        assert_eq!(plain[2758], 1);
+        let file = read_player_bytes(&plain).unwrap();
+        assert!(file.extra_accessory);
+        // The :55242 read lands on the UsingBiomeTorches SETTER
+        // (`Player.cs:3960-3963`): builderAccStatus[11] = !value тАФ the bool
+        // byte does NOT ride a field of its own. The getter (:3954-3958)
+        // recomputes unlocked && builderAccStatus[11] == 0.
+        assert!(file.unlocked_biome_torches);
+        assert_eq!(file.builder_acc_status[11], 0, "true maps to slot 0");
+        assert!(file.ate_artisan_bread);
+        assert_eq!(file.used_upgrades, [true, false, true, false, true, true]);
+        assert!(file.downed_dd2_any_difficulty);
+        assert_eq!(file.tax_money, 123456);
+        assert_eq!((file.deaths_pve, file.deaths_pvp), (7, 3));
+        assert!(file.hb_locked);
+        assert_eq!(file.last_saved_binary, 0x48DF_4506_E391_C000);
+        // The fresh defaults still read fresh (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(!fresh.extra_accessory && !fresh.hb_locked);
+        assert_eq!(fresh.used_upgrades, [false; 6]);
+        assert_eq!((fresh.tax_money, fresh.deaths_pve, fresh.deaths_pvp), (0, 0, 0));
+        assert_eq!(fresh.last_saved_binary, 0);
+    }
+
+    /// The final re-diff fix тАФ `UsingBiomeTorches` is a PROPERTY over
+    /// `builderAccStatus[11]` (`Player.cs:3950-3963`), not a persisted field.
+    /// WRITE (`:54778`): the getter `unlocked && builderAccStatus[11] == 0`
+    /// тАФ a locked character writes false even at the ctor's slot-11 == 0;
+    /// an unlocked+disabled character (slot 11 == 1) writes false. READ
+    /// (`:55242`): the setter `builderAccStatus[11] = !value`; the later
+    /// builder-array read (`:55635-55653`) overwrites slot 11 from the file
+    /// at >= 230 тАФ the C# order. The raw `using_biome_torches` field is the
+    /// file-verbatim byte only.
+    #[test]
+    fn the_using_biome_torches_byte_is_the_slot11_property() {
+        // 1. Locked + ctor slot 0: the getter is FALSE (the old writer
+        //    would have written the raw bool verbatim тАФ here it must not).
+        let locked = PlayerFileWrite {
+            unlocked_biome_torches: false,
+            using_biome_torches: true, // the raw field is IGNORED by the writer
+            ..sample()
+        };
+        let plain = serialize_plaintext(&locked);
+        assert_eq!(&plain[67..69], &[0, 0], "locked writes false at :54778");
+        // 2. Unlocked + slot 11 == 0 (using): the getter is TRUE.
+        let using = PlayerFileWrite {
+            unlocked_biome_torches: true,
+            ..sample()
+        };
+        let plain = serialize_plaintext(&using);
+        assert_eq!(&plain[67..69], &[1, 1]);
+        // builderAccStatus[11] sits at 2792 + 11*4 = 2836 (research/99 row
+        // 55); slot 0 = 1 (the ctor ruler toggle), slot 11 = 0 here.
+        assert_eq!(i32::from_le_bytes(plain[2836..2840].try_into().unwrap()), 0);
+        // 3. Unlocked + slot 11 == 1 (disabled): the getter is FALSE while
+        //    the unlock bool stays TRUE тАФ the pair decouples.
+        let disabled = PlayerFileWrite {
+            unlocked_biome_torches: true,
+            builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            ..sample()
+        };
+        let plain = serialize_plaintext(&disabled);
+        assert_eq!(&plain[67..69], &[1, 0]);
+        assert_eq!(i32::from_le_bytes(plain[2836..2840].try_into().unwrap()), 1);
+        // The read restores the disabled state through the builder array
+        // (the >= 230 overwrite) AND the raw byte rides verbatim.
+        let file = read_player_bytes(&plain).unwrap();
+        assert!(file.unlocked_biome_torches);
+        assert!(!file.using_biome_torches, "the raw :54778 byte");
+        assert_eq!(file.builder_acc_status[11], 1, "the file's slot 11 wins");
+        // 4. The using file reads back with slot 11 == 0 and re-writes
+        //    byte-identical (the property round-trip closes).
+        let file = read_player_bytes(&serialize_plaintext(&using)).unwrap();
+        assert!(file.using_biome_torches && file.builder_acc_status[11] == 0);
+        let rewrite = PlayerFileWrite {
+            unlocked_biome_torches: file.unlocked_biome_torches,
+            using_biome_torches: file.using_biome_torches,
+            builder_acc_status: file.builder_acc_status,
+            ..sample()
+        };
+        assert_eq!(serialize_plaintext(&rewrite)[67..69], [1, 1]);
+    }
+
+    /// The playtime i64 is gated >= 138 (`Deserialize:55150-55157`): a
+    /// genuine 135..137 file carries NONE тАФ `SetPlayTime(TimeSpan.Zero)` тАФ
+    /// and the hair i32 follows the difficulty byte directly. The audit
+    /// caught the unconditional read desyncing those files.
+    #[test]
+    fn a_pre_138_file_carries_no_playtime_i64() {
+        for version in [135, 137, 138] {
+            let mut w = Writer::new();
+            w.i32(version);
+            w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+            w.u32(0);
+            w.u64(0);
+            w.cs_string("Old");
+            w.u8(0); // difficulty (gate 17)
+            if version >= 138 {
+                w.u64(639_000_000_000_000_000); // playtime (gate 138)
+            }
+            w.i32(7); // hair тАФ the alignment probe
+            w.u8(0); // hairDye (gate 82) тАФ no team below 283
+            w.bytes(&[0, 0]); // hide BitsBytes (gate 124)
+            w.u8(0); // hideMisc (gate 119)
+            w.u8(0); // skinVariant (gate 107)
+            for v in [100, 100, 20, 20] {
+                w.i32(v);
+            }
+            w.boolean(false); // extraAccessory (gate 125) тАФ no 229 block
+            w.i32(0); // tax (gate 128) тАФ no dd2 (182), no deaths (254)
+            w.bytes(&[0; 21]); // colors
+            for _ in 0..30 {
+                w.i32(0); // armor + dye pairs, no favourited (< 322)
+                w.u8(0);
+            }
+            for _ in 0..58 {
+                w.bytes(&[0; 10]); // inventory triples + favourited (114)
+            }
+            let misc_pairs = if version >= 136 { 5 } else { 4 };
+            for _ in 0..misc_pairs {
+                // misc pairs (gate 117); the < 136 arm skips slot 1
+                // (`:55391-55393`) тАФ four pairs, not five.
+                w.bytes(&[0; 10]);
+            }
+            for _ in 0..80 {
+                w.bytes(&[0; 9]); // bank + bank2 (gate 58) тАФ no bank3 (182)
+            }
+            // no bank4 (198), no vault (199); buffs: 22 pairs (< 252, >= 74)
+            for _ in 0..22 {
+                w.i32(0);
+                w.i32(0);
+            }
+            w.i32(-1); // spawn sentinel
+            w.boolean(false); // hbLocked (gate 16)
+            w.bytes(&[0; 13]); // hideInfo (gate 115)
+            w.i32(0); // angler (gate 98) тАФ the walk ends here (< 162)
+            let file = read_player_bytes(&w.into_inner())
+                .unwrap_or_else(|e| panic!("version {version}: {e:?}"));
+            assert_eq!(file.hair, 7, "version {version} stays aligned");
+            assert_eq!(
+                file.play_time_ticks,
+                if version >= 138 { 639_000_000_000_000_000 } else { 0 }
+            );
+        }
+    }
+
+    /// The verify-sweep air policy, hand-built into the file bytes (NOT via
+    /// the port writer): `netDefaults` airs an out-of-band id, the stack read
+    /// OVERWRITES the aired stack, `Prefix` no-ops on air, and the favourited
+    /// bool rides (`Item.cs:49923-49933`). Covers all five triple families +
+    /// the type-0-with-prefix no-op + the below-(-48) negative band.
+    #[test]
+    fn the_aired_slot_keeps_its_stack_and_favorited_from_the_file_bytes() {
+        let plain = serialize_plaintext(&sample());
+        // bank4 slot 0 at 2001 (24 + 87 header + 120 armor + 60 dye + 580
+        // inventory + 50 misc + 1080 banks): (6300, 42, 9, true) тЖТ (0,42,0,true).
+        let mut w = Writer::new();
+        w.bytes(&plain[..2001]);
+        w.i32(6300);
+        w.i32(42);
+        w.u8(9);
+        w.boolean(true);
+        w.bytes(&plain[2011..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.bank4[0], (0, 42, 0, true));
+        // bank slot 0 at 921: a type-0 slot with prefix 7 тЖТ the prefix airs
+        // (`Prefix` no-ops on the air item), the stack rides.
+        let mut w = Writer::new();
+        w.bytes(&plain[..921]);
+        w.i32(0);
+        w.i32(5);
+        w.u8(7);
+        w.bytes(&plain[930..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.bank[0], (0, 5, 0));
+        // bank slot 1: a negative BELOW the -1..-48 band has no netDefaults
+        // case тАФ the fresh air item stays, stack rides, prefix airs.
+        let mut w = Writer::new();
+        w.bytes(&plain[..930]);
+        w.i32(-49);
+        w.i32(3);
+        w.u8(9);
+        w.bytes(&plain[939..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.bank[1], (0, 3, 0));
+        // loadout 0 armor 0 at 2884 (2880 idx + 4): (6300, 2, 81, true).
+        let mut w = Writer::new();
+        w.bytes(&plain[..2884]);
+        w.i32(6300);
+        w.i32(2);
+        w.u8(81);
+        w.boolean(true);
+        w.bytes(&plain[2894..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.loadouts[0].armor[0], (0, 2, 0, true));
+        // loadout 0 armor 1 at 2894: (-49, 3, 81, true) тАФ the below-band
+        // negative airs id+prefix, stack + favourited ride.
+        let mut w = Writer::new();
+        w.bytes(&plain[..2894]);
+        w.i32(-49);
+        w.i32(3);
+        w.u8(81);
+        w.boolean(true);
+        w.bytes(&plain[2904..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.loadouts[0].armor[1], (0, 3, 0, true));
+        // temp slot 0 at 2862 (bits byte 0x01 + the triple): (6300, 7, 9).
+        let mut w = Writer::new();
+        w.bytes(&plain[..2862]);
+        w.u8(1);
+        w.i32(6300);
+        w.i32(7);
+        w.u8(9);
+        w.bytes(&plain[2863..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.temp_slots[0], Some((0, 7, 0)));
+        // temp slot 1 (bits 0x02 at 2862, the triple right after at 2863):
+        // (-49, 6, 9) тАФ the below-band negative airs id+prefix, stack rides.
+        let mut w = Writer::new();
+        w.bytes(&plain[..2862]);
+        w.u8(2);
+        w.i32(-49);
+        w.i32(6);
+        w.u8(9);
+        w.bytes(&plain[2863..]); // the powers onward (the fresh file had no payload)
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.temp_slots[1], Some((0, 6, 0)));
+        // refunds at 3819 (count + one triple): (6300, 4, 9) then a live one.
+        let mut w = Writer::new();
+        w.bytes(&plain[..3819]);
+        w.i32(2);
+        w.i32(6300);
+        w.i32(4);
+        w.u8(9);
+        w.i32(8);
+        w.i32(99);
+        w.u8(0);
+        w.bytes(&plain[3823..]); // the dialogue count tail
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.refunds, vec![(0, 4, 0), (8, 99, 0)]);
+        // refund slot 1: (-49, 6, 9) тАФ the below-band negative.
+        let mut w = Writer::new();
+        w.bytes(&plain[..3819]);
+        w.i32(2);
+        w.i32(8);
+        w.i32(99);
+        w.u8(0);
+        w.i32(-49);
+        w.i32(6);
+        w.u8(9);
+        w.bytes(&plain[3823..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.refunds, vec![(8, 99, 0), (0, 6, 0)]);
+        // inventory slot 0 at 291: (6300, 5, 9, true) тЖТ the >= Count arm
+        // (`Player.cs:55346-55355`) drops stack AND prefix AND the star.
+        let mut w = Writer::new();
+        w.bytes(&plain[..291]);
+        w.i32(6300);
+        w.i32(5);
+        w.u8(9);
+        w.boolean(true);
+        w.bytes(&plain[301..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.inventory[0], (0, 0, 0));
+        assert_eq!(file.inv_favorites & 1, 0, "the over-count arm drops the star");
+        // inventory slot 1 at 301: (-49, 5, 9, true) тЖТ the netDefaults
+        // no-case air keeps the stack + the star, airs the prefix.
+        let mut w = Writer::new();
+        w.bytes(&plain[..301]);
+        w.i32(-49);
+        w.i32(5);
+        w.u8(9);
+        w.boolean(true);
+        w.bytes(&plain[311..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.inventory[1], (0, 5, 0));
+        assert_eq!(file.inv_favorites & 2, 2);
+        // armor slot 0 at 111: (-49, 81, true) тЖТ id+prefix air, fav rides.
+        let mut w = Writer::new();
+        w.bytes(&plain[..111]);
+        w.i32(-49);
+        w.u8(81);
+        w.boolean(true);
+        w.bytes(&plain[117..]);
+        let file = read_player_bytes(&w.into_inner()).unwrap();
+        assert_eq!(file.armor[0], (0, 0, true));
+    }
+
+    // --- W4-f44 crosspersist: the timestamp residuals -----------------------
+
+    /// The DateTime binary encoding pins: Unix epoch = ticks
+    /// 621355968000000000 with kind bits 01 (Utc); the golden fixture's
+    /// FixtureClock 2026-11-18T00:00:00Z encodes to 0x48DF4506E391C000
+    /// (independently derived via .NET `DateTime.ToBinary`).
+    #[test]
+    fn the_utc_binary_encoding_pins_the_epoch_and_the_fixture_clock() {
+        assert_eq!(unix_secs_to_utc_binary(0), Some(0x489F_7FF5_F7B5_8000u64 as i64));
+        // 2026-11-18T00:00:00Z = Unix 1794960000.
+        assert_eq!(
+            unix_secs_to_utc_binary(1_794_960_000),
+            Some(0x48DF_4506_E391_C000u64 as i64)
+        );
+        // utc_now_binary carries the Utc kind bits and a post-2026 stamp.
+        let now = utc_now_binary();
+        assert_eq!(now as u64 >> 62, 1, "kind bits 01 = DateTimeKind.Utc");
+        assert!(now > 0x48DF_4506_E391_C000u64 as i64, "after the fixture clock");
+    }
+
+    /// `LoadPlayer:55096-55099`: a zero lastTimePlayerWasSaved falls back to
+    /// the FILE's last-write time тАФ the port's historical 0-stamp files
+    /// surface a real stamp on the disk read; a nonzero stamp rides verbatim
+    /// (the byte-level `read_player_bytes` keeps the raw 0 тАФ the fallback is
+    /// the disk reader's, exactly like the C#'s placement inside LoadPlayer).
+    #[test]
+    fn a_zero_stamp_falls_back_to_the_file_mtime_on_the_disk_read() {
+        let dir = crate::test_world_helpers::test_scratch("plr-stamp-fallback");
+        let path = dir.join("Zero.plr");
+        write_player_file(&path, &sample()).unwrap(); // sample stamps 0
+        let file = read_player_file(&path).unwrap();
+        assert_ne!(file.last_saved_binary, 0, "the mtime fallback fills the zero stamp");
+        assert_eq!(file.last_saved_binary as u64 >> 62, 1, "kind Utc");
+        // The fallback matches the file's own mtime in whole seconds.
+        let secs = std::fs::metadata(&path)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(file.last_saved_binary, unix_secs_to_utc_binary(secs).unwrap());
+        // The raw byte walk keeps the file's 0 (no fallback below LoadPlayer).
+        let raw = read_player_bytes(&cbc_decrypt(&std::fs::read(&path).unwrap())).unwrap();
+        assert_eq!(raw.last_saved_binary, 0);
+        // A nonzero stamp rides verbatim through the disk read.
+        let stamped = PlayerFileWrite {
+            last_saved_binary: 0x48DF_4506_E391_C000,
+            ..sample()
+        };
+        write_player_file(&path, &stamped).unwrap();
+        let file = read_player_file(&path).unwrap();
+        assert_eq!(file.last_saved_binary, 0x48DF_4506_E391_C000);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 }

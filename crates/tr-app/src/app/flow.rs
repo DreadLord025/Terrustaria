@@ -2071,6 +2071,16 @@ impl App {
                 self.play_world = Some(path);
             }
         }
+        // `UICharacterListItem.PlayGame` (`:256-261`) → `Main.SelectPlayer`
+        // (`Main.cs:66208-66216`): the played card's file becomes the
+        // active player. The port parks the `.plr` path; the world swap's
+        // fresh `App::new` re-reads it and hydrates the live Player
+        // (research/132 §2c — character-load FIRST, sidecar second).
+        // A disk-less card (the session stand-in / a fake) parks `None`
+        // and keeps the implicit session character.
+        if let FlowClick::CharPlay(i) = click {
+            self.play_player = self.players.get(i).and_then(|p| p.path.clone());
+        }
         let (front, backup, page) =
             next_flow_state(Some(front), self.front_backup.clone(), None, click);
         self.front_backup = backup;
@@ -3653,6 +3663,7 @@ pub(crate) mod front_flow_tests {
             front_scroll: 0.0,
             front_scroll_drag: None,
             session_draft: None,
+            play_player: None,
             vk_grid: false,
             settings: settings::Settings::default(),
             player_name: "flow".into(),
@@ -3994,15 +4005,7 @@ pub(crate) mod front_flow_tests {
                 inventory,
                 inv_favorites: 0,
                 last_saved_binary: 0,
-                voice_variant: 1,
-                voice_pitch_offset: 0.0,
-                unlocked_biome_torches: false,
-                using_biome_torches: false,
-                research: Vec::new(),
-                powers: crate::player_file::CreativePowersSave::written_fresh(),
-                current_loadout_index: 0,
-                loadouts: Default::default(),
-                revision: 0,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -5634,6 +5637,33 @@ pub(crate) mod front_flow_tests {
         assert!(app.front.is_none(), "the 888 side clears too");
         assert!(app.front_backup.is_none());
         assert!(app.front_hint.is_none());
+    }
+
+    /// W4-f44 SEAL — `CharPlay` parks the played card's `.plr` path
+    /// (`Main.SelectPlayer` → `data.SetAsActive`, `Main.cs:66208-66216`):
+    /// the world swap's fresh `App::new` re-reads it for the hydration.
+    /// A disk-backed card parks its path; the disk-less session stand-in
+    /// parks `None` (the implicit session character keeps running).
+    #[test]
+    fn w4_f44_char_play_parks_the_cards_plr_path() {
+        let mut disk = entry("Disk", true);
+        disk.path = Some(std::path::PathBuf::from("Players/Disk.plr"));
+        let session = entry("Session", false); // path: None
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![disk, session],
+            Vec::new(),
+        );
+        app.apply_front_flow(FrontScreen::CharSelect, FlowClick::CharPlay(0));
+        assert_eq!(
+            app.play_player.as_deref(),
+            Some(std::path::Path::new("Players/Disk.plr")),
+            "the disk card's file becomes the active player"
+        );
+        assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
+        // The session stand-in: no file, the park clears back to None.
+        app.apply_front_flow(FrontScreen::CharSelect, FlowClick::CharPlay(1));
+        assert!(app.play_player.is_none(), "the disk-less card parks None");
     }
 
     /// The favourites survive the save/load round (BUG-03): two slots

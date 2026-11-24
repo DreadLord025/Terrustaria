@@ -344,29 +344,20 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // live `favorite_slots`, flattened (`App::favorite_bits`); a fresh
         // character has none.
         inv_favorites: favorites,
-        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
-        // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
-        last_saved_binary: 0,
-        // W4-e10 — the picked voice pair (`Player.cs:54924-54925`).
-        voice_variant: draft.voice_variant,
-        voice_pitch_offset: draft.voice_pitch_offset,
-        // A fresh character has not earned the Torch God's Favor (W4-f33).
-        unlocked_biome_torches: false,
-        using_biome_torches: false,
-        // The Journey research pairs: a fresh character has none.
-        research: Vec::new(),
-        powers: crate::player_file::CreativePowersSave::written_fresh(),
-        // A freshly-created character is on loadout 0 with three empty sets
-        // (`Player.cs:3200-3207`).
-        current_loadout_index: 0,
-        loadouts: Default::default(),
-        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — `Serialize`
-        // stamps the save-time clock on every write, `CreateAndSave`
-        // included (`PlayerFileData.cs:58` → `SavePlayer`). W4-c43.
-        last_saved_binary: tr_core::clock::utc_now_binary(),
-        // `CreateAndSave`'s fresh `FromCurrentSettings` metadata
-        // (`PlayerFileData.cs:53`): revision 0.
-        revision: 0,
+        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the creation
+        // save stamps the real clock (the C# writes UtcNow on EVERY save,
+        // creation included); the port's fixture/golden writes still pass 0
+        // ("unknown"), and the reader's mtime fallback (`LoadPlayer:55096`)
+        // covers those (ANALYSIS "W4-f44 crosspersist").
+        last_saved_binary: crate::player_file::utc_now_binary(),
+        // W4-e10 (kept through the f44 fold): the char-creation picker's voice
+        // rides the fresh `.plr` (the C# `Player.cs:54924` writes a byte;
+        // e10's live field is i32, so cast at the file boundary — 132 §4's
+        // keep-one transport).
+        voice_variant: draft.voice_variant as u8,
+        // The per-player tail (loadouts / void vault / research): a fresh
+        // character carries the vanilla defaults (`PlayerFileWrite::default`).
+        ..Default::default()
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

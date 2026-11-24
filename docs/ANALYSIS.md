@@ -26397,7 +26397,6 @@ snapshot (`dye_slots`) now rides `GetEffectiveDye`. The UI is
 the equipment-slot tint follows the current loadout's `LoadoutSlotColors` row +
 the 30-frame change flash (`ItemSlot.cs:2778-2837`), and Alt+click toggles the
 share (`ToggleLoadoutShare` + `ClearSlotShareInOtherLoadouts`, `:879-912`).
-
 **Serialization.** The `.plr` writer/reader carry `CurrentLoadoutIndex` +
 `Loadouts[3]` (`Serialize:54919-54923` / `Deserialize:55720-55727`, the >= 322
 favourited gate, the `ItemID.Count` air-gap, the `Utils.Clamp` index); a fresh
@@ -26405,7 +26404,6 @@ character's three empty sets reproduce the golden 310-zero-byte block, so the
 full-file byte parity with `golden.plr` is untouched. The in-game `.trplayer`
 sidecar gains a **v7** loadout block (index + live share word + the three stored
 sets as kinds/hide/share); v6-and-older files load on loadout 0 with empty sets.
-
 **Recorded deviations / skips.**
 - The vanilla F1/F2/F3 = Loadout1/2/3 keys (`PlayerInput.cs:2088-2090` →
   `TriggersSet.cs:805-824`) stay the port's debug bindings (F1 debug overlay,
@@ -26417,7 +26415,6 @@ sets as kinds/hide/share); v6-and-older files load on loadout 0 with empty sets.
   `ParticleOrchestrator.cs:2370-2399`) is the particle-system lane's (the port's
   particle orchestration is unported); the 12 cue + `RecordLoadoutChange` +
   `mouseLeftRelease = false` are ported.
-
 **Landed since the Ph5 note (dev-1/2/3/4 + the loadout-rest retire round,
 research/362):** the `Extra_310..315` share-badge corner icons
 (`ItemSlot.cs:2733-2746`, dev-1 — packed + drawn at `Color.White*0.7*num17`);
@@ -26436,7 +26433,6 @@ c28's; the `.plr`/`.trplayer` transport dedups onto f44/g88; the net-147 apply
 is g55's keep-one over g51's stub; the tooltip share lines are e16/f28's; the
 `FixLoadedData` sanitisation folds onto f44's walk) are merge-time folds, not
 g55 gaps — the full census + compose confirmation is research/362.
-
 **Evidence**: 29 `w4_g55_*` witnesses written not run (code-only lane) — the
 swap rotation/gate/wrap, the `.plr` round-trip + index clamp + fresh-zero block,
 the sidecar v7 round-trip + v6-empty load, the button geometry/hit/colour, the
@@ -26445,12 +26441,10 @@ scan, the share toggle/clear (+ the hint disable), the share badges, the net-147
 mask/switch/apply, the loadout clone, the `pendingItemReuse` gate + arm, the
 death loadout sweep, and the angler loadout scan.
 ## The save files' wall clock + the SavePlayer envelope (W4-c43)
-
 `tr_core::clock` is the one seam for the .NET `DateTime` stamps both file
 formats carry: ticks are 100 ns units since 0001-01-01 (the Unix epoch sits
 at tick 621355968000000000), and `ToBinary` packs a 2-bit kind into bits
 62-63 (`Utc` = bit 62). Deliberate deviations:
-
 - **Every stamp the port writes is Utc-kind.** `CreationTime`'s C# source
   is `DateTime.Now` (`WorldFile.CreateMetadata:600`, kind Local); the port
   owns no time-zone database, so it stamps `UtcNow` instead. Reads mask
@@ -26465,7 +26459,6 @@ at tick 621355968000000000), and `ToBinary` packs a 2-bit kind into bits
   (`WorldGen.cs:11337`); inserting that draw into the port's frozen
   contract streams would move every world hash, so the creation tails roll
   it from a fresh `identity_rng()` (same value range) after generation.
-
 The world identity lands as: the creation tails (`create_world_in`,
 `WorldGenJob`'s Completed arm) run `wld::stamp_created_identity`
 (`CreateMetadata:600-604`) + the WorldId roll; the save funnel stamps
@@ -26483,7 +26476,6 @@ determinism contract narrows accordingly: a double-save pair is byte-equal
 `test_DW_7_2`/`test_DW_7_3`/the `.bak` rotation test pin the normalized
 pairs; the worldgen tile hashes are untouched (the identity fields are not
 in `world_hash`'s fold).
-
 **The `.plr` envelope (Ph2).** The S1-J-5c "App stamps 0" policy is
 retired: `save_created_character` now stamps `utc_now_binary()` (the
 `Serialize:54909` `DateTime.UtcNow.ToBinary()` — `CreateAndSave` runs
@@ -26507,9 +26499,7 @@ stamp), `w4_c43_a_zero_stamp_falls_back_to_the_file_mtime`,
 post-201 gate stripped reads aligned, stamp 0). The golden byte-parity
 tests are untouched — the fixture's revision is 0 and its clock is the
 caller-supplied pin.
-
 ## The `.wld` header/flags SECOND half (W4-f45)
-
 `task/W4-f45-wld-header-2` (code-only, 2026-11-21, base = W4-c43's tip
 `07697080`) claims the remaining header/flags fields that have live port
 state or a faithful gen/death source, in four phases. Every claim is a
@@ -26518,7 +26508,6 @@ round-trips; the App-owned schedulers snapshot into the World at save
 (`saveglue.rs::save_world`, the `SetTempToOngoing` shape) and restore at
 load (`app/mod.rs`, `from_wld`-gated so a `.trwld`'s zeros never clobber the
 live defaults).
-
 - **Ph1 — the downed-flag census.** `downedClown`/`downedEmpressOfLight`
   (`WorldFile.cs:1297`/`:1395`) round-trip (their kinds — Clown 109,
   HallowBoss 636 — are unported, so no live setter yet). The five seasonal
@@ -26562,7 +26551,6 @@ live defaults).
   `NPC.cs:79411`) + the six arrival unlocks (`WorldGen.cs:5577-5608`) —
   gain their setters and the `SpawnAllowed_*` overrides
   (`NPC.cs:7069/7094/7119/7160/7177`).
-
 **Deliberate deviations.** The party celebrant list carries the C#'s stable
 `Main.npc` slots, but the port's live list indexes the compacted `Vec<Npc>`
 (the recorded `world_events.rs` deviation) — the slots are written as-is; a
@@ -26570,21 +26558,17 @@ compacted-list remap is the follow-up. The Truffle's housing-gate consumer
 (`housing.rs:456`) keeps its parameter (the Truffle kind is unported, so the
 flag round-trips without a live reader). The Clown/Empress/bartender latches
 round-trip without live setters (their kinds/rescue paths are unported).
-
 **Still unowned (no port state, written at the C# default):** claimableBanners,
 the treeTop variation table, the world-gen manifest JSON (all three the W4-c44
 golden-fixture lane owns), and forceHalloweenForToday/forceXMasForToday (the
 W4-f39 season lane). The set below was claimed in the second pass (Ph5-Ph13).
-
 ### Second pass (Ph5-Ph13): the remaining unowned census
-
 `task/W4-f45-wld-header-2` continues on the same branch (base `42b7363b`) and
 claims the rest of the header/flags fields that have a live port consumer in an
 in-flight lane or a faithful gen/death/use source. Every claim is a `World`
 field the `.wld` flags writer/reader round-trips; the byte offsets are
 hand-derived against the `flags_tail` running widths and pinned by the
 `expected_flags_block` independent table + the owned-world sweep.
-
 - **Ph5 — GameMode** (`WorldFile.cs:1240` write / `:1985` read): the world's
   difficulty i32 (0 Classic / 1 Expert / 2 Master / 3 Journey), the W4-e25
   expert/master scaling lane's consumer. The pre-209 read gates are ported: the
@@ -26642,14 +26626,12 @@ hand-derived against the `flags_tail` running widths and pinned by the
   copper, `:1409-1415` / `:2434-2440`, v261): the town-slime kinds are unported,
   so the latches round-trip (the green arrival setter rides the f43 town-slime
   lane; the doom party clears green, `Main.cs:17940`).
-
 **Determinism.** The new fields are not in `world_hash`'s fold (the tile
 hashes are untouched); the gen stamps (dungeon anchor, crimson, the tree/cave
 tables, the doom party) are deterministic functions of the options/seed. The
 `.wld` flags block grows by the variable celebrant/angler/extra-spawn lists —
 the `expected_flags_block` table computes the shifts, and the owned-world sweep
 pins the whole block.
-
 Witnesses (written NOT run, code-only): the Ph1 seasonal-death census
 (`world_sim/npcs.rs`), the Ph1-Ph13 offset+gate witnesses
 (`wld/mod.rs::w4_f45_*`), the tree/cave roll witness
@@ -26657,9 +26639,7 @@ Witnesses (written NOT run, code-only): the Ph1 seasonal-death census
 the meteor-shower witness (`worldgen/meteor.rs`), the coin-rain store witness
 (`rain.rs::test_DW_2_4`), and the extended `owned_world`/`assert_owned_fields`
 round-trip sweep. The compile window runs them.
-
 ### Final phase: the full walk audit + the VERSION-gate census
-
 `task/W4-f45-wld-header-2` final phase (`2e13cfafc` + `ad153feb3`, code-only)
 publishes **research/279-wld-final-audit.md** (renumbered 137→279 per the
 research/150 registry §6.3 — 137 belongs to g84) — the complete
@@ -26670,7 +26650,6 @@ research/150 registry §6.3 — 137 belongs to g84) — the complete
 byte-identical dedups, the g70 treeStyle conflation flagged, the Ph6 gen-roll
 copies defer to the g71/g72 canonical), and the gate census. **Four gate
 fixes landed:**
-
 - **The >326 later-version reject** (`WorldFile.cs:712`/`:197`): the port
   walked a v327+ file as v326; `SectionTable::open` now bails it.
 - **The <88 lower boundary** (the off-by-one): the C# dispatch is `> 87 ->
@@ -26689,7 +26668,6 @@ fixes landed:**
   of the game's non-NUL BCrypt walk (controls pumpkinseason/arachnophobia +
   the target all match). The post-walk placement is byte-equivalent (nothing
   after `:2130` touches the rain triple).
-
 **Recorded observations (research/279 §5, not byte-walk defects):** the
 pre-267 zenith inference's `EVERYTHING_DEPS` widening (pre-existing, the C#
 sets zenithWorld only); `downedMechBossAny` derived vs stored (equivalent for
@@ -26699,13 +26677,291 @@ full-count skip (equivalent for C# files); `UpdateTimeRate`'s creative-fold
 ordering (the clock seam, a no-byte side-effect); the manifest empty-string
 write (the C# writes the null-field JSON even when empty — c44 fixture owns
 the payload).
-
 **The remaining-unowned census answer (research/279 §1.5):** five families —
 claimableBanners (no claim queue; the item spawns at the death spot), the
 TreeTops variation table (a derived mirror; the sources are owned), the
 world-gen manifest (no gen metadata), forceSeasonsForToday (f39), and the
 eight setBG seats (g70 forest four / g71 surface three + underworld). Every
 other flags field is owned. Witnesses written NOT run (code-only).
+**W4-f44 phase 2 (2026-11-21): the equip/dye tails + the Journey powers.**
+The three equipment tails the reader used to consume-and-drop now ride BOTH
+models: `armor[20]`/`dye[10]` as `(type, prefix, favorited)` (no stack —
+`Serialize:54812-54823` / `Deserialize:55306-55340`, the favourited bool gated
+>= 322), the interleaved `miscEquips[5]`/`miscDyes[5]` `(type, prefix)` pairs
+(`:54831-54837` / `:55420-55447`), `hideVisibleAccessory[10]`'s two BitsBytes
+(`:54758-54769` / `:55171-55183`), `hideMisc` (`:54770`) and `hideInfo[13]`
+(`:54890-54893` / `:55616-55623`). The Journey side gains the per-player
+creative powers `CreativePowerManager.SaveToPlayer`/`LoadToPlayer` carry
+(`:54913` / `:55706-55709`; ids 5/11/14, `CreativePowers.cs:705-707`/`:744-746`/
+`:1717-1719`). **Read semantics mirrored**: an out-of-range equip id airs
+through `SetDefaults` (`Item.cs:48671-48674`) and `Prefix` no-ops on air
+(`CanHavePrefixes` false, `Item.cs:515-518`) — id+prefix air, but favorited is
+set unconditionally (`:55315`) and rides; the misc `>= ItemID.Count` arm drops
+the prefix byte (`:55425-55439`). The legacy negative ids -1..-48
+(`Item.netDefaults`, `Item.cs:1213-1360`) ride VERBATIM (the card model carries
+no item-defaults tables, so the mapping is deferred; a re-save round-trips the
+bytes). The unknown-power-id BREAK stays (`CreativePowerManager.cs:203-206`);
+after the load the C# RESETS the powers for non-Journey characters
+(`difficulty != 3`, `:211-214` → `ResetDataForNewPlayer`, the ctor defaults
+false/true/0.5, `CreativePowers.cs:710-713`/`:749-752`/`:1722-1725`) — mirrored
+in `finish_player_file`. **Writer default split**: `CreativePowersSave::default`
+is the read-side reset state; `PlayerFileWrite`'s default is
+`written_fresh()` (false, false, 0f) — the live manager state a Classic session
+saves, which the golden fixture pinned. The legacy 279 subset shim now also
+captures its armour/dye pairs + hide BitsBytes. **Evidence**:
+`the_equip_and_hide_tails_round_trip`, `the_equip_tail_write_is_byte_faithful`
+(the hide BitsBytes move ONLY offsets 47/48; the golden parity re-pinned),
+`over_count_equip_items_air_without_desyncing`,
+`the_creative_powers_load_and_reset_by_difficulty`,
+`an_unknown_power_id_breaks_the_loop_like_the_csharp`,
+`the_legacy_subset_keeps_its_equip_and_hide_state`; the golden fixture's
+fresh-tail read + the inc1/inc2 shallow retries extended to the new fields.
+**W4-f44 phase 3 (2026-11-21): the .plr remainder — every field now rides.**
+The ten field families the writer used to emit at fresh defaults and the
+reader consumed-and-dropped are captured verbatim on BOTH models, completing
+`Serialize` (`Player.cs:54750-54933`) / `Deserialize` (`:55134-55764`):
+(1) `playTime.Ticks` (`:54754`/`:55150-55157` gate 138), `hairDye`
+(`:54756`/`:55163-55166` gate 82), `team` (`:54757`/`:55167-55170` gate 283);
+(2) `bank`/`bank2`/`bank3` 40×(type,stack,prefix) each (`:54838-54855`/
+`:55449-55487`, gate 58 with the <58 20-slot arm cited, bank3 gate 182) —
+the bank read is `netDefaults`/`stack`/`Prefix` with NO `TurnToAir`, so an
+over-count id airs id+prefix while the stack rides (`Item.cs:48670-48688`
+then `Prefix` no-ops on air `:515-518`); legacy -1..-48 verbatim per ph2;
+(3) `buffType`/`buffTime[44]` as the COMPACTED live pairs (`:54864-54876`/
+`:55578-55599`, the zero-type `num28--`/`num27--` compaction verbatim, count
+gates 10/22/44 at 74/252) — the write pads to 44 and zeroes the
+`Main.buffNoSave` types, the FULL table ported (`Main.cs:8969-9069` explicit
+101 + the 173..=181 loop `:9070-9073` + the 66 mount buffs
+`BuffID.Sets.MountType` `ID/BuffID.cs:169` via `Main.cs:9206-9213`);
+(4) the bed spawn points `spX/spY/spI/spN[200]` (`:54877-54888`/`:55600-55611`,
+the -1 sentinel + 200 cap verbatim both sides); (5) `anglerQuestsFinished`
+(gate 98), `DpadRadial.Bindings[4]` (gate 162, fresh -1×4), `builderAccStatus[12]`
+(count gates 8/10/11/12 at 164/167/197/230 PLUS the <210 `[0]=1` and <249
+inventory-3611 `[1]=1` fixups `:55654-55673`, state-only), `bartenderQuestLog`
+(gate 181), `dead` + the conditional `respawnTimer` with the
+`Utils.Clamp(0,60000)` read (`:55684`), `golferScoreAccumulated` (gate 206);
+(6) `_temporaryItemSlots[4]` as `Option<(type,stack,prefix)>`
+(`SaveTemporaryItemSlotContents:54935-54959`/`LoadTemporaryItemSlotContents:54962-54985`,
+gate 214, BitsByte + per-set-bit triples); (7) the super-cart BitsByte
+(`:54914-54918`/`:55710-55715` gate 253, fresh byte **2** from the
+`enabledSuperCart = true` field default `:2054`) — the <253 fallback derives
+the unlock from `HasItemInAnyInventory(3353)` (`:55716-55719` → `:55931-55970`,
+`HasItem` needs stack > 0 `:55906-55916`); (8) the voice pair
+(`:54924-54925`/`:55728-55741` gates 280/281) — the read clamps the variant to
+1..4 (`LoadPlayer_LastMinuteFixes:55831`) and the <280 arm derives `Male ? 1 : 2`
+from `PlayerVariantID.Sets.Male` {0,1,2,3,8,10} (`ID/PlayerVariantID.cs:20`,
+`Player.cs:3405-3410`) after the skinVariant clamp, zeroing the pitch;
+(9) the crafting refunds as count + (type,stack,prefix) triples
+(`CraftingRequests.SavePossibleRefunds:353-362`/`:55746-55754` gate 300);
+(10) `oneTimeDialoguesSeen` as count + strings, deduped first-occurrence on
+both sides (the `HashSet.Add`, `Player.cs:3209`/`:54927-54932`/`:55755-55762`
+gate 310). **Documented stand-ins**: the equip arrays carry no stack in the
+card model, so the <253 cart-derive treats a non-air equip slot as stack > 0;
+the dialogues keep first-occurrence order (the HashSet's practical add-only
+enumeration order). **Back-compat**: the legacy 279 subset shim now also
+captures playtime/hairDye (it has no team byte); the inc1/inc2 truncation
+retries keep their fresh defaults for the sections they never reach.
+**Golden parity preserved**: every `PlayerFileWrite` default emits the exact
+fresh-ctor byte the pre-ph3 writer hardcoded — `golden_plr_writer_matches_
+the_csharp_fixture_byte_for_byte` stays byte-identical (3840 bytes).
+**Evidence** (witnesses written, code-only — not run): `the_header_fields_
+round_trip`, `the_banks_round_trip_and_stay_byte_faithful` (offset 1322),
+`the_buffs_round_trip_compacted_and_no_save_types_zero`, `the_spawn_points_
+round_trip_with_the_sentinel` (offset 2754), `the_quest_and_death_fields_
+round_trip` + `the_builder_acc_legacy_fixups_apply_without_extra_bytes`
+(hand-built 205 body), `the_temp_slots_round_trip_through_the_bits_byte`,
+`the_super_cart_byte_rides_and_the_legacy_unlock_derives` (hand-built 252
+body), `the_voice_pair_round_trips_clamps_and_derives` (hand-built 279 body,
+all 12 variants), `the_refunds_round_trip_as_count_and_triples`,
+`the_dialogues_round_trip_deduped`.
+**W4-f44 verify-sweep (2026-11-21): the full-walk audit + the found gaps.**
+The line-by-line `Serialize:54750-54933` / `Deserialize:55134-55764` audit
+(`docs/research/99-plr-complete-audit.md` — the complete offset table + the
+version-gate matrix) confirmed the PH3 field set is complete (no `miscEquips2`
+in 1.4.5.8; nothing follows the dialogues) and found seven gaps, all ported:
+(G1) bank4/loadout over-count ids dropped the stack + favourited — C#
+`Item.DeserializeFrom` (`Item.cs:49921-49933`) airs the id INSIDE `netDefaults`
+(`SetDefaults:48671-48674` zeroes the type), the stack read overwrites
+(`:49924`), `Prefix` no-ops on air, the favourited bool rides, and the final
+`type >= Count` check sees 0 and never fires — the aired slot keeps
+(0, file-stack, 0, file-fav); (G2) temp/refund over-count kept the prefix —
+now airs; (G3) negatives below -48 rode verbatim — `netDefaults`' switch has
+no case, the fresh air item stays, (0, file-stack, 0); (G4) a type-0 slot with
+a nonzero prefix byte kept the prefix — `Prefix` no-ops on any air item;
+(G5) the playtime gate 138 was missing (a genuine 135-137 file desynced);
+(G6) the misc < 136 arm skips slot 1 (`:55393`) — was reading five pairs;
+(G7) the unlock/seed header block (`extraAccessory`, the torch pair, artisan
+bread, the six used-upgrades, the DD2 downed flag, taxMoney, the death
+counters — `:54776-54790`), `hbLocked` (`:54889`) and the save timestamp's
+READ side (`:55688-55691`) were unmodelled state — a vanilla character lost
+them on a port re-save; all now ride both models (`PlayerFile`/
+`PlayerFileWrite`'s `extra_accessory`/`unlocked_biome_torches`/
+`using_biome_torches`/`ate_artisan_bread`/`used_upgrades[6]`/
+`downed_dd2_any_difficulty`/`tax_money`/`deaths_pve`/`deaths_pvp`/`hb_locked`/
+`last_saved_binary`). The shared air policy is `air_checked_triple`/
+`air_checked_pair`; the inventory's >= Count arm keeps its read-and-drop
+(`:55346-55355`). **Shim coverage**: no new arms needed — the 279 subset's
+existing header capture now rides the 11 bools + 3 counters it already
+consumed; the inc1/inc2 cuts sit after the new fields, so the shared prefix
+carries them. **Golden parity preserved**: every new write default emits the
+byte the old writer hardcoded; the fresh-tail read additionally pins the
+fixture's FixtureClock stamp on the read side. **Evidence** (witnesses
+written, code-only — not run): `the_unlock_and_counter_header_fields_round_trip`
+(offsets 66-90 + 2758), `a_pre_138_file_carries_no_playtime_i64` (hand-built
+135/137/138 bodies), `the_aired_slot_keeps_its_stack_and_favorited_from_the_file_bytes`
+(hand-spliced bytes at bank4 2001 / bank 921 / loadout 2884 / temp 2862 /
+refunds 3819 / inventory 291 / armor 111); the three over-count witnesses
+updated to the corrected expectations.
+**W4-f44 crosspersist (2026-11-21): the three-layer master map + the
+timestamp residual fix.** `docs/research/132-persist-master-map.md`
+publishes the cross-layer contract over research/99 (`.plr`),
+research/103 v9 + 122 (`.trplayer`), research/92 + 135 (`.trwld` 21-byte
+v18 union / `.wld`): per-field ownership (the G7 `used_upgrades[6]`
+array and the g89/g90 sidecar bools are THE SAME vanilla fields at
+different save cadences — a deliberate dual-carrier, one writer per
+file, one slot/token per field), the per-layer merge order, the
+cross-layer back-compat matrix, and the e10 voice co-lane cross-note
+(e10 tip `2c024e444` lands NO `.plr` write — its `Player.voice_variant`
+is a live consumer field; research/99 row 67's transport is complete on
+this branch, the hydration seam is a cast at the future character-load
+restore). **The timestamp fix (`d331ea7c`)**: `read_player_file` now
+ports `LoadPlayer:55096-55099`'s zero-stamp mtime fallback
+(`File.GetLastWriteTimeUtc(path).ToBinary()` — DateTime binary = UTC
+ticks low 62 bits + kind bits 01, whole seconds), and the creation save
+(`session.rs`) stamps `utc_now_binary()` like `Player.cs:54909` instead
+of the historical 0. The byte-level codec stays caller-stamped (golden
+FixtureClock parity untouched). **Divergence re-verification** (the
+sweep's six, C# re-read): #1 narrowed (this fix; remaining residue =
+the caller-stamped codec + whole-second precision); #2/#3 provably
+C#-identical (`InternalSavePlayerFile:54739` calls `Metadata.Write` not
+`IncrementAndWrite` — the only Increment call is `WorldFile.cs:1175`;
+vanilla `IsFavorite` never set true, `favorites.json` is the live
+store); #4 (legacy -1..-48 verbatim), #5 (cart-derive equip stand-in),
+#6 (dialogue first-occurrence order) still deliberate. 2 witnesses
+written not run (code-only):
+`the_utc_binary_encoding_pins_the_epoch_and_the_fixture_clock` (.NET
+ToBinary-derived pins), `a_zero_stamp_falls_back_to_the_file_mtime_on_the_disk_read`.
+**W4-f44 FINAL (2026-11-21, `63204f85`): the slot-11 property fix + the
+master INDEX close.** The last full Serialize/Deserialize re-diff found
+ONE remaining semantics gap: the `:54778`/`:55242` `UsingBiomeTorches`
+byte is a PROPERTY over `builderAccStatus[11]` (`Player.cs:3950-3963`),
+not a stored field — the C# write emits the GETTER
+(`unlockedBiomeTorches && builderAccStatus[11] == 0`) and the read lands
+on the SETTER (`builderAccStatus[11] = !value`), with the later >=230
+builder-array read (`:55635-55653`) overwriting the slot from the file
+in C# order. The G7 sweep's raw-bool transport round-tripped the byte
+but lost the slot link (a locked character with a stray `using=true`
+wrote a byte the C# never writes; the unlocked+disabled toggle had no
+carrier). Fixed on the full walk + the 279 subset; the raw
+`using_biome_torches` field stays the file-verbatim carry (the f33
+fold's shape parity), the writer IGNORES it. Golden parity untouched.
+Witness: `the_using_biome_torches_byte_is_the_slot11_property`; the G7
+header witness re-pinned. **research/132 is now the persist MASTER
+INDEX (FINAL)**: it seats the f33 torch-favor v7 fork (tip `8a000407f`,
+a 2-token pair-line — the value-range recognition rule vs g88's life
+pair, §2d), the g88 v10 crystal fold + a6b/138 adjudications (worktree
+states read), and the L3 union re-extend obligation: g71c's five-branch
+21-byte head (g70/g71/g69/d125/d109-dense) must seat g72d's 31-byte
+cave claim (research/64-addendum, worktree `108cc0934`), g90's 2-byte
+book pair (135 §4) and c43's 44-byte identity block — the reconciled
+FINAL head is **97 bytes + W×H dense**, with the per-claimant
+truncation-constant moves and the g71c/g72c roll keep-one adjudication
+recorded (§3-L3). The condensed L1→L2→L3 merger checklist is 132 §8.
+**W4-f44 RETIRE (2026-11-21, this commit): research/132 FINAL-FINAL — THE
+persist merger-bible.** The retire probe re-read every persist lane at its
+PUSHED tip (the FINAL probe's worktree states all landed) and closed the
+three open obligations: (1) **the L3 union is now TEN claimants / a
+107-byte fixed head + W×H dense** (132 §3-L3 is THE authoritative layout)
+— the FINAL "97" was an arithmetic slip (16+31+3+1+1+2+44 = 98); the
+retire additions are g87's 3-byte pet trio (`dfbcaf94b`), the c39⨉f39
+five-byte moon-boss downeds (`8ecb288aa`/`bd5a5a24a` — field-identical
+claims, ONE deduped block, f39's season-lane DoDeathEvents owns the
+semantics) and the FIRED underworld seat (g71's pushed wiring rolls +
+`.wld`-persists `underworld_bg_style` — a `.trwld` byte is mandatory, 1 B
+between the surface group and crimson); the flag singles ride strict C#
+`.wld` write order. (2) **the g88f receipt** (`a9f1c29d8`, v11): 132 §2d's
+torch-pair recognition rule + line-16 seat CONSUMED verbatim (the version
+bumped v11 instead of the stay-v10 proposal — the safer shape, superseded
+in the doc), 135 §2's six-line rule landed, research/138 PUSHED
+(`d7de8bd53`) and its per-item use-arm verdicts seated (132 §3-L2 rule 7);
+the NEW g87 `dh` sentinel line (the ninth v7 shape) folds as line 17 at
+v12, the DD2 version reservation moves to v13 (132 §2e). (3) **the e10
+voice-write landed** (`693e3850a`+ — the picker + draft + session
+threading + an i32 transport diff): the keep-one FINAL is this branch's
+u8 transport (the file-faithful width, the complete-walk superset, the
+superset witness); e10's player_file.rs diff dedups, its picker/threading
+fold with an `as u8` cast; the live-Player hydration hunk stays OPEN on
+both branches (the shared character-load seam, 132 §4). The FINAL-FINAL
+5-step merger checklist (all recognition rules, all claimants, all dedup
+steps) is 132 §8. Docs-only retire — no code change, golden parity
+untouched.
+**W4-f44 SEAL (2026-11-21, this commit): 132 SEALED — the persist-family
+bible final + the hydration port.** Three receipts closed: (1) **the
+132↔92 convergence** — g71 `f2d8c2c67`'s research/92 §1-FULL (the
+13-branch claimant registry) independently derived the SAME 107-byte
+head; the byte-order comparison found identical claimant sets/block
+internals but differing flag-group offsets (theirs keeps 64a's 53-byte
+prefix — books at 51..53; ours placed underworld before crimson).
+Adjudicated **C#-write-order definitive** (`WorldFile.cs:1281` crimson <
+`:1347-1351` moon-boss < `:1376` underworld < `:1392-1394` pets < `:1395`
+empress < `:1407-1408` books): the FINAL-SEAL layout is crimson 50 /
+moon-boss 51..56 / underworld 56 / pets 57..60 / empress 60 / books
+61..63 / identity 63..107 / dense LAST — forward-only-free, mutual
+receipt published (92 §1-FULL the registry of record, 132 §3-L3 the
+layout of record). (2) **the g88h seal** (`6a829a0e8`): its 100-byte
+step-10 arithmetic (computed against our pre-RETIRE 97-slip doc) is
+superseded by the 107 table; its `dh`-line DROP verdict (138-FINAL
+§10.4 — the v11 reader tolerates the sentinel lossy-not-corrupt) wins as
+the merger DEFAULT, our §2e line-17-at-v12 fold stays the CONDITIONAL
+seat (only if in-session carriers are needed before the exit-save);
+DD2 keeps its v12 token-7 reservation under the default. (3) **the
+hydration hunk CLOSED** (the e10c receipt): the census found it small
+(the reader modelled every field; only the apply-side was missing) —
+`CharPlay` now parks the card's `.plr` (`Main.SelectPlayer`,
+`Main.cs:66208-66216`), `swap_world` carries it across the `App::new`
+reset, `Player::hydrate_from_file` applies the stats/unlock family
+(the torch pair through the slot-11 setter + the C#-order array copy)/
+six used-upgrades (five new sibling fields at the g90b spots)/pearl luck
+mirror/super-cart BitsByte/voice pair (e10's i32 live width)/counters;
+the file name + favourites land; the sidecar restore runs SECOND and
+wins (132 §2c live). The exit-save is the one remaining shared
+remainder. 3 witnesses written not run (code-only); golden `.plr`
+parity untouched — no codec change, the `None` park keeps every
+boot/screenshot path byte-identical.
+**W4-f44 SEAL-VERIFY (2026-11-21, this commit): the post-seal receipts
+pass — the D5-A3 re-pin EXECUTED + the g56 `.trvault` compose.** Two
+receipts landed on 132 (docs-only): (1) **the D5-A3 re-pin** — g88
+`d09d7e10a`'s L3-ARBITER FINAL read FULL (A1's verbatim `writer.Write`
+rows, A2's overrule of both non-matching middles, A3's ONE table, A4's
+five-dependent notify list): A3 is field-for-field IDENTICAL to 132's
+FINAL-SEAL layout (the seal's convergence adjudication had already
+landed the arbiter's exact order), so the owed re-pin (A4's 132-row at
+`d35876af9`, echoed by g71 `b27474a44` §1-SEAL.5: "132 owes its
+one-move underworld re-pin") closes as a RECEIPT — the RETIRE Δ table
+marked historical, the authority chain pinned (132 §3-L3 = 103 A3 =
+D3 = D5; the C# rows the tie-breaker, not timestamp/designation). All
+five L3 dependents now seat the identical strict-C#-row middle (92
+`8224c94f1`, 64b `aa1645481`, 138 `9a4acd729`, 135 `43fee29a4`, 132
+here) — the persist-order dispute RESOLVED family-wide. The C# stream
+re-read directly (`WorldFile.cs:1270-1414`) agrees line-for-line.
+(2) **the g56 `.trvault` fold-contract** (`54c63d8d4`, research/239 §1
+consumed as 132 §2g): the 40-char favorites sidecar COEXISTS through
+the folds (keep-one TODAY = the sidecar — 132's bank4 rows 47/48 are
+the byte-shape, not a live carrier; the hydration applies player-state
+only, bank payloads deferred), its write RETIRES only at the two-seam
+gate — composed with 132's remainder: **the exit-save is the ONE
+shared gate for the torch-line drop (103 §2b rule 3), the dh
+conditional (§2f) and the vault retire (239 §1c)**; the exit-save pass
+lands the bank4/favorites payload writer + hydration extension +
+`voidVaultInfo` bit-0 parity byte (never hydrated against the per-tick
+`HasItem(4131)` refresh, `Player.cs:24550-24553`); NO g88 v12 vault
+line ever; the reader keeps a one-release back-read; the merger
+conflict notes (persist.rs/saveglue.rs/mod.rs pure insertions) seated,
+the restore order hydration → superset → `.trvault`. The landed
+hydration port re-verified at the seal tip (`flow.rs:1302-1304` park,
+`app/mod.rs:2848-2857` apply-before-sidecar,
+`player.rs::hydrate_from_file`, `save.rs` VERSION 17). Docs-only — no
+code change, no cargo/tests/rustfmt/graphify; golden `.plr` parity
 
 ## The world-format contract (S1-J-8)
 
