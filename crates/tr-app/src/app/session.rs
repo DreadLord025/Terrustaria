@@ -276,6 +276,9 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // W4-e10 — the picked voice pair (`Player.cs:54924-54925`).
         voice_variant: draft.voice_variant,
         voice_pitch_offset: draft.voice_pitch_offset,
+        // A fresh character has not earned the Torch God's Favor (W4-f33).
+        unlocked_biome_torches: false,
+        using_biome_torches: false,
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

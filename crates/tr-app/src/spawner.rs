@@ -3396,6 +3396,33 @@ mod tests {
     }
 
     #[test]
+    fn w4_d105_the_sunflower_flag_feeds_the_spawn_modifiers() {
+        // W4-d105 doc-sweep: the Sunflower (146) buff's `player.sunflower`
+        // flag (`Player.cs:11003`, set by the wave-C slot chain) feeds
+        // `NPC.GetSpawnRate` (`NPC.cs:712-716`): rate ×1.2, cap ×0.8 — the
+        // same shape as invis, applied AFTER it (`:702` then `:712`).
+        // Day surface base: 360 / 5 → 432 / 4.
+        let w = ground_tall();
+        let mut c = ctx_at(&w, true);
+        c.flags.sunflower = true;
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!(r.spawn_rate, (360.0 * 1.2) as i32);
+        assert_eq!(r.max_spawns, (5.0 * 0.8) as i32);
+        // The stacked order: invis first (432/4), then sunflower
+        // (432 × 1.2 = 518.4 → 518; 4 × 0.8 = 3.2 → 3).
+        let mut c = ctx_at(&w, true);
+        c.flags.invis = true;
+        c.flags.sunflower = true;
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!(r.spawn_rate, (432.0 * 1.2) as i32);
+        assert_eq!(r.max_spawns, (4.0 * 0.8) as i32);
+        // `anglerSetSpawnReduction` (`NPC.cs:717-721`) is dead code in the
+        // C# — `Player.cs:2808` declares it, `:18729` clears it, no site
+        // sets it true — so the port's `angler_set` arm stays constants-off
+        // (the flag exists for the C# shape only).
+    }
+
+    #[test]
     fn spawns_land_outside_the_safe_area() {
         let w = ground_tall();
         let mut rng = UnifiedRandom::new(0xDEAD_BEEFu32 as i32);

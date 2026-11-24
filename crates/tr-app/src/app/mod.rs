@@ -361,11 +361,11 @@ pub(crate) struct App {
     /// `Main.timesTriedToFastStack` (`Main.cs:1697`).
     pub(crate) times_tried_to_fast_stack: i32,
     /// `Main.cursorOverride` (`Main.cs:2047`): the hovered slot's
-    /// alternate-click cursor — 8 = transfer from the chest, 9 = transfer to
-    /// it (`ItemSlot.cs:213-218`) — or −1. Reset per interface frame
-    /// (`Main.cs:44941`), set by the chest hover evaluation (`ItemSlot.cs:
-    /// 599-627`); the Cursors_8/9 texture draw is a recorded follow-up (the
-    /// phase-4 file scope excludes assets.rs/cursor.rs).
+    /// alternate-click cursor — 3 favourite, 6 trash, 8 transfer from the
+    /// chest, 9 transfer to it, 10 sell (`ItemSlot.cs:213-218`) — or −1.
+    /// Reset per interface frame (`Main.cs:44941`), set by the hover
+    /// evaluation (`ItemSlot.cs:599-627`); the override texture draw landed
+    /// W4-e19 (`ui::cursor::draw_override`, `Main.cs:45269-45310`).
     pub(crate) cursor_override: i32,
     /// `Main.defaultChestName` (`Main.cs:1753`) — the tile default captured
     /// at the rename keyboard's open (`IngameFancyUI.cs:103-123`); the
@@ -1325,6 +1325,61 @@ fn apply_pose_pin(world: &mut World, mut p: Option<&mut crate::player::Player>, 
     // The pin writes tiles after the render chunks were built — the
     // revision bump is what `apply_edit` uses to rebuild them.
     world.revision = world.revision.wrapping_add(1);
+}
+
+/// The gen-time starter ledger's name resolution — `NPC.getNewNPCName`
+/// (`NPC.cs:7281-7325`): the kind's `RandomFromCategory(<Kind>Names,
+/// genRand)` pick, the raw draw word carried by the ledger record
+/// (`worldgen::starter_npcs`). The category size resolves the index exactly
+/// like `LanguageManager.RandomFromCategory` (`value[random.Next(Count)]`).
+/// Kinds with no category (the C#'s `_ => ""` arm) keep the static name.
+fn starter_npc_name(net_id: u16, roll: u32) -> String {
+    let category = match net_id {
+        17 => "MerchantNames",
+        18 => "NurseNames",
+        19 => "ArmsDealerNames",
+        20 => "DryadNames",
+        22 => "GuideNames",
+        38 => "DemolitionistNames",
+        54 => "ClothierNames",
+        107 => "GoblinTinkererNames",
+        108 => "WizardNames",
+        124 => "MechanicNames",
+        160 => "TruffleNames",
+        178 => "SteampunkerNames",
+        207 => "DyeTraderNames",
+        208 => "PartyGirlNames",
+        209 => "CyborgNames",
+        227 => "PainterNames",
+        228 => "WitchDoctorNames",
+        229 => "PirateNames",
+        353 => "StylistNames",
+        368 => "TravelingMerchantNames",
+        369 => "AnglerNames",
+        453 => "SkeletonMerchantNames",
+        441 => "TaxCollectorNames",
+        550 => "BartenderNames",
+        588 => "GolferNames",
+        633 => "BestiaryGirlNames",
+        663 => "PrincessNames",
+        637 => "CatNames_Siamese",
+        638 => "DogNames_Labrador",
+        656 => "BunnyNames_White",
+        670 => "SlimeNames_Blue",
+        678 => "SlimeNames_Green",
+        679 => "SlimeNames_Old",
+        680 => "SlimeNames_Purple",
+        681 => "SlimeNames_Rainbow",
+        682 => "SlimeNames_Red",
+        683 => "SlimeNames_Yellow",
+        684 => "SlimeNames_Copper",
+        _ => return String::new(),
+    };
+    let size = crate::lang::category_size(category);
+    if size == 0 {
+        return String::new();
+    }
+    crate::lang::random_from_category(category, (roll % size as u32) as usize)
 }
 
 impl App {
@@ -3075,6 +3130,13 @@ impl App {
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
+                    // W4-f33 — the Torch God's Favor permanent unlock rides
+                    // the v7 sidecar line (`Player.cs:55241-55242`): the
+                    // biome torches resume with the character. The builder
+                    // toggle half restores through the UsingBiomeTorches
+                    // setter (`builderAccStatus[11]`, `:3960-3963`).
+                    p.unlocked_biome_torches = saved.unlocked_biome_torches;
+                    p.set_using_biome_torches(saved.using_biome_torches);
                     for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                         inventory[i] = ItemSlot {
                             kind: *kind,
@@ -3166,8 +3228,49 @@ impl App {
         if sections.from_wld {
             // The file's roster wins; the Guide spawn is skipped (below).
         } else if sections.native.npcs.is_empty() {
-            if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
-                npcs.push(guide);
+            // W4-d105 lane 5 (#37): the gen-time starter-NPC ledger — the
+            // `Guide` pass (`WorldGen.cs:19685-19897`) spawned these with
+            // `NPC.NewNPC` at generation. A classic world carries exactly
+            // one homeless Guide; the seed worlds carry their own rosters.
+            // The records store the VANILLA netID; the name roll resolves
+            // through the kind's `getNewNPCName` category
+            // (`NPC.cs:7281-7325`).
+            for rec in &world.gen_npcs {
+                let Some((kind, _)) = crate::npc::kind_from_net_id(rec.kind as i32) else {
+                    continue;
+                };
+                let Some(mut npc) =
+                    Npc::spawn_town_at(&world, (rec.x / TILE_PX) as i32, (rec.y / TILE_PX) as i32, kind)
+                else {
+                    continue;
+                };
+                // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`) — the
+                // ledger carries the bottom-centre anchor; the port's Npc
+                // x/y is the top-left position.
+                let (w, h) = kind.size();
+                npc.x = rec.x - w * 0.5;
+                npc.y = rec.y - h;
+                // The port folds `NPC.direction` into `facing`
+                // (`npc.rs:1803-1806`).
+                npc.facing = rec.direction;
+                // Every starter spawn is homeless (`homeless = true` in
+                // every arm); the home tile rides the record for the
+                // look-for-home tick.
+                npc.home = None;
+                npc.given_name = if !rec.given_name_key.is_empty() {
+                    crate::lang::text(rec.given_name_key)
+                } else {
+                    starter_npc_name(rec.kind, rec.name_roll)
+                };
+                npcs.push(npc);
+            }
+            // Pre-ledger saves (and a ledger whose spawns all collided)
+            // keep the vanilla-gen arrival: one homeless Guide at the spawn
+            // point, which the look-for-home tick re-houses within seconds.
+            if npcs.is_empty() {
+                if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
+                    npcs.push(guide);
+                }
             }
         } else {
             for rec in &sections.native.npcs {
@@ -4732,6 +4835,11 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 // the tile kind.
                 edit::TileInteraction::Extractinator => {
                     log::info!("TR_TOGGLE {},{} -> extractinator", op.x, op.y)
+                }
+                // W4-e28: the station-buff grant needs the player's buff
+                // slots (none at load) — the dispatch only reports the row.
+                edit::TileInteraction::StationBuff { buff_type, .. } => {
+                    log::info!("TR_TOGGLE {},{} -> station buff {buff_type}", op.x, op.y)
                 }
                 edit::TileInteraction::BankOpen { bank } => {
                     log::info!("TR_TOGGLE {},{} -> bank {bank}", op.x, op.y)

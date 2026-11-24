@@ -46,6 +46,7 @@
 use glam::Vec2;
 use tr_core::World;
 
+use crate::npc::Npc;
 use crate::projectile::{
     Projectile, BRAIN_SCRAMBLER, DESTROYER_LASER, EYE_LASER, FLOWER_POW_PETAL, FLAMING_WOOD,
     FLAMING_ARROW_HOSTILE, GOLEM_EYE_BEAM, MINI_RETINA_LASER, MUSKET_BALL, PIRATE_ARROW,
@@ -120,18 +121,27 @@ enum Rot {
 /// order, then the shared counter/gravity/rotation/clamp tail, then the
 /// movement stand-in. `owner` is the owner player's center (the pool's
 /// `Main.player[owner]` channel) — only the skull's homing reads it.
-pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
+/// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`)
+/// in `finish` — the slice-A kinds are not arrows (the producer's `arrow`
+/// gate never charms them), so the tail is the two-bit no-op for them.
+pub(crate) fn ai001_slice_a(
+    p: &mut Projectile,
+    world: &World,
+    owner: Option<(f32, f32)>,
+    npcs: &[Npc],
+    immune: &[i32],
+) {
     match p.kind {
         // `:55950` case 14 — no per-type hook at all: the musket ball is
         // a straight bullet (the generic flight's gravity was the bug).
-        MUSKET_BALL => finish(p, world, false, Gravity::Rest, Rot::Default),
+        MUSKET_BALL => finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune),
         // `:55346-55350` — the first-tick sound latch: the C# plays
         // `SoundID.Item5` BEFORE setting `ai[1] = 1f` (S1-E-21h: the cue
         // rides the latch helper below), then the counter runs (`flag3`
         // true — 81 is not on the skip list) into the 20/0.07 gravity arm.
         WOODEN_ARROW_HOSTILE => {
             latch_ai1(p, 5); // Projectile.cs:55346-55350
-            finish(p, world, true, Gravity::HostileArrow, Rot::Default);
+            finish(p, world, true, Gravity::HostileArrow, Rot::Default, npcs, immune);
         }
         // `:55346-55350` — the 81/82 shared latch arm (`SoundID.Item5`
         // SKIPPED, the `ai[1] = 1f` state rides). 82 is NOT on the flag3
@@ -144,45 +154,45 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
         // own draws — the projectile draw-pass is unported (ANALYSIS).
         FLAMING_ARROW_HOSTILE => {
             latch_ai1(p, 5); // Projectile.cs:55346-55350 (SoundID.Item5)
-            finish(p, world, true, Gravity::GenericArrow, Rot::Default);
+            finish(p, world, true, Gravity::GenericArrow, Rot::Default, npcs, immune);
         }
         // `:55229-55233` — `ai[1] = 1f` + `SoundID.Item33` (S1-E-21h).
         EYE_LASER => {
             latch_ai1(p, 33); // Projectile.cs:55229-55233
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         // `:55291-55295` — `ai[1] = 1f` + `SoundID.Item12` (S1-E-21h); 84 is
         // on the `flag3 = false` skip list (`:55956`) — straight flight.
         PROBE_LASER => {
             latch_ai1(p, 12); // Projectile.cs:55291-55295
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         // `:55311-55315` — `ai[1] = 1f` + `SoundID.Item17` (S1-E-21h).
         TRAP_DART => {
             latch_ai1(p, 17); // Projectile.cs:55311-55315
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         // `:55306-55310` — `ai[1] = 1f` + `SoundID.Item33` (S1-E-21h).
         DESTROYER_LASER => {
             latch_ai1(p, 33); // Projectile.cs:55306-55310
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         // `:55351-55355` — the sound (`SoundID.Item11`) plays BEFORE the
         // latch in the C# (S1-E-21h: the helper keeps that order).
         PIRATE_ARROW => {
             latch_ai1(p, 11); // Projectile.cs:55351-55355
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         // `:55321-55325` — `ai[1] = 1f` + `SoundID.Item17` (S1-E-21h).
         TRAP_SUPERDART => {
             latch_ai1(p, 17); // Projectile.cs:55321-55325
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         // `:55356-55360` — the sound-then-latch pair (`SoundID.Item17`,
         // S1-E-21h); the spin tail is `:57586-57596`.
         FLOWER_POW_PETAL => {
             latch_ai1(p, 17); // Projectile.cs:55356-55360
-            finish(p, world, false, Gravity::Rest, Rot::Petal);
+            finish(p, world, false, Gravity::Rest, Rot::Petal, npcs, immune);
         }
         GOLEM_EYE_BEAM => {
             // `:55239-55243` — `ai[1] = 1f` + `SoundID.Item33` (S1-E-21h).
@@ -194,7 +204,7 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
             if p.alpha < 0 {
                 p.alpha = 0;
             }
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         SKULL => skull(p, world, owner),
         // W4-c3 — `Projectile.cs:56631-56656` — the Shadowflames bolt's
@@ -213,6 +223,7 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
             p.local_ai[0] += 1.0;
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
+        SKULL => skull(p, world, owner, npcs, immune),
         FLAMING_WOOD => {
             // `:55164-55196` — `alpha -= 100` clamp 0; the light plot
             // (`:55171`) and the two dust rolls (`:55175-55189`, the
@@ -227,12 +238,12 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
             // trackable pool, wave A) — DEFERRED (S1-E-21h), the latch
             // state rides alone.
             latch_ai1_no_cue(p);
-            finish(p, world, false, Gravity::Rest, Rot::FlamingWood);
+            finish(p, world, false, Gravity::Rest, Rot::FlamingWood, npcs, immune);
         }
         // `:55296-55300` — `ai[1] = 1f` + `SoundID.Item12` (S1-E-21h).
         MINI_RETINA_LASER => {
             latch_ai1(p, 12); // Projectile.cs:55296-55300
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         BRAIN_SCRAMBLER => {
             // `:54150-54174` — the head block: the latch, the alpha fade,
@@ -255,7 +266,7 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
                     p.frame = 0;
                 }
             }
-            finish(p, world, false, Gravity::Rest, Rot::Scrambler);
+            finish(p, world, false, Gravity::Rest, Rot::Scrambler, npcs, immune);
         }
         RAY_GUNNER => {
             // `:54829-54832` — the light plot only (SKIPPED).
@@ -273,7 +284,7 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
             if p.alpha < 0 {
                 p.alpha = 0;
             }
-            finish(p, world, false, Gravity::Rest, Rot::Default);
+            finish(p, world, false, Gravity::Rest, Rot::Default, npcs, immune);
         }
         _ => unreachable!("the dispatch gates on SLICE_A_KINDS"),
     }
@@ -306,7 +317,7 @@ fn latch_ai1_no_cue(p: &mut Projectile) {
 /// (`:55974`), so the counter rests and the generic gravity never fires;
 /// the shot steers at the player only inside the `30 < ai[1] < 110`
 /// window and accelerates 2%/tick below the speed 18.
-fn skull(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
+fn skull(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>, npcs: &[Npc], immune: &[i32]) {
     // `:56058-56060` — `Player.FindClosest(Center, 1, 1)` then `ai[1]++`.
     // The port has one player: the owner center IS the closest player
     // (the pool's `Main.player[owner]` stand-in). No owner resolved →
@@ -353,14 +364,24 @@ fn skull(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
     }
     // 270 falls through the gravity chain to the generic `ai[0] >= 15f`
     // tail (`:57568`), unreachable with the resting counter.
-    finish(p, world, false, Gravity::Rest, Rot::Skull);
+    finish(p, world, false, Gravity::Rest, Rot::Skull, npcs, immune);
 }
 
 /// The shared tail: the `flag3` counter (`:56038-56041`), the per-kind
 /// gravity arm, the rotation tail (`:57582-57752`), the `flag8` clamp
 /// (`:57753-57768` — only the +16 bound; the −16 bound is `flag4`'s,
 /// kind 1006 only, not a slice-A kind), then the movement stand-in.
-fn finish(p: &mut Projectile, world: &World, count_flight: bool, gravity: Gravity, rot: Rot) {
+/// W4-f20 F7: the Harpy-charm tail (`:57769-57793`) runs after the clamp,
+/// before the movement — the C#'s own slot.
+fn finish(
+    p: &mut Projectile,
+    world: &World,
+    count_flight: bool,
+    gravity: Gravity,
+    rot: Rot,
+    npcs: &[Npc],
+    immune: &[i32],
+) {
     // `Projectile.cs:56038-56041` — `if (flag3) ai[0]++`.
     if count_flight {
         p.ai[0] += 1.0;
@@ -422,6 +443,8 @@ fn finish(p: &mut Projectile, world: &World, count_flight: bool, gravity: Gravit
     if p.vel.y > 16.0 {
         p.vel.y = 16.0;
     }
+    // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7).
+    crate::projectile_harpy_charm::charm_tail(p, world, npcs, immune);
     // The movement: the port's tile-model stand-in, byte-identical to
     // `ai_style1_flight`'s probe (`HandleMovement`'s default arm
     // `Projectile.cs:19843-19848`; the blocked hit kills — the arrows
@@ -510,7 +533,7 @@ mod tests {
         let w = world();
         let mut p = proj(MUSKET_BALL, 2.0, 0.0);
         for _ in 0..30 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert_eq!(p.ai[0], 0.0, "flag3 = false (`:55950`)");
         assert_eq!(p.vel.y, 0.0, "no gravity — the generic arm is unreachable");
@@ -527,7 +550,7 @@ mod tests {
         let w = world();
         let mut p = proj(WOODEN_ARROW_HOSTILE, 2.0, 0.0);
         for _ in 0..25 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert_eq!(p.ai[1], 1.0, "the first-tick latch (`:55349`)");
         assert_eq!(p.ai[0], 20.0, "the pin (`:56892`)");
@@ -540,7 +563,7 @@ mod tests {
         // the hostile arrow still flies flat (its arm starts at 20).
         let mut q = proj(WOODEN_ARROW_HOSTILE, 2.0, 0.0);
         for _ in 0..16 {
-            ai001_slice_a(&mut q, &w, None);
+            ai001_slice_a(&mut q, &w, None, &[], &[]);
         }
         assert_eq!(q.vel.y, 0.0, "no gravity before tick 20");
     }
@@ -556,7 +579,7 @@ mod tests {
         let w = world();
         let mut p = proj(FLAMING_ARROW_HOSTILE, 2.0, 0.0);
         for _ in 0..20 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert_eq!(p.ai[1], 1.0, "the first-tick latch (`:55349`)");
         assert_eq!(p.ai[0], 15.0, "the generic pin (`:57570`)");
@@ -568,7 +591,7 @@ mod tests {
         // Before tick 15 the arrow flies flat (the generic arm's gate).
         let mut q = proj(FLAMING_ARROW_HOSTILE, 2.0, 0.0);
         for _ in 0..14 {
-            ai001_slice_a(&mut q, &w, None);
+            ai001_slice_a(&mut q, &w, None, &[], &[]);
         }
         assert_eq!(q.vel.y, 0.0, "no gravity before tick 15");
         // The row: 10x10, stock penetrate 1 / timeLeft 3600, arrow false.
@@ -596,10 +619,10 @@ mod tests {
             let mut p = proj(kind, 2.0, 0.0);
             // The row's extraUpdates would multiply sub-steps in the
             // pool; the direct arm call is one C# AI() invocation.
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
             assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch (`ai[1] = 1f`)");
             for _ in 0..29 {
-                ai001_slice_a(&mut p, &w, None);
+                ai001_slice_a(&mut p, &w, None, &[], &[]);
             }
             assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch holds");
             assert_eq!(p.ai[0], 0.0, "kind {kind}: flag3 = false");
@@ -615,12 +638,12 @@ mod tests {
         let mut p = proj(GOLEM_EYE_BEAM, 2.0, 0.0);
         p.alpha = 255; // the spawn-site override (the row keeps 0)
         for _ in 0..10 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert_eq!(p.alpha, 155);
         assert_eq!(p.ai[1], 1.0, "the `:55239` latch");
         for _ in 0..20 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert_eq!(p.alpha, 0, "255 − 300 clamps at 0");
         assert_eq!(p.vel.y, 0.0, "tileCollide = false, straight (`:55972`)");
@@ -634,14 +657,14 @@ mod tests {
         let w = world();
         let mut p = proj(FLOWER_POW_PETAL, 2.0, 0.0);
         for _ in 0..10 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert!((p.rot - 1.0).abs() < 1e-5, "10 × (2 × 0.05)");
         assert_eq!(p.ai[1], 1.0, "the `:55356` latch");
         assert_eq!(p.ai[0], 0.0);
         let mut q = proj(FLOWER_POW_PETAL, -2.0, 0.0);
         for _ in 0..10 {
-            ai001_slice_a(&mut q, &w, None);
+            ai001_slice_a(&mut q, &w, None, &[], &[]);
         }
         assert!((q.rot + 1.0).abs() < 1e-5, "the negative-x sign flips");
     }
@@ -662,7 +685,7 @@ mod tests {
         p.alpha = 255; // the SetDefaults row (`:3558-3566`)
         let owner = Some((p.pos.x + p.w * 0.5, p.pos.y - 100.0));
         for _ in 0..30 {
-            ai001_slice_a(&mut p, &w, owner);
+            ai001_slice_a(&mut p, &w, owner, &[], &[]);
         }
         assert_eq!(p.ai[1], 30.0, "ai[1]++ per tick (`:56060`)");
         assert_eq!(p.ai[0], 0.0, "flag3 = false (`:55974`)");
@@ -676,7 +699,7 @@ mod tests {
         );
         assert!(p.vel.y == 0.0, "no steer at ai[1] = 30 (strict > 30)");
         let speed_before = p.vel.length();
-        ai001_slice_a(&mut p, &w, owner);
+        ai001_slice_a(&mut p, &w, owner, &[], &[]);
         assert_eq!(p.ai[1], 31.0);
         assert!(p.vel.y < 0.0, "the steer turns toward the owner above");
         assert!(
@@ -695,11 +718,11 @@ mod tests {
     fn s1_d_5a_the_flaming_wood_fades_fast_and_faces_minus_half_pi() {
         let w = world();
         let mut p = proj(FLAMING_WOOD, 2.0, 0.0);
-        ai001_slice_a(&mut p, &w, None);
+        ai001_slice_a(&mut p, &w, None, &[], &[]);
         assert_eq!(p.alpha, 155);
-        ai001_slice_a(&mut p, &w, None);
+        ai001_slice_a(&mut p, &w, None, &[], &[]);
         assert_eq!(p.alpha, 55);
-        ai001_slice_a(&mut p, &w, None);
+        ai001_slice_a(&mut p, &w, None, &[], &[]);
         assert_eq!(p.alpha, 0, "55 − 100 clamps at 0");
         assert_eq!(p.ai[1], 1.0, "the `:55191` latch");
         assert!(
@@ -720,19 +743,19 @@ mod tests {
         let mut p = proj(BRAIN_SCRAMBLER, 2.0, 0.0);
         p.alpha = 255;
         for _ in 0..7 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert_eq!(p.alpha, 0);
         assert_eq!(p.ai[1], 1.0, "the `:54152` latch");
         for _ in 0..5 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert_eq!(p.frame, 0, "12 ticks = 4 frames, wrapped (`:54168`)");
         assert_eq!(p.frame_counter, 0);
         assert!((p.rot - std::f32::consts::PI).abs() < 1e-5, "angle + π");
         assert_eq!(p.sprite_direction, 1);
         let mut q = proj(BRAIN_SCRAMBLER, -2.0, 0.0);
-        ai001_slice_a(&mut q, &w, None);
+        ai001_slice_a(&mut q, &w, None, &[], &[]);
         assert!(
             (q.rot - 3.0 * std::f32::consts::PI).abs() < 1e-4,
             "atan2(0, −2) = π, + π + π = 3π"
@@ -749,7 +772,7 @@ mod tests {
         let mut p = proj(RAY_GUNNER, 10.0, 0.0);
         p.alpha = 255;
         for _ in 0..10 {
-            ai001_slice_a(&mut p, &w, None);
+            ai001_slice_a(&mut p, &w, None, &[], &[]);
         }
         assert_eq!(p.alpha, 165, "255 − 10 × (byte)(10 × 0.9)");
         assert_eq!(p.ai[1], 1.0);

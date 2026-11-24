@@ -55,18 +55,24 @@ pub fn transform_to_item(
 }
 
 /// `ShimmerTransforms.GetLunarBrickTransformFromMoonPhase`
-/// (`ShimmerTransforms.cs:113-126`) — the `_` default is the falling/empty
-/// phase (5406).
+/// (`ShimmerTransforms.cs:113-126`) over the `MoonPhase` enum's RAW values
+/// (`Enums/MoonPhase.cs`: Full 0, ThreeQuartersAtLeft 1, HalfAtLeft 2,
+/// QuarterAtLeft 3, Empty 4, QuarterAtRight 5, HalfAtRight 6,
+/// ThreeQuartersAtRight 7 — `Main.GetMoonPhase()` is `(MoonPhase)moonPhase`,
+/// `Main.cs:3199-3202`). W4-e19 round 3 census: the old port read an inverted
+/// 0=empty/4=full convention (the sky FLOORS table's own stand-in) — the
+/// switch arms now carry the enum's real indices; the `_` default (Empty 4)
+/// is 5406.
 pub fn lunar_brick_for_moon_phase(moon_phase: u8) -> i32 {
     match moon_phase {
-        7 => 5407, // QuarterAtRight
-        6 => 5405, // HalfAtRight
-        5 => 5404, // ThreeQuartersAtRight
-        4 => 5408, // Full
-        3 => 5401, // ThreeQuartersAtLeft
+        0 => 5408, // Full
+        1 => 5401, // ThreeQuartersAtLeft
         2 => 5403, // HalfAtLeft
-        1 => 5402, // QuarterAtLeft
-        _ => 5406,
+        3 => 5402, // QuarterAtLeft
+        5 => 5407, // QuarterAtRight
+        6 => 5405, // HalfAtRight
+        7 => 5404, // ThreeQuartersAtRight
+        _ => 5406, // Empty (4) + any out-of-range value
     }
 }
 
@@ -211,12 +217,17 @@ mod tests {
 
     #[test]
     fn transform_to_item_falls_back_to_the_lunar_bricks() {
-        // `ShimmerTransforms.cs:113-126` — the arm is 3461-only.
-        assert_eq!(transform_to_item(3461, -1, 0, 4), 5408); // Full
+        // `ShimmerTransforms.cs:113-126` over the RAW `MoonPhase` enum
+        // (`Enums/MoonPhase.cs`: Full 0 … Empty 4 … ThreeQuartersAtRight 7;
+        // `Main.GetMoonPhase()` = `(MoonPhase)moonPhase`, `Main.cs:3201`) —
+        // the arm is 3461-only. W4-e19 round 3: the old inverted-convention
+        // pins (4=Full, 0=default) are corrected to the enum's indices.
+        assert_eq!(transform_to_item(3461, -1, 0, 0), 5408); // Full
         assert_eq!(transform_to_item(3461, -1, 0, 2), 5403); // HalfAtLeft
         assert_eq!(transform_to_item(3461, -1, 0, 6), 5405); // HalfAtRight
-        assert_eq!(transform_to_item(3461, -1, 0, 0), 5406); // the default phase
-        assert_eq!(lunar_brick_for_moon_phase(7), 5407);
+        assert_eq!(transform_to_item(3461, -1, 0, 4), 5406); // Empty, the default
+        assert_eq!(lunar_brick_for_moon_phase(5), 5407); // QuarterAtRight
+        assert_eq!(lunar_brick_for_moon_phase(7), 5404); // ThreeQuartersAtRight
     }
 
     #[test]

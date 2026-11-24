@@ -99,9 +99,13 @@ pub struct LootFlags {
     pub tenth_anniversary: bool,
     /// `Main.dontStarveWorld`.
     pub dont_starve: bool,
-    /// `WorldGen.Skyblock.lowTiles`.
+    /// `WorldGen.Skyblock.lowTiles` — the port's Skyblock world identity
+    /// (the gen-time active-tile census has no port; the seed flag is the
+    /// standing stand-in, the `CrateEnv::skyblock_low_tiles` note).
     pub skyblock: bool,
-    /// The player holds the Skyblock sickle (1786).
+    /// The player holds the Skyblock sickle (1786) —
+    /// `HasItemInInventoryOrOpenVoidBag` (`Conditions.cs:1561`), the f35
+    /// wiring scans the 58-slot carry view + the OPEN void bag.
     pub player_has_sickle: bool,
     /// `SpecialSeedFeatures.RemixSeed`.
     pub remix_seed: bool,
@@ -122,9 +126,10 @@ pub struct LootFlags {
     pub downed_mech3: bool,
     /// `NPC.downedMechBossAny`.
     pub downed_mech_any: bool,
-    /// `NPC.downedPlantera`.
-    pub downed_plantera: bool,
-    /// `NPC.downedPlantBoss` (`Conditions.FirstTimeKillingPlantera` inverts it).
+    /// `NPC.downedPlantBoss` (`Conditions.DownedPlantera` reads it directly
+    /// `Conditions.cs:322`; `FirstTimeKillingPlantera` inverts it). One flag,
+    /// two conditions — the pre-f35 `downed_plantera` second flag was a
+    /// misread (nothing ever set it, so the 460/466/468 rows stayed dead).
     pub downed_plant_boss: bool,
     /// `NPC.downedMechdusa`.
     pub downed_mechdusa: bool,
@@ -142,9 +147,14 @@ pub struct LootFlags {
     pub zone_hallow: bool,
     pub zone_desert: bool,
     pub zone_snow: bool,
-    /// `Conditions.SoulOfWhateverConditionCanDrop`'s depth band.
+    /// `Conditions.SoulOfWhateverConditionCanDrop`'s depth band
+    /// (`Conditions.cs:1606`): the dying NPC's `position.Y > rockLayer * 16`
+    /// (the NPC's own position, not the player's zone). The remix world
+    /// ignores it (`:1599-1605`).
     pub soul_depth_ok: bool,
-    /// The PirateMap depth/ocean band (`Conditions.PirateMap`).
+    /// The PirateMap band (`Conditions.cs:395-398`): the NPC's
+    /// `position.Y / 16 < worldSurface + 10` AND its `Center.X / 16` outside
+    /// the middle (left of 380 or right of `maxTilesX - 380`).
     pub pirate_map_band: bool,
     /// `HalloweenWeapons`' `info.npc.value` cap (500 × the difficulty mult).
     pub halloween_value_cap: f32,
@@ -539,6 +549,52 @@ pub fn roll_only_bad_luck_extreme(rng: &mut dyn DropRng, luck: f32, range: i32) 
 }
 
 // --- Money (`NPC.NPCLoot_DropMoney`, `NPC.cs:79619-80106`) -------------------
+
+/// `NPCID.Sets.StatueSpawnedDropRarity` (`NPCID.cs:10445`): the custom
+/// float set, default -1f (no rarity gate). `NPCLoot`'s statue arm
+/// (`NPC.cs:78849`) reads it by TYPE.
+pub fn statue_spawned_drop_rarity(kind: i32) -> f32 {
+    match kind {
+        480 | 82 | 86 | 48 | 490 | 489 | 170 | 180 | 171 | 24 | 481 | 42 | 6 | 2 => 0.05,
+        167 => 0.25,
+        73 => 0.01,
+        49 | 3 | 58 | 21 | 65 | 449 | 482 | 103 | 64 | 63 => 0.2,
+        85 => 0.0,
+        _ => -1.0,
+    }
+}
+
+/// `NPCID.Sets.NoEarlymodeLootWhenSpawnedFromStatue` (`NPCID.cs:10446`):
+/// the six statue kinds whose pre-hardmode kills drop NOTHING.
+pub fn no_earlymode_loot_when_spawned_from_statue(kind: i32) -> bool {
+    matches!(kind, 480 | 82 | 86 | 170 | 180 | 171)
+}
+
+/// `NPCLoot`'s statue loot gate (`NPC.cs:78849-78852`): a statue-spawned
+/// kill refuses when (a) its kind is in `NoEarlymodeLootWhenSpawnedFromStatue`
+/// and the world is pre-hardmode, or (b) its rarity row is not -1 and the
+/// `Main.rand.NextFloat()` draw misses the rarity OR nobody interacted.
+/// The float draw happens ONLY inside the rarity arm (the `||` chain
+/// short-circuits: a non-statue kill and the early-mode refusal draw
+/// nothing). `any_interactions` is `NPC.AnyInteractions` (`:78722-78742`).
+pub fn statue_loot_refused(
+    rng: &mut dyn DropRng,
+    spawned_from_statue: bool,
+    kind: i32,
+    hard_mode: bool,
+    any_interactions: bool,
+) -> bool {
+    if spawned_from_statue && no_earlymode_loot_when_spawned_from_statue(kind) && !hard_mode {
+        return true;
+    }
+    if spawned_from_statue {
+        let rarity = statue_spawned_drop_rarity(kind);
+        if rarity != -1.0 && (rng.next_float() >= rarity || !any_interactions) {
+            return true;
+        }
+    }
+    false
+}
 
 /// `NPC.NPCLoot_DropMoney` (`NPC.cs:79619-80106`): the value rolls (midas,
 /// the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck
@@ -1211,7 +1267,13 @@ impl ItemDropRule for DropLocalPerClientAndResetsMoney {
         info: &mut DropAttemptInfo,
         out: &mut Vec<DropRequest>,
     ) -> DropAttemptResult {
-        if roll_luck(info.rng, info.luck, self.chance_denominator) < 1 {
+        // `DropLocalPerClientAndResetsNPCMoneyTo0.TryDroppingItem`
+        // (`DropLocalPerClient...cs:22-36`): the gate is the PLAIN
+        // `info.rng.Next(chanceDenominator)` — NOT `RollLuck`. The C#
+        // class overrides the base `CommonDrop`'s luck roll away; the
+        // bag always drops in expert (denominator 1) and its stream
+        // consumption must not depend on the killer's luck.
+        if info.rng.next_range(0, self.chance_denominator) < 1 {
             let stack = info.rng.next_range(self.amount_min, self.amount_max + 1);
             out.push(DropRequest {
                 item: self.item,
@@ -1579,10 +1641,29 @@ pub fn drop_nothing() -> Box<dyn ItemDropRule> {
 // variant's `can_drop` is the verbatim `Conditions.<Name>.CanDrop` body over
 // [`LootFlags`]/[`LootNpc`] (the caller snapshots the world/player/NPC state).
 
-/// `Conditions.SoulOfWhateverConditionCanDrop` (`Conditions.cs:805-855`): the
-/// depth band below the cavern layer, shared by the two soul conditions.
+/// `Conditions.SoulOfWhateverConditionCanDrop` (`Conditions.cs:1579-1612`):
+/// the shared soul gate — NOT a boss, not the `DontDropDungeonKeysOrSouls`
+/// set (the caller folds it into `dont_drop_keys`, `NPCID.cs:10115` = {23}),
+/// not the six exempt types, then hardmode + lifeMax > 1 + !friendly +
+/// value >= 1; the classic world adds the depth band
+/// (`position.Y > rockLayer * 16`), the remix world drops it.
+/// `soul_depth_ok` carries the caller's depth snapshot; on a remix world
+/// the depth term is IGNORED (`:1599-1605`).
 fn soul_of_whatever_can_drop(info: &DropAttemptInfo) -> bool {
-    info.flags.soul_depth_ok
+    let f = &info.flags;
+    let n = &info.npc;
+    if n.is_boss || n.dont_drop_keys {
+        return false;
+    }
+    // The type switch (`:1589-1597`) — the slime 1, the EoW segments
+    // 13/14/15, the Slimer 121, the Spiked Slime 535 never drop souls.
+    if matches!(n.kind, 1 | 13 | 14 | 15 | 121 | 535) {
+        return false;
+    }
+    if !f.hard_mode || n.life_max <= 1 || n.friendly || n.value < 1.0 {
+        return false;
+    }
+    f.remix_seed || f.soul_depth_ok
 }
 
 /// The pumpkin/frost moon gates' wave-scaled chance denominator
@@ -1732,7 +1813,10 @@ impl DropCondition for Cond {
             Cond::MechdusaKill => f.mechdusa && n.mechdusa_parts_cleared,
             Cond::BeatAnyMechBoss => f.downed_mech_any,
             Cond::DownedAllMechBosses => f.downed_mech1 && f.downed_mech2 && f.downed_mech3,
-            Cond::DownedPlantera => f.downed_plantera,
+            // `Conditions.DownedPlantera` (`Conditions.cs:318-326`) reads
+            // `NPC.downedPlantBoss` — the SAME flag FirstTimeKillingPlantera
+            // inverts (`:354-362`), not a second flag.
+            Cond::DownedPlantera => f.downed_plant_boss,
             Cond::FirstTimeKillingPlantera => !f.downed_plant_boss,
             Cond::MissingTwin => n.twin_missing,
             Cond::LegacyHack_IsABoss => n.is_boss,
@@ -1978,11 +2062,24 @@ impl ItemDropRule for DropPerPlayerOnThePlayer {
                 };
             }
         }
-        // One `Next(min, max + 1)` roll per active player.
+        // `DropPerPlayerOnThePlayer.TryDroppingItem`
+        // (`DropPerPlayerOnThePlayer.cs:22-29`): the stack
+        // `info.rng.Next(min, max + 1)` is a CALL ARGUMENT to
+        // `CommonCode.DropItemForEachInteractingPlayerOnThePlayer` — it
+        // draws ONCE, BEFORE the per-player gate (the C# argument
+        // evaluation order), even when every gate misses. The gate is
+        // the PLAIN `rng.Next(chanceDenominator) < chanceNumerator`
+        // (`CommonCode.cs:45/:51` — NOT RollLuck), and the CommonCode
+        // tail zeroes `npc.value` unconditionally (`CommonCode.cs:55`).
+        let stack = info.rng.next_range(self.amount_min, self.amount_max + 1);
         for _ in 0..info.active_players {
-            if info.rng.next_range(0, self.chance_denominator.max(1)) == 0 {
-                let stack = info.rng.next_range(self.amount_min, self.amount_max + 1);
-                out.push(drop_request(self.item, stack, false));
+            if info.rng.next_range(0, self.chance_denominator.max(1)) < 1 {
+                out.push(DropRequest {
+                    item: self.item,
+                    stack,
+                    scattered: false,
+                    resets_money: true,
+                });
             }
         }
         DropAttemptResult {
@@ -2723,6 +2820,304 @@ mod tests {
         let mut out = Vec::new();
         resolve_rule(boss_bag(123).as_ref(), &mut info(&mut rng), &mut out);
         assert!(out.is_empty());
+    }
+
+    /// W4-f35 doc-sweep: the bag rule's gate is the PLAIN
+    /// `info.rng.Next(chanceDenominator)` (`DropLocalPerClient...cs:24`),
+    /// NOT `CommonDrop`'s `RollLuck` — the override drops the luck roll.
+    /// At luck 1.0 the bag's stream consumption is IDENTICAL to luck 0
+    /// (one gate draw + one stack draw), and the gate float is never read.
+    #[test]
+    fn w4_f35_boss_bag_gate_is_luck_free() {
+        for luck in [0.0f32, 1.0, -0.7] {
+            let mut rng = ScriptRng::new(&[], &[0, 1]);
+            let mut i = DropAttemptInfo {
+                luck,
+                is_expert: true,
+                ..info_npc(&mut rng, LootNpc::default())
+            };
+            let mut out = Vec::new();
+            let r = resolve_rule(boss_bag(3318).as_ref(), &mut i, &mut out);
+            assert_eq!(r.state, DropResultState::Success, "luck {luck}");
+            assert_eq!(out.len(), 1);
+            assert_eq!(out[0].item, 3318);
+            assert!(out[0].resets_money);
+            drop(i); // releases the rng borrow
+            // Exactly the gate Next(0,1) + the stack Next(1,2) — no luck
+            // float gate, no shrunk/widened extra draws. The ScriptRng's
+            // float script is EMPTY: any `next_float` (the RollLuck gate)
+            // would panic "script exhausted".
+            assert_eq!(rng.ranges, [(0, 1), (1, 2)], "luck {luck}");
+        }
+    }
+
+    /// W4-f35 doc-sweep: the master pet/mount rule
+    /// (`DropPerPlayerOnThePlayer.cs:22-29` → `CommonCode.cs:34-56`)
+    /// draws the stack ONCE as a call argument BEFORE the per-player
+    /// gate (the C# argument-evaluation order), the gate is the PLAIN
+    /// `rng.Next(denominator)` (no RollLuck), and the CommonCode tail
+    /// zeroes `npc.value` even when every gate misses. The denominator
+    /// is `_masterModeDropRng = 4` (`ItemDropDatabase.cs:15`).
+    #[test]
+    fn w4_f35_master_pet_draws_the_stack_before_the_gate() {
+        // Gate HIT: stack draw first (1,2), then the gate (0,4) = 0.
+        let mut rng = ScriptRng::new(&[], &[1, 0]);
+        let mut i = DropAttemptInfo {
+            is_master: true,
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(
+            master_mode_drop_on_all_players(4797, 4).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out.len(), 1);
+        assert_eq!((out[0].item, out[0].stack), (4797, 1));
+        assert!(out[0].resets_money, "CommonCode.cs:55 zeroes npc.value");
+        drop(i);
+        // The STACK draw precedes the gate draw (the argument order).
+        assert_eq!(rng.ranges, [(1, 2), (0, 4)]);
+
+        // Gate MISS: the stack STILL draws (the argument is evaluated
+        // before the call), the gate (0,4) = 3 misses, nothing drops —
+        // but the money reset still fires (the unconditional tail).
+        let mut rng = ScriptRng::new(&[], &[1, 3]);
+        let mut i = DropAttemptInfo {
+            is_master: true,
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        resolve_rule(
+            master_mode_drop_on_all_players(4797, 4).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert!(out.is_empty(), "the 1/4 gate missed");
+        drop(i);
+        assert_eq!(rng.ranges, [(1, 2), (0, 4)], "the stack drew anyway");
+
+        // NOT master: the DropBasedOnMasterMode normal arm is
+        // DropNothing — no draws at all.
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = info_npc(&mut rng, LootNpc::default());
+        let mut out = Vec::new();
+        resolve_rule(
+            master_mode_drop_on_all_players(4797, 4).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert!(out.is_empty());
+        drop(i);
+        assert!(rng.ranges.is_empty(), "the classic arm draws nothing");
+    }
+
+    /// W4-f35 LOOT FINAL: `SoulOfWhateverConditionCanDrop`
+    /// (`Conditions.cs:1579-1612`) is a FULL gate, not a depth flag — the
+    /// boss / DontDropDungeonKeysOrSouls / six-type refusals, the hardmode
+    /// + lifeMax + friendly + value terms, then the classic depth band;
+    /// the remix world IGNORES the depth term. Both soul conditions AND
+    /// the gate (`SoulOfLight` `:856-865`, `SoulOfNight` `:830-843`).
+    /// The gate draws NOTHING (an empty script proves it).
+    #[test]
+    fn w4_f35_soul_gate_is_the_full_condition_not_a_depth_flag() {
+        // The healthy hardmode underground hallow kill: kind 6 (value 150,
+        // lifeMax > 1), depth ok, hallow zone — SoulOfLight passes.
+        let soul_npc = LootNpc {
+            kind: 6,
+            value: 150.0,
+            life_max: 200,
+            ..Default::default()
+        };
+        let soul_flags = LootFlags {
+            hard_mode: true,
+            soul_depth_ok: true,
+            zone_hallow: true,
+            zone_corrupt: true,
+            ..Default::default()
+        };
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = DropAttemptInfo {
+            flags: soul_flags,
+            ..info_npc(&mut rng, soul_npc)
+        };
+        assert!(Cond::SoulOfLight.can_drop(&mut i));
+        assert!(Cond::SoulOfNight.can_drop(&mut i));
+        drop(i);
+        assert!(rng.ranges.is_empty(), "the gate draws nothing");
+
+        // Each refusal term kills BOTH soul conditions on its own. A helper
+        // builds the info from a (flags, npc) pair so every case is explicit
+        // (no fn-pointer table over the lifetime-parameterized LootNpc).
+        fn both_refuse(f: LootFlags, n: LootNpc<'static>, label: &str) {
+            let mut rng = ScriptRng::new(&[], &[]);
+            let mut i = DropAttemptInfo {
+                flags: f,
+                ..info_npc(&mut rng, n)
+            };
+            assert!(!Cond::SoulOfLight.can_drop(&mut i), "{label}");
+            assert!(!Cond::SoulOfNight.can_drop(&mut i), "{label}");
+        }
+        both_refuse(
+            soul_flags,
+            LootNpc { is_boss: true, ..soul_npc },
+            "boss (:1581)",
+        );
+        both_refuse(
+            soul_flags,
+            LootNpc { dont_drop_keys: true, ..soul_npc },
+            "DontDropDungeonKeysOrSouls (:1585)",
+        );
+        for kind in [1, 13, 14, 15, 121, 535] {
+            both_refuse(
+                soul_flags,
+                LootNpc { kind, ..soul_npc },
+                "the exempt type (:1589-1597)",
+            );
+        }
+        both_refuse(
+            LootFlags { hard_mode: false, ..soul_flags },
+            soul_npc,
+            "pre-hardmode (:1601/:1606)",
+        );
+        both_refuse(
+            soul_flags,
+            LootNpc { life_max: 1, ..soul_npc },
+            "lifeMax <= 1",
+        );
+        both_refuse(
+            soul_flags,
+            LootNpc { friendly: true, ..soul_npc },
+            "friendly",
+        );
+        both_refuse(
+            soul_flags,
+            LootNpc { value: 0.5, ..soul_npc },
+            "value < 1",
+        );
+        both_refuse(
+            LootFlags { soul_depth_ok: false, ..soul_flags },
+            soul_npc,
+            "above rockLayer (classic depth)",
+        );
+
+        // The remix world drops the DEPTH term only (`:1599-1605`): the
+        // surface kill (depth false) passes; a pre-hardmode remix kill
+        // still refuses.
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = DropAttemptInfo {
+            flags: LootFlags {
+                remix_seed: true,
+                soul_depth_ok: false,
+                ..soul_flags
+            },
+            ..info_npc(&mut rng, soul_npc)
+        };
+        assert!(Cond::SoulOfLight.can_drop(&mut i), "remix ignores depth");
+        drop(i);
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = DropAttemptInfo {
+            flags: LootFlags {
+                remix_seed: true,
+                soul_depth_ok: false,
+                hard_mode: false,
+                ..soul_flags
+            },
+            ..info_npc(&mut rng, soul_npc)
+        };
+        assert!(!Cond::SoulOfLight.can_drop(&mut i), "remix keeps hardmode");
+        drop(i);
+
+        // The zones AND the gate: hallow-only drops light, evil-only night.
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = DropAttemptInfo {
+            flags: LootFlags {
+                zone_corrupt: false,
+                ..soul_flags
+            },
+            ..info_npc(&mut rng, soul_npc)
+        };
+        assert!(Cond::SoulOfLight.can_drop(&mut i));
+        assert!(!Cond::SoulOfNight.can_drop(&mut i));
+        drop(i);
+    }
+
+    /// W4-f35 LOOT FINAL: `Conditions.DownedPlantera` (`Conditions.cs:322`)
+    /// reads `NPC.downedPlantBoss` — the SAME flag FirstTimeKillingPlantera
+    /// (`:358`) inverts. The pre-final port read a second `downed_plantera`
+    /// flag nothing ever set, so the 460/463/466/467/468 rows stayed dead
+    /// after the first Plantera kill.
+    #[test]
+    fn w4_f35_downed_plantera_is_the_plant_boss_flag() {
+        for downed in [false, true] {
+            let mut rng = ScriptRng::new(&[], &[]);
+            let mut i = DropAttemptInfo {
+                flags: LootFlags {
+                    downed_plant_boss: downed,
+                    ..Default::default()
+                },
+                ..info_npc(&mut rng, LootNpc::default())
+            };
+            assert_eq!(Cond::DownedPlantera.can_drop(&mut i), downed);
+            assert_eq!(
+                Cond::FirstTimeKillingPlantera.can_drop(&mut i),
+                !downed,
+                "the two conditions are exact complements"
+            );
+        }
+    }
+
+    /// W4-f35 LOOT FINAL: the statue loot gate's two type tables
+    /// (`NPCID.cs:10445-10446`) and the gate's draw shape
+    /// (`NPC.cs:78849-78852`): the early-mode refusal draws NOTHING, the
+    /// rarity arm draws ONE NextFloat (a miss refuses, a hit passes), the
+    /// no-interaction refusal still draws the float first (the `||` order),
+    /// and a non-statue kill draws nothing.
+    #[test]
+    fn w4_f35_statue_gate_tables_and_draw_shape() {
+        // The rarity table's rows (the 0.05 / 0.25 / 0.01 / 0.2 / 0 bands).
+        assert_eq!(statue_spawned_drop_rarity(480), 0.05);
+        assert_eq!(statue_spawned_drop_rarity(42), 0.05);
+        assert_eq!(statue_spawned_drop_rarity(167), 0.25);
+        assert_eq!(statue_spawned_drop_rarity(73), 0.01);
+        assert_eq!(statue_spawned_drop_rarity(3), 0.2);
+        assert_eq!(statue_spawned_drop_rarity(85), 0.0);
+        assert_eq!(statue_spawned_drop_rarity(1), -1.0); // the slime: no row
+        // The early-mode set (the six statue kinds).
+        for k in [480, 82, 86, 170, 180, 171] {
+            assert!(no_earlymode_loot_when_spawned_from_statue(k));
+        }
+        assert!(!no_earlymode_loot_when_spawned_from_statue(42));
+        assert!(!no_earlymode_loot_when_spawned_from_statue(1));
+
+        // The early-mode refusal: no draw (the empty float script).
+        let mut rng = ScriptRng::new(&[], &[]);
+        assert!(statue_loot_refused(&mut rng, true, 170, false, true));
+        assert!(rng.ranges.is_empty());
+
+        // The rarity arm: the float draws; 0.04 < 0.05 passes (with an
+        // interaction), 0.05 >= 0.05 refuses (the C# `>=`).
+        let mut rng = ScriptRng::new(&[0.04], &[]);
+        assert!(!statue_loot_refused(&mut rng, true, 42, true, true));
+        let mut rng = ScriptRng::new(&[0.05], &[]);
+        assert!(statue_loot_refused(&mut rng, true, 42, true, true));
+
+        // The no-interaction refusal: the float STILL draws first (the
+        // `NextFloat() >= rarity || !AnyInteractions()` order), then the
+        // interaction term refuses even on a passing float.
+        let mut rng = ScriptRng::new(&[0.0], &[]);
+        assert!(statue_loot_refused(&mut rng, true, 42, true, false));
+
+        // The 0.0 rarity (the Mimic 85): any float >= 0 refuses.
+        let mut rng = ScriptRng::new(&[0.0], &[]);
+        assert!(statue_loot_refused(&mut rng, true, 85, true, true));
+
+        // A non-statue kill and a no-row statue kill draw nothing.
+        let mut rng = ScriptRng::new(&[], &[]);
+        assert!(!statue_loot_refused(&mut rng, false, 170, false, false));
+        let mut rng = ScriptRng::new(&[], &[]);
+        assert!(!statue_loot_refused(&mut rng, true, 1, true, true));
     }
 
     #[test]

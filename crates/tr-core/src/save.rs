@@ -58,6 +58,9 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// v18 appended the three town-pet license world flags (`NPC.boughtCat` /
 /// `boughtDog` / `boughtBunny`, `WorldFile.cs:1392-1394`) the 4829/4830/4910
 /// Pet License use-unlocks raise (W4-g87); a pre-v18 file loads them false.
+/// v18 appended `WorldGen.crimson` (`WorldFile.cs:1281`'s flags byte — W4-g69:
+/// the cloud lane's `RollRareCloud` type-36 gate reads the world evil type);
+/// a pre-v18 file loads with the corruption default (`:3507`'s fallback).
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -444,6 +447,11 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
         u8::from(world.bought_dog),
         u8::from(world.bought_bunny),
     ])?;
+    // v18: `WorldGen.crimson` (`WorldFile.cs:1281`'s flags byte) — W4-g69:
+    // the world evil type the cloud lane's RollRareCloud gate reads; a
+    // pre-v18 file loads with the corruption default (the vanilla's own
+    // `WorldFile.cs:3507` fallback).
+    w.write_all(&[u8::from(world.crimson)])?;
     Ok(())
 }
 
@@ -832,6 +840,10 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.bought_cat = r.u8()? != 0;
         world.bought_dog = r.u8()? != 0;
         world.bought_bunny = r.u8()? != 0;
+    // v18: the world evil type (see the writer's citation) — a pre-v18
+    // file keeps the corruption default (`WorldFile.cs:3507`'s fallback).
+    if version >= 18 {
+        world.crimson = r.u8()? != 0;
     }
     world.revision = 0;
     Ok((world, side))
@@ -1107,6 +1119,8 @@ mod tests {
         // DW-1.4 (dirty): the existing loader rejects a version above the
         // current one (`save.rs` version gate). v18 (the town-pet license
         // flags, W4-g87) is now the current format, so the gate pins 18.
+        // current one (`save.rs` version gate). v18 (the WorldGen.crimson
+        // byte, W4-g69) is now the current format, so the gate pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
@@ -1189,8 +1203,9 @@ mod tests {
         // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +1 more: the v18 WorldGen.crimson byte, W4-g69.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1 + 1));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1303,6 +1318,8 @@ mod tests {
         // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
         // the v17 fishron flag (1) and the v18 pet-license flags (3, W4-g87).
         let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 3;
+        // the v17 fishron flag (1) and the v18 crimson byte (1).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 1;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1332,6 +1349,8 @@ mod tests {
     /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
     /// v18 town-pet license flags (3 bytes, W4-g87).
     const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 3;
+    /// v18 `WorldGen.crimson` byte (W4-g69).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 1;
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL;
@@ -1521,6 +1540,10 @@ mod tests {
         // flags ride behind the v15 flag (9 bytes).
         let mut v14 = buf.clone();
         v14.truncate(v14.len() - 1 - 5 - 1 - 3);
+        // The v16 style bytes + the v17 fishron byte + the v18 crimson
+        // byte ride behind the v15 flag (7 bytes).
+        let mut v14 = buf.clone();
+        v14.truncate(v14.len() - 1 - 5 - 1 - 1);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
@@ -1553,6 +1576,33 @@ mod tests {
     }
 
     #[test]
+    fn w4_g69_the_world_evil_type_round_trips_in_v18() {
+        // `WorldGen.crimson` (`WorldFile.cs:1281`'s flags byte) — W4-g69:
+        // the cloud lane's RollRareCloud type-36 gate reads the world evil
+        // type, so the v18 tail persists it. Both arms round-trip; a
+        // pre-v18 file keeps the corruption default (`:3507`'s fallback).
+        let mut w = World::new("Test".into(), 64, 48);
+        w.crimson = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.crimson, "the crimson world survives the reload");
+        w.crimson = false;
+        buf.clear();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        assert!(!parse(&buf).unwrap().0.crimson, "corruption round-trips too");
+        // A v17 file (the last byte truncated, the version patched) loads
+        // with the default even when the payload's world was crimson.
+        w.crimson = true;
+        buf.clear();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        buf.truncate(buf.len() - 1);
+        buf[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&buf).unwrap();
+        assert!(!back.crimson, "a pre-v18 file keeps the corruption default");
+    }
+
+    #[test]
     fn dw_2_1_a_v5_payload_loads_defaults() {
         // DW-2.1: the v6 payload truncated to the v5 length (the version
         // field patched) parses with the `World::new` defaults — the flags
@@ -1565,8 +1615,9 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +1 more: the v18 WorldGen.crimson byte, W4-g69.)
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 1));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);

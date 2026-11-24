@@ -74,6 +74,7 @@
 use glam::Vec2;
 use tr_core::World;
 
+use crate::npc::Npc;
 use crate::projectile::{
     MOONLORD_ARROW, MOONLORD_ARROW_TRAIL, MOONLORD_BULLET, Projectile,
 };
@@ -107,9 +108,13 @@ fn counts_flight(kind: u16) -> bool {
 /// `HandleMovement` default arm `:19849-19853`: one last step into the tile,
 /// then `Kill()`). `kill_time_left` captures the C# `Kill()`'s `num`
 /// (`:70649`) for the 639's death-hook trail spawn.
-fn finish_flight(p: &mut Projectile, world: &World) {
+fn finish_flight(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i32]) {
     p.vel.y = p.vel.y.clamp(-16.0, 16.0);
     p.rot = p.vel.y.atan2(p.vel.x) + 1.57;
+    // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7):
+    // after the clamp, before the movement. The 639 IS an arrow (the
+    // producer's `arrow` gate charms it); the 638 is not.
+    crate::projectile_harpy_charm::charm_tail(p, world, npcs, immune);
     if p.tile_collide {
         let nx = p.pos.x + p.vel.x;
         let ny = p.pos.y + p.vel.y;
@@ -131,7 +136,8 @@ fn finish_flight(p: &mut Projectile, world: &World) {
 /// `AI_001`'s moon-lord-shot body for one slot, in the C#'s own block order.
 /// Every early `Kill(); return` is the port's death convention
 /// (`active = false`, `time_left = 0`) plus the `kill_time_left` capture.
-pub(crate) fn step(p: &mut Projectile, world: &World) {
+/// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`).
+pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i32]) {
     // ---- 1. The hook group above the counter ------------------------------
     // `:55864-55899` — the Moonlord Bullet (638): the speed-scaled alpha
     // fade `alpha -= (byte)((double)velocity.Length() * 0.3)` (the double
@@ -223,6 +229,10 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
         if p.vel != Vec2::ZERO {
             p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
         }
+        // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7):
+        // the 640 is not an arrow (the producer never charms it), so the
+        // tail is the two-bit no-op; the slice keeps the C# shape.
+        crate::projectile_harpy_charm::charm_tail(p, world, npcs, immune);
         // `HandleMovement`'s 466/580/640 arm (`:18308-18316`): on the first
         // blocked move (`localAI[1] < 1`) the counter jumps to 2, the
         // projectile takes ONE last full-velocity step and the velocity
@@ -251,7 +261,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
     } else {
         // 638/639 keep the default rotation (`:57750`) the shared tail
         // writes; the movement is the kill-on-tile default arm.
-        finish_flight(p, world);
+        finish_flight(p, world, npcs, immune);
     }
 }
 
@@ -354,16 +364,16 @@ mod tests {
     fn flag3_holds_the_bullet_and_arrow_counters() {
         let w = air();
         let mut b = shot(MOONLORD_BULLET);
-        step(&mut b, &w);
+        step(&mut b, &w, &[], &[]);
         assert_eq!(b.ai[0], 0.0, "the 638 rests (`:56018`)");
         let mut a = shot(MOONLORD_ARROW);
-        step(&mut a, &w);
+        step(&mut a, &w, &[], &[]);
         assert_eq!(a.ai[0], 10.0, "the latched vx (`:55421`)");
         assert_eq!(a.ai[1], 0.0);
         assert_eq!(a.local_ai[0], 1605.0, "the latched Centre.X (`:55419`)");
         assert_eq!(a.local_ai[1], 805.0);
         let mut t = shot(MOONLORD_ARROW_TRAIL);
-        step(&mut t, &w);
+        step(&mut t, &w, &[], &[]);
         assert_eq!(t.ai[0], 1.0, "the 640 counts (not on the C# list)");
     }
 
@@ -373,15 +383,15 @@ mod tests {
     fn the_bullet_fades_by_the_truncated_speed_product() {
         let w = air();
         let mut p = shot(MOONLORD_BULLET);
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.alpha, 252);
         // Speed 0 → no fade; the alpha floors at 0, never negative.
         p.vel = Vec2::ZERO;
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.alpha, 252);
         p.vel = Vec2::new(10.0, 0.0);
         p.alpha = 2;
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.alpha, 0);
     }
 
@@ -391,12 +401,12 @@ mod tests {
     fn the_arrow_drops_only_after_fourteen_sub_steps() {
         let w = air();
         let mut p = shot(MOONLORD_ARROW);
-        step(&mut p, &w); // timeLeft 90 > 76 — no gravity
+        step(&mut p, &w, &[], &[]); // timeLeft 90 > 76 — no gravity
         assert_eq!(p.vel.y, 0.0);
         assert_eq!(p.alpha, 230, "the fade 25 (`:55424`)");
         p.time_left = 76;
         p.vel = Vec2::new(10.0, 0.0);
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.vel.y, 0.1, "`timeLeft <= 76` → +0.1 (`:57546`)");
         // The latch does not re-fire (localAI non-zero).
         assert_eq!(p.local_ai[0], 1605.0);
@@ -417,7 +427,7 @@ mod tests {
         }
         let mut p = shot(MOONLORD_ARROW_TRAIL);
         p.pos = Vec2::new(1620.0, 800.0);
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.local_ai[1], 2.0, "the stick latch (`:18312`)");
         assert_eq!(p.pos, Vec2::new(1630.0, 800.0), "the last step (`:18313`)");
         assert_eq!(p.vel, Vec2::ZERO, "the velocity zeroes (`:18314`)");
@@ -427,7 +437,7 @@ mod tests {
         // all-equal — alive. (The pool shifts the ring per update; the
         // direct-step fixture records the newest entry by hand.)
         p.old_pos[0] = p.pos;
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.ai[0], 1.0);
         assert!(p.active);
     }
@@ -441,7 +451,7 @@ mod tests {
         p.vel = Vec2::ZERO;
         p.local_ai[1] = 2.0;
         p.old_pos = [Vec2::new(1600.0, 800.0); 10];
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert!(!p.active, "the all-equal Kill (`:55450`)");
         assert_eq!(p.kill_time_left, 90, "the Kill() `num` capture (`:70649`)");
     }

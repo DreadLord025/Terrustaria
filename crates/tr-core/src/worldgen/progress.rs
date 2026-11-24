@@ -120,13 +120,26 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         // WorldGen.cs:16980.
         "cave houses" => PassMessage::Gen(30),
         // WorldGen.cs:20910 (Micro Biomes — the grouped steps).
-        "campsites" | "sword shrines" | "mahogany trees" | "mining explosives" | "thin ice" => PassMessage::Gen(76),
+        "campsites" | "sword shrines" | "mahogany trees" | "mining explosives" | "thin ice"
+        | "dead man's chests" => PassMessage::Gen(76),
         // WorldGen.cs:16309 (ShellPilesMarblePilesAndSpikePits — the
         // classic-world arm; the MarblePiles/SpikeCaves messages are the
         // Don't Starve / no-traps arms, not the classic feed).
         "spike pits" | "shell piles" => PassMessage::Key("WorldGeneration.ShellPiles"),
         // WorldGen.cs:20197.
         "vines" => PassMessage::Gen(43),
+        // WorldGen.cs:20451 (Flowers).
+        "flowers" => PassMessage::Gen(44),
+        // WorldGen.cs:20603 (Mushrooms).
+        "mushrooms" => PassMessage::Gen(45),
+        // WorldGen.cs:20773 (LongMoss).
+        "moss grass" => PassMessage::Key("WorldGeneration.LongMoss"),
+        // WorldGen.cs:20868-20900 (BeeLarvaInBeehives) sets no
+        // progress.Message — only progress.Set(1.0) — so the step carries
+        // none (the C# keeps the previous pass's message).
+        // WorldGen.cs:20729-20768 (ExposedGemsUnderground) sets no
+        // progress.Message — only progress.Set(1.0) — so the step carries
+        // none (the C# keeps the previous pass's message).
         // WorldGen.cs:12933.
         "floating islands" => PassMessage::Gen(12),
         // WorldGen.cs:16421.
@@ -135,6 +148,13 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
+        // WorldGen.cs:19902 (SunflowersPart2).
+        "sunflowers" => PassMessage::Gen(39),
+        // WorldGen.cs:19973 (AlchemyHerbs).
+        "herbs" => PassMessage::Gen(41),
+        // WorldGen.cs:19981-19994 (DyePlants) sets no progress.Message —
+        // only progress.Set(1.0) — so the step carries none (the C# keeps
+        // the previous pass's message).
         // WorldGen.cs:20068.
         "surface flora" => PassMessage::Gen(42),
         // WorldGen.cs:21314.

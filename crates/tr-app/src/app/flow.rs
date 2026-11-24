@@ -3059,6 +3059,8 @@ pub(crate) mod front_flow_tests {
                 last_saved_binary: 0,
                 voice_variant: 1,
                 voice_pitch_offset: 0.0,
+                unlocked_biome_torches: false,
+                using_biome_torches: false,
             },
         )
         .unwrap();

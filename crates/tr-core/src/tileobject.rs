@@ -817,7 +817,9 @@ pub fn can_cut_tile(world: &World, x: i32, y: i32) -> bool {
     false
 }
 
-pub(crate) fn is_tile_table(kind: u16) -> bool {
+/// Membership in [`TILE_TABLE`] — `Main.tileTable` (`Place2x2`'s floor
+/// alternative, `WorldGen.cs:51374`).
+pub fn is_tile_table(kind: u16) -> bool {
     is_table(kind)
 }
 

@@ -89,7 +89,7 @@ pub struct LuckState {
     /// in the current window (cleared on every consume).
     pub nearby_torch: [bool; TORCH_ID_COUNT],
     /// `Player.nearbyTorches` (`:3054`): the unsnuffed-torch count — the
-    /// Torch God trigger's input (the event itself is not ported).
+    /// Torch God trigger's input (the event rides `torch_god.rs`, W4-f33).
     pub nearby_torches: i32,
     /// `Player.dryCoralTorch` (`:3060`): a coral torch seen out of water.
     pub dry_coral_torch: bool,
@@ -225,10 +225,14 @@ impl LuckState {
 /// window's bottom row the counters are consumed and `torch_luck` is
 /// recalculated. Above the world surface or dead → consume immediately
 /// (`:17750-17755`) — the field starts at (0,0), so the very first tick
-/// consumes and anchors the window, exactly like the C# default. The
-/// `happyFunTorchTime` / `torchGodCooldown` head (the Torch God event,
-/// `:17734-17741`) is not ported (M2-BUFF-6 deviation); a `null` tile returns
-/// without walking on (`:17761-17763`).
+/// consumes and anchors the window, exactly like the C# default. A `null`
+/// tile returns without walking on (`:17761-17763`).
+///
+/// The no-event entry point (the tests + any caller without the player
+/// context): delegates to [`torch_scan_step_event`] with no event — the
+/// `happyFunTorchTime` / `torchGodCooldown` head (`:17734-17741`) and the
+/// trigger tail (`:18066-18086`) are the W4-f33 seam, live only through
+/// the event-carrying entry.
 pub fn torch_scan_step(
     luck: &mut LuckState,
     world: &World,
@@ -237,9 +241,62 @@ pub fn torch_scan_step(
     held_torch_style: Option<u8>,
     zones: Zones,
 ) {
+    let mut rng = tr_core::UnifiedRandom::default();
+    let _ = torch_scan_step_impl(luck, world, center, dead, held_torch_style, zones, None, &mut rng);
+}
+
+/// The event-carrying scan entry (W4-f33) — `Player.Update`'s call site
+/// (`player.rs::update_luck`): the C# head (`:17733-17742`) runs FIRST
+/// (the event consumes the tick instead of the scan), the trigger tail
+/// (`:18066-18086`) runs inside every consume BEFORE `nearbyTorches = 0`.
+/// Returns the tick's deferred Torch God writes (the `pending_*`
+/// convention — all RNG already consumed on `rng`, the UpdatePlayers
+/// stream).
+pub fn torch_scan_step_event(
+    luck: &mut LuckState,
+    world: &World,
+    center: (f32, f32),
+    dead: bool,
+    held_torch_style: Option<u8>,
+    zones: Zones,
+    event: &mut crate::torch_god::TorchGodEventCtx<'_>,
+    rng: &mut dyn tr_core::loot::DropRng,
+) -> crate::torch_god::TorchGodPending {
+    torch_scan_step_impl(
+        luck,
+        world,
+        center,
+        dead,
+        held_torch_style,
+        zones,
+        Some(event),
+        rng,
+    )
+}
+
+fn torch_scan_step_impl(
+    luck: &mut LuckState,
+    world: &World,
+    center: (f32, f32),
+    dead: bool,
+    held_torch_style: Option<u8>,
+    zones: Zones,
+    mut event: Option<&mut crate::torch_god::TorchGodEventCtx<'_>>,
+    rng: &mut dyn tr_core::loot::DropRng,
+) -> crate::torch_god::TorchGodPending {
+    // The event head (`Player.cs:17733-17742`): while happyFunTorchTime
+    // runs, the cursor zeroes and TorchAttack replaces the whole scan;
+    // otherwise the cooldown decrements once per call.
+    if let Some(ctx) = event.as_deref_mut() {
+        if let Some(pending) =
+            crate::torch_god::try_recalculating_torch_luck_head(ctx, luck, world, center, rng)
+        {
+            return pending;
+        }
+    }
     if (luck.next_torch_luck_check_center.1 as f64) < world.world_surface * 16.0 || dead {
-        torch_consume_and_calculate(luck, center, held_torch_style, zones, world);
-        return;
+        torch_consume_impl(luck, center, held_torch_style, zones, world, event);
+        return Default::default();
     }
     // `int num = 1; int num2 = 40;` — one row per call, a ±40-tile window.
     let window = 40_i32;
@@ -264,12 +321,12 @@ pub fn torch_scan_step(
     let row = top + luck.lucky_torch_counter;
     if row < 10 || row > world.height - 10 {
         luck.lucky_torch_counter += 1;
-        return;
+        return Default::default();
     }
     for x in x_lo..=x_hi {
         let Some(tile) = world.tile(x, row) else {
             // `if (tile == null) { return; }` — the whole scan stops.
-            return;
+            return Default::default();
         };
         if !tile.active() || tile.kind != 4 || tile.frame_x < 0 || tile.frame_y < 0 {
             continue;
@@ -288,24 +345,37 @@ pub fn torch_scan_step(
         }
     }
     if row >= bottom {
-        torch_consume_and_calculate(luck, center, held_torch_style, zones, world);
-        return;
+        torch_consume_impl(luck, center, held_torch_style, zones, world, event);
+        return Default::default();
     }
     luck.lucky_torch_counter += 1;
+    Default::default()
 }
 
 /// `Player.UpdateTorchLuck_ConsumeCountersAndCalculate`
 /// (`Player.cs:17912-18088`): zeroes the cursor, resets `torchLuck`, anchors
 /// the next window at the current center, feeds the held torch's own style
 /// in, then runs the 12-verdict biome table and the five ladders. The Torch
-/// God trigger tail (`:18066-18086`) is not ported — the `nearbyTorches = 0`
-/// reset still runs.
+/// God trigger tail (`:18066-18086`) runs through the W4-f33 event seam
+/// (when the context is present) AFTER the clamp, BEFORE the
+/// `nearbyTorches = 0` reset — the C#'s exact order.
 fn torch_consume_and_calculate(
     luck: &mut LuckState,
     center: (f32, f32),
     held_torch_style: Option<u8>,
     zones: Zones,
     world: &World,
+) {
+    torch_consume_impl(luck, center, held_torch_style, zones, world, None);
+}
+
+fn torch_consume_impl(
+    luck: &mut LuckState,
+    center: (f32, f32),
+    held_torch_style: Option<u8>,
+    zones: Zones,
+    world: &World,
+    event: Option<&mut crate::torch_god::TorchGodEventCtx<'_>>,
 ) {
     luck.lucky_torch_counter = 0;
     luck.torch_luck = 0.0;
@@ -413,6 +483,11 @@ fn torch_consume_and_calculate(
     // `torchLuck` is the ONLY clamped component in the system (`:18062-18065`).
     if luck.torch_luck < 0.0 {
         luck.torch_luck = 0.0;
+    }
+    // The Torch God trigger tail (`:18066-18086`, W4-f33) — AFTER the
+    // clamp, BEFORE the `nearbyTorches = 0` reset, the C#'s exact order.
+    if let Some(ctx) = event {
+        crate::torch_god::torch_god_trigger_check(ctx, luck, world.world_surface);
     }
     luck.nearby_torches = 0;
 }

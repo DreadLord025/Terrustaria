@@ -558,6 +558,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // play_chillet_sound precedent).
             app.audio.play_foxparks_flame(x, y, rng);
         } else {
+            // S1-E-21h f1 — the queue's sixth term (d77's `volumeScale`
+            // seam, adopted from `9d35874a`): the id-0/13/4 int-overload
+            // routes ride INSIDE `play_proj_sound_scaled`'s int match (f1's
+            // part-4 shape) and ignore the scale (the int overload's own
+            // volume is 1 at every f1 site); the id-2 styles fold it into
+            // `play_use_sound_scaled`'s post-gate multiply
+            // (`LegacySoundPlayer.cs:1411`).
             app.audio
                 .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, rng);
         }
@@ -944,6 +951,19 @@ mod s1_e_21h_sound_stream_tests {
             .projectiles
             .spawn_with_data_ai_owned(
                 EYE_OF_CTHULHU_DASH,
+    /// S1-E-21h f1 — the `Kill()` death cue's stream contract: a shot that
+    /// dies this pass queues its death cue, and the case-2 pitch draw rides
+    /// the `UpdateProjectiles` stream ONLY when audible. The Jester's Arrow
+    /// (5, `:75670` Item10) dies on its first sub-step's `penetrate == 0`
+    /// after a hit; here it is spawned with `time_left = 1` so the lifetime
+    /// block kills it on tick 1 without a target. Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_the_death_cue_draws_ride_update_projectiles_only_when_audible() {
+        use crate::projectile::JESTERS_ARROW;
+        fn dying_star_app() -> App {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.projectiles.spawn_with_data_ai_owned(
+                JESTERS_ARROW,
                 0,
                 32.0,
                 32.0,
@@ -970,6 +990,41 @@ mod s1_e_21h_sound_stream_tests {
             *app.rngs.stream(RngKey::UpdateProjectiles),
             witness,
             "the first sub-step's roll + the intent's drain draw"
+            );
+            // Force the lifetime kill on tick 1 (the death hook fires).
+            let slot = app
+                .projectiles
+                .slots()
+                .iter()
+                .position(|p| p.active && p.kind == JESTERS_ARROW)
+                .expect("the arrow lives");
+            app.projectiles.slots_mut()[slot].time_left = 1;
+            app
+        }
+        // Muted: the death cue queues but the drain's gate refuses before
+        // the case-2 switch — no gameplay draw.
+        let mut app = dying_star_app();
+        app.audio.set_listener(listener(0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine under the muted death-cue gate",
+                key.name()
+            );
+        }
+        // Audible: exactly ONE case-2 default pitch draw (`Next(-6, 7)`)
+        // on the `UpdateProjectiles` stream — the death cue's Item10.
+        let mut app = dying_star_app();
+        app.audio.set_listener(listener(1.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "exactly one case-2 pitch draw for the death cue"
         );
         for key in RngKey::ALL {
             if key == RngKey::UpdateProjectiles {
@@ -1006,6 +1061,54 @@ mod s1_e_21h_sound_stream_tests {
             .expect("the carrier");
         app.projectiles.slots_mut()[slot].ai[1] = 1.0;
         app.projectiles.slots_mut()[slot].wants_sound = Some((42, 274, 32.0, 32.0, 0.0));
+        // The death fired once: the second tick draws nothing further.
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "the once-per-death cue draws nothing on tick 2"
+        );
+    }
+
+    /// S1-E-21h f1 fifth batch — the Kill-tail death cue's stream contract:
+    /// the Holy Water bottle (69, `:77018` Shatter) dies this pass and queues
+    /// its id-13 cue; the Shatter case draws NOTHING (`LegacySoundPlayer.cs:
+    /// 783-792`), so the `UpdateProjectiles` stream stays pristine whether
+    /// audible or muted — the gate still precedes the (empty) case. The
+    /// bottle is aiStyle 2 (RNG-free flight), spawned `time_left = 1` so the
+    /// lifetime block kills it on tick 1. Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_b5_the_water_bottle_shatter_cue_is_draw_free() {
+        use crate::projectile::HOLY_WATER;
+        fn dying_bottle_app() -> App {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.projectiles.spawn_with_data_ai_owned(
+                HOLY_WATER, 0, 32.0, 32.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0,
+            );
+            let slot = app
+                .projectiles
+                .slots()
+                .iter()
+                .position(|p| p.active && p.kind == HOLY_WATER)
+                .expect("the bottle lives");
+            app.projectiles.slots_mut()[slot].time_left = 1;
+            app
+        }
+        // Audible: the Shatter plays but draws nothing — every stream pristine.
+        let mut app = dying_bottle_app();
+        app.audio.set_listener(listener(1.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine — the Shatter case draws nothing",
+                key.name()
+            );
+        }
+        // Muted: the gate refuses before the (empty) case — still pristine.
+        let mut app = dying_bottle_app();
+        app.audio.set_listener(listener(0.0));
         update_projectiles(&mut app, 1.0 / 60.0);
         for key in RngKey::ALL {
             assert_eq!(
@@ -1515,3 +1618,4 @@ mod s1_p_i09_yoyo_snapshot_tests {
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
     }
 }
+})

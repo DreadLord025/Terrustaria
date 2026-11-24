@@ -76,6 +76,9 @@ pub const SQUIRREL_HOOK: u16 = 865;
 /// `ProjectileID.QueenSlimeHook` (935) — the `extraUpdates = 3` hook whose
 /// latch teleports its owner.
 pub const QUEEN_SLIME_HOOK: u16 = 935;
+/// `ProjectileID.TorchGod` (949) — the Torch God event's snuffed-torch
+/// shot (`Projectile.cs:8948-8955`, W4-f33).
+pub const TORCH_GOD: u16 = 949;
 pub const SHURIKEN: u16 = 3;
 /// `ProjectileID.VilethornBase` (7) — the Vilethorn's first segment
 /// (`Projectile.cs:874-884`).
@@ -231,6 +234,18 @@ pub const SHADOWFLAME_ARROW: u16 = 495;
 /// `ProjectileID.BloodArrow` (`ProjectileID.cs:2192`) — the Blood Rain
 /// Bow's rain shot.
 pub const BLOOD_ARROW: u16 = 819;
+/// `ProjectileID.Stake` (`ProjectileID.cs:1200`) — the Stake Launcher's
+/// shot (W4-f20 slice D, `Projectile.cs:4160-4171`).
+pub const STAKE: u16 = 323;
+/// `ProjectileID.PulseBolt` (`ProjectileID.cs:1268`) — the Pulse Bow's
+/// override shot (W4-f20 slice D, `Projectile.cs:4474-4486`).
+pub const PULSE_BOLT: u16 = 357;
+/// `ProjectileID.Hellwing` (`ProjectileID.cs:1524`) — the Hellwing Bow's
+/// homing bat (W4-f20 slice D, `Projectile.cs:5604-5615`).
+pub const HELLWING: u16 = 485;
+/// `ProjectileID.DD2BetsyArrow` (`ProjectileID.cs:1974`) — the Betsy Bow's
+/// shot (W4-f20 slice D, `Projectile.cs:7521-7535`).
+pub const BETSY_ARROW: u16 = 710;
 /// `ProjectileID.ShimmerArrow` (`ProjectileID.cs:2566`).
 pub const SHIMMER_ARROW: u16 = 1006;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
@@ -1270,6 +1285,10 @@ pub const ELECTROSPHERE_MISSILE: u16 = 442;
 /// `ProjectileID.Electrosphere` (443, `ProjectileID.cs:1440`) — the sphere the
 /// missile's death spawns (aiStyle 77).
 pub const ELECTROSPHERE: u16 = 443;
+/// `ProjectileID.SkyDragonsFuryElectrosphere` (1110, `ProjectileID.cs:2774`) —
+/// the Sky Dragon's Fury alt-shot's death circle (aiStyle 77, the 443 sibling;
+/// W4-f20 F3, the 709 Kill-hook half `Projectile.cs:73372-73388`).
+pub const SKY_DRAGONS_FURY_ELECTROSPHERE: u16 = 1110;
 /// `ProjectileID.ChargedBlasterOrb` (459, `ProjectileID.cs:1472`) — the
 /// cannon's charge orb (aiStyle 1, `extraUpdates = 1`).
 pub const CHARGED_BLASTER_ORB: u16 = 459;
@@ -3464,6 +3483,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater` (the overlay below), the `NewProjectileSetup`
             // 300-tick seed (`:11065-11068`).
             443 => (80.0, 80.0, 77, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-f20 F3 — the Sky Dragon's Fury circle 1110
+            // (`Projectile.cs:10340-10352`): 80x80, aiStyle 77, friendly,
+            // alpha 255, scale 1, melee, ignoreWater, tileCollide false,
+            // penetrate -1; the `NewProjectileSetup` 300-tick seed
+            // (`:11065-11068`, the 443 sibling). The 709's Kill spawns it
+            // (`:73384`) and overrides timeLeft to `30 * Next(2,6)`.
+            SKY_DRAGONS_FURY_ELECTROSPHERE => (80.0, 80.0, 77, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // The Fireworks Launcher's rockets 167-170 (`:2558-2569`):
             // 14x14, aiStyle 34, `timeLeft = 45`, the idStatic-1 pair with
             // `appliesImmunityTimeOnSingleHits` (the plain PVE walk applies
@@ -4006,6 +4032,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // W4-f33 — `Projectile.cs:8948-8955`: the Torch God shot (949):
+            // 4x4, aiStyle 184 (`AI_184_BadTorchLuck`), `penetrate = -1`,
+            // `tileCollide = false` (the AI's ai[1] budget arms it later).
+            // The stock `friendly`/`hostile` stay false (`:788`/`:764` —
+            // the arm touches neither): the hurt rides the AI's own
+            // `SelfHurtPlayers`, never the pool's PVE/EVP lanes. The stock
+            // timeLeft 3600 (`:787`) / extraUpdates 0 (`:771`) stand.
+            TORCH_GOD => (4.0, 4.0, 184, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             // The dungeon-debris trio (`Projectile.cs:7748-7755`): 10x10,
             // aiStyle 10, `penetrate = -1`; everything else keeps the reset
             // (`tileCollide` true `:775`, `timeLeft` 3600 `:787`,
@@ -4730,6 +4764,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i16 — the Electrosphere sphere 443's `ignoreWater = true`
             // (`Projectile.cs:5147`, the `:5137-5149` row block).
             || kind == 443
+            // W4-f20 F3 — the Sky Dragon's Fury circle 1110's `ignoreWater`
+            // (`Projectile.cs:10349`, the `:10340-10352` row block).
+            || kind == SKY_DRAGONS_FURY_ELECTROSPHERE
             // S1-P-i14 — the bullet-launch projectiles that set `ignoreWater`:
             // the Xenopopper bubble 444 (`Projectile.cs:5159`) and the Onyx
             // black bolt 661 (`:7118`).
@@ -4791,6 +4828,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // PROJ-171 retire: the 978 Volcano's `melee = true`
                     // term (`Projectile.cs:9267`) is DROPPED with its row
                     // (keep-d12c — d12c's 9e668d0f0 owns the 978 melee flag).
+                    // W4-f20 F3 — the Sky Dragon's Fury circle 1110's
+                    // `this.melee = true` (`Projectile.cs:10348`).
+                    | SKY_DRAGONS_FURY_ELECTROSPHERE
                     // W4-g2 (d5 F6): the Partisan's orb sets `melee = true`
                     // (`Projectile.cs:3157`). The 228/732 siblings set it too
                     // (`:3144`/`:7713`) — the W4-g2 reconciliation round closes
@@ -5129,12 +5169,21 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         206 => 5,
         254 => 5,
         436 => 4,
+        // W4-f20 F3 — the Electrosphere sphere 443 + the Sky Dragon's Fury
+        // circle 1110 share the 4-frame sheet (`Main.cs:8536`/`:8559`); the
+        // aiStyle-77 pulse's 3-tick frame machine wraps at 4
+        // (`Projectile.cs:30724-30733`).
+        443 | SKY_DRAGONS_FURY_ELECTROSPHERE => 4,
         447 => 4,
         448 => 3,
         450 => 5,
         454 => 2,
         456 => 4,
         462 => 5,
+        // W4-f20 slice D — the Hellwing bat's 5-frame sheet
+        // (`Main.cs:8482`); the AI_001 rotation tail's 2-tick frame
+        // machine wraps at 5 (`Projectile.cs:57716-57725`).
+        HELLWING => 5,
         519 => 4,
         574 => 2,
         601 => 2,
@@ -5325,9 +5374,172 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
     }
 }
 
+/// `Main.projPet` (`Main.cs:8728-8852`) — the pet/light-pet projectile set.
+/// The `SendData(27)` relay's flag3 section-cull exemption reads it
+/// (`NetMessage.cs:1777`); the whole 125-row census lands verbatim (the
+/// array is zero-initialised and only these writes set it true — the other
+/// `Main.projPet[` reads in Player/Projectile/MessageBuffer are consumers).
+pub const fn proj_pet(kind: u16) -> bool {
+    matches!(
+        kind,
+        111 | 112
+            | 127
+            | 175
+            | 191
+            | 192
+            | 193
+            | 194
+            | 197
+            | 198
+            | 199
+            | 200
+            | 208
+            | 209
+            | 210
+            | 211
+            | 236
+            | 266
+            | 268
+            | 269
+            | 313
+            | 314
+            | 317
+            | 319
+            | 324
+            | 334
+            | 353
+            | 373
+            | 375
+            | 380
+            | 387
+            | 388
+            | 390
+            | 391
+            | 392
+            | 393
+            | 394
+            | 395
+            | 398
+            | 407
+            | 423
+            | 492
+            | 499
+            | 533
+            | 613
+            | 623
+            | 625
+            | 626
+            | 627
+            | 628
+            | 653
+            | 701
+            | 702
+            | 703
+            | 755
+            | 758
+            | 759
+            | 764
+            | 765
+            | 774
+            | 815
+            | 816
+            | 817
+            | 821
+            | 825
+            | 831
+            | 833
+            | 834
+            | 835
+            | 854
+            | 858
+            | 859
+            | 860
+            | 864
+            | 875
+            | 881
+            | 882
+            | 883
+            | 884
+            | 885
+            | 886
+            | 887
+            | 888
+            | 889
+            | 890
+            | 891
+            | 892
+            | 893
+            | 894
+            | 895
+            | 896
+            | 897
+            | 898
+            | 899
+            | 900
+            | 901
+            | 934
+            | 946
+            | 951
+            | 956
+            | 957
+            | 958
+            | 959
+            | 960
+            | 963
+            | 970
+            | 994
+            | 998
+            | 1003
+            | 1004
+            | 1018
+            | 1022
+            | 1027
+            | 1046
+            | 1050
+            | 1056
+            | 1090
+            | 1093
+            | 1094
+            | 1095
+            | 1096
+            | 1112
+            | 1113
+            | 1118
+            | 1119
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-g52 — the `Main.projPet` census (`Main.cs:8728-8852`): all 125
+    /// `= true` write sites, and nothing else. The boundary kinds pin the
+    /// gaps (12 is flag3 by its own type test, NOT a pet; 72/18/500/650 are
+    /// the `Player.cs:48561` companion special-cases, not `projPet` rows).
+    #[test]
+    fn w4_g52_proj_pet_matches_the_main_census() {
+        const ROWS: &[u16] = &[
+            111, 112, 127, 175, 191, 192, 193, 194, 197, 198, 199, 200, 208, 209, 210, 211, 236,
+            266, 268, 269, 313, 314, 317, 319, 324, 334, 353, 373, 375, 380, 387, 388, 390, 391,
+            392, 393, 394, 395, 398, 407, 423, 492, 499, 533, 613, 623, 625, 626, 627, 628, 653,
+            701, 702, 703, 755, 758, 759, 764, 765, 774, 815, 816, 817, 821, 825, 831, 833, 834,
+            835, 854, 858, 859, 860, 864, 875, 881, 882, 883, 884, 885, 886, 887, 888, 889, 890,
+            891, 892, 893, 894, 895, 896, 897, 898, 899, 900, 901, 934, 946, 951, 956, 957, 958,
+            959, 960, 963, 970, 994, 998, 1003, 1004, 1018, 1022, 1027, 1046, 1050, 1056, 1090,
+            1093, 1094, 1095, 1096, 1112, 1113, 1118, 1119,
+        ];
+        assert_eq!(ROWS.len(), 125, "the census grep count (Main.cs)");
+        for k in 0..=1200u16 {
+            assert_eq!(
+                proj_pet(k),
+                ROWS.contains(&k),
+                "projPet[{k}] vs Main.cs:8728-8852"
+            );
+        }
+        assert!(!proj_pet(12), "type 12 is flag3 by its own arm, not projPet");
+        assert!(!proj_pet(72) && !proj_pet(18) && !proj_pet(500) && !proj_pet(650));
+    }
 
     #[test]
     fn the_damage_class_flags_match_the_set_defaults_census() {

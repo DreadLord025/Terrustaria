@@ -738,6 +738,10 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // `Main.cursorOverride` (`Main.cs:45269-45310`): the shift/alt hover
+    // cursor id (-1 = none) — the SELL (10) / TRASH (6) / transfer (8/9) /
+    // favourite (3) icons replace the normal cursor. W4-e19.
+    cursor_override: i32,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1310,8 +1314,11 @@ pub fn draw_hud(
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
-    // hidden while the vanilla `Cursor_0` is on screen.
-    cursor::draw(r, lookups, cursor_state, mouse_pos);
+    // hidden while the vanilla `Cursor_0` is on screen. The override arm
+    // (`Main.cs:45269-45310`) replaces the normal cursor while an id is lit.
+    if !cursor::draw_override(r, lookups, cursor_state, mouse_pos, cursor_override) {
+        cursor::draw(r, lookups, cursor_state, mouse_pos);
+    }
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it

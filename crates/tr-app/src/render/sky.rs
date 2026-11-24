@@ -636,6 +636,10 @@ pub(crate) fn draw_sky(
     // `Main.hellBlackBoxBottom` (`Main.cs:2463`), threaded to `DrawBackground` —
     // the underworld black box consumes the previous frame's hell floor line.
     hell_black_box_bottom: &mut f32,
+    // `Main.shimmerAlpha` (`Main.cs:52800`/`:62086`): the SceneState ramp —
+    // 1 skips the underground backdrop AND the natural star field; >0 dims
+    // the stars by `1 - alpha` (the artificial pass is g69d's claim).
+    shimmer_alpha: f32,
     // The ambient-sky creatures (`AmbientSky`): the live entities and the
     // lookups/context their sheets need. Drawn between the passes at the C#
     // `DrawToDepth` boundaries — see the `DRAW_TO_DEPTH` table below.
@@ -734,7 +738,9 @@ pub(crate) fn draw_sky(
     // at a fixed hour. (`Main.atmo` is 1 at the surface; the graveyard dim of
     // `Main.cs:63037-63045` is not modelled.)
     let sky_r = (tint[0] * 255.0) as i32;
-    if 255.0 * (1.0 - storm) - sky_r as f32 - 25.0 > 0.0 {
+    // `Main.cs:62086-62089`: the natural star field is skipped outright at
+    // full shimmer (the aether's artificial pass replaces it — g69d's claim).
+    if shimmer_alpha != 1.0 && 255.0 * (1.0 - storm) - sky_r as f32 - 25.0 > 0.0 {
         for s in stars {
             let Some(st) = sky.stars.get(s.tex).and_then(|t| *t) else {
                 continue;
@@ -783,6 +789,10 @@ pub(crate) fn draw_sky(
             // fully opaque at the computed brightness (see ANALYSIS.md).
             let k = s.scale * twinkle;
             let rot = s.rotation + anim_time * 60.0 * s.rotation_speed;
+            // `Main.cs:63107-63110`: the natural star dims by `1 - shimmerAlpha`
+            // (the `artificial: false` arm; the i%3 channel lerp at `:63090-63102`
+            // multiplies by `(1f - num * 0f)` = 1 — a no-op in the decompile).
+            let star_dim = 1.0 - shimmer_alpha;
             push_screen_rot(
                 r,
                 camera,
@@ -791,7 +801,12 @@ pub(crate) fn draw_sky(
                 [px, py],
                 [st.w * k, st.h * k],
                 st.uv,
-                [v as f32 / 255.0, v as f32 / 255.0, v as f32 / 255.0, 1.0],
+                [
+                    v as f32 / 255.0 * star_dim,
+                    v as f32 / 255.0 * star_dim,
+                    v as f32 / 255.0 * star_dim,
+                    1.0,
+                ],
                 rot,
             );
         }
@@ -1545,6 +1560,7 @@ pub(crate) fn draw_sky(
             cave_parallax,
             anim_time,
             hell_black_box_bottom,
+            shimmer_alpha,
         );
     }
 }

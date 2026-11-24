@@ -2386,6 +2386,12 @@ pub(crate) fn draw_player(
         gfx_off_y: player.gfx_off_y,
         swing,
         hold_style: held.map_or(0, |(kind, _, _)| crate::item::hold_style(kind)),
+        // W4-f33 — the Torch God draw-hide gate (`PlayerDrawLayers.cs:3089`):
+        // the event flag + the held item's createTile (−1 = none).
+        happy_fun_torch_time: player.torch_god.happy_fun_torch_time,
+        held_create_tile: held.map_or(-1, |(kind, _, _)| {
+            registry::get(kind).map_or(-1, |d| d.tile.map_or(-1, |t| t as i32))
+        }),
         // The held item's real useStyle (`Item.useStyle` — the per-style
         // body rows and the held-item draw both read it).
         use_style: held.map_or(1, |(kind, _, _)| crate::item::use_style(kind)),

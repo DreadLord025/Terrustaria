@@ -78,6 +78,26 @@
 //! - the `Webs And Honey` hive arm keys on wall 86 (`WallID.HiveUnsafe`),
 //!   which the port's beehive pass does not paint (`structures.rs:404` uses
 //!   its own walls), so that arm is a no-op until the beehive wall lands.
+//!
+//! W4-c29 gem-moss fidelity (ANALYSIS "Gem-moss fidelity (W4-c29)"):
+//! - `Spread.Gem`'s `hashSet.Add` return is ignored (`WorldGen.cs:3617`) —
+//!   a twice-enqueued cell re-processes and its solid branch re-draws the
+//!   `randGemTile` conversions; the former dedup dropped those draws.
+//! - the exposed-gem write is `PlaceTile`'s 178 arm (`:59691-59701`): the
+//!   `CheckAndAdjustMultiDirectionalTile` anchor gate (`:60314-60366`, the
+//!   slope-allowing four-face anchors) + the `Next(3)*18` frame-row draw —
+//!   the former `place_framed` write carried neither.
+//! - `neonMossBiome`'s classic clamps ride the C#'s edges (`num6` top under
+//!   the rock line, `num7` bottom at maxY, `:9843-9858`), SET the drift to
+//!   ±5.0, keep the step budget a scaled double and paint the exclusive
+//!   loops — the M5-STRUCT-5 draft inverted the clamp edge, nudged ±2.0,
+//!   truncated the budget and painted the inclusive rim.
+//! - the moss pass's arm A runs the C#'s `num2`/`num3` reject ledger
+//!   (`:17554-17566`) and the exclusion scan carries `Main.tileDungeon`;
+//!   arm F walks the map live column-major over `Main.tileMoss` (627
+//!   included) instead of a row-major snapshot.
+//! - `neonMossBiome`'s remix clamp (`Main.remixWorld`, `:9832-9842`) stays
+//!   unported with the other remix draw schedules.
 
 use std::collections::HashSet;
 
@@ -151,6 +171,11 @@ const WALL_SPIDER: u16 = 62;
 /// `WallID.LivingWoodUnsafe` (`WallID.cs:556`) — `nextCount` bails on it.
 const WALL_LIVING_WOOD: u16 = 244;
 
+/// `Main.tileDungeon` (`Main.cs:7992-7997`) — the six dungeon bricks: the
+/// blue/green/pink 41/43/44 plus the ancient 677/678/679. The moss pass's
+/// neon-anchor exclusion scan reads it (`WorldGen.cs:17545`).
+const TILE_DUNGEON: [u16; 6] = [41, 43, 44, 677, 678, 679];
+
 /// The walls the port's terrain pre-lays under every solid row
 /// (`terrain.rs:284-289`) — the deviation counterpart of the C#'s `wall == 0`.
 const BASELINE_WALLS: [u16; 4] = [WALL_STONE, WALL_DIRT, WALL_SANDSTONE, 216];
@@ -195,8 +220,8 @@ fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
 /// `WorldGen.countTiles`'s scratch state (`WorldGen.cs:9546-9557`): the
 /// counters the pass's acceptance tests read.
 #[derive(Default, Clone, Copy)]
-struct CaveCounts {
-    tiles: i32,
+pub(super) struct CaveCounts {
+    pub(super) tiles: i32,
     shroom: i32,
     lava: i32,
     ice: i32,
@@ -210,8 +235,11 @@ struct CaveCounts {
 
 /// `WorldGen.countTiles` (`WorldGen.cs:9546-9635`) over an explicit stack: the
 /// C# recursion depth is the pocket size, so the port walks it iteratively
-/// (the fill carries no RNG, so the traversal order is free).
-fn count_tiles(world: &World, x: i32, y: i32, lava_ok: bool, max: i32) -> CaveCounts {
+/// (the fill carries no RNG, so the traversal order is free). Shared with
+/// the dead-man's-chest pocket gate (`mini_biomes::dead_mans_good_spot`,
+/// `WorldGen.cs:9546-9635` — the same `countTiles(jungle: false, lavaOk:
+/// true)` reading, the same baseline-wall adaptation).
+pub(super) fn count_tiles(world: &World, x: i32, y: i32, lava_ok: bool, max: i32) -> CaveCounts {
     let mut c = CaveCounts::default();
     let mut seen: HashSet<(i32, i32)> = HashSet::new();
     let mut stack = vec![(x, y)];
@@ -313,6 +341,16 @@ fn gemmable(kind: u16) -> bool {
 /// `countTiles` measured: the solid/walled cells get gem tiles (and their four
 /// neighbours), the open cells get a gem wall and, half the time, an exposed
 /// gem.
+///
+/// W4-c29 gem-fidelity: the C#'s `hashSet.Add(item)` (`:3617`) IGNORES its
+/// return — a cell enqueued twice in one wave (two open neighbours both
+/// pushing it before either is processed) is processed on EVERY visit, and
+/// the solid branch's `randGemTile` conversions re-draw each time. The port's
+/// former `if !seen.insert(item) { continue; }` dedup dropped those draws
+/// (the g41 census's "gem-fidelity row"). The insert now ignores its result
+/// like the C#; a re-visited open cell reads its freshly painted gem wall
+/// (`has_real_wall`) and takes the solid branch, exactly as the C#'s
+/// `tile.wall != 0` re-read does.
 fn spread_gem(world: &mut World, rng: &mut Rng, x: i32, y: i32, gem: &[bool; 6]) {
     if !in_world(world, x, y, 0) {
         return;
@@ -325,9 +363,8 @@ fn spread_gem(world: &mut World, rng: &mut Rng, x: i32, y: i32, gem: &[bool; 6])
             if !in_world(world, item.0, item.1, 1) {
                 continue;
             }
-            if !seen.insert(item) {
-                continue;
-            }
+            // `hashSet.Add(item)` (`:3617`) — the return is ignored.
+            seen.insert(item);
             if solid_tile(world, item.0, item.1) || has_real_wall(world, item.0, item.1) {
                 let kind = world.tile(item.0, item.1).map(|t| (t.active(), t.kind));
                 if let Some((active, tile_kind)) = kind {
@@ -359,8 +396,11 @@ fn spread_gem(world: &mut World, rng: &mut Rng, x: i32, y: i32, gem: &[bool; 6])
                 }
                 let inactive = world.tile(item.0, item.1).is_some_and(|t| !t.active());
                 if inactive && rng.range(0, 2) == 0 {
+                    // `PlaceTile(item.X, item.Y, 178, mute: true, forced:
+                    // false, -1, randGem())` (`:3655`) — the style draws
+                    // BEFORE the placement arm's anchor gate.
                     let style = rand_gem(rng, gem) as i32;
-                    place_framed(world, item.0, item.1, TILE_EXPOSED_GEMS, style * 18);
+                    place_exposed_gem(world, rng, item.0, item.1, style);
                 }
                 for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                     let cand = (item.0 + dx, item.1 + dy);
@@ -593,6 +633,100 @@ fn place_framed(world: &mut World, x: i32, y: i32, kind: u16, frame_x: i32) -> b
     true
 }
 
+/// `WorldGen.ValidAnchorForMultiDirectionalTile` (`WorldGen.cs:60297-60312`):
+/// the four-direction anchor predicate — a non-boulder, non-door tile whose
+/// OPPOSITE face is solid under the slope-allowing reading (direction 0 =
+/// the tile ABOVE, its bottom face via `SolidTileAllowTopSlope`; 1 = below,
+/// `SolidTileAllowBottomSlope`; 2 = left, `SolidTileAllowLeftSlope`; 3 =
+/// right, `SolidTileAllowRightSlope`). The C#'s chained `&&` of negated
+/// disjunctions reduces to exactly that per-direction test.
+fn valid_anchor_for_multi_directional_tile(world: &World, x: i32, y: i32, direction: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if crate::tiledata::SET_BOULDERS.has(t.kind) || t.kind == 10 {
+        return false;
+    }
+    match direction {
+        0 => crate::edit::solid_tile_allow_top_slope(world, x, y),
+        1 => crate::edit::solid_tile_allow_bottom_slope(world, x, y),
+        2 => crate::edit::solid_tile_allow_left_slope(world, x, y),
+        3 => crate::edit::solid_tile_allow_right_slope(world, x, y),
+        _ => false,
+    }
+}
+
+/// `WorldGen.CheckAndAdjustMultiDirectionalTile` (`WorldGen.cs:60314-60366`):
+/// the four anchor captures (above → `num2`, below → `num`, left → `num3`,
+/// right → `num4`), then the priority pick below(0) → left(2) → right(3) →
+/// above(1), each requiring the captured kind to be solid and NOT solid-top.
+/// Returns the frame direction, or `None` when no anchor qualifies.
+fn check_and_adjust_multi_directional_tile(world: &World, x: i32, y: i32) -> Option<i32> {
+    if !in_world(world, x, y, 2) {
+        return None;
+    }
+    let mut below: i32 = -1;
+    let mut above: i32 = -1;
+    let mut left: i32 = -1;
+    let mut right: i32 = -1;
+    if valid_anchor_for_multi_directional_tile(world, x, y - 1, 0) {
+        above = world.tile(x, y - 1).map(|t| t.kind as i32).unwrap_or(-1);
+    }
+    if valid_anchor_for_multi_directional_tile(world, x, y + 1, 1) {
+        below = world.tile(x, y + 1).map(|t| t.kind as i32).unwrap_or(-1);
+    }
+    if valid_anchor_for_multi_directional_tile(world, x - 1, y, 2) {
+        left = world.tile(x - 1, y).map(|t| t.kind as i32).unwrap_or(-1);
+    }
+    if valid_anchor_for_multi_directional_tile(world, x + 1, y, 3) {
+        right = world.tile(x + 1, y).map(|t| t.kind as i32).unwrap_or(-1);
+    }
+    let solid_not_top = |kind: i32| {
+        kind >= 0
+            && TILE_SOLID.has(kind as u16)
+            && !TILE_SOLID_TOP.has(kind as u16)
+    };
+    if solid_not_top(below) {
+        return Some(0);
+    }
+    if solid_not_top(left) {
+        return Some(2);
+    }
+    if solid_not_top(right) {
+        return Some(3);
+    }
+    if solid_not_top(above) {
+        return Some(1);
+    }
+    None
+}
+
+/// `WorldGen.PlaceTile`'s 178 arm (`WorldGen.cs:59691-59701`): the
+/// multi-directional anchor gate, then `frameX = style * 18`,
+/// `frameY = genRand.Next(3) * 18` — the frame-row draw fires ONLY when an
+/// anchor qualified (the port's former `place_framed` write carried neither
+/// the gate nor the draw). `SquareTileFrame` rides the port's post-pipeline
+/// framing seam (the M5-STRUCT-5 idiom).
+fn place_exposed_gem(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bool {
+    if !in_world(world, x, y, 1) {
+        return false;
+    }
+    if world.tile(x, y).is_some_and(|t| t.active()) {
+        return false;
+    }
+    if check_and_adjust_multi_directional_tile(world, x, y).is_none() {
+        return false;
+    }
+    let row = rng.range(0, 3) * 18;
+    if let Some(t) = world.tile_mut(x, y) {
+        t.kind = TILE_EXPOSED_GEMS;
+        t.flags |= FLAG_ACTIVE;
+        t.frame_x = (style * 18) as i16;
+        t.frame_y = row as i16;
+    }
+    true
+}
+
 /// `Spread.Spider` (`WorldGen.cs:3682-3789`) — the BFS paints wall 62 over the
 /// region and decorates the open cells: the buried chest (1/15 of the floored
 /// cells), the pot, the stalactite on a ceiling, the large piles and the
@@ -802,6 +936,20 @@ fn neon_moss_scale(world: &World) -> f64 {
 
 /// `WorldGen.neonMossBiome` (`WorldGen.cs:9783-9876`) — the downward ellipse
 /// walk painting the neon moss over the stone it crosses.
+///
+/// W4-c29 classic-path fidelity fixes over the M5-STRUCT-5 draft:
+/// - the rock-line clamp rides `num6` (the ellipse's TOP edge, `:9843-9850`),
+///   not the bottom edge — the draft clamped `ymax`, inverting the gate;
+/// - the clamp SETS the drift to ±5.0 (`:9848`, `:9856`), the draft nudged
+///   ±2.0 — a different walker trajectory after the first clamped step;
+/// - the step budget `num2` stays a scaled double (`:9800-9807` — the
+///   `while (num2 > 0.0)` runs `ceil` iterations on a sub-4200 world), the
+///   draft truncated it before the loop;
+/// - the paint loops are EXCLUSIVE on the high edges (`k < num5`, `l < num7`,
+///   `:9860-9862`), the draft painted the inclusive rim row/column.
+/// The remix arm (`Main.remixWorld`, `:9832-9842`) clamps to the surface
+/// instead of the rock line — not ported (the seed-fidelity rows own the
+/// alternative draw schedules); a classic world never reads it.
 #[allow(clippy::too_many_arguments)]
 fn neon_moss_biome(
     world: &mut World,
@@ -820,42 +968,43 @@ fn neon_moss_biome(
         vel = (vel.0 * 1.5, vel.1 * 1.5);
     }
     let mut radius = rng.range(60, 80) as f64;
-    let mut steps = rng.range(30, 40) as i32;
+    let mut steps = rng.range(30, 40) as f64;
     // `double num3 = maxTilesX / 4200.0; if (WorldGen.getGoodWorldGen) num3 *=
     // 1.5;` (`:9801-9805`) — the for-the-worthy neon moss blob is 1.5x wider
     // and takes 1.5x as many steps (`num`/`num2` are both scaled by `num3`).
     let scale = neon_moss_scale(world);
     radius *= scale;
-    steps = (steps as f64 * scale) as i32;
+    steps *= scale;
     let rock_layer = world.rock_layer;
-    let world_surface = world.world_surface;
-    while steps > 0 {
+    while steps > 0.0 {
         radius *= 0.98;
-        steps -= 1;
+        steps -= 1.0;
         let (x0, y0) = (pos.0 - radius, pos.1 - radius);
         let (x1, y1) = (pos.0 + radius, pos.1 + radius);
         let xmin = (x0 as i32).max(1);
         let xmax = (x1 as i32).min(world.width - 1);
-        let ymin = (y0 as i32).max(1);
+        let mut ymin = (y0 as i32).max(1);
         let ymax = (y1 as i32).min(world.height - 1);
-        // The remix clamp is the port's rock/surface clamp: the C# forces the
-        // ellipse under the rock line (or the surface) and nudges the drift.
-        let mut ymax = ymax;
-        if (ymax as f64) < rock_layer {
-            ymax = rock_layer as i32;
+        // `else if ((double)num6 < Main.rockLayer)` (`:9843-9850`) — the TOP
+        // edge is forced under the rock line and the drift is SET to 5.0.
+        if (ymin as f64) < rock_layer {
+            ymin = rock_layer as i32;
             if vel.1 < 5.0 {
-                vel.1 = vel.1 + 2.0;
+                vel.1 = 5.0;
             }
         }
-        if (ymax as f64) > max_y as f64 {
+        // `if (num7 > maxY)` (`:9851-9858`) — the BOTTOM edge caps at maxY
+        // and the drift is SET to -5.0.
+        let mut ymax = ymax;
+        if ymax > max_y {
             ymax = max_y;
             if vel.1 > -5.0 {
-                vel.1 = vel.1 - 2.0;
+                vel.1 = -5.0;
             }
         }
         let r = radius * (1.0 + rng.next_f64() * 0.4 - 0.2);
-        for k in xmin..=xmax {
-            for l in ymin..=ymax {
+        for k in xmin..xmax {
+            for l in ymin..ymax {
                 if ((k as f64 - pos.0).hypot(l as f64 - pos.1)) < r * 0.8
                     && world.tile(k, l).is_some_and(|t| t.active() && t.kind == TILE_STONE)
                     && (world.tile(k - 1, l).is_none_or(|t| !t.active())
@@ -875,7 +1024,6 @@ fn neon_moss_biome(
             vel.0.clamp(-10.0, 10.0),
             vel.1.clamp(-10.0, 10.0),
         );
-        let _ = world_surface;
     }
 }
 
@@ -1039,37 +1187,47 @@ pub(crate) fn pass_moss(
     let (moss_type, neon) = rand_moss(rng);
     let neon_moss_type = NEON_MOSS[neon];
     let mut caves = 0u32;
-    // Arm A — the neon moss biomes.
-    let mut wanted = (world.width / 2100) as i32;
+    // Arm A — the neon moss biomes. W4-c29: the C#'s `num2`/`num3` ledger
+    // (`:17554-17566`) — a rejected anchor bumps `num2` (the consecutive-reject
+    // streak) and only advances `num3` (the placed count) once the streak
+    // passes `maxTilesX`; an accepted anchor RESETS `num2` and advances `num3`
+    // at once. The draft advanced the placed count on every attempt, so a
+    // reject-heavy world silently placed fewer biomes than the C#.
+    let wanted = (world.width / 2100) as i32;
+    let mut reject_streak = 0i32;
     let mut placed_count = 0i32;
     while placed_count < wanted {
-        let mut x = neon_moss_x(rng, world.width, world.seeds);
+        let x = neon_moss_x(rng, world.width, world.seeds);
         let y = rng.range(rock_layer as i32 + 40, lava_line as i32 - 40);
-        // The exclusion scan (`:17508-17573`).
+        // The exclusion scan (`:17518-17553`) — the classic arm's set
+        // (`:17545`): 70/60/367/368/161/147/396/397 plus `Main.tileDungeon`
+        // (the dungeon bricks, `Main.cs:7992-7997` — the draft omitted them).
         let mut rejected = false;
-        for i in (x - 50)..=(x + 50) {
+        'scan: for i in (x - 50)..=(x + 50) {
             for j in (y - 50)..=(y + 50) {
-                if world.tile(i, j).is_some_and(|t| t.active())
-                    && matches!(
-                        world.tile(i, j).map(|t| t.kind).unwrap_or(0),
-                        70 | 60 | TILE_MARBLE | TILE_GRANITE | TILE_ICE | TILE_SNOW | 396 | 397
-                    )
-                {
-                    rejected = true;
-                    break;
+                if let Some(t) = world.tile(i, j) {
+                    if t.active()
+                        && (matches!(
+                            t.kind,
+                            70 | 60 | TILE_MARBLE | TILE_GRANITE | TILE_ICE | TILE_SNOW | 396 | 397
+                        ) || TILE_DUNGEON.contains(&t.kind))
+                    {
+                        rejected = true;
+                        break 'scan;
+                    }
                 }
-            }
-            if rejected {
-                break;
             }
         }
         if rejected {
-            placed_count += 1;
+            reject_streak += 1;
+            if reject_streak > world.width {
+                placed_count += 1;
+            }
         } else {
-            neon_moss_biome(world, rng, x, y, lava_line as i32, neon_moss_type);
+            reject_streak = 0;
             placed_count += 1;
+            neon_moss_biome(world, rng, x, y, lava_line as i32, neon_moss_type);
         }
-        let _ = &mut x;
     }
     // Arm B — the moss caves.
     let attempts = (world.width as f64 * 0.01) as i32;
@@ -1175,22 +1333,23 @@ pub(crate) fn pass_moss(
         }
         budget -= 0.001;
     }
-    // Arm F — the closing spread sweep (`:17659-17698`).
-    let moss_tiles: Vec<(i32, i32)> = world
-        .tiles
-        .iter()
-        .enumerate()
-        .filter(|(_, t)| t.active() && (MOSS_TILES.contains(&t.kind) || NEON_MOSS.contains(&t.kind) || t.kind == 381))
-        .map(|(idx, _)| {
-            let x = (idx as i32) % world.width;
-            let y = (idx as i32) / world.width;
-            (x, y)
-        })
-        .collect();
-    for (x, y) in moss_tiles {
-        let kind = world.tile(x, y).map(|t| t.kind).unwrap_or(0);
-        for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-            spread_grass(world, x + dx, y + dy, TILE_STONE, kind);
+    // Arm F — the closing spread sweep (`:17659-17698`). W4-c29: the C# walks
+    // the map LIVE, column-major (`num20` = x outer, `num21` = y inner), and
+    // reads `Main.tileMoss` — the generated `TILE_MOSS` set carries the
+    // rainbow moss 627 (`Main.cs:7031`) beside the five + neon + lava moss.
+    // The draft snapshotted a ROW-major list without 627: a different visit
+    // order (the sweep's conversions feed later cells) and a missed family.
+    for x in 0..world.width {
+        for y in 0..world.height {
+            let kind = world.tile(x, y).map(|t| (t.active(), t.kind));
+            let Some((active, kind)) = kind else {
+                continue;
+            };
+            if active && crate::tiledata::TILE_MOSS.has(kind) {
+                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    spread_grass(world, x + dx, y + dy, TILE_STONE, kind);
+                }
+            }
         }
     }
     caves
@@ -1246,6 +1405,168 @@ pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surfa
 /// The dirt/stone ids the scatter arms read (kept for the const block to stay
 /// a real dependency — the arms compare against `TILE_STONE` directly).
 const _: (u16, u16, u16, u16) = (TILE_DIRT, TILE_STONE, TILE_SAND, WALL_SANDSTONE);
+
+/// `Main.wallDungeon` (`Main.cs:10598-10606`): the nine dungeon wall ids.
+const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
+
+/// `ExposedGemsUnderground` (`WorldGen.cs:20729-20768`): two `maxTilesX`
+/// loops. The first scatters single gems (178) on the free underground
+/// cells (the rock-layer band, no lava, no dungeon/planked wall) with the
+/// weighted `Next(12)` style; the second fills gem patches (style 6, the
+/// diamond) on the free cells beside the marble/granite walls (216/187) in
+/// the `Next(1,4)`-half-sized rectangles.
+pub(crate) fn pass_random_gems(
+    world: &mut World,
+    rng: &mut Rng,
+    world_surface: f64,
+    rock_layer: f64,
+) {
+    // The sub-vanilla guard: both y bands must be non-empty (the C# throws
+    // on `Next(rockLayer, height-300)` collapsing; the port skips the loops
+    // before any draw — the wave B convention).
+    let y_hi = world.height - 300;
+    if world.width <= 40 || y_hi <= rock_layer as i32 || y_hi <= world_surface as i32 {
+        return;
+    }
+    // `:20734-20744` — the single-gem scatter.
+    for _ in 0..world.width {
+        let x = rng.range(20, world.width - 20);
+        let y = rng.range(rock_layer as i32, y_hi);
+        let Some(t) = world.tile(x, y) else {
+            continue;
+        };
+        let any_lava = t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava;
+        if !t.active() && !any_lava && !WALL_DUNGEON.contains(&t.wall) && t.wall != 27 {
+            // `:20740-20742` — the weighted style (`Next(12)`: <3 → 0,
+            // <6 → 1, <8 → 2, <10 → 3, ≥11 → 5, else 4).
+            let roll = rng.range(0, 12);
+            let style = if roll < 3 {
+                0
+            } else if roll < 6 {
+                1
+            } else if roll < 8 {
+                2
+            } else if roll < 10 {
+                3
+            } else if roll >= 11 {
+                5
+            } else {
+                4
+            };
+            // batch-O keep-one: the c29-fidelity `place_exposed_gem` (the
+            // :59691-59701 arm above — the anchor gate + the Next(3) row,
+            // rng-first signature) serves BOTH callers; the d105 local copy
+            // retired (its square_tile_frame_gen rides the post-pipeline
+            // framing seam, the M5-STRUCT-5 idiom the c29 form documents).
+            place_exposed_gem(world, rng, x, y, style);
+        }
+    }
+    // `:20745-20766` — the marble/granite gem patches.
+    for _ in 0..world.width {
+        let x = rng.range(20, world.width - 20);
+        let y = rng.range(world_surface as i32, y_hi);
+        let Some(t) = world.tile(x, y) else {
+            continue;
+        };
+        let any_lava = t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava;
+        if !t.active() && !any_lava && (t.wall == 216 || t.wall == 187) {
+            let left = rng.range(1, 4);
+            let right = rng.range(1, 4);
+            let up = rng.range(1, 4);
+            let down = rng.range(1, 4);
+            for k in x - left..x + right {
+                for l in y - up..y + down {
+                    if world.tile(k, l).is_some_and(|t| !t.active()) {
+                        place_exposed_gem(world, rng, k, l, 6);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// batch-O keep-one (c29 × d105): the d105 local `place_exposed_gem` (x/y-first
+// signature) + its `check_and_adjust_multi_directional`/`valid_anchor`/three
+// slope-helper copies RETIRED — the c29-fidelity forms above serve both
+// callers (`spread_gem` :403 + `pass_random_gems`), the anchor predicates ride
+// the canonical `crate::edit::solid_tile_allow_*_slope` seams (kill.rs), and
+// `SquareTileFrame` rides the post-pipeline framing seam (the M5-STRUCT-5
+// idiom; the d105 immediate `square_tile_frame_gen` call retired with the dup
+// — the C# :59700 call is covered by the pipeline's final framing pass).
+
+/// `LongMoss` (`WorldGen.cs:20769-20812`): the full-world sweep — every
+/// active moss tile (`Main.tileMoss`) grows the long moss (184) on each of
+/// its four free neighbours via `PlaceTile(184)`. The sweep draws no RNG
+/// of its own beyond the `PlaceTile`-184 arm's `Next(3)` frame variants.
+pub(crate) fn pass_moss_grass(world: &mut World, rng: &mut Rng) {
+    let last_x = world.width - 5;
+    for i in 5..last_x {
+        for j in 5..world.height - 5 {
+            // `:20781` — the active moss gate.
+            if !world
+                .tile(i, j)
+                .is_some_and(|t| t.active() && crate::tiledata::TILE_MOSS.has(t.kind))
+            {
+                continue;
+            }
+            // `:20783-20806` — the four neighbours (left, right, up, down).
+            for k in 0..4 {
+                let (nx, ny) = match k {
+                    0 => (i - 1, j),
+                    1 => (i + 1, j),
+                    2 => (i, j - 1),
+                    _ => (i, j + 1),
+                };
+                if world.tile(nx, ny).is_some_and(|t| !t.active()) {
+                    place_long_moss(world, nx, ny, rng);
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlaceTile`'s long-moss arm (`WorldGen.cs:59703-59720`, type
+/// 184): two independent gates — a solid `tileMoss` neighbour, then a solid
+/// `tileMossBrick` neighbour — each writing active 184 with `frameX
+/// style*18` (the pass passes style 0) and a fresh `frameY Next(3)*18`.
+/// Both gates can fire on one cell (two draws); the liquid gate
+/// (`:59454-59471` — 184 is NOT in the refusal list) passes every liquid
+/// cell.
+fn place_long_moss(world: &mut World, x: i32, y: i32, rng: &mut Rng) {
+    // The four neighbour reads (the type test reads inactive cells too —
+    // the C# tests `.type` with no active gate; `SolidTile` gates it).
+    let neighbours = [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)];
+    let moss_side = neighbours.iter().any(|&(nx, ny)| {
+        world.tile(nx, ny).is_some_and(|t| crate::tiledata::TILE_MOSS.has(t.kind))
+            && solid_tile(world, nx, ny)
+    });
+    if moss_side {
+        let frame_y = rng.range(0, 3) * 18;
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 184;
+            t.frame_x = 0;
+            t.frame_y = frame_y as i16;
+        }
+        crate::edit::square_tile_frame_gen(world, x, y);
+    }
+    let brick_side = neighbours.iter().any(|&(nx, ny)| {
+        world
+            .tile(nx, ny)
+            .is_some_and(|t| crate::tiledata::SET_CONVERSION_MOSS_BRICK.has(t.kind))
+            && solid_tile(world, nx, ny)
+    });
+    if brick_side {
+        let frame_y = rng.range(0, 3) * 18;
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 184;
+            t.frame_x = 0;
+            t.frame_y = frame_y as i16;
+        }
+        crate::edit::square_tile_frame_gen(world, x, y);
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1412,11 +1733,24 @@ mod tests {
             .filter(|t| (WALL_GEM_BASE..WALL_GEM_BASE + 6).contains(&t.wall))
             .count();
         assert!(gem_walls >= (size * size) as usize, "the gem walls ({gem_walls})");
-        // `Spread.Gem` exposes half the open cells (`Next(2) == 0`).
-        let exposed = w.tiles.iter().filter(|t| t.kind == TILE_EXPOSED_GEMS).count();
+        // W4-c29: the exposed gems ride `PlaceTile`'s 178 arm — the
+        // multi-directional anchor gate means only the pocket's rim-adjacent
+        // open cells qualify (the deep interior has no solid neighbour), and
+        // each placement draws the `Next(3)*18` frame row.
+        let exposed: Vec<_> = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_EXPOSED_GEMS)
+            .collect();
         let cells = (size * size) as usize;
-        assert!(exposed > cells / 4, "the exposed gems are the Next(2) arm ({exposed})");
-        assert!(exposed <= cells, "never more than the pocket ({exposed})");
+        assert!(!exposed.is_empty(), "the rim-adjacent cells expose gems");
+        assert!(exposed.len() <= cells, "never more than the pocket ({})", exposed.len());
+        for t in &exposed {
+            assert!(t.frame_x % 18 == 0 && (0..6).contains(&(t.frame_x / 18)),
+                "the gem style column {}", t.frame_x);
+            assert!(matches!(t.frame_y, 0 | 18 | 36),
+                "the Next(3) frame row {}", t.frame_y);
+        }
     }
 
     #[test]
@@ -1692,5 +2026,304 @@ mod tests {
             big > base,
             "the worthy blob covered no more stone ({big} vs {base})"
         );
+    }
+
+    // --- W4-c29: the gem-moss fidelity witnesses (written NOT run) ----------
+
+    /// W4-c29: `Spread.Gem`'s duplicate-visit redraw (`WorldGen.cs:3617`) —
+    /// the C#'s `hashSet.Add` ignores its return, so a cell two open
+    /// neighbours enqueue in one wave is processed twice and the second
+    /// visit's solid branch re-draws the `randGemTile` conversions. The a==b
+    /// replay pins the tile field AND the stream state; the exposed gems
+    /// land only on rim-adjacent cells (the 178 anchor gate), never in the
+    /// deep interior the former ungated write filled.
+    #[test]
+    fn w4_c29_spread_gem_duplicate_visits_redraw_deterministically() {
+        let build = |seed: u64| {
+            let mut w = flat_world(600, 300, 40);
+            carve_pocket(&mut w, 290, 110, 30, 30);
+            let mut rng = Rng(seed);
+            let gem = [true, false, true, false, false, false];
+            spread_gem(&mut w, &mut rng, 305, 125, &gem);
+            (w, rng.0)
+        };
+        let (wa, state_a) = build(0x6E6);
+        let (wb, state_b) = build(0x6E6);
+        assert_eq!(wa.tiles, wb.tiles, "the tile field replays");
+        assert_eq!(state_a, state_b, "the stream state replays");
+        // Every exposed gem sits next to a solid cell (the anchor gate); the
+        // deep interior (305, 125) carries none.
+        assert!(wa.tile(305, 125).is_some_and(|t| t.kind != TILE_EXPOSED_GEMS),
+            "the deep interior exposes no gem");
+        for y in 111..139 {
+            for x in 291..319 {
+                if wa.tile(x, y).is_some_and(|t| t.active() && t.kind == TILE_EXPOSED_GEMS) {
+                    let anchored = [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|&(dx, dy)| {
+                        wa.tile(x + dx, y + dy)
+                            .is_some_and(|t| t.active() && TILE_SOLID.has(t.kind))
+                    });
+                    assert!(anchored, "the gem at ({x},{y}) has no solid anchor");
+                }
+            }
+        }
+    }
+
+    /// W4-c29: the 178 `PlaceTile` arm (`WorldGen.cs:59691-59701`) — the
+    /// multi-directional anchor gate refuses a deep-interior cell (no solid
+    /// neighbour) and accepts a rim-adjacent one; the accepted write draws
+    /// the `Next(3)*18` frame row. The gate's priority pick is below(0) →
+    /// left(2) → right(3) → above(1) (`:60345-60364`).
+    #[test]
+    fn w4_c29_the_exposed_gem_anchor_gate_and_frame_row() {
+        let mut w = flat_world(600, 300, 40);
+        carve_pocket(&mut w, 290, 110, 30, 30);
+        // Deep interior: no solid neighbour within the four faces.
+        let mut rng = Rng(7);
+        let before = rng.0;
+        assert!(!place_exposed_gem(&mut w, &mut rng, 305, 125, 2),
+            "the deep interior has no anchor");
+        assert_eq!(rng.0, before, "the refused gate draws nothing");
+        // Rim-adjacent: the cell just inside the pocket's floor has the
+        // solid floor below (direction 1 → frame direction 0).
+        assert!(place_exposed_gem(&mut w, &mut rng, 305, 139, 2),
+            "the floor-adjacent cell anchors");
+        let t = w.tile(305, 139).unwrap();
+        assert_eq!(t.kind, TILE_EXPOSED_GEMS);
+        assert_eq!(t.frame_x, 36, "style 2 → frameX 36");
+        assert!(matches!(t.frame_y, 0 | 18 | 36), "the Next(3) row {}", t.frame_y);
+        assert_ne!(rng.0, before, "the accepted write drew the frame row");
+        // The anchor priority: a cell with BOTH a floor below and a ceiling
+        // above takes the below anchor (frame direction 0) — the gate's
+        // first pick. A one-tall corridor cell qualifies on both faces.
+        let mut c = flat_world(600, 300, 40);
+        carve_pocket(&mut c, 290, 125, 30, 1);
+        assert_eq!(
+            check_and_adjust_multi_directional_tile(&c, 305, 125),
+            Some(0),
+            "the below anchor wins the priority pick"
+        );
+        // A boulder neighbour is not an anchor (`Sets.Boulders`, `:60299`).
+        let mut b = flat_world(600, 300, 40);
+        carve_pocket(&mut b, 290, 125, 30, 1);
+        let seat = b.index(305, 126);
+        b.tiles[seat].kind = 138; // the boulder
+        assert_eq!(
+            check_and_adjust_multi_directional_tile(&b, 305, 125),
+            Some(1),
+            "the boulder floor is refused, the ceiling above anchors"
+        );
+    }
+
+    /// W4-c29: `neonMossBiome`'s classic clamps (`WorldGen.cs:9843-9858`) —
+    /// the rock-line clamp rides the ellipse's TOP edge and SETS the drift
+    /// to +5.0; the maxY clamp rides the BOTTOM edge and SETS -5.0. A blob
+    /// anchored above the rock line is pushed DOWN (the top-edge clamp), so
+    /// it paints stone below the rock line, never above it.
+    #[test]
+    fn w4_c29_the_neon_moss_blob_stays_under_the_rock_line() {
+        let mut w = flat_world(2000, 600, 60);
+        // The rock line sits at row 300 (flat_world: surface 60, half the
+        // remaining height); anchor the blob well ABOVE it.
+        let rock = w.rock_layer as i32;
+        carve_pocket(&mut w, 900, rock - 80, 220, 200);
+        neon_moss_biome(&mut w, &mut Rng(0x4E0A), 1000, rock - 60, 520, NEON_MOSS[0]);
+        let painted_above = (0..rock).any(|y| {
+            (0..w.width).any(|x| {
+                w.tile(x, y).is_some_and(|t| t.active() && t.kind == NEON_MOSS[0])
+            })
+        });
+        assert!(!painted_above, "no neon moss above the rock line");
+        let painted_below = (rock..w.height).any(|y| {
+            (0..w.width).any(|x| {
+                w.tile(x, y).is_some_and(|t| t.active() && t.kind == NEON_MOSS[0])
+            })
+        });
+        assert!(painted_below, "the blob painted under the rock line");
+    }
+
+    /// W4-c29: the moss pass's arm A reject ledger (`WorldGen.cs:17554-
+    /// 17566`) — a rejected anchor bumps the consecutive-reject streak and
+    /// only advances the placed count once the streak passes `maxTilesX`;
+    /// an accepted anchor resets the streak. On a pocket-free flat world
+    /// every anchor is accepted (no exclusion kind in the scan box), so the
+    /// pass places exactly `maxTilesX / 2100` biomes and the a==b replay
+    /// holds. The dungeon-brick exclusion (`Main.tileDungeon`) rejects an
+    /// anchor whose scan box carries a brick.
+    #[test]
+    fn w4_c29_the_moss_arm_a_ledger_and_dungeon_exclusion() {
+        // The exclusion scan rejects a dungeon brick in the 101x101 box.
+        let mut w = flat_world(2000, 600, 60);
+        let rock = w.rock_layer as i32;
+        let lava = 520i32;
+        // Plant a blue dungeon brick at the centre of the only anchor band.
+        let (ax, ay) = (1000, (rock + 40 + lava - 40) / 2);
+        let idx = w.index(ax, ay);
+        w.tiles[idx].kind = 41;
+        w.tiles[idx].flags |= FLAG_ACTIVE;
+        // The scan box around (ax, ay) carries the brick → rejected.
+        let rejected = ((ax - 50)..=(ax + 50)).any(|i| {
+            ((ay - 50)..=(ay + 50)).any(|j| {
+                w.tile(i, j).is_some_and(|t| {
+                    t.active() && TILE_DUNGEON.contains(&t.kind)
+                })
+            })
+        });
+        assert!(rejected, "the dungeon brick rejects the anchor");
+        // The a==b replay of the whole moss pass on a classic world.
+        let build = |seed: u64| {
+            let mut w = flat_world(600, 700, 40);
+            carve_pocket(&mut w, 300, 520, 28, 28);
+            let mut rng = Rng(seed);
+            let rock = w.rock_layer;
+            pass_moss(&mut w, &mut rng, rock, 420.0, 530.0, 480);
+            (w.tiles.clone(), rng.0)
+        };
+        let (ta, sa) = build(11);
+        let (tb, sb) = build(11);
+        assert_eq!(ta, tb, "the moss pass tile field replays");
+        assert_eq!(sa, sb, "the moss pass stream state replays");
+    }
+
+    /// W4-c29: arm F walks the map LIVE column-major over `Main.tileMoss`
+    /// (`WorldGen.cs:17659-17698`, the set carries 627 `Main.cs:7031`) — a
+    /// rainbow-moss 627 tile spreads onto its stone neighbours exactly like
+    /// the five classic mosses. The fixture gives the target's 3x3 box one
+    /// air cell (the `spread_grass` enclosure gate refuses a fully-solid
+    /// box, `:75186-75201`).
+    #[test]
+    fn w4_c29_the_moss_arm_f_sweeps_the_rainbow_moss_live() {
+        let mut w = flat_world(600, 300, 40);
+        // The rainbow-moss seed in the stone field.
+        let idx = w.index(300, 150);
+        w.tiles[idx].kind = 627;
+        w.tiles[idx].flags |= FLAG_ACTIVE;
+        // One air cell inside the left neighbour's 3x3 box.
+        let air = w.index(298, 149);
+        w.tiles[air].flags &= !FLAG_ACTIVE;
+        // Arm F's sweep: the live column-major walk over the moss set.
+        for x in 0..w.width {
+            for y in 0..w.height {
+                let k = w.tile(x, y).map(|t| (t.active(), t.kind));
+                if let Some((true, kind)) = k {
+                    if crate::tiledata::TILE_MOSS.has(kind) {
+                        for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                            spread_grass(&mut w, x + dx, y + dy, TILE_STONE, kind);
+                        }
+                    }
+                }
+            }
+        }
+        assert!(w.tile(299, 150).is_some_and(|t| t.active() && t.kind == 627),
+            "the rainbow moss spread onto the stone neighbour");
+        assert_eq!(w.tile(300, 150).unwrap().kind, 627, "the seed survives");
+    }
+
+    /// `place_exposed_gem` (`WorldGen.cs:59691-59701`): a free cell with a
+    /// solid floor below takes the gem — frameX style*18, frameY a
+    /// Next(3)*18 variant. (d105 witness re-pinned to the c29-fidelity
+    /// rng-first signature at the batch-O keep-one.)
+    #[test]
+    fn place_exposed_gem_writes_the_style_and_variant() {
+        let mut w = flat_world(200, 600, 60);
+        // A free cell at (100, 200) with the stone floor at (100, 201).
+        carve_pocket(&mut w, 100, 200, 1, 1);
+        let mut rng = Rng(0x1234);
+        place_exposed_gem(&mut w, &mut rng, 100, 200, 3);
+        let t = w.tile(100, 200).unwrap();
+        assert!(t.active() && t.kind == TILE_EXPOSED_GEMS);
+        assert_eq!(t.frame_x, 3 * 18);
+        assert!(t.frame_y == 0 || t.frame_y == 18 || t.frame_y == 36);
+    }
+
+    /// The multi-directional anchor (`:60314-60366`): a free cell with no
+    /// solid neighbour refuses (no write, no frame_y draw).
+    #[test]
+    fn place_exposed_gem_refuses_without_an_anchor() {
+        let mut w = flat_world(200, 600, 60);
+        // A 3x3 air pocket — the centre cell has no solid neighbour.
+        carve_pocket(&mut w, 99, 199, 3, 3);
+        let mut rng = Rng(0x1234);
+        let mut replay = Rng(0x1234);
+        place_exposed_gem(&mut w, &mut rng, 100, 200, 0);
+        assert!(!w.tile(100, 200).unwrap().active());
+        assert_eq!(rng.next_u32(), replay.next_u32(), "no draw on refusal");
+    }
+
+    /// The full pass (`:20729-20768`): the scatter plants gems on the free
+    /// underground cells; the weighted styles spread across the bands.
+    #[test]
+    fn the_random_gems_pass_scatters_the_gems() {
+        let mut w = flat_world(2000, 600, 60);
+        // Carve a large cavern so the scatter has free cells with anchors.
+        carve_pocket(&mut w, 400, 250, 1200, 200);
+        let mut rng = Rng(0x77);
+        pass_random_gems(&mut w, &mut rng, 60.0, 200.0);
+        let gems = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_EXPOSED_GEMS)
+            .count();
+        assert!(gems > 0, "the gems scattered ({gems})");
+        // Every gem frame is a style multiple of 18 with a Next(3) variant.
+        for t in w.tiles.iter().filter(|t| t.active() && t.kind == TILE_EXPOSED_GEMS) {
+            assert_eq!(t.frame_x % 18, 0);
+            assert!(t.frame_y == 0 || t.frame_y == 18 || t.frame_y == 36);
+        }
+    }
+
+    /// `place_long_moss` (`WorldGen.cs:59703-59720`): a free cell beside a
+    /// solid moss tile takes the long moss (184), frameX 0, frameY a
+    /// Next(3)*18 variant.
+    #[test]
+    fn place_long_moss_grows_beside_the_moss() {
+        let mut w = flat_world(200, 600, 60);
+        // A moss tile at (100, 200), a free cell at (101, 200).
+        let i = w.index(100, 200);
+        w.tiles[i].kind = MOSS_TILES[0];
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        carve_pocket(&mut w, 101, 200, 1, 1);
+        let mut rng = Rng(0x42);
+        place_long_moss(&mut w, 101, 200, &mut rng);
+        let t = w.tile(101, 200).unwrap();
+        assert!(t.active() && t.kind == 184);
+        assert_eq!(t.frame_x, 0);
+        assert!(t.frame_y == 0 || t.frame_y == 18 || t.frame_y == 36);
+    }
+
+    /// The no-moss refusal: a free cell with only stone neighbours stays
+    /// empty (no write, no draw).
+    #[test]
+    fn place_long_moss_refuses_without_moss() {
+        let mut w = flat_world(200, 600, 60);
+        carve_pocket(&mut w, 100, 200, 1, 1);
+        let mut rng = Rng(0x42);
+        let mut replay = Rng(0x42);
+        place_long_moss(&mut w, 100, 200, &mut rng);
+        assert!(!w.tile(100, 200).unwrap().active());
+        assert_eq!(rng.next_u32(), replay.next_u32(), "no draw on refusal");
+    }
+
+    /// The full pass (`:20769-20812`): the long moss grows on the free
+    /// neighbours of the moss tiles.
+    #[test]
+    fn the_moss_grass_pass_grows_the_long_moss() {
+        let mut w = flat_world(400, 600, 60);
+        // A moss patch with air around it.
+        carve_pocket(&mut w, 100, 200, 60, 40);
+        for x in 110..150 {
+            for y in 210..230 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = MOSS_TILES[(x + y) as usize % 5];
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut rng = Rng(0x99);
+        pass_moss_grass(&mut w, &mut rng);
+        let long_moss = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 184)
+            .count();
+        assert!(long_moss > 0, "the long moss grew ({long_moss})");
     }
 }

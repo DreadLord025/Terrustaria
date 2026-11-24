@@ -1210,8 +1210,12 @@ pub struct Player {
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
-    /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
-    /// is unported, so the flag stays false in play.
+    /// (`Recipe.cs:353-356`). PERMANENT — set once by the 5043 use
+    /// (`ItemCheck_UseTorchGodsFavor`, `Player.cs:45228-45231`, W4-f33:
+    /// `torch_god_favor_use::torch_gods_favor_item_check`; a6's claim died,
+    /// the use arm landed here). Persisted in the `.plr` (`:54777`/`:55241`)
+    /// and the `.trplayer` v7 line. The builder toggle half rides
+    /// `builder_acc_status[11]` — read through [`Self::using_biome_torches`].
     pub unlocked_biome_torches: bool,
     /// `Player.hbLocked` (`Player.cs:1436`): the hotbar-lock toggle. The
     /// `DrawHotbarLockIcon` click flips it (`Main.cs:42507`, sound 22 at
@@ -1219,6 +1223,18 @@ pub struct Player {
     /// (`GUIHotbarDrawInner`, `Main.cs:43616`/`:43620`) — a locked hotbar
     /// refuses the pointer selection. W4-g21 batch 5, host 71.
     pub hb_locked: bool,
+    /// The Torch God event state (`Player.cs:3066-3080`, W4-f33) — the
+    /// `happyFunTorchTime` machine; see `torch_god.rs`.
+    pub torch_god: crate::torch_god::TorchGodState,
+    /// The tick's deferred Torch God writes (the `pending_*` convention):
+    /// the decision + RNG run inside `update_luck`, the world_sim drain
+    /// applies the tile snuff/relight, the 949 spawn and the favor drop.
+    pub pending_torch_god: crate::torch_god::TorchGodPending,
+    /// The trigger's inventory scan (`Player.cs:18069-18076`): any of the
+    /// 59 inventory slots holds the favor (5043). Fed per tick by
+    /// `world_sim::update_player` beside `held_torch_style` (the player
+    /// tick does not see the App's inventory arrays).
+    pub has_torch_gods_favor: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -1566,6 +1582,13 @@ pub struct Player {
     /// (`:35137-35140`, `Item.cs:49963`) and `GrabItems` pulls stars at
     /// speed 12 / acc 5 (`:34943-34946`).
     pub mana_magnet: bool,
+    /// `Player.treasureMagnet` (`Player.cs:936`): the Treasure Magnet 5010
+    /// (`:14551-14553`) and the Hand Of Creation 5126 (`:15286-15294`) arm it
+    /// per tick; `ResetEffects` clears it (`:18493`). The consumer is
+    /// `GetItemGrabRange`'s `Item.treasureGrabRange = 150` add (`:35149-35152`,
+    /// `Item.cs:49965`) — W4-g15 doc-sweep lane 5 (the flag existed on
+    /// `GrabFlags` but no equipment grant ever set it).
+    pub treasure_magnet: bool,
     /// `Player.lifeMagnet` (`Player.cs:934`): the Heartreach Potion's buff 105
     /// arms it (`UpdateBuffs` `:10138-10141`); `ResetEffects` clears it
     /// (`:18492`). `GetItemGrabRange` adds `Item.lifeGrabRange = 250` for the
@@ -2287,6 +2310,32 @@ pub struct Player {
     /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
     /// +1 ammo damage on arrows (`:53548`).
     pub acc_sharp_barb: bool,
+    // ---- W4-f20 F7: the Harpy-charm accessory family (the ai[2]-bits
+    // producer, census research/26f F7). The `Update_HarpyCharm` tick
+    // (`Player.cs:24565` → `:28436-28490`) scans the owner's uncharmed
+    // aiStyle-1 arrows 400..1200 px out, picks the nearest with a
+    // 1600-px line-of-sight target and calls `ApplyHarpyCharm`
+    // (`Projectile.cs:57796-57824`); the AI_001 tail (`:57769-57793`)
+    // then steers the charmed arrow at π/sub-step until the target is
+    // lost (the Consumed bit). The flags clear in `ResetEffects`
+    // (`:18471-18472`, `:18609`) and re-arm from the worn accessory
+    // (`ApplyEquipFunctional` `:14490-14493`/`:14588-14598`); the
+    // cooldown PERSISTS across ticks (ResetEffects does not clear it).
+    /// `Player.accHarpyCharm` (`Player.cs:1234`): 6166 Harpy Charm
+    /// (`:14492`), 6180 Seraph Necklace (`:14589`), 6181 Phoenix Quiver
+    /// (`:14594`).
+    pub acc_harpy_charm: bool,
+    /// `Player.accSeraphNecklace` (`Player.cs:1238`): 6180 (`:14591`) —
+    /// the charm cooldown drops 90 → 72 (`:28458-28461`).
+    pub acc_seraph_necklace: bool,
+    /// `Player.hasPhoenixQuiver` (`Player.cs:1976`): 6181 (`:14595`) —
+    /// the charm's itemID picks 6181 (the PhoenixQuivered bit, the
+    /// `:54005-54011` dust gate's producer).
+    pub has_phoenix_quiver: bool,
+    /// `Player.accHarpyCharmCooldown` (`Player.cs:1236`): the 90-tick
+    /// (Seraph 72) re-charm cooldown (`:28488`), decremented by
+    /// `Update_HarpyCharm` (`:28438-28441`). NOT cleared by ResetEffects.
+    pub acc_harpy_charm_cooldown: i32,
     // S1-P-i35 — the fishing family (`Player.cs:1088-1102` region).
     /// `Player.fishingSkill` (`Player.cs:1092`): the +15 Fishing potion
     /// (buff 121, `UpdateBuffs` `:10146-10149`), the Angler armor pieces
@@ -2908,6 +2957,9 @@ impl Player {
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
             hb_locked: false,
+            torch_god: crate::torch_god::TorchGodState::default(),
+            pending_torch_god: crate::torch_god::TorchGodPending::default(),
+            has_torch_gods_favor: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
@@ -2962,6 +3014,7 @@ impl Player {
             gold_ring: false,
             has_lucky_coin: false,
             mana_magnet: false,
+            treasure_magnet: false,
             life_magnet: false,
             latest_mana_potion_damage_bonus: 0.0,
             latest_mana_potion_duration: 0.0,
@@ -3157,6 +3210,10 @@ impl Player {
             used_gummy_worm: false,
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
+            acc_harpy_charm: false,
+            acc_seraph_necklace: false,
+            has_phoenix_quiver: false,
+            acc_harpy_charm_cooldown: 0,
             ballista_panic: false,
             set_squire_t2: false,
             set_squire_t3: false,
@@ -4042,6 +4099,13 @@ impl Player {
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
         self.deaths_pve = self.deaths_pve.saturating_add(1);
+        // `Player.KillMe`'s Torch God abort (`Player.cs:38855-38858`,
+        // W4-f33): dying ends the event — the relight + cooldown arm here
+        // (the C# order: after the counters, before the coin loss), the
+        // tile loop defers to the world_sim drain.
+        if crate::torch_god::end_ongoing_torch_god_event(&mut self.torch_god) {
+            self.pending_torch_god.relight = true;
+        }
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
@@ -5681,7 +5745,18 @@ impl Player {
             // reaches, one grant path. The Architect's Gizmo Pack (5126)
             // carries the same `chiselSpeed` (`:15293`) plus the range
             // flag the reach scan reads (`craft.rs`).
-            4056 | 5126 => self.pick_speed_bonus += 0.25,
+            4056 => self.pick_speed_bonus += 0.25,
+            // W4-g15 lane 5 — the Treasure Magnet 5010 (`Player.cs:14551-
+            // 14553`): the bare `treasureMagnet` flag, the +150 grab-range
+            // add (`GetItemGrabRange` `:35149-35152`).
+            5010 => self.treasure_magnet = true,
+            // The Hand Of Creation 5126: the chisel row above PLUS the
+            // `treasureMagnet` row (`:15292`) — ONE arm (a second 5126 arm
+            // below would be unreachable, the i52 keep-one convention).
+            5126 => {
+                self.pick_speed_bonus += 0.25;
+                self.treasure_magnet = true;
+            }
             // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
             // (`Player.cs:14651-14683`), in the C#'s order: the High Test
             // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
@@ -6083,6 +6158,26 @@ impl Player {
             // (the `brain_of_confusion` convention).
             // Star Cloak 532 (`:15583-15586`).
             532 => self.star_cloak = true,
+            // W4-f20 F7 — the Harpy-charm family (`Player.cs:14490-14493`,
+            // `:14588-14598`): 6166 Harpy Charm (+5 ranged crit), 6180
+            // Seraph Necklace (charm + longInvince + seraph), 6181 Phoenix
+            // Quiver (charm + phoenix + the molten/magic quiver halves —
+            // the quiver flags ride the `grant_ammo_mastery` seam, the
+            // M3-ITEM-6 keep-one; this arm adds the charm-family flags and
+            // the +0.1 additive stack is ALSO there — no double-add).
+            6166 => {
+                self.ranged_crit += 5;
+                self.acc_harpy_charm = true;
+            }
+            6180 => {
+                self.acc_harpy_charm = true;
+                self.long_invince = true;
+                self.acc_seraph_necklace = true;
+            }
+            6181 => {
+                self.acc_harpy_charm = true;
+                self.has_phoenix_quiver = true;
+            }
             // Star Veil 862 (`:15144-15149`): the cloak + `longInvince` +
             // the starVeil override (star type 725).
             862 => {
@@ -6485,6 +6580,21 @@ impl Player {
         let now_honey = liquid == Some(tr_core::tile::LiquidKind::Honey);
         let now_shimmer = liquid == Some(tr_core::tile::LiquidKind::Shimmer);
         let now_any_wet = now_wet || now_lava || now_honey || now_shimmer;
+        // W4-f34 — `Player.cs:27744-27748`: honey contact refreshes the
+        // Honey buff every tick (`AddBuff(48, 1800)` — 30 s, the refresh-
+        // not-stack path `:5402-5426`); the `!this.shimmering` guard is
+        // vacuous in the port (no absorbed state, S1-E-16 — the same
+        // deviation the splash block records at `:27777`). The C# runs the
+        // grant between the shimmer arm and the splash edges; the port
+        // folds it ahead of the splash block — observation-identical:
+        // `AddBuff` draws no RNG, the splash reads only the wet flags, and
+        // the buff's effect rows (`update_survival`, later in this tick)
+        // see the fresh grant either way. The effect rows: the drain
+        // mitigation (`:19096-19103`, `derive_dot_inputs`) and the +2 regen
+        // / +2 ramp-time adds (`:19134-19138`, `update_survival`).
+        if now_honey {
+            self.buffs.add_buff(48, 1800);
+        }
         if now_any_wet && !was_any_wet && self.wet_count == 0 {
             self.wet_count = 10;
             // `:27777` — the shimmering (absorbed) state suppresses the play;
@@ -6762,6 +6872,9 @@ impl Player {
         // re-arm them per tick (S1-P-i52).
         self.mana_magnet = false;
         self.life_magnet = false;
+        // `ResetEffects`' `treasureMagnet = false` (`Player.cs:18493`): the
+        // 5010/5126 grants re-arm it per tick (W4-g15 lane 5).
+        self.treasure_magnet = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
@@ -6776,6 +6889,10 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
+        // W4-f34 — `ResetEffects`' `deadCellsPotionStation = false`
+        // (`Player.cs:18362`): the buff-366 arm below re-arms it per tick;
+        // the `AddBuff` chain's 1.2× extension rule (`:5430-5433`) reads it.
+        self.buffs.dead_cells_potion_station = false;
         // (Resync keep-one: the summoner/whip attack-speed clears live in
         // the i24/i27 ResetEffects block above — `:18341`/`:18499`.)
         // `ResetEffects`' attack-speed clears (`Player.cs:18531-18532`
@@ -6893,6 +7010,13 @@ impl Player {
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
         }
+        // W4-f20 F7 — the Harpy-charm family's ResetEffects clears
+        // (`Player.cs:18471-18472` accHarpyCharm/accSeraphNecklace,
+        // `:18609` hasPhoenixQuiver). The COOLDOWN persists (the C# does
+        // not reset it — `:28438` decrements it across ticks).
+        self.acc_harpy_charm = false;
+        self.acc_seraph_necklace = false;
+        self.has_phoenix_quiver = false;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -7250,6 +7374,19 @@ impl Player {
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
                 // +12 armor penetration.
                 159 => self.melee_armor_penetration += 12,
+                // W4-f34 — `:9935-9939` — Sugar Rush (192, the Slice of
+                // Cake): `pickSpeed -= 0.2f; moveSpeed += 0.2f` (the port's
+                // positive pick_speed_bonus convention: a lower pickSpeed
+                // mines faster, the Mining-104 row's shape).
+                192 => {
+                    self.pick_speed_bonus += 0.2;
+                    self.move_speed += 0.2;
+                }
+                // W4-f34 — `:10185-10188` — the Dead Cells Potion Station
+                // buff (366): `deadCellsPotionStation = true` — the AddBuff
+                // chain's 1.2× time-extension flag (`:5430-5433`, the
+                // `BuffTimeIsExtendedByDeadCellsPotionStationBuff` set).
+                366 => self.buffs.dead_cells_potion_station = true,
                 // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
                 // Shell): +25% while at or below half life.
                 62 => {
@@ -7766,8 +7903,9 @@ impl Player {
         }
         // `Player.Update` → `UpdateLuck` (`Player.cs:25645` → `:29041`): the
         // decay timers + `RecalculateLuck`, after the buff effects derived
-        // stinky/luckPotion/kiteLuckLevel above and before movement.
-        self.update_luck(world);
+        // stinky/luckPotion/kiteLuckLevel above and before movement. The
+        // Torch God event's draws ride the same UpdatePlayers stream.
+        self.update_luck(world, rng);
         // `Player.cs:26004-26009`: the run-speed merge runs AFTER `UpdateEquips`
         // (`:25633`) - the accessory/prefix `moveSpeed` adds ride the debuff
         // multiply too. `oldStyleParkour` (the `:26007` gate) is unported
@@ -11422,28 +11560,64 @@ impl Player {
         self.luck_state.luck
     }
 
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3964`): the getter is
+    /// `unlockedBiomeTorches && builderAccStatus[11] == 0`; the setter writes
+    /// `builderAccStatus[11] = !value ? 1 : 0` and NOTHING else. The 5043
+    /// use (`ItemCheck_UseTorchGodsFavor`, `:45231-45232`) sets the unlock
+    /// flag THEN this property — the pair arms the conversion in one use
+    /// (W4-f33). The builder-toggle UI (`Main.cs:42532-42585`) flips
+    /// `builder_acc_status[11]` between 0 (on) and 1 (off); the port's
+    /// toggle click is unported, so play reads the ctor's 0 (`:814`).
+    pub fn using_biome_torches(&self) -> bool {
+        self.unlocked_biome_torches && self.builder_acc_status[11] == 0
+    }
+
+    /// The `UsingBiomeTorches` setter half (`Player.cs:3960-3963`) — the
+    /// 5043 use's `this.UsingBiomeTorches = true` (`:45232`).
+    pub fn set_using_biome_torches(&mut self, value: bool) {
+        self.builder_acc_status[11] = if value { 0 } else { 1 };
+    }
+
     /// `Player.UpdateLuck` → `UpdateLuckFactors` (`Player.cs:29041-29135`),
     /// called from the post-buff-effects position (`:25645`): the ladybug and
     /// coin decays run for every player, the torch scan + the broken-mirror
     /// decay for `Main.myPlayer` only (the port's single player). The torch
     /// slot fills with the 1-row-per-tick scan in the M2-BUFF-6 phase 2; the
     /// `luckNeedsSync` tail is net-only.
-    fn update_luck(&mut self, world: &World) {
+    fn update_luck(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         let day_rate = world.day_rate();
         self.luck_state.update_lady_bug_decay(day_rate);
         self.luck_state.update_coin_decay(day_rate);
         // `TryRecalculatingTorchLuck` + the diff check (`Player.cs:29126-29130`
         // — the diff half is net-only): `Main.myPlayer`-only in the C#, which
-        // is the port's single player.
+        // is the port's single player. W4-f33: the event head/trigger tail
+        // ride the seam — the decision + all `UpdatePlayers` draws run here
+        // (the C# call position); the tile/pool/item writes defer to the
+        // world_sim drain (`pending_torch_god`).
         let center = self.center();
-        crate::luck::torch_scan_step(
+        let mut event = crate::torch_god::TorchGodEventCtx {
+            state: &mut self.torch_god,
+            buffs: &mut self.buffs,
+            unlocked_biome_torches: self.unlocked_biome_torches,
+            pos_y: self.y,
+            has_favor: self.has_torch_gods_favor,
+            // `Main.Difficulty` — the port's single-difficulty Classic 1.0
+            // fold (the `World::MOON_POINT_SCALAR` precedent).
+            difficulty: 1.0,
+        };
+        let pending = crate::luck::torch_scan_step_event(
             &mut self.luck_state,
             world,
             center,
             self.dead,
             self.held_torch_style,
             self.zones,
+            &mut event,
+            rng,
         );
+        // The pending struct accumulates nothing across ticks (the drain
+        // runs every fixed step right after the tick) — a plain write.
+        self.pending_torch_god = pending;
         self.luck_state.update_broken_mirror_decay(day_rate);
         self.luck_state.recalculate_luck();
     }
@@ -12030,12 +12204,20 @@ impl Player {
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting || self.sleeping,
-                extra_regen: self.accessory_life_regen,
+                // W4-f34 — the Honey buff's regen adds (`Player.cs:19134-
+                // 19138`): `lifeRegenTime += 2f; lifeRegen += 2` while held
+                // (the drain mitigation `:19096-19103` already folds into
+                // `dot_regen`). The adds land AFTER the ramp-time++ and
+                // BEFORE the starving/soulDrain/heartyMeal rows and the
+                // campfire/heart aura adds — the engine's `extra_*` slots
+                // sit at exactly that point (`regen.rs:174-182`).
+                extra_regen: self.accessory_life_regen + if self.holding(48) { 2 } else { 0 },
                 // S1-C-12 wave D — the Crimson set's regen halves
                 // (`ArmorSetBonuses.cs:248-251` grants the flag):
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
-                extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
+                extra_time: if self.crimson_regen { 1.0 } else { 0.0 }
+                    + if self.holding(48) { 2.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
                 ..RegenInputs::default()
             };
@@ -14066,6 +14248,175 @@ mod tests {
     }
 
     #[test]
+    fn w4_e28_the_bast_aura_grants_the_defense_buff() {
+        // `Player.cs:25536-25539`: `HasCatBast` → `AddBuff(215, 2)`; the
+        // effect arm (`:10106-10109`) reads the PREVIOUS tick's grant:
+        // `statDefense += 5`.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.auras.cat_bast = true;
+        p.update(&w, PlayerInput::default());
+        let slot = p.buffs.find_buff_index(215).expect("the 2-tick grant");
+        assert_eq!(p.buffs.buff_time[slot], 2);
+        assert_eq!(p.stat_defense, 0, "the effect reads the previous tick");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 5, "the +5 defense arm");
+    }
+
+    #[test]
+    fn w4_e28_the_aura_grants_expire_when_the_player_leaves() {
+        // The 2-tick grants refresh only while the aura holds
+        // (`Player.cs:25532-25547`): leaving the scan window lets the buff
+        // times run out — campfire/heart/star/bast all drop.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.auras.campfire = true;
+        p.auras.heart_lantern = true;
+        p.auras.star_in_bottle = true;
+        p.auras.cat_bast = true;
+        p.update(&w, PlayerInput::default());
+        for id in [87, 89, 158, 215] {
+            assert!(p.buffs.find_buff_index(id).is_some(), "buff {id} granted");
+        }
+        // The aura vanishes (the player walked out of the scan window).
+        p.auras = Default::default();
+        for _ in 0..3 {
+            p.update(&w, PlayerInput::default());
+        }
+        for id in [87, 89, 158, 215] {
+            assert!(p.buffs.find_buff_index(id).is_none(), "buff {id} expired");
+        }
+        assert_eq!(p.mana_regen_bonus, 0, "the star's +10 dropped too");
+        assert_eq!(p.stat_defense, 0, "the bast's +5 dropped too");
+    }
+
+    #[test]
+    fn w4_e28_the_campfire_and_heart_auras_feed_the_regen() {
+        // `UpdateLifeRegen` (`Player.cs:19170-19177`): the campfire adds +1
+        // regen and ×1.1 ramp, the heart lantern +2 — the aura snapshot,
+        // not the buff slot, feeds these rows (the wiring:
+        // `update_survival`'s `campfire: self.auras.campfire`).
+        use crate::regen::{RegenInputs, RegenState, update_life_regen};
+        let mut st = RegenState::default();
+        let mut life = 50;
+        let mut in_ = RegenInputs {
+            max_life: 100,
+            ..RegenInputs::default()
+        };
+        in_.campfire = true;
+        in_.heart_lantern = true;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        // +1 (campfire) +2 (heart) before the ramp rows; the base ramp at
+        // life_regen_time 1 contributes round(0) = 0 — the tick regens 3.
+        assert_eq!(st.life_regen, 3);
+        // Without the auras the same tick regens 0.
+        let mut st2 = RegenState::default();
+        let mut life2 = 50;
+        let _ = update_life_regen(&mut st2, &RegenInputs { max_life: 100, ..RegenInputs::default() }, &mut life2);
+        assert_eq!(st2.life_regen, 0);
+    }
+
+    #[test]
+    fn w4_e28_the_clairvoyance_buff_arm_is_verbatim() {
+        // `Player.cs:11886-11892` — the Crystal Ball's buff 29: magicCrit
+        // +2, magicDamage +0.05, statManaMax2 +20, manaCost −0.02.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let (crit0, dmg0, mana0, cost0) =
+            (p.magic_crit, p.magic_damage, p.mana_max, p.mana_cost);
+        p.buffs.add_buff(29, 108000);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.magic_crit, crit0 + 2);
+        assert!((p.magic_damage - (dmg0 + 0.05)).abs() < 1e-5);
+        assert_eq!(p.mana_max, mana0 + 20);
+        assert!((p.mana_cost - (cost0 - 0.02)).abs() < 1e-5);
+        // 108000 ticks = 30 minutes at 60 Hz — the grant duration.
+        let slot = p.buffs.find_buff_index(29).unwrap();
+        assert!(p.buffs.buff_time[slot] > 107000);
+    }
+
+    #[test]
+    fn w4_f34_the_sugar_rush_buff_arm_is_verbatim() {
+        // `Player.cs:9935-9939` — the Slice of Cake's buff 192:
+        // `pickSpeed -= 0.2f; moveSpeed += 0.2f`. The port's positive
+        // pick_speed_bonus convention mirrors the Mining-104 row.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let (pick0, move0) = (p.pick_speed_bonus, p.move_speed);
+        p.buffs.add_buff(192, 7200);
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - (pick0 + 0.2)).abs() < 1e-5);
+        assert!((p.move_speed - (move0 + 0.2)).abs() < 1e-5);
+        // The grant expires normally (192 is NOT in
+        // `TimeLeftDoesNotDecrease`, `BuffID.cs:47`).
+        let slot = p.buffs.find_buff_index(192).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 7199, "one tick decremented");
+    }
+
+    #[test]
+    fn w4_f34_the_dead_cells_station_flag_rearms_per_tick_and_clears() {
+        // `Player.cs:10185-10188` — buff 366 sets `deadCellsPotionStation`;
+        // `ResetEffects` (`:18362`) clears it per tick, the arm re-arms it.
+        // The flag feeds `AddBuff_DetermineBuffTimeToAdd`'s 1.2× extension
+        // (`:5430-5433`) for the `BuffTimeIsExtendedByDeadCellsPotionStation`
+        // set (potions 1..18 / 104..117 / 121..124 / 257 / 343).
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(366, 108000);
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.dead_cells_potion_station, "the arm re-arms it");
+        // While held, a set-member potion's grant extends ×1.2 truncating.
+        p.buffs.add_buff(1, 100); // ObsidianSkin, in the set
+        let slot = p.buffs.find_buff_index(1).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 120, "100 × 1.2");
+        // The buff never ticks down (`TimeLeftDoesNotDecrease`, `:47`).
+        let slot366 = p.buffs.find_buff_index(366).unwrap();
+        assert_eq!(p.buffs.buff_time[slot366], 108000);
+        // Cleared: the next tick's ResetEffects drops the flag, and a fresh
+        // potion grant lands at its plain duration.
+        p.buffs.clear_buff(366);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.buffs.dead_cells_potion_station, "the reset clears it");
+        p.buffs.add_buff(2, 100); // Regeneration, in the set
+        let slot = p.buffs.find_buff_index(2).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 100, "no extension without the flag");
+    }
+
+    #[test]
+    fn w4_f34_honey_contact_refreshes_the_honey_buff_every_tick() {
+        // `Player.cs:27744-27748`: while in honey (`Collision.honey`, the
+        // port's mid-tile probe) `AddBuff(48, 1800)` refreshes per tick —
+        // the buff holds at 1800 while submerged and decays once dry.
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Honey);
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let slot = p.buffs.find_buff_index(48).expect("the honey grant");
+        assert_eq!(p.buffs.buff_time[slot], 1800, "the 30-second grant");
+        // Submerged ticks refresh, never stack (`:5402-5426`).
+        for _ in 0..5 {
+            p.update(&w, PlayerInput::default());
+        }
+        let slot = p.buffs.find_buff_index(48).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 1800, "refreshed, not stacked");
+        // Out of the honey the timer runs down (48 is not in
+        // `TimeLeftDoesNotDecrease`).
+        p.teleport_style(p.x, 20.0 * 16.0, 0);
+        p.update(&w, PlayerInput::default());
+        let slot = p.buffs.find_buff_index(48).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 1799, "decays once dry");
+    }
+
+    #[test]
     fn movement_speed_per_liquid() {
         // Player.cs:28168-28171: water/lava 0.5, honey 0.25, shimmer 0.375,
         // dry 1.0.
@@ -15689,6 +16040,30 @@ mod tests {
         assert!(!p.life_magnet);
     }
 
+    /// W4-g15 lane 5 — `ApplyEquipFunctional`'s Treasure Magnet 5010
+    /// (`Player.cs:14551-14553`) and the Hand Of Creation 5126's
+    /// `treasureMagnet` row (`:15292`): the flag arms per tick, the
+    /// `ResetEffects` clear (`:18493`) drops it when the item comes off,
+    /// and the 5126 chisel half (`:15293`, the +0.25 pick-speed fold)
+    /// survives the merged arm. The consumer is `GetItemGrabRange`'s
+    /// +150 (`:35149-35152`).
+    #[test]
+    fn w4_g15_the_treasure_magnet_accessories_arm_treasure_magnet() {
+        let p = player_with_accessory(5010);
+        assert!(p.treasure_magnet, "the Treasure Magnet");
+        let p = player_with_accessory(5126);
+        assert!(p.treasure_magnet, "the Hand Of Creation's magnet row");
+        assert!(
+            (p.pick_speed_bonus - 0.25).abs() < 1e-4,
+            "the 5126 chisel half kept"
+        );
+        let p = player_with_accessory(4056);
+        assert!(!p.treasure_magnet, "the Ancient Chisel carries no magnet");
+        assert!((p.pick_speed_bonus - 0.25).abs() < 1e-4);
+        let p = player_with_accessory(0);
+        assert!(!p.treasure_magnet, "ResetEffects cleared it");
+    }
+
     /// `UpdateBuffs`' Heartreach arm (`Player.cs:10138-10141`): buff 105
     /// arms `lifeMagnet` per tick; the expiry + `ResetEffects` (`:18492`)
     /// clear it.
@@ -16885,6 +17260,35 @@ mod tests {
         p.vx = 0.0;
         p.update_frames(&w);
         assert_eq!(p.body_frame, 0);
+    }
+
+    #[test]
+    fn w4_f33_the_torch_god_event_drops_the_torch_hold_body_row() {
+        // `Player.cs:36455` — the torch-hold row 3 gates on
+        // `!happyFunTorchTime || createTile != 4`. The world_sim fills
+        // `torch_hold_ok` from the event flag + the held item's createTile;
+        // here the gate is driven directly (the FrameInputs convention).
+        let (w, mut p) = settled();
+        p.vx = 0.0;
+        p.frame_inputs = FrameInputs {
+            hold_style: 1,
+            can_visually_hold: true,
+            hold_style_dry: true,
+            torch_hold_ok: true,
+            use_style_blocks_frames: true,
+            ..FrameInputs::default()
+        };
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 3, "the torch hold at rest");
+        // The event runs + a torch held → torch_hold_ok false → the row
+        // falls through to the rest row 0 (no walk, no other hold).
+        p.frame_inputs.torch_hold_ok = false;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 0, "the event drops the torch-hold row");
+        // The gate open again → row 3 returns.
+        p.frame_inputs.torch_hold_ok = true;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 3);
     }
 
     #[test]
@@ -18103,25 +18507,30 @@ mod tests {
     fn honey_softens_a_drain_by_four_and_never_heals() {
         // DW-2.5 — `Player.cs:19096-19103`: honey +4 to a negative regen,
         // clamped at 0 — never positive, no heal from the mitigation itself.
+        // W4-f34 re-derivation: the +2 flat add / +2 ramp-time rows
+        // (`:19134-19138`) now land too, so the totals carry them.
         let (mut p, dw) = drain_rig();
         p.buffs.add_buff(20, 600); // Poisoned −4
         p.buffs.add_buff(48, 600); // Honey
         for _ in 0..300 {
             p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         }
-        assert_eq!(p.regen.life_regen, 0, "−4 + 4 clamps at 0");
-        assert_eq!(p.hp, 1000, "a softened −4 drains nothing");
+        // −4 + 4 clamps at 0, then honey's +2 flat add (`:19137`).
+        assert_eq!(p.regen.life_regen, 2, "the mitigation clamps, the +2 adds");
+        assert!(p.hp >= 1000, "a softened drain never loses life");
         let (mut p, dw) = drain_rig();
         p.buffs.add_buff(70, 600); // Venom −30
         p.buffs.add_buff(48, 600);
         p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
-        assert_eq!(p.regen.life_regen, -26, "−30 + 4 stays negative");
-        // Honey without a drain never adds anything (the +2 aura is M2-BUFF-5).
+        assert_eq!(p.regen.life_regen, -24, "−30 + 4 mitigation + 2 honey");
+        // Honey without a drain adds its flat +2 (W4-f34 — the former
+        // M2-BUFF-5 deferral landed; the ramp row at time 3 still rounds 0).
         let (mut p, dw) = drain_rig();
         p.buffs.add_buff(48, 600);
         p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
-        assert_eq!(p.regen.life_regen, 0);
-        assert_eq!(p.hp, 1000);
+        assert_eq!(p.regen.life_regen, 2, "the +2 flat add");
+        assert_eq!(p.regen.life_regen_time, 3.0, "1 base + 2 honey");
+        assert!(p.hp >= 1000);
     }
 
     #[test]

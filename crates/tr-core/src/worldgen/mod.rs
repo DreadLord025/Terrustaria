@@ -39,6 +39,7 @@ mod ocean;
 pub mod pipeline;
 pub mod progress;
 mod spider_gem_moss;
+pub mod starter_npcs;
 mod structures;
 mod surface;
 mod temple;
@@ -148,6 +149,9 @@ pub fn generate_with_progress<'a>(
     let mut world = World::new(opts.name.clone(), width, height);
     world.seeds = opts.flags;
     world.micro_seeds = opts.micro_flags;
+    // `WorldGen.crimson` — the world evil type the passes generate with
+    // (W4-g69: the cloud RollRareCloud gate reads it at runtime).
+    world.crimson = opts.crimson;
     // The same boot the no-hook path runs (`generate_with_chest_stock`).
     pipeline::boot_statics(&mut world);
     let noise = Noise { seed: opts.seed };
@@ -176,6 +180,9 @@ pub fn generate_with_chest_stock<'a>(
     // special-world identity the passes generated with.
     world.seeds = opts.flags;
     world.micro_seeds = opts.micro_flags;
+    // `WorldGen.crimson` — the world evil type (W4-g69, the cloud lane's
+    // RollRareCloud gate reads it; the shop/lang folds keep their rows).
+    world.crimson = opts.crimson;
     // The `Reset`-equivalent setup (vanilla runs `Reset` — the GenVars init
     // and the layout rolls — before `AddPasses`; it is not a pass):
     // the frame-important boot statics, the value noise and the three
@@ -324,6 +331,35 @@ mod tests {
                 (x.kind, x.wall, x.flags, x.frame_x, x.frame_y),
                 (y.kind, y.wall, y.flags, y.frame_x, y.frame_y)
             );
+        }
+    }
+
+    /// W4-d105 lane 5 (#37): the Guide pass lands its starter-NPC ledger
+    /// through the full pipeline — a classic world carries exactly one
+    /// homeless Guide (netID 22) at the spawn point, and two generations of
+    /// the same seed agree record-for-record (the name roll is
+    /// stream-deterministic).
+    #[test]
+    fn w4_d105_the_guide_ledger_lands_at_generation() {
+        let opts = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let a = generate(&opts);
+        assert_eq!(a.gen_npcs.len(), 1, "one classic Guide");
+        let n = &a.gen_npcs[0];
+        assert_eq!(n.kind, 22);
+        assert_eq!((n.home_x, n.home_y), (a.spawn_x, a.spawn_y));
+        assert_eq!(n.direction, 1);
+        let b = generate(&opts);
+        assert_eq!(a.gen_npcs.len(), b.gen_npcs.len());
+        for (na, nb) in a.gen_npcs.iter().zip(&b.gen_npcs) {
+            assert_eq!(na.kind, nb.kind);
+            assert_eq!((na.x, na.y), (nb.x, nb.y));
+            assert_eq!((na.home_x, na.home_y), (nb.home_x, nb.home_y));
+            assert_eq!(na.name_roll, nb.name_roll);
         }
     }
 

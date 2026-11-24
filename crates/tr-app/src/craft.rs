@@ -68,6 +68,14 @@ pub(crate) struct Recipe {
     /// `notDecraftable` — the derived reverse platform/wall rows carry it
     /// (`Recipe.cs:16665`/:16689); the craft direction ignores it.
     pub(crate) not_decraftable: bool,
+    /// `crimson` (`Recipe.cs:98`) — the world-evil decraft tag: feeds
+    /// `ItemID.Sets.IsCraftedCrimson` (`:15249-15252`), the shimmer decraft's
+    /// crimson-world variant preference (`ShimmerTransforms.cs:22-25`).
+    /// Does NOT gate crafting.
+    pub(crate) crimson: bool,
+    /// `corruption` (`Recipe.cs:100`) — the corruption twin (`:15253-15256`,
+    /// `ShimmerTransforms.cs:26-29`).
+    pub(crate) corruption: bool,
 }
 
 /// The zero recipe the static entries inherit the unset fields from.
@@ -84,6 +92,8 @@ const BASE: Recipe = Recipe {
     need_mechdusa: false,
     alchemy: false,
     not_decraftable: false,
+    crimson: false,
+    corruption: false,
 };
 
 /// One `requiredItem` entry: the authored item id + stack, with the accepted

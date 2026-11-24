@@ -17,6 +17,11 @@ mod bank;
 mod banners;
 mod bestiary;
 mod biome;
+mod boss_bags;
+mod fishing_crates;
+mod misc_bags;
+mod npc_death_heals;
+mod presents;
 mod buff_effects;
 mod buff_effects_misc;
 mod buffs;
@@ -45,9 +50,16 @@ mod input_map;
 mod inv;
 mod house_banners;
 mod luck;
+mod torch_god;
+mod projectile_ai_torch_god;
+// W4-f33 — the Torch God's Favor (5043) permanent-upgrade use path
+// (ItemCheck_UseTorchGodsFavor, Player.cs:45226-45243), wired at the
+// ItemCheck_OwnerOnlyCode permanent-item seam (:43600).
+mod torch_god_favor_use;
 mod wiring_stub;
 mod yoyo_string;
 mod item;
+mod item_dust;
 mod itemdata;
 mod item_sorting;
 mod quick_stack;
@@ -219,6 +231,22 @@ mod projectile_ai001_a;
 mod special_arrows;
 mod projectile_frost_shots;
 mod projectile_ai001_c;
+// W4-f20 slice D — the AI_001 per-type arms for the 7 rowed aiStyle-1
+// kinds the S1-D-5 slices never covered (323/357/485/661/710/719/819,
+// Projectile.cs:54002-57798); census research/167 F6/F7. Code-only mode —
+// witness tests written not run.
+mod projectile_ai001_d;
+// W4-f20 slice E — the AI_001 per-type arms for the aiStyle-1 kinds the
+// round-b row branches rowed but left on the generic ai_arrow (435/576/
+// 709, Projectile.cs:54002-57794); census research/26f. ROW-GATED INERT
+// until c11/d11/d15 merge (the d7 unwired precedent). Code-only mode —
+// witness tests written not run.
+mod projectile_ai001_e;
+// W4-f20 F7 — the Harpy-charm chain: the ai[2]-bits producer
+// (Player.Update_HarpyCharm, Player.cs:28436-28490) + ApplyHarpyCharm
+// (Projectile.cs:57796-57824) + the AI_001 charm tail (:57769-57793);
+// census research/26f F7. Code-only mode — witness tests written not run.
+mod projectile_harpy_charm;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;

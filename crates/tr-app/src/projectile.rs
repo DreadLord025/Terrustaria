@@ -5596,8 +5596,8 @@ impl Projectile {
     /// Phase 3 extracted it so the aiStyle-1 riders can wrap the same
     /// generic flight instead of duplicating it) — the delegation is
     /// behaviour-identical, pinned by the arrow tests below.
-    fn ai_arrow(&mut self, world: &World) {
-        self.ai_style1_flight(world, true);
+    fn ai_arrow(&mut self, world: &World, npcs: &[Npc], immune: &[i32]) {
+        self.ai_style1_flight(world, true, npcs, immune);
     }
 
     /// The aiStyle-14 core (`Projectile()`'s `else if (this.aiStyle == 14)`
@@ -7382,7 +7382,17 @@ impl Projectile {
     /// (`:55947-56032`) that holds the flight counter at rest. The plain
     /// arrows pass `true`; the M4-PROJ-6 riders 20/88/355/660 are all on that
     /// list, so they never reach the gravity at all.
-    fn ai_style1_flight(&mut self, world: &World, count_flight: bool) {
+    ///
+    /// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`)
+    /// that runs after the clamp, before the movement — the C#'s own slot.
+    /// The no-charm case (ai[2] bits 0) is a two-bit test, no scan.
+    fn ai_style1_flight(
+        &mut self,
+        world: &World,
+        count_flight: bool,
+        npcs: &[Npc],
+        immune: &[i32],
+    ) {
         if count_flight {
             self.ai[0] += 1.0;
         }
@@ -7391,6 +7401,8 @@ impl Projectile {
         }
         self.vel.y = self.vel.y.clamp(-16.0, 16.0);
         self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7).
+        crate::projectile_harpy_charm::charm_tail(self, world, npcs, immune);
         if self.tile_collide {
             let nx = self.pos.x + self.vel.x;
             let ny = self.pos.y + self.vel.y;
@@ -7419,11 +7431,22 @@ impl Projectile {
     /// resting counter and no gravity: a laser or a fang flies exactly
     /// straight, as in the vanilla game. S1-D-3q's BulletSnowman 110 joins
     /// the same list (`:55962`) with its latch + fade hooks above.
-    fn ai_style1_rider(&mut self, world: &World) {
+    fn ai_style1_rider(&mut self, world: &World, npcs: &[Npc], immune: &[i32]) {
         // The PurpleLaser (`:54021-54045`): the `extraUpdates` remap off
         // `ai[0]`, then the scale growth to 4 with the owner-only knockback
-        // and the 8-tick counter. `ai[0]` sits at rest on this kind, so the
-        // remap never fires — ported for its shape, pinned by the tests.
+        // and the 8-tick counter. W4-f20 F4 census correction: the remap
+        // DOES fire — the Laser Rifle's shoot path seeds `ai[0] =
+        // Main.rand.Next(3, 6)` (`Player.cs:49381`, the port's `editing.rs`
+        // ai0 arm), so the bolt remaps its row's 4 to 3..5 on the first AI
+        // tick (the flight counter itself rests — 88 is on the `flag3 =
+        // false` list `:55957`, so the seed never grows). The `.min(15.0)`
+        // cap the C# lacks is INERT for every reachable input: the seed is
+        // 3..5, a net-wire `ai[0]` payload would need ≥ 16 to diverge (no
+        // such writer exists — the hostile 88 spawns ride ai0 0), and the
+        // pre-remap row value 4 keeps the first tick's sub-step count
+        // identical either way. Kept as the u32-cast guard (a negative or
+        // huge float would wrap the bare `as u32`); recorded, not
+        // behaviour-visible (research/26f F4).
         if self.kind == PURPLE_LASER {
             if self.ai[0] != 0.0 {
                 self.extra_updates = self.ai[0].min(15.0) as u32;
@@ -7494,8 +7517,11 @@ impl Projectile {
         }
         // The generic flight, then the per-kind rotation tail the C# order
         // below it: SkyFracture's `velocity.ToRotation() + π/4`
-        // (`:57650-57652`).
-        self.ai_style1_flight(world, false);
+        // (`:57650-57652`). W4-f20 F7: the flight carries the Harpy-charm
+        // tail (`:57769-57793`) — the rider kinds are not arrows (the
+        // producer's `arrow` gate never charms them), so the tail is the
+        // two-bit no-op for them; the slice keeps the C# shape.
+        self.ai_style1_flight(world, false, npcs, immune);
         if self.kind == SKY_FRACTURE {
             self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_4;
         }
@@ -8031,7 +8057,9 @@ impl Projectile {
         }
         // 837 is off the `flag3` skip list, so the flight counter and the
         // gravity run for the skull exactly as they do for an arrow.
-        self.ai_style1_flight(world, true);
+        // W4-f20 F7: the skull is not an arrow (the producer never charms
+        // it) — the empty immune slice keeps the charm tail a no-op.
+        self.ai_style1_flight(world, true, npcs, &[]);
         // The per-kind rotation tail (`:57597-57602`): the skull's sprite
         // faces its flight direction without the generic +π/2 offset. The
         // C#'s `base.direction` field has no slot counterpart; it tracks
@@ -14915,6 +14943,13 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
 /// for a hand-built corpse, the f20 precedent). Byte-identical name+value
 /// to f20's local const (`01e0b1083`, same file position) — keep-one at the
 /// g1×f20 merge.
+/// W4-f20 F3 — `ProjectileID.MonkStaffT3AltShot` (709): the Sky Dragon's
+/// Fury alt-shot. The kind const lives module-private in
+/// `projectile_ai001_e` (the d15 row-gated inertness — no `data.rs` const
+/// until the d15 merge); the Kill hook needs the id here, so it carries
+/// its own local const (the same value, the same row-gated inertness: the
+/// hook only fires for a 709 slot, and `proj_data(709)` is None until d15
+/// merges, so no 709 spawns on this branch).
 const MONK_STAFF_T3_ALT_SHOT_KIND: u16 = 709;
 
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
@@ -15543,8 +15578,9 @@ fn aura_solid_at(world: &World, x: i32, y: i32) -> bool {
 /// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`) with an
 /// explicit fallback — the Ballista's aim and the aura's arc read the C#'s
 /// `SafeNormalize(Vector2.UnitY)` form, where a zero delta keeps the unit-Y
-/// default instead of collapsing to zero.
-fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
+/// default instead of collapsing to zero. `pub(crate)`: W4-f20 F7's
+/// Harpy-charm tail reads the same form (`Projectile.cs:57781`).
+pub(crate) fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         default_value
     } else {
@@ -15660,8 +15696,10 @@ fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
 
 /// `Utils.rotateTowards(currentPosition, currentVelocity, targetPosition,
 /// maxChange)` (`Utils.cs:1934-1939`): the velocity turned by at most
-/// `max_change` toward the target, its length preserved.
-fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
+/// `max_change` toward the target, its length preserved. `pub(crate)`:
+/// W4-f20 F7's Harpy-charm producer/tail read it (`Projectile.cs:57778`/
+/// `:57801`).
+pub(crate) fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
     let len = vel.length();
     // `vel.ToRotation()` and `position.AngleTo(target)` (`Entity.cs:186-190`).
     let angle = angle_towards(
@@ -15740,6 +15778,9 @@ pub struct ProjectilePool {
     /// `LegacySoundPlayer.cs:1411`'s post-gate multiply): the DD2 Goblin
     /// Bomb's 0.5-volume death cue (`Projectile.cs:71906`); every other
     /// intent carries 1.0.
+    /// intent carries 1.0. f1 adopts the shape VERBATIM from d77's pushed
+    /// seam (`9d35874a`) — every f1 queue site pushes 1.0 (no f1 arm plays
+    /// a `WithVolume` style).
     pending_proj_sounds: Vec<(u16, i32, f32, f32, f32, f32)>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
@@ -16716,6 +16757,14 @@ impl ProjectilePool {
         &self.slots
     }
 
+    /// W4-f20 F7 — the slot's local-NPC-immunity slice (the C#
+    /// `projectile.localNPCImmunity`, `Projectile.cs:45645`): the
+    /// Harpy-charm producer's `FindTargetWithLineOfSight` scan reads it
+    /// per arrow (`Player.cs:28475`).
+    pub fn local_immunity_slice(&self, slot: usize) -> &[i32] {
+        &self.local_immunity[slot * 256..(slot + 1) * 256]
+    }
+
     /// The mutable slot array — the golf family's pool-side resolvers
     /// (the tee placement's owned-ball cull, the >10-ball spawn cull, the
     /// strike writes) run here where the C# reads `Main.projectile` whole
@@ -17421,6 +17470,7 @@ impl ProjectilePool {
     /// the AI-side boulder NPCDeath6 STYLE overload (the kill-tail's
     /// `(4, 6)` is the INT overload — the d75 part-6 compose receipt).
     /// The world sim drains and
+    /// every non-quiet cue). The world sim drains and
     /// plays them through `Audio::play_proj_sound_scaled` on the
     /// `UpdateProjectiles` stream (`Main.cs:17775`), attenuation gate
     /// first — the wave-C drain convention.
@@ -18044,15 +18094,25 @@ impl ProjectilePool {
                             // (the straight flight, `flag3 = false` `:55973`).
                             ELECTROSPHERE_MISSILE => self.slots[i].ai_electrosphere_missile(world),
                             CHARGED_BLASTER_ORB => self.slots[i].ai_charged_blaster_orb(world),
-                            POISON_FANG => self.slots[i].ai_style1_rider(world),
+                            POISON_FANG => self.slots[i].ai_style1_rider(
+                                world,
+                                npcs,
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                            ),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
-                                self.slots[i].ai_style1_rider(world)
+                                self.slots[i].ai_style1_rider(
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
                             }
                             kind if crate::projectile_ai001_a::handles(kind) => {
                                 crate::projectile_ai001_a::ai001_slice_a(
                                     &mut self.slots[i],
                                     world,
                                     owner,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
                                 )
                             }
                             // S1-D-5 slice B — the higher-id rowed kinds'
@@ -18085,6 +18145,43 @@ impl ProjectilePool {
                                     sub_steps as i32 - 2 - sub as i32,
                                 )
                             }
+                            // W4-f20 slice D — the 7 rowed aiStyle-1 kinds
+                            // the S1-D-5 slices never covered (323 Stake /
+                            // 357 PulseBolt / 485 Hellwing / 661 BlackBolt /
+                            // 710 BetsyArrow / 719 Stinger / 819 BloodArrow,
+                            // `Projectile.cs:54002-57798`), gated to
+                            // `projectile_ai001_d`'s own kind list ONLY
+                            // (disjoint from A/B/C and every other gate —
+                            // census research/167 F6). The 357 takes NO
+                            // gravity (the chain heads at its fade block,
+                            // F7); the 485 blends toward its launch vector.
+                            kind if crate::projectile_ai001_d::covers(kind) => {
+                                crate::projectile_ai001_d::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
+                            }
+                            // W4-f20 slice E — the aiStyle-1 kinds the
+                            // round-b row branches ROWED but left on the
+                            // generic flight (435 MartianTurretBolt c11 /
+                            // 576 NebulaLaser d11 / 709 MonkStaffT3AltShot
+                            // d15, `Projectile.cs:54002-57794`), gated to
+                            // `projectile_ai001_e`'s own kind list ONLY
+                            // (disjoint from A/B/C/D and every other gate —
+                            // census research/26f). ROW-GATED INERT until
+                            // the row branches merge: `proj_data` returns
+                            // None for these kinds here, so this arm never
+                            // routes them yet (the d7 unwired precedent).
+                            kind if crate::projectile_ai001_e::covers(kind) => {
+                                crate::projectile_ai001_e::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
+                            }
                             // S1-D-4 — the Frost Moon family's four
                             // aiStyle-1 kinds (345/348/349/350,
                             // `projectile_ai_frostmoon`): kind-disjoint
@@ -18103,7 +18200,12 @@ impl ProjectilePool {
                             // every other kind keeps the generic `ai_arrow`
                             // flight byte-identical.
                             kind if crate::projectile_ai_moonlord::covers(kind) => {
-                                crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
+                                crate::projectile_ai_moonlord::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
                             }
                             // S1-P-i06 — the North Pole's falling flake (344,
                             // `AI_001`'s type hook `Projectile.cs:57062-57114`):
@@ -18144,6 +18246,7 @@ impl ProjectilePool {
                                     &npcs[..],
                                     rng,
                                     local_owner,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
                                 )
                             }
                             // S1-P-i17 — the special arrows' per-type
@@ -18171,6 +18274,7 @@ impl ProjectilePool {
                                         &mut self.slots[i],
                                         world,
                                         npcs,
+                                        &self.local_immunity[i * 256..(i + 1) * 256],
                                     )
                                 }
                             }
@@ -18246,6 +18350,11 @@ impl ProjectilePool {
                             STYNGER => self.slots[i].ai_stynger(world),
                             BONE_SHARD => self.slots[i].ai_bone_shard(world, rng),
                             _ => self.slots[i].ai_arrow(world),
+                            _ => self.slots[i].ai_arrow(
+                                world,
+                                npcs,
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                            ),
                         },
                         3 => {
                             // `AI_003_Boomerang` (S1-P-i08): the meleeSpeed
@@ -19011,6 +19120,25 @@ impl ProjectilePool {
                         // the four variation choreographies and the alpha
                         // ramp.
                         187 => self.slots[i].ai_insanity_shadow(world),
+                        // W4-f33 — the aiStyle-184 Torch God shot (949,
+                        // `AI_184_BadTorchLuck` `Projectile.cs:42787-42822`):
+                        // the owner-gated SelfHurtPlayers, the Item8 latch,
+                        // the ai[1] budget drain (tileCollide arms at 0)
+                        // and the 4-dust census. The movement integrate is
+                        // `kill_step` (HandleMovement's default — free
+                        // flight until the budget arms the tile collide,
+                        // then kill-on-tile).
+                        184 => {
+                            crate::projectile_ai_torch_god::ai_184_bad_torch_luck(
+                                &mut self.slots[i],
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            if self.slots[i].active {
+                                self.slots[i].kill_step(world);
+                            }
+                        }
                         // The aiStyle-188 Light's Bane slash
                         // (`:42229-42262`): the scale latch, the 3-tick
                         // frame machine and the velocity rotation.
@@ -21368,6 +21496,7 @@ impl ProjectilePool {
                         // own volume in `kill_tail_cue`.
                         let volume = if req.0 == 13 { 0.35 } else { 1.0 };
                         self.pending_proj_sounds.push((req.0, style, req.2, req.3, req.4, volume));
+                        self.pending_proj_sounds.push((req.0, req.1, req.2, req.3, req.4, 1.0));
                     }
                     // S1-P-i55 — `base.oldPosition = base.position`
                     // (`Projectile.cs:17013`) latches between the AI and
@@ -21410,6 +21539,39 @@ impl ProjectilePool {
                     let vel = self.slots[i].vel;
                     self.slots[i].pos += vel;
                 }
+                // W4-f20 F6 — the magicQuiver Update-tail bump
+                // (`Projectile.cs:17032-17035`): `!npcProj && friendly &&
+                // Main.player[owner].magicQuiver && extraUpdates < 1 &&
+                // arrow` → `extraUpdates = 1`. The C# runs it AFTER
+                // `HandleMovement` + the `!active` return (`:17027-17030`)
+                // and `ProjLight` (`:17031`, the light layer's own seam),
+                // BEFORE the per-type dust tail (`:17036-17077`, the dust
+                // lane) and `Damage()` (`:17078` — the `damage_pve` call
+                // below); the port's movement rides inside the AI arms, so
+                // this seam is the same post-move/pre-Damage slot. The C#
+                // reads `numUpdates` from `extraUpdates` ONCE at the loop
+                // head (`:16675`), so the bump takes effect on the NEXT
+                // update: this sub-step's remaining tail runs unchanged and
+                // the lifetime block still spends one timeLeft — the
+                // arrow's sub-step count doubles from the following tick
+                // (the ×1.1 shoot-speed fuse is the ammo.rs half, landed
+                // f28/e16; this is the flight-side half, census 26f F6).
+                // `!npcProj`: the port's hostile shots ride `friendly =
+                // false` (the `owned_by_someone` fold), so `friendly` alone
+                // carries the gate. The owner read is the LOCAL player's
+                // flag for the locally-simulated owner-0 slot; a remote
+                // owner has no port flag (the `owner == local_owner` gate).
+                // The bump draws nothing — the `UpdateProjectiles` stream
+                // is untouched by construction.
+                if self.slots[i].active
+                    && self.slots[i].friendly
+                    && self.slots[i].arrow
+                    && self.slots[i].extra_updates < 1
+                    && self.slots[i].owner == local_owner
+                    && player.as_ref().is_some_and(|pl| pl.magic_quiver)
+                {
+                    self.slots[i].extra_updates = 1;
+                }
                 // `Projectile.cs:17078` — `this.Damage()` runs per sub-step
                 // inside `Update` (it calls `Damage_PVP` internally,
                 // `:12509`), between the AI and the lifetime block: the hit
@@ -21436,6 +21598,12 @@ impl ProjectilePool {
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    // W4-f33 — the Torch God shot (949) is exempt: the C#
+                    // stock `hostile = false` (`Projectile.cs:764`) makes
+                    // `Damage_EVP` refuse (`:14775`); its player hurt rides
+                    // the AI's own `SelfHurtPlayers` (`:42791`), which
+                    // never kills the shot (`penetrate = -1`).
+                    && self.slots[i].kind != TORCH_GOD
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -21548,7 +21716,35 @@ impl ProjectilePool {
                     // guard's direct deactivate never reaches `Kill()`).
                     self.kill_tail_cue(i);
                 }
+                // S1-E-21h f1 — `Kill()`'s per-kind death cue (the fourth
+                // projectile-sound batch, `:70978`-`:76243`): queued BEFORE
+                // the death arms below so it reads the PRE-resize position
+                // (every C# arm plays ahead of its resize/`Damage()`). The
+                // cue is kind-disjoint from the bomb blasts and d77's
+                // selection; the drain plays it at the pass tail. The T3
+                // flag rides `Main.player[owner].setApprenticeT3`
+                // (`:71832`) for the Flame Burst shots' recentre size —
+                // the local player stands in for the owner (the pool's
+                // single-player snapshot, the doll_flags convention); a
+                // remote owner's shot keeps the base 96-box.
+                let apprentice_t3 = player
+                    .as_deref()
+                    .map(|p| p.set_apprentice_t3)
+                    .unwrap_or(false);
+                self.kill_sound_cue(i, apprentice_t3);
                 self.spawn_inferno_blast(i);
+                // W4-f20 F3 — `Kill()`'s 709 half of the 459/709 arm
+                // (`Projectile.cs:73372-73388`): the Sky Dragon's Fury
+                // alt-shot's death pulls in the nearby 1110 circles and
+                // spawns a fresh one. The 459 half (`:73338-73371`, the
+                // resize + Damage + dust/gore burst) is the g1 Kill-hook
+                // lane's claim (its census `26d` lists 459 among the six
+                // functional hooks) — this lane ports ONLY the 709-only
+                // half + the 1110 row/arm (the F3 "row+arm together"
+                // pattern). The arm sits at `:73338`, BEFORE the gem arm
+                // `:75425` and the 442 arm `:73528` — kind-disjoint, so the
+                // order between them is unobservable.
+                self.sky_dragons_fury_kill(i, rng, local_owner);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
                 self.spawn_rain_cloud(i);
@@ -21668,6 +21864,21 @@ impl ProjectilePool {
                 // C# body order: the 932 dust chain precedes the 715 arm.
                 if self.slots[i].kind == 932 {
                     crate::projectile_ai_misc::fairy_queen_death_draws(rng);
+                }
+                // W4-f33 — `Kill()`'s 949 arm (`Projectile.cs:70976-70995`):
+                // the Item10 cue + the 20-dust census (each dust's NewDust
+                // draws + the Next(3) noGravity roll), on the same
+                // UpdateProjectiles stream. The cue rides the pool's sound
+                // queue (the pass-tail drain, the S1-E-21c convention).
+                // The out-of-world guard (`:16696`) deactivates WITHOUT
+                // `Kill()`, so its deaths draw nothing (the channel-cancel
+                // head's `!died_out_of_world` gate, same reason).
+                if self.slots[i].kind == TORCH_GOD && !died_out_of_world {
+                    crate::projectile_ai_torch_god::kill_census(
+                        &self.slots[i],
+                        rng,
+                        &mut self.pending_proj_sounds,
+                    );
                 }
                 self.celeb2_death(
                     i,
@@ -22321,6 +22532,91 @@ impl ProjectilePool {
             }
         }
         self.slots[slot].active = false;
+    /// W4-f20 F3 — `Kill()`'s 709-only half of the 459/709 arm
+    /// (`Projectile.cs:73372-73388`): the Sky Dragon's Fury alt-shot's death
+    /// pulls in the nearby own 1110 circles (`ai[1] = 1`, the velocity pull
+    /// toward the corpse centre / 5, `netUpdate`) and spawns a fresh circle
+    /// at the centre with the shot's damage / 0 knockback, `timeLeft =
+    /// 30 * Next(2,6)` (the ONE explicit draw — the RNG-bearing half the
+    /// slice-E module could not carry). The tracked
+    /// `DD2_SkyDragonsFuryCircle` cue (`:73387`) folds inert (the pool has
+    /// no tracked-sound layer, S1-E-23 — the d15 dd2 precedent); the
+    /// `localAI[0]` slot-id write rides 0 (the aiStyle-77 arm's sound-volume
+    /// decay reads it, `:30673-30686`, itself the sound-layer skip).
+    ///
+    /// The 459/709 SHARED burst (`:73338-73371`: the scale≥1 resize + Damage
+    /// + the 3/7 dust-31 ring + the 10/30 dust-226 ring + the 0/2 gore rows)
+    /// is the g1 Kill-hook lane's claim (its census `26d` lists 459 among
+    /// the six functional hooks) — NOT ported here. This lane ports ONLY
+    /// the 709-only half + the 1110 row/arm (the F3 "row+arm together"
+    /// pattern; the g1 tip `5bd68ce2` is census-only, the half still
+    /// deferred there).
+    ///
+    /// The corpse-flag lift (the 442 `dart_electro_firework_kill`
+    /// precedent): the C# `Kill()` runs the arm while the shot is STILL
+    /// active (`active = false` lands at `:77262`, after), so
+    /// `GetNextSlot` skips the dying slot — the circle takes the NEXT free
+    /// slot, not the shot's own.
+    fn sky_dragons_fury_kill(&mut self, slot: usize, rng: &mut dyn DropRng, local_owner: u8) {
+        let p = &self.slots[slot];
+        if p.kind != MONK_STAFF_T3_ALT_SHOT_KIND {
+            return;
+        }
+        // `:73372` — the owner gate (`Main.myPlayer == this.owner`).
+        if p.owner != local_owner {
+            return;
+        }
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let (damage, owner) = (p.damage, p.owner);
+        // `:73374-73383` — the pull-in: every own 1110 whose box intersects
+        // the 80×80 centre box gets `ai[1] = 1` + the velocity pull +
+        // `netUpdate`. The C# `getRect().Intersects(value6)` is the strict
+        // rectangle overlap (the 442 pull-in's `hit` shape).
+        for j in 0..MAX_PROJECTILES {
+            if j == slot {
+                continue;
+            }
+            let q = &mut self.slots[j];
+            if q.active && q.owner == owner && q.kind == SKY_DRAGONS_FURY_ELECTROSPHERE {
+                let hit = q.pos.x < center.x + 40.0
+                    && q.pos.x + q.w > center.x - 40.0
+                    && q.pos.y < center.y + 40.0
+                    && q.pos.y + q.h > center.y - 40.0;
+                if hit {
+                    q.ai[1] = 1.0;
+                    let qc = Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5);
+                    q.vel = (center - qc) / 5.0;
+                    q.net_update = true;
+                }
+            }
+        }
+        // `:73384-73387` — the fresh circle spawn. The 1110's 80×80 half-box
+        // subtracts (the C# takes the centre). The corpse-flag lift keeps
+        // the dying shot's slot out of the free-slot scan.
+        self.slots[slot].active = true;
+        let spawned = self.spawn_with_data_ai_owned(
+            SKY_DRAGONS_FURY_ELECTROSPHERE,
+            owner,
+            center.x - 40.0,
+            center.y - 40.0,
+            0.0,
+            0.0,
+            damage,
+            0.0,
+            0.0,
+            0.0,
+        );
+        self.slots[slot].active = false;
+        if let Some(s) = spawned {
+            // `:73386` — `timeLeft = 30 * Main.rand.Next(2, 6)`: the ONE
+            // explicit draw (60/90/120/150). It rides the pass's
+            // `UpdateProjectiles` stream AFTER the spawn (the C# order).
+            let life = 30 * rng.next_range(2, 6);
+            self.slots[s].time_left = life;
+            // `:73387` — the tracked-sound slot-id write folds to 0 (the
+            // sound-layer skip, S1-E-23); the aiStyle-77 arm reads it.
+            self.slots[s].local_ai[0] = 0.0;
+        }
     }
 
     /// S1-P-i16 — the dart/electrosphere/fireworks `Kill()` arms, in the
@@ -23598,6 +23894,459 @@ impl ProjectilePool {
         // `:15088-15091` — fewer than 6 found: nothing dies.
         if count >= 6 && oldest != usize::MAX {
             self.kill(oldest);
+        }
+    }
+
+    /// S1-E-21h f1 — `Kill()`'s per-kind death cues (`Projectile.cs`'s
+    /// `:70978`-`:76243` tail, the fourth projectile-sound batch): the plain
+    /// `SoundEngine.PlaySound` play each kind's death arm fires at
+    /// `base.position` (the pre-resize top-left — every arm below plays
+    /// BEFORE its resize/`Damage()`), queued as the `(id, style, x, y,
+    /// pitchOffset)` intent the pass-tail drain plays on the
+    /// `UpdateProjectiles` stream (`Main.cs:17775`), attenuation BEFORE the
+    /// case draws. The death hook fires once per death (a dead slot never
+    /// returns to `active`), so no latch flag is needed. The cue pushes
+    /// DIRECTLY into `pending_proj_sounds` (the golf `tick.sounds` seam):
+    /// the death hook runs AFTER the AI dispatch's `wants_sound` forwarding,
+    /// so a slot-parked intent would never be forwarded. The cue list is
+    /// kind-disjoint from the landed S1-E-21h bomb blasts (`:78331`/
+    /// `:78386`, the fifth-batch tail) and from d77's in-flight selection.
+    /// The dust/gore BODIES stay skipped with their layers (the module's RNG
+    /// note); the cue itself is draw-free at the queue site — its case draw
+    /// rides the drain. Kinds whose death arm is unported (no row) are
+    /// absent here, exactly as the census records.
+    ///
+    /// DEPRECATED-BY-UNION (S1-E-21h f1 RETIRE): d77's `kill_tail_cue`
+    /// (pushed tip `5f10560b2`, `projectile.rs:20211` — the Kill-host wave
+    /// `0573b70f2` on top of `d61e6362`) is the CANONICAL survivor — a
+    /// strict superset of this fn's part-4/5 base-rowed map (the 88 kinds,
+    /// ANALYSIS part 7's per-arm diff) AND of the part-6 owed wave (the
+    /// Kill-host wave's 15 re-probe cues absorbed 949/590/539/the rope
+    /// coils/728/729/1120/1115/576 + the second wave's 523/12/321, with
+    /// the `NPC_Killed_7` bank row + style-7 route). At merge: DROP the
+    /// part-4/5 block below + the absorbed part-6 arms (the 410 too —
+    /// keep-one d8's `bubble_pop_kill`) + `rocket_kill_census`'s cue
+    /// pushes + the `play_proj_sound` int-match; FOLD the f1-UNIQUE arms
+    /// (the part-7 second owed wave minus 523/12/321, the Flame Burst
+    /// derived recentre incl. the 706 sibling) into d77c per the
+    /// part-7/8 fold-hunks. This fn stays LIVE until then — it is the
+    /// fold SOURCE; comments-only retirement, no behaviour change.
+    fn kill_sound_cue(&mut self, slot: usize, apprentice_t3: bool) {
+        let p = &self.slots[slot];
+        let (x, y) = (p.pos.x, p.pos.y);
+        // The full `(id, style, x, y, pitchOffset)` payload — every arm
+        // plays at `base.position` except the 932's `base.Center` (and
+        // the Flame Burst shots' derived post-recentre read).
+        let cue: Option<(u16, i32, f32, f32, f32)> = match p.kind {
+            // ===== f1-UNIQUE fold-source head (KEEP at merge) =====
+            // `:71848` — the Flame Burst Tower shots' Item100 (S1-E-21h
+            // f1 final-phase remainder: the one rowed kind in the range
+            // neither d77's map nor any pushed sibling arms). The C#
+            // RECENTRES first (`:71844-71846`: position = Center,
+            // width = height = 16 * num129, Center = position) and runs
+            // `Damage()` (`:71847`) BEFORE the play — num129 is 6, or 13
+            // under `Main.player[owner].setApprenticeT3` (`:71832`/
+            // `:71841`). `Resize` keeps the centre, so the play point is
+            // the OLD centre minus the blast box's half (the 539 jellyfish
+            // precedent); the resize/Damage/dust state halves stay
+            // deferred (the S1-D-4b-9 kill-dust deferral stands).
+            // S1-E-21h f1 RETIRE phase — the 706 Phantom Phoenix joins
+            // the SAME C# gate (`:71821` names 664/666/668/706): its row
+            // landed on d80's pushed tip `c10fda594` (`PHANTOM_PHOENIX`,
+            // 66x66 aiStyle 1, `Projectile.cs:7461-7473`) AFTER the
+            // part-7 census — the final-inert-wave arm, NUMERIC literal
+            // (INERT until the merge lands d80's row, the owed-phase
+            // convention; d80 arms no `:71848` cue itself — its DD2
+            // one-shots are the tracked shot/impact sounds).
+            FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3 | 706 => {
+                let half = if apprentice_t3 { 104.0 } else { 48.0 };
+                Some((2, 100, x + p.w * 0.5 - half, y + p.h * 0.5 - half, 0.0))
+            }
+            // ===== DEPRECATED-BY-UNION: the part-4/5 block (88 kinds) =====
+            // Every arm from here to the owed-wave head below appears
+            // VERBATIM in d77 `kill_tail_cue` (`d61e6362`, id/style/
+            // position semantics identical — the part-7 per-arm diff).
+            // DROP this whole block at merge (the 454 duplicate plays
+            // once through d77's cue-first arm); the owed-wave head above
+            // and tail below are the f1-UNIQUE fold-source.
+            // `:71112` — the 932 FairyQueenRangedItemShot's Item10 at
+            // `base.Center` (the ONE Center-positioned cue of the batch).
+            932 => Some((2, 10, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
+            // `:71782` — the DD2 javelin pair's Dig thud.
+            DD2_SPEAR | DD2_SPEAR_T3 => Some((0, 0, x, y, 0.0)),
+            // `:71802` — the Ballista shot's Dig thud.
+            BALLISTA_SHOT => Some((0, 0, x, y, 0.0)),
+            // `:72015` — the Nebula Blaze pair's Item14 (the play precedes
+            // the `:72016` recentre-resize).
+            NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => Some((2, 14, x, y, 0.0)),
+            // `:72716` — the Blood Arrow's Dig thud.
+            BLOOD_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:72851` — the Flairon bubble's Item54.
+            FLAIRON_BUBBLE => Some((2, 54, x, y, 0.0)),
+            // `:73294` — the Crystal Pulse's Item110.
+            CRYSTAL_PULSE => Some((2, 110, x, y, 0.0)),
+            // `:73400` — the Xenopopper bubble's Item96 (the play precedes
+            // the `:73401` `Next(5,9)` dust-count draw).
+            XENOPOPPER_BUBBLE => Some((2, 96, x, y, 0.0)),
+            // `:73530` — the Electrosphere missile's Item94 (the play
+            // precedes the `:73531` `Next(3,7)` dust-count draw).
+            ELECTROSPHERE_MISSILE => Some((2, 94, x, y, 0.0)),
+            // `:73605` — the Saucer missile's Item14 (pre-resize).
+            SAUCER_MISSILE => Some((2, 14, x, y, 0.0)),
+            // `:73016` — the Phantasmal Sphere's NPCDeath style-6 play
+            // (`PlaySound(4, pos, 6)`, the int overload — the `:73017`
+            // recentre-resize follows).
+            PHANTASMAL_SPHERE => Some((4, 6, x, y, 0.0)),
+            // `:73923` — the Molotov's Shatter.
+            MOLOTOV_COCKTAIL => Some((13, 0, x, y, 0.0)),
+            // `:73965` — the Javelin's Dig thud (507 rowed; 508 unrowed).
+            JAVELIN => Some((0, 0, x, y, 0.0)),
+            // `:73982` — the Bone Javelin's Dig thud.
+            BONE_JAVELIN => Some((0, 0, x, y, 0.0)),
+            // `:74014` — the arrow/dart family's Dig thud (1/81/98/980
+            // rowed; 1073 unrowed).
+            WOODEN_ARROW | WOODEN_ARROW_HOSTILE | TRAP_DART | TRAP_VENOM_DART => {
+                Some((0, 0, x, y, 0.0))
+            }
+            // `:74161` — the North Pole snowflake's Item27.
+            NORTH_POLE_SNOWFLAKE => Some((2, 27, x, y, 0.0)),
+            // `:74173` — the Frost Shard's Item27.
+            FROST_SHARD => Some((2, 27, x, y, 0.0)),
+            // `:74184` — the Stake's Dig thud.
+            323 => Some((0, 0, x, y, 0.0)),
+            // `:74238` — the Ornament's Item27.
+            ORNAMENT_HOSTILE => Some((2, 27, x, y, 0.0)),
+            // `:74305` — the SuperDart's Dig thud (184 rowed; 195 unrowed).
+            TRAP_SUPERDART => Some((0, 0, x, y, 0.0)),
+            // `:74328` — the Plantera seed pair's Dig thud.
+            SEED_PLANTERA | POISON_SEED_PLANTERA => Some((0, 0, x, y, 0.0)),
+            // `:74444` — the Drippler extra ball's Dig thud.
+            DRIPPLER_EXTRA_BALL => Some((0, 0, x, y, 0.0)),
+            // `:74545` — the Frost Arrow's Dig thud.
+            FROST_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:74736` — the Bone Arrow's Dig thud (the play precedes the
+            // `:74741` owner-gated 1124 shard spawns).
+            BONE_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:74762` — the Snowball's Item51.
+            SNOWBALL => Some((2, 51, x, y, 0.0)),
+            // `:75214` — the Holy Arrow / Hallow Star's Item10 (the play
+            // precedes the `:75223` owner-gated star re-spawn).
+            HOLY_ARROW | FALLING_STAR => Some((2, 10, x, y, 0.0)),
+            // `:75252` — the Crystal Bullet's Dig thud (the play precedes
+            // the `:75260` owner-gated shard split).
+            CRYSTAL_BULLET => Some((0, 0, x, y, 0.0)),
+            // `:75278` — the Houndius fireball's Item45.
+            HOUNDIUS_SHOOTIUS_FIREBALL => Some((2, 45, x, y, 0.0)),
+            // `:75288` — the Dead Cells barnacle shot's Item167.
+            DEAD_CELLS_BARNACLE_SHOT => Some((2, 167, x, y, 0.0)),
+            // `:75331` — the Frost Bolt staff's Item27 (359 rowed; the
+            // 118/119/128 siblings unrowed).
+            FROST_BOLT => Some((2, 27, x, y, 0.0)),
+            // `:75350` — the Frost Blast's Item27.
+            FROST_BLAST_FRIENDLY => Some((2, 27, x, y, 0.0)),
+            // `:75365` — the Frost Hydra's Item27.
+            FROST_HYDRA => Some((2, 27, x, y, 0.0)),
+            // `:75427` — the gem bolts' Dig thud (the play precedes the
+            // `:75448` AoeExplosion feature gate).
+            k if GEM_BOLTS.contains(&k) => Some((0, 0, x, y, 0.0)),
+            // `:75515` — the Blizzard's Item27.
+            BLIZZARD => Some((2, 27, x, y, 0.0)),
+            // `:75537` — the Ice Block's Item27, gated `ai[0] >= 0f`
+            // (`:75535`).
+            ICE_BLOCK => {
+                if p.ai[0] >= 0.0 {
+                    Some((2, 27, x, y, 0.0))
+                } else {
+                    None
+                }
+            }
+            // `:75572` — the Poison Dart's Dig thud (267 rowed; 51 unrowed).
+            267 => Some((0, 0, x, y, 0.0)),
+            // `:75594` — the Fire/Flaming arrow pair's Dig thud.
+            FLAME_ARROW | FLAMING_ARROW_HOSTILE => Some((0, 0, x, y, 0.0)),
+            // `:75602` — the merchant Bone Arrow's Dig thud.
+            BONE_ARROW_MERCHANT => Some((0, 0, x, y, 0.0)),
+            // `:75610` — the Frostburn Arrow's Dig thud.
+            FROSTBURN_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:75618` — the Cursed Arrow's Dig thud.
+            CURSED_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:75632` — the Ichor Arrow's Dig thud.
+            ICHOR_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:75646` — the thrown-weapon family's Dig thud (3/48/54
+            // rowed; 599/909 unrowed).
+            SHURIKEN | THROWING_KNIFE | POISONED_KNIFE => Some((0, 0, x, y, 0.0)),
+            // `:75662` — the Unholy Arrow's Dig thud.
+            UNHOLY_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:75670` — the Jester's Arrow's Item10.
+            JESTERS_ARROW => Some((2, 10, x, y, 0.0)),
+            // `:75683` — the Starfury / Star Cannon star's Item10 (9/955
+            // rowed; 12/503 unrowed).
+            STARFURY | STAR_CANNON_STAR => Some((2, 10, x, y, 0.0)),
+            // `:75857` — the Dutchman shell's Item14 (pre-resize).
+            DUTCHMAN_SHELL => Some((2, 14, x, y, 0.0)),
+            // `:75901` — the Venom Arrow's Item10.
+            VENOM_ARROW => Some((2, 10, x, y, 0.0)),
+            // `:75913` — the Venom Bullet's Item10 (the play precedes the
+            // `:75940` debuff-spread burst).
+            VENOM_BULLET => Some((2, 10, x, y, 0.0)),
+            // `:76002` — the Exploding Bullet's Item14 (the play precedes
+            // the `:76010` owner-gated AoE burst).
+            EXPLODING_BULLET => Some((2, 14, x, y, 0.0)),
+            // `:76053` — the Shimmer Arrow's Dig thud (the `Vector2`
+            // overload truncates, `SoundEngine.cs:85`).
+            SHIMMER_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:76070` — the Sky Fracture's Item10.
+            SKY_FRACTURE => Some((2, 10, x, y, 0.0)),
+            // `:76122` — the Moonlord Bullet's Item10.
+            MOONLORD_BULLET => Some((2, 10, x, y, 0.0)),
+            // `:76136` — the Ball of Fire's Item10 (15 rowed; 321 unrowed).
+            BALL_OF_FIRE => Some((2, 10, x, y, 0.0)),
+            // `:76148` — the Ball of Frost's Item10.
+            BALL_OF_FROST => Some((2, 10, x, y, 0.0)),
+            // `:76160` — the Cursed Flame pair's Item10.
+            CURSED_FLAME_FRIENDLY | CURSED_FLAME => Some((2, 10, x, y, 0.0)),
+            // `:76180` — the Sand Ball gun's Dig thud (42 rowed; 31 unrowed).
+            42 => Some((0, 0, x, y, 0.0)),
+            // `:76207` — the hostile Snow Ball's Dig thud.
+            SNOW_BALL_HOSTILE => Some((0, 0, x, y, 0.0)),
+            // S1-E-21h f1 fifth batch — the `Kill()` tail's per-kind death
+            // cues (`:76252`-`:77208`, the `!projPet` chain's rowed kinds).
+            // Every arm below plays at the PRE-resize `base.position` (none
+            // resizes ahead of its play), so the death-hook read is exact.
+            // The rocket/bomb families (`Kill_Bombs_DoUsualKillCode`) are
+            // NOT here — their cues ride `rocket_kill_census` (the death
+            // hook runs after their resizes; see that fn).
+            // `:76283` — the Water Bolt's Item10.
+            WATER_BOLT => Some((2, 10, x, y, 0.0)),
+            // `:76300` — the Demon Sickle / Demon Scythe's Item10.
+            DEMON_SICKLE | DEMON_SCYTHE => Some((2, 10, x, y, 0.0)),
+            // `:77018`/`:77033`/`:77048` — the three water bottles' Shatter
+            // (`PlaySound(13, pos)`, the int overload — no draws).
+            HOLY_WATER | UNHOLY_WATER | BLOOD_WATER => Some((13, 0, x, y, 0.0)),
+            // `:77063` — the hostile Unholy Trident's Item10.
+            UNHOLY_TRIDENT_HOSTILE => Some((2, 10, x, y, 0.0)),
+            // `:77077` — the Unholy Trident's Item10.
+            UNHOLY_TRIDENT => Some((2, 10, x, y, 0.0)),
+            // `:77094` — the Sword Beam's Item10.
+            SWORD_BEAM => Some((2, 10, x, y, 0.0)),
+            // `:77107` — the Enchanted Beam's Item10.
+            ENCHANTED_BEAM => Some((2, 10, x, y, 0.0)),
+            // `:77124` — the Terra Beam's Item10.
+            TERRA_BEAM => Some((2, 10, x, y, 0.0)),
+            // `:77138` — the Light Beam's Item10.
+            LIGHT_BEAM => Some((2, 10, x, y, 0.0)),
+            // `:77153` — the Night Beam's Item10.
+            NIGHT_BEAM => Some((2, 10, x, y, 0.0)),
+            // ===== part-6 owed-wave tail: DEPRECATED-BY-UNION (RETIRE
+            // re-probe) — d77's Kill-host wave (`0573b70f2`, tip
+            // `5f10560b2`) armed the 15 re-probe cues on `kill_tail_cue`:
+            // the 949/590/539/rope-coil/728/729/1120/1115/576 arms below
+            // are now d77 DUPLICATES (payload-identical, the part-8
+            // per-arm diff) — DROP at merge, no fold owed. The 410 is
+            // NOT in d77's map but d8 SELF-ARMS it (`bubble_pop_kill`,
+            // `projectile.rs:20114` at the d8 tip) — keep-one d8, DROP
+            // this arm too. The arms stay LIVE here until the merge (the
+            // fold-source convention). =====
+            // S1-E-21h f1 owed-arm phase — the NONE-site kinds whose
+            // `proj_data` rows landed on the PUSHED sibling branches (the
+            // part-5 re-census vs the current tips). The rows stay on their
+            // own branches (NOT re-ported here); these arms activate when
+            // the merge lands them — until then the kinds cannot spawn
+            // (`spawn_with_data`'s row guard) and the arms are inert.
+            // `:70978` — the Torch God fireball 949's Item10 at
+            // `base.Center` (the arm plays ahead of its 20-dust census;
+            // the row rides d19's pushed tip a4185f89, `Projectile.cs:
+            // 8948-8955`: 4x4, aiStyle 184).
+            949 => Some((2, 10, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
+            // `:72921` — the Bubble Gun's bubble 410's Item54 pop at
+            // `base.position` (the play precedes the 10-dust ring; the row
+            // rides d8's pushed tip e66b41b0, `Projectile.cs:4917-4932`:
+            // 14x14, aiStyle 72).
+            410 => Some((2, 54, x, y, 0.0)),
+            // `:72616` — the Truffle spore 590's Dig thud; the int
+            // overload's Style 27 is unused by case 0
+            // (`LegacySoundPlayer.cs:440-452`), kept on the payload for the
+            // census mapping (the skull 270/837 convention). The play
+            // precedes the dust/gore census; the row rides d12's pushed tip
+            // 9152b259, `Projectile.cs:6385-6396`: 14x14, aiStyle 112.
+            590 => Some((0, 27, x, y, 0.0)),
+            // `:72571` — the Stardust jellyfish 539's NPCDeath style-7 play
+            // (`PlaySound(4, pos, 7)`, the int overload). The C# arm
+            // RECENTRES first (`:72567-72569`: position = Center, 80x80,
+            // Center = position), so the play point is the OLD centre minus
+            // the 80-box's half — computed here from the pre-hook box (the
+            // rocket_kill_census play-point precedent; the resize/Damage/
+            // dust state halves stay deferred — d11 ports the AI machine
+            // only). The row rides d11's pushed tip e0395afc,
+            // `Projectile.cs:6142-6150`: 18x30, aiStyle 102.
+            539 => Some((
+                4,
+                7,
+                x + p.w * 0.5 - 40.0,
+                y + p.h * 0.5 - 40.0,
+                0.0,
+            )),
+            // `:74619`/`:74683` — the rope coils' Dig thud (171/475/505/506),
+            // gated `ai[1] == 0f` (`:74617`/`:74681` — a coil that already
+            // placed rope dies silent). The rows ride d4's pushed tip
+            // 7e3bdea6, `Projectile.cs:2570-2578`/`:5496-5504`: 14x14,
+            // aiStyle 35.
+            171 | 475 | 505 | 506 => {
+                if p.ai[1] == 0.0 {
+                    Some((0, 0, x, y, 0.0))
+                } else {
+                    None
+                }
+            }
+            // `:75127`/`:75151` — the Super Star 728 / its slash 729's
+            // Item10 at `base.position` (the plays precede the dust/gore
+            // censuses; the rows ride d16's pushed tip e122a6b2,
+            // `Projectile.cs:7659-7671`/`:7672-7687`).
+            728 | 729 => Some((2, 10, x, y, 0.0)),
+            // `:75376` — the Forbidden sign's shot 1120's Dig thud at the
+            // PRE-resize `base.position` (the play precedes the
+            // `Resize(112, 112)` burst `:75409` — a9's gem_bolt_aoe branch
+            // resizes AFTER this hook, the gem-bolt order). The row rides
+            // a9's pushed tip 8c4fded8, `Projectile.cs:10479-10490`: 10x10,
+            // aiStyle 29.
+            1120 => Some((0, 0, x, y, 0.0)),
+            // `:75502` — the Glacier Fang shot 1115's Item27 (the play
+            // precedes the ai[0]-remapped dust count; the row rides d21's
+            // pushed tip 9fa9e9ba, `Projectile.cs:10401-10412`: 10x10,
+            // aiStyle 208).
+            1115 => Some((2, 27, x, y, 0.0)),
+            // `:76038` — the common-bullet arm's NebulaLaser 576 sibling
+            // (the 24-kind list's one newly-rowed member; d77's pushed
+            // subset covers the other 19 — keep-one d77 there). The row
+            // rides d11's pushed tip e0395afc, `Projectile.cs:6258-6269`:
+            // 4x4, aiStyle 1.
+            576 => Some((2, 10, x, y, 0.0)),
+            // ===== f1-UNIQUE fold-source tail (KEEP at merge): the
+            // part-7 second owed wave, MINUS the three arms d77's
+            // Kill-host wave (`0573b70f2`) absorbed — the 523/12/321
+            // below are DEPRECATED-BY-UNION duplicates (d77 arms
+            // 523 @ pos / 9|12|955 @ pos / 15|321 @ pos), DROP at merge;
+            // every OTHER arm here is absent from d77 `5f10560b2`'s map
+            // (the part-8 per-arm diff) and FOLDS into d77c. =====
+            // S1-E-21h f1 FINAL phase — the second owed wave: the part-6
+            // "still rowless everywhere" kinds whose rows landed on the
+            // sibling tips AFTER the part-6 sweep (the final re-census
+            // below; every arm INERT until the merge lands its row, the
+            // owed-phase convention — NUMERIC literals, the rows are NOT
+            // re-ported). All cue-first / pre-resize plays except the
+            // 931/1039's Center.
+            // `:71152` — the 931 FairyQueenMagicItemShot / 1039
+            // ConstellationStar's Item10 at `base.Center` (the play
+            // precedes the trail-dust census; the rows ride d18's pushed
+            // tip `18916087`, data.rs:3924/:3933).
+            931 | 1039 => Some((2, 10, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
+            // `:71194` — the 1047 RainbowBoulder's trackable cue at
+            // `base.Center` (`SoundID.RainbowBoulder = (42, 274)`,
+            // `SoundID.cs:1709` — case 42, one variation, NO gameplay
+            // draw; the play precedes the trail census; the row rides
+            // d3's pushed tip `2d01693c`, data.rs:3389, `RAINBOW_BOULDER`).
+            1047 => Some((42, 274, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
+            // `:73259` — the 523 ToxicBubble's Item54 pop (the play
+            // precedes the 25-dust ring; the row rides d10's pushed tip
+            // `1f0b60e9`, data.rs:1771, `TOXIC_BUBBLE`).
+            523 => Some((2, 54, x, y, 0.0)),
+            // `:73868` — the 1037 MeteorWhipMeteor / 1049
+            // MeteorStormMeteor's Item89 CUE-FIRST (the play precedes the
+            // 192×scale recentre `:73869-73873`; the rows ride e3's pushed
+            // tip `1d26efa9`, data.rs:3863/:3869).
+            1037 | 1049 => Some((2, 89, x, y, 0.0)),
+            // `:74754` — the 1124 BoneShard's Dig thud (the play precedes
+            // the 5-dust census; the row rides d78's pushed tip `cbae0aa3`,
+            // data.rs:3302, `BONE_SHARD`: 6x6, aiStyle 1).
+            1124 => Some((0, 0, x, y, 0.0)),
+            // `:74859` — the 1048 Poulder's Item16 (the `!projPet`
+            // boulder chain's int-position play; the row rides d3's
+            // pushed tip `2d01693c`, data.rs:3392, `POULDER`: 31x31,
+            // aiStyle 25).
+            1048 => Some((2, 16, x, y, 0.0)),
+            // `:74863` — the 1053 LavaBoulder's Item14 (the boulder
+            // chain's int-position play; the row rides d3's tip,
+            // data.rs:3368-3371, `LAVA_BOULDER` in the shared block).
+            1053 => Some((2, 14, x, y, 0.0)),
+            // `:74867` — the 1054 SpiderBoulder's NPCHit29 play
+            // (`PlaySound(SoundID.NPCHit29, x, y)` — the int facade,
+            // `SoundID.NPCHit29 = (3, 29)`, `SoundID.cs:1285`; the row
+            // rides d3's tip, data.rs:3372, `SPIDER_BOULDER`: timeLeft
+            // 300).
+            1054 => Some((3, 29, x, y, 0.0)),
+            // `:74871` — the 1055 Ghoulder's NPCDeath style-6 play
+            // (`PlaySound(SoundID.NPCDeath6, x, y)` — the int facade,
+            // `SoundID.NPCDeath6 = (4, 6)`; the row rides d3's tip,
+            // data.rs:3373, `GHOULDER`: timeLeft 900).
+            1055 => Some((4, 6, x, y, 0.0)),
+            // `:74875` — the boulder chain's else Dig thud: 99 Boulder /
+            // 727 RollingCactus / 1013 BouncyBoulder / 1014
+            // LifeCrystalBoulder / 1021 MoonBoulder / 1057
+            // BoulderThatSpawnsPet (the rows ride d3's tip, data.rs:3368-
+            // 3381 — the shared 31×31 aiStyle-25 block + the MoonBoulder
+            // arm; every member of the C#'s 11-kind list except the
+            // NPCHit29/Item14/NPCDeath6 kinds below is rowed there).
+            99 | 727 | 1013 | 1014 | 1021 | 1057 => Some((0, 0, x, y, 0.0)),
+            // `:74972` — the 1005 MiniBoulder's Dig thud (the play precedes
+            // the dust + velocity×1.6 census; the row rides d3's tip,
+            // data.rs:3376, `MINI_BOULDER`: 15x15, aiStyle 25).
+            1005 => Some((0, 0, x, y, 0.0)),
+            // `:75082` — the 655 BeeHive's NPCDeath play
+            // (`PlaySound(4, x, y)` — the int overload's Style default 1;
+            // the row rides d3's tip, data.rs:3384, `BEE_HIVE`: 31x31,
+            // aiStyle 25).
+            655 => Some((4, 1, x, y, 0.0)),
+            // `:75163` — the 723 ManaCloakStar's Item10 (the play precedes
+            // the dust/gore censuses + the owner-gated 4143 drop; the row
+            // rides f48's pushed tip `69d499c6`, data.rs:3871-3875, the
+            // cloak-star block).
+            723 => Some((2, 10, x, y, 0.0)),
+            // `:75187` — the cloak family's else Item10: 724 BeeCloakStar
+            // / 725 StarVeilStar / 726 StarCloakStar / 1133 SnakeCloakStar
+            // (the same f48 block; the still-rowless 907 sibling — its
+            // `:75183` Item27 arm — stays out, the PART-arm convention).
+            724 | 725 | 726 | 1133 => Some((2, 10, x, y, 0.0)),
+            // `:75331` — the 128 FrostBlastHostile's Item27 (the frost-bolt
+            // family arm's newly-rowed sibling; the row rides g8's pushed
+            // tip `82c93cec`, data.rs:3216, `FROST_BLAST_HOSTILE`: 14x14,
+            // aiStyle 28).
+            128 => Some((2, 27, x, y, 0.0)),
+            // `:75683` — the 12 natural FallingStar's Item10 (the star
+            // arm's unrowed sibling at part 6; the row rides d15's pushed
+            // tip `60731d50`, data.rs:4117, `NATURAL_FALLING_STAR`).
+            12 => Some((2, 10, x, y, 0.0)),
+            // `:76136` — the 321 FlamingJack's Item10 (the ball-of-fire
+            // arm's unrowed sibling at part 6; the row rides d6's pushed
+            // tip `451cace1`, data.rs:2846, `FLAMING_JACK`: 30x30,
+            // aiStyle 55).
+            321 => Some((2, 10, x, y, 0.0)),
+            // `:76180` — the 31 falling SandBall's Dig thud (the 42's
+            // unrowed sibling at part 6; the row rides f42's pushed tip
+            // `75f055fc`, data.rs:3996 — g8's tip `82c93cec` data.rs:3209
+            // carries the same row, keep-one at merge).
+            31 => Some((0, 0, x, y, 0.0)),
+            // `:76268` — the 584 NurseSyringeHeal's Dig thud (the row
+            // rides d11's pushed tip `eae7b509`, data.rs:2566,
+            // `NURSE_SYRINGE_HEAL`).
+            584 => Some((0, 0, x, y, 0.0)),
+            // `:76345` — the 514 NailFriendly's Item14 (the play precedes
+            // the dust census; the row rides d10's tip, data.rs:1757,
+            // `NAIL_FRIENDLY`).
+            514 => Some((2, 14, x, y, 0.0)),
+            // `:76946`/`:76989` — the 246 Stynger bolt / 249
+            // StyngerShrapnel's Item14 (cue-first; the rows ride d78's
+            // tip, data.rs:3822/:3830, `STYNGER`/`STYNGER_SHRAPNEL`).
+            246 | 249 => Some((2, 14, x, y, 0.0)),
+            // `:75683` — the 503 StarWrath star's Item10 (the star arm's
+            // newly-rowed sibling; the row rides e3's tip, data.rs:3858,
+            // `STAR_WRATH`: 24x24, aiStyle 5).
+            503 => Some((2, 10, x, y, 0.0)),
+            _ => None,
+        };
+        if let Some((id, style, x, y, pitch)) = cue {
+            // The sixth queue term (d77's volumeScale seam) — every f1
+            // death arm plays a stock-scale style, so 1.0.
+            self.pending_proj_sounds.push((id, style, x, y, pitch, 1.0));
         }
     }
 
@@ -25222,6 +25971,16 @@ impl ProjectilePool {
     /// are the documented liquid-layer follow-up (ANALYSIS "Rocket & dart
     /// ammo") — the fills draw nothing, so the census is complete without
     /// them.
+    ///
+    /// DEPRECATED-BY-UNION (S1-E-21h f1 RETIRE, the CUE PUSHES only): d77's
+    /// rocket census (tip `5f10560b2`, `projectile.rs:22787`; unchanged
+    /// from `d61e6362`'s copy at `:22478`) covers all 16 f1 cue sites AND
+    /// the 133/136 Item62 picks f1 gated out (the 139 Item62 f1 DOES cue —
+    /// d77 carries it too, the witness's `(139, 62)` row; both copies
+    /// agree) — DROP every `pending_proj_sounds.push` below at merge
+    /// (keep-one d77). The DRAW CENSUS itself (the rng walks + resizes)
+    /// is NOT retired here — the merge owner reconciles it against d77's
+    /// copy separately.
     fn rocket_kill_census(&mut self, slot: usize, rng: &mut dyn tr_core::loot::DropRng, local_owner: u8) {
         // One gore's draw row: the type pick + the two NewGore kicks.
         fn gore(rng: &mut dyn tr_core::loot::DropRng) {
@@ -25249,6 +26008,11 @@ impl ProjectilePool {
             // S1-E-21h d77 — `:77737`/`:77781`/`:77820`: the second member
             // of each trio (785 wet / 788 lava / 791 honey) plays Item62,
             // the rest Item14 — at the POST-resize `base.position`.
+            // S1-E-21h f1 fifth batch — the wet/lava/honey death cue
+            // (`:77737`/`:77781`/`:77820`, Item62 for the II kinds
+            // 785/788/791; `:77741`/`:77785`/`:77824`, Item14 otherwise).
+            // The C# plays AFTER `Resize(22, 22)` at `base.position` (the
+            // post-resize top-left), so the cue reads the resized box.
             let style = if matches!(kind, 785 | 788 | 791) { 62 } else { 14 };
             let p = &self.slots[slot];
             self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
@@ -25259,6 +26023,12 @@ impl ProjectilePool {
             // `:77854-77892` — the dry family: the same shape.
             resize(&mut self.slots[slot], 22.0);
             // S1-E-21h d77 — `:77859`: 800 plays Item62, the rest Item14.
+            // `:77854-77892` — the dry family: the same shape. S1-E-21h f1
+            // fifth batch — the cue (`:77859` Item62 for the II kind 800;
+            // `:77863` Item14 otherwise; the C# names 800, NOT 799 — the
+            // pre-port "62 for 799" comment was wrong), post-`Resize(22)`
+            // `base.position`.
+            resize(&mut self.slots[slot], 22.0);
             let style = if kind == 800 { 62 } else { 14 };
             let p = &self.slots[slot];
             self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
@@ -25284,6 +26054,20 @@ impl ProjectilePool {
             // 1/11-step rings' one `NextFloat` rotation + one `NextFloat`
             // velocity scale per particle (`:77951-77965`), 12 gores
             // (`:77966-77977`'s 3×2×2 loop), the 10×10 recentre.
+            // S1-E-21h f1 fifth batch — the Mini Nuke cue (`:77897` Item62
+            // for 794/797; `:77901` Item14 otherwise) plays at `base.Center`
+            // BEFORE `Resize(50, 50)` — the centre is resize-invariant, so
+            // reading it ahead of the resize matches the C# play point.
+            let style = if matches!(kind, 794 | 797) { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((
+                2,
+                style,
+                p.pos.x + p.w * 0.5,
+                p.pos.y + p.h * 0.5,
+                0.0,
+                1.0,
+            ));
             resize(&mut self.slots[slot], 50.0);
             for _ in 0..50 {
                 let _ = rng.next_range(0, 5); // dust scale (`:77909`)
@@ -25320,6 +26104,9 @@ impl ProjectilePool {
             resize(&mut self.slots[slot], 22.0);
             // S1-E-21h d77 — `:77983`: every shrapnel plays Item62 at the
             // POST-resize `base.position`.
+            // S1-E-21h f1 fifth batch — the shrapnel cue (`:77983`, Item62
+            // for ALL four kinds — no Item14 sibling), post-`Resize(22)`
+            // `base.position`.
             let p = &self.slots[slot];
             self.pending_proj_sounds.push((2, 62, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..4 {
@@ -25344,6 +26131,14 @@ impl ProjectilePool {
                 let p = &self.slots[slot];
                 self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             }
+            // S1-E-21h f1 fifth batch — the cluster cue (`:78025` Item62
+            // for 777/781; `:78029` Item14 otherwise), post-`Resize(22)`
+            // `base.position` — queued BEFORE the owner-gated ring (the
+            // remote owner's cluster still plays its cue, `:78023` precedes
+            // the `:78063` owner gate).
+            let style = if matches!(kind, 777 | 781) { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             for _ in 0..4 {
                 gore(rng);
             }
@@ -25408,6 +26203,14 @@ impl ProjectilePool {
                 let style = if matches!(kind, 133 | 136) { 62 } else { 14 };
                 let p = &self.slots[slot];
                 self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
+            // S1-E-21h f1 fifth batch — the plain-rocket cue (`:78096`,
+            // Item14) plays at `base.position` BEFORE the 22×22 recentre
+            // (the post-`PrepareBombToBlow` top-left). The Item62 sibling
+            // (`:78092`, kinds 133/136) is d77's pick — excluded here so the
+            // cue stays kind-disjoint from d77's selection.
+            if !matches!(kind, 133 | 136) {
+                let p = &self.slots[slot];
+                self.pending_proj_sounds.push((2, 14, p.pos.x, p.pos.y, 0.0, 1.0));
             }
             resize(&mut self.slots[slot], 22.0);
             for _ in 0..8 {
@@ -25425,6 +26228,14 @@ impl ProjectilePool {
                 let p = &self.slots[slot];
                 self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             }
+            // S1-E-21h f1 fifth batch — the Rocket III/IV cue (`:78146`
+            // Item62 for 139; `:78150` Item14 otherwise) plays at
+            // `base.position` BEFORE the 80×80 recentre (the
+            // post-`PrepareBombToBlow` top-left). d77's `:78218` pick is the
+            // scarab-773 arm's dead 794/797 clause, NOT this arm.
+            let style = if kind == 139 { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0, 1.0));
             resize(&mut self.slots[slot], 80.0);
             for _ in 0..40 {
                 if rng.next_range(0, 2) == 0 {
@@ -25750,8 +26561,19 @@ impl ProjectilePool {
             // flips `friendly = false`, so a sphere being reeled back to its
             // bolt deals no NPC damage (`Damage_PVE_Inner`'s `!friendly`
             // refusal `:12611`). The fresh sphere spawns friendly (the
-            // `:788` default) and hits normally.
-            if p.kind == 443 && !p.friendly {
+            // `:788` default) and hits normally. W4-f20 F3: the 1110 Sky
+            // Dragon's Fury circle shares the aiStyle-77 arm + the same
+            // pull-in latch (the 709's Kill sets `ai[1] = 1` on the nearby
+            // circles, `:73379`), so the gate carries it too.
+            if matches!(p.kind, 443 | SKY_DRAGONS_FURY_ELECTROSPHERE) && !p.friendly {
+                continue;
+            }
+            // W4-f33 — the Torch God shot (949): the stock `friendly =
+            // false` (`Projectile.cs:788` — the 949 arm `:8948-8955` never
+            // sets it), so `Damage_PVE_Inner`'s `!friendly` refusal
+            // (`:12611`) means it hits NO NPC — the rain hurts only the
+            // player, through the AI's own SelfHurtPlayers.
+            if p.kind == TORCH_GOD {
                 continue;
             }
             // W4-d78 batch 2 — `Colliding`'s type-1124 arm
@@ -26462,6 +27284,10 @@ impl ProjectilePool {
             } else if p.kind == MAGIC_MISSILE {
                 // `:14032-14035` — the Magic Missile (16): 8 ticks.
                 npcs[idx].immune[owner_idx] = 8;
+            } else if matches!(p.kind, ELECTROSPHERE | SKY_DRAGONS_FURY_ELECTROSPHERE) {
+                // `:14008-14011` — the Electrosphere 443 / Sky Dragon's Fury
+                // circle 1110: 8 ticks (W4-f20 F3).
+                npcs[idx].immune[owner_idx] = 8;
             } else if p.kind == TYPHOON {
                 // `:14036-14039` — the Razorblade Typhoon (409): 6 ticks.
                 npcs[idx].immune[owner_idx] = 6;
@@ -26890,6 +27716,8 @@ impl ProjectilePool {
                 npcs[idx].immune[owner] = 7; // `:14024-14031` (W4-d78 batch 2)
             } else if p.kind == MAGIC_MISSILE {
                 npcs[idx].immune[owner] = 8; // `:14032-14035`
+            } else if matches!(p.kind, ELECTROSPHERE | SKY_DRAGONS_FURY_ELECTROSPHERE) {
+                npcs[idx].immune[owner] = 8; // `:14008-14011` (W4-f20 F3)
             } else if p.kind == TYPHOON {
                 npcs[idx].immune[owner] = 6; // `:14036-14039`
             } else if uses_local && p.local_hit_cooldown != -2 {
@@ -27075,7 +27903,7 @@ mod s1_e_21h_sound_tests {
                 tile_collide: false,
                 ..Default::default()
             };
-            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
             assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
             // The C# plays BEFORE the movement tail — the payload carries
             // the pre-movement position (48, 48).
@@ -27085,7 +27913,7 @@ mod s1_e_21h_sound_tests {
                 "kind {kind}'s cue at the play-time position"
             );
             p.wants_sound = None;
-            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
             assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
         }
         // The Flaming Wood's Item42 trackable is DEFERRED — the latch
@@ -27098,7 +27926,7 @@ mod s1_e_21h_sound_tests {
             tile_collide: false,
             ..Default::default()
         };
-        crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+        crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
         assert_eq!(p.ai[1], 1.0);
         assert_eq!(p.wants_sound, None, "the Item42 trackable is deferred");
     }
@@ -28541,6 +29369,170 @@ mod s1_e_21h_sound_tests {
             if plays {
                 assert_eq!((queued[0].0, queued[0].1), (2, 27));
             }
+    /// S1-E-21h f1 — the `Kill()` death-cue table (the fourth batch,
+    /// `:70978`-`:76243`): every rowed kind queues its `(id, style)` at the
+    /// PRE-resize `base.position` (the 932 at `base.Center`), once per death.
+    /// The cue pushes straight into `pending_proj_sounds` (the death hook
+    /// runs after the AI dispatch's `wants_sound` forwarding). Written, NOT
+    /// run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_the_kill_death_cues_queue_their_payloads() {
+        let mut pool = ProjectilePool::new();
+        // (kind, id, style) — the id-2 ItemN styles, the id-0 Dig thud and
+        // the id-13 Shatter. The position is the slot's top-left (64, 64)
+        // except the 932's Centre.
+        let cases: [(u16, u16, i32); 41] = [
+            (932, 2, 10),
+            (DD2_SPEAR, 0, 0),
+            (DD2_SPEAR_T3, 0, 0),
+            (BALLISTA_SHOT, 0, 0),
+            (NEBULA_BLAZE_1, 2, 14),
+            (NEBULA_BLAZE_2, 2, 14),
+            (BLOOD_ARROW, 0, 0),
+            (FLAIRON_BUBBLE, 2, 54),
+            (CRYSTAL_PULSE, 2, 110),
+            (XENOPOPPER_BUBBLE, 2, 96),
+            (ELECTROSPHERE_MISSILE, 2, 94),
+            (SAUCER_MISSILE, 2, 14),
+            (PHANTASMAL_SPHERE, 4, 6),
+            (MOLOTOV_COCKTAIL, 13, 0),
+            (JAVELIN, 0, 0),
+            (BONE_JAVELIN, 0, 0),
+            (WOODEN_ARROW, 0, 0),
+            (NORTH_POLE_SNOWFLAKE, 2, 27),
+            (FROST_SHARD, 2, 27),
+            (323, 0, 0),
+            (ORNAMENT_HOSTILE, 2, 27),
+            (TRAP_SUPERDART, 0, 0),
+            (SEED_PLANTERA, 0, 0),
+            (DRIPPLER_EXTRA_BALL, 0, 0),
+            (FROST_ARROW, 0, 0),
+            (BONE_ARROW, 0, 0),
+            (SNOWBALL, 2, 51),
+            (HOLY_ARROW, 2, 10),
+            (CRYSTAL_BULLET, 0, 0),
+            (HOUNDIUS_SHOOTIUS_FIREBALL, 2, 45),
+            (DEAD_CELLS_BARNACLE_SHOT, 2, 167),
+            (FROST_BOLT, 2, 27),
+            (FROST_BLAST_FRIENDLY, 2, 27),
+            (FROST_HYDRA, 2, 27),
+            (GEM_BOLT_AMETHYST, 0, 0),
+            (BLIZZARD, 2, 27),
+            (267, 0, 0),
+            (FLAME_ARROW, 0, 0),
+            (SHURIKEN, 0, 0),
+            (UNHOLY_ARROW, 0, 0),
+            (JESTERS_ARROW, 2, 10),
+        ];
+        for (kind, id, style) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 64.0, 64.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            // The death hook's cue reads the slot's current box.
+            let (w, h) = {
+                let p = &pool.slots()[slot];
+                (p.w, p.h)
+            };
+            pool.kill_sound_cue(slot, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
+            let (qx, qy) = if kind == 932 {
+                (64.0 + w * 0.5, 64.0 + h * 0.5)
+            } else {
+                (64.0, 64.0)
+            };
+            assert_eq!(
+                queued[0],
+                (id, style, qx, qy, 0.0, 1.0),
+                "kind {kind}'s cue payload"
+            );
+            assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
+            // Clean the slot so the next kind spawns fresh.
+            pool.kill(slot);
+        }
+    }
+
+    /// S1-E-21h f1 — the tail's remaining families (the star / bullet /
+    /// ball-of-fire / thrown rows) and the Ice Block's `ai[0] >= 0f` gate.
+    #[test]
+    fn s1_e_21h_f1_the_tail_cues_and_the_ice_block_gate() {
+        let mut pool = ProjectilePool::new();
+        let cases: [(u16, u16, i32); 16] = [
+            (STARFURY, 2, 10),
+            (STAR_CANNON_STAR, 2, 10),
+            (DUTCHMAN_SHELL, 2, 14),
+            (VENOM_ARROW, 2, 10),
+            (VENOM_BULLET, 2, 10),
+            (EXPLODING_BULLET, 2, 14),
+            (SHIMMER_ARROW, 0, 0),
+            (SKY_FRACTURE, 2, 10),
+            (MOONLORD_BULLET, 2, 10),
+            (BALL_OF_FIRE, 2, 10),
+            (BALL_OF_FROST, 2, 10),
+            (CURSED_FLAME_FRIENDLY, 2, 10),
+            (CURSED_FLAME, 2, 10),
+            (42, 0, 0),
+            (SNOW_BALL_HOSTILE, 0, 0),
+            (FALLING_STAR, 2, 10),
+        ];
+        for (kind, id, style) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            pool.kill_sound_cue(slot, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
+            assert_eq!(queued[0], (id, style, 80.0, 80.0, 0.0, 1.0), "kind {kind}");
+            pool.kill(slot);
+        }
+        // The Ice Block (`:75535-75537`): the cue fires only on `ai[0] >= 0`.
+        let slot = pool
+            .spawn_with_data_ai_owned(ICE_BLOCK, 0, 96.0, 96.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the ice block row");
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        pool.kill_sound_cue(slot, false);
+        assert!(pool.drain_proj_sounds().is_empty(), "the negative latch rides cue-less");
+        pool.slots_mut()[slot].ai[0] = 0.0;
+        pool.kill_sound_cue(slot, false);
+        let queued = pool.drain_proj_sounds();
+        assert_eq!(queued, vec![(2, 27, 96.0, 96.0, 0.0, 1.0)], "the zero latch plays");
+        pool.kill(slot);
+    }
+
+    /// S1-E-21h f1 fifth batch — the `Kill()` tail's per-kind death cues
+    /// (`:76252`-`:77208`): the 13 rowed kinds queue their `(id, style)` at
+    /// the PRE-resize `base.position` (none of these arms resizes ahead of
+    /// its play). The water bottles ride the id-13 Shatter; the rest are
+    /// id-2 Item10. Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_b5_the_kill_tail_cues_queue_their_payloads() {
+        let mut pool = ProjectilePool::new();
+        // (kind, id, style) — the 12 sites :76283/:76300/:77018/:77033/
+        // :77048/:77063/:77077/:77094/:77107/:77124/:77138/:77153.
+        let cases: [(u16, u16, i32); 13] = [
+            (WATER_BOLT, 2, 10),
+            (DEMON_SICKLE, 2, 10),
+            (DEMON_SCYTHE, 2, 10),
+            (HOLY_WATER, 13, 0),
+            (UNHOLY_WATER, 13, 0),
+            (BLOOD_WATER, 13, 0),
+            (UNHOLY_TRIDENT_HOSTILE, 2, 10),
+            (UNHOLY_TRIDENT, 2, 10),
+            (SWORD_BEAM, 2, 10),
+            (ENCHANTED_BEAM, 2, 10),
+            (TERRA_BEAM, 2, 10),
+            (LIGHT_BEAM, 2, 10),
+            (NIGHT_BEAM, 2, 10),
+        ];
+        for (kind, id, style) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 64.0, 64.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            pool.kill_sound_cue(slot, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
+            assert_eq!(queued[0], (id, style, 64.0, 64.0, 0.0, 1.0), "kind {kind}'s payload");
+            assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
             pool.kill(slot);
         }
     }
@@ -29139,6 +30131,103 @@ mod s1_e_21h_sound_tests {
         // The 1115/1120 pair (kept out of the array for its 13-slot shape).
         for (kind, want) in [(1115u16, (2u16, 27i32)), (1120, (0, 0))] {
             let mut pool = ProjectilePool::new();
+    /// S1-E-21h f1 fifth batch — the rocket families' death cues ride
+    /// `rocket_kill_census` (NOT the death hook — the hook runs after their
+    /// resizes). The cue position is the C# play point: post-`Resize(22)`
+    /// `base.position` for the wet/dry/shrapnel/cluster arms, `base.Center`
+    /// before `Resize(50)` for the Mini Nuke, and the post-`PrepareBombToBlow`
+    /// top-left before the family resize for the plain / Rocket III/IV arms.
+    /// The plain arm's 133/136 Item62 sibling (`:78092`) is d77's pick — the
+    /// port gates it out. Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_b5_the_rocket_cues_queue_at_their_play_points() {
+        // (kind, style, position-mode) — mode 0 = post-Resize(22) top-left,
+        // 1 = Centre (pre-Resize(50)), 2 = pre-family-resize top-left.
+        let cases: [(u16, i32, u8); 15] = [
+            (785, 62, 0), (788, 62, 0), (791, 62, 0), // wet/lava/honey II
+            (784, 14, 0), (787, 14, 0), (790, 14, 0), // wet/lava/honey I
+            (800, 62, 0), (799, 14, 0),               // dry II / I
+            (794, 62, 1), (797, 62, 1), (793, 14, 1), // Mini Nuke
+            (779, 62, 0), (862, 62, 0),               // shrapnel
+            (777, 62, 0), (776, 14, 0),               // cluster II / I
+            (139, 62, 2),                             // Rocket III
+        ];
+        for (kind, style, mode) in cases {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 90, 4.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            // Stand in for `PrepareBombToBlow`'s resize (the census runs
+            // after it): a 128×128 box recentred on the spawn centre (107,107).
+            {
+                let p = &mut pool.slots_mut()[slot];
+                p.w = 128.0;
+                p.h = 128.0;
+                p.pos = Vec2::new(107.0 - 64.0, 107.0 - 64.0); // (43,43)
+            }
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.rocket_kill_census(slot, &mut rng, 0);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one rocket cue");
+            let (qx, qy) = match mode {
+                // post-Resize(22): centre (107,107) − 11 = (96,96).
+                0 => (96.0, 96.0),
+                // Centre before Resize(50): (107,107).
+                1 => (107.0, 107.0),
+                // pre-family-resize top-left: (43,43).
+                _ => (43.0, 43.0),
+            };
+            assert_eq!(queued[0], (2, style, qx, qy, 0.0, 1.0), "kind {kind}'s play point");
+        }
+        // The plain arm's 133/136 are d77's Item62 pick — the port queues
+        // NOTHING for them (the else-branch Item14 covers 134/135/137/138).
+        for kind in [133u16, 136] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 90, 4.0).unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.rocket_kill_census(slot, &mut rng, 0);
+            assert!(pool.drain_proj_sounds().is_empty(), "kind {kind} is d77's pick");
+        }
+        // The plain else-branch (134) queues Item14 at the pre-resize top-left.
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(134, 100.0, 100.0, 0.0, 0.0, 90, 4.0).unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.rocket_kill_census(slot, &mut rng, 0);
+        let queued = pool.drain_proj_sounds();
+        assert_eq!(queued, vec![(2, 14, 100.0, 100.0, 0.0, 1.0)], ":78096 the 134 else-branch");
+    }
+
+    /// S1-E-21h f1 owed-arm phase — the NONE-site kinds whose `proj_data`
+    /// rows landed on the PUSHED sibling tips queue their death cues from
+    /// `kill_sound_cue`. The slots are CONSTRUCTED directly (the base table
+    /// has no rows for these kinds — `spawn_with_data*` declines until the
+    /// merge lands the siblings' rows; the arms are inert until then), with
+    /// the sibling rows' boxes cited verbatim. The 949 plays at
+    /// `base.Center`, the 539 at the old centre − 40 (the C# `:72567-72569`
+    /// recentres to 80×80 BEFORE its `:72571` play), the rest at the
+    /// pre-resize `base.position`. Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_owed_the_landed_sibling_cues_queue_their_payloads() {
+        let mut pool = ProjectilePool::new();
+        // (kind, w, h, id, style, position-mode) — mode 0 = top-left,
+        // 1 = Centre, 2 = old centre − 40 (the jellyfish recentre). Boxes
+        // from the pushed rows: 949 `Projectile.cs:8948-8955` (d19
+        // a4185f89), 410 `:4917-4932` (d8 e66b41b0), 590 `:6385-6396` (d12
+        // 9152b259), 539 `:6142-6150` / 576 `:6258-6269` (d11 e0395afc),
+        // 728 `:7659-7671` / 729 `:7672-7687` (d16 e122a6b2), 1115
+        // `:10401-10412` (d21 9fa9e9ba), 1120 `:10479-10490` (a9 8c4fded8).
+        let cases: [(u16, f32, f32, u16, i32, u8); 9] = [
+            (949, 4.0, 4.0, 2, 10, 1),
+            (410, 14.0, 14.0, 2, 54, 0),
+            (590, 14.0, 14.0, 0, 27, 0),
+            (539, 18.0, 30.0, 4, 7, 2),
+            (728, 24.0, 24.0, 2, 10, 0),
+            (729, 20.0, 20.0, 2, 10, 0),
+            (1115, 10.0, 10.0, 2, 27, 0),
+            (1120, 10.0, 10.0, 0, 0, 0),
+            (576, 4.0, 4.0, 2, 10, 0),
+        ];
+        for (kind, w, h, id, style, mode) in cases {
             pool.slots_mut()[0] = Projectile {
                 active: true,
                 kind,
@@ -29214,6 +30303,244 @@ mod s1_e_21h_sound_tests {
         assert_eq!(p.ai[1], 41.0);
         assert!(!p.active, "the >40 kill (`:37677-37680`)");
         assert!(p.vel.y <= 18.0, "the 18 cap held");
+                pos: Vec2::new(64.0, 64.0),
+                w,
+                h,
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one owed death cue");
+            let (qx, qy) = match mode {
+                1 => (64.0 + w * 0.5, 64.0 + h * 0.5),
+                2 => (64.0 + w * 0.5 - 40.0, 64.0 + h * 0.5 - 40.0),
+                _ => (64.0, 64.0),
+            };
+            assert_eq!(queued[0], (id, style, qx, qy, 0.0, 1.0), "kind {kind}'s payload");
+            assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
+        }
+    }
+
+    /// S1-E-21h f1 owed-arm phase — the rope coils' `ai[1] == 0f` gate
+    /// (`Projectile.cs:74617`/:74681): a coil that already placed rope dies
+    /// silent; the fresh coil queues the Dig thud. Rows ride d4's pushed
+    /// tip 7e3bdea6 (`Projectile.cs:2570-2578`/:5496-5504: 14×14, aiStyle
+    /// 35). Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_owed_the_rope_coils_gate_on_ai1() {
+        let mut pool = ProjectilePool::new();
+        for kind in [171u16, 475, 505, 506] {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w: 14.0,
+                h: 14.0,
+                ..Default::default()
+            };
+            // The placed-rope coil (`ai[1] != 0f`) rides cue-less.
+            pool.slots_mut()[0].ai[1] = 1.0;
+            pool.kill_sound_cue(0, false);
+            assert!(pool.drain_proj_sounds().is_empty(), "kind {kind}: placed rope is silent");
+            // The fresh coil (`ai[1] == 0f`) queues the Dig thud.
+            pool.slots_mut()[0].ai[1] = 0.0;
+            pool.kill_sound_cue(0, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued, vec![(0, 0, 64.0, 64.0, 0.0, 1.0)], "kind {kind}'s Dig thud");
+        }
+    }
+
+    /// S1-E-21h f1 owed-arm phase — the keep-one census: the kinds that
+    /// SELF-ARM on their pushed sibling branches queue NOTHING from f1's
+    /// `kill_sound_cue` (229 g2 `chlorophyte_orb_kill`, 596 g5
+    /// `djinn_curse_kill`, 608 d12 `solar_counter_kill_resize`, 1024 d12
+    /// sticker `wants_sound`, 761/762 d16 paper-airplane arm — ANALYSIS
+    /// part 6's keep-one table cites each play position). Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_owed_the_self_arming_siblings_stay_unarmed_here() {
+        let mut pool = ProjectilePool::new();
+        for kind in [229u16, 596, 608, 1024, 761, 762] {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0, false);
+            assert!(
+                pool.drain_proj_sounds().is_empty(),
+                "kind {kind} self-arms on its sibling — f1 keeps one"
+            );
+        }
+    }
+
+    /// S1-E-21h f1 final phase — the Flame Burst Tower shots' Item100
+    /// (`Projectile.cs:71848`, the range census's one unclaimed rowed
+    /// site): the C# recentres to `16 * num129` (96, or 208 under the
+    /// owner's `setApprenticeT3`, `:71832-71846`) BEFORE the play, so the
+    /// cue reads the OLD centre minus the blast half (48 / 104 — the 539
+    /// jellyfish derived-read precedent). RETIRE-phase re-pin: the 706
+    /// Phantom Phoenix NOW rides the same arm (its row landed on d80
+    /// `c10fda594`, 66×66 — the arm is INERT on this base until the merge;
+    /// a constructed slot proves the payload). Written, NOT run —
+    /// code-only mode.
+    #[test]
+    fn s1_e_21h_f1_final_the_flame_burst_shots_play_at_the_derived_recentre() {
+        let mut pool = ProjectilePool::new();
+        for kind in [FLAME_BURST_SHOT_1, FLAME_BURST_SHOT_2, FLAME_BURST_SHOT_3] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 64.0, 64.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row (S1-D-4b-9)"));
+            // The 16×16 row box: centre (72, 72).
+            // Base: 96-box → play at centre − 48 = (24, 24).
+            pool.kill_sound_cue(slot, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued, vec![(2, 100, 24.0, 24.0, 0.0, 1.0)], "kind {kind} base");
+            // T3: 208-box → play at centre − 104 = (−32, −32).
+            pool.kill_sound_cue(slot, true);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued, vec![(2, 100, -32.0, -32.0, 0.0, 1.0)], "kind {kind} T3");
+            pool.kill(slot);
+        }
+        // The 706 Phantom Phoenix (d80 `c10fda594` row, 66×66): the SAME
+        // derived-recentre arm — centre (97, 97), base play (49, 49),
+        // T3 play (−7, −7). CONSTRUCTED (the row is not on this base —
+        // the arm is inert until the merge, the owed-phase convention).
+        pool.slots_mut()[0] = Projectile {
+            active: true,
+            kind: 706,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            w: 66.0,
+            h: 66.0,
+            ..Default::default()
+        };
+        pool.kill_sound_cue(0, false);
+        assert_eq!(
+            pool.drain_proj_sounds(),
+            vec![(2, 100, 49.0, 49.0, 0.0, 1.0)],
+            "706 base: centre 97 − 48"
+        );
+        pool.kill_sound_cue(0, true);
+        assert_eq!(
+            pool.drain_proj_sounds(),
+            vec![(2, 100, -7.0, -7.0, 0.0, 1.0)],
+            "706 T3: centre 97 − 104"
+        );
+    }
+
+    /// S1-E-21h f1 FINAL phase — the second owed wave's cue table: the
+    /// part-6 rowless kinds whose rows landed on the sibling tips AFTER
+    /// the part-6 sweep (d3/d6/d10/d11/d15/d18/d78/e3/f42/f48/g8 — the
+    /// final re-census, ANALYSIS part 7). The slots are CONSTRUCTED
+    /// directly (the base table has no rows — the arms are INERT until
+    /// the merge lands the siblings' rows); the boxes ride the cited
+    /// rows. The 931/1039/1047 play at Center, the rest at the pre-resize
+    /// top-left. Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_final_the_second_owed_wave_queues_its_payloads() {
+        let mut pool = ProjectilePool::new();
+        // (kind, w, h, id, style, centre?) — boxes from the pushed rows:
+        // 931/1039 d18 data.rs:3924/:3933, 1047/1048/1053/1054/1055/99/
+        // 727/1013/1014/1021/1057/1005/655 d3 data.rs:3368-3392, 523/514
+        // d10 data.rs:1771/:1757, 1037/1049 e3 data.rs:3863/:3869 (24x24),
+        // 1124 d78 data.rs:3302 (6x6), 723-726/1133 f48 data.rs:3871
+        // (24x24), 128 g8 data.rs:3216 (14x14), 12 d15 data.rs:4117,
+        // 321 d6 data.rs:2846 (30x30), 31 f42 data.rs:3996 (10x10), 584
+        // d11 data.rs:2566, 246/249 d78 data.rs:3822/:3830, 503 e3
+        // data.rs:3858 (24x24).
+        let cases: [(u16, f32, f32, u16, i32, bool); 28] = [
+            (931, 30.0, 30.0, 2, 10, true),
+            (1039, 30.0, 30.0, 2, 10, true),
+            (1047, 31.0, 31.0, 42, 274, true),
+            (523, 32.0, 32.0, 2, 54, false),
+            (1037, 24.0, 24.0, 2, 89, false),
+            (1049, 24.0, 24.0, 2, 89, false),
+            (1124, 6.0, 6.0, 0, 0, false),
+            (1048, 31.0, 31.0, 2, 16, false),
+            (1053, 31.0, 31.0, 2, 14, false),
+            (1054, 31.0, 31.0, 3, 29, false),
+            (1055, 31.0, 31.0, 4, 6, false),
+            (99, 31.0, 31.0, 0, 0, false),
+            (727, 31.0, 31.0, 0, 0, false),
+            (1013, 31.0, 31.0, 0, 0, false),
+            (1014, 31.0, 31.0, 0, 0, false),
+            (1021, 31.0, 31.0, 0, 0, false),
+            (1057, 31.0, 31.0, 0, 0, false),
+            (1005, 15.0, 15.0, 0, 0, false),
+            (655, 31.0, 31.0, 4, 1, false),
+            (723, 24.0, 24.0, 2, 10, false),
+            (724, 24.0, 24.0, 2, 10, false),
+            (725, 24.0, 24.0, 2, 10, false),
+            (726, 24.0, 24.0, 2, 10, false),
+            (1133, 24.0, 24.0, 2, 10, false),
+            (128, 14.0, 14.0, 2, 27, false),
+            (12, 18.0, 18.0, 2, 10, false),
+            (321, 30.0, 30.0, 2, 10, false),
+            (31, 10.0, 10.0, 0, 0, false),
+        ];
+        for (kind, w, h, id, style, centre) in cases {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w,
+                h,
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one owed death cue");
+            let (qx, qy) = if centre {
+                (64.0 + w * 0.5, 64.0 + h * 0.5)
+            } else {
+                (64.0, 64.0)
+            };
+            assert_eq!(queued[0], (id, style, qx, qy, 0.0, 1.0), "kind {kind}'s payload");
+            assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
+        }
+        // The second batch's tail kinds (the same construction shape).
+        for (kind, w, h, id, style) in [
+            (584u16, 10.0, 10.0, 0u16, 0i32),
+            (514, 10.0, 10.0, 2, 14),
+            (246, 10.0, 10.0, 2, 14),
+            (249, 12.0, 12.0, 2, 14),
+            (503, 24.0, 24.0, 2, 10),
+        ] {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w,
+                h,
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0, false);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued, vec![(id, style, 64.0, 64.0, 0.0, 1.0)], "kind {kind}");
+        }
+        // The still-rowless sibling stays OUT (the PART-arm convention):
+        // the 907 cloak sibling (its :75183 Item27 arm) rides cue-less.
+        // (RETIRE re-probe: the 706 moved to the Flame Burst arm — its
+        // row landed on d80 `c10fda594`; the payload witness lives in
+        // `s1_e_21h_f1_final_the_flame_burst_shots_play_at_the_derived_recentre`.)
+        for kind in [907u16] {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w: 16.0,
+                h: 16.0,
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0, false);
+            assert!(pool.drain_proj_sounds().is_empty(), "kind {kind} is rowless");
+        }
     }
 }
 
@@ -39455,8 +40782,10 @@ mod magic_ai_tests {
     #[test]
     fn test_dw_3_2_the_purple_laser_grows_to_four_and_keeps_a_resting_flight_counter() {
         // `:54021-54045`: `scale += 0.053f` (cap 4), `knockBack *= 1.0045f`,
-        // the 8-tick counter, and the `extraUpdates = (int)ai[0]` remap that
-        // never fires because `flag3` holds `ai[0]` at rest for this kind.
+        // the 8-tick counter, and the `extraUpdates = (int)ai[0]` remap.
+        // THIS fixture spawns with ai0 = 0 (no shoot-path seed), so the
+        // remap never fires here; the seeded case (the Laser Rifle's
+        // `Next(3, 6)`, `Player.cs:49381`) is the F4 witness below.
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(
@@ -39496,6 +40825,64 @@ mod magic_ai_tests {
             4,
             "the row's extraUpdates rides untouched"
         );
+    }
+
+    /// W4-f20 F4 — the seeded remap: the Laser Rifle's shoot path seeds
+    /// `ai[0] = Main.rand.Next(3, 6)` (`Player.cs:49381`, the editing.rs
+    /// ai0 arm), so the `:54025` remap DOES fire — the row's extraUpdates 4
+    /// becomes the seed (3..5) on the first AI tick. The flight counter
+    /// rests (88 is `flag3 = false`, `:55957`), so the seed never grows and
+    /// the remap re-writes the same value every tick. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f20_f4_the_seeded_purple_laser_remaps_extra_updates_to_the_seed() {
+        for seed in [3.0f32, 4.0, 5.0] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(
+                    PURPLE_LASER,
+                    10.0 * TILE_PX,
+                    10.0 * TILE_PX,
+                    2.0,
+                    0.0,
+                    200,
+                    2.0,
+                    seed,
+                    0.0,
+                )
+                .unwrap();
+            assert_eq!(pool.slots()[slot].extra_updates, 4, "the row's 4 pre-AI");
+            let mut w = world();
+            step(&mut pool, &mut w);
+            assert_eq!(
+                pool.slots()[slot].extra_updates, seed as u32,
+                ":54025 — the remap takes the seed"
+            );
+            // The counter rests — the seed never grows, the remap is stable.
+            for _ in 0..30 {
+                step(&mut pool, &mut w);
+            }
+            assert_eq!(pool.slots()[slot].ai[0], seed, "flag3=false (:55957)");
+            assert_eq!(pool.slots()[slot].extra_updates, seed as u32);
+        }
+    }
+
+    /// W4-f20 F4 — the `.min(15.0)` cap the C# lacks is INERT for every
+    /// reachable input: the shoot seed is 3..5 (all < 15, so the cap never
+    /// binds), and the only writer that could exceed 15 would be a net-wire
+    /// ai[0] payload — no such writer exists (the hostile 88 spawns ride
+    /// ai0 0). The cap stays as the u32-cast guard; this witness pins that
+    /// the whole reachable seed range passes the cap unchanged. WRITTEN
+    /// NOT RUN (the finalize note, research/26f F4).
+    #[test]
+    fn w4_f20_f4_the_cap_is_inert_across_the_reachable_seed_range() {
+        // Every seed the shoot path can draw (Next(3, 6) = 3, 4, 5) maps
+        // through `.min(15.0)` unchanged — the C# `(int)ai[0]` and the
+        // port's capped cast agree on the whole producer range.
+        for seed in 3..6 {
+            let capped = (seed as f32).min(15.0) as u32;
+            let bare = seed as u32;
+            assert_eq!(capped, bare, "seed {seed}: the cap never binds");
+        }
     }
 
     #[test]
@@ -49946,6 +51333,157 @@ mod s1_p_i22_magic_guns_tomes_tests {
         assert!(p.local_ai[2] > 0.0, "the start Y snapshot");
         assert_eq!(p.alpha, 255, "the aiStyle-48 alpha write (`:28240`)");
     }
+
+    /// W4-f20 F3 — the 1110 row carries the verbatim `SetDefaults` slice
+    /// (`Projectile.cs:10340-10352`) + the 300-tick `NewProjectileSetup`
+    /// seed (`:11065-11068`) + the 4-frame sheet (`Main.cs:8559`).
+    #[test]
+    fn w4_f20_f3_the_1110_row_is_verbatim() {
+        let d = proj_data(SKY_DRAGONS_FURY_ELECTROSPHERE).expect("the 1110 row");
+        assert_eq!((d.w, d.h), (80.0, 80.0), "`:10342-10343`");
+        assert_eq!(d.ai_style, 77, "`:10344`");
+        assert_eq!(d.penetrate, -1, "`:10351`");
+        assert_eq!(d.time_left, 300, "the `:11067` seed");
+        assert_eq!(d.extra_updates, 0);
+        assert!(!d.tile_collide, "`:10350`");
+        assert!(d.ignore_water, "`:10349`");
+        assert_eq!(d.alpha, 255, "`:10346`");
+        assert_eq!(d.scale, 1.0, "`:10347`");
+        assert!(d.melee, "`:10348`");
+        assert_eq!(proj_frames(SKY_DRAGONS_FURY_ELECTROSPHERE), 4, "`Main.cs:8559`");
+        // The 443 sibling shares the sheet + the aiStyle-77 arm.
+        assert_eq!(proj_frames(ELECTROSPHERE), 4, "`Main.cs:8536`");
+    }
+
+    /// W4-f20 F3 — the 709 Kill hook spawns the 1110 circle at the corpse
+    /// centre with the shot's damage / 0 knockback, `timeLeft = 30 *
+    /// Next(2,6)` (`Projectile.cs:73384-73386`). The 709 row lives on d15
+    /// (row-gated inert here), so the witness hand-builds the 709 slot (the
+    /// d7 unwired precedent) and drives the hook directly.
+    #[test]
+    fn w4_f20_f3_the_709_kill_spawns_the_circle_with_the_rng_life() {
+        let mut pool = ProjectilePool::new();
+        // A hand-built 709 corpse at centre (400, 300), damage 50, owner 0.
+        let slot = {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false; // the corpse (the hook runs on the !active transition)
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 0;
+            p.pos = Vec2::new(400.0 - 6.0, 300.0 - 6.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+            0
+        };
+        // A scripted stream: Next(2,6) returns 4 → timeLeft 120.
+        struct LifeRng;
+        impl DropRng for LifeRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                assert_eq!((min, max), (2, 6), "`:73386` — the one draw");
+                4
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = LifeRng;
+        pool.sky_dragons_fury_kill(slot, &mut rng, 0);
+        let circle = pool
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == SKY_DRAGONS_FURY_ELECTROSPHERE)
+            .expect("the death spawns the circle");
+        assert_eq!(circle.damage, 50, "the shot's damage (`:73384`)");
+        assert_eq!(circle.knock_back, 0.0, "knockback 0 (`:73384`)");
+        assert_eq!(circle.owner, 0, "the owner preserved");
+        assert_eq!(circle.time_left, 120, "30 * Next(2,6)=4 (`:73386`)");
+        // The spawn takes the centre (the 80×80 half-box subtracts).
+        assert_eq!(circle.pos, Vec2::new(400.0 - 40.0, 300.0 - 40.0));
+        assert_eq!(circle.vel, Vec2::ZERO, "the spawn velocity 0 (`:73384`)");
+    }
+
+    /// W4-f20 F3 — the pull-in: every own 1110 whose box intersects the
+    /// 80×80 centre box gets `ai[1] = 1` + the velocity pull toward the
+    /// corpse centre / 5 + `netUpdate` (`Projectile.cs:73374-73383`). A
+    /// circle outside the box, or another owner's, is untouched.
+    #[test]
+    fn w4_f20_f3_the_709_kill_pulls_in_the_nearby_circles() {
+        let mut pool = ProjectilePool::new();
+        // The 709 corpse at centre (400, 300).
+        {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false;
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 0;
+            p.pos = Vec2::new(394.0, 294.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+        }
+        // A nearby own circle at centre (430, 300) — inside the 80×80 box.
+        let near = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 0, 430.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        // A far own circle at centre (600, 300) — outside the box.
+        let far = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 0, 600.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        // Another owner's circle inside the box — untouched.
+        let other = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 1, 420.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        struct LifeRng;
+        impl DropRng for LifeRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                2
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = LifeRng;
+        pool.sky_dragons_fury_kill(0, &mut rng, 0);
+        let n = &pool.slots()[near];
+        assert_eq!(n.ai[1], 1.0, "`:73379` — the pull-in latch");
+        // The pull: (corpse centre - circle centre) / 5 = ((400-430)/5, 0).
+        assert_eq!(n.vel, Vec2::new(-6.0, 0.0), "`:73380` — the velocity pull");
+        assert!(n.net_update, "`:73381`");
+        assert_eq!(pool.slots()[far].ai[1], 0.0, "the far circle is untouched");
+        assert_eq!(pool.slots()[far].vel, Vec2::ZERO);
+        assert_eq!(pool.slots()[other].ai[1], 0.0, "the other owner's circle is untouched");
+    }
+
+    /// W4-f20 F3 — the owner gate: a remote-owned 709 spawns no circle
+    /// (`Main.myPlayer == this.owner`, `Projectile.cs:73372`).
+    #[test]
+    fn w4_f20_f3_a_remote_owned_709_spawns_no_circle() {
+        let mut pool = ProjectilePool::new();
+        {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false;
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 1; // remote
+            p.pos = Vec2::new(394.0, 294.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+        }
+        struct NoDrawRng;
+        impl DropRng for NoDrawRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                panic!("the owner gate skips the spawn — no draw");
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = NoDrawRng;
+        pool.sky_dragons_fury_kill(0, &mut rng, 0);
+        assert!(
+            !pool.slots().iter().any(|p| p.active && p.kind == SKY_DRAGONS_FURY_ELECTROSPHERE),
+            "the remote owner spawns nothing"
+        );
+    }
 }
 
 /// S1-P-i23 — the channel machinery witnesses (written, NOT run — code-only
@@ -51410,6 +52948,133 @@ mod w4_g1a_kill_hook_tests {
 }
 
 #[cfg(test)]
+mod w4_f20_f6_quiver_tests {
+    //! W4-f20 F6 — the magicQuiver Update-tail bump
+    //! (`Projectile.cs:17032-17035`): the friendly arrow-flag kinds gain
+    //! `extraUpdates = 1` while the owner wears a quiver. WRITTEN NOT RUN
+    //! (code-only contract); every value hand-derived from the cited C#.
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 128, 128)
+    }
+
+    fn quiver_player(w: &World) -> crate::player::Player {
+        let mut p = crate::player::Player::spawn(w);
+        p.x = 200.0;
+        p.y = 200.0;
+        p.magic_quiver = true;
+        p
+    }
+
+    fn step_with(
+        pool: &mut ProjectilePool,
+        w: &mut World,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            player,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    /// The bump fires on the FIRST update and takes effect on the SECOND:
+    /// the C# reads `numUpdates` once at `:16675`, so tick 1 spends ONE
+    /// timeLeft (1200 → 1199) and tick 2 spends TWO (1199 → 1197).
+    #[test]
+    fn w4_f20_f6_the_quiver_bumps_the_arrows_extra_updates_from_the_next_tick() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOODEN_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "the row's stock 0");
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 1, ":17034 — the bump");
+        assert_eq!(pool.slots()[slot].time_left, 1199, "tick 1: one sub-step");
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].time_left, 1197, "tick 2: two sub-steps");
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the < 1 gate holds it at 1");
+    }
+
+    /// No quiver → no bump: the plain arrow keeps the row's sub-step count
+    /// and spends one timeLeft per tick.
+    #[test]
+    fn w4_f20_f6_without_the_quiver_the_arrow_keeps_one_sub_step() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOODEN_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 200.0;
+        p.y = 200.0;
+        step_with(&mut pool, &mut w, Some(&mut p));
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "no quiver, no bump");
+        assert_eq!(pool.slots()[slot].time_left, 1198, "one per tick");
+    }
+
+    /// The `arrow` flag gate (`:17032`): the musket ball (14, arrow=false)
+    /// keeps its stock count even with the quiver on.
+    #[test]
+    fn w4_f20_f6_the_bump_is_arrow_flag_gated() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(MUSKET_BALL, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "the bullet is not an arrow");
+    }
+
+    /// The `extraUpdates < 1` gate: the Frost Arrow (120, row extraUpdates
+    /// 1) is already sub-stepped — the bump never rewrites it.
+    #[test]
+    fn w4_f20_f6_the_bump_skips_already_substepped_arrows() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FROST_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the row's 1");
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the < 1 gate");
+        assert_eq!(pool.slots()[slot].time_left, 1198, "two sub-steps from tick 1");
+    }
+
+    /// The owner gate (`Main.player[this.owner]`): a remote-owned arrow
+    /// reads no local quiver flag — the bump stays off (the port has one
+    /// player; the `owner == local_owner` gate folds the C# read).
+    #[test]
+    fn w4_f20_f6_a_remote_owned_arrow_takes_no_local_quiver_bump() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_owned(WOODEN_ARROW, 1, 300.0, 300.0, 6.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        // The remote slot is not locally simulated (owner 1 != local 0),
+        // so it does not even tick — the C# `:17210` netMode gate.
+        assert_eq!(pool.slots()[slot].extra_updates, 0);
+        assert_eq!(pool.slots()[slot].time_left, 1200, "untouched");
+    }
+}
+
+#[cfg(test)]
 mod w4_g2_rowless_tests {
     //! W4-g2 — the rowless-kind round (d5 findings F1/F4/F5/F6): the
     //! aiStyle-48 delay/cue/reflect arms (290/433), the aiStyle-50 hostile
@@ -52837,3 +54502,4 @@ mod w4_g3_final_damage_mult_tests {
     }
 }
 
+}}}}

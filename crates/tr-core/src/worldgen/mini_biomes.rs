@@ -4,7 +4,8 @@
 //! `EnchantedSwordBiome` (the sword shrines), `MahoganyTreeBiome` (the
 //! jungle's living mahogany trees — S1-K-2 wave A, the faithful port) and
 //! `MiningExplosivesBiome` (the wired ore-vein traps — S1-K-2 wave B, the
-//! faithful port).
+//! faithful port) and `DeadMansChestBiome` (the trapped gold chests —
+//! W4-c29, the faithful port).
 //!
 //! Source map (line numbers into `decompiled/Terraria/GameContent/Biomes/`):
 //! - `CaveHouseBiome.Place` (`:34-92`): the 25-tile wire/chest exclusion,
@@ -1664,13 +1665,14 @@ fn place_explosives_tile(world: &mut World, x: i32, y: i32) {
     t.frame_y = 0;
 }
 
-/// `WorldGen.Place2x2(x, y, 411, style 0)` (`WorldGen.cs:51330-51423`): the
-/// detonator write — the 5-tile bounds gate, the 2×2 body
+/// `WorldGen.Place2x2(x, y, kind, style 0)` (`WorldGen.cs:51330-51423`): the
+/// floor-supported 2×2 write — the 5-tile bounds gate, the 2×2 body
 /// `(x-1..=x, y-1..=y)` empty, both floor columns `(x-1, y+1)`/`(x, y+1)`
-/// active and `SolidTile2` (the `tileTable` alternative never fires — the
-/// caller reset the floor to stone), then the 2×2 at `(x-1, y-1)` with
-/// `frameX = k*18`, `frameY = l*18`.
-fn place_detonator_tile(world: &mut World, x: i32, y: i32) {
+/// active and `SolidTile2` OR `tileTable` (the default arm `:51371-51378`),
+/// then the 2×2 at `(x-1, y-1)` with `frameX = k*18`, `frameY = l*18`.
+/// The detonator 411 site (`MiningExplosivesBiome.cs:79`) and the boulder
+/// 138 site (`DeadMansChestBiome.cs:612`) share it.
+fn place_2x2_floor_tile(world: &mut World, x: i32, y: i32, kind: u16) {
     if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
         return;
     }
@@ -1681,7 +1683,13 @@ fn place_detonator_tile(world: &mut World, x: i32, y: i32) {
             }
         }
         let floor = world.tile(i, y + 1);
-        if !floor.is_some_and(|t| t.active()) || !solid_tile2(world, i, y + 1) {
+        // `nactive()` (`Tile.cs:240-247`): active AND not actuated.
+        let floor_ok = floor.is_some_and(|t| {
+            t.active()
+                && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+                && (solid_tile2(world, i, y + 1) || crate::tileobject::is_table(t.kind))
+        });
+        if !floor_ok {
             return;
         }
     }
@@ -1690,7 +1698,7 @@ fn place_detonator_tile(world: &mut World, x: i32, y: i32) {
             let i = world.index(x - 1 + k, y - 1 + l);
             let t = &mut world.tiles[i];
             t.flags |= FLAG_ACTIVE;
-            t.kind = 411;
+            t.kind = kind;
             t.frame_x = (k * 18) as i16;
             t.frame_y = (l * 18) as i16;
         }
@@ -1866,7 +1874,7 @@ pub(crate) fn place_mining_explosives(
     }
     // `:78-80`: the explosives, the detonator and the wire run.
     place_explosives_tile(world, result.0, result.1);
-    place_detonator_tile(world, result2.0, result2.1);
+    place_2x2_floor_tile(world, result2.0, result2.1, 411);
     wire_line(world, result, result2);
     // `:81`: `AddProtectedStructure(area, 5)` — the box inflated by 5.
     protected.push((area.0 - 5, area.1 - 5, area.2 + 10, area.3 + 10));
@@ -1938,6 +1946,636 @@ pub(crate) fn pass_mining_explosives(
         if place_mining_explosives(world, x, y, &mut protected, rng) {
             placed += 1;
         }
+    }
+    placed
+}
+
+// --- the dead man's chests (W4-c29) -------------------------------------------
+//
+// `DeadMansChestBiome` (`DeadMansChestBiome.cs:10-625`) + the Micro Biomes
+// pass's dead-man's-chest block (`WorldGen.cs:20916-20938`). The gold chest
+// is retyped to the dead man's chest 467 (style 4) and wired to dart traps,
+// boulder traps and explosives found around it. The four placement-attempt
+// caches (`:85-91`) are local Vecs; the `IntRange` draws are `Next(min,
+// max+1)` (`Utils.cs:1241-1244`) over the same `genRand` stream the block
+// draws from (`GenBase.cs:9`).
+
+/// `DeadMansChestBiome.IsAGoodSpot` (`:450-482`): the 50-fluff bounds gate,
+/// the ocean-depths veto, the gold chest (tile 21, style 1) anchor, the
+/// clearable floor two rows down, the 20-tile wire exclusion and the
+/// >=40-cell `countTiles(jungle: false, lavaOk: true)` pocket.
+fn dead_mans_good_spot(world: &World, x: i32, y: i32) -> bool {
+    // `:452-454`: InWorld(x, y, 50).
+    if !in_world_fluff(world, x, y, 50) {
+        return false;
+    }
+    // `:456-459`: oceanDepths — the beach bands above oceanLevel.
+    let ocean_level = (world.world_surface + world.rock_layer) / 2.0 + 40.0;
+    if y as f64 <= ocean_level && (x < 380 || x > world.width - 380) {
+        return false;
+    }
+    // `:460-468`: the anchor must be the style-1 gold chest (tile 21,
+    // frameX/36 == 1 — the port's `frame_x = 18*style` convention, so
+    // `frame_x/18 == 1`). The C# reads `tile.type`/`tile.frameX` with NO
+    // active check — ported verbatim (a chest record's anchor is active in
+    // practice; the gate itself does not test it).
+    let anchor = world.tile(x, y);
+    if !anchor.is_some_and(|t| t.kind == 21 && t.frame_x / 18 == 1) {
+        return false;
+    }
+    // `:469-472`: the floor two rows down must be clearable.
+    let floor_kind = world.tile(x, y + 2).map(|t| t.kind).unwrap_or(0);
+    if !crate::tiledata::SET_CAN_BE_CLEARED_DURING_GENERATION.has(floor_kind) {
+        return false;
+    }
+    // `:473-476`: countWires(x, y, 20) > 0 vetoes (any of the four colours).
+    if dead_mans_count_wires(world, x, y, 20) > 0 {
+        return false;
+    }
+    // `:477-480`: countTiles(x, y, jungle: false, lavaOk: true) < 40 vetoes.
+    // maxTileCount is 3500 at MicroBiomes time (`WorldGen.cs:19593`).
+    let c = super::spider_gem_moss::count_tiles(world, x, y, true, 3500);
+    c.tiles >= 40
+}
+
+/// `WorldGen.countWires` (`WorldGen.cs:9515-9544`): the (2*size+1)² box
+/// counts each of the four wire colours per cell.
+fn dead_mans_count_wires(world: &World, x: i32, y: i32, size: i32) -> i32 {
+    let mut n = 0;
+    for i in x - size..=x + size {
+        for j in y - size..=y + size {
+            if i < 0 || j < 0 || i >= world.width || j >= world.height {
+                continue;
+            }
+            for c in [
+                crate::wiring::WireColor::Red,
+                crate::wiring::WireColor::Blue,
+                crate::wiring::WireColor::Green,
+                crate::wiring::WireColor::Yellow,
+            ] {
+                if world.wires.get(i, j, c) {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}
+
+/// `WorldGen.CanBeClearedDuringGeneration` (`WorldGen.cs:80168-80175`) — the
+/// `dualDungeons` veto is inactive in the port (no dual-dungeon bounds
+/// model), so the set lookup stands.
+fn clearable(kind: u16) -> bool {
+    crate::tiledata::SET_CAN_BE_CLEARED_DURING_GENERATION.has(kind)
+}
+
+/// `TileID.Sets.IsAContainer` (`TileID.cs:617`): 21, 467, 88.
+fn is_container(kind: u16) -> bool {
+    crate::tiledata::SET_IS_A_CONTAINER.has(kind)
+}
+
+/// The boulder-trap spot the finder records (`BoulderPlacementAttempt`,
+/// `:37-54`).
+struct BoulderSpot {
+    pos: (i32, i32),
+    y_push: i32,
+    required_height: i32,
+    best_type: u16,
+}
+
+/// The dart-trap spot (`DartTrapPlacementAttempt`, `:12-35`).
+struct DartSpot {
+    pos: (i32, i32),
+    direction_x: i32,
+    x: i32,
+    y: i32,
+    x_push: i32,
+}
+
+/// The wire run (`WirePlacementAttempt`, `:56-73`).
+struct WireSpot {
+    pos: (i32, i32),
+    dir_x: i32,
+    dir_y: i32,
+    steps: i32,
+}
+
+/// The four placement caches (`:85-91`) plus the explosive spots.
+#[derive(Default)]
+struct DeadMansCaches {
+    darts: Vec<DartSpot>,
+    wires: Vec<WireSpot>,
+    boulders: Vec<BoulderSpot>,
+    explosives: Vec<(i32, i32)>,
+}
+
+/// `DeadMansChestBiome.AreThereEnoughTraps` (`:163-170`): at least one
+/// boulder OR explosive, AND at least one dart.
+fn enough_traps(c: &DeadMansCaches) -> bool {
+    (c.boulders.len() >= 1 || c.explosives.len() >= 1) && c.darts.len() >= 1
+}
+
+/// `DeadMansChestBiome.FindBoulderTrapSpots` (`:180-220`): the count roll
+/// `Next(2, 5)` and the step roll `Next(2, 5)`, the left-shifted scan line
+/// `position.Y - 6`, then the min/max x wire run and the vertical drop wire.
+fn find_boulder_trap_spots(world: &World, pos: (i32, i32), rng: &mut super::Rng, c: &mut DeadMansCaches) {
+    let mut x = pos.0;
+    let num = rng.range(2, 5); // _numberOfBoulderTraps = IntRange(2, 4)
+    let step = rng.range(2, 5); // _numberOfStepsBetweenBoulderTraps = IntRange(2, 4)
+    x -= num / 2 * step;
+    let line_y = pos.1 - 6;
+    for _ in 0..=num {
+        find_boulder_trap_spot(world, (x, line_y), c);
+        x += step;
+    }
+    if c.boulders.is_empty() {
+        return;
+    }
+    let mut lo = c.boulders[0].pos.0;
+    let mut hi = c.boulders[0].pos.0;
+    for b in &c.boulders[1..] {
+        lo = lo.min(b.pos.0);
+        hi = hi.max(b.pos.0);
+    }
+    lo = lo.min(pos.0);
+    hi = hi.max(pos.0);
+    c.wires.push(WireSpot { pos: (lo, line_y - 1), dir_x: 1, dir_y: 0, steps: hi - lo });
+    c.wires.push(WireSpot { pos, dir_x: 0, dir_y: -1, steps: 7 });
+}
+
+/// `DeadMansChestBiome.FindBoulderTrapSpot` (`:222-234`): scan up to 50 tiles
+/// up for the first active cell, then check it.
+fn find_boulder_trap_spot(world: &World, pos: (i32, i32), c: &mut DeadMansCaches) {
+    for i in 0..50 {
+        let y = pos.1 - i;
+        if active_at(world, pos.0, y) {
+            find_boulder_trap_spot_check(world, (pos.0, y), i, c);
+            break;
+        }
+    }
+}
+
+/// `DeadMansChestBiome.FindBoulderTrapSpot_CheckSpot` (`:236-296`): the 2×5
+/// solid-count histogram with the un-clearable/container veto, the 4×4
+/// solid ceiling ring, the not-both-active floor pair, the 5×7 container/
+/// ore exclusion and the dominant-kind pick.
+fn find_boulder_trap_spot_check(world: &World, pos: (i32, i32), y_push: i32, c: &mut DeadMansCaches) {
+    let mut hist = [0i32; crate::tiledata::TILE_COUNT];
+    // `:239-253`: the 2-wide × 5-tall body (position.Y-4 .. position.Y).
+    for i in pos.0..pos.0 + 2 {
+        for j in pos.1 - 4..=pos.1 {
+            let Some(t) = world.tile(i, j) else { return };
+            if t.active()
+                && !world.frame_important.get(t.kind as usize).copied().unwrap_or(false)
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+            {
+                hist[t.kind as usize] += 1;
+            }
+            if t.active() && (!clearable(t.kind) || is_container(t.kind)) {
+                return;
+            }
+        }
+    }
+    // `:254-264`: the 4-wide × 4-tall ceiling ring above the body — every
+    // cell must be active and non-container.
+    for k in pos.0 - 1..pos.0 + 3 {
+        for l in pos.1 - 5..=pos.1 - 2 {
+            let Some(t) = world.tile(k, l) else { return };
+            if !t.active() || is_container(t.kind) {
+                return;
+            }
+        }
+    }
+    // `:265-270`: the floor pair directly below must not both be active.
+    if active_at(world, pos.0, pos.1 + 1) && active_at(world, pos.0 + 1, pos.1 + 1) {
+        return;
+    }
+    // `:271-286`: the 6-wide × 6-tall exclusion box (container / 12 / 665 /
+    // 639) — `num = 2` pads the 2×5 body: `X-2..=X+3` × `Y-6..=Y-1`.
+    for m in pos.0 - 2..=pos.0 + 3 {
+        for n in pos.1 - 6..=pos.1 - 1 {
+            if world.tile(m, n).is_some_and(|t| {
+                t.active() && (is_container(t.kind) || matches!(t.kind, 12 | 665 | 639))
+            }) {
+                return;
+            }
+        }
+    }
+    // `:287-294`: the dominant solid kind (first max wins).
+    let mut best = 0usize;
+    for k in 1..hist.len() {
+        if hist[best] < hist[k] {
+            best = k;
+        }
+    }
+    c.boulders.push(BoulderSpot {
+        pos,
+        y_push: y_push - 1,
+        required_height: 4,
+        best_type: best as u16,
+    });
+}
+
+/// `DeadMansChestBiome.FindDartTrapSpots` (`:298-314`): the count roll
+/// `Next(3, 7)`, the direction roll `Next(2)` (1 → +1 else -1), the
+/// alternating-direction walk stepping up, then the vertical wire over the
+/// last successful index.
+fn find_dart_trap_spots(world: &World, pos: (i32, i32), rng: &mut super::Rng, c: &mut DeadMansCaches) {
+    let num = rng.range(3, 7); // _numberOfDartTraps = IntRange(3, 6)
+    let mut dir = if rng.range(0, 2) != 0 { 1 } else { -1 };
+    let mut steps = -1;
+    let mut cur = pos;
+    for i in 0..num {
+        let ok = find_dart_trap_spot_single(world, cur, dir, c);
+        dir *= -1;
+        cur.1 -= 1;
+        if ok {
+            steps = i;
+        }
+    }
+    c.wires.push(WireSpot { pos: (cur.0, cur.1 + num), dir_x: 0, dir_y: -1, steps });
+}
+
+/// `DeadMansChestBiome.FindDartTrapSpotSingle` (`:316-334`): scan up to 20
+/// cells sideways for the first solid non-container cell; it must be >=5
+/// away, non-actuated, non-frame-important and clearable.
+fn find_dart_trap_spot_single(world: &World, pos: (i32, i32), dir: i32, c: &mut DeadMansCaches) -> bool {
+    for i in 0..20 {
+        let px = pos.0 + i * dir;
+        let Some(t) = world.tile(px, pos.1) else { continue };
+        let container = (t.kind as usize) < crate::tiledata::TILE_COUNT && is_container(t.kind);
+        if !container && t.active() && crate::tiledata::TILE_SOLID.has(t.kind) {
+            if i >= 5
+                && !t.actuator()
+                && !world.frame_important.get(t.kind as usize).copied().unwrap_or(false)
+                && clearable(t.kind)
+            {
+                c.darts.push(DartSpot { pos, direction_x: dir, x: px, y: pos.1, x_push: i });
+                return true;
+            }
+            return false;
+        }
+    }
+    false
+}
+
+/// `DeadMansChestBiome.IsGoodSpotsForExplosive` (`:397-409`): an active
+/// solid, non-frame-important, non-solid-top, non-container cell.
+fn good_explosive_spot(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else { return false };
+    if t.active() && (t.kind as usize) < crate::tiledata::TILE_COUNT && is_container(t.kind) {
+        return false;
+    }
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !world.frame_important.get(t.kind as usize).copied().unwrap_or(false)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+}
+
+/// `DeadMansChestBiome.FindExplosiveTrapSpots` (`:336-395`): the centre pair,
+/// the right 4-band and the left 4-band picks, each `Next(list.Count)` over
+/// its good spots. The C# clears `list` only after the centre pick (`:355`),
+/// so the right and left bands ACCUMULATE — ported verbatim. The spots are
+/// appended left, centre, right (`:383-394`).
+fn find_explosive_trap_spots(world: &World, pos: (i32, i32), rng: &mut super::Rng, c: &mut DeadMansCaches) {
+    let y = pos.1 + 3;
+    let mut list: Vec<i32> = Vec::new();
+    let mut x = pos.0;
+    if good_explosive_spot(world, x, y) {
+        list.push(x);
+    }
+    x += 1;
+    if good_explosive_spot(world, x, y) {
+        list.push(x);
+    }
+    let centre = if !list.is_empty() { list[rng.range(0, list.len() as i32) as usize] } else { -1 };
+    list.clear(); // `:355` — the ONLY clear; the right/left bands accumulate.
+    x += rng.range(2, 6);
+    let band = 4;
+    for i in x..x + band {
+        if good_explosive_spot(world, i, y) {
+            list.push(i);
+        }
+    }
+    let right = if !list.is_empty() { list[rng.range(0, list.len() as i32) as usize] } else { -1 };
+    x = pos.0 - band - rng.range(2, 6);
+    for j in x..x + band {
+        if good_explosive_spot(world, j, y) {
+            list.push(j);
+        }
+    }
+    let left = if !list.is_empty() { list[rng.range(0, list.len() as i32) as usize] } else { -1 };
+    if left != -1 {
+        c.explosives.push((left, y));
+    }
+    if centre != -1 {
+        c.explosives.push((centre, y));
+    }
+    if right != -1 {
+        c.explosives.push((right, y));
+    }
+}
+
+/// `DeadMansChestBiome.TurnGoldChestIntoDeadMansChest` (`:484-519`): the 2×2
+/// retype to 467 style 4 (`frameX = 144 + i*18`, `frameY = j*18` — the
+/// `WorldGen.IsChestRigged` style, `netglue.rs:57-58`), then the `Next(3) ==
+/// 0` Dead Man's Sweater (5007) insert at slot 1: the occupied slots
+/// `len-2 ..= 1` copy DOWN one slot (the C# DeepClone loop, `:508-515` —
+/// empty slots are skipped, their stale sources survive), slot 1 becomes
+/// the sweater. The port's compressed slot vec materializes to the 40-slot
+/// `maxItems` first (`save.rs:140-146`), so the loop indices are the C#'s.
+fn turn_gold_into_dead_mans(world: &mut World, pos: (i32, i32), rng: &mut super::Rng) {
+    for i in 0..2 {
+        for j in 0..2 {
+            if let Some(t) = world.tile_mut(pos.0 + i, pos.1 + j) {
+                t.kind = 467;
+                t.frame_x = (144 + i * 18) as i16;
+                t.frame_y = (j * 18) as i16;
+            }
+        }
+    }
+    if rng.range(0, 3) != 0 {
+        return;
+    }
+    // `Chest.FindChest(position)` (`Chest.cs:513-520`) — the record at the
+    // anchor coords; none → the sweater insert is skipped.
+    let Some(idx) = world.chests.iter().position(|c| c.x == pos.0 && c.y == pos.1) else {
+        return;
+    };
+    let max = crate::wld::sections::chests::DEFAULT_MAX_ITEMS as usize;
+    let rec = &mut world.chests[idx];
+    rec.slots.resize(max, crate::save::ChestItem { stack: 0, kind: 0, prefix: 0 });
+    for k in (1..=max - 2).rev() {
+        if rec.slots[k].stack != 0 {
+            rec.slots[k + 1] = rec.slots[k];
+        }
+    }
+    rec.slots[1] = crate::save::ChestItem { stack: 1, kind: 5007, prefix: 0 };
+}
+
+/// `DeadMansChestBiome.PlaceWireLine` (`:539-545`): the inclusive
+/// `0..=steps` walk setting the red wire bit (a negative `steps` runs
+/// nothing — the dart wire's -1 sentinel).
+fn dead_mans_wire_line(world: &mut World, start: (i32, i32), dx: i32, dy: i32, steps: i32) {
+    for i in 0..=steps {
+        world.wires.set(start.0 + dx * i, start.1 + dy * i, crate::wiring::WireColor::Red, true);
+    }
+}
+
+/// `DeadMansChestBiome.ActuallyPlaceDartTrap` (`:521-537`): the found cell
+/// retypes to the dart trap 137 (`frameY = 0`, `frameX = 18` when firing
+/// left else 0), slope/half-brick cleared, then the wire run from the
+/// chest-side origin to the trap. The `TileFrame` re-frame rides the
+/// post-pipeline framing seam (137 is frame-important — `Main.cs:7431`).
+fn place_dart_trap(world: &mut World, d: &DartSpot) {
+    if let Some(t) = world.tile_mut(d.x, d.y) {
+        t.kind = 137;
+        t.frame_y = 0;
+        t.frame_x = if d.direction_x == -1 { 18 } else { 0 };
+        t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+    }
+    dead_mans_wire_line(world, d.pos, d.direction_x, 0, d.x_push);
+}
+
+/// `DeadMansChestBiome.ActuallyPlaceBoulderTrap` (`:547-614`): the 2-wide
+/// column — the top 2 rows cleared, the 5 body rows filled with the
+/// dominant kind (the do/while always exits after one iteration — the
+/// fill activates an inactive cell, an active cell passes the while test
+/// immediately), wired + actuated when solid, the bottom 2 rows cleared;
+/// then the 6×6 boulder seat box retypes non-boulder kinds to stone 1
+/// (wired cells gain the actuator), the boulder 138 `PlaceTile` →
+/// `Place2x2` and the drop wire.
+fn place_boulder_trap(world: &mut World, b: &BoulderSpot) {
+    for i in b.pos.0..b.pos.0 + 2 {
+        for j in b.pos.1 - b.required_height..=b.pos.1 + 2 {
+            if j < b.pos.1 - b.required_height + 2 || j > b.pos.1 {
+                clear_tile_keep(world, i, j);
+                continue;
+            }
+            let Some(t) = world.tile_mut(i, j) else { continue };
+            if !t.active() {
+                t.flags |= FLAG_ACTIVE;
+                t.kind = b.best_type;
+            }
+            t.set_slope(0);
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            world.wires.set(i, j, crate::wiring::WireColor::Red, true);
+            if crate::tiledata::TILE_SOLID.has(t.kind) {
+                t.flags |= crate::tile::FLAG_ACTUATOR;
+            }
+        }
+    }
+    // `:590-611`: the 6×6 seat box centred one above the body top
+    // (`num3 = 3` — the half-span, `num - 3 ..= num + 2`).
+    let cx = b.pos.0 + 1;
+    let cy = b.pos.1 - b.required_height + 1;
+    for k in cx - 3..=cx + 2 {
+        for l in cy - 3..=cy + 2 {
+            let wired = world.wires.get(k, l, crate::wiring::WireColor::Red);
+            if let Some(t) = world.tile_mut(k, l) {
+                if !crate::tiledata::SET_BOULDERS.has(t.kind) {
+                    t.kind = 1;
+                    if wired {
+                        t.flags |= crate::tile::FLAG_ACTUATOR;
+                    }
+                }
+            }
+        }
+    }
+    // `:612-613`: the boulder and the drop wire from the spot down.
+    place_boulder_2x2(world, cx, cy);
+    dead_mans_wire_line(world, b.pos, 0, 1, b.y_push);
+}
+
+/// `DeadMansChestBiome.ActuallyPlaceExplosive` (`:616-624`): the cell
+/// retypes to the explosives 141 (frames 0/0, slope/half-brick cleared).
+fn place_dead_mans_explosive(world: &mut World, pos: (i32, i32)) {
+    if let Some(t) = world.tile_mut(pos.0, pos.1) {
+        t.kind = 141;
+        t.frame_x = 0;
+        t.frame_y = 0;
+        t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+    }
+}
+
+/// `DeadMansChestBiome.PlaceWiresForExplosives` (`:138-161`): the vertical
+/// wire from the chest down to the FIRST explosive's row, then the
+/// horizontal run across the min/max x of ALL explosive spots at that row.
+fn place_wires_for_explosives(world: &mut World, origin: (i32, i32), c: &DeadMansCaches) {
+    if c.explosives.is_empty() {
+        return;
+    }
+    let first = c.explosives[0];
+    dead_mans_wire_line(world, origin, 0, 1, first.1 - origin.1);
+    let mut lo = first.0;
+    let mut hi = first.0;
+    for &(x, _) in &c.explosives[1..] {
+        lo = lo.min(x);
+        hi = hi.max(x);
+    }
+    dead_mans_wire_line(world, (lo, first.1), 1, 0, hi - lo);
+}
+
+/// `DeadMansChestBiome.Place` (`:102-136`): the good-spot gate, the three
+/// finders (boulder → dart → explosive, the exact draw order), the
+/// enough-traps gate, then the chest retype and the four placement loops in
+/// the C# order (darts, wires, boulders, explosives) + the explosive wires.
+fn place_dead_mans_chest(world: &mut World, origin: (i32, i32), rng: &mut super::Rng) -> bool {
+    if !dead_mans_good_spot(world, origin.0, origin.1) {
+        return false;
+    }
+    let mut c = DeadMansCaches::default();
+    let pos = (origin.0, origin.1 + 1);
+    find_boulder_trap_spots(world, pos, rng, &mut c);
+    find_dart_trap_spots(world, pos, rng, &mut c);
+    find_explosive_trap_spots(world, pos, rng, &mut c);
+    if !enough_traps(&c) {
+        return false;
+    }
+    turn_gold_into_dead_mans(world, origin, rng);
+    for d in &c.darts {
+        place_dart_trap(world, d);
+    }
+    for w in &c.wires {
+        dead_mans_wire_line(world, w.pos, w.dir_x, w.dir_y, w.steps);
+    }
+    for b in &c.boulders {
+        place_boulder_trap(world, b);
+    }
+    for &e in &c.explosives {
+        place_dead_mans_explosive(world, e);
+    }
+    place_wires_for_explosives(world, origin, &c);
+    true
+}
+
+/// The boulder seat's `WorldGen.PlaceTile(num, num2, 138)` wrapper gate
+/// (`WorldGen.cs:59342-59373` → `:59738-59741`): 138 is `tileSolid`
+/// (`Main.cs:7462`), not forced, so the write needs `Collision.EmptyTile`
+/// (`Collision.cs:1359-1381` — no active tile at the origin; the
+/// player/NPC intersection scans are inert at generation time) — THEN the
+/// `Place2x2` body runs its own gates. The wave-B detonator site called
+/// `forced: true` (`MiningExplosivesBiome.cs:79`) and skipped this wrapper.
+fn place_boulder_2x2(world: &mut World, x: i32, y: i32) {
+    if active_at(world, x, y) {
+        return;
+    }
+    place_2x2_floor_tile(world, x, y, 138);
+}
+
+/// `DeadMansChestBiome.GetPossibleChestsToTrapify` (`:411-448`): every
+/// chest record whose anchor passes `IsAGoodSpot` AND whose boulder+dart
+/// finds satisfy `AreThereEnoughTraps` (the explosive finder does NOT run
+/// here) AND the 1×1 `CanPlace` (padding 10) over the widened
+/// `GeneralPlacementTiles` set (21/467/138/664/712/713/714/715 re-allowed,
+/// `:419-426`). The finder draws consume the stream even for rejected
+/// candidates — the C# order is load-bearing.
+fn possible_chests_to_trapify(
+    world: &World,
+    protected: &[(i32, i32, i32, i32)],
+    rng: &mut super::Rng,
+) -> Vec<usize> {
+    let mut out = Vec::new();
+    for j in 0..world.chests.len() {
+        let (x, y) = (world.chests[j].x, world.chests[j].y);
+        if !dead_mans_good_spot(world, x, y) {
+            continue;
+        }
+        let mut c = DeadMansCaches::default();
+        let pos = (x, y + 1);
+        find_boulder_trap_spots(world, pos, rng, &mut c);
+        find_dart_trap_spots(world, pos, rng, &mut c);
+        if !enough_traps(&c) {
+            continue;
+        }
+        // `StructureMap.CanPlace(Rectangle(x, y, 1, 1), array, 10)`
+        // (`StructureMap.cs:24-52`): the bounds gate on the UNPADDED area,
+        // the protected-rect and tile scans on the padding-10 box.
+        if x < 0 || y < 0 || x + 1 > world.width - 1 || y + 1 > world.height - 1 {
+            continue;
+        }
+        let (bx, by) = (x - 10, y - 10);
+        let mut blocked = false;
+        for &(rx, ry, rw, rh) in protected {
+            if bx < rx + rw && bx + 21 > rx && by < ry + rh && by + 21 > ry {
+                blocked = true;
+                break;
+            }
+        }
+        if blocked {
+            continue;
+        }
+        'scan: for px in bx..bx + 21 {
+            for py in by..by + 21 {
+                if world.tile(px, py).is_some_and(|t| {
+                    t.active()
+                        && !crate::tiledata::SET_GENERAL_PLACEMENT_TILES.has(t.kind)
+                        && !matches!(t.kind, 21 | 467 | 138 | 664 | 712 | 713 | 714 | 715)
+                }) {
+                    blocked = true;
+                    break 'scan;
+                }
+            }
+        }
+        if !blocked {
+            out.push(j);
+        }
+    }
+    out
+}
+
+/// The Micro Biomes pass's dead-man's-chest block (`WorldGen.cs:20916-
+/// 20938`, W4-c29): the `actuallyNoTrapsForRealIMeanIt` veto rides the step
+/// adapter (there is NO notTheBees gate here — unlike the explosives
+/// block); the candidate scan runs FIRST, then the `DeadManChests` config
+/// roll (Min 10 / Max 20 / WorldWidth — `worldgen_configuration.json:191-
+/// 195`) is drawn AFTER it (`:20923-20924` — the scan's finder draws
+/// consume the stream before the count), then the pick loop:
+/// `Next(candidates.Count)` per iteration, the 3000-attempt budget
+/// decremented BEFORE the `<= 0` break (2999 picks max), `Place` at the
+/// chest anchor, the counter advances even on a failed Place (`:20936` —
+/// the C# ignores the return), the picked index is removed. The
+/// `num *= 3.0` trap-world multiplier (`:20918-20921`) scales only the
+/// progress denominator — no count change.
+///
+/// The pin path: `generate()` (no chest-stock hook) leaves `world.chests`
+/// empty (`chest_stock.rs:238-240`), so the scan finds no candidates and
+/// the block draws only the config roll on its own fresh
+/// `pass_rng("Micro Biomes")` copy — both world-hash pins stay unchanged;
+/// the stocked tr-app path traps chests by design (ANALYSIS).
+pub(crate) fn pass_dead_mans_chests(
+    world: &mut World,
+    count_range: Option<super::config::WorldGenRange>,
+    rng: &mut super::Rng,
+) -> u32 {
+    // The pass-local protected list (the wave-B idiom — the port has no
+    // shared StructureMap; the C# `GenVars.structures` carries the earlier
+    // passes' boxes, none of which the port's micro steps register here).
+    let protected: Vec<(i32, i32, i32, i32)> = Vec::new();
+    let mut candidates = possible_chests_to_trapify(world, &protected, rng);
+    // `:20924`: the count roll AFTER the scan (the C# order is load-bearing
+    // — the finder draws for every good-spot candidate precede it).
+    let count = count_range
+        .map(|r| r.get_random(rng, world.width, world.height))
+        .unwrap_or(0);
+    let mut placed = 0u32;
+    let mut done = 0i32;
+    let mut budget = 3000;
+    while done < count && !candidates.is_empty() {
+        budget -= 1;
+        if budget <= 0 {
+            break;
+        }
+        let pick = rng.range(0, candidates.len() as i32) as usize;
+        let j = candidates[pick];
+        let (x, y) = (world.chests[j].x, world.chests[j].y);
+        if place_dead_mans_chest(world, (x, y), rng) {
+            placed += 1;
+        }
+        done += 1;
+        candidates.remove(pick);
     }
     placed
 }
@@ -2159,7 +2797,8 @@ mod tests {
         let mut rng = crate::worldgen::noise::Rng::from_seed(11);
         // One hive with the full world disc for its patches.
         let before = w.tiles.iter().filter(|t| t.liquid_kind() == crate::tile::LiquidKind::Honey).count();
-        let placed = super::super::structures::pass_beehives(&mut w, &spans, 150.0, &mut rng);
+        let mut larva = Vec::new();
+        let placed = super::super::structures::pass_beehives(&mut w, &spans, 150.0, &mut rng, &mut larva);
         let after = w.tiles.iter().filter(|t| t.liquid_kind() == crate::tile::LiquidKind::Honey).count();
         assert!(placed >= 1, "the hive placed: {placed}");
         assert!(after > before, "the hive's patches hold honey: {before} -> {after}");
@@ -2578,6 +3217,254 @@ mod tests {
         let placed = pass_thin_ice(&mut dry, 100.0, 3, &mut Rng::from_seed(31));
         assert_eq!(placed, 0);
         assert!(!dry.tiles.iter().any(|t| t.active() && t.kind == 162));
+    }
+
+    // --- the dead man's chests (W4-c29) --------------------------------------
+
+    /// A stone world with the trap cavern the finders want: air
+    /// `x 435..=464, y 496..=515` (the boulder scan line `y=495` hits the
+    /// solid ceiling immediately — `yPush 0` — and the dart side-finds
+    /// land on the walls 15-16 cells out), a solid floor row `y=504` for
+    /// the explosive spots, and the style-1 gold chest 2×2 at `(450, 500)`
+    /// with its record. The default wall 0 bails `count_tiles` at the
+    /// anchor (`has_real_wall` — the baseline adaptation), so the pocket
+    /// gate reads 3500 ≥ 40.
+    fn dead_mans_world() -> World {
+        let mut w = World::new("dmc".into(), 900, 800);
+        for t in w.tiles.iter_mut() {
+            t.kind = 1;
+            t.flags |= FLAG_ACTIVE;
+        }
+        for x in 435..=464 {
+            for y in 496..=515 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        for x in 435..=464 {
+            let i = w.index(x, 504);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        for (dx, dy, fx, fy) in [(0, 0, 18, 0), (1, 0, 36, 0), (0, 1, 18, 18), (1, 1, 36, 18)] {
+            let i = w.index(450 + dx, 500 + dy);
+            w.tiles[i].kind = 21;
+            w.tiles[i].frame_x = fx;
+            w.tiles[i].frame_y = fy;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.chests.push(crate::save::ChestRecord {
+            x: 450,
+            y: 500,
+            name: String::new(),
+            slots: vec![
+                crate::save::ChestItem { stack: 3, kind: 757, prefix: 0 },
+                crate::save::ChestItem { stack: 1, kind: 29, prefix: 0 },
+            ],
+        });
+        w.world_surface = 130.0;
+        w.rock_layer = 400.0;
+        w
+    }
+
+    #[test]
+    fn the_dead_mans_good_spot_gates_draw_nothing() {
+        // `IsAGoodSpot` (`:450-482`): the wrong chest style, a wire in the
+        // 20-box and the ocean band each veto — and no gate draws.
+        let mut w = dead_mans_world();
+        assert!(dead_mans_good_spot(&w, 450, 500));
+        // Style 0 (frameX 0) is not the gold chest.
+        let i = w.index(450, 500);
+        w.tiles[i].frame_x = 0;
+        assert!(!dead_mans_good_spot(&w, 450, 500));
+        w.tiles[i].frame_x = 18;
+        // A red wire 10 cells away vetoes (`countWires(x, y, 20)`).
+        w.wires.set(460, 500, crate::wiring::WireColor::Red, true);
+        assert!(!dead_mans_good_spot(&w, 450, 500));
+        w.wires.set(460, 500, crate::wiring::WireColor::Red, false);
+        // The ocean band: above oceanLevel (305) inside the 380 margins.
+        assert!(!dead_mans_good_spot(&w, 100, 200));
+        let mut a = Rng::from_seed(3);
+        let mut b = Rng::from_seed(3);
+        dead_mans_good_spot(&w, 450, 500);
+        assert_eq!(a.next_u32(), b.next_u32());
+    }
+
+    #[test]
+    fn the_dead_mans_chest_traps_the_gold_chest() {
+        // `Place` (`:102-136`) on the cavern fixture: the 467 style-4
+        // retype, the dart traps 137 wired to the chest, the boulder 138
+        // 2×2 seats and the explosives 141 on the floor row.
+        let mut placed_any = false;
+        let mut sweater = 0;
+        let mut no_sweater = 0;
+        for seed in 1..=12u32 {
+            let mut w = dead_mans_world();
+            let mut rng = Rng::from_seed(seed);
+            if !place_dead_mans_chest(&mut w, (450, 500), &mut rng) {
+                continue;
+            }
+            placed_any = true;
+            // The 2×2 retype: frameX 144/162, frameY 0/18 (`:486-497`).
+            for (dx, dy, fx, fy) in [(0, 0, 144, 0), (1, 0, 162, 0), (0, 1, 144, 18), (1, 1, 162, 18)] {
+                let t = w.tile(450 + dx, 500 + dy).unwrap();
+                assert_eq!((t.kind, t.frame_x, t.frame_y), (467, fx, fy), "seed {seed}");
+            }
+            assert!(w.tiles.iter().any(|t| t.active() && t.kind == 137), "a dart trap (seed {seed})");
+            let n138 = w.tiles.iter().filter(|t| t.active() && t.kind == 138).count();
+            assert!(n138 >= 4 && n138 % 4 == 0, "the boulder seats are 2x2 (seed {seed})");
+            let n141 = w.tiles.iter().filter(|t| t.active() && t.kind == 141).count();
+            // The centre is always distinct from the bands; the left and
+            // right picks can land on the SAME cell (the accumulated-list
+            // quirk) — 2 or 3 distinct explosives.
+            assert!((2..=3).contains(&n141), "the centre + band explosives (seed {seed})");
+            for t in w.tiles.iter().filter(|t| t.active() && t.kind == 141) {
+                assert_eq!((t.frame_x, t.frame_y), (0, 0));
+            }
+            assert!(
+                (0..w.width).any(|x| (0..w.height).any(|y| w.wires.get(x, y, crate::wiring::WireColor::Red))),
+                "the wire runs exist (seed {seed})"
+            );
+            if w.chests[0].slots.iter().any(|s| s.kind == 5007 && s.stack == 1) {
+                sweater += 1;
+            } else {
+                no_sweater += 1;
+            }
+        }
+        assert!(placed_any, "the cavern fixture traps the chest");
+        assert!(sweater > 0 && no_sweater > 0, "the Next(3) sweater roll splits the seeds");
+    }
+
+    #[test]
+    fn the_dead_mans_sweater_shift_is_the_deepclone_loop() {
+        // `TurnGoldChestIntoDeadMansChest` (`:507-518`): the occupied
+        // slots copy DOWN one (the stale sources survive), slot 1 becomes
+        // the sweater. Find a seed whose `Next(3)` is 0.
+        let seed = (1..=60u32)
+            .find(|&s| Rng::from_seed(s).range(0, 3) == 0)
+            .expect("a Next(3)==0 seed exists");
+        let mut w = dead_mans_world();
+        w.chests[0].slots = vec![
+            crate::save::ChestItem { stack: 0, kind: 0, prefix: 0 },
+            crate::save::ChestItem { stack: 0, kind: 0, prefix: 0 },
+            crate::save::ChestItem { stack: 7, kind: 200, prefix: 0 },
+        ];
+        turn_gold_into_dead_mans(&mut w, (450, 500), &mut Rng::from_seed(seed));
+        let s = &w.chests[0].slots;
+        assert_eq!(s.len(), 40, "materialized to maxItems");
+        assert_eq!((s[1].stack, s[1].kind), (1, 5007), "the sweater at slot 1");
+        assert_eq!((s[3].stack, s[3].kind), (7, 200), "slot 2 copied down");
+        // The stale source survives: slot 1 was EMPTY so the k=1 copy is
+        // skipped — slot 2 keeps its 7x200 AND slot 3 carries the clone
+        // (the C# writes item[k+1] and never clears item[k], `:508-515`).
+        assert_eq!((s[2].stack, s[2].kind), (7, 200), "the stale source");
+    }
+
+    #[test]
+    fn the_dead_mans_explosive_bands_accumulate() {
+        // `FindExplosiveTrapSpots` (`:336-395`): `list.Clear()` runs ONLY
+        // after the centre pick — with an air centre and a solid right
+        // band, the LEFT pick draws from the accumulated right-band list
+        // (the C# quirk). The floor row is solid only at x 454..=461.
+        let mut w = dead_mans_world();
+        for x in 435..=464 {
+            let i = w.index(x, 504);
+            w.tiles[i] = Tile::default();
+        }
+        for x in 454..=461 {
+            let i = w.index(x, 504);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut c = DeadMansCaches::default();
+        find_explosive_trap_spots(&w, (450, 501), &mut Rng::from_seed(9), &mut c);
+        assert!(c.explosives.len() >= 2, "the right pick + the accumulated left pick");
+        assert!(c.explosives[0].0 >= 454, "the LEFT entry came from the right band");
+        assert!(c.explosives.iter().all(|&(_, y)| y == 504));
+    }
+
+    #[test]
+    fn the_dead_mans_enough_traps_gate() {
+        // `AreThereEnoughTraps` (`:163-170`): (boulder OR explosive) AND
+        // dart.
+        let mut c = DeadMansCaches::default();
+        assert!(!enough_traps(&c));
+        c.darts.push(DartSpot { pos: (0, 0), direction_x: 1, x: 5, y: 0, x_push: 5 });
+        assert!(!enough_traps(&c), "dart alone is not enough");
+        c.explosives.push((0, 3));
+        assert!(enough_traps(&c), "dart + explosive passes");
+        c.explosives.clear();
+        c.boulders.push(BoulderSpot { pos: (0, 0), y_push: -1, required_height: 4, best_type: 1 });
+        assert!(enough_traps(&c), "dart + boulder passes");
+    }
+
+    #[test]
+    fn the_dead_mans_boulder_wrapper_needs_an_empty_origin() {
+        // `PlaceTile(138)` is not forced (`:612`): `Collision.EmptyTile`
+        // vetoes an active origin BEFORE the Place2x2 body gates.
+        let mut w = dead_mans_world();
+        place_boulder_2x2(&mut w, 450, 495); // solid stone origin
+        assert!(!w.tiles.iter().any(|t| t.active() && t.kind == 138));
+    }
+
+    #[test]
+    fn the_dead_mans_pass_draws_the_count_after_the_scan() {
+        // `WorldGen.cs:20923-20924`: the candidate scan's finder draws
+        // precede the DeadManChests roll; the pick loop follows. The
+        // manual replay pins the exact stream order.
+        use super::super::config::{ScalingMode, WorldGenRange};
+        let range = WorldGenRange { min: 10, max: 20, scale: ScalingMode::WorldWidth };
+        let mut w = dead_mans_world();
+        let mut a = Rng::from_seed(5);
+        pass_dead_mans_chests(&mut w, Some(range), &mut a);
+        let mut w2 = dead_mans_world();
+        let mut b = Rng::from_seed(5);
+        let mut cands = possible_chests_to_trapify(&w2, &[], &mut b);
+        let count = range.get_random(&mut b, w2.width, w2.height);
+        let mut done = 0;
+        let mut budget = 3000;
+        while done < count && !cands.is_empty() {
+            budget -= 1;
+            if budget <= 0 {
+                break;
+            }
+            let pick = b.range(0, cands.len() as i32) as usize;
+            let j = cands[pick];
+            let (x, y) = (w2.chests[j].x, w2.chests[j].y);
+            place_dead_mans_chest(&mut w2, (x, y), &mut b);
+            done += 1;
+            cands.remove(pick);
+        }
+        assert_eq!(a.next_u32(), b.next_u32(), "scan -> roll -> picks");
+    }
+
+    #[test]
+    fn the_dead_mans_pass_is_inert_without_chest_records() {
+        // The pin path: `generate()` leaves `world.chests` empty — the
+        // scan finds nothing and the block draws ONLY the config roll.
+        use super::super::config::{ScalingMode, WorldGenRange};
+        let range = WorldGenRange { min: 10, max: 20, scale: ScalingMode::WorldWidth };
+        let mut w = dead_mans_world();
+        w.chests.clear();
+        let mut a = Rng::from_seed(17);
+        let placed = pass_dead_mans_chests(&mut w, Some(range), &mut a);
+        assert_eq!(placed, 0);
+        assert!(!w.tiles.iter().any(|t| t.active() && (t.kind == 467 || t.kind == 137 || t.kind == 138)));
+        let mut b = Rng::from_seed(17);
+        range.get_random(&mut b, w.width, w.height);
+        assert_eq!(a.next_u32(), b.next_u32(), "only the count roll drew");
+    }
+
+    #[test]
+    fn the_dead_mans_pass_is_deterministic_for_a_seed() {
+        use super::super::config::{ScalingMode, WorldGenRange};
+        let range = WorldGenRange { min: 10, max: 20, scale: ScalingMode::WorldWidth };
+        let run = || {
+            let mut w = dead_mans_world();
+            pass_dead_mans_chests(&mut w, Some(range), &mut Rng::from_seed(23));
+            super::super::world_hash::world_hash(&w)
+        };
+        assert_eq!(run(), run());
     }
 
 }

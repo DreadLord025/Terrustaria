@@ -399,10 +399,14 @@ impl App {
                         time: clock_time as f32,
                         day_time: is_day,
                         raining: rain.is_raining(),
-                        // `Main.shimmerDarken` / `Main.liquidAlpha[13]`: shimmer is not
-                        // simulated yet, so both stay at their neutral value.
                         // `Main.shimmerDarken` (SceneState.UpdateShimmer ramps).
                         shimmer_darken: scene_state.shimmer_darken,
+                        // `Main.liquidAlpha[13]` (TileLightScanner.cs:3160-3166):
+                        // the shimmer blue boost. NOTE: in the decompile NO writer
+                        // ever raises liquidAlpha[13] (the DrawWaters ramp skips
+                        // style 14, the capture loop only writes 0..=10) — the
+                        // C# arm is dead code; the port keeps the 0 feed (the
+                        // census deviation, ANALYSIS W4-e19 aether).
                         shimmer_alpha: 0.0,
                         // `Main.sundialCooldown`/`Main.moondialCooldown`
                         // (`Main.cs:2161`/`:2165`): the scanner and the glow pass
@@ -997,7 +1001,7 @@ impl App {
                         },
                         player_key,
                         npc_key,
-                        items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15),
+                        items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15, anim_time),
                         hand_key: {
                             let slot = inventory.get(*selected).filter(|s| s.count > 0);
                             let held = slot.map_or(0, |s| s.kind as u32);
@@ -1124,6 +1128,10 @@ impl App {
                         bg_alpha_far,
                         light,
                         hell_black_box_bottom,
+                        // `Main.shimmerAlpha` (W4-e19 aether arm): the live
+                        // SceneState ramp — 1 skips the underground backdrop
+                        // + the natural stars, >0 dims them.
+                        scene_state.shimmer_alpha,
                         &self.ambience.entities,
                         lookups,
                         sky_tint,
@@ -1877,6 +1885,9 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // `Main.cursorOverride` — the shift-hover sell/
+                            // trash/transfer cursor (W4-e19).
+                            self.cursor_override,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

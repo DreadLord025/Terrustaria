@@ -631,6 +631,53 @@ pub(crate) fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bo
         && !t.half_brick()
 }
 
+/// `WorldGen.SolidTileAllowTopSlope` (`WorldGen.cs:70320-70338`): an active,
+/// non-actuated solid (or planter-box 380) tile whose BOTTOM is not a slope —
+/// a platform passes only as a half-brick. An out-of-range read throws into
+/// the `catch` → false (no `InWorld` guard here, unlike the bottom-slope
+/// variant); the port's dense array has no in-world null case.
+pub(crate) fn solid_tile_allow_top_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && (td::TILE_SOLID.has(t.kind) || t.kind == 380)
+        && ((!td::SET_PLATFORMS.has(t.kind) && !t.bottom_slope())
+            || (td::SET_PLATFORMS.has(t.kind) && t.half_brick()))
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowLeftSlope` (`WorldGen.cs:70340-70358`): an active,
+/// non-actuated solid, non-platform, non-halfBrick tile whose RIGHT is not a
+/// slope (`rightSlope` = slope 1 or 3, `Tile.cs:320-328`). OOB → false (the
+/// `catch`).
+pub(crate) fn solid_tile_allow_left_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !t.half_brick()
+        && !matches!(t.slope(), 1 | 3)
+        && !td::SET_PLATFORMS.has(t.kind)
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowRightSlope` (`WorldGen.cs:70360-70378`): the mirror
+/// of [`solid_tile_allow_left_slope`] — the LEFT side must not be a slope
+/// (`leftSlope` = slope 2 or 4, `Tile.cs:310-318`).
+pub(crate) fn solid_tile_allow_right_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && !t.half_brick()
+        && !matches!(t.slope(), 2 | 4)
+        && !td::SET_PLATFORMS.has(t.kind)
+        && !t.inactive()
+}
+
 /// The destruction plan of one `Check*` routine: the object cells to
 /// `KillTile` (active cells of the object's type — the exact cell guard each
 /// C# kill loop applies), the drop vanilla would spawn (`None` for checks

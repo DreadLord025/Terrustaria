@@ -66,7 +66,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.eclipse);
     w.i32(0); // dungeonX — unowned
     w.i32(0); // dungeonY — unowned
-    w.boolean(false); // WorldGen.crimson — the evil flavour is unowned state
+    w.boolean(world.crimson); // WorldGen.crimson (`WorldFile.cs:1281`) — W4-g69
     write_downed_flags(w, world);
     // WorldFile.cs:1299-1305: the orbs, the meteor, the altar count, the
     // hardmode switch and the post-plantera party.
@@ -239,7 +239,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
     w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
     w.boolean(false); // unlockedSlimeYellowSpawn
-    w.boolean(false); // unlockedSlimeCopperSpawn
+    w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn (W4-g15 lane 5)
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
     // seeds — the seasons/seeds have no World store (the port's `micro_seeds`
     // bitmask rides the `.trwld` v12 tail only, `save.rs:382-383`); the two
@@ -396,7 +396,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.blood_moon = r.u8()? != 0;
     world.eclipse = r.u8()? != 0;
     r.skip(2 * 4)?; // dungeonX/Y
-    r.skip(1)?; // WorldGen.crimson
+    world.crimson = r.bool()?; // WorldGen.crimson (`WorldFile.cs:2080`) — W4-g69
                 // WorldFile.cs:2084-2102 — the boss flags (with `downedSlimeKing` gated at 118).
     world.downed_eoc = r.bool()?; // downedBoss1
     world.downed_eow = r.bool()?; // downedBoss2
@@ -638,7 +638,8 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(3)?; // unlockedSlimeGreen/Old/Purple
         world.unlocked_slime_rainbow_spawn = r.bool()?; // unlockedSlimeRainbowSpawn
         world.unlocked_slime_red_spawn = r.bool()?; // unlockedSlimeRedSpawn
-        r.skip(2)?; // unlockedSlimeYellow/Copper
+        r.skip(1)?; // unlockedSlimeYellow
+        world.unlocked_slime_copper_spawn = r.bool()?; // unlockedSlimeCopperSpawn (W4-g15 lane 5)
     }
     // WorldFile.cs:2306-2319 — the moondial, the forced seasons, the secret seeds, the
     // meteor shower, the team spawns and the extra spawn points.

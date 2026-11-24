@@ -121,6 +121,14 @@ pub struct World {
     pub hallow_bg_style: u8,
     pub crimson_bg_style: u8,
     pub mushroom_bg_style: u8,
+    /// `WorldGen.crimson` (`WorldGen.cs:4158`) — the WORLD evil type: true
+    /// crimson, false corruption. Set at generation from `GenOptions.crimson`
+    /// (the UI pick / `roll_crimson`), persisted in the `.wld` flags block
+    /// (`WorldFile.cs:1281`/`:2080`) and the `.trwld` v18 tail. W4-g69: the
+    /// cloud lane's `RollRareCloud` type-36 gate (`Cloud.cs:196`,
+    /// `NPC.downedBoss2 && WorldGen.crimson`) reads it; the shop/lang/loot
+    /// consumers still fold their own defaults (their lanes' rows).
+    pub crimson: bool,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -205,6 +213,14 @@ pub struct World {
     pub downed_mech_boss3: bool,
     pub downed_mech_boss2: bool,
     pub downed_plant_boss: bool,
+    /// `NPC.EoCKilledToday` / `NPC.WoFKilledToday` (`NPC.cs:6611-6613`,
+    /// W4-f35): the Badger's Hat latches — the boss death heal feed
+    /// (`DoDeathEvents_DropBossPotionsAndHearts`, `:79003-79015`) sets
+    /// them, the hat drops + both clear when both are up; the dusk
+    /// transition resets both (`Main.cs:65221` `ResetBadgerHatTime`).
+    /// Runtime-only (the C# statics are not saved).
+    pub eoc_killed_today: bool,
+    pub wof_killed_today: bool,
     /// The Goblin Army invasion (`Main.invasionType = 1`).
     pub invasion_goblins: bool,
     /// The remaining invasion enemies (`Main.invasionSize`).
@@ -305,6 +321,14 @@ pub struct World {
     /// 682 raises it; `Projectile.cs:20819`'s enemy roll gates on it) — the
     /// same Main-global standing-in (S1-P-i35).
     pub unlocked_slime_red_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`WorldItem.GetPickedUpByMonsters_Special`
+    /// `WorldItem.cs:1091` — a dropped Copper Shortsword 89 / Chain Knife 3507
+    /// touching a convertible NPC raises it; `NPC.TransformCopperSlime`
+    /// `NPC.cs:19166-19180` gates on it) — the same Main-global standing-in
+    /// (W4-g15 lane 5). The transform target (684 TownSlimeCopper) has no
+    /// NpcKind row yet (the town-slime family is unported), so the flag is
+    /// the port's observable half; the NPC-side transform is the roster gap.
+    pub unlocked_slime_copper_spawn: bool,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
@@ -595,6 +619,18 @@ pub struct World {
     /// store materialises from these at `enter_loaded_world`.
     pub chests: Vec<crate::save::ChestRecord>,
 
+    /// The gen-time starter-NPC ledger — the `Guide` pass
+    /// (`GenPassNameID.SpawnStarterNPCs`, `WorldGen.cs:19685-19897`) spawns
+    /// the world's starter town NPCs with `NPC.NewNPC`; the port's `World`
+    /// is tiles + save state, so the spawns land here (W4-d105 lane 5) and
+    /// the App materialises them at `enter_loaded_world` — the same seam the
+    /// `.trwld` town roster rides. The records carry the VANILLA netID (the
+    /// `NewNPC` `Type` argument); the App decodes through `kind_from_net_id`.
+    /// A freshly generated classic world carries exactly one homeless Guide
+    /// at the spawn point; an empty list means "no starter spawns" (a loaded
+    /// file's roster replaces them outright).
+    pub gen_npcs: Vec<crate::worldgen::starter_npcs::StarterNpc>,
+
     // --- world identity / file metadata (S1-J-2, `IO/WorldFile.cs`) ---------
     /// `Main.ActiveWorldFileData.WorldGeneratorVersion` (`WorldFile.cs:1225`).
     pub generator_version: u64,
@@ -634,6 +670,7 @@ impl World {
             frame_important: Vec::new(),
             ore_tiers: crate::ores::SavedOreTiers::new(),
             chests: Vec::new(),
+            gen_npcs: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,
@@ -653,6 +690,8 @@ impl World {
             downed_mech_boss3: false,
             downed_mech_boss2: false,
             downed_plant_boss: false,
+            eoc_killed_today: false,
+            wof_killed_today: false,
             invasion_goblins: false,
             invasion_size: 0,
 
@@ -691,6 +730,7 @@ impl World {
             golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
+            unlocked_slime_copper_spawn: false,
             combat_book_was_used: false,
             bought_cat: false,
             bought_dog: false,
@@ -709,6 +749,7 @@ impl World {
             jungle_bg_style: 0,
             hallow_bg_style: 0,
             crimson_bg_style: 0,
+            crimson: false,
             mushroom_bg_style: 0,
             column_surface: Vec::new(),
             chunks_x: 0,

@@ -663,6 +663,8 @@ mod tests {
             last_saved_binary: 0,
             voice_variant: 1,
             voice_pitch_offset: 0.0,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
         std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
@@ -730,6 +732,8 @@ mod tests {
             last_saved_binary: 0,
             voice_variant: 1,
             voice_pitch_offset: 0.0,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
         };
         crate::player_file::write_player_file(path, &file).unwrap();
     }
@@ -999,6 +1003,8 @@ mod tests {
                 last_saved_binary: 0,
                 voice_variant: 1,
                 voice_pitch_offset: 0.0,
+                unlocked_biome_torches: false,
+                using_biome_torches: false,
             },
         )
         .unwrap();

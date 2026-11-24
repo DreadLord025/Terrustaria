@@ -117,6 +117,7 @@ pub(crate) fn step(
     npcs: &[Npc],
     rng: &mut dyn DropRng,
     local_owner: u8,
+    immune: &[i32],
 ) {
     if p.kind == 442 {
         electrosphere_bolt(p, world);
@@ -162,6 +163,11 @@ pub(crate) fn step(
     if p.vel.y > 16.0 {
         p.vel.y = 16.0;
     }
+    // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7):
+    // after the clamp, before the movement. The darts are not arrows
+    // (the producer's `arrow` gate never charms them), so the tail is
+    // the two-bit no-op; the slice keeps the C# shape.
+    crate::projectile_harpy_charm::charm_tail(p, world, npcs, immune);
     // The movement: the 477's bounce arm (`HandleMovement`
     // `:18644-18697`) or the kill-on-tile stand-in.
     if p.kind == 477 {
@@ -658,14 +664,14 @@ mod tests {
         // 267: four ticks fade, the 20th adds 0.075 gravity.
         let mut p = proj(267, 6.0, 0.0);
         for _ in 0..3 {
-            step(&mut p, &w, &[], &mut rng, 0);
+            step(&mut p, &w, &[], &mut rng, 0, &[]);
         }
         assert_eq!(p.alpha, 255, "the fade waits localAI[0] > 3");
-        step(&mut p, &w, &[], &mut rng, 0);
+        step(&mut p, &w, &[], &mut rng, 0, &[]);
         assert_eq!(p.alpha, 0, ":57295-57298 — the fourth tick clears");
         assert_eq!(p.vel.y, 0.0, "no gravity before ai[0] >= 20");
         for _ in 0..16 {
-            step(&mut p, &w, &[], &mut rng, 0);
+            step(&mut p, &w, &[], &mut rng, 0, &[]);
         }
         // ai[0] is 20 now: the pin fires and the gravity adds 0.075.
         assert_eq!(p.ai[0], 20.0, ":57301 — the pin");
@@ -673,7 +679,7 @@ mod tests {
         // 477: the same 20 ticks, NO gravity (`:57302`).
         let mut c = proj(477, 6.0, 0.0);
         for _ in 0..20 {
-            step(&mut c, &w, &[], &mut rng, 0);
+            step(&mut c, &w, &[], &mut rng, 0, &[]);
         }
         assert_eq!(c.vel.y, 0.0, ":57302 — the crystal dart never falls");
         assert!(rng.draws.is_empty(), "267/477 spend no AI draws");
@@ -699,7 +705,7 @@ mod tests {
         // threshold 5, count base 2, no +1 (Next(4) = 1), then two
         // direction pairs (0, 100) and (100, 0).
         let mut seq = Seq(vec![5, 2, 1, 0, 100, 100, 0], 0);
-        step(&mut p, &w, &[], &mut seq, 0);
+        step(&mut p, &w, &[], &mut seq, 0, &[]);
         assert_eq!(p.ai[1], -1000.0, ":57323 — the split latch");
         assert_eq!(p.penetrate, -1, ":57311 — the pre-split penetrate");
         assert_eq!(p.wants_dart_spawns.len(), 2, "Next(2,4) = 2, no bonus");
@@ -715,7 +721,7 @@ mod tests {
         // (`:57313-57316`), the threshold draw still spends (the C#
         // compares every tick).
         let mut seq2 = Seq(vec![5], 0);
-        step(&mut p, &w, &[], &mut seq2, 0);
+        step(&mut p, &w, &[], &mut seq2, 0, &[]);
         assert_eq!(p.penetrate, 1, ":57315 — the restore");
         assert_eq!(p.max_penetrate, 1);
         assert_eq!(seq2.1, 1, "the threshold draw stays on the stream");
@@ -739,7 +745,7 @@ mod tests {
             fn next_float(&mut self) -> f32 { 0.5 }
         }
         let mut seq = Seq(vec![5], 0);
-        step(&mut p, &w, &[], &mut seq, 0);
+        step(&mut p, &w, &[], &mut seq, 0, &[]);
         assert_eq!(p.ai[1], 0.0, ":57360 — the reset");
         // The step itself does not decrement timeLeft (the pool does);
         // the drop took 20 off 300 → 280 (`:57356-57359`).
@@ -763,12 +769,12 @@ mod tests {
         let mut rng = Recorder::new(0);
         // Four ticks: alpha 255 → 165 at the fourth (localAI[0] hits 4).
         for _ in 0..4 {
-            step(&mut p, &w, &[], &mut rng, 0);
+            step(&mut p, &w, &[], &mut rng, 0, &[]);
         }
         assert_eq!(p.alpha, 165, ":54734 — the 90 fade at localAI[0] >= 4");
         // The arrival: place the bolt at the target centre.
         p.pos = Vec2::new(100.0 * 16.0 + 8.0 - 7.0, 10.0 * 16.0 + 8.0 - 7.0);
-        step(&mut p, &w, &[], &mut rng, 0);
+        step(&mut p, &w, &[], &mut rng, 0, &[]);
         assert!(!p.active, ":54742-54745 — the arrival kill");
         // The hover: a visible bolt (alpha 0) dies at localAI[1] 120.
         let mut h = proj(442, 0.0, 0.0);
@@ -776,7 +782,7 @@ mod tests {
         h.ai[0] = 1000.0; // far target — no arrival
         h.ai[1] = 1000.0;
         h.local_ai[1] = 119.0;
-        step(&mut h, &w, &[], &mut rng, 0);
+        step(&mut h, &w, &[], &mut rng, 0, &[]);
         assert!(!h.active, ":57350-57353 — the 120-tick hover kill");
         assert!(rng.draws.is_empty(), "the bolt spends no draws");
     }
@@ -794,7 +800,7 @@ mod tests {
         p.pos = Vec2::new(11.0 * TILE_PX + 2.0, 10.0 * TILE_PX);
         p.damage = 40;
         let mut rng = Recorder::new(0);
-        step(&mut p, &w, &[], &mut rng, 0);
+        step(&mut p, &w, &[], &mut rng, 0, &[]);
         assert_eq!(p.penetrate, 4, ":18648 — one bounce spends one");
         assert_eq!(p.vel.x, -6.0, ":18655 — the reflection");
         assert_eq!(p.damage, 34, "(int)(40 * 0.85) = 34 (:18662)");
