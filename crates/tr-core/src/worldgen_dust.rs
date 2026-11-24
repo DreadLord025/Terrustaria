@@ -189,10 +189,6 @@ pub fn unlock_door_dust(
 /// `WorldGen.paintColor(color)` (`WorldGen.cs:43921-44034`) as a dust
 /// `Color`: the byte table is already verbatim in
 /// `tile_light::palette::paint_color_bytes` (the map/scanner consumers);
-/// the C# starts from `Color.White`, so alpha stays 255.
-fn paint_color(color: u8) -> Color {
-    let [r, g, b] = crate::tile_light::paint_color_bytes(color);
-    Color::new(r, g, b, 255)
 /// the C# starts from `Color.White` (alpha 255) and the ONLY alpha arm
 /// is color 30's `white.A = 150` (`:44026-44032`, research/66 §2 —
 /// d54's `paint_color_full` had it right; g14's forced 255 fixed).
@@ -214,7 +210,7 @@ pub fn paint_effect_dust(
     color: u8,
     old_color: u8,
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -237,7 +233,7 @@ pub fn paint_effect_dust(
             1.0,
         );
         let d = dust.slot_mut(idx);
-        if gen.next_max(2) == 0 {
+        if gen_rng.next_max(2) == 0 {
             d.no_gravity = true;
             d.scale *= 1.2;
         } else {
@@ -269,7 +265,7 @@ pub fn paint_coat_effect_dust(
     paint_coat_id: u8,
     old_colors: &[Color],
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -295,7 +291,7 @@ pub fn paint_coat_effect_dust(
             1.0,
         );
         let d = dust.slot_mut(idx);
-        if gen.next_max(2) == 0 {
+        if gen_rng.next_max(2) == 0 {
             d.no_gravity = true;
             d.scale *= 1.2;
         } else {
@@ -467,11 +463,11 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(11);
-        let mut gen = UnifiedRandom::new(23);
+        let mut gen_rng = UnifiedRandom::new(23);
         let mut mpool = DustPool::new();
         let mut mrng = UnifiedRandom::new(11);
         let mut mgen = UnifiedRandom::new(23);
-        paint_effect_dust(3, 4, 0, 9, &mut rng, &mut gen, &mut pool, &c, &w);
+        paint_effect_dust(3, 4, 0, 9, &mut rng, &mut gen_rng, &mut pool, &c, &w);
         let want_color = paint_color(9); // color==0 falls back to oldColor
         for _ in 0..10 {
             let idx = mpool.new_dust(
@@ -496,7 +492,7 @@ mod tests {
             assert_eq!(pool.slot(i).position, mpool.slot(i).position);
         }
         streams_agree(&mut rng, &mut mrng);
-        streams_agree(&mut gen, &mut mgen);
+        streams_agree(&mut gen_rng, &mut mgen);
     }
 
     /// W4-g14 — site 44097: the id-0 old-coat pick draws one
@@ -509,11 +505,11 @@ mod tests {
         let old = [coating_color(1), coating_color(2)];
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(31);
-        let mut gen = UnifiedRandom::new(37);
+        let mut gen_rng = UnifiedRandom::new(37);
         let mut mpool = DustPool::new();
         let mut mrng = UnifiedRandom::new(31);
         let mut mgen = UnifiedRandom::new(37);
-        paint_coat_effect_dust(2, 2, 0, &old, &mut rng, &mut gen, &mut pool, &c, &w);
+        paint_coat_effect_dust(2, 2, 0, &old, &mut rng, &mut gen_rng, &mut pool, &c, &w);
         for _ in 0..10 {
             let pick = old[mrng.next_max(2) as usize];
             let idx = mpool.new_dust(
@@ -534,7 +530,7 @@ mod tests {
             assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
         }
         streams_agree(&mut rng, &mut mrng);
-        streams_agree(&mut gen, &mut mgen);
+        streams_agree(&mut gen_rng, &mut mgen);
         // The fixed-id path: no pick draws, every dust the id's colour.
         let mut pool2 = DustPool::new();
         let mut rng2 = UnifiedRandom::new(31);
@@ -559,8 +555,8 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(11);
-        let mut gen = UnifiedRandom::new(23);
-        paint_effect_dust(3, 4, 0, 30, &mut rng, &mut gen, &mut pool, &c, &w);
+        let mut gen_rng = UnifiedRandom::new(23);
+        paint_effect_dust(3, 4, 0, 30, &mut rng, &mut gen_rng, &mut pool, &c, &w);
         assert_eq!(active(&pool).len(), 10);
         for i in 0..10 {
             assert_eq!(pool.slot(i).color, Color::new(200, 200, 200, 150));

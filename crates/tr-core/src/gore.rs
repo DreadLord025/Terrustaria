@@ -97,6 +97,9 @@ impl GoreRng for dyn crate::loot::DropRng {
     }
     fn next_float_direction(&mut self) -> f32 {
         crate::loot::DropRng::next_float_direction(self)
+    }
+}
+
 /// The dust-spawn adapter (W4-g68): the C#'s `Gore_UpdateLeaf` lava arm calls
 /// `Dust.NewDust` on the SAME `Main.rand` the gore walk rolls (both sit inside
 /// `Main.SwapRandom("UpdateGores")`, `Main.cs:17771-17774`), so the gore
@@ -2204,11 +2207,6 @@ mod tests {
         assert!(pool.slot(0).active);
         assert_eq!(pool.slot(0).alpha, 254);
         pool.update(&mut rng, &world, &collisions, 0.0, &mut NoGoreSound);
-            pool.update(&mut rng, &world, &collisions, 0.0, None);
-        }
-        assert!(pool.slot(0).active);
-        assert_eq!(pool.slot(0).alpha, 254);
-        pool.update(&mut rng, &world, &collisions, 0.0, None);
         assert!(!pool.slot(0).active);
     }
 

@@ -465,8 +465,8 @@ pub(crate) fn finish_tenth_anniversary_world(
         if !opts.flags.contains(SeedFlags::FOR_THE_WORTHY)
             && !opts.flags.contains(SeedFlags::DRUNK)
         {
-            let mut gen = crate::UnifiedRandom::new(opts.seed as i32);
-            convert_sky_islands(world, 2, true, &mut gen); // :24243
+            let mut gen_rng = crate::UnifiedRandom::new(opts.seed as i32);
+            convert_sky_islands(world, 2, true, &mut gen_rng); // :24243
         }
         paint_the_dungeon(world, 24, 24); // :24245
         paint_the_living_trees(world, 12, 12); // :24246-24249

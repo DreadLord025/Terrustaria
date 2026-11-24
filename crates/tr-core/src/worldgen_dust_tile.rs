@@ -682,7 +682,7 @@ fn tile_ladder_walks_ores(
     j: i32,
     num: i32,
     world: &World,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
 ) -> i32 {
     let kind = t.kind;
     let fx = t.frame_x as i32;
@@ -814,17 +814,17 @@ fn tile_ladder_walks_ores(
             num = 3;
         } else if fx < 108 {
             num = 3;
-            if gen.next_max(3) == 0 {
+            if gen_rng.next_max(3) == 0 {
                 num = 189;
             }
         } else if fx < 144 {
             num = 3;
-            if gen.next_max(2) == 0 {
+            if gen_rng.next_max(2) == 0 {
                 num = 189;
             }
         } else {
             num = 3;
-            if gen.next_max(4) != 0 {
+            if gen_rng.next_max(4) != 0 {
                 num = 189;
             }
         }
@@ -875,7 +875,7 @@ fn tile_ladder_walks_ores(
     }
     if matches!(kind, 2 | 477) {
         // `:68362-68365` — genRand arm.
-        num = if gen.next_max(2) != 0 { 2 } else { 0 };
+        num = if gen_rng.next_max(2) != 0 { 2 } else { 0 };
     }
     if kind == 127 {
         num = 67;
@@ -942,7 +942,7 @@ fn tile_ladder_walks_ores(
     if matches!(kind, 204 | 478) {
         // `:68464-68471` — genRand arm.
         num = 117;
-        if gen.next_max(2) == 0 {
+        if gen_rng.next_max(2) == 0 {
             num = 1;
         }
     }
@@ -951,7 +951,7 @@ fn tile_ladder_walks_ores(
     }
     if kind == 243 {
         // `:68476-68479` — genRand arm.
-        num = if gen.next_max(2) != 0 { 13 } else { 7 };
+        num = if gen_rng.next_max(2) != 0 { 13 } else { 7 };
     }
     if kind == 219 {
         num = -1;
@@ -961,7 +961,7 @@ fn tile_ladder_walks_ores(
     }
     if kind == 244 {
         // `:68488-68491` — genRand arm (== 0 polarity).
-        num = if gen.next_max(2) == 0 { 1 } else { 13 };
+        num = if gen_rng.next_max(2) == 0 { 1 } else { 13 };
     }
     // `:68492-68503` — the 597 else-if with the big furniture set.
     if kind == 597 {
@@ -975,7 +975,7 @@ fn tile_ladder_walks_ores(
             | 644 | 645 | 710
     ) {
         num = 13;
-        if gen.next_max(3) != 0 {
+        if gen_rng.next_max(3) != 0 {
             num = -1;
         }
     }
@@ -995,7 +995,7 @@ fn tile_ladder_furniture_herbs(
     j: i32,
     num: i32,
     world: &World,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
 ) -> i32 {
     let kind = t.kind;
     let fx = t.frame_x as i32;
@@ -1157,7 +1157,7 @@ fn tile_ladder_furniture_herbs(
     if kind == 231 {
         // `:68702-68709` — genRand arm.
         num = 153;
-        if gen.next_max(3) == 0 {
+        if gen_rng.next_max(3) == 0 {
             num = 26;
         }
     }
@@ -1208,7 +1208,7 @@ fn tile_ladder_furniture_herbs(
     }
     if kind == 238 {
         // `:68766-68769` — genRand arm.
-        num = if gen.next_max(3) != 0 { 166 } else { 167 };
+        num = if gen_rng.next_max(3) != 0 { 166 } else { 167 };
     }
     if kind == 69 {
         num = 7;
@@ -1271,7 +1271,7 @@ fn tile_ladder_furniture_herbs(
 fn tile_ladder_tail(
     t: &Tile,
     num: i32,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
 ) -> (i32, bool) {
     let kind = t.kind;
     let fx = t.frame_x as i32;
@@ -1315,7 +1315,7 @@ fn tile_ladder_tail(
     }
     if matches!(kind, 109 | 492) {
         // `:68874-68877` — genRand arm.
-        num = if gen.next_max(2) != 0 { 47 } else { 0 };
+        num = if gen_rng.next_max(2) != 0 { 47 } else { 0 };
     }
     if matches!(kind, 110 | 113 | 115) {
         num = 47;
@@ -1360,30 +1360,30 @@ fn tile_ladder_tail(
     }
     if matches!(kind, 58 | 76 | 77 | 684) {
         // `:68946-68949` — genRand arm.
-        num = if gen.next_max(2) != 0 { 25 } else { 6 };
+        num = if gen_rng.next_max(2) != 0 { 25 } else { 6 };
     }
     if kind == 37 {
         // `:68950-68953` — genRand arm.
-        num = if gen.next_max(2) != 0 { 23 } else { 6 };
+        num = if gen_rng.next_max(2) != 0 { 23 } else { 6 };
     }
     if kind == 32 {
         // `:68954-68957` — genRand arm.
-        num = if gen.next_max(2) != 0 { 24 } else { 14 };
+        num = if gen_rng.next_max(2) != 0 { 24 } else { 14 };
     }
     if kind == 352 {
         // `:68958-68961` — genRand arm.
-        num = if gen.next_max(3) != 0 { 125 } else { 5 };
+        num = if gen_rng.next_max(3) != 0 { 125 } else { 5 };
     }
     if matches!(kind, 23 | 24 | 661) {
         // `:68962-68965` — genRand arm.
-        num = if gen.next_max(2) != 0 { 17 } else { 14 };
+        num = if gen_rng.next_max(2) != 0 { 17 } else { 14 };
     }
     if matches!(kind, 25 | 31 | 696) {
         // `:68966-68969` — the 31/696 mature arm SHORT-CIRCUITS the
         // genRand draw (the C# ternary's condition first).
         num = if (kind == 31 || kind == 696) && fx >= 36 {
             5
-        } else if gen.next_max(2) != 0 {
+        } else if gen_rng.next_max(2) != 0 {
             1
         } else {
             14
@@ -1393,7 +1393,7 @@ fn tile_ladder_tail(
         // `:68970-68973` — the frameX>=54 arm short-circuits likewise.
         num = if fx >= 54 {
             5
-        } else if gen.next_max(2) != 0 {
+        } else if gen_rng.next_max(2) != 0 {
             1
         } else {
             14
@@ -1412,7 +1412,7 @@ fn tile_ladder_tail(
     }
     if kind == 27 {
         // `:68986-68989` — genRand arm.
-        num = if gen.next_max(2) != 0 { 19 } else { 3 };
+        num = if gen_rng.next_max(2) != 0 { 19 } else { 3 };
     }
     if kind == 129 {
         // `:68990-68997` — the >=324 write is OVERWRITTEN by the
@@ -1433,7 +1433,7 @@ fn tile_ladder_tail(
     }
     if kind == 385 {
         // `:68998-69001` — genRand arm.
-        num = gen.next_range(68, 71);
+        num = gen_rng.next_range(68, 71);
     }
     if kind == 4 {
         // `:69002-69006` — the torch table (MathHelper.Clamp on the
@@ -1445,11 +1445,11 @@ fn tile_ladder_tail(
         // `:69007-69014` — the genRand gate is SHORT-CIRCUITED by
         // frameX >= 36 (the && evaluates left first).
         num = 189;
-        if fx < 36 && gen.next_max(2) == 0 {
+        if fx < 36 && gen_rng.next_max(2) == 0 {
             num = 6;
         }
     }
-    if matches!(kind, 34 | 42) && gen.next_max(2) == 0 {
+    if matches!(kind, 34 | 42) && gen_rng.next_max(2) == 0 {
         // `:69015-69018` — the draw runs for EVERY 34/42 tile.
         num = 6;
     }
@@ -1514,19 +1514,19 @@ pub fn kill_tile_make_tile_dust(
     t: &Tile,
     disco: (u8, u8, u8),
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) -> usize {
     let mut num = tile_ladder_head(t);
-    num = tile_ladder_switch1(t, num, gen);
-    num = tile_ladder_middle(t, i, j, num, world, gen);
+    num = tile_ladder_switch1(t, num, gen_rng);
+    num = tile_ladder_middle(t, i, j, num, world, gen_rng);
     num = tile_ladder_frames1(t, num, rng);
     num = tile_ladder_frames2(t, num);
-    num = tile_ladder_walks_ores(t, i, j, num, world, gen);
-    num = tile_ladder_furniture_herbs(t, i, j, num, world, gen);
-    let (num, flag2) = tile_ladder_tail(t, num, gen);
+    num = tile_ladder_walks_ores(t, i, j, num, world, gen_rng);
+    num = tile_ladder_furniture_herbs(t, i, j, num, world, gen_rng);
+    let (num, flag2) = tile_ladder_tail(t, num, gen_rng);
     if num < 0 {
         return DUST_SENTINEL; // `:69168`.
     }
@@ -1628,14 +1628,14 @@ pub fn kill_tile_make_tile_dust(
     // arguments BEFORE the internals, the fadeIn draw AFTER (it reads
     // the post-spawn scale), the duplicated noGravity write kept.
     if kind == 314 {
-        let sx = gen.next_range(-2, 3) as f32;
-        let sy = gen.next_range(-2, 3) as f32;
+        let sx = gen_rng.next_range(-2, 3) as f32;
+        let sy = gen_rng.next_range(-2, 3) as f32;
         let idx = dust.new_dust(
             rng, ctx, world, pos, 16, 16, 213, sx, sy, 0, Color::default(), 1.0,
         );
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
-        d.fade_in = d.scale + 1.0 + 0.01 * gen.next_range(0, 51) as f32;
+        d.fade_in = d.scale + 1.0 + 0.01 * gen_rng.next_range(0, 51) as f32;
         d.no_gravity = true;
         return idx;
     }
@@ -1690,10 +1690,6 @@ pub fn kill_tile_make_tile_dust(
         return idx;
     }
     // `:69150-69155` — the torch-disco arm. The C# float ctor
-    // `new Color((float)R/255f, …)` truncates each [0,1] component to
-    // a byte — every channel lands 0 except a full-255 one (which
-    // lands 1). Ported as the truncation, not a re-scale.
-    if kind == 4 && num == 66 {
     // `new Color((float)R/255f, …)` goes through XNA/MonoGame's
     // `(byte)(v*255f)` per channel — the disco bytes round-trip
     // (modulo the C#'s own f32 divide/multiply rounding, kept
@@ -1714,12 +1710,6 @@ pub fn kill_tile_make_tile_dust(
             0.0,
             0.0,
             0,
-            Color::new(
-                (disco.0 as f32 / 255.0) as u8,
-                (disco.1 as f32 / 255.0) as u8,
-                (disco.2 as f32 / 255.0) as u8,
-                255,
-            ),
             Color::new(ch(disco.0), ch(disco.1), ch(disco.2), 255),
             1.0,
         );
@@ -1789,12 +1779,12 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(3);
-        let mut gen = UnifiedRandom::new(5);
+        let mut gen_rng = UnifiedRandom::new(5);
         let mut rtail = UnifiedRandom::new(3);
         let mut gtail = UnifiedRandom::new(5);
         let t = tile(1, 0, 0);
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         assert_ne!(idx, DUST_SENTINEL);
         assert_eq!(pool.slot(idx).dust_type, 1);
@@ -1806,7 +1796,7 @@ mod tests {
             0.0, 0.0, 0, Color::default(), 1.0,
         );
         streams_agree(&mut rng, &mut rtail);
-        streams_agree(&mut gen, &mut gtail);
+        streams_agree(&mut gen_rng, &mut gtail);
     }
 
     /// W4-g14 — the negative-num veto: kind 216 resolves -1 and spawns
@@ -1817,16 +1807,16 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(7);
-        let mut gen = UnifiedRandom::new(11);
+        let mut gen_rng = UnifiedRandom::new(11);
         let mut rtail = UnifiedRandom::new(7);
         let mut gtail = UnifiedRandom::new(11);
         let t = tile(216, 0, 0);
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         assert_eq!(idx, DUST_SENTINEL);
         streams_agree(&mut rng, &mut rtail);
-        streams_agree(&mut gen, &mut gtail);
+        streams_agree(&mut gen_rng, &mut gtail);
     }
 
     /// W4-g14 — site 69089: the 627 moss-disco arm — the ladder's moss
@@ -1838,10 +1828,10 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(13);
-        let mut gen = UnifiedRandom::new(17);
+        let mut gen_rng = UnifiedRandom::new(17);
         let t = tile(627, 0, 0);
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (10, 20, 30), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (10, 20, 30), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         let d = pool.slot(idx);
         assert_eq!(d.dust_type, 267);
@@ -1860,13 +1850,13 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(19);
-        let mut gen = UnifiedRandom::new(23);
+        let mut gen_rng = UnifiedRandom::new(23);
         let mut mpool = DustPool::new();
         let mut mrng = UnifiedRandom::new(19);
         let mut mgen = UnifiedRandom::new(23);
         let t = tile(314, 0, 0);
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         let sx = mgen.next_range(-2, 3) as f32;
         let sy = mgen.next_range(-2, 3) as f32;
@@ -1883,7 +1873,7 @@ mod tests {
         assert_eq!(pool.slot(idx).fade_in, mpool.slot(midx).fade_in);
         assert!(pool.slot(idx).no_gravity);
         streams_agree(&mut rng, &mut mrng);
-        streams_agree(&mut gen, &mut mgen);
+        streams_agree(&mut gen_rng, &mut mgen);
     }
 
     /// W4-g14 — site 69158: the num==139 arm (kind 454) draws
@@ -1895,12 +1885,12 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(29);
-        let mut gen = UnifiedRandom::new(31);
+        let mut gen_rng = UnifiedRandom::new(31);
         let mut mpool = DustPool::new();
         let mut mrng = UnifiedRandom::new(29);
         let t = tile(454, 0, 0);
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         let ty = 139 + mrng.next_max(4);
         mpool.new_dust(
@@ -1927,12 +1917,12 @@ mod tests {
             let roll = probe.next_max(3);
             let mut pool = DustPool::new();
             let mut rng = UnifiedRandom::new(53);
-            let mut gen = UnifiedRandom::new(seed);
+            let mut gen_rng = UnifiedRandom::new(seed);
             let mut gtail = UnifiedRandom::new(seed);
             let _ = gtail.next_max(3);
             let t = tile(352, 0, 0);
             let idx = kill_tile_make_tile_dust(
-                400, 100, &t, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+                400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
             );
             if roll == 0 {
                 let d = pool.slot(idx);
@@ -1943,7 +1933,7 @@ mod tests {
             } else {
                 assert_eq!(pool.slot(idx).dust_type, 125);
             }
-            streams_agree(&mut gen, &mut gtail);
+            streams_agree(&mut gen_rng, &mut gtail);
         }
     }
 
@@ -1955,13 +1945,13 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(59);
-        let mut gen = UnifiedRandom::new(61);
+        let mut gen_rng = UnifiedRandom::new(61);
         let mut mpool = DustPool::new();
         let mut mrng = UnifiedRandom::new(59);
         let mut gtail = UnifiedRandom::new(61);
         let t = tile(19, 0, 30 * 18);
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         let ty = 68 + mrng.next_max(3);
         mpool.new_dust(
@@ -1970,14 +1960,9 @@ mod tests {
         );
         assert_eq!(pool.slot(idx).dust_type, ty);
         streams_agree(&mut rng, &mut mrng);
-        streams_agree(&mut gen, &mut gtail); // the ladder drew nothing on gen
+        streams_agree(&mut gen_rng, &mut gtail); // the ladder drew nothing on gen
     }
 
-    /// W4-g14 — site 69152: the torch-disco arm's float-ctor colour
-    /// truncates every [0,1] component to a byte: (200,100,255) lands
-    /// (0,0,1), not a re-scale. The torch table resolves row 14 → 66.
-    #[test]
-    fn w4_g14_tile_torch_disco_float_ctor_truncation() {
     /// W4-g14 (rewritten per research/66 §1 arm 11) — site 69152: the
     /// torch-disco arm's float ctor round-trips the bytes: XNA's
     /// `(byte)(v*255f)` undoes the `/255f`, so (200,100,255) lands
@@ -1990,14 +1975,13 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(67);
-        let mut gen = UnifiedRandom::new(71);
+        let mut gen_rng = UnifiedRandom::new(71);
         let t = tile(4, 0, 14 * 22);
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (200, 100, 255), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (200, 100, 255), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         let d = pool.slot(idx);
         assert_eq!(d.dust_type, 66);
-        assert_eq!(d.color, Color::new(0, 0, 1, 255));
         let ch = |b: u8| (b as f32 / 255.0 * 255.0).clamp(0.0, 255.0) as u8;
         assert_eq!(d.color, Color::new(ch(200), ch(100), ch(255), 255));
         assert!(d.no_gravity);
@@ -2013,11 +1997,11 @@ mod tests {
         // No solid above: lift = 255/16 - 3 = 12 (uncapped).
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(73);
-        let mut gen = UnifiedRandom::new(79);
+        let mut gen_rng = UnifiedRandom::new(79);
         let mut t = tile(518, 0, 0);
         t.liquid = 255;
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         assert_eq!(pool.slot(idx).position.y, 1600.0 - 12.0);
         // Solid above: capped at 8.
@@ -2044,14 +2028,14 @@ mod tests {
         // Mature 31 (fx >= 36): num 5, NO gen draw.
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(83);
-        let mut gen = UnifiedRandom::new(89);
+        let mut gen_rng = UnifiedRandom::new(89);
         let mut gtail = UnifiedRandom::new(89);
         let t = tile(31, 36, 0);
         let idx = kill_tile_make_tile_dust(
-            400, 100, &t, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            400, 100, &t, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         assert_eq!(pool.slot(idx).dust_type, 5);
-        streams_agree(&mut gen, &mut gtail);
+        streams_agree(&mut gen_rng, &mut gtail);
         // Immature 25: one Next(2) draw, num 1 or 14.
         let mut probe = UnifiedRandom::new(89);
         let roll = probe.next_max(2);
@@ -2073,7 +2057,7 @@ mod tests {
 /// no-dust switch, the 184 column table, the 512-516/541/590 arms, the
 /// seven 583-589 genRand.Next(10) arms, 595/596/615/616, the 633
 /// Next(6), 637/638 and the 634 Next(10)+Next(12) pair.
-fn tile_ladder_switch1(t: &Tile, num: i32, gen: &mut UnifiedRandom) -> i32 {
+fn tile_ladder_switch1(t: &Tile, num: i32, gen_rng: &mut UnifiedRandom) -> i32 {
     let kind = t.kind;
     let fx = t.frame_x as i32;
     let mut num = num;
@@ -2120,21 +2104,21 @@ fn tile_ladder_switch1(t: &Tile, num: i32, gen: &mut UnifiedRandom) -> i32 {
         541 => num = 226,
         590 => num = 1,
         // `:67031-67051` — the seven Next(10) arms.
-        583 => num = if gen.next_max(10) != 0 { 1 } else { 87 },
-        584 => num = if gen.next_max(10) != 0 { 1 } else { 86 },
-        585 => num = if gen.next_max(10) != 0 { 1 } else { 88 },
-        586 => num = if gen.next_max(10) != 0 { 1 } else { 89 },
-        587 => num = if gen.next_max(10) != 0 { 1 } else { 90 },
-        588 => num = if gen.next_max(10) != 0 { 1 } else { 91 },
-        589 => num = if gen.next_max(10) != 0 { 1 } else { 138 },
+        583 => num = if gen_rng.next_max(10) != 0 { 1 } else { 87 },
+        584 => num = if gen_rng.next_max(10) != 0 { 1 } else { 86 },
+        585 => num = if gen_rng.next_max(10) != 0 { 1 } else { 88 },
+        586 => num = if gen_rng.next_max(10) != 0 { 1 } else { 89 },
+        587 => num = if gen_rng.next_max(10) != 0 { 1 } else { 90 },
+        588 => num = if gen_rng.next_max(10) != 0 { 1 } else { 91 },
+        589 => num = if gen_rng.next_max(10) != 0 { 1 } else { 138 },
         595 | 596 | 615 | 616 => num = 78,
         // `:67064-67066` — Next(6).
-        633 => num = if gen.next_max(6) != 0 { 237 } else { 36 },
+        633 => num = if gen_rng.next_max(6) != 0 { 237 } else { 36 },
         637 | 638 => num = 237,
         634 => {
             // `:67071-67077` — Next(10) then Next(12), both always.
-            num = if gen.next_max(10) != 0 { 36 } else { 31 };
-            if gen.next_max(12) == 0 {
+            num = if gen_rng.next_max(10) != 0 { 36 } else { 31 };
+            if gen_rng.next_max(12) == 0 {
                 num = 6;
             }
         }
@@ -2152,7 +2136,7 @@ fn tile_ladder_middle(
     j: i32,
     num: i32,
     world: &World,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
 ) -> i32 {
     let kind = t.kind;
     let fx = t.frame_x as i32;
@@ -2247,7 +2231,7 @@ fn tile_ladder_middle(
     }
     if kind == 641 {
         // `:67170-67173` — genRand arm.
-        num = if gen.next_max(2) != 0 { 161 } else { 243 };
+        num = if gen_rng.next_max(2) != 0 { 161 } else { 243 };
     }
     if kind == 659 {
         num = 308;
@@ -2269,11 +2253,11 @@ fn tile_ladder_middle(
     }
     if kind == 370 {
         // `:67198-67201` — genRand arm.
-        num = if gen.next_max(2) != 0 { 23 } else { 6 };
+        num = if gen_rng.next_max(2) != 0 { 23 } else { 6 };
     }
     if kind == 171 {
         // `:67202-67205` — genRand arm.
-        num = if gen.next_max(2) != 0 { -1 } else { 196 };
+        num = if gen_rng.next_max(2) != 0 { -1 } else { 196 };
     }
     if kind == 326 {
         num = 13;

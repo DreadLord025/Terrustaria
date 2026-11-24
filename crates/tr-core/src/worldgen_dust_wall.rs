@@ -31,7 +31,7 @@ use glam::Vec2;
 /// The wall dust-type ladder, switch half (`WorldGen.cs:61347-61655`):
 /// `num = 0`, then the big switch over `tileCache.wall`. The six
 /// genRand arms roll `gen` exactly where the C# evaluates them.
-fn wall_dust_type_switch(wall: u16, gen: &mut UnifiedRandom) -> i32 {
+fn wall_dust_type_switch(wall: u16, gen_rng: &mut UnifiedRandom) -> i32 {
     match wall {
         366 => 1,
         365 => 13,
@@ -62,7 +62,7 @@ fn wall_dust_type_switch(wall: u16, gen: &mut UnifiedRandom) -> i32 {
         240 => 135,
         // `:61453-61456` — genRand arm.
         3 | 246 => {
-            if gen.next_max(2) != 0 {
+            if gen_rng.next_max(2) != 0 {
                 1
             } else {
                 14
@@ -76,7 +76,7 @@ fn wall_dust_type_switch(wall: u16, gen: &mut UnifiedRandom) -> i32 {
         62 | 263 => 0,
         // `:61507-61510` — genRand arm.
         69 | 264 => {
-            if gen.next_max(2) != 0 {
+            if gen_rng.next_max(2) != 0 {
                 17
             } else {
                 14
@@ -88,7 +88,7 @@ fn wall_dust_type_switch(wall: u16, gen: &mut UnifiedRandom) -> i32 {
         81 | 268 => 123,
         // `:61527-61531` — genRand arm (the == 0 polarity).
         83 | 234 | 269 => {
-            if gen.next_max(2) == 0 {
+            if gen_rng.next_max(2) == 0 {
                 1
             } else {
                 117
@@ -101,7 +101,7 @@ fn wall_dust_type_switch(wall: u16, gen: &mut UnifiedRandom) -> i32 {
         196..=199 | 284..=287 => 0,
         // `:61572-61577` — genRand arm.
         200 | 202 | 288 | 290 => {
-            if gen.next_max(2) != 0 {
+            if gen_rng.next_max(2) != 0 {
                 70
             } else {
                 69
@@ -110,7 +110,7 @@ fn wall_dust_type_switch(wall: u16, gen: &mut UnifiedRandom) -> i32 {
         201 | 289 => 17,
         // `:61582-61585` — genRand arm.
         203 | 291 => {
-            if gen.next_max(2) != 0 {
+            if gen_rng.next_max(2) != 0 {
                 68
             } else {
                 69
@@ -120,7 +120,7 @@ fn wall_dust_type_switch(wall: u16, gen: &mut UnifiedRandom) -> i32 {
         206 | 294 => 1,
         // `:61598-61607` — genRand arm.
         208..=211 | 296..=299 => {
-            if gen.next_max(2) != 0 {
+            if gen_rng.next_max(2) != 0 {
                 125
             } else {
                 155
@@ -145,7 +145,7 @@ fn wall_dust_type_switch(wall: u16, gen: &mut UnifiedRandom) -> i32 {
 /// in C# order; the five genRand arms (186, 182, 93, 144, 27) roll only
 /// when their wall matches. The 153-166 band's inner switch is a
 /// no-op for the walls it does not list (the C# leaves `num` alone).
-fn wall_dust_type_overrides(wall: u16, mut num: i32, gen: &mut UnifiedRandom) -> i32 {
+fn wall_dust_type_overrides(wall: u16, mut num: i32, gen_rng: &mut UnifiedRandom) -> i32 {
     if wall == 148 {
         num = -1;
     }
@@ -217,7 +217,7 @@ fn wall_dust_type_overrides(wall: u16, mut num: i32, gen: &mut UnifiedRandom) ->
     }
     if wall == 186 {
         // `:61750` — genRand arm.
-        num = gen.next_range(68, 71);
+        num = gen_rng.next_range(68, 71);
     }
     if wall == 319 {
         num = 171;
@@ -290,7 +290,7 @@ fn wall_dust_type_overrides(wall: u16, mut num: i32, gen: &mut UnifiedRandom) ->
     }
     if wall == 182 {
         // `:61854` — genRand arm.
-        num = if gen.next_max(2) != 0 { 23 } else { 6 };
+        num = if gen_rng.next_max(2) != 0 { 23 } else { 6 };
     }
     if (153..=166).contains(&wall) {
         // `:61858-61888` — the inner switch (no default: unlisted walls
@@ -325,7 +325,7 @@ fn wall_dust_type_overrides(wall: u16, mut num: i32, gen: &mut UnifiedRandom) ->
         // `:61910-61917` — the 93 arm rolls genRand.
         num = 86 + wall as i32 - 88;
         if wall == 93 {
-            num = gen.next_range(88, 94);
+            num = gen_rng.next_range(88, 94);
         }
     }
     if wall == 33 {
@@ -411,7 +411,7 @@ fn wall_dust_type_overrides(wall: u16, mut num: i32, gen: &mut UnifiedRandom) ->
     }
     if wall == 144 {
         // `:62084` — genRand arm.
-        num = if gen.next_max(2) != 0 { 118 } else { 10 };
+        num = if gen_rng.next_max(2) != 0 { 118 } else { 10 };
     }
     if wall == 75 {
         num = 26;
@@ -430,7 +430,7 @@ fn wall_dust_type_overrides(wall: u16, mut num: i32, gen: &mut UnifiedRandom) ->
     }
     if wall == 27 {
         // `:62108` — genRand arm.
-        num = if gen.next_max(2) != 0 { 1 } else { 7 };
+        num = if gen_rng.next_max(2) != 0 { 1 } else { 7 };
     }
     if wall == 138 {
         num = 77;
@@ -469,13 +469,13 @@ pub fn kill_wall_make_wall_dust(
     wall: u16,
     disco: (u8, u8, u8),
     rng: &mut UnifiedRandom,
-    gen: &mut UnifiedRandom,
+    gen_rng: &mut UnifiedRandom,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) -> usize {
-    let num = wall_dust_type_switch(wall, gen);
-    let num = wall_dust_type_overrides(wall, num, gen);
+    let num = wall_dust_type_switch(wall, gen_rng);
+    let num = wall_dust_type_overrides(wall, num, gen_rng);
     let pos = Vec2::new((i * 16) as f32, (j * 16) as f32);
     // `:62138-62141` — wall 348: the plain spawn, velocity ×0.4.
     if wall == 348 {
@@ -569,15 +569,15 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(3);
-        let mut gen = UnifiedRandom::new(5);
+        let mut gen_rng = UnifiedRandom::new(5);
         let mut gtail = UnifiedRandom::new(5);
         let idx = kill_wall_make_wall_dust(
-            4, 5, 4, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            4, 5, 4, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         assert_ne!(idx, crate::particles::DUST_SENTINEL);
         assert_eq!(pool.slot(idx).dust_type, 7);
         assert_eq!(pool.slot(idx).position, Vec2::new(64.0, 80.0));
-        streams_agree(&mut gen, &mut gtail); // the ladder drew nothing
+        streams_agree(&mut gen_rng, &mut gtail); // the ladder drew nothing
     }
 
     /// W4-g14 — site 62140: wall 348 spawns num 57 with velocity ×0.4;
@@ -588,11 +588,11 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(9);
-        let mut gen = UnifiedRandom::new(11);
+        let mut gen_rng = UnifiedRandom::new(11);
         let mut mpool = DustPool::new();
         let mut m = UnifiedRandom::new(9);
         let idx = kill_wall_make_wall_dust(
-            2, 2, 348, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            2, 2, 348, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         let midx = mpool.new_dust(
             &mut m, &c, &w, Vec2::new(32.0, 32.0), 16, 16, 57,
@@ -612,9 +612,9 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(13);
-        let mut gen = UnifiedRandom::new(17);
+        let mut gen_rng = UnifiedRandom::new(17);
         let idx = kill_wall_make_wall_dust(
-            3, 3, 44, (200, 100, 50), &mut rng, &mut gen, &mut pool, &c, &w,
+            3, 3, 44, (200, 100, 50), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         let d = pool.slot(idx);
         assert_eq!(d.dust_type, 66);
@@ -633,9 +633,9 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(19);
-        let mut gen = UnifiedRandom::new(23);
+        let mut gen_rng = UnifiedRandom::new(23);
         let idx = kill_wall_make_wall_dust(
-            1, 1, 76, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            1, 1, 76, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         let d = pool.slot(idx);
         assert_eq!(d.dust_type, 4);
@@ -653,23 +653,23 @@ mod tests {
         for wall in [116u16, 120, 126, 132, 133, 135] {
             let mut pool = DustPool::new();
             let mut rng = UnifiedRandom::new(29);
-            let mut gen = UnifiedRandom::new(31);
+            let mut gen_rng = UnifiedRandom::new(31);
             let idx = kill_wall_make_wall_dust(
-                1, 1, wall, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+                1, 1, wall, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
             );
             assert_eq!(idx, crate::particles::DUST_SENTINEL, "wall {wall} silent");
         }
         // Wall 144: the override rolls genRand.Next(2) then spawns.
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(29);
-        let mut gen = UnifiedRandom::new(31);
+        let mut gen_rng = UnifiedRandom::new(31);
         let mut mgen = UnifiedRandom::new(31);
         let want = if mgen.next_max(2) != 0 { 118 } else { 10 };
         let idx = kill_wall_make_wall_dust(
-            1, 1, 144, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            1, 1, 144, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         assert_eq!(pool.slot(idx).dust_type, want);
-        streams_agree(&mut gen, &mut mgen);
+        streams_agree(&mut gen_rng, &mut mgen);
     }
 
     /// W4-g14 — the genRand switch arms roll in C# order: wall 27
@@ -683,11 +683,11 @@ mod tests {
         for (wall, switch_arm) in [(3u16, true), (27u16, false)] {
             let mut pool = DustPool::new();
             let mut rng = UnifiedRandom::new(37);
-            let mut gen = UnifiedRandom::new(41);
+            let mut gen_rng = UnifiedRandom::new(41);
             let mut mgen = UnifiedRandom::new(41);
             let roll = mgen.next_max(2);
             let idx = kill_wall_make_wall_dust(
-                1, 1, wall, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+                1, 1, wall, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
             );
             let want = if switch_arm {
                 if roll != 0 { 1 } else { 14 }
@@ -697,7 +697,7 @@ mod tests {
                 7
             };
             assert_eq!(pool.slot(idx).dust_type, want, "wall {wall}");
-            streams_agree(&mut gen, &mut mgen);
+            streams_agree(&mut gen_rng, &mut mgen);
         }
     }
 
@@ -709,9 +709,9 @@ mod tests {
         let c = ctx();
         let mut pool = DustPool::new();
         let mut rng = UnifiedRandom::new(43);
-        let mut gen = UnifiedRandom::new(47);
+        let mut gen_rng = UnifiedRandom::new(47);
         let idx = kill_wall_make_wall_dust(
-            1, 1, 148, (0, 0, 0), &mut rng, &mut gen, &mut pool, &c, &w,
+            1, 1, 148, (0, 0, 0), &mut rng, &mut gen_rng, &mut pool, &c, &w,
         );
         assert_eq!(idx, crate::particles::DUST_SENTINEL);
     }
