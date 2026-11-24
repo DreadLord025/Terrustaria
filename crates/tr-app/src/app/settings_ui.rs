@@ -103,6 +103,7 @@ impl App {
                 if let Some(front) = self.front.clone() {
                     self.apply_front_flow(front, crate::app::flow::FlowClick::SecretSeedsOpen);
                 }
+            }
             TrUiPreset::Packs => {
                 // The pack-selection screenshot (`TR_UI=packs`): the menuMode
                 // 11 row 4 entry (`Main.cs:48949-48957`, the no-Steam else
