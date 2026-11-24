@@ -119,6 +119,11 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 | 313 | W4-d9 FINAL: the projectile aiStyles 81-90 band table (the five gap-styles 81/86/87/89/90 ported + wired, the five even styles main's census; the e3 dust-activation contracts + the g78 spelunker-canonical verdict; registry-number 313 per §8.1 row 6, chain 281→313, code-only) | `313-projectile-ai-81-90-final.md` | ✅ SEALED |
 | 357 | W4-e26 luck-system FINAL census + RETIRE declaration (number 357 per registry-150 §9 UNIFIED FINAL — chain 248→357: g82's §6.3 reservation wins key 248, the round-4 draft's 333 collided with d119, §9.2 row 357 is FINAL; drafted at first-free 248, 237-247 claimed at tips; the c8 generic SIGHT-gate auto-cover receipt — Frog/LadyBug/GoldLadyBug zero provider wiring, 605 pre-tabled in GOLD_PEER_TABLE; the ladybug-rain-boost g67-drop/d130-canonical merge note; the factor-activation table — f33 torch-god ports the scan head/tail NOT the galaxy-pearl/mirror/kite neutral factors, gnome +0.2 already live; the Frog361/Duck362 DEDUPE claims-table — d37-E8 keep-one EXECUTED 04dbdb0d2: Duck→c10, Frog wire 361→744 cs/net 361, ladybug pair stays e26 via the d42 flip; bijection 273/273, ALL_KINDS 273, sheets 184/184, ENTRIES 252; LUCK-FAMILY COMPLETE §4; code-only) | `357-e26-luck-final-census.md` | ✅ |
 
+## Wave 4 lane FINALs (registry-150 §8.7 new-doc rule, ≥360)
+| # | Module | File | Status |
+| --- | --- | --- | --- |
+| 360 | W4-g10 lane 3 pets FINAL — the SEAL-VERIFY receipt (g10b phases landed, ALL-11 wired census, the f43b splice contract receipt, the d43 keep-one) + the pets-family bible | `360-g10-pets-final.md` | ✅ SEALED (code-only; 26 witnesses written not run) |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

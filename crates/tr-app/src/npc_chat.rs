@@ -1267,6 +1267,37 @@ fn skeleton_merchant(ctx: &mut ChatContext) -> String {
     crate::lang::dialog(356 + num19)
 }
 
+/// `Lang.GetSlimeType` (`Lang.cs:375-406`): the town-slime kind → the
+/// chatter category's colour word — the 8-word switch the `Lang.SlimeChat`
+/// filter composes (`Slime{colour}Chatter.Chatter`, `Lang.cs:408-411`).
+/// 670 Blue (also the switch's default), 678 Green, 679 Old, 680 Purple,
+/// 681 Rainbow, 682 Red, 683 Yellow, 684 Copper. W4-g10 lane 3 FINAL: the
+/// per-KIND mapping over the landed town-slime kinds (the Lead's
+/// colour-per-kind deliverable).
+///
+/// Keep-one (d120): `task/W4-d120-town-chatter` ports the same switch
+/// type-keyed (`slime_chat_colour(ty: u16)`, its `npc_chat.rs`) AND the
+/// `GetChat` arms that consume it (`NPC.cs:94816-94819`, the
+/// `is_town_slime`-guarded `Slime{colour}Chatter.Chatter` pick) plus the
+/// `dialog_count`/`select_dialog` localization machinery. d120's arms are
+/// keyed on the VANILLA type (`npc.kind.cs_id()`), so they go LIVE the
+/// moment these kinds merge — zero d120 edits (its retire note, research/143
+/// item 2). At the merge this kind-keyed fn and d120's type-keyed fn dedup
+/// (identical words; `kind.cs_id()` bridges them); d120 owns the dispatch.
+pub(crate) fn slime_chat_colour(kind: NpcKind) -> &'static str {
+    match kind {
+        NpcKind::TownSlimeGreen => "Green",
+        NpcKind::TownSlimeOld => "Old",
+        NpcKind::TownSlimePurple => "Purple",
+        NpcKind::TownSlimeRainbow => "Rainbow",
+        NpcKind::TownSlimeRed => "Red",
+        NpcKind::TownSlimeYellow => "Yellow",
+        NpcKind::TownSlimeCopper => "Copper",
+        // 670 (TownSlimeBlue) and the switch's default arm.
+        _ => "Blue",
+    }
+}
+
 // ---- the chat dialog's minimal renderer (task wire-npc-chat) -----------
 
 /// The chat dialog's screen box — `NPCChatPanel.Draw`'s rectangle
@@ -2279,5 +2310,64 @@ mod tests {
         init_lang();
         let count = crate::lang::dialog_count("SlimeBlueChatter.Chatter");
         assert!(count >= 1, "the blue town slime's rows ship");
+    /// W4-g10 lane 3 FINAL — `Lang.GetSlimeType` (`Lang.cs:375-406`): the
+    /// colour-per-kind mapping over the LANDED town-slime kinds. Each kind
+    /// answers its C# switch word, the composed `Slime{colour}Chatter`
+    /// category ships its chatter rows, and the kind's `cs_id` (the vanilla
+    /// type d120's type-keyed `GetChat` arm reads) matches the switch case.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_g10_the_town_slime_kinds_answer_their_colour_words() {
+        init_lang();
+        // (kind, vanilla type, colour word) — the C# switch's eight cases.
+        let table: [(NpcKind, u16, &str); 8] = [
+            (NpcKind::TownSlimeBlue, 670, "Blue"),
+            (NpcKind::TownSlimeGreen, 678, "Green"),
+            (NpcKind::TownSlimeOld, 679, "Old"),
+            (NpcKind::TownSlimePurple, 680, "Purple"),
+            (NpcKind::TownSlimeRainbow, 681, "Rainbow"),
+            (NpcKind::TownSlimeRed, 682, "Red"),
+            (NpcKind::TownSlimeYellow, 683, "Yellow"),
+            (NpcKind::TownSlimeCopper, 684, "Copper"),
+        ];
+        for (kind, ty, colour) in table {
+            // The colour word the kind answers.
+            assert_eq!(slime_chat_colour(kind), colour, "{kind:?} colour");
+            // The kind's vanilla type is the switch case (d120's arm keys
+            // on `cs_id`, so the type-keyed and kind-keyed maps agree).
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            // The dispatch guard (`NPCID.Sets.IsTownSlime`, NPCID.cs:10119).
+            assert!(crate::npc_ai_town::is_town_slime(ty as i32), "{kind:?} in the set");
+            // The composed category ships its three chatter rows (the
+            // shipped en-US Town.json carries Chatter_1..3 for every
+            // colour, plus a NoHome row the housing path reads).
+            let category = format!("Slime{colour}Chatter");
+            for i in 1..=3 {
+                assert!(
+                    crate::lang::exists(&format!("{category}.Chatter_{i}")),
+                    "{category}.Chatter_{i} ships"
+                );
+            }
+            // The colour's OWN first line resolves (not a shared pool).
+            let first = crate::lang::text(&format!("{category}.Chatter_1"));
+            assert!(!first.is_empty(), "{category}.Chatter_1 resolves");
+            assert_ne!(first, format!("{category}.Chatter_1"), "not the bare key");
+        }
+        // The default arm: a non-town-slime kind answers Blue (the switch's
+        // `result = "Blue"` initializer, Lang.cs:377).
+        assert_eq!(slime_chat_colour(NpcKind::Slime), "Blue", "the wild slime default");
+        assert_eq!(slime_chat_colour(NpcKind::Guide), "Blue", "the switch default");
+        // The eight first lines are pairwise distinct (each colour owns its
+        // lines — the witness that the mapping is not a constant).
+        let mut firsts: Vec<String> = table
+            .iter()
+            .map(|(_, _, c)| crate::lang::text(&format!("Slime{c}Chatter.Chatter_1")))
+            .collect();
+        let n = firsts.len();
+        firsts.sort();
+        firsts.dedup();
+        assert_eq!(firsts.len(), n, "every colour's first line is distinct");
     }
+}
 }

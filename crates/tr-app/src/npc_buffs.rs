@@ -1101,6 +1101,20 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // carries no entry for them) — the null-row else-branch
         // (`NPC.cs:17822-17828`), no immunity. The Duck dropped to c10.
         NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => &[],
+        // W4-g10 lane 3 — the town pets: `NPCID.cs`'s DebuffImmunitySets has
+        // no row for 637/638/656/670/678-684 — the null-row else-branch, no
+        // immunity (`NPC.cs:17826-17832`), same as the town residents.
+        NpcKind::TownCat
+        | NpcKind::TownDog
+        | NpcKind::TownBunny
+        | NpcKind::TownSlimeBlue
+        | NpcKind::TownSlimeGreen
+        | NpcKind::TownSlimeOld
+        | NpcKind::TownSlimePurple
+        | NpcKind::TownSlimeRainbow
+        | NpcKind::TownSlimeRed
+        | NpcKind::TownSlimeYellow
+        | NpcKind::TownSlimeCopper => &[],
     }
 }
 

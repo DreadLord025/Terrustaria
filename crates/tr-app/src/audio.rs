@@ -705,8 +705,10 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
 /// S1-P-i41 — the `Sounds/Custom/` trackables the mount system plays:
 /// `SoundID.PalChillet = CreateTrackable("pal_chillet").WithVolume(0.35f)`
 /// (`SoundID.cs:1716`), the Chillemt mounts' equip cue (`Mount.cs:6285`).
-/// One variation, pinned like the item-use trackables.
-pub(crate) const MOUNT_CUSTOM_CUES: &[&str] = &["pal_chillet"];
+/// One variation, pinned like the item-use trackables. W4-g10 FINAL adds
+/// `PalChilletJoy` (`SoundID.cs:1717`, the petting joy cue
+/// `Player.cs:33354`) — same 0.35 volume, one variation.
+pub(crate) const MOUNT_CUSTOM_CUES: &[&str] = &["pal_chillet", "pal_chillet_joy"];
 
 /// Whether the cue name is in the SFX bank (the item-use coverage test's
 /// seam, S1-E-21 wave A).
@@ -1326,6 +1328,30 @@ impl Audio {
             return None;
         }
         let cue = "pal_chillet";
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// W4-g10 FINAL — the Chillemt mounts' PETTING joy cue
+    /// (`Player.PetMount` `Player.cs:33352-33355`:
+    /// `SoundEngine.PlaySound(SoundID.PalChilletJoy, base.Center)` for the
+    /// `(uint)(type - 62) <= 3` gate). The same case-42 trackable façade as
+    /// [`Self::play_chillet_sound`] — the style's own 0.35 volume, the
+    /// variance-0 NextFloat still consumed on the audio-only stream, the
+    /// one-variation `pal_chillet_joy` asset (`SoundID.cs:1717`).
+    pub fn play_petting_joy_sound(&mut self, x: f32, y: f32) -> Option<&'static str> {
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.name == "PalChilletJoy")?;
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        if sound::play_sound(u32::from(style.sound_id), x, y, self.listener, style.volume)
+            .is_none()
+        {
+            return None;
+        }
+        let cue = "pal_chillet_joy";
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
         Some(cue)
