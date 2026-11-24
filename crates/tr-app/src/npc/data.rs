@@ -1402,10 +1402,6 @@ impl NpcKind {
             NpcKind::VampireBat => 405,
             NpcKind::Vampire => 400,
             NpcKind::VileSpitEoW => 411,
-            // Doc-sweep lane 36 — the ShimmerSlime keeps its vanilla id
-            // (676 is free in the protocol space; the 677 twin is
-            // W4-c7/c9's pushed claim). `NPCID.cs:12029`.
-            NpcKind::ShimmerSlime => 676,
         }
     }
 
@@ -2286,11 +2282,6 @@ impl NpcKind {
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
             793 => NpcKind::Moth,
-            // Doc-sweep lane 36 — the ShimmerSlime's vanilla id (`to_u16`).
-            676 => NpcKind::ShimmerSlime,
-            _ => return None,
-        })
-    
             // d23's g8/d43-owned decode arms (see the to_u16 note above).
             401 => NpcKind::IceBat,
             402 => NpcKind::Lavabat,
@@ -2299,6 +2290,9 @@ impl NpcKind {
             405 => NpcKind::VampireBat,
             400 => NpcKind::Vampire,
             411 => NpcKind::VileSpitEoW,
+            _ => return None,
+        })
+    }
 }
 
     /// `npc.townNPC` (`NPC.cs:6537`) — the flag the town `SetDefaults`
