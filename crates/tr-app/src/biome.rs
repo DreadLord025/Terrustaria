@@ -554,5 +554,40 @@ mod bg_transition_tests {
         assert_eq!(desert_preferred_style(false, false, false, 0, 0, 0), 2);
         // The corrupt arm outranks crimson when both would fire.
         assert_eq!(desert_preferred_style(true, true, true, 500, 300, 100), 5);
+    /// S1-G-13 consumers: the `DrawCapture` biome background-index override
+    /// (`Main.cs:56675-56680`) — fresh zeroed arrays +
+    /// `UpdateBGVisibility_*(bgIndex, 1f)` land EXACTLY one front slot at 1
+    /// and the style's far layer(s) at 1, in a single step.
+    #[test]
+    fn the_capture_bg_override_lands_full_alpha_in_one_step() {
+        for (style, far_slots) in [
+            (0, vec![0]),
+            (1, vec![2]),
+            (2, vec![1]),
+            (3, vec![0]),
+            (6, vec![2]),
+            (7, vec![4]),
+            (8, vec![5]),
+            (9, vec![0, 6]),
+            (10, vec![10]),
+        ] {
+            let mut front = [0.0; 16];
+            let mut far = [0.0; 16];
+            advance_bg_alphas(&mut front, &mut far, style, 0, 0, 1.0);
+            assert_eq!(front[style as usize], 1.0, "front style {style}");
+            assert_eq!(
+                front.iter().filter(|a| **a != 0.0).count(),
+                1,
+                "only the override's front slot lights up (style {style})"
+            );
+            for (i, a) in far.iter().enumerate() {
+                let want = far_slots.contains(&i);
+                assert_eq!(*a, if want { 1.0 } else { 0.0 }, "far {i} style {style}");
+            }
+        }
+        // The capture driver builds the arrays exactly this way.
+        let cr = include_str!("app/capture_render.rs");
+        assert!(cr.contains("let mut bg_front = [0.0f32; 16];"));
+        assert!(cr.contains("settings.biome.background_index,"));
     }
 }

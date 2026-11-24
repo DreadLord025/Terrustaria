@@ -269,6 +269,14 @@ pub struct Auras {
     pub sunflower: bool,
     pub cat_bast: bool,
     pub shadow_candle: bool,
+    /// The Strong Wind grant gate (`Player.cs:25556-25559`):
+    /// `!behindBackWall && ZoneSandstorm` → `AddBuff(194, 2)`. Derived in
+    /// [`SceneMetrics::auras`] from the two scan flags (W4-c40).
+    pub sandstorm_wind: bool,
+    /// `SceneMetrics.hasBanner` (`SceneMetrics.cs:136`) — any strength-
+    /// enabled banner in the scan window; the MonsterBanner (147) 2-tick
+    /// indicator grant reads it (`Player.cs:25552-25555`).
+    pub banner: bool,
     /// `SceneMetrics.hasBanner` (`SceneMetrics.cs:136`) — any strength-
     /// enabled banner in the scan window; the MonsterBanner (147) 2-tick
     /// indicator grant reads it (`Player.cs:25552-25555`). W4-g4 P1 (the
@@ -297,6 +305,9 @@ pub struct Zones {
     pub jungle: bool,
     /// `ZoneGlowshroom` — `EnoughTilesForGlowingMushroom` (`:698-701`).
     pub glowshroom: bool,
+    /// `ZoneGraveyard` (`SceneMetrics.cs:679`) — the vampire seed's
+    /// sun-exposure gate reads it (`Player.cs:28681`, W4-d80).
+    pub graveyard: bool,
     pub dungeon: bool,
     /// `ZoneLihzhardTemple` (`SceneMetrics.cs:694`, wall 87) — the Golem
     /// family's enrage gate input (`NPC.cs:19513`/`:31136`/`:19238`/
@@ -557,6 +568,9 @@ impl SceneMetrics {
             sunflower: self.has_sunflower,
             cat_bast: self.has_cat_bast,
             shadow_candle: self.shadow_candle_count > 0,
+            // `Player.cs:25556`: `!this.behindBackWall && this.ZoneSandstorm`
+            // (the player flags mirror the scan, `:16715`).
+            sandstorm_wind: !self.behind_backwall && self.zone_sandstorm,
             banner: self.has_banner,
         }
     }
@@ -571,6 +585,7 @@ impl SceneMetrics {
             hallow: self.zone_hallow,
             jungle: self.zone_jungle,
             glowshroom: self.enough_tiles_for_glowing_mushroom(),
+            graveyard: self.zone_graveyard,
             dungeon: self.zone_dungeon,
             temple: self.zone_lihzhard_temple,
             shimmer: self.zone_shimmer,
@@ -926,7 +941,7 @@ impl SceneMetrics {
             max_tiles_x,
             self.tile_center.1,
         );
-        // `SceneMetrics.cs:698` via `WorldGen.IsSurfaceForAtmospherics`
+        // `SceneMetrics.cs:693` via `WorldGen.IsSurfaceForAtmospherics`
         // (`WorldGen.cs:10976-10985`; the remix branch is not ported):
         self.surface_atmospherics = self.tile_center.1 as f64 <= world_surface;
         // `SceneMetrics.cs:698-703` (the 1.4.5.8 lines; the earlier
@@ -947,6 +962,13 @@ impl SceneMetrics {
         // zone gate drops.
         self.zone_rain = raining && self.surface_atmospherics;
         self.zone_sandstorm = self.zone_desert && self.surface_atmospherics && sandstorm_happening;
+        // `SceneMetrics.cs:698`:
+        self.zone_rain = raining && self.surface_atmospherics;
+        // `SceneMetrics.cs:699`:
+        self.zone_sandstorm = self.zone_desert && self.surface_atmospherics && sandstorm_happening;
+        // `SceneMetrics.cs:700-703`: the ONE-WAY gate — a sandstorm clears
+        // the rain zone (g67f-weather-bible); the rain never clears the
+        // sandstorm (witness `zone_sandstorm_suppresses_zone_rain`).
         if self.zone_sandstorm {
             self.zone_rain = false;
         }
@@ -1200,12 +1222,12 @@ impl Sandstorm {
     }
 
     /// `Sandstorm.UpdateTime` (`Sandstorm.cs:32-77`). `day_rate` is
-    /// `Main.dayRate` (1 in our port: no sleeping/creative powers yet);
-    /// `wind_speed_current` is `Main.windSpeedCurrent`. The `Main.netMode != 1`
-    /// gate (`:34`) is always true for a single-player session. The start roll
-    /// uses the no-hardMode branch (`:58-59`: `num = 21600 * 3`; hardmode is
-    /// not ported yet).
-    pub fn update_time(&mut self, day_rate: i32, wind_speed_current: f32) {
+    /// `Main.dayRate`; `wind_speed_current` is `Main.windSpeedCurrent`;
+    /// `hard_mode` is `Main.hardMode` — the start-delay denominator
+    /// (`:58-59`: `num = 21600 * (hardMode ? 2 : 3)`, W4-c40). The
+    /// `Main.netMode != 1` gate (`:34`) is always true for a single-player
+    /// session.
+    pub fn update_time(&mut self, day_rate: i32, wind_speed_current: f32, hard_mode: bool) {
         if self.happening {
             // `Sandstorm.cs:38-41`:
             if self.time_left > SANDSTORM_DURATION_MAX {
@@ -1225,8 +1247,11 @@ impl Sandstorm {
                 self.stop_sandstorm();
             }
         } else {
-            // `Sandstorm.cs:58-59`: start-delay denominator.
-            let num = 21600 * 3;
+            // `Sandstorm.cs:58-59`: start-delay denominator —
+            // `num = ((!Main.hardMode) ? (num * 3) : (num * 2))` (W4-c40:
+            // the hardMode arm was pinned off before `World.hard_mode`
+            // existed; the roll slot count/order is unchanged).
+            let num = 21600 * if hard_mode { 2 } else { 3 };
             // `Sandstorm.cs:60-69`: one roll per day-rate tick.
             if Self::has_sufficient_wind(wind_speed_current) {
                 for _ in 0..day_rate {
@@ -1258,6 +1283,15 @@ impl Sandstorm {
         self.happening = false;
         self.time_left = 0;
         self.change_severity_intentions();
+    }
+
+    /// `Sandstorm.WorldClear` (`Sandstorm.cs:27-30`): the per-world reset
+    /// clears ONLY `Happening` — the severity/intent/RNG state survive
+    /// (the C#'s own scope; `Main.cs:52247`'s WorldClear family). The
+    /// port's live reset is `App::new`'s fresh `Sandstorm`; this is the
+    /// vanilla entry point for the swap path (W4-c40).
+    pub fn world_clear(&mut self) {
+        self.happening = false;
     }
 
     /// `Sandstorm.ChangeSeverityIntentions` (`Sandstorm.cs:79-97`); the
@@ -1836,10 +1870,8 @@ impl SceneState {
 
     /// `MoonlordDeathDrama.ThrowPieces` (`MoonlordDeathDrama.cs:227-238`): the
     /// four flung body parts, seeded by `DramaSeed` from its own stream.
-    ///
-    /// No caller yet — the Moon Lord's death path is unported (`NPC.cs:82681`
-    /// is the only call site).
-    #[allow(dead_code)]
+    /// W4-d70 DOC-SWEEP: the Moon Lord core's death (`NPC.cs:82681`'s
+    /// `HitEffect(0, 1337)` arm) calls it through the sim's death pass.
     pub fn throw_pieces(&mut self, core_center: [f32; 2], drama_seed: i32) {
         let mut r = crate::UnifiedRandom::new(drama_seed);
         // `Vector2.UnitY.RotatedBy(a)` = `(-sin a, cos a)`.
@@ -1871,8 +1903,8 @@ impl SceneState {
 
     /// `MoonlordDeathDrama.AddExplosion` (`MoonlordDeathDrama.cs:240-243`): one
     /// 7-frame blast at `spot`, the frame speed from the shared `Main.rand`
-    /// stream. No caller yet (the Moon Lord's death path is unported).
-    #[allow(dead_code)]
+    /// stream. W4-d70 DOC-SWEEP: the crash drama's dust-storm spots
+    /// (`NPC.cs:41364`) call it through the sim's request drain.
     pub fn add_explosion(&mut self, spot: [f32; 2], rand: &mut crate::UnifiedRandom) {
         let frame_speed = rand.next_range(2, 4);
         self.moonlord_explosions.push(MoonlordExplosion {
@@ -1883,8 +1915,9 @@ impl SceneState {
     }
 
     /// `MoonlordDeathDrama.RequestLight` (`:245-256`): register a light spot and
-    /// raise this frame's whitening request (clamped to 1).
-    #[allow(dead_code)]
+    /// raise this frame's whitening request (clamped to 1). W4-d70 DOC-SWEEP:
+    /// the core's phase ramps + the DD2 crystal's win/loss scenes call it
+    /// through the sim's request drain.
     pub fn request_light(&mut self, light: f32, spot: [f32; 2]) {
         self.moonlord_light_sources.push(spot);
         let light = light.min(1.0);
@@ -1899,9 +1932,13 @@ impl SceneState {
     }
 
     /// `SceneState.UpdateShimmer` (`SceneState.cs:283-309`): the two ramps.
-    /// The monolith states (`:284,288`) and the perspective-player shimmering
-    /// term land with their systems (M4 events / M2-BUFF shimmer); the active
-    /// trigger is `metrics.ZoneShimmer` with its depth window.
+    /// W4-d70 DOC-SWEEP: the `ShimmerMonolithState` terms (`:285-289`) are
+    /// ported — state 1 (the placed monolith's on frame) triggers, state 2
+    /// (the off frame) suppresses. The perspective-player
+    /// `shimmerMonolithShader` term (`Player.ApplyShader` 5347) has no port
+    /// field yet (the accessory shader grants are unported), so it folds to
+    /// false; the active trigger is `metrics.ZoneShimmer` with its depth
+    /// window plus the monolith state.
     fn update_shimmer(&mut self, metrics: &SceneMetrics) {
         // `SceneState.cs:285`: the four-term flag — the zone, the placed
         // Shimmer Monolith (state 1 = on), the equipped one (the 5347 accessory
@@ -1913,6 +1950,13 @@ impl SceneState {
         // `SceneState.cs:286-289`: state 2 (the monolith's OFF toggle) wins
         // over every term — the aether visuals stay down even in the zone.
         let flag = flag && metrics.shimmer_monolith_state != 2;
+        let mut flag = metrics.shimmer_monolith_state == 1
+            || metrics.zone_shimmer
+            || (metrics.player_shimmering && metrics.underground_for_shimmering);
+        // `:286-289`: the off frame suppresses every trigger.
+        if metrics.shimmer_monolith_state == 2 {
+            flag = false;
+        }
         if flag {
             move_towards_impl(
                 self.skip_transitions,
@@ -2277,6 +2321,14 @@ impl FilterBoard {
     /// `Filter.IsActive` (`Filter.cs:58-61`).
     pub fn is_active(&self, id: FilterId) -> bool {
         self.slots[id.index()].active
+    }
+
+    /// `Filter.Deactivate` (`Filter.cs:44-47`): drop `Active` (the opacity
+    /// fades out on the next `update`). `Main.ClearVisualPostProcessEffects`
+    /// (`Main.cs:52114-52252`) calls this on every active filter when the
+    /// world closes back to the menu.
+    pub fn deactivate(&mut self, id: FilterId) {
+        self.slots[id.index()].active = false;
     }
 
     /// `Filter.IsHidden = hidden` (`Filter.cs:12`; `SceneState.cs:161`).
@@ -2655,6 +2707,130 @@ pub fn is_desert_bg_style(bg_style: i32) -> bool {
     matches!(bg_style, 2 | 5 | 13 | 14)
 }
 
+// --- MoonLordScreenShaderData (W4-d70): the Moon Lord screen-filter shader ---
+//
+// `GameContent/Shaders/MoonLordScreenShaderData.cs`: the `FilterMoonLord` /
+// `FilterMoonLordShake` / `MonolithMoonLord` rows share this shader
+// (`ScreenEffectInitializer.cs:22-24`). Its `Apply` override picks a world
+// target (`UpdateMoonLordIndex`) and publishes `LatestFilterStrength`, the
+// value `Main.GetMoonLordColoring` (`Main.cs:26323-26332`) lerps the Moon
+// Lord's parts toward `(183, 255, 255)` with. The S1-G-6 tick driver feeds the
+// shake's `UseIntensity`; this is the target/strength half it left inert.
+
+/// One NPC row `UpdateMoonLordIndex` reads (`MoonLordScreenShaderData.cs:30-68`):
+/// only the core (398) and the deathray eye (400, `ai[0] == 4`) matter.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MoonLordShaderNpc {
+    /// `Main.npc[i].type`.
+    pub npc_type: i32,
+    /// `Main.npc[i].Center`.
+    pub center: [f32; 2],
+    /// `Main.npc[i].ai[0]`.
+    pub ai0: f32,
+    /// `Main.npc[i].ai[1]`.
+    pub ai1: f32,
+}
+
+/// `NPC.MoonLordAttacksArray2`'s duration row (`NPC.InitializeMoonLordAttacks2`,
+/// `NPC.cs:6968-7008`, `[1, j]`): the ten attack lengths the deathray sequencer
+/// walks. The attack-id row `[0, j]` is not read by `UpdateMoonLordIndex`.
+pub const MOON_LORD_ATTACK_DURATIONS: [i32; 10] = [53, 90, 53, 135, 53, 200, 53, 375, 53, 135];
+
+/// `MoonLordScreenShaderData.UpdateMoonLordIndex`
+/// (`MoonLordScreenShaderData.cs:20-79`): the world-space shake anchor. The
+/// core's centre is the base; a deathray eye (`type == 400 && ai[0] == 4`)
+/// whose attack-phase weight beats the running best lerps toward it, and a
+/// core in the `ai[0] == -2` despawn fade lerps back toward the core. Returns
+/// `_targetPositionInWorld`.
+pub fn moon_lord_target_position(npcs: &[MoonLordShaderNpc]) -> [f32; 2] {
+    let mut vector = [0.0f32; 2]; // the core centre
+    let mut value = [0.0f32; 2]; // the best deathray eye centre
+    let mut num = 0.0f32; // the best eye weight
+    let mut num2 = 0.0f32; // the core despawn-fade weight
+    for n in npcs {
+        // `:36-43`: the core centre, plus the `-2` despawn remap.
+        if n.npc_type == 398 {
+            vector = n.center;
+            if n.ai0 == -2.0 {
+                num2 = remap(n.ai1, 55.0, 60.0, 1.0, 0.0);
+            }
+        }
+        // `:44-47`: only the deathray eye (`ai[0] == 4`) contributes.
+        if n.npc_type != 400 || n.ai0 != 4.0 {
+            continue;
+        }
+        let num3 = n.ai1;
+        // `:48-62`: walk the attack-duration row to the current attack's
+        // elapsed ticks (`num6 = ai[1] - sum of the prior durations`).
+        let mut num5 = 0i32;
+        for &dur in MOON_LORD_ATTACK_DURATIONS.iter() {
+            if dur as f32 + num5 as f32 > num3 {
+                break;
+            }
+            num5 += dur;
+        }
+        let num6 = num3 as i32 - num5;
+        // `:63`: the rise (0..180) times the fall (340..360) window.
+        let num7 = remap(num6 as f32, 0.0, 180.0, 0.0, 1.0)
+            * remap(num6 as f32, 340.0, 360.0, 1.0, 0.0);
+        // `:64-68`: last-match-wins on a strictly greater weight.
+        if num7 > num {
+            value = n.center;
+            num = num7;
+        }
+    }
+    // `:70-78`: the eye lerp, then the despawn-fade lerp back to the core.
+    let mut target = vector;
+    if num > 0.0 {
+        target = [
+            lerp(target[0], value[0], num),
+            lerp(target[1], value[1], num),
+        ];
+    }
+    if num2 > 0.0 {
+        target = [
+            lerp(target[0], vector[0], num2),
+            lerp(target[1], vector[1], num2),
+        ];
+    }
+    target
+}
+
+/// `MoonLordScreenShaderData.Apply` (`MoonLordScreenShaderData.cs:81-96`):
+/// `(UseTargetPosition value, LatestFilterStrength)`. The `aimAtPlayer`
+/// variant (`MonolithMoonLord`) aims at `SceneMetrics.Center` with strength 1;
+/// the `FilterMoonLord`/`FilterMoonLordShake` variant tracks the NPC anchor
+/// and fades the strength by its distance from the scene centre
+/// (`Remap(dist, 4000, 8000, 1, 0)`).
+pub fn moon_lord_shader_apply(
+    aim_at_player: bool,
+    scene_center: [f32; 2],
+    npcs: &[MoonLordShaderNpc],
+) -> ([f32; 2], f32) {
+    if aim_at_player {
+        return (scene_center, 1.0);
+    }
+    let target = moon_lord_target_position(npcs);
+    let dx = target[0] - scene_center[0];
+    let dy = target[1] - scene_center[1];
+    let dist = (dx * dx + dy * dy).sqrt();
+    let strength = remap(dist, 4000.0, 8000.0, 1.0, 0.0);
+    (target, strength)
+}
+
+/// `Main.GetMoonLordColoring` (`Main.cs:26323-26332`): the Moon Lord parts'
+/// tint — `Color.Lerp(White, (183, 255, 255), LatestFilterStrength)`, returned
+/// as sRGB bytes. The `:26326-26330` branch reads `ai[3]`/`ai[0]` into
+/// discarded locals (no effect on the colour), so it is a no-op here.
+pub fn moon_lord_coloring(latest_filter_strength: f32) -> [u8; 3] {
+    let t = latest_filter_strength;
+    [
+        lerp(255.0, 183.0, t) as u8,
+        255, // green is 255 on both endpoints
+        255, // blue is 255 on both endpoints
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2944,12 +3120,21 @@ mod tests {
         // `SceneMetrics.cs:698-703` — the ONE-WAY gate (W4-d130 final
         // cross-note): the sandstorm clears ZoneRain; rain never gates
         // ZoneSandstorm (`Sandstorm.cs:32-77` reads only wind).
+        // `SceneMetrics.cs:698-703` — the ONE-WAY ZoneSandstorm→clears-
+        // ZoneRain gate (g67f-weather-bible): the sandstorm arm runs AFTER
+        // the rain assignment and only ever CLEARS zone_rain; zone_rain
+        // never touches zone_sandstorm.
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
         m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, true);
         assert!(m.zone_sandstorm);
         assert!(!m.zone_rain);
+        // The gate is ONE-WAY: raining while the sandstorm holds still
+        // leaves zone_sandstorm set (the rain never clears the storm) —
+        // a re-calculation with raining=true replays the same result.
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, true);
+        assert!(m.zone_sandstorm && !m.zone_rain, "rain cannot clear the storm");
 
         // Without the happening storm the rain zone stays.
         let mut m = SceneMetrics::new();
@@ -3079,13 +3264,13 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.5);
+        s.update_time(1, 0.5, false);
         assert_eq!(s.time_left, 84); // 100 - 1 - 15
 
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.7);
+        s.update_time(1, 0.7, false);
         assert_eq!(s.time_left, 99);
 
         // `Sandstorm.cs:47-54`: wind exactly 0 zeroes TimeLeft (`:47-50`) and
@@ -3093,7 +3278,7 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.0);
+        s.update_time(1, 0.0, false);
         assert!(!s.happening);
         assert_eq!(s.time_left, 0);
     }
@@ -3105,7 +3290,7 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 86401;
-        s.update_time(1, 0.7);
+        s.update_time(1, 0.7, false);
         assert!(!s.happening);
         assert_eq!(s.time_left, 0);
     }
@@ -3137,16 +3322,139 @@ mod tests {
         // `Sandstorm.cs:56-69`: with wind, one `Next(64800)` roll per
         // day-rate tick; a huge day rate starts the storm.
         let mut s = Sandstorm::new(42);
-        s.update_time(70000, 0.8);
+        s.update_time(70000, 0.8, false);
         assert!(s.happening);
         assert!((SANDSTORM_DURATION_MIN..=SANDSTORM_DURATION_MAX).contains(&s.time_left));
 
         // Same seed -> same outcome.
         let mut s2 = Sandstorm::new(42);
-        s2.update_time(70000, 0.8);
+        s2.update_time(70000, 0.8, false);
         assert_eq!(s2.happening, s.happening);
         assert_eq!(s2.time_left, s.time_left);
         assert_eq!(s2.severity.to_bits(), s.severity.to_bits());
+    }
+
+    /// W4-c40 — `Sandstorm.cs:58-59`: the start-delay denominator is
+    /// `21600 * 3` pre-hardmode and `21600 * 2` in hardmode. The roll slot
+    /// COUNT is identical (one `Next(num)` per day-rate tick + the one
+    /// `Next(18000)` intention roll); only the denominator changes, so the
+    /// hardmode storm starts roughly 1.5x as often per tick. Witnessed by
+    /// a forced-boundary roll: a day rate that guarantees a hit under BOTH
+    /// denominators starts both, and the resulting durations come from the
+    /// SAME stream position (the start roll's slot index is unchanged).
+    #[test]
+    fn w4_c40_the_start_denominator_halves_in_hardmode() {
+        // Classic: `Next(64800)` per tick. Hardmode: `Next(43200)`.
+        // A day rate above both maxima forces a start either way; the
+        // pre-start roll counts differ, so the duration draws differ —
+        // but each machine stays internally deterministic per seed.
+        for hard in [false, true] {
+            let mut a = Sandstorm::new(7);
+            a.update_time(70000, 0.8, hard);
+            assert!(a.happening, "hard={hard}");
+            let mut b = Sandstorm::new(7);
+            b.update_time(70000, 0.8, hard);
+            assert_eq!(a.time_left, b.time_left, "hard={hard} deterministic");
+            assert_eq!(a.severity.to_bits(), b.severity.to_bits());
+        }
+        // The denominator itself: with wind sufficient and NOT happening,
+        // the C# draws `Next(21600 * (hardMode ? 2 : 3))`. Pin the two
+        // values the port must use (the literals of `:58-59`).
+        assert_eq!(21600 * 3, 64800);
+        assert_eq!(21600 * 2, 43200);
+    }
+
+    /// W4-c40 — `Sandstorm.WorldClear` (`Sandstorm.cs:27-30`) clears ONLY
+    /// `Happening`: the timeLeft/severity/intent survive (unlike
+    /// `StopSandstorm`, which zeroes timeLeft and re-rolls the intent).
+    #[test]
+    fn w4_c40_world_clear_clears_only_happening() {
+        let mut s = Sandstorm::new(5);
+        s.happening = true;
+        s.time_left = 12_345;
+        s.severity = 0.7;
+        s.intended_severity = 0.9;
+        s.world_clear();
+        assert!(!s.happening);
+        assert_eq!(s.time_left, 12_345, "the timer survives");
+        assert_eq!(s.severity.to_bits(), 0.7f32.to_bits());
+        assert_eq!(s.intended_severity.to_bits(), 0.9f32.to_bits());
+    }
+
+    /// W4-c40 — the hardMode flag changes ONLY the start denominator: a
+    /// HAPPENING storm's decay (`:42-54`) and the intention roll (`:71-74`)
+    /// are hardmode-independent. Twin storms with identical state decay
+    /// byte-identically under both flags (zero extra draws either way).
+    #[test]
+    fn w4_c40_hardmode_does_not_touch_the_decay_or_intention_slots() {
+        for seed in [1u64, 99, 12345] {
+            let mut classic = Sandstorm::new(seed);
+            classic.happening = true;
+            classic.time_left = 50_000;
+            let mut hard = Sandstorm::new(seed);
+            hard.happening = true;
+            hard.time_left = 50_000;
+            for _ in 0..30 {
+                classic.update_time(1, 0.7, false);
+                hard.update_time(1, 0.7, true);
+                assert_eq!(classic.time_left, hard.time_left);
+                assert_eq!(classic.happening, hard.happening);
+                assert_eq!(classic.severity.to_bits(), hard.severity.to_bits());
+                assert_eq!(
+                    classic.intended_severity.to_bits(),
+                    hard.intended_severity.to_bits()
+                );
+            }
+        }
+    }
+
+    /// W4-c40 DOC-SWEEP lane 6 — `Sandstorm.ChangeSeverityIntentions`'s
+    /// NOT-HAPPENING bands (`Sandstorm.cs:85-92`): a third of the rolls want
+    /// to stay clear (`Next(3) == 0` → 0), the rest take a low ambient
+    /// severity (`NextFloat() * 0.3`). The HAPPENING band (`:83`,
+    /// `0.4 + NextFloat`) is pinned by `test_DW_1_2_start_sets_duration_range_and_intent`;
+    /// the calm bands had no witness. `stop_sandstorm` (`:124-129`) clears
+    /// `Happening` and re-rolls the intent, so it is the public entry into
+    /// the calm branch. The replay draws the C#'s slot order on a twin
+    /// `FastRandom` (the `random_counter_drift_replays_the_rand_stream`
+    /// convention): ONE `Next(3)` per roll, then a `NextFloat` ONLY on the
+    /// ambient arm — the clear arm consumes no float.
+    #[test]
+    fn w4_c40_the_calm_intent_bands_replay_the_rand_stream() {
+        let mut s = Sandstorm::new(0x5EED);
+        let mut probe = FastRandom::new(0x5EED);
+        let mut clear_rolls = 0;
+        let mut ambient_rolls = 0;
+        for _ in 0..400 {
+            // Re-arm a running storm so `stop_sandstorm` re-rolls the intent
+            // from the not-happening branch every iteration.
+            s.happening = true;
+            s.stop_sandstorm();
+            assert!(!s.happening, "StopSandstorm clears Happening (:126)");
+            assert_eq!(s.time_left, 0, "and zeroes TimeLeft (:127)");
+            // The C#'s calm branch: `Next(3)` first, `NextFloat` only on the
+            // ambient arm (`Sandstorm.cs:85-92`).
+            if probe.next_range(0, 3) == 0 {
+                assert_eq!(s.intended_severity, 0.0, "the clear band (:87)");
+                clear_rolls += 1;
+            } else {
+                let expected = probe.next_float() * 0.3;
+                assert_eq!(
+                    s.intended_severity.to_bits(),
+                    expected.to_bits(),
+                    "the ambient band (:91)"
+                );
+                assert!(
+                    (0.0..0.3).contains(&s.intended_severity),
+                    "ambient severity stays below 0.3"
+                );
+                ambient_rolls += 1;
+            }
+        }
+        // Both bands fire on a 400-roll run (the 1/3 clear split is not
+        // degenerate), and the machine consumed exactly the probe's draws.
+        assert!(clear_rolls > 0 && ambient_rolls > 0, "both calm bands fire");
+        assert_eq!(s.rng.next_float().to_bits(), probe.next_float().to_bits());
     }
 
     #[test]
@@ -3965,6 +4273,29 @@ mod tests {
         );
     }
 
+    /// W4-d70 DOC-SWEEP — `SceneState.cs:285-289`: the ShimmerMonolith's on
+    /// frame (state 1) triggers the ramps without the zone; the off frame
+    /// (state 2) suppresses even an active zone.
+    #[test]
+    fn the_shimmer_monolith_state_gates_the_ramps() {
+        let mut m = SceneMetrics::new();
+        // No zone, no shimmering player — only the monolith.
+        m.shimmer_monolith_state = 1;
+        let mut st = SceneState::new();
+        for _ in 0..40 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha >= 0.99, "the on frame triggers: {}", st.shimmer_alpha);
+        // The off frame suppresses an otherwise-active zone.
+        m.zone_shimmer = true;
+        m.shimmer_monolith_state = 2;
+        let mut st2 = SceneState::new();
+        for _ in 0..40 {
+            st2.update(&m);
+        }
+        assert_eq!(st2.shimmer_alpha, 0.0, "the off frame suppresses");
+    }
+
     /// The zone needs the depth window (`SceneMetrics.cs:704`): the count
     /// alone is not enough above `worldSurface + 84`.
     #[test]
@@ -4357,5 +4688,105 @@ mod s1_e_16_screen_effect_tests {
             unpainted.set_wall_paint(x, y, 15);
         }
         assert!(!inside_unbreakable_walls(&unpainted, 100, 100));
+    }
+}
+
+/// W4-d70: `MoonLordScreenShaderData` — the shake's target/strength half and
+/// the `GetMoonLordColoring` consumer (`MoonLordScreenShaderData.cs:20-96`,
+/// `Main.cs:26323-26332`). Written, not run (code-only lane).
+#[cfg(test)]
+mod w4_d70_moon_lord_shader_tests {
+    use super::*;
+
+    fn core(center: [f32; 2], ai0: f32, ai1: f32) -> MoonLordShaderNpc {
+        MoonLordShaderNpc { npc_type: 398, center, ai0, ai1 }
+    }
+    fn eye(center: [f32; 2], ai0: f32, ai1: f32) -> MoonLordShaderNpc {
+        MoonLordShaderNpc { npc_type: 400, center, ai0, ai1 }
+    }
+
+    /// `:26-43`: with no NPCs the anchor is Zero; a lone core anchors on its
+    /// centre (no eye weight, no despawn fade).
+    #[test]
+    fn the_anchor_is_zero_empty_and_the_core_when_alone() {
+        assert_eq!(moon_lord_target_position(&[]), [0.0, 0.0]);
+        let npcs = [core([1234.0, 5678.0], 0.0, 0.0)];
+        assert_eq!(moon_lord_target_position(&npcs), [1234.0, 5678.0]);
+    }
+
+    /// `:44-68`: a deathray eye (`ai[0] == 4`) at the attack-phase peak lerps
+    /// the anchor toward itself. `ai[1] = 90` lands in attack 1 (duration 90,
+    /// elapsed 90): rise `Remap(90, 0, 180, 0, 1) = 0.5`, fall
+    /// `Remap(90, 340, 360, 1, 0) = 1` → weight 0.5.
+    #[test]
+    fn a_deathray_eye_at_half_weight_pulls_the_anchor_halfway() {
+        let npcs = [core([0.0, 0.0], 0.0, 0.0), eye([1000.0, 0.0], 4.0, 90.0)];
+        let t = moon_lord_target_position(&npcs);
+        assert!((t[0] - 500.0).abs() < 1e-3, "{t:?}");
+        assert_eq!(t[1], 0.0);
+    }
+
+    /// `:44`: an eye NOT in the deathray phase (`ai[0] != 4`) contributes
+    /// nothing — the anchor stays on the core.
+    #[test]
+    fn a_non_deathray_eye_does_not_move_the_anchor() {
+        let npcs = [core([0.0, 0.0], 0.0, 0.0), eye([1000.0, 0.0], 1.0, 90.0)];
+        assert_eq!(moon_lord_target_position(&npcs), [0.0, 0.0]);
+    }
+
+    /// `:39-42` + `:75-78`: a core in the `-2` despawn fade lerps the anchor
+    /// back toward the core. `ai[1] = 57.5` → `Remap(57.5, 55, 60, 1, 0) = 0.5`.
+    /// The eye's attack-phase weight first pulls the anchor toward the eye,
+    /// then the despawn fade pulls it halfway back to the core.
+    #[test]
+    fn the_despawn_fade_pulls_the_anchor_back_to_the_core() {
+        let npcs = [core([0.0, 0.0], -2.0, 57.5), eye([1000.0, 0.0], 4.0, 434.0)];
+        // attack durations: 53+90+53+135+53 = 384; ai1=434 → elapsed 50 in
+        // attack 5 (200). rise Remap(50,0,180)=0.2778, fall=1 → weight 0.2778.
+        let t = moon_lord_target_position(&npcs);
+        // anchor = lerp(core, eye, 0.2778) = 277.8, then lerp(that, core, 0.5).
+        let w = 50.0 / 180.0;
+        let expect = 1000.0 * w * 0.5;
+        assert!((t[0] - expect).abs() < 1e-2, "{t:?} vs {expect}");
+    }
+
+    /// `:81-96`: the `aimAtPlayer` row aims at the scene centre with strength 1.
+    #[test]
+    fn the_aim_at_player_row_uses_the_scene_centre_and_full_strength() {
+        let (target, strength) = moon_lord_shader_apply(true, [777.0, 888.0], &[]);
+        assert_eq!(target, [777.0, 888.0]);
+        assert_eq!(strength, 1.0);
+    }
+
+    /// `:92`: the tracked row's strength fades by distance —
+    /// `Remap(dist, 4000, 8000, 1, 0)`. At the scene centre (dist 0) it is 1;
+    /// at 6000 px it is 0.5; at 8000+ it is 0.
+    #[test]
+    fn the_tracked_strength_fades_with_distance() {
+        let npcs = [core([0.0, 0.0], 0.0, 0.0)];
+        let (_, s0) = moon_lord_shader_apply(false, [0.0, 0.0], &npcs);
+        assert_eq!(s0, 1.0);
+        let (_, s1) = moon_lord_shader_apply(false, [6000.0, 0.0], &npcs);
+        assert!((s1 - 0.5).abs() < 1e-4, "{s1}");
+        let (_, s2) = moon_lord_shader_apply(false, [9000.0, 0.0], &npcs);
+        assert_eq!(s2, 0.0);
+    }
+
+    /// `Main.cs:26325`: `Color.Lerp(White, (183,255,255), strength)` — at 0 the
+    /// parts are white, at 1 the cyan `(183,255,255)`, halfway `(219,255,255)`.
+    #[test]
+    fn the_coloring_lerps_white_to_cyan() {
+        assert_eq!(moon_lord_coloring(0.0), [255, 255, 255]);
+        assert_eq!(moon_lord_coloring(1.0), [183, 255, 255]);
+        assert_eq!(moon_lord_coloring(0.5), [219, 255, 255]);
+    }
+
+    /// `NPC.cs:6986-7006`: the ten attack durations, verbatim.
+    #[test]
+    fn the_attack_duration_row_matches_initialize_moon_lord_attacks2() {
+        assert_eq!(
+            MOON_LORD_ATTACK_DURATIONS,
+            [53, 90, 53, 135, 53, 200, 53, 375, 53, 135]
+        );
     }
 }

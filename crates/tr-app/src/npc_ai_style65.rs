@@ -825,6 +825,7 @@ pub fn ai_065_step(
             // `:45002-45011` — the NEAR wander: the latch sticks at 1
             // for the NPC's whole life (nothing in the arm clears it).
             // `:45002-45011` — the NEAR wander: the latch sticks at 1.
+            // `:45002-45011` — the NEAR wander; the latch sticks at 1.
             npc.local_ai[3] = 1.0;
             let num22 = rng.next_range(26, 301) as f32 * 0.01;
             let num23 = rng.next_range(-100, 101);
@@ -894,6 +895,9 @@ pub fn ai_065_step(
     }
     // `:45036-45057` — rising: the 30-tile down-scan for ANY solid; if
     // none, flip the aim and damp ONCE (liquid does not count here).
+    // `:45036-45057` — rising: the 30-tile down-scan for ANY solid;
+    // only when none is found, the single flip + damp (liquid does
+    // not count here).
     if npc.vy < 0.0 {
         let num30 = 30;
         let mut flag2 = false;
@@ -922,6 +926,7 @@ pub fn ai_065_step(
                 npc.vy *= 0.9;
             }
         }
+    }
 
     // `:45058-45088` — the threat flee.
     if npc.local_ai[1] > 0.0 {
@@ -1069,6 +1074,7 @@ pub fn ai_065_step(
     // neither fires and the direction keeps its old value.
     // `:45094-45101` — the facing: two separate ifs; at vx == 0 (or
     // NaN) neither fires and the direction keeps its old value.
+    // NaN) neither fires.
     if npc.vx < 0.0 {
         npc.facing = -1;
     }
@@ -2165,5 +2171,243 @@ mod tests {
             (356, 444, 653, 661)
         );
         assert_ne!(EMPRESS_BUTTERFLY as u16, crate::projectile::FROST_BLAST_FRIENDLY);
+    fn w4_d30_s65_the_latched_idle_tick_draws_no_rng() {
+        let w = air();
+        let players = [cand(1620.0, 1500.0)];
+        let mut n = fly(1600.0, 1500.0);
+        let mut rng = UnifiedRandom::new(99);
+        let untouched = rng.clone();
+        for _ in 0..5 {
+            ai_065_butterflies(
+                GOLD_BUTTERFLY, &mut n, &w, &ctx(&players, &[]), &mut rng,
+                &mut DustPool::new(), &spawn_ctx(),
+            );
+        }
+        assert_eq!(rng, untouched, "five idle ticks, zero draws");
     }
 }
+
+/// `AI_065_Butterflies` (`NPC.cs:44896-45119`), the type-356 path. `npc`
+/// must carry the kind's `SetDefaults` box (10×10 — `kind.size()` once
+/// the kind lands, `size_override` in the witnesses).
+pub fn ai_065_step(
+    ty: i32,
+    npc: &mut Npc,
+    world: &World,
+    ctx: &Ai65Ctx,
+    rng: &mut UnifiedRandom,
+) {
+    debug_assert!(ty == BUTTERFLY, "only the Butterfly 356 is ported (W4-f18)");
+
+    // `:44898-44899` — the aim locals ride ai[0]/ai[1].
+    let mut num = npc.ai[0];
+    let mut num2 = npc.ai[1];
+
+    // `:44956-45014` — the host block (`Main.netMode != 1` folds true).
+    // `:44958-44970` — the one-time colour roll: ONE Next(100) through
+    // the 8-step ladder, ai[2] = 1 + pick.
+    if npc.ai[2] == 0.0 {
+        let num16 = rng.next_max(100);
+        let pick = if num16 == 0 {
+            5
+        } else if num16 < 3 {
+            1
+        } else if num16 < 9 {
+            2
+        } else if num16 < 19 {
+            7
+        } else if num16 < 34 {
+            3
+        } else if num16 < 53 {
+            6
+        } else if num16 >= 75 {
+            0
+        } else {
+            4
+        };
+        npc.ai[2] = (1 + pick) as f32;
+    }
+    // `:44971-44974` — the one-time scale latch: Next(75, 111) * 0.01f.
+    if npc.ai[3] == 0.0 {
+        npc.ai[3] = rng.next_range(75, 111) as f32 * 0.01;
+    }
+    // `:44975-44976` — the rearm countdown, EVERY tick.
+    npc.local_ai[0] -= 1.0;
+    if npc.local_ai[0] <= 0.0 {
+        // `:44978` — the timer draw BEFORE TargetClosest (the style64
+        // arm's order is the reverse; both kept).
+        npc.local_ai[0] = rng.next_range(90, 240) as f32;
+        // `:44979`.
+        target_closest(npc, world, ctx.players, true, 65, ctx.ticker);
+        // `:44980` — the horizontal gap to the target's Center.X.
+        let p = &ctx.players[npc.target as usize];
+        let (cx, _cy) = npc.center();
+        let num17 = (cx - (p.x + p.width as f32 / 2.0)).abs();
+        // `:44981-45001` — the FAR wander.
+        if num17 > 700.0 && npc.local_ai[3] == 0.0 {
+            // `:44983-44991` — the speed ladder, one draw per tick.
+            let mut num18 = rng.next_range(50, 151) as f32 * 0.01;
+            if num17 > 1000.0 {
+                num18 = rng.next_range(150, 201) as f32 * 0.01;
+            } else if num17 > 850.0 {
+                num18 = rng.next_range(100, 151) as f32 * 0.01;
+            }
+            // `:44992-44993` — the direction-scaled X, the Y spread.
+            let num19 = npc.facing * rng.next_range(100, 251);
+            let mut num20 = rng.next_range(-50, 51);
+            // `:44994-44997` — the CONDITIONAL downward-bias draw.
+            if npc.y > p.y - 100.0 {
+                num20 -= rng.next_range(100, 251);
+            }
+            // `:44998-45000` — the int-sum f64 sqrt, cast to f32 BEFORE
+            // the divide; NO zero guard (the C# NaN/Inf pass-through).
+            let num21 =
+                num18 / ((num19 * num19 + num20 * num20) as f64).sqrt() as f32;
+            num = num19 as f32 * num21;
+            num2 = num20 as f32 * num21;
+        } else {
+            // `:45002-45011` — the NEAR wander: the latch sticks at 1.
+            npc.local_ai[3] = 1.0;
+            let num22 = rng.next_range(26, 301) as f32 * 0.01;
+            let num23 = rng.next_range(-100, 101);
+            let num24 = rng.next_range(-100, 101);
+            let num25 =
+                num22 / ((num23 * num23 + num24 * num24) as f64).sqrt() as f32;
+            num = num23 as f32 * num25;
+            num2 = num24 as f32 * num25;
+        }
+        // `:45012`.
+        npc.net_update = true;
+    }
+
+    // `:45015` — scale rides the latched ai[3] every tick.
+    npc.scale = npc.ai[3];
+
+    // `:45016-45018` — the 1/60 blend toward the aim, f32 in the C#'s
+    // order: (v * (float)(60 - 1) + aim) / (float)60.
+    let num26 = 60.0f32;
+    npc.vx = (npc.vx * (num26 - 1.0) + num) / num26;
+    npc.vy = (npc.vy * (num26 - 1.0) + num2) / num26;
+
+    // `:45019-45035` — falling: the 3-tile down-scan. A blocking tile
+    // (solid OR liquid) flips the aim AND damps the velocity ×0.9 —
+    // INSIDE the loop, once per blocking tile.
+    if npc.vy > 0.0 {
+        let num27 = 3;
+        let (cx, cy) = npc.center();
+        let num28 = (cx as i32) / 16;
+        let num29 = (cy as i32) / 16;
+        for j in num29..num29 + num27 {
+            if let Some(t) = world.tile(num28, j) {
+                if (nactive(t) && tile_solid_runtime(t.kind)) || t.liquid > 0 {
+                    num2 *= -1.0;
+                    if npc.vy > 0.0 {
+                        npc.vy *= 0.9;
+                    }
+                }
+            }
+        }
+    }
+    // `:45036-45057` — rising: the 30-tile down-scan for ANY solid; if
+    // none, flip the aim and damp ONCE (liquid does not count here).
+    if npc.vy < 0.0 {
+        let num30 = 30;
+        let mut flag2 = false;
+        let (cx, cy) = npc.center();
+        let num31 = (cx as i32) / 16;
+        let num32 = (cy as i32) / 16;
+        for k in num32..num32 + num30 {
+            if let Some(t) = world.tile(num31, k) {
+                if nactive(t) && tile_solid_runtime(t.kind) {
+                    flag2 = true;
+                }
+            }
+        }
+        if !flag2 {
+            num2 *= -1.0;
+            if npc.vy < 0.0 {
+                npc.vy *= 0.9;
+            }
+        }
+    }
+    // `:45058-45088` — the 15-tick threat flee (the 661's 10-tick arm is
+    // unported). The scan reads the slot-ordered sibling views; the
+    // butterfly's own damage 0 excludes it.
+    if npc.local_ai[1] > 0.0 {
+        npc.local_ai[1] -= 1.0;
+    } else {
+        npc.local_ai[1] = 15.0;
+        let mut num33 = 0.0f32;
+        let mut zero = (0.0f32, 0.0f32);
+        let (cx, cy) = npc.center();
+        for view in ctx.npcs {
+            if view.active && view.damage > 0 && !view.friendly {
+                let d = rect_distance(
+                    view.x as i32,
+                    view.y as i32,
+                    view.width,
+                    view.height,
+                    cx,
+                    cy,
+                );
+                if d <= 100.0 {
+                    num33 += 1.0;
+                    // `base.DirectionFrom(nPC.Center)` — the XNA
+                    // normalize of (own Centre - threat Centre).
+                    let (tcx, tcy) = view.center();
+                    let (dx, dy) = xna_normalize(cx - tcx, cy - tcy);
+                    zero.0 += dx;
+                    zero.1 += dy;
+                }
+            }
+        }
+        if num33 > 0.0 {
+            // `:45082` — velocity += zero / num33 * 2f (the C#'s
+            // divide-then-multiply order).
+            npc.vx += zero.0 / num33 * 2.0;
+            npc.vy += zero.1 / num33 * 2.0;
+            // `:45083-45086` — the 16-cap via SafeNormalize(Zero)
+            // (`Utils.cs:1837-1844` — zero/NaN falls back to (0,0)).
+            let len = ((npc.vx * npc.vx + npc.vy * npc.vy) as f64).sqrt() as f32;
+            if len > 16.0 {
+                if (npc.vx == 0.0 && npc.vy == 0.0)
+                    || npc.vx.is_nan()
+                    || npc.vy.is_nan()
+                {
+                    npc.vx = 0.0;
+                    npc.vy = 0.0;
+                } else {
+                    let (nx, ny) = xna_normalize(npc.vx, npc.vy);
+                    npc.vx = nx * 16.0;
+                    npc.vy = ny * 16.0;
+                }
+            }
+        }
+    }
+    // `:45089-45093` — the wall bounce: the aim turns AWAY from the
+    // velocity's sign (>= 0 → -|aim|, the NaN compare folds to the
+    // first arm), the velocity kicks back ×-0.2.
+    if npc.collide_x {
+        num = if !(npc.vx < 0.0) {
+            0.0 - num.abs()
+        } else {
+            num.abs()
+        };
+        npc.vx *= -0.2;
+    }
+    // `:45094-45101` — the facing: two separate ifs; at vx == 0 (or
+    // NaN) neither fires and the direction keeps its old value.
+    if npc.vx < 0.0 {
+        npc.facing = -1;
+    }
+    if npc.vx > 0.0 {
+        npc.facing = 1;
+    }
+    // `:45102-45103` — the aim write-back, LAST.
+    npc.ai[0] = num;
+    npc.ai[1] = num2;
+    // `:45104-45107` — the 356 catchItem re-derive is the catch path's
+    // (`bug_net::catch_item(356, ai[2])` reads the live style); the
+    // 653/661 tails (`:45108-45118` / `:44900-44955`) are unported.
+}
+

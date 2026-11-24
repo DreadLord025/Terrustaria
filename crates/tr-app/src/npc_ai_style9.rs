@@ -313,6 +313,10 @@ fn solar_flare_step(npc: &mut Npc, world: &World, player: &Player, rng: &mut Uni
 /// counter/damage `:21465-21495`); W4-d52 wires the dust loop through the
 /// live pool (the `:21561` light stays the visual lane's cited skip — see
 /// the module header for the exact rand order).
+/// Solar Flare (516, W4-d23). W4-d52 wires the dust loop through the live
+/// pool (the `:21561` light stays the visual lane's cited skip — see the
+/// module header for the exact rand order); the 516 launch's three draws
+/// ride the caller's stream.
 ///
 /// The seam: `TargetClosest` rides `npc_target::target_closest` (the
 /// `EverLastingTicker` is not plumbed into `Npc::update` yet — the 0

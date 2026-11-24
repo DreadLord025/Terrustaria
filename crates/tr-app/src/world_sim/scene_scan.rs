@@ -193,9 +193,11 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
             {
                 metrics.ocean_sand_tile_count += 1;
             }
-            // The M2-BUFF-8 banner arm (`SceneMetrics.cs:416-445`): tile 91
-            // decodes to the banner id; the strength-enabled ones raise the
-            // buff (the port's family banners all carry the 1.5/0.75 pair).
+            // The M2-BUFF-8 banner arm (`SceneMetrics.cs:410-443`): tile 91
+            // decodes to the `NPCBannerBuff` index (the C#'s `num3`, the
+            // -21-shifted `NPCtoBanner` space — `banner_num_from_frame`);
+            // the strength-enabled ones raise the buff (the port's family
+            // banners all carry the 1.5/0.75 pair).
             if tile.kind == 91 {
                 if let Some(banner) =
                     tr_core::bestiary::banner_num_from_frame(tile.frame_x, tile.frame_y)
@@ -437,6 +439,37 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         &snow_metrics,
         &snow_inputs,
         snow_dust,
+    // W4-g11 — `Main.snowing()` (`Main.cs:17238`, the bare `Main.rand` slot
+    // BEFORE the `DoUpdateInWorld` swap at `:17732`; `:17247`'s
+    // `Sandstorm.EmitDust` follows it). The port's per-frame scene update is
+    // the `:17238`/`:17247` pair's home (the `update_scene` doc): the flakes
+    // spawn into the shared pool on `NamedRngs::global()`, the retired
+    // `rain.rs` `Snowflake` stand-in is gone. The env reads the STORED
+    // metrics (vanilla's last-scan persistence — the rescan below overwrites
+    // them after both emitters, exactly the `EmitDust` convention).
+    let snow_env = crate::main_dust::SnowingEnv {
+        remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+        game_paused: app.game_paused,
+        snow_tile_count: app.scene_metrics.snow_tile_count,
+        surface_atmospherics: app.scene_metrics.surface_atmospherics,
+        cloud_alpha: rain.intensity_value(),
+        // `Main.Camera.ScaledPosition`/`ScaledSize` — the world-space view
+        // rect (the `spawn_ctx_from` convention: `camera - screen*0.5/zoom`,
+        // `screen/zoom`).
+        scaled_size: screen / *zoom,
+        scaled_position: *camera - screen * 0.5 / *zoom,
+        gfx_quality: app.gfx_quality.quality,
+        // `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`):
+        // `npcsFoundForCheckActive[668]` — any ACTIVE Deerclops in the list
+        // (`UpdateFoundActiveNPCs`, `NPC.cs:7229-7239`; the port's `hp > 0`
+        // is the active flag).
+        deerclops_near: npcs.iter().any(|n| n.hp > 0 && n.kind == NpcKind::Deerclops),
+        player_vy,
+        raining: rain.is_raining(),
+        wind_speed_current: wind.speed_current,
+    };
+    crate::main_dust::snowing(
+        &snow_env,
         app.rngs.global(),
         &ctx,
         world,
@@ -729,6 +762,23 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         );
     }
     let tile_color = tr_core::sky_color::apply_sky_to_tiles(c).map(|b| b as f32 / 255.0);
+    // W4-d70: the NPC rows `MoonLordScreenShaderData.UpdateMoonLordIndex`
+    // reads (`MoonLordScreenShaderData.cs:30-68`) — the core (398) and the
+    // deathray eyes (400). Only active NPCs (`hp > 0`, the standing-active
+    // proxy the scan uses).
+    let moon_lord_npcs: Vec<tr_core::scene::MoonLordShaderNpc> = npcs
+        .iter()
+        .filter(|n| n.hp > 0 && matches!(n.kind, NpcKind::MoonLordCore | NpcKind::MoonLordFreeEye))
+        .map(|n| {
+            let (cx, cy) = n.center();
+            tr_core::scene::MoonLordShaderNpc {
+                npc_type: n.kind.net_id(),
+                center: [cx, cy],
+                ai0: n.ai[0],
+                ai1: n.ai[1],
+            }
+        })
+        .collect();
     let inputs = crate::app::filters::SceneVisualInputs {
         storm: &*sandstorm,
         wind_speed_current: wind.speed_current,
@@ -747,10 +797,25 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         bg_style: *bg_style,
         bg_delay: *bg_delay,
         global_time: *anim_time % 3600.0,
+        moon_lord_npcs: &moon_lord_npcs,
+        // W4-d70 DOC-SWEEP: the live sun-scorch counter (the vampire seed's
+        // burn ramp) feeds the HeatDistortion branches.
+        sun_scorch_counter: player.as_ref().map_or(0, |p| p.sun_scorch_counter),
     };
     // The graphics gates follow the live menu toggles (`TR_*` pins override).
     filter_driver.sync_settings(settings);
     filter_driver.apply_visuals(&metrics, scene_state, &inputs);
+    // W4-c40: the SkyManager half of `ManageSpecialBiomeVisuals("Sandstorm",
+    // ...)` (`SceneState.cs:313-321`): `inZone != IsActive()` flips the sky.
+    // The condition is the filter driver's `sandstorm_visuals_on` (the same
+    // `:97` boolean the Sandstorm filter manage read).
+    if filter_driver.sandstorm_visuals_on != app.sandstorm_sky.is_active() {
+        if filter_driver.sandstorm_visuals_on {
+            app.sandstorm_sky.activate();
+        } else {
+            app.sandstorm_sky.deactivate();
+        }
+    }
     // `Main.SceneMetrics` persists per frame (`Main.cs:1789`); the ambience
     // gates read its zone flags from the stored copy.
     app.scene_metrics = metrics;
@@ -761,6 +826,13 @@ mod tests {
     // W4-d129 census witnesses (written-not-run, code-only lane): the scan
     // window census, the RNG-free property, the aura frame edges, the banner
     // decode convention pin and the dungeon-zone gate.
+    #[path = "scene_scan_w4_d129.rs"]
+    mod scene_scan_w4_d129;
+
+    // W4-d129 census witnesses (written-not-run, code-only lane): the scan
+    // window census, the RNG-free property, the aura frame edges, the banner
+    // decode convention pin and the dungeon-zone gate. The banner pin rides
+    // the W4-f31 reconciliation (the C# num3 / NPCtoBanner index space).
     #[path = "scene_scan_w4_d129.rs"]
     mod scene_scan_w4_d129;
 
@@ -787,6 +859,47 @@ mod tests {
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         w.compute_column_surface();
         w
+    }
+
+    #[test]
+    fn the_placed_banner_buff_lands_in_the_npc_to_banner_space() {
+        // W4-f31 (the d129 census finding's reconciliation): the C# tile-91
+        // arm (`SceneMetrics.cs:410-443`) indexes `NPCBannerBuff[num3]` —
+        // the -21-shifted decode, the `NPCtoBanner` space the placement
+        // style offsets from (`Item.cs:19230`'s `placeStyle = 22 + type -
+        // 1615` = banner + 21 over `BannerToItem`'s base band,
+        // `BannerSystem.cs:400`). The Slime Banner item 1683 places style
+        // 90 -> frameX 1620; the buff lands at `npc_to_banner(1)` = 69,
+        // NOT at the place style 90.
+        let m = scan_scene_at(
+            &aura_world(91, 1620, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
+        assert!(m.has_banner);
+        assert!(m.npc_banner_buff[69], "the buff rides the NPCtoBanner index");
+        assert!(!m.npc_banner_buff[90], "not the place-style index");
+        // The buff reader (`Player.GetBannerBuffEffect`, `Player.cs:20483`)
+        // and the hover list (`Main.cs:21360-21388`) read the same space.
+        assert_eq!(
+            crate::banners::banner_buff_for(&m, 1),
+            Some((1.5, 0.75)),
+            "the placed Slime banner arms the Blue Slime buff"
+        );
+        let names = crate::ui::resources::banner_hover_names(&m.npc_banner_buff);
+        assert_eq!(names.len(), 1, "{names:?}");
+        // A blank-strip cell (frameX < 396, frameY < 54) raises nothing.
+        let m = scan_scene_at(
+            &aura_world(91, 378, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
+        assert!(!m.has_banner);
+        assert!(m.npc_banner_buff.iter().all(|b| !b));
     }
 
     #[test]

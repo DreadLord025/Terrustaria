@@ -19,14 +19,21 @@ mod wall;
 // the i33 copy reads the full 279-wall Main.wallHouse, the C# table the
 // Player.cs:45924 gate actually reads, not the housing room-check subset).
 pub use wall::{
-    break_wall, can_player_smash_wall, kill_wall_drop, kill_wall_sound, near_friendly_wall,
-    place_wall, replace_wall, wall_house, WALL_COUNT,
+    break_wall, can_player_smash_wall, kill_wall, kill_wall_drop, kill_wall_sound,
+    near_friendly_wall, place_wall, replace_wall, wall_house, WallBreak, WALL_COUNT,
 };
 mod hammer;
 pub use hammer::{
     can_pound_tile, forbids_sloping, is_a_hammer_target, is_tile_poundable, pound_damage,
     pound_tile, slope_tile, smooth_slope, smooth_slope_one, try_finding_wall_to_hammer,
     try_pound_tile, PoundOutcome,
+};
+mod paint;
+pub use paint::{paint_coat_tile, paint_coat_wall, paint_tile, paint_wall};
+mod replace;
+pub use replace::{
+    is_tile_replaceable, move_replace_anchor, replace_tile_write, would_tile_replacement_work,
+    Replaced,
 };
 mod kill;
 pub use kill::{
@@ -593,7 +600,8 @@ pub fn interact_at(
     // vanilla opens via `OpenChest(num74, num75, num76)`; the port's banks
     // are player-bounded (`Player.bank[1..4]`, `Player.cs:1580-1591`), so
     // only the chest index moves. The vault's `disableVoidBag` gate
-    // (:33127-33133) has no port mechanic yet.
+    // (:33134-33139) is enforced downstream by `chest::toggle_open`
+    // (W4-g56 — the MP-only net-slot lock, `Player.disable_void_bag`).
     if matches!(t.kind, 29 | 97 | 463 | 491) {
         let bank = match t.kind {
             29 => -2,
@@ -1503,7 +1511,7 @@ pub fn open_door(
 /// player/NPC overlap check of `EmptyTile(ignoreTiles: true)`
 /// (`Collision.cs:1359`). The `PlaySound(8)` cue is app-side (the drain plays
 /// it on the `UpdateNPCs` stream, the `open_door` convention). `drops`
-/// collects the validate-cleanup kills. W4-g4 P4 (the W4-d22 reconcile fold).
+/// collects the validate-cleanup kills.
 pub fn shift_tall_gate(
     world: &mut World,
     x: i32,
@@ -2516,12 +2524,11 @@ mod tests {
         false
     }
 
-    /// W4-g4 P4 (the W4-d22 reconcile fold) — `WorldGen.ShiftTallGate`
-    /// (`WorldGen.cs:51723-51775`): the zombie door-bash drain's gate-388
-    /// open. A closed tall gate (388, the 1×5 style-0 object) shifts to
-    /// its open kind (389) row by row; the frames keep, the occupancy
-    /// gate refuses a blocked cell, and a non-gate cell refuses outright.
-    /// WRITTEN NOT RUN (code-only mode).
+    /// W4-g4 — `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the
+    /// zombie door-bash drain's gate-388 open. A closed tall gate (388, the
+    /// 1×5 style-0 object) shifts to its open kind (389) row by row; the
+    /// frames keep, the occupancy gate refuses a blocked cell, and a
+    /// non-gate cell refuses outright.
     #[test]
     fn w4_g4_shift_tall_gate_opens_the_closed_gate() {
         let mut w = doorway_world();

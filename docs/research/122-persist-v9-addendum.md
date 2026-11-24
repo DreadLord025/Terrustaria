@@ -236,3 +236,124 @@ The writer bumped v11 for the f33 biome-torch pair LINE (research/103
 research/138 is still unpushed (a6 tip `8ed96ee5` re-verified); §5a of
 103 remains the dup adjudication of record. The full merger checklist
 with f44c's research/132 cross-refs is 103 §9.
+## 6. Receipt — W4-g89i lands the crystal token (v10, 2026-11-21)
+
+The §3.1 crystal-token append landed on THIS branch (g89) as **v10**: the
+unlock line widens to the six-token g88-v10 binding order (research/138 §6
+adjudicated the written order crystal=4 / arcane=5 / pearl=6, overriding
+103 §2a's old pearl-first reservation). g89 carries **token 4 only**
+(`used_aegis_crystal`, the 5337 Aegis Crystal — its +0.2 lifeRegenTime
+consumer is the g90 lane-7 `regen.rs` `aegis_crystal` slot, research/138
+§3.3); tokens 5/6 (arcane/pearl) write `0` placeholders — their Player
+fields + consumers stay the a6/g90 lanes'. The v7/v8/v9 short-line
+back-reads are unchanged (a v9 three-token line loads the crystal false).
+The `.plr` FIRST unlock bool (`:54781`/`:55255`) is now read+written
+(previously consumed-dropped). At the merge: the sidecar dedups onto g88
+v10's superset writer (research/138 §2/§8.2 — g88 owns tokens 1-6 + the
+pairs + bread + loadouts; g89's token-4 reader/writer is the same shape,
+keep g88's), the `.plr` bool onto f44's `used_upgrades[6]` index 0, the use
+arm onto a6's `use_shimmer_permanent` machine. The §4.4 merge-order step
+"then a6/g87 crystal tokens" is satisfied for the crystal by this commit;
+arcane/pearl remain a6/g90's.
+
+## 7. FINAL-FINAL receipt — the g88g-v10-token-4 SAME-slot check + the aegis-family declaration (W4-g89j, 2026-11-21)
+
+Probe: `origin/task/W4-g88-life-fruit-use` tip **`a9f1c29d8`** (persist fold 7
+FINAL — writer **v11**, the f33 torch fold; fold 6 `c8985b534` landed the v10
+crystal trio), `origin/task/W4-a6-crystals-powerups` tip **`115ce655a`**
+(research/138 FINAL, `138-powerup-master-reconcile.md` pushed),
+`origin/task/W4-g90-artisan-bread-use` tip **`94d33f2ca`** (g90b `e76ee133e`
+in its lineage, `git merge-base --is-ancestor` exit 0).
+
+### 7a. The token-4 double-writer question — ANSWER: SAME slot, SAME order, NO conflict; g88's writer is the keep
+
+Both branches write **line 8 token 4 = `usedAegisCrystal`** (the 138 §6
+binding order crystal=4 / arcane=5 / pearl=6, vanilla `.plr` relative order
+`:54781`/`:54783`/`:54784`):
+
+- **g89 (this branch, `3c7adb0b6`)**: writer `persist.rs:104-110` —
+  `"{} {} {} {} 0 0\n"` (tokens 1-4 live, **tokens 5/6 hardcoded `0`
+  placeholders** — the arcane/pearl Player fields do not exist here);
+  reader `:189-200` reads tokens 1-4 positionally, ignores 5/6 (the iterator
+  drops them); version gate `"7"|"8"|"9"|"10"`.
+- **g88 (`a9f1c29d8`)**: writer `persist.rs:260-267` — the full SIX-token
+  line, all six from live Player fields; reader `:440-456` reads
+  `unlock.get(3)/get(4)/get(5)` for the trio; the version gate is
+  `"8"|"9"|"10"|"11"` and the writer is v11 (the torch pair appended LAST,
+  after the loadout block — NOT an unlock token).
+
+So YES, this is a **SAME-slot double-writer** in the branch-collision sense —
+but NOT a semantic conflict: same line, same token position, same flag, same
+0/1 encoding. The g88 superset is a strict **superset of this branch's
+writer** (g89's `0 0` placeholders are exactly what g88 writes when
+arcane/pearl are false). **Merger verdict (138 §2/§8.2 + 103 §9-L2 step 6):
+take g88's `persist.rs` WHOLE (v11 writer + the tolerant v7-v11 reader);
+DROP g89's v10 writer/reader.** No token remap, no version negotiation: a
+g89-written v10 file (`10\n` header, six-token unlock line with `0 0` tail)
+loads on g88's reader with crystal correct + arcane/pearl false — byte-level
+compatible.
+
+**One bounded cross-read loss (pre-existing, NOT introduced by the fold):**
+g88's reader cannot load a g89 v10 file's LINE COUNT beyond the unlock line —
+g89 v10 has NO pair/bread/loadout lines, and g88's shape walk keeps fresh
+defaults for missing lines (103 §3 "missing pieces keep their fresh
+defaults"), so the load is lossless for everything g89 wrote. The reverse
+(g89's reader on a g88 v10/v11 file) DOES lose the post-unlock lines (g89's
+reader stops after line 8 and its version gate rejects `"11"`) — irrelevant
+at the merge because g89's reader is dropped, but it means **until the merge,
+a save written by the g88 branch must not be loaded by a g89 build** (the
+`"11"` version falls into the migrate arm's reject path). Recorded as the
+standing pre-merge incompatibility; the merge kills it.
+
+### 7b. g88e-folded-crystal-trio (from g90b) — this branch's write DEDUPES
+
+g88 fold 6 (`c8985b534`) folded g90b `e76ee133e`'s four shimmer Player flags
+(`usedAegisCrystal`/`usedArcaneCrystal`/`usedGalaxyPearl` + the ambrosia
+overlap) into the superset: the Player declarations at g90b's exact spots
+(after `used_ambrosia`, ctor `:56078`/`:56080`/`:56081`), the App restore
+beside the aegis/gummy/ambrosia triple, the pearl `LuckState` mirror. This
+branch's `used_aegis_crystal` declaration (g89i, the same spot after
+`used_ambrosia`) + the App restore + the `.plr` `:54781`/`:55255` halves are
+the SAME field at the SAME anchor — **textual dedup at the merge, keep one**
+(103 §9-L1 step 3: all named bools dedup onto f44c's `used_upgrades[6]`,
+crystal = index 0; 138 §2 L1). The g89i consumer (the `regen.rs`
+`aegis_crystal` slot BETWEEN the base +1 and the crimson fold, the f32
+accumulation order) is the canonical shape **a6 adopted** (138 §3.3 — "a6
+now matches every claimant consumer shape") and g90b owns (`e76ee133e`);
+three copies of one observation-identical slot — **keep g90's declaration +
+consumer shape as the merge anchor** (138 §1 verdict), drop g89's and a6's
+dups. No semantic conflict anywhere in the trio fold.
+
+### 7c. The aegis-family declaration — ALL LANDED (5338/5341/5342/5337)
+
+| Item | Flag | Use arm (this branch) | Consumer | `.plr` | `.trplayer` |
+|------|------|----------------------|----------|--------|-------------|
+| 5338 Aegis Fruit | `used_aegis_fruit` | `editing.rs::use_aegis_fruit` (g89 `920014cb`) | +4 defense row `:12853-12856` | `:54782`/`:55256` both halves | line 8 token 1 (v7) |
+| 5341 Gummy Worm | `used_gummy_worm` | `use_gummy_worm` on the shared core (g89b `9bf03ede`) | +3 fishing (i35, pre-existing) | `:54785`/`:55259` | token 2 (v8) |
+| 5342 Ambrosia | `used_ambrosia` | `use_ambrosia` (g89c `78766306`) | pick/tile/wall ±0.05 row `:12861-12866` — boosters COMPLETE 3/3 | `:54786`/`:55260` | token 3 (v9) |
+| 5337 Aegis Crystal | `used_aegis_crystal` | `use_aegis_crystal` (g89i `3c7adb0b6`) | +0.2 lifeRegenTime, `regen.rs` f32-order slot `:19112-19120` | `:54781`/`:55255` | token 4 (v10) |
+
+All four use arms ride the shared `use_shimmer_permanent_item` core (the
+once-ever `!used*` gate + ApplyItemTime 45 + the consumable pay + TurnToAir);
+all four `.plr` bools read+write; all four sidecar tokens live with the
+v7/v8/v9 short-line back-reads. **Merger per 138/103** (the FINAL adjudications,
+both pushed): the four use arms dedup onto **a6's `powerups.rs::
+use_shimmer_permanent`** (138 §1 — the single six-arm machine; 103 §9-L2
+step 8 confirms, superseding its old g89-signature preference); the Player
+fields + consumers anchor on **g90's shapes** (a6 matches); the `.plr` bools
+dedup onto **f44c's `used_upgrades[6]`** (103 §9-L1 step 3, indices crystal 0
+/ fruit 1 / gummy 4 / ambrosia 5 — the `.plr` file order, NOT the token
+order); the sidecar onto **g88's v11 superset** (§7a). The remaining two
+cluster arms (5339 Arcane Crystal / 5340 Galaxy Pearl) stay a6/g90's — this
+branch writes their `0` placeholders and never claims them.
+
+### 7d. FINAL-FINAL status
+
+research/122 is **FINAL**: §1-§5 the v9-era contract (historical, superseded
+piecewise by the landed v10/v11), §6 the g89i token-4 receipt, §7 this
+double-writer check + the family declaration. The authoritative live layout
+is **g88's research/103 (FINAL, §9 the full merger persist-checklist)**;
+this doc remains the v9-addendum lineage record + the g89-side receipts.
+The merger inputs are complete: 138 (use arms/consumers/`.wld`/`.trwld`),
+103 §9 (L1/L2/L3 checklist), 132 (cross-layer master map, f44c), this §7
+(the g89-side token-4 dedup receipt). No open g89 persist question remains.

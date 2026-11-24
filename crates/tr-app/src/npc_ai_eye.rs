@@ -5,6 +5,10 @@
 //! rides `local_ai[1]`, the moan cue `wants_sound`'s `FighterMoan(9)`);
 //! the seven live eye kinds keep the byte-identical `update_eye` stand-in
 //! until their own migration round (the caster/style10 precedent).
+//! WIRED by W4-b2b: the aiStyle-2 axis arm (`npc.rs::ai_002_eye_family`)
+//! runs this machine for the seven ported kinds; the `update_eye`
+//! stand-in and the `FlyerParams::FLOATING_EYE` false citation are
+//! retired (the caster/style10 precedent, completed).
 //!
 //! The A-1 audit (`docs/research/54-audit-slime-eye.md` §2, branch
 //! `docs/audit-slime-eye`) found the live arm is a normalized-aim
@@ -83,7 +87,7 @@
 //! * The arm does NOT integrate position: `NPC.Update`'s generic tail is
 //!   the caller's (the `npc_ai_style31.rs` precedent). The lens drops are
 //!   FAITHFUL already (`loot_db_gen.rs:540`, audit §2d) — untouched.
-#![allow(dead_code)] // wiring lands with the update_eye migration
+#![allow(dead_code)] // WIRED (W4-b2b: the aiStyle-2 axis claims 2); the EyeOut/EyeDust feed fields stay parked until the dust/sound/light passes (the style27/28/29 precedent)
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

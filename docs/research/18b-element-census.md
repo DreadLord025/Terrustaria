@@ -151,12 +151,12 @@ in `ui/elements.rs` (pushed after this census); the merge owner keeps one
 copy — see ANALYSIS.
 ## d83 progress (`task/W4-d83-ui-elements-3`, base = d82 tip `53912fa0`)
 
+## d83 progress (`task/W4-d83-ui-elements-3`, base = d82 tip `53912fa0`)
 d81's batch 1 (`0b815a62`) landed shared small classes into `ui/elements.rs`
 (GroupOptionButtonState, PowerStrip, traits, UICyclingImage cycler,
 UICreativePowerButton marker) ahead of its row band; d83 keeps the census rows
 as the claim record and ports the *remaining halves* without re-splitting.
 Where d81/d82 already landed a class's state, the row cites both homes.
-
 | row | class | status |
 | --- | --- | --- |
 | 35 | `UIIconTextButton` | LANDED (`ui/buttons.rs::IconTextButton`, colour/opacity machine + SetText resize + icon geometry `UIIconTextButton.cs:36-132`; hover latch shared with rows 29/32; dead ctor params + `_hoverColor` documented) |
@@ -189,7 +189,6 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 62 | `UIWorldListItem` | LANDED (draw/click/colours/labels pre-landed S1-H-10 `ui/world_select.rs`; missing halves added: conditional cloud/seed slot num-walk + their hover keys + status-icon label keys + SeedCopied + WorldFileData.GetFullSeedText/GetSerializedSeedsSum `UIWorldListItem.cs:113-162/:271-318/:460-464`, `WorldFileData.cs:123-197`; slots parked until SocialAPI/generator-version data lands) |
 | 63 | `UIWrappedSearchBar` | LANDED (`ui/search_bar.rs::WrappedSearchBar`, theme box colour (35,40,83)/cyan shift, OurFavoriteColor focus border, HideSearchButton -3 width, cancel 11/12 sounds, right-click/outside-click/search-area gates, virtual submit trim; draw pre-landed `crafting.rs:756-838`) |
 | 64 | `UISortableElement` | LANDED (`ui/sortable.rs::SortableElement`, OrderIndex + ascending CompareTo with the base-arm fallback `UISortableElement.cs:5-22`) |
-
 **d83 complete (2026-11-20):** all 30 rows (35-64) LANDED. Batches 1-11 on
 `task/W4-d83-ui-elements-3`; tests written not run (code-only lane). The
 planned `ui/resources.rs` home (row 47) was taken by the HUD module — the
@@ -197,6 +196,7 @@ pack card lives in `ui/resource_packs.rs` (no re-split). Row 61 re-audited
 as wholly pre-landed (`world_creation.rs`).
 | row | class | status |
 | --- | --- | --- |
+
 | 22 | `UICreativeInfiniteItemsDisplay` | pending |
 | 23 | `UICreativeItemGrid` | pending |
 | 24 | `UICreativeItemsInfiniteFilteringOptions` | pending |
@@ -210,9 +210,7 @@ as wholly pre-landed (`world_creation.rs`).
 | 32 | `UIHairStyleButton` | pending |
 | 33 | `UIHeader` | pending |
 | 34 | `UIHorizontalSeparator` | pending |
-
 ## d81 progress (task/W4-d81-ui-elements-1)
-
 **Keep-one dedupe (2026-11-20):** d81's batch 1 (`0b815a62`, written before this
 census was published) ported `UICyclingImage` (row 26) and
 `UICreativePowerButton` (row 25) into `ui/elements.rs`. Both are **d82 rows**;
@@ -220,9 +218,6 @@ d82 landed them independently (`ui/images.rs::CyclingImage`,
 `ui/creative_powers.rs::CreativePowerButton`, `484c2529`). The d81 copies are
 **removed** — the d82 modules are the survivors. No behaviour change: the two
 ports were byte-equivalent state machines and neither had a consumer yet.
-
-| row | class | status |
-| --- | --- | --- |
 | 1 | `AWorldListItem` | LANDED (missing halves `ui/world_select.rs`: `difficulty_text_with_ftw` full `:43-85` chain, `WorldIconFlags`/`seed_icon_name`/`first_icon_name`/`icon_name_list` `:87-200`, `GlitchAnimation` `:21-41` with injected `Main.rand` rolls; card geometry/difficulty draw pre-landed) |
 | 2 | `EmoteButton` | LANDED (re-audit: whole class pre-landed — blink counter `emotes.rs::button_frame` `:38-44`, frame pick + border tint + MouseText `ui/emotes.rs::draw` `:32-75`, hover sound-12 edge `app/loop.rs:600-619` `:77-88`, click+close `app/clicks.rs:1170-1197` `:90-95`) |
 | 3 | `EmotesGroupListItem` | LANDED (geometry `ui/emotes.rs`: `group_row_count`/`group_height`/`group_header_rect`/`group_separator_color`/`group_button_top_left`/`compare_group_order` `:11-94`; the flat-roster wheel draw pre-landed, group titles/separators a documented deviation) |

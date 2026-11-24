@@ -908,14 +908,23 @@ pub fn prefixed_item_name(id: u16, prefix: u16) -> String {
         .replace("{ItemName}", &item_name(id))
 }
 
-/// `Lang.GetTooltip(itemId)` (`Lang.cs:193-196`): the per-item tooltip text
-/// from the `ItemTooltip.<ItemID const name>` language key (the cache the
-/// C# builds from `ItemID`'s field names, `Lang.cs:537-549`). `None` when the
-/// item carries no tooltip text.
+/// `Lang.GetTooltip(itemId)` (`Lang.cs:193-196`) + `ItemTooltip.Lines`
+/// (`ItemTooltip.cs:21-32,66-81`): the per-item tooltip text from the
+/// `ItemTooltip.<ItemID const name>` language key (the cache the C# builds
+/// from `ItemID`'s field names, `Lang.cs:537-549`). `None` when the item
+/// carries no tooltip text — the `!_text.HasValue` arm (`ItemTooltip.cs:71`,
+/// `HasValue` = `EnglishValue != Key`, `LocalizedText.cs:33`) and the
+/// `ItemTooltip.None` slot at id 0 (`Lang.cs:539,546` — zero lines,
+/// `ItemTooltip.cs:26-28`; W4-c21).
 pub fn item_tooltip_text(id: u16) -> Option<String> {
     let Some(name) = crate::itemdata::NAMES.get(id as usize) else {
         return None;
     };
+    // The `ItemTooltip.None` slot (`Lang.cs:539,546` fills only `id > 0`):
+    // zero lines (`ItemTooltip.cs:26-28`), not one empty line.
+    if id == 0 {
+        return None;
+    }
     let value = item_tooltip(id);
     if value == format!("ItemTooltip.{name}") {
         None
@@ -1188,8 +1197,14 @@ const NEGATIVE_NPC_NAMES: &[(usize, &str)] = &[
     (54, "BigRainZombie"),
 ];
 
-/// `Lang.GetBuffName(id)` (`Lang.cs:241-244`): `BuffName.{const name}`.
+/// `Lang.GetBuffName(id)` (`Lang.cs:241-244`): `BuffName.{const name}` —
+/// the C# indexes `_buffNameCache[id]` directly, so an id outside
+/// `0..BuffID.Count` is out of the cache (the port answers empty rather than
+/// throw, the `GetProjectileName` bounds convention — W4-c21).
 pub fn buff_name(id: i32) -> String {
+    if id < 0 || id as usize >= crate::buffs::BUFF_ID_COUNT {
+        return String::new();
+    }
     match const_name(crate::lang_tables::BUFF_ID, id) {
         Some(name) => text(&format!("BuffName.{name}")),
         None => String::new(),
@@ -1197,18 +1212,28 @@ pub fn buff_name(id: i32) -> String {
 }
 
 /// `Lang.GetBuffDescription(id)` (`Lang.cs:246-249`):
-/// `BuffDescription.{const name}`.
+/// `BuffDescription.{const name}` — the same cache bounds as
+/// [`buff_name`] (W4-c21).
 pub fn buff_description(id: i32) -> String {
+    if id < 0 || id as usize >= crate::buffs::BUFF_ID_COUNT {
+        return String::new();
+    }
     match const_name(crate::lang_tables::BUFF_ID, id) {
         Some(name) => text(&format!("BuffDescription.{name}")),
         None => String::new(),
     }
 }
 
-/// `Lang.GetEmojiName(id)` (`Lang.cs:211-218`): `EmojiName.{const name}`.
-/// The C# leaves a missing entry blank (`leaveMissingEntriesBlank`), so an
-/// unknown id answers empty.
+/// `Lang.GetEmojiName(id)` (`Lang.cs:211-218`): `EmojiName.{const name}`,
+/// bounded by `0..EmoteID.Count` (= 151, the cache length `Lang.cs:1226`) —
+/// an out-of-range id answers `LocalizedText.Empty` (W4-c21, the
+/// `GetProjectileName` bounds convention). The C# leaves a missing entry
+/// blank (`leaveMissingEntriesBlank`, `Lang.cs:520`), so an in-cache id with
+/// no shipped row answers empty too (the port's table walk already does).
 pub fn emoji_name(id: i32) -> String {
+    if id < 0 || id >= crate::emotes::EMOTE_COUNT {
+        return String::new();
+    }
     match crate::emotes::EMOTE_NAMES
         .iter()
         .find(|(n, _)| *n == id)
@@ -1232,8 +1257,14 @@ pub fn prefix_name(id: i32) -> String {
 }
 
 /// `Lang.GetProjectileName(type)` (`Lang.cs:441-448`):
-/// `ProjectileName.{const name}`.
+/// `ProjectileName.{const name}`, bounded by the cache length
+/// (`ProjectileID.Count`) — an out-of-range id answers `LocalizedText.Empty`
+/// (W4-c21). Id 0 is in-cache: the shipped `ProjectileName.None` row is the
+/// empty string.
 pub fn projectile_name(id: i32) -> String {
+    if id < 0 || id >= crate::projectile_id::PROJECTILE_COUNT {
+        return String::new();
+    }
     match crate::projectile_id::PROJECTILE_ID
         .iter()
         .find(|(n, _)| *n as i32 == id)
@@ -1245,8 +1276,14 @@ pub fn projectile_name(id: i32) -> String {
 }
 
 /// `Lang._itemTooltipCache[id]` (`Lang.cs:538-550`):
-/// `ItemTooltip.{const name}` — the item's own tooltip row.
+/// `ItemTooltip.{const name}` — the item's own tooltip row. The C# fills only
+/// `0 < id < ItemID.Count` (`:546`); every other slot stays `ItemTooltip.None`
+/// (`:539`, zero lines). The port answers the empty string for those ids
+/// instead of the C# IndexOutOfRange (the W4-c21 bounds convention).
 pub fn item_tooltip(id: u16) -> String {
+    if id == 0 || id as usize >= crate::itemdata::NAMES.len() {
+        return String::new();
+    }
     text(&format!("ItemTooltip.{}", crate::itemdata::NAMES[id as usize]))
 }
 
@@ -1518,6 +1555,99 @@ mod tests {
         // A missing key falls back to the key text, not a crash.
         assert_eq!(tip(9999), text("LegacyTooltip.9999"));
     }
+
+    /// W4-c21 — `Lang.GetProjectileName` (`Lang.cs:441-448`) bounds the id by
+    /// the cache length (`ProjectileID.Count` = 1136) and answers
+    /// `LocalizedText.Empty` outside it; before the bounds the port answered
+    /// a bare `ProjectileName.{...}` key for out-of-range ids.
+    #[test]
+    fn w4_c21_projectile_name_bounds_answer_empty() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // Inside the cache: the localized row (`ProjectileID.BoneJavelin`).
+        assert_eq!(projectile_name(598), "Bone Javelin");
+        // Id 0 (`ProjectileID.None`): `FillNameCacheArray`'s `num >= 0` gate
+        // admits it, and the shipped `ProjectileName.None` row IS the empty
+        // string — so 0 answers empty exactly like the C# cache row.
+        assert_eq!(projectile_name(0), "");
+        // Negative ids and ids at/over `Count` answer Empty (`:443`).
+        assert_eq!(projectile_name(-1), "");
+        assert_eq!(projectile_name(crate::projectile_id::PROJECTILE_COUNT), "");
+        assert_eq!(projectile_name(i32::MAX), "");
+        // The last in-cache id resolves (`ProjectileID.KrakenWave` = 1135).
+        assert!(!projectile_name(crate::projectile_id::PROJECTILE_COUNT - 1).is_empty());
+    }
+
+    /// W4-c21 — `Lang.GetBuffName`/`GetBuffDescription` (`Lang.cs:241-249`)
+    /// index `_buffNameCache`/`_buffDescriptionCache` sized `BuffID.Count` =
+    /// 401; the port answers empty outside the cache instead of the C#
+    /// IndexOutOfRange (the W4-c26 hover test's `buff_name(99999) == ""`).
+    #[test]
+    fn w4_c21_buff_name_bounds_answer_empty() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        assert_eq!(buff_name(1), "Obsidian Skin");
+        assert_eq!(buff_description(24), "Slowly losing life");
+        // The last in-cache id (`BuffID.MoonLordFreeEye` = 400) resolves.
+        assert!(!buff_name(400).is_empty());
+        // Outside `0..BuffID.Count`: empty, both directions.
+        assert_eq!(buff_name(-1), "");
+        assert_eq!(buff_name(crate::buffs::BUFF_ID_COUNT as i32), "");
+        assert_eq!(buff_name(99999), "");
+        assert_eq!(buff_description(-1), "");
+        assert_eq!(buff_description(99999), "");
+    }
+
+    /// W4-c21 — `Lang.GetEmojiName` (`Lang.cs:211-218`) bounds the id by
+    /// `0..EmoteID.Count` (= 151, `EmoteID.cs:317`) and answers
+    /// `LocalizedText.Empty` outside it; every in-cache id carries a shipped
+    /// `EmojiName` row (the `leaveMissingEntriesBlank` gate, `Lang.cs:520`,
+    /// blanks only rows the culture lacks).
+    #[test]
+    fn w4_c21_emoji_name_bounds_answer_empty() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // Inside the cache: `EmoteID.EmotionLove` = 0.
+        assert_eq!(emoji_name(0), "heart");
+        // The last in-cache id (`EmoteID.Count - 1` = 150) resolves.
+        assert!(!emoji_name(crate::emotes::EMOTE_COUNT - 1).is_empty());
+        // Negative ids and ids at/over `Count` answer Empty (`:213`).
+        assert_eq!(emoji_name(-1), "");
+        assert_eq!(emoji_name(crate::emotes::EMOTE_COUNT), "");
+        assert_eq!(emoji_name(i32::MAX), "");
+    }
+
+    /// W4-c21 — `Lang.GetTooltip` (`Lang.cs:193-196`) indexes
+    /// `_itemTooltipCache` sized `ItemID.Count` = 6196 (`Lang.cs:1225`); the
+    /// cache fills only `0 < id < Count` (`:546`), so id 0 stays
+    /// `ItemTooltip.None` (zero lines) and out-of-range ids answer empty
+    /// instead of the C# IndexOutOfRange. `item_tooltip_text` maps a missing
+    /// row to `None` — `ItemTooltip.ValidateTooltip`'s `!HasValue` arm
+    /// (`ItemTooltip.cs:71-75`).
+    #[test]
+    fn w4_c21_item_tooltip_bounds_answer_none() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // A shipped row: `ItemID.HermesBoots` = 54.
+        assert_eq!(item_tooltip(54), "The wearer can run super fast");
+        assert_eq!(
+            item_tooltip_text(54).as_deref(),
+            Some("The wearer can run super fast")
+        );
+        // Id 0: the `ItemTooltip.None` slot — no text, no phantom empty line.
+        assert_eq!(item_tooltip(0), "");
+        assert_eq!(item_tooltip_text(0), None);
+        // An in-cache id with no `ItemTooltip.*` row (the Iron Pickaxe):
+        // the manager answers the key itself -> `!HasValue` -> no lines.
+        assert_eq!(item_tooltip_text(1), None);
+        // At/over `ItemID.Count`: out of the cache, empty (no panic).
+        let count = crate::itemdata::NAMES.len() as u16;
+        assert_eq!(item_tooltip(count), "");
+        assert_eq!(item_tooltip(u16::MAX), "");
+        assert_eq!(item_tooltip_text(count), None);
+        assert_eq!(item_tooltip_text(u16::MAX), None);
+    }
+
     /// W4-c21 — `Lang.GetMapObjectName` (`Lang.cs:77-84`) indexes
     /// `_mapLegendCache` sized `MapHelper.LookupCount()` (`:560`); an
     /// out-of-cache lookup id answers empty (the port's bounds convention).

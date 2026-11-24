@@ -320,7 +320,10 @@ pub(crate) fn color_sliders_update(
 /// `lum_floor` is 0.15 for menuMode 25 and 0.0 for 252 (`Main.cs:51201-51202`):
 /// the knob maps `(l - floor) / (1 - floor)` and a grab stores
 /// `l = t * (1 - floor) + floor`.
-// Consumed by the cursor / border colour screens (`menu.rs`).
+// Consumed by the cursor / border colour screens (`menu.rs`). Returns the
+// four highlight flags (W4-g23: the menu's `focusColor` wiring reads them —
+// the flags ARE the `Main.focusColor = 1/2/3/4` conditions, `Main.cs:51149`
+// /`:51181`/`:51218`/`:51255`), so the caller never re-runs the update pass.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_color_sliders(
     r: &mut SpriteRenderer,
@@ -333,7 +336,7 @@ pub fn draw_color_sliders(
     mouse: Vec2,
     mouse_down: bool,
     grab: &mut u8,
-) {
+) -> [bool; 4] {
     let highlight =
         color_sliders_update(screen_w, top, bars, lum_floor, alpha_bar, mouse, mouse_down, grab);
     let left = color_slider_left(screen_w);
@@ -412,6 +415,7 @@ pub fn draw_color_sliders(
             },
         );
     }
+    highlight
 }
 
 /// `(float)num / (float)num54` of the C# blip loops (`Main.cs:51171` and the row
@@ -688,6 +692,8 @@ impl VerticalSlider {
             self.really_mouse_overed, // `:75-78`
         )
     }
+}
+
 // --- UIColoredSlider's missing halves (W4-d81 census row 20) --------------------
 //
 // The bar/knob/value geometry + the CurrentAimed/CurrentLocked latch are

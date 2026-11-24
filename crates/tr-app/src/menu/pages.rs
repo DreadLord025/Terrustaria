@@ -204,9 +204,12 @@ impl Menu {
             // `Main.MenuUI.SetState(Main.AchievementsMenu)` — the
             // achievements menu overlay (M6-ACH-2).
             Item::new(crate::lang::menu(131), Act::Out(Action::Achievements)),
+            // menuMode 11 row 4 (`Main.cs:48949-48957`): the no-Steam else
+            // branch — `UI.ResourcePacks` opens `OpenResourcePacksMenu(null)`
+            // (W4-d84 row 5; the Steam `UI.Workshop` hub row needs Steam).
             Item::new(
                 crate::lang::text("UI.ResourcePacks"),
-                Act::Hint("Resource packs are not ported yet"),
+                Act::Out(Action::ResourcePacks),
             ),
             Item::new(crate::lang::menu(14), Act::Nav(Page::Settings)),
             // Row 5 (`Main.cs:48964-48971`): `UI.Credits` sets

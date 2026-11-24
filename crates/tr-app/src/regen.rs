@@ -69,8 +69,19 @@ pub enum DotDeath {
     Tongued,
     /// `ByOther(22)` — vampireBurningInSunlight (generic lane).
     VampireSunlight,
-    /// `ByOther(23)` — chlorophyteSpore (generic lane).
+    /// `ByOther(23)` - chlorophyteSpore (generic lane).
     ChlorophyteSpore,
+    /// `ByOther(13)` - the Rod of Discord's chaos-state teleport death
+    /// (`Player.cs:45521`, W4-g89f). NOT a DoT-lane reason - the rod arm
+    /// books it directly; the `Next(2)` male/female variant roll
+    /// (`:45522-45525`) picks between this and `TeleportFemale`.
+    Teleport,
+    /// `ByOther(14)`/`ByOther(15)` - the same death's gendered rows
+    /// (`Lang.cs:1098-1103`; both keys carry the SAME text in en-US).
+    /// The port has no player `Male` flag (the render draws the base male
+    /// frame), so the roll's 1-arm books this row and the 0-arm `Teleport`
+    /// - the text is identical either way (ANALYSIS W4-g89f).
+    TeleportGendered,
 }
 
 /// Per-tick inputs gathered by the caller (one 60 Hz tick of player state).
@@ -138,6 +149,14 @@ pub struct RegenInputs {
     /// research/138 §2 — pre-summing 0.2+1.0 into `extra_time` reorders
     /// the f32 adds).
     pub aegis_crystal: bool,
+    /// (`:19117-19120`) in `extra_time`, the C#'s f32 accumulation order
+    /// (W4-g90 lane 7).
+    pub aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 permanent
+    /// mana-regen boost — `manaRegenDelay -= 0.05f` inside the positive-
+    /// delay block (`:19430-19433`) and `manaRegen += statManaMax2 / 50`
+    /// after the still/grapple doubling (`:19453-19456`) (W4-g90 lane 7).
+    pub arcane_crystal: bool,
     /// crimson ×1.5 / shinyStone ×1.1 / rabid ramp scale (`:19247-19258`).
     pub extra_ramp_scale: f32,
     /// palladium's +4 straight into the counter (`:19264`).
@@ -183,6 +202,7 @@ impl Default for RegenInputs {
             extra_regen: 0,
             extra_time: 0.0,
             aegis_crystal: false,
+            arcane_crystal: false,
             extra_ramp_scale: 1.0,
             extra_count: 0,
             sitting_or_sleeping: false,
@@ -225,6 +245,8 @@ pub fn update_life_regen(
     // `:19113-19116` — the Aegis Crystal's +0.2, between the base +1 and
     // the crimson/soulDrain adds folded into `extra_time` (W4-a6 reconcile,
     // the g90 lane-7 slot — the C#'s f32 accumulation order).
+    // the crimson/soulDrain adds folded into `extra_time` (the g90 lane-7
+    // slot, research/138 §3.3 — the C#'s f32 accumulation order).
     if in_.aegis_crystal {
         state.life_regen_time += 0.2;
     }
@@ -454,6 +476,11 @@ fn apply_nebula_buff_mana(state: &mut RegenState, level: i32, mana: &mut i32, ma
 /// C# `flag` (`:19420`) feeding the ManaV2 animation gate. The caller
 /// applies the `Player.Update` tail clamps (`:25996-26003`: negative
 /// count → 0, over-max mana → max) after this call.
+/// C# — M6-AUDIO polish). `manaRegenDelayBonus` has no grant source in the
+/// source (`:18656` is its only write) — folded out (noted in ANALYSIS); the
+/// arcane crystal now rides `in_.arcane_crystal` (W4-g90 lane 7).
+/// `flags.item_in_use` is the C# `flag`
+/// (`:19420`) feeding the ManaV2 animation gate.
 pub fn update_mana_regen(
     state: &mut RegenState,
     in_: &RegenInputs,
@@ -470,6 +497,9 @@ pub fn update_mana_regen(
         // `:19430-19433` — the Arcane Crystal's permanent −0.05 per delay
         // tick (inside the `> 0` guard, after the still/grapple extra).
         if in_.used_arcane_crystal {
+        // `:19430-19433` — the Arcane Crystal's −0.05, INSIDE the positive-
+        // delay block after the still/grapple/buff decrement (W4-g90 lane 7).
+        if in_.arcane_crystal {
             state.mana_regen_delay -= 0.05;
         }
     }
@@ -492,6 +522,10 @@ pub fn update_mana_regen(
         // `:19453-19456` — the Arcane Crystal's `statManaMax2 / 50` extra
         // (integer division), after the still/grapple double.
         if in_.used_arcane_crystal {
+        // `:19453-19456` — the Arcane Crystal's `statManaMax2 / 50` (integer
+        // division), after the still/grapple doubling, before the num10
+        // bar-ratio scale (W4-g90 lane 7).
+        if in_.arcane_crystal {
             state.mana_regen += in_.max_mana / 50;
         }
         let num6 = *mana as f32 / in_.max_mana as f32;
@@ -1333,5 +1367,37 @@ mod tests {
         assert_eq!(death2, Some(DotDeath::Burned));
         assert_eq!(hp2, 0);
         assert_eq!(st2.life_regen_count, -700); // one chunk, then stop
+    }
+
+    /// W4-g89i — the Aegis Crystal's permanent +0.2 lifeRegenTime
+    /// (`Player.cs:19113-19116`), added BETWEEN the base +1 (`:19112`) and
+    /// the crimson +1 folded into `extra_time` (`:19117-19120`) — the C#'s
+    /// f32 accumulation order (the g90 lane-7 shape, research/138 §3.3;
+    /// the a6 reconcile adopted it over the pre-summed `extra_time` fold).
+    #[test]
+    fn w4_g89i_the_aegis_crystal_adds_between_the_base_and_the_crimson() {
+        let mut st = RegenState::default();
+        let mut life = 100;
+        let mut in_ = inputs(400, 200);
+        in_.aegis_crystal = true;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        assert!(
+            (st.life_regen_time - 1.2).abs() < 1e-5,
+            "base +1 then crystal +0.2 (`:19112-19116`)"
+        );
+        // With the crimson row: +1 base, +0.2 crystal, +1 crimson = 2.2 —
+        // the crystal's add lands BEFORE the extra_time fold, verbatim.
+        in_.extra_time = 1.0;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        assert!((st.life_regen_time - 3.4).abs() < 1e-5, "1.2 + 1.0 + 1.2");
+        // Without the crystal the same two ticks read 1.0 then 2.0 + 1.0.
+        let mut plain = RegenState::default();
+        let mut life2 = 100;
+        let mut in2 = inputs(400, 200);
+        let _ = update_life_regen(&mut plain, &in2, &mut life2);
+        assert_eq!(plain.life_regen_time, 1.0, "no crystal, base only");
+        in2.extra_time = 1.0;
+        let _ = update_life_regen(&mut plain, &in2, &mut life2);
+        assert_eq!(plain.life_regen_time, 3.0, "1.0 + 1.0 + 1.0");
     }
 }

@@ -184,10 +184,11 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], num_updates:
         DARK_MAGE_FLAME => {
             // `:56461-56473` (below the counter in the C#, but the counter
             // and this hook commute — no shared state): the localAI[0]
-            // one-shot (`PlayTrackedSound(DD2_DarkMageAttack)` SKIPPED)
-            // and `alpha -= 20`, clamp 0.
+            // one-shot (`PlayTrackedSound(DD2_DarkMageAttack)`, `:56466` —
+            // W4-d80) and `alpha -= 20`, clamp 0.
             if p.local_ai[0] == 0.0 {
                 p.local_ai[0] = 1.0;
+                p.wants_tracked = Some(crate::projectile::ProjTrackedCue::OneShot("DD2_DarkMageAttack"));
             }
             fade_alpha(p, 20);
             // Not on the flag3 skip list — the counter runs, but the

@@ -882,6 +882,14 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | HeadacheSkeleton
             | MisassembledSkeleton
             | PantlessSkeleton
+            // W4-d23 — the Vampire (159) rides the plain
+            // `walker_step_fighter` machine (`update_skeleton`), so its
+            // `ai[3]` is free for the idle counter; its moan is the
+            // 159-only `Next(500)` arm (`NPC.cs:57352-57355`,
+            // `fighter_ambient_moans`' case 29 style 7), NOT the
+            // family's `Next(1000)` (159 is absent from the `:57340`
+            // list) — the Blood Zombie's kind-gate precedent.
+            | Vampire
     )
 }
 

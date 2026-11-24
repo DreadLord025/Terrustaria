@@ -116,6 +116,16 @@ pub fn is_melee_buff(buff_type: i32) -> bool {
 /// caller (`net_player_sync::add_buff_remote_pvp`) is a parked decision
 /// helper until the c27 55 wire merges, so the non-test build sees no live
 /// caller yet — the allow rides until then.
+/// `BuffID.Sets.IsWellFed` (`ID/BuffID.cs:43`, `CreateBoolSet(26, 206, 207)`)
+/// — the three Well Fed tiers. `QuickBuff_ShouldBotherUsingThisBuff`
+/// (`Player.cs:5986-5990`) refuses a second well-fed buff while any tier
+/// stands; the food-priority ladder (`Player.cs:5965-5974`) ranks the same
+/// three ids. Distinct from [`is_fed_state`] (`IsFedState` adds the three
+/// Exquisitely Stuffed ids 332-334).
+pub fn is_well_fed(buff_type: i32) -> bool {
+    matches!(buff_type, 26 | 206 | 207)
+}
+
 #[allow(dead_code)]
 pub fn is_pvp_buff(buff_type: i32) -> bool {
     in_set(&PVP_BUFF_IDS, buff_type)
@@ -394,6 +404,24 @@ impl BuffSlots {
                 self.del_buff(i);
             }
         }
+    }
+
+    /// `Player.CountBuffs` (`Player.cs:5483-5494`). Faithful quirk: the C#
+    /// loop reads `buffType[num]` — the RUNNING COUNT, not the loop index
+    /// (`for (i = 0; i < maxBuffs; i++) if (buffType[num] > 0) num++;`) —
+    /// so it counts the LEADING RUN of non-empty slots and stops advancing
+    /// at the first hole. `QuickBuff`'s full-bar gates (`Player.cs:5773`,
+    /// `:5800`, `:5814`, `:5821`, `:5835`) read this, not a plain census.
+    pub fn count_buffs(&self) -> i32 {
+        let mut num = 0usize;
+        for _ in 0..MAX_BUFFS {
+            // The read index never exceeds 43: `num` advances at most once
+            // per iteration and only AFTER the read (the C#'s bound too).
+            if self.buff_type[num] > 0 {
+                num += 1;
+            }
+        }
+        num as i32
     }
 
     /// `Player.FindBuffIndex` (`Player.cs:5250-5262`).

@@ -95,10 +95,28 @@ fn solid_or_sloped(t: &Tile) -> bool {
 
 /// Builds the draw records for `[x0..=x1] x [y0..=y1]`.
 pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDraw> {
+    build_with_bubbles(world, x0, y0, x1, y1).0
+}
+
+/// W4-f6 wiring — `build` plus the lava-bubble cell list: the
+/// `InternalPrepareDraw` bubble pass (`LiquidRenderer.cs:552-577`) iterates
+/// the FULL padded rectangle (`drawArea ± 2`, not just the inner draw
+/// records) and gates on `VisibleType == 1 && HasVisibleLiquid`. This
+/// collects those cells in the C#'s row-major order so the caller can drain
+/// `world_dust::lava_bubbles` on the renderer's private `_random` stream.
+/// RNG-free and draw-record-identical to [`build`] (the extra pass only
+/// reads the cache). Returns `(records, bubble_cells)`.
+pub fn build_with_bubbles(
+    world: &World,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+) -> (Vec<LiquidDraw>, Vec<(i32, i32)>) {
     let draw_w = (x1 - x0 + 1).max(0);
     let draw_h = (y1 - y0 + 1).max(0);
     if draw_w == 0 || draw_h == 0 {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     let rx = x0 - CACHE_PADDING;
     let ry = y0 - CACHE_PADDING;
@@ -458,7 +476,20 @@ pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDra
             });
         }
     }
-    out
+    // W4-f6 wiring — the lava-bubble cells (`LiquidRenderer.cs:552-577`):
+    // the full padded rectangle, row-major (x outer, y inner), gated on
+    // `VisibleType == 1 && HasVisibleLiquid`. The `Dust.lavaBubbles < 200`
+    // gate + the two `Next` rolls are the caller's (the emitter).
+    let mut bubbles = Vec::new();
+    for gx in 0..w {
+        for gy in 0..h {
+            let c = cache[index(gx, gy)];
+            if c.visible_type == 1 && c.has_visible_liquid {
+                bubbles.push((rx + gx, ry + gy));
+            }
+        }
+    }
+    (out, bubbles)
 }
 
 /// `LiquidRenderer.VISCOSITY_MASK` (`LiquidRenderer.cs:892`): the wave-mask
@@ -786,5 +817,43 @@ mod tests {
         let (_, a) = wf.update(4.0, 1.24);
         let (_, b) = wf.update(4.0, -1.24);
         assert_eq!((a, b), (2, 4), "0.5 frames/s regardless of wind");
+    /// W4-f6 WIRING — the bubble-cell pass: `build_with_bubbles` returns the
+    /// SAME draw records as `build` (the extra pass only reads the cache),
+    /// and collects the visible-lava cells of the FULL padded rectangle.
+    #[test]
+    fn w4_f6_bubble_cells_match_build_and_collect_lava() {
+        let mut w = block(10, 10);
+        // A lava pool: floor at y6, lava y3..6 with the lava flag.
+        for x in 0..10 {
+            set(&mut w, x, 6, 1, 0);
+            for y in 3..6 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].flags |= crate::tile::FLAG_LIQUID_LAVA;
+            }
+        }
+        let plain = build(&w, 0, 2, 8, 5);
+        let (recs, bubbles) = build_with_bubbles(&w, 0, 2, 8, 5);
+        assert_eq!(recs.len(), plain.len(), "the records are unchanged");
+        for (a, b) in recs.iter().zip(plain.iter()) {
+            assert_eq!((a.x, a.y, a.src_x, a.src_y, a.visible), (b.x, b.y, b.src_x, b.src_y, b.visible));
+        }
+        assert!(!bubbles.is_empty(), "the lava pool yields bubble cells");
+        // Every cell is a visible-lava tile; the padded rect extends 2 beyond
+        // the draw area (x -2..10, y 0..7), so cells outside 0..8/2..5 appear.
+        assert!(bubbles.iter().all(|&(x, y)| {
+            let t = w.tile(x, y);
+            t.is_some_and(|t| t.liquid > 0 && t.liquid_kind() == LiquidKind::Lava)
+        }));
+        // A water-only pool yields no bubble cells.
+        let mut ww = block(10, 10);
+        for x in 0..10 {
+            set(&mut ww, x, 6, 1, 0);
+            for y in 3..6 {
+                set_water(&mut ww, x, y);
+            }
+        }
+        let (_, wb) = build_with_bubbles(&ww, 0, 2, 8, 5);
+        assert!(wb.is_empty(), "water is VisibleType 0, not lava");
     }
 }

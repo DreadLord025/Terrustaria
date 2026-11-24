@@ -83,6 +83,10 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | `Framing.WallFrame` | PORTED | `framing.rs::wall_frame_of_variant` + `wall_frame_head` | `TruncatesWalls`/`invisibleWall` gates (S1-P-i33), `wallLargeFrames` arms + wall-21 roll (S1-A-3), wall-id clamp + wall==0 paint/coating reset (W4-d110, code-only) |
 | `wallFrameLookup` / `centerWallFrameLookup` | PORTED | `framing.rs:1069-1093` | 20×3 table + the mask-15 offset add |
 | phlebas/lazure wall lookups (`Framing.cs:35-39`, `:378-387`) | NOT-FOUND | — | large-frame walls keep the generic mask |
+| `TileObjectData` registry | PORTED (generated) | `tileobject/registry.rs` (GENERATED) | S1-F-7 wave A 2026-11-18: `tools/GenTileObjectData/gen.py` interprets `Initialize` `:2110-5014` 1:1 — all 389 tiles / 604 defs; freeze `tests/tileobject_registry_freeze.rs`, `gen.py --check`; W4-d111 re-census 2026-11-20 confirmed 0 missing `addTile` ids (witness pins `tests/tileobject_registry_witness.rs`) |
+| `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5312`) | PARTIAL | `tileobject.rs::base_def` + `edit.rs:2600-2612` | base/style routing ported; dynamic stalactite/detritus arms not found |
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263` |
+
 | `TileObjectData` registry | PARTIAL | `tileobject.rs:293-330` | 36 defs registered out of the C#'s full registry (`Initialize` `:2110`); ROADMAP:1319 admits "remaining: the full-registry generator" |
 | `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5312`) | PARTIAL | `tileobject.rs::base_def` + `edit.rs:2600-2612` | base/style routing ported; dynamic stalactite/detritus arms not found |
 | `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`; W4-d113: `try_get_tile_bounds` — the :5163-5194 coordinate walk, resolver-parameterised on d112's `GetTileData(Tile)` seam, tests `w4_d113_walk_*`) | `CoordinateFullWidth/Height` `:256-263` |
@@ -90,6 +94,11 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (`get_tile_data` = the (type,style,alternate) overload `:5126-5161`, `resolve_tile_def` = the Tile overload `:5196-5261`; tests `get_tile_data_resolution`, `coordinate_full_extents`) | `TryGetTileBounds` `:5163-5194` still unported (coordinate pickup consumer) |
 | `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`; W4-d113: `try_get_tile_bounds` — the :5163-5194 coordinate walk, resolver-parameterised on d112's `GetTileData(Tile)` seam, tests `w4_d113_walk_*`) | `CoordinateFullWidth/Height` `:256-263` `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263`; **W4-e12**: the int overload's alternate tail corrected 1:1 (:5150-5159 — an out-of-range alternate KEEPS the resolved def, the port answered None; consumers `TileObject.Place` :31 / `DrawPreview` :859; witnesses `test_w4_e12_*` written-not-run). The Tile overload :5196-5261 + bounds :5163-5194 are the d112/d113/e11/d114 branch claims |
 | `TileObjectData` registry | PORTED (generated) | `tileobject/registry.rs` (GENERATED) | S1-F-7 wave A 2026-11-18: `tools/GenTileObjectData/gen.py` interprets `Initialize` `:2110-5014` 1:1 — all 389 tiles / 604 defs; freeze `tests/tileobject_registry_freeze.rs`, `gen.py --check`; W4-d111 re-census 2026-11-20 confirmed 0 missing `addTile` ids (witness pins `tests/tileobject_registry_witness.rs`) |
+
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`; W4-d113: `try_get_tile_bounds` — the :5163-5194 coordinate walk, resolver-parameterised on d112's `GetTileData(Tile)` seam, tests `w4_d113_walk_*`) | `CoordinateFullWidth/Height` `:256-263` |
+
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263`; **W4-e12**: the int overload's alternate tail corrected 1:1 (:5150-5159 — an out-of-range alternate KEEPS the resolved def, the port answered None; consumers `TileObject.Place` :31 / `DrawPreview` :859; witnesses `test_w4_e12_*` written-not-run). The Tile overload :5196-5261 + bounds :5163-5194 are the d112/d113/e11/d114 branch claims |
+
 | `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5327`) | PORTED | `tileobject.rs::get_tile_data_for_tile` + `resolve_from_frames` (W4-e11) | the frameY override arms + the `[Style, Style+RandomStyleRange]` bands (:5249-5258); witnesses `tileobject_frame_resolution_witness.rs` (written-not-run) |
 | `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED | `tileobject.rs` (`get_tile_data`, `get_tile_data_for_tile` :5196-5261, `try_get_tile_bounds` :5163-5194, `check_water_death`/`check_lava_death` :5083-5119 — W4-e11) | `CoordinateFullWidth/Height` `:256-263`; the `Liquid.cs:1190` settlement-kill wiring is the liquid task's seam |
 | `tiledata` sets | PARTIAL | `tiledata/sets.rs` | 46 `TileSet`s vs 152 `Factory.CreateBoolSet(` sites in `TileID.cs` (upper bound: nested/Conversion sets) |
@@ -110,6 +119,14 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   style frames, failed place, kills cut tiles), `test_DW_1_4_door_*`, `test_DW_1_5_module_doc_maps_csharp_fields`,
   `test_DW_1_6_reframe_area_keeps_object_frames`, `test_calculate_placement_style_matches_csharp`,
   `test_get_tile_data_resolution`, `test_is_valid_anchor_lists`.
+- `tests/tileobject_registry_freeze.rs` (2): the generated registry's FNV-1a pin
+  (389 tiles / 604 defs) + the `BY_KIND` lookup census.
+- `tests/tileobject_registry_witness.rs` (7, W4-d111 2026-11-20): the full
+  389-kind `addTile` census vs the C# `Initialize` scan, plus verbatim def pins
+  for kinds 19/10/11/3/165/171/185 (sub-tiles, alternates, hooks, style-override
+  tags) — batch 1 of the d11x series covers the first 120 registered kinds
+  (3..=270); d112+ start at kind 271.
+
 - `tests/tileobject_resolve_witness_d112.rs` (10, W4-d112 2026-11-20, WRITTEN
   NOT RUN — code-only lane): the `resolve_tile_def` frameY consumer
   (`GetTileData(Tile)` :5196-5261) — the three `GetStyle_*` override thresholds
@@ -207,6 +224,15 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 - **S** — Decide + document the `frameNumber` policy: decode the stored byte from the save
   (and use it when reframing) or keep the hash; add a test that a loaded world's frames are
   stable across two loads. (Depends on a shipped test `.wld`.)
+- **~~M — Write a `TileObjectData` generator~~ — DONE (S1-F-7 wave A):**
+  `tools/GenTileObjectData/gen.py` parses `TileObjectData.Initialize` (`:2110`)
+  into the GENERATED `tileobject/registry.rs`; `RandomStyleRange` alternation
+  landed with wave B. Remaining: the `GetStyle_Detritus/SmallPiles/Stalactite`
+  (`:5294-5312`) frameY resolution — the tags are generated data
+  (`get_style_override`), the tile-based `GetTileData(Tile)` consumer
+  (`:5196-5261`) is the open half. (`reframe_area` keeps object frames —
+  tested by `test_DW_1_6`.)
+
 - **M** — Write a `TileObjectData` generator (extend or clone `tools/GenTileData`) that
   parses `TileObjectData.Initialize` (`:2110`) into the `TABLE` consts; then the style
   alternation arms `GetStyle_Detritus/SmallPiles/Stalactite` (`:5294-5312`) and
@@ -219,6 +245,8 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   liquid-death consumers onto the resolver + `TryGetTileBounds` `:5163-5194`.
 - **~~M — Write a `TileObjectData` generator~~ — DONE:**
   the generator landed with S1-F-7 wave A (389 tiles/604 defs,
+
+  **DONE**: the generator landed with S1-F-7 wave A (389 tiles/604 defs,
   d111 census proved it complete); the `RandomStyleRange` runtime hook with
   wave B (S1-F-7b); the tile-based `GetTileData(Tile)` frameY resolution
   (:5196-5261, the override arms :5294-5327) with **W4-e11** —

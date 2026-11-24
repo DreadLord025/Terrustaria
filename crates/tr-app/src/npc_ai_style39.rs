@@ -4,11 +4,12 @@
 //!
 //! S1-D-3 (aiStyle-39 round, code-only mode): this module is the faithful
 //! 1:1 port of the arm as a pure function over `Npc` + a small context
-//! seam. It is NOT wired into `Npc::update_rng`'s style axis yet — the
-//! live `npc.rs::update_solar_sroller` keeps running until the wiring
-//! round (the sibling D-3 rounds land the same way: module + tests first,
-//! dispatch claim second). Every other file is byte-identical except the
-//! one `mod` line in `main.rs` and the docs.
+//! seam. WIRED (S1-D-4 W-10): `npc.rs::update_solar_sroller` drives it
+//! over the invented v1; W4-g9 moved that SAME wrapper onto the
+//! aiStyle-39 axis arm (the kind match's sroller arm is an
+//! `unreachable!` marker now). The sibling D-3 rounds land the same way:
+//! module + tests first, dispatch claim second — the `npc_ai_style28.rs`
+//! pattern, commit `040df4c5`.
 //!
 //! The five kinds on this style (`SetDefaults`, `NPC.cs`):
 //! * `NPCID.GiantTortoise` 153 (`:10930-10943`): 46×32, dmg 80, def 30,

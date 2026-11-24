@@ -387,6 +387,17 @@ const MOON_EXPLOSION_SHEETS: [&str; 5] = [
     "Misc/MoonExplosion/Explosion",
 ];
 
+/// `Images/Misc/Sunflare/Lens/*` sheet names, in the order
+/// [`Lookups::sunflare_lens`] indexes them (`NextHorizonRenderer.cs:57-62`):
+/// the blurry point, the sharp point, the bokeh (`Flare1`), the spectra
+/// (`Flare2`).
+const SUNFLARE_LENS_SHEETS: [&str; 4] = [
+    "Misc/Sunflare/Lens/PointBlurry",
+    "Misc/Sunflare/Lens/PointSharp",
+    "Misc/Sunflare/Lens/Flare1",
+    "Misc/Sunflare/Lens/Flare2",
+];
+
 /// Every whole-image sheet the static half of the atlas packs, in a fixed
 /// order. Exposed so the renderer's tests can assert that a sheet a draw arm
 /// asks `sky_tex` for is actually in here — the M4-NPC-3v bug was exactly that
@@ -735,6 +746,18 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_70",
         "Extra_71",
         "Extra_72",
+        // W4-g12 doc-sweep: the glowing-mushroom-tree cap
+        // (`TextureAssets.ShroomCap`, `AssetInitializer.cs:532` —
+        // `Images/Shroom_Tops`, the 3-frame 62x42 strip
+        // `TileDrawing.cs:994-1006` draws over a type-72 trunk top).
+        "Shroom_Tops",
+        // W4-g12 doc-sweep: the coin spin strips (`TextureAssets.Coin[0..4]`,
+        // `AssetInitializer.cs:369` — `Images/Coin_<i>`, 1x8 frames,
+        // `CoinSlot.DrawItemCoin` `CoinSlot.cs:242-243`).
+        "Coin_0",
+        "Coin_1",
+        "Coin_2",
+        "Coin_3",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -836,6 +859,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_35",
         "NPC_113",
         "NPC_134",
+        // W4-d127 — `Main.DrawWoF`'s sheets (`Main.cs:38402`/`:38494`):
+        // `TextureAssets.Wof` (the 190x420 body strip, three 140-px mouth
+        // rows), `Chain12` (the 16x28 rope/tongue link) and `Chain4` (the
+        // rope's source-rect width, also 16x28).
+        "WallOfFlesh",
+        "Chain12",
+        "Chain4",
         // The Destroyer's segments + the Probe (S1-D-3-wire-destroyer).
         "NPC_135",
         "NPC_136",
@@ -1057,6 +1087,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
+        // W4-g56 — `ItemSlot.cs:2155-2158`: the favorited void-vault slot
+        // (context 32) swaps to `Inventory_Back19`.
+        "Inventory_Back19",
         "Inventory_Back5",
         "Inventory_Back9",
         "Inventory_Back14",
@@ -1264,6 +1297,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Coin_1",
         "Coin_2",
         "Coin_3",
+        // W4-f40: `LanternSky`'s lantern sheet (`TextureAssets.Extra[134]`,
+        // `LanternSky.cs:79`) — the 3-variant background lantern strip.
+        "Extra_134",
         "UI/Cursor_0",
         "UI/Cursor_1",
         // `TextureAssets.Cursors[11]` — the thick-cursor border ring
@@ -1331,6 +1367,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // slot, the cyan panel 9-slice, the separator, the scrollbar, the craft
         // icon/toggles and the filter strip's icons.
         "Inventory_Back18",
+        // W4-f23 wiring: `Inventory_Back24` — the selected-recipe grid overlay
+        // (`ItemSlot.cs:2371-2374`, context 41 + DrawSelectionHighlightForGridSlot).
+        "Inventory_Back24",
         "UI/PanelBackground",
         "UI/PanelBorder",
         "UI/CharCreation/Separator1",
@@ -1398,6 +1437,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `ui::chat_portrait_data::packed_sheet_names` (the provider
         // table's expansion — `NPCID.cs:5894-6073`).
         "TownNPCs/Portraits/Portrait_Window",
+        // The shop happiness icon strip (`TextureAssets.NPCHappiness`,
+        // `Main.cs:41792-41796` — `Images/UI/NPCHappiness`, 4 horizontal
+        // frames; W4-g58's slice, ported via research/142).
+        "UI/NPCHappiness",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -1408,6 +1451,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // both horizontal 2-frame strips.
         "UI/Bestiary",
         "UI/Emotes",
+        // The reforge button's idle/hover sheets (`TextureAssets.Reforge[0/1]`,
+        // `AssetInitializer.cs:293-296`; drawn at `Main.cs:41642-41647`, W4-g57).
+        "UI/Reforge_0",
+        "UI/Reforge_1",
         "UI/Bestiary/Slot_Back",
         "UI/Bestiary/Slot_Front",
         "UI/Bestiary/Slot_Overlay",
@@ -1633,6 +1680,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/WorldGen/Outer_Crimson",
         "UI/WorldGen/Outer_Random",
         "UI/WorldGen/Outer_Lower",
+        // W4-f23 closeout item 1: the worldgen-debug pass-list icons —
+        // `GenPassElement.PassIconEntry.FromBestiaryIcon` frames this 16×5
+        // sheet (`UIWorldGenDebug.cs:184-196`, `Icon_Tags_Shadow`).
+        "UI/Bestiary/Icon_Tags_Shadow",
         "UI/CharCreation/CategoryPanel",
         "UI/CharCreation/CategoryPanelBorder",
         "UI/CharCreation/CategoryPanelHighlight",
@@ -1703,6 +1754,19 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/WorldCreation/Seed_Secret",
         "UI/VK_Shift",
         "UI/VK_Backspace",
+        // W4-d84: the Workshop/ResourcePack cluster (`UIWorkshopHub.cs:122/136/
+        // 150/164`, `UIResourcePackSelectionMenu.cs:136/187`,
+        // `UIResourcePack.cs` icon fallback, `UIWorkshopPublish*ListItem.cs:78`).
+        "UI/Workshop/HubResourcepacks",
+        "UI/Workshop/HubWorlds",
+        "UI/Workshop/HubPublishResourcepacks",
+        "UI/Workshop/HubPublishWorlds",
+        "UI/Workshop/Publish",
+        // `TextureAssets.Extra[243]` — the Steam-workshop badge
+        // (`UIWorkshopImportWorldListItem.cs:63/:168`, `UIResourcePack.cs:104`).
+        "Extra_243",
+        "UI/TexturePackButtons",
+        "UI/DefaultResourcePackIcon",
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
         // for this sheet and it was never packed (a silent no-draw).
         "NPC_133",
@@ -2270,6 +2334,37 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-g8 lane 1 batch 3 — the CursedSkull + the bat/flyer family's
         // own sheets (`render/entities.rs`'s KIND_WIRE_3_SHEETS).
         "NPC_34",
+        // W4-g82 — the rope coils' trailing-chain sheets
+        // (`Main.DrawProjDirect`, `Main.cs:28546`/`:28601-28605`/
+        // `:28660-28666`): Chain16 for 171, Chain38/39 for 475,
+        // Chains_4/5 for 505, Chains_6/7 for 506 (`TextureAssets.Chains`
+        // loads `Images/Chains_<i>`, `AssetInitializer.cs:579-581`).
+        "Chain16",
+        "Chain38",
+        "Chain39",
+        "Chains_4",
+        "Chains_5",
+        "Chains_6",
+        "Chains_7",
+        // The man-eater family (W4-d23, aiStyle 13): the six kinds' own
+        // sheets, keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s MANEATER_SHEETS).
+        "NPC_43",
+        "NPC_56",
+        "NPC_101",
+        "NPC_175",
+        "NPC_259",
+        "NPC_260",
+        // The aiStyle-9 spit/flare family (W4-d23): the three kinds' own
+        // sheets, keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s SPIT_FLARE_SHEETS).
+        "NPC_112",
+        "NPC_666",
+        "NPC_516",
+        // The aiStyle-14 flyer family (W4-d23): the fourteen kinds' own
+        // sheets, keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s FLYER14_SHEETS).
+        "NPC_48",
         "NPC_62",
         "NPC_93",
         "NPC_121",
@@ -2321,6 +2416,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_356",
         "NPC_366",
         "NPC_367",
+        "NPC_156",
+        "NPC_158",
+        "NPC_159",
+        "NPC_226",
+        "NPC_634",
+        "NPC_660",
         // W4-f18 first-20 port — batch 1's critters' own sheets, keyed by
         // the vanilla net id in `NpcAssets::npc_sheets`
         // (`render/entities.rs`'s CRITTER_SHEETS).
@@ -2339,6 +2440,8 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-f18 batch 3 — the critters' own sheets (the folded DuckWhite2
         // 365 / TruffleWormDigger 375 draw their own art).
         "NPC_365",
+        // W4-f18 batch 3 — the critters' own sheets (the folded DuckWhite2
+        // 365 / TruffleWormDigger 375 draw their own art).
         "NPC_366",
         "NPC_367",
         "NPC_374",
@@ -2486,6 +2589,19 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-d11 DOC-SWEEP — the BloodSquid's own sheet
         // (`render/entities.rs`'s SMALL_KIND_SHEETS 619 row).
         "NPC_619",
+        "NPC_430",
+        // W4-f42 — the sandstorm debris + desert family's sheets, keyed by
+        // the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s DESERT_SHEETS).
+        "NPC_546",
+        "NPC_61",
+        "NPC_69",
+        "NPC_78",
+        "NPC_79",
+        "NPC_630",
+        "NPC_80",
+        "NPC_580",
+        "NPC_581",
 ];
 
 
@@ -2558,6 +2674,16 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // W4-d122: the coin spin sheets (`TextureAssets.Coin[0..3]`,
+    // `Images/Coin_0..3`, `AssetInitializer.cs:369`) — the savings draw's
+    // `CoinSlot.DrawItemCoin` source (`CoinSlot.cs:242`), one 8-frame
+    // vertical strip per denomination. A missing file falls back to the
+    // static `Item_71..74` icon (`coin_anim_uv`).
+    for i in 0..4 {
+        if let Ok(img) = load_png(dir, &format!("Coin_{i}"), SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
     // The buff icons (`TextureAssets.Buff[type]`, `Images/Buff_<id>`): the
     // `Main.DrawBuffIcon` source (`Main.cs:43310`). Enumerated like the
     // items — a missing file just leaves that id's icon unpicked.
@@ -2631,6 +2757,19 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // W4-d70: the lens-flare elements (`NextHorizonRenderer.LoadTextures`,
+    // `NextHorizonRenderer.cs:36-66`): `Images/Misc/Sunflare/Lens/{PointBlurry,
+    // PointSharp,Flare1,Flare2}` — the bokeh/spectra/point sheets the sunrise
+    // and sunset flare chains draw. The gradient/dither/flare1/flare2 sheets
+    // the same loader requests feed the horizon gradient (unported), so only
+    // the four Lens elements are packed here.
+    for name in ["PointBlurry", "PointSharp", "Flare1", "Flare2"] {
+        match load_misc_png(dir, &format!("Sunflare/Lens/{name}")) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing Misc/Sunflare/Lens/{name}"),
+        }
+    }
+
     // `DrawTile_LiquidBehindTile`: `Liquid_*` is the 16 px partial strip and
     // `LiquidSlope_*` the four diagonal masks drawn behind blocks that stand in
     // liquid.
@@ -2701,6 +2840,22 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
     }
     if let Ok(img) = load_png(dir, "UI/BuilderIcons", SheetLayout::Raw) {
         images.push(img);
+    }
+    // `TextureAssets.HighlightMask[type]` (`AssetInitializer.cs:356-362`):
+    // the smart-cursor selection-outline sheets, one per `HasOutlines` id
+    // (`TileID.cs:551`, 95 ids), loaded from `Images/Misc/TileOutlines/
+    // Tiles_<id>` — W4-g86 seam 2, the atlas feed of
+    // `render/tile_outlines.rs`. The C# loads exactly the set members; the
+    // two extra files in the dir (Tiles_14/Tiles_469) are NOT in the set
+    // and stay unpacked. A missing file leaves that id's outline undrawn
+    // (the `r.uv` None arm), the item-icon convention.
+    for kind in 0..tr_core::tiledata::TILE_COUNT as u16 {
+        if tr_core::tiledata::SET_HAS_OUTLINES.has(kind) {
+            let name = format!("Misc/TileOutlines/Tiles_{kind}");
+            if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+                images.push(img);
+            }
+        }
     }
 
     // The tile-side glow sheets of `DrawSingleTile_Flames`
@@ -2999,6 +3154,174 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_327",
     "Glow_334",
     "Glow_335",
+    // W4-g35 entity glow consumers: the NPC `Main.DrawNPC` arms
+    // (`npc_glow.rs` census, `Main.cs:23406-26297`), the projectile
+    // `proj.glowMask` overlay (`Main.cs:34855-34942`, the
+    // `set_defaults_glow_mask` slice) and the item-slot glow
+    // (`ItemSlot.cs:2891-2929` + the world drop `Main.cs:38740-38775`,
+    // the `itemdata.rs` glow_mask column). The pillar ghosts' 132/143/
+    // 149/162 already ride STATIC_SHEET_NAMES; the flame set above and
+    // f15's TILE-DRAW-2 45 stay disjoint from this list.
+    "Glow_2",   // VortexChainsaw 427 (Projectile.cs:4988)
+    "Glow_3",   // VortexDrill 428 (:4995)
+    "Glow_5",   // VortexPickaxe item 2776
+    "Glow_7",   // NebulaChainsaw 429 (:5002)
+    "Glow_8",   // NebulaDrill 430 (:5009)
+    "Glow_10",  // NebulaPickaxe item 2781
+    "Glow_11",  // MartianOfficer 383 (Main.cs:25772)
+    "Glow_24",  // BrainScrambler 381 rider frame (Main.cs:25855 — the Extra[0] twin, residual)
+    "Glow_20",  // VortexChainsaw item 2773 (Item.cs:26504)
+    "Glow_21",  // VortexDrill item 2774
+    "Glow_22",  // VortexHamaxe item 2778 (:26574)
+    "Glow_23",  // NebulaDrill item 2779
+    "Glow_26",  // VortexHelmet item 2757
+    "Glow_27",  // VortexBreastplate item 2758
+    "Glow_28",  // NebulaHelmet item 2760
+    "Glow_29",  // NebulaBreastplate item 2761
+    "Glow_30",  // NebulaLeggings item 2762
+    "Glow_31",  // MartianEngineer 386 (Main.cs:25959)
+    "Glow_32",  // MartianTurret 387 (:25971)
+    "Glow_33",  // MartianDrone 388 (:25975)
+    "Glow_34",  // GigaZapper 389 (:25979)
+    "Glow_36",  // ElectrosphereLauncher item 2796
+    "Glow_38",  // Xenopopper item 2797
+    "Glow_39",  // LaserDrill item 2798
+    "Glow_45",  // MartianUniformTorso item 2807
+    "Glow_46",  // MartianUniformHelmet item 2806
+    "Glow_47",  // LaserMachinegun item 2795
+    "Glow_48",  // MartianSaucer 392 (Main.cs:24601)
+    "Glow_49",  // MartianSaucerCore 395 (:24605)
+    "Glow_50",  // MartianSaucerCannon 394 (:24609)
+    "Glow_93",  // MartianConduitPlating item 2860
+    "Glow_98",  // MartianHairDye item 2863
+    "Glow_99",  // MartianArmorDye item 2864
+    "Glow_100", // MartianProbe 399 body (Main.cs:25103)
+    "Glow_101", // MartianProbe 399 Extra[20] twin (:25108)
+    "Glow_102", // ChargedBlasterCannon item 2882
+    "Glow_103", // ChlorophyteDye item 2883
+    "Glow_104", // PixieDye item 2879
+    "Glow_105", // WispDye item 2878
+    "Glow_106", // InfernalWispDye item 2885
+    "Glow_107", // UnicornWispDye item 2884
+    "Glow_129", // LavaLamp item 3253
+    "Glow_133", // StardustWormHead 402 trail (Main.cs:24306, parity pick)
+    "Glow_134", // StardustWormHead 402 trail alternate
+    "Glow_135", // StardustWormHead 402 head (:24312)
+    "Glow_136", // StardustSoldier 411 (Main.cs:26109)
+    "Glow_137", // StardustSpiderSmall 410 (:26115)
+    "Glow_138", // StardustSpiderBig 409 (:26112)
+    "Glow_139", // StardustJellyfishBig 407 (:26118)
+    "Glow_141", // StardustCellBig 405 (:26121)
+    "Glow_142", // StardustCellSmall 406 (:26124)
+    "Glow_144", // NebulaSoldier 424 (:26127)
+    "Glow_145", // NebulaBeast 423 (:26130)
+    "Glow_146", // NebulaHeadcrab 421 (:25381/:26133)
+    "Glow_147", // NebulaBrain 420 (:26136)
+    "Glow_150", // VortexRifleman 425 (:26141)
+    "Glow_151", // VortexSoldier 429 (:26148)
+    "Glow_152", // VortexHornet 427 (:23409)
+    "Glow_153", // VortexHornetQueen 426 (:23412)
+    "Glow_154", // SolarSolenian 419 (:25152/:26193)
+    "Glow_155", // SolarDrakomire 415 (:26184)
+    "Glow_157", // SolarCrawltipedeHead 412 (:26176, 157+type-412)
+    "Glow_158", // SolarCrawltipedeBody 413
+    "Glow_159", // SolarCrawltipedeTail 414
+    "Glow_160", // SolarSroller 417 (:26213)
+    "Glow_161", // SolarCorite 418 (:26152)
+    "Glow_163", // SolarSpearman 518 (:26234)
+    "Glow_172", // DesertDjinn 533 (:26275)
+    "Glow_175", // StardustChainsaw item 3463 (Item.cs:31064)
+    "Glow_176", // StardustDrill item 3464
+    "Glow_178", // StardustPickaxe item 3466
+    "Glow_179", // StardustChainsaw 610 (Projectile.cs:5028)
+    "Glow_180", // StardustDrill 609 (:5035)
+    "Glow_191", // VortexBeater item 3475
+    "Glow_194", // NebulaArcanum item 3476
+    "Glow_196", // LunarHamaxeVortex item 3523
+    "Glow_197", // LunarHamaxeNebula item 3524
+    "Glow_198", // LunarHamaxeStardust item 3525
+    "Glow_200", // Phantasm item 3540
+    "Glow_207", // NebulaBlaze item 3542
+    "Glow_216", // SandElemental 541 (Main.cs:23425, ring + centre)
+    "Glow_218", // SpiritFlame item 3779
+    "Glow_224", // DD2WitherBeast 568/569 (Main.cs:23452, gate localAI[3]>=60)
+    "Glow_225", // DD2DarkMage 564/565 (Main.cs:23941, gate Opacity>0)
+    "Glow_226", // DD2Betsy 551 (Main.cs:23596)
+    "Glow_227", // DD2SquireBetsySword item 3827
+    "Glow_233", // MonkStaffT3 item 3858 (the :2913 3-row rect)
+    "Glow_234", // DD2BetsyBow item 3859
+    "Glow_238", // ApprenticeStaffT3 item 3870
+    "Glow_239", // DD2EterniaCrystal 548 (Main.cs:24039, gate alpha<255)
+    "Glow_244", // DefendersForge item 3813
+    "Glow_253", // Everscream 344 (Main.cs:26243)
+    "Glow_254", // SantaNK1 346 (:26250)
+    "Glow_255", // HeadlessHorseman 315 (:26260)
+    "Glow_318", // glow bobber 987 (Projectile.cs:9432) + item 5140
+    "Glow_319", // 988 / 5141
+    "Glow_320", // 989 / 5142
+    "Glow_321", // 990 / 5143
+    "Glow_322", // 991 / 5144
+    "Glow_323", // 992 / 5145
+    "Glow_324", // 993 / 5146
+    "Glow_328", // LightsBane item 46
+    "Glow_355", // DeadCellsFlint item 5462
+    "Glow_360", // FireImp 24 (Main.cs:25563)
+    "Glow_372", // RainbowPhaseblade 1101 (Projectile.cs:10019) + item 5670
+    "Glow_373", // RainbowPhasesaber 1102 (:10035) + item 5671
+    "Glow_374", // TrueCopperShortsword item 5669
+    "Glow_379", // PalworldTrustyCattiva item 6148
+    "Glow_380", // PalworldTrustyFoxsparks item 6149
+    "Glow_381", // PalworldTrustyChillet item 6150
+    "Glow_382", // PalworldTrustyChilletIgnis item 6151
+    "Glow_383", // PalworldTrustyDigtoise item 6174
+    // TILE-DRAW-2 glow bind (W4-f15): every `TextureAssets.GlowMask` id the
+    // SECOND `GetTileDrawData` switch picks (`TileDrawing.cs:6049-6507`,
+    // `drawdata_cases_a::glow_switch`), consumed by `render/tile_glow.rs`.
+    "Glow_51",
+    "Glow_52",
+    "Glow_53",
+    "Glow_54",
+    "Glow_55",
+    "Glow_56",
+    "Glow_57",
+    "Glow_58",
+    "Glow_59",
+    "Glow_60",
+    "Glow_61",
+    "Glow_62",
+    "Glow_63",
+    "Glow_64",
+    "Glow_65",
+    "Glow_66",
+    "Glow_67",
+    "Glow_68",
+    "Glow_69",
+    "Glow_88",
+    "Glow_112",
+    "Glow_113",
+    "Glow_114",
+    "Glow_115",
+    "Glow_116",
+    "Glow_117",
+    "Glow_118",
+    "Glow_119",
+    "Glow_120",
+    "Glow_121",
+    "Glow_122",
+    "Glow_123",
+    "Glow_124",
+    "Glow_125",
+    "Glow_127",
+    "Glow_202",
+    "Glow_243",
+    "Glow_267",
+    "Glow_268",
+    "Glow_269",
+    "Glow_270",
+    "Glow_289",
+    "Glow_315",
+    "Glow_329",
+    "Glow_330",
     // The named single-sheet textures.
     "GlowSnail",
     "FireflyJar",
@@ -3140,6 +3463,7 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 329] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
 /// 328 inherited slots + W4-d11's BloodSquid 619 (appended last).
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 329] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 246] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -3278,6 +3602,34 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 329] = [
         // W4-d11 DOC-SWEEP — the BloodSquid, appended last for the same
         // reason.
         619,
+        // W4-c10 roster tail — the twelve critters' sheets, appended
+        // last for the same reason (the vec grows 189 → 201).
+        357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487,
+        // The man-eater family (W4-d23) — appended last so the earlier
+        // slots keep their indexes.
+        43, 56, 101, 175, 259, 260,
+        // The aiStyle-9 spit/flare family (W4-d23) — appended last so the
+        // earlier slots keep their indexes.
+        112, 666, 516,
+        // The aiStyle-14 flyer family (W4-d23) — appended last so the
+        // earlier slots keep their indexes.
+        48, 62, 93, 121, 137, 150, 151, 152, 156, 158, 159, 226, 634, 660,
+        // W4-f18 first-20 port — batch 1's critters, appended last so the
+        // earlier slots keep their indexes.
+        355, 356, 358, 359,
+        // W4-f18 batch 2 — the GlowingSnail/Frog/duck walkers' entries
+        // (the Duck2 363 folds onto 362, so it has no slot of its own).
+        360, 361,
+        // W4-f18 batch 3 — the scorpion pair + the TruffleWorm's entries
+        // (the DuckWhite2 365 folds onto 364, the TruffleWormDigger 375
+        // onto 374 — neither has a slot of its own).
+        366, 367, 374,
+        // W4-f18 batch 4 — the entry-bearing kinds (the CultistArcherWhite
+        // 380 folds onto 379, so it has no slot of its own).
+        377, 378, 379, 430,
+        // W4-f42 — the sandstorm debris + desert family (appended last so
+        // the earlier slots keep their indexes).
+        546, 61, 69, 78, 79, 630, 80, 580, 581,
     ];
 
 
@@ -3768,6 +4120,10 @@ pub struct Lookups {
     /// M4-PROJ-4c: `FishingLine.png` — the 12-px-wide string slice
     /// (`Main.DrawProjDirect`, `Main.cs:28044`).
     pub fishing_line: Option<tr_render::SheetRect>,
+    /// W4-g82: the rope coils' trailing-chain sheets, keyed by the C#
+    /// texture name (`Chain16`/`Chain38`/`Chain39`/`Chains_4..7`,
+    /// `Main.cs:28546`/`:28601-28605`/`:28660-28666`).
+    pub coil_chains: HashMap<&'static str, tr_render::SheetRect>,
     /// M4-PROJ-4c: the yoyo and counterweight sprite sheets, keyed by the
     /// projectile id (`Projectile_<id>` naming, the `AssetInitializer.cs:124`
     /// convention the `item_icons` scan uses).
@@ -3791,6 +4147,14 @@ pub struct Lookups {
     /// (`CoinLossRevengeSystem.cs:262-264`, `CoinSlot.cs:242`) — distinct
     /// from the `Item_71..74` inventory icons in [`Self::coins`].
     /// W4-f29 fix F4 (research/140 §3).
+    /// `Coin_0..3` (`TextureAssets.Coin`, `AssetInitializer.cs:369`): the
+    /// 1x8 spin strips `CoinSlot.DrawItemCoin` frames (`CoinSlot.cs:242-
+    /// 243`) — the savings pile's coin icons (W4-g12 doc-sweep).
+    pub coin_strips: [Option<tr_render::SheetRect>; 4],
+    /// W4-d122: `TextureAssets.Coin[0..3]` (`Images/Coin_0..3`,
+    /// `AssetInitializer.cs:369`) — the 8-frame vertical spin strips
+    /// `CoinSlot.DrawItemCoin` reads (`CoinSlot.cs:242-243`'s
+    /// `Frame(1, 8, 0, coinFrame)`); the savings draw's coin icons.
     pub coin_anim: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
@@ -3838,6 +4202,9 @@ pub struct Lookups {
     pub extra_182: Option<tr_render::SheetRect>,
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
+    /// W4-f40: `TextureAssets.Extra[134]` (`LanternSky.cs:79`) — the lantern
+    /// night's background lantern sheet (3 variants across, one row).
+    pub lantern_sky: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
     /// `Extra_255`/`Extra_256`: the super-cart on/off ticks
     /// (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
@@ -3891,6 +4258,11 @@ pub struct Lookups {
     /// `Images/Misc/MoonExplosion/{Spine,Shoulder,Torso,Head,Explosion}`
     /// (`MoonlordDeathDrama.cs:231-242`).
     pub moon_explosion: [Option<tr_render::SheetRect>; 5],
+    /// `Images/Misc/Sunflare/Lens/{PointBlurry,PointSharp,Flare1,Flare2}`
+    /// (`NextHorizonRenderer.LoadTextures`, `NextHorizonRenderer.cs:57-62`):
+    /// the lens-flare elements — `[0]` the blurry point, `[1]` the sharp
+    /// point, `[2]` the bokeh (`Flare1`), `[3]` the spectra (`Flare2`).
+    pub sunflare_lens: [Option<tr_render::SheetRect>; 4],
     /// `TextureAssets.Buff[type]` (`Images/Buff_<id>`): the buff bar's icons
     /// (`Main.DrawBuffIcon`, `Main.cs:43310`).
     pub buff_icons: HashMap<u16, tr_render::SheetRect>,
@@ -3957,6 +4329,12 @@ pub struct Lookups {
     pub ui_back4: Option<tr_render::SheetRect>,
     /// `Inventory_Back5`: the world-chest slot frame (`ItemSlot.cs:2215-2221`).
     pub ui_back5: Option<tr_render::SheetRect>,
+    /// `Inventory_Back2`: the bank / void-vault slot frame (`ItemSlot.cs:
+    /// 2218-2221` — contexts 4 AND 32, W4-g56).
+    pub ui_back2: Option<tr_render::SheetRect>,
+    /// `Inventory_Back19`: the favorited void-vault slot frame
+    /// (`ItemSlot.cs:2155-2158` — context 32's favorite swap, W4-g56).
+    pub ui_back19: Option<tr_render::SheetRect>,
     /// `Inventory_Back6`: shop slot frame (`ItemSlot.cs:2292`).
     pub ui_back6: Option<tr_render::SheetRect>,
     /// `Inventory_Back7`: the trash slot frame (`ItemSlot.cs:2295`).
@@ -4005,6 +4383,8 @@ pub struct Lookups {
     pub torch_biome: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
+    /// `Inventory_Back24`: the selected-recipe grid overlay (`ItemSlot.cs:2371-2374`).
+    pub ui_back24: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
     pub ui_panel_bg: Option<tr_render::SheetRect>,
     /// `UI/PanelBorder`: the panel border 9-slice (`UIPanel.cs:26`).
@@ -4071,6 +4451,10 @@ pub struct Lookups {
     /// and a click handler but no sprite until §14 because the sheet was
     /// never packed.
     pub ui_emote_button: Option<tr_render::SheetRect>,
+    /// `Images/UI/Reforge_0`/`Reforge_1` (`TextureAssets.Reforge[0/1]`,
+    /// `AssetInitializer.cs:293-296`): the reforge menu's hammer button —
+    /// `[0]` idle, `[1]` hovered (`Main.cs:41642-41647`, W4-g57).
+    pub ui_reforge: [Option<tr_render::SheetRect>; 2],
     /// The bestiary card stack (`UIBestiaryEntryButton.cs:40-86`): the cell
     /// back, the hover frame, the 60 %-white overlay, the front border and
     /// the locked portrait.
@@ -4240,6 +4624,10 @@ pub struct Lookups {
     /// requests `Images/UI/WorldGen/Outer_{Corrupt,Crimson,Random,Lower}`.
     /// Index order: 0 Corrupt, 1 Crimson, 2 Random, 3 Lower.
     pub worldgen_outer: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Bestiary/Icon_Tags_Shadow` 416×130 (16×5 cells of 26 px) — the
+    /// worldgen-debug pass-list icons (`UIWorldGenDebug.cs:184-196`,
+    /// `GenPassElement.PassIconEntry.FromBestiaryIcon`). W4-f23 closeout 1.
+    pub ui_bestiary_tags_shadow: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CategoryPanel` 44x44 (`UIColoredImageButton.cs:41`).
     pub cc_panel: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CategoryPanelBorder` 44x44 (`UIColoredImageButton.cs:52`).
@@ -4255,6 +4643,25 @@ pub struct Lookups {
     pub cc_small_panel_border: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CharInfo` 30x30 (`UICharacterCreation.cs:765`).
     pub cc_char_info: Option<tr_render::SheetRect>,
+    /// W4-d84: the four Workshop-hub button icons
+    /// (`UIWorkshopHub.cs:122/136/150/164`): HubWorlds (import),
+    /// HubResourcepacks (use), HubPublishWorlds, HubPublishResourcepacks —
+    /// the `MakeFancyButton` grid's order (top-left, top-right, bottom-left,
+    /// bottom-right).
+    pub workshop_hub_icons: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Workshop/Publish` (`UIIconTextButton`'s icon,
+    /// `UIWorkshopPublishResourcePackListItem.cs:78`).
+    pub workshop_publish_icon: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[243]` — the Steam-workshop badge the import rows
+    /// draw top-right (`UIWorkshopImportWorldListItem.cs:63/:168`).
+    pub workshop_icon: Option<tr_render::SheetRect>,
+    /// `UI/TexturePackButtons` — the 2x2 toggle/order button frames
+    /// (`UIResourcePackSelectionMenu.cs:136-137`, `:187-188`).
+    pub texture_pack_buttons: Option<tr_render::SheetRect>,
+    /// `UI/DefaultResourcePackIcon` — the atlas fallback icon
+    /// (`ResourcePack.CreateIcon`, `IO/ResourcePack.cs:103-111`; the port
+    /// never decodes a pack's own icon — resource_pack.rs's deviation).
+    pub default_pack_icon: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/HairStyle_Hair` 30x30 (`UICharacterCreation.cs:760`).
     pub cc_hair_style: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/HairStyle_Arrow` 30x30 (`UICharacterCreation.cs:762`).
@@ -4401,6 +4808,13 @@ impl Lookups {
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
             fishing_line: atlas.sheet("FishingLine").copied(),
+            // W4-g82 — the coil chain sheets (the `glow_sheets` keyed-name
+            // precedent); a missing file leaves the link undrawn, like
+            // the C#'s lazy load never resolving.
+            coil_chains: ["Chain16", "Chain38", "Chain39", "Chains_4", "Chains_5", "Chains_6", "Chains_7"]
+                .iter()
+                .filter_map(|n| atlas.sheet(n).map(|r| (*n, *r)))
+                .collect(),
             // The same prefix scan as `item_icons` — an id whose texture
             // file never made the atlas simply stays absent.
             yoyo_sprites: atlas
@@ -4500,6 +4914,7 @@ impl Lookups {
             extra_182: atlas.sheet("Extra_182").copied(),
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
+            lantern_sky: atlas.sheet("Extra_134").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
             extra_255: atlas.sheet("Extra_255").copied(),
             extra_256: atlas.sheet("Extra_256").copied(),
@@ -4522,6 +4937,7 @@ impl Lookups {
                 .collect(),
             flame_ring: atlas.sheet("FlameRing").copied(),
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
+            sunflare_lens: SUNFLARE_LENS_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_flame: atlas.sheet("Flame").copied(),
@@ -4541,6 +4957,8 @@ impl Lookups {
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
             ui_back4: atlas.sheet("Inventory_Back4").copied(),
             ui_back5: atlas.sheet("Inventory_Back5").copied(),
+            ui_back2: atlas.sheet("Inventory_Back2").copied(),
+            ui_back19: atlas.sheet("Inventory_Back19").copied(),
             ui_back6: atlas.sheet("Inventory_Back6").copied(),
             ui_back7: atlas.sheet("Inventory_Back7").copied(),
             ui_back12: atlas.sheet("Inventory_Back12").copied(),
@@ -4560,6 +4978,7 @@ impl Lookups {
             block_replace: atlas.sheet("UI/BlockReplace_0").copied(),
             torch_biome: atlas.sheet("Extra_211").copied(),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
+            ui_back24: atlas.sheet("Inventory_Back24").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),
             ui_separator: atlas.sheet("UI/CharCreation/Separator1").copied(),
@@ -4590,6 +5009,10 @@ impl Lookups {
             ui_search_icon_blue: atlas.sheet("UI/Bestiary/Button_Search").copied(),
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
             ui_emote_button: atlas.sheet("UI/Emotes").copied(),
+            ui_reforge: [
+                atlas.sheet("UI/Reforge_0").copied(),
+                atlas.sheet("UI/Reforge_1").copied(),
+            ],
             ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
             ui_bestiary_slot_selection: atlas.sheet("UI/Bestiary/Slot_Selection").copied(),
             ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),
@@ -5065,6 +5488,37 @@ atlas.sheet("NPC_442").copied(),
                 // W4-g8 lane 1 batch 3 — the CursedSkull + the bat/flyer
                 // family's strips (the BESTIARY_NPC_SHEET_IDS tail).
                 atlas.sheet("NPC_34").copied(),
+                // W4-c10 roster tail — the twelve critters' strips
+                // (2/5/7/3/13/2/6/2/2/4/4/4 rows, `Main.cs:67082`).
+                atlas.sheet("NPC_357").copied(),
+                atlas.sheet("NPC_442").copied(),
+                atlas.sheet("NPC_443").copied(),
+                atlas.sheet("NPC_444").copied(),
+                atlas.sheet("NPC_445").copied(),
+                atlas.sheet("NPC_446").copied(),
+                atlas.sheet("NPC_447").copied(),
+                atlas.sheet("NPC_448").copied(),
+                atlas.sheet("NPC_484").copied(),
+                atlas.sheet("NPC_485").copied(),
+                atlas.sheet("NPC_486").copied(),
+                atlas.sheet("NPC_487").copied(),
+                // The man-eater family (W4-d23) — the six new strips
+                // (43/56/101/175/259/260).
+                atlas.sheet("NPC_43").copied(),
+                atlas.sheet("NPC_56").copied(),
+                atlas.sheet("NPC_101").copied(),
+                atlas.sheet("NPC_175").copied(),
+                atlas.sheet("NPC_259").copied(),
+                atlas.sheet("NPC_260").copied(),
+                // The aiStyle-9 spit/flare family (W4-d23) — the three new
+                // strips (112/666/516).
+                atlas.sheet("NPC_112").copied(),
+                atlas.sheet("NPC_666").copied(),
+                atlas.sheet("NPC_516").copied(),
+                // The aiStyle-14 flyer family (W4-d23) — the fourteen
+                // new strips (48/62/93/121/137/150/151/152/156/158/159/
+                // 226/634/660).
+                atlas.sheet("NPC_48").copied(),
                 atlas.sheet("NPC_62").copied(),
                 atlas.sheet("NPC_93").copied(),
                 atlas.sheet("NPC_121").copied(),
@@ -5190,6 +5644,12 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_684").copied(),
                 // Doc-sweep lane 36 — the ShimmerSlime's strip.
                 atlas.sheet("NPC_676").copied(),
+                atlas.sheet("NPC_156").copied(),
+                atlas.sheet("NPC_158").copied(),
+                atlas.sheet("NPC_159").copied(),
+                atlas.sheet("NPC_226").copied(),
+                atlas.sheet("NPC_634").copied(),
+                atlas.sheet("NPC_660").copied(),
                 // W4-f18 first-20 port — batch 1's critters' strips, in
                 // BESTIARY_NPC_SHEET_IDS' appended order.
                 atlas.sheet("NPC_355").copied(),
@@ -5287,6 +5747,17 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_676").copied(),
                 // W4-d11 DOC-SWEEP — the BloodSquid's 6-frame NPC_619 strip.
                 atlas.sheet("NPC_619").copied(),
+                // W4-f42 — the sandstorm debris + desert family (the
+                // BESTIARY_NPC_SHEET_IDS tail).
+                atlas.sheet("NPC_546").copied(),
+                atlas.sheet("NPC_61").copied(),
+                atlas.sheet("NPC_69").copied(),
+                atlas.sheet("NPC_78").copied(),
+                atlas.sheet("NPC_79").copied(),
+                atlas.sheet("NPC_630").copied(),
+                atlas.sheet("NPC_80").copied(),
+                atlas.sheet("NPC_580").copied(),
+                atlas.sheet("NPC_581").copied(),
             ],
 
 
@@ -5314,6 +5785,7 @@ atlas.sheet("NPC_442").copied(),
                         .map(|s| (name, s))
                 })
                 .collect(),
+            ui_npc_happiness: atlas.sheet("UI/NPCHappiness").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
@@ -5350,6 +5822,7 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("UI/WorldGen/Outer_Random").copied(),
                 atlas.sheet("UI/WorldGen/Outer_Lower").copied(),
             ],
+            ui_bestiary_tags_shadow: atlas.sheet("UI/Bestiary/Icon_Tags_Shadow").copied(),
             cc_panel: atlas.sheet("UI/CharCreation/CategoryPanel").copied(),
             cc_panel_border: atlas.sheet("UI/CharCreation/CategoryPanelBorder").copied(),
             cc_panel_highlight: atlas
@@ -5359,6 +5832,17 @@ atlas.sheet("NPC_442").copied(),
             cc_small_panel: atlas.sheet("UI/CharCreation/SmallPanel").copied(),
             cc_small_panel_border: atlas.sheet("UI/CharCreation/SmallPanelBorder").copied(),
             cc_char_info: atlas.sheet("UI/CharCreation/CharInfo").copied(),
+            workshop_hub_icons: [
+                "UI/Workshop/HubWorlds",
+                "UI/Workshop/HubResourcepacks",
+                "UI/Workshop/HubPublishWorlds",
+                "UI/Workshop/HubPublishResourcepacks",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            workshop_publish_icon: atlas.sheet("UI/Workshop/Publish").copied(),
+            workshop_icon: atlas.sheet("Extra_243").copied(),
+            texture_pack_buttons: atlas.sheet("UI/TexturePackButtons").copied(),
+            default_pack_icon: atlas.sheet("UI/DefaultResourcePackIcon").copied(),
             cc_hair_style: atlas.sheet("UI/CharCreation/HairStyle_Hair").copied(),
             cc_hair_arrow: atlas.sheet("UI/CharCreation/HairStyle_Arrow").copied(),
             cc_colors: [
@@ -5631,6 +6115,29 @@ atlas.sheet("NPC_442").copied(),
         let fh = rect.height / 8;
         let uv = uv_rect(rect, self.atlas_size, 0, frame * fh as i32, fw, fh);
         Some((uv, fw as f32, fh as f32))
+    /// W4-d122: one spin frame of a coin strip — `CoinSlot.DrawItemCoin`'s
+    /// `TextureAssets.Coin[coinType - 71].Value.Frame(1, 8, 0, coinFrame)`
+    /// (`CoinSlot.cs:242-243`). Returns the UV + the frame's pixel size;
+    /// the static `Item_71..74` icon stands in when the strip is absent
+    /// (frame 0's whole sheet — the no-animation fallback).
+    pub fn coin_anim_uv(&self, kind: usize, frame: i32) -> Option<([f32; 4], f32, f32)> {
+        if let Some(rect) = self.coin_anim.get(kind).and_then(|s| s.as_ref()) {
+            let fh = rect.height / 8;
+            if fh == 0 || frame < 0 || frame >= 8 {
+                return None;
+            }
+            return Some((
+                uv_rect(rect, self.atlas_size, 0, frame * fh as i32, rect.width, fh),
+                rect.width as f32,
+                fh as f32,
+            ));
+        }
+        let rect = self.coins.get(kind)?.as_ref()?;
+        Some((
+            uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),
+            rect.width as f32,
+            rect.height as f32,
+        ))
     }
 
     /// The leaf gore sheet for `WorldGen.GetTreeLeaf`'s `passStyle` —
@@ -5759,6 +6266,19 @@ atlas.sheet("NPC_442").copied(),
     /// draws, e.g. the teleporter pulse on `Glow_334`).
     pub fn glow_frame_uv(&self, name: &str) -> Option<([f32; 4], f32, f32)> {
         let rect = self.glow_sheets.get(name)?;
+        Some((
+            uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),
+            rect.width as f32,
+            rect.height as f32,
+        ))
+    }
+
+    /// W4-g82 — UV of a whole coil-chain sheet plus its pixel size (the
+    /// `DrawProjDirect` chain links draw the FULL sheet,
+    /// `Main.cs:28546`'s `Rectangle(0, 0, W, H)` — the `glow_frame_uv`
+    /// shape over [`Self::coil_chains`]).
+    pub fn coil_chain_uv(&self, name: &str) -> Option<([f32; 4], f32, f32)> {
+        let rect = self.coil_chains.get(name)?;
         Some((
             uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),
             rect.width as f32,
@@ -6141,6 +6661,54 @@ mod tests {
         assert_eq!(enumerate_item_icon_ids(&dir), Vec::<u16>::new());
     }
 
+    /// W4-f12 SEAL item 1 — the buff-icon enumeration is the atlas pack's
+    /// source (`enumerate_buff_icon_ids` → `Lookups.buff_icons`, the
+    /// `draw_buffs`/`DrawBuffIcon` reader, `Main.cs:43310-43315`): sorted,
+    /// deduped, non-`Buff_`/non-numeric ignored — the `test_DW_4_1` shape
+    /// for the `Buff_` prefix (`AssetInitializer.cs:420` loads one
+    /// `Images/Buff_<id>` per id; no frame metadata exists).
+    #[test]
+    fn w4_f12_seal_buff_icon_enumeration_sorted_deduped() {
+        let dir = std::env::temp_dir().join(format!("tr_buff_enum_{}", std::process::id()));
+        let images = dir.join("Images");
+        std::fs::create_dir_all(&images).unwrap();
+        for name in [
+            "Buff_20.xnb",
+            "Buff_2.xnb",
+            "Buff_5.xnb",
+            "Buff_5.xnb.bak",
+            "Item_3.xnb",
+            "Buff_x.xnb",
+        ] {
+            std::fs::write(images.join(name), b"x").unwrap();
+        }
+        assert_eq!(
+            enumerate_buff_icon_ids(&images),
+            vec![2, 5, 20],
+            "sorted ascending, non-Buff/non-numeric ignored"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// W4-f12 SEAL item 1 — the LANDED 400: the content junction carries
+    /// exactly the ids 1..=400 (`BuffID.cs:173-989`, `Count` :997 = 401),
+    /// and the atlas pack resolves every one. All 400 sheets are STATIC
+    /// single-frame (`DrawBuffIcon` :43315 draws the full sheet — the
+    /// closeout animation census retired the icon-cycle premise); the
+    /// 270-id UpdateBuffs set-diff is EMPTY (`tools/w4_f12_closeout_sweep.py`,
+    /// re-run at seal time). Written not run (code-only).
+    #[test]
+    fn w4_f12_seal_buff_icons_enumerate_the_full_400() {
+        let content = crate::app::find_content_dir()
+            .expect("assets/Content not found: the asset tests need the game content junction");
+        let ids = enumerate_buff_icon_ids(&content.join("Images"));
+        assert_eq!(ids, (1u16..=400).collect::<Vec<_>>(), "the full BuffID range");
+        let (_, lookups) = content_lookups();
+        for id in 1u16..=400 {
+            assert!(lookups.buff_icons.contains_key(&id), "icon {id} packs");
+        }
+    }
+
     #[test]
     fn test_DW_4_3_fallback_lookups_survive_without_item_sheets() {
         // An atlas carrying only the fallback sheets: `item_icons` must hold
@@ -6479,6 +7047,10 @@ mod tests {
     /// `AssetInitializer.cs:367-370`) pack and slice into 8 vertical frames
     /// (`CoinSlot.DrawItemCoin`, `CoinSlot.cs:242-243`: `Frame(1, 8, 0,
     /// coinFrame)`). The shop savings pile draws these.
+    /// The coin SPIN strips (`TextureAssets.Coin[0..3]`,
+    /// `AssetInitializer.cs:367-370`) pack and slice into 8 vertical frames
+    /// (`CoinSlot.DrawItemCoin`, `CoinSlot.cs:242-243`: `Frame(1, 8, 0,
+    /// coinFrame)`). The savings draws read these.
     #[test]
     fn the_coin_spin_strips_pack_and_slice_eight_frames() {
         let (_, lookups) = content_lookups();
@@ -6488,12 +7060,30 @@ mod tests {
             // inside the sheet and differ in V.
             let (uv0, w0, h0) = lookups.coin_strip_frame(kind, 0).expect("frame 0");
             let (uv7, w7, h7) = lookups.coin_strip_frame(kind, 7).expect("frame 7");
+            let rect = lookups.coin_anim[kind].expect("Coin_{kind} packs");
+            // Each frame is width × height/8; frame 0 and frame 7 stay
+            // inside the sheet and differ in V.
+            let (uv0, w0, h0) = lookups.coin_anim_uv(kind, 0).expect("frame 0");
+            let (uv7, w7, h7) = lookups.coin_anim_uv(kind, 7).expect("frame 7");
             assert_eq!(w0, rect.width as f32);
             assert_eq!(h0, (rect.height / 8) as f32);
             assert_eq!((w0, h0), (w7, h7));
             assert!(uv7[1] > uv0[1], "frame 7 sits below frame 0");
             assert!(uv7[3] <= (rect.y + rect.height) as f32 / lookups.atlas_size.1 as f32 + 1e-6);
         }
+    }
+
+    /// The shop happiness icon (`TextureAssets.NPCHappiness`,
+    /// `Main.cs:41792-41794`) packs as a horizontal 4-frame strip —
+    /// `value5.Frame(4, 1, band)` quarters the width.
+    #[test]
+    fn the_npc_happiness_sheet_packs_as_a_four_frame_strip() {
+        let (_, lookups) = content_lookups();
+        let sheet = lookups
+            .ui_npc_happiness
+            .expect("UI/NPCHappiness must pack for the shop chrome");
+        assert!(sheet.width > 0 && sheet.height > 0);
+        assert_eq!(sheet.width % 4, 0, "Frame(4, 1, …) quarters the width");
     }
 
     #[test]
@@ -6566,6 +7156,26 @@ mod tests {
             .one_drop_logo
             .expect("Images/OneDropLogo must pack for the yoyo tooltip");
         assert!(sheet.width > 0 && sheet.height > 0, "the logo has a size");
+    /// W4-g82 — the coil chain sheets the draw arm asks `coil_chain_uv`
+    /// for must be packed AND resolve (the `every_sheet_a_draw_arm_asks_
+    /// for_is_packed` audit's coil half — the M4-NPC-3v silent-nothing
+    /// bug class). The retail content carries all seven files.
+    #[test]
+    fn w4_g82_the_coil_chain_sheets_pack_and_resolve() {
+        let (_, lookups) = content_lookups();
+        for kind in [171u16, 475, 505, 506] {
+            for name in crate::projectile_rope_coil::coil_chain_sheets(kind) {
+                assert!(
+                    STATIC_SHEET_NAMES.contains(name),
+                    "{name} is asked for by the coil {kind} chain but never packed"
+                );
+                let (uv, w, h) = lookups
+                    .coil_chain_uv(name)
+                    .unwrap_or_else(|| panic!("{name} must resolve from the atlas"));
+                assert!(uv.iter().all(|c| (0.0..=1.0).contains(c)), "{name} uv {uv:?}");
+                assert!(w > 0.0 && h > 0.0, "{name} has a size");
+            }
+        }
     }
 
     /// S1-G-12b: the FULL sheet set — the current enumeration PLUS the two

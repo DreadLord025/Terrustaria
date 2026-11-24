@@ -76,6 +76,15 @@
 //! skips — they land with their kinds. The Djinn's curse volley
 //! (`:21140-21141`) and the Rune Wizard's aim jitter (`:21268-21269`) remain
 //! the unported arms' draws.
+//! cited inline below). W4-d52 wires the PORTED kinds' dust arms through the
+//! live `DustPool` on the caller's stream: the teleport bursts' `Next(1, 3)`
+//! scales (`:20867`/`:20936`) + the 50-dust loops, and the ambient tail gates
+//! (`:21282` 29/45, `:21292` 32, `:21366` the else group). W4-f42 wires the
+//! Djinn's curse volley search (`:21140-21141`, the shared
+//! `npc_ai_caster::djinn_curse_search`, X then Y per attempt). The unported
+//! kinds' arms (172 `:21319`, 693/281-286 `:20882-20902`/`:21331-21355`) stay
+//! cited skips — they land with their kinds. The Rune Wizard's aim jitter
+//! (`:21268-21269`) remains the unported arm's draw.
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};

@@ -35,7 +35,7 @@ use tr_core::particles::Color;
 
 /// One `Dust.NewDust` on the `UpdatePlayers` stream, returning the slot index
 /// (the sentinel included — the C# writes `Main.dust[6000]` on a refusal).
-fn nd(
+pub(crate) fn nd(
     app: &mut App,
     pos: Vec2,
     w: i32,
@@ -388,7 +388,7 @@ fn dash_trail_vortex(app: &mut App, b: &DashDust) {
 
 /// `Color.Lerp(value1, value2, amount)` — XNA's per-channel byte lerp,
 /// truncated (the `render::pylons::lerp_bytes` shape, all four channels).
-fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+pub(crate) fn lerp_color(a: Color, b: Color, t: f32) -> Color {
     let ch = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
     Color::new(ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), ch(a.a, b.a))
 }

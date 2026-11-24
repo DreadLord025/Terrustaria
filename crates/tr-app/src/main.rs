@@ -14,6 +14,7 @@ mod achievements_data;
 mod accessory_combat;
 mod audio;
 mod bank;
+mod void_lens;
 mod banners;
 mod bestiary;
 mod bestiary_data;
@@ -29,9 +30,9 @@ mod presents;
 mod buff_effects;
 mod buff_effects_frame;
 mod buff_effects_misc;
+mod buff_effects_summons;
 mod buff_effects_orbs;
 mod buff_effects_potions_sets;
-mod buff_effects_summons;
 mod buff_effects_status;
 mod buffs;
 mod buff_effects_accessory;
@@ -93,7 +94,6 @@ mod quick_stack;
 mod sortdata;
 mod lang;
 mod lang_tables;
-mod loadout;
 mod loot_db;
 mod loot_db_gen;
 mod map;
@@ -101,19 +101,40 @@ mod map_layers;
 mod map_npc_icons;
 mod map_player_icons;
 mod map_sections;
+// W4-g11: the Main.cs `Dust.NewDust*` sites, batch 1 of 3 — `snowing()`
+// (Main.cs:13088) + the `TeleportEffect` App-level dispatcher/seams,
+// per the claim doc (docs/research/64-dust-main-sites-claims.md) and the
+// union-exec (docs/research/116-teleport-reconcile.md).
+mod main_dust;
+// W4-g11 union-exec (research/116 keep-one): the surviving
+// `Main.TeleportEffect` body — g61's widest-11 arms adapted per-hunk +
+// the wired `NPC.UpdateNPC_TeleportVisuals` decay.
+mod teleport_dust;
+// W4-g23: the Main.cs PlaySound census batch 3 (sites 181-271 of 271,
+// :49734-:66248) — the DrawMenu inline-cue census (the rows are landed, the
+// per-site cue seam is g22's in-flight Menu::pending_cue) + the tail sites'
+// pure cue-decision halves (colour/volume hover ticks, star-game hit pair,
+// click-pan toggle, unity-map hover, fullscreen-map close, NewText tail,
+// SelectPlayer/password/IP arms). Code-only — witnesses written not run.
+mod main_sounds_batch3;
 mod melee_swing;
 mod menu;
 mod minecart;
+mod main_dust_b;
 mod mount;
+mod mount_dust;
 mod net;
 mod npc;
 mod npc_scaling;
+mod npc_glow;
 mod npc_chat;
 mod npc_dust;
 mod npc_pet_exchange;
 mod player_petting;
 mod party_hat;
 mod event_skies;
+mod npc_death_dust;
+mod npc_names;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
@@ -122,7 +143,6 @@ mod npc_ai_style64;
 mod npc_ai_style65;
 // W4-f18 first-20 port: the Butterfly 356's AI_065 machine (NPC.cs:
 // 44896-45119) — the style-axis 65 arm claims it (npc.rs).
-mod npc_ai_style65;
 // W4-f18 batch 2: the town-CRITTER path of AI_007 (NPC.cs:52965-55561,
 // the TownCritter subset) — the Frog 361 / Duck 362 / DuckWhite 364 ride
 // the style-axis 7 arm (npc.rs); the full town machine stays unwired.
@@ -155,6 +175,9 @@ mod npc_ai_blood_squid;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
 mod npc_ai_unicorn;
+// W4-c40 — the Sand Elemental's aiStyle-102 machine (UNWIRED, the d41
+// roster wave owns the kind row; the style73 precedent).
+mod npc_ai_sand_elemental;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;
@@ -218,7 +241,6 @@ mod npc_ai_style66;
 // W4-c10 roster tail — the d30 butterfly module (aiStyle 65, the
 // GoldButterfly 444 wiring) + the d38 TownCritter wander/hop subset
 // (the GoldBunny/GoldFrog/GoldMouse 443/445/447).
-mod npc_ai_style65;
 mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
@@ -271,7 +293,6 @@ mod npc_ai_style111;
 mod npc_ai_style112;
 mod npc_ai_style113;
 mod npc_ai_style114;
-mod npc_ai_style115;
 mod npc_ai_style116;
 mod npc_ai_style117;
 mod npc_ai_style118;
@@ -356,8 +377,20 @@ mod npc_findframe_extra2;
 mod npc_findframe_extra3;
 mod npc_findframe_extra5;
 mod npc_findframe_extra6;
+mod npc_findframe_extra7;
 mod npc_findframe_extra7b;
 mod npc_findframe_extra7c;
+mod npc_findframe_extra8;
+mod npc_findframe_low1;
+mod npc_findframe_low2;
+mod npc_findframe_mid1;
+mod npc_findframe_extra1;
+mod npc_findframe_extra4;
+mod npc_findframe_extra9;
+mod npc_findframe_extra10;
+mod npc_findframe_extra11;
+mod npc_findframe_extra12;
+mod npc_findframe_extra13;
 mod npc_findframe_extra7d;
 mod npc_findframe_extra7e;
 mod npc_findframe_extra7f;
@@ -366,26 +399,23 @@ mod npc_findframe_extra7h;
 mod npc_findframe_extra7i;
 mod npc_findframe_extra7j;
 mod npc_findframe_extra7k;
-mod npc_findframe_extra4;
-mod npc_findframe_extra7;
-mod npc_findframe_extra8;
-mod npc_findframe_extra9;
-mod npc_findframe_extra10;
-mod npc_findframe_extra11;
-mod npc_findframe_extra12;
-mod npc_findframe_extra13;
 // W4-f4 wave E: the 17 unclaimed out-of-HitEffect gore sites (research/211)
 // — UNWIRED standalone machines, the hosts' wiring is the follow-up round.
 mod npc_hit_effect_e;
 // W4-g10 lane 3: the town pets' FindFrame arm (the humanoid-group body
 // with the pet overrides, NPC.cs:68622-69655).
-mod npc_findframe_pet;
+// W4-g6 wiring lane 1 — the FIRST-half unwired findframe waves'
+// modules (the C#-slot order: extra2 84-181, mid2 166-180, extra3
+// 182-219; the SECOND half 233+ rides W4-g7).
 mod persist;
 mod grapple;
 mod gore_seam;
 mod creative;
 mod creative_sacrifices;
 mod hair_window;
+// W4-d122 shop currency: the Defender Medal wallet (CustomCurrencyManager/
+// CustomCurrencySingleCoin) — the Tavernkeep's medal rows buy through it.
+mod custom_currency;
 mod happiness;
 mod hotbar;
 mod hurt_modifiers;
@@ -404,6 +434,7 @@ mod player_dodge_draw;
 // Ledger: docs/research/64-dust-sites-player-2.md.
 mod player_dust2;
 mod player_file;
+mod popup_text;
 mod potions;
 // W4-a6: the permanent power-up consumables — ItemCheck_UseLifeCrystal /
 // UseManaCrystal (Player.cs:45274-45320) + the sibling Use* arms
@@ -422,7 +453,6 @@ pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod proj_trail_dust;
 mod projectile;
-mod quick_stack;
 mod debug_options;
 // W4-d53: the projectile-tick `Dust.NewDust` drain lanes — the per-tick arrow
 // trail (Projectile.cs:17036-17077), the stationary Vortex-bolt trail
@@ -431,6 +461,8 @@ mod debug_options;
 // UpdateProjectiles stream (the player_dust / pending_proj_sounds convention).
 mod projectile_dust;
 mod projectile_ai001_b;
+mod projectile_ai_dd2_shots;
+mod projectile_ai_rc_drone;
 mod projectile_ai_frostmoon;
 mod projectile_ai_guns;
 mod projectile_gun_splash;
@@ -644,7 +676,6 @@ mod projectile_ai_thrown;
 // (`Projectile.cs:34970-35696`): the home-spot ladder, the frame machines,
 // the 957 ground-bounce column scan and the 650 ore scan + steering tail;
 // the 895/898 flight sparkles + the 650's 204 pair ride proj_trail_dust.
-mod projectile_ai_pets124;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs
@@ -689,6 +720,22 @@ mod rain;
 // W4-g70 lane 8: the live star field (Star.cs) — spawn/update/NightSetup/
 // StarFall, replacing the static BG-11/16 stand-in.
 mod star_field;
+// W4-g82 — the rope-coil lane: the four coils' aiStyle-35 machine
+// (171/475/505/506, Projectile.cs:27189-27291), the DrawProjDirect chain
+// placement preview (Main.cs:28499-28669), the Kill refund ladder
+// (:77572-77615) + CheckRopeUsability (Player.cs:41506-41545). WIRED:
+// the 35 dispatch arm + rows (projectile.rs / projectile/data.rs), the
+// death-hook refund + ai1==0 cue (the d77 kill_tail_cue pattern), the
+// chain draw in draw_with_hand, the usability gate in use_tile_item.
+// W4-c40c — the storm-bolt lane (research/78 item 4): the LightningGenerator
+// bolt geometry (`LightningGenerator.cs:9-326`, the private-LCG random walk +
+// the CanHitTarget tile/liquid gate) and the damaging SpawnStormLightning
+// spawn chain (`WorldGen.cs:71864-72018`, the strike roll + attractor scan +
+// safe-spot/rain-shelter/nearby-bolt gates). UNWIRED modules — the 1091
+// aiStyle-203 AI + the UpdateWorldGen tick drain are the wiring follow-up
+// (the npc_ai_sand_elemental precedent). Witnesses WRITTEN NOT RUN.
+mod storm_lightning;
+mod resource_pack;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
@@ -698,6 +745,16 @@ mod recall_teleport;
 // (`Player.JumpMovement`, Player.cs:20818-21012) first; the tick queues the
 // box/velocity snapshot, this module replays on the `UpdatePlayers` stream.
 mod player_dust;
+// W4-g66: the movement-trail drain lanes — the DoubleJumpVisuals and
+// floor-dust chains first. Same snapshot-then-replay convention as
+// `player_dust`.
+mod player_boot_dust;
+mod player_trail_dust;
+mod player_wing_dust;
+// W4-g89f: the Rod of Discord 1326 / Rod of Harmony 5335 use path —
+// ItemCheck_UseTeleportRod (Player.cs:45476-45534) + the chaos-state tax.
+// Wired into update_editing (the recall/boss-spawner seam).
+mod rod_teleport;
 mod regen;
 mod research;
 mod sand;
@@ -705,7 +762,6 @@ mod sand;
 // 41-61 + Mount sites 1-19 (research/66's claim; d54's first-40 orch lane
 // reserved, WorldGen/Main stay g14/g11-g13). UNWIRED code-only emitters.
 mod orchestrator_dust;
-mod mount_dust;
 // W4-d130: the ambient snowfall (`Main.snowing()`, Main.cs:13032-13116) —
 // the type-76 dust spawn/AI/draw, the rain rig's flake approximation retired.
 mod snow;
@@ -731,7 +787,6 @@ mod tile_draw_particles;
 // run in app/frame/draw.rs::draw_region outside the G6 cache on
 // rngs.global() (see the module doc + docs/ANALYSIS.md "The Main.cs dust
 // sites, batch 3 (W4-g13)").
-mod main_dust;
 mod spawner;
 mod tag_effects;
 mod settings;
@@ -747,6 +802,9 @@ mod soundid;
 // case-20 female-hit slot pick. The menu-half cues ride Menu::pending_cue
 // (code-only mode — witnesses written not run).
 mod main_sounds;
+mod sun_scorch;
+mod dryad_stardew;
+mod town_shimmer;
 mod test_world_helpers;
 mod orch_dust;
 mod orch_dust_boulder;
@@ -785,7 +843,6 @@ mod npc_hit_effect_c;
 
 // W4-g60: the NPC death dust lane 2 (HitEffect death halves, types
 // 231-697) — the death retain's feed (see the module doc).
-mod npc_death_dust;
 
 mod projectile_dust3;
 

@@ -16,6 +16,18 @@
 //! `track_collision`/`on_track`/`track_rotation`/`magnet_position`); the
 //! remaining pre-consumer items keep targeted allows until Phase 3 (sparks)
 //! and M2-MOUNT-3 (the hook-mount snap, the sprite decode) land.
+//!
+//! W4-f6 final 4 — the unclaimed track-side dust (research/198, renamed
+//! 67→198 round-1): the four
+//! non-base `MinecartDust` delegates (`DelegateMethods.Minecart.SparksFart`
+//! :328 / `SparksTerraFart` :348 / `SparksMech` :373 / `SparksMeow` :394, the
+//! 51/53/11/33 cart rows) ride the SAME `wheel_sparks` queue → `spawn_spark`
+//! drain seam as the base 213 (the row's delegate picks the body at queue
+//! time; the TerraFart 50% branch rolls BEFORE the side/speed rolls). The
+//! tick + draw cover 260/211/107 beside the 213. `SpawnFartCloud` (:258, the
+//! fart carts' 3-gore cloud + the 53-only 15-dust tail) is STAGED — its live
+//! triggers are c14's fart sound delegates (the activation seam is documented
+//! at the fn). The f11/e20 lanes are device-wiring (Wiring.cs), no claim here.
 
 use glam::Vec2;
 use tr_core::World;
@@ -986,17 +998,72 @@ pub(crate) struct CartCue {
     pub(crate) y: f32,
 }
 
-/// One queued spark spawn request — the pre-`NewDust` half of
-/// `DelegateMethods.Minecart.Sparks` (`DelegateMethods.cs:225-227`): the ±13
-/// side offset rotated by `Minecart.rotation` (the `Dust.NewDust` position
-/// argument) and the two `Next(-2,3)` speed arguments the C# evaluates before
-/// the call. The `world_sim` drain turns it into the pool's type-213 slot
-/// ([`spawn_spark`]); the pool's own rolls then ride the same stream.
+/// One queued spark spawn request — the pre-`NewDust` half of the cart's
+/// `MinecartDust` delegate (`DelegateMethods.Minecart.Sparks`
+/// `DelegateMethods.cs:225-227` and its four variants): the ±13 side offset
+/// rotated by `Minecart.rotation` (the `Dust.NewDust` position argument) and
+/// the two `Next(-2,3)` speed arguments the C# evaluates before the call. The
+/// `world_sim` drain turns it into the pool slot ([`spawn_spark`]); the pool's
+/// own rolls then ride the same stream. `variant` is the row's delegate
+/// (`Mount.cs:122`/`:916`/`:1013`/`:1099`/`:1107`/`:1487`); the base `Sparks`
+/// keeps the type-213 body byte-for-byte.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct SparkSpawn {
     pub(crate) pos: Vec2,
     pub(crate) speed_x: f32,
     pub(crate) speed_y: f32,
+    body: SparkBody,
+}
+
+/// The cart's `MinecartDust` delegate (`MountDelegatesData.MinecartDust`,
+/// `Mount.cs:104`). The base `Sparks` (`DelegateMethods.cs:223-242`) is the
+/// type-213 wheel spark; the four variants are the unclaimed track-side dust
+/// (research/198, renamed from 67): Fart 51 (`:1099`), Terra-Fart 53 (`:1107`), Mech 11
+/// (`:1487`), Meowmere 33 (`:1013`). Every other cart row keeps `Sparks`
+/// (`SetAsMinecart` `:2751`, the hand-written 6/13/16 rows `:916`/`:1595`/
+/// `:1047`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SparkVariant {
+    /// `DelegateMethods.Minecart.Sparks` — dust 213 (`:223-242`).
+    Sparks,
+    /// `SparksFart` — dust 211, alpha 50, scale 0.8 (`:328-346`).
+    Fart,
+    /// `SparksTerraFart` — a 50% `SparksFart` branch, else dust 107
+    /// (`:348-371`).
+    TerraFart,
+    /// `SparksMech` — dust 260, the 213 body with a +0.5 fadeIn (`:373-392`).
+    Mech,
+    /// `SparksMeow` — the 213 body + the Meowmere shader (`:394-414`, the
+    /// shader is the documented `Dust.shader` drop).
+    Meow,
+}
+
+/// The row's `MinecartDust` delegate (`Mount.cs` registrations). The base
+/// `Sparks` is the default for every cart row that does not override it.
+pub(crate) fn spark_variant_of(mount_kind: i32) -> SparkVariant {
+    match mount_kind {
+        51 => SparkVariant::Fart,      // `:1099`
+        53 => SparkVariant::TerraFart, // `:1107`
+        11 => SparkVariant::Mech,      // `:1487`
+        33 => SparkVariant::Meow,      // `:1013`
+        _ => SparkVariant::Sparks,     // `:2751`/`:916`/`:1595`/`:1047`
+    }
+}
+
+/// The resolved per-spawn delegate body — the TerraFart 50% branch
+/// (`DelegateMethods.cs:350`) is rolled at QUEUE time (it precedes the side
+/// offset + speed rolls), so the drain sees a concrete body. `Fart` here is
+/// either the 51 delegate or the TerraFart branch's `SparksFart` call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SparkBody {
+    /// dust 213 (`Sparks`/`SparksMeow`, the shader is a drop).
+    Dust213,
+    /// dust 260 (`SparksMech`).
+    Dust260,
+    /// dust 211 (`SparksFart`).
+    Dust211,
+    /// dust 107 (`SparksTerraFart`'s green arm).
+    Dust107,
 }
 
 /// Live population of one dust type in the pool — the tests' read and the
@@ -1008,13 +1075,32 @@ pub(crate) fn live_type(pool: &tr_core::particles::DustPool, ty: i32) -> usize {
         .count()
 }
 
-/// The drain-time half of `DelegateMethods.Minecart.Sparks`
-/// (`DelegateMethods.cs:227-242`): the pool's verbatim type-213 spawn — its
-/// rolls ride the client's stream — then the delegate's post-spawn arms. The
-/// arms roll even when the pool refused: the C# blindly writes
-/// `Main.dust[6000]`, the sentinel slot (`Dust.cs:79`), which is never
-/// scanned or drawn.
+/// The drain-time half of the cart's `MinecartDust` delegate
+/// (`DelegateMethods.Minecart.Sparks` `DelegateMethods.cs:227-242` and its
+/// variants): the pool's verbatim spawn — its rolls ride the client's stream —
+/// then the delegate's post-spawn arms. The arms roll even when the pool
+/// refused: the C# blindly writes `Main.dust[6000]`, the sentinel slot
+/// (`Dust.cs:79`), which is never scanned or drawn.
 pub(crate) fn spawn_spark<R: tr_core::particles::DustRng>(
+    pool: &mut tr_core::particles::DustPool,
+    rng: &mut R,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+    spawn: SparkSpawn,
+) -> usize {
+    match spawn.body {
+        SparkBody::Dust213 => spawn_spark_213(pool, rng, ctx, world, spawn),
+        SparkBody::Dust260 => spawn_spark_mech(pool, rng, ctx, world, spawn),
+        SparkBody::Dust211 => spawn_spark_fart(pool, rng, ctx, world, spawn),
+        SparkBody::Dust107 => spawn_spark_terra(pool, rng, ctx, world, spawn),
+    }
+}
+
+/// `DelegateMethods.Minecart.Sparks` (`DelegateMethods.cs:226-241`) — the
+/// type-213 body. `SparksMeow` (`:397-413`) is the SAME body plus the
+/// `dust.shader = GameShaders.Armor.GetShaderFromItemId(2870)` write (`:398`,
+/// the documented `Dust.shader` drop — no draw-shader chain).
+fn spawn_spark_213<R: tr_core::particles::DustRng>(
     pool: &mut tr_core::particles::DustPool,
     rng: &mut R,
     ctx: &tr_core::particles::SpawnCtx,
@@ -1105,6 +1191,166 @@ impl Default for DustPlayerSnap {
 /// `light_color` is the `Lighting.GetColor` probe (43's death check,
 /// `:1405`) — the caller passes the bright default until the S1-E-5 sample
 /// seam lands (`dust_physics` module docs).
+/// `DelegateMethods.Minecart.SparksMech` (`DelegateMethods.cs:376-391`) — the
+/// 213 body with dust 260 and a `+0.5` fadeIn band (`:378`, vs the 213 `+1`).
+fn spawn_spark_mech<R: tr_core::particles::DustRng>(
+    pool: &mut tr_core::particles::DustPool,
+    rng: &mut R,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+    spawn: SparkSpawn,
+) -> usize {
+    // `:376`: `Dust.NewDust(dustPosition, 1, 1, 260, Next(-2,3), Next(-2,3))`.
+    let idx = pool.new_dust(
+        rng,
+        ctx,
+        world,
+        spawn.pos,
+        1,
+        1,
+        260,
+        spawn.speed_x,
+        spawn.speed_y,
+        0,
+        tr_core::particles::Color::default(),
+        1.0,
+    );
+    let slot = pool.slot_mut(idx);
+    slot.no_gravity = true;
+    // `:378`: the fadeIn band is `scale + 0.5 + 0.01*Next(0,51)`.
+    slot.fade_in = slot.scale + 0.5 + 0.01 * rng.next_max(51) as f32;
+    slot.no_gravity = true;
+    // `:380-383`: the same velocity recipe + lift.
+    slot.velocity *= rng.next_range(15, 51) as f32 * 0.01;
+    slot.velocity.x *= rng.next_range(25, 101) as f32 * 0.01;
+    slot.velocity.y -= rng.next_range(15, 31) as f32 * 0.1;
+    slot.position.y -= 4.0;
+    // `:384-391`: the same 2-in-3 gravity flip.
+    if rng.next_max(3) != 0 {
+        slot.no_gravity = false;
+    } else {
+        slot.scale *= 0.6;
+    }
+    idx
+}
+
+/// `DelegateMethods.Minecart.SparksFart` (`DelegateMethods.cs:330-345`) —
+/// dust 211, alpha 50, scale 0.8; two independent 50% `alpha += 25` rolls,
+/// `noLight = true`, the `Next(3) == 0` gravity pick, then the velocity
+/// recipe + lift. NO fadeIn band (the 213 body's is absent here).
+fn spawn_spark_fart<R: tr_core::particles::DustRng>(
+    pool: &mut tr_core::particles::DustPool,
+    rng: &mut R,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+    spawn: SparkSpawn,
+) -> usize {
+    // `:331`: `Dust.NewDust(dustPosition, 1, 1, 211, Next(-2,3), Next(-2,3),
+    // 50, default, 0.8f)`.
+    let idx = pool.new_dust(
+        rng,
+        ctx,
+        world,
+        spawn.pos,
+        1,
+        1,
+        211,
+        spawn.speed_x,
+        spawn.speed_y,
+        50,
+        tr_core::particles::Color::default(),
+        0.8,
+    );
+    let slot = pool.slot_mut(idx);
+    // `:332-339`: two independent `Next(2) == 0` alpha bumps.
+    if rng.next_max(2) == 0 {
+        slot.alpha += 25;
+    }
+    if rng.next_max(2) == 0 {
+        slot.alpha += 25;
+    }
+    // `:340-341`: `noLight = true`, then the gravity pick.
+    slot.no_light = true;
+    slot.no_gravity = rng.next_max(3) == 0;
+    // `:342-345`: the velocity recipe + lift.
+    slot.velocity *= rng.next_range(15, 51) as f32 * 0.01;
+    slot.velocity.x *= rng.next_range(25, 101) as f32 * 0.01;
+    slot.velocity.y -= rng.next_range(15, 31) as f32 * 0.1;
+    slot.position.y -= 4.0;
+    idx
+}
+
+/// `DelegateMethods.Minecart.SparksTerraFart`'s green arm
+/// (`DelegateMethods.cs:355-370`) — dust 107, alpha 100, scale 0.8, the
+/// `Color.Lerp(new Color(64,220,96), White, NextFloat()*0.3)` spawn colour
+/// (the NextFloat draws AFTER the two speed args, inside the NewDust arg
+/// list), two 50% alpha bumps, `noLightEmittance = true`, the gravity pick,
+/// then the velocity recipe + lift.
+fn spawn_spark_terra<R: tr_core::particles::DustRng>(
+    pool: &mut tr_core::particles::DustPool,
+    rng: &mut R,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+    spawn: SparkSpawn,
+) -> usize {
+    // `:356`: the colour's `NextFloat()*0.3f` lerp amount draws here (the C#
+    // evaluates the NewDust args left-to-right: the two speeds were rolled at
+    // queue time, the colour's NextFloat is the next draw).
+    let amount = rng.next_float() * 0.3;
+    let color = terra_fart_color(amount);
+    let idx = pool.new_dust(
+        rng,
+        ctx,
+        world,
+        spawn.pos,
+        1,
+        1,
+        107,
+        spawn.speed_x,
+        spawn.speed_y,
+        100,
+        color,
+        0.8,
+    );
+    let slot = pool.slot_mut(idx);
+    // `:357-364`: two independent `Next(2) == 0` alpha bumps.
+    if rng.next_max(2) == 0 {
+        slot.alpha += 25;
+    }
+    if rng.next_max(2) == 0 {
+        slot.alpha += 25;
+    }
+    // `:365-366`: `noLightEmittance = true`, then the gravity pick.
+    slot.no_light_emittance = true;
+    slot.no_gravity = rng.next_max(3) == 0;
+    // `:367-370`: the velocity recipe + lift.
+    slot.velocity *= rng.next_range(15, 51) as f32 * 0.01;
+    slot.velocity.x *= rng.next_range(25, 101) as f32 * 0.01;
+    slot.velocity.y -= rng.next_range(15, 31) as f32 * 0.1;
+    slot.position.y -= 4.0;
+    idx
+}
+
+/// `Color.Lerp(new Color(64, 220, 96), Color.White, amount)` — XNA's
+/// per-channel byte lerp, truncated (the `mount_dust::color_lerp` convention).
+fn terra_fart_color(amount: f32) -> tr_core::particles::Color {
+    let a = tr_core::particles::Color::new(64, 220, 96, 255);
+    let b = tr_core::particles::Color::WHITE;
+    let ch = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * amount) as u8;
+    tr_core::particles::Color::new(ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), ch(a.a, b.a))
+}
+
+/// The cart-spark `Dust.UpdateDust` pass over the pool's 213/260/211/107 slots,
+/// in the C# source order. Death deactivates the slot (`Dust.cs:449` and
+/// passim) — the pool keeps its 6000 fixed slots.
+/// `Main.UpdateWorld_Dust`'s single ported pass (`Main.cs:18045-18047`): the
+/// shared `Dust.UpdateDust` loop (`Dust.cs:420-2423`,
+/// `DustPool::update_dust`) drives the head, the move and the kills, and this
+/// entry dispatches the ported per-type arms — the wheel sparks' 213 + the
+/// variant delegates' 260/211/107 (this file, W4-f6 final 4) and the flying
+/// sand's 268 (`sand.rs`). ONE pass per frame: the C# calls `UpdateDust` once,
+/// so every active slot integrates exactly once (the two clients' separate
+/// tick loops were the batch-review defect).
 pub(crate) fn tick(
     pool: &mut tr_core::particles::DustPool,
     rng: &mut impl tr_core::particles::DustRng,
@@ -1190,14 +1436,15 @@ pub(crate) fn tick(
         d.scale = s.scale;
     }
         |d: &mut tr_core::particles::Dust| {
-            if d.dust_type == 213 {
-                // `:1819-1829`: the spark falls.
+            if d.dust_type == 213 || d.dust_type == 260 {
+                // `:1819-1829`: the spark falls (260 is not 107/41/44/309).
                 if !d.no_gravity {
                     d.velocity.y += 0.1;
                 }
                 // `:2071-2072`: the air drag.
                 d.velocity.x *= 0.99;
-                // `:744` + `:2080`: rotation is rebuilt from the dragged velocity.
+                // `:739` + `:2080`: rotation is rebuilt from the dragged
+                // velocity (the 213|260 arm zeroes it first, so `=` not `+=`).
                 d.rotation = d.velocity.x * 0.5;
                 // `:2083-2124`: the fadeIn ramp — +0.1/tick while the spawn
                 // fadeIn stands (capped at it), then −0.2/tick (it burns out).
@@ -1208,6 +1455,56 @@ pub(crate) fn tick(
                     }
                 } else {
                     d.scale -= 0.2;
+                }
+            } else if d.dust_type == 211 {
+                // `:729-732`: the SparksFart solid-kill — `noLight` (the
+                // delegate sets it) over a solid tile deactivates. Runs before
+                // the gravity chain (the C# standalone arm precedes `:1819`).
+                if d.no_light
+                    && crate::player::Player::solid_collision(world, d.position.x, d.position.y, 4.0, 4.0)
+                {
+                    d.active = false;
+                }
+                // `:1819-1829`: the spark falls (211 is not 107/41/44/309).
+                if !d.no_gravity {
+                    d.velocity.y += 0.1;
+                }
+                // `:2071-2072`: the air drag.
+                d.velocity.x *= 0.99;
+                // `:2079-2081`: rotation ACCUMULATES (211 is not in the
+                // `:737` 213|260 zero-arm, so `+=` not `=`).
+                d.rotation += d.velocity.x * 0.5;
+                // `:2083-2128`: the GENERIC fadeIn ramp — 211 is in no special
+                // arm: +0.03/tick while fadeIn stands, else −0.01/tick. The
+                // SparksFart delegate sets no fadeIn, so it burns at −0.01.
+                if d.fade_in > 0.0 && d.fade_in < 100.0 {
+                    d.scale += 0.03;
+                    if d.scale > d.fade_in {
+                        d.fade_in = 0.0;
+                    }
+                } else {
+                    d.scale -= 0.01;
+                }
+            } else if d.dust_type == 107 {
+                // `:1819-1824`: the 107 gravity arm — `velocity *= 0.9` (BOTH
+                // axes) instead of the +0.1 fall, gated on !noGravity.
+                if !d.no_gravity {
+                    d.velocity *= 0.9;
+                }
+                // `:2071-2072`: the air drag.
+                d.velocity.x *= 0.99;
+                // `:2079-2081`: rotation accumulates (107 not in the zero-arm).
+                d.rotation += d.velocity.x * 0.5;
+                // `:2083-2128`: the generic fadeIn ramp (+0.03 / −0.01). The
+                // TerraFart spark sets no fadeIn; the SpawnFartCloud dust sets
+                // fadeIn 0.2..0.3 (`DelegateMethods.cs:301`).
+                if d.fade_in > 0.0 && d.fade_in < 100.0 {
+                    d.scale += 0.03;
+                    if d.scale > d.fade_in {
+                        d.fade_in = 0.0;
+                    }
+                } else {
+                    d.scale -= 0.01;
                 }
             } else if d.dust_type == 268 {
                 crate::sand::type_268_arm(d, show_sandstorm_visuals, player_vy, world);
@@ -1228,6 +1525,7 @@ pub(crate) fn tick(
                 crate::rain::water_splash_arm(d, world);
             }
             // All arms return false: the 213/268/splash arms are standalone
+            // All arms return false: the 213/260/211/107/268 arms are standalone
             // statements of the C#'s FIRST ladder (between the `:477` move and
             // the fresh `if (dust.type >= 130 ...)` chain head at `:2127`), so
             // they do NOT exclude the second chain's final
@@ -1235,22 +1533,25 @@ pub(crate) fn tick(
             // no-gravity 213 takes its arm AND the tail, exactly like the C#.
             // The 76 arm is an else-if OF the first ladder (`:1745`), so it
             // excludes the `:2071` drag — its own tails ran above.
+            // no-gravity spark takes its arm AND the tail, exactly like the C#.
             false
         },
     );
     pool.snow_dust = snow_dust;
 }
 
-/// The generic `Main.DrawDust` draw (`Main.cs:39003-39013`) over the pool's
-/// type-213 slots with the type-213 pins: the draw scale is forced to 1
-/// (`:38974-38977`), the tint is `GetAlpha`'s 213 arm — a self-lit
-/// scale-scaled gray with no light term (`Dust.cs:2498-2501`) — and the
-/// `GetColor` overlay never fires (the spawn colour is default-black,
-/// `Main.cs:39006`).
+/// `Main.DrawDust`'s draw over the pool's cart-spark slots (213/260/211/107).
+/// The 213/260 sparks are self-lit (`Dust.cs:2498-2501`: a scale-scaled gray
+/// with no light term; the `GetColor` overlay never fires — the spawn colour is
+/// default-black, `Main.cs:39006`); 213 forces draw scale 1 (`:38974-38977`),
+/// 260 keeps `GetVisualScale`. The 211/107 variants are light-tinted: the
+/// generic base + `GetColor` overlay path (`Main.cs:39005-39013`) with the
+/// full-dark kill (`:39015-39017`), the `sand::draw` convention.
 pub(crate) fn draw(
-    pool: &tr_core::particles::DustPool,
+    pool: &mut tr_core::particles::DustPool,
     r: &mut tr_render::sprite::SpriteRenderer,
     lookups: &crate::assets::Lookups,
+    light: &tr_core::lighting::LightMap,
     camera: Vec2,
     zoom: f32,
     screen: Vec2,
@@ -1261,30 +1562,78 @@ pub(crate) fn draw(
             (p.y - camera.y) * zoom + screen.y * 0.5,
         ]
     };
-    for d in &pool.slots()[..tr_core::particles::DUST_SENTINEL] {
-        if !d.active || d.dust_type != 213 {
+    for i in 0..tr_core::particles::DUST_SENTINEL {
+        let d = pool.slot(i);
+        if !d.active {
             continue;
         }
-        // `Dust.frame` for 213 (`Dust.cs:177-189`): the pool's per-100 shift
-        // gives x = 10*213 − 2000 = 130, y = 60 + 10*row, an 8×8 cell.
-        let Some(uv) = lookups.dust_uv(d.frame_x, d.frame_y, d.frame_w as u32, d.frame_h as u32)
-        else {
-            continue;
-        };
-        // `Dust.cs:2498-2501` — the 213 arm of the shared per-type table:
-        // `int num2 = (int)(scale / 2.5f * 255f)` through the ctor's byte cast.
-        // The arm ignores the light colour, so the argument is arbitrary.
-        let a = tr_core::dust_table::get_alpha(d, tr_core::particles::Color::WHITE).a as f32
-            / 255.0;
-        // `Main.cs:38974-38977`: draw scale 1 — the 8 px frame at zoom.
-        let size = 8.0 * zoom;
-        r.push_fx_sprite_rot(
-            to_screen(d.position),
-            [size, size],
-            uv,
-            [a, a, a, a],
-            d.rotation,
-        );
+        match d.dust_type {
+            213 | 260 => {
+                // `Dust.frame` (`Dust.cs:177-189`): the pool's per-100 shift
+                // gives the 8×8 cell (213: x=130; 260: x=600, y=60+10*row).
+                let Some(uv) =
+                    lookups.dust_uv(d.frame_x, d.frame_y, d.frame_w as u32, d.frame_h as u32)
+                else {
+                    continue;
+                };
+                // `Dust.cs:2498-2501` — the 213|260 arm: `int num2 =
+                // (int)(scale / 2.5f * 255f)` through the ctor's byte cast. The
+                // arm ignores the light colour, so the argument is arbitrary.
+                let a = tr_core::dust_table::get_alpha(d, tr_core::particles::Color::WHITE).a
+                    as f32
+                    / 255.0;
+                // `Main.cs:38974-38977`: 213 forces draw scale 1; 260 keeps
+                // `GetVisualScale` (= scale, `Dust.cs:2782-2789`).
+                let scale = if d.dust_type == 213 { 1.0 } else { d.scale };
+                let size = 8.0 * scale * zoom;
+                r.push_fx_sprite_rot(to_screen(d.position), [size, size], uv, [a, a, a, a], d.rotation);
+            }
+            211 | 107 => {
+                // The light-tinted generic path (`Main.cs:39005-39017`).
+                let pos = d.position;
+                let c = crate::rain::light_at(light, pos);
+                let light_color = tr_core::particles::Color::new(
+                    (c[0].clamp(0.0, 1.0) * 255.0) as u8,
+                    (c[1].clamp(0.0, 1.0) * 255.0) as u8,
+                    (c[2].clamp(0.0, 1.0) * 255.0) as u8,
+                    255,
+                );
+                let base = tr_core::dust_table::get_alpha(d, light_color);
+                // `Main.cs:39015-39017`: `newColor == Color.Black` deactivates.
+                if base.r == 0 && base.g == 0 && base.b == 0 && base.a == 0 {
+                    pool.slot_mut(i).active = false;
+                    continue;
+                }
+                let Some(uv) =
+                    lookups.dust_uv(d.frame_x, d.frame_y, d.frame_w as u32, d.frame_h as u32)
+                else {
+                    continue;
+                };
+                let size = 8.0 * d.scale * zoom;
+                let tint = [
+                    base.r as f32 / 255.0,
+                    base.g as f32 / 255.0,
+                    base.b as f32 / 255.0,
+                    base.a as f32 / 255.0,
+                ];
+                r.push_fx_sprite_rot(to_screen(pos), [size, size], uv, tint, d.rotation);
+                // `Main.cs:39006-39013`: the `GetColor` overlay when the spawn
+                // colour is non-zero (the 107 green lerp; 211 keeps default).
+                if d.color.r != 0 || d.color.g != 0 || d.color.b != 0 || d.color.a != 0 {
+                    let oc = tr_core::dust_table::get_color(d, base);
+                    if oc.r != 0 || oc.g != 0 || oc.b != 0 || oc.a != 0 {
+                        let ot = [
+                            oc.r as f32 / 255.0,
+                            oc.g as f32 / 255.0,
+                            oc.b as f32 / 255.0,
+                            oc.a as f32 / 255.0,
+                        ];
+                        r.push_fx_sprite_rot(to_screen(pos), [size, size], uv, ot, d.rotation);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -1301,9 +1650,12 @@ fn next_range(rng: &mut u64, min: i32, max_exclusive: i32) -> i32 {
 
 /// `Minecart.WheelSparks` (`Minecart.cs:1623-1630`): the magnet-formula spark
 /// point, then `spark_count` delegate calls. Each call queues one request —
-/// the pre-`NewDust` rolls of `DelegateMethods.Minecart.Sparks`
-/// (`DelegateMethods.cs:225-226`) on the client's stream; the pool's rolls
-/// ride the same stream at drain time ([`spawn_spark`]).
+/// the pre-`NewDust` rolls of the row's `MinecartDust` delegate
+/// (`DelegateMethods.cs:225-226` and variants) on the client's stream; the
+/// pool's rolls ride the same stream at drain time ([`spawn_spark`]).
+/// `variant` is the row's delegate ([`spark_variant_of`]); the TerraFart 50%
+/// branch (`:350`) rolls HERE, before the side offset + speed rolls (the C#
+/// `if (Main.rand.Next(2) == 0)` precedes the `SparksFart`/green-arm body).
 pub(crate) fn wheel_sparks(
     sparks: &mut Vec<SparkSpawn>,
     rng: &mut u64,
@@ -1312,11 +1664,27 @@ pub(crate) fn wheel_sparks(
     height: i32,
     spark_count: u32,
     rotation: f32,
+    variant: SparkVariant,
 ) {
     // `:1625` — `Position + (Width/2 − TextureWidth/2, Height/2) +
     // MagnetOffset`, the same arithmetic as `GetMagnetPosition` (`:1290-1294`).
     let at = magnet_position(position, width, height);
     for _ in 0..spark_count {
+        // The TerraFart branch pick (`DelegateMethods.cs:350`) draws FIRST;
+        // the Fart arm then re-rolls its OWN side offset (`:330`, the C#
+        // calls `SparksFart(dustPosition)` with the un-offset point).
+        let body = match variant {
+            SparkVariant::Sparks | SparkVariant::Meow => SparkBody::Dust213,
+            SparkVariant::Mech => SparkBody::Dust260,
+            SparkVariant::Fart => SparkBody::Dust211,
+            SparkVariant::TerraFart => {
+                if next_int(rng, 2) == 0 {
+                    SparkBody::Dust211
+                } else {
+                    SparkBody::Dust107
+                }
+            }
+        };
         // `DelegateMethods.cs:225`: the ±13 side offset rotated by
         // `Minecart.rotation` (`Vector2.RotatedBy`: (x cosθ − y sinθ,
         // x sinθ + y cosθ)).
@@ -1330,6 +1698,7 @@ pub(crate) fn wheel_sparks(
             pos: at + rotated,
             speed_x,
             speed_y,
+            body,
         });
     }
 }
@@ -1347,6 +1716,7 @@ pub(crate) fn rolling_wheel_sparks(
     velocity: Vec2,
     max_run_speed: f32,
     rotation: f32,
+    variant: SparkVariant,
 ) {
     // `:19870/:19928`: Item55 plays on every gate-passing tick, before the
     // rolls, at `(int)position + (width/2, height/2)`.
@@ -1371,6 +1741,7 @@ pub(crate) fn rolling_wheel_sparks(
                 height,
                 1,
                 rotation,
+                variant,
             );
         }
         if next_int(rng, 2) == 0 {
@@ -1382,10 +1753,11 @@ pub(crate) fn rolling_wheel_sparks(
                 height,
                 1,
                 rotation,
+                variant,
             );
         }
         if next_int(rng, 2) == 0 {
-            wheel_sparks(sparks, rng, position, width, height, 1, rotation);
+            wheel_sparks(sparks, rng, position, width, height, 1, rotation, variant);
         }
     }
     // `:19888-19898`: `> 0.33·max` — two 2-in-3 rolls at `*0.5`/`position`.
@@ -1399,15 +1771,16 @@ pub(crate) fn rolling_wheel_sparks(
                 height,
                 1,
                 rotation,
+                variant,
             );
         }
         if next_int(rng, 3) != 0 {
-            wheel_sparks(sparks, rng, position, width, height, 1, rotation);
+            wheel_sparks(sparks, rng, position, width, height, 1, rotation, variant);
         }
     }
     // `:19900-19902`: the guaranteed single spark at `position`.
     else {
-        wheel_sparks(sparks, rng, position, width, height, 1, rotation);
+        wheel_sparks(sparks, rng, position, width, height, 1, rotation, variant);
     }
 }
 
@@ -1916,6 +2289,87 @@ pub(crate) fn flip_switch_track(world: &mut World, i: i32, j: i32) {
             frame_track_pound(world, i, j);
         }
         _ => {}
+/// `DelegateMethods.Minecart.SpawnFartCloud` (`DelegateMethods.cs:258-306`) —
+/// the fart carts' (51/53) cloud visual, STAGED (research/198, renamed from 67): the live
+/// triggers are c14's fart sound delegates (`JumpingSoundFart` :308-312 /
+/// `LandingSoundFart` :314-319 / `BumperSoundFart` :321-326, which call this
+/// with `useDelay` false/true respectively) — those land on
+/// `task/W4-c14-tile-break-footstep-sounds`, not this branch. `delay` is
+/// `Player.fartKartCloudDelay` (`Player.cs:1614`, decremented per track-rider
+/// tick at `:28098`, max 20 `:1616`). All rolls ride the caller's
+/// `UpdatePlayers` stream in C# order (the delegate runs inline inside the
+/// player tick): per gore the `Next(435,438)` type arg evaluates BEFORE the
+/// `NewGore` internals (Y lift, X kick); the 53-only dust tail rolls 2
+/// position NextFloats + the colour NextFloat + the pool chain + 3 velocity
+/// + fadeIn + gravity per dust.
+#[allow(dead_code)] // STAGED - c14's fart sound delegates are the live callers
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_fart_cloud(
+    gore: &mut tr_core::gore::GorePool,
+    dust: &mut tr_core::particles::DustPool,
+    rng: &mut tr_core::UnifiedRandom,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+    position: Vec2,
+    width: i32,
+    height: i32,
+    velocity: Vec2,
+    mount_kind: i32,
+    delay: &mut i32,
+    use_delay: bool,
+) {
+    // `:260-267`: the delay gate (the bumper arm's useDelay: true).
+    if use_delay {
+        if *delay > 0 {
+            return;
+        }
+        *delay = 20;
+    }
+    // `:268-270`: the anchor — `Width / 2` is INTEGER halving.
+    let num = 10.0f32;
+    let y = -4.0f32;
+    let vector = position + Vec2::new((width / 2 - 18) as f32, (height - 16) as f32);
+    // `:271-275`: the velocity carry, clamped to length 2.
+    let mut vector2 = velocity * 0.1;
+    if vector2.length() > 2.0 {
+        vector2 = crate::bow_launch::safe_normalize(vector2, Vec2::ZERO) * 2.0;
+    }
+    // `:276-287`: three gores at (0, -num, +num) X offsets, each the type pick
+    // then NewGore(Zero velocity) then the ×0.2 / +carry / Y×0.75 post-writes.
+    for off in [0.0, -num, num] {
+        let ty = rng.next_range(435, 438); // `:276`/`:280`/`:284` arg
+        let idx = gore.new_gore(rng, world, vector + Vec2::new(off, y), Vec2::ZERO, ty, 1.0);
+        let g = gore.slot_mut(idx);
+        g.velocity *= 0.2;
+        g.velocity += vector2;
+        g.velocity.y *= 0.75;
+    }
+    // `:288-305`: the Terra-Fart (53) only — 15 green 107 dusts.
+    if mount_kind == 53 {
+        let vector3 = position + Vec2::new((width / 2) as f32, (height + 10) as f32);
+        let num3 = 30.0f32;
+        let num4 = -16.0f32;
+        for _ in 0..15 {
+            // `:295`: the position floats draw FIRST (the NewDustPerfect
+            // position arg), then the colour's NextFloat inside the arg list.
+            let px = -num3 + num3 * 2.0 * rng.next_float();
+            let py = num4 * rng.next_float();
+            let color = terra_fart_color(rng.next_float() * 0.3);
+            let idx = dust.new_dust_perfect(
+                rng, ctx, world, vector3 + Vec2::new(px, py),
+                107, Some(Vec2::ZERO), 100, color, 0.6,
+            );
+            let d = dust.slot_mut(idx);
+            // `:296-303`: the velocity recipe + carry + the fadeIn/gravity.
+            d.velocity *= rng.next_range(15, 51) as f32 * 0.01;
+            d.velocity.x *= rng.next_range(25, 101) as f32 * 0.01;
+            d.velocity.y -= rng.next_range(15, 31) as f32 * 0.1;
+            d.velocity += vector2;
+            d.velocity.y *= 0.75;
+            d.fade_in = 0.2 + rng.next_float() * 0.1;
+            d.no_gravity = rng.next_max(3) == 0;
+            d.no_light_emittance = true;
+        }
     }
 }
 
@@ -3162,6 +3616,7 @@ mod tests {
                 Vec2::new(vel_x, 0.0),
                 13.0,
                 0.0,
+                SparkVariant::Sparks,
             );
             if sparks.len() == want {
                 return s;
@@ -3219,7 +3674,7 @@ mod tests {
     fn spawn_one(at: Vec2, rot: f32, seed: u64) -> (tr_core::particles::DustPool, usize) {
         let mut queue = Vec::new();
         let mut rng = seed;
-        wheel_sparks(&mut queue, &mut rng, at, 20, 52, 1, rot);
+        wheel_sparks(&mut queue, &mut rng, at, 20, 52, 1, rot, SparkVariant::Sparks);
         let mut pool = tr_core::particles::DustPool::new();
         let world = World::new("spark".into(), 8, 8);
         let ctx = spark_ctx();
@@ -3317,7 +3772,7 @@ mod tests {
     fn wheel_sparks_lands_on_the_magnet_point_with_the_requested_count() {
         let mut queue = Vec::new();
         let mut rng = 7u64;
-        wheel_sparks(&mut queue, &mut rng, SPARK_POS, 20, 52, 10, 0.0);
+        wheel_sparks(&mut queue, &mut rng, SPARK_POS, 20, 52, 10, 0.0, SparkVariant::Sparks);
         assert_eq!(queue.len(), 10, "the landing burst's count");
         let at = magnet_position(SPARK_POS, 20, 52);
         assert_eq!(at, Vec2::new(110.0, 252.0), "the bottom-center point");
@@ -3482,7 +3937,7 @@ mod tests {
             &mut crate::app::SplitmixRand(&mut rng),
             &ctx,
             &world,
-            SparkSpawn { pos: SPARK_POS, speed_x: 0.0, speed_y: 0.0 },
+            SparkSpawn { pos: SPARK_POS, speed_x: 0.0, speed_y: 0.0, body: SparkBody::Dust213 },
         );
         assert_ne!(idx, tr_core::particles::DUST_SENTINEL, "the spawn landed");
         {
@@ -3593,6 +4048,7 @@ mod tests {
                     pos: SPARK_POS,
                     speed_x: 0.0,
                     speed_y: 0.0,
+                    body: SparkBody::Dust213,
                 },
             );
             assert_eq!(
@@ -3681,7 +4137,7 @@ mod tests {
         let mut pool = tr_core::particles::DustPool::new();
         let mut queue = Vec::new();
         let mut rng = 11u64;
-        wheel_sparks(&mut queue, &mut rng, SPARK_POS, 20, 52, 600, 0.0);
+        wheel_sparks(&mut queue, &mut rng, SPARK_POS, 20, 52, 600, 0.0, SparkVariant::Sparks);
         for s in &queue {
             spawn_spark(
                 &mut pool,
@@ -3712,6 +4168,7 @@ mod tests {
                 pos: SPARK_POS,
                 speed_x: 0.0,
                 speed_y: 0.0,
+                body: SparkBody::Dust213,
             },
         );
         assert_eq!(live_type(&pool, 213), 0, "the band refused the spawn");
@@ -3732,6 +4189,7 @@ mod tests {
             pos: SPARK_POS,
             speed_x: 0.0,
             speed_y: 0.0,
+            body: SparkBody::Dust213,
         };
         // Bands inactive: 6 + 5 = 11 draws, no band roll.
         let mut pool = tr_core::particles::DustPool::new();
@@ -3794,6 +4252,7 @@ mod tests {
             Vec2::new(10.4, 0.0),
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert_eq!(sparks.len(), 3);
         assert_eq!(
@@ -3819,6 +4278,7 @@ mod tests {
             Vec2::new(10.4, 0.0),
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert!(sparks.is_empty());
         let mut twin = seed;
@@ -3841,6 +4301,7 @@ mod tests {
             Vec2::new(6.5, 0.0),
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert_eq!(sparks.len(), 2);
         let seed = seed_with_spark_count(6.5, 0);
@@ -3856,6 +4317,7 @@ mod tests {
             Vec2::new(6.5, 0.0),
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert!(sparks.is_empty());
         let mut twin = seed;
@@ -3876,6 +4338,7 @@ mod tests {
             Vec2::new(2.0, 0.0),
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert_eq!(sparks.len(), 1);
         let mut twin = 12345u64;
@@ -3958,6 +4421,7 @@ mod tests {
             Vec2::new(vx66, 0.0),
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert_eq!(sparks.len(), 2, "0.66·max takes the mid branch");
         let vx33 = 13.0f32 * 0.33f32;
@@ -3974,6 +4438,7 @@ mod tests {
             Vec2::new(vx33, 0.0),
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert_eq!(sparks.len(), 1, "0.33·max takes the guaranteed branch");
     }
@@ -4001,6 +4466,7 @@ mod tests {
             vel,
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert_eq!(sparks.len(), 2);
         let mut twin = seed;
@@ -4025,6 +4491,7 @@ mod tests {
             vel,
             max,
             0.0,
+            SparkVariant::Sparks,
         );
         assert!(sparks.is_empty());
         let mut twin = seed;
@@ -4052,6 +4519,7 @@ mod tests {
                 Vec2::new(11.0, 0.0),
                 max,
                 0.25,
+                SparkVariant::Sparks,
             );
             let mut b = Vec::new();
             let mut rb = seed;
@@ -4065,6 +4533,7 @@ mod tests {
                 Vec2::new(11.0, 0.0),
                 max,
                 0.25,
+                SparkVariant::Sparks,
             );
             assert_eq!(a, b);
             assert_eq!(ra, rb);
@@ -4130,5 +4599,338 @@ mod tests {
         assert_eq!(sounds[1].cue, "Item_56", "then the bumper (`:324`)");
         assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
         assert_eq!((sounds[1].x, sounds[1].y), (110.0, 234.0));
+    // -- W4-f6 final 4: the unclaimed track-side spark variants ---------------
+    // `DelegateMethods.Minecart.SparksFart/SparksTerraFart/SparksMech/SparksMeow`
+    // (the 51/53/11/33 cart rows' `MinecartDust` delegates, `Mount.cs:1099`/
+    // `:1107`/`:1487`/`:1013`). The base `Sparks` (213) keeps its own witnesses
+    // above; these pin the four variant bodies + the queue-time TerraFart branch.
+
+    /// The row→delegate map (`Mount.cs` registrations): 51 Fart, 53 TerraFart,
+    /// 11 Mech, 33 Meow, every other cart row the base Sparks.
+    #[test]
+    fn w4_f6_spark_variant_of_maps_the_cart_rows() {
+        assert_eq!(spark_variant_of(51), SparkVariant::Fart);
+        assert_eq!(spark_variant_of(53), SparkVariant::TerraFart);
+        assert_eq!(spark_variant_of(11), SparkVariant::Mech);
+        assert_eq!(spark_variant_of(33), SparkVariant::Meow);
+        // The base cart + the hand-written 6/13/16 rows keep Sparks.
+        for k in [6, 13, 16, 15, 18, 25, 34, 38] {
+            assert_eq!(spark_variant_of(k), SparkVariant::Sparks, "row {k}");
+        }
+    }
+
+    /// `SparksMech` (`DelegateMethods.cs:376-391`): dust 260, the 213 body with
+    /// a `+0.5` fadeIn band (vs the 213 `+1`). Same 11 drain rolls as the 213.
+    #[test]
+    fn w4_f6_mech_spark_is_dust_260_with_the_half_fade_band() {
+        let world = World::new("spark".into(), 8, 8);
+        let ctx = spark_ctx();
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut counting = CountingRand { state: 42, draws: 0 };
+        let idx = spawn_spark(
+            &mut pool,
+            &mut counting,
+            &ctx,
+            &world,
+            SparkSpawn { pos: SPARK_POS, speed_x: 0.0, speed_y: 0.0, body: SparkBody::Dust260 },
+        );
+        assert_ne!(idx, tr_core::particles::DUST_SENTINEL);
+        let d = pool.slot(idx);
+        assert_eq!(d.dust_type, 260);
+        // fadeIn = scale + 0.5 + 0.01*Next(0,51) — the band sits in [scale+0.5,
+        // scale+1.0], strictly below the 213's [scale+1, scale+1.5].
+        assert!(d.fade_in >= d.scale + 0.5 - 1e-4 && d.fade_in <= d.scale + 1.0 + 1e-4);
+        assert_eq!(counting.draws, 11, "the same 6 pool + 5 delegate rolls");
+        // The 260 sheet cell: x = 10*260 − 2000 = 600, y = 60 + 10*row (two
+        // per-100 shifts, `Dust.cs:180-186`).
+        assert_eq!(d.frame_x, 600);
+        assert!((60..=80).contains(&d.frame_y) && d.frame_y % 10 == 0);
+    }
+
+    /// `SparksFart` (`DelegateMethods.cs:330-345`): dust 211, alpha 50 base +
+    /// two independent 50% `+25` bumps, scale 0.8, `noLight = true`, the
+    /// `Next(3) == 0` gravity pick, NO fadeIn band. 12 drain rolls (6 pool +
+    /// 2 alpha + 1 gravity + 3 velocity).
+    #[test]
+    fn w4_f6_fart_spark_is_dust_211_with_the_alpha_bumps() {
+        let world = World::new("spark".into(), 8, 8);
+        let ctx = spark_ctx();
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut counting = CountingRand { state: 42, draws: 0 };
+        let idx = spawn_spark(
+            &mut pool,
+            &mut counting,
+            &ctx,
+            &world,
+            SparkSpawn { pos: SPARK_POS, speed_x: 0.0, speed_y: 0.0, body: SparkBody::Dust211 },
+        );
+        assert_ne!(idx, tr_core::particles::DUST_SENTINEL);
+        let d = pool.slot(idx);
+        assert_eq!(d.dust_type, 211);
+        assert!(d.no_light, "the delegate sets noLight");
+        assert_eq!(d.fade_in, 0.0, "no fadeIn band");
+        // alpha ∈ {50, 75, 100} — the base 50 plus 0/1/2 bumps of 25.
+        assert!(matches!(d.alpha, 50 | 75 | 100), "alpha {}", d.alpha);
+        // scale = (1 + Next(-20,21)*0.01) * 0.8 ∈ [0.64, 0.96].
+        assert!(d.scale >= 0.64 - 1e-4 && d.scale <= 0.96 + 1e-4);
+        assert_eq!(counting.draws, 12, "6 pool + 2 alpha + 1 gravity + 3 velocity");
+        // The 211 sheet cell: x = 10*211 − 2000 = 110, y = 60 + 10*row.
+        assert_eq!(d.frame_x, 110);
+    }
+
+    /// `SparksTerraFart`'s green arm (`DelegateMethods.cs:355-370`): dust 107,
+    /// alpha 100, scale 0.8, the green→white lerp colour, `noLightEmittance`,
+    /// the gravity pick. 13 drain rolls (1 colour NextFloat + 6 pool + 2 alpha
+    /// + 1 gravity + 3 velocity).
+    #[test]
+    fn w4_f6_terra_spark_green_arm_is_dust_107_with_the_lerp_colour() {
+        let world = World::new("spark".into(), 8, 8);
+        let ctx = spark_ctx();
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut counting = CountingRand { state: 42, draws: 0 };
+        let idx = spawn_spark(
+            &mut pool,
+            &mut counting,
+            &ctx,
+            &world,
+            SparkSpawn { pos: SPARK_POS, speed_x: 0.0, speed_y: 0.0, body: SparkBody::Dust107 },
+        );
+        assert_ne!(idx, tr_core::particles::DUST_SENTINEL);
+        let d = pool.slot(idx);
+        assert_eq!(d.dust_type, 107);
+        assert!(d.no_light_emittance, "the delegate sets noLightEmittance");
+        assert_eq!(d.fade_in, 0.0, "no fadeIn band");
+        assert!(matches!(d.alpha, 100 | 125 | 150), "alpha {}", d.alpha);
+        // The colour lerps (64,220,96) toward white by NextFloat()*0.3 ∈ [0,0.3]:
+        // R ∈ [64,121], G ∈ [220,230], B ∈ [96,143].
+        assert!(d.color.r >= 64 && d.color.r <= 121, "R {}", d.color.r);
+        assert!(d.color.g >= 220 && d.color.g <= 231, "G {}", d.color.g);
+        assert!(d.color.b >= 96 && d.color.b <= 144, "B {}", d.color.b);
+        assert_eq!(counting.draws, 13, "1 colour + 6 pool + 2 alpha + 1 gravity + 3 velocity");
+        // The 107 sheet cell: x = 10*107 − 1000 = 70, y = 30 + 10*row.
+        assert_eq!(d.frame_x, 70);
+    }
+
+    /// The TerraFart 50% branch (`DelegateMethods.cs:350`) rolls at QUEUE time,
+    /// BEFORE the side offset + speed rolls: the branch pick is the first draw,
+    /// then the chosen body's side/speeds. A seed whose first `Next(2)` is 0
+    /// takes the Fart (211) arm; otherwise the green (107) arm.
+    #[test]
+    fn w4_f6_terra_fart_branch_rolls_before_the_side_and_speeds() {
+        // Find a seed whose first splitmix Next(2) == 0 (the Fart branch).
+        let fart_seed = (1u64..)
+            .find(|&s| {
+                let mut st = s;
+                (crate::app::next_rand(&mut st) % 2) == 0
+            })
+            .unwrap();
+        let mut queue = Vec::new();
+        let mut rng = fart_seed;
+        wheel_sparks(&mut queue, &mut rng, SPARK_POS, 20, 52, 1, 0.0, SparkVariant::TerraFart);
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].body, SparkBody::Dust211, "first Next(2)==0 → Fart");
+        // The stream moved 4 rolls: branch + side + 2 speeds.
+        let mut twin = fart_seed;
+        for _ in 0..4 {
+            crate::app::next_rand(&mut twin);
+        }
+        assert_eq!(rng, twin, "branch + side + 2 speeds = 4 queue rolls");
+        // A seed whose first Next(2) == 1 takes the green arm.
+        let green_seed = (1u64..)
+            .find(|&s| {
+                let mut st = s;
+                (crate::app::next_rand(&mut st) % 2) == 1
+            })
+            .unwrap();
+        let mut queue = Vec::new();
+        let mut rng = green_seed;
+        wheel_sparks(&mut queue, &mut rng, SPARK_POS, 20, 52, 1, 0.0, SparkVariant::TerraFart);
+        assert_eq!(queue[0].body, SparkBody::Dust107, "first Next(2)==1 → green");
+    }
+
+    /// The variant tick arms (`Dust.cs`): 260 shares the 213 fall/drag/rotation/
+    /// fade; 211 falls + accumulates rotation + the generic −0.01 fade; 107
+    /// takes the `velocity *= 0.9` gravity arm (both axes) instead of the fall.
+    #[test]
+    fn w4_f6_variant_ticks_follow_the_c_sharp_arms() {
+        let cam = Vec2::ZERO;
+        let screen = Vec2::new(1600.0, 900.0);
+        // 64×64 — the 211 arm's SolidCollision clamps to `maxTilesY - 40`.
+        let world = World::new("spark".into(), 64, 64);
+        // 260: the 213 body — fall +0.1, drag ×0.99, rotation = vel.X*0.5,
+        // fade-done −0.2.
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 100.0, |d| {
+            d.dust_type = 260;
+            d.velocity = Vec2::new(2.0, 0.0);
+            d.no_gravity = false;
+            d.rotation = 9.0;
+            d.fade_in = 0.0;
+            d.scale = 1.0;
+        });
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &world, 0.0, true);
+        let p = pool.slot(0);
+        assert_eq!(p.velocity, Vec2::new(1.98, 0.1), "260 falls like 213");
+        assert_eq!(p.rotation, 0.99, "260 rotation = vel.X*0.5 (the zero-arm)");
+        assert!((p.scale - 0.8).abs() < 1e-6, "260 fade-done −0.2");
+        // 211: fall +0.1, drag ×0.99, rotation ACCUMULATES (+=), generic −0.01.
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 100.0, |d| {
+            d.dust_type = 211;
+            d.velocity = Vec2::new(2.0, 0.0);
+            d.no_gravity = false;
+            d.no_light = false; // avoid the solid-kill (empty world anyway)
+            d.rotation = 9.0;
+            d.fade_in = 0.0;
+            d.scale = 1.0;
+        });
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &world, 0.0, true);
+        let p = pool.slot(0);
+        assert_eq!(p.velocity, Vec2::new(1.98, 0.1), "211 falls");
+        assert!((p.rotation - (9.0 + 0.99)).abs() < 1e-5, "211 rotation += vel.X*0.5");
+        assert!((p.scale - 0.99).abs() < 1e-6, "211 generic fade −0.01");
+        // 107: the gravity arm is velocity *= 0.9 (BOTH axes), not the +0.1 fall.
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 100.0, |d| {
+            d.dust_type = 107;
+            d.velocity = Vec2::new(2.0, 1.0);
+            d.no_gravity = false;
+            d.rotation = 0.0;
+            d.fade_in = 0.0;
+            d.scale = 1.0;
+        });
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &world, 0.0, true);
+        let p = pool.slot(0);
+        // gravity ×0.9 → (1.8, 0.9), then drag ×0.99 on X → 1.782.
+        assert!((p.velocity.x - 1.8 * 0.99).abs() < 1e-5, "107 X: ×0.9 then ×0.99");
+        assert!((p.velocity.y - 0.9).abs() < 1e-5, "107 Y: ×0.9, no +0.1 fall");
+        assert!((p.scale - 0.99).abs() < 1e-6, "107 generic fade −0.01");
+    }
+
+    /// The 211 solid-kill (`Dust.cs:729-732`): a `noLight` 211 over a solid tile
+    /// deactivates; without `noLight` it survives. (The world is 64×64 — the
+    /// `SolidCollision` port clamps to `maxTilesY - 40`.)
+    #[test]
+    fn w4_f6_fart_spark_dies_over_solid_when_no_light() {
+        let mut world = World::new("spark".into(), 64, 64);
+        // A solid stone tile at (3,3) → world px (48..64, 48..64).
+        let i = world.index(3, 3);
+        world.tiles[i] = Tile { kind: 1, ..Default::default() };
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        let cam = Vec2::ZERO;
+        let screen = Vec2::new(1600.0, 900.0);
+        // noLight 211 sitting on the stone → dies.
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 52.0, |d| {
+            d.dust_type = 211;
+            d.position = Vec2::new(52.0, 52.0);
+            d.velocity = Vec2::ZERO;
+            d.no_light = true;
+            d.no_gravity = true;
+            d.scale = 1.0;
+        });
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &world, 0.0, true);
+        assert!(!pool.slot(0).active, "noLight 211 over solid dies");
+        // Same position, noLight false → survives.
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 52.0, |d| {
+            d.dust_type = 211;
+            d.position = Vec2::new(52.0, 52.0);
+            d.velocity = Vec2::ZERO;
+            d.no_light = false;
+            d.no_gravity = true;
+            d.scale = 1.0;
+        });
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &world, 0.0, true);
+        assert!(pool.slot(0).active, "without noLight the 211 survives");
+    }
+
+    /// `SpawnFartCloud` (`DelegateMethods.cs:258-306`) — the 51 cart's cloud:
+    /// three 435-437 gores at the `(Width/2 − 18, Height − 16)` anchor with
+    /// the (0, −10, +10) X offsets and the −4 Y lift, the ×0.2/+carry/Y×0.75
+    /// post-writes, the 20-tick delay gate, NO dust tail (53-only). The gore
+    /// types are SAFE_GORE + special_ai 0, so each gore costs exactly 3 rolls
+    /// (the type pick + the 2 NewGore velocity rolls) — 9 total.
+    #[test]
+    fn w4_f6_fart_cloud_spawns_three_gores_and_gates_on_the_delay() {
+        let world = World::new("cloud".into(), 64, 64);
+        let ctx = spark_ctx();
+        let mut gore = tr_core::gore::GorePool::new();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let mut delay = 0i32;
+        let pos = Vec2::new(300.0, 300.0);
+        spawn_fart_cloud(
+            &mut gore, &mut dust, &mut rng, &ctx, &world,
+            pos, 20, 52, Vec2::new(5.0, 0.0), 51, &mut delay, true,
+        );
+        assert_eq!(delay, 20, "the useDelay arm re-arms the 20-tick gate");
+        let live: Vec<_> = gore.slots()[..tr_core::gore::GORE_SENTINEL]
+            .iter()
+            .filter(|g| g.active)
+            .collect();
+        assert_eq!(live.len(), 3, "three cloud gores");
+        // The anchor: (300 + 20/2 − 18, 300 + 52 − 16 − 4) = (292, 332).
+        let anchor = Vec2::new(292.0, 332.0);
+        for (g, off) in live.iter().zip([0.0f32, -10.0, 10.0]) {
+            assert!((435..=437).contains(&g.gore_type), "type {}", g.gore_type);
+            assert_eq!(g.position, anchor + Vec2::new(off, 0.0));
+            assert!(!g.sticky, "the 435-437 sticky=false chain");
+            // velocity = (NewGore rolls) ×0.2 + carry(0.5, 0), Y ×0.75.
+            assert!((g.velocity.x - 0.5).abs() <= 0.4 + 1e-4, "vx {}", g.velocity.x);
+        }
+        assert_eq!(live_type(&dust, 107), 0, "the 51 cart has no dust tail");
+        // The gated call: delay > 0 refuses with ZERO draws.
+        let mut rng2 = tr_core::UnifiedRandom::new(7);
+        let mut gore2 = tr_core::gore::GorePool::new();
+        let mut dust2 = tr_core::particles::DustPool::new();
+        spawn_fart_cloud(
+            &mut gore2, &mut dust2, &mut rng2, &ctx, &world,
+            pos, 20, 52, Vec2::ZERO, 51, &mut delay, true,
+        );
+        assert!(gore2.slots()[..tr_core::gore::GORE_SENTINEL].iter().all(|g| !g.active));
+        assert_eq!(rng2.peek(), tr_core::UnifiedRandom::new(7).peek(), "no draws");
+        // useDelay: false (the jump/landing delegates) bypasses the gate.
+        spawn_fart_cloud(
+            &mut gore2, &mut dust2, &mut rng2, &ctx, &world,
+            pos, 20, 52, Vec2::ZERO, 51, &mut delay, false,
+        );
+        assert_eq!(
+            gore2.slots()[..tr_core::gore::GORE_SENTINEL].iter().filter(|g| g.active).count(),
+            3,
+            "the useDelay:false arm fires despite the gate"
+        );
+    }
+
+    /// `SpawnFartCloud`'s Terra-Fart tail (`DelegateMethods.cs:288-305`): the
+    /// 53 cart adds 15 type-107 dusts at `(Width/2, Height+10)` ± the 30×16
+    /// float box, alpha 100, scale 0.6, the green lerp colour, fadeIn
+    /// 0.2..0.3, `noLightEmittance`, the `Next(3)==0` gravity pick.
+    #[test]
+    fn w4_f6_terra_fart_cloud_adds_the_fifteen_green_dusts() {
+        let world = World::new("cloud".into(), 64, 64);
+        let ctx = spark_ctx();
+        let mut gore = tr_core::gore::GorePool::new();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let mut delay = 0i32;
+        spawn_fart_cloud(
+            &mut gore, &mut dust, &mut rng, &ctx, &world,
+            Vec2::new(300.0, 300.0), 20, 52, Vec2::ZERO, 53, &mut delay, false,
+        );
+        assert_eq!(live_type(&dust, 107), 15, "the 53 tail's 15 dusts");
+        // The tail anchor: (300 + 10, 300 + 62) = (310, 362); the box spans
+        // X ±30, Y −16..0 (the pool's perfect-position overwrite is exact).
+        for d in dust.slots()[..tr_core::particles::DUST_SENTINEL].iter().filter(|d| d.active) {
+            assert_eq!(d.dust_type, 107);
+            assert!(d.position.x >= 280.0 && d.position.x <= 340.0, "x {}", d.position.x);
+            assert!(d.position.y >= 346.0 && d.position.y <= 362.0, "y {}", d.position.y);
+            assert!(d.alpha >= 100, "alpha {}", d.alpha);
+            assert!(d.no_light_emittance);
+            assert!(d.fade_in >= 0.2 - 1e-5 && d.fade_in <= 0.3 + 1e-5, "fade {}", d.fade_in);
+            // scale = pool roll × 0.6 ∈ [0.48, 0.72].
+            assert!(d.scale >= 0.48 - 1e-4 && d.scale <= 0.72 + 1e-4);
+            assert!(d.color.g >= 220, "the green lerp G {}", d.color.g);
+        }
     }
 }

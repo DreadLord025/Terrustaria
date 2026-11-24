@@ -51,17 +51,27 @@ impl WalkerParams {
     };
 }
 
-/// The flyer tunables.
+/// The flyer tunables — the RETIRED v1 archetype's shape. W4-b2b: the
+/// false `AI_002` citation is dead — neither 0.12 nor 3.0 appears in
+/// `AI_002_FloatingEye` (`NPC.cs:52274-52731`); the faithful eye machine
+/// is `npc_ai_eye::floating_eye_ai`, wired on the aiStyle-2 axis. These
+/// fields exist only for the test-only `flyer_step` A/B pin.
 #[derive(Clone, Copy, Debug)]
 pub struct FlyerParams {
-    /// The acceleration toward the player (`AI_002`'s 0.12).
+    /// The v1 stand-in's normalized-aim acceleration (INVENTED — not an
+    /// `AI_002` constant; the real arm steers 0.1/0.04 per axis).
     pub accel: f32,
-    /// The speed cap (`AI_002`'s 3.0 for the demon eyes).
+    /// The v1 stand-in's symmetric speed clamp (INVENTED — the real arm
+    /// clamps ±4 X / ±1.5 Y × `(2 − scale)`).
     pub max_speed: f32,
 }
 
 impl FlyerParams {
-    /// The demon-eye machine (`AI_002_FloatingEye`, `NPC.cs:52274+`).
+    /// The RETIRED v1 eye stand-in's numbers (W4-b2b killed the false
+    /// `AI_002_FloatingEye` citation — the A-1 audit, research/54 §2).
+    /// Test-only: `the_flyer_homes_and_bounces` pins the legacy archetype;
+    /// no live caller remains (`update_eye` retired with the wiring).
+    #[allow(dead_code)] // test-only A/B pin (W4-b2b) — no live caller
     pub const FLOATING_EYE: Self = Self {
         accel: 0.12,
         max_speed: 3.0,
@@ -91,12 +101,11 @@ pub fn walker_step(
     let aggro = dx.abs() < params.aggro_x && dy.abs() < params.aggro_y;
     if aggro {
         npc.facing = if dx >= 0.0 { 1 } else { -1 };
-        // W4-g4 lane 15 (the W4-d22 reconcile fold) — the Confused debuff
-        // (31) reverses the walk direction (`NPC.cs:77772-77775`, the
-        // SetTargetTrackingValues tail the fighter core's TargetClosest
-        // runs; the generic archetype's ad-hoc facing carries the same
-        // flip — the P3 buff-31 latch convention:
-        // `buffs.find_buff_index(31)`).
+        // W4-g4 lane 15 — the Confused debuff (31) reverses the walk
+        // direction (`NPC.cs:77772-77775`, the SetTargetTrackingValues
+        // tail the fighter core's TargetClosest runs; the generic
+        // archetype's ad-hoc facing carries the same flip — the P3
+        // buff-31 latch convention: `buffs.find_buff_index(31)`).
         if npc.buffs.find_buff_index(31).is_some() {
             npc.facing *= -1;
         }
@@ -436,11 +445,13 @@ pub fn walker_step_fighter(
     walker_integrate(npc, world, params, gravity, max_fall);
 }
 
-/// `AI_002_FloatingEye`'s fly-and-bob step (`NPC.cs:52274+`, the eye
-/// machine): accelerate toward the player, bounce off the tiles, the bob
-/// rides the anim clock. The last live caller (the bat stand-in) retired
-/// with the S1-D-3 reconcile — the archetype stays for the aiStyle-2
-/// slice's A/B pin (`the_flyer_homes_and_bounces`).
+/// The RETIRED v1 flyer archetype's fly-and-bob step (W4-b2b: was
+/// false-cited as `AI_002_FloatingEye`, `NPC.cs:52274+` — the normalized
+/// 0.12 aim, the ±3 clamp and the `sin(anim*3)*0.4` bob appear NOWHERE in
+/// the C# arm; the faithful machine is `npc_ai_eye::floating_eye_ai`,
+/// wired on the aiStyle-2 axis). Test-only: the last live caller
+/// (`update_eye`) retired with the wiring; the archetype stays for the
+/// A/B pin (`the_flyer_homes_and_bounces`).
 #[allow(dead_code)]
 pub fn flyer_step(
     npc: &mut Npc,
@@ -1637,11 +1648,10 @@ mod tests {
         assert!(fighters_not_discouraged(&sk, &w));
     }
 
-    /// W4-g4 lane 15 (the W4-d22 reconcile fold) — the graveyard term of
-    /// the chain (`NPC.cs:60302`'s `!Main.player[target].ZoneGraveyard`):
-    /// a day-discouraged skeleton above the surface chases again when the
-    /// target's zone pre-stamp is set (the sim feeds
-    /// `scene_metrics.zone_graveyard`).
+    /// W4-g4 lane 15 — the graveyard term of the chain (`NPC.cs:60302`'s
+    /// `!Main.player[target].ZoneGraveyard`): a day-discouraged skeleton
+    /// above the surface chases again when the target's zone pre-stamp
+    /// is set (the sim feeds `scene_metrics.zone_graveyard`).
     #[test]
     fn w4_g4_the_graveyard_stamp_cancels_the_day_discouragement() {
         let mut w = ground(); // day
@@ -1689,11 +1699,10 @@ mod tests {
         assert_eq!(calm.vx.to_bits(), (-1.0f32).to_bits());
         // walker_step_ladder (the aiStyle-3 ladder — the VortexSoldier
         // stand-in): the ladder's accel reads the flipped direction.
-        // W4-g4 P9 (the W4-d22 reconcile fold): the kind is the Soldier
-        // 429 (null immunity row, `NPCID.cs:8561`), NOT the Headcrab 428
-        // — the headcrab is Confused-immune (`NPCID.cs:8555-8559`), so
-        // its buff-31 add is rejected and the flip never fires for it in
-        // the C#.
+        // W4-g4 P9: the kind is the Soldier 429 (null immunity row,
+        // `NPCID.cs:8561`), NOT the Headcrab 428 — the headcrab is
+        // Confused-immune (`NPCID.cs:8555-8559`), so its buff-31 add is
+        // rejected and the flip never fires for it in the C#.
         let mut calm3 = Npc::new(NpcKind::VortexSoldier, 90.0 * 16.0, 118.0 * 16.0 - 56.0, 1, 0.0);
         calm3.on_ground = true;
         let mut conf3 = calm3.clone();

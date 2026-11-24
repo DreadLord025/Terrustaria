@@ -248,6 +248,8 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
             // `currentShoppingSettings = NotInShop` — the mood latch resets
             // to 1.0 (W4-f37; the shop-open latch rides the same field).
             app.shop_mood = 1.0;
+            // W4-f30 — the Joja latches clear on the close (`NPC.cs:93772`).
+            crate::dryad_stardew::reset_joja_latches(app);
         }
     }
     // The open arm's gates: a fresh press, no inventory panel over the world.
@@ -261,15 +263,27 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43068` — `flag3 && !player.dead`
     }
     let region = chat_world_region(p);
-    let i = app.npcs.iter().position(|n| {
+    // `Main.cs:43017` — `flag2 = mouse-over || (SmartInteractShowingGenuine
+    // && SmartInteractNPC == i)`; `:43048-43052` — `flag3` starts from the
+    // smart-interact pick and the town-NPC-in-region test ORs in. The
+    // smart-cursor NPC pick (the NPC provider's win, W4-g86) lets the talk
+    // arm reach an NPC the mouse is NOT directly over — the first such
+    // NPC in slot order, exactly the C#'s per-NPC loop order.
+    let smart_pick = if app.smart_interact.showing_genuine && app.smart_interact.npc >= 0 {
+        Some(app.smart_interact.npc as usize)
+    } else {
+        None
+    };
+    let i = app.npcs.iter().enumerate().position(|(idx, n)| {
         n.hp > 0
             && n.kind.is_town_npc_like()
-            && {
-                let (w, h) = n.size();
-                let (lx, ly, hx, hy) = region;
-                // `Rectangle.Intersects` of the region and the NPC box.
-                n.x < hx && n.x + w > lx && n.y < hy && n.y + h > ly
-            }
+            && (smart_pick == Some(idx)
+                || {
+                    let (w, h) = n.size();
+                    let (lx, ly, hx, hy) = region;
+                    // `Rectangle.Intersects` of the region and the NPC box.
+                    n.x < hx && n.x + w > lx && n.y < hy && n.y + h > ly
+                })
     })?;
     if app.talk_npc == Some(i) {
         return None; // `:43077` — the same NPC re-clicked falls through
@@ -356,6 +370,10 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     // `LanternNight`, the remix world, the Moon Lord) default off — each
     // noted at its field. `WorldGen.crimson` reads the LIVE `World.crimson`
     // (W4-g69 doc-sweep).
+    // carry yet (the storm clock, the happy-windy-day, the remix world,
+    // `WorldGen.crimson`) default off — each noted at its field. W4-f38:
+    // the party/lantern flags and the Moon Lord latch now read the live
+    // schedulers (`world_events`) and the world.
     let day_time = app.world.day_time;
     let time = app.world.time;
     let blood_moon = app.world.blood_moon;
@@ -454,6 +472,8 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         // `WorldGen.crimson` — the LIVE world evil type (W4-g69 doc-sweep:
         // `World.crimson`, the `.wld` flags byte + the `.trwld` v18 tail).
         crimson: app.world.crimson,
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
+        crimson: false,        // `WorldGen.crimson` — the world-evil flag
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
@@ -463,6 +483,7 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         dd2_downed_t3: dd2_t3,
         dd2_ongoing,
         lanterns_up, // `LanternNight.LanternsUp` (S1-F-14)
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         player_life: life,
         player_life_max: life_max,
         player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max
@@ -482,6 +503,43 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     // unobservable either way (the same-NPC re-talk declines `:43077`),
     // the port's early clear is the recorded timing note (research/70 §3).
     app.npcs[i].next_dialogue = false;
+    // `FreeCakeDialogue.GetChatAndClearCondition`'s side effects
+    // (`ConditionalDialogue.cs:58-66`), AFTER the text draw: the condition
+    // clears (`NPC.freeCake = false`), the pending row with it, and the
+    // Slice Of Cake (3750) gift rides `QuickSpawnItem(GiftRecieved)` →
+    // `GetOrDropItem` — the inventory fills first, the overflow drops at
+    // the player centre (the bobber-catch seam, `Player.cs:7187-7200`).
+    // The `SendData(51, …, 10f)` net sync has no single-player consumer.
+    if app.npcs[i].next_dialogue {
+        app.world_events.free_cake = false;
+        app.npcs[i].next_dialogue = false;
+        let max_stack = crate::registry::max_stack(3750);
+        let mut pending = 1u32;
+        while pending > 0 {
+            let Some(slot) = crate::item::slot_for_pickup(&mut app.inventory, 3750, 0) else {
+                break;
+            };
+            let room = max_stack.saturating_sub(app.inventory[slot].count);
+            if room == 0 {
+                break;
+            }
+            let take = pending.min(room);
+            app.inventory[slot].count += take;
+            pending -= take;
+        }
+        if pending > 0 {
+            if let Some(p) = app.player.as_ref() {
+                let (cx, cy) = p.center();
+                crate::world_sim::items::spawn_item_drop_px(
+                    &mut app.items,
+                    app.rngs.stream(RngKey::UpdateItems),
+                    3750,
+                    pending,
+                    glam::Vec2::new(cx, cy),
+                );
+            }
+        }
+    }
     app.npc_chat_text = text.clone(); // `:43082` — `Main.npcChatText = GetChat()`
     // `:43083` — `SoundEngine.PlaySound(24)` (`SoundID.Chat`) AFTER the
     // `GetChat` answer, inside the fresh-talk arm (`talkNPC != i`).
@@ -881,6 +939,11 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
             453 => 20,
             _ => return None,
         },
+        // W4-d123: `Shop(550, 21)` (`NPCInteractions.cs:508`) — the
+        // Tavernkeep's medal shop. The Skeleton Merchant's `Shop(453, 20)`
+        // (`:507`) has no ported kind yet (the shop itself is ported).
+        NpcKind::DD2Bartender => 21,
+        _ => return None,
     })
 }
 
@@ -893,6 +956,17 @@ pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
     n.max_hp = NpcKind::GoblinTinkerer.max_hp();
     n.hp = n.max_hp;
     world.saved_goblin = true;
+    name_the_freed_town_npc(n, world);
+}
+
+/// `NPC.Transform`'s tail (`NPC.cs:81137`): every rescue re-runs
+/// `GiveTownUniqueDataToNPCsThatNeedIt` for the NEW type — the freed NPC
+/// names himself. All six rescue targets are legacy profiles (variation 0,
+/// `Profiles.cs:83-91`), so the `Main.rand` stand-in is never drawn; the
+/// name draws ride `WorldGen.genRand` (`World::frame_rng`).
+fn name_the_freed_town_npc(n: &mut Npc, world: &mut tr_core::World) {
+    let mut main_rand = tr_core::unified_random::UnifiedRandom::new(world.seed as i32);
+    crate::npc_names::give_town_unique_data(n, &mut main_rand, &mut world.frame_rng);
 }
 
 /// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
@@ -908,6 +982,7 @@ pub(crate) fn rescue_bound_wizard(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_wizard = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The bound Mechanic's rescue (`AI_000_TransformBoundNPC`'s 123 → 124 arm,
@@ -919,6 +994,7 @@ pub(crate) fn rescue_bound_mechanic(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_mech = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The webbed Stylist's rescue (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
@@ -935,6 +1011,7 @@ pub(crate) fn rescue_sleeping_golfer(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_golfer = true;
+    name_the_freed_town_npc(n, world);
 }
 
 pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
@@ -943,6 +1020,7 @@ pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_stylist = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
@@ -955,6 +1033,7 @@ pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_angler = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// `Main.NPCChatText_DoAnglerQuest` (`Main.cs:40227-40263`) — the quest's
@@ -1354,11 +1433,27 @@ pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
 
 /// `Chest.cs:2714-2746`'s copper total over the 54-slot inventory scan — the
 /// Stylist's Money Hair Dye gate reads it (the cap at 9,999,999,999 stands).
-/// The port's coin model keeps the purse aggregate (`App.coins`) beside the
-/// grid's coin stacks, so both feed the total (the recorded purse deviation).
-fn coin_total(inventory: &[crate::item::ItemSlot], purse: u64) -> i64 {
-    let mut total: i64 = purse as i64;
-    for sl in inventory.iter() {
+/// The C# walks `Player.inventory[0..54]`: the 50-slot grid AND the four coin
+/// rows (50..53); the ammo rows (54..57) and the banks are NOT scanned.
+///
+/// W4-d122 fifth round: the port's coin model keeps the purse aggregate
+/// (`App.coins`) beside the grid's coin stacks, and the pickup lane credits
+/// the mirror with the copper value of what the inventory stacks take
+/// (`world_sim/items.rs`'s `into_inventory` arm, ANALYSIS "the purse") — so
+/// the mirror ALREADY covers every pickup-fed grid/coin-row stack. Adding
+/// those stacks on top double-counted them (a 500k-copper pickup opened the
+/// 1g gate at 1,000,000). The total is therefore `max(purse, grid + coin
+/// rows)`: the purse covers the pickup/sell lanes, the stack scan covers
+/// sidecar-restored / TR_COINS-free grid coins the mirror never saw, and a
+/// stack the mirror already counted is never added twice. The recorded
+/// purse deviation (ANALYSIS "the shop currency remainder", fifth round).
+fn coin_total(
+    inventory: &[crate::item::ItemSlot],
+    coin_rows: &[crate::item::ItemSlot],
+    purse: u64,
+) -> i64 {
+    let mut stacks: i64 = 0;
+    for sl in inventory.iter().chain(coin_rows.iter()) {
         if sl.count == 0 {
             continue;
         }
@@ -1369,12 +1464,54 @@ fn coin_total(inventory: &[crate::item::ItemSlot], purse: u64) -> i64 {
             74 => 1_000_000,
             _ => continue,
         };
-        total += sl.count as i64 * mult;
-        if total < 0 || total > 9_999_999_999 {
+        stacks += sl.count as i64 * mult;
+        // `:2733-2737`'s mid-walk clamp (the `break` stops the scan).
+        if stacks < 0 || stacks > 9_999_999_999 {
             return 9_999_999_999;
         }
     }
-    total
+    (purse as i64).max(stacks)
+}
+
+/// `TeleportPylonsSystem.DoesPositionHaveEnoughNPCs(2, center)`
+/// (`TeleportPylonsSystem.cs:221-238`, read by `Chest.cs:3472`'s pylon
+/// tail): two housed town NPCs whose home tile sits in the zone-scan
+/// rect centred on the player AND within 100 tiles of the NPC's own
+/// centre. The rect is `Utils.CenteredRectangle`'s Point form
+/// (`Utils.cs:952-955`) over `SceneMetrics.ZoneScanSize` (169×124,
+/// `SceneMetrics.cs:919`).
+fn pylon_enough_npcs(app: &App) -> bool {
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let (cx, cy) = p.center();
+    let (cx, cy) = ((cx / 16.0) as i32, (cy / 16.0) as i32);
+    let (sw, sh) = tr_core::scene::ZONE_SCAN_SIZE;
+    let (rx, ry) = (cx - sw / 2, cy - sh / 2);
+    let mut count = 0;
+    for n in app.npcs.iter() {
+        if n.hp <= 0 || !n.kind.is_town_resident() {
+            continue;
+        }
+        let Some((hx, hy)) = n.home else {
+            continue; // `!nPC.homeless`
+        };
+        if hx < rx || hx >= rx + sw || hy < ry || hy >= ry + sh {
+            continue;
+        }
+        let (nw, nh) = n.size();
+        let ncx = (n.x + nw * 0.5) / 16.0;
+        let ncy = (n.y + nh * 0.5) / 16.0;
+        let dx = hx as f32 - ncx;
+        let dy = hy as f32 - ncy;
+        if (dx * dx + dy * dy).sqrt() < 100.0 {
+            count += 1;
+            if count == 2 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
@@ -1424,8 +1561,19 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         downed_moon_lord: app.world.downed_moon_lord,
         night: !app.world.day_time,
         blood_moon: app.world.blood_moon,
+        // W4-f40: `Chest.cs:2309`'s `LanternNight.LanternsUp` gate — the
+        // Party Girl's Release-Lantern row reads the live event flag.
+        // RETIRE (research/105 §9.2): f41 `be4cb841`'s feed line is the
+        // identical expression — the merge keeps ONE (either copy).
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         zone_snow: app.scene_metrics.zone_snow,
         zone_jungle: app.scene_metrics.zone_jungle,
+        // W4-d123: `Main.player[Main.myPlayer].ZoneGraveyard` — the second-
+        // half shops' graveyard tails (`Chest.cs:2269`/`:2305`/`:2411`/
+        // `:2471`/`:2684`).
+        zone_graveyard: app.scene_metrics.zone_graveyard,
+        // W4-d123: `ZoneBeach` — the Pirate's 1180 row (`Chest.cs:2688`).
+        zone_beach: app.scene_metrics.zone_beach,
         // `NPC.downedBoss2`/`downedBoss3` — the world's own latches (the
         // chat context reads the same pair, `npc_chat`'s `downed_boss2/3`).
         downed_boss2: app.world.downed_eow,
@@ -1438,12 +1586,81 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
         // port's tracker over the ENTRIES' unlock states.
         bestiary_completion: crate::bestiary::completion_percent_world(&app.bestiary),
+        bestiary_completion: crate::bestiary::completion_percent(&app.bestiary),
         // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
         // override; the port's roster is the other half of her gate.
         unlocked_princess: false,
+        // W4-d123: the Party Girl's second-half gates (`Chest.cs:2309-2345`)
+        // — the world-events scheduler's lantern/party states, the Golem
+        // latch; the Pirate's presence stays constants-off (no town kind).
+        lantern_night: crate::world_events::lanterns_up(&app.world_events),
+        pirate_present: false,
+        downed_golem: app.world.downed_golem,
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
+        // W4-d123: `Main.eclipse` — the Cyborg shop's event gates
+        // (`Chest.cs:2368-2381`).
+        eclipse: app.world.eclipse,
+        // W4-d123: the Witch Doctor's / Painter's Plantera + roster gates
+        // (`Chest.cs:2630`/`:2475`/`:2618`) — the world latch and the live
+        // town scans (`NPC.AnyNPCs(124)`/`AnyNPCs(108)`).
+        downed_plant_boss: app.world.downed_plant_boss,
+        mechanic_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::Mechanic),
+        wizard_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::Wizard),
+        // W4-d123: the Skeleton Merchant's world-side gates
+        // (`Chest.cs:2822-2831`/`:2887`/`:2958`) — the remix bit, the
+        // live clock and the player's artisan-bread latch.
+        remix_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::REMIX),
+        world_time: app.world.time,
+        ate_artisan_bread: app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.ate_artisan_bread),
+        // W4-d123: the Decor shop's / pylon tail's zone + position gates
+        // (`Chest.cs:2509-2612`/`:3472-3536`) — the scene metrics' zones,
+        // the storm flag, the player's below-surface/depth reads and the
+        // two-housed-NPC scan.
+        zone_crimson: app.scene_metrics.zone_crimson,
+        zone_corrupt: app.scene_metrics.zone_corrupt,
+        zone_hallow: app.scene_metrics.zone_hallow,
+        zone_desert: app.scene_metrics.zone_desert,
+        zone_dungeon: app.scene_metrics.zone_dungeon,
+        zone_sky_height: app.scene_metrics.zone_sky_height,
+        zone_glowshroom: app.scene_metrics.glowshroom,
+        zone_underworld_height: app.scene_metrics.zone_underworld_height,
+        storming: app.wind.storming,
+        shopping_below_surface: app.player.as_ref().is_some_and(|p| {
+            (p.center().1 / 16.0) as i32 as f64 > app.world.world_surface
+        }),
+        pylon_enough_npcs: pylon_enough_npcs(app),
+        pylon_remix_depth: app.player.as_ref().is_some_and(|p| {
+            let ty = p.center().1 / 16.0;
+            (ty as f64) > app.world.rock_layer && ty < (app.world.height - 350) as f32
+        }),
+        pylon_remix_ocean_depth: app.player.as_ref().is_some_and(|p| {
+            let ty = p.y / 16.0;
+            (ty as f64) > app.world.rock_layer && ty < (app.world.height - 350) as f32
+        }),
+        pylon_remix_edge: app.player.as_ref().is_some_and(|p| {
+            // `:3517-3518` — position (NOT center) / 16.
+            let tx = (p.x / 16.0) as f64;
+            tx < app.world.width as f64 * 0.43 || tx > app.world.width as f64 * 0.57
+        }),
+        beach_above_surface: app
+            .player
+            .as_ref()
+            .is_some_and(|p| (p.y as f64) < app.world.world_surface * 16.0),
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
-        coins_over_gold: coin_total(&app.inventory, app.coins) >= 1_000_000,
+        coins_over_gold: coin_total(&app.inventory, &app.equip.coins, app.coins) >= 1_000_000,
         // `NPC.AnyNPCs(208)` (`Chest.cs:2762`) — the live roster scan.
         party_girl_present: app
             .npcs
@@ -1462,6 +1679,27 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         downed_mech_2: app.world.downed_mech_boss2,
         downed_mech_3: app.world.downed_mech_boss3,
         downed_martians: app.world.downed_martians,
+        // W4-d122: the Truffle/Steampunker gates (`Chest.cs:2113-2233`).
+        downed_plant_boss: app.world.downed_plant_boss,
+        // `WorldGen.cs:11118-11121` — the seed-option statics ride the
+        // persisted `World.seeds` bits.
+        remix_world: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+        anniversary_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        get_good_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        // W4-d122 shop 11: the Steampunker's scene/event gates
+        // (`Chest.cs:2151-2233`).
+        eclipse: app.world.eclipse,
+        downed_boss1: app.world.downed_eoc,
+        downed_golem: app.world.downed_golem,
+        zone_graveyard: app.scene_metrics.zone_graveyard,
+        zone_sky_height: app.scene_metrics.zone_sky_height,
+        zone_hallow: app.scene_metrics.zone_hallow,
         // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
         // (`WorldGen.cs:555-562`) — `Chest.SetupShop`'s Dryad and Bestiary
         // Girl vampirism rows (`shop.rs`'s `Vampirism*` gates). The world's
@@ -1491,6 +1729,52 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
         zone_desert: app.scene_metrics.zone_desert,
         downed_pirates: app.world.downed_pirates,
+        // W4-g90 — the Skeleton Merchant's gates (`Chest.cs:2958`'s
+        // `!ateArtisanBread`, `:2822-2831`'s remix swap, `:2887`'s clock).
+        ate_artisan_bread: app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.ate_artisan_bread),
+        remix_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::REMIX),
+        time: app.world.time,
+        // W4-d122 shop 1: the Merchant's seed/weather/party gates
+        // (`Chest.cs:1387-1438`).
+        not_the_bees: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
+        happy_windy_day: app.wind.happy_windy_day,
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
+        // W4-d122 shop 2: the Arms Dealer's ore-tier split
+        // (`Chest.cs:1489`) — the world's rolled silver tier.
+        silver_ore_tier: app.world.ore_tiers.silver,
+        // W4-d122 shop 4: the Demolitionist's Land Mine triple conjunct
+        // (`Chest.cs:1766`).
+        downed_pirates: app.world.downed_pirates,
+        // W4-d122 shop 5: the Clothier's latches + the Tax Collector scan
+        // (`Chest.cs:1849-1953`). `downed_clown` stays false — the port
+        // persists no clown bit (the recorded deviation).
+        downed_clown: false,
+        downed_cultist: app.world.downed_ancient_cultist,
+        downed_frost: app.world.downed_frost,
+        tax_collector_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::TaxCollector),
+        // W4-d122 shop 8: the Mechanic's Rod Angler scan
+        // (`Chest.cs:2085`'s `NPC.AnyNPCs(369)`).
+        angler_present: app.npcs.iter().any(|n| n.hp > 0 && n.kind == NpcKind::Angler),
+        // W4-d122 remainder census, shop 23: the fairy-torch head gate
+        // (`Chest.cs:3266`/:3544-3559 — the three fairy-critter SIGHTS)
+        // and the Solar Pillar latch (`:3304`).
+        fairy_torch_available: crate::bestiary::fairy_torch_available(&app.bestiary),
+        downed_tower_solar: app.world.downed_tower_solar,
+        // W4-d122 remainder census, shop 24: the anniversary block's
+        // desert gate (`Chest.cs:3441`) — the scene metrics' zone flag.
+        zone_desert: app.scene_metrics.zone_desert,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -1610,6 +1894,9 @@ pub(crate) fn update_brain_state(app: &mut App) {
 }
 
 pub(crate) fn update_worms(app: &mut App) {
+    // W4-d127 — the leech entry burst's ctx is captured BEFORE the stream
+    // borrow (`spawn_ctx` takes `&self`; the helper borrows `app` immutably).
+    let dust_ctx = app.spawn_ctx();
     // `AI_006_Worms` runs inside each NPC's `Update` — the `UpdateNPCs`
     // swap's stream (`Main.cs:17767-17769`).
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
@@ -1637,12 +1924,92 @@ pub(crate) fn update_worms(app: &mut App) {
     // convention, the destroyer precedent).
     let dust_ctx = crate::npc::permissive_dust_ctx(&app.world);
     update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id, &mut app.dust, &dust_ctx);
+    update_worms_ctx(
+        world,
+        ctx,
+        &mut app.npcs,
+        rng,
+        &mut app.next_worm_id,
+        Some(&mut app.dust),
+        &dust_ctx,
+    );
+    // W4-g59 DOC-SWEEP — the EoW spawn fade (`AI_006_Worms`'s tail,
+    // `NPC.cs:52251-52271`), a post-pass after the chain movement (the
+    // pool-pass deviation — the C# interleaves it in slot order).
+    eow_spawn_fade(&app.world, &dust_ctx, &mut app.npcs, &mut app.dust, rng);
     // S1-E-21g — the worm pass's queued plays (the leech entry burst,
     // the dig roars): the same drain as the per-NPC loop, after the
     // pass's draws on the same UpdateNPCs stream.
     for n in app.npcs.iter_mut() {
-        for req in n.wants_sound.drain(..) {
-            play_npc_sound_request(&mut app.audio, req, rng);
+        for req in std::mem::take(&mut n.wants_sound) {
+            play_npc_sound_request(&mut app.audio, n, req, rng);
+        }
+    }
+}
+
+/// W4-g59 DOC-SWEEP — the EoW spawn fade (`AI_006_Worms`'s tail,
+/// `NPC.cs:52251-52271`): the 13/14/15 family fades its `alpha = 255`
+/// SetDefaults start (`:8921`/`:8941`/`:8961`) 42 per MOVED tick. The
+/// port runs it as a post-pass after the chain movement (the pool-pass
+/// deviation — the C# interleaves it in slot order; the fade reads the
+/// leader's alpha, so the head's fade lands before its followers' gate).
+/// The dust rides the live pool on the same `UpdateNPCs` stream. The
+/// movement test reads the preamble's `old_x/old_y` stamp (`NPC.cs:92605`)
+/// vs the post-worm-pass position — the C#'s
+/// `(position - oldPosition).Length() > 2f`.
+fn eow_spawn_fade(
+    world: &tr_core::World,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+    npcs: &mut [Npc],
+    dust: &mut tr_core::particles::DustPool,
+    rng: &mut UnifiedRandom,
+) {
+    for i in 0..npcs.len() {
+        if !matches!(
+            npcs[i].kind,
+            NpcKind::EaterOfWorldsHead | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail
+        ) || npcs[i].hp <= 0
+        {
+            continue;
+        }
+        // `:52251` — the gate: type 13 always passes; 14/15 pass only while
+        // their leader (`ai[1]` = the port's seg_index-1 link) is already
+        // half-visible (`alpha < 85`). A missing leader reads 255 (the C#'s
+        // fresh-slot default) → the follower holds its fade.
+        let is_head = npcs[i].kind == NpcKind::EaterOfWorldsHead;
+        let leader_alpha = if is_head {
+            0
+        } else {
+            let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
+            npcs.iter()
+                .find(|n| n.worm_id == wid && n.seg_index == seg.saturating_sub(1) && n.hp > 0)
+                .map(|n| n.alpha as i32)
+                .unwrap_or(255)
+        };
+        if !is_head && leader_alpha >= 85 {
+            continue;
+        }
+        // `:52255-52263` — while still fading AND alive: 2× type-14 dust at
+        // the position, alpha 100, scale 2, noGravity + noLight.
+        if npcs[i].alpha > 0 {
+            let (w, h) = npcs[i].size();
+            let pos = Vec2::new(npcs[i].x, npcs[i].y);
+            for _ in 0..2 {
+                let idx = dust.new_dust(
+                    rng, dust_ctx, world, pos, w as i32, h as i32, 14,
+                    0.0, 0.0, 100, tr_core::particles::Color::default(), 2.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+            }
+        }
+        // `:52264-52271` — the fade step is MOVEMENT-gated: only when the
+        // tick's displacement exceeds 2 px does `alpha -= 42` (floor 0).
+        let dx = npcs[i].x - npcs[i].old_x;
+        let dy = npcs[i].y - npcs[i].old_y;
+        if (dx * dx + dy * dy).sqrt() > 2.0 {
+            npcs[i].alpha = npcs[i].alpha.saturating_sub(42);
         }
     }
 }
@@ -1677,8 +2044,9 @@ pub(crate) struct WormHeadCtx {
 /// wave-G site, `Main.cs:17767`). The int overloads
 /// (`SoundEngine.cs:102-108`) draw NO `GetRandomPitch` NextFloat; the
 /// style façades (`:93-99`) consume it on the audio-only stream.
-fn play_npc_sound_request(
+pub(crate) fn play_npc_sound_request(
     audio: &mut crate::audio::Audio,
+    n: &mut Npc,
     req: crate::npc::NpcSoundRequest,
     rng: &mut UnifiedRandom,
 ) {
@@ -1727,6 +2095,14 @@ fn play_npc_sound_request(
         NpcSoundCue::NpcDeath13 => {
             audio.play_npc_death_style(13, req.x, req.y, rng);
         }
+        // W4-c2 — the pillar shield cues (`NPC.cs:39089`/`:39093`): both
+        // the style façades, case 4.
+        NpcSoundCue::NpcDeath58 => {
+            audio.play_npc_death_style(58, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath3 => {
+            audio.play_npc_death_style(3, req.x, req.y, rng);
+        }
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
         }
@@ -1749,6 +2125,15 @@ fn play_npc_sound_request(
         NpcSoundCue::Pixie => {
         NpcSoundCue::Trackable(cue) => {
             audio.play_npc_trackable(cue, req.x, req.y);
+        NpcSoundCue::VoiceHit(style) => {
+            audio.play_npc_voice_hit(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::Item10 => {
+            audio.play_npc_item_cue(10, req.x, req.y, rng);
+        }
+        NpcSoundCue::KindHit(cue) => {
+            audio.play_npc_hit_sound(cue, req.x, req.y, rng);
+        }
     }
 }
 
@@ -1843,6 +2228,208 @@ pub(crate) fn style74_death_feed(app: &mut App, npc: &Npc) {
             // the caller's stream (the S1-E-21e contract).
             audio.play_fighter_moan(29, style, req.x, req.y, rng);
         }
+        // W4-d80 — the tracked-sound entity loops (research/64): the queue
+        // preserves the C#'s intra-tick play order; the drain applies each
+        // intent against the tracked pool and writes the `SlotId` floats
+        // back into `local_ai` (the C# `localAI` dance). ZERO gameplay
+        // draws — the variation/pitch picks ride the two audio-only
+        // statics (the census' RNG contract).
+        cue => apply_npc_tracked_cue(audio, n, cue, req.x, req.y),
+    }
+}
+
+/// W4-d80 — one drained tracked-sound intent (`NpcSoundCue`'s DD2 arms):
+/// the ensure/play/follow/stop dance against the pool, the handle floats
+/// written back into `Npc.local_ai`. The C# sites play at `base.Center`;
+/// the queue carries the machine's centre snapshot (the one-tick position
+/// lag is the batch convention, ANALYSIS — the follow arms re-point it
+/// every tick anyway). The `GetActiveSound` null test is the pool's
+/// versioned-slot lookup (`SlotVector.Has`): a reaped slot reads null and
+/// the ensure re-plays.
+fn apply_npc_tracked_cue(
+    audio: &mut crate::audio::Audio,
+    n: &mut Npc,
+    cue: crate::npc::NpcSoundCue,
+    x: f32,
+    y: f32,
+) {
+    use crate::npc::NpcSoundCue;
+    use crate::tracked_sound::TrackedStyle;
+    use tr_core::slot::SlotId;
+    let play = |audio: &mut crate::audio::Audio, name: &str| -> SlotId {
+        let Some(style) = TrackedStyle::by_name(name) else {
+            return SlotId::INVALID;
+        };
+        audio.play_tracked(style, x, y, Default::default())
+    };
+    let handle = |n: &Npc, i: usize| SlotId::from_float(n.local_ai[i]);
+    match cue {
+        NpcSoundCue::BetsyWindAttack => {
+            // `NPC.cs:61982` — the one-shot, no slot storage.
+            let _ = play(audio, "DD2_BetsyWindAttack");
+        }
+        NpcSoundCue::BetsyFlameBreath => {
+            // `NPC.cs:62028` — the dash tick's handle into `localAI[2]`.
+            n.local_ai[2] = play(audio, "DD2_BetsyFlameBreath").to_float();
+        }
+        NpcSoundCue::BetsyBreathFollow => {
+            // `NPC.cs:61993-61997` — the live handle follows the centre.
+            if let Some(s) = audio.get_active_sound_mut(handle(n, 2)) {
+                s.position = (x, y);
+            }
+        }
+        NpcSoundCue::BetsyBreathHandleDrop => {
+            // `NPC.cs:62302-62305` — the dead handle drops to Invalid.
+            if audio.get_active_sound(handle(n, 2)).is_none() {
+                n.local_ai[2] = SlotId::INVALID.to_float();
+            }
+        }
+        NpcSoundCue::PortalOpen => {
+            // `NPC.cs:40981-40982` — the open one-shot + the handle reset.
+            let _ = play(audio, "DD2_EtherianPortalOpen");
+            n.local_ai[3] = SlotId::INVALID.to_float();
+        }
+        NpcSoundCue::PortalIdleEnsure => {
+            // `NPC.cs:40984-40987` — the idle-loop ensure into `localAI[3]`.
+            if audio.get_active_sound(handle(n, 3)).is_none() {
+                n.local_ai[3] = play(audio, "DD2_EtherianPortalIdleLoop").to_float();
+            }
+        }
+        NpcSoundCue::PortalFadeVolume(scale) => {
+            // `NPC.cs:41029-41037` — the fade ensure, then `Volume = scale`.
+            if audio.get_active_sound(handle(n, 3)).is_none() {
+                n.local_ai[3] = play(audio, "DD2_EtherianPortalIdleLoop").to_float();
+            }
+            if let Some(s) = audio.get_active_sound_mut(handle(n, 3)) {
+                s.volume = scale;
+            }
+        }
+        NpcSoundCue::PortalStop => {
+            // `NPC.cs:41044` — `activeSound?.Stop()`.
+            if let Some(s) = audio.get_active_sound_mut(handle(n, 3)) {
+                s.stop();
+            }
+        }
+        NpcSoundCue::KoboldStopBoth => {
+            // `NPC.cs:63206-63207` — both handles stop on the explode entry.
+            for i in [0, 1] {
+                if let Some(s) = audio.get_active_sound_mut(handle(n, i)) {
+                    s.stop();
+                }
+            }
+        }
+        NpcSoundCue::KoboldExplosion => {
+            // `NPC.cs:63256` — the death-tick one-shot, no slot storage.
+            let _ = play(audio, "DD2_KoboldExplosion");
+        }
+        NpcSoundCue::KoboldIgniteEnsure => {
+            // `NPC.cs:63265-63268` — the `!IsValid` gate (NOT the null test).
+            if !handle(n, 0).is_valid() {
+                n.local_ai[0] = play(audio, "DD2_KoboldIgnite").to_float();
+            }
+        }
+        NpcSoundCue::KoboldLoopsPlay => {
+            // `NPC.cs:63272-63273` — the 30-tick ignite timer's pair.
+            n.local_ai[0] = play(audio, "DD2_KoboldIgniteLoop").to_float();
+            n.local_ai[1] = play(audio, "DD2_KoboldScreamChargeLoop").to_float();
+        }
+        NpcSoundCue::KoboldLoopsEnsureFollow => {
+            // `NPC.cs:63288-63307` — null → re-play, else follow (both).
+            for (i, name) in [(0, "DD2_KoboldIgniteLoop"), (1, "DD2_KoboldScreamChargeLoop")] {
+                if audio.get_active_sound(handle(n, i)).is_none() {
+                    n.local_ai[i] = play(audio, name).to_float();
+                } else if let Some(s) = audio.get_active_sound_mut(handle(n, i)) {
+                    s.position = (x, y);
+                }
+            }
+        }
+        NpcSoundCue::WitherAuraEnsureFollow => {
+            // `NPC.cs:63380-63388` — the aura pulse's ensure-or-follow.
+            if audio.get_active_sound(handle(n, 1)).is_none() {
+                n.local_ai[1] = play(audio, "DD2_WitherBeastAuraPulse").to_float();
+            } else if let Some(s) = audio.get_active_sound_mut(handle(n, 1)) {
+                s.position = (x, y);
+            }
+        }
+        // W4-d80 final — the DD2 riders census round (research/64 final):
+        // the remaining AI_107/108/109/110 one-shots and handle plays.
+        NpcSoundCue::CrystalWinScene => {
+            // `NPC.cs:40764` — the win-scene one-shot, no slot storage.
+            let _ = play(audio, "DD2_WinScene");
+        }
+        NpcSoundCue::BetsyCircleAttack => {
+            // `NPC.cs:62109` — the circle flight's one-shot.
+            let _ = play(audio, "DD2_BetsyFlyingCircleAttack");
+        }
+        NpcSoundCue::BetsyDashScream => {
+            // `NPC.cs:62136` — the dash entry's one-shot.
+            let _ = play(audio, "DD2_BetsyScream");
+        }
+        NpcSoundCue::OgreAttack => {
+            // `NPC.cs:63082` — the club swing's one-shot.
+            let _ = play(audio, "DD2_OgreAttack");
+        }
+        NpcSoundCue::OgreGroundPound => {
+            // `NPC.cs:63100` — the pound's one-shot.
+            let _ = play(audio, "DD2_OgreGroundPound");
+        }
+        NpcSoundCue::OgreSpit => {
+            // `NPC.cs:63114` — the spit's one-shot.
+            let _ = play(audio, "DD2_OgreSpit");
+        }
+        NpcSoundCue::DrakinShot => {
+            // `NPC.cs:63183` — the burst's one-shot.
+            let _ = play(audio, "DD2_DrakinShot");
+        }
+        NpcSoundCue::DrakinBreathIn => {
+            // `NPC.cs:63187` — the engage's one-shot.
+            let _ = play(audio, "DD2_DrakinBreathIn");
+        }
+        NpcSoundCue::JavelinAttack => {
+            // `NPC.cs:63441` — the throw tick's one-shot.
+            let _ = play(audio, "DD2_JavelinThrowersAttack");
+        }
+        NpcSoundCue::GoblinBomberThrow => {
+            // `NPC.cs:63535` — the lob tick's one-shot.
+            let _ = play(audio, "DD2_GoblinBomberThrow");
+        }
+        NpcSoundCue::PortalSpawnEnemy => {
+            // `NPC.cs:63765`/`:65482`/`:65934` — the materialize one-shot.
+            let _ = play(audio, "DD2_EtherianPortalSpawnEnemy");
+        }
+        NpcSoundCue::WyvernDiveDown { scream } => {
+            // `NPC.cs:65610-65614` — the dive-down into `localAI[1]`, then
+            // the 1-in-5 scream into `localAI[2]` (the machine rolled the
+            // `Next(5)` on its own stream; the drain only plays).
+            n.local_ai[1] = play(audio, "DD2_WyvernDiveDown").to_float();
+            if scream {
+                n.local_ai[2] = play(audio, "DD2_WyvernScream").to_float();
+            }
+        }
+        NpcSoundCue::KoboldFlyerCharge => {
+            // `NPC.cs:65618-65619` — the charge scream into `localAI[1]`
+            // + the ignite one-shot (handle discarded).
+            n.local_ai[1] = play(audio, "DD2_KoboldFlyerChargeScream").to_float();
+            let _ = play(audio, "DD2_KoboldIgnite");
+        }
+        NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow => {
+            // `NPC.cs:65636-65644` — null → play into `localAI[2]`, else
+            // `Position = Center`.
+            if audio.get_active_sound(handle(n, 2)).is_none() {
+                n.local_ai[2] = play(audio, "DD2_KoboldIgniteLoop").to_float();
+            } else if let Some(s) = audio.get_active_sound_mut(handle(n, 2)) {
+                s.position = (x, y);
+            }
+        }
+        NpcSoundCue::DarkMageSummonSkeleton => {
+            // `NPC.cs:65842` — the summon window's one-shot.
+            let _ = play(audio, "DD2_DarkMageSummonSkeleton");
+        }
+        NpcSoundCue::DarkMageCastHeal => {
+            // `NPC.cs:65860` — the heal window's one-shot.
+            let _ = play(audio, "DD2_DarkMageCastHeal");
+        }
+        _ => {}
     }
 }
 
@@ -1892,6 +2479,18 @@ pub(crate) fn update_worms_in_dust(
         zone_underground_desert: false,
     });
     update_worms_ctx(world, ctx, npcs, rng, next_worm_id, dust, dust_ctx);
+    // The dust-free seam: the budget/chain witnesses pin the init ledger
+    // without the entry burst's draws (W4-d127 — the burst is additive and
+    // rides the same stream; production threads the real pool below).
+    update_worms_ctx(
+        world,
+        ctx,
+        npcs,
+        rng,
+        next_worm_id,
+        None,
+        &tr_core::particles::SpawnCtx::default(),
+    );
 }
 
 fn update_worms_ctx(
@@ -1901,6 +2500,11 @@ fn update_worms_ctx(
     mut rng: &mut UnifiedRandom,
     next_worm_id: &mut u32,
     dust: &mut tr_core::particles::DustPool,
+    // W4-d127 — the leech entry burst's pool + spawn ctx (`NPC.cs:50969-
+    // 50977`). Production threads the real `Main.dust` + the frame's
+    // `Dust.NewDust` ctx; `None` keeps the chain-init ledger dust-free for
+    // the budget witnesses (the W-A2-1 stream pins).
+    mut dust: Option<&mut tr_core::particles::DustPool>,
     dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
     // The init loop: the links spawn their children (the chain assembles
@@ -1930,6 +2534,7 @@ fn update_worms_ctx(
         // plays, then spawns; the queued play drains after the pass's
         // draws (the attenuation-gated audio convention), so the burst
         // rides here in the latch block.
+        // init, `SoundID.NPCDeath13` at base.position (the style façade).
         if kind == NpcKind::LeechHead && npcs[i].local_ai[1] == 0.0 {
             npcs[i].local_ai[1] = 1.0;
             // E0502 gate fix: read the position before the mutable push.
@@ -1955,6 +2560,38 @@ fn update_worms_ctx(
                     num * 8.0, -1.0, 0,
                     tr_core::particles::Color::default(), 1.0,
                 );
+            // W4-d127 — `NPC.cs:50969-50977`: the 20-dust entry burst.
+            // `num = 1` (or -1 when velocity.X < 0, `:50970-50973`); each
+            // `Dust.NewDust((pos.X - 20, pos.Y - 20), width + 40,
+            // height + 40, 5, num * 8, -1f)` (`:50976`) rolls the shared
+            // `UpdateNPCs` stream through the verbatim allocator (the
+            // Everscream/saucer precedent — the dust draws ride the SAME
+            // stream the AI draws do, `Main.cs:17767-17769`). C# order:
+            // the burst draws FIRST (`:50965` opens `AI_006_Worms`), the
+            // budget roll (`:51310`) follows in the same first tick — the
+            // port keeps that order (burst here, roll below). The old
+            // "SKIPPED (wave G)" deviation is retired: production threads
+            // the real pool + ctx; the `None` seam isolates the chain-init
+            // budget ledger for the W-A2-1 witnesses (dust-free by design).
+            if let Some(dust) = dust.as_deref_mut() {
+                let num = if npcs[i].vx < 0.0 { -1 } else { 1 };
+                let (bw, bh) = npcs[i].size();
+                for _ in 0..20 {
+                    dust.new_dust(
+                        rng,
+                        dust_ctx,
+                        world,
+                        Vec2::new(sx - 20.0, sy - 20.0),
+                        bw as i32 + 40,
+                        bh as i32 + 40,
+                        5,
+                        num as f32 * 8.0,
+                        -1.0,
+                        0,
+                        tr_core::particles::Color::default(),
+                        1.0,
+                    );
+                }
             }
         }
         // The tails (9/12/15) sit outside the chain-spawn lists
@@ -2185,6 +2822,10 @@ fn update_worms_ctx(
                 npcs[i].kind = NpcKind::EaterOfWorldsHead;
                 npcs[i].y -= npcs[i].size().1;
                 npcs[i].max_hp = NpcKind::EaterOfWorldsHead.max_hp();
+                // W4-g59 DOC-SWEEP — `Transform(13)`'s `SetDefaults` resets
+                // the fade start (`NPC.cs:8921`'s `alpha = 255`): the new
+                // head re-fades from invisible (`:52251-52271`).
+                npcs[i].alpha = 255;
                 npcs[i].hp = if old_max > 0 {
                     (old_life * npcs[i].max_hp / old_max).max(1)
                 } else {
@@ -2243,6 +2884,9 @@ fn update_worms_ctx(
                 npcs[i].kind = NpcKind::EaterOfWorldsTail;
                 npcs[i].y -= npcs[i].size().1;
                 npcs[i].max_hp = NpcKind::EaterOfWorldsTail.max_hp();
+                // W4-g59 DOC-SWEEP — `Transform(15)`'s `SetDefaults` resets
+                // the fade start (`NPC.cs:8961`'s `alpha = 255`).
+                npcs[i].alpha = 255;
                 npcs[i].hp = if old_max > 0 {
                     (old_life * npcs[i].max_hp / old_max).max(1)
                 } else {
@@ -2614,6 +3258,30 @@ fn worm_head_step(
         }
     }
     let (num45, num46) = npc.kind.worm_tunables();
+    // W4-d127 — the leech head's WoF-hp speed ladder (`NPC.cs:51745-51763`).
+    // `type == 117 && Main.wofNPCIndex >= 0`: the FLOAT ratio
+    // `(float)life / (float)lifeMax` (`:51747`) gates three cumulative
+    // bumps — <0.5 → +1 speed/+0.1 accel, <0.25 → +1/+0.1, <0.1 → +2/+0.1.
+    // The base 8/0.07 (`:51670-51671`) rides `worm_tunables`' default row;
+    // the presence gate is `world.wof_npc_index >= 0` (the sim's
+    // `Main.wofNPCIndex` mirror, `world_sim/npcs.rs`'s wall write-back).
+    // No wall → no ladder (the head keeps the base tunables).
+    let (mut num45, mut num46) = (num45, num46);
+    if npc.kind == NpcKind::LeechHead && world.wof_npc_index >= 0 {
+        let num47 = world.wof_life as f32 / world.wof_life_max as f32;
+        if num47 < 0.5 {
+            num45 += 1.0;
+            num46 += 0.1;
+        }
+        if num47 < 0.25 {
+            num45 += 1.0;
+            num46 += 0.1;
+        }
+        if num47 < 0.1 {
+            num45 += 2.0;
+            num46 += 0.1;
+        }
+    }
     let mut despawn_chain = false;
     // The tile-snapped aim (`NPC.cs:51855-51866`): BOTH the player centre
     // and the NPC centre floor to the 16-px grid before the delta; num48/
@@ -3123,6 +3791,49 @@ pub(crate) fn update_destroyers(app: &mut App) {
     }
 }
 
+/// N16 (wyvern wiring): the Wyvern family's sim pass — the type-87..92
+/// path of `AI_006_Worms` (`npc_ai_wyvern.rs::wyvern_family_step`), the
+/// Destroyer precedent (the family is NOT `is_worm()` — the shared worm
+/// pass never sees it; the stand-in no-op kind arm retires its "UNWIRED"
+/// note). Runs after the per-NPC step, beside `update_destroyers`: the
+/// chain assembly + the orphan deaths need the whole pool, and the
+/// followers snap to their leaders' same-tick positions (the C#
+/// interleaves it in slot order; the port's pass reads the same spawn
+/// order — the documented pool-pass convention).
+///
+/// RNG: the machine draws NOTHING (the module's census) — the pass takes
+/// no stream; the death-gore draws are the documented cosmetic skip.
+pub(crate) fn update_wyverns(app: &mut App) {
+    if !app
+        .npcs
+        .iter()
+        .any(|n| crate::npc_ai_wyvern::is_wyvern_family(n.kind) && n.hp > 0)
+    {
+        return;
+    }
+    // The target candidate (the `npc_target` convention, single-player).
+    let players: Vec<crate::npc_target::TargetCandidate> = app
+        .player
+        .as_ref()
+        .map(|p| vec![crate::npc_target::session_candidate(p)])
+        .unwrap_or_default();
+    if players.is_empty() {
+        return;
+    }
+    let ctx = crate::npc_ai_wyvern::WyvernCtx {
+        net_mode: 0, // single-player (the chain gate `netMode != 1`)
+        world_surface: app.world.world_surface,
+    };
+    crate::npc_ai_wyvern::wyvern_family_step(
+        &mut app.npcs,
+        &app.world,
+        &players,
+        &ctx,
+        &mut app.next_worm_id,
+        0, // the EverLastingTicker stamp (the S1-D-3p convention)
+    );
+}
+
 /// `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:681-763`): the
 /// Guide Voodoo Doll (267) that touches lava is consumed, strikes every
 /// town NPC dead (the Guide first, then the stack's remainder across the
@@ -3397,14 +4108,13 @@ pub(crate) fn tower_shield_absorb(world: &mut tr_core::World, tower: usize) -> b
 /// the 629 bolt contact ([`tower_shield_absorb`]). When the last bolt
 /// zeroes the shield, the next tick's gate opens the tower to damage.
 ///
-/// B-6b wiring: the C# runs this inside the pillar machine; the port's
-/// stand-in (`update_ancient_cultist`) is B-6a's re-port territory, so the
-/// gate rides the sim pass instead — once per `update_npcs`, right after
-/// the death path (so towers spawned by this tick's cultist death are
-/// gated the same tick). B-6a folds it into the re-ported machine at the
-/// C# position; the ai[3] shield-break flash cycle (`NPC.cs:39069-39100`,
-/// NPCDeath58 on the flip / NPCDeath3 at ai[3]==1 / the 120-wrap) rides
-/// that re-port too — it reads the `ai[3] = 1` trigger R71's spend writes.
+/// B-6b wiring: the C# runs this inside the pillar machine; W4-c2 landed
+/// that machine on the style axis (`npc.rs::ai_094_pillar_family` →
+/// `npc_ai_pillar::pillar_ai_step`, which writes the gate AND the ai[3]
+/// shield-break flash cycle at the C# position, `NPC.cs:39069-39115`).
+/// This pass STAYS as the same-tick backstop right after the death path:
+/// towers spawned by this tick's cultist death are gated before their
+/// first AI turn, and the write is idempotent with the machine's own.
 pub(crate) fn apply_tower_shield_gates(app: &mut App) {
     for n in app.npcs.iter_mut() {
         let shield = match n.kind {
@@ -3577,6 +4287,36 @@ pub(crate) fn update_invasion_state(app: &mut App) {
                 let was_down = app.world.downed_goblins;
                 app.world.downed_goblins = true;
                 crate::world_events::on_game_event_cleared(&mut app.world_events, 0, !was_down);
+        // W4-f40 DOC-SWEEP: `SetEventFlagCleared` (`NPC.cs:78759-78766`)
+        // calls `OnGameEventClearedForTheFirstTime(gameEventId)` on the
+        // flag's false→true edge — the invasion ids are goblins 0 / frost 1
+        // / pirates 2 / martians 3 (`Main.cs:64336`/`:64341`/`:64346`/
+        // `:64351`), all the DEFAULT arm (`NPC.cs:78773-78775`), so the
+        // first invasion clear arms the next lantern night. The `first`
+        // edge keeps repeat clears inert (the boss-death precedent).
+        match app.world.invasion_type {
+            2 => {
+                let first = !app.world.downed_frost;
+                app.world.downed_frost = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 1, first);
+                let _ = app.notify_progression_net(12);
+            }
+            3 => {
+                let first = !app.world.downed_pirates;
+                app.world.downed_pirates = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 2, first);
+                let _ = app.notify_progression_net(11);
+            }
+            4 => {
+                let first = !app.world.downed_martians;
+                app.world.downed_martians = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 3, first);
+                let _ = app.notify_progression_net(13);
+            }
+            _ => {
+                let first = !app.world.downed_goblins;
+                app.world.downed_goblins = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 0, first);
                 let _ = app.notify_progression_net(10);
             }
         }
@@ -3869,7 +4609,10 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
 /// `DD2Event.DropMedals` (`DD2Event.cs:802-813`) — one `Item.NewItem(...,
 /// 3817, numberOfMedals, noBroadcast: true)` stack per live Eternia Crystal
 /// (548), in `Main.npc` order, at the crystal's rect centre (the obsolete
-/// rect overload's `X + Width/2, Y + Height/2`, `Item.cs:49651`). The rolls
+/// rect overload's `(int)X + Width/2, (int)Y + Height/2`, `Item.cs:49651` —
+/// the position TRUNCATES before the half-box add, W4-f36; the same
+/// convention the coin drops pin, `death.rs`'s `(int)position + Width/2`).
+/// The rolls
 /// ride the caller's stream through the `spawn_item_drop_px` seam (the
 /// module's zero-RNG-decisions contract — the decision draws nothing, the
 /// spawn's velocity/phase triplet + prefix ride `Item.NewItem`'s
@@ -3884,13 +4627,24 @@ fn dd2_drop_medals(app: &mut App, medals: i32) {
     // `hp` in the same tick — the `wants_event_stop` term keeps that crystal
     // in the scan (the death retain has not run yet). A wave-complete drop
     // never sees one: the stop resolve removes it the same tick.
+    // W4-f36: the rect overload's centre TRUNCATES the position first —
+    // `new Vector2(X + Width / 2, Y + Height / 2)` on the `(int)` args
+    // (`Item.cs:49651`); the port's float `center()` (`x + w/2`) would
+    // carry the sub-pixel drift into the drop point.
     let spots: Vec<Vec2> = app
         .npcs
         .iter()
         .filter(|n| {
             n.kind == NpcKind::DD2EterniaCrystal && (n.hp > 0 || n.wants_event_stop)
         })
-        .map(|n| Vec2::new(n.center().0, n.center().1))
+        .map(|n| {
+            let (w, h) = n.size();
+            // `X + Width / 2` — the int division, not a float halve.
+            Vec2::new(
+                n.x as i32 as f32 + (w as i32 / 2) as f32,
+                n.y as i32 as f32 + (h as i32 / 2) as f32,
+            )
+        })
         .collect();
     for pos in spots {
         // The kill path's stage: `checkDead` runs under the NPC pass's
@@ -5578,6 +6332,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the tick closure's pooled arm runs (the Moon Lord carrier
     // write-through precedent). Dormant until the 437/438 kinds land.
     ritual_link_prepass(app);
+    // `NPC.CheckDialogue` (`NPC.cs:90510`/`:90519-90532`): the conditional
+    // dialogue probe — every 10th tick per NPC, else the failed-condition
+    // clear. The C# runs it inside each NPC's own `UpdateNPC` after the AI;
+    // the port batches it at the phase head (the pre-pass convention — the
+    // only consumer is the right-click `GetChat`, a separate input path, so
+    // the intra-tick position is unobservable). `who` = the stable uid.
+    {
+        let free_cake = app.world_events.free_cake;
+        let count = app.game_update_count;
+        for n in app.npcs.iter_mut() {
+            crate::npc_chat::check_dialogue(n, count, n.uid, free_cake);
+        }
+    }
     // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
     // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead
     // at STRIKE time (before `UpdateNPCs`), so the restore rides ahead of
@@ -6099,6 +6866,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `scene_metrics.zone_graveyard` (the d120 biome pass, captured above
     // for the moan gate) stands in. Stamped on every slot — any kind's
     // `TargetClosest` may pick the session player.
+        }
+    }
+    // W4-g4 lane 15 — `Main.player[target].ZoneGraveyard` pre-stamp (the
+    // wind pre-pass convention above): the fighter bash gate
+    // (`NPC.cs:59997`) and the despawn-discouragement chain (`:60302`)
+    // read the TARGET player's zone; the port is single-player, so the
+    // session player's `scene_metrics.zone_graveyard` (the d120 biome
+    // pass, captured above for the moan gate) stands in. Stamped on every
+    // slot — any kind's `TargetClosest` may pick the session player.
     {
         for n in app.npcs.iter_mut() {
             n.target_zone_graveyard = zone_graveyard;
@@ -6119,6 +6895,62 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     {
         app.world.empress_rage_mode = false;
     }
+    // W4-d127 — the aiStyle-24 birds' ambient pre-stamps: `Main.cloudAlpha`
+    // (the owl's day/rain perch flush + the night-roost gate,
+    // `NPC.cs:25343`/`:25373` — the port's Rain.visual_alpha clamp keeps
+    // the gates' zero-ness exact: the arm tests only == 0 / > 0) and the
+    // owl's roost neighbour scan (`NPC.cs:25345-25367`, the whole pool in
+    // slot order with the per-slot `is_self` flag — the twin_time_lefts
+    // carrier precedent). No kind carries ai_style 24 until the roster
+    // co-lanes merge (74=d35, 297/298=d38, 442=d40, 611=d42, 671-675/689=
+    // d43), so the pass is a no-op today; the axis arm is merge-ready.
+    {
+        let cloud = app.rain.visual_alpha();
+        let any_bird = app.npcs.iter().any(|n| n.kind.ai_style() == 24 && n.hp > 0);
+        if any_bird {
+            let snap: Vec<(bool, i32, f32, f32, f32, i32, i32, bool)> = app
+                .npcs
+                .iter()
+                .map(|n| {
+                    let (nw, nh) = n.size();
+                    (
+                        n.hp > 0,
+                        n.kind.cs_id() as i32,
+                        n.ai[0],
+                        n.x,
+                        n.y,
+                        nw as i32,
+                        nh as i32,
+                        // `Main.npc[i].townNPC` (`:25351`) — the port's
+                        // resident-kind flag (the SetDefaults row).
+                        n.kind.is_town_resident(),
+                    )
+                })
+                .collect();
+            for i in 0..app.npcs.len() {
+                if app.npcs[i].kind.ai_style() != 24 || app.npcs[i].hp <= 0 {
+                    continue;
+                }
+                app.npcs[i].cloud_alpha = cloud;
+                app.npcs[i].style24_neighbors = snap
+                    .iter()
+                    .enumerate()
+                    .map(|(j, &(active, ty, ai0, x, y, w, h, town))| {
+                        crate::npc_ai_style24::NeighborNpc {
+                            is_self: j == i,
+                            active,
+                            town_npc: town,
+                            ty,
+                            ai0,
+                            x,
+                            y,
+                            width: w,
+                            height: h,
+                        }
+                    })
+                    .collect();
+            }
+        }
     }
     // W4-f42 — the Tumbleweed's wind/zone pre-stamps (`NPC.cs:62709-62713`'s
     // windSpeedTarget + ZoneSandstorm, `:62570`'s ZoneDesert) and the
@@ -6217,6 +7049,34 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // active && type == this.type`, the Manhattan `< width` window read
     // in-machine). The 86/155 paths never read these; the stamp is
     // Tumbleweed-only (RNG-free — no stream draws).
+    let player = &mut app.player;
+    // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
+    // DungeonSpirit's arm (`npc_ai_style56::style56_step`) needs the
+    // shared `Main.dust` pool + its `SpawnCtx` — both App fields the
+    // `Npc::update_rng` signature cannot carry. The arm runs INSIDE
+    // the tick closure at the NPC's own slot turn (the C#'s
+    // `UpdateNPC` order), on the same `UpdateNPCs` stream; the
+    // axis' 56 arm then owns only the noTileCollide integration tail.
+    // `spawn_ctx` borrows the whole App immutably, so it is computed
+    // BEFORE the `&mut app.npcs`/`&mut app.dust` field borrows below.
+    // The DungeonSpirit's dust pre-pass reuses the frame's spawn ctx
+    // captured above (`dust_spawn_ctx`, before the `npcs_rng` mutable
+    // borrow) — a second `app.spawn_ctx()` here would re-borrow `*app`
+    // immutably while `npcs_rng` holds it mutable (E0502).
+    let dust_ctx = dust_spawn_ctx;
+    // W4-c10 roster tail — the GoldWorm sparkle's `Lighting.GetColor`
+    // read (`NPC.cs:92348`): the last draw's computed LightMap (the
+    // ess_scale stamp's one-frame convention — the sim runs ahead of the
+    // draw that refreshes it).
+    let app_light = &app.light;
+    // W4-g11 final phase (g61b seam-4 fold, research/116 §5):
+    // `Main.timeForVisualEffects` (`Main.cs:1181` — a double, ticks since
+    // start wrapped at 216000) as the port's `anim_time * 60` stand-in
+    // (the `frame/draw.rs:374` convention, g61b `c289d64f`'s shape),
+    // captured ONCE per call before the field borrows — the fade's
+    // style-12 hue clock reads it.
+    let time_for_visuals = (app.anim_time as f64 * 60.0) % 216000.0;
+    // Limit the scope of borrows to just the tick closure
     {
         let wind_target = app.wind.speed_target;
         let zone_desert = app.scene_metrics.zone_desert;
@@ -6472,6 +7332,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // stream — threaded alongside the dust pool (the S1-F-13c shape).
         let gore = &mut app.gore;
         let entity_lights = &mut app.entity_lights;
+        // W4-d22: the EoC's spin hand-off gore burst (`NPC.cs:20365-20370`)
+        // draws Main.rand through the live gore pool on the UpdateNPCs
+        // stream — threaded alongside the dust pool (the S1-F-13c shape).
+        let gore = &mut app.gore;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -6619,6 +7483,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                             npcs[fi].butterfly_threat_views = views.clone();
                         }
                     }
+                }
                 // W4-c6 style-59 wiring — the Pumpking blade's carrier
                 // feed (`NPC.cs:33200-33218`): the arm reads
                 // `Main.npc[(int)MathHelper.Clamp(ai[1], 0f, 199f)]`
@@ -6696,6 +7561,75 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     if npcs[i].kind == NpcKind::Mechanic && npcs[i].hp > 0 {
                         npcs[i].local_ai[0] =
                             if app.projectiles.mechanic_wrench_latched(i) { 1.0 } else { 0.0 };
+                // W4-g90 — the town stat-ladder feeder (the b3-seam's
+                // stat half, LIVE ahead of the b3 AI migration): the C#
+                // runs `isLikeATownNPC`'s stat block INSIDE
+                // `AI_007_TownEntities` (`NPC.cs:52999-53157`) at each
+                // town NPC's slot turn; the port's live dispatch still
+                // rides `update_guide`, so the ladder runs HERE, once
+                // per tick before the slot loop (the ForceBubble
+                // pre-pass ORDER convention — the block reads only the
+                // NPC's own state + world flags, never a sibling, so
+                // the position move is state-identical). RNG-free by
+                // construction: the ladder draws nothing. The combat
+                // books (+250 HP / ×0.8 cd / +0.25 dmg / +8 def each)
+                // and the boss ladder now apply in play; the returned
+                // (num2, num3) attack scales have no consumer until the
+                // b3 AI wiring drains `TownOutputs` — dropped here (the
+                // eye wiring's `let _ = out` precedent).
+                // FEEDER-CANONICAL (retire, the b3 receipt): b3's
+                // phase-1 tip `96a5d88f0` wires the AI dispatch on its
+                // own branch but folds combat_book_two false in its
+                // INLINE env — this feeder is the canonical env source
+                // (`from_world`, both books live); at the merge b3's
+                // arm env builds through it and the arm's ladder call
+                // (`npc_ai_town.rs:1737`) dedupes onto THIS pre-pass
+                // (the two b3-dedup witnesses pin the field census +
+                // the one-row delta).
+                {
+                    let flags = crate::npc_ai_town::TownEnvFlags::from_world(
+                        world,
+                        player.buffs.expert_mode,
+                    );
+                    for n in npcs.iter_mut() {
+                        // The C# gate: the block lives inside the
+                        // aiStyle-7 arm and is isLikeATownNPC-gated
+                        // (`NPC.cs:53014`); every ported town-like kind
+                        // is aiStyle 7 (`npc/data.rs::ai_style`).
+                        if n.hp <= 0
+                            || n.kind.ai_style() != 7
+                            || !n.kind.is_town_npc_like()
+                        {
+                            continue;
+                        }
+                        // The kind defaults: the `SetDefaults` rows
+                        // (every town kind 250/15). The BASE defense is
+                        // the kind table read with the override cleared
+                        // — the ladder rewrites `defense_override` every
+                        // tick, so a stale override must not feed the
+                        // next tick's base (the skeletron wiring's
+                        // reset-then-read convention, `npc.rs`).
+                        n.defense_override = None;
+                        let stats = crate::npc_ai_town::TownKindStats {
+                            def_life_max: n.kind.max_hp(),
+                            def_defense: n.defense(),
+                        };
+                        // The Andrew `defDefense` easter egg
+                        // (`NPC.cs:52968-52971`) writes the BASE the
+                        // ladder reads — the full arm applies it to its
+                        // defaults copy before the ladder; the feeder
+                        // mirrors that (the Slimefors 680 half needs a
+                        // kind the port does not ship).
+                        let mut stats = stats;
+                        if n.kind.net_id() == 441 && n.given_name == "Andrew" {
+                            stats.def_defense = 200;
+                        }
+                        let env = flags.env(world, &[], &[], n.home.is_none());
+                        let dryad_ward = n.buffs.find_buff_index(165).is_some();
+                        let tipsy = n.buffs.find_buff_index(25).is_some();
+                        let _ = crate::npc_ai_town::town_stat_bonuses(
+                            n, stats, &env, dryad_ward, tipsy,
+                        );
                     }
                 }
                 for i in 0..npcs.len() {
@@ -6705,6 +7639,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     {
                         let n = &mut npcs[i];
                         n.slot = i;
+                        // W4-g11 union-exec (research/116 §2) —
+                        // `NPC.UpdateNPC_TeleportVisuals` (`NPC.cs:90322`,
+                        // body `:92194-92241`): the per-tick teleport fade
+                        // runs PRE-AI in the C# — `:90322` sits after
+                        // `UpdateAltTexture` `:90313` / `UpdateNPC_CastLights`
+                        // `:90320` and BEFORE `AI()` `:90423` (the g61b
+                        // seam-4 order fold, research/116 §5 — the earlier
+                        // g11 tail placement ran it after the AI's draws,
+                        // a stream-order deviation on any slot with a live
+                        // teleport grant). The head gate (`teleport_time
+                        // <= 0`) draws nothing, so the common case is a
+                        // zero-draw no-op either way; the fade plays no
+                        // sound (styles 0/4/12/13 are dust-only). The
+                        // style-12 clock reads `time_for_visuals` (the
+                        // `anim_time*60 % 216000` stand-in captured above).
+                        if n.teleport_time > 0.0 {
+                            let mut no_sound = |_: i32, _: i32, _: f32, _: f32| {};
+                            let mut tv_env = crate::teleport_dust::TeleportDustEnv {
+                                world,
+                                dust: &mut *dust,
+                                dust_ctx: &dust_ctx,
+                                rng: &mut *npcs_rng,
+                                play_sound: &mut no_sound,
+                            };
+                            crate::teleport_dust::update_npc_teleport_visuals(
+                                &mut tv_env,
+                                n,
+                                time_for_visuals,
+                            );
+                        }
                         // `NPC.OnSpawn`'s type-113 arm (`NPC.cs:8404-8407`):
                         // `Main.wofNPCIndex = whoAmI` at spawn — the presence
                         // mirror stays on while the wall lives (the death
@@ -7277,6 +8241,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // (the 677 threat scan reads `Main.npc[0..maxNPCs]` in
                         // slot order, `NPC.cs:34120-34128`) — they run here on
                         // the `UpdateNPCs` stream, ahead of the solo axis.
+                    } else {
                         npcs[i].update_preamble(step);
                         npcs[i].gfx_off_y = crate::npc_ai_unicorn_b::gfx_off_y_decay(
                             npcs[i].gfx_off_y,
@@ -7394,6 +8359,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // W4-c8 sweep — the world-read entry (the d44
                         // pattern, BOTH production call sites): the
                         // crawler groups' slope tail reads the live world.
+                        // W4-d44 wire — the world-read entry: the d48
+                        // worm's slope probe resolves against the live
+                        // world (`NPC.cs:72807-72815`); every other kind
+                        // rides the world-free hook unchanged.
                         npcs[i].find_frame_world(world);
                         npcs[i].find_frame();
                         // `NPC.cs:90512` — the trail shift rides after
@@ -7451,8 +8420,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // retire fold — the C# `:57338-57367` position). Each
                     // play gates attenuation BEFORE any case draw (the
                     // E21e precedent); the draws ride the UpdateNPCs stream.
-                    for req in n.wants_sound.drain(..) {
-                        play_npc_sound_request(audio, req, npcs_rng);
+                    for req in std::mem::take(&mut n.wants_sound) {
+                        play_npc_sound_request(audio, n, req, npcs_rng);
                     }
                     // W4-f2 — `Collision_WaterCollision`'s splash cues
                     // (`NPC.cs:93052-93275`, inside `UpdateCollision`
@@ -7555,6 +8524,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     }
                     let n = &mut npcs[i];
                     black_slime_darkness_touch(n, player, npcs_rng);
+                    // `NPC.UpdateNPC_TeleportVisuals` moved PRE-AI to the
+                    // slot preamble (the `n.slot = i` block above —
+                    // `NPC.cs:90322` before `AI()` `:90423`, the g61b
+                    // seam-4 fold, research/116 §5). The fade's scoped env
+                    // borrows end there; this tail resumes the slot's
+                    // mutable borrow directly.
+                    let n = &mut npcs[i];
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
                     if n.look_for_home_timeout > 0 {
@@ -7589,6 +8565,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // (the roster has no critter ids), so the emitter
                     // stays silent until they land — but a Golem head no
                     // longer rolls the bird's Next(400).
+                    // has none. W4-d127 FINAL: the key is `cs_id()` (the
+                    // C# net id the table tests, `NPC.cs:92249`+), NOT
+                    // `to_u16()` (the port-local protocol space) — the
+                    // MERGER-L7 mis-route: GolemHead's protocol id 74
+                    // collides with the Bird 74 chirp arm, so the old key
+                    // made the Golem's head chirp by day. The bird kinds
+                    // (74/297/298/442/611/671-675/689) land on the roster
+                    // co-lanes (d35/d38/d40/d42/d43); until then no ported
+                    // kind's cs_id matches the table, so the emitter stays
+                    // silent — the arms are census-complete on main
+                    // (`critter_sound_cue`/`critter_legacy_voice`), NOT
+                    // e9/f2 (those port the IdleSounds ladder + water
+                    // splash, a different table).
                     let mut hi_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
                     let cue = crate::ambient_sound::critter_sound_cue(
                         n.kind.cs_id() as i32,
@@ -7856,11 +8845,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // `:60072-60084` — the tall gate (388) `ShiftTallGate` (W4-g4 P4,
-        // the W4-d22 reconcile fold: the S1-D-3z stand-in retired). The
-        // gate shifts to its open kind (389); a refusal sets
-        // `ai[3] = num57` like the door's. The occupancy gate is
-        // `Collision.EmptyTile(ignoreTiles: true)` — the player/NPC box
+        // `:60072-60084` — the tall gate (388) `ShiftTallGate` (W4-g4: the
+        // S1-D-3z stand-in retired). The gate shifts to its open kind (389);
+        // a refusal sets `ai[3] = num57` like the door's. The occupancy gate
+        // is `Collision.EmptyTile(ignoreTiles: true)` — the player/NPC box
         // overlap (the `close_door` convention).
         if kind == Some(388) {
             let mut drops = Vec::new();
@@ -7912,9 +8900,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].ai[3] = 60.0;
                 app.npcs[i].net_update = true;
             } else {
-                // `WorldGen.cs:51762` — `SoundEngine.PlaySound(8)`: the
-                // gate cue rides the UpdateNPCs stream (the door
-                // convention).
+                // `WorldGen.cs:51762` — `SoundEngine.PlaySound(8)`: the gate
+                // cue rides the UpdateNPCs stream (the door convention).
                 app.audio.play_door_sound(
                     true,
                     tx as f32 * TILE_PX,
@@ -8158,6 +9145,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // + the Probe's `AI_005` type-139 arm — the same after-the-step position
     // as the worm pass (the family is no longer `is_worm()`).
     update_destroyers(app);
+    // N16 (wyvern wiring): the Wyvern family's own AI_006 path — the same
+    // after-the-step position (the family is NOT `is_worm()` either).
+    update_wyverns(app);
     // `EmoteBubble.UpdateAll` (`EmoteBubble.cs:46-63`): the bubble lifetimes
     // tick on the world update.
     app.emotes.update_all();
@@ -8423,6 +9413,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                             shimmered,
                             app.rngs.stream(RngKey::UpdateTime),
                         );
+                        // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt`
+                        // (`NPC.cs:80769`): the arrival names himself — the
+                        // name draws ride `WorldGen.genRand` (the port's
+                        // `frame_rng` stand-in), the pet variation roll rides
+                        // the `SpawnNPC` SwapRandom wrapper's stream.
+                        crate::npc_names::give_town_unique_data(
+                            &mut n,
+                            app.rngs.stream(RngKey::SpawnNpc),
+                            &mut app.world.frame_rng,
+                        );
+                        // `WorldGen.cs:5575`: the arrival announcement —
+                        // `Announcement.HasArrived` ("{0} has arrived!") with
+                        // `GetFullNetName` in `ChatColors.NPCTravel`
+                        // (`ChatColors.cs:25`, 50/125/255), BEFORE the
+                        // progression event (`:5576`).
+                        let announcement = crate::lang::text_args(
+                            "Announcement.HasArrived",
+                            &[crate::npc_names::full_name(&n)],
+                        );
+                        app.chat
+                            .new_text(announcement, crate::chat::COLOR_NPC_TRAVEL);
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
                         // (progression 8) — the Truffle's IT_CAN_TALK (18,
@@ -8506,6 +9517,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // 600-tick win-death resolve) rides before the death retain: the
     // win-death zeroes the crystal's hp AND stops the event in one pass.
     update_dd2_event(app, dt);
+    // W4-c2 — `NPC.checkDead`'s pillar intercept (`NPC.cs:78080-78086`):
+    // a dying tower does NOT die — `ai[2] = 1`, `ai[1] = 0`,
+    // `PrepareForDeathAnimation` (`life = lifeMax`, `dontTakeDamage`,
+    // `netUpdate`) — and enters the 180-tick dissolve the aiStyle-94
+    // machine owns. Runs BEFORE the retain, the crystal-intercept shape
+    // (`update_dd2_event` above). RNG-free; the second death (ai[2]==1,
+    // the dissolve's ai[1] >= 180 kill) passes through to the death arms.
+    for n in app.npcs.iter_mut() {
+        if n.hp <= 0 {
+            crate::npc_ai_pillar::check_dead_pillar_intercept(n);
+        }
+    }
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     // W4-f32 DOC-SWEEP — the death path re-ordered to the C# `NPCLoot`
@@ -8574,6 +9597,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         if app.world.report_pumpkin_moon_kill(npc.kind.to_u16()) {
             let _ = app.notify_progression_net(15);
+        // W4-g59 — the death DUST feed: the kind's `HitEffect` death-half
+        // burst (`npc_death_dust.rs`, batches 1-16: every dust-first clean
+        // kind the port's kind set carries + the 24 d35 row-gated
+        // activations of the DOC-SWEEP + the 23 d34/c4/d23/d37 row-gated
+        // activations of batches 11-13 + the 17 g8/d120/f42 row-gated
+        // activations of batches 14-15 + the 105 base-fold activation
+        // of batch 16). BEFORE the death cue: the C#
+        // runs HitEffect at `:81488`, ahead of checkDead's DeathSound
+        // (`:81561` → `:78186`). The draws ride the UpdateNPCs stream —
+        // the S1-E-21c batched-death deviation (the death-cue precedent
+        // below). Kinds outside the match draw nothing; the gore BODIES
+        // stay d55's (the feed consumes only the gore ARGUMENT draws the
+        // C# interleaves — the Wyvern's count/type rolls + the cursed
+        // pair's velocity pairs, the g63 rule; d55's wiring must not
+        // re-consume them).
+        {
+            let ctx = app.spawn_ctx();
+            let rng = app.rngs.stream(RngKey::UpdateNpcs);
+            crate::npc_death_dust::death_dust(
+                npc,
+                npc.kind.cs_id() as i32,
+                &mut app.dust,
+                &ctx,
+                rng,
+                &app.world,
+            );
         }
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
@@ -8616,9 +9665,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // same recorded deviation as the death cue above. Roars draw
         // nothing, so the stream choice is unobservable here.
         if npc.kind == NpcKind::EyeOfCthulhu {
+            // W4-d80 — the drain now takes the NPC for the tracked-cue
+            // write-backs; the roar is a legacy cue (no `local_ai` touch),
+            // so a scratch clone carries the signature.
+            let mut scratch = npc.clone();
             let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
             play_npc_sound_request(
                 &mut app.audio,
+                &mut scratch,
                 crate::npc::NpcSoundRequest {
                     cue: crate::npc::NpcSoundCue::Roar(0),
                     x: npc.x,
@@ -8629,6 +9683,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
             play_npc_sound_request(
                 &mut app.audio,
+                &mut scratch,
                 crate::npc::NpcSoundRequest {
                     cue: crate::npc::NpcSoundCue::Roar(0),
                     x: npc.x,
@@ -8705,6 +9760,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let was_down = app.world.downed_golem;
                 app.world.downed_golem = true;
                 crate::world_events::on_game_event_cleared(&mut app.world_events, 6, !was_down);
+                // W4-f40: `NPC.cs:79346` `SetEventFlagCleared(ref
+                // downedGolemBoss, 6)` → the first clear arms the next
+                // lantern night (`OnGameEventClearedForTheFirstTime`).
+                let first = !app.world.downed_golem;
+                app.world.downed_golem = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 6, first);
             }
             // S1-D-3 W-9 fishron wiring — `DoDeathEvents`'s case 370
             // (`NPC.cs:79348-79350`): `SetEventFlagCleared(ref
@@ -8811,6 +9872,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         let _ = app.notify_progression_net(22);
                     }
                 }
+                let first = !app.world.downed_fishron;
+                app.world.downed_fishron = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 7, first);
+            }
+            NpcKind::Deerclops => {
+                // `NPC.cs:79355` `SetEventFlagCleared(ref downedDeerclops, 25)`.
+                let first = !app.world.downed_deerclops;
+                app.world.downed_deerclops = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 25, first);
             }
             NpcKind::SolarTower => {
                 app.world.downed_tower_solar = true;
@@ -8859,6 +9929,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // row (`NPC.cs:78776-78779`) arms the lantern night too
                     // (the credits roll is unported).
                     crate::world_events::on_game_event_cleared(&mut app.world_events, 10, !was_down);
+                    // W4-f40: `NPC.cs:79398` `SetEventFlagCleared(ref
+                    // downedMoonlord, 10)` — case 10 arms the lantern night
+                    // (the credits roll is a separate unported system).
+                    let first = !app.world.downed_moon_lord;
+                    app.world.downed_moon_lord = true;
+                    app.world.lunar_apocalypse_is_up = false;
+                    // W4-d70 DOC-SWEEP — `NPC.HitEffect`'s 398/1337 arm
+                    // (`NPC.cs:82679-82682`): the drama's end flings the
+                    // four body pieces, seeded by `Main.rand.Next(100)`
+                    // (the death pass's UpdateNPCs stream, the death-cue
+                    // precedent). The `netMode != 2` gate folds away (the
+                    // port's host simulates; the client reads the drama
+                    // through its own scene state).
+                    let (cx, cy) = npc.center();
+                    let seed = app.rngs.stream(RngKey::UpdateNpcs).next_max(100);
+                    app.scene_state.throw_pieces([cx, cy], seed);
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 10, first);
                 }
             }
             NpcKind::NebulaTower => {
@@ -8887,6 +9974,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let was_down = app.world.downed_ancient_cultist;
                 app.world.downed_ancient_cultist = true;
                 crate::world_events::on_game_event_cleared(&mut app.world_events, 9, !was_down);
+                // W4-f40: `NPC.cs:79394` `SetEventFlagCleared(ref
+                // downedAncientCultist, 9)` — the first clear arms the
+                // lantern night.
+                let first = !app.world.downed_ancient_cultist;
+                app.world.downed_ancient_cultist = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 9, first);
                 // `WorldGen.TriggerLunarApocalypse` fires from `checkDead`
                 // under the `UpdateNPCs` swap (`NPC.cs:79393-79396`,
                 // `Main.cs:17767-17769`).
@@ -8903,24 +9996,54 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // no Vortex kind at all before, so its `downedTowerVortex` /
             // `TowerActiveVortex` never cleared).
             NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
-                // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
-                // meteorite — the guaranteed first (the pre-kill read of
-                // the downed flag), the 1/2 afterwards.
-                let was_down = app.world.downed_eow;
-                if !was_down {
-                    app.world.spawn_meteor = true;
-                } else {
-                    // `NPC.cs:79450-79456` draws `Next(2)` under the
-                    // `UpdateNPCs` swap (`checkDead` -> `DoDeathEvents`
-                    // inside `NPC.UpdateNPC`, `Main.cs:17767-17769`) — the
-                    // stream S1-A-11's npcs pass lands on in P3.
-                    app.world.spawn_meteor = tr_core::worldgen::meteor::boss_death_roll(
-                        app.rngs.stream(crate::app::RngKey::UpdateNpcs),
-                        true,
-                    );
+                // `NPC.cs:79447-79457`'s orb-boss-death arm (`this.boss`
+                // is the kind by construction — the head 13 and the Brain
+                // 266 are the only living-boss kinds of the 13/14/15/266
+                // case group the port spawns; the body/tail deaths ride
+                // the head's split, not this arm).
+                // `NPC.cs:79449-79452`: on a skyblock world with
+                // low tiles the death arms `shadowOrbSmashed` (the
+                // sky islands have no orbs to smash — the boss kill IS
+                // the goblin unlock). The port's lowTiles stand-in is the
+                // seed flag (the `loot.rs` LootFlags.skyblock convention,
+                // `npcs.rs`'s flags build — no dynamic activeTiles census;
+                // a skyblock world past the 10% tile threshold keeps the
+                // flag down — the recorded stand-in deviation).
+                if app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::SKYBLOCK)
+                {
+                    app.world.shadow_orb_smashed = true;
                 }
+                // `NPC.cs:79453-79456`'s pending meteorite — gated on
+                // `Main.isThereAWorldSurface` (`Main.cs:2788`:
+                // `worldSurface > 50.0` — the remix/FTW underground worlds
+                // never meteor): the guaranteed first (the pre-kill read
+                // of the downed flag), the 1/2 afterwards.
+                if app.world.world_surface > 50.0 {
+                    let was_down = app.world.downed_eow;
+                    if !was_down {
+                        app.world.spawn_meteor = true;
+                    } else {
+                        // `NPC.cs:79453` draws `Next(2)` under the
+                        // `UpdateNPCs` swap (`checkDead` -> `DoDeathEvents`
+                        // inside `NPC.UpdateNPC`, `Main.cs:17767-17769`) —
+                        // the stream S1-A-11's npcs pass lands on in P3.
+                        app.world.spawn_meteor = tr_core::worldgen::meteor::boss_death_roll(
+                            app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+                            true,
+                        );
+                    }
+                }
+                // `:79457` — `SetEventFlagCleared(ref downedBoss2, 14)`:
+                // ONE shared flag for both halves (the nightly `Next(50)`
+                // meteor roll + the hardmode-ore unlock read it).
                 app.world.downed_eow = true;
                 // `NPC.cs:79457` — `SetEventFlagCleared(ref downedBoss2, 14)`.
+                // W4-f40: `NPC.cs:79457` `SetEventFlagCleared(ref
+                // downedBoss2, 14)` — the first EoW/Brain clear arms the
+                // lantern night (the shared downedBoss2 flag).
                 crate::world_events::on_game_event_cleared(&mut app.world_events, 14, !was_down);
             }
             NpcKind::GolemHead => {
@@ -9018,6 +10141,35 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // `NPC.DropEoWLoot` (`NPC.cs:78414-78430`, called from `checkDead`
+    // `:78195-78198` BEFORE `NPCLoot`/`CountKillForAchievements`): the LAST
+    // EoW segment alive sets `boss = true` — the scan skips the dying NPC
+    // itself (`i != whoAmI`) and every OTHER active 13/14/15. The port's
+    // death batch already removed every dead segment from `app.npcs`, so the
+    // "no other segment alive" test reads the survivors plus the OTHER dead
+    // clones this tick (the C# sees them active until their own checkDead).
+    // The latch rides the dead clone's `boss` flag, which the achievement
+    // gate below reads (`CountKillForAchievements`'s `if (this.boss)`).
+    let eow_kinds = |k: NpcKind| {
+        matches!(
+            k,
+            NpcKind::EaterOfWorldsHead | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail
+        )
+    };
+    let mut dead: Vec<Npc> = dead;
+    for i in 0..dead.len() {
+        if !eow_kinds(dead[i].kind) {
+            continue;
+        }
+        let other_alive = app.npcs.iter().any(|n| n.hp > 0 && eow_kinds(n.kind))
+            || dead
+                .iter()
+                .enumerate()
+                .any(|(j, n)| j != i && eow_kinds(n.kind));
+        if !other_alive {
+            dead[i].boss = true;
+        }
+    }
     for npc in &dead {
         // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
         // (`NPC.cs:78835-78847`); the `GetWereThereAnyInteractions` gate is
@@ -9041,13 +10193,41 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `AchievementsHelper.TryGrantingBestiary100PercentAchievement` (`AchievementsHelper.cs:81-84`):
         // when the bestiary completion reaches 100%, fire progression event 29 (BOOK_WORM).
         let _ = app.try_grant_bestiary_100_net();
-        // `AchievementsHelper.NotifyNPCKilled` (`AchievementsHelper.cs:200-217`):
-        // the process whose player interacted gets the credit locally
-        // (`:202-208`, and in MP the host's own `97` loops back through its
-        // player slot, `:210-216`); a host additionally fans `97` out to every
-        // other interactor.
-        if npc.player_interaction[app.local_id as usize] {
-            let _ = app
+        // `NPC.CountKillForAchievements` (`NPC.cs:79833-79862`) — the
+        // achievement credit + the MechaMayhem machine, per the C# switch:
+        //   125/126 (the Twins): credit + mayhem ONLY when the OTHER eye is
+        //     already gone (`!AnyNPCs(other)`, `:79839`);
+        //   127/134 (Prime/Destroyer): mayhem FIRST, then credit (`:79847-79848`);
+        //   13/14/15 (the EoW family): credit only when `boss` (`:79853`);
+        //   default: credit (`:79859`).
+        // `NotifyNPCKilled` (`AchievementsHelper.cs:200-217`): the process
+        // whose player interacted gets the local credit (`:202-208`); a host
+        // additionally fans `97` out to every interactor (`:210-216`). The
+        // dying NPC is already out of `app.npcs` (the retain above), so the
+        // `AnyNPCs` scans read the surviving roster, like the C#.
+        let net_id = entry.net_id;
+        let notify_kill = |app: &mut App| {
+            if npc.player_interaction[app.local_id as usize] {
+                let _ = app
+                    .achievements
+                    .notify(achievements::CondKind::NpcKilled(net_id));
+            }
+            app.send_npc_killed(npc, net_id as i16);
+        };
+        let any_npcs = |app: &App, id: i32| {
+            app.npcs.iter().any(|n| n.hp > 0 && n.kind.net_id() == id)
+        };
+        let mayhem_kill = |app: &mut App| {
+            // Snapshot the living roster's net ids BEFORE the mutable borrow
+            // of `app.achievements` (the `AnyNPCs` predicate reads them; the
+            // dying NPC is already out of the list).
+            let alive: Vec<i32> = app
+                .npcs
+                .iter()
+                .filter(|n| n.hp > 0)
+                .map(|n| n.kind.net_id())
+                .collect();
+            if app
                 .achievements
                 .notify(achievements::CondKind::NpcKilled(entry.net_id));
         }
@@ -9070,6 +10250,83 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 (npc.x / 16.0) as i32,
                 (npc.y / 16.0) as i32,
             );
+                .mecha_mayhem_kill(net_id, |id| alive.contains(&id))
+            {
+                // `MechaMayhem_Kill`'s tail fires progression 21 (MECHA_MAYHEM)
+                // through `NotifyProgressionEvent` (`AchievementsHelper.cs:480`).
+                let _ = app.notify_progression_net(21);
+            }
+        };
+        match net_id {
+            125 | 126 => {
+                let other = if net_id == 126 { 125 } else { 126 };
+                if !any_npcs(app, other) {
+                    notify_kill(app);
+                    mayhem_kill(app);
+                }
+            }
+            127 | 134 => {
+                mayhem_kill(app);
+                notify_kill(app);
+            }
+            13 | 14 | 15 => {
+                if npc.boss {
+                    notify_kill(app);
+                }
+            }
+            _ => notify_kill(app),
+        }
+        // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79810-79821`) →
+        // `BannerSystem.AddNPCKillBy` (`BannerSystem.cs:231-258`). W4-e24:
+        // the faithful drop-rule chain — the tally gates on
+        // `GetWereThereAnyInteractions` (`NPC.cs:78840`, the NPCLoot banner
+        // arm) and `ExcludedFromDeathTally` (`:79812`); the announcement
+        // `plr` is `lastInteraction` (falling back to `FindClosestPlayer`
+        // when that slot is inactive/dead, `:79814-79818`). The milestone
+        // makes the banner CLAIMABLE (`AddClaimableBanner`) and announces
+        // the tally in the Command color — it does NOT drop the banner item
+        // at the death spot (the pre-e24 world-drop was unfaithful; the
+        // player claims the item through the BannerClaimingUI). The whole
+        // chain draws NO RNG (the C# `AddNPCKillBy`/`AddKill`/
+        // `AddClaimableBanner` are pure state writes).
+        if crate::banners::get_were_there_any_interactions(npc, app.local_id as usize) {
+            // The gate chain reads the NPC's OWN id, not the bestiary
+            // entry's folded one: `ExcludedFromDeathTally` reads `this.netID`
+            // (`NPC.cs:79795-79805`, `netID = type` at `:17817`) — the Force
+            // Bubble (384) is excluded while its folded credit entry (the
+            // Officer, 383) is not. The slime family's own net id is the
+            // variant-aware entry id (-1..-10; `cs_id`'s fallback hardcodes
+            // Blue); every other kind's `cs_id` is its own vanilla type (the
+            // folded families keep no hand row — the s1_f_3 invariant), so
+            // the two agree except the Force Bubble's hand row.
+            let own_id = if npc.kind == NpcKind::Slime {
+                entry.net_id
+            } else {
+                npc.kind.cs_id() as i32
+            };
+            if !crate::banners::excluded_from_death_tally(own_id) {
+                let banner_id = crate::banners::banner_id(own_id, own_id);
+                let plr = banner_kill_plr(app, npc);
+                // `AddNPCKillBy`'s announcement reads `Main.player[plr].name`
+                // (`BannerSystem.cs:254`) — the picked slot's name, not the
+                // local player's: a `FindClosestPlayer` fallback onto a remote
+                // peer announces the PEER's name. An absent slot (-1) takes
+                // the unnamed form, so the name is unused.
+                let name = if plr == app.local_id as i32 {
+                    app.player_name.clone()
+                } else if let Some(peer) = app.remote_players.get(&(plr as u32)) {
+                    peer.name.clone()
+                } else {
+                    String::new()
+                };
+                if let Some(text) = app.banners.add_npc_kill_by(banner_id, plr, &name) {
+                    crate::chat::broadcast_death_text(
+                        &mut app.chat,
+                        &text,
+                        crate::chat::COLOR_COMMAND,
+                    );
+                }
+            }
         }
         // `NPCLoot_DropItems` (`NPC.cs:78855` → `:78925-78937`): the rule
         // engine over the dead NPC's registered drops.
@@ -9121,6 +10378,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let was_down = app.world.downed_slime_king;
                 app.world.downed_slime_king = true;
                 crate::world_events::on_game_event_cleared(&mut app.world_events, 11, !was_down);
+                // W4-f40: `NPC.cs:79416` `SetEventFlagCleared(ref
+                // downedSlimeKing, 11)` — the first clear arms the lantern
+                // night (the dual-dungeon wall clear is unported).
+                let first = !app.world.downed_slime_king;
+                app.world.downed_slime_king = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 11, first);
                 // `NPC.cs:79405-79410` (case 50): the King's death while a
                 // slime rain is up calls `Main.StopSlimeRain()` and fires
                 // STICKY_SITUATION (progression 16).
@@ -9171,6 +10434,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let was_down = app.world.downed_mech_boss3;
                 app.world.downed_mech_boss3 = true;
                 crate::world_events::on_game_event_cleared(&mut app.world_events, 18, !was_down);
+                // W4-f40: `NPC.cs:79441` `SetEventFlagCleared(ref downedBoss1, 13)`.
+                let first = !app.world.downed_eoc;
+                app.world.downed_eoc = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 13, first);
+            }
+            NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
+            NpcKind::QueenBee => {
+                // W4-f40: `NPC.cs:79387` `SetEventFlagCleared(ref downedQueenBee, 8)`.
+                let first = !app.world.downed_queen_bee;
+                app.world.downed_queen_bee = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 8, first);
+            }
+            NpcKind::TheDestroyer => {
+                // W4-f40: `NPC.cs:79476` `SetEventFlagCleared(ref downedMechBoss1, 16)`.
+                let first = !app.world.downed_mech_boss1;
+                app.world.downed_mech_boss1 = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 16, first);
+            }
+            NpcKind::SkeletronPrime => {
+                // W4-f40: `NPC.cs:79469` `SetEventFlagCleared(ref downedMechBoss3, 18)`.
+                let first = !app.world.downed_mech_boss3;
+                app.world.downed_mech_boss3 = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 18, first);
             }
             // The Twins: the flag when BOTH eyes are dead (the vanilla
             // checks `!AnyNPCs(125) && !AnyNPCs(126)` after the death).
@@ -9184,6 +10470,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let was_down = app.world.downed_mech_boss2;
                     app.world.downed_mech_boss2 = true;
                     crate::world_events::on_game_event_cleared(&mut app.world_events, 17, !was_down);
+                    // W4-f40: `NPC.cs:79426` `SetEventFlagCleared(ref
+                    // downedMechBoss2, 17)`.
+                    let first = !app.world.downed_mech_boss2;
+                    app.world.downed_mech_boss2 = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 17, first);
                 }
             }
             NpcKind::Spazmatism => {
@@ -9203,6 +10494,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let was_down = app.world.downed_plant_boss;
                 app.world.downed_plant_boss = true;
                 crate::world_events::on_game_event_cleared(&mut app.world_events, 12, !was_down);
+                    let first = !app.world.downed_mech_boss2;
+                    app.world.downed_mech_boss2 = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 17, first);
+                }
+            }
+            NpcKind::Plantera => {
+                // W4-f40: `NPC.cs:79433` `SetEventFlagCleared(ref downedPlantBoss, 12)`.
+                let first = !app.world.downed_plant_boss;
+                app.world.downed_plant_boss = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 12, first);
             }
             // The Brain: the vanilla shares `downedBoss2` with the EoW —
             // the port's `downed_eow` covers the shared flag.
@@ -9212,6 +10513,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let was_down = app.world.downed_skeletron;
                 app.world.downed_skeletron = true;
                 crate::world_events::on_game_event_cleared(&mut app.world_events, 15, !was_down);
+                // W4-f40: `NPC.cs:79463` `SetEventFlagCleared(ref downedBoss3, 15)`.
+                let first = !app.world.downed_skeletron;
+                app.world.downed_skeletron = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 15, first);
             }
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
@@ -9223,6 +10528,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 if !app.world.hard_mode {
                     app.world.hard_mode = true;
                     let _ = app.notify_progression_net(9);
+                    // W4-f40: `NPC.cs:79490` `SetEventFlagCleared(ref
+                    // eventFlag, 19)` — the hardmode flag's false→true edge
+                    // arms the lantern night (the dual-dungeon wall clear is
+                    // unported). The edge is the same `!hardMode` guard.
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 19, true);
                 }
                 // `SetEventFlagCleared(ref eventFlag, 19)` (`NPC.cs:79490`):
                 // the hardmode flag's first clear arms the lantern night
@@ -9332,6 +10642,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         report_invasion_kill(app, npc.kind);
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
+        spawn_coins(app, &npc);
+        spawn_loot(app, &npc);
+        // W4-g4 SEAL — the heart/star heal feed (`NPC.cs:78898`) is f35's
+        // `spawn_heals` (npc_death_heals.rs, b72cdfbfc + 00a5b27db, the
+        // superset port with the boss tail). g4's duplicate seam was
+        // RETIRED here (research/91-seal-keep-one.md) — a second call
+        // would double-feed the UpdateNPCs stream. f35's merge wires it
+        // AFTER spawn_loot, the same slot.
     }
     // B-6b — the shield lifecycle's live consumers, at the death path's
     // tail (the C# owns the reset in the static state, `NPC.cs:95247-
@@ -9539,6 +10857,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         bees.push(bee);
     }
     app.npcs.append(&mut bees);
+    // W4-c2 — the Solar pillar's goop request (`NPC.cs:39376-39381`'s
+    // `NewNPC(..., 519)` + the launch velocity + netUpdate): the machine
+    // drew the arm's five rolls on the UpdateNPCs stream at request time;
+    // SolarGoop 519 has NO ported kind yet (aiStyle 99, `NPC.cs:
+    // 15409-15423` — the npc_ai_pillar census row), so the spawn body is
+    // the documented kind-wave skip. The drain keeps the queue from
+    // leaking across ticks; no draws here (the C#'s NewNPC(519) draws
+    // nothing beyond the arm's own).
+    for n in app.npcs.iter_mut() {
+        n.wants_solar_goop = None;
+    }
     // The GiantFungiBulb's spore spawn (W4-d23, `NPC.cs:22837-22840`): the
     // aiStyle-13 axis arm set `wants_fungi_spore` on a spawn tick (the two
     // `Next(-10,11)` jitters already rode the UpdateNPCs stream in C#
@@ -9723,36 +11052,95 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
-    // the shared counter's third break summons the Eater of Worlds (a
-    // shadow orb) or the Brain of Cthulhu (a crimson heart) at the
-    // nearest player; the port polls the count delta (the flag edge is
-    // the edge — the sim resets it to 0 on the summon, exactly like the
-    // vanilla's `shadowOrbCount = 0`).
+    // the case-31 counter's third smash summons the Eater of Worlds (the
+    // corruption half) or the Brain of Cthulhu (the crimson half) via
+    // `NPC.SpawnOnPlayer(plr, 13 | 266)`; the port polls the count delta
+    // (the sim resets it to 0 on the summon, exactly like the vanilla's
+    // `shadowOrbCount = 0` INSIDE the living-boss gate — a blocked gate
+    // leaves the count at 3 and every later smash retries).
     // W-A2-3 (T3c): the gate is the C#'s LIVING-BOSS check
     // (`WorldGen.cs:54296`: `!(AnyNPCs(266) & flag) && (!AnyNPCs(13) ||
-    // flag)` — the corruption arm reduces to `!AnyNPCs(13)`), NOT
-    // `downed_eow`: once the EoW is killed the orbs summon it again
-    // freely while none lives. The crimson-Brain arm still rides the
-    // heart-detection wave.
-    if app.world.shadow_orb_count >= 3
-        && !app
-            .npcs
+    // flag)`), NOT `downed_eow`: once the boss is killed the orbs summon
+    // it again freely while none lives. Per-half reduction: crimson
+    // (`flag`) → `!AnyNPCs(266)` (a living EoW does NOT block the Brain);
+    // corruption → `!AnyNPCs(13)` (a living Brain does NOT block the EoW).
+    // W4-g85 final: `flag` = the smash's own `frameX >= 36` bit, recorded
+    // by the core kill plan in `orb_smash_crimson` (the count-poll reads
+    // the last completed smash's bit — the vanilla summons synchronously
+    // inside that smash). NOT the world evil: a drunk world's chasm holds
+    // both halves and each summons its own boss.
+    // `:54294`'s secret-seed override: `dontStarveWorld && getGoodWorld &&
+    // !remixWorld` summons on EVERY 31 smash, not just the third.
+    // The `NPC.SpawnOnPlayer` entry guard `Main.netMode == 1`
+    // (`NPC.cs:80477`): a client never spawns — the host's `23` sync owns it.
+    let ftw_starve_every_smash = app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
+        && !app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    let crimson_half = app.world.orb_smash_crimson;
+    let boss_lives = if crimson_half {
+        app.npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+    } else {
+        app.npcs
             .iter()
             .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+    };
+    // The `count >= 1` floor is the poll's smash-edge stand-in: the C#
+    // runs inside CheckOrb (a smash happened), the poll must not summon
+    // on an idle FTW/starve world at count 0.
+    if app.world.shadow_orb_count >= 1
+        && (app.world.shadow_orb_count >= 3 || ftw_starve_every_smash)
+        && !boss_lives
+        && !app.is_client()
     {
         app.world.shadow_orb_count = 0;
+        // The chat watermark resets with the count (port bookkeeping —
+        // the next cycle's smashes chat again from count 1).
+        app.world.orb_smash_chat_count = 0;
         if let Some(p) = app.player.as_ref() {
             let (px, py) = p.center();
             let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
             let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
-            // The crimson flag rides the orb frame — the port's worldgen
-            // places the corruption/crimson orbs per the chasm side; the
-            // port's spawn picks the corruption EoW (the crimson-Brain
-            // arm rides the flag, the detection lands with the wave event).
-            let mut head = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
-            head.hp = head.max_hp;
-            head.worm_left = 65;
-            app.npcs.push(head);
+            // `SpawnOnPlayer`'s at-the-player semantics — the port's
+            // standing surface-scan deviation (`use_boss_summon_item`'s
+            // same reduction): the EoW rides the worm engine, the Brain
+            // arrives alone (the Creepers' orbit = the follow-up).
+            if crimson_half {
+                let mut brain = Npc::new(NpcKind::BrainOfCthulhu, px, py, 1, 0.0);
+                brain.hp = brain.max_hp;
+                app.npcs.push(brain);
+            } else {
+                let mut head =
+                    Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
+                head.hp = head.max_hp;
+                head.worm_left = 65;
+                app.npcs.push(head);
+            }
+        }
+    } else if app.world.shadow_orb_count >= 1
+        && app.world.shadow_orb_count < 3
+        && !ftw_starve_every_smash
+        && !app.is_client()
+    {
+        // `:54322-54330`'s chat arm — the else of the summon threshold
+        // (NOT of the living-boss gate: a BLOCKED third smash chats
+        // nothing, the `count < 3` pin below): every non-third 31 smash
+        // broadcasts `Lang.misc[10]` ("A horrible chill goes down your
+        // spine..."), the second `Lang.misc[11]` ("Screams echo around
+        // you..."), `ChatColors.World`. The port broadcasts once per
+        // smash via a count watermark (`orb_smash_chat_count`): the
+        // C# runs inside CheckOrb, the poll can't see per-smash edges.
+        if app.world.orb_smash_chat_count < app.world.shadow_orb_count {
+            let msg = if app.world.shadow_orb_count == 2 { 11 } else { 10 };
+            crate::chat::broadcast_death_text(
+                &mut app.chat,
+                &crate::lang::misc(msg),
+                crate::chat::COLOR_WORLD,
+            );
+            app.world.orb_smash_chat_count = app.world.shadow_orb_count;
         }
     }
     // The Golem's anchor + shield (`NPC.cs:19507`'s `NPC.golemBoss` +
@@ -9943,8 +11331,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // hostile shot spawned from an NPC (`EntitySource_Parent`) carries
         // the spawner's `BannerSystem.NPCtoBanner(nPC.BannerID())` — the
         // banner its `Damage_EVP` strength reads (`:14832`). Captured per
-        // requester before the drains (the `wants_hostile_shot` owner
-        // slot). W4-g4 P1 (the W4-d22 reconcile fold).
+        // requester before the drains (the `wants_hostile_shot` owner slot).
         let banner = tr_core::bestiary::npc_to_banner(n.kind.cs_id() as i32);
         for shot in n.wants_hostile_shot.drain(..) {
             shots.push((i, banner, shot));
@@ -10059,8 +11446,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0)
         };
         // `FindBannerToAssociateTo` (`Projectile.cs:11114`): stamp the
-        // spawner's banner onto the fresh slot (the `set_scale`
-        // precedent). W4-g4 P1.
+        // spawner's banner onto the fresh slot (the `set_scale` precedent).
         if let Some(slot) = spawned {
             app.projectiles.slots_mut()[slot].banner_id_to_respond_to = banner;
         }
@@ -10076,6 +11462,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
     for shot in ai_shots {
+    for (banner, shot) in ai_shots {
         // W4-c6 style-59: the BladeShot carries the C#'s CENTRE
         // (`NPC.cs:33230` passes `base.Center.X/Y`; `NewProjectile`
         // subtracts half the extent, `Projectile.cs:10876-10877`) — the
@@ -10609,6 +11996,31 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let Some(player) = player_ref {
             for i in 0..npcs.len() {
                 if let Some(ty) = npcs[i].wants_transform {
+                    // W4-d127 — the OwlMimic's `Transform(317)`
+                    // (`NPC.cs:25333`): the style-24 module ALREADY ran
+                    // `transform_core` in-place mid-arm (the ±height
+                    // reposition, the ai/localAI reset, the 30x32
+                    // override, lifeMax 75, the integer life rescale —
+                    // `NPC.cs:81092-81110`), so this drain is
+                    // COMPLETION-ONLY: the kind swap that makes the NEXT
+                    // tick dispatch on DemonEyeOwl's aiStyle 2 (the b2
+                    // eye axis arm). NO second `transform_to_kind` — it
+                    // would reposition (+2) and rescale the life twice.
+                    // `kind_from_net_id` resolves through the bestiary
+                    // row: `None` until the d38 roster merge lands
+                    // net_id 317 (`bestiary.rs:2310` on its tip); the
+                    // observable subset the core applied keeps the slot
+                    // faithful meanwhile (the merge gate, ANALYSIS).
+                    if ty == 317 {
+                        if let Some((kind, _)) = crate::npc::kind_from_net_id(317) {
+                            npcs[i].kind = kind;
+                            // The kind's own 30x32 box (`NPC.cs:13009-
+                            // 13010`) replaces the core's override.
+                            npcs[i].size_override = None;
+                        }
+                        npcs[i].wants_transform = None;
+                        continue;
+                    }
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         479 => NpcKind::MothronSpawn,
@@ -10642,6 +12054,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // this base: the snail trio stays c9's, nothing
                         // queues 677 here yet; the merge dedupes).
                         199 => NpcKind::LihzahrdCrawler,
+                        364 => NpcKind::DuckWhite,
+                        375 => NpcKind::TruffleWormDigger,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);
@@ -10920,6 +12334,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-d70 DOC-SWEEP: the MoonlordDeathDrama request drains
+    // (`MoonlordDeathDrama.cs:240-256`) — the AI machines queue the
+    // RequestLight ramps (the core's spawn/teleport/drama/despawn, the DD2
+    // crystal's win/loss scenes) and the crash drama's AddExplosion spots;
+    // the SceneState owns the whitening fade + the blast list. The
+    // explosion's frame-speed draw rides the shared `Main.rand` stream
+    // (`NPC.cs:41364` → `AddExplosion` `:242`), the light requests draw
+    // nothing. Both drain in NPC slot order, like the C#'s array walk.
+    for n in app.npcs.iter_mut() {
+        for (light, sx, sy) in n.wants_drama_light.drain(..) {
+            app.scene_state.request_light(light, [sx, sy]);
+        }
+        for (sx, sy) in n.wants_drama_explosion.drain(..) {
+            app.scene_state.add_explosion([sx, sy], app.rngs.global());
+        }
+    }
     // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
     // the payload's pirate spawns with the drop velocity (the vanilla's
     // `±5 X` jitter + the ship's X, then the -8.01 Y launch).
@@ -10992,12 +12422,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // mirror (the `world_sim/items.rs:176` convention): the ×1.5
             // respawn timer (`Player.cs:39072-39075`) is reachable now.
             let expert = player.buffs.expert_mode;
+            // W4-f30 — `KillMe`'s teammate-gravestone arm (`Player.cs:38834-
+            // 38837`): a gravestone projectile's killing blow fires 36. The
+            // C# gates on `whoAmI != Main.myPlayer && team == LocalPlayer.team`
+            // (a TEAMMATE's death, credited to the local player); the port is
+            // single-player, so the local gravestone self-kill stands in (the
+            // documented MP deviation — the `OnKillNPC` town-kill arm above
+            // is the primary 36 site). The killing-blow source was latched by
+            // `hurt_inner`; consume it here.
+            let grave_self_kill = player
+                .death_source_projectile
+                .is_some_and(|k| k == 43 || (201..=205).contains(&k) || (527..=531).contains(&k));
+            player.death_source_projectile = None;
             drop(player);
             // `Player.KillMe`'s chat broadcast: the resolved message in
             // the Death color (`ChatColors.cs`); the ported monitor rides
             // the App.
             crate::chat::broadcast_death(&mut app.chat, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
+            if grave_self_kill {
+                let _ = app.notify_progression_net(36);
+            }
             if let Some(player) = app.player.as_mut() {
                 player.start_death(&app.world, boss_near, expert);
             }
@@ -11175,6 +12620,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     zone_jungle: app.scene_metrics.zone_jungle,
                     // `Player.ZoneEvil` = the corrupt or crimson zone.
                     zone_evil: app.scene_metrics.zone_corrupt || app.scene_metrics.zone_crimson,
+                    // The town gate's explicit `!ZoneCrimson` (`NPC.cs:799`,
+                    // W4-c41) — survives the infected-seed flag clear.
+                    zone_crimson: app.scene_metrics.zone_crimson,
+                    // `Main.infectedSeed` ← the world's `worldIsInfected`
+                    // micro seed (`NPC.cs:795-798`, W4-c41).
+                    infected_seed: app
+                        .world
+                        .micro_seeds
+                        .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
                     zone_temple: app.scene_metrics.zone_lihzhard_temple,
                     zone_underground_desert: app.scene_metrics.zone_underground_desert,
                     zone_meteor: app.scene_metrics.zone_meteor,
@@ -11187,6 +12641,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         && !app.scene_metrics.zone_hallow,
                     zone_graveyard: app.scene_metrics.zone_graveyard,
                     zone_sandstorm: app.scene_metrics.zone_sandstorm,
+                    // W4-c40 — the desert-override ladder's two extra gates
+                    // (`NPC.cs:3949/:3951`): the event flag and downedBoss1.
+                    sandstorm_happening: app.sandstorm.happening,
+                    downed_boss1: app.world.downed_eoc,
                     zone_water_candle: app.scene_metrics.zone_water_candle,
                     zone_peace_candle: app.scene_metrics.zone_peace_candle,
                     // `Player.UpdateBuffs`' Invisibility (10) / Battle (13)
@@ -11372,6 +12830,66 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
 }
 }
 }
+}
+
+/// `CountKillForBannersAndDropThem`'s `plr` pick (`NPC.cs:79814-79818`):
+/// `lastInteraction` stands when that player slot is active and alive;
+/// otherwise `FindClosestPlayer` (`NPC.cs:77456-77492`) picks the nearest
+/// living player (the dead/ghost fallback). The port's single session
+/// player rides slot `local_id`; the remote peers (`remote_players`) ride
+/// their own slots for the host's `FindClosestPlayer` scan. A slot the port
+/// does not model is simply absent (the C# loops the 255 `Main.player`
+/// slots; an inactive slot never wins). No RNG draws — the pick is a pure
+/// distance scan.
+fn banner_kill_plr(app: &App, npc: &Npc) -> i32 {
+    let local = app.local_id as i32;
+    // The `lastInteraction` slot's active/alive read: the local player is
+    // the session player; a remote slot is active while its peer is stored.
+    let last = npc.last_interaction;
+    let last_ok = if last == local {
+        app.player.as_ref().is_some_and(|p| !p.dead)
+    } else {
+        last >= 0 && app.remote_players.contains_key(&(last as u32))
+    };
+    if last_ok {
+        return last;
+    }
+    // `FindClosestPlayer`: the living-pass candidates, then the dead
+    // fallback inside the helper. The local player's centre is its live
+    // hitbox centre; a remote peer's centre is its wire position + the
+    // 20x42 box half-extents (the port's peer hitbox stand-in).
+    let mut candidates: Vec<crate::banners::ClosestPlayerCandidate> = Vec::new();
+    let mut slots: Vec<i32> = Vec::new();
+    if let Some(p) = app.player.as_ref() {
+        let (cx, cy) = p.center();
+        candidates.push(crate::banners::ClosestPlayerCandidate {
+            active: true,
+            dead: p.dead,
+            ghost: false,
+            cx,
+            cy,
+        });
+        slots.push(local);
+    }
+    let mut peer_ids: Vec<u32> = app.remote_players.keys().copied().collect();
+    peer_ids.sort_unstable();
+    for id in peer_ids {
+        let peer = &app.remote_players[&id];
+        candidates.push(crate::banners::ClosestPlayerCandidate {
+            active: true,
+            dead: peer.hp <= 0,
+            ghost: false,
+            cx: peer.x + crate::player::WIDTH * 0.5,
+            cy: peer.y + crate::player::HEIGHT * 0.5,
+        });
+        slots.push(id as i32);
+    }
+    let pick = crate::banners::find_closest_player(npc.center(), &candidates);
+    if pick < 0 {
+        -1
+    } else {
+        slots[pick as usize]
+    }
 }
 
 /// The full NPC loot through the rule engine
@@ -11798,13 +13316,13 @@ pub(crate) fn spawn_coins(app: &mut App, npc: &Npc) {
         // the port's single player; the `|luck|` double-roll gate lives in
         // `drop_money` (`loot.rs:316-318`).
         app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
-        // W4-d22 g4d — the two false stand-ins wired to their live inputs
-        // (the g4 FINAL fold, `55840d9a`): `this.midas` (`NPC.cs:79631`)
-        // is the NPC's Midas debuff (72 — the Flask of Gold / Golden
-        // Bullet inflict, `projectile_special_bullets.rs`);
-        // `Main.bloodMoon` (`:79660`) is the world's live flag. The
-        // midas `Next(30, 51)` and the blood-moon `Next(101)` bumps draw
-        // ONLY when their gates are up — a clean classic kill stays
+        // W4-g4 FINAL — the two false stand-ins wired to their live inputs:
+        // `this.midas` (`NPC.cs:79631`) is the NPC's Midas debuff (72, the
+        // Flask of Gold / Golden Bullet inflict — `melee_on_hit.rs:127`,
+        // `projectile_special_bullets.rs:442`); `Main.bloodMoon`
+        // (`:79660`) is the world's live blood-moon flag. The midas
+        // `Next(30, 51)` and the blood-moon `Next(101)` bumps draw ONLY
+        // when their gates are up — a clean classic kill stays
         // byte-identical to the pre-wiring stream.
         npc.buffs.has_buff(72), // `this.midas` (:79631)
         app.world.blood_moon,   // `Main.bloodMoon` (:79660)
@@ -12399,6 +13917,18 @@ pub(crate) fn do_death_events_switch(app: &mut App, npc: &Npc) {
         _ => {}
     }
 }
+// W4-g4 SEAL — the g4 FINAL `spawn_heal_drops` + its two pure helpers
+// (`drop_common_life_and_mana`/`drop_heals_type_switch`, the 55840d9a
+// port of NPC.cs:79098-79195/:79531-79557) are RETIRED here. The f35
+// census row the FINAL probe read (`65-expert-drop-trees-census.md:39`)
+// sits in a "Port status BEFORE this task" table — f35's own tip ported
+// the SAME seam FIRST (`b72cdfbfc` npc_death_heals.rs + the `00a5b27db`
+// spawn_heals wiring, both BEFORE g4's 55840d9a) as a SUPERSET (the boss
+// potions/hearts tail + the Badger's Hat latches + the EoW head latch).
+// Keep-one adjudication: f35 owns the heal seam (research/
+// 91-seal-keep-one.md); a second copy would double-feed the UpdateNPCs
+// death stream. The C# census survives in research/91-final-fighter-
+// census.md §1 (corrected by the seal note).
 
 #[cfg(test)]
 mod tests {
@@ -12416,6 +13946,74 @@ mod tests {
 
     use super::*;
     use tr_core::World;
+
+    // ---- W4-g90: the town stat-ladder feeder (WRITTEN NOT RUN) ----------
+
+    /// The LIVE wiring: one `update_npcs` tick with both combat-book
+    /// world flags raised feeds the town ladder — the Guide leaves the
+    /// tick at 750/750 lifeMax (`NPC.cs:53016-53035`: 250 + 250 + 250,
+    /// the full-heal-on-growth) and defense 31 (15 + 8 + 8). A wild NPC
+    /// (the slime) is untouched — the block is isLikeATownNPC-gated
+    /// (`NPC.cs:53014`). The feeder draws NOTHING (the ladder is
+    /// RNG-free), so the ambient spawns' streams are unperturbed.
+    #[test]
+    fn w4_g90_the_town_tick_feeds_both_combat_books_into_the_ladder() {
+        let world = crate::test_world_helpers::ground();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.combat_book_was_used = true;
+        app.world.combat_book_volume_two_was_used = true;
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        let mut slime = Npc::new(NpcKind::Slime, 48.0, 100.0, 1, 0.0);
+        slime.hp = slime.max_hp;
+        let slime_max = slime.max_hp;
+        app.npcs.push(slime);
+        app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let g = app.npcs.iter().find(|n| n.kind == NpcKind::Guide).unwrap();
+        assert_eq!(g.max_hp, 750, "250 base + 250 book one + 250 book two");
+        assert_eq!(g.hp, 750, "the `& flag3` full heal (`:53032-53035`)");
+        assert_eq!(g.defense(), 31, "15 + 8 + 8 (`:53022`/`:53029`)");
+        let s = app.npcs.iter().find(|n| n.kind == NpcKind::Slime).unwrap();
+        assert_eq!(s.max_hp, slime_max, "the wild slime skips the block");
+        assert_eq!(s.defense_override, None, "no ladder write on a wild kind");
+        // A second tick is idempotent (the reset-then-read base).
+        update_npcs(&mut app, 1.0 / 60.0);
+        let g = app.npcs.iter().find(|n| n.kind == NpcKind::Guide).unwrap();
+        assert_eq!((g.max_hp, g.hp, g.defense()), (750, 750, 31));
+    }
+
+    /// No books, one boss down: the ladder still runs every tick — the
+    /// EoC row adds +2 defense and the 0.985 cooldown scale (the returned
+    /// num3 has no live consumer until b3 drains TownOutputs; the
+    /// defense write is the observable half).
+    #[test]
+    fn w4_g90_the_town_tick_feeds_the_boss_ladder_without_books() {
+        let world = crate::test_world_helpers::ground();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.downed_eoc = true;
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let g = app.npcs.iter().find(|n| n.kind == NpcKind::Guide).unwrap();
+        assert_eq!(g.max_hp, 250, "no books: the lifeMax reset is the base");
+        assert_eq!(g.defense(), 17, "15 + 2 (EoC, `:53041-53045`)");
+    }
 
     /// S1-D-8b's A/B equivalence proof: the migrated carrier family
     /// (spatial hash over the snapshot) against the verbatim pre-migration
@@ -12704,6 +14302,52 @@ mod tests {
             let _ = witness.next_max(3);
         }
         assert_eq!(rng, witness, "the protocol key rolls the bird's gate");
+    /// W4-d127 FINAL — the critter-emitter KEY census (the MERGER-L7
+    /// mis-route fix): the table tests the C# NET ID (`cs_id`), not the
+    /// port-local protocol id (`to_u16`). GolemHead's protocol id 74
+    /// collides with the Bird 74 chirp arm (`NPC.cs:92277`), so the old
+    /// `to_u16` key made the Golem's head chirp by day; its `cs_id` 245
+    /// (the bestiary Golem fold) is outside every table arm and draws
+    /// nothing. The bird kinds' cs_id rows (74/297/298/442/611/671-675/
+    /// 689) are the ones the emitter must read once the roster co-lanes
+    /// land them. WRITTEN NOT RUN.
+    #[test]
+    fn the_critter_emitter_keys_cs_id_not_protocol_id() {
+        // The mis-route: GolemHead's protocol id IS a bird-table id.
+        assert_eq!(NpcKind::GolemHead.to_u16(), 74, "the protocol collision");
+        // Its net id is the Golem fold (245), outside the table.
+        assert_eq!(NpcKind::GolemHead.cs_id(), 245, "the bestiary Golem fold");
+        // Under the OLD key the head would chirp by day (Next(400)==0 →
+        // the 74 arm's Next(3) pick → legacy 32); under the FIXED key it
+        // is silent and draws nothing.
+        let mut old_rng = UnifiedRandom::new(5);
+        let mut old_roll = |hi: u32| old_rng.next_max(hi as i32) as u32;
+        let old = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true, 1000.0, 3000.0, 3000.0, 0.0, &mut old_roll,
+        );
+        // The 74 arm fires on a Next(400)==0; seed 5 may or may not hit,
+        // but the KEY POINT is the arm is REACHABLE under the old key.
+        // Force the gate roll to 0 to prove the mis-route concretely.
+        let mut forced = |hi: u32| if hi == 400 { 0 } else { 1 };
+        let misroute = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true, 1000.0, 3000.0, 3000.0, 0.0, &mut forced,
+        );
+        assert_eq!(misroute, Some((32, 14.0)), "the old key chirps the Golem head");
+        let _ = old;
+        // The fixed key: cs_id 245 is outside the table, no draw.
+        let mut rng = UnifiedRandom::new(5);
+        let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+        assert_eq!(
+            crate::ambient_sound::critter_sound_cue(
+                NpcKind::GolemHead.cs_id() as i32,
+                true, 1000.0, 3000.0, 3000.0, 0.0, &mut hi_roll,
+            ),
+            None,
+            "the fixed key silences the Golem head"
+        );
+        assert_eq!(rng, UnifiedRandom::new(5), "no draw under the fixed key");
     }
 
     /// S1-E-21 wave C — the death play's stream contract: `checkDead`'s
@@ -12778,6 +14422,46 @@ mod tests {
     /// ladybug time, any other town NPC −10800/3, the Clothier (54)
     /// exempt, extremes win. The arm rides the port's death pass (the
     /// draw-free luck setters — no stream choice arises).
+    /// W4-g11 final phase (g61b seam-4 fold, research/116 §5) — the fade's
+    /// PRE-AI wiring contract (`NPC.cs:90322` before `AI()` `:90423`):
+    /// * style 13 (the frog's instant clear, `:92238`) zeroes
+    ///   `teleport_time` on the FIRST tick — the AI never sees a live
+    ///   grant; the arm draws nothing (`:92236-92239`), so the
+    ///   `UpdateNPCs` stream's fade share is zero draws.
+    /// * a zero grant (the common case) is a head-gate no-op
+    ///   (`:92196-92199`) — the pass leaves the field untouched.
+    #[test]
+    fn w4_g11_the_fade_clears_style13_pre_ai_in_one_tick() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // The slot loop (the fade included) runs only with a session player.
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let mut npc = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+        npc.hp = npc.max_hp;
+        npc.teleport_time = 1.0;
+        npc.teleport_style_id = 13; // the frog grant shape (`NPC.cs:79880`)
+        app.npcs.push(npc);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let n = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Zombie)
+            .expect("the zombie survives its first tick");
+        assert_eq!(
+            n.teleport_time, 0.0,
+            "style 13 clears on the fade tick, before the AI runs"
+        );
+        // A second tick with the cleared grant is a head-gate no-op (the
+        // zombie may despawn in the 8×8 fixture — either way no grant).
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().all(|n| n.teleport_time == 0.0),
+            "the head gate holds"
+        );
+    }
+
+    /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
+    /// a dye-material row (the dye materials / the Strange Plants) — the
+    /// port's `ItemSlot` has no `dye` field, so the bands carry the gate.
     #[test]
     fn w4_e26_the_town_npc_death_moves_the_ladybug_timer() {
         // The Guide dies → +14400 (`NPC.cs:81635`).
@@ -13008,6 +14692,81 @@ mod tests {
         );
     }
 
+    /// W4-f38 — the move-in notification (`WorldGen.cs:5575`): the arrival
+    /// names himself (`NPC.cs:80769` → `GiveTownUniqueDataToNPCsThatNeedIt`)
+    /// and broadcasts `Announcement.HasArrived` with `GetFullNetName` in
+    /// `ChatColors.NPCTravel` BEFORE the NO_HOBO event (`:5576`). The
+    /// relocation arm (`:5453-5462`) fires NO_HOBO with NO announcement.
+    #[test]
+    fn the_town_arrival_announces_the_full_name_in_npc_travel() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 105, 12, 9);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // The dye-material gate (the test above): the Dye Trader arrives.
+        let slot = &mut app.inventory[0];
+        slot.kind = 1109;
+        slot.name = "Yellow Dye";
+        slot.count = 1;
+        app.town_arrival.check_for_spawns = 7199;
+        app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let trader = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DyeTrader)
+            .expect("the Dye Trader arrives");
+        assert!(!trader.given_name.is_empty(), "the arrival names himself");
+        let expected = crate::lang::text_args(
+            "Announcement.HasArrived",
+            &[crate::npc_names::full_name(trader)],
+        );
+        assert!(expected.ends_with(" the Dye Trader has arrived!"));
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text == expected && m.color == crate::chat::COLOR_NPC_TRAVEL),
+            "the Announcement.HasArrived broadcast (`WorldGen.cs:5575`)"
+        );
+        // The relocation arm: a homeless Dye Trader takes the next room
+        // with NO second announcement (`:5453-5462` has no broadcast).
+        app.npcs.retain(|n| n.kind != NpcKind::DyeTrader);
+        let mut homeless = Npc::new(NpcKind::DyeTrader, 32.0, 100.0, 1, 0.0);
+        homeless.hp = homeless.max_hp;
+        homeless.home = None;
+        homeless.look_for_home_timeout = 0;
+        app.npcs.push(homeless);
+        app.chat.messages.clear();
+        app.town_arrival.check_for_spawns = 7199;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::DyeTrader && n.home.is_some()),
+            "the homeless trader relocates"
+        );
+        assert!(
+            !app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("has arrived")),
+            "the relocation arm is silent (`WorldGen.cs:5453-5462`)"
+        );
+    }
+
     /// `Main.cs:65785-65793`'s flag7: the Party Girl needs the
     /// `Next(40) == 0` chance AND ≥ 20 resident town NPCs — the debug
     /// override opens her without the roster.
@@ -13188,6 +14947,54 @@ mod tests {
             "the Stylist is freed"
         );
         assert!(app.world.saved_stylist, "savedStylist raises");
+    }
+
+    /// W4-d122 fifth round — the Stylist Coins gate's copper total
+    /// (`Chest.cs:2714-2746`): the 54-slot scan covers the grid AND the
+    /// four coin rows; the purse mirror already credits pickup-fed stacks
+    /// (`world_sim/items.rs`'s `into_inventory` arm), so the total is
+    /// `max(purse, stacks)` — a pickup never double-counts. Written, not
+    /// run (code-only).
+    #[test]
+    fn the_stylist_coin_total_never_double_counts_the_pickup_mirror() {
+        use crate::item::{ItemSlot, EMPTY_SLOT};
+        let coin = |kind: u16, count: u32| ItemSlot { kind, name: "", count, prefix: 0 };
+        let grid = vec![EMPTY_SLOT; crate::item::INV];
+        let rows = [EMPTY_SLOT; crate::inv::COINS];
+        // Empty everything: 0.
+        assert_eq!(coin_total(&grid, &rows, 0), 0);
+        // The purse alone (the sell/payout lane): its value stands.
+        assert_eq!(coin_total(&grid, &rows, 1_000_000), 1_000_000);
+        // A grid stack the mirror never saw (sidecar restore): it counts.
+        let mut g = grid.clone();
+        g[3] = coin(73, 100); // 100 gold = 1,000,000
+        assert_eq!(coin_total(&g, &rows, 0), 1_000_000);
+        // The coin ROWS count too (C# inventory[50..53]).
+        let mut r = rows;
+        r[0] = coin(71, 50);
+        assert_eq!(coin_total(&grid, &r, 0), 50);
+        // THE discriminating case: a 500k-copper pickup credits BOTH the
+        // mirror and the coin-row stack — the old purse+stacks sum read
+        // 1,000,000 and opened the 1g gate; the max reads 500,000.
+        let mut r = rows;
+        r[3] = coin(73, 50); // 50 gold = 500,000
+        assert_eq!(coin_total(&grid, &r, 500_000), 500_000, "no double count");
+        assert!(coin_total(&grid, &r, 500_000) < 1_000_000, "the 1g gate stays shut");
+        // The mid-walk clamp (`:2733-2737`): a stack over the cap clamps.
+        let mut g = grid.clone();
+        g[0] = coin(74, 10_000); // 10,000 platinum = 10,000,000,000 > cap
+        assert_eq!(coin_total(&g, &rows, 0), 9_999_999_999);
+        // The denomination multipliers: 71×1, 72×100, 73×10000, 74×1000000.
+        let mut g = grid.clone();
+        g[0] = coin(71, 5);
+        g[1] = coin(72, 3);
+        g[2] = coin(73, 2);
+        g[3] = coin(74, 1);
+        assert_eq!(coin_total(&g, &rows, 0), 5 + 300 + 20_000 + 1_000_000);
+        // A non-coin kind contributes nothing.
+        let mut g = grid.clone();
+        g[0] = coin(8, 999);
+        assert_eq!(coin_total(&g, &rows, 0), 0);
     }
 
     /// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
@@ -14612,6 +16419,84 @@ mod tests {
             !crimson.contains(&56) && !crimson.contains(&59),
             "no corruption rows on a crimson world"
         );
+    /// W4-f30 — the death path's `CountKillForAchievements` Twins gate
+    /// (`NPC.cs:79839`): the credit + mayhem fire only when the OTHER eye is
+    /// already gone. The gate is the `!AnyNPCs(other)` scan over the living
+    /// roster (the dying eye is already out of `app.npcs` after the retain).
+    /// This witnesses the scan predicate the death arm reads, deterministically
+    /// (the full `update_npcs` boss AI is out of scope — the machine itself is
+    /// witnessed in `achievements.rs`).
+    #[test]
+    fn f30_the_twins_kill_gate_reads_the_other_eye() {
+        let any = |npcs: &[Npc], id: i32| npcs.iter().any(|n| n.hp > 0 && n.kind.net_id() == id);
+        let mut ret = Npc::new(NpcKind::Retinazer, 0.0, 0.0, 1, 0.0);
+        ret.hp = ret.max_hp;
+        let mut spaz = Npc::new(NpcKind::Spazmatism, 0.0, 0.0, 1, 0.0);
+        spaz.hp = spaz.max_hp;
+        // Both eyes alive: killing Retinazer (125) is gated — Spazmatism (126)
+        // still lives, so `!AnyNPCs(126)` is false.
+        let both = vec![ret.clone(), spaz.clone()];
+        assert!(any(&both, 126), "the other eye lives — the gate holds");
+        // The other eye gone: the gate opens.
+        spaz.hp = 0;
+        let one = vec![ret.clone(), spaz.clone()];
+        assert!(!any(&one, 126), "the other eye is gone — the gate opens");
+        // And the machine fires 21 on that last-eye kill once the run is armed
+        // and the other two families already fell.
+        let mut m = crate::achievements::AchievementManager::registry();
+        m.mecha_mayhem_start([127, 134, 125, 126].into_iter());
+        m.mecha_mayhem_kill(134, |id| [127, 125, 126].contains(&id));
+        m.mecha_mayhem_kill(127, |id| [125, 126].contains(&id));
+        assert!(m.mecha_mayhem_kill(125, |id| any(&one, id)), "the last eye fires 21");
+    }
+
+    /// W4-f30 — `NPC.DropEoWLoot`'s last-segment boss latch (`NPC.cs:78414-78430`):
+    /// the EoW achievement credit (`CountKillForAchievements`'s `if (this.boss)`,
+    /// `:79853`) fires only for the LAST segment. The latch sets `boss = true`
+    /// when no OTHER 13/14/15 is alive (the dying segment itself excluded, the
+    /// `i != whoAmI` term). This mirrors the death pass's scan over the dead
+    /// clones + the surviving roster.
+    #[test]
+    fn f30_the_eow_boss_latch_fires_only_for_the_last_segment() {
+        let eow = |k: NpcKind| {
+            matches!(
+                k,
+                NpcKind::EaterOfWorldsHead | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail
+            )
+        };
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 0.0, 0.0, 1, 0.0);
+        head.hp = head.max_hp;
+        let mut body = Npc::new(NpcKind::EaterOfWorldsBody, 0.0, 0.0, 1, 0.0);
+        body.hp = body.max_hp;
+        // The death pass's latch: for each dead EoW clone at index i, no OTHER
+        // dead clone (j != i) and no living roster EoW means it is the last.
+        let latch = |dead: &[Npc], alive: &[Npc]| -> Vec<bool> {
+            (0..dead.len())
+                .map(|i| {
+                    if !eow(dead[i].kind) {
+                        return false;
+                    }
+                    let other = alive.iter().any(|n| n.hp > 0 && eow(n.kind))
+                        || dead.iter().enumerate().any(|(j, n)| j != i && eow(n.kind));
+                    !other
+                })
+                .collect()
+        };
+        // Both segments die this tick: neither is the last (each sees the other
+        // dead clone), so neither latches — the C# sees them active in turn.
+        head.hp = 0;
+        body.hp = 0;
+        let dead = vec![head.clone(), body.clone()];
+        assert_eq!(latch(&dead, &[]), vec![false, false], "two simultaneous deaths latch neither");
+        // The body died earlier (out of the batch); the head dies alone now —
+        // it is the last segment, so it latches.
+        let dead = vec![head.clone()];
+        assert_eq!(latch(&dead, &[]), vec![true], "the lone last segment latches");
+        // A living sibling keeps the latch off.
+        body.hp = body.max_hp;
+        let dead = vec![head.clone()];
+        assert_eq!(latch(&dead, &[body.clone()]), vec![false], "a living sibling holds the latch");
+        assert!(!head.boss, "Npc::new does not set the boss flag — the death pass does");
     }
 
     #[cfg(test)]
@@ -15066,6 +16951,39 @@ mod invasion_tests {
         app.world.invasion_size = 5;
         report_invasion_kill(&mut app, NpcKind::Zombie);
         assert_eq!(app.world.invasion_size, 5);
+    }
+
+    /// W4-f40 DOC-SWEEP — the FIRST invasion clear arms the next lantern
+    /// night (`Main.cs:64335-64354` → `SetEventFlagCleared(ref downedX, id)`
+    /// → `OnGameEventClearedForTheFirstTime`, `NPC.cs:78759-78775`): the
+    /// invasion ids (goblins 0 / frost 1 / pirates 2 / martians 3) all take
+    /// the DEFAULT arm, so each first clear sets `NextNightIsLanternNight`.
+    /// The flag's false→true edge keeps a repeat clear inert.
+    #[test]
+    fn w4_f40_the_first_invasion_clear_arms_the_lantern_night() {
+        for (ty, id) in [(1i32, 0i32), (2, 1), (3, 2), (4, 3)] {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            app.world.invasion_type = ty;
+            app.world.invasion_size = 0;
+            app.world.invasion_size_start = 120;
+            assert!(!app.world_events.next_night_is_lantern_night);
+            update_invasion_state(&mut app);
+            assert!(
+                app.world_events.next_night_is_lantern_night,
+                "invasion {ty} (event {id}) first clear arms the night"
+            );
+            // A repeat clear of the SAME invasion (flag already true) is a
+            // no-op: re-arm a fresh invasion, clear again, the edge holds.
+            app.world_events.next_night_is_lantern_night = false;
+            app.world.invasion_type = ty;
+            app.world.invasion_size = 0;
+            update_invasion_state(&mut app);
+            assert!(
+                !app.world_events.next_night_is_lantern_night,
+                "invasion {ty} repeat clear is inert (the was-down edge)"
+            );
+        }
     }
 
     #[test]
@@ -19947,6 +21865,51 @@ mod dd2_victory_tests {
         assert_eq!(app.world.dd2_crystal_drops.already_dropped, 10);
     }
 
+    /// W4-d122 fifth round — the f36 medal-drop item-id cross-check. The
+    /// C# `DD2Event.DropMedals` (`DD2Event.cs:802-813`) drops **3817**
+    /// (`Item.NewItem(..., 3817, numberOfMedals, noBroadcast: true)`,
+    /// `:809`) — the Defender Medal, NOT the 3822 Eternia Crystal (the
+    /// sentry ammo / the per-kill `ShouldDropCrystals` drop, `:815+`).
+    /// W4-f36 (`fac5f222`) ports the drop side through the SAME
+    /// `tr_core::dd2::MEDAL_ITEM` constant this branch's win/wave lanes
+    /// use; this witness pins the RAW kind on the dropped stacks (the
+    /// `medal_stacks` helper filters by the constant, so a wrong constant
+    /// would hide there) and keeps the two ids distinct. Written, not run.
+    #[test]
+    fn the_f36_medal_drop_item_id_is_3817_not_the_crystal() {
+        assert_eq!(tr_core::dd2::MEDAL_ITEM, 3817, "DD2Event.cs:809's literal");
+        assert_eq!(
+            tr_core::dd2::ENERGY_CRYSTAL_ITEM, 3822,
+            "the crystal is the sentry ammo, not the medal"
+        );
+        assert_ne!(tr_core::dd2::MEDAL_ITEM, tr_core::dd2::ENERGY_CRYSTAL_ITEM);
+        // The wallet's registration agrees (`CustomCurrencyManager.cs:17`).
+        assert_eq!(
+            crate::custom_currency::DEFENDER_MEDAL_ITEM,
+            tr_core::dd2::MEDAL_ITEM
+        );
+        // A tier-1 win pays ONE 3-medal stack of the RAW kind 3817.
+        let mut app = base_app();
+        crystal(&mut app);
+        app.world.dd2_wave = 5;
+        app.world.dd2_wave_kills = 139.0;
+        report_invasion_kill(&mut app, NpcKind::DD2DarkMage);
+        let ci = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .unwrap();
+        app.npcs[ci].ai[0] = 599.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        let medals: Vec<&ItemDrop> = app.items.iter().filter(|d| d.kind == 3817).collect();
+        assert_eq!(medals.len(), 1, "one stack per live crystal (`:804-812`)");
+        assert_eq!(medals[0].count, 3, "DropMedals(3) (`:330`)");
+        assert!(
+            !app.items.iter().any(|d| d.kind == 3822),
+            "the win pays no energy crystals"
+        );
+    }
+
     #[test]
     fn the_loss_stop_never_pays_the_win() {
         // The loss scene's 600-tick end (`NPC.cs:40954-40967`) runs
@@ -20039,6 +22002,178 @@ mod dd2_victory_tests {
             "the latch refuses a second summon"
         );
     }
+
+    // --- W4-f36: the medal DROP side (`DropMedals`, DD2Event.cs:802-813) ---
+
+    #[test]
+    fn the_medal_drop_sits_at_the_truncated_rect_centre() {
+        // `:809` calls the OBSOLETE RECT overload: `(int)nPC.position.X +
+        // (int)nPC.Size.X / 2` (`Item.cs:49651`) — the position truncates
+        // BEFORE the half-box add (the crystal's 40x40 box, half 20). The
+        // seam's +1 px X offset rides `spawn_item_drop_px` (the module's
+        // pinned box-left convention, d124's starter-drop witness).
+        let mut app = base_app();
+        crystal(&mut app);
+        let ci = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .unwrap();
+        app.npcs[ci].x += 0.75;
+        app.npcs[ci].y += 0.9;
+        dd2_drop_medals(&mut app, 3);
+        let drops: Vec<&ItemDrop> = app
+            .items
+            .iter()
+            .filter(|d| d.kind == tr_core::dd2::MEDAL_ITEM)
+            .collect();
+        assert_eq!(drops.len(), 1);
+        let cx = (150.0 * TILE_PX + 0.75) as i32 as f32 + 20.0;
+        let cy = (112.0 * TILE_PX + 0.9) as i32 as f32 + 20.0;
+        assert_eq!(drops[0].pos.x, cx + 1.0, "trunc X + 40/2 (+1 seam px)");
+        assert_eq!(drops[0].pos.y, cy, "trunc Y + 40/2");
+        assert_eq!(drops[0].count, 3, "the whole stack, one item");
+        assert_eq!(drops[0].prefix, 0, "3817 is not prefixable — no roll");
+    }
+
+    #[test]
+    fn one_medal_stack_per_live_crystal_in_npc_order() {
+        // `:804-812`: the `Main.maxNPCs` walk pays EVERY active 548 (no
+        // first-match break, unlike `DropStarterCrystals`). A dead crystal
+        // (hp 0, no stop request) and a portal pay nothing.
+        let mut app = base_app();
+        crystal(&mut app);
+        let mut second = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            170.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        second.hp = second.max_hp;
+        app.npcs.push(second);
+        let mut dead = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            180.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        dead.hp = 0;
+        app.npcs.push(dead);
+        portal(&mut app);
+        dd2_drop_medals(&mut app, 15);
+        let drops: Vec<&ItemDrop> = app
+            .items
+            .iter()
+            .filter(|d| d.kind == tr_core::dd2::MEDAL_ITEM)
+            .collect();
+        assert_eq!(drops.len(), 2, "one stack per LIVE 548");
+        assert!(drops.iter().all(|d| d.count == 15));
+        assert_eq!(drops[0].pos.x, 150.0 * TILE_PX + 20.0 + 1.0, "npc order");
+        assert_eq!(drops[1].pos.x, 170.0 * TILE_PX + 20.0 + 1.0);
+    }
+
+    #[test]
+    fn the_medal_spawn_census_is_the_newitem_triplet_per_stack() {
+        // RNG census (`Item.cs:49654-49772`): 3817 is not in
+        // `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`), so each
+        // `Item.NewItem` draws the velocity pair (`:49749-49750`) — the
+        // port's pinned triplet + phase rides `spawn_item_drop_px` — and
+        // `Prefix(0)` draws nothing (`Item.cs:511-514`'s early return;
+        // 3817 has no rollable table either). 3 draws × stack count, all
+        // on the caller's `UpdateNpcs` stream; the scan itself is RNG-free.
+        let mut app = base_app();
+        crystal(&mut app);
+        let mut second = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            170.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        second.hp = second.max_hp;
+        app.npcs.push(second);
+        *app.rngs.stream(RngKey::UpdateNpcs) = UnifiedRandom::new(0x3817);
+        let mut expect = UnifiedRandom::new(0x3817);
+        // The `stack <= 0` refusal (`Item.cs:49660-49663`) — no drop, no
+        // draws (the port's `medals <= 0` guard).
+        dd2_drop_medals(&mut app, 0);
+        assert!(medal_stacks(&app).is_empty());
+        dd2_drop_medals(&mut app, 60);
+        for _ in 0..(2 * 3) {
+            expect.next_float();
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            expect,
+            "2 stacks x 3 draws; the scan + the zero guard draw nothing"
+        );
+    }
+
+    #[test]
+    fn a_win_with_no_live_crystal_drops_no_medals() {
+        // `DropMedals`'s walk finds no active 548 — the win still latches
+        // the tier flag and broadcasts (`WinInvasionInternal` :316-341),
+        // but no medal item spawns and the stream stays pristine.
+        let mut app = base_app();
+        *app.rngs.stream(RngKey::UpdateNpcs) = UnifiedRandom::new(0x5EED);
+        let expect = UnifiedRandom::new(0x5EED);
+        dd2_win_invasion(&mut app);
+        assert!(medal_stacks(&app).is_empty(), "no 548 — no drop");
+        assert!(app.world.dd2_downed_t1, "the latch is not crystal-gated");
+        assert_eq!(win_broadcasts(&app), 1, "InvasionWin still fires");
+        assert_eq!(*app.rngs.stream(RngKey::UpdateNpcs), expect);
+    }
+
+    #[test]
+    fn the_wave_complete_rows_pay_for_every_tier_at_the_driver() {
+        // `CheckProgress` (`:405-449`) through `dd2_report_kill`: the rows
+        // read on the NEW wave — t1 4/5→1/1 (`:407-414`), t2 5/6/7→1/3/6
+        // (`:418-429`), t3 4/5/6/7→1/3/11/25 (`:433-448`). One goblin kill
+        // (worth 1) at required-1 completes the wave; the stack lands at
+        // the live crystal, prefix 0.
+        for (tier, wave, medals) in [
+            (1, 3, 1u32),
+            (1, 4, 1),
+            (2, 4, 1),
+            (2, 5, 3),
+            (2, 6, 6),
+            (3, 3, 1),
+            (3, 4, 3),
+            (3, 5, 11),
+            (3, 6, 25),
+        ] {
+            let mut app = base_app();
+            crystal(&mut app);
+            if tier >= 2 {
+                app.world.hard_mode = true;
+                app.world.downed_mech_boss1 = true;
+            }
+            if tier == 3 {
+                app.world.downed_golem = true;
+            }
+            // The tier's budget for the SOURCE wave (60/80/100/120/140/180
+            // — `:977-1009`/`:1162-1197`/`:1468-1500`; no cap waves here).
+            let required = [0, 60, 80, 100, 120, 140, 180][wave as usize];
+            app.world.dd2_wave = wave;
+            app.world.dd2_wave_kills = (required - 1) as f32;
+            let goblin = match tier {
+                2 => NpcKind::DD2GoblinT2,
+                3 => NpcKind::DD2GoblinT3,
+                _ => NpcKind::DD2GoblinT1,
+            };
+            report_invasion_kill(&mut app, goblin);
+            assert_eq!(app.world.dd2_wave, wave + 1, "t{tier} w{wave} advances");
+            assert!(!app.world.dd2_won, "t{tier} w{wave}: not the sentinel");
+            assert_eq!(
+                medal_stacks(&app),
+                vec![medals],
+                "t{tier} new wave {} pays {medals}",
+                wave + 1
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -20067,10 +22202,12 @@ mod cultist_tests {
     }
 
     #[test]
-    fn the_cultist_bobs_and_regen_when_far() {
-        // `AI()`'s aiStyle-94 block (`NPC.cs:38968+`): the sine bob and the
-        // +200 regen per 60 ticks while the player stays 2000+ px.
-        // (S1-D-3b: Lunar Pillar machine, not CultistBoss 439's AI_084.)
+    fn the_pillar_regen_counter_is_inert_like_vanilla() {
+        // W4-c2 re-pin (the stand-in's accumulating `caster_counter` was
+        // a different, wrong machine): `NPC.cs:39117-39130` — the far
+        // player increments `localAI[0]`, but the SECOND if's else zeroes
+        // it whenever < 60, so the counter never accumulates past 1 and
+        // the +200 heal only fires from an externally seeded >= 59.
         let (mut app, mut player) = {
             let mut a = base_app();
             let p = Player::spawn(&a.world);
@@ -20085,22 +22222,31 @@ mod cultist_tests {
             0.0,
         );
         n.hp = 3000;
-        // The player far away.
+        // The player far away (> 2000 px from the tower centre).
         player.x = 20.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         let before = n.hp;
         let mut rng = UnifiedRandom::new(7);
         for _ in 0..61 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.local_ai[0], 0.0, "the vanilla counter never accumulates");
         }
-        assert_eq!(n.hp - before, 200, "the far regen (+200)");
+        assert_eq!(n.hp, before, "no unprovoked regen through this arm");
+        // The externally seeded 59 → the increment reaches 60 → +200.
+        n.local_ai[0] = 59.0;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp - before, 200, "the seeded far regen (+200)");
+        assert_eq!(n.local_ai[0], 0.0);
         let _ = app;
     }
 
     #[test]
-    fn the_cultist_dissolves_after_the_180_tick_ritual() {
-        // The ai[2] timer's 180-tick dissolve (`:39060-39066`): life 0.
-        // (S1-D-3b: aiStyle 94 Lunar Pillar behavior.)
+    fn the_pillar_lives_until_the_checkdead_dissolve() {
+        // W4-c2 re-pin (the stand-in's ai[2]-as-timer self-kill retired):
+        // `ai[2]` is the C#'s dissolve FLAG (`NPC.cs:78080-78086`), not a
+        // counter — an idle tower never dies on its own. The death comes
+        // from the intercept (`check_dead_pillar_intercept`) + the 180
+        // ticks of the `ai[2] == 1` arm (`:38970-39067`, ai[1] the timer).
         let (_app, mut player) = {
             let mut a = base_app();
             let p = Player::spawn(&a.world);
@@ -20114,13 +22260,24 @@ mod cultist_tests {
             1,
             0.0,
         );
+        n.hp = n.max_hp;
         player.x = 20.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
         for _ in 0..180 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert_eq!(n.hp, 0, "the ritual's dissolve");
+        assert!(n.hp > 0, "no unprovoked 180-tick self-kill");
+        assert_eq!(n.ai[2], 0.0, "ai[2] is the flag, not a timer");
+        // The kill → the intercept → the dissolve's 180 ticks → death.
+        n.hp = 0;
+        assert!(crate::npc_ai_pillar::check_dead_pillar_intercept(&mut n));
+        assert_eq!(n.hp, n.max_hp, "PrepareForDeathAnimation");
+        for _ in 0..180 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[1], 180.0, "the dissolve's own timer");
+        assert_eq!(n.hp, 0, "the dissolve's death (`:39061-39066`)");
     }
 
     fn surface_world_fixture() -> World {
@@ -20382,6 +22539,39 @@ mod tower_shield_tests {
         update_tower_shields(&mut app);
         assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
         assert_eq!(app.world.lunar_shield_power_normal, 100);
+    }
+
+    /// W4-f40 — the boss-death → `NextNightIsLanternNight` trigger wiring
+    /// (`NPC.cs:78769-78793` via `SetEventFlagCleared`): the FIRST Eye of
+    /// Cthulhu kill arms the next lantern night; a repeat kill (the flag
+    /// already downed) does not re-arm it. The death rides `update_npcs`'
+    /// retain (the `checkDead` boss arms).
+    #[test]
+    fn w4_f40_the_first_boss_kill_arms_the_next_lantern_night() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        assert!(!app.world_events.next_night_is_lantern_night);
+        // The first EoC death.
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 100.0, 100.0, 1, 0.0);
+        eoc.hp = 0;
+        app.npcs.push(eoc);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_eoc, "the downed flag set");
+        assert!(
+            app.world_events.next_night_is_lantern_night,
+            "the first clear arms the lantern night"
+        );
+        // Consume the override at the next dusk (CheckNight), then a repeat
+        // EoC kill must NOT re-arm it (the flag is already true).
+        app.world_events.next_night_is_lantern_night = false;
+        let mut eoc2 = Npc::new(NpcKind::EyeOfCthulhu, 100.0, 100.0, 1, 0.0);
+        eoc2.hp = 0;
+        app.npcs.push(eoc2);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.world_events.next_night_is_lantern_night,
+            "a repeat kill does not re-arm (SetEventFlagCleared's edge)"
+        );
     }
 }
 
@@ -20707,7 +22897,9 @@ mod lunar_chain_tests {
         // towers down → `StartImpendingDoom(3600)` → `Main.cs:64987`'s
         // spawn of the 398 core.
         let mut app = app_ready();
-        // The apocalypse is up with all four towers.
+        // The apocalypse is up with all four towers. W4-c2: ai[2] = 1
+        // marks the post-dissolve death — a first death is intercepted
+        // (`NPC.cs:78080-78086`) into the 180-tick dissolve instead.
         app.world.lunar_apocalypse_is_up = true;
         for kind in [
             NpcKind::SolarTower,
@@ -20717,6 +22909,7 @@ mod lunar_chain_tests {
         ] {
             let mut t = Npc::new(kind, 60.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
             t.hp = 0;
+            t.ai[2] = 1.0;
             app.npcs.push(t);
         }
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
@@ -21085,7 +23278,7 @@ mod worm_tests {
         let tail_x = npcs[tail].x;
         assert!(Npc::strike_melee(
             &mut npcs, tail, 7, tail_x, 0.0, false, None, false
-        ));
+        ) > 0);
         assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
     }
 
@@ -21418,6 +23611,78 @@ mod worm_tests {
     }
 
     #[test]
+    fn the_wyvern_family_never_enters_the_shared_worm_pass() {
+        // N16: the wyvern family is NOT `is_worm()` — the shared pass
+        // never claims it, never writes a budget, never grows a chain,
+        // never draws (the R55 Destroyer precedent). The family's own
+        // machine runs in `update_wyverns`.
+        let world = World::new("t".into(), 64, 800);
+        for kind in [
+            NpcKind::WyvernHead,
+            NpcKind::WyvernLegs,
+            NpcKind::WyvernBody,
+            NpcKind::WyvernBody2,
+            NpcKind::WyvernBody3,
+            NpcKind::WyvernTail,
+        ] {
+            assert!(!kind.is_worm(), "{kind:?} stays out of the worm pass");
+            let mut head = Npc::new(kind, 160.0, 160.0, 1, 0.0);
+            head.hp = head.max_hp;
+            let mut npcs = vec![head];
+            let mut rng = UnifiedRandom::new(11);
+            let oracle = rng.clone();
+            let mut next_id = 1u32;
+            update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
+            assert_eq!(npcs.len(), 1, "{kind:?} runs in update_wyverns");
+            assert!(!npcs[0].worm_inited, "{kind:?} the pass never claims it");
+            assert_eq!(rng, oracle, "{kind:?} no draws");
+        }
+    }
+
+    #[test]
+    fn the_wyvern_sim_pass_assembles_and_flies_the_chain() {
+        // N16 through the WIRED sim pass (`update_wyverns`): the fresh
+        // head assembles its 14 links on the first pass, the head flies
+        // toward the player, the followers trail at the 42-px spacing —
+        // and the `UpdateNpcs` stream is bit-identical across the whole
+        // run (the module's RNG census, now over the live route).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 50.0;
+        app.world = w;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 2400.0;
+        player.y = 400.0;
+        app.player = Some(player);
+        let mut head = Npc::new(NpcKind::WyvernHead, 1600.0, 400.0, 1, 0.0);
+        head.hp = head.max_hp;
+        app.npcs.push(head);
+        let rng = app.rngs.stream(RngKey::UpdateNpcs).clone();
+        for _ in 0..60 {
+            update_wyverns(&mut app);
+        }
+        assert_eq!(app.npcs.len(), 15, "head + 14 links");
+        assert!(app.npcs.iter().all(|n| n.hp > 0));
+        // The head moved toward the player (the +X aim).
+        assert!(app.npcs[0].x > 1600.0, "the head flies +X");
+        // The chain trails at the spacing (the 60 passes spread it).
+        for i in 1..app.npcs.len() {
+            let l = &app.npcs[i - 1];
+            let f = &app.npcs[i];
+            let d = ((l.x - f.x) * (l.x - f.x) + (l.y - f.y) * (l.y - f.y)).sqrt();
+            assert!((d - 42.0).abs() < 0.5, "link {i} spacing {d}");
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            rng,
+            "the wyvern pass draws NOTHING on the UpdateNpcs stream"
+        );
+        // The shared worm pass leaves the family alone even in the App.
+        update_worms(&mut app);
+        assert_eq!(app.npcs.len(), 15);
+    }
+
+    #[test]
     fn the_child_spawns_bottom_at_the_parents_bottom() {
         // `NPC.cs:51347` + `NewNPC`'s `Bottom` setter (`:80770`,
         // `Entity.cs:128-131`): the child's BOTTOM sits at the parent's
@@ -21594,6 +23859,175 @@ mod worm_tests {
             );
             assert_eq!(rng.peek(), before, "the latched head stays silent");
         }
+    }
+
+    /// W4-d127 — the leech head's WoF-hp speed ladder (`NPC.cs:51745-51763`).
+    /// The head starts in the air with `vy` above every cap, so the stumble's
+    /// `vy = (vy + 0.11).min(num45)` (`:51929`) clamps to EXACTLY `num45`, and
+    /// the `vy == num45` arm's `vx += num46` (`:51941`, player to the right)
+    /// lands EXACTLY `num46` — both tunables pinned per hp band. The base
+    /// 8/0.07 (`:51670-51671`) plus the three cumulative bumps.
+    #[test]
+    fn the_leech_head_speeds_up_with_the_walls_missing_hp() {
+        // (wof_life fraction of 8000, expected speed, expected accel). The
+        // accel is rebuilt with the SAME f32 adds the arm runs so the pin is
+        // bit-exact (0.07 + 0.1 + … rounds like the C#).
+        let bands: [(i32, f32, f32); 4] = [
+            (8000, 8.0, 0.07),                          // full hp: no bump
+            (3200, 9.0, 0.07 + 0.1),                    // 0.4 < 0.5
+            (1600, 10.0, 0.07 + 0.1 + 0.1),             // 0.2 < 0.25
+            (400, 12.0, 0.07 + 0.1 + 0.1 + 0.1),        // 0.05 < 0.1
+        ];
+        for (life, speed, accel) in bands {
+            let mut world = World::new("t".into(), 64, 800);
+            world.world_surface = 120.0; // 1920 px; the player sits below it
+            world.wof_npc_index = 0; // a wall lives (`Main.wofNPCIndex >= 0`)
+            world.wof_life = life;
+            world.wof_life_max = 8000;
+            let mut head = Npc::new(NpcKind::LeechHead, 160.0, 1600.0, 1, 0.0);
+            head.hp = head.max_hp;
+            head.worm_inited = true; // isolate the head machine (no chain roll)
+            head.worm_id = 99;
+            head.vy = 20.0; // above every cap → the min clamps to num45
+            let mut npcs = vec![head];
+            let mut rng = UnifiedRandom::new(5);
+            let mut next_id = 1u32;
+            // Player deep (below the surface gate) and to the RIGHT, within
+            // 1000 px so the dig override stays off (air stumble runs).
+            update_worms_in(&world, Some((400.0, 2000.0)), &mut npcs, &mut rng, &mut next_id);
+            assert_eq!(npcs[0].vy, speed, "life {life}: the speed cap (:51748-51762)");
+            assert_eq!(npcs[0].vx, accel, "life {life}: the accel (:51751-51761)");
+        }
+    }
+
+    /// W4-d127 — no wall (`Main.wofNPCIndex < 0`): the ladder is gated off and
+    /// the leech keeps the base 8/0.07 even at 1 hp (`NPC.cs:51745`'s
+    /// `Main.wofNPCIndex >= 0` term).
+    #[test]
+    fn the_leech_head_keeps_base_speed_with_no_wall() {
+        let mut world = World::new("t".into(), 64, 800);
+        world.world_surface = 120.0;
+        world.wof_npc_index = -1; // no wall
+        world.wof_life = 1;
+        world.wof_life_max = 8000;
+        let mut head = Npc::new(NpcKind::LeechHead, 160.0, 1600.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        head.vy = 20.0;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        update_worms_in(&world, Some((400.0, 2000.0)), &mut npcs, &mut rng, &mut next_id);
+        assert_eq!(npcs[0].vy, 8.0, "the base cap, no wall");
+        assert_eq!(npcs[0].vx, 0.07, "the base accel, no wall");
+    }
+
+    /// W4-d127 — the leech entry burst's stream ledger (`NPC.cs:50969-50977`).
+    /// With a real pool threaded in, the 20 `Dust.NewDust` calls draw the
+    /// shared stream BEFORE the budget roll (the C#'s `:50965` opens
+    /// `AI_006_Worms`, `:51310` follows in the same first tick). ChildSafety
+    /// is off by default (`ChildSafety.cs:33`) and the empty pool puts every
+    /// spawn in the low pressure band (no band draw), so each `NewDust` draws
+    /// EXACTLY the default block's six (`Dust.cs:153-193`): position.x/y
+    /// `Next(50)`, velocity.x/y `Next(-20,21)`, frame_y `Next(3)`, scale
+    /// `Next(-20,21)`. The oracle replays that ledger then the budget pair —
+    /// the post-pass stream position must match.
+    #[test]
+    fn the_leech_entry_burst_draws_before_the_budget_roll() {
+        let world = World::new("t".into(), 64, 800);
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head = Npc::new(NpcKind::LeechHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.vx = 8.0; // num = +1 (the WallOfFlesh's direction * 8 slide)
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(11);
+        let mut oracle = UnifiedRandom::new(11);
+        let mut dust = tr_core::particles::DustPool::new();
+        // Oracle: 20 NewDust default-block ledgers, then Next(8,13)+Next(3,6).
+        for _ in 0..20 {
+            let _ = oracle.next_max(50); // position.x (width 54 - 4)
+            let _ = oracle.next_max(50); // position.y
+            let _ = oracle.next_range(-20, 21); // velocity.x
+            let _ = oracle.next_range(-20, 21); // velocity.y
+            let _ = oracle.next_max(3); // frame_y
+            let _ = oracle.next_range(-20, 21); // scale
+        }
+        let _ = oracle.next_range(8, 13);
+        let _ = oracle.next_range(3, 6);
+        let mut next_id = 1u32;
+        update_worms_ctx(
+            &world,
+            None,
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+            Some(&mut dust),
+            &dust_ctx,
+        );
+        assert_eq!(npcs[0].local_ai[1], 1.0, "the entry latch");
+        assert_eq!(rng.next(), oracle.next(), "burst draws precede the budget roll");
+        // The pool holds the burst's live dust (type 5, the +8 x-slide bias).
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 20, "20 dust spawned");
+        assert!(live.iter().all(|d| d.dust_type == 5), "type 5 (:50976)");
+        assert!(
+            live.iter().all(|d| d.velocity.x >= 6.0 && d.velocity.x <= 10.0),
+            "the +8 x-slide (num*8 ± the ±2 jitter)"
+        );
+    }
+
+    /// W4-d127 re-verify — the `Option<&mut DustPool>` REBORROW shape
+    /// (`update_worms_ctx`'s `mut dust` param + `dust.as_deref_mut()` inside
+    /// the init `while` loop) keeps the pool alive across iterations: two
+    /// leech heads initialised in ONE pass each burst 20 dust into the SAME
+    /// pool (40 total), and the caller still owns the pool afterwards. A
+    /// consuming `if let Some(dust) = dust` would move the `Option` on the
+    /// first head and fail to compile / drop the second burst; `as_deref_mut`
+    /// reborrows `&mut DustPool` per iteration instead. This pins that the
+    /// reborrow (not a move) is what the loop runs.
+    #[test]
+    fn the_dust_reborrow_survives_two_leech_heads_in_one_pass() {
+        let world = World::new("t".into(), 64, 800);
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head_a = Npc::new(NpcKind::LeechHead, 160.0, 160.0, 1, 0.0);
+        head_a.hp = head_a.max_hp;
+        head_a.vx = 8.0;
+        let mut head_b = Npc::new(NpcKind::LeechHead, 400.0, 160.0, 1, 0.0);
+        head_b.hp = head_b.max_hp;
+        head_b.vx = 8.0;
+        let mut npcs = vec![head_a, head_b];
+        let mut rng = UnifiedRandom::new(11);
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut next_id = 1u32;
+        update_worms_ctx(
+            &world,
+            None,
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+            Some(&mut dust),
+            &dust_ctx,
+        );
+        assert_eq!(npcs[0].local_ai[1], 1.0, "head A latched");
+        assert_eq!(npcs[1].local_ai[1], 1.0, "head B latched (the loop reached it)");
+        // Both bursts landed in the one pool the caller still owns.
+        let live = dust.slots().iter().filter(|d| d.active).count();
+        assert_eq!(live, 40, "two 20-dust bursts share the reborrowed pool");
     }
 
     #[test]
@@ -22228,7 +24662,7 @@ mod worm_tests {
         let tail_x = npcs[tail].x;
         assert!(Npc::strike_melee(
             &mut npcs, tail, 9, tail_x, 0.0, false, None, false
-        ));
+        ) > 0);
         assert_eq!(npcs[0].hp, pool - 9, "the tail hits the head's pool");
         assert_eq!(npcs[tail].hp, pool - 9, "the tail mirrors the carrier");
     }
@@ -22592,6 +25026,306 @@ mod worm_tests {
         let after = (0..6000).filter(|&i| dust.slot(i).active).count();
         assert_eq!(after - before, 4, "the head pair + the link pair");
         assert_eq!(npcs[1].alpha, 213, "the link fades 42 behind the visible head");
+    // ---- W4-g59 DOC-SWEEP: the EoW spawn fade (`NPC.cs:52251-52271`).
+
+    /// The fade is MOVEMENT-gated: a head that moved >2 px this tick drops
+    /// alpha 42 (255 → 213) and spawns 2× type-14 fade dust; a stationary
+    /// head keeps its alpha and draws nothing.
+    #[test]
+    fn w4_g59_the_eow_fade_steps_42_only_on_movement() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        assert_eq!(head.alpha, 255, "the ctor carries the SetDefaults fade start");
+        // Moved 10 px this tick (the preamble stamped old_x = 100).
+        head.old_x = 100.0;
+        head.old_y = 100.0;
+        head.x = 110.0;
+        let mut npcs = vec![head];
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(191);
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
+        assert_eq!(npcs[0].alpha, 213, "255 - 42 on a >2px move");
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 2, "the 2x type-14 fade dust");
+        for d in &live {
+            assert_eq!(d.dust_type, 14);
+            assert_eq!(d.alpha, 100);
+            assert!(d.no_gravity && d.no_light);
+        }
+        // A stationary tick: no fade step, no dust.
+        npcs[0].old_x = npcs[0].x;
+        npcs[0].old_y = npcs[0].y;
+        let mut dust2 = tr_core::particles::DustPool::new();
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust2, &mut rng);
+        assert_eq!(npcs[0].alpha, 213, "the stationary tick holds the alpha");
+        assert!(dust2.slots().iter().all(|d| !d.active), "no dust when still");
+    }
+
+    /// The follower gate (`:52251`): a body fades only while its leader's
+    /// alpha < 85; at/above 85 it holds. The head always passes.
+    #[test]
+    fn w4_g59_the_eow_follower_fade_gates_on_the_leader_alpha() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_id = 1;
+        head.worm_inited = true;
+        head.alpha = 100; // still >= 85: the follower holds
+        head.old_x = 100.0;
+        head.old_y = 100.0;
+        head.x = 110.0;
+        let mut body = Npc::new(NpcKind::EaterOfWorldsBody, 100.0, 140.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.worm_id = 1;
+        body.seg_index = 1;
+        body.worm_inited = true;
+        body.old_x = 100.0;
+        body.old_y = 140.0;
+        body.x = 110.0;
+        let mut npcs = vec![head, body];
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(193);
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
+        assert_eq!(npcs[0].alpha, 58, "the head fades (100 - 42)");
+        assert_eq!(npcs[1].alpha, 255, "the body holds while the leader >= 85");
+        // Now the leader is half-visible (< 85): the body fades too.
+        npcs[0].alpha = 58;
+        npcs[0].old_x = npcs[0].x;
+        npcs[0].old_y = npcs[0].y;
+        npcs[1].old_x = 100.0;
+        npcs[1].old_y = 140.0;
+        npcs[1].x = 110.0;
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
+        assert_eq!(npcs[1].alpha, 213, "the body fades once the leader < 85");
+    }
+
+    /// The fade floors at 0 and stops drawing dust once invisible; the
+    /// death dust feed then reads the steady-state 0 (the batch-2 trio).
+    #[test]
+    fn w4_g59_the_eow_fade_floors_at_zero() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.alpha = 30; // one more step floors at 0
+        head.old_x = 100.0;
+        head.old_y = 100.0;
+        head.x = 110.0;
+        let mut npcs = vec![head];
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(197);
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
+        assert_eq!(npcs[0].alpha, 0, "30 - 42 floors at 0");
+        // The next moved tick: alpha 0 → no dust, no underflow.
+        npcs[0].old_x = npcs[0].x;
+        npcs[0].old_y = npcs[0].y;
+        npcs[0].x += 10.0;
+        let mut dust2 = tr_core::particles::DustPool::new();
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust2, &mut rng);
+        assert_eq!(npcs[0].alpha, 0);
+        assert!(dust2.slots().iter().all(|d| !d.active), "invisible: no fade dust");
+    }
+
+    #[test]
+    fn w4_g85_the_crimson_half_summons_the_brain_not_the_eow() {
+        // W4-g85 final witness: `WorldGen.cs:54296-54318` — the summon's
+        // `flag` is the smash's OWN `frameX >= 36` bit (the core records
+        // it in `orb_smash_crimson`), NOT the world evil. The crimson
+        // half spawns the Brain 266; the corruption half the EoW 13.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        let player = Player::spawn(&app.world);
+        app.player = Some(player);
+        app.world.orb_smash_crimson = true;
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0),
+            "the crimson third smash summons the Brain (`SpawnOnPlayer(plr, 266)`)"
+        );
+        assert!(
+            !app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EaterOfWorldsHead),
+            "no EoW on the crimson half"
+        );
+        assert_eq!(app.world.shadow_orb_count, 0, "the summon resets the count");
+        // `:54296`'s per-half gate: a living EoW does NOT block the Brain
+        // (`(!AnyNPCs(13) || flag)` is vacuously true when flag is set).
+        let mut eow = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        eow.hp = eow.max_hp;
+        app.npcs.push(eow);
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+                .count(),
+            2,
+            "the living EoW does not block the crimson summon"
+        );
+        // The mirror: a living Brain does NOT block the corruption EoW
+        // (`!(AnyNPCs(266) & flag)` is vacuously true when flag is clear).
+        app.world.orb_smash_crimson = false;
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+                .count(),
+            2,
+            "the living Brain does not block the corruption summon"
+        );
+        // A living Brain DOES block a second crimson summon (`AnyNPCs(266)`).
+        app.world.orb_smash_crimson = true;
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+                .count(),
+            2,
+            "AnyNPCs(266) blocks the second Brain"
+        );
+        assert_eq!(app.world.shadow_orb_count, 3, "the blocked gate keeps the count");
+    }
+
+    #[test]
+    fn w4_g85_the_ftw_starve_pair_summons_on_every_smash_and_the_chat_arm() {
+        // W4-g85 final witness: `:54294`'s secret-seed override
+        // (`dontStarveWorld && getGoodWorld && !remixWorld`) summons on
+        // EVERY 31 smash; classic worlds broadcast the chill/screams chat
+        // on the non-third smashes (`:54322-54330`, misc[10]/[11]).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        app.player = Some(Player::spawn(&app.world));
+        // Classic first smash: no summon, the chill broadcast.
+        app.world.shadow_orb_count = 1;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.is_empty(), "the first smash never summons (classic)");
+        assert_eq!(app.world.orb_smash_chat_count, 1, "the chill broadcast");
+        assert!(app
+            .chat
+            .messages
+            .iter()
+            .any(|m| m.text == crate::lang::misc(10)));
+        // Second smash: the screams line (misc[11]).
+        app.world.shadow_orb_count = 2;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app
+            .chat
+            .messages
+            .iter()
+            .any(|m| m.text == crate::lang::misc(11)));
+        // FTW + Don't Starve, NOT remix: the FIRST smash already summons.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = fixture();
+        app2.player = Some(Player::spawn(&app2.world));
+        app2
+            .world
+            .seeds
+            .insert(tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        app2.world.shadow_orb_count = 1;
+        update_npcs(&mut app2, 1.0 / 60.0);
+        assert!(
+            app2.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0),
+            "the FTW/starve pair summons on the first smash"
+        );
+        assert_eq!(app2.world.shadow_orb_count, 0);
+        assert!(app2.chat.messages.is_empty(), "the summon half never chats");
+        // Remix cancels the override (`!remixWorld`).
+        let mut app3 = flow_app(None, vec![], vec![]);
+        app3.world = fixture();
+        app3.player = Some(Player::spawn(&app3.world));
+        app3.world.seeds.insert(
+            tr_core::seeds::SeedFlags::DONT_STARVE
+                | tr_core::seeds::SeedFlags::FOR_THE_WORTHY
+                | tr_core::seeds::SeedFlags::REMIX,
+        );
+        app3.world.shadow_orb_count = 1;
+        update_npcs(&mut app3, 1.0 / 60.0);
+        assert!(app3.npcs.is_empty(), "remix cancels the every-smash override");
+    }
+
+    #[test]
+    fn w4_g85_the_orb_boss_death_arms_the_shared_flag_and_the_skyblock_unlock() {
+        // W4-g85 final witness: `NPC.cs:79443-79458` — the 13/14/15/266
+        // case group sets ONE shared `downedBoss2` (the port's
+        // `downed_eow`), gates the meteor on `isThereAWorldSurface`
+        // (`Main.cs:2788`), and on a low-tile skyblock world arms
+        // `shadowOrbSmashed` (the goblin unlock without any orb).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        // The Brain's death (the crimson half) — same arm as the EoW's.
+        let mut brain = Npc::new(NpcKind::BrainOfCthulhu, 100.0, 100.0, 1, 0.0);
+        brain.hp = 0;
+        app.npcs.push(brain);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_eow, "the Brain death sets the SHARED boss-2 flag");
+        assert!(
+            app.world.spawn_meteor,
+            "the guaranteed first meteor (world_surface 120 > 50)"
+        );
+        assert!(!app.world.shadow_orb_smashed, "a classic world never arms it here");
+        // The no-surface gate: worldSurface <= 50 blocks the meteor.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = fixture();
+        app2.world.world_surface = 40.0;
+        let mut eow = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        eow.hp = 0;
+        app2.npcs.push(eow);
+        update_npcs(&mut app2, 1.0 / 60.0);
+        assert!(app2.world.downed_eow, "the flag sets regardless of surface");
+        assert!(
+            !app2.world.spawn_meteor,
+            "!isThereAWorldSurface blocks the death meteor"
+        );
+        // The skyblock unlock: the death arms shadowOrbSmashed.
+        let mut app3 = flow_app(None, vec![], vec![]);
+        app3.world = fixture();
+        app3.world
+            .seeds
+            .insert(tr_core::seeds::SeedFlags::SKYBLOCK);
+        let mut brain3 = Npc::new(NpcKind::BrainOfCthulhu, 100.0, 100.0, 1, 0.0);
+        brain3.hp = 0;
+        app3.npcs.push(brain3);
+        update_npcs(&mut app3, 1.0 / 60.0);
+        assert!(
+            app3.world.shadow_orb_smashed,
+            "the skyblock boss death IS the orb-smash unlock"
+        );
     }
 }
 
@@ -23648,6 +26382,73 @@ mod moon_lord_tests {
         assert_eq!(heads, 1, "the head — and only the head");
     }
 
+    /// W4-d70 DOC-SWEEP — the core's white-flash ramps
+    /// (`NPC.cs:41179/41203/41314/41436/41453`) drain into the SceneState's
+    /// `request_light`; the spawn-in's first 59 ticks ask for `ai[1]/30`.
+    #[test]
+    fn the_core_spawn_ramp_requests_drama_light() {
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        // One tick: the spawn latch arms ai[0] = -1, ai[1] = 1 → the
+        // request (1/30) drains into the scene state.
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            (app.scene_state.moonlord_requested_light - 1.0 / 30.0).abs() < 1e-6,
+            "the first tick asks for ai[1]/30"
+        );
+        // The SceneState's update moves the whitening toward the request
+        // (0.02/tick) and clears the request — the fade has begun.
+        crate::world_sim::scene_scan::update_scene(&mut app, 1.0 / 60.0, Vec2::new(1280.0, 720.0));
+        assert!(
+            app.scene_state.moonlord_whitening > 0.0,
+            "the whitening fade began"
+        );
+        // The drain empties the machine's queue.
+        assert!(
+            app.npcs
+                .iter()
+                .all(|n| n.wants_drama_light.is_empty()),
+            "the requests drained"
+        );
+    }
+
+    /// W4-d70 DOC-SWEEP — the core's drama end (`NPC.cs:82679-82682`'s
+    /// `HitEffect(0, 1337)` arm) flings the four body pieces through
+    /// `throw_pieces`, seeded by the death pass's `Next(100)`.
+    #[test]
+    fn the_core_death_flings_the_drama_pieces() {
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        // The drama's own end: ai[0] already 2, ai[1] at 600 → life = 0
+        // through checkDead (NOT the despawn bypass).
+        core.moon_spawn_latch = true;
+        core.ai[0] = 2.0;
+        core.ai[1] = 599.0;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.scene_state.moonlord_pieces.len(),
+            4,
+            "the four body pieces flung"
+        );
+        assert!(app.world.downed_moon_lord, "the drama's checkDead raised the flag");
+    }
+
     #[test]
     fn the_core_becomes_vulnerable_when_its_parts_die() {
         // `AI_077`'s `flag2` (`NPC.cs:41270-41285`): all three parts in
@@ -24278,7 +27079,9 @@ mod pillar_mob_tests {
     fn the_tower_death_flags_the_shield_reset() {
         // The tower's death raises its downed flag + deactivates it
         // (`NPC.cs:79288`'s family at the death) — and the shield's
-        // reset fires once all four are down.
+        // reset fires once all four are down. W4-c2: ai[2] = 1 marks the
+        // post-dissolve death (a first death is intercepted into the
+        // dissolve, `NPC.cs:78080-78086`).
         let mut app = base_app();
         let _player = Player::spawn(&app.world);
         crate::world_sim::npcs::raise_tower_shield(&mut app.world);
@@ -24290,10 +27093,86 @@ mod pillar_mob_tests {
             0.0,
         );
         n.hp = 0;
+        n.ai[2] = 1.0;
         app.npcs.push(n);
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_tower_solar, "the downed flag");
         assert!(!app.world.tower_active_solar, "the tower deactivates");
+    }
+
+    /// W4-c2 witness 1 — the death-pass intercept rides BEFORE the
+    /// retain: a tower killed by damage does not die — `ai[2] = 1`,
+    /// `ai[1] = 0`, life restored (`PrepareForDeathAnimation`,
+    /// `NPC.cs:78032-78038`), no downed flag, no death cue; the NEXT
+    /// ticks run the dissolve arm on the axis machine (ai[1] climbs).
+    #[test]
+    fn w4c2_the_death_sweep_intercepts_the_first_tower_kill() {
+        let mut app = base_app();
+        app.player = Some(Player::spawn(&app.world));
+        raise_tower_shield(&mut app.world);
+        let mut n = Npc::new(
+            NpcKind::SolarTower,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 0;
+        n.ai[1] = 42.0; // the intercept zeroes the dissolve timer
+        app.npcs.push(n);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), 1, "the tower survives its first death");
+        let t = &app.npcs[0];
+        assert_eq!(t.ai[2], 1.0, "the dissolve flag");
+        // The intercept rides the death sweep AFTER the tick (the port's
+        // batched-death fold — the C# runs checkDead inside StrikeNPC):
+        // this tick's arm saw ai[2] == 0, the intercept zeroed ai[1].
+        assert_eq!(t.ai[1], 0.0, "zeroed by the intercept");
+        assert_eq!(t.hp, t.max_hp, "life = lifeMax");
+        assert!(t.dont_take_damage, "the shield stands");
+        assert!(!app.world.downed_tower_solar, "no death events ran");
+        // The dissolve keeps ticking through the axis arm.
+        for _ in 0..10 {
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(app.npcs[0].ai[1], 10.0, "the dissolve timer climbs");
+        assert!(app.npcs[0].hp > 0);
+    }
+
+    /// W4-c2 witness 2 — the draw delta: an idle tower tick on the axis
+    /// arm spends exactly the FOUR ambient `Next(5)` gate draws
+    /// (`NPC.cs:39251`/`:39260` for the vortex row) on the caller's
+    /// stream — the retired stand-in discarded `rng` entirely (zero
+    /// draws), and the every-tick 579 ritual is gone. The queued plays
+    /// drain after the machine (the shield gate holds → no flash cue).
+    #[test]
+    fn w4c2_the_idle_pillar_tick_draws_the_four_ambient_gates() {
+        let mut app = base_app();
+        app.player = Some(Player::spawn(&app.world));
+        raise_tower_shield(&mut app.world);
+        let mut n = Npc::new(
+            NpcKind::VortexTower,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        app.npcs.push(n);
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        let mut player = app.player.take().unwrap();
+        app.npcs[0].update_rng(&app.world, &mut player, 1.0 / 60.0, &mut rng);
+        for _ in 0..4 {
+            mirror.next_max(5);
+        }
+        assert_eq!(rng, mirror, "four ambient gate draws, nothing else");
+        assert!(
+            app.npcs[0].wants_hostile_shot.is_empty(),
+            "the stand-in's every-tick 579 spam is retired"
+        );
+        assert!(app.npcs[0].dont_take_damage, "the machine's own shield gate");
+        app.player = Some(player);
     }
 }
 
@@ -26720,6 +29599,21 @@ mod dw3_tests {
         play_npc_sound_request(&mut audio, req(NpcSoundCue::Roar(0)), &mut rng);
         play_npc_sound_request(&mut audio, req(NpcSoundCue::EowDig), &mut rng);
         let mut witness = UnifiedRandom::new(7);
+    fn s1_e_21g_the_sound_drain_spends_the_case_draws_in_order() {
+        use crate::npc::{NpcSoundCue, NpcSoundRequest};
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut n = Npc::new(NpcKind::Slime, 0.0, 0.0, 1, 0.0);
+        let req = |cue| NpcSoundRequest { cue, x: 100.0, y: 100.0 };
+        // The caster pair (`NPC.cs:20862`/`:20931`): two case-2 pitches.
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::Item8), &mut rng);
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::Item8), &mut rng);
+        // The tower cry (`:39059`, the int overload): one case-4 pitch.
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::NpcDeath(22)), &mut rng);
+        // The roar + the EoW trackable: nothing.
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::Roar(0)), &mut rng);
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::EowDig), &mut rng);
+        let mut witness = UnifiedRandom::new(7);
         let _ = witness.next_range(-6, 7);
         let _ = witness.next_range(-6, 7);
         let _ = witness.next_range(-10, 11);
@@ -26751,6 +29645,7 @@ mod dw3_tests {
             NpcSoundCue::EowDig,
         ] {
             play_npc_sound_request(&mut audio, req(cue), &mut rng);
+            play_npc_sound_request(&mut audio, &mut n, req(cue), &mut rng);
         }
         assert_eq!(rng.peek(), peek, "the muted drain is draw-free");
     }
@@ -27256,7 +30151,7 @@ mod fishron_wiring_tests {
         bubble.target = 0;
         bubble.ai[3] = 1.0;
         let mut npcs = vec![bubble];
-        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0), false));
+        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0), false) > 0);
         assert_eq!(npcs[0].hp, npcs[0].max_hp, "life restored");
         assert_eq!(npcs[0].ai[0], 1.0);
         assert_eq!(npcs[0].ai[1], 4.0);
@@ -29146,4 +32041,803 @@ mod empress_wiring_tests {
 
 // balance-close (union shared delimiter)
 }}}}}}}}}}
+}
+/// W4-d80 — the tracked-sound entity loops (research/64): the DD2
+/// machines' ensure/play/follow/stop dance through the drain, the
+/// `local_ai` handle write-backs and the RNG contract (zero gameplay
+/// draws — the variation/pitch picks ride the two audio-only statics).
+/// WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_tracked_npc_tests {
+    use super::*;
+    use crate::npc::{NpcSoundCue, NpcSoundRequest};
+    use tr_core::slot::SlotId;
+
+    /// The headless rig: the tracked cues seeded silent so the plays
+    /// resolve their asset and add a slot (no output device).
+    fn rig() -> (crate::audio::Audio, Npc) {
+        let mut audio = crate::audio::Audio::new(None);
+        for cue in [
+            "dd2_betsy_wind_attack_0",
+            "dd2_betsy_wind_attack_1",
+            "dd2_betsy_wind_attack_2",
+            "dd2_betsy_flame_breath",
+            "dd2_etherian_portal_open",
+            "dd2_etherian_portal_idle_loop",
+            "dd2_kobold_explosion_0",
+            "dd2_kobold_explosion_1",
+            "dd2_kobold_explosion_2",
+            "dd2_kobold_ignite",
+            "dd2_kobold_ignite_loop",
+            "dd2_kobold_scream_charge_loop",
+            "dd2_wither_beast_aura_pulse_0",
+            "dd2_wither_beast_aura_pulse_1",
+        ] {
+            audio.test_seed_tracked_cue(cue);
+        }
+        let n = Npc::new(NpcKind::DD2Betsy, 96.0, 96.0, 1, 0.0);
+        (audio, n)
+    }
+
+    fn drain(audio: &mut crate::audio::Audio, n: &mut Npc, rng: &mut UnifiedRandom) {
+        for req in std::mem::take(&mut n.wants_sound) {
+            play_npc_sound_request(audio, n, req, rng);
+        }
+    }
+
+    /// The RNG contract (the census' core claim): every tracked intent —
+    /// plays, follows, stops, handle drops — leaves the gameplay stream
+    /// pristine; the two audio-only statics move only on the plays.
+    #[test]
+    fn w4_d80_the_tracked_drain_is_gameplay_draw_free() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let (style_before, pitch_before) = audio.test_audio_streams();
+        for cue in [
+            NpcSoundCue::BetsyWindAttack,
+            NpcSoundCue::BetsyFlameBreath,
+            NpcSoundCue::BetsyBreathFollow,
+            NpcSoundCue::BetsyBreathHandleDrop,
+            NpcSoundCue::PortalOpen,
+            NpcSoundCue::PortalIdleEnsure,
+            NpcSoundCue::PortalFadeVolume(0.5),
+            NpcSoundCue::PortalStop,
+            NpcSoundCue::KoboldStopBoth,
+            NpcSoundCue::KoboldExplosion,
+            NpcSoundCue::KoboldIgniteEnsure,
+            NpcSoundCue::KoboldLoopsPlay,
+            NpcSoundCue::KoboldLoopsEnsureFollow,
+            NpcSoundCue::WitherAuraEnsureFollow,
+        ] {
+            n.wants_sound.push(NpcSoundRequest { cue, x: 100.0, y: 100.0 });
+        }
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the tracked path");
+        let (style_after, pitch_after) = audio.test_audio_streams();
+        assert_ne!(style_after, style_before, "the variation picks moved");
+        assert_ne!(pitch_after, pitch_before, "the pitch rolls moved");
+    }
+
+    /// Betsy: the flame-breath handle lands in `local_ai[2]`, the follow
+    /// re-points it, the tail drops the dead handle to Invalid
+    /// (`NPC.cs:62028`/`:61993-61997`/`:62302-62305`).
+    #[test]
+    fn w4_d80_betsy_breath_handle_follow_and_drop() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyFlameBreath, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let id = SlotId::from_float(n.local_ai[2]);
+        assert!(id.is_active(), "the dash tick stored a live handle");
+        audio.test_keep_tracked_alive(id);
+        // The follow re-points the live handle.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyBreathFollow, x: 200.0, y: 300.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(audio.get_active_sound(id).unwrap().position, (200.0, 300.0));
+        // The tail keeps a LIVE handle (`GetActiveSound != null`).
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyBreathHandleDrop, x: 0.0, y: 0.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[2]), id, "the live handle stays");
+        // A dead handle (a stale, never-active id) drops to Invalid.
+        n.local_ai[2] = SlotId(12345).to_float();
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyBreathHandleDrop, x: 0.0, y: 0.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(
+            SlotId::from_float(n.local_ai[2]),
+            SlotId::INVALID,
+            "the dead handle drops (`:62304`)"
+        );
+    }
+
+    /// The portal: the open resets `local_ai[3]`, the idle ensure plays
+    /// once (the null test holds while live), the fade rides the scale
+    /// onto the Volume override, the death stops it
+    /// (`NPC.cs:40979-41044`).
+    #[test]
+    fn w4_d80_portal_open_ensure_fade_and_stop() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.kind = NpcKind::DD2LanePortal;
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalOpen, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[3]), SlotId::INVALID);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalIdleEnsure, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let id = SlotId::from_float(n.local_ai[3]);
+        assert!(id.is_active(), "the idle loop ensured");
+        audio.test_keep_tracked_alive(id);
+        // The ensure is a no-op while the slot lives.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalIdleEnsure, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[3]), id, "no re-play while live");
+        // The fade rides the scale onto the Volume override.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalFadeVolume(0.3), x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert!((audio.get_active_sound(id).unwrap().volume - 0.3).abs() < 1e-6);
+        // The death stop runs against the live slot (headless the sink is
+        // absent — the `?.Stop()` shape keeps the slot addressable until
+        // the pool reaps it).
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalStop, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert!(audio.get_active_sound(id).is_some(), "the slot stays until reaped");
+    }
+
+    /// The kobold: the ignite ensure's `!IsValid` gate, the 30-tick loop
+    /// pair, the explode-entry stops and the death one-shot
+    /// (`NPC.cs:63263-63274`/`:63206-63207`/`:63256`).
+    #[test]
+    fn w4_d80_kobold_ignite_loops_and_explode() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.kind = NpcKind::DD2KoboldWalkerT2;
+        // The spawn-in reset (`:63200-63201`).
+        n.local_ai[0] = SlotId::INVALID.to_float();
+        n.local_ai[1] = SlotId::INVALID.to_float();
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldIgniteEnsure, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let ignite = SlotId::from_float(n.local_ai[0]);
+        assert!(ignite.is_active(), "the ignite one-shot ensured");
+        // The `!IsValid` gate holds while the handle is valid (even dead).
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldIgniteEnsure, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[0]), ignite, "no re-ensure while valid");
+        // The 30-tick pair overwrites both handles.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldLoopsPlay, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let loop0 = SlotId::from_float(n.local_ai[0]);
+        let loop1 = SlotId::from_float(n.local_ai[1]);
+        assert!(loop0.is_active() && loop1.is_active());
+        assert_ne!(loop0, ignite, "the ignite loop replaced the one-shot handle");
+        audio.test_keep_tracked_alive(loop0);
+        audio.test_keep_tracked_alive(loop1);
+        // The ensure-or-follow follows the live pair.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldLoopsEnsureFollow, x: 400.0, y: 500.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(audio.get_active_sound(loop0).unwrap().position, (400.0, 500.0));
+        assert_eq!(audio.get_active_sound(loop1).unwrap().position, (400.0, 500.0));
+        // The explode-entry stops + the death one-shot leave the handles
+        // untouched (the C# stops, never resets, `:63206-63207`).
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldStopBoth, x: 100.0, y: 100.0,
+        });
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldExplosion, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[0]), loop0);
+        assert_eq!(SlotId::from_float(n.local_ai[1]), loop1);
+    }
+
+    /// The wither beast: the aura ensure plays once, the follow re-points
+    /// the live pulse (`NPC.cs:63380-63388`); the idle reset is the
+    /// machine's own `local_ai[1] = Invalid` write (`:63362-63365`).
+    #[test]
+    fn w4_d80_wither_aura_ensure_follow_and_reset() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.kind = NpcKind::DD2WitherBeast;
+        n.local_ai[1] = SlotId::INVALID.to_float();
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::WitherAuraEnsureFollow, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let id = SlotId::from_float(n.local_ai[1]);
+        assert!(id.is_active(), "the aura pulse ensured");
+        audio.test_keep_tracked_alive(id);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::WitherAuraEnsureFollow, x: 600.0, y: 700.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[1]), id, "no re-play while live");
+        assert_eq!(audio.get_active_sound(id).unwrap().position, (600.0, 700.0));
+    }
+
+    /// The bank rows: every W4-d80 NPC tracked cue resolves its style in
+    /// the generated table (the `by_name` lookup cannot silently miss).
+    #[test]
+    fn w4_d80_the_npc_tracked_styles_resolve() {
+        use crate::tracked_sound::TrackedStyle;
+        for (name, cue, variations) in [
+            ("DD2_BetsyWindAttack", "dd2_betsy_wind_attack", 3u32),
+            ("DD2_BetsyFlameBreath", "dd2_betsy_flame_breath", 1),
+            ("DD2_EtherianPortalOpen", "dd2_etherian_portal_open", 1),
+            ("DD2_EtherianPortalIdleLoop", "dd2_etherian_portal_idle_loop", 1),
+            ("DD2_KoboldExplosion", "dd2_kobold_explosion", 3),
+            ("DD2_KoboldIgnite", "dd2_kobold_ignite", 1),
+            ("DD2_KoboldIgniteLoop", "dd2_kobold_ignite_loop", 1),
+            ("DD2_KoboldScreamChargeLoop", "dd2_kobold_scream_charge_loop", 1),
+            ("DD2_WitherBeastAuraPulse", "dd2_wither_beast_aura_pulse", 2),
+        ] {
+            let style = TrackedStyle::by_name(name).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(style.cue, cue, "{name}'s asset");
+            assert_eq!(style.variations, variations, "{name}'s variations");
+            assert_eq!(style.max_tracked_instances, 0, "{name} is uncapped");
+        }
+    }
+
+    /// W4-d80 final — the riders round's headless rig: EVERY variation of
+    /// each new family seeded (the `random_sound` pick draws 0..n, a
+    /// missing asset folds the play to `SlotId::INVALID`).
+    fn riders_rig() -> (crate::audio::Audio, Npc) {
+        let mut audio = crate::audio::Audio::new(None);
+        for cue in [
+            "dd2_win_scene",
+            "dd2_betsy_flying_circle_attack",
+            "dd2_betsy_scream",
+            "dd2_ogre_attack_0",
+            "dd2_ogre_attack_1",
+            "dd2_ogre_attack_2",
+            "dd2_ogre_ground_pound",
+            "dd2_ogre_spit",
+            "dd2_drakin_shot_0",
+            "dd2_drakin_shot_1",
+            "dd2_drakin_shot_2",
+            "dd2_drakin_breath_in_0",
+            "dd2_drakin_breath_in_1",
+            "dd2_drakin_breath_in_2",
+            "dd2_javelin_throwers_attack_0",
+            "dd2_javelin_throwers_attack_1",
+            "dd2_javelin_throwers_attack_2",
+            "dd2_goblin_bomber_throw_0",
+            "dd2_goblin_bomber_throw_1",
+            "dd2_goblin_bomber_throw_2",
+            "dd2_etherian_portal_spawn_enemy_0",
+            "dd2_etherian_portal_spawn_enemy_1",
+            "dd2_etherian_portal_spawn_enemy_2",
+            "dd2_wyvern_dive_down_0",
+            "dd2_wyvern_dive_down_1",
+            "dd2_wyvern_dive_down_2",
+            "dd2_wyvern_scream_0",
+            "dd2_wyvern_scream_1",
+            "dd2_wyvern_scream_2",
+            "dd2_kobold_flyer_charge_scream_0",
+            "dd2_kobold_flyer_charge_scream_1",
+            "dd2_kobold_flyer_charge_scream_2",
+            "dd2_kobold_ignite",
+            "dd2_kobold_ignite_loop",
+            "dd2_dark_mage_summon_skeleton_0",
+            "dd2_dark_mage_summon_skeleton_1",
+            "dd2_dark_mage_summon_skeleton_2",
+            "dd2_dark_mage_cast_heal_0",
+            "dd2_dark_mage_cast_heal_1",
+            "dd2_dark_mage_cast_heal_2",
+        ] {
+            audio.test_seed_tracked_cue(cue);
+        }
+        let n = Npc::new(NpcKind::DD2Betsy, 96.0, 96.0, 1, 0.0);
+        (audio, n)
+    }
+
+    /// The riders' RNG contract: every new intent — the one-shots, the
+    /// wyvern pair (both scream arms), the glider charge + the ignite-loop
+    /// ensure/follow — leaves the gameplay stream pristine; the two
+    /// audio-only statics move on the plays.
+    #[test]
+    fn w4_d80_final_the_riders_drain_is_gameplay_draw_free() {
+        let (mut audio, mut n) = riders_rig();
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let (style_before, pitch_before) = audio.test_audio_streams();
+        for cue in [
+            NpcSoundCue::CrystalWinScene,
+            NpcSoundCue::BetsyCircleAttack,
+            NpcSoundCue::BetsyDashScream,
+            NpcSoundCue::OgreAttack,
+            NpcSoundCue::OgreGroundPound,
+            NpcSoundCue::OgreSpit,
+            NpcSoundCue::DrakinShot,
+            NpcSoundCue::DrakinBreathIn,
+            NpcSoundCue::JavelinAttack,
+            NpcSoundCue::GoblinBomberThrow,
+            NpcSoundCue::PortalSpawnEnemy,
+            NpcSoundCue::WyvernDiveDown { scream: true },
+            NpcSoundCue::WyvernDiveDown { scream: false },
+            NpcSoundCue::KoboldFlyerCharge,
+            NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow,
+            NpcSoundCue::DarkMageSummonSkeleton,
+            NpcSoundCue::DarkMageCastHeal,
+        ] {
+            n.wants_sound.push(NpcSoundRequest { cue, x: 100.0, y: 100.0 });
+        }
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the riders path");
+        let (style_after, pitch_after) = audio.test_audio_streams();
+        assert_ne!(style_after, style_before, "the variation picks moved");
+        assert_ne!(pitch_after, pitch_before, "the pitch rolls moved");
+    }
+
+    /// The wyvern's launch pair (`NPC.cs:65610-65614`): the dive-down
+    /// handle lands in `local_ai[1]`; the scream payload gates the second
+    /// play into `local_ai[2]` (the machine rolled the `Next(5)` — the
+    /// drain only plays, in the C#'s order).
+    #[test]
+    fn w4_d80_final_wyvern_launch_pair_stores_both_handles() {
+        let (mut audio, mut n) = riders_rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::WyvernDiveDown { scream: true }, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let dive = SlotId::from_float(n.local_ai[1]);
+        let scream = SlotId::from_float(n.local_ai[2]);
+        assert!(dive.is_active() && scream.is_active(), "both handles live");
+        assert_ne!(dive, scream, "distinct slots");
+        // The no-scream arm leaves `local_ai[2]` untouched.
+        let (mut audio2, mut n2) = riders_rig();
+        n2.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::WyvernDiveDown { scream: false }, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio2, &mut n2, &mut rng);
+        assert!(SlotId::from_float(n2.local_ai[1]).is_active());
+        assert_eq!(n2.local_ai[2], 0.0, "no scream: the slot stays unwritten");
+    }
+
+    /// The glider's charge + ignite loop (`NPC.cs:65618-65619`/
+    /// `:65634-65645`): the charge scream lands in `local_ai[1]` (the
+    /// ignite one-shot's handle is discarded); the dive's ensure plays
+    /// the loop into `local_ai[2]` once, then follows the live handle.
+    #[test]
+    fn w4_d80_final_glider_charge_and_ignite_loop_ensure_follow() {
+        let (mut audio, mut n) = riders_rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldFlyerCharge, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let charge = SlotId::from_float(n.local_ai[1]);
+        assert!(charge.is_active(), "the charge scream stored");
+        assert_eq!(n.local_ai[2], 0.0, "the ignite one-shot discards its handle");
+        // The dive's first ensure tick plays the loop into `local_ai[2]`.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let loop_id = SlotId::from_float(n.local_ai[2]);
+        assert!(loop_id.is_active(), "the ignite loop ensured");
+        audio.test_keep_tracked_alive(loop_id);
+        // The follow tick: no re-play, the position re-points.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow, x: 400.0, y: 500.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[2]), loop_id, "no re-play while live");
+        assert_eq!(audio.get_active_sound(loop_id).unwrap().position, (400.0, 500.0));
+        // A reaped handle re-plays (the C# null arm).
+        if let Some(s) = audio.get_active_sound_mut(loop_id) {
+            s.set_test_keep_alive(false);
+        }
+        audio.update_tracked(false);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldFlyerIgniteLoopEnsureFollow, x: 600.0, y: 700.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let replayed = SlotId::from_float(n.local_ai[2]);
+        assert!(replayed.is_active() && replayed != loop_id, "the dead loop re-played");
+    }
+
+    /// The riders' bank rows: every new cue resolves its style in the
+    /// generated table (the `by_name` lookup cannot silently miss).
+    #[test]
+    fn w4_d80_final_the_rider_tracked_styles_resolve() {
+        use crate::tracked_sound::TrackedStyle;
+        for (name, cue, variations) in [
+            ("DD2_WinScene", "dd2_win_scene", 1u32),
+            ("DD2_BetsyFlyingCircleAttack", "dd2_betsy_flying_circle_attack", 1),
+            ("DD2_BetsyScream", "dd2_betsy_scream", 1),
+            ("DD2_OgreAttack", "dd2_ogre_attack", 3),
+            ("DD2_OgreGroundPound", "dd2_ogre_ground_pound", 1),
+            ("DD2_OgreSpit", "dd2_ogre_spit", 1),
+            ("DD2_DrakinShot", "dd2_drakin_shot", 3),
+            ("DD2_DrakinBreathIn", "dd2_drakin_breath_in", 3),
+            ("DD2_JavelinThrowersAttack", "dd2_javelin_throwers_attack", 3),
+            ("DD2_GoblinBomberThrow", "dd2_goblin_bomber_throw", 3),
+            ("DD2_EtherianPortalSpawnEnemy", "dd2_etherian_portal_spawn_enemy", 3),
+            ("DD2_WyvernDiveDown", "dd2_wyvern_dive_down", 3),
+            ("DD2_WyvernScream", "dd2_wyvern_scream", 3),
+            ("DD2_KoboldFlyerChargeScream", "dd2_kobold_flyer_charge_scream", 3),
+            ("DD2_DarkMageSummonSkeleton", "dd2_dark_mage_summon_skeleton", 3),
+            ("DD2_DarkMageCastHeal", "dd2_dark_mage_cast_heal", 3),
+        ] {
+            let style = TrackedStyle::by_name(name).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(style.cue, cue, "{name}'s asset");
+            assert_eq!(style.variations, variations, "{name}'s variations");
+            assert_eq!(style.max_tracked_instances, 0, "{name} is uncapped");
+        }
+    }
+}
+
+
+/// W4-f31 — the banner index-space reconciliation witness (the d129 census
+/// finding): the kill tally's banner id, the placed banner's scan decode
+/// and the buff/hover readers all share the `NPCtoBanner` space
+/// (`SceneMetrics.cs:424-440`'s `num3`, `Item.cs:19230`'s style = banner+21,
+/// `BannerSystem.cs:400`). WRITTEN NOT RUN (code-only lane).
+#[cfg(test)]
+mod w4_f31_banner_space_tests {
+    use super::*;
+
+    /// The placed Slime banner arms the CORRECT buff: 50 Blue Slime kills
+    /// drop the Slime Banner item 1683 (`BannerSystem.AddNPCKillBy`,
+    /// `BannerSystem.cs:163-193`); placing it writes tile 91 at its
+    /// `placeStyle` 90 (`Item.cs:19230`'s `22 + 1683 - 1615` = banner 69 +
+    /// 21); the scan's decode recovers 69 = `NPCtoBanner(1)` and the buff
+    /// reader (`Player.cs:20483-20493`) arms the Blue Slime — not the
+    /// place-style index 90's npc.
+    #[test]
+    fn w4_f31_the_placed_slime_banner_arms_the_correct_buff() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * TILE_PX;
+        player.y = 110.0 * TILE_PX;
+        app.player = Some(player);
+        // 49 kills on the tally: the next death is the 50th — the Blue
+        // Slime's `KillsToBanner` milestone (the default 50).
+        for _ in 0..49 {
+            assert!(app.banners.add_npc_kill_by(1, 0, "Tester").is_none());
+        }
+        let mut slime = Npc::new(NpcKind::Slime, 100.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        slime.slime = SlimeVariant::Blue;
+        slime.hp = 0;
+        app.npcs.push(slime);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.banners.kills(69), 50, "the tally keys NPCtoBanner(1)");
+        // The milestone dropped the banner ITEM (e24's lane, untouched):
+        // `BannerToItem(69)` = 1683, one at the death spot.
+        let drop = app
+            .items
+            .iter()
+            .find(|d| d.kind == 1683)
+            .expect("the 50th kill drops the Slime Banner");
+        assert_eq!(drop.count, 1);
+        // Place it: the item's own `createTile`/`placeStyle` row writes
+        // tile 91, frameX = style * 18 (`WorldGen.PlaceTile`), frameY 0.
+        let def = crate::itemdata::ITEMS[1683];
+        assert_eq!(def.tile, Some(91));
+        assert_eq!(def.place_style, 90, "banner 69 + 21 (Item.cs:19230)");
+        let i = app.world.index(100, 110);
+        app.world.tiles[i].kind = 91;
+        app.world.tiles[i].frame_x = (def.place_style * 18) as i16;
+        app.world.tiles[i].frame_y = 0;
+        app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        // The scan decodes into the NPCtoBanner space: buff 69, not 90.
+        let m = crate::world_sim::scene_scan::scan_scene_at(
+            &app.world,
+            [100.0 * TILE_PX, 110.0 * TILE_PX],
+            false,
+            false,
+            false,
+        );
+        assert!(m.has_banner);
+        assert!(m.npc_banner_buff[69]);
+        assert!(!m.npc_banner_buff[90], "the place-style index stays cold");
+        // The buff reader arms the Blue Slime (net 1), the classic pair.
+        assert_eq!(
+            crate::banners::banner_buff_for(&m, 1),
+            Some((1.5, 0.75)),
+            "the placed Slime banner arms the Blue Slime buff"
+        );
+        // The hover list names the Blue Slime — `BannerToNPC(69)` = 1.
+        let names = crate::ui::resources::banner_hover_names(&m.npc_banner_buff);
+        assert_eq!(names, vec![crate::lang::npc_name(1)]);
+    }
+}
+
+/// W4-e24 — the NPC banner drop-rule chain's wiring witnesses (WRITTEN, NOT
+/// RUN — code-only mode). These exercise the death-path banner arm end to end
+/// through `update_npcs`: the interaction gate, the exclusion gate (the NPC's
+/// OWN net id, not the folded bestiary entry), the claimable-not-world-drop
+/// milestone, the `lastInteraction`/`FindClosestPlayer` plr pick + the
+/// picked-slot announcement name, and the chain's RNG neutrality. The claim
+/// loopback itself (`request_banner_claim`/`claim_banner`) is pinned in
+/// `banners.rs`; the v18 save round-trip in `save.rs`/`saveglue.rs`.
+#[cfg(test)]
+mod w4_e24_banner_wiring_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::net::PlayerNet;
+    use crate::player::Player;
+
+    /// The announcement keys resolve through the shipped en-US resources; the
+    /// tests hold the lang lock for the whole read (the `lang::test_lock`
+    /// convention — a parallel culture switch would race the singleton).
+    fn lang_guard() -> std::sync::MutexGuard<'static, ()> {
+        let g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        g
+    }
+
+    /// A ground-world App with a live session player at slot 0 and the ambient
+    /// spawner held off (`npc_timer` high, the DW-3.3 precedent) so the death
+    /// pass is the only NPC activity.
+    fn rig() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.compute_column_surface();
+        app.world = world;
+        app.player = Some(Player::spawn(&app.world));
+        app.npc_timer = 10.0;
+        app
+    }
+
+    /// Push a Blue Slime at tile 30 and strike it dead as player 0 — the
+    /// `ApplyInteraction_Inner` port latches `player_interaction[0]` +
+    /// `last_interaction = 0` (`npc.rs`'s `strike_pooled`). Returns the pool
+    /// index it occupied (the death retain compacts it away this tick).
+    fn struck_slime(app: &mut App) -> usize {
+        let slime = Npc::spawn_slime_variant(&app.world, 30, SlimeVariant::Blue).unwrap();
+        app.npcs.push(slime);
+        let idx = app.npcs.len() - 1;
+        assert!(Npc::strike_melee(
+            &mut app.npcs,
+            idx,
+            9999,
+            0.0,
+            0.0,
+            false,
+            Some(0),
+            false
+        ));
+        assert!(app.npcs[idx].hp <= 0, "the strike killed the slime");
+        assert!(app.npcs[idx].player_interaction[0], "the interaction latched");
+        assert_eq!(app.npcs[idx].last_interaction, 0, "lastInteraction latched");
+        idx
+    }
+
+    /// The interaction gate (`NPC.GetWereThereAnyInteractions`,
+    /// `NPC.cs:78840`): a STRUCK death tallies; a dead-on-arrival death (no
+    /// interaction — the despawn / self-strike shape) refuses.
+    #[test]
+    fn w4_e24_the_interaction_gate_separates_struck_from_dead_on_arrival() {
+        let _g = lang_guard();
+        // Struck: the banner tally climbs.
+        let mut a = rig();
+        struck_slime(&mut a);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert_eq!(a.banners.kills(69), 1, "the struck slime tallied");
+        assert!(a.npcs.is_empty(), "the dead slime was retained out");
+        // Dead-on-arrival: no interaction → the gate refuses, no tally.
+        let mut b = rig();
+        let mut slime = Npc::spawn_slime_variant(&b.world, 30, SlimeVariant::Blue).unwrap();
+        slime.hp = 0; // no strike — the interaction array stays empty
+        b.npcs.push(slime);
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert_eq!(b.banners.kills(69), 0, "the un-interacted death refuses");
+        assert_eq!(b.banners.claimable(69), 0);
+    }
+
+    /// The milestone makes the banner CLAIMABLE, not a world drop
+    /// (`BannerSystem.AddClaimableBanner`, `BannerSystem.cs:260-269`): 50
+    /// struck Blue Slime kills → `claimable[69] == 1`, the announcement fires
+    /// in the Command color, and NO banner item (1683) lands in `app.items`.
+    /// The claim loopback then delivers it to the mouse item.
+    #[test]
+    fn w4_e24_fifty_struck_slimes_make_the_banner_claimable_not_a_world_drop() {
+        let _g = lang_guard();
+        let mut app = rig();
+        app.player_name = "Belsin".into();
+        for _ in 0..50 {
+            struck_slime(&mut app);
+            app.npc_timer = 10.0; // hold the spawner off every tick
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(app.banners.kills(69), 50);
+        assert_eq!(app.banners.claimable(69), 1, "the 50th kill made it claimable");
+        assert!(app.banners.is_new_banner(69));
+        assert!(app.banners.any_new_claimable);
+        // The announcement: the named form, Command color (250, 250, 0).
+        let line = app
+            .chat
+            .messages
+            .iter()
+            .find(|m| m.color == crate::chat::COLOR_COMMAND)
+            .expect("the milestone announced");
+        assert_eq!(line.text, "Belsin has defeated the 50th Blue Slime!", "{}", line.text);
+        // NO world drop of the banner item — the pre-e24 death-spot drop is gone.
+        assert!(
+            !app.items.iter().any(|d| d.kind == 1683),
+            "the milestone does NOT drop the banner item"
+        );
+        // The claim loopback delivers it to the mouse item (inventory open).
+        app.inventory_open = true;
+        crate::banners::request_banner_claim(&mut app, 69, 1);
+        assert_eq!(app.banners.claimable(69), 0, "the claim drained the pool");
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (1683, 1));
+        assert_eq!(app.fake_cursor.item_type(), 0, "the loopback cleared the overlay");
+        assert!(!app.items.iter().any(|d| d.kind == 1683), "no overflow — the cursor took it");
+    }
+
+    /// The exclusion gate reads the NPC's OWN net id, not the folded bestiary
+    /// entry (`NPC.ExcludedFromDeathTally`, `NPC.cs:79793-79808`): the Force
+    /// Bubble (384) is in `PositiveNPCTypesExcludedFromDeathTally` while its
+    /// folded credit entry (the Officer, 383) is NOT — so a struck bubble
+    /// death never tallies, but a struck Zombie (3 → banner 87) does.
+    #[test]
+    fn w4_e24_excluded_kinds_never_tally_but_the_folded_entry_would() {
+        let _g = lang_guard();
+        // The fold: the bubble's bestiary credit rides the Officer (383).
+        let folded = crate::bestiary::entry_for_npc(NpcKind::ForceBubble, SlimeVariant::Blue);
+        assert_eq!(folded.net_id, 383, "the bubble folds onto the Officer");
+        assert!(!crate::banners::excluded_from_death_tally(383), "the Officer is not excluded");
+        assert!(crate::banners::excluded_from_death_tally(384), "the bubble IS excluded");
+        // A struck Force Bubble death: the gate reads 384 → excluded → no tally.
+        let mut a = rig();
+        let bubble = Npc::new(NpcKind::ForceBubble, 30.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        a.npcs.push(bubble);
+        let idx = a.npcs.len() - 1;
+        Npc::strike_melee(&mut a.npcs, idx, 99999, 0.0, 0.0, false, Some(0), false);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert_eq!(a.banners.kills(141), 0, "the excluded bubble never tallies");
+        assert_eq!(a.banners.pairs().count(), 0, "no banner tally at all");
+        // The control: a struck Zombie (own id 3, not excluded) tallies 87.
+        let mut b = rig();
+        let zombie = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        b.npcs.push(zombie);
+        let idx = b.npcs.len() - 1;
+        Npc::strike_melee(&mut b.npcs, idx, 99999, 0.0, 0.0, false, Some(0), false);
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert_eq!(b.banners.kills(87), 1, "the non-excluded zombie tallied");
+    }
+
+    /// The plr pick (`NPC.CountKillForBannersAndDropThem`,
+    /// `NPC.cs:79814-79818`): `lastInteraction` stands while that slot is
+    /// active + alive; a dead local slot falls back to `FindClosestPlayer`
+    /// (the living remote peer wins); no player at all → -1.
+    #[test]
+    fn w4_e24_the_plr_pick_falls_back_to_the_closest_living_player() {
+        let mut app = rig();
+        // The local player is dead; a living peer sits beside the NPC.
+        if let Some(p) = app.player.as_mut() {
+            p.dead = true;
+            p.x = 0.0;
+            p.y = 110.0 * TILE_PX;
+        }
+        app.remote_players.insert(
+            5,
+            PlayerNet {
+                id: 5,
+                name: "Peer".into(),
+                x: 100.0 * TILE_PX,
+                y: 110.0 * TILE_PX,
+                hp: 100,
+                max_hp: 100,
+                ..Default::default()
+            },
+        );
+        let mut npc = Npc::new(NpcKind::Slime, 100.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        // lastInteraction = 0 (the dead local slot) → FindClosestPlayer → peer 5.
+        npc.last_interaction = 0;
+        assert_eq!(banner_kill_plr(&app, &npc), 5, "the dead local slot falls back to the peer");
+        // A living local slot stands as lastInteraction.
+        if let Some(p) = app.player.as_mut() {
+            p.dead = false;
+        }
+        assert_eq!(banner_kill_plr(&app, &npc), 0, "the living local slot stands");
+        // No player at all + the unset sentinel → -1.
+        app.player = None;
+        app.remote_players.clear();
+        npc.last_interaction = 255;
+        assert_eq!(banner_kill_plr(&app, &npc), -1, "no active player → -1");
+    }
+
+    /// The announcement names the PICKED slot (`BannerSystem.cs:254` reads
+    /// `Main.player[plr].name`): a dead local slot + a living peer → the 50th
+    /// kill announces the PEER's name, not the local player's.
+    #[test]
+    fn w4_e24_the_announcement_names_the_picked_slot() {
+        let _g = lang_guard();
+        let mut app = rig();
+        app.player_name = "Local".into();
+        if let Some(p) = app.player.as_mut() {
+            p.dead = true;
+            p.x = 0.0;
+            p.y = 110.0 * TILE_PX;
+        }
+        app.remote_players.insert(
+            5,
+            PlayerNet {
+                id: 5,
+                name: "Peer".into(),
+                x: 30.0 * TILE_PX,
+                y: 110.0 * TILE_PX,
+                hp: 100,
+                max_hp: 100,
+                ..Default::default()
+            },
+        );
+        // 49 kills already tallied; the 50th lands the milestone.
+        app.banners.load_pairs([(69, 49)]);
+        struck_slime(&mut app);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.banners.kills(69), 50);
+        let line = app
+            .chat
+            .messages
+            .iter()
+            .find(|m| m.color == crate::chat::COLOR_COMMAND)
+            .expect("the milestone announced");
+        assert_eq!(line.text, "Peer has defeated the 50th Blue Slime!", "{}", line.text);
+    }
+
+    /// The banner chain draws NO RNG: two identical struck-slime deaths, one
+    /// with the interaction latched (the tally runs) and one with it cleared
+    /// (the gate refuses) — every named stream is byte-equal afterwards. The
+    /// C# `AddNPCKillBy`/`AddKill`/`AddClaimableBanner` are pure state writes;
+    /// the removed death-spot drop's velocity/prefix draws are gone.
+    #[test]
+    fn w4_e24_the_banner_chain_draws_no_rng() {
+        let _g = lang_guard();
+        let mut a = rig();
+        struck_slime(&mut a);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert_eq!(a.banners.kills(69), 1, "the tally ran");
+
+        let mut b = rig();
+        struck_slime(&mut b);
+        // Clear ONLY the interaction (the gate input) — the physical state
+        // (hp, knockback, hurt_cd) stays identical, so any stream divergence
+        // would be the banner chain's own draws.
+        let idx = b.npcs.len() - 1;
+        b.npcs[idx].player_interaction = [false; 256];
+        b.npcs[idx].last_interaction = 255;
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert_eq!(b.banners.kills(69), 0, "the gate refused");
+
+        for key in RngKey::ALL {
+            assert_eq!(
+                a.rngs.stream(key),
+                b.rngs.stream(key),
+                "{} byte-equal — the banner chain drew nothing",
+                key.name()
+            );
+        }
+    }
 }

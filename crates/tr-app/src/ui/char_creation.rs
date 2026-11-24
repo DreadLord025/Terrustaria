@@ -850,7 +850,7 @@ pub fn cloth_style_preview_animated(hovered: bool) -> bool {
 /// offset (the draw), not a rect, so every returned rect is font-free.
 pub fn layout(screen: Vec2, name_w: f32) -> Layout {
     let _ = name_w; // the plate's rect is style-driven (400x40 -> 100%); see `draw_info_menu`.
-    let full = [0.0, 0.0, screen.x, screen.y];
+    let full = super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]); // `UIState.cs:9-11`
     // The root: `Width 500, Height 380+4, Top 220, HAlign .5` (`:186-193`).
     let root = uistate::resolve(
         full,

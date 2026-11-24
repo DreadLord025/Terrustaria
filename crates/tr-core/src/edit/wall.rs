@@ -17,6 +17,9 @@ use crate::world::World;
 /// `place_wall_route`'s replacement arm (`world_sim/editing.rs`, the old
 /// wall's cue before its drop on `UpdatePlayers`); W4-g24 FINAL re-sweep
 /// confirmed both call sites covered.
+/// walls before Skeletron, wall 87 before Golem); W4-c15's [`kill_wall`]
+/// reports both arms so the app plays the cue on the sub-100 hammer tick
+/// (`Player.PickWall` `Player.cs:45957`) as well.
 ///
 /// The arms: the glass/stone family → the legacy id 13 (Shatter, no pitch
 /// draw, `LegacySoundPlayer.cs:783-792`); the grass/jungle family → id 6
@@ -357,9 +360,10 @@ fn is_dungeon_wall(wall: u16) -> bool {
 
 /// `WorldGen.KillWall_CheckFailure` (`WorldGen.cs:60410-60421`): the dungeon
 /// walls before Skeletron (`NPC.downedBoss3`) and the temple wall 87 before
-/// Golem (`NPC.downedGolemBoss`) refuse the break. The port has no per-tick
-/// `fail` path (S1-E-21i), so a refusal is a silent no-op rather than the C#'s
-/// 3-dust + sound + re-frame tick.
+/// Golem (`NPC.downedGolemBoss`) refuse the break. The refusal still plays
+/// the sound table (`KillWall` `:60385` precedes the fail return `:60395`) —
+/// W4-c15's [`kill_wall`] surfaces that; the 3-dust burst stays the
+/// recorded dust-layer skip.
 fn kill_wall_check_failure(world: &World, wall: u16) -> bool {
     if is_dungeon_wall(wall) && !world.downed_skeletron {
         return true;
@@ -461,20 +465,36 @@ pub fn near_friendly_wall(world: &World, x: i32, y: i32) -> bool {
         || open_or_house(x, y + 1)
 }
 
-/// Removes the background wall at `(x, y)`. Returns the wall id.
-///
-/// `WorldGen.KillWall` (`WorldGen.cs:60368-60408`): the break refuses the
-/// unbreakable 350 (the port folds `Player.CanPlayerSmashWall`'s gate in here,
-/// ANALYSIS) and the `KillWall_CheckFailure` progression walls; on success it
-/// clears the wall paint/coating (`:60402`) before the re-frame. The sound
-/// (`KillWall_PlaySounds`), dust and item drop are app-side.
-pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
+/// The outcome of a `WorldGen.KillWall` attempt (`WorldGen.cs:60368-60408`,
+/// W4-c15): the sound table (`KillWall_PlaySounds`) plays on BOTH the success
+/// and the fail paths — `:60385` precedes the fail return `:60395-60399`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WallBreak {
+    /// `:60400-60407` — the wall came off: drop the item, then the re-frame.
+    Broken(u16),
+    /// `:60387-60399` — the sub-100 hammer tick or a progression refusal:
+    /// the cue plays, the wall STAYS (the 3-dust burst is the dust skip).
+    Failed(u16),
+}
+
+/// `WorldGen.KillWall(i, j, fail)` (`WorldGen.cs:60368-60408`, W4-c15): the
+/// full entry, fail path included. The bounds/null guards (`:60370-60379`)
+/// and the `wall <= 0` refusal (`:60380`) answer `None` — no cue. The port
+/// folds `Player.CanPlayerSmashWall`'s 350 gate in here (ANALYSIS, the
+/// `break_wall` precedent); the C# checks 350 in the CALLER
+/// (`Player.cs:45919`, `ExplodeTiles` `Projectile.cs:78743`). A progression
+/// refusal (`KillWall_CheckFailure`) OR the caller's `fail` flag keeps the
+/// wall and reports [`WallBreak::Failed`] — the app plays the cue on both
+/// arms (`Player.PickWall` `Player.cs:45949`/`:45957` calls this on every
+/// hammer tick, success or sub-100).
+pub fn kill_wall(world: &mut World, x: i32, y: i32, fail: bool) -> Option<WallBreak> {
     let t = *world.tile(x, y)?;
     if t.wall == 0 || t.wall == WALL_UNBREAKABLE {
         return None;
     }
-    if kill_wall_check_failure(world, t.wall) {
-        return None;
+    // `:60384` — the incoming fail flag ORs with the progression refusal.
+    if fail || kill_wall_check_failure(world, t.wall) {
+        return Some(WallBreak::Failed(t.wall));
     }
     let wall = t.wall;
     let i = world.index(x, y);
@@ -482,7 +502,23 @@ pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
     world.tiles[i].set_wall_frame(0, 0);
     clear_wall_paint_and_coating(world, x, y);
     after_wall_edit(world, x, y);
-    Some(wall)
+    Some(WallBreak::Broken(wall))
+}
+
+/// Removes the background wall at `(x, y)`. Returns the wall id.
+///
+/// `WorldGen.KillWall` (`WorldGen.cs:60368-60408`): the break refuses the
+/// unbreakable 350 (the port folds `Player.CanPlayerSmashWall`'s gate in here,
+/// ANALYSIS) and the `KillWall_CheckFailure` progression walls; on success it
+/// clears the wall paint/coating (`:60402`) before the re-frame. The sound
+/// (`KillWall_PlaySounds`), dust and item drop are app-side. The success-only
+/// wrapper of [`kill_wall`] — callers that need the fail-path cue (the hammer
+/// tick, `Player.PickWall` `Player.cs:45957`) use that entry directly.
+pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
+    match kill_wall(world, x, y, false) {
+        Some(WallBreak::Broken(wall)) => Some(wall),
+        _ => None,
+    }
 }
 
 /// Places a background wall into a cell that has none. The caller checks reach and
@@ -585,6 +621,61 @@ mod tests {
         // 62/71 outside 63..70, 240/244 outside the singles.
         assert_eq!(kill_wall_sound(87), (0, 1));
         assert_eq!(kill_wall_sound(94), (0, 1));
+    }
+
+    /// W4-c15 — `WorldGen.KillWall(i, j, fail)` (`WorldGen.cs:60368-60408`):
+    /// the fail flag keeps the wall and reports `Failed` (the app plays the
+    /// cue on that arm too, `:60385` precedes the fail return `:60395`); the
+    /// progression refusal folds into the same arm (`:60384`); the empty
+    /// cell / 350 answer `None` (no cue); success clears paint + re-frames.
+    #[test]
+    fn w4_c15_kill_wall_reports_the_fail_arm_and_keeps_the_wall() {
+        let mut w = ground_world();
+        let i = w.index(10, 10);
+        w.tiles[i].wall = 4;
+        w.set_wall_paint(10, 10, 9);
+        // The caller's fail flag (`Player.PickWall`'s sub-100 tick,
+        // `Player.cs:45957`): the wall AND its paint stay.
+        assert_eq!(kill_wall(&mut w, 10, 10, true), Some(WallBreak::Failed(4)));
+        assert_eq!(w.tile(10, 10).unwrap().wall, 4);
+        assert_eq!(w.wall_paint(10, 10), 9);
+        // The progression refusal reports Failed WITHOUT the flag —
+        // dungeon 7 pre-Skeletron (`:60412`), temple 87 pre-Golem (`:60416`).
+        w.tiles[i].wall = 7;
+        assert_eq!(kill_wall(&mut w, 10, 10, false), Some(WallBreak::Failed(7)));
+        assert_eq!(w.tile(10, 10).unwrap().wall, 7);
+        w.tiles[i].wall = 87;
+        assert_eq!(kill_wall(&mut w, 10, 10, false), Some(WallBreak::Failed(87)));
+        // Post-boss the same cells break; the paint clears (`:60402`).
+        w.downed_skeletron = true;
+        w.tiles[i].wall = 7;
+        assert_eq!(kill_wall(&mut w, 10, 10, false), Some(WallBreak::Broken(7)));
+        assert_eq!(w.wall_paint(10, 10), 0);
+        // The no-cue refusals: empty wall (`:60380`) and the 350 fold.
+        assert_eq!(kill_wall(&mut w, 10, 10, false), None);
+        w.tiles[i].wall = WALL_UNBREAKABLE;
+        assert_eq!(kill_wall(&mut w, 10, 10, true), None);
+        // Out of world (`:60370`): None, both arms.
+        assert_eq!(kill_wall(&mut w, -1, 10, false), None);
+        assert_eq!(kill_wall(&mut w, 10, 999, true), None);
+        // The success-only wrapper keeps its old contract on every arm.
+        w.tiles[i].wall = 4;
+        assert_eq!(break_wall(&mut w, 10, 10), Some(4));
+        w.tiles[i].wall = 7;
+        w.downed_skeletron = false;
+        assert_eq!(break_wall(&mut w, 10, 10), None, "the wrapper hides Failed");
+    }
+
+    /// W4-c15 — the fail arm's cue is the SAME four-arm table
+    /// (`KillWall_PlaySounds` reads only `tileCache.wall`, `:60423-60441` —
+    /// the fail flag never reaches it): a failed dungeon-7 tick digs (0),
+    /// a failed grass-63 tick is Grass (6), a failed temple-87 tick digs.
+    #[test]
+    fn w4_c15_the_fail_arm_plays_the_same_cue_table() {
+        assert_eq!(kill_wall_sound(7), (0, 1), "dungeon unsafe digs");
+        assert_eq!(kill_wall_sound(87), (0, 1), "temple digs");
+        assert_eq!(kill_wall_sound(63), (6, 1), "grass stays grass");
+        assert_eq!(kill_wall_sound(88), (13, 1), "the safe dungeon shatters");
     }
 
     // ---- S1-P-i33: the wall placement/removal census fixes ----------------

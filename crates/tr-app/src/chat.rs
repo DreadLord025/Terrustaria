@@ -67,6 +67,19 @@ pub struct ChatMonitor {
     pub blink_timer: u32,
     /// `Main.textBlinkerState`: `1` draws the `|` cursor.
     pub blink_on: bool,
+    /// The Say path's overhead intent (`ChatHelper.DisplayMessage`'s
+    /// author arm, `ChatHelper.cs:86-87`): `(bare text, color)` — the
+    /// monitor line carries the name-tag prefix (`:88`), the overhead
+    /// does not. The caller drains it into `Player.chat_overhead`
+    /// (`app/loop.rs`); the port's single-player fold runs Say inside
+    /// `send`, so the intent rides here (W4-d121).
+    pub pending_overhead: Option<(String, [u8; 3])>,
+    /// W4-g23 — `Main.NewText`/`NewTextMultiline`'s `PlaySound(12)` tails
+    /// (`Main.cs:64635`/`:64641`): one legacy id per append, drained by the
+    /// App once per frame (`ChatMonitor` has no `Audio` — the pure monitor
+    /// records the cue, the frame loop plays it). The C# plays inline at
+    /// the append; the port's drain preserves the per-line count and order.
+    pending_cues: Vec<u32>,
 }
 
 impl ChatMonitor {
@@ -86,6 +99,32 @@ impl ChatMonitor {
         );
         while self.messages.len() > MESSAGE_CAP {
             self.messages.pop();
+        }
+        // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail (`Main.cs:64635`;
+        // the multiline twin `:64641` folds into the same append) — W4-g23
+        // wires the centralized cue here; the App drains it per frame.
+        self.pending_cues
+            .push(crate::main_sounds_batch3::new_text_cue());
+    }
+
+    /// W4-g23 — drains the `NewText` cue queue: the legacy ids the appends
+    /// recorded since the last drain, in append order. The frame loop plays
+    /// each (`12` → `Menu_Tick`); one cue per line, like the C# tail.
+    pub fn take_pending_cues(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.pending_cues)
+    }
+
+    /// W4-g23 — the App-side drain of [`Self::take_pending_cues`]: plays each
+    /// queued `NewText` tail through `Audio` (12 → `Menu_Tick`, the
+    /// `Main.cs:64635`/`:64641` ids). The frame loop calls this once per
+    /// frame; the achievement subscriber calls it inline after its append.
+    pub fn drain_new_text_cues(&mut self, audio: &crate::audio::Audio) {
+        for id in self.take_pending_cues() {
+            audio.play(match id {
+                10 => "Menu_Open",
+                11 => "Menu_Close",
+                _ => "Menu_Tick", // 12
+            });
         }
     }
 
@@ -135,7 +174,8 @@ impl ChatMonitor {
 
     /// [`ChatMonitor::send`] with the chat-side player state the
     /// `DeathCommand` family reads (the death counters and the dead flag
-    /// the outgoing gates check).
+    /// the outgoing gates check). The Say arm also queues the author's
+    /// overhead intent ([`ChatMonitor::pending_overhead`]).
     pub fn send_with(
         &mut self,
         raw: &str,
@@ -144,6 +184,8 @@ impl ChatMonitor {
         emotes: &mut crate::emotes::EmoteSystem,
         player: Option<&crate::player::Player>,
     ) {
+        // One send = one message: a stale intent never survives the pass.
+        self.pending_overhead = None;
         let Some(command) = raw.strip_prefix('/') else {
             self.say(raw, player_name);
             return;
@@ -301,6 +343,10 @@ impl ChatMonitor {
     /// difficulty is `Color.White` (`Player.ChatColor()`, `:34745`).
     fn say(&mut self, text: &str, player_name: &str) {
         self.new_text(format!("{player_name} {text}"), [255, 255, 255]);
+        // `SayChatCommand.ProcessIncomingMessage` broadcasts AS the client
+        // (`ChatHelper.cs:86-87`): the author's overhead arms with the
+        // BARE text in `Player.ChatColor()` (White, classic difficulty).
+        self.pending_overhead = Some((text.to_string(), [255, 255, 255]));
     }
 }
 
@@ -330,6 +376,24 @@ mod tests {
         chat.send("hello world", "Belsin", &mut tr_core::UnifiedRandom::new(1), &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin hello world");
         assert_eq!(chat.messages[0].color, [255, 255, 255]);
+        // The author arm (`ChatHelper.cs:86-87`): the overhead intent
+        // carries the BARE text, not the name-tag line.
+        assert_eq!(
+            chat.pending_overhead,
+            Some(("hello world".to_string(), [255, 255, 255]))
+        );
+    }
+
+    /// A non-Say command never arms the overhead (`BroadcastChatMessage`
+    /// uses author 255 — `ChatHelper.cs:46-49`, no `NewMessage`), and a
+    /// stale intent from an earlier send does not survive the next pass.
+    #[test]
+    fn only_say_arms_the_overhead_intent() {
+        let mut chat = ChatMonitor::default();
+        chat.send("first line", "Belsin", &mut tr_core::UnifiedRandom::new(1), &mut crate::emotes::EmoteSystem::default());
+        assert!(chat.pending_overhead.is_some());
+        chat.send("/roll", "Belsin", &mut tr_core::UnifiedRandom::new(7), &mut crate::emotes::EmoteSystem::default());
+        assert_eq!(chat.pending_overhead, None);
     }
 
     #[test]
@@ -518,5 +582,29 @@ mod tests {
         // The expired line stays in the scrollback (the 500-line log).
         assert_eq!(chat.messages.len(), 2);
         assert_eq!(chat.visible_lines(true).count(), 2);
+    }
+
+    /// W4-g23 — the `NewText` cue tail wiring (`Main.cs:64632-64642`): every
+    /// append queues exactly one legacy 12 (`:64635`/`:64641`), the drain
+    /// empties the queue in append order, and `update` (the timer decay)
+    /// queues nothing.
+    #[test]
+    fn w4_g23_every_new_text_append_queues_one_12_and_the_drain_empties() {
+        let mut chat = ChatMonitor::default();
+        chat.new_text("first", COLOR_DEATH);
+        chat.new_text("second", COLOR_WORLD);
+        assert_eq!(chat.take_pending_cues(), vec![12, 12], "one per append");
+        assert!(chat.take_pending_cues().is_empty(), "the drain empties");
+        // The timer decay is not an append — no cue.
+        chat.update();
+        assert!(chat.take_pending_cues().is_empty());
+        // The send path folds into new_text, so it cues too.
+        chat.send(
+            "hello",
+            "Belsin",
+            &mut tr_core::UnifiedRandom::new(1),
+            &mut crate::emotes::EmoteSystem::default(),
+        );
+        assert_eq!(chat.take_pending_cues(), vec![12]);
     }
 }

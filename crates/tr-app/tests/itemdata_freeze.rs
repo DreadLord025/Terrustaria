@@ -24,6 +24,10 @@ use std::path::PathBuf;
 /// `not_ammo`/`extractinator_consumable` fields added to every generated
 /// row — the tooltip-lines second half).
 const DATA_FNV1A64: u64 = 0x1dd2_84fc_4b36_2f46;
+/// Re-pinned for W4-g35 (the `glow_mask` field added to every generated
+/// row — the glow-mask records wave; the sdcall/type-repoint interpreter
+/// fixes also restored the 52/2779/2781/2784/2786/3464/3466 case bodies).
+const DATA_FNV1A64: u64 = 0x8e04_e794_8244_3e00;
 /// `ItemID.Count` (`ItemID.cs:14861`) — the number of `ItemDef` rows.
 const ROWS: usize = 6196;
 

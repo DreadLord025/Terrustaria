@@ -8,12 +8,15 @@
 //! sits between the rain and the sand/wheel dust draws in the frame pass,
 //! in the same world-effect (fx) range the dust and leaf gores use.
 //!
+//! W4-g12 doc-sweep: `DrawGoreBehind` (`Main.cs:21842-21871`, called at
+//! `:56937`/`:63424` behind the tiles, gated on `Main.drawBackGore`) is
+//! PORTED as [`draw_behind`] — the drip rows outside frames 7..=9 draw
+//! in the tile pass's behind-tiles slot (`tiles.rs`, before the
+//! behind-tiles NPCs); the latch is re-derived from the pool predicate
+//! (no port static). The quads ride the G6-cached world range, keyed by
+//! `WorldFrameKey::back_gore`.
+//!
 //! Documented drops:
-//! - `DrawGoreBehind` (`Main.cs:21842-21871`, called at `:56937`/`:63424`
-//!   behind the tiles, gated on `Main.drawBackGore`) is not ported — the
-//!   drip rows outside frames 7..=9 are skipped here exactly like
-//!   `DrawGore`'s own gate (`:21883-21887`), but nothing draws them behind
-//!   the tiles yet (the back pass needs the tile-batch seam).
 //! - `LoadGore` (`Main.cs:59100-59106`) is a lazy texture request; the port
 //!   packs every `Gore_<id>` sheet at startup instead
 //!   (`AssetInitializer.cs:135-137` names them `Images/Gore_<i>`), so an
@@ -141,6 +144,20 @@ pub(crate) fn draws_in_front(g: &Gore) -> bool {
         && (g.frame.current_row < 7 || g.frame.current_row > 9))
 }
 
+/// `Main.cs:21846-21854` (`DrawGoreBehind`'s walk gate): the drip rows
+/// OUTSIDE the fall frames 7..=9 — exactly the slots `DrawGore` skips
+/// while latching `Main.drawBackGore` (`:21883-21886`). W4-g12 doc-sweep.
+pub(crate) fn draws_in_back(g: &Gore) -> bool {
+    // `:21846-21849`.
+    if !g.active || g.gore_type <= 0 {
+        return false;
+    }
+    // `:21851-21854`.
+    (g.gore_type as usize) < tr_core::gore_id::GORE_COUNT
+        && tr_core::gore_id::is_drip(g.gore_type as usize)
+        && (g.frame.current_row < 7 || g.frame.current_row > 9)
+}
+
 /// One planned gore quad: the rotated top-left in screen px, the size, the
 /// atlas UV, the byte tint normalised to `[0, 1]` and the rotation. Split
 /// out of [`draw`] so the maths tests run without a GPU.
@@ -164,7 +181,27 @@ pub(crate) fn plan_quad(
     zoom: f32,
     screen: Vec2,
 ) -> GoreQuad {
-    // `:21889-21891` vs `:21900-21903`: the framed cell or the whole sheet.
+    plan_quad_inner(g, sheet, atlas_size, tint, camera, zoom, screen, false)
+}
+
+/// The shared geometry of the two gore passes. `behind` picks
+/// `DrawGoreBehind`'s body (`Main.cs:21858-21868`): the same framed/unframed
+/// source rects and integer-half origins, but NO type-1217 nudge (the
+/// front pass's `:21893-21896` has no twin here). The framed `- 2f` lift
+/// IS present in both (`:21862` keeps it, `:21867` has none).
+#[allow(clippy::too_many_arguments)]
+fn plan_quad_inner(
+    g: &Gore,
+    sheet: &tr_render::SheetRect,
+    atlas_size: (u32, u32),
+    tint: Color,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    behind: bool,
+) -> GoreQuad {
+    // `:21889-21891` vs `:21900-21903` (front) / `:21858-21860` vs
+    // `:21866-21867` (behind): the framed cell or the whole sheet.
     let framed = g.frame.column_count > 1 || g.frame.row_count > 1;
     let src = if framed {
         source_rect(&g.frame, sheet.width, sheet.height)
@@ -172,16 +209,17 @@ pub(crate) fn plan_quad(
         [0, 0, sheet.width as i32, sheet.height as i32]
     };
     let (w, h) = (src[2], src[3]);
-    // `:21892-21896`: the type-1217 nudge (framed path only).
-    let nudge_y = if framed && g.gore_type == 1217 {
+    // `:21892-21896`: the type-1217 nudge (front pass, framed path only).
+    let nudge_y = if !behind && framed && g.gore_type == 1217 {
         4.0
     } else {
         0.0
     };
-    // `:21898`/`:21903`: the draw position — `position - screenPosition +
-    // (w/2, h/2)` with the framed path's extra `- 2f`; the halves are the
-    // C#'s INTEGER divisions (`sourceRectangle.Width / 2`). The view
-    // transform is the rain/sand `to_screen` (zoom about the screen centre).
+    // `:21898`/`:21903` (front), `:21862`/`:21867` (behind): the draw
+    // position — `position - screenPosition + (w/2, h/2)` with the framed
+    // path's extra `- 2f`; the halves are the C#'s INTEGER divisions
+    // (`sourceRectangle.Width / 2`). The view transform is the rain/sand
+    // `to_screen` (zoom about the screen centre).
     let half = [(w / 2) as f32, (h / 2) as f32];
     let lift = if framed { 2.0 } else { 0.0 };
     let anchor = [
@@ -256,6 +294,76 @@ pub(crate) fn draw(
         let q = plan_quad(g, sheet, lookups.atlas_size, tint, camera, zoom, screen);
         r.push_fx_sprite_rot(q.pos, q.size, q.uv, q.color, q.rot);
     }
+}
+
+/// `Main.DrawGoreBehind` (`Main.cs:21842-21871`, W4-g12 doc-sweep): the
+/// drip rows outside frames 7..=9, drawn BEHIND the tiles. The C# sites
+/// are `:56934-56940` (the capture path: after `DrawWalls`/`DrawWoF`,
+/// before the behind-tiles NPCs; re-latches `drawBackGore = true` after
+/// drawing) and `:63275`/`:63415-63434` (the direct path: the latch
+/// consumed and cleared). The port's seam is the tile pass's
+/// behind-tiles slot (before `draw_npcs(behindTiles: true)`), pushed
+/// into the world range in world pixels so the cached-range transform
+/// applies; the caller gates on the front pass's latch (any
+/// `draws_in_back` slot this frame — the port re-derives it per frame
+/// instead of carrying the C# static, a recorded equivalence: the
+/// latch is set by `DrawGore`'s walk over the same pool state).
+/// Read-only over the pool; the per-slot maths is `plan_quad_inner`'s
+/// `behind` arm (no 1217 nudge, the framed -2 lift kept).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_behind(
+    pool: &GorePool,
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+) -> u32 {
+    let mut quads = 0u32;
+    for i in 0..GORE_SLOTS {
+        let g = pool.slot(i);
+        // `:21846-21854`.
+        if !draws_in_back(g) {
+            continue;
+        }
+        // `:21857` `LoadGore` — packed at startup (module docs).
+        let Some(sheet) = lookups.gore_sheets.get(&(g.gore_type as u16)) else {
+            continue;
+        };
+        // `:21858-21861` / `:21866`: the same source-rect-centre light
+        // sample as the front pass.
+        let framed = g.frame.column_count > 1 || g.frame.row_count > 1;
+        let (w, h) = if framed {
+            let src = source_rect(&g.frame, sheet.width, sheet.height);
+            (src[2], src[3])
+        } else {
+            (sheet.width as i32, sheet.height as i32)
+        };
+        let (tx, ty) = light_tile(g.position, w, h);
+        let tint = get_alpha(
+            g.gore_type,
+            g.alpha,
+            light_color(style, light, tx, ty, anim_time),
+        );
+        // The behind pass draws in WORLD pixels (the tile pass's range):
+        // camera 0 / zoom 1 / screen 0 collapses `plan_quad_inner`'s view
+        // transform to `position + half - lift` with the origin-rotation
+        // shift — the same geometry, the world-range GPU transform takes
+        // it to the screen (`push_sprite_rot`, the tiles convention).
+        let q = plan_quad_inner(
+            g,
+            sheet,
+            lookups.atlas_size,
+            tint,
+            Vec2::ZERO,
+            1.0,
+            Vec2::ZERO,
+            true,
+        );
+        r.push_sprite_rot(q.pos, q.size, q.uv, q.color, q.rot);
+        quads += 1;
+    }
+    quads
 }
 
 #[cfg(test)]
@@ -453,5 +561,89 @@ mod tests {
         g.active = true;
         g.gore_type = 0;
         assert!(!draws_in_front(&g));
+    }
+
+    /// W4-g12 doc-sweep: `DrawGoreBehind`'s gate (`Main.cs:21846-21854`)
+    /// is the exact complement of the front gate over the drip rows —
+    /// a slot draws in exactly one of the two passes.
+    #[test]
+    fn w4_g12_the_back_gate_is_the_front_gates_drip_complement() {
+        let mut g = Gore {
+            active: true,
+            gore_type: 706,
+            frame: SpriteFrame::new(1, 15),
+            ..Gore::default()
+        };
+        for row in 0..15 {
+            g.frame.current_row = row;
+            assert_ne!(
+                draws_in_front(&g),
+                draws_in_back(&g),
+                "row {row}: exactly one pass draws a live drip"
+            );
+            assert_eq!(draws_in_back(&g), !(7..=9).contains(&row));
+        }
+        // Non-drip types never draw behind; inactive/type-0 never draw.
+        g.gore_type = 1;
+        g.frame.current_row = 0;
+        assert!(!draws_in_back(&g));
+        g.gore_type = 706;
+        g.active = false;
+        assert!(!draws_in_back(&g));
+        g.active = true;
+        g.gore_type = 0;
+        assert!(!draws_in_back(&g));
+    }
+
+    /// W4-g12 doc-sweep: the behind pass's geometry (`Main.cs:21862`/
+    /// `:21867`) keeps the framed -2 lift but has NO type-1217 nudge
+    /// (the front pass's `:21893-21896` has no twin in DrawGoreBehind).
+    #[test]
+    fn w4_g12_the_behind_quad_keeps_the_lift_and_drops_the_1217_nudge() {
+        let sheet4 = tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 26,
+            height: 104,
+            plain_frame: (0, 0),
+        };
+        let mut g = Gore {
+            active: true,
+            gore_type: 1217,
+            position: Vec2::new(100.0, 200.0),
+            scale: 1.0,
+            rotation: 0.0,
+            frame: SpriteFrame::new(1, 4),
+            ..Gore::default()
+        };
+        let cam = Vec2::ZERO;
+        let screen = Vec2::new(800.0, 600.0);
+        let front = plan_quad(&g, &sheet4, (8192, 8192), Color::WHITE, cam, 1.0, screen);
+        let back =
+            plan_quad_inner(&g, &sheet4, (8192, 8192), Color::WHITE, cam, 1.0, screen, true);
+        // The 4 px nudge is the ONLY difference (both keep the -2 lift).
+        assert_eq!(front.pos[1] - back.pos[1], 4.0);
+        assert_eq!(front.pos[0], back.pos[0]);
+        assert_eq!(front.size, back.size);
+        // A non-1217 type: identical geometry in both passes.
+        g.gore_type = 706;
+        let front = plan_quad(&g, &sheet4, (8192, 8192), Color::WHITE, cam, 1.0, screen);
+        let back =
+            plan_quad_inner(&g, &sheet4, (8192, 8192), Color::WHITE, cam, 1.0, screen, true);
+        assert_eq!(front.pos, back.pos);
+    }
+
+    /// W4-g12 doc-sweep: the world-range seam — `draw_behind` collapses
+    /// the view transform (camera 0 / zoom 1 / screen 0), so the quad
+    /// lands at `position + half - lift` in WORLD pixels and the G6
+    /// range's GPU transform takes it to the screen.
+    #[test]
+    fn w4_g12_the_behind_seam_draws_in_world_pixels() {
+        let src = include_str!("gore.rs");
+        let body = &src[src.find("pub(crate) fn draw_behind(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert!(body.contains("Vec2::ZERO"), "camera/screen collapse to zero");
+        assert!(body.contains("push_sprite_rot"), "the world range, not fx");
+        assert!(body.contains("draws_in_back(g)"), "the :21846-21854 gate");
     }
 }

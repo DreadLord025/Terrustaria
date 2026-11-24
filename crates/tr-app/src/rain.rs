@@ -15,6 +15,12 @@
 //! (`Main.cs:13032-13116`) spawns `Dust` type 76 into the shared pool wherever the
 //! scene metrics count snow tiles at the surface — `crate::snow` owns that spawn,
 //! AI and draw (W4-d130); the old biome-gated flake approximation is retired.
+//! with a splash. In a snow biome the event renders as snowfall instead: no rain
+//! drops. W4-g11: the ambient flakes are the verbatim `Main.snowing()` port
+//! (`main_dust.rs`, `Main.cs:13032-13116`) spawning type-76 dust into the shared
+//! `DustPool` — the retired session-local `Snowflake` vector stand-in is gone
+//! (the `:17238` slot runs once per `Main.Update` on the bare `Main.rand`, NOT
+//! per rain tick; `world_sim::scene_scan::update_scene` owns the call).
 //!
 //! Since M1.4-BG-22 the event lifecycle is the vanilla `UpdateTime` rain section
 //! (`Main.cs:64833-64949`) — the `ladyBugRainBoost` drain, the `rainTime` drain with
@@ -75,6 +81,15 @@ struct Drop {
 }
 
 /// A `WaterfallManager.TrySparkling` particle: `Dust.NewDust(..., 43, ...)` with
+#[derive(Clone, Copy, Debug)]
+struct Splash {
+    pos: Vec2,
+    vel: Vec2,
+    life: f32,
+    frame: u8,
+}
+
+/// One `WaterfallManager.TrySparkling` particle: `Dust.NewDust(..., 43, ...)` with
 /// the velocity zeroed (`WaterfallManager.cs:1061-1062`), drawn from the `Dust`
 /// sheet's frame 43 at scale 0.5. The generic dust fade (`alpha -= 25` per
 /// tick) stands in for the type's own AI.
@@ -126,6 +141,18 @@ pub struct Rain {
     /// slot (`Rain.cs:187-194`), so the pool keeps fixed slots, never compacts.
     drops: Vec<Drop>,
     sparkles: Vec<Sparkle>,
+    /// The camera is in a snow biome: rain is replaced by snowfall. W4-g11:
+    /// the flakes themselves live in the shared `DustPool` (`Main.snowing`,
+    /// `main_dust.rs`); this flag only suppresses the rain-drop spawn.
+    snow_mode: bool,
+    /// The gfx-quality value the snow cap scales with (S1-B-6) — the
+    /// weather pass copies `App.gfx_quality.quality` in.
+    pub gfx_quality: f32,
+    /// `Main.waterStyle` at spawn time (`Rain.cs:205` reads the stored
+    /// static, not a re-derivation): the weather pass copies the frame's
+    /// `CalculateWaterStyle` value in — the fountain head arm included
+    /// (`Main.cs:57390-57393`).
+    pub water_style: u32,
     rng: u64,
     forced: Option<f32>,
     accum: f32,
@@ -281,6 +308,9 @@ impl Rain {
             lightning_decay: 0.008,
             drops: vec![Drop::default(); MAX_DROPS],
             sparkles: Vec::with_capacity(64),
+            snow_mode: false,
+            gfx_quality: 0.0,
+            water_style: 0,
             rng,
             forced,
             accum: 0.0,
@@ -313,6 +343,12 @@ impl Rain {
     /// lerp-to-white reads (`SetBackColor`, `:63905-63916`). W4-g70 lane 8.
     pub fn flash(&self) -> f32 {
         self.flash
+    }
+
+    /// `Main.cloudAlpha` RAW (W4-g11): `Main.snowing()`'s formulas read the
+    /// unclamped value (`Main.cs:13044-13046` — the event can push it past 1).
+    pub(crate) fn intensity_value(&self) -> f32 {
+        self.intensity
     }
 
     /// `Main.raining`: the toggle the tile-light scanner reads for the water
@@ -609,6 +645,31 @@ impl Rain {
         // The splash particles are `DustPool` slots now (g67's lane,
         // transplanted) — the shared `update_dust` pass ticks them
         // (`water_splash_arm`), nothing to advance here.
+        // Each tick advances the drops at the original 60 Hz velocity.
+        self.update_drops(world, camera, screen, zoom);
+        if self.snow_mode {
+            // Vanilla suppresses rain drops in a snow biome; the ambient
+            // snow dust is `Main.snowing()` (`Main.cs:17238`, the W4-g11
+            // `main_dust.rs` port) — it runs once per Main.Update on the
+            // shared pool, never from this rain tick.
+        } else if self.intensity > 0.01 {
+            self.spawn(
+                world,
+                camera,
+                screen,
+                zoom,
+                shimmer_alpha,
+                atmo,
+                snow_tile_count,
+                zone_rain,
+            );
+        }
+        for s in &mut self.splashes {
+            s.pos += s.vel;
+            s.vel.y += 0.12;
+            s.life -= 1.0 / TICKS_PER_SEC;
+        }
+        self.splashes.retain(|s| s.life > 0.0);
         // The generic `Dust.Update` fade (`alpha -= 25` per tick from 254).
         for s in &mut self.sparkles {
             s.alpha -= 25.0 / 255.0;
@@ -1305,6 +1366,12 @@ impl Rain {
             kind,
         };
     }
+    // W4-g11: `update_snow`/`spawn_snow` (the session-local `Snowflake`
+    // vector stand-in) are retired — the ambient flakes are `Main.snowing()`
+    // (`Main.cs:13032-13116`, the `main_dust.rs` port) spawning type-76 dust
+    // into the shared `DustPool` at the `Main.cs:17238` slot; the pool's
+    // generic `UpdateDust` pass integrates them (the 76 physics arm is the
+    // d50 `dust_physics` lane's).
 
     /// `Rain.NewRainForced` (`Rain.cs:135-164`, g67b `5c9398ea` fold): the
     /// Eyebrella vanity drip (`Player.DoEyebrellaRainEffect`,
@@ -1416,6 +1483,10 @@ impl Rain {
         // (`draw_splashes`, the g67 seam) — the drops/flash still gate
         // this pass.
         if self.drop_count() == 0 && self.flash <= 0.01 {
+        if self.drops.is_empty()
+            && self.splashes.is_empty()
+            && self.flash <= 0.01
+        {
             return;
         }
         if self.flash > 0.01 {
@@ -1455,6 +1526,23 @@ impl Rain {
                 uv,
                 tint,
                 d.rot,
+            );
+        }
+        // W4-g11: the snow-flake draw retired with the `Snowflake` vector —
+        // the type-76 pool slots draw through the dust lane (`Main.DrawDust`,
+        // the d50 draw pass), not here.
+        for s in &self.splashes {
+            let Some(uv) = lookups.dust_uv(330, s.frame as i32 * 10, 8, 8) else {
+                continue;
+            };
+            let c = light_at(light, s.pos);
+            let a = (s.life / SPLASH_LIFE).clamp(0.0, 1.0) * 0.8;
+            r.push_fx_sprite_rot(
+                to_screen(s.pos),
+                [8.0 * 0.6 * zoom, 8.0 * 0.6 * zoom],
+                uv,
+                [c[0], c[1], c[2], a],
+                0.0,
             );
         }
         // `WaterfallManager.TrySparkling`'s `Dust` 43 sparkles: scale 0.5, the
@@ -1712,6 +1800,9 @@ pub(crate) fn dust_in_cull_rect(position: Vec2, rect: (i32, i32, i32, i32)) -> b
     let sy = position.y as i32;
     rx < sx + 4 && sx < rx + rw && ry < sy + 4 && sy < ry + rh
 }
+// W4-g11: the `rain_zone` surface approximation retired with `spawn_snow` —
+// `Main.snowing()` gates on `SceneMetrics.SnowTileCount`/`SurfaceAtmospherics`
+// (`Main.cs:13040`), not a camera-column probe.
 
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
 pub(crate) fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
@@ -1876,6 +1967,9 @@ mod tests {
         };
     }
 
+    /// W4-g11 keep-one: the snow biome suppresses rain drops; the flakes are
+    /// `Main.snowing()`'s type-76 pool spawns (`main_dust.rs` witnesses pin
+    /// the draw sequence) — Rain itself carries no snow state any more.
     #[test]
     fn the_impact_gate_rolls_for_all_three_kills() {
         // W4-d130 reconcile witness — `Rain.cs:117-131`: the ONE combined
@@ -2008,8 +2102,11 @@ mod tests {
             half.update(&w, &i, 1.0 / 60.0, None);
         }
         assert!(half.drop_count() > 0, "3/4 of the budget still spawns");
+        assert_eq!(rain.drop_count(), 0, "no rain drops while snowing");
     }
 
+    /// W4-g11 keep-one: leaving the snow biome re-arms the rain spawn on the
+    /// next tick (the `snow_mode` flag is the only gate).
     #[test]
     fn the_atmo_gate_and_power_nine_shape_the_budget() {
         // `Rain.cs:182-186`: `num2 = (int)(num2 * atmo^9)`, and `atmo < 0.4`
@@ -2047,6 +2144,22 @@ mod tests {
         let mut i = inputs();
         i.wind_speed_current = 0.5;
         rain.update(&w, &i, 1.0 / 60.0, None);
+        assert_eq!(rain.drop_count(), 0);
+        for _ in 0..600 {
+            rain.update(
+                &w,
+                camera,
+                screen,
+                1.0,
+                1.0 / 60.0,
+                false,
+                1,
+                0.0,
+                1.0,
+                0,
+                true,
+            );
+        }
         assert!(rain.drop_count() > 0);
         for d in rain.drops.iter().filter(|d| d.active) {
             assert!(

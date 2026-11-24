@@ -117,9 +117,12 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
 | `GetSpawnRate` floor/cap (`:749-756`) | PORTED | `:350-357` | `the_rate_floor_and_cap_hold` (48 → 60, max 15) |
 | `GetSpawnRate` moon-event raid pacing (`:771-775`) | PORTED | `spawner.rs:430-437` | `moon_event_forces_the_raid_pacing` (20, 11); **W4-c38 (2026-11-20)**: the surface gate `player.position.Y < worldSurface*16` landed (`de5f8c8e`) — `the_moon_pacing_keeps_the_unpaced_rate_underground` (360/6 below the line, strict `<` boundary) |
 | `GetSpawnRate` `this.invaders` override (rate 20, max `5·(2+0.3·players)`) (`:781-785`) | MISSING | — | no `invaders` branch in `get_spawn_rate`; the invasion path has its own unrated loop (see deviations) |
+
+| `GetSpawnRate` moon-event raid pacing (`:771-775`) | PORTED | `:360-363` | `moon_event_forces_the_raid_pacing` (20, 11) |
+| `GetSpawnRate` `this.invaders` override (rate 20, max `5·(2+0.3·players)`) (`:781-785`) | PORTED | `spawner.rs::get_spawn_rate` (the `ctx.invaders` branch) | S1-F-12 (`9ea4b52f`); **W4-c41 (2026-11-20)**: re-derived — the after-floor/cap + before-dungeon-ten precedence and the zero-draw rate stage pinned (`the_invaders_override_outranks_the_chain_but_yields_to_the_dungeon_ten`, `the_invaders_rate_stage_draws_nothing`) |
 | `GetSpawnRate` pre-Skeletron dungeon rate 10 (`:786-789`) | PORTED | `:364-366` | `dungeon_pre_skeletron_is_rate_ten` (10 / 180 post) |
 | `GetSpawnRate` getGoodWorld / Journey / Skyblock (`:757-770`, `:790-793`) | MISSING (documented constants-off) | `:197-201` | needs M5-SEED-1 / M6-CREATIVE-1 |
-| `GetSpawnRate` town-NPC distribution block with `Main.rand` (`:799-923`) | PORTED | `get_spawn_rate` `:406-510` | the S1-F-11 block — `townNPCs` 1/2/≥3 × depth × graveyard → `noWorms`/`spawnFriendly` on `SpawnRate`, the ×1.25…×3 rescales with the vanilla casts; skyblock/shadow-candle/expertMode/OOA/remix constants-off, the graveyard input in `SpawnFlags` for the M2-BUFF scan; mutation-checked draw-order tests |
+| `GetSpawnRate` town-NPC distribution block with `Main.rand` (`:799-923`) | PORTED | `get_spawn_rate` `:406-510` | the S1-F-11 block — `townNPCs` 1/2/≥3 × depth × graveyard → `noWorms`/`spawnFriendly` on `SpawnRate`, the ×1.25…×3 rescales with the vanilla casts; skyblock/shadow-candle/expertMode/OOA/remix constants-off, the graveyard input in `SpawnFlags` for the M2-BUFF scan; mutation-checked draw-order tests. **W4-c41 (2026-11-20)**: the infected-seed gate (`:794-799`) landed — `Main.infectedSeed` clears the corrupt/crimson `flag` but the explicit `!ZoneCrimson` survives (`SpawnFlags.zone_crimson`/`infected_seed`, wired off `WORLD_IS_INFECTED`); the 63-seed C#-reference census replay (`the_town_block_census_replays_the_c_draw_order_across_seeds`) pins every arm's draws + the full stream state |
 | `GetSpawnRate` `RollOnlyBadLuckExtreme(50)` tail (`:924-928`) | MISSING | — | luck does not reach the spawn stream |
 | `GetSpawnArea` + `FindSpawnTile` + tile gates | PORTED (partial) | `get_spawn_area` `:155`, `try_spawn_an_npc` `:588-675`, `has_tile_spawn_space` `:372`, `check_not_spawning_on_screen` `:396`, `find_ground_tile` `:416`, `post_check_chosen_spawn_tile` `:436` | the scope/biome-gun range extension (`NPC.cs:943-967`) and the `wallHouse` arm of the solid check are unported (documented `:151-154`, `:622-624`) |
 | `SpawnNPC` latch + named stream | PORTED | `spawn_npc_call` `:472-484` | `the_latch_consumes_one_call_and_clears`, `the_named_stream_is_deterministic_per_seed` |
@@ -144,7 +147,7 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
 | Cultist → pillars → Moon Lord | PORTED | `world_sim/lunar.rs` (`:35-212`), `world.rs:230-263` | `trigger_lunar_apocalypse`, the shield family, the countdowns, `anyone_near_cultists` |
 | Lantern Night | MISSING | — | no state anywhere (`grep lantern_night` → 0 in `crates/`); C# `GameContent\Events\LanternNight.cs` |
 | Birthday Party | MISSING | — | no party state; only `World.unlocked_party_girl` (the arrival flag) and `StockWhen::PartyGirlPresent` |
-| Sandstorm event | PARTIAL | `scene_scan`/`audio.rs::SceneMetrics.ZoneSandstorm` `:437-438`, `spawner.rs:251-253` | the zone flag feeds the spawn-rate branch; the event's own scheduler (`GameContent\Events\Sandstorm.cs`) is unported |
+| Sandstorm event | PORTED (sim) | `scene.rs::Sandstorm` (the scheduler, R-11-5), `spawner.rs::sandstorm_desert_pick` + `spawning_sandstone_check`, `npc_ai_sand_elemental.rs` (the 541 machine, UNWIRED), `player.rs` (the windPushed push + the sandStorm dash boost), `stray.rs::can_spawn_sandstorm_hostile/friendly` | the scheduler + severity machine landed R-11-5/WEATHER-2; **W4-c40 (2026-11-21, code-only)** adds the hardMode start denominator (`Sandstorm.cs:58-59`), `world_clear` (`:27-30`), the desert spawn-override ladder (`NPC.cs:3949-4019` + `:5452-5491`), the Sand Elemental aiStyle-102 machine (`:40147-40542` + FindFrame `:69734-69772`), the Strong Wind push chain (`Player.cs:25556-25559`/`:11835-11838`/`:16970`/`:19751-19770`/`:19795-19817`/`:20089-20107`) and the i12 sandStorm run-boost reuse (`:26573-26577`). The 541-546/580/581 kind rows ride d41/d42; the visuals ride f42. ANALYSIS "The Sandstorm sim halves (W4-c40)" |
 | `EncourageDespawn` family | PARTIAL | `world_sim/npcs.rs:2262-2270` | one ad-hoc cull: the Eye of Cthulhu's day-time climb-away; `NPC.cs:7249`/`:52752`/`:60300` otherwise unmodelled |
 | Travelling Merchant visit cycle | PORTED | `weather.rs:335-341`, `:343+` | `travel_visit_roll` mirrors `Main.cs:65024-65025`'s day-rate roll shape |
 | Deerclops midnight spawn | PORTED | `weather.rs` (the `:330` spawn arm) | `Main.cs:65121-65134`'s crossing + gates |
@@ -215,17 +218,35 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
    `<`, `Main.remixWorld` constants-off) and the inner night moon arm (`:542-546`) carries the same
    gate; `the_moon_pacing_keeps_the_unpaced_rate_underground` pins the un-paced 360/6 below the
    line and the strict boundary at exactly `worldSurface*16`.
+
+   **W4-c41 addendum (2026-11-20)**: the block's gate re-derived — the `Main.infectedSeed` clear
+   of the corrupt/crimson `flag` (`NPC.cs:795-798`) with the surviving explicit `!ZoneCrimson`
+   (`:799`) was folded away by the S1-F-11 port; now split (`SpawnFlags.zone_crimson` +
+   `infected_seed`, wired off `MicroSeedFlags::WORLD_IS_INFECTED`). The 63-seed C#-reference
+   census (`the_town_block_census_replays_the_c_draw_order_across_seeds`) pins every arm's draw
+   widths/order + the full stream state; the constants-off list is unchanged.
 2. **No `invaders` spawn-rate override** (`NPC.cs:781-785`) — *behavioural, high*. C# forces
    `spawnRate = 20` / `maxSpawns = 5·(2+0.3·players)` while an invasion window is open. The port
    instead fires `invasion_spawn_pick` **once per fixed step** with no rate roll and no nearby cap
    (`world_sim/npcs.rs:3386-3423`), and skips the natural spawn call entirely when it fires
    (`:3418`). Net effect: ~20× the vanilla invasion density and no crowd control. ROADMAP M4-EVENT-1a's
    "2-second spawn pass" text does not describe the current code.
+   **CLOSED 2026-11-14 (S1-F-12, `9ea4b52f` + the placement half)**: the override branch lives in
+   `get_spawn_rate` and the invasion pick rides the one natural path (`spawn_npc_call` → the rate
+   gates → `Next(spawnRate)` → the scan → the ladder). **W4-c41 re-verified 2026-11-20**: the
+   precedence (after the floor/cap, before the dungeon-ten arm) and the zero-draw rate stage
+   pinned by two new witnesses; the ladder's per-arm `Next(n)` order + the bitwise-`&` quirk
+   draws re-derived unchanged against `NPC.cs:1424-1567`.
 3. **Invasion enemies are not placed through `FindSpawnTile`** — *behavioural, medium*. The port
    spawns them at `(playerX - 600, playerY - 400)` clamped to a tile row
    (`world_sim/npcs.rs:3429-3443`); C# picks a validated tile through the 50-candidate scan with
    `HasTileSpawnSpace`, the safe-area and on-screen checks (`NPC.cs:969-1048`). Invasion NPCs can
    therefore materialise inside blocks or in mid-air.
+   **CLOSED 2026-11-14 (S1-F-12 placement half)**: the `(px−600, py−400)` block retired — the
+   invasion arm spawns on the machinery-found tile (`spawn_npc_at`'s `else if (ctx.invaders)`,
+   `NewNPC Bottom` `NPC.cs:80772`). **W4-c41 re-verified 2026-11-20** — the dispatch position
+   (after the skyMob dispatch, after `GetZombieSettings`'s `Next(7)` `:1284`) and the placement
+   re-read unchanged.
 4. **`ShouldSpawnInvasionEnemies`'s town fallback is missing** (`NPC.cs:455-468`) — *behavioural,
    low/medium*. The `invasionX` within ±5 tiles of `maxTilesX/2` + a resident town NPC inside
    3000 px arm (with its `Next(3)`) is unported; documented in the port's doc comment
@@ -234,6 +255,10 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
    (`world_sim/npcs.rs:3407`) — *determinism, medium*. C# draws every one of these from `Main.rand`
    inside `SpawnAnNPC`; the port keeps its own stream discipline but the streams cannot be compared
    tick-for-tick with the source, and the natural-spawn stream is left unadvanced on invasion ticks.
+   **CLOSED 2026-11-14 (S1-F-12 placement half)**: the pick moved into `spawner.rs` on the
+   persistent `SpawnNPC` stream (`world_sim/npcs.rs`'s one natural path); the `item_rng` interleave
+   retired. **W4-c41 re-verified 2026-11-20** — the wiring (`spawn_npc_call` → rate draws →
+   `Next(spawnRate)` → the 50-candidate scan → `Next(7)` → the ladder) re-read unchanged.
 6. **Kind coverage gaps in the tables** — *behavioural, low-medium*. The type-4 table's RayGunner
    382 / BrainScrambler 381 / ScutlixRider 390 arms consume their rolls and land on the port's
    nearest kind, and the `!AnyNPCs(395)` Saucer gate is pinned `false` (`:3400`) — so the Saucer

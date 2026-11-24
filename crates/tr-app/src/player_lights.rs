@@ -648,6 +648,7 @@ mod tests {
             hallow: false,
             jungle: false,
             glowshroom: false,
+            graveyard: false,
             dungeon: false,
             temple: false,
             shimmer: false,

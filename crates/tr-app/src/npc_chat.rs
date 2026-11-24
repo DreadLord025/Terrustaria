@@ -193,6 +193,51 @@ impl Flags {
 /// conditional dialogue (`nextDialogue`, `:93768-93771`) is consumed by
 /// the caller (`talk_to_npc` — the cake gift needs the App); this ladder
 /// is the `nextDialogue == null` body.
+/// `NPC.CheckDialogue` (`NPC.cs:90519-90532`, called at `:90510` inside
+/// `UpdateNPC`): every 10th tick (`(GameUpdateCount + whoAmI) % 10 == 0`)
+/// re-probe the registry (`ConditionalDialogue.TryGetPendingDialogue`,
+/// `ConditionalDialogue.cs:85-102` — the probe REPLACES the pending row,
+/// clearing it when no condition holds); on the other nine ticks a pending
+/// row whose condition failed clears immediately. The `netMode != 2` gate
+/// is the port's single-player constant-on.
+///
+/// `who` is the port's stable `Npc::uid` standing in for `whoAmI` (the
+/// compaction deviation — the cadence is identical, the phase rides the
+/// stable id instead of the shifting slot index).
+pub fn check_dialogue(npc: &mut Npc, update_count: u32, who: u32, free_cake: bool) {
+    if update_count.wrapping_add(who) % 10 == 0 {
+        npc.next_dialogue = pending_dialogue(npc.kind, free_cake);
+    } else if npc.next_dialogue && !conditions_met(npc.kind, free_cake) {
+        npc.next_dialogue = false;
+    }
+}
+
+/// `ConditionalDialogue.TryGetPendingDialogue`'s registry scan: `Init`
+/// (`ConditionalDialogue.cs:122-125`) registers exactly one row —
+/// `FreeCakeDialogue` on type 208 (the Party Girl), condition `NPC.freeCake`
+/// (`:51-56`). Every other type answers `false` (a null registry list).
+fn pending_dialogue(kind: NpcKind, free_cake: bool) -> bool {
+    kind == NpcKind::PartyGirl && free_cake
+}
+
+/// The pending row's `ConditionsMet` — the same single predicate.
+fn conditions_met(kind: NpcKind, free_cake: bool) -> bool {
+    pending_dialogue(kind, free_cake)
+}
+
+/// `FreeCakeDialogue.GetChatAndClearCondition`
+/// (`ConditionalDialogue.cs:58-66`): the text half —
+/// `PartyGirlSpecialText.Cake{Main.rand.Next(1, 4)}` (the draw rides the
+/// caller's `Main.rand` stream, the `GetChat` contract). The side effects
+/// (`NPC.freeCake = false`, the `SendData(51)` net sync, the
+/// `QuickSpawnItem(3750, GiftRecieved)` cake gift) ride the caller —
+/// `world_sim::npcs::talk_to_npc` drains them after the text.
+fn cake_chat(ctx: &mut ChatContext) -> String {
+    let n = ctx.next_range(1, 4);
+    crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"))
+}
+
+/// `NPC.GetChat` (`NPC.cs:93766-94800`): the NPC's line.
 pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
     // `:93768-93771`: the pending conditional dialogue wins BEFORE the
     // Joja-cola/Dryad re-roll resets and the per-kind ladder.
@@ -1776,6 +1821,12 @@ mod tests {
     /// unchanged (the inventory fill is draw-free).
     #[test]
     fn the_party_girl_gifts_the_cake_then_draws_the_text() {
+    /// W4-g86 — `Main.cs:43017`/`:43048`: the smart-interact NPC pick
+    /// (`SmartInteractShowingGenuine && SmartInteractNPC == i`) lets the
+    /// talk arm reach an NPC OUTSIDE the mouse's world region — the NPC
+    /// provider's win stands in for the mouse-over test.
+    #[test]
+    fn w4_g86_the_smart_interact_npc_pick_opens_the_talk_outside_the_region() {
         init_lang();
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.player = Some(crate::player::Player::spawn(&app.world));
@@ -1900,6 +1951,22 @@ mod tests {
             .map(|n| n.next_dialogue)
             .unwrap_or(false);
         assert!(latched, "the re-poll latched again");
+        let mut guide = npc(NpcKind::Guide);
+        // FAR outside the ±5-tile chat world region (the player's box).
+        guide.x = p.x + 40.0 * 16.0;
+        guide.y = p.y;
+        app.npcs.push(guide);
+        // No smart pick: the region test refuses the far NPC.
+        app.place_down = true;
+        assert!(crate::world_sim::npcs::talk_to_npc(&mut app, false).is_none());
+        assert_eq!(app.talk_npc, None);
+        // The NPC provider's win (W4-g86): the pick reaches the far NPC.
+        app.smart_interact.showing_genuine = true;
+        app.smart_interact.npc = 0;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false);
+        assert!(text.is_some(), "the smart-interact pick opens the talk");
+        assert_eq!(app.talk_npc, Some(0));
     }
 
     /// `NPCChatPanel.cs:65-68` — the panel's box: x = `screenWidth / 2 - 250`,

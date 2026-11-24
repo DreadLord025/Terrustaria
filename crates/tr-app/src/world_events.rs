@@ -15,6 +15,12 @@
 //! (`new Color(255, 0, 160)`). `NPC.freeCake` (the party girl's cake
 //! latch, `BirthdayParty.cs:106`) rides `WorldEvents.free_cake`; its
 //! consumer is the talk's FreeCakeDialogue arm (`world_sim/npcs.rs`).
+//! `Main.npc` slots — recorded). W4-f38: the `BroadcastText` rows are keyed
+//! now — the start `Game.BirthdayParty_{n}` over `GetGivenOrTypeNetName`
+//! (`BirthdayParty.cs:127-139`) and the dusk `Lang.misc[99]` farewell
+//! (`:56`) — in the C# colour (`new Color(255, 0, 160)`); `NPC.freeCake`
+//! rides [`WorldEvents::free_cake`] (the `ConditionalDialogue` consumer is
+//! the chatter layer's).
 
 use crate::chat::{self, ChatMonitor};
 use crate::npc::{Npc, NpcKind};
@@ -57,6 +63,10 @@ pub(crate) struct WorldEvents {
     /// `FreeCakeDialogue` consumes it on the next talk
     /// (`ConditionalDialogue.cs:58-66`). The clear-world reset
     /// (`WorldGen.cs:6945`, the `NPC` static ctor `:95165`) zeroes it too.
+    /// `NPC.freeCake` (`NPC.cs:6093`): the genuine party hands the Party
+    /// Girl's free-cake dialogue its condition (`BirthdayParty.cs:106`);
+    /// dusk clears it (`Main.cs:65222`), `clearWorld` too
+    /// (`WorldGen.cs:6945`).
     pub free_cake: bool,
     // --- CultistRitual (`CultistRitual.cs`) ---
     /// `CultistRitual.delay` (`CultistRitual.delayStart` = 86400).
@@ -177,12 +187,44 @@ pub(crate) fn check_morning_lanterns(ev: &mut WorldEvents) {
     }
 }
 
-/// `BirthdayParty.CheckNight` (`BirthdayParty.cs:37-51`): the genuine party
+/// `NPC.OnGameEventClearedForTheFirstTime`'s lantern half (`NPC.cs:78769-
+/// 78793`): a boss/event's FIRST clear arms the next night as a lantern
+/// night. The C# `SetEventFlagCleared(ref flag, id)` (`:78759-78766`) calls
+/// this only on the flag's false→true edge, so the caller passes `first` =
+/// "the downed flag was false before this kill". The switch sets
+/// `NextNightIsLanternNight = true` for the default arm and cases 10
+/// (Moon Lord) / 16/17/18 (the mech trio); ONLY cases 4 (Mourning Wood), 21
+/// (Everscream) and 22 (SantaNK1) skip it. NOTE (c39 research/114 §0.1,
+/// re-read `NPC.cs:79210-79237`): case 4 is Mourning Wood (type 325,
+/// `downedHalloweenTree`), NOT Pumpking — Pumpking (type 327) is case 5
+/// (`downedHalloweenKing`), the DEFAULT arm, so it ARMS the night; Ice
+/// Queen (345) is case 20 (default, arms). The id table is the C#'s; only
+/// the earlier "Pumpking" label was wrong. The case-10 credits roll and
+/// the case-16/17/18 Plantera-bulb generation are separate systems (the
+/// bulb pass is unported; recorded). The port's `game_event_id` is the C#
+/// `gameEventId` the death arms already cite.
+pub(crate) fn on_game_event_cleared(ev: &mut WorldEvents, game_event_id: i32, first: bool) {
+    if !first {
+        return;
+    }
+    // `NPC.cs:78789-78792`: the three skip ids never arm it — 4 Mourning
+    // Wood / 21 Everscream / 22 SantaNK1 (NOT Pumpking, which is id 5, the
+    // default arm; c39 research/114 §0.1).
+    if matches!(game_event_id, 4 | 21 | 22) {
+        return;
+    }
+    // The default arm + cases 10/16/17/18 all set the flag (`:78773-78788`).
+    ev.next_night_is_lantern_night = true;
+}
+
+/// `BirthdayParty.CheckNight` (`BirthdayParty.cs:40-58`): the genuine party
 /// clears at dusk (its celebrating roster with it) and the manual one
 /// expires, with the keyed farewell broadcast — `Lang.misc[99]` =
 /// "Party time's over!" (`Legacy.json`'s `"99"` row; the stale base
 /// literal "Everyone has gone home!" was a bug — research/70 §1i,
 /// research/114 §0.4), `new Color(255, 0, 160)`.
+/// expires, with the `Lang.misc[99]` broadcast ("Party time's over!",
+/// `LegacyMisc.99`) in `new Color(255, 0, 160)`.
 pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
     let mut cleared = false;
     if ev.genuine_party {
@@ -196,6 +238,9 @@ pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
     }
     if cleared {
         // `Lang.misc[99]` — the keyed row, not the stale base literal.
+        // `:56`: `NetworkText.FromKey(Lang.misc[99].Key)` — the keyed row,
+        // not a literal (the pre-1.4.5 "Everyone has gone home!" text was
+        // replaced by "Party time's over!").
         chat::broadcast_death_text(chat, &crate::lang::misc(99), [255, 0, 160]);
     }
 }
@@ -254,6 +299,8 @@ pub(crate) fn check_morning_party(
     ev.free_cake = true;
     ev.party_days_on_cooldown = rng(5, 11);
     // `:106` — `NPC.freeCake = true`.
+    // `BirthdayParty.cs:106`: the genuine party arms the Party Girl's
+    // free-cake dialogue (`ConditionalDialogue.FreeCakeDialogue`).
     ev.free_cake = true;
     ev.celebrating_npcs.clear();
     // `Main.rand.Next(5) == 0 && list.Count > 12` → 3 celebrants, else the
@@ -403,6 +450,11 @@ pub(crate) fn tablet_destroyed(ev: &mut WorldEvents) {
 /// `WorldClear`'s family (`Main.cs:52245-52247`'s per-event clears —
 /// `LanternNight.WorldClear`/`BirthdayParty.WorldClear`; the ritual's
 /// `delay`/`recheck` ride the world's load reset, `WorldFile.cs:163`).
+/// W4-f40 RETIRE receipt (research/105 §9.3, c39 114 §11 item 2): this
+/// body leaves `next_night_is_lantern_night` alone — matches
+/// `LanternNight.WorldClear` (`LanternNight.cs:119-125`) and c39's
+/// `world_clear`; the clear-then-restore call sites are canonical here
+/// (`swap_world`/`client_install_world`, NOT `enter_loaded_world`).
 pub(crate) fn world_clear(ev: &mut WorldEvents) {
     ev.manual_lanterns = false;
     ev.genuine_lanterns = false;
@@ -416,6 +468,7 @@ pub(crate) fn world_clear(ev: &mut WorldEvents) {
     // `NPC.freeCake = false` (`WorldGen.cs:6945`, the clearWorld family).
     // `NPC.freeCake = false` rides the same clear-world pass
     // (`WorldGen.cs:6945`, beside `Main.cs:52245-52247`'s event clears).
+    // `WorldGen.clearWorld:6945`: `NPC.freeCake = false`.
     ev.free_cake = false;
     // The ritual's `delay`/`recheck` are NOT in the WorldClear family — they
     // ride the world-file load (`WorldFile.cs:163`'s `_tempCultistDelay`
@@ -473,6 +526,41 @@ mod tests {
         assert!(!ev3.manual_lanterns);
     }
 
+    /// W4-f40 — `NPC.OnGameEventClearedForTheFirstTime`'s lantern half
+    /// (`NPC.cs:78769-78793`): the first clear of a boss/event arms the next
+    /// lantern night, EXCEPT the three skip ids (4 Mourning Wood / 21
+    /// Everscream / 22 SantaNK1 — c39 research/114 §0.1: Pumpking is id 5,
+    /// the default arm, so it ARMS), and only on the flag's false→true edge
+    /// (`SetEventFlagCleared`).
+    #[test]
+    fn w4_f40_the_first_event_clear_arms_the_next_lantern_night() {
+        // The default arm + the mech/Moon-Lord cases all set the flag.
+        // Id 5 (Pumpking) and id 20 (Ice Queen) are default-arm — they arm.
+        for id in [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 23, 24, 25] {
+            let mut ev = WorldEvents::default();
+            on_game_event_cleared(&mut ev, id, true);
+            assert!(ev.next_night_is_lantern_night, "event {id} arms the night");
+        }
+        // The skip ids (Mourning Wood 4 / Everscream 21 / SantaNK1 22)
+        // never arm it (`NPC.cs:78789-78792`).
+        for id in [4, 21, 22] {
+            let mut ev = WorldEvents::default();
+            on_game_event_cleared(&mut ev, id, true);
+            assert!(!ev.next_night_is_lantern_night, "event {id} skips the night");
+        }
+        // The repeat clear (the flag already true) is a no-op — the C#
+        // `SetEventFlagCleared` only calls on the false→true edge.
+        let mut ev = WorldEvents::default();
+        on_game_event_cleared(&mut ev, 13, false);
+        assert!(!ev.next_night_is_lantern_night, "no re-arm on a repeat clear");
+        // The armed flag survives a later moon-event boss death (the C#
+        // never clears it here — only `CheckNight`'s override consumes it).
+        let mut ev = WorldEvents::default();
+        on_game_event_cleared(&mut ev, 13, true);
+        on_game_event_cleared(&mut ev, 4, true);
+        assert!(ev.next_night_is_lantern_night, "the armed flag persists");
+    }
+
     #[test]
     fn w4_c39_the_persistence_gate_drops_genuine_lanterns_on_a_midnight_boss() {
         // `LanternNight.cs:150-154` + `:42-48`: `UpdateTime` clears the
@@ -522,6 +610,10 @@ mod tests {
 
     #[test]
     fn s1_f_14_the_party_machine_follows_natural_attempt() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut ev = WorldEvents::default();
         let mut chat = ChatMonitor::default();
         let partyable = [true; 5];
@@ -539,9 +631,19 @@ mod tests {
         assert!(ev.free_cake, "`:106` — NPC.freeCake = true on a fresh party");
         assert_eq!(ev.party_days_on_cooldown, 6);
         assert_eq!(ev.celebrating_npcs.len(), 1);
+        // W4-f38: `BirthdayParty.cs:106` — the genuine party arms freeCake.
+        assert!(ev.free_cake, "NPC.freeCake = true on the genuine party");
         check_night_party(&mut ev, &mut chat);
         assert!(!ev.genuine_party);
         assert!(ev.celebrating_npcs.is_empty());
+        // W4-f38: `:56` — `Lang.misc[99]` = "Party time's over!"
+        // (`LegacyMisc.99`), in `new Color(255, 0, 160)`.
+        assert!(
+            chat.messages
+                .iter()
+                .any(|m| m.text == "Party time's over!" && m.color == [255, 0, 160]),
+            "the keyed farewell broadcast, not a literal"
+        );
         let mut ev2 = WorldEvents::default();
         let partyable12 = [true; 13];
         let mut seq2 = [0i32, 6i32, 0i32].into_iter();
@@ -591,6 +693,8 @@ mod tests {
         assert!(!ev.free_cake, "`WorldGen.cs:6945`");
         assert!(ev.celebrating_npcs.is_empty());
         assert!(!ev.free_cake, "`WorldGen.cs:6945` — freeCake clears too");
+        // `WorldGen.clearWorld:6945` — `NPC.freeCake = false`.
+        assert!(!ev.free_cake);
         // The ritual's delay survives the clear (the world-file restore owns
         // it — `WorldFile.cs:163`).
         assert_eq!(ev.cultist_delay, 86400);

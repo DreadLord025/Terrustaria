@@ -233,6 +233,15 @@ impl App {
                 .pairs()
                 .map(|(banner, kills)| BannerKill { banner, kills })
                 .collect();
+            // `BannerSystem.Save`'s `claimableBanners` half
+            // (`BannerSystem.cs:180-185`): the claimable-banner pool the
+            // milestone fills (W4-e24) — the v18 section, sparse like the
+            // kill counts.
+            let banner_claimable: Vec<save::BannerClaimable> = self
+                .banners
+                .claimable_pairs()
+                .map(|(banner, count)| save::BannerClaimable { banner, count })
+                .collect();
             // `NPCKillsTracker.Save` (`NPCKillsTracker.cs:59-70`): the bestiary
             // kill counts ride the world file's section 10 in vanilla; the port
             // had them on the `.trplayer` sidecar, whose line stays written
@@ -289,6 +298,7 @@ impl App {
             let side = save::WorldSide {
                 chests,
                 banners,
+                banner_claimable,
                 bestiary,
                 npcs,
                 ore_tiers: Some(ore_tiers),
@@ -343,6 +353,12 @@ impl App {
                     self.equip_share_flags,
                 ) {
                     log::warn!("player save failed: {e}");
+                }
+                // W4-g56 — the void-vault favorites ride their own `.trvault`
+                // sidecar (the `.plr` bank4-favourited rows are f44's lane, the
+                // `.trplayer` superset g88's; the contract is in ANALYSIS).
+                if let Err(e) = persist::save_vault_favorites(&self.world_path, &p.vault_favorites) {
+                    log::warn!("vault favorites save failed: {e}");
                 }
             }
             // `Player.InternalSaveMap` (`Player.cs:55046`): the explored map is
@@ -576,6 +592,12 @@ impl App {
         // block).
         if self.world.slime_rain {
             crate::world_sim::weather::stop_slime_rain(&mut self.world, self.rngs.global());
+        // W4-d70: `Main.ClearVisualPostProcessEffects` (`Main.cs:52114-52252`,
+        // called at `:48909` on the return to `menuMode = 0`): every active
+        // scene filter deactivates. The port's board carries the M1 subset;
+        // the tower/monolith/MoonLord/test rows have no activation reader.
+        for id in tr_core::scene::FilterId::ALL {
+            self.filter_driver.board.deactivate(id);
         }
         // `WorldGen.cs:6682`: `Main.menuMode = 0` — back to the main menu
         // (`Main.gameMenu` stays true; the port's `menu.is_some()` is that
@@ -1641,6 +1663,7 @@ mod chest_save_tests {
                 bestiary: Vec::new(),
                 npcs: Vec::new(),
                 ore_tiers: None,
+                ..Default::default()
             }),
             PathBuf::new(),
         );
@@ -1691,14 +1714,16 @@ mod chest_save_tests {
             WorldSections::native(save::WorldSide::default()),
             path.clone(),
         );
-        // Two NPC families (the Blue Slime 1 → the banner 69, the Green Slime
+        // Two NPC families (the Blue Slime 1 → the banner 69, the Pinky
         // -4 → the banner 151, `bestiary::npc_to_banner`) — the production
-        // call the death pass makes (`world_sim/npcs.rs`'s kill hook).
+        // call the death pass makes (`world_sim/npcs.rs`'s kill hook). The
+        // counts stay below the milestone (50 / 25), so no announcement
+        // fires and the lang singleton is untouched.
         for _ in 0..7 {
-            app.banners.add_npc_kill_by(1, "Tester");
+            app.banners.add_npc_kill_by(1, 0, "Tester");
         }
         for _ in 0..3 {
-            app.banners.add_npc_kill_by(-4, "Tester");
+            app.banners.add_npc_kill_by(-4, 0, "Tester");
         }
         app.player = None;
         app.settings.map_enabled = false;
@@ -1724,6 +1749,57 @@ mod chest_save_tests {
             PathBuf::new(),
         );
         assert_eq!(control.banners.pairs().count(), 0, "no records — no tally");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-e24: the claimable pool's save → load round-trip through the App
+    /// path — `BannerSystem.Save`'s `claimableBanners` half
+    /// (`BannerSystem.cs:180-185`) rides the v18 section, and the loaded side
+    /// seeds the pool (`BannerSystem.Load`'s `version >= 289` arm `:203-211`).
+    /// The pool is seeded through `load_claimable_pairs` (the Load path
+    /// itself), so no milestone fires and the lang singleton stays untouched.
+    #[test]
+    fn w4_e24_a_saved_claimable_pool_round_trips_through_the_app() {
+        let world = chest_rig();
+        let dir = scratch("w4-e24-claimable-roundtrip");
+        let path = dir.join("world.trwld");
+
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        // Two banners in the pool (the Slime 69 and the Pinky 151), one
+        // fully claimed (0 stays in the map — the sparse-record contract).
+        app.banners.load_claimable_pairs([(69, 2), (151, 0)]);
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            sections.native.banner_claimable.len(),
+            2,
+            "one record per pooled banner — the zeroed entry rides too"
+        );
+        let back = app_for(world, sections, path);
+        let pairs: Vec<(i32, u16)> = back.banners.claimable_pairs().collect();
+        assert_eq!(pairs, vec![(69, 2), (151, 0)], "the pool rides the store");
+        assert_eq!(back.banners.claimable(69), 2);
+        // The Load does NOT arm the new-banner shine (the C# `Load` only
+        // fills claimableBanners; newBanner stays cleared).
+        assert!(!back.banners.is_new_banner(69));
+        assert!(!back.banners.any_new_claimable);
+
+        // The control: a fresh App over the same world starts with no pool.
+        let world2 = chest_rig();
+        let control = app_for(
+            world2,
+            WorldSections::native(save::WorldSide::default()),
+            PathBuf::new(),
+        );
+        assert_eq!(control.banners.claimable_pairs().count(), 0);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

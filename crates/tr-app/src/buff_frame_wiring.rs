@@ -663,6 +663,58 @@ mod tests {
         assert_eq!(p.orb_scan.nebula_level_mana, 0, "no stale tier survives");
     }
 
+    /// W4-f12 SEAL item 2 — the f49-mana-seal bridge FINAL shape. f49's R3
+    /// EXECUTED (8eb20d8b, their SEALED tip 0d1f941af): the three scan arms
+    /// + helper are DELETED, `Player::fold_orb_nebula_bridge(mana, life,
+    /// damage)` (their player.rs:3547-3551) is the ASSIGN stub this fold
+    /// calls at the merge, and `update_survival` is LIFTED to the seam
+    /// AFTER this pass (their world_sim/player.rs:1204). The SEAL ruling
+    /// (research/28g-buff-family-seal.md item 2): bridge ALL THREE via the
+    /// stub — `p.fold_orb_nebula_bridge(p.orb_scan.nebula_level_mana,
+    /// p.orb_scan.nebula_level_life, p.orb_scan.nebula_level_damage)`
+    /// after the `beetle_buff |=` line (their RT1 both-forms note; the
+    /// three field reads evaluate before the `&mut p` call — borrow-clean).
+    /// This witness pins the scan-side premise on THIS tree: all three
+    /// tiers are ASSIGN-derived (`:12072`), the time-2 edge steps ONCE per
+    /// family, and the head reset + buff-less frame leaves all three 0 (a
+    /// stale tier cannot cross the bridge).
+    #[test]
+    fn w4_f12_seal_bridge_scan_tiers_are_assign_shaped_for_the_f49_stub() {
+        let mut p = player();
+        let mut pool = ProjectilePool::default();
+        // One slot per nebula family, tier 2 at the step-down edge.
+        p.buffs.buff_type[0] = 177; // mana tier 2
+        p.buffs.buff_time[0] = 2;
+        p.buffs.buff_type[1] = 174; // life tier 2
+        p.buffs.buff_time[1] = 2;
+        p.buffs.buff_type[2] = 180; // damage tier 2
+        p.buffs.buff_time[2] = 2;
+        run(&mut p, &mut pool);
+        assert_eq!(p.orb_scan.nebula_level_mana, 1, "the ONE mana step");
+        assert_eq!(p.orb_scan.nebula_level_life, 1, "the ONE life step");
+        assert_eq!(p.orb_scan.nebula_level_damage, 1, "the ONE damage step");
+        assert_eq!(p.buffs.buff_type[0], 176);
+        assert_eq!(p.buffs.buff_type[1], 173);
+        assert_eq!(p.buffs.buff_type[2], 179);
+        for j in 0..3 {
+            assert_eq!(p.buffs.buff_time[j], 480, "re-armed once (:12077)");
+        }
+        // The regen feed the bridge rides beside: the Life tier-1 add is
+        // +6 (`:10451`), folded onto `buff_life_regen` — the extra_regen
+        // sum (player.rs:11492) carries it to the LIFTED regen read.
+        assert_eq!(p.buff_life_regen, 6, "the Life regen add lands once");
+        // The next tick: head reset + empty bar -> all three scan tiers 0
+        // (the stub's three ASSIGNs can never carry a stale tier).
+        p.orb_scan.reset_effects();
+        for j in (0..3).rev() {
+            p.buffs.del_buff(j);
+        }
+        run(&mut p, &mut pool);
+        assert_eq!(p.orb_scan.nebula_level_mana, 0);
+        assert_eq!(p.orb_scan.nebula_level_life, 0);
+        assert_eq!(p.orb_scan.nebula_level_damage, 0);
+    }
+
     #[test]
     fn w4_f12_nebula_life_steps_down_and_adds_regen() {
         // `:10448-10452` + `:12070-12079`: tier 2 at time 2 steps to tier 1,
@@ -813,6 +865,46 @@ mod tests {
         );
         assert!(DEBUFF_DISPATCH.contains(&63), "the wiring owns the arm");
         assert!(!INLINE_OWNED.contains(&63), "not inline-owned on this tree");
+    }
+
+    /// W4-f12 SEAL item 3 — Panic-63 canonical, the dispatch-keeper pin
+    /// against BOTH third copies. The seal census re-read the two tips:
+    /// f50 SEALED 51eefdf84 (player.rs blob 156fc3fec unchanged since
+    /// 18eeb4f44 — the inline row :7168 + comment :7165-7167) and f48
+    /// e5b66bb06 (blob 2120682ca — the inline row :6834 + comment
+    /// :6829-6833, the THIRD copy f50's closeout sub-receipt found at
+    /// 69d499c6b). BOTH fold out at the merge; this wiring's
+    /// DEBUFF_DISPATCH 63 arm (`buff_effects.rs:149`, the `:10130-10133`
+    /// `moveSpeed++`) is the ONE reader. The beetle/solar ladder ids
+    /// 95-100/170-172 likewise route ONLY to g27 `apply_orb_arm` — f50's
+    /// `rederive_beetle_solar_buffs` (:4726-4828 at their tip) drops
+    /// wholesale, the machines stay (the seal doc's drop-hunk table).
+    #[test]
+    fn w4_f12_seal_panic_63_and_the_ladder_keep_one_dispatch_owner() {
+        // 63: exactly one dispatch set owns it, and it is the debuff lane.
+        assert!(DEBUFF_DISPATCH.contains(&63), "the wiring owns the reader");
+        assert!(!INLINE_OWNED.contains(&63));
+        assert!(!ACCESSORY_OWNED.contains(&63));
+        assert!(!SUMMON_OWNED.contains(&63));
+        assert!(!MISC_DISPATCH.contains(&63));
+        assert!(!is_orb_id(63));
+        assert!(!matches!(63, 192 | 321 | 396 | 62), "not a d73 booster id");
+        // The 9 beetle/solar ladder ids: g27-only (the rederive copy drops).
+        for b in (95..=100).chain(170..=172) {
+            assert!(is_orb_id(b), "orb {b} routes to apply_orb_arm");
+            assert!(!INLINE_OWNED.contains(&b));
+            assert!(!ACCESSORY_OWNED.contains(&b));
+            assert!(!SUMMON_OWNED.contains(&b));
+            assert!(!DEBUFF_DISPATCH.contains(&b));
+            assert!(!MISC_DISPATCH.contains(&b));
+        }
+        // The single +1 through the wiring (an inline twin would make +2).
+        let mut p = player();
+        let mut pool = ProjectilePool::default();
+        let base = p.move_speed;
+        p.buffs.add_buff(63, 480);
+        run(&mut p, &mut pool);
+        assert!((p.move_speed - (base + 1.0)).abs() < 1e-6, "ONE moveSpeed++");
     }
 
     #[test]

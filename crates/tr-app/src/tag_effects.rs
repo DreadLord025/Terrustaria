@@ -443,9 +443,8 @@ mod tests {
         assert!(!s.is_npc_tagged(4672, 1), "the pirate ship too");
         s.try_apply_tag_to_npc(4672, 2, NpcKind::Zombie);
         assert!(s.is_npc_tagged(4672, 2), "the rest take the tag");
-        // W4-g4 P9 (the W4-d22 reconcile fold) — the wheel 72 + the lane
-        // portal 549 join the roster (`NPCID.cs:6528`/`:9194`,
-        // ImmuneToWhips).
+        // W4-g4 P9 — the wheel 72 + the lane portal 549 join the roster
+        // (`NPCID.cs:6528`/`:9194`, ImmuneToWhips).
         s.try_apply_tag_to_npc(4672, 3, NpcKind::BlazingWheel);
         assert!(!s.is_npc_tagged(4672, 3), "the wheel is whip-immune");
         s.try_apply_tag_to_npc(4672, 4, NpcKind::DD2LanePortal);

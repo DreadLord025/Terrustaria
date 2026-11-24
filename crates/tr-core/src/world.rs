@@ -622,6 +622,17 @@ pub struct World {
     /// `NPC.unlockedSlimeCopperSpawn` (`WorldFile.cs:1415`, v261; the
     /// shimmer conversion's target gate, `NPCID.cs:10120`).
     pub unlocked_slime_copper_spawn: bool,
+    /// `NPC.combatBookVolumeTwoWasUsed` (`NPC.cs:6341`; the 5336 use arm
+    /// `Player.cs:45337-45348`, `.wld` write `WorldFile.cs:1407` / read
+    /// `:2416-2423` version ≥259) — the same world-field standing-in
+    /// (W4-g89e). The town-NPC stat ladder's second +250/×0.8/+0.25/+8
+    /// block (`NPC.cs:53025-53031`) reads it.
+    pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`NPC.cs:6343`, the 5343 use
+    /// `Player.cs:45370-45382`; `Chest.SetupTravelShop`'s +1 slot row
+    /// `Chest.cs:1303-1306`) — the same standing-in (W4-g90 lane 7; the
+    /// .wld flag reads from v260, `WorldFile.cs:2405`).
+    pub peddlers_satchel_was_used: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -700,6 +711,35 @@ pub struct World {
     /// every completed orb/heart smash fires progression 7 (SMASHING_POPPET).
     /// The core kill plan sets the flag; the app's break seam drains it into
     /// the manager (the core carries no achievement system).
+    /// W4-g85 final — `WorldGen.CheckOrb`'s summon-half selector
+    /// (`WorldGen.cs:54296-54318`'s `flag` = `type == 31 && frameX >= 36`):
+    /// the LAST completed case-31 smash's crimson bit. A crimson half
+    /// summons the Brain of Cthulhu 266 (`!AnyNPCs(266)` — the second
+    /// operand `(!AnyNPCs(13) || flag)` is vacuously true); the corruption
+    /// half summons the EoW 13 (`!AnyNPCs(13)` — the first operand
+    /// `!(AnyNPCs(266) & flag)` is vacuously true). The core
+    /// kill plan records the bit beside the count; the app's third-orb
+    /// summon polls it (the count-poll deferral keeps the last smash's
+    /// bit — the vanilla summons synchronously inside that smash).
+    pub orb_smash_crimson: bool,
+    /// W4-g85 final — the chat watermark for `:54322-54330`'s arm (the
+    /// else of the summon threshold): the C# broadcasts once per
+    /// non-third 31 smash inside CheckOrb; the port's count-poll cannot
+    /// see per-smash edges, so the sim broadcasts for each count the
+    /// watermark has not covered (`Lang.misc[10]`, the second `[11]`).
+    /// Port-only bookkeeping — no C# field, no save byte.
+    pub orb_smash_chat_count: i32,
+    /// W4-g85 wiring round 2 — `WorldGen.CheckOrb`'s achievement tail
+    /// (`WorldGen.cs:54331`, `AchievementsHelper.NotifyProgressionEvent(7)`
+    /// = SMASHING_POPPET): the call sits INSIDE case 31 (after the
+    /// `:54322-54330` chat arm, before the `:54332` break), so ONLY a 31
+    /// smash queues it — the 12/639/696 cases break at `:54230`/`:54233`/
+    /// `:54236` without reaching it. The core kill plan sets the flag; the
+    /// app's `break_tile` seam drains it into `notify_progression_net(7)`
+    /// (the core carries no achievement system). Co-lane keep-one: W4-c36
+    /// batch 5 (`6c8eb75dd`) carries the same field + drain but sets it
+    /// UNCONDITIONALLY (its base predates the four-case fix); at merge
+    /// keep ONE field/drain and THIS case-31 gate.
     pub orb_smash_notify_pending: bool,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
@@ -1231,6 +1271,8 @@ impl World {
             unlocked_slime_purple_spawn: false,
             unlocked_slime_yellow_spawn: false,
             unlocked_slime_copper_spawn: false,
+            combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
@@ -1295,6 +1337,8 @@ impl World {
             altars_smashed: 0,
             shadow_orb_smashed: false,
             shadow_orb_count: 0,
+            orb_smash_crimson: false,
+            orb_smash_chat_count: 0,
             orb_smash_notify_pending: false,
             downed_goblins: false,
             downed_frost: false,

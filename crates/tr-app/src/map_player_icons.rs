@@ -215,6 +215,8 @@ pub(crate) fn death_marker_pos(
 /// (`:55755-55758`) additionally subtracts 4 on both axes (net `(0, -2)`);
 /// `minimap` selects that arm. W4-f29 fix F5 (research/140 §3): the
 /// fullscreen box must NOT ride the minimap's −4/−4.
+/// Returns the hover answer (`:56455-56463` — the 28×28 box shifted
+/// `(4, 2) - 14*headScale`, then `-4` on both axes: net `(0, -2)`).
 pub(crate) fn draw_death_marker(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -254,6 +256,15 @@ pub(crate) fn death_hover_rect(pos: [f32; 2], head_scale: f32, minimap: bool) ->
         28.0 * head_scale,
         28.0 * head_scale,
     ]
+    // `:56455-56458`: num3 = num + 4 - 14*s, num4 = num2 + 2 - 14*s, then
+    // `num3 -= 4; num4 -= 4` — the box origin is pos + (0, -2) - 14*s.
+    let rect = [
+        pos[0] - 14.0 * head_scale,
+        pos[1] - 2.0 - 14.0 * head_scale,
+        28.0 * head_scale,
+        28.0 * head_scale,
+    ];
+    hover_inclusive(rect, mouse)
 }
 
 /// `Game.PlayerDeathTime` ("{0} died {1} ago", `Main.cs:55986`): the
@@ -382,6 +393,12 @@ fn draw_return_portal(
         ((pos.0) / 16.0 - map_top_left[0]) * map_scale + map_offset[0],
         ((pos.1 - player_height / 2.0) / 16.0 - map_top_left[1]) * map_scale + map_offset[1],
     ]);
+    let v = [
+        (((pos.0) / 16.0 - map_top_left[0]) * map_scale + map_offset[0]).floor(),
+        (((pos.1 - player_height / 2.0) / 16.0 - map_top_left[1]) * map_scale
+            + map_offset[1])
+            .floor(),
+    ];
     if let Some(c) = clip {
         if !rect_contains_point(c, v) {
             return None;
@@ -424,6 +441,10 @@ fn draw_golf_marker(
         (ball.center.x / 16.0 - map_top_left[0]) * map_scale + map_offset[0],
         (ball.center.y / 16.0 - map_top_left[1]) * map_scale + map_offset[1],
     ]);
+    let v = [
+        ((ball.center.x / 16.0 - map_top_left[0]) * map_scale + map_offset[0]).floor(),
+        ((ball.center.y / 16.0 - map_top_left[1]) * map_scale + map_offset[1]).floor(),
+    ];
     if let Some(c) = clip {
         if !rect_contains_point(c, v) {
             return None;
@@ -465,6 +486,8 @@ fn draw_golf_marker(
 /// W4-f29 fix F4 (research/140 §3). The clip is the transformed
 /// (UNFLOORED) position's `ToPoint`; the hover is `Utils.CenteredRectangle`.
 /// Returns the hover answer.
+/// The clip is the transformed (UNFLOORED) position's `ToPoint`; the
+/// hover is `Utils.CenteredRectangle`. Returns the hover answer.
 pub(crate) fn draw_revenge_map_icon(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -497,6 +520,7 @@ pub(crate) fn draw_revenge_map_icon(
     // `TextureAssets.Coin[tier]` — the animation strip, not Item_71..74
     // (`CoinLossRevengeSystem.cs:262`, W4-f29 fix F4).
     let Some(sheet) = lookups.coin_anim[tier] else {
+    let Some(sheet) = lookups.coins[tier] else {
         return false;
     };
     // `value.Frame(1, 8)` — the first of the 8 animation rows.
@@ -581,6 +605,10 @@ pub(crate) fn draw_revenge_mouse_over(
         // centred, scale 1 (the 1024 size limit never bites a 16px coin).
         // W4-f29 fix F4: the animation strip, not the Item_71..74 icon.
         if let Some(sheet) = lookups.coin_anim[3 - i] {
+        // `CoinSlot.DrawItemCoin` (`CoinSlot.cs:240-253`): frame 0 of the
+        // 8-row coin strip, centred, scale 1 (the 1024 size limit never
+        // bites a 16px coin).
+        if let Some(sheet) = lookups.coins[3 - i] {
             let fh = sheet.height / 8;
             let uv = lookups.health_bar_uv(&sheet, 0, 0, sheet.width, fh);
             r.push_ui_sprite(
@@ -715,6 +743,8 @@ mod tests {
     /// with NO further shift. The `-4/-4` pair exists only in the minimap
     /// inline copy (`:55757-55758`) — the e17 first pass wrongly applied
     /// the minimap's net `(0, -2)` box to both branches.
+    /// `Main.cs:56455-56458`: the death hover box is the head box shifted
+    /// (-4, -4) — net origin pos + (0, -2) - 14*s.
     #[test]
     fn w4_e17_death_hover_box_is_the_shifted_head_box() {
         let pos = [200.0, 300.0];
@@ -772,6 +802,10 @@ mod tests {
         // A negative coordinate truncates toward zero (not Math.Floor,
         // which would answer -126).
         assert_eq!(utils_floor([-125.265, -97.64]), [-125.0, -97.0]);
+        // The death box: (pos.x - 14s, pos.y - 2 - 14s, 28s, 28s).
+        assert_eq!(head[0] - 4.0, pos[0] - 14.0 * s);
+        assert_eq!(head[1] - 4.0, pos[1] - 2.0 - 14.0 * s);
+        assert_eq!(head[2], 28.0 * s);
     }
 
     /// `CoinLossRevengeSystem.cs:262`: the coin tiers.

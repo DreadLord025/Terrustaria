@@ -2378,6 +2378,12 @@ impl NpcKind {
                 // the `:51861-51865` aim inversion) with NO chain (375
                 // sits outside the `:51301`/`:51436` lists;
                 // `is_worm_head`/`is_worm_mid` stay false).
+                // W4-f18 batch 3 — the TruffleWormDigger 375 IS an AI_006
+                // kind (`NPC.cs:51730-51734`'s 6/0.15 tunables, the
+                // `:51598` 1000-px dig list) — a lone burrower with no
+                // chain (type 375 sits outside the `:51301` spawn lists,
+                // so `is_worm_head` stays false; the StardustWormHead
+                // precedent). Its dig aim is INVERTED (`:51861-51865`).
                 | NpcKind::TruffleWormDigger
                 // W4-d41 — the Dune Splicer chain (510-512): the head's
                 // own fixed-budget spawn (`NPC.cs:51253-51276`, the
@@ -2592,7 +2598,8 @@ impl NpcKind {
             // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
             // precedent): the shared pass's budget chain + dig head are
             // NOT the wyvern's machine — the fixed 14-link chain and the
-            // altitude-gate flyer live in `npc_ai_wyvern.rs` (UNWIRED).
+            // altitude-gate flyer live in `npc_ai_wyvern.rs` (WIRED by
+            // N16: `world_sim/npcs.rs::update_wyverns`).
             NpcKind::WyvernHead => (11.0, 0.25),
             // W4-c8 — the TruffleWormDigger's 6/0.15 (`NPC.cs:51730-
             // 51734`): the lone fleeing digger (the StardustWormHead
@@ -3462,6 +3469,22 @@ impl NpcKind {
             NpcKind::CultistBossClone => "NPC_Hit_2",
             // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
             NpcKind::GoldBird
+            // W4-c10 — the waterfowl family's `SoundID.NPCHit1` rows
+            // (`NPC.cs:13621`/`:13633`/`:13645`/`:13657`/`:16747`/
+            // `:16759`/`:16817`/`:16829`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => "NPC_Hit_1",
+            // W4-c10 roster tail — the twelve critters' `SoundID.NPCHit1`
+            // rows (`NPC.cs:13553`, `:14255`/`:14270`/`:14283`/`:14298`/
+            // `:14311`/`:14326`/`:14340`, the `:14584` range row).
+            NpcKind::Worm
+            | NpcKind::GoldBird
             | NpcKind::GoldBunny
             | NpcKind::GoldButterfly
             | NpcKind::GoldFrog
@@ -3553,6 +3576,11 @@ impl NpcKind {
             // rows (`NPC.cs:13553`, `:14255`/`:14270`/`:14283`/`:14298`/
             // `:14311`/`:14326`/`:14340`, the `:14584` range row).
             // E8 merge: the 12-critter hit rows are c8/d40's above.
+            // W4-c6 style-59 wiring: 328 `SoundID.NPCHit1` (`NPC.cs:13166`,
+            // `SoundID.cs:1257` = (3, 1)). The blade is `dontTakeDamage`,
+            // so the cue only plays on a force-kill path — the row is
+            // carried for the census.
+            NpcKind::PumpkingBlade => "NPC_Hit_1",
             // The man-eater family (W4-d23): all six NPCHit1
             // (`NPC.cs:9303`/`:9484`/`:10197`/`:11218`/`:12342`/`:12358`).
             NpcKind::ManEater
@@ -3836,6 +3864,18 @@ impl NpcKind {
             NpcKind::FairyCritterPink
             | NpcKind::FairyCritterGreen
             | NpcKind::FairyCritterBlue => "NPC_Hit_1",
+            // W4-f18 first-20 port — the critters' `SoundID.NPCHit1` rows
+            // (`NPC.cs:13525`/`:13539`/`:13553`/`:13567`/`:13581`).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => "NPC_Hit_1",
+            // W4-f18 batch 2 — the critters' `SoundID.NPCHit1` rows
+            // (`NPC.cs:13591`/`:13605`/`:13617`/`:13629`/`:13641`).
+            NpcKind::GlowingSnail | NpcKind::Frog => "NPC_Hit_1",
+            // W4-f18 batch 3 — the critters' `SoundID.NPCHit1` rows
+            // (`NPC.cs:13653`/`:13665`/`:13766`/`:13781`).
+            NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Hit_1",
+            // W4-f18 batch 4 — the `SoundID.NPCHit1` rows (`NPC.cs:13815`/
+            // `:13829`/`:13843`/`:8616`).
+            NpcKind::Grasshopper | NpcKind::ChatteringTeethBomb | NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite | NpcKind::ArmedZombie => "NPC_Hit_1",
             // W4-f42 — the sandstorm debris + desert family's hit cues:
             // 546 NPCHit11 (`NPC.cs:15980`), 61 NPCHit28 (`:9563`),
             // 69 NPCHit31 (`:9674`), 78/79/80 NPCHit1 (`:9807`/`:9820`/
@@ -3843,6 +3883,9 @@ impl NpcKind {
             // 581 NPCHit32 (`:14877`).
             NpcKind::Antlion | NpcKind::WalkingAntlion => "NPC_Hit_31",
             NpcKind::FlyingAntlion => "NPC_Hit_32",
+            NpcKind::Tumbleweed => "NPC_Hit_11",
+            NpcKind::Vulture => "NPC_Hit_28",
+            NpcKind::Antlion | NpcKind::WalkingAntlion => "NPC_Hit_31",
             NpcKind::Mummy
             | NpcKind::DarkMummy
             | NpcKind::BloodMummy
@@ -4406,6 +4449,25 @@ impl NpcKind {
             NpcKind::CultistDevote => "NPC_Killed_1",
             // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
             NpcKind::GoldBird
+            // W4-c10 — the waterfowl family's `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13622`/`:13634`/`:13646`/`:13658`/`:16748`/
+            // `:16760`/`:16818`/`:16830`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => "NPC_Killed_1",
+            // W4-c10 roster tail — the GoldMouse's `SoundID.NPCDeath4`
+            // (`NPC.cs:14327`, (4, 4) `ID/SoundID.cs:1318`) — the mouse
+            // squeak; every other critter `NPCDeath1`.
+            NpcKind::GoldMouse => "NPC_Killed_4",
+            // `NPC.cs:13554`, `:14257`/`:14271`/`:14284`/`:14299`/`:14312`/
+            // `:14341`, the `:14585` range row.
+            NpcKind::Worm
+            | NpcKind::GoldBird
             | NpcKind::GoldBunny
             | NpcKind::GoldButterfly
             | NpcKind::GoldFrog
@@ -4495,6 +4557,13 @@ impl NpcKind {
             // squeak; every other critter `NPCDeath1`.
             // E8 merge: the GoldMouse NPCDeath4 + the 12-critter death
             // rows are d40/c8's above (the dup drops).
+            // W4-c6 style-59 wiring: 328 `SoundID.NPCDeath1` (`NPC.cs:13167`,
+            // `SoundID.cs:1315` = (4, 1)) — the despawn's `checkDead` plays
+            // it (`:78186-78194`); the one `Next(-10,11) * 0.01` pitch roll
+            // (`LegacySoundPlayer.cs:693`) rides the death-sound batch on
+            // the `UpdateNpcs` stream (`world_sim/npcs.rs`'s dead pass,
+            // the S1-E-21c convention — NOT the style-59 arm).
+            NpcKind::PumpkingBlade => "NPC_Killed_1",
             // The man-eater family (W4-d23): all six NPCDeath1
             // (`NPC.cs:9305`/`:9486`/`:10199`/`:11220`/`:12344`/`:12360`).
             NpcKind::ManEater
@@ -4837,6 +4906,15 @@ impl NpcKind {
             // W4-f18 batch 3 — the critters' `SoundID.NPCDeath1` rows
             // (`NPC.cs:13654`/`:13666`/`:13767`/`:13782`).
             NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Killed_1",
+            // W4-f18 first-20 port — the critters' `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13526`/`:13540`/`:13554`/`:13568`/`:13582`).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => "NPC_Killed_1",
+            // W4-f18 batch 2 — the critters' `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13592`/`:13606`/`:13618`/`:13630`/`:13642`).
+            NpcKind::GlowingSnail | NpcKind::Frog => "NPC_Killed_1",
+            // W4-f18 batch 3 — the critters' `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13654`/`:13666`/`:13767`/`:13782`).
+            NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Killed_1",
             // W4-f18 batch 4 — the `SoundID.NPCDeath1` rows (`NPC.cs:
             // 13816`/`:13830`/`:13844`); the ArmedZombie 430's NPCDeath2
             // (`:8617`).
@@ -4958,6 +5036,18 @@ impl NpcKind {
             // (`NPC.cs:11163`/`:17730`).
             NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Killed_2",
             | NpcKind::CultistDragonTail => "NPC_Killed_60",
+            // W4-f42 — the sandstorm debris + desert family's death cues:
+            // 546 NPCDeath15 (`NPC.cs:15981`), 61 NPCDeath31 (`:9564`),
+            // 69 NPCDeath34 (`:9675`), 78/79/80 NPCDeath6 (`:9808`/`:9821`/
+            // `:9834`), 630 NPCDeath6 (`:17116`), 580 NPCDeath34 (`:14863`),
+            // 581 NPCDeath35 (`:14878`).
+            NpcKind::Tumbleweed => "NPC_Killed_15",
+            NpcKind::Vulture => "NPC_Killed_31",
+            NpcKind::Antlion | NpcKind::WalkingAntlion => "NPC_Killed_34",
+            NpcKind::Mummy
+            | NpcKind::DarkMummy
+            | NpcKind::BloodMummy
+            | NpcKind::LightMummy => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -5279,6 +5369,14 @@ impl NpcKind {
             // noGravity is the aiStyle-24 head's per-tick write (`:25325`,
             // the AngryNimbus precedent - the superset addition).
             NpcKind::GoldBird => true,
+            NpcKind::GoldButterfly | NpcKind::GoldBird => true,
+            // W4-c4 (the style-44 swimmers) — the aiStyle-44 AI head sets
+            // `noGravity = true` every tick (`NPC.cs:30863`); kb 0.8/0.3/
+            // 0.5/0 (`:11894`/`:14849`/`:14876`/`:16632`).
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => true,
             // The man-eater family (W4-d23): all six `SetDefaults` rows
             // write `noGravity = true` (`NPC.cs:9295`/`:9477`/`:10188`/
             // `:11210`/`:12334`/`:12350`).
@@ -5391,6 +5489,11 @@ impl NpcKind {
             | NpcKind::MagmaSnail => true,
             // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
             NpcKind::SporeBat => true,
+            // W4-f42 — the desert flyers' AI heads set noGravity every tick:
+            // the Vulture (61, aiStyle 17 `NPC.cs:24024`), the FlyingAntlion
+            // (581, aiStyle 44 `:30863`). The Antlion (69) toggles it per
+            // tick (the emergence), so its SetDefaults default stays false.
+            NpcKind::Vulture => true,
             _ => false,
         }
     }
@@ -5753,6 +5856,13 @@ impl NpcKind {
             // aiStyle 17 — W4-f42: the Vulture (`NPC.cs:9558`).
             // aiStyle 19 — W4-f42: the Antlion (`NPC.cs:9670`).
             // aiStyle 44 — W4-f42: the Flying Antlion (`NPC.cs:14872`).
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => 16,
+            // aiStyle 17 — W4-f42: the Vulture (`NPC.cs:9558`).
+            NpcKind::Vulture => 17,
+            // aiStyle 19 — W4-f42: the Antlion (`NPC.cs:9670`).
+            NpcKind::Antlion => 19,
             // aiStyle 22 - NPC.cs:13194
             NpcKind::Poltergeist => 22,
             // aiStyle 22 — the Drippler (S1-D-3z; `NPC.cs:14623`).
@@ -6170,6 +6280,10 @@ impl NpcKind {
             // (the WaterBoltMimic 694); the 34/289 aiStyle-10 rows are
             // d34/d38's above (E8 keep-both, same axis machine).
             NpcKind::WaterBoltMimic => 10,
+            // aiStyle 68 — W4-c10, the waterfowl SWIMMERS: `NPC.cs:13629`
+            // (363), `:13653` (365), `:16755` (603), `:16825` (609) — the
+            // four `this.aiStyle = 68;` rows of the SetDefaults census.
+            NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2 => 68,
             // W4-c4 (the style-44 swimmers): aiStyle 44 - NPC.cs:11889
             // (the FlyingFish 224), :14845 (the GiantFlyingAntlion 509),
             // :14872 (the FlyingAntlion 581), :16627 (the EyeballFlyingFish
@@ -6500,6 +6614,30 @@ impl NpcKind {
             // aiStyle 1 — doc-sweep lane 36, the ShimmerSlime
             // (`NPC.cs:17570`), the shared slime family.
             NpcKind::ShimmerSlime => 1,
+            // W4-f18 first-20 port — the critters' aiStyle rows: 355/358
+            // 64 (`NPC.cs:13521`/`:13563`), 356 65 (`:13535`), 357 66
+            // (`:13549`), 359 67 (`:13577`).
+            NpcKind::Firefly | NpcKind::LightningBug => 64,
+            NpcKind::Butterfly => 65,
+(f18's Worm 66 arm deduped into the W4-c10 crawler group above.)
+            NpcKind::Snail => 67,
+            // W4-f18 batch 2 — 360 67 (`NPC.cs:13589`), 361/362/364 7
+            // (`:13603`/`:13615`/`:13639`), 363 68 (`:13627`).
+            NpcKind::GlowingSnail => 67,
+            NpcKind::Frog => 7, // (f18 Duck/DuckWhite members deduped into the c10 walker group above)
+(f18's Duck2 68 arm deduped into the W4-c10 swimmer group above.)
+            // W4-f18 batch 3 — 365 68 (`NPC.cs:13651`), 366/367 7
+            // (`:13663`), 374 66 (`:13764`), 375 6 (`:13779`).
+(f18's DuckWhite2 68 arm deduped into the W4-c10 swimmer group above.)
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => 7,
+            NpcKind::TruffleWorm => 66,
+            NpcKind::TruffleWormDigger => 6,
+            // W4-f18 batch 4 — 377 1 (`NPC.cs:13813`), 378 41
+            // (`:13827`), 379/380 3 (`:13841`), 430 3 (`:8614`).
+            NpcKind::Grasshopper => 1,
+            NpcKind::ChatteringTeethBomb => 41,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 3,
+            NpcKind::ArmedZombie => 3,
         }
     }
 
@@ -6757,6 +6895,26 @@ impl NpcKind {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => 1.0,
+            NpcKind::Vampire => 6.0,
+            _ => return None,
+        })
+    }
+
+    /// W4-g12 doc-sweep — the wave-A slimes' `NPC.scale` `SetDefaults`
+    /// rows (the `entities.rs` "unported outside the base slime variants"
+    /// deviation): 16 1.25f (`NPC.cs:8977`), 59 1.1f (`:9526`), 71 1.25f
+    /// (`:9710`), 81 1.1f (`:9850`), 138 1.05f (`:10761`), 183 1.1f
+    /// (`:11344`), 184 1.1f (`:11354`). IceSlime 147 (`:10847-10860`)
+    /// and UmbrellaSlime 225 (`:11898-11910`) write NO scale row — the
+    /// `SetDefaults` head's 1f default. The scale is DRAW-ONLY in C#
+    /// (`Main.DrawNPC`'s `scale` argument, `Main.cs:23124`); the hitbox
+    /// stays the `SetDefaults` box.
+    pub fn wave_a_slime_scale(self) -> Option<f32> {
+        Some(match self {
+            NpcKind::MotherSlime | NpcKind::DungeonSlime => 1.25,
+            NpcKind::LavaSlime | NpcKind::CorruptSlime | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime => 1.1,
+            NpcKind::IlluminantSlime => 1.05,
             // W4-f18 batch 4 — the cultist archers' shooter-default 1f
             // (`NPC.cs:59717`, no 379/380 override); the ArmedZombie 430's
             // charge-family cap 1f (`:58267`, the scale factor is 1 at the
@@ -6811,8 +6969,10 @@ impl NpcKind {
             // (`:9518-9519`/`:10750-10751`/`:10849-10850` region/
             // `:11348-11349` region), 81/183 40x30 (`:9840-9841`/
             // `:11334-11335` region), 225 38x26 (`:11900-11901` region).
-            // The C# `scale` rows (1.25/1.1/1.05) are unported outside
-            // the slime variants — documented deviation.
+            // The C# `scale` rows (1.25/1.1/1.05) ride
+            // `wave_a_slime_scale` → `Npc::scale` (W4-g12 doc-sweep) —
+            // DRAW-ONLY, the hitbox stays this box (the C# scale
+            // multiplies the sprite, not `base.width/height`).
             NpcKind::MotherSlime | NpcKind::DungeonSlime => (36.0, 24.0),
             NpcKind::LavaSlime
             | NpcKind::IlluminantSlime
@@ -7234,6 +7394,30 @@ impl NpcKind {
             NpcKind::CultistDevote => (22.0, 40.0),
             NpcKind::CultistBossClone => (24.0, 50.0),
             // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-c10 — the waterfowl boxes: the walkers 22x26
+            // (`NPC.cs:13615-13616`/`:13639-13640`/`:16741-16742`/
+            // `:16811-16812`), the swimmers 28x22 (`:13627-13628`/
+            // `:13651-13652`/`:16753-16754`/`:16823-16824`).
+            NpcKind::Duck | NpcKind::DuckWhite | NpcKind::Seagull | NpcKind::Grebe => {
+                (22.0, 26.0)
+            }
+            NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2 => {
+                (28.0, 22.0)
+            }
+            // W4-c10 roster tail — the critter boxes: the crawlers 10x4
+            // (`NPC.cs:13547-13548`/`:14334-14335`/`:14578-14579`), the
+            // GoldBird 14x14 (`:14249-14250`), the GoldBunny 18x20
+            // (`:14264-14265`), the GoldButterfly 10x10 (`:14277-14278`),
+            // the GoldFrog 12x10 (`:14292-14293`), the GoldGrasshopper
+            // 14x10 (`:14305-14306`), the GoldMouse 14x12
+            // (`:14320-14321`).
+            NpcKind::Worm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => (10.0, 4.0),
             NpcKind::GoldBird => (14.0, 14.0),
             NpcKind::GoldBunny => (18.0, 20.0),
             NpcKind::GoldButterfly => (10.0, 10.0),
@@ -7843,6 +8027,44 @@ impl NpcKind {
             }
             // Doc-sweep lane 36 — 676 24x18 (`NPC.cs:17568-17569`).
             NpcKind::ShimmerSlime => (24.0, 18.0),
+            NpcKind::Firefly => (10.0, 10.0),
+            NpcKind::Butterfly => (10.0, 10.0),
+(f18's Worm box deduped into the W4-c10 crawler group above.)
+            NpcKind::LightningBug => (12.0, 12.0),
+            NpcKind::Snail => (12.0, 12.0),
+            // W4-f18 batch 2 — 360 14x14 (`NPC.cs:13587-13588`), 361 12x10
+            // (`:13601-13602`), 362/364 22x26 (`:13613-13614`/
+            // `:13637-13638`), 363 28x22 (`:13625-13626`).
+            NpcKind::GlowingSnail => (14.0, 14.0),
+            NpcKind::Frog => (12.0, 10.0),
+(f18's Duck/DuckWhite box deduped into the W4-c10 walker group above.)
+(f18's Duck2 box deduped into the W4-c10 swimmer group above.)
+            // W4-f18 batch 3 — 365 28x22 (`NPC.cs:13649-13650`), 366/367
+            // 26x18 (`:13661-13662`), 374 20x10 (`:13762-13763`), 375
+            // 10x10 (`:13777-13778`).
+(f18's DuckWhite2 box deduped into the W4-c10 swimmer group above.)
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => (26.0, 18.0),
+            NpcKind::TruffleWorm => (20.0, 10.0),
+            NpcKind::TruffleWormDigger => (10.0, 10.0),
+            // W4-f18 batch 4 — 377 14x10 (`NPC.cs:13811-13812`), 378 20x26
+            // (`:13825-13826`), 379/380 18x40 (`:13839-13840`), 430 18x40
+            // (`:8612-8613`).
+            NpcKind::Grasshopper => (14.0, 10.0),
+            NpcKind::ChatteringTeethBomb => (20.0, 26.0),
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => (18.0, 40.0),
+            NpcKind::ArmedZombie => (18.0, 40.0),
+            // W4-f42 — the sandstorm debris + desert family's `SetDefaults`
+            // boxes: 546 30x30 (`NPC.cs:15974-15975`), 61 36x36
+            // (`:9556-9557`), 69 24x24 (`:9668-9669`), the mummies 18x40
+            // (`:9801-9802`/`:9814-9815`/`:17109-17110`/`:9827-9828`),
+            // 580 26x26 (`:14856-14857`), 581 30x22 (`:14870-14871`).
+            NpcKind::Tumbleweed => (30.0, 30.0),
+            NpcKind::Vulture => (36.0, 36.0),
+            NpcKind::Antlion => (24.0, 24.0),
+            NpcKind::Mummy | NpcKind::DarkMummy | NpcKind::BloodMummy | NpcKind::LightMummy => {
+                (18.0, 40.0)
+            }
+            NpcKind::WalkingAntlion => (26.0, 26.0),
         }
     }
 
@@ -7973,6 +8195,35 @@ impl NpcKind {
             // superset-module rule - d38 carries no cs_id arm for it).
             NpcKind::GiantCursedSkull => 289,
             NpcKind::WaterBoltMimic => 694,
+            // W4-c10 — the waterfowl family's own bestiary credits (the
+            // populator registers all eight: `FindEntryByNPCID(362/363/
+            // 364/365/602/603/608/609)`, `BestiaryDatabaseNPCsPopulator.cs:
+            // 1191-1266`) — no fold needed, the vanilla ids ride.
+            NpcKind::Duck => 362,
+            NpcKind::Duck2 => 363,
+            NpcKind::DuckWhite => 364,
+            NpcKind::DuckWhite2 => 365,
+            NpcKind::Seagull => 602,
+            NpcKind::Seagull2 => 603,
+            NpcKind::Grebe => 608,
+            NpcKind::Grebe2 => 609,
+            // W4-c10 roster tail — the twelve critters' own bestiary
+            // credits (the populator registers all twelve:
+            // `FindEntryByNPCID(357/442-448/484-487)`,
+            // `BestiaryDatabaseNPCsPopulator.cs:890-1886`) — no fold
+            // needed, the vanilla ids ride.
+            NpcKind::Worm => 357,
+            NpcKind::GoldBird => 442,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldButterfly => 444,
+            NpcKind::GoldFrog => 445,
+            NpcKind::GoldGrasshopper => 446,
+            NpcKind::GoldMouse => 447,
+            NpcKind::GoldWorm => 448,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
             // W4-c4 (the style-44 swimmers): the vanilla `NPC.type` ids
             // (`NPCID.cs:11125`/`:11695`/`:11839`/`:11851`). The
             // FlyingFish's protocol id is port-local 359 (d37's
@@ -8600,6 +8851,9 @@ impl NpcKind {
             NpcKind::Penguin
             | NpcKind::PenguinBlack
             | NpcKind::CorruptPenguin => 12,
+            // W4-f42 — the mummies' 16-frame humanoid strips
+            // (`Main.npcFrameCount[78/79/80/630]` = 16, `Main.cs:67082`).
+            NpcKind::Mummy | NpcKind::DarkMummy | NpcKind::BloodMummy | NpcKind::LightMummy => 16,
             _ => 1,
         }
     }
@@ -8741,6 +8995,13 @@ impl NpcKind {
                 | NpcKind::TombCrawlerTail
                 // W4-f18 batch 3 — the TruffleWormDigger 375's
                 // `behindTiles = true` row (`NPC.cs:13785`).
+                | NpcKind::Clinger
+                // W4-f18 batch 3 — the TruffleWormDigger 375's
+                // `behindTiles = true` row (`NPC.cs:13785`).
+                | NpcKind::TruffleWormDigger
+                // W4-f42 — the Antlion's `behindTiles = true` row
+                // (`NPC.cs:9678`).
+                | NpcKind::Antlion
         )
     }
 
@@ -9417,6 +9678,32 @@ impl NpcKind {
             // W4-c3: 694 60 (`NPC.cs:17744`); the 34/289 lifeMax rows
             // are d34/d38's above (identical values, E8 keep-both).
             NpcKind::WaterBoltMimic => 60,
+            // W4-c10 — the waterfowl family's `lifeMax = 5` rows
+            // (`NPC.cs:13620`/`:13632`/`:13644`/`:13656`/`:16746`/
+            // `:16758`/`:16816`/`:16828`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => 5,
+            // W4-c10 roster tail — the twelve critters' `lifeMax = 5` rows
+            // (`NPC.cs:13552`, `:14254`/`:14269`/`:14282`/`:14297`/
+            // `:14310`/`:14325`/`:14339`, the `:14583` range row).
+            NpcKind::Worm
+            | NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper
+            | NpcKind::GoldMouse
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => 5,
             // W4-c4 (the style-44 swimmers): 224 20 (`NPC.cs:11892`),
             // 509 90 (`:14848`), 581 60 (`:14875`), 587 300 (`:16630`).
             // E8 merge: FlyingFish's 20 is d37's row above.
@@ -9747,6 +10034,32 @@ impl NpcKind {
             NpcKind::Cyborg => 500,
             // Doc-sweep lane 36 — 676 lifeMax 80 (`NPC.cs:17573`).
             NpcKind::ShimmerSlime => 80,
+            // W4-f18 first-20 port — the critters' `lifeMax = 5` rows
+            // (`NPC.cs:13524`/`:13538`/`:13552`/`:13566`/`:13580`).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => 5,
+            // W4-f18 batch 2 — the critters' `lifeMax = 5` rows
+            // (`NPC.cs:13590`/`:13604`/`:13616`/`:13628`/`:13640`).
+            NpcKind::GlowingSnail | NpcKind::Frog => 5,
+            // W4-f18 batch 3 — the critters' `lifeMax = 5` rows
+            // (`NPC.cs:13652`/`:13664`/`:13765`/`:13780`).
+            NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 5,
+            // W4-f18 batch 4 — 377 5 (`NPC.cs:13814`), 378 200
+            // (`:13828`), 379/380 210 (`:13842`), 430 45 (`:8615`).
+            NpcKind::Grasshopper => 5,
+            NpcKind::ChatteringTeethBomb => 200,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 210,
+            NpcKind::ArmedZombie => 45,
+            // W4-f42 — the sandstorm debris + desert family's `lifeMax`:
+            // 546 50 (`NPC.cs:15979`), 61 40 (`:9561`), 69 45 (`:9672`),
+            // 78 130 (`:9806`), 79/630 180 (`:9819`/`:17114`), 80 200
+            // (`:9832`), 580 80 (`:14861`), 581 60 (`:14875`).
+            NpcKind::Tumbleweed => 50,
+            NpcKind::Vulture => 40,
+            NpcKind::Antlion => 45,
+            NpcKind::Mummy => 130,
+            NpcKind::DarkMummy | NpcKind::BloodMummy => 180,
+            NpcKind::LightMummy => 200,
+            NpcKind::WalkingAntlion => 80,
         }
     }
 
@@ -10356,6 +10669,32 @@ impl NpcKind {
             // W4-c3: 694 20 (`NPC.cs:17742`); the 34/289 damage rows
             // are d34/d38's above (identical values, E8 keep-both).
             NpcKind::WaterBoltMimic => 20,
+            // W4-c10 — the waterfowl family's `damage = 0` rows
+            // (`NPC.cs:13618`/`:13630`/`:13642`/`:13654`/`:16744`/
+            // `:16756`/`:16814`/`:16826`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => 0,
+            // W4-c10 roster tail — the twelve critters' `damage = 0` rows
+            // (`NPC.cs:13550`, `:14252`/`:14267`/`:14280`/`:14295`/
+            // `:14308`/`:14323`/`:14337`, the `:14581` range row).
+            NpcKind::Worm
+            | NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper
+            | NpcKind::GoldMouse
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => 0,
             // W4-c4 (the style-44 swimmers): 224 9 (`NPC.cs:11890`),
             // 509 34 (`:14846`), 581 29 (`:14873`), 587 35 (`:16628`).
             // E8 merge: FlyingFish's 9 is d37's row above.
@@ -10426,6 +10765,10 @@ impl NpcKind {
             // (`:15472`), 159 80 (`:15486`), 226 85 (`:11917`), 634 13
             // (`:17167`), 660 50 (`:17343`).
             NpcKind::GiantBat | NpcKind::Slimer => 45,
+            NpcKind::Harpy => 25,
+            NpcKind::Demon => 32,
+            NpcKind::GiantBat | NpcKind::Slimer => 45,
+            NpcKind::IlluminantBat => 75,
             NpcKind::IceBat => 18,
             NpcKind::Lavabat | NpcKind::RedDevil | NpcKind::QueenSlimeMinionPurple => 50,
             NpcKind::GiantFlyingFox => 80,
@@ -10706,6 +11049,34 @@ impl NpcKind {
             | NpcKind::BartenderUnconscious => 10,
             // Doc-sweep lane 36 — 676 damage 20 (`NPC.cs:17571`).
             NpcKind::ShimmerSlime => 20,
+            NpcKind::FlyingSnake => 85,
+            NpcKind::SporeBat => 13,
+            // W4-f18 first-20 port — the critters' `damage = 0` rows
+            // (`NPC.cs:13522`/`:13536`/`:13550`/`:13564`/`:13578`).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => 0,
+            // W4-f18 batch 2 — the critters' `damage = 0` rows
+            // (`NPC.cs:13588`/`:13602`/`:13614`/`:13626`/`:13638`).
+            NpcKind::GlowingSnail | NpcKind::Frog => 0,
+            // W4-f18 batch 3 — the critters' `damage = 0` rows
+            // (`NPC.cs:13650`/`:13662`/`:13763`/`:13778`).
+            NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 0,
+            // W4-f18 batch 4 — 377 0 (`NPC.cs:13812`), 378 120
+            // (`:13826`), 379/380 45 (`:13840`), 430 14 (`:8613`).
+            NpcKind::Grasshopper => 0,
+            NpcKind::ChatteringTeethBomb => 120,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 45,
+            NpcKind::ArmedZombie => 14,
+            // W4-f42 — the sandstorm debris + desert family's `damage`:
+            // 546 30 (`NPC.cs:15977`), 61 15 (`:9559`), 69 10 (`:9671`),
+            // 78 50 (`:9804`), 79/630 60 (`:9817`/`:17112`), 80 55
+            // (`:9830`), 580 25 (`:14859`), 581 29 (`:14873`).
+            NpcKind::Tumbleweed => 30,
+            NpcKind::Vulture => 15,
+            NpcKind::Antlion => 10,
+            NpcKind::Mummy => 50,
+            NpcKind::DarkMummy | NpcKind::BloodMummy => 60,
+            NpcKind::LightMummy => 55,
+            NpcKind::WalkingAntlion => 25,
         }
     }
 }

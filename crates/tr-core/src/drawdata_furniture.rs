@@ -217,6 +217,10 @@ pub fn is_basic_chest(kind: u16) -> bool {
 /// `Main.critterCage = true` for every cage cell (`:5672`/`:5781`/`:5838`
 /// etc.), gating `AnimateTiles_CritterCages`; the port's draw seam uses
 /// this to set the flag for ANY cage kind (the animator is whole, W4-g34).
+/// Whether a kind rides one of the four cage `case` groups — the G6 key's
+/// in-view gate for the cage animator (the `TileAnimator::is_animated_kind`
+/// convention) and the draw's `Main.critterCage` set probe
+/// (TileDrawing.cs:5672 etc.).
 pub fn is_cage_kind(kind: u16) -> bool {
     cage_table(kind).is_some()
 }

@@ -10,12 +10,15 @@
 
 pub(crate) mod achievement_hooks;
 pub(crate) mod capture_driver;
+pub(crate) mod capture_entities;
+pub(crate) mod capture_render;
 pub(crate) mod clicks;
 pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
 pub(crate) mod journey_clicks;
+pub(crate) mod layer_targets;
 mod r#loop;
 pub(crate) mod net_npc_sync;
 pub(crate) mod net_apply;
@@ -114,12 +117,32 @@ pub(crate) struct App {
     /// "The render-target family (S1-G-13)"). The capture mode's
     /// `DrawCapture` chunk render is the consumer this seam waits for.
     pub(crate) targets: Option<tr_render::RenderTargetFamily>,
+    /// S1-G-13 consumers: the one `TargetCompositor` the six composite sites
+    /// share (`Main.DoDraw`'s `spriteBatch.Draw(target.Texture, ...)` — the
+    /// port rebuilds the bind group per draw, the instance buffer persists).
+    /// Allocated lazily beside the family.
+    pub(crate) target_compositor: Option<tr_render::TargetCompositor>,
+    /// S1-G-13 consumers: `Main.renderCount`'s port for the gated layer path
+    /// — the lighting phase index `LightingEngine.ProcessArea` publishes
+    /// (`LightingEngine.cs:90-103`: MinimapUpdate→3, ExportMetrics→0, Scan→1,
+    /// Blur→2, cycling every frame). Starts at 1 (the first frame's Scan).
+    pub(crate) layer_render_count: i32,
+    /// S1-G-13 consumers: the last draw region's `LightParams` snapshot —
+    /// the capture chunk render (`Main.DrawCapture`, `Main.cs:56727-56732`)
+    /// re-lights its area with the frame's ambient parameters. `None` until
+    /// the first draw; the capture tick falls back to the default params.
+    pub(crate) capture_light_params: Option<tr_core::lighting::LightParams>,
     /// `Main.SceneState` — the phase-1 tr-core port; `update_scene` steps its
     /// fades and the filter driver reads its intensities.
     pub(crate) scene_state: tr_core::scene::SceneState,
     /// `Sandstorm` — the event state machine; the storm machine ticks in
     /// `update_scene` and the storm filters read its severity.
     pub(crate) sandstorm: tr_core::scene::Sandstorm,
+    /// W4-c40: `SkyManager.Instance["Sandstorm"]` (`SandstormSky.cs`) — the
+    /// sky tint quad's fade state; the `SceneState.cs:97` edge flips it in
+    /// `update_scene`, `SkyManager.Update` fades it in `ambience_phase`,
+    /// the sky pass draws it at the `DrawRemainingDepth` flush.
+    pub(crate) sandstorm_sky: crate::render::sandstorm_sky::SandstormSky,
     /// M1.4-BG-18 phase 3: the `ApplyVisuals` driver (`app::filters`) — filter
     /// board, storm shader state and the winner uniform the post branch
     /// applies.
@@ -223,9 +246,23 @@ pub(crate) struct App {
     /// `ShopHelper.GetShoppingSettings`, the close resets to `NotInShop`
     /// (`{1f, ""}`). The happiness button + the shop chrome read it.
     pub(crate) shopping_settings: crate::happiness::ShoppingSettings,
+    /// W4-f30 — `NPC.PreventJojaColaDialog` (`NPC.cs:6629`): the Dryad's
+    /// Stardew bit latches it after the gift so the cola reminder does not
+    /// re-print over the thank-you line. Cleared on the chat close
+    /// (`NPC.cs:93772`/`:95303`).
+    pub(crate) prevent_joja_cola_dialog: bool,
+    /// W4-f30 — `NPC.RerollDryadText` (`NPC.cs:6631`): the Stardew bit's
+    /// text-reroll state machine (`NPCChatPanel.cs:199-208`): 2 right after
+    /// the gift, 1 once the Dryad enters the animation state 24, 0 once she
+    /// leaves it (the chat re-rolls to `GetChat()`).
+    pub(crate) reroll_dryad_text: i32,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
+    /// `PopupText.popupText[20]` (`PopupText.cs:11-12`): the item-name
+    /// popups — the reforge reveal (`Main.cs:41906`) is the only spawn
+    /// site the port has (W4-g57).
+    pub(crate) popup_texts: crate::popup_text::Pool,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`) — the one-cycle spawn skip the
@@ -423,6 +460,18 @@ pub(crate) struct App {
     /// for the native `.trwld` the kills ride the sidecar's v5 line, which the
     /// sights/chats have no equivalent for (they stay empty).
     pub(crate) bestiary: tr_core::bestiary::WorldBestiary,
+    /// W4-f30 — `CreativeItemSacrificesCatalog`'s per-world sacrificed counts
+    /// (`ItemsSacrificedUnlocksTracker`, the Journey research). The live
+    /// sacrifice UI is unported, so the tracker never edits in play yet; the
+    /// `CheckResearchAchievement` call sites (the per-tick armor tail +
+    /// EnterWorld) read it through `check_research_achievement` (the prep
+    /// landed with the f30 tail census). The save rides M6-SAVE's world
+    /// sections when the UI lands.
+    pub(crate) research: crate::research::ResearchTracker,
+    /// `AchievementsHelper._lastResearchVersion` (`AchievementsHelper.cs:17`):
+    /// the static latch `CheckResearchAchievement` compares the tracker's
+    /// `LastEditId` against to skip unchanged frames.
+    pub(crate) last_research_version: i32,
     /// `WorldGen.TownManager` (`TownRoomManager.cs`): one room per town NPC,
     /// loaded from world-file section 9 (`SaveTownManager`'s list) and rebuilt
     /// by the load fix-ups.
@@ -449,8 +498,16 @@ pub(crate) struct App {
     pub(crate) chat: chat::ChatMonitor,
     /// `EmoteBubble.byID` + the wheel state (M6-EMOTE-1).
     pub(crate) emotes: emotes::EmoteSystem,
-    /// `BannerSystem`'s kill tally (M2-BUFF-8).
+    /// `UIScrollbar._isDragging`'s `_dragYOffset` for the emote wheel's bar
+    /// (`UIScrollbar.cs:23-27`, `LeftMouseDown` `:131-135`) — W4-g54.
+    pub(crate) emote_scroll_drag: Option<f32>,
+    /// `BannerSystem`'s kill tally + claimable counts (M2-BUFF-8, W4-e24).
     pub(crate) banners: banners::BannerSystem,
+    /// `FakeCursorItem` (`GameContent/FakeCursorItem.cs`): the pending-claim
+    /// cursor overlay the BannerClaimingUI shows while a banner claim is in
+    /// flight (W4-e24). The single-player loopback adds then removes it
+    /// within one claim, so it reads empty between claims.
+    pub(crate) fake_cursor: banners::FakeCursorItem,
     /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
     /// stand-in; M4-TOWN-1).
     pub(crate) town_look_timer: f32,
@@ -495,7 +552,8 @@ pub(crate) struct App {
     /// menu/world backdrop, opened from `Lang.menu[131]` (`Main.cs:48931`)
     /// or `TR_ACHIEVEMENTS=1`.
     pub(crate) achievements_open: bool,
-    /// The list's scroll, in px (`UIList._scrollPosition`'s stand-in).
+    /// The list's scroll, in px (`UIScrollbar._viewPosition` via
+    /// `UIList.DrawSelf`'s `_innerList.Top`, `UIList.cs:181`).
     pub(crate) achievements_scroll: f32,
     /// `UIDebugCommandsList`'s overlay state (W4-d85 row 7) — opened by the
     /// `/hh` debug command (`ToolkitDebugCommands.cs:42-47` →
@@ -536,6 +594,16 @@ pub(crate) struct App {
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
+    /// The scrollbar's drag latch (`UIScrollbar._isDragging`/`_dragYOffset`,
+    /// `UIScrollbar.cs:126-149`): `Some(offset)` while the handle is held.
+    pub(crate) achievements_scroll_drag: Option<f32>,
+    /// The Back panel's hover-sound latch (`FadedMouseOver` fires sound 12
+    /// once per hover edge, `UIAchievementsMenu.cs:150-155`).
+    pub(crate) achievements_back_sounded: bool,
+    /// The scrollbar handle's hover latch (`UIScrollbar._isHoveringOverHandle`,
+    /// `UIScrollbar.cs:25`/`:113-120`): sound 12 fires on the false→true edge,
+    /// and `DrawSelf`'s handle tint reads `dragging || hovering` (`:122`).
+    pub(crate) achievements_handle_hover: bool,
     /// `InGameNotificationsTracker._notifications`
     /// (`UI/InGameNotificationsTracker.cs:13`) — the achievement-unlock
     /// popups (S1-E-26 wave A). The `OnAchievementCompleted` subscriber
@@ -598,6 +666,13 @@ pub(crate) struct App {
     /// The coin cells' display-state machine (`CoinSlot.cs`, S1-H-9): the
     /// entry arrays the vanilla carries as statics, owned by the App.
     pub(crate) coin_slot: crate::ui::coin_slot::CoinSlotState,
+    /// `ItemSlot._customCurrencyForSavings` (`ItemSlot.cs:308`, init −1
+    /// `:363`): the savings display's currency latch. `UpdateInterface`
+    /// (`:516-521`) resets it when the inventory closes or the talk ends;
+    /// `MouseHover` (`:3177`) stamps the hovered item's
+    /// `shopSpecialCurrency` — a shop medal row latches 0, every plain
+    /// item −1 (`draw_hud`'s hover stamps).
+    pub(crate) custom_currency_for_savings: i32,
     /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
     /// .cs:315`): the cached coin carriers. Session-only — cleared on the
     /// world unload (the vanilla never saves them).
@@ -646,6 +721,11 @@ pub(crate) struct App {
     /// inside the handle is kept (`:134-135`). `LeftMouseUp` clears it
     /// (`:145-149`).
     pub(crate) front_scroll_drag: Option<f32>,
+    /// Which list the `front_scroll_drag` latch belongs to on the two-list
+    /// pack-selection screen (`UIResourcePackSelectionMenu`'s
+    /// `_availablePacksList`/`_enabledPacksList`): `false` = available (left),
+    /// `true` = enabled (right). The single-list screens ignore it.
+    pub(crate) front_scroll_drag_enabled: bool,
     /// `Main.PendingPlayer`'s recorded twin — `FinishCreatingCharacter`'s
     /// `PlayerFileData.CreateAndSave` + `Main.LoadPlayers` port: the created
     /// draft feeds the implicit session entry's name/difficulty
@@ -768,6 +848,12 @@ pub(crate) struct App {
     /// both decision layers once per fixed step here, then drains the outboxes
     /// on the 10 Hz `net_tick` below.
     pub(crate) net_sync_cadence_timer: f32,
+    /// W4-d100: the remote-entity smoothing's own 60 Hz accumulator — the
+    /// C# runs `Player.UpdateNetOffset` once per `Player.Update`
+    /// (`Player.cs:28172`, `Main.cs:17824-17857`'s fixed-step walk) and
+    /// `NPC.UpdateNetOffset` once per `UpdateNPC`; the port steps both on
+    /// this timer (`net_interp_tick`), never per render frame.
+    pub(crate) net_interp_timer: f32,
     /// The host's per-slot NPC bookkeeping: `(kind, generation)` — the
     /// generation bumps on a kind change so the client recreates the slot
     /// (`MessageBuffer.cs:1602-1613`'s test).
@@ -797,6 +883,12 @@ pub(crate) struct App {
     /// W4-c28: the pending `PlayerSend` outbox the 60 Hz client cadence fills
     /// (`net_player_sync`); `net_tick` drains it through the existing wires.
     pub(crate) net_player_outbox: Vec<crate::app::net_player_sync::PlayerSend>,
+    /// W4-d70 DOC-SWEEP: the local player's last-sent armour block
+    /// (`PlayerItemSlotID.Armor0..19`) — the `5 PlayerInventory` diff the
+    /// paladin peer loops' shield re-derivation reads on the other side.
+    pub(crate) net_armor_last: [u16; 20],
+    /// The heartbeat counter for the `13` cadence (`net_tick` calls).
+    pub(crate) net_beat: u32,
     /// `Main.netPlayCounter` (`Main.cs:64557`): the host's per-tick server
     /// counter, wrapping at 3600 (`Main.cs:64558-64562`).
     pub(crate) net_play_counter: u32,
@@ -873,6 +965,13 @@ pub(crate) struct App {
     /// the edge. (The QuickHeal twin `releaseQuickHeal` `:1770` is the i54
     /// hotbar worker's `quick_heal_prev` — not duplicated here.)
     pub(crate) quick_mana_prev: bool,
+    /// The B-key (`Main.cBuff`) press latch (W4-a5), the `quick_mana_prev`
+    /// precedent: `TriggersSet.CopyInto` (`TriggersSet.cs:801-804`) calls
+    /// `Player.QuickBuff` on the QuickBuff trigger under
+    /// `PlayerInput.Triggers.Current` — the port fires it on the key's
+    /// press EDGE (the two-frame latch), not every held tick. Starts
+    /// false — the first held tick counts as the edge.
+    pub(crate) quick_buff_prev: bool,
     /// `Main.mouseNPCIndex` (`Main.cs:751`, default −1): the `Main.npc[]`
     /// slot whose head rides the cursor for a housing relocation; −1 with
     /// `mouse_npc_type == 0` is the housing query, −1/−1 is nothing.
@@ -924,6 +1023,23 @@ pub(crate) struct App {
     /// arms gate on `== 0` (`:37964`). The port is keyboard+mouse (no
     /// gamepad re-arm); the decrement rides the editing pass head.
     pub(crate) block_interaction_with_projectiles: i32,
+    /// W4-g56 — `Player.lastMouseInterface` (`Player.cs:1454`, latched at
+    /// `Main.cs:61811-61812`: last frame's `mouseInterface`): the
+    /// void-lens interaction gate reads it (`Main.cs:37688`). The port
+    /// recomputes it at the interface-draw tail from the same hover
+    /// surfaces that set `mouseInterface` (the slot/panel hit tests).
+    pub(crate) last_mouse_interface: bool,
+    /// W4-g56 — the per-slot `TryInteractingWithVoidLens` answers
+    /// (`Main.cs:27924`), computed once per draw at the draw head
+    /// (`void_lens::update_selection`) and read by the projectile draw
+    /// loop's type-734 arm. Indexed by projectile slot; 0 for non-lenses.
+    pub(crate) void_lens_selection: Vec<u8>,
+    /// W4-g56 — the inventory/chest slot glow (`ItemSlot.cs`'s four glow
+    /// arrays, `ui/glow.rs`): the open-time clear (`SetGlowForChest`), the
+    /// Sort-feedback writer (`ItemSorting.Sort:1586`), the per-frame decay
+    /// (`UpdateInterface:522-544`) and the draw tint (`ItemSlot.Draw:2305-
+    /// 2326`). The chest pair rides the open container (contexts 3/4/32).
+    pub(crate) slot_glow: crate::ui::glow::GlowState,
     /// `Main.mouseRightRelease` as the vanilla recomputes it at the END of
     /// every interface draw (`Main.cs:62458-62465`: `!Main.mouseRight`) —
     /// the buff bar's cancel reads `mouseRight && mouseRightRelease`
@@ -943,9 +1059,35 @@ pub(crate) struct App {
     /// The buff bar's right-click removal requests — the C# removes in the
     /// draw pass (`Main.cs:43348`); the port drains them in the tick.
     pub(crate) buff_removals: Vec<usize>,
-    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe row's index
-    /// into the available list — the first click focuses, the next crafts.
+    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe's position
+    /// in the RAW `Main.availableRecipe` list (`HandleCraftSlot`
+    /// `NewCraftingUI.cs:510`, `UpdateContents` `:610`/`:622`) — the first
+    /// click focuses, the next crafts. NOT a recipe-table index and NOT a
+    /// shown-grid position (the W4-f23 index-space fix).
     pub(crate) focus_recipe: i32,
+    /// The previous frame's RAW available list — `Main.availableRecipe`'s
+    /// state across `Recipe.UpdateRecipeList`'s clear+rebuild: the refocus
+    /// tail (`Recipe.cs:232-233`) captures `availableRecipe[focusRecipe]`
+    /// from THIS list before the rebuild (`TryRefocusingRecipe` `:477-495`,
+    /// wired in `frame/draw.rs`). Empty until the panel first draws.
+    pub(crate) craft_last_available: Vec<usize>,
+    /// The craft grid's `UIScrollbar.ViewPosition` (`UIScrollbar.cs:37-47`):
+    /// the wheel (`UIList.ScrollWheel` `:107-114`) and the bar's press/drag
+    /// (`:126-143`, `:109-112`) write it; `SetView` clamps it to
+    /// `contentHeight - listHeight` every rebuild.
+    pub(crate) craft_scroll: f32,
+    /// The bar's `_isDragging` grab offset (`UIScrollbar.cs:134-135`) —
+    /// `Some` while the handle is held, `None` after `LeftMouseUp` (`:148`).
+    pub(crate) craft_scroll_drag: Option<f32>,
+    /// `_isHoveringOverHandle` (`UIScrollbar.cs:115-120`): re-derived every
+    /// draw frame; the enter edge plays sound 12 (`:119`).
+    pub(crate) craft_scroll_hover: bool,
+    /// `Main.nearbyCraftingMouseOver` (`Main.cs:1309`): the nearby-chests
+    /// toggle's hover latch (`CraftingUI.cs:354`'s
+    /// `DoStatefulTickSound`), re-derived every draw frame the panel draws;
+    /// the enter edge plays sound 12 (`Main.cs:3244`). Cleared by
+    /// `Main.ResetInventoryState` (`:3225`) on the inventory open/close.
+    pub(crate) nearby_crafting_mouse_over: bool,
     /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
     /// recipe lock — a different recipe or a maxStack-1 product resets it.
     pub(crate) current_recipe_being_crafted: i32,
@@ -984,6 +1126,37 @@ pub(crate) struct App {
     // mirror dropped — the C# field is `Player.cursorItemIconEnabled`
     // (`Player.cs:1850`), the ONE truth g79's paint gates, the wiring/
     // mining in-reach latch and the icon pass all read.)
+    /// `Player.cursorItemIconEnabled` (`Player.cs:1856`): the held-tool
+    /// cursor-icon latch — the wiring/mining tools arm it in reach
+    /// (`Player.cs:46756-46760`/`:45620-45624`), `MouseOversClear` clears
+    /// it per update (`Main.cs:46503-46513`, `:17035`). S1-W4-g81.
+    pub(crate) cursor_item_icon_enabled: bool,
+    /// `Player.cursorItemIconID` (`Player.cs:1854`): the tile-interaction
+    /// hover-icon override — `TileInteractionsMouseOver`'s arms decode the
+    /// hovered tile into an item id (the altar 6135/6136/1293,
+    /// `Player.cs:34524-34536`/`:34309-34314`), the `ItemCheck` head's
+    /// bait/solution arms write the carried kind (`:42615-42650`). Non-zero
+    /// REPLACES the held kind in `DrawInterface_40_InteractItemIcon`
+    /// (`Main.cs:45057-45060`). i32, NOT u16 — the sign arm's in-box clear
+    /// writes the `-1` sentinel (`Player.cs:34306`). W4-g86 research/244
+    /// phase 1.
+    pub(crate) cursor_item_icon_id: i32,
+    /// `Player.cursorItemIconText` (`Player.cs:1858`, default `""`): the
+    /// container/dresser hover NAME — layer 40 draws it through
+    /// `MouseText(Text, 0, 0)` (`Main.cs:45102-45105`). W4-g86 research/244
+    /// phase 1.
+    pub(crate) cursor_item_icon_text: String,
+    /// `Player.cursorItemIconPush` (`Player.cs:1856`): the icon's extra
+    /// offset — layer 40 draws at `mouse + (10 + Push, 10 + Push)`
+    /// (`Main.cs:45089`); the pole's bait arm pushes 6, the solution arm 10
+    /// (`Player.cs:42622`/`:42633`). W4-g86 research/244 phase 1.
+    pub(crate) cursor_item_icon_push: i32,
+    /// `Player.cursorItemIconReversed` (`Player.cs:1852`): layer 40's
+    /// `SpriteEffects.FlipHorizontally` (`Main.cs:45083-45086`). Cleared
+    /// ONCE per frame at the `DoUpdate` head (`Main.cs:16842`), NOT inside
+    /// `MouseOversClear` — the two clears ride different clocks
+    /// (research/244 §3.2). W4-g86 research/244 phase 1.
+    pub(crate) cursor_item_icon_reversed: bool,
     /// `Main._itemIconCacheScreenPosition`/`_itemIconCacheSelectedItemID`/
     /// `_itemIconCacheTime` (`Main.cs:2411-2415`): the 10-frame icon
     /// linger after the tool leaves reach (`ItemIconCacheUpdate`
@@ -998,22 +1171,24 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
-    /// The current dig's break interval in seconds — the `mine_timer`
-    /// denominator the tile-crack overlay maps onto the C# `HitTile`
-    /// 0..100 damage (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+    /// The current dig's break interval in seconds (the pre-i29 mining
+    /// pacing; the crack overlay now reads the `hit_tile` book directly —
+    /// W4-g77 — while `sync_mine_crack_state` keeps this pair fresh for
+    /// the mining-state witnesses).
     pub(crate) mine_hardness: f32,
     /// S1-P-i33 — the wall-hammer hit counter (`Player.PickWall`'s `hitTile`
     /// damage book, `Player.cs:45944-45945`): the number of `useTime / 2`-tick
     /// hits landed on the current wall target. The break fires at
-    /// `ceil(100 / (hammer * 1.5))` hits — an integer count, so the cadence is
-    /// exact (the float `mine_timer` still feeds the crack overlay).
+    /// `ceil(100 / (hammer * 1.5))` hits — an integer count, so the cadence
+    /// is exact (the crack overlay reads the `hit_tile` book — W4-g77).
     pub(crate) mine_wall_hits: i32,
-    /// `HitTile.lastCrack` (`HitTile.cs:80`, static, default 0): the last
-    /// rolled crack style the no-repeat reroll compares against.
-    pub(crate) mine_crack_style: i32,
-    /// The dig target the current crack style was rolled for (the C# rolls
-    /// on `HitTileObject.Clear`, i.e. slot reuse — `HitTile.cs:29-46`).
-    pub(crate) mine_crack_target: Option<(i32, i32)>,
+    /// The render-side per-slot crack styles for the `hit_tile` book
+    /// (`HitTile.cs:23`'s `crackStyle` + `:82`'s static `lastCrack`): the
+    /// sim book is RNG-free (i29), so `CrackStyles` rolls on the slot's
+    /// new occupancy (the C# rolls on `HitTileObject.Clear`, i.e. slot
+    /// reuse — `HitTile.cs:29-46`). W4-g77 replaced the single-style
+    /// projection with the book-driven walk.
+    pub(crate) mine_crack_styles: crate::render::tile_cracks::CrackStyles,
     /// `HitTile.rand` (`HitTile.cs:78`): the crack-style stream. Deviation:
     /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
     /// (determinism rule, ANALYSIS "The tile-crack overlay").
@@ -1027,6 +1202,19 @@ pub(crate) struct App {
     /// parameterless ctor is clock-seeded (`UnifiedRandom.cs:18-21`); the
     /// port seeds the world seed (the `mine_crack_rng` deviation class).
     pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
+    /// W4-f6 wiring — `TileDrawing._rand` (`TileDrawing.cs:104`/:191): the
+    /// special-tile pass's PRIVATE stream (the pylon crystal's dust gate,
+    /// `:8669-8670`). Deviation: the C# parameterless ctor is clock-seeded;
+    /// the port seeds the world seed (the `mine_crack_rng` determinism
+    /// convention). NOT a `SwapRandom` key. g68 collision keep-one
+    /// (research/198, renamed 67→198 round-1): g68's drip gates (`EmitLiquidDrops` :7609) read the
+    /// SAME C# field on the ONE `Main.TilesRenderer` (`Main.cs:2301/6541`)
+    /// — at merge keep ONE field, both consumers, drips-before-pylons.
+    pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
+    /// W4-f6 wiring — `LiquidRenderer._random` (`LiquidRenderer.cs:132`):
+    /// the lava-bubble PRIVATE stream (`InternalPrepareDraw` :558/:562).
+    /// Same clock-seed → world-seed deviation; NOT a `SwapRandom` key.
+    pub(crate) liquid_rand: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -1041,6 +1229,11 @@ pub(crate) struct App {
     /// (`Main.cSmartCursorModeIsToggleAndNotHold`, `Main.cs:67178`), **not**
     /// this state.
     pub(crate) smart_cursor_used: bool,
+    /// W4-g86: `Main.SmartInteractTileCoords`/`…Selected` + the interaction
+    /// rect (`Main.cs:2035-2045`) — the smart-interact lookup's output
+    /// (`world_sim/smart_interact.rs`, `Player.SmartInteractLookup`
+    /// `Player.cs:17374`), the feed of the tile-outline overlay.
+    pub(crate) smart_interact: crate::world_sim::smart_interact::SmartInteractState,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
@@ -1118,6 +1311,13 @@ pub(crate) struct App {
     /// right-click kick-out hit-tests them (`Main.cs:40824-40829`, W4-g21
     /// batch 4 host 53).
     pub(crate) house_banners: Vec<crate::house_banners::Banner>,
+    /// `UIWorldGenDebug.IsActive` (`UIWorldGenDebug.cs:794`) — the F5 debug
+    /// pass-list overlay over the loading screen (`UIWorldLoad.cs:50-53`'s
+    /// `DebugOptions.enableDebugCommands && F5` arm, the port's `TR_DEBUG`
+    /// stand-in). W4-f23 closeout item 1: the driver lands as an overlay,
+    /// not a new FrontScreen variant (the d85 dev-screens co-lane owns the
+    /// full screen; this wires the parked element halves to the live job).
+    pub(crate) worldgen_debug_open: bool,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -1245,6 +1445,40 @@ pub(crate) struct App {
     /// (`Main.cs:66833-66834`).
     pub(crate) master_color: f32,
     pub(crate) master_color_dir: f32,
+    /// `Main.invAlpha` / `Main.invDir` (`Main.cs:1287-1289`): the Interface
+    /// Logic 2 pulse (`DrawInterface_24_InterfaceLogic2`, `:45695-45711`) —
+    /// the crafting grid's selection-overlay tint `Main.inventoryBack`
+    /// (`ItemSlot.cs:2373`). W4-f23 deviation fix: was the midpoint-210
+    /// constant.
+    pub(crate) inv_pulse: crate::ui::inv_pulse::InvPulse,
+    /// `Main.hideUI` (`Main.cs:2085`): the F11 screenshot-mode toggle
+    /// (`DoUpdate_F11_ToggleUI`, `:18402-18424`). While true the interface
+    /// layer loop stops at layer 8 (`DrawInterface_8_CheckF11UIHideToggle`,
+    /// `:46175-46183`) and the world-side chat bubbles / combat text skip
+    /// (`:62334`). The port gates the HUD draw + those two passes on it.
+    pub(crate) hide_ui: bool,
+    /// `Main.releaseUI` (`Main.cs:2087`): the F11 press latch — starts true
+    /// (the key starts released), drops while held, re-arms on release.
+    pub(crate) release_ui: bool,
+    /// `Player.releaseMapStyle` (`Player.cs:1838`): the Tab map-style
+    /// cycle's press latch (`:24951-24964`).
+    pub(crate) release_map_style: bool,
+    /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
+    pub(crate) demon_torch: f32,
+    pub(crate) demon_torch_dir: f32,
+    /// `Main.masterColor` / `Main.masterColorDir` (`Main.cs:1235-1237`,
+    /// the ±0.05 cycle `:18225-18235`, reset 1/+1 at `:66833-66834`): the
+    /// master-rarity pulse the reforge popup recolours by
+    /// (`PopupText.cs:667-670`, W4-g57).
+    pub(crate) master_color: f32,
+    pub(crate) master_color_dir: i8,
+    /// `Main.martianLight` / `Main.martianLightDir` (`Main.cs:1231-1233`,
+    /// the same `DoUpdate_AnimateTileGlows`, `:18251-18261`): the 0.015
+    /// bounce that feeds `TileDrawing._martianGlow` (`:498-499`). It ticks
+    /// EVERY frame in C# — no event gate (`Main.cs:17145` is unconditional);
+    /// the "0 outside the event" reading was wrong (W4-g12 doc-sweep).
+    pub(crate) martian_light: f32,
+    pub(crate) martian_light_dir: f32,
     /// `Main.DiscoR/G/B` and the `Main.DiscoStyle` cycle (`DoUpdate_AnimateDiscoRGB`).
     pub(crate) disco: [u8; 3],
     pub(crate) disco_style: u8,
@@ -1310,6 +1544,18 @@ pub(crate) struct App {
     /// pass head (`:474`). The port's single row-major pass raises it during
     /// `draw_tiles` and the animator consumes the previous frame's value.
     pub(crate) critter_cage: bool,
+    /// W4-f14: `Main.critterCage` + the `Main.*CageFrame` tables
+    /// (`Main.cs:1445`, `:66902-66972`) — the critter-cage animator
+    /// (`Main.AnimateTiles_CritterCages`, `Main.cs:13511-16596`), ticked at
+    /// the `AnimateTiles` tail (`Main.cs:19303`) on the SAME accumulator
+    /// and `Main.rand` stream as `tile_anim`. PROCESS state in the C# —
+    /// never re-zeroed per world (the `:8393-8394` reset covers
+    /// `tileFrame` only); `new` replays the 3600-tick startup warm-up
+    /// (`Main.cs:6800-6807`). `draw_tiles` clears/sets `critter_cage`
+    /// (TileDrawing.cs:474/:5672) and reads the tables through
+    /// `drawdata_furniture::cage_draw_data`; the G6
+    /// `WorldFrameKey::cage_anim` covers the state.
+    pub(crate) cage_anim: tr_core::drawdata_cages::CritterCageAnimator,
     /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
@@ -1332,6 +1578,13 @@ pub(crate) struct App {
     /// (S1-E-1 phase 2); the `world_sim` drain feeds the cart's queued
     /// requests into it and the frame ticks/draws the client slots.
     pub(crate) dust: tr_core::particles::DustPool,
+    /// W4-g11 union-exec (research/116 gap 4) — `Main.waterStyle`
+    /// (`Main.cs:1105`): the STORED water style, written by `DrawWaters`
+    /// (`:57475`, the port's `frame/draw.rs` liquid-alpha block); the
+    /// `TeleportEffect` style-5 arm reads this static, NOT an inline
+    /// `CalculateWaterStyle` recompute (a mid-frame biome change would
+    /// flip the dust type).
+    pub(crate) water_style: i32,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2205`, stored by
     /// `WaterfallManager.cs:960-962`): the waterfall loop's (strength, x, y)
     /// that `Main.Ambience` reads every ¼ s. Honey falls never feed it
@@ -1382,6 +1635,14 @@ pub(crate) struct App {
     /// ambience phase as the `AmbientSky` manager (`SkyManager.Update`,
     /// `Main.cs:17139`).
     pub(crate) slime_sky: crate::slime_sky::SlimeSky,
+    /// W4-f40: the `LanternSky : CustomSky` background lantern field
+    /// (`crates/tr-app/src/render/lantern_sky.rs`). Its private RNG draws on
+    /// no named stream (the C#'s `_random`, `LanternSky.cs:71`); the
+    /// activate/deactivate edges ride `world_events::update_time_lanterns`.
+    pub(crate) lantern_sky: crate::render::lantern_sky::LanternSky,
+    /// W4-f40: the `LanternSky`'s 60 Hz accumulator (`SkyManager.Update`
+    /// runs once per world update, `Main.cs:17139`; the ambience precedent).
+    pub(crate) lantern_sky_step: FixedStepper,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -1468,6 +1729,11 @@ pub(crate) struct App {
     /// the mining damage book: per-cell accumulated damage, 100 breaks the
     /// tile (`Player.PickTile` `Player.cs:53769`), 60-tick TTL decay.
     pub(crate) hit_tile: tr_core::hit_tile::HitTile,
+    /// `Player.hitReplace` (`Player.cs:1660`) — the block-swap damage book
+    /// (`PlaceThing_TryReplacingTiles`, `:39857-39873`): a SECOND `HitTile`,
+    /// independent of the mining book; `ClearMiningCacheAt` clears both
+    /// (`:53846-53850`).
+    pub(crate) hit_replace: tr_core::hit_tile::HitTile,
     /// `Player.poundRelease` (`Player.cs:1502`): the hammer's pound latch.
     /// Set on the use-button release (`Player.cs:45635-45638`), consumed by
     /// `ItemCheck_UseMiningTools_TryPoundingTile` (`:45969-46311`) on the
@@ -1555,6 +1821,11 @@ pub(crate) struct App {
     /// (`Main.cs:52823-52841`): the cavern style latch + cross-fade, stepped once
     /// per `DrawBackground` (W4-g72 final — the pick reads the rolled cave arrays
     /// + `scene_metrics`; the fade overlay draws stay atlas-blocked).
+    /// (`Main.cs:52823-52841`): the cavern style latch + cross-fade, carried
+    /// across frames like `hellBlackBoxBottom`. The g72e 14-arg
+    /// `draw_background` consumes it (`&mut`); the layer callback threads
+    /// this field (W4-g72 closeout delta 64d §2 — `bg_styles::UgBackState`
+    /// lands with the g72 lane).
     pub(crate) ug_back: crate::render::bg_styles::UgBackState,
 }
 
@@ -1600,11 +1871,83 @@ pub(crate) struct WorldFrameKey {
     /// keep the pre-wiring cache behaviour bit-for-bit (the waterfall key's
     /// convention).
     pub(crate) tile_anim: u64,
+    /// W4-d58: `chest::chest_frame_key()` — every live chest's anchor + lid
+    /// frame (`Main.chest[i].frame`, `Chest.cs:86`), which the chest rewrite
+    /// (`CacheSpecialDraws_Part2`, `TileDrawing.cs:4289-4330`) folds into the
+    /// source rects inside the cached world range. Zero unless a BasicChest
+    /// tile (21/467) is active in the view rect, so chest-free worlds keep
+    /// the pre-wiring cache behaviour bit-for-bit (the `tile_anim`
+    /// convention). The lid animator ticks on the world step
+    /// (`Chest.UpdateChestFrames`, `Main.cs:17810`), so an opening/closing
+    /// chest changes this while the camera stands still.
+    pub(crate) chest_frames: u64,
+    /// W4-f14: `CritterCageAnimator::anim_key()` — the `Main.*CageFrame`
+    /// tables the cage arms' `addFrY` rewrites read
+    /// (TileDrawing.cs:5629-5907). Zero unless a cage kind is active in
+    /// the view rect (the `tile_anim` convention).
+    pub(crate) cage_anim: u64,
     /// Remote peers' smoothed positions/animations and the NPC smoothing
     /// accumulators: the networked entities drawn inside the cached world
     /// range. Zero in single-player (the offsets are zero and no peers).
     pub(crate) net_key: u32,
+    /// W4-g80: the 83 herb-maturity sheet swap's weather inputs that the
+    /// light key does not already carry — `Main.cloudAlpha`'s zero/non-zero
+    /// gate and the deathweed moon gate (`blood_moon || moonPhase == 0`),
+    /// plus the fireblossom `time > 40500` gate. `day_time`/`raining`/`time`
+    /// already ride `light_params`. Zero unless an herb 83 is active in the
+    /// view rect, so herb-free worlds keep the pre-wiring cache behaviour
+    /// bit-for-bit (the vine-grid key's convention).
+    pub(crate) herb_weather: u32,
+    /// W4-g12: `DrawGoreBehind`'s drip slots draw inside the cached world
+    /// range (the behind-tiles seam), so their state rides the key — a
+    /// hash of every `draws_in_back` slot's position/frame/alpha/scale/
+    /// rotation/type. Zero while no drip slot draws (the waterfall
+    /// convention: gore-free frames keep the pre-wiring cache behaviour).
+    pub(crate) back_gore: u64,
+    /// W4-d70: `MoonLordScreenShaderData.LatestFilterStrength` — the Moon Lord
+    /// parts' `GetMoonLordColoring` tint (`Main.cs:26325`) rides the cached
+    /// world range. Zero unless a Moon Lord part is present, so Moon-Lord-free
+    /// worlds keep the pre-wiring cache behaviour bit-for-bit (the tile_anim
+    /// key's convention).
+    pub(crate) moon_lord_strength: u32,
     pub(crate) world_revision: u64,
+    /// W4-d127 — the WoF draw inputs inside the cached world range: the
+    /// mouth clock (`Main.wofDrawFrameIndex`, `Main.cs:761`), the band
+    /// statics (`wofDrawAreaTop/Bottom`, `:757`/`:759`) and the tongue
+    /// gate (`Player.tongued`). Non-zero only while a wall lives, so
+    /// wall-free worlds keep the pre-wiring cache behaviour bit-for-bit
+    /// (the waterfall/tile_anim key convention).
+    pub(crate) wof_key: u64,
+}
+
+impl WorldFrameKey {
+    /// The `back_gore` input: one hash over the drip slots the behind
+    /// pass draws (`Main.cs:21846-21854`'s gate), every field its quad
+    /// reads. Order is the pool walk order (slot index ascending).
+    pub(crate) fn back_gore_key(pool: &tr_core::gore::GorePool) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        let mut any = false;
+        for i in 0..tr_core::gore::GORE_SLOTS {
+            let g = pool.slot(i);
+            if !crate::render::gore::draws_in_back(g) {
+                continue;
+            }
+            any = true;
+            i.hash(&mut h);
+            g.gore_type.hash(&mut h);
+            g.position.x.to_bits().hash(&mut h);
+            g.position.y.to_bits().hash(&mut h);
+            g.rotation.to_bits().hash(&mut h);
+            g.scale.to_bits().hash(&mut h);
+            g.alpha.hash(&mut h);
+            g.frame.current_column.hash(&mut h);
+            g.frame.current_row.hash(&mut h);
+            g.frame.column_count.hash(&mut h);
+            g.frame.row_count.hash(&mut h);
+        }
+        if any { h.finish() } else { 0 }
+    }
 }
 
 #[cfg(test)]
@@ -1637,8 +1980,14 @@ mod frame_key {
             brightness: brightness.to_bits(),
             waterfall: 0,
             tile_anim: 0,
+            chest_frames: 0,
+            cage_anim: 0,
             net_key: 0,
+            herb_weather: 0,
+            back_gore: 0,
+            moon_lord_strength: 0,
             world_revision: 0,
+            wof_key: 0,
         };
         assert_ne!(key(1.2), key(1.0), "blind's GlobalBrightness drop must change the key");
         assert_eq!(key(1.2), key(1.2), "an unchanged brightness must not");
@@ -1669,8 +2018,14 @@ mod frame_key {
             brightness: 0,
             waterfall: 0,
             tile_anim,
+            chest_frames: 0,
+            cage_anim: 0,
             net_key: 0,
+            herb_weather: 0,
+            back_gore: 0,
+            moon_lord_strength: 0,
             world_revision: 0,
+            wof_key: 0,
         };
         let mut a = tr_core::drawdata_anim::TileAnimator::new();
         let k0 = key(a.anim_key());
@@ -1756,6 +2111,239 @@ mod frame_key {
             "no per-world cage reset or warm-up (:8387-8395 covers tileFrame only)"
         );
         assert!(enter.contains("self.tile_anim.reset();"), "the tileFrame reset stays");
+    /// W4-d58 key-coverage witness: the chest lid frames feed the chest
+    /// rewrite inside the cached world range (`CacheSpecialDraws_Part2`,
+    /// `TileDrawing.cs:4309-4320`), so two frames that differ only in a
+    /// chest's lid state must not share a cached range. The key input is
+    /// `chest::chest_frame_key()` — this pins that the i43 animator's
+    /// open/close walk changes it while everything else stands still.
+    #[test]
+    fn chest_lid_state_changes_the_frame_key() {
+        let key = |chest_frames: u64| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            chest_frames,
+            net_key: 0,
+            world_revision: 0,
+        };
+        let mut chests = vec![crate::chest::WorldChest {
+            tile: (10, 20),
+            ..Default::default()
+        }];
+        let k0 = key(crate::chest::chest_frame_key(&chests));
+        // One open tick: counter 1 → frame 1 (the +38 half-open row).
+        crate::chest::update_chest_frames(&mut chests, 0);
+        let k1 = key(crate::chest::chest_frame_key(&chests));
+        assert_ne!(k0, k1, "an opening lid must change the key");
+        assert_eq!(k1, key(crate::chest::chest_frame_key(&chests)), "a still lid must not");
+        // Nine more ticks reach frame 2 (+76); the close walk returns to 0.
+        for _ in 0..9 {
+            crate::chest::update_chest_frames(&mut chests, 0);
+        }
+        let k2 = key(crate::chest::chest_frame_key(&chests));
+        assert_ne!(k1, k2, "the fully open lid differs from half-open");
+        for _ in 0..10 {
+            crate::chest::update_chest_frames(&mut chests, -1);
+        }
+        assert_eq!(k0, key(crate::chest::chest_frame_key(&chests)), "closed again = k0");
+    }
+
+    /// W4-f14 key-coverage witness: the cage animator's frame tables ride
+    /// the cached world range (`draw_tiles` feeds `frame_of` into the cage
+    /// arms' addFrY rewrites), so two frames that differ only in cage
+    /// state must not share a cached range.
+    #[test]
+    fn cage_animator_state_changes_the_frame_key() {
+        let key = |cage_anim: u64| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            cage_anim,
+            net_key: 0,
+            world_revision: 0,
+        };
+        let mut a = tr_core::drawdata_cages::CritterCageAnimator::zeroed();
+        let k0 = key(a.anim_key());
+        a.critter_cage = true;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        a.animate_critter_cages(&mut rng);
+        let k1 = key(a.anim_key());
+        assert_ne!(k0, k1, "one open-gate cage tick must change the key");
+        assert_eq!(k1, key(a.anim_key()), "an unchanged animator must not");
+        // The closed gate draws nothing — the key holds (the pre-wiring
+        // cache behaviour for cage-free views).
+        a.critter_cage = false;
+        a.animate_critter_cages(&mut rng);
+        assert_eq!(k1, key(a.anim_key()), "the closed gate keeps the key");
+    }
+
+    /// W4-g80 key-coverage witness: the 83 herb-maturity sheet swap reads
+    /// weather the light key does not carry (`cloudAlpha > 0`, the deathweed
+    /// moon gate, the fireblossom `time > 40500` gate), so two frames that
+    /// differ only in those gates must not share a cached world range while
+    /// an herb 83 is in view. The key input is the three-gate bitmask.
+    #[test]
+    fn herb_weather_gates_change_the_frame_key() {
+        let key = |herb_weather: u32| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            net_key: 0,
+            herb_weather,
+            world_revision: 0,
+        };
+        // bit 0 = cloudAlpha > 0 (waterleaf), bit 1 = the deathweed moon
+        // gate, bit 2 = time > 40500 (fireblossom).
+        for gate in [1u32, 2, 4] {
+            assert_ne!(key(0), key(gate), "gate {gate} must change the key");
+        }
+        assert_eq!(key(5), key(5), "unchanged gates must not");
+    }
+
+    /// W4-g12 key-coverage witness: `DrawGoreBehind`'s drip quads draw
+    /// inside the cached world range, so a drip's motion/frame/alpha must
+    /// change `back_gore`; a gore-free pool keeps the key at 0 (the
+    /// waterfall convention — the pre-wiring cache behaviour survives).
+    #[test]
+    fn w4_g12_back_gore_state_changes_the_frame_key() {
+        let mut pool = tr_core::gore::GorePool::new();
+        assert_eq!(WorldFrameKey::back_gore_key(&pool), 0, "no gores, no key");
+        // A hanging drip (type 706, row 3 — outside the fall frames).
+        let g = pool.slot_mut(0);
+        g.active = true;
+        g.gore_type = 706;
+        g.frame = tr_core::gore::SpriteFrame::new(1, 15);
+        g.frame.current_row = 3;
+        g.position = glam::Vec2::new(100.0, 200.0);
+        let k0 = WorldFrameKey::back_gore_key(&pool);
+        assert_ne!(k0, 0, "a live drip rides the key");
+        // Motion changes it.
+        pool.slot_mut(0).position.x += 1.0;
+        let k1 = WorldFrameKey::back_gore_key(&pool);
+        assert_ne!(k0, k1, "drip motion must invalidate the cached range");
+        // The frame advance changes it.
+        pool.slot_mut(0).frame.current_row = 4;
+        assert_ne!(k1, WorldFrameKey::back_gore_key(&pool));
+        // The fall frames (7..=9) leave the behind pass — back to 0.
+        pool.slot_mut(0).frame.current_row = 8;
+        assert_eq!(WorldFrameKey::back_gore_key(&pool), 0, "fall frames draw in front");
+    }
+
+    /// W4-d127 re-verify — the `wof_key` bit-pack (`frame/draw.rs`'s
+    /// `WorldFrameKey.wof_key`, `Main.DrawWoF`'s draw inputs) is injective
+    /// over the reachable band range. The four fields occupy disjoint bit
+    /// ranges: clock [0,8), band top [8,24), band bottom [24,40), tongue
+    /// [40,41). While a wall lives the bands are always valid (the first
+    /// `style27_step` initialises them before any draw; the clamps hold them
+    /// in `[underworld+10, +80]*16`, max `2400*16 = 38400 < 2^16`), so the
+    /// sign-extended `as i64 as u64` shift never sees a negative and the
+    /// fields never overlap. This pins the pack's layout: two states that
+    /// differ in ANY one field produce different keys, and the max band
+    /// value still fits its 16-bit field without spilling into the tongue.
+    #[test]
+    fn wof_key_field_layout_is_injective_over_the_band_range() {
+        // The pack, verbatim from frame/draw.rs (the wall-present branch).
+        let pack = |clock: i32, top: i32, bottom: i32, tongue: bool| -> u64 {
+            (clock as u64)
+                | ((top as i64 as u64) << 8)
+                | ((bottom as i64 as u64) << 24)
+                | ((tongue as u64) << 40)
+        };
+        // The largest reachable band pixel value (Large world 2400 rows).
+        let max_band = 2400 * 16; // 38400 < 65536 = 2^16
+        assert!(max_band < (1 << 16), "the band fits its 16-bit field");
+        // Each field alone changes the key (disjoint ranges).
+        let base = pack(0, 1000, 2000, false);
+        assert_ne!(base, pack(1, 1000, 2000, false), "the clock rides bits [0,8)");
+        assert_ne!(base, pack(0, 1001, 2000, false), "the top rides bits [8,24)");
+        assert_ne!(base, pack(0, 1000, 2001, false), "the bottom rides bits [24,40)");
+        assert_ne!(base, pack(0, 1000, 2000, true), "the tongue rides bit 40");
+        // The max band value does not spill into the tongue bit.
+        let hi = pack(17, max_band, max_band, false);
+        assert_eq!(hi >> 40, 0, "no band bit reaches the tongue field");
+        // The clock wraps at 18 (the mouth clock's range), never reaching
+        // the band top's bit 8.
+        assert!(pack(17, 0, 0, false) < (1 << 8), "the clock stays below bit 8");
+        // A full-range sweep: distinct (top, bottom) pairs stay distinct.
+        let mut seen = std::collections::HashSet::new();
+        for top in [0, 160, 1600, 16000, max_band] {
+            for bottom in [0, 160, 1600, 16000, max_band] {
+                assert!(seen.insert(pack(0, top, bottom, false)), "({top},{bottom}) aliases");
+            }
+        }
+    }
+
+    /// W4-d70 key-coverage witness: the Moon Lord parts' `GetMoonLordColoring`
+    /// tint (`Main.cs:26325`, `Color.Lerp(White, (183,255,255), strength)`)
+    /// rides the cached world range, so two frames that differ only in
+    /// `LatestFilterStrength` must not share a cached range. The key input is
+    /// the strength's bits, gated on a Moon Lord part being present (zero
+    /// otherwise — Moon-Lord-free worlds keep the pre-wiring cache behaviour).
+    #[test]
+    fn moon_lord_strength_changes_the_frame_key() {
+        let key = |strength: f32| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            net_key: 0,
+            moon_lord_strength: strength.to_bits(),
+            world_revision: 0,
+        };
+        assert_ne!(key(1.0), key(0.5), "a changed strength must change the key");
+        assert_eq!(key(1.0), key(1.0), "an unchanged strength must not");
     }
 }
 
@@ -1928,6 +2516,23 @@ impl App {
     /// destructure there holds `renderer`, so a whole-`self` method
     /// would conflict; the body reads the cache triple + `mouse_pos` +
     /// `inventory[selected]` verbatim (the S1-W4-g81 seal).
+    /// `Main.ItemIconCacheVerification` (`Main.cs:46522-46540`): while the
+    /// linger runs, a non-zero mouse move decrements it, a >4 px move
+    /// zeroes it, and a selected-item switch zeroes it. S1-W4-g81.
+    pub(crate) fn item_icon_cache_verification(&mut self) {
+        if self.item_icon_cache_time > 0 {
+            let d = (self.item_icon_cache_pos - self.mouse_pos).length();
+            if d != 0.0 {
+                self.item_icon_cache_time -= 1;
+            }
+            if d > 4.0 {
+                self.item_icon_cache_time = 0;
+            }
+            if self.item_icon_cache_kind != self.inventory[self.selected].kind {
+                self.item_icon_cache_time = 0;
+            }
+        }
+    }
 
     /// `Main.mH` (`Main.cs:45771-45783`): 256 while the minimap HUD is live,
     /// clamped by the 600 px equipment push-up — the same value `frame()`
@@ -2100,6 +2705,25 @@ impl App {
         }
     }
 
+    /// `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`): the F11
+    /// screenshot-mode toggle. `releaseUI` is the press latch — the flip
+    /// fires only while it stands, then drops until the key releases. The
+    /// flip plays `SoundEngine.PlaySound(12)` (`:18416`). The C# runs the
+    /// pass on every update (menus included, `:17156`); the port routes it
+    /// through `world_key` (the in-world key arm) — the menu/front screens
+    /// own their keys, and `hideUI` only gates the in-world interface.
+    pub(crate) fn toggle_hide_ui(&mut self, f11_down: bool) {
+        if f11_down {
+            if self.release_ui {
+                self.hide_ui = !self.hide_ui;
+                self.audio.play("Menu_Tick");
+            }
+            self.release_ui = false;
+        } else {
+            self.release_ui = true;
+        }
+    }
+
     /// `Player.cs:24774-24793` + `24898-24908`: the fullscreen-map controls. The pan
     /// step is `16 / scale` tiles **once per frame, with no `dt` factor** (the
     /// original runs it in the per-frame input pass); each movement arm also
@@ -2211,6 +2835,22 @@ impl App {
         let (sw, sh) = self.screen_size();
         let map_binds = self.map_binds.clone();
         let held = |action: crate::input_map::MapAction| {
+    /// `Player.cs:24909-24965` — the NOT-fullscreen map-key block: the
+    /// MapZoomIn/Out and MapAlphaUp/Down triggers step the minimap
+    /// (`mapStyle == 1`, ×1.025/×0.975, ±0.015) or the overlay
+    /// (`mapStyle == 2`, ×1.05/×0.95, ±0.015), and the MapStyle trigger
+    /// (Tab) cycles `Main.mapStyle` 0→1→2→0 with sound 12 on the
+    /// `releaseMapStyle` press latch. Runs once per player tick while the
+    /// map is enabled and NOT fullscreen (the fullscreen arm lives in
+    /// [`Self::update_map_input`]); the clamps are the draw-side ones
+    /// (`Main.cs:55515-55530` / `:55550-55566`).
+    pub(crate) fn update_map_style_keys(&mut self) {
+        if !self.settings.map_enabled || self.map.as_ref().is_some_and(|m| m.open) {
+            return;
+        }
+        let (sw, _) = self.screen_size();
+        let map_binds = self.map_binds.clone();
+        let bound = |action: crate::input_map::MapAction| {
             self.keys.iter().any(|k| {
                 map_binds[action.index()].as_str() == crate::input_map::key_name(*k)
             })
@@ -2252,6 +2892,66 @@ impl App {
             m.overlay_scale =
                 map::overlay_scale_clamp(sw, self.world.width, render_zoom, m.overlay_scale);
             m.overlay_alpha = map::map_alpha_clamp(m.overlay_alpha);
+        let zoom_in = bound(crate::input_map::MapAction::ZoomIn);
+        let zoom_out = bound(crate::input_map::MapAction::ZoomOut);
+        let alpha_up = bound(crate::input_map::MapAction::AlphaUp);
+        let alpha_down = bound(crate::input_map::MapAction::AlphaDown);
+        if let Some(m) = self.map.as_mut() {
+            match self.map_style {
+                // `Player.cs:24911-24928`.
+                1 => {
+                    if zoom_in {
+                        m.minimap_scale = map::minimap_key_scale(m.minimap_scale, true);
+                    }
+                    if zoom_out {
+                        m.minimap_scale = map::minimap_key_scale(m.minimap_scale, false);
+                    }
+                    if alpha_up {
+                        m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, true);
+                    }
+                    if alpha_down {
+                        m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, false);
+                    }
+                    // `Main.cs:55515-55530`.
+                    m.minimap_scale = ui::minimap::clamp_minimap_scale(m.minimap_scale);
+                    m.minimap_alpha = map::map_alpha_clamp(m.minimap_alpha);
+                }
+                // `Player.cs:24930-24947`.
+                2 => {
+                    if zoom_in {
+                        m.overlay_scale = map::map_key_scale(m.overlay_scale, true);
+                    }
+                    if zoom_out {
+                        m.overlay_scale = map::map_key_scale(m.overlay_scale, false);
+                    }
+                    if alpha_up {
+                        m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, true);
+                    }
+                    if alpha_down {
+                        m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, false);
+                    }
+                    // `Main.cs:55550-55566`.
+                    m.overlay_scale =
+                        map::overlay_scale_clamp(sw, self.world.width, self.zoom, m.overlay_scale);
+                    m.overlay_alpha = map::map_alpha_clamp(m.overlay_alpha);
+                }
+                _ => {}
+            }
+        }
+        // `Player.cs:24949-24965` — the style cycle rides `mapStyle != 0`
+        // (the `if (this.mapStyle)` trigger, not the Main.mapStyle value):
+        // the Tab press cycles 0→1→2→0 with sound 12, on the release latch.
+        if bound(crate::input_map::MapAction::Style) {
+            if self.release_map_style {
+                self.audio.play("Menu_Tick");
+                self.map_style += 1;
+                if self.map_style > 2 {
+                    self.map_style = 0;
+                }
+            }
+            self.release_map_style = false;
+        } else {
+            self.release_map_style = true;
         }
     }
 
@@ -2532,6 +3232,15 @@ impl App {
         if self.shop_npc.is_some() && !self.inventory_open {
             self.close_shop();
         }
+        // `ItemSlot.UpdateInterface` (`ItemSlot.cs:516-521`, per-update at
+        // `Main.cs:17046`): the savings currency latch resets when the
+        // inventory closes or the talk ends. The port's shop opens
+        // collapse the talk onto `shop_npc` (the same stand-in the close
+        // rule above records); the reforge menu also holds a talk.
+        let talking = self.shop_npc.is_some() || self.talk_npc.is_some();
+        if !self.inventory_open || !talking {
+            self.custom_currency_for_savings = crate::custom_currency::CURRENCY_NONE;
+        }
     }
 
     /// One unit of the shop buy — `ItemSlot.HandleShopSlot`'s loop body
@@ -2550,9 +3259,12 @@ impl App {
     /// `ItemSlot.cs:1220`/`:1650`). The consumer is the shop-grid click
     /// (`app/clicks.rs`).
     ///
-    /// Deviation: the charge rides the port's aggregate `App.coins` purse
-    /// (the recorded coin model, ANALYSIS) — the C# `BuyItem` spends the
-    /// inventory + bank coin stacks through `TryPurchasing`.
+    /// Deviation: the PLAIN-currency charge rides the port's aggregate
+    /// `App.coins` purse (the recorded coin model, ANALYSIS) — the C#
+    /// `BuyItem` spends the inventory + bank coin stacks through
+    /// `TryPurchasing`. The special-currency arm (the Tavernkeep's medal
+    /// rows) IS ported: `custom_currency.rs` spends the real 3817 stacks
+    /// across the inventory + the four banks with the restore-on-fail.
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
         // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
         // charge is `GetItemExpectedPrice`'s buying value for the stock
@@ -2577,6 +3289,42 @@ impl App {
             self.shopping_settings.price_adjustment,
         ) as u64;
         if self.coins < price {
+        // `Player.BuyItem`'s custom-currency arm (`Player.cs:35402-35405`)
+        // spends the medal wallet (`CustomCurrencySingleCoin.TryPurchasing`
+        // over the bank's 3817 stacks) — the wallet is unported, so a
+        // medal row refuses here rather than charging the coin purse
+        // (the recorded CustomCurrencyManager gap).
+        if entry.shop_special_currency != -1 {
+            return false;
+        }
+        let price =
+            crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
+        // `Player.BuyItem`'s custom-currency arm (`Player.cs:35402-35405`)
+        // → `CustomCurrencyManager.BuyItem` (`CustomCurrencyManager.cs:
+        // 69-119`): the medal wallet counts the inventory (minus the coin
+        // slots) + the four banks and spends the 3817 stacks through
+        // `CustomCurrencySingleCoin.TryPurchasing` — the full-cache restore
+        // on a failed spend rides `custom_currency.rs`. The plain purse
+        // keeps the recorded aggregate `App.coins` model (ANALYSIS).
+        let special = entry.shop_special_currency;
+        if special != crate::custom_currency::CURRENCY_NONE {
+            let Some(p) = self.player.as_mut() else {
+                return false; // no player = no wallet (the C# always has one)
+            };
+            let ok = crate::custom_currency::buy_with_currency(
+                price as i64,
+                [
+                    self.inventory.as_mut_slice(),
+                    p.banks[0].as_mut_slice(),
+                    p.banks[1].as_mut_slice(),
+                    p.banks[2].as_mut_slice(),
+                    p.banks[3].as_mut_slice(),
+                ],
+            );
+            if !ok {
+                return false; // `:77-80`'s short-wallet refusal / the restore
+            }
+        } else if self.coins < price {
             return false;
         }
         // `:2075-2083` — an air cursor takes the row's kind (and prefix);
@@ -2589,9 +3337,10 @@ impl App {
                 prefix: entry.prefix,
             };
         }
-        // `:2084-2087` — the sellback memo (no custom currencies in the
-        // port, so the `shopSpecialCurrency == -1` half is always true).
-        if !entry.buy_once {
+        // `:2084-2087` — the sellback memo: plain-currency non-buyOnce rows
+        // only (`!inv[slot].buyOnce && inv[slot].shopSpecialCurrency == -1`
+        // — the medal rows never memo).
+        if !entry.buy_once && special == crate::custom_currency::CURRENCY_NONE {
             self.shop_sellback.add(entry.item, entry.prefix, 1);
         }
         self.mouse_item.count += 1;
@@ -2605,6 +3354,7 @@ impl App {
                     item: 0,
                     when: crate::shop::StockWhen::Always,
                     shop_custom_price: None,
+                    shop_special_currency: -1,
                     buy_once: false,
                     is_a_shop_item: false,
                     prefix: 0,
@@ -2613,7 +3363,9 @@ impl App {
                 };
             }
         }
-        self.coins -= price;
+        if special == crate::custom_currency::CURRENCY_NONE {
+            self.coins -= price; // the medal arm already spent the wallet
+        }
         true
     }
 
@@ -2763,6 +3515,42 @@ impl App {
         self.reforge_slot.prefix = prefix;
         if top_tier {
             self.reforge_cooldown = 60; // `Main.cs:41910`
+        }
+        // `PopupText.NewText(...)` (`Main.cs:41906`, W4-g57): the new-prefix
+        // reveal — the affix name floats up from the player's centre
+        // (`Main.LocalPlayer.Center`), `noStack: true`. VISUAL only: the
+        // spawn draws no `Main.rand` (`PopupText.cs:194-412`), so the i45
+        // tail below keeps its exact draw order. The `showItemText` gate
+        // (`PopupText.cs:196-199`) rides `settings.pickup_text`.
+        if self.settings.pickup_text {
+            let name = crate::lang::prefixed_item_name(kind, prefix);
+            let stack = self.reforge_slot.count.max(1) as i32;
+            let display = crate::popup_text::display_text(&name, stack);
+            let text_size = [
+                crate::ui::text::ui_font_width(&self.lookups, &display, 1.0)
+                    .unwrap_or(display.chars().count() as f32 * 8.0),
+                crate::ui::text::ui_font_height(&self.lookups, 1.0).unwrap_or(8.0),
+            ];
+            let (cx, cy) = self
+                .player
+                .as_ref()
+                .map(|p| p.center())
+                .unwrap_or((0.0, 0.0));
+            let rare = crate::prefix::prefixed_stats(kind, prefix)
+                .map(|s| s.rare)
+                .unwrap_or(0);
+            crate::popup_text::spawn_reforge(
+                &mut self.popup_texts,
+                top_tier,
+                &name,
+                stack,
+                [cx, cy],
+                crate::popup_text::popup_rarity_color(rare),
+                rare == -13, // `PrepareEffects` (`PopupText.cs:397-400`)
+                false,       // the port's item table carries no expert flag
+                text_size,
+                self.world.height as f32 * 16.0, // `Main.bottomWorld`
+            );
         }
         // The presentation tail (`Main.cs:41906-41932`): the sound + the
         // top-tier particle draws, in the C#'s order on the same global
@@ -3231,6 +4019,11 @@ impl App {
             self.chat.new_text(line, [255, 255, 255]);
             // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail.
             self.audio.play_menu("Menu_Tick");
+            // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail — W4-g23
+            // centralized it in `ChatMonitor::new_text`; drain the queue
+            // here so the cue still fires inside this subscriber (the
+            // per-frame drain in `frame()` covers the other callers).
+            self.chat.drain_new_text_cues(&self.audio);
             // `if (SoundEngine.FindActiveSound(SoundID.AchievementComplete)
             // == null) SoundEngine.PlayTrackedSound(...)` (`:731-734`).
             let style = crate::achievements::achievement_complete_style();
@@ -3446,6 +4239,10 @@ impl App {
         // world never enters paused. (`GameUpdateCount` resets through the
         // `OnWorldLoad` hook — the fresh [`App::new`] both install paths build.)
         self.game_paused = false;
+        // W4-g66 gap-fill — the session character's appearance lands on the
+        // live player (`Main.ActivePlayerFileData.Player`'s colours; the
+        // wings-33/38 dust arms read them).
+        self.apply_session_appearance();
         // S1-G-1f: the world-load animator reset (`Main.cs:8393-8394` —
         // `tileFrame[l] = 0; tileFrameCounter[l] = 0`, and
         // `weatherVaneBobframe = 0` at `:67242`).
@@ -3492,6 +4289,26 @@ impl App {
         if let Some(m) = self.map.as_mut() {
             m.reset_map_delay();
         }
+        // W4-f30 — `Player.Hooks.EnterWorld`'s forced research check
+        // (`Player.cs:325` → `AchievementsHelper.CheckResearchAchievement(
+        // forced: true)`): the world-entry re-count fires 45 (TRASH_COMPACTOR)
+        // if half the researchable catalogue is already complete. The tracker
+        // loads empty until the Journey sacrifice UI lands (M6-SAVE's world
+        // section), so this is inert in play but the call site is wired.
+        let (fired, version) =
+            crate::research::check_research_achievement(&self.research, self.last_research_version, true);
+        self.last_research_version = version;
+        if fired {
+            let _ = self.notify_progression_net(45);
+        }
+        // W4-f40 DOC-SWEEP: the lantern world-load clear (`WorldGen.cs:6996`
+        // `LanternNight.WorldClear()` + the `SkyManager.Reset` family) lives
+        // at the clear-then-restore sites — `swap_world` (ahead of the
+        // `App::new` restore) and `client_install_world` (ahead of the tile
+        // install) — NOT here: this tail runs AFTER the restore, and a
+        // clear here would clobber a loaded lantern night (the C#
+        // `clearWorld` precedes `SetOngoingToTemps`, `WorldFile.cs:1977`
+        // vs `:173-176`).
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -3620,6 +4437,71 @@ impl App {
                 self.world_advanced_glitch = ui::world_creation_advanced::EverythingGlitch::default();
             }
             FrontScreen::SecretSeedsList(_) => {}
+            // `UIResourcePackInfoMenu` has no `OnActivate` override — the
+            // ctor's `BuildPage` (`:33-38`) is the whole setup; the pack and
+            // the back target rode in from `Click_Info`.
+            FrontScreen::ResourcePackInfo(_) => {}
+            // `Main.OpenResourcePacksMenu` (`Main.cs:52371-52375`): the ctor
+            // takes `AssetInitializer.CreateResourcePackList` — the config's
+            // saved entries + the directory discovery (`ResourcePackList.
+            // FromJson`) — then `PopulatePackList` (`:57`). The back target
+            // rode in from the opener (null for the menu row, the hub for
+            // `Click_OpenResourcePacksMenu`).
+            FrontScreen::ResourcePackSelection(ref mut state) => {
+                let dir = crate::resource_pack::resource_packs_dir();
+                state.packs = match dir {
+                    Some(dir) => crate::resource_pack::ResourcePackList::from_config(
+                        &self.settings.resource_packs,
+                        &dir,
+                    ),
+                    None => crate::resource_pack::ResourcePackList::default(),
+                };
+                state.populate();
+                state.available_scroll = 0.0;
+                state.enabled_scroll = 0.0;
+            }
+            // `UIWorkshopSelectResourcePackToPublish.OnActivate` (`:128-135`)
+            // → `PopulateEntries` (`:137-151`): the publishable list (no
+            // saved state), Branding-None filter + IsCompressed sort. The
+            // back target rode in from the hub's opener.
+            FrontScreen::WorkshopPublishPacks(ref mut state) => {
+                let dir = crate::resource_pack::resource_packs_dir();
+                state.packs = match dir {
+                    Some(dir) => crate::resource_pack::ResourcePackList::publishable(&dir),
+                    None => crate::resource_pack::ResourcePackList::default(),
+                };
+                state.populate();
+                state.scroll = 0.0;
+            }
+            // `UIWorkshopSelectWorldToPublish.OnActivate` (`:125-132`) →
+            // `PopulateEntries` (`:134-149`): `Main.LoadWorlds`, drop
+            // `!IsValid`, the favourite/name/file sort — NOT the world
+            // select's Journey-first sort. The back target rode in from the
+            // hub's opener.
+            FrontScreen::WorkshopPublishWorlds(ref mut state) => {
+                let fakes = crate::env::fake_count("TR_FAKE_WORLDS");
+                let dir = save::default_world_dir().unwrap_or_default();
+                let mut worlds = ui::save_list::list_worlds(&dir, fakes);
+                worlds.retain(|w| w.valid);
+                ui::workshop_publish::sort_publish_worlds(&mut worlds);
+                state.worlds = worlds;
+                state.scroll = 0.0;
+            }
+            // `UIWorkshopWorldImport.OnActivate` (`:131-140`):
+            // `UpdateWorkshopWorldList` (`:142-153`) returns early without
+            // `SocialAPI.Workshop`, so `UpdateWorldsList` (`:155-166`)
+            // sorts an empty list — the screen is always empty live. The
+            // back target rode in from the hub's opener.
+            FrontScreen::WorkshopImportWorlds(ref mut state) => {
+                state.worlds.clear();
+                ui::workshop_publish::sort_publish_worlds(&mut state.worlds);
+                state.scroll = 0.0;
+            }
+            // `UIWorkshopHub` has no `OnActivate` override — `EnterHub`
+            // (`:40-43`) fires the empty `OnWorkshopHubMenuOpened` event
+            // (`:368-373`); no re-list. The back target rode in from the
+            // opener (null from the menu row).
+            FrontScreen::WorkshopHub(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
@@ -3930,6 +4812,15 @@ impl App {
                 self.set_debug_loadouts_search(name);
                 self.front = None;
             }
+            // `OnFinishedSettingName` (`UIWorkshopImportWorldListItem.cs:
+            // 107-114`): `SocialAPI.Workshop` is null, so the import never
+            // runs and no state change happens — the keyboard stays open,
+            // exactly like the source. The notice is the port's channel.
+            KeyboardTail::WorldImport => {
+                self.front_hint = Some(format!(
+                    "Importing \"{name}\" is not ported yet (no Steam Workshop)"
+                ));
+            }
         }
     }
 
@@ -4124,6 +5015,19 @@ impl App {
     /// so the menu stays alive with its own world rather than a black screen.
     pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
         let (mut world, sections) = load_world(path)?;
+        let (world, sections) = load_world(path)?;
+        // W4-f40 DOC-SWEEP: the C# `LoadWorld` runs `WorldGen.clearWorld()`
+        // (`WorldFile.cs:1977`) BEFORE `LoadWorldFlags` reads the event temps
+        // back (`SetOngoingToTemps`, `:173-176`) — the clear-then-restore
+        // order. The port's restore rides `App::new` below (f45's from_wld
+        // block), so the clear runs here, ahead of it; a clear in
+        // `enter_loaded_world` (AFTER the rebuild) would clobber the
+        // restored lantern quad. The fresh `App::new` builds
+        // `WorldEvents`/`LanternSky` from defaults anyway — this pins the
+        // order for any future restore-onto-self path. The failed-load
+        // early return above leaves the current world untouched.
+        crate::world_events::world_clear(&mut self.world_events);
+        self.lantern_sky.reset();
         let content = assets::content_dir().context("no retail Content directory")?;
         let mut static_cache = self.static_sheets.take();
         let mut fonts_cache = self.fonts_cache.take();
@@ -4157,6 +5061,10 @@ impl App {
         // to softcore on every Play — the hardcore ghost arm needs the draft.
         let session_draft = self.session_draft.take();
         let player_name = self.player_name.clone();
+        // W4-g66 gap-fill — the session draft survives the world swap
+        // (`Main.PendingPlayer`/`ActivePlayerFileData` are world-independent;
+        // `enter_loaded_world` re-applies its appearance to the fresh player).
+        let session_draft = self.session_draft.take();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
         let music = std::mem::replace(
             &mut self.music,
@@ -4537,6 +5445,38 @@ impl App {
                     // Super Cart ride (`player.rs:9500`) consume the flags.
                     p.extra_accessory = saved.extra_accessory;
                     p.unlocked_super_cart = saved.unlocked_super_cart;
+                    // W4-g89 — the permanent Aegis Fruit unlock rides the
+                    // sidecar's v7 line (`Player.usedAegisFruit` load,
+                    // `Player.cs:55256`); the booster pass re-adds the +4
+                    // every tick (`:12853-12856`). The Gummy Worm rides the
+                    // same line's second token (v8, `:55259`; the +3 row
+                    // `:12857-12860`).
+                    p.used_aegis_fruit = saved.used_aegis_fruit;
+                    p.used_gummy_worm = saved.used_gummy_worm;
+                    // W4-g89c — the Ambrosia rides the third token (v9,
+                    // `:55260`; the speed row `:12861-12866`).
+                    p.used_ambrosia = saved.used_ambrosia;
+                    // W4-g89i — the Aegis Crystal rides the fourth token
+                    // (v10, `:55255`; the +0.2 regen row `:19113-19116`).
+                    p.used_aegis_crystal = saved.used_aegis_crystal;
+                    // W4-g90: the permanent artisan-loaf unlock rides the
+                    // sidecar's v7 line (`Player.ateArtisanBread`,
+                    // `Player.cs:2048`; vanilla persists it in the `.plr`,
+                    // `:54779`/`:55245`). Older sidecars load false.
+                    p.ate_artisan_bread = saved.ate_artisan_bread;
+                    // W4-g90 lane 7: the five shimmer unlocks ride the same
+                    // v7 block (`Player.cs:54781-54786` minus the g89-owned
+                    // fruit) — the boosters resume on world reload.
+                    // DEPRECATED-BY-SUPERSET (retire, 135 §11): these six
+                    // restores dedup onto g88 v11's superset restore block
+                    // at the merge (103 §9 step 7 — gummy already restored
+                    // there since fold 3); the sidecar restore runs SECOND
+                    // after the character-load hydration (132 §2c).
+                    p.used_aegis_crystal = saved.used_aegis_crystal;
+                    p.used_arcane_crystal = saved.used_arcane_crystal;
+                    p.used_galaxy_pearl = saved.used_galaxy_pearl;
+                    p.used_gummy_worm = saved.used_gummy_worm;
+                    p.used_ambrosia = saved.used_ambrosia;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
@@ -4565,6 +5505,15 @@ impl App {
                 // sidecar's v5 line; they feed the tracker the App literal
                 // below builds from.
                 loaded_kills = saved.kills;
+            }
+            // W4-g56 — the void-vault favorites restore from the `.trvault`
+            // sidecar (the `.plr` bank4-favourited rows are f44's lane; the
+            // contract is in ANALYSIS). A fresh world (no sidecar) keeps the
+            // all-false default.
+            if let Some(favs) = persist::load_vault_favorites(&world_path) {
+                if let Some(p) = player.as_mut() {
+                    p.vault_favorites = favs;
+                }
             }
         }
         if let Some(n) = crate::env::coins() {
@@ -4686,6 +5635,20 @@ impl App {
                 if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
                     npcs.push(guide);
                 }
+            if let Some(mut guide) = Npc::spawn_guide(&world, world.spawn_x) {
+                // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt`
+                // (`NPC.cs:80769`/`:80839-80856`): the starter Guide names
+                // himself at spawn — two `genRand` draws through the legacy
+                // profile (`npc_names.rs`). The C# `Main.rand` is the
+                // worldgen stream here; the legacy profile rolls variation
+                // 0 and never draws it, so the seed stand-in is inert.
+                let mut main_rand = tr_core::unified_random::UnifiedRandom::new(world.seed as i32);
+                crate::npc_names::give_town_unique_data(
+                    &mut guide,
+                    &mut main_rand,
+                    &mut world.frame_rng,
+                );
+                npcs.push(guide);
             }
         } else {
             for rec in &sections.native.npcs {
@@ -5184,6 +6147,22 @@ impl App {
                 .map(|b| (b.banner, b.kills))
                 .collect()
         };
+        // them inside the world-flags block.
+        let seeded_banners: Vec<(i32, i32)> = sections
+            .native
+            .banners
+            .iter()
+            .map(|b| (b.banner, b.kills))
+            .collect();
+        // W4-e24: `BannerSystem.Load`'s `version >= 289` claimable half
+        // (`BannerSystem.cs:203-211`) — the v18 section's recorded claimable
+        // counts restore the pool the milestone fills.
+        let seeded_claimable: Vec<(i32, u16)> = sections
+            .native
+            .banner_claimable
+            .iter()
+            .map(|b| (b.banner, b.count))
+            .collect();
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
@@ -5255,6 +6234,8 @@ impl App {
             sign_x: 0,
             sign_y: 0,
             shopping_settings: crate::happiness::ShoppingSettings::default(),
+            prevent_joja_cola_dialog: false,
+            reroll_dryad_text: 0,
             gpu: None,
             renderer: None,
             post: None,
@@ -5269,10 +6250,17 @@ impl App {
                 dust.set_wet_probe(Box::new(crate::player::wet_collision));
                 dust
             },
+            // `Main.waterStyle` starts 0 (`Main.cs:1105`'s static default);
+            // `DrawWaters` (`:57475`) writes it each foreground draw.
+            water_style: 0,
             water_mask: None,
             targets: None,
+            target_compositor: None,
+            layer_render_count: 1,
+            capture_light_params: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
+            sandstorm_sky: crate::render::sandstorm_sky::SandstormSky::default(),
             filter_driver: crate::app::filters::FilterDriver::new(),
             world,
             atlas: Some(atlas),
@@ -5457,6 +6445,8 @@ impl App {
             craft_filter: None,
             craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: app_bestiary,
+            research: crate::research::ResearchTracker::default(),
+            last_research_version: 0,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
                 &sections.data.npcs.shimmered,
@@ -5512,23 +6502,31 @@ impl App {
                 let mask = crate::env::achievements_categories().unwrap_or(0xF);
                 [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0, mask & 8 != 0]
             },
+            achievements_scroll_drag: None,
+            achievements_back_sounded: false,
+            achievements_handle_hover: false,
             // `InGameNotificationsTracker`'s static list starts empty
             // (`InGameNotificationsTracker.cs:109-112`).
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: {
-                // `TR_EMOTES` opens the wheel for the screenshot runs.
+                // `TR_EMOTES` opens the wheel for the screenshot runs —
+                // through the same `OnActivate` rebuild the click arm uses
+                // (W4-g54: the page needs its groups, not just the flag).
                 let mut sys = emotes::EmoteSystem::default();
                 if crate::env::emotes_open() {
-                    sys.menu_open = true;
+                    sys.open();
                     sys.new_bubble(0);
                 }
                 sys
             },
+            emote_scroll_drag: None,
             banners: {
                 let mut banners = banners::BannerSystem::default();
                 banners.load_pairs(seeded_banners);
+                banners.load_claimable_pairs(seeded_claimable);
                 banners
             },
+            fake_cursor: banners::FakeCursorItem::default(),
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             town_spawn: crate::town_spawn::TownSpawnStatics::default(),
@@ -5571,6 +6569,7 @@ impl App {
             // wiring RNG (S1-L-6c).
             craft_rng: tr_core::unified_random::UnifiedRandom::new(world_seed as i32 | 1),
             coin_slot: crate::ui::coin_slot::CoinSlotState::new(),
+        custom_currency_for_savings: crate::custom_currency::CURRENCY_NONE,
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,
@@ -5583,6 +6582,7 @@ impl App {
             front_mouse_down: false,
             front_scroll: 0.0,
             front_scroll_drag: None,
+            front_scroll_drag_enabled: false,
             session_draft: None,
             vk_grid: crate::env::vk_grid(),
             settings,
@@ -5612,6 +6612,7 @@ impl App {
             net_proj_outbox: Vec::new(),
             net_proj_prev: HashMap::new(),
             net_sync_cadence_timer: 0.0,
+            net_interp_timer: 0.0,
             net_npc_gen: HashMap::new(),
             net_items: HashMap::new(),
             net_items_dirty: false,
@@ -5622,6 +6623,8 @@ impl App {
             net_clone_items: HashMap::new(),
             net_client_counter: 0,
             net_player_outbox: Vec::new(),
+            net_armor_last: [0; 20],
+            net_beat: 0,
             net_play_counter: 0,
             last_item_update: 0,
             net_npc_slots: Vec::new(),
@@ -5649,6 +6652,7 @@ impl App {
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
             quick_mana_prev: false,
+            quick_buff_prev: false,
             mouse_npc_index: -1,
             mouse_npc_type: -1,
             ui_left_press: false,
@@ -5660,11 +6664,19 @@ impl App {
             no_throw: 0,
             cursor_item_icon_id: 0,
             block_interaction_with_projectiles: 3,
+            last_mouse_interface: false,
+            void_lens_selection: Vec::new(),
+            slot_glow: crate::ui::glow::GlowState::default(),
             ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),
             focus_recipe: 0,
+            craft_last_available: Vec::new(),
+            craft_scroll: 0.0,
+            craft_scroll_drag: None,
+            craft_scroll_hover: false,
+            nearby_crafting_mouse_over: false,
             current_recipe_being_crafted: -1,
             prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),
@@ -5681,6 +6693,14 @@ impl App {
             item_icon_cache_time: 0,
             wire_tool_mode: ui::wires_ui::TOOL_MODE_DEFAULT,
             wires_radial: ui::wires_ui::WiresRadial::default(),
+            cursor_item_icon_enabled: false,
+            cursor_item_icon_id: 0,
+            cursor_item_icon_text: String::new(),
+            cursor_item_icon_push: 0,
+            cursor_item_icon_reversed: false,
+            item_icon_cache_pos: Vec2::ZERO,
+            item_icon_cache_kind: 0,
+            item_icon_cache_time: 0,
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,
@@ -5688,13 +6708,14 @@ impl App {
             mine_timer: 0.0,
             mine_hardness: 0.0,
             mine_wall_hits: 0,
-            mine_crack_style: 0,
-            mine_crack_target: None,
+            mine_crack_styles: crate::render::tile_cracks::CrackStyles::new(),
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
             tile_draw_rand: tr_core::UnifiedRandom::new(world_seed as i32),
+            liquid_rand: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
+            smart_interact: Default::default(),
             ingame_options: {
                 // `TR_OPTIONS` (the M7-UI-4 screenshot fixture): the window opens
                 // at boot so `TR_SHOT` captures the panel.
@@ -5732,6 +6753,7 @@ impl App {
             hotbar_lock_hover: false,
             toggle_acc_hover: -1,
             house_banners: Vec::new(),
+            worldgen_debug_open: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
@@ -5762,6 +6784,7 @@ impl App {
             shot_at: crate::env::shot_at().unwrap_or(20),
             atlas_stats,
             combat_texts: Vec::new(),
+            popup_texts: crate::popup_text::Pool::default(),
             static_sheets: None,
             fonts_cache: None,
             light: LightMap::new(),
@@ -5788,6 +6811,23 @@ impl App {
             martian_light_dir: 1.0,
             master_color: 1.0,
             master_color_dir: 1.0,
+            // `Main.invAlpha = 1f; Main.invDir = 1f` (`Main.cs:66846-66847`).
+            inv_pulse: crate::ui::inv_pulse::InvPulse::default(),
+            // `Main.hideUI`/`releaseUI`'s static defaults (`Main.cs:2085-2087`:
+            // false / false — the first released-frame pass arms the latch).
+            hide_ui: false,
+            release_ui: false,
+            release_map_style: false,
+            // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
+            demon_torch: 1.0,
+            demon_torch_dir: 1.0,
+            // `Main.masterColor = 1f; Main.masterColorDir = 1` (`Main.cs:66833-66834`).
+            master_color: 1.0,
+            master_color_dir: 1,
+            // `Main.martianLight = 1f; Main.martianLightDir = 1`
+            // (`Main.cs:66831-66832`).
+            martian_light: 1.0,
+            martian_light_dir: 1.0,
             // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
             disco: [255, 0, 0],
             disco_style: 0,
@@ -5807,6 +6847,10 @@ impl App {
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
             cage_anim: tr_core::critter_cage_anim::CritterCageAnimator::new(),
             critter_cage: false,
+            // W4-f14: the cage animator is PROCESS state — constructed
+            // once per App with the world-seed warm-up stand-in (the C#
+            // seeds Main.rand from DateTime.Now.Ticks, Main.cs:6463).
+            cage_anim: tr_core::drawdata_cages::CritterCageAnimator::new(world_seed as i32),
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
@@ -5836,6 +6880,8 @@ impl App {
             // W4-f39: the SlimeSky's private stream pins to the world seed
             // (the C# ctor is clock-seeded; the c39 event_skies deviation).
             slime_sky: crate::slime_sky::SlimeSky::new(world_seed),
+            lantern_sky: crate::render::lantern_sky::LanternSky::new(world_seed),
+            lantern_sky_step: FixedStepper::new(1.0 / 60.0, 8),
 
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
@@ -5877,6 +6923,7 @@ impl App {
             item_time: 0.0,
             tool_time: 0.0,
             hit_tile: tr_core::hit_tile::HitTile::new(),
+            hit_replace: tr_core::hit_tile::HitTile::new(),
             pound_release: false,
             mining_can_hit_walls: true,
             coins,
@@ -8014,6 +9061,80 @@ mod s1_e_18_tests {
 }
 
 #[cfg(test)]
+mod w4_g86_icon_cache_tests {
+    //! W4-g86 — the g81 carry's `ItemIconCacheUpdate`/`Verification` pair
+    //! (`Main.cs:46515-46540`), the 10-frame tool-icon linger. WRITTEN NOT
+    //! RUN (code-only lane). Zero RNG — the pair is distance/countdown
+    //! maths only.
+    use super::*;
+
+    fn cache_app() -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // Hold the Iron Pickaxe so the kind-switch arm stays quiet.
+        app.inventory[app.selected].kind = 1;
+        app.inventory[app.selected].count = 1;
+        app.mouse_pos = Vec2::new(100.0, 100.0);
+        app
+    }
+
+    /// `ItemIconCacheUpdate` (`Main.cs:46515-46520`): the re-arm records the
+    /// CURRENT mouse position + the tool kind + exactly 10 frames.
+    #[test]
+    fn w4_g86_the_cache_update_pins_position_kind_and_ten_frames() {
+        let mut app = cache_app();
+        app.item_icon_cache_update(1);
+        assert_eq!(app.item_icon_cache_pos, Vec2::new(100.0, 100.0));
+        assert_eq!(app.item_icon_cache_kind, 1);
+        assert_eq!(app.item_icon_cache_time, 10);
+    }
+
+    /// `ItemIconCacheVerification` (`Main.cs:46522-46540`): a STILL mouse
+    /// (distance 0) never decrements — the linger holds its full 10 frames
+    /// while the tool stays selected and the pointer parks.
+    #[test]
+    fn w4_g86_a_still_mouse_holds_the_linger() {
+        let mut app = cache_app();
+        app.item_icon_cache_update(1);
+        for _ in 0..30 {
+            app.item_icon_cache_verification();
+        }
+        assert_eq!(app.item_icon_cache_time, 10, "num == 0 skips the decay");
+    }
+
+    /// A 1-4 px move decrements ONE frame per verification (`:46527-46530`),
+    /// a >4 px move zeroes outright (`:46531-46534` — strictly greater: a
+    /// move of exactly 4 only decrements).
+    #[test]
+    fn w4_g86_small_moves_decay_big_moves_zero() {
+        let mut app = cache_app();
+        app.item_icon_cache_update(1);
+        // Exactly 4 px: decrement only (`num > 4f` is false).
+        app.mouse_pos = Vec2::new(104.0, 100.0);
+        app.item_icon_cache_verification();
+        assert_eq!(app.item_icon_cache_time, 9);
+        // 4.01 px from the CACHE position: the >4 arm zeroes.
+        app.mouse_pos = Vec2::new(104.01, 100.0);
+        app.item_icon_cache_verification();
+        assert_eq!(app.item_icon_cache_time, 0);
+        // A dead linger never re-arms through verification alone.
+        app.item_icon_cache_verification();
+        assert_eq!(app.item_icon_cache_time, 0);
+    }
+
+    /// The selected-item switch zeroes the linger even with a still mouse
+    /// (`:46535-46538` — `_itemIconCacheSelectedItemID !=
+    /// inventory[selectedItem].type`).
+    #[test]
+    fn w4_g86_a_selected_item_switch_zeroes_the_linger() {
+        let mut app = cache_app();
+        app.item_icon_cache_update(1);
+        app.inventory[app.selected].kind = 3509; // the Copper Pickaxe
+        app.item_icon_cache_verification();
+        assert_eq!(app.item_icon_cache_time, 0);
+    }
+}
+
+#[cfg(test)]
 mod dye_pin_tests {
     use super::*;
 
@@ -8136,6 +9257,7 @@ mod s1_p_i44_tests {
             item: 9,
             when: crate::shop::StockWhen::Always,
             shop_custom_price: None,
+            shop_special_currency: -1,
             buy_once: true,
             is_a_shop_item: false,
             prefix: 0,
@@ -8293,6 +9415,100 @@ mod s1_p_i44_tests {
         app.update_shop_close();
         assert!(app.shop_npc.is_none());
         assert!(app.shop_stock.is_empty());
+    }
+
+    // — W4-d122 shop currency: the medal-buy witnesses (`Player.BuyItem`'s
+    // custom-currency arm, `Player.cs:35402-35405` → `CustomCurrencyManager.
+    // BuyItem`, `CustomCurrencyManager.cs:69-119`). Written, not run
+    // (code-only). —
+
+    fn medals(count: u32) -> ItemSlot {
+        ItemSlot {
+            kind: crate::custom_currency::DEFENDER_MEDAL_ITEM,
+            name: crate::registry::name(crate::custom_currency::DEFENDER_MEDAL_ITEM),
+            count,
+            prefix: 0,
+        }
+    }
+
+    /// A Tavernkeep medal row: the 15-medal tier-2 Flameburst Rod 3819
+    /// (`Chest.cs:3008-3010`), currency 0, raw price 15.
+    fn medal_stock_app() -> App {
+        let mut app = shop_app();
+        app.player = Some(Player::spawn(&app.world));
+        app.shop_stock = vec![crate::shop::ShopEntry {
+            item: 3819,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: Some(15),
+            shop_special_currency: crate::custom_currency::DEFENDER_MEDALS,
+            buy_once: false,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 1,
+        }];
+        app
+    }
+
+    #[test]
+    fn the_medal_buy_spends_the_wallet_not_the_purse() {
+        // `CustomCurrencyManager.BuyItem` (`:72-77`/`:114`): the inventory
+        // medal stack pays; `App.coins` never moves; the sellback memo
+        // stays empty (`ItemSlot.cs:2084`'s `shopSpecialCurrency == -1`
+        // half); the unit lands on the cursor like every shop buy.
+        let mut app = medal_stock_app();
+        app.inventory[0] = medals(20);
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[0].count, 5, "15 medals consumed");
+        assert_eq!(app.coins, 1_000_000, "the purse is untouched");
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (3819, 1));
+        assert_eq!(app.shop_sellback.get_amount(3819, 0), 0, "no medal memo");
+        // The raw price ignores the mood AND the Discount Card
+        // (`Player.cs:35361-35365`'s early return).
+        app.shop_mood = 0.75;
+        app.discount_available = true;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[0], crate::item::EMPTY_SLOT, "drained to air");
+    }
+
+    #[test]
+    fn the_medal_buy_spends_the_banks_after_the_inventory() {
+        // The spend order (`CustomCurrencySingleCoin.cs:30-67` over
+        // `BuyItem`'s `:89-93` container list): inventory first, then
+        // bank/bank2/bank3/bank4.
+        let mut app = medal_stock_app();
+        app.inventory[3] = medals(10);
+        let p = app.player.as_mut().unwrap();
+        p.banks[0][0] = medals(4);
+        p.banks[1][7] = medals(50);
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[3], crate::item::EMPTY_SLOT);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.banks[0][0].count, 0, "the piggy bank paid the last 5");
+        assert_eq!(p.banks[1][7].count, 50, "the safe untouched");
+    }
+
+    #[test]
+    fn the_short_medal_wallet_refuses_and_restores() {
+        // `CustomCurrencyManager.cs:77-80`: 14 < 15 refuses before any
+        // spend; the cursor/purse/stock stay put. The full-cache restore
+        // (`CustomCurrencySingleCoin.cs:68-72`) is pinned in
+        // `custom_currency.rs`'s own witnesses.
+        let mut app = medal_stock_app();
+        app.inventory[0] = medals(14);
+        assert!(!app.buy_shop_item(0));
+        assert_eq!(app.inventory[0].count, 14, "nothing moved");
+        assert_eq!(app.mouse_item.count, 0);
+        assert_eq!(app.coins, 1_000_000);
+        assert_eq!(app.shop_stock[0].stack, 1);
+        // A funded purse does NOT rescue a medal row (the currencies are
+        // separate — `Player.cs:35402-35405` never reads the coin count).
+        app.coins = 999_999_999;
+        assert!(!app.buy_shop_item(0));
+        // No player = no wallet: the medal row refuses (the C# always has
+        // a local player; the port's headless None is the safe refusal).
+        let mut no_player = medal_stock_app();
+        no_player.player = None;
+        assert!(!no_player.buy_shop_item(0));
     }
 }
 

@@ -964,6 +964,15 @@ impl Wiring {
         std::mem::take(&mut self.teleport_events)
     }
 
+    /// A test hook (not a behaviour): re-queues one drained pad pair so the
+    /// app-layer drain can be exercised without a second `TripWire` (the
+    /// mech re-trip path would register another pair). NOT `cfg(test)` —
+    /// the consumer is `tr-app`'s wiring witness (the `Rain::with_forced`
+    /// injectable-constructor convention).
+    pub fn push_teleport_event_for_test(&mut self, pair: ((f32, f32), (f32, f32))) {
+        self.teleport_events.push(pair);
+    }
+
     /// Drains the announcement-box texts (case 425's `Main.NewTextMultiline`).
     pub fn take_announcement_events(&mut self) -> Vec<(i32, i32, String)> {
         std::mem::take(&mut self.announcement_events)

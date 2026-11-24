@@ -13,8 +13,13 @@
 //! (`player.rs`'s buff scan + `buff_effects*.rs`); this module only ports
 //! the USE side — the sickness gates, the durations/buff ids the item rows
 //! carry, the heal/mana restore and the stack consume. `QuickBuff`
-//! (`Player.cs:5766-6017`) is census-MISSING and deferred (its food-priority
-//! + ShouldBotherUsingThisBuff + mana-pay table is a separate slice).
+//! (`Player.cs:5766-6017`) lands with W4-a5: the food-priority ladder
+//! (`quick_buff_pick_best_food_item`), the slot-order buff ladder, the
+//! `ShouldUseItem`/`ShouldBotherUsingThisBuff` exclusions + the `:5879-
+//! 5890` mana pay (`quick_buff_should_use_item`), the buff-27 fairy trio
+//! roll and the last-used `UseSound` play (`quick_buff`). The B-key press
+//! latch is the `world_sim/player.rs` seam (`quick_buff_prev`, the
+//! `quick_mana_prev` precedent; `TriggersSet.cs:801-804`).
 //!
 //! Coordination: `QuickHeal`'s H-key EDGE + the hotbar chooser also land on
 //! the i54 branch (`hotbar.rs` + `world_sim/player.rs`); this module is the
@@ -51,14 +56,17 @@
 //!   (`:5600`) so it does NOT block, and the `:51946-51948` UndoSlowMagicUse
 //!   arm is noted at its site.
 //!
-//! RNG order (the only draws in the use path, both Strange Brew 3001):
+//! RNG order (the drink-path draws, both Strange Brew 3001):
 //! 1. `ApplyPotionDelay`: `Main.rand.Next(2400, 4200 + 1)` (`:51857`) —
 //!    drawn at the use START (`:42758`), BEFORE the heal;
 //! 2. `ApplyLifeAndOrMana`: `Main.rand.Next(healLife, 120 + 1)` (`:51895`)
 //!    then `Main.rand.NextFloat()` (`:51898`, the i-frame roll 240/120/60
 //!    at ≤0.1 / ≤0.3 / ≤0.6).
-//! All ride the `UpdatePlayers` named stream (`Player.ItemCheck` under the
-//! `Main.cs:17754` swap); the callers hand it in.
+//! The QuickBuff path adds ONE `Main.rand.Next(3)` per buff-27 (fairy)
+//! candidate (`:5901`, unconditional — even on a refused pet), then the
+//! tail use-sound's pitch draw. All ride the `UpdatePlayers` named stream
+//! (`Player.ItemCheck` under the `Main.cs:17754` swap); the callers hand
+//! it in.
 
 use tr_core::UnifiedRandom;
 
@@ -1097,6 +1105,387 @@ pub(crate) fn spawn_heal_text_with(app: &mut App, amount: i32, rng: &mut tr_core
     );
 }
 
+// ---- QuickBuff (W4-a5: Player.cs:5766-6017) -------------------------------
+//
+// The B-key buff hotkey. Phase 1 ported the ladder proper: the gates, the
+// food-priority pick (`QuickBuff_PickBestFoodItem` :5918-5963 + the
+// `FindFoodPriority` table :5965-5974), the 58-slot inventory scan, the
+// void-bag scan and the last-used `UseSound` play (:5842-5845). Phase 2
+// fills `ShouldUseItem` (:5866-5916): the ShouldBotherUsingThisBuff
+// exclusions (:5976-6017), the direct mana pay (:5879-5890), the pet/603
+// refusals and the buff-27 fairy trio roll; the B-key press latch rides
+// `world_sim/player.rs` (`quick_buff_prev`).
+
+/// `Player.QuickBuff_FindFoodPriority` (`Player.cs:5965-5974`): the three
+/// Well Fed tiers rank 1/2/3 (the [`crate::buffs::is_well_fed`] set),
+/// everything else 0.
+fn quick_buff_find_food_priority(buff_type: i32) -> i32 {
+    match buff_type {
+        26 => 1,
+        206 => 2,
+        207 => 3,
+        _ => 0,
+    }
+}
+
+/// `Player.QuickBuff_PickBestFoodItem` (`Player.cs:5918-5963`): the live
+/// well-fed tier sets the floor (`num = priority + 1`, so only a STRICTLY
+/// higher tier re-feeds), then the 58 inventory slots + the void bag are
+/// scanned for the best food: priority ≥ floor, and among equals the
+/// LONGER `buffTime` wins (`item.buffTime < item2.buffTime || num3 > num`).
+/// The port's 58 slots span the grid + coin + ammo rows (the `quick_heal`
+/// convention); `useVoidBag` reads the per-tick `void_vault_enabled`
+/// refresh (`Player.cs:24550-24553`).
+pub fn quick_buff_pick_best_food_item(app: &App) -> Option<QuickSlot> {
+    let p = app.player.as_ref()?;
+    let mut num = 0; // `:5920`
+    for i in 0..crate::buffs::MAX_BUFFS {
+        if p.buffs.buff_time[i] >= 1 {
+            let num2 = quick_buff_find_food_priority(p.buffs.buff_type[i]);
+            if num <= num2 {
+                num = num2 + 1; // `:5927-5930`
+            }
+        }
+    }
+    // (loc, the stored item's buffTime, its priority) — the C# keeps the
+    // Item reference; the port keeps the two fields the compare reads.
+    let mut best: Option<(QuickSlot, i32, i32)> = None;
+    let mut consider = |slot: ItemSlot, loc: QuickSlot| {
+        if slot.count == 0 || slot.kind == 0 {
+            return; // `!item2.IsAir` (`Item.cs:385-395`)
+        }
+        let Some(def) = registry::get(slot.kind) else {
+            return;
+        };
+        let num3 = quick_buff_find_food_priority(def.buff_type);
+        // `:5939`: num3 > 0 && num3 >= num && (item == null ||
+        // item.buffTime < item2.buffTime || num3 > num).
+        let take = num3 > 0
+            && num3 >= num
+            && match best {
+                None => true,
+                Some((_, best_time, _)) => best_time < def.buff_time || num3 > num,
+            };
+        if take {
+            best = Some((loc, def.buff_time, num3));
+            num = num3;
+        }
+    };
+    for (i, slot) in app.inventory.iter().enumerate() {
+        consider(*slot, QuickSlot::Inventory(i));
+    }
+    for (i, slot) in app.equip.coins.iter().enumerate() {
+        consider(*slot, QuickSlot::Coin(i));
+    }
+    for (i, slot) in app.equip.ammo.iter().enumerate() {
+        consider(*slot, QuickSlot::Ammo(i));
+    }
+    if p.void_vault_enabled {
+        for (i, slot) in p.banks[3].iter().enumerate() {
+            consider(*slot, QuickSlot::VoidBag(i));
+        }
+    }
+    best.map(|(loc, _, _)| loc)
+}
+
+/// `Player.QuickBuff_ShouldBotherUsingThisBuff` (`Player.cs:5976-6017`):
+/// refuse the attempted buff while the bar already carries it, its family
+/// or its pet class. The loop breaks on the first refusal (`:5981-6000`):
+/// the buff-27 fairy trio (27/101/102), any Well Fed tier against any
+/// (`BuffID.Sets.IsWellFed`, `ID/BuffID.cs:43`), the exact id, any melee
+/// (flask) buff against any (`Main.meleeBuff`). The pet tail (`:6002-6015`)
+/// re-scans WITHOUT break: a light pet refuses while any light pet stands,
+/// a vanity pet while any vanity pet stands. NOTE the C# scans `buffType`
+/// with NO `buffTime >= 1` gate — an expired-but-unpurged slot still
+/// refuses (the `FindBuffIndex` gate is NOT this scan).
+fn quick_buff_should_bother_using_this_buff(p: &Player, attempted: i32) -> bool {
+    let mut result = true;
+    for i in 0..crate::buffs::MAX_BUFFS {
+        let held = p.buffs.buff_type[i];
+        if attempted == 27 && matches!(held, 27 | 101 | 102) {
+            result = false;
+            break; // `:5981-5985`
+        }
+        if crate::buffs::is_well_fed(attempted) && crate::buffs::is_well_fed(held) {
+            result = false;
+            break; // `:5986-5990`
+        }
+        if held == attempted {
+            result = false;
+            break; // `:5991-5995`
+        }
+        if crate::buffs::is_melee_buff(attempted) && crate::buffs::is_melee_buff(held) {
+            result = false;
+            break; // `:5996-6000`
+        }
+    }
+    if crate::buffs::is_light_pet(attempted) || crate::buffs::is_vanity_pet(attempted) {
+        for j in 0..crate::buffs::MAX_BUFFS {
+            let held = p.buffs.buff_type[j];
+            if crate::buffs::is_light_pet(held) && crate::buffs::is_light_pet(attempted) {
+                result = false; // `:6006-6009`
+            }
+            if crate::buffs::is_vanity_pet(held) && crate::buffs::is_vanity_pet(attempted) {
+                result = false; // `:6010-6013`
+            }
+        }
+    }
+    result
+}
+
+/// The `QuickBuff_ShouldUseItem` mana-pay arm (`Player.cs:5879-5890`): the
+/// direct `(int)(item.mana * manaCost)` cost (`:5881`), the
+/// `ApplyManaRegenerationDelay` from the PRE-pay bar (`:5883` precedes the
+/// `:5884` deduction), then the pay. Returns false when the bar cannot
+/// cover the cost (`:5886-5889` — flag = false, NO drain, no ManaV2
+/// empty-arm: this is NOT `CheckMana`).
+fn quick_buff_pay_mana(p: &mut Player, item_mana: i32) -> bool {
+    let cost = (item_mana as f32 * p.mana_cost) as i32; // `:5881`
+    if p.mana < cost {
+        return false; // `:5886-5889`
+    }
+    crate::regen::apply_mana_regen_delay(&mut p.regen, p.mana_max, p.mana, p.mana_regen_buff);
+    p.mana -= cost; // `:5884`
+    true
+}
+
+/// `Player.QuickBuff_ShouldUseItem` (`Player.cs:5866-5916`): the `:5869`
+/// row gates (stack/type/buffType/summon), the `:5873` `ItemCheck_TryStartUse`
+/// can-use gate (the potion arm — buff potions are NOT potion-flagged,
+/// `Item.cs:4858-4871` — plus the `:52221-52224` silence gate that survives
+/// ManaV2), the ShouldBother exclusions, the `:5879-5890` mana pay, the
+/// pet refusal (`:5891-5894`), the Carrot-603 collector's refusal
+/// (`:5895-5898`) and the buff-27 fairy trio roll (`:5899-5914`). Returns
+/// the (possibly re-rolled) `btype` the C# writes through its `out` param.
+///
+/// Faithful side effect: the mana pay (`:5883-5884`) runs even when a LATER
+/// gate refuses the buff — the C# pays first and refuses after, so a pet
+/// item with mana > 0 would still drain the bar. The pay is the direct
+/// `(int)(mana * manaCost)` deduction + `ApplyManaRegenerationDelay` from
+/// the PRE-pay bar (`:5883` precedes `:5884`), NOT `CheckMana` — no ManaV2
+/// empty-arm, no manaFlower retry on this path. (Silence and the Carrot
+/// refuse EARLIER, inside `TryStartUse` — `:52221`/`:52120` — so they never
+/// reach the pay.) No shipped item carries BOTH mana > 0 and buffType > 0
+/// (verified over the generated item table), so the pay + silence arms are
+/// constants-off on retail data — kept for structure like the
+/// `mana_potion_delay` gate.
+///
+/// `ItemCheck_TryStartUse`'s own `ActuallyPayMana` (`:52026`) is constants-
+/// off here: no shipped item carries BOTH mana > 0 and buffType > 0 (the
+/// buff-granting items are potions/foods/pets, all mana 0 — verified over
+/// the generated item table), so the cascade's pay never fires before the
+/// `:5879` arm; the row stays cited for the day one does. The cascade's
+/// `CanPayMana` predict (`:52225-52227` → `:52624-52636`) is omitted as
+/// always-true: `CheckManaPredictWithoutUse` returns true unconditionally
+/// under ManaV2 (`:52556-52559`).
+fn quick_buff_should_use_item(app: &mut App, loc: QuickSlot) -> Option<i32> {
+    let slot = loc.slot(app);
+    if slot.count == 0 || slot.kind == 0 {
+        return None; // `:5869` stack <= 0 || type <= 0
+    }
+    let def = registry::get(slot.kind)?;
+    if def.buff_type <= 0 || def.summon {
+        return None; // `:5869` buffType <= 0 || summon
+    }
+    let mut btype = def.buff_type; // `:5877`
+    let mut flag = {
+        let p = app.player.as_ref()?;
+        if potion_use_blocked(p, def) {
+            return None; // `:5873` (`:52217-52220`)
+        }
+        if def.mana > 0 && p.silence {
+            return None; // `:5873` (`:52221-52224`)
+        }
+        // `:5873` (`:52120-52123`): the Carrot (603) without the
+        // Collector's Edition refuses inside TryStartUse —
+        // `Main.runningCollectorsEdition` is false in the port (no
+        // registry/DLC probe, `Main.cs:4229-4239`). The `:5895-5898` twin
+        // arm below is unreachable after this, kept cited there.
+        if slot.kind == 603 {
+            return None;
+        }
+        quick_buff_should_bother_using_this_buff(p, btype) // `:5878`
+    };
+    // `:5879-5890`: `(item.mana > 0) & flag` — the C# `&` evaluates both
+    // sides; the pay only runs when flag stands (the block's own gate).
+    if def.mana > 0 && flag {
+        let p = app.player.as_mut()?;
+        if !quick_buff_pay_mana(p, def.mana) {
+            flag = false; // `:5888`
+        }
+    }
+    if crate::buffs::is_light_pet(btype) || crate::buffs::is_vanity_pet(btype) {
+        flag = false; // `:5891-5894`
+    }
+    // `:5895-5898`: the 603 twin (the TryStartUse gate above already
+    // refused it; the C# carries both).
+    if slot.kind == 603 {
+        flag = false;
+    }
+    // `:5899-5914`: the fairy bell's 27 rolls one of 27/101/102 — ONE
+    // `Main.rand.Next(3)` draw, even when flag is already false (the C#
+    // re-rolls btype unconditionally; the UpdatePlayers stream, the
+    // `Player.ItemCheck` swap `Main.cs:17754`).
+    if btype == 27 {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        btype = match rng.next_max(3) {
+            0 => 27,
+            1 => 101,
+            _ => 102,
+        };
+    }
+    flag.then_some(btype) // `:5915`
+}
+
+/// `Player.QuickBuff_UseItemForBuff` (`Player.cs:5848-5864`): the buffTime
+/// 0 → 3600 fallback (`:5850-5854`), `AddBuff(btype, num)` and the
+/// consumable stack-- / TurnToAir (`:5856-5863`).
+fn quick_buff_use_item_for_buff(app: &mut App, loc: QuickSlot, btype: i32) {
+    let slot = loc.slot(app);
+    let Some(def) = registry::get(slot.kind) else {
+        return;
+    };
+    let time = if def.buff_time == 0 { 3600 } else { def.buff_time };
+    if let Some(p) = app.player.as_mut() {
+        p.buffs.add_buff(btype, time); // `:5855`
+    }
+    if def.consumable {
+        loc.consume(app); // `:5856-5863`
+    }
+}
+
+/// One `QuickBuff_ShouldUseItem` → dismount → sound-record → use step of
+/// the `:5803-5819`/`:5824-5840` loops. Returns whether the item was used
+/// (the C# loop's `if` body ran).
+fn quick_buff_ladder_step(
+    app: &mut App,
+    loc: QuickSlot,
+    last_sound: &mut Option<(u16, f32)>,
+) -> bool {
+    let Some(btype) = quick_buff_should_use_item(app, loc) else {
+        return false;
+    };
+    let held = loc.slot(app);
+    if let Some(p) = app.player.as_mut() {
+        // `:5808-5811`/`:5829-5832`: `Mount.DismountsOnItemUse` →
+        // `TryEarlyDismount` (the mount helper carries its own gates).
+        p.try_early_dismount(&app.world);
+    }
+    if let Some(def) = registry::get(held.kind) {
+        // `:5812`/`:5833`: `legacySoundStyle = item2.UseSound` — the LAST
+        // used item's sound wins; it plays once at the tail (`:5842`).
+        *last_sound = def.use_sound.map(|idx| (idx, def.use_sound_pitch));
+    }
+    quick_buff_use_item_for_buff(app, loc, btype); // `:5813`/`:5834`
+    true
+}
+
+/// The `CountBuffs() == Player.maxBuffs` full-bar read (`Player.cs:5773`,
+/// `:5800`, `:5814`, `:5821`, `:5835`) — the leading-run count, NOT a
+/// census (see [`crate::buffs::BuffSlots::count_buffs`]).
+fn quick_buff_bar_full(app: &App) -> bool {
+    app.player
+        .as_ref()
+        .is_some_and(|p| p.buffs.count_buffs() == crate::buffs::MAX_BUFFS as i32)
+}
+
+/// `Player.QuickBuff` (`Player.cs:5766-5846`): the B-key buff hotkey. The
+/// gates (`:5768`): pending inventory actions (the cursor-stack stand-in)
+/// / cursed / CCed / dead / spectating (no port field — single-player,
+/// constants-off like `recall_teleport.rs`'s note) / the full buff bar.
+/// Then the best food (`:5777-5799`, the TryStartUse gate, the early
+/// dismount, the buff grant WITH the 3600 fallback, the consume), the
+/// 58-slot buff ladder (`:5800-5820`) and the void-bag ladder
+/// (`:5821-5841`), each breaking at the full bar. The LAST used item's
+/// `UseSound` plays ONCE at `base.position` (`:5842-5845`, the top-left
+/// like the other quick-use paths). Returns true when any item was used
+/// (the C# is void; the bool is the port's latch-witness seam).
+pub fn quick_buff(app: &mut App) -> bool {
+    {
+        let Some(p) = app.player.as_ref() else {
+            return false;
+        };
+        if app.mouse_item.count > 0
+            || p.buffs.find_buff_index(23).is_some()
+            || p.cced()
+            || p.dead
+        {
+            return false; // `:5768-5771`
+        }
+        if p.buffs.count_buffs() == crate::buffs::MAX_BUFFS as i32 {
+            return false; // `:5773-5776`
+        }
+    }
+    let mut used = false;
+    let mut last_sound: Option<(u16, f32)> = None; // `LegacySoundStyle`
+    // The food arm (`:5777-5799`).
+    if let Some(loc) = quick_buff_pick_best_food_item(app) {
+        let held = loc.slot(app);
+        if let Some(def) = registry::get(held.kind) {
+            let can_use = app
+                .player
+                .as_ref()
+                .is_some_and(|p| !potion_use_blocked(p, def)); // `:5778`
+            if can_use {
+                if let Some(p) = app.player.as_mut() {
+                    p.try_early_dismount(&app.world); // `:5780-5783`
+                }
+                // `:5784`: `legacySoundStyle = item.UseSound`.
+                last_sound = def.use_sound.map(|idx| (idx, def.use_sound_pitch));
+                // `:5785-5798`: the grant + consume (the same body as
+                // UseItemForBuff, with the item's own buffType).
+                quick_buff_use_item_for_buff(app, loc, def.buff_type);
+                used = true;
+            }
+        }
+    }
+    // The 58-slot ladder (`:5800-5820`): the port's grid + coin + ammo
+    // rows in C# inventory order.
+    let inv_n = app.inventory.len();
+    let coin_n = app.equip.coins.len();
+    let ammo_n = app.equip.ammo.len();
+    if !quick_buff_bar_full(app) {
+        for i in 0..(inv_n + coin_n + ammo_n) {
+            let loc = if i < inv_n {
+                QuickSlot::Inventory(i)
+            } else if i < inv_n + coin_n {
+                QuickSlot::Coin(i - inv_n)
+            } else {
+                QuickSlot::Ammo(i - inv_n - coin_n)
+            };
+            if quick_buff_ladder_step(app, loc, &mut last_sound) {
+                used = true;
+                if quick_buff_bar_full(app) {
+                    break; // `:5814-5817`
+                }
+            }
+        }
+    }
+    // The void-bag ladder (`:5821-5841`), gated on `useVoidBag()`.
+    let bag_enabled = app.player.as_ref().is_some_and(|p| p.void_vault_enabled);
+    let bag_n = app.player.as_ref().map_or(0, |p| p.banks[3].len());
+    if !quick_buff_bar_full(app) && bag_enabled {
+        for j in 0..bag_n {
+            if quick_buff_ladder_step(app, QuickSlot::VoidBag(j), &mut last_sound) {
+                used = true;
+                if quick_buff_bar_full(app) {
+                    break; // `:5835-5838`
+                }
+            }
+        }
+    }
+    // `:5842-5845`: `SoundEngine.PlaySound(legacySoundStyle, base.position)`
+    // — ONE play of the last used item's sound, at the top-left.
+    if let Some((idx, pitch)) = last_sound {
+        let pos = app.player.as_ref().map(|p| (p.x, p.y));
+        if let Some((x, y)) = pos {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            app.audio.play_use_sound(idx, x, y, pitch, rng);
+        }
+    }
+    used
+}
+
 // ---- witnesses (S1-P-i37) — WRITTEN NOT RUN (code-only swarm, no compiler) ----
 //
 // The RNG expectations below were derived from a JS mirror of
@@ -1447,7 +1836,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.potion_delay = 1234;
         p.mana_potion_delay = 42;
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert_eq!((p.potion_delay, p.mana_potion_delay), (0, 0));
     }
 
@@ -1881,6 +2270,341 @@ mod tests {
             assert!(p.buffs.find_buff_index(332).is_none(), "kind {kind}");
             assert!(p.buffs.find_buff_index(333).is_none());
         }
+    }
+
+    // ---- QuickBuff phase 1 (W4-a5, Player.cs:5766-5870) — WRITTEN NOT RUN ----
+
+    /// The food floor: a live tier blocks equal/lower foods, only a
+    /// strictly higher tier re-feeds (`:5922-5932` num = priority + 1).
+    #[test]
+    fn quick_buff_food_pick_respects_the_live_tier_floor() {
+        let mut app = drink_app();
+        // No live food: the highest-priority food wins (4029 Pizza, 207).
+        app.inventory[0] = slot(4009, 1); // Apple, 26, 18000
+        app.inventory[1] = slot(4029, 1); // Pizza, 207, 28800
+        assert_eq!(
+            quick_buff_pick_best_food_item(&app),
+            Some(QuickSlot::Inventory(1))
+        );
+        // A live 206 floor = 3: the Pizza (207) still wins.
+        app.player.as_mut().unwrap().buffs.add_buff(206, 1000);
+        assert_eq!(
+            quick_buff_pick_best_food_item(&app),
+            Some(QuickSlot::Inventory(1))
+        );
+        // A live 207 floor = 4: nothing outranks it — no food pick.
+        app.player.as_mut().unwrap().buffs.add_buff(207, 1000);
+        assert_eq!(quick_buff_pick_best_food_item(&app), None);
+    }
+
+    /// Among equal-priority foods the longer buffTime wins (`:5939`).
+    #[test]
+    fn quick_buff_food_pick_prefers_the_longer_buff_time_at_equal_tier() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(967, 1); // Marshmallow, 26, 3600
+        app.inventory[1] = slot(2425, 1); // Cooked Fish, 26, 28800
+        assert_eq!(
+            quick_buff_pick_best_food_item(&app),
+            Some(QuickSlot::Inventory(1)),
+            "28800 > 3600 at the same tier"
+        );
+    }
+
+    /// The void bag joins the food scan only while enabled (`:5946-5961`).
+    #[test]
+    fn quick_buff_food_pick_scans_the_void_bag_when_enabled() {
+        let mut app = drink_app();
+        app.player.as_mut().unwrap().banks[3][2] = slot(4029, 1);
+        assert_eq!(quick_buff_pick_best_food_item(&app), None, "bag disabled");
+        app.player.as_mut().unwrap().void_vault_enabled = true;
+        assert_eq!(
+            quick_buff_pick_best_food_item(&app),
+            Some(QuickSlot::VoidBag(2))
+        );
+    }
+
+    /// The ladder grants every distinct buff potion, consumes the stacks,
+    /// skips summon staffs, and plays ONE use sound at the tail.
+    #[test]
+    fn quick_buff_ladder_grants_consumes_and_skips_summons() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(292, 2); // Ironskin, buff 5, 28800
+        app.inventory[1] = slot(290, 1); // Swiftness, buff 3, 28800
+        app.inventory[2] = slot(1309, 1); // Slime Staff — summon, skipped
+        assert!(quick_buff(&mut app));
+        let p = app.player.as_ref().unwrap();
+        let i5 = p.buffs.find_buff_index(5).expect("Ironskin granted");
+        assert_eq!(p.buffs.buff_time[i5], 28800);
+        assert!(p.buffs.find_buff_index(3).is_some(), "Swiftness granted");
+        assert!(p.buffs.find_buff_index(64).is_none(), "the summon skipped");
+        assert_eq!(app.inventory[0].count, 1);
+        assert_eq!(app.inventory[1].count, 0, "TurnToAir at 0");
+        assert_eq!(app.inventory[1].kind, 0);
+        assert_eq!(app.inventory[2].count, 1, "the staff untouched");
+        // No swing on the quick path (the C# QuickBuff has no animation).
+        assert_eq!(app.swing, 0.0);
+    }
+
+    /// The buffTime 0 → 3600 fallback (`:5785-5789`/`:5850-5854`). No
+    /// shipped NON-pet buff item carries buffTime 0 (the fairy/pet rows do,
+    /// but `:5891-5894` refuses those), so the fallback's live witness is
+    /// the well-fed tier's row value passing through unchanged; the 0-arm
+    /// stays cited for structure.
+    #[test]
+    fn quick_buff_grants_the_row_buff_time_verbatim() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(291, 1); // Gills, buff 4, 14400 (not 28800)
+        assert!(quick_buff(&mut app));
+        let p = app.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(4).expect("the Gills grant");
+        assert_eq!(p.buffs.buff_time[i], 14400, "the row value, not 3600");
+        assert_eq!(app.inventory[0].count, 0);
+    }
+
+    /// The food arm feeds first, then the ladder; the well-fed grant's
+    /// IsFedState cleanup keeps only the new tier.
+    #[test]
+    fn quick_buff_feeds_the_best_food_before_the_buff_ladder() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(292, 1); // Ironskin
+        app.inventory[1] = slot(4029, 1); // Pizza, 207
+        assert!(quick_buff(&mut app));
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(207).is_some(), "the food fed");
+        assert!(p.buffs.find_buff_index(5).is_some(), "the ladder ran too");
+        assert_eq!(app.inventory[1].count, 0);
+        assert_eq!(app.inventory[0].count, 0);
+    }
+
+    /// The gates (`:5768-5776`): dead / cursed / CCed / cursor stack /
+    /// the full buff bar (CountBuffs' leading-run quirk included).
+    #[test]
+    fn quick_buff_gates_dead_cursed_cced_cursor_and_the_full_bar() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(292, 1);
+        app.player.as_mut().unwrap().dead = true;
+        assert!(!quick_buff(&mut app));
+        let mut app2 = drink_app();
+        app2.inventory[0] = slot(292, 1);
+        app2.player.as_mut().unwrap().buffs.add_buff(23, 600);
+        assert!(!quick_buff(&mut app2));
+        let mut app3 = drink_app();
+        app3.inventory[0] = slot(292, 1);
+        app3.player.as_mut().unwrap().frozen = true;
+        assert!(!quick_buff(&mut app3), "CCed (frozen) blocks");
+        let mut app4 = drink_app();
+        app4.inventory[0] = slot(292, 1);
+        app4.mouse_item = slot(2, 1);
+        assert!(!quick_buff(&mut app4));
+        // The full bar: 44 leading non-empty slots (CountBuffs == 44).
+        let mut app5 = drink_app();
+        app5.inventory[0] = slot(292, 1);
+        {
+            let p = app5.player.as_mut().unwrap();
+            for i in 0..crate::buffs::MAX_BUFFS {
+                p.buffs.buff_type[i] = 5;
+                p.buffs.buff_time[i] = 100;
+            }
+        }
+        assert!(!quick_buff(&mut app5), "the full bar refuses");
+        assert_eq!(app5.inventory[0].count, 1);
+    }
+
+    // ---- QuickBuff phase 2 (W4-a5, Player.cs:5866-6017) — WRITTEN NOT RUN ----
+
+    /// The ShouldBother exclusions (`:5976-6017`): the exact-id refusal,
+    /// the well-fed family, the melee-flask family, the fairy trio and the
+    /// two pet classes — each against a live bar slot.
+    #[test]
+    fn quick_buff_should_bother_refuses_the_families() {
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        assert!(quick_buff_should_bother_using_this_buff(&p, 5));
+        p.buffs.add_buff(5, 1000);
+        assert!(!quick_buff_should_bother_using_this_buff(&p, 5), "exact id");
+        // Well-fed family: any tier refuses any (`:5986-5990`).
+        let mut q = Player::spawn(&w);
+        q.buffs.add_buff(26, 1000);
+        assert!(!quick_buff_should_bother_using_this_buff(&q, 207));
+        assert!(!quick_buff_should_bother_using_this_buff(&q, 26));
+        assert!(quick_buff_should_bother_using_this_buff(&q, 5), "non-food passes");
+        // Melee family: any flask refuses any (`:5996-6000`).
+        let mut r = Player::spawn(&w);
+        r.buffs.add_buff(71, 1000);
+        assert!(!quick_buff_should_bother_using_this_buff(&r, 76));
+        assert!(quick_buff_should_bother_using_this_buff(&r, 5));
+        // Fairy trio: 27 refuses while 27/101/102 stands (`:5981-5985`).
+        for trio in [27, 101, 102] {
+            let mut s = Player::spawn(&w);
+            s.buffs.buff_type[0] = trio;
+            s.buffs.buff_time[0] = 1000;
+            assert!(!quick_buff_should_bother_using_this_buff(&s, 27));
+        }
+        // Light pets refuse light pets, vanity pets refuse vanity pets —
+        // but NOT across classes (`:6002-6015`).
+        let mut t = Player::spawn(&w);
+        t.buffs.buff_type[0] = 19; // Shadow Orb light pet
+        t.buffs.buff_time[0] = 1000;
+        assert!(!quick_buff_should_bother_using_this_buff(&t, 57));
+        assert!(quick_buff_should_bother_using_this_buff(&t, 40), "vanity passes");
+        let mut u = Player::spawn(&w);
+        u.buffs.buff_type[0] = 40; // Bunny vanity pet
+        u.buffs.buff_time[0] = 1000;
+        assert!(!quick_buff_should_bother_using_this_buff(&u, 41));
+        assert!(quick_buff_should_bother_using_this_buff(&u, 19), "light passes");
+    }
+
+    /// The scan reads `buffType` with NO time gate (`:5979-6001` — not
+    /// FindBuffIndex): an expired-but-unpurged slot still refuses.
+    #[test]
+    fn quick_buff_should_bother_scans_type_without_the_time_gate() {
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        p.buffs.buff_type[3] = 5;
+        p.buffs.buff_time[3] = 0; // expired, not yet purged
+        assert!(!quick_buff_should_bother_using_this_buff(&p, 5));
+        assert!(p.buffs.find_buff_index(5).is_none(), "FindBuffIndex skips it");
+    }
+
+    /// The ladder skips a buff already standing — no second consume.
+    #[test]
+    fn quick_buff_ladder_skips_the_already_standing_buff() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(292, 2); // Ironskin
+        app.player.as_mut().unwrap().buffs.add_buff(5, 1000);
+        assert!(!quick_buff(&mut app), "nothing to use");
+        assert_eq!(app.inventory[0].count, 2, "no consume on the refusal");
+    }
+
+    /// The flask family: a live Venom refuses the Ichor flask (`:5996`).
+    #[test]
+    fn quick_buff_ladder_refuses_a_second_flask() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(1356, 1); // Flask of Ichor, buff 76
+        app.player.as_mut().unwrap().buffs.add_buff(71, 1000);
+        assert!(!quick_buff(&mut app));
+        assert_eq!(app.inventory[0].count, 1);
+        // With no flask standing the Ichor grants.
+        let mut app2 = drink_app();
+        app2.inventory[0] = slot(1356, 1);
+        assert!(quick_buff(&mut app2));
+        assert!(app2.player.as_ref().unwrap().buffs.find_buff_index(76).is_some());
+        assert_eq!(app2.inventory[0].count, 0);
+    }
+
+    /// The pet refusal (`:5891-5894`): light/vanity pets never quick-buff,
+    /// even with an empty bar; the fairy bell rolls its trio draw anyway.
+    #[test]
+    fn quick_buff_refuses_pets_but_still_rolls_the_fairy_trio() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(115, 1); // Shadow Orb, buff 19 (light pet)
+        let before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(!quick_buff(&mut app));
+        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(19).is_none());
+        assert_eq!(app.inventory[0].count, 1);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            before,
+            "no 27 roll for a non-fairy pet"
+        );
+        // The Fairy Bell (425, buff 27): refused, but the `:5899-5914` roll
+        // runs unconditionally — exactly ONE Next(3) on UpdatePlayers.
+        let mut app2 = drink_app();
+        app2.inventory[0] = slot(425, 1);
+        let mut twin = app2.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(!quick_buff(&mut app2));
+        let _ = twin.next_max(3);
+        assert_eq!(
+            *app2.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            twin,
+            "exactly one fairy-trio draw"
+        );
+        assert_eq!(app2.inventory[0].count, 1, "not consumable, not used");
+    }
+
+    /// The Carrot 603 refuses without the Collector's Edition (`:52120`,
+    /// `:5895-5898` — the port's runningCollectorsEdition is false).
+    #[test]
+    fn quick_buff_refuses_the_carrot_without_collectors() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(603, 1); // Carrot, buff 40 (vanity pet)
+        assert!(!quick_buff(&mut app));
+        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(40).is_none());
+        assert_eq!(app.inventory[0].count, 1);
+    }
+
+    /// The mana-pay arm (`:5879-5890`): the scaled cost pays, the delay
+    /// re-arms from the PRE-pay bar, and an unaffordable cost refuses
+    /// WITHOUT draining (no ManaV2 empty-arm on this path).
+    #[test]
+    fn quick_buff_pay_mana_scales_pays_and_refuses_without_draining() {
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        p.mana = 100;
+        p.mana_max = 200;
+        p.mana_cost = 0.5;
+        assert!(quick_buff_pay_mana(&mut p, 40));
+        assert_eq!(p.mana, 80, "(int)(40 * 0.5) = 20 paid");
+        // The delay read the PRE-pay 100/200 bar: (0.5*240+45)*0.7 = 115
+        // → the ManaV2 cap pins 4 (any-mana row).
+        assert_eq!(p.regen.mana_regen_delay, 4.0);
+        // Unaffordable: refuse, no drain, no delay rewrite.
+        p.mana = 5;
+        p.regen.mana_regen_delay = 0.0;
+        assert!(!quick_buff_pay_mana(&mut p, 40));
+        assert_eq!(p.mana, 5, "no ManaV2 drain-to-0 on this path");
+        assert_eq!(p.regen.mana_regen_delay, 0.0);
+        // The truncation: (int)(15 * 0.94) = 14 (14.1 → 14).
+        let mut q = Player::spawn(&w);
+        q.mana = 100;
+        q.mana_max = 200;
+        q.mana_cost = 0.94;
+        assert!(quick_buff_pay_mana(&mut q, 15));
+        assert_eq!(q.mana, 86);
+    }
+
+    /// Silence refuses a mana-carrying buff item inside TryStartUse
+    /// (`:52221-52224`) — constants-off on retail data (no shipped item
+    /// carries both mana and buffType), witnessed through the gate order.
+    #[test]
+    fn quick_buff_silenced_mana_item_refuses_before_the_pay() {
+        let mut app = drink_app();
+        // No retail row carries mana + buffType, so the silence arm is
+        // witnessed structurally: a mana-0 buff potion passes silence.
+        app.inventory[0] = slot(292, 1);
+        app.player.as_mut().unwrap().silence = true;
+        assert!(quick_buff(&mut app), "mana 0 — silence does not gate it");
+        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(5).is_some());
+    }
+
+    /// The well-fed ladder refusal: a live 207 blocks every food (the
+    /// food pick's floor AND ShouldBother's family check agree).
+    #[test]
+    fn quick_buff_well_fed_bar_refuses_every_food() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(4022, 1); // Golden Delight, 207, 172800
+        app.inventory[1] = slot(4009, 1); // Apple, 26
+        app.player.as_mut().unwrap().buffs.add_buff(207, 1000);
+        assert!(!quick_buff(&mut app));
+        assert_eq!(app.inventory[0].count, 1);
+        assert_eq!(app.inventory[1].count, 1);
+    }
+
+    /// `CountBuffs`' verbatim quirk (`Player.cs:5483-5494`): the read index
+    /// is the RUNNING COUNT, so a hole mid-bar stops the count — a plain
+    /// census would say 44, the C# says 22.
+    #[test]
+    fn count_buffs_counts_the_leading_run_not_a_census() {
+        let mut b = crate::buffs::BuffSlots::default();
+        // Fill every slot, then punch a hole at 22.
+        for i in 0..crate::buffs::MAX_BUFFS {
+            b.buff_type[i] = 5;
+            b.buff_time[i] = 100;
+        }
+        assert_eq!(b.count_buffs(), 44);
+        b.buff_type[22] = 0;
+        b.buff_time[22] = 0;
+        assert_eq!(b.count_buffs(), 22, "the leading run stops at the hole");
     }
 
     #[test]

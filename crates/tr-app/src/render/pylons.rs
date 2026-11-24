@@ -24,15 +24,19 @@
 //!   vanilla they draw between the non-solid and solid tile layers — the
 //!   port's fused tile pass keeps the grass-style z-order approximation,
 //! * the dust rolls (`TeleportPylonsSystem.SpawnInWorldDust`,
-//!   `VoidLensHelper.SpawnVoidLensDust`) are skipped: they draw `Main.rand` /
-//!   `TileDrawing._rand` and belong to the unported particle pass — skipping
-//!   them wholesale leaves every RNG stream untouched,
+//!   `VoidLensHelper.SpawnVoidLensDust`) are WIRED (W4-f6): the pylon gates
+//!   draw the private `TileDrawing._rand` stand-in (`App.tile_draw_rand`,
+//!   world-seeded — the `mine_crack_rng` determinism convention), the spawn
+//!   + the void lens draw the bare `Main.rand` (`NamedRngs::global()`);
+//!   both gate on `!game_paused`,
 //! * `Main.tileFrameCounter[597]/[491]` (`Main.cs:19284-19287`/`:19227-19230`,
 //!   `AnimateTiles`' wrap-at-64/40 counters) are stood in by
 //!   `game_update_count % 64` / `% 40` — the animator is unported
 //!   (`drawdata.rs`'s `tile_frame ≡ 0` note), the cadence and wrap match,
-//! * the smart-cursor selection glow arms are ported but the hook passes
-//!   `selection_mode = 0`: `Main.InSmartCursorHighlightArea` is unported.
+//! * the smart-cursor selection glow arms read `selection_mode` off the
+//!   smart-interact highlight area (`Main.InSmartCursorHighlightArea`,
+//!   `TileDrawing.cs:8687-8695`/`:8721-8729`) — the W4-g86 follow-up wired
+//!   the seam the first pass left at 0 (`tile_outlines::selection_mode`).
 
 use glam::Vec2;
 use tr_core::lighting::LightStyle;
@@ -363,7 +367,64 @@ pub(crate) fn void_lens_sprites(
     // `Y -= 2`, frame `(int)(((float)tileFrameCounter[491] + X + Y) % 40f) / 5`.
     let center = to_world(x, y, 8.0, 8.0 - 2.0);
     let frame = (((env.lens_counter as f32 + center[0] + center[1]) % 40.0) as i32) / 5;
-    let (fw, fh) = (sizes.lens[0], sizes.lens[1]);
+    void_lens_sprites_at(
+        light_at,
+        style,
+        anim_time,
+        env.global_time,
+        sizes.lens,
+        center,
+        frame,
+        1.0,
+        selection_mode,
+    )
+}
+
+/// W4-g56 — the projectile-side `VoidLensHelper(Projectile)` ctor
+/// (`VoidLensHelper.cs:19-24`): position = `proj.Center`, opacity =
+/// `proj.Opacity`, frame = `proj.frame` (AI_154's 5-tick machine), drawn by
+/// `Main.DrawProjDirect`'s type-734 arm (`Main.cs:27920-27931`). Shares the
+/// tile lens's `DrawToDrawData` body 1:1 — only the ctor inputs differ.
+pub(crate) fn void_lens_projectile_sprites(
+    light_at: impl Fn(i32, i32) -> [f32; 3],
+    style: &LightStyle,
+    anim_time: f32,
+    global_time: f32,
+    lens_frame_size: [f32; 2],
+    center: [f32; 2],
+    frame: i32,
+    opacity: f32,
+    selection_mode: u8,
+) -> Vec<SpecialSprite> {
+    void_lens_sprites_at(
+        light_at,
+        style,
+        anim_time,
+        global_time,
+        lens_frame_size,
+        center,
+        frame,
+        opacity,
+        selection_mode,
+    )
+}
+
+/// The shared `DrawToDrawData` body (`VoidLensHelper.cs:77-104`) both ctors
+/// feed: the base sprite, the 3-copy purple ring at the 0.34f cadence and
+/// the `Extra_93` selection glow.
+#[allow(clippy::too_many_arguments)]
+fn void_lens_sprites_at(
+    light_at: impl Fn(i32, i32) -> [f32; 3],
+    style: &LightStyle,
+    anim_time: f32,
+    global_time: f32,
+    lens_frame_size: [f32; 2],
+    center: [f32; 2],
+    frame: i32,
+    opacity: f32,
+    selection_mode: u8,
+) -> Vec<SpecialSprite> {
+    let (fw, fh) = (lens_frame_size[0], lens_frame_size[1]);
     let src = [0.0, frame as f32 * fh, fw, (frame as f32 + 1.0) * fh];
     // `:82-83`: `Lerp(GetColor(position.ToTileCoordinates()), White, 0.5)`,
     // `*= opacity`. `ToTileCoordinates` is `(int)v >> 4` (`Utils.cs`).
@@ -374,7 +435,7 @@ pub(crate) fn void_lens_sprites(
             let l = lerp_bytes(c, [255, 255, 255], 0.5);
             [l[0], l[1], l[2], 255]
         },
-        1.0,
+        opacity,
     );
     let mut out = Vec::with_capacity(5);
     out.push(SpecialSprite {
@@ -390,11 +451,11 @@ pub(crate) fn void_lens_sprites(
     // `(127, 50, 127, 0) * opacity * (x*0.1 + 0.3)` where
     // `x = cos(GlobalTimeWrappedHourly / 5 * 2π)`; the offset vector rotates
     // at `(t/5 + num) * 2π` with radius `x + 2`.
-    let x = (env.global_time / 5.0 * (std::f32::consts::PI * 2.0)).cos();
+    let x = (global_time / 5.0 * (std::f32::consts::PI * 2.0)).cos();
     let mut num = 0.0f32;
     while num < 1.0 {
-        let ring = scale_bytes(scale_bytes([127, 50, 127, 0], 1.0), x * 0.1 + 0.3);
-        let rv = rotation_vector((env.global_time / 5.0 + num) * (std::f32::consts::PI * 2.0));
+        let ring = scale_bytes(scale_bytes([127, 50, 127, 0], opacity), x * 0.1 + 0.3);
+        let rv = rotation_vector((global_time / 5.0 + num) * (std::f32::consts::PI * 2.0));
         let r = x * 1.0 + 2.0;
         let (sw, sh) = (fw * 1.1, fh * 1.1);
         out.push(SpecialSprite {
@@ -427,6 +488,74 @@ pub(crate) fn void_lens_sprites(
     out
 }
 
+/// W4-g56 — the projectile-side `VoidLensHelper(Projectile)` ctor
+/// (`VoidLensHelper.cs:19-24`): position = `proj.Center`, opacity =
+/// `proj.Opacity`, frame = `proj.frame` (AI_154's 5-tick machine), drawn by
+/// `Main.DrawProjDirect`'s type-734 arm (`Main.cs:27920-27931`). Shares the
+/// tile lens's `DrawToDrawData` body 1:1 — only the ctor inputs differ.
+/// The pass runs inside the projectile draw loop (the C# draws the lens
+/// with the projectiles, `Main.cs:62251`), pushing the same world-effect
+/// quads the tile pass uses. Returns the quad count.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_void_lens_projectile(
+    r: &mut SpriteRenderer,
+    light: &tr_core::lighting::LightMap,
+    style: &LightStyle,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    anim_time: f32,
+    global_time: f32,
+    center: [f32; 2],
+    frame: i32,
+    opacity: f32,
+    selection_mode: u8,
+) -> u32 {
+    // `Utils.Frame`'s integer divide off the packed sheet (the tile pass's
+    // `sheet_px` shape).
+    let Some(uv) = r.sheets.get("Projectile_734").copied() else {
+        return 0;
+    };
+    let sheet_w = ((uv[2] - uv[0]) * r.atlas_size.0 as f32).round();
+    let sheet_h = ((uv[3] - uv[1]) * r.atlas_size.1 as f32).round();
+    let lens = [sheet_w, (sheet_h as u32 / 8) as f32];
+    let sprites = void_lens_projectile_sprites(
+        |lx, ly| light.get(lx, ly),
+        style,
+        anim_time,
+        global_time,
+        lens,
+        center,
+        frame,
+        opacity,
+        selection_mode,
+    );
+    let mut quads = 0u32;
+    for s in sprites {
+        let Some(uv) = r.uv(
+            s.sheet,
+            s.src[0],
+            s.src[1],
+            s.src[2] - s.src[0],
+            s.src[3] - s.src[1],
+        ) else {
+            continue;
+        };
+        r.push_fx_sprite_rot(
+            [
+                (s.pos[0] - camera.x) * zoom + screen.x * 0.5,
+                (s.pos[1] - camera.y) * zoom + screen.y * 0.5,
+            ],
+            [s.size[0] * zoom, s.size[1] * zoom],
+            uv,
+            s.color,
+            0.0,
+        );
+        quads += 1;
+    }
+    quads
+}
+
 /// The `VoidLensHelper.Update` light half (`VoidLensHelper.cs:34-38`):
 /// `Lighting.AddLight(position, 0.4f, 0.2f, 0.9f)` — the Vector2 overload
 /// tiles by `(int)(v / 16f)` (`Lighting.cs:140-143`).
@@ -439,11 +568,52 @@ pub(crate) fn void_lens_light(x: i32, y: i32) -> (i32, i32, [f32; 3]) {
     )
 }
 
+/// W4-f6 wiring — the pylon crystal's dust box (`TileDrawing.cs:8657-8672`):
+/// the same visibility gate + bobbing anchor `pylon_sprites` uses, returning
+/// `(tileStyle, dustBox.TopLeft(), Width, Height)` for
+/// `Utils.CenteredRectangle(vector2, rectangle.Size())` (`:8672`). `None`
+/// when the pylon is invisible (the C# `continue`s before the dust gate).
+fn pylon_dust_box(
+    world: &World,
+    env: &SpecialEnv,
+    sizes: &FrameSizes,
+    x: i32,
+    y: i32,
+) -> Option<(i32, Vec2, i32, i32)> {
+    let tile = world.tile(x, y).filter(|t| t.active())?;
+    let tile2 = world.tile(x + 1, y + 1).filter(|t| t.active())?;
+    if !is_visible(world, x + 1, y + 1, tile2, env.show_invisible) {
+        return None;
+    }
+    let style = tile.frame_x as i32 / 54; // `:8657` — num3
+    let (fw, fh) = (sizes.pylon[0], sizes.pylon[1]);
+    // `:8666-8668` — the bobbing crystal anchor.
+    let bob = (env.global_time * (std::f32::consts::PI * 2.0) / 5.0).sin();
+    let base = to_world(x, y, 24.0, 64.0);
+    let center = Vec2::new(base[0], base[1] - 40.0 + bob * 4.0);
+    // `Utils.CenteredRectangle` (`Utils.cs:947-950`): the truncating ints.
+    let top_left = Vec2::new(
+        (center.x - fw / 2.0) as i32 as f32,
+        (center.y - fh / 2.0) as i32 as f32,
+    );
+    Some((style, top_left, fw as i32, fh as i32))
+}
+
 /// The pass hook: scan the view rect (the `draw_tiles`/`draw_wires` shape),
 /// collect the three families in the C# order — void lenses, pylons,
 /// trophies (`PostDrawTiles`, `TileDrawing.cs:423-425`) — and push them into
 /// the always-rebuilt world-effect range (screen space, like the leaf gores)
 /// so the G6-cached world range is untouched. Returns the quad count.
+///
+/// W4-f6 wiring: the dust rolls now fire — the pylon crystal's
+/// `_rand.Next(4)`/`Next(10)` gates (`TileDrawing.cs:8669-8673`, site 390)
+/// on the PRIVATE `tile_rand` stream, the void lens's `SpawnVoidLensDust`
+/// (`VoidLensHelper.cs:40-75`, sites 48/63) on the bare `Main.rand`
+/// (`global_rand`). Both gate on `!game_paused` (the `_isActiveAndNotPaused`
+/// / `Main.gamePaused` reads). `dust`/`ctx` are the pool + spawn context.
+/// `area` is the smart-interact highlight state — the pylon/void-lens
+/// selection glow reads `selection_mode` off it (`TileDrawing.cs:8687-8695`
+/// / `:8721-8729`), the W4-g86 `selection_mode = 0` follow-up.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_pylons_trophies_void(
     r: &mut SpriteRenderer,
@@ -457,6 +627,11 @@ pub(crate) fn draw_pylons_trophies_void(
     env: &SpecialEnv,
     game_paused: bool,
     entity_lights: &mut crate::entity_lights::EntityLights,
+    tile_rand: &mut tr_core::UnifiedRandom,
+    global_rand: &mut tr_core::UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    area: &crate::render::tile_outlines::HighlightArea<'_>,
 ) -> u32 {
     // The sheet frame sizes from the atlas (`Utils.Frame`'s integer divide).
     let sheet_px = |name: &str| -> Option<[f32; 2]> {
@@ -498,15 +673,29 @@ pub(crate) fn draw_pylons_trophies_void(
                 continue;
             };
             match special_kind(tile) {
-                // `selection_mode = 0`: the smart cursor is unported.
+                // `selection_mode` off the smart-interact highlight area
+                // (`TileDrawing.cs:8721-8729`, the W4-g86 follow-up).
                 Some(491) => {
-                    // `TileDrawing.cs:8717-8720`: `Update` (the light half)
-                    // runs only when `!Main.gamePaused`; the source lands in
-                    // the current list and the engine reads it one frame
-                    // late, exactly like the item/NPC feeds.
+                    // `TileDrawing.cs:8717-8720`: `Update` (the light half +
+                    // `SpawnVoidLensDust`) runs only when `!Main.gamePaused`;
+                    // the source lands in the current list and the engine
+                    // reads it one frame late, exactly like the item/NPC feeds.
                     if !game_paused {
                         let (lx, ly, rgb) = void_lens_light(tx, ty);
                         entity_lights.add(lx, ly, rgb);
+                        // W4-f6 wiring — `VoidLensHelper.Update` →
+                        // `SpawnVoidLensDust` (`VoidLensHelper.cs:34-38`,
+                        // sites 48/63) on the bare `Main.rand`. The position
+                        // is `p.ToWorldCoordinates()` with `Y -= 2`
+                        // (`:26-32`), the same anchor `void_lens_light` uses.
+                        let center = to_world(tx, ty, 8.0, 8.0 - 2.0);
+                        crate::world_dust::void_lens_dust(
+                            Vec2::new(center[0], center[1]),
+                            global_rand,
+                            dust,
+                            ctx,
+                            world,
+                        );
                     }
                     sprites.extend(void_lens_sprites(
                         |lx, ly| light.get(lx, ly),
@@ -516,20 +705,37 @@ pub(crate) fn draw_pylons_trophies_void(
                         &sizes,
                         tx,
                         ty,
-                        0,
+                        crate::render::tile_outlines::selection_mode(area, tx, ty),
                     ));
                 }
-                Some(597) => sprites.extend(pylon_sprites(
-                    world,
-                    |lx, ly| light.get(lx, ly),
-                    style,
-                    anim_time,
-                    env,
-                    &sizes,
-                    tx,
-                    ty,
-                    0,
-                )),
+                Some(597) => {
+                    // W4-f6 wiring — the pylon crystal's dust gate
+                    // (`TileDrawing.cs:8669-8673`, site 390): `_rand.Next(4)`
+                    // draws EVERY visible pylon, then `(active && flag) &&
+                    // _rand.Next(10)` (the second draws only when the first
+                    // passed AND active). The box is the centered crystal
+                    // rect at the bobbing anchor.
+                    let pylon_dust = pylon_dust_box(world, env, &sizes, tx, ty);
+                    if let Some((style_id, top_left, w, h)) = pylon_dust {
+                        let flag = tile_rand.next_max(4) == 0; // `:8669`
+                        if !game_paused && flag && tile_rand.next_max(10) == 0 {
+                            crate::world_dust::pylon_spawn_dust(
+                                style_id, top_left, w, h, global_rand, dust, ctx, world,
+                            );
+                        }
+                    }
+                    sprites.extend(pylon_sprites(
+                        world,
+                        |lx, ly| light.get(lx, ly),
+                        style,
+                        anim_time,
+                        env,
+                        &sizes,
+                        tx,
+                        ty,
+                        crate::render::tile_outlines::selection_mode(area, tx, ty),
+                    ));
+                }
                 Some(617) => sprites.extend(trophy_sprites(
                     world,
                     |lx, ly| light.get(lx, ly),
@@ -824,5 +1030,24 @@ mod tests {
             lerp_bytes([127, 127, 127], [255, 255, 255], 0.5),
             [191, 191, 191]
         );
+    }
+
+    /// W4-f6 WIRING — the pylon dust box: a visible style-1 pylon at (10,10)
+    /// resolves the centered crystal rect at the bobbing anchor; the style
+    /// is `frameX / 54`. An invisible pylon returns None (no gate draws).
+    #[test]
+    fn w4_f6_pylon_dust_box_centers_the_crystal_rect() {
+        let w = world_with(597, 54, 0); // style 1 (frameX 54 / 54)
+        let e = env();
+        let got = pylon_dust_box(&w, &e, &SIZES, 10, 10).expect("visible pylon");
+        assert_eq!(got.0, 1, "the style is frameX / 54");
+        // global_time 0 -> bob 0; base = (10*16+24, 10*16+64) = (184, 224);
+        // center = (184, 224-40) = (184, 184); the 54x62 rect centers there.
+        assert_eq!(got.1, Vec2::new(184.0 - 27.0, 184.0 - 31.0));
+        assert_eq!((got.2, got.3), (54, 62));
+        // The bottom-right cell missing -> invisible -> None.
+        let mut w2 = world_with(597, 54, 0);
+        w2.tile_mut(11, 11).unwrap().flags = 0;
+        assert!(pylon_dust_box(&w2, &e, &SIZES, 10, 10).is_none());
     }
 }

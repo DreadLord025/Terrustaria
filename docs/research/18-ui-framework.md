@@ -147,6 +147,10 @@ Screens already covered by immediate ports are listed for completeness at the en
 | `GameInterfaceLayer`, `LegacyGameInterfaceLayer`, `InterfaceScaleType` | named layer stack, 3 scale spaces | d87's 43-layer table + stop-on-false walk (`164cb7090`) | ~~MISSING~~ **PARTIAL (REFRESH: d87)** | the layer list is data now; the per-layer zoom application stays the follow-up |
 | `UIState` (as a class you instantiate) | 100% root + `NoGamepadSupport` | `FrontScreen` / per-screen root | PARTIAL | no shared root type (by design, immediate mode) |
 
+| `UserInterface` (object, `_currentState`, `_history`) | element stack, `GoBack`, 32-entry history | `flow.rs` table | MISSING/partial | `GoBack` semantics (2-state pop) not modelled |
+| `GameInterfaceLayer`, `LegacyGameInterfaceLayer`, `InterfaceScaleType` | named layer stack, 3 scale spaces | fixed order in `frame.rs` | MISSING | ordering is hard-coded; no per-layer zoom |
+| `UIState` (as a class you instantiate) | 100% root + `NoGamepadSupport` | `ui/state_root.rs::StateRoot`/`root_rect` (W4-f23) + `FrontScreen` / per-screen root | PORTED as a pure helper (W4-f23, research/18e); WIRED keep-one (wiring pass) | the ctor rect rides the shared `resolve`; `NoGamepadSupport`'s only consumer arm (`UILinkPointNavigator.cs:280-283`) ported as a predicate (parked — the only setter is UIWorldGenDebug's ctor, d86 scope-out); the nine landed full-screen root rects now route through `root_rect` |
+
 ### Element classes (`Terraria/UI/*.cs` + `GameContent/UI/Elements/*.cs`)
 
 > **2026-11-20 (W4-d82):** the full 64-class census + the d81/d82/d83 lane
@@ -241,6 +245,23 @@ the rows keep their historical text with the refresh verdict appended.
 | `UIManageControls` | 20 | `ui/manage_controls.rs` + `input_profiles.rs` (d86 `21fab7274`) | **PORTED (REFRESH)** — the screen state machine + the profile data; rows cite d83's `keybinding_rows.rs`; `input_map.rs` keeps the 14+6 bind DATA for the input pass |
 | `AWorkshopPublishInfoState` (+ForResourcePack/ForWorld) | — | `ui/workshop_publish_info.rs` (d86) | data/state half PORTED (d86); Steam I/O excluded with Social/** (research/18c pair decision) |
 | `UIWorldLoad` | 16 | `ui/world_load.rs` (S1-E-17, first-class `FrontScreen::WorldLoad`) | ~~PARTIAL — verify no screen is lost~~ **PORTED (REFRESH: d86 `19641e25f` re-verified in depth against UIWorldLoad.cs:16-137)** — nothing was folded into world_select/save_list; the row was stale; deferrals recorded (drunk Main.rand arms, gameTips, F5 debug scope-out, gamepad squiggle) |
+| `UIWorkshopHub` | 13 | `ui/workshop_hub.rs` (`FrontScreen::WorkshopHub`) | PORTED (W4-d84 row 1; no Steam — the menu row keeps the ResourcePacks branch, `TR_UI=wshub` is the screenshot entry; Logs is a notice, d85 row 10) |
+| `UIWorkshopSelectResourcePackToPublish` | 17 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishPacks`) | PORTED (W4-d84 row 2; the publish tail is a notice — the Steam form is out of range) |
+| `UIWorkshopSelectWorldToPublish` | 16 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishWorlds`) | PORTED (W4-d84 row 3; the publish tail is a notice — the Steam form is out of range) |
+| `UIWorkshopWorldImport` | 18 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopImportWorlds`) | PORTED (W4-d84 row 4; no Steam — the subscribed list is always empty, the import rows are ported for the record) |
+| `UIResourcePackSelectionMenu` | 17 | `ui/resource_packs.rs` (`FrontScreen::ResourcePackSelection`) | PORTED (W4-d84 row 5; the enabled-only ApplyListChanges save, the two-list scroll routing) |
+| `UIResourcePackInfoMenu` | 15 | `ui/resource_pack_info.rs` (`FrontScreen::ResourcePackInfo`) | PORTED (W4-d84 row 6; the back target parks the exact parent selection screen) |
+| `UIDebugCommandsList` | 15 | none | debug |
+| `UIDebugLoadoutsList` | 14 | none | debug |
+| `UIDebugLoadoutItem`-family screens | — | none | debug |
+| `UIReportsPage` | 16 | none | |
+| `UIWorldCreationAdvanced` | 16 | none | ROADMAP:953 lists it; world_creation.rs covers the base screen only |
+| `UIWorldCreationAdvancedSecretSeedsList` | 17 | none | same |
+| `UIWorldGenDebug` | 27 | none | debug |
+| `UICreativePowersMenu` | 13 | none | journey-mode powers |
+| `UITextWrappingTest` | 14 | none | test-only screen |
+| `UIManageControls` | 20 | none | keybinding screen; `input_map.rs` has the data, not the screen |
+| `UIWorldLoad` | 16 | `world_select.rs`/`save_list.rs` (folded in) | PARTIAL — verify no screen is lost |
 | `NewCraftingUI` | 21 | `crafting.rs` | PORTED (immediate) |
 | `UICharacterSelect/UICharacterCreation/UIWorldSelect/UIWorldCreation/UIVirtualKeyboard/UIAchievementsMenu/UIBestiaryTest/UIEmotesMenu` | — | `char_*`, `world_*`, `keyboard.rs`, `achievements.rs`, `bestiary.rs`, `emotes.rs` | PORTED |
 

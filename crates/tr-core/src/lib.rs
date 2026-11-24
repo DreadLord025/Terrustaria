@@ -14,6 +14,7 @@ pub mod clock;
 pub mod damage;
 pub mod drawdata;
 pub mod drawdata_anim;
+pub mod drawdata_cages;
 pub mod drawdata_furniture;
 pub mod dd2;
 pub mod dd2_victory;
@@ -24,7 +25,12 @@ pub mod extract;
 pub mod falling;
 pub mod flame;
 pub mod framing;
+// W4-g82 — TileFrameCosmetic's rope arm (WorldGen.cs:81894-81931), the
+// tr-core home of render/ropes.rs's verbatim decision maths; wired into
+// framing::frame_of_variant's merge-chain tail.
+pub mod framing_rope;
 pub mod generation_progress;
+pub mod glowmask;
 pub mod housing;
 pub mod hit_tile;
 pub mod lighting;

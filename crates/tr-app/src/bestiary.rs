@@ -2753,8 +2753,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Lunatic Cultist",
     },
     // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
-        name: "Lavafly",
-    },
     // The snail wall-crawler family + its shimmer target (W4-c9): the
     // populator registers all four (`BestiaryDatabaseNPCsPopulator.cs`'s
     // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
@@ -2811,7 +2809,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Gold Mouse",
-        name: "Shimmerfly",
     },
     // W4-c8 — the crawling-critter family's own entries (the populator
     // registers them all; `NPCID.Search.GetName` credits, the en-US
@@ -3015,6 +3012,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Crimson Mimic",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+        name: "Lavafly",
+    },
+    // The snail wall-crawler family + its shimmer target (W4-c9): the
+    // populator registers all four (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set — plus the `FindEntryByNPCID(359)`/`(677)`
+    // cavern-spawn info rows).
     BestiaryEntryDef {
         credit_id: "BigMimicHallow",
         net_id: 475,
@@ -3032,6 +3037,9 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Jungle Mimic",
     },
     BestiaryEntryDef {
+        credit_id: "MagmaSnail",
+        net_id: 655,
+        kind: NpcKind::MagmaSnail,
         credit_id: "Mothron",
         net_id: 477,
         kind: NpcKind::Mothron,
@@ -3095,6 +3103,21 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::GraniteFlyer,
         variant: None,
         quick_unlock: false,
+        name: "Gold Mouse",
+        name: "Shimmerfly",
+    },
+    // W4-c8 — the crawling-critter family's own entries (the populator
+    // registers them all; `NPCID.Search.GetName` credits, the en-US
+    // NPCs.json display names). The digger 375 is Hide=true
+    // (`NPCID.cs:3714-3718`) — its entry exists (the ForceBubble
+    // precedent) but `entry_for_npc` folds it onto the TruffleWorm.
+    // W4-c10 — the waterfowl family's own entries (the populator
+    // registers all eight: `FindEntryByNPCID(362/363/364/365/602/603/
+    // 608/609).Info`, `BestiaryDatabaseNPCsPopulator.cs:1191-1266`;
+    // `NPCID.Search.GetName` credits). The display names ride the
+    // localization rows: Duck2/DuckWhite/DuckWhite2 all read "Duck",
+    // Seagull2 "Seagull", Grebe2 "Grebe"
+    // (`Terraria.Localization.Content.en-US.NPCs.json`).
         name: "Granite Elemental",
     },
     // W4-c10 merge: the gold entries RESTORED (the c8/c9 merges dropped
@@ -3109,6 +3132,9 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Gold Bird",
     },
     BestiaryEntryDef {
+        credit_id: "Duck2",
+        net_id: 363,
+        kind: NpcKind::Duck2,
         credit_id: "GoldBunny",
         net_id: 443,
         kind: NpcKind::GoldBunny,
@@ -3117,6 +3143,9 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Gold Bunny",
     },
     BestiaryEntryDef {
+        credit_id: "DuckWhite",
+        net_id: 364,
+        kind: NpcKind::DuckWhite,
         credit_id: "GoldFrog",
         net_id: 445,
         kind: NpcKind::GoldFrog,
@@ -3154,6 +3183,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::Grubby,
         variant: None,
         quick_unlock: false,
+        name: "Worm",
         name: "Grubby",
     },
     BestiaryEntryDef {
@@ -3181,20 +3211,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Etherian Lightning Bug",
-        name: "Maggot",
-    },
-    // The gold critters (W4-c9): the populator registers each
-    // (`BestiaryDatabaseNPCsPopulator.cs`'s
-    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
-    // `CountsAsACritter` set). The names ride the lang table
-    // (`lang_tables.rs`'s 442/446/447 rows).
-    BestiaryEntryDef {
-        credit_id: "GoldBird",
-        net_id: 442,
-        kind: NpcKind::GoldBird,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Bird",
     },
     BestiaryEntryDef {
         credit_id: "WalkingAntlion",
@@ -3237,6 +3253,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // (592, `ContentSamples.cs:1049`) now that c4's 592 entry landed;
     // both resolvers carry the fold arm below.
     // W4-c4 (the style-44 swimmers): the four kinds' own entries - the
+    // W4-c4 (the style-44 swimmers): the four kinds' own entries — the
     // populator attaches info to all four
     // (`BestiaryDatabaseNPCsPopulator.cs:1133`/`:1523`/`:629`/`:1164`).
     // The display names ride `en-US NPCs.json` (581 is "Antlion
@@ -3590,6 +3607,21 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::Corruptor,
         variant: None,
         quick_unlock: false,
+        name: "Etherian Lightning Bug",
+        name: "Maggot",
+    },
+    // The gold critters (W4-c9): the populator registers each
+    // (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set). The names ride the lang table
+    // (`lang_tables.rs`'s 442/446/447 rows).
+    BestiaryEntryDef {
+        credit_id: "GoldBird",
+        net_id: 442,
+        kind: NpcKind::GoldBird,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bird",
         name: "Corruptor",
     },
     BestiaryEntryDef {
@@ -3778,6 +3810,401 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Maggot",
     },
+];
+
+/// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
+/// (`CommonEnemyUICollectionInfoProvider.cs:39-46`): the entry's current
+/// unlock tier from the kill tracker. The CRITTER entries never read
+/// this — [`unlock_state_world`] dispatches them to the sight providers
+/// (the W4-c8 sweep census).
+    // [merge-P] duplicate fn unlock_state removed (same-scope duplicate; longest implementation kept)
+    // The man-eater family (W4-d23, aiStyle 13): the six wired kinds' own
+    // entries — the populator registers all six by id (the normal-enemy
+    // kill ladder, no quick-unlock).
+    BestiaryEntryDef {
+        credit_id: "ManEater",
+        net_id: 43,
+        kind: NpcKind::ManEater,
+        variant: None,
+        quick_unlock: false,
+        name: "Man Eater",
+    },
+    BestiaryEntryDef {
+        credit_id: "Snatcher",
+        net_id: 56,
+        kind: NpcKind::Snatcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Snatcher",
+    },
+    BestiaryEntryDef {
+        credit_id: "Clinger",
+        net_id: 101,
+        kind: NpcKind::Clinger,
+        variant: None,
+        quick_unlock: false,
+        name: "Clinger",
+    },
+    BestiaryEntryDef {
+        credit_id: "AngryTrapper",
+        net_id: 175,
+        kind: NpcKind::AngryTrapper,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Trapper",
+    },
+    BestiaryEntryDef {
+        credit_id: "FungiBulb",
+        net_id: 259,
+        kind: NpcKind::FungiBulb,
+        variant: None,
+        quick_unlock: false,
+        name: "Fungi Bulb",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFungiBulb",
+        net_id: 260,
+        kind: NpcKind::GiantFungiBulb,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Fungi Bulb",
+    },
+    // The aiStyle-9 spit/flare family (W4-d23): the three wired kinds' own
+    // entries — the populator registers all three by id (112/666 the
+    // Corruption spit, 516 the Solar Pillar flare; the normal-enemy kill
+    // ladder, no quick-unlock).
+    BestiaryEntryDef {
+        credit_id: "VileSpit",
+        net_id: 112,
+        kind: NpcKind::VileSpit,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Spit",
+    },
+    BestiaryEntryDef {
+        credit_id: "VileSpitEaterOfWorlds",
+        net_id: 666,
+        kind: NpcKind::VileSpitEoW,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Spit",
+    },
+    BestiaryEntryDef {
+        credit_id: "SolarFlare",
+        net_id: 516,
+        kind: NpcKind::SolarFlare,
+        variant: None,
+        quick_unlock: false,
+        name: "Solar Flare",
+    },
+    // The aiStyle-14 flyer family (W4-d23): the 13 wired kinds' own
+    // entries — the populator attaches info to every id (48
+    // `BestiaryDatabaseNPCsPopulator.cs:1653`, 62 `:1548`, 93 `:1129`,
+    // 121 `:1271`, 137 `:1130`, 150 `:1352`, 151 `:1353`, 152 `:1317`,
+    // 156 `:1673`, 158 `:1356`, 159 `:1465`, 226 `:1553`, 634 `:1950`);
+    // 660's UI provider credits 657 (`:694`'s quick-unlock map) but its
+    // entry + draw sheet ride its own id (the Sharkron precedent).
+    BestiaryEntryDef {
+        credit_id: "Harpy",
+        net_id: 48,
+        kind: NpcKind::Harpy,
+        variant: None,
+        quick_unlock: false,
+        name: "Harpy",
+    },
+    BestiaryEntryDef {
+        credit_id: "Demon",
+        net_id: 62,
+        kind: NpcKind::Demon,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantBat",
+        net_id: 93,
+        kind: NpcKind::GiantBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "Slimer",
+        net_id: 121,
+        kind: NpcKind::Slimer,
+        variant: None,
+        quick_unlock: false,
+        name: "Slimer",
+    },
+    BestiaryEntryDef {
+        credit_id: "IlluminantBat",
+        net_id: 137,
+        kind: NpcKind::IlluminantBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Illuminant Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "IceBat",
+        net_id: 150,
+        kind: NpcKind::IceBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "LavaBat",
+        net_id: 151,
+        kind: NpcKind::Lavabat,
+        variant: None,
+        quick_unlock: false,
+        name: "Lava Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFlyingFox",
+        net_id: 152,
+        kind: NpcKind::GiantFlyingFox,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Flying Fox",
+    },
+    BestiaryEntryDef {
+        credit_id: "RedDevil",
+        net_id: 156,
+        kind: NpcKind::RedDevil,
+        variant: None,
+        quick_unlock: false,
+        name: "Red Devil",
+    },
+    BestiaryEntryDef {
+        credit_id: "VampireBat",
+        net_id: 158,
+        kind: NpcKind::VampireBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Vampire Bat",
+    },
+    // The VampireBat's Transform(159) target (`NPC.cs:23353`) — aiStyle 3
+    // (the fighter walker), NOT a style-14 member; it lands here because
+    // the transform pair is one unit (the bat flees the surface by day,
+    // the vampire walks it by night — `:58843-58851` transforms back).
+    BestiaryEntryDef {
+        credit_id: "Vampire",
+        net_id: 159,
+        kind: NpcKind::Vampire,
+        variant: None,
+        quick_unlock: false,
+        name: "Vampire",
+    },
+    BestiaryEntryDef {
+        credit_id: "FlyingSnake",
+        net_id: 226,
+        kind: NpcKind::FlyingSnake,
+        variant: None,
+        quick_unlock: false,
+        name: "Flying Snake",
+    },
+    BestiaryEntryDef {
+        credit_id: "SporeBat",
+        net_id: 634,
+        kind: NpcKind::SporeBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Spore Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "QueenSlimeMinionPurple",
+        net_id: 660,
+        kind: NpcKind::QueenSlimeMinionPurple,
+        variant: None,
+        quick_unlock: false,
+        name: "Queen Slime Minion",
+    },
+    // W4-f18 first-20 port — batch 1's five critters. The credit ids are
+    // the vanilla `NPCID` names (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `ContentSamples.NpcBestiaryCreditIdsByNpcNetIds` rows); the display
+    // names ride `en-US.NPCs.json`'s NPCName rows.
+    BestiaryEntryDef {
+        credit_id: "Firefly",
+        net_id: 355,
+        kind: NpcKind::Firefly,
+        variant: None,
+        quick_unlock: false,
+        name: "Firefly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Butterfly",
+        net_id: 356,
+        kind: NpcKind::Butterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Butterfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightningBug",
+        net_id: 358,
+        kind: NpcKind::LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Lightning Bug",
+    },
+    BestiaryEntryDef {
+        credit_id: "Snail",
+        net_id: 359,
+        kind: NpcKind::Snail,
+        variant: None,
+        quick_unlock: false,
+        name: "Snail",
+    },
+    // W4-f18 batch 2 — the GlowingSnail, the Frog and the two walker
+    // ducks. The Duck2 363 is Hide=true (`NPCID.cs:3617-3622`) — it folds
+    // onto the Duck 362's entry (no row of its own, the DetonatingBubble
+    // precedent); the credit ids ride the vanilla NPCID names.
+    BestiaryEntryDef {
+        credit_id: "GlowingSnail",
+        net_id: 360,
+        kind: NpcKind::GlowingSnail,
+        variant: None,
+        quick_unlock: false,
+        name: "Glowing Snail",
+    },
+    BestiaryEntryDef {
+        credit_id: "Frog",
+        net_id: 361,
+        kind: NpcKind::Frog,
+        variant: None,
+        quick_unlock: false,
+        name: "Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "ScorpionBlack",
+        net_id: 366,
+        kind: NpcKind::ScorpionBlack,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Scorpion",
+        net_id: 367,
+        kind: NpcKind::Scorpion,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "TruffleWorm",
+        net_id: 374,
+        kind: NpcKind::TruffleWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Truffle Worm",
+    },
+    // W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb, the
+    // CultistArcherBlue and the ArmedZombie. The CultistArcherWhite 380
+    // (Hide=true, `NPCID.cs:3734-3739`) folds onto the CultistArcherBlue
+    // 379 — no row of its own (the DetonatingBubble precedent).
+    BestiaryEntryDef {
+        credit_id: "Grasshopper",
+        net_id: 377,
+        kind: NpcKind::Grasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Grasshopper",
+    },
+    BestiaryEntryDef {
+        credit_id: "ChatteringTeethBomb",
+        net_id: 378,
+        kind: NpcKind::ChatteringTeethBomb,
+        variant: None,
+        quick_unlock: false,
+        name: "Chattering Teeth Bomb",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistArcherBlue",
+        net_id: 379,
+        kind: NpcKind::CultistArcherBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Cultist Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "ArmedZombie",
+        net_id: 430,
+        kind: NpcKind::ArmedZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // (W4-f42's nine-entry block moved to the roster tail at the merge —
+    // the c37 star census pins the base ENTRIES order; the FlyingAntlion
+    // row deduped into the W4-c4 style-44 entry above.)
+    // W4-f42 — the sandstorm debris + desert family (the `NPC.cs:3949-4018`
+    // spawn arm's picks). The vanilla net ids are the bestiary credits.
+    BestiaryEntryDef {
+        credit_id: "Tumbleweed",
+        net_id: 546,
+        kind: NpcKind::Tumbleweed,
+        variant: None,
+        quick_unlock: false,
+        name: "Tumbleweed",
+    },
+    BestiaryEntryDef {
+        credit_id: "Vulture",
+        net_id: 61,
+        kind: NpcKind::Vulture,
+        variant: None,
+        quick_unlock: false,
+        name: "Vulture",
+    },
+    BestiaryEntryDef {
+        credit_id: "Antlion",
+        net_id: 69,
+        kind: NpcKind::Antlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mummy",
+        net_id: 78,
+        kind: NpcKind::Mummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "DarkMummy",
+        net_id: 79,
+        kind: NpcKind::DarkMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodMummy",
+        net_id: 630,
+        kind: NpcKind::BloodMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightMummy",
+        net_id: 80,
+        kind: NpcKind::LightMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Light Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "WalkingAntlion",
+        net_id: 580,
+        kind: NpcKind::WalkingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Walking Antlion",
+    },
     // W4-d120 — AddTownNPCs_Manual (BestiaryDatabaseNPCsPopulator.cs:814-
     // 822): the four town kinds' TownNPC entries; the names ride the
     // en-US NPCs.json rows (`NPCName.<const>`).
@@ -3824,6 +4251,14 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
     let full = tr_core::bestiary::kills_needed_for(entry.net_id);
     get_unlock_state_by_kill_count(
         kills.get_kill_count(entry.credit_id),
+/// The entry's current unlock tier — its `UIInfoProvider`'s
+/// `GetEntryUICollectionInfo` (`BestiaryEntryUnlockState`). The provider
+/// is `bestiary_data::gate(entry.net_id)` (the populator's override walk,
+/// `BestiaryDatabaseNPCsPopulator.cs:649-730`); the three trackers are the
+/// world's `BestiaryUnlocksTracker` (`Main.BestiaryTracker`).
+pub fn unlock_state(entry: &BestiaryEntryDef, tracker: &WorldBestiary) -> UnlockState {
+    eval_gate(
+        crate::bestiary_data::gate(entry.net_id),
         entry.quick_unlock,
         full,
     )
@@ -3995,6 +4430,8 @@ pub fn unlock_state_world(entry: &BestiaryEntryDef, bestiary: &WorldBestiary) ->
 /// sight-aware dispatch (the critter entries unlock on proximity, not
 /// kills).
 pub fn completion_percent(kills: &KillTracker) -> f32 {
+/// (`Chest.cs:3265`).
+pub fn completion_percent(tracker: &WorldBestiary) -> f32 {
     // `BestiaryUnlockProgressReport.CompletionPercent`
     // (`BestiaryUnlockProgressReport.cs:9-19`): 1 for an empty roster,
     // else the known share (`UIBestiaryTest.GetUnlockProgress`, `:497-513`,
@@ -4245,6 +4682,23 @@ pub fn try_entry_for_npc(
         // OWN ENTRIES entry net 375 for the cs_id fallback, the
         // ForceBubble precedent; mirroring it here would break the
         // s1_f_3 cs_id==net gate.)
+        // W4-c6 style-59 wiring: the blade's bestiary draw modifiers are
+        // Hide=true (`NPCID.cs:3398-3403`) — the credit folds onto the
+        // Pumpking (the fishron-hazard precedent). The DRAW sheet stays
+        // NPC_328 through `texture_net_id`'s own row.
+        NpcKind::PumpkingBlade => NpcKind::Pumpking,
+        // W4-f18 batch 2 — the Duck2 363 is Hide=true (`NPCID.cs:3617-
+        // 3622`): the swimming form folds onto the walker Duck 362's
+        // entry (one credit per waterfowl, the DetonatingBubble precedent).
+        NpcKind::Duck2 => NpcKind::Duck,
+        // W4-f18 batch 3 — the DuckWhite2 365 folds onto the DuckWhite 364
+        // (Hide=true, `NPCID.cs:3633-3638`); the TruffleWormDigger 375
+        // folds onto the TruffleWorm 374 (Hide=true, `NPCID.cs:3713-3718`).
+        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
+        NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
+        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
+        // CultistArcherBlue 379 (Hide=true, `NPCID.cs:3734-3739`).
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -4400,6 +4854,24 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // Bubble precedent; its own ENTRIES entry + cs_id 375 stand for
         // the not-catchable friendly/immunity gate).
         NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
+        // W4-c6 style-59 wiring: the blade's Hide=true draw modifiers
+        // (`NPCID.cs:3398-3403`) — no entry of its own; the credit folds
+        // onto the Pumpking (the ForceBubble/fishron-hazard precedent).
+        // The populator DOES attach invasion-spawn info to entry 328
+        // (`BestiaryDatabaseNPCsPopulator.cs:1655`) — the entry exists in
+        // the vanilla DB but is hidden from the grid; the port's fold
+        // keeps the credit on the boss row like every Hide=true rider.
+        NpcKind::PumpkingBlade => NpcKind::Pumpking,
+        // W4-f18 batch 2 — the Duck2 363 folds onto the Duck 362's row
+        // (Hide=true, `NPCID.cs:3617-3622`; the try_entry twin above).
+        NpcKind::Duck2 => NpcKind::Duck,
+        // W4-f18 batch 3 — the DuckWhite2 365 / TruffleWormDigger 375 fold
+        // onto their walker rows (the try_entry twin above).
+        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
+        NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
+        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
+        // CultistArcherBlue 379 (the try_entry twin above).
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES
@@ -4920,6 +5392,9 @@ mod tests {
     /// (`CritterUICollectionInfoProvider.cs:14-20`, GAP-1 in research/293
     /// §8, a pre-existing base-wide gap the wiring round owns), so this
     /// witness pins the port's CURRENT behavior, not the vanilla tier.
+    /// W4-c37: the whole roster reads UNKNOWN on a fresh world — the
+    /// research/30 #4 witness (the old default-0 denominator reported
+    /// tier 4 for 164 of the entries with zero kills).
     #[test]
     fn w4_d38_final_the_unlock_ladders_match_the_banner_chain() {
         use crate::npc::NpcKind as K;
@@ -5108,49 +5583,49 @@ mod tests {
     /// override rows `ContentSamples.cs:1106-1242` first, else the
     /// `GetNPCBestiaryRarityStarsCount` formula over the Classic
     /// `SetDefaults` sample with the fresh-Main progression flags false).
-    /// 249 rows: 50x1 / 121x2 / 46x3 / 23x4 / 9x5.
+    /// 326 rows: 79x1 / 161x2 / 53x3 / 23x4 / 10x5 (the merge appended the W4 kinds' rows).
     #[test]
     fn w4_c37_the_star_census() {
         const EXPECTED: &[(i32, i32)] = &[
-            (1, 1),   // BlueSlime
-            (-3, 1),  // GreenSlime
-            (-4, 4),  // Pinky
-            (-5, 1),  // BabySlime
-            (-6, 1),  // BlackSlime
-            (-7, 1),  // PurpleSlime
-            (-8, 1),  // RedSlime
-            (-9, 3),  // YellowSlime
-            (2, 1),   // DemonEye
-            (3, 1),   // Zombie
-            (16, 2),  // MotherSlime
-            (50, 2),  // KingSlime
-            (4, 2),   // EyeofCthulhu
-            (52, 5),  // DoctorBones
-            (53, 5),  // TheGroom
-            (59, 1),  // LavaSlime
-            (71, 4),  // DungeonSlime
-            (81, 2),  // CorruptSlime
+            (1, 1), // BlueSlime
+            (-3, 1), // GreenSlime
+            (-4, 4), // Pinky
+            (-5, 1), // BabySlime
+            (-6, 1), // BlackSlime
+            (-7, 1), // PurpleSlime
+            (-8, 1), // RedSlime
+            (-9, 3), // YellowSlime
+            (2, 1), // DemonEye
+            (3, 1), // Zombie
+            (16, 2), // MotherSlime
+            (50, 2), // KingSlime
+            (4, 2), // EyeofCthulhu
+            (52, 5), // DoctorBones
+            (53, 5), // TheGroom
+            (59, 1), // LavaSlime
+            (71, 4), // DungeonSlime
+            (81, 2), // CorruptSlime
             (115, 2), // TheHungry
             (117, 1), // LeechHead
-            (5, 1),   // ServantofCthulhu
+            (5, 1), // ServantofCthulhu
             (132, 1), // BaldZombie
             (133, 2), // WanderingEye
-            (22, 1),  // Guide
-            (21, 1),  // Skeleton
-            (44, 3),  // UndeadMiner
-            (49, 1),  // CaveBat
-            (51, 1),  // JungleBat
-            (60, 2),  // Hellbat
-            (66, 3),  // VoodooDemon
-            (6, 1),   // EaterofSouls
-            (42, 1),  // Hornet
+            (22, 1), // Guide
+            (21, 1), // Skeleton
+            (44, 3), // UndeadMiner
+            (49, 1), // CaveBat
+            (51, 1), // JungleBat
+            (60, 2), // Hellbat
+            (66, 3), // VoodooDemon
+            (6, 1), // EaterofSouls
+            (42, 1), // Hornet
             (210, 1), // Bee
             (211, 1), // BeeSmall
-            (23, 2),  // MeteorHead
-            (29, 2),  // GoblinSorcerer
-            (45, 5),  // Tim
-            (32, 1),  // DarkCaster
-            (24, 2),  // FireImp
+            (23, 2), // MeteorHead
+            (29, 2), // GoblinSorcerer
+            (45, 5), // Tim
+            (32, 1), // DarkCaster
+            (24, 2), // FireImp
             (138, 2), // IlluminantSlime
             (147, 1), // IceSlime
             (161, 2), // ZombieEskimo
@@ -5176,23 +5651,23 @@ mod tests {
             (490, 2), // Drippler
             (225, 2), // UmbrellaSlime
             (533, 2), // DesertDjinn
-            (30, 1),  // ChaosBall
-            (25, 1),  // BurningSphere
-            (33, 1),  // WaterSphere
-            (55, 1),  // Goldfish
-            (58, 1),  // Piranha
-            (65, 2),  // Shark
-            (7, 2),   // DevourerHead
-            (10, 1),  // GiantWormHead
-            (87, 3),  // WyvernHead
-            (17, 1),  // Merchant
-            (20, 3),  // Dryad
-            (18, 1),  // Nurse
-            (19, 1),  // ArmsDealer
-            (38, 1),  // Demolitionist
+            (30, 1), // ChaosBall
+            (25, 1), // BurningSphere
+            (33, 1), // WaterSphere
+            (55, 1), // Goldfish
+            (58, 1), // Piranha
+            (65, 2), // Shark
+            (7, 2), // DevourerHead
+            (10, 1), // GiantWormHead
+            (87, 3), // WyvernHead
+            (17, 1), // Merchant
+            (20, 3), // Dryad
+            (18, 1), // Nurse
+            (19, 1), // ArmsDealer
+            (38, 1), // Demolitionist
             (227, 2), // Painter
             (228, 2), // WitchDoctor
-            (54, 2),  // Clothier
+            (54, 2), // Clothier
             (368, 3), // TravellingMerchant
             (369, 2), // Angler
             (108, 3), // Wizard
@@ -5205,7 +5680,7 @@ mod tests {
             (207, 2), // DyeTrader
             (208, 4), // PartyGirl
             (222, 3), // QueenBee
-            (35, 3),  // SkeletronHead
+            (35, 3), // SkeletronHead
             (113, 4), // WallofFlesh
             (134, 4), // TheDestroyer
             (127, 4), // SkeletronPrime
@@ -5249,10 +5724,10 @@ mod tests {
             (350, 2), // ElfArcher
             (351, 3), // Krampus
             (352, 2), // Flocko
-            (27, 1),  // GoblinThief
-            (28, 2),  // GoblinWarrior
+            (27, 1), // GoblinThief
+            (28, 2), // GoblinWarrior
             (111, 1), // GoblinArcher
-            (26, 1),  // GoblinPeon
+            (26, 1), // GoblinPeon
             (471, 4), // GoblinSummoner
             (143, 2), // SnowmanGangsta
             (144, 2), // MisterStabby
@@ -5353,14 +5828,91 @@ mod tests {
             (130, 3), // PrimeVice
             (131, 3), // PrimeLaser
             (114, 3), // WallofFleshEye
-            (36, 2),  // SkeletronHand
+            (36, 2), // SkeletronHand
             (668, 3), // Deerclops
             (107, 3), // GoblinTinkerer
-            (13, 3),  // EaterofWorldsHead
-            (72, 2),  // BlazingWheel
+            (13, 3), // EaterofWorldsHead
+            (72, 2), // BlazingWheel
             (250, 3), // AngryNimbus
             (288, 2), // DungeonSpirit
             (384, 2), // ForceBubble
+            (362, 2), // Duck
+            (363, 1), // Duck2
+            (364, 2), // DuckWhite
+            (365, 1), // DuckWhite2
+            (602, 1), // Seagull
+            (603, 1), // Seagull2
+            (608, 2), // Grebe
+            (609, 1), // Grebe2
+            (357, 1), // Worm
+            (442, 1), // GoldBird
+            (443, 1), // GoldBunny
+            (444, 1), // GoldButterfly
+            (445, 1), // GoldFrog
+            (446, 1), // GoldGrasshopper
+            (447, 1), // GoldMouse
+            (448, 1), // GoldWorm
+            (484, 5), // EnchantedNightcrawler
+            (485, 1), // Grubby
+            (486, 2), // Sluggy
+            (487, 3), // Buggy
+            (224, 2), // FlyingFish
+            (509, 2), // GiantFlyingAntlion
+            (581, 1), // FlyingAntlion
+            (587, 2), // EyeballFlyingFish
+            (57, 3), // CorruptGoldfish
+            (157, 2), // Arapaima
+            (241, 2), // BloodFeeder
+            (465, 3), // CrimsonGoldfish
+            (592, 1), // GoldGoldfish
+            (607, 2), // Pupfish
+            (615, 3), // Dolphin
+            (688, 1), // Pufferfish
+            (692, 2), // Orca
+            (43, 2), // ManEater
+            (56, 1), // Snatcher
+            (101, 2), // Clinger
+            (175, 2), // AngryTrapper
+            (259, 1), // FungiBulb
+            (260, 2), // GiantFungiBulb
+            (112, 2), // VileSpit
+            (666, 2), // VileSpitEaterOfWorlds
+            (516, 2), // SolarFlare
+            (48, 2), // Harpy
+            (62, 2), // Demon
+            (93, 2), // GiantBat
+            (121, 2), // Slimer
+            (137, 2), // IlluminantBat
+            (150, 1), // IceBat
+            (151, 2), // LavaBat
+            (152, 2), // GiantFlyingFox
+            (156, 2), // RedDevil
+            (158, 2), // VampireBat
+            (159, 2), // Vampire
+            (226, 2), // FlyingSnake
+            (634, 1), // SporeBat
+            (660, 2), // QueenSlimeMinionPurple
+            (355, 2), // Firefly
+            (356, 1), // Butterfly
+            (358, 3), // LightningBug
+            (359, 1), // Snail
+            (360, 3), // GlowingSnail
+            (361, 1), // Frog
+            (366, 2), // ScorpionBlack
+            (367, 1), // Scorpion
+            (374, 3), // TruffleWorm
+            (377, 1), // Grasshopper
+            (378, 2), // ChatteringTeethBomb
+            (379, 2), // CultistArcherBlue
+            (430, 1), // ArmedZombie
+            (546, 2), // Tumbleweed
+            (61, 1), // Vulture
+            (69, 1), // Antlion
+            (78, 2), // Mummy
+            (79, 2), // DarkMummy
+            (630, 2), // BloodMummy
+            (80, 2), // LightMummy
+            (580, 2), // WalkingAntlion
         ];
         assert_eq!(EXPECTED.len(), ENTRIES.len());
         for (e, &(net, stars)) in ENTRIES.iter().zip(EXPECTED) {
@@ -5630,5 +6182,21 @@ mod w4_c7_seal_tests {
         assert!(!GOLD_PEERS.iter().any(|(g, _)| *g == 593), "593 collection-only");
         let butterfly = GOLD_PEERS.iter().find(|(g, _)| *g == 444).unwrap();
         assert_eq!(butterfly.1, &[356], "the GoldButterfly peer contract");
+    /// W4-d122 remainder census — `Chest.BestiaryGirl_IsFairyTorchAvailable`
+    /// (`Chest.cs:3544-3559`): ALL THREE fairy-critter sightings needed,
+    /// and the critter provider reads SIGHTS not kills
+    /// (`CritterUICollectionInfoProvider.cs:15-21`). Written, not run.
+    #[test]
+    fn the_fairy_torch_needs_all_three_critter_sights() {
+        let mut b = tr_core::bestiary::WorldBestiary::new();
+        assert!(!fairy_torch_available(&b), "no sights, no torch");
+        b.set_was_seen_directly("FairyCritterBlue");
+        b.set_was_seen_directly("FairyCritterGreen");
+        assert!(!fairy_torch_available(&b), "two of three is not enough");
+        // Kills do NOT open a critter entry — the provider reads sights.
+        b.kills.register_kill("FairyCritterPink");
+        assert!(!fairy_torch_available(&b), "kills are not sights");
+        b.set_was_seen_directly("FairyCritterPink");
+        assert!(fairy_torch_available(&b), "all three sighted");
     }
 }

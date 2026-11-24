@@ -103,7 +103,7 @@ tools). C# anchors: `decompiled/Terraria/Player.cs:38197-38567` (Hurt),
 | `GetWeaponCrit` + `Next(1,101) <= crit` (`:53371-53386`) | PORTED | `player.rs:2383` + `damage.rs:186` | Rolled at throw time from the item stream (`editing.rs:701-703`, `editing.rs:1633-1636`). `crit_roll_is_the_1_to_100_le_crit_gate` pins it. |
 | `DamageVar` on the player-dealt melee hit (`:44342`) | PORTED | `editing.rs:1091-1101` | `damage_var(raw, luck)` after `strike_npc_damage`'s defence, per `ProcessHitAgainstNPC`. Pinned by `test_DW_3_2_melee_hit_passes_the_player_luck_to_damage_var` (`editing.rs:4060`). |
 | `StrikeNPC_Inner` (defence ×0.5, crit ×2, floor 1) + armour pen | PORTED | `damage.rs:50/59/88`, used at `editing.rs:1124` | 8 tests in `damage.rs:190-297`. |
-| `Projectile.Damage`'s `DamageVar` + defence (`Projectile.cs:12938`) | FAIL | `projectile.rs:9703` → `npc.rs:4062` | `hurt_from_projectile` takes the raw `damage` with no `damage_var` roll and no defence subtraction (`grep damage_var|strike_npc_damage|defense()` in `projectile.rs` → no matches). The ROADMAP's M4-DAMAGE admission covers only the contact hit, not this path. Owner/luck is also not threaded (the `owned_by_someone` arm, `Projectile.cs:12938`). |
+| `Projectile.Damage`'s `DamageVar` + defence (`Projectile.cs:12938`) | PORTED (S1-C-2 2026-11-12; re-verified W4-d116 2026-11-20) | `projectile.rs::damage_pve`/`damage_pve_boxed` → `Npc::strike_projectile` | The wave-1 FAIL is stale: both PVE walks roll `damage_var(rng, dmg, luck)` with the owner's luck (`:12938`) and `strike_npc_damage` (defence ×0.5, crit ×2, floor 1) before the strike; the per-hit crit moved spawn→hit with S1-P-i11. W4-d116 re-verified against main a725acb0 and landed the remaining `StrikeNPC_Inner` tail — see the W4-d116 addendum below. |
 | NPC → player contact damage (`:31387`, `Update_NPCCollision` `:31423`) | PARTIAL | `npc.rs:12326-12334` | Flat `contact_damage()`, no `DamageVar(npcdmg, -luck)` roll and no `damageMultiplier`; the town-NPC exclusion is a hard-coded kind list (`npc.rs:12297-12325`) rather than the friendly-AI check. |
 | `ItemCheck`'s frozen/webbed gate (`:3381`) | PORTED | `editing.rs:331-338` | |
 | Consumables: food (`:42756` wellFed gate), healing potions (`:42756` + `ApplyPotionDelay`/`ApplyLifeAndMana`) | PORTED | `editing.rs:465-527` | Buff 26/206/207 gate + 14400-ticks fallback; buff 21 at 3600 ticks gates the re-drink. M3-ITEM-4 verified. |
@@ -369,3 +369,95 @@ orb per tick rides `UpdatePlayers` (deviation 3).
   retargets (panic-speed :16199-16215, ladder :16342-16379) are merge-time work
   per the closeout; the stealth witness :16173-16197 survives the f3 dedupe
   unchanged (the joint hurt-head witness).
+## W4-d116 addendum (2026-11-20) — StrikeNPC_Inner re-verification + the remaining tail
+
+> Task W4-d116 (branch `task/W4-d116-player-hurt-armor`, base a725acb0 = wave-3 complete).
+> The audit headline ("projectile→NPC hits skip DamageVar AND defence + num2<1→1 floor
+> missing") was checked against current main FIRST: **both halves were already fixed** —
+> S1-C-2 (2026-11-12, DamageVar + defence on both PVE walks), S1-C-3 (2026-11-12, the
+> `amount.max(1)` floor in `hurt_inner` + the 20-tick iframe), S1-P-i11 (wave 3, the
+> per-hit crit spawn→hit move + the knockback census). The M4-DAMAGE "FAIL for the
+> wiring" verdict above is stale for the same reason. This task ported what REMAINED of
+> `NPC.StrikeNPC_Inner` (`NPC.cs:81235-81563`), verbatim.
+
+### The damage pipeline, verbatim (C# → port)
+
+| C# site | Step | Port |
+| --- | --- | --- |
+| `NPC.cs:81189-81233` | `StrikeNPC` wrapper: owner default, active/life gate, net send, `StrikeNPC_Inner` call | `Npc::strike_melee` (hurt_cd/dontTakeDamage/hp gates — the port's melee stand-ins) / `Npc::strike_projectile` (hp gate only; the projectile's right to hit rides the three immunity systems) |
+| `:81237` | `flag = Damage >= 9999 && owner == 255` (instakill) | not reachable on ported lanes (no 9999 caller); the combat-text gate folds flag=false |
+| `:81239` | `num = (int)Math.Max(1.0, CalculateDamageNPCsTake(Damage, defense) * (crit ? 2 : 1))` | `tr_core::damage::strike_npc_damage` (caller-side, both lanes + melee) — unchanged, verified |
+| `:81240-81243` | `RedHatSkeletronAdjustmentsEnabled()` → `num = Max(1, (int)(num * 0.7f))` | **NEW** in `strike_pooled`/`hurt`/`hurt_from_projectile` — reads the existing `red_hat_skeletron_adjustments_enabled()` (35/33 ai[3]==1, 36/32 localAI[3]==1, `:66671-66682`) |
+| `:81244-81246` | `if (takenDamageMultiplier > 1f) num = (int)(num * takenDamageMultiplier)` | **NEW** — the LIVE `Npc::taken_damage_multiplier` field (was a strike-time kind-table read with NO >1 gate). Seeded from `NpcKind::taken_damage_multiplier()` at ctor (the crawltipede tail's 10, `:15316`); the selenian's per-tick 1/3 flip (`AI_003_Fighters` `:56722`/`:56776`) is the field's future writer — that AI arm is unported (the walker stand-in), recorded below |
+| `:81248-81249` | `Invariant.Assert(num >= 1); num = Math.Max(1, num)` | **NEW** — the final `amount.max(1)` after the tail |
+| `:81250-81264` | combat text: `!flag && lifeMax > 1` → friendly pair / hostile pair / fromNet pair, `NewText(rect, color, num, crit)` | melee: existed but showed the PRE-tail number, hard-coded the hostile pair, and drew AFTER the probe — **FIXED** (final `dealt`, `n.friendly` pair, text-before-probe). Projectile: **NEW** — both PVE walks queue `(hitbox, dealt, crit, friendly)` (`pending_npc_damage_texts`), the world-sim drain spawns on UpdateProjectiles |
+| `:81266-81273` | `LocalPlayerInteraction`/`PlayerInteraction` | `player_interaction[owner]` — unchanged |
+| `:81274` | `justHit = true` | unchanged |
+| `:81275-81367` | the per-type strike reactions (438/379 cultist aggro, town panic `300 + Next(300)`, aiStyle-87 latch, aiStyle-8 caster re-arms 172→450 / 283/284→`Next(2)`→390 / 533→`Next(3)!=0`→181 / else 400 + TargetClosest, 693 localAI, 346 gore, 184/535 localAI[0]=60, 185 localAI[0]=1) | **UNPORTED, census below** — most kinds absent (Necromancer 283/284, RuneWizard 172, CultistDevote 438, CultistArcherBlue 379, SlimeSpiked 535, SnowFlinx 185, LibrarianSkeleton 693); the ported ones (town panic, DesertDjinn 533, SpikedIceSlime 184, SantaNK1 346) ride AI machines that do not read these strike writes yet — the writes are deferred with their readers (no behaviour without the reader, and the town/caster RNG draws would shift streams with no consumer) |
+| `:81368-81386` | `if (!immortal)` → DamageTracker + realLife pool arm / own-life arm | **NEW** — the `!immortal` gate now wraps the life subtraction in all three strike fns (the dummy 488 keeps its life; the pool arm + mirror unchanged inside). `NPCDamageTracker` has no port system (the `npc_buffs.rs` precedent) |
+| `:81387-81475` | knockback | `knock_back_npc` (S1-P-i11) — unchanged; now reads the POST-tail `amount` (the C# `num4 = num * 10` reads the final num too) |
+| `:81476-81489` | Wall-of-Flesh pair HitEffect fan / `HitEffect(hitDirection, num)` | the probe gate (`:89266-89285`) is the ported HitEffect slice; **order FIXED** — the projectile lane drew the probe INLINE (before the missing text); now both text and probe defer to the pass tail in C# order (text → probe → hit-sound), `pending_probe_rolls` |
+| `:81490-81554` | town-pet hurt sounds (type 1 ai[1] switch, `Next(5)` chicken) / `HitSound` play | the HitSound queue exists (S1-E-21c); the type-1 pet switch is unported (no town pets with ai[1] variants) |
+| `:81555-81562` | carrier/self `checkDead` | the port's death retain + the bubble 371 re-arm (S1-D-3 W-9) — unchanged |
+| `:81563` | `return num` | **NEW** — `strike_melee`/`strike_projectile` return the dealt i32 (0 on refusal); the whip flag10 gate now reads the RETURN (`Projectile.cs:13649` num24 → `:13659`), not the pre-strike value |
+
+### RNG order census (the strike's draws, per lane)
+
+**Melee (UpdatePlayers stream, `Main.cs:17754` swap):**
+1. crit `Next(1,101)` (`Player.cs:44298`) — unchanged
+2. `DamageVar` `Next(-15,16)` [+ luck `NextFloat` + reroll `Next(-15,16)`] (`:44342`) — unchanged
+3. StatusToNPC duration rolls (`:44391`) — unchanged
+4. **combat text** `Next(-w/2, w/2+1)`, `Next(-h/2, h/2+1)` [+ crit `Next(-25,26)`] (`CombatText.cs:88-89,106`) — **MOVED BEFORE the probe** (was after)
+5. probe `Next(25)` (`NPC.cs:89275`, only `ai[2]==0` living bodies) — position unchanged relative to sound
+6. hit-sound pitch `Next(-10,11)` (case-3) — unchanged
+7. Lucky Coin `Next(5)` [+ `Next(10)`/`Next(100)`/`Next(1,11)`/velocity pair] (`Player.cs:44537-44549`) — unchanged
+
+**Projectile (UpdateProjectiles stream, `Main.cs:17775` swap):**
+1. per-hit crit `Next(1,101)` per set class flag (`Projectile.cs:12883-12917`, S1-P-i11) — unchanged
+2. tag math / yoyo / boomerang arms — unchanged
+3. `DamageVar` `Next(-15,16)` [+ luck pair] (`:12938`) — unchanged
+4. whip debuff 1/5, StatusNPC arrow/bullet rolls (`:13580`) — unchanged
+5. **combat text** 2 (+1 crit) rolls — **NEW draws** (the lane never spawned text)
+6. **probe** `Next(25)` — **MOVED AFTER the text** (was inline mid-walk, before any text)
+7. hit-sound case-3 draws — unchanged (drain order text → probe → sound)
+
+The C# runs 5/6/7 inline inside `StrikeNPC` mid-walk; the port defers all three to the
+pass tail in the same relative order (the S1-E-21c batch convention — the recorded
+deviation now covers the text + probe too, ANALYSIS "W4-d116").
+
+### Deviations kept / new (ANALYSIS mirror)
+
+- The selenian's `takenDamageMultiplier` 1/3 flip (`NPC.cs:56722`/`:56776`) is NOT
+  wired: `update_solar_selenian` is the walker stand-in (the `AI_003_Fighters` arm
+  `:56719-56785` — the windup/roll/reflect cycle — is unported). The field is the seam;
+  the kind row seeds 1 (the selenian's SetDefaults never writes it), so today's behaviour
+  is unchanged for it. The crawltipede tail's 10 is preserved exactly (ctor seed).
+- The `:81275-81367` strike-reaction block is deferred with its readers (census above).
+  The town panic's `300 + Main.rand.Next(300)` draw (`:81291`/`:81299`) and the
+  caster re-arm draws (`:81321`/`:81329`) therefore do NOT ride the streams yet —
+  adding them without the AI readers would shift every downstream draw for no behaviour.
+- `NPCDamageTracker` (`:81372`/`:81383`) has no port system (the DoT precedent,
+  `npc_buffs.rs:804`).
+- The instakill flag (`:81237`, 9999/owner-255) has no ported caller; the combat-text
+  gate folds it false. `StrikeNPCNoInteraction` (`:81184`) has no ported caller.
+- The combat text's `fromNet` dim pair (`:81261`) is unreachable on the local lanes;
+  the net host strike (`netglue.rs`) spawns no text (the C# host runs `netMode == 2`
+  → `CombatText.NewText` returns early, `CombatText.cs:61-64`) — correct as-is.
+
+### Witnesses (WRITTEN NOT RUN — code-only mode)
+
+- `npc.rs`: `w4_d116_the_immortal_target_takes_no_life_loss`,
+  `w4_d116_the_red_hat_skeletron_takes_seventy_percent` (25→17, 1→0→floor 1, unlatched 25),
+  `w4_d116_the_live_taken_multiplier_gates_and_floors` (×3, the 0.5 refusal, red-hat-then-mult 25→17→51),
+  `w4_d116_the_strike_returns_the_dealt_number` (40 / hurt_cd 0 / dead 0),
+  `w4_d116_the_taken_multiplier_seeds_from_the_kind_row` (tail 10, slime 1, live-write wins).
+- `projectile.rs`: `w4_d116_the_pve_strike_queues_the_damage_text` (final num 1, hostile
+  pair, lifeMax-1 critter queues nothing), `w4_d116_the_immortal_target_still_gets_the_text_no_life_loss`,
+  `w4_d116_the_destroyer_hit_queues_the_probe_roll_behind_the_text` (the mirror replays
+  DamageVar → text jitter ×2 → Next(25) on one FastRandom(7) stream).
+- `world_sim/editing.rs`: `w4_d116_the_melee_text_shows_the_dealt_number_and_draws_first`,
+  `w4_d116_the_town_npc_text_uses_the_friendly_pair`.
+- Existing witnesses re-checked by reading: `the_worm_segments_share_the_carriers_pool` /
+  the crawltipede tail pool −70 / `s1_p_i09_the_immortal_target_never_doubles`
+  (immortal drop 0 < 30 still holds — the gate zeroes it) /
+  `projectile_pve_damage_applies_defense_s1_c_2` (floor-1 path unchanged).

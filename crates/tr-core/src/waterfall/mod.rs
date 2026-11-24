@@ -1855,6 +1855,16 @@ mod tests {
         assert_eq!(out2[0].source, [18, 0, 16, 16]);
     }
 
+    /// The lava-fountain draw arm (`WaterfallManager.cs:481-484`): type 26
+    /// draws TWO sheets — the background texture 27 at 0.4 × the fade and the
+    /// foreground texture 26 at 0.9 × the fade, both with the flat
+    /// `Color(255,255,255,127)` tint (`:463`), and every cell seeds `AddLight`
+    /// case 26 (`:464`/`:1077-1081`: `(0.55 + (270-mouseText)/900) * 0.6`).
+    /// Even columns lead the lava-rain frames by 3/2 (`:398-408`), odd columns
+    /// ride them raw (`:431-433`).
+    #[test]
+    // [merge-P] duplicate fn lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell removed (same-scope duplicate; longest implementation kept)
+
     /// `WaterfallManager.GetAlpha`'s default arm (`WaterfallManager.cs:1037`):
     /// an Echo-coated wall (`invisibleWall()`) or the glass wall 318 skips the
     /// 0.6 damp above `worldSurface` — unless the `_shouldShowInvisible...`

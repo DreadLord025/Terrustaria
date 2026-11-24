@@ -10,6 +10,20 @@
 //! (W4-g58 D5, `ui::savings`): the four banks' combined coins as the
 //! bank-icon pile + the coin spin strips, drawn between the Shop label
 //! and the happiness icon.
+//! The shop happiness chrome (W4-g58's slice, ported onto this branch —
+//! research/142-savings-keep-one.md) — `Main.DrawInventory`'s shop block
+//! (`Main.cs:41788-41797`): the `Lang.inter[28]` "Shop" label at
+//! `(504, invBottom)`, the `ItemSlot.DrawSavings` coin pile (`:41791`,
+//! vertical), the `NPCHappiness` icon (the 4-frame strip whose frame rides
+//! the price multiplier's bands) and the multiplier's `P0` percent label.
+//! The offsets are the statics `Main.cs:67266-67269`
+//! (`shopHappinessTextOffset = (26, 98)`, `shopHappinessIconOffset =
+//! (12, 108)`); `invBottom = 258` (`Main.cs:6608`).
+//!
+//! The pile rides THIS branch's `ui::savings::draw_savings` (both arms +
+//! the `_customCurrencyForSavings` medal dispatch); g58b's
+//! `happiness_button`/`npc_chat` report gate is NOT part of this port
+//! (it belongs to g58b's report lane — merge note in research/142).
 
 use tr_render::SpriteRenderer;
 
@@ -46,6 +60,10 @@ pub(crate) fn icon_frame(price_adjustment: f32) -> i32 {
 /// is already cents-rounded (`ShopHelper.LimitAndRoundMultiplier`
 /// `:176-181`), so the ×100 is integral in practice and the midpoint
 /// convention never fires.
+/// PercentPositivePattern = 0` — "n %", a space before the sign). The
+/// multiplier is already cents-rounded (`ShopHelper.
+/// LimitAndRoundMultiplier` `:176-181`), so the ×100 is integral in
+/// practice and the midpoint convention never fires.
 pub(crate) fn price_percent_text(price_adjustment: f32) -> String {
     let pct = (price_adjustment * 100.0).round() as i64;
     format!("{pct} %")
@@ -72,6 +90,13 @@ pub(crate) fn icon_pos() -> [f32; 2] {
 /// `Utils.cs:2464-2496`: the four ±2 px side passes then the colour pass).
 /// `savings` carries the coin cells + the player's four banks; `None`
 /// skips the pile (the headless/no-player draws).
+/// label + the savings pile (`:41791`) + the icon + the percent, all
+/// tinted `Color.White * (mouseTextColor / 255f)` — the border passes
+/// stay `Color.Black` (`Utils.DrawBorderStringFourWay`, `Utils.cs:
+/// 2464-2496`). `savings` carries the coin machine + the player's four
+/// banks + the `_customCurrencyForSavings` latch; `None` skips the pile
+/// (the headless/no-player draws).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -80,6 +105,7 @@ pub(crate) fn draw(
     savings: Option<(
         &mut crate::ui::coin_slot::CoinSlotState,
         &[&[crate::item::ItemSlot]; 4],
+        i32,
     )>,
 ) {
     let tint = [pulse.text; 4];
@@ -101,6 +127,19 @@ pub(crate) fn draw(
     // strips (W4-g58 D5).
     if let Some((coin_slot, banks)) = savings {
         crate::ui::savings::draw_savings(r, lookups, coin_slot, banks, 504.0, INV_BOTTOM, tint);
+    // the vertical arm (the default `horizontal: false`).
+    if let Some((coin_slot, banks, currency)) = savings {
+        crate::ui::savings::draw_savings(
+            r,
+            lookups,
+            coin_slot,
+            banks,
+            504.0,
+            INV_BOTTOM,
+            false,
+            pulse.text,
+            currency,
+        );
     }
     // `:41792-41796` — the NPCHappiness strip: `Frame(4, 1, band)`
     // (`Utils.cs:1344-1349`: `width/4` per frame), drawn at scale 1 with
@@ -136,6 +175,7 @@ pub(crate) fn draw(
 
 #[cfg(test)]
 mod w4_g58_tests {
+mod tests {
     use super::*;
 
     /// `Main.cs:41794` — the nested ternary's four bands, boundaries

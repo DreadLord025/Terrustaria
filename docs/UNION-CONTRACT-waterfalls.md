@@ -516,6 +516,70 @@ Fountain head arm (4):
 **FINAL lane total: 58 − 1 retired + 3 keep-one + 4 head-arm = 64
 witnesses** (all written NOT run — code-only).
 
+## Final sweep (2026-11-21, code-only)
+The post-union full-file re-census of `WaterfallManager.cs` (1182 lines) against
+this branch. Verdict: **every spawn/draw/frame/light arm is present**; one
+colour-source bug fixed, two census witnesses added, one residual recorded.
+### Census results (C# arm → union location)
+| C# arm | Lines | Union location | Verdict |
+| --- | --- | --- | --- |
+| `CheckForWaterfall` | 95-105 | `mod.rs::check_for_waterfall` | PORTED, **UNWIRED** (the `TileDrawing.cs:3858` behind-water refusal — research/09 task seed; the `inActive()` half belongs to g80) |
+| `FindWaterfalls` half-brick spout + lava/honey/shimmer precedence | 157-203 | `mod.rs:391-414` | PRESENT (verbatim `:179` gate, `:182-197` else-if chain) |
+| fountain 196 → type 11 | 204-219 | `mod.rs:415-425` | PRESENT (`waterfall_tile_196_drops_below`) |
+| fountain 460 → type 22 | 220-235 | `mod.rs:426-436` | PRESENT (`sand_fountain_tile_460_drops_below`) |
+| fountain 717 → type 26 | 236-251 | `mod.rs:437-447` | PRESENT — **witness added** (`lava_fountain_tile_717_drops_below`) |
+| `UpdateFrame` 6 counters | 257-323 | `mod.rs::update_tick` | PRESENT (regular >2/>15, slow >6/>15, rain >0/>2, lava-rain ==1/==3/>3, snow >3/>7) |
+| typed falls 1/14/25 slow-frame + drewLava/stopAtStep gate | 352-359 | `draw.rs:71-76` | PRESENT |
+| rain arms 11/22/26 (cull, frame tables, two-sheet pairs, fade, liquid trim, walk) | 364-525 | `draw.rs:77-175` + `rain_frames` | PRESENT — **717 draw witness added** (`lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell`: 27-bg 0.4 / 26-fg 0.9, white-127 tint, 3/2 lead, AddLight 26, `:708` water-ambience inclusion) |
+| style 0 → Style, disco 2 gate | 527-537 | `draw.rs:176-188` | PRESENT |
+| the walk (solid break, bends, num34 conversions 160→2 / 262-268→15-21, all quad arms, 189/196 range extension, k=1000 exits) | 539-958 | `draw.rs:190-754` | PRESENT (incl. `:749` white propagation, `:945` color4 carry) |
+| ambience scans + stores | 685-729, 960-965 | `draw.rs:342-399, 756-769` | PRESENT (both Y quirks verbatim) |
+| `DrawWaterfall(int,...)` type-25 overload | 969-985 | `quad_mark` fill + `render/liquids.rs::draw_shimmer_fall` | PRESENT |
+| `StylizeColor` cases 1/2/15-21 | 987-1028 | `draw.rs::stylize_color` | PRESENT — **case 2 colour source FIXED** (see below) |
+| `GetAlpha` | 1030-1044 | `draw.rs::get_alpha` | PRESENT (`:1037` latch gate) |
+| `TrySparkling` | 1046-1065 | `draw.rs::try_sparkling` | PRESENT (frame-seeded stream, documented) |
+| `AddLight` cases 1/26/2/15-21/25 | 1067-1116 | `draw.rs::add_light` | PRESENT |
+| `Draw()` head latch + pass table | 1118-1174 | `mod.rs::draw` + `set_show_invisible` | PRESENT (12-pass table verbatim) |
+### The fix: the disco fall's colour source
+The C# manager carries NO `DiscoR/G/B` state — `StylizeColor` case 2
+(`:1010-1012`) and `AddLight` case 2 (`:1084`) read the SHARED `Main.DiscoR/G/B`
+statics `Main.DoUpdate_AnimateDiscoRGB` (`Main.cs:19591-19648`) steps. The
+union's manager-local cycle copy was out of phase with the app's shared one
+(`world_sim::clock::advance_disco`) and initialised `disco_r: 0` against
+`Main.Initialize`'s `DiscoR = 255` (`Main.cs:66780`). The sweep removes the
+private cycle, adds `set_disco_rgb` (the `set_show_invisible` latch pattern) and
+feeds it from `params.disco` in `frame/draw.rs`. Commit `d118f7ba`; witnesses
+`the_disco_fall_reads_the_shared_disco_latch`,
+### Ambience wiring — verified LIVE
+`frame.rs:300-335` (the ¼ s `Main.Ambience` tick) feeds both App triples through
+`sound::liquid_ambience` into `audio.rs::set_liquid_loop` (both re-pitch
+branches, `2^-0.2` / `2^0`). The triples are stored by `frame/draw.rs:689-698`
+from the walk's dual `AmbientScan`. Residual: the `ambientLava` blend
+(`Main.cs:13488-13497`) stays unported — `Main.ambientLava*` is stored by
+`DrawWaters` (`:57934-57936`), outside the waterfall lane.
+### Tile-side fountain chain — verified complete
+- tile 338 (FireworkFountain) placement: `tileobject/registry.rs` D_338 (1×2,
+  bottom anchor), item 2738 (`itemdata.rs`).
+- wiring case 338: `wiring.rs:2315` → `firework_fountain` (`:1660`,
+  `Wiring.cs:1522-1546` verbatim: 2×2 anchor, SkipWire, `CheckMech(30)`,
+  `419 + Next(4)`); the pool-side aiStyle-73 dedupe lives in
+  `world_sim/wiring.rs:427-430` (`fountain_anchored`).
+- tile 207 (WaterFountain) wiring: `wiring.rs:2544` → `switch_fountain`
+  (`:2808`, `WorldGen.cs:51150-51193` ±72 frameY flip + the running-gated
+  SkipWire block).
+- The proj 419-422 AI arm (`ai_fountain`, aiStyle 73) rides the d8 lane
+  (`task/W4-d8-proj-ai-71-80`, `e66b41b0` — not yet in main; not duplicated
+  here).
+### Residuals (recorded, not ported here)
+1. ~~`DrawTile_LiquidBehindTile`'s `:3858` `CheckForWaterfall` refusal arm~~
+   **WIRED in the retire-contract phase** (`liquid_behind_spout_refused`,
+   the manager handle from the `draw_tiles` seam; g80's `inActive()` half
+   composes by OR — see the addendum below).
+2. The `ambientLava` blend (above) — a `DrawWaters` lane concern; on the
+   canonical g73 branch resolved UPSTREAM by `liquid_loop_update` (the
+   two-tier split — see the addendum and the `sound.rs` DELEGATED-STATUS note).
+3. `Main.gfxQuality` fixed 1.0 (the documented convergence value, `mod.rs:24-27`).
+
 ## Verification the merger must run (this lane was code-only)
 
 ```powershell
@@ -527,7 +591,7 @@ cargo test -p tr-app --features debug   # the F3 quit-row witness lives in the d
 Judge only by the `test result: ok` lines (cargo may exit 1 on success).
 The final fold was compile-checked by inspection only — if the 64
 witnesses surface fixture drift, fix the FIXTURE against the C# walk (the
-decisions above are locked; the numbers are hand-replays, not run
+decisions above are locked; the numbers are hand-replays, not run results).
 results). Known inspection notes for the verifier:
 
 * The g73 union witnesses ride the 9-arg latch-form `draw` (the
@@ -553,3 +617,102 @@ results). Known inspection notes for the verifier:
   `:6704` call site; the g46/g47 merges carry no `biome.rs`/`rain.rs`
   water-style hunks (their versions predate the head arm — this branch's
   copies win, §-fountain).
+
+Known inspection notes for the verifier: the folded g73 witnesses were
+adapted from the 10-arg parameter-form `draw` to the 9-arg latch form
+(the `show_invisible` argument removed; the latch defaults false, which
+is what every folded witness passed anyway). The shimmer consumer reads
+the generic `lookups.waterfall_uv(texture, source)` (no per-texture rows
+needed — the `Waterfall_25` sheet loads with the rest of the family).
+---
+# ADDENDUM - retire-contract fold-list for g73e (2026-11-21, W4-g75)
+**Canonical has moved.** `origin/task/W4-g73-waterfall-draw` tip **82ae8b96**
+(the g73 final fold: `eee87f98` merged this branch's union `e30ad7ba` INTO
+g73, keeping g73's `liquid_loop_update` superset + scan_view/header-bit/
+instant-rescan uniques; contract rewritten, canonical = g73). The sections
+ABOVE predate that fold - where they say "canonical = g75" or "drop g73's
+waterfall modules", the g73 contract wins; everything else (the semantic
+decisions, the latch form, the witness fixtures) carried over unchanged.
+**Verified NOT folded** (ancestry checks against 82ae8b96, exit 1 = absent;
+RE-VERIFIED at the falls closeout, 2026-11-21, after the `a3093a66f`/`d441713d`
+retire-contract commits landed — this addendum's first draft at `17161648`
+PREDATES those two, so the list below was extended from 3 to 5): ALL SIX
+post-`e30ad7ba` commits (`d118f7ba`, `f4e3071f`, `2b9ed81f`, `17161648`,
+`a3093a66f`, `d441713d`) are missing from canonical, and g73's
+`waterfall/mod.rs` still carries the manager-local `update_disco_rgb`
+cycle (the exact bug d118f7ba fixes). g73e folds EXACTLY the list below
+(`17161648` and this closeout update are addendum-docs-only — g73e re-homes
+the whole addendum under its contract, so they ride item 3's contract hunk).
+## The fold-list (5 commits, in order)
+### 1. `d118f7ba` - disco shared-statics FIX (CRITICAL - behavioural)
+Without this fold the canonical port's disco fall (tile 160 -> type 2)
+tints from a PRIVATE cycle copy that is out of phase with the app's
+`advance_disco` (init 0 vs `Main.Initialize`'s `DiscoR=255`, `Main.cs:66780`)
+and double-steps it. The C# manager has NO disco state: `StylizeColor`
+case 2 (`WaterfallManager.cs:1010-1012`) and `AddLight` case 2 (`:1084`)
+read the SHARED `Main.DiscoR/G/B` that `DoUpdate_AnimateDiscoRGB`
+(`Main.cs:19591-19648`) steps.
+| File | Hunks to fold |
+| --- | --- | --- |
+| `crates/tr-core/src/waterfall/mod.rs` | (a) struct-field doc re-point: the `disco_r/g/b` fields read the shared statics, no local cycle (`@@ -141,11`); (b) `new()`/reset comments (`@@ -190,10`); (c) NEW `pub fn set_disco_rgb(&mut self, disco: [u8; 3])` latch beside `set_show_invisible` (`@@ -214,6`); (d) `update_frame` doc: the disco cycle is NOT here (`@@ -237,9`); (e) REMOVE the `self.update_disco_rgb()` call + the whole `fn update_disco_rgb` (~48 lines, `@@ -296,54`); (f) 2 module witnesses `the_disco_fall_reads_the_shared_disco_latch` / `update_tick_does_not_cycle_the_disco_rgb` (`@@ -1864,4`, +74) |
+| `crates/tr-app/src/app/frame/draw.rs` | (a) the waterfall block latches `waterfall.set_disco_rgb(params.disco)` beside `set_show_invisible(params.draw_invisible_walls)` (+8, `@@ -666`); (b) NEW `mod w4_g75_final_sweep_tests` with `the_waterfall_block_latches_the_shared_disco_statics` (+23, file tail) |
+| `anchors.txt` | +1 row: `crates/tr-core/src/waterfall/mod.rs\|pub fn set_disco_rgb\|...` (file tail) |
+### 2. `f4e3071f` - the 717 lava-fountain witnesses (tests only, +70)
+| `crates/tr-core/src/waterfall/mod.rs` | (a) `lava_fountain_tile_717_drops_below` (+20, `@@ -683` - tile 717 -> type 26 spawn ONE ROW BELOW, `WaterfallManager.cs:236-251`, solid-underneath refusal); (b) `lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell` (+50, `@@ -1745` - texture 27 bg 0.4 / texture 26 fg 0.9, flat white-127 tint `:463`, even-column 3/2 lava-rain frame lead `:398-408`, `AddLight` case 26 per cell `:464`/`:1077-1081`, the `:708` water-ambience inclusion - 26 NOT excluded, water triple only) |
+### 3. `2b9ed81f` - the FINAL SWEEP docs (+126/-4, five files)
+| `docs/UNION-CONTRACT-waterfalls.md` | the "Final sweep" section (+74, after the witness inventory): the full-file re-census table, the disco-fix rationale, the ambience-LIVE verification, the residuals list. g73e re-homes it under ITS contract structure (82ae8b96's 43-witness inventory + this addendum) |
+| `docs/ANALYSIS.md` | the sweep paragraph (+41) |
+| `docs/PORT_MAP.md` | the waterfall row's status extension (FINAL SWEEP sentence: shared disco latch, 717 witnesses, live consumer, `:3858` residual; 1 line replaced) |
+| `docs/research/09-tile-drawing.md` | +row 18 (waterfall overlay PORTED), the `Draw_LiquidBehindTile` row's `:3858` census, +the CheckForWaterfall task seed (+9/-2) |
+| `docs/research/32-sound-audio.md` | the two liquid-loop rows re-pointed at the live `sound::liquid_ambience` consumer (`frame.rs:300-335`), `ambientLava` residual (+2/-2) |
+### 4. `a3093a66f` - the :3858 spout-clause WIRING (behavioural, +121, 3 files)
+The retire-contract phase's code commit - NEWER than this addendum's first
+draft (`17161648`); without it canonical's `draw_tile_liquid_behind` still
+misses `TileDrawing.cs:3858`'s `halfBrick() && (num3 > 160 || num > 160) &&
+waterfallManager.CheckForWaterfall(tileX, tileY)` refusal (a spouting
+half-brick suppresses its OWN behind-water mask so the fall reads clean).
+| `crates/tr-app/src/render/liquids.rs` | (a) NEW `fn liquid_behind_spout_refused(tile, left, right, waterfall, tx, ty) -> bool` (+23, after `push_waterfall_split`, `@@ -514,6` - the `:3835-3844` type-379 bubble exclusion on `num3`/`num`: a 379 neighbour contributes 0, then `half_brick() && (num3 > 160 \|\| num > 160) && check_for_waterfall`); (b) `draw_tile_liquid_behind` gains the `waterfall: &WaterfallManager` parameter (+1, `@@ -529,6`); (c) the refusal call BEFORE the neighbour-liquid scan, as in C# (+5, `@@ -548,6` - `if liquid_behind_spout_refused(...) { return 0; }`); (d) 2 witnesses `w4_g75_a_spouting_half_brick_refuses_its_liquid_behind_draw` / `w4_g75_a_bubble_neighbour_does_not_feed_the_spout_clause` (+67, tests tail `@@ -823,4` - REAL `find_waterfalls` scan builds the list, strict `> 160`, full-block + unlisted-cell negatives, 379 sides read 0, one real side still trips) |
+| `crates/tr-app/src/render/tiles.rs` | (a) the solid-layer `draw_tile_liquid_behind` call passes `waterfall,` (+1, `@@ -832,6` - `draw_tiles` already carries the manager from the `DoDraw_Waterfalls` seam, no new plumbing); (b) NEW `mod w4_g75_retire_contract_tests` with `the_liquid_behind_call_feeds_the_waterfall_manager` (+23, file tail - source-probe witness on the call site) |
+| `anchors.txt` | +1 row: `crates/tr-app/src/render/liquids.rs\|fn liquid_behind_spout_refused\|...` (file tail) |
+g80 `af6cd44f` owns the `inActive()` half of the same refusal line
+(`liquid_behind_refused`) and EXPLICITLY leaves this half-brick +
+`CheckForWaterfall` clause as a recorded deviation - the halves are
+complementary, not contested; at the family merge the two gates compose
+by OR (either refusal suppresses the behind-water draw).
+### 5. `d441713d` - DELEGATED-STATUS + census-doc sync (+40/-19, five files)
+Doc-only sync of item 4 into the census + the two-tier delegation note.
+| `crates/tr-app/src/sound.rs` | the `liquid_ambience` doc's DELEGATED-STATUS block (+13/-2, `@@ -74,8`): g73's `ambient_sound::liquid_loop_update` (the DECISION tier - Manhattan position pick + the `ambientLavafallStrength + ambientLavaStrength` sum, `Main.cs:13488-13497`) delegates its per-channel volume walk to this pure fn; the `ambientLava` residual is resolved UPSTREAM by the g73 tier, this fn stays blend-free. **The merger keeps BOTH fns, two-tier** - do not collapse or re-derive either half |
+| `docs/UNION-CONTRACT-waterfalls.md` | the Final-sweep residuals list: item 1 struck through as WIRED, item 2 re-pointed at the upstream g73 resolution (+7/-4, `@@ -254,10`; g73e re-homes under its residuals section) |
+| `docs/ANALYSIS.md` | the sweep paragraph's `ambientLava` + `:3858` sentences re-pointed (WIRED + the OR-composition note, +13/-5, `@@ -1092,11`) |
+| `docs/PORT_MAP.md` | the waterfall row's residual sentence flipped to WIRED + the witness tally extended to "5 sweep + 3 retire-contract" (1 line replaced, `@@ -107,7`) |
+| `docs/research/09-tile-drawing.md` | the `Draw_LiquidBehindTile` census row's `:3858` arm flipped to WIRED (+1/-1, `@@ -136,7`) + the CheckForWaterfall task seed struck through **DONE** (+5/-6, `@@ -246,12`) |
+Plus this addendum itself (fold-list + canonical pointer, first drafted in
+`17161648`, extended here at the closeout) - g73e re-homes it whole under
+its contract structure.
+## FINAL witness inventory (post-fold total pinned: 51 lane witnesses)
+g73 canonical (`82ae8b96`) carries **43**: the 19 union + the 15 FALLS
+residuals + the 9 falls-adjacent (3 source-detection mod.rs + 5 decision-half
+`ambient_sound.rs` + 1 live re-pan `audio.rs` - its contract's inventory
+lists them by name). The fold adds **8** from this list, no overlaps:
+| Added by | Witnesses | Location |
+| `d118f7ba` (disco fix, 3) | `the_disco_fall_reads_the_shared_disco_latch`, `update_tick_does_not_cycle_the_disco_rgb` | `waterfall/mod.rs` |
+| | `the_waterfall_block_latches_the_shared_disco_statics` | `app/frame/draw.rs` (`w4_g75_final_sweep_tests`) |
+| `f4e3071f` (717 census, 2) | `lava_fountain_tile_717_drops_below`, `lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell` | `waterfall/mod.rs` |
+| `a3093a66f` (spout wiring, 3) | `w4_g75_a_spouting_half_brick_refuses_its_liquid_behind_draw`, `w4_g75_a_bubble_neighbour_does_not_feed_the_spout_clause` | `render/liquids.rs` tests |
+| | `the_liquid_behind_call_feeds_the_waterfall_manager` | `render/tiles.rs` (`w4_g75_retire_contract_tests`) |
+**43 + 5 sweep + 3 spout = 51.** The sand-fall pair
+(`sand_fountain_tile_460_drops_below`,
+`sand_fall_draws_one_sheet_with_the_even_column_lead_and_fade`) is NOT new -
+it is already inside the 15 residuals (and hence the 43). All 8 additions
+verified present on this branch by grep at the closeout (mod.rs:691/1776/
+1919/1974, frame/draw.rs:2259, liquids.rs:862/898, tiles.rs:2248). All
+written, NOT run (code-only lane) - the merger runs the verification block
+above and judges by `test result: ok`.
+## Research/09 falls rows - all-landed check (closeout)
+`docs/research/09-tile-drawing.md` on this branch: row 3
+(`DrawTile_LiquidBehindTile` solid-layer call) PORTED; row 18 (waterfall
+overlay) PORTED with the full census + the disco shared-statics fix; the
+`Draw_LiquidBehindTile` census row carries the WIRED `:3858` arm; the
+CheckForWaterfall task seed is struck through DONE. No open falls row or
+seed remains in research/09 - the family's only outstanding items are the
+g80-owned `inActive()` half (its lane) and the merger's fold itself.

@@ -672,6 +672,11 @@ impl DustPool {
     /// writes into whatever slot `NewDust` returned — the sentinel included.
     /// W4-g64: generic over the pool's [`DustRng`] seam (the `new_dust`
     /// shape) — the concrete `UnifiedRandom` callers are unchanged.
+    /// W4-g61 (union-exec per research/116): the stream parameter
+    /// generalised from `&mut UnifiedRandom` to the [`DustRng`] seam
+    /// (behaviour identical — `UnifiedRandom` implements it; the
+    /// teleport-in arms roll a recording witness stream through the
+    /// same internals).
     pub fn new_dust_perfect<R: DustRng>(
         &mut self,
         rng: &mut R,
@@ -699,6 +704,8 @@ impl DustPool {
     /// is zeroed (`Vector2.HasNaNs`). W4-g64: generic over the pool's
     /// [`DustRng`] seam (the `new_dust` shape) — the concrete
     /// `UnifiedRandom` callers are unchanged.
+    /// is zeroed (`Vector2.HasNaNs`). W4-g61: the [`DustRng`] seam
+    /// generalisation (see [`Self::new_dust_perfect`]).
     #[allow(clippy::too_many_arguments)]
     pub fn new_dust_direct<R: DustRng>(
         &mut self,
@@ -733,6 +740,8 @@ impl DustPool {
     /// W4-g64: generic over the pool's [`DustRng`] seam (the `new_dust`
     /// shape) so the machines' `DropRng` streams drive the clone's internal
     /// `NewDust` rolls — the concrete `UnifiedRandom` callers are unchanged.
+    /// W4-g61: the [`DustRng`] seam generalisation (see
+    /// [`Self::new_dust_perfect`]).
     pub fn clone_dust<R: DustRng>(
         &mut self,
         rng: &mut R,

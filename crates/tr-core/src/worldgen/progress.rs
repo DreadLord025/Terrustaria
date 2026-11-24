@@ -112,6 +112,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "evil" => PassMessage::Gen(72),
         // WorldGen.cs:14560.
         "liquids" => PassMessage::Gen(19),
+        // DitherSnakePass.cs:24 — the dual-dungeons snake pass's message.
+        "Dual Dungeons Dither Snake" => PassMessage::Key("WorldGeneration.DualDungeonsDitherSnake"),
         // DungeonCrawler.cs:346 — the pass's first progress message
         // (the later UpdateDungeonProgress rows are the faithful-pass work).
         "dungeon" => PassMessage::Key("WorldGeneration.DungeonVariableSetup"),
@@ -250,6 +252,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "piles" => PassMessage::Gen(89),
         // WorldGen.cs:19460 — the Spawn Point pass sets only
         // progress.Set(1.0), no message (W4-d104): absent from the table.
+        // WorldGen.cs:15721 (W4-d102) — the same key as Living Trees.
+        "wood tree walls" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:19902 (SunflowersPart2).

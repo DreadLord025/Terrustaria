@@ -469,16 +469,15 @@ pub(crate) fn fighter_obstacle_scan_g(
                 // `:59996` — flag24: the door-bash type list.
                 let flag24 = DOOR_BASH_TYPES.contains(&npc.kind.cs_id());
                 // `:59997` — flag25: `ZoneGraveyard && rand.Next(60) == 0`.
-                // W4-g4 lane 15 (the d22 reconcile fold): the zone rides
-                // the sim's pre-stamp (`target_zone_graveyard` ←
-                // `scene_metrics.zone_graveyard`, the d120 biome pass).
-                // Outside a graveyard the `&&` short-circuits and the
-                // draw is NEVER consumed (the legacy zero-draw census);
-                // inside one, the bash spends exactly one Next(60) on
-                // the UpdateNPCs stream. flag25 feeds flag27 below: a
-                // graveyard 1/60 roll cancels the normal-night ai[1]
-                // reset, so even the flag24 types accumulate toward the
-                // open on that tick.
+                // W4-g4 lane 15: the zone rides the sim's pre-stamp
+                // (`target_zone_graveyard` ← `scene_metrics.zone_graveyard`,
+                // the d120 biome pass). Outside a graveyard the `&&`
+                // short-circuits and the draw is NEVER consumed (the
+                // legacy zero-draw census); inside one, the bash spends
+                // exactly one Next(60) on the UpdateNPCs stream. flag25
+                // feeds flag27 below: a graveyard 1/60 roll cancels the
+                // normal-night ai[1] reset, so even the flag24 types
+                // accumulate toward the open on that tick.
                 let flag25 = npc.target_zone_graveyard && rng.next_max(60) == 0;
                 // `:59998-60006` — flag26: the target inside unbreakable
                 // walls. No Player field — false (module docs).

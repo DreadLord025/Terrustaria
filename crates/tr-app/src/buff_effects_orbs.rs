@@ -1,4 +1,4 @@
-//! W4-g27 — the KEEP-ONE canonical module for the lunar-orb buff arms of
+//! W4-g27 тАФ the KEEP-ONE canonical module for the lunar-orb buff arms of
 //! `Player.UpdateBuffs` (`Player.cs:10342-10461`): Beetle Endurance 95-97,
 //! Solar Shield 170-172, Beetle Might 98-100 and the Nebula trio 173-181
 //! (the `UpdateBuffs_NebulaBuffs` helper `:12070-12079` rides along).
@@ -7,25 +7,25 @@
 //! Five branches implemented this block; the keep-one decision (the full
 //! per-branch diff table + the merger contract live in
 //! `docs/research/W4-g27-orb-keep-one.md`):
-//! - **d73 `buff_effects_boosters.rs`** — MOST FAITHFUL arm core: direct
+//! - **d73 `buff_effects_boosters.rs`** тАФ MOST FAITHFUL arm core: direct
 //!   `BuffSlots` mutation, the adjusted-`j` double-delete quirk, the Might
 //!   stats BEFORE the offense gate, the shared sweep/unset helpers. Kept.
-//! - **c17 `buff_effects_potions_sets.rs`** — the counter-seeding correction:
+//! - **c17 `buff_effects_potions_sets.rs`** тАФ the counter-seeding correction:
 //!   `ResetEffects` zeroes `beetleOrbs`/`solarShields`/`nebulaLevel*` every
 //!   frame (`Player.cs:18501-18502`/`:18505`/`:18755`), so the scan state
-//!   starts at 0 each tick — d73's "persists across ticks" claim is WRONG.
+//!   starts at 0 each tick тАФ d73's "persists across ticks" claim is WRONG.
 //!   The zeroing is folded into `OrbScanState::reset_effects` below.
-//! - **c16 `buff_effects_orbs.rs`** — the request vocabulary + the purge-band
+//! - **c16 `buff_effects_orbs.rs`** тАФ the request vocabulary + the purge-band
 //!   documentation (the walk deletes the CURRENT slot too and the outer `j`
-//!   is NOT decremented afterwards — the shifted-in buff skips its arm this
+//!   is NOT decremented afterwards тАФ the shifted-in buff skips its arm this
 //!   tick). Its `purge_band`/`delete_buff`/rescan requests are mirrored in
 //!   `OrbArmRequests` for the accumulator-shaped mergers (the rescan rides
 //!   `next_index` there).
-//! - **d74 `buff_effects_tail.rs`** — the per-slot request shape (its
+//! - **d74 `buff_effects_tail.rs`** тАФ the per-slot request shape (its
 //!   `clear_buff_range`/`buff_time_set`/`buff_type_decrement`); same quirk
 //!   gap as c16 (the context counters are caller-seeded, the delete tail
 //!   uses the unadjusted `j`).
-//! - **c18 `buff_effects_summons.rs`** — NO orb arms (it owns 62 + the
+//! - **c18 `buff_effects_summons.rs`** тАФ NO orb arms (it owns 62 + the
 //!   summon keep-alives `:10462-10976`); listed for the census only.
 //!
 //! Scope: the 18 orb ids ONLY. Mana Heat 396 / Sugar Rush 192 / Brain of
@@ -35,20 +35,20 @@
 //!
 //! Wiring contract (the f12/merger step, NOT this module):
 //! 1. Run the timer tick FIRST (`buffs.rs::update_buffs_tick`, the
-//!    `:9871-9874` decrement — none of the orb ids is in
+//!    `:9871-9874` decrement тАФ none of the orb ids is in
 //!    `TimeLeftDoesNotDecrease`, `BuffID.cs:47`).
 //! 2. Call `OrbScanState::reset_effects()` once per frame (the C#
 //!    `ResetEffects` writes), then walk the bar in slot order calling
 //!    `apply_orb_arm` per active slot (`buffType > 0 && buffTime > 0`,
 //!    `:9867-9870`), advancing by the returned `NextSlot` index (clamped
-//!    `>= 0` — the -1 case is the guarded double-delete crash path, where
+//!    `>= 0` тАФ the -1 case is the guarded double-delete crash path, where
 //!    the C# throws `DelBuff(-1)` before the loop ever advances).
 //! 3. Fold `OrbEffects` onto the live fields AFTER the scan: stats ADD
 //!    (`+=`), `beetle_buff` ORs; the counters/levels already live in
-//!    `OrbScanState` (copy them onto the player fields — they are the C#
+//!    `OrbScanState` (copy them onto the player fields тАФ they are the C#
 //!    fields, zeroed again next frame by step 2).
 //!
-//! RNG census: ZERO draws in `:10342-10461` + `:12070-12079` — arithmetic
+//! RNG census: ZERO draws in `:10342-10461` + `:12070-12079` тАФ arithmetic
 //! and slot bookkeeping only; the block is stream-neutral by construction.
 
 use crate::buffs::{BuffSlots, MAX_BUFFS};
@@ -57,7 +57,7 @@ use crate::buffs::{BuffSlots, MAX_BUFFS};
 /// tier that hits `buffTime == 2` steps down and re-arms at 480 ticks.
 pub const NEBULA_TIER_TIME: i32 = 480; // `:12077`
 /// The beetle/solar orb pin (`Player.cs:10344`/`:10379`): `buffTime[j] = 5`
-/// — the armor set re-grants the buff every tick while worn.
+/// тАФ the armor set re-grants the buff every tick while worn.
 pub const ORB_BUFF_TIME: i32 = 5;
 
 /// The per-tick context the arms read besides `buffType`/`buffTime`.
@@ -65,19 +65,19 @@ pub const ORB_BUFF_TIME: i32 = 5;
 /// matching every other ported `UpdateBuffs` arm.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct OrbContext {
-    /// `beetleDefense` (`Player.cs:10366`) — `ApplySetBonus_BeetleDefense`
+    /// `beetleDefense` (`Player.cs:10366`) тАФ `ApplySetBonus_BeetleDefense`
     /// (`:16499-16501`, the Beetle Shell chestpiece; unported until the
     /// armor-set lane lands, so the endurance arms zero + delete exactly
     /// like the C# without the set).
     pub beetle_defense: bool,
-    /// `beetleOffense` (`:10433`) — `ApplySetBonus_BeetleDamage`
+    /// `beetleOffense` (`:10433`) тАФ `ApplySetBonus_BeetleDamage`
     /// (`:16529-16532`, the Beetle Scale Mail chestpiece).
     pub beetle_offense: bool,
-    /// `setSolar` (`:10401`) — `ApplySetBonus_Solar` (`:16366-16369`).
+    /// `setSolar` (`:10401`) тАФ `ApplySetBonus_Solar` (`:16366-16369`).
     pub set_solar: bool,
 }
 
-/// The scan's read-write counters — the C# `Player` fields `beetleOrbs` /
+/// The scan's read-write counters тАФ the C# `Player` fields `beetleOrbs` /
 /// `solarShields` / `nebulaLevel*`. CORRECTION over d73: `ResetEffects`
 /// zeroes ALL of them every frame (`Player.cs:18501` beetleOrbs, `:18505`
 /// solarShields, `:18755` the nebula trio), so the scan starts at 0 each
@@ -86,7 +86,7 @@ pub struct OrbContext {
 /// calls `reset_effects()` once per frame before the scan.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct OrbScanState {
-    /// `beetleOrbs` (`:10365`/`:10430`, zeroed `:10368`/`:10435`) — shared
+    /// `beetleOrbs` (`:10365`/`:10430`, zeroed `:10368`/`:10435`) тАФ shared
     /// by BOTH beetle families (Endurance and Might).
     pub beetle_orbs: i32,
     /// `solarShields` (`:10400`, zeroed `:10403`).
@@ -100,7 +100,7 @@ pub struct OrbScanState {
 }
 
 impl OrbScanState {
-    /// The `ResetEffects` writes (`Player.cs:18501`/`:18505`/`:18755`) —
+    /// The `ResetEffects` writes (`Player.cs:18501`/`:18505`/`:18755`) тАФ
     /// call once per frame BEFORE the buff scan. (`beetleBuff` `:18502`
     /// rides the accumulator's per-tick default instead.)
     pub fn reset_effects(&mut self) {
@@ -111,10 +111,10 @@ impl OrbScanState {
 /// One tick's accumulated stat/flag writes of the orb block. Stats ADD per
 /// slot exactly like the C# chain; `beetle_buff` ORs. Slot mutations (the
 /// time pins, the tier sweeps, the nebula step-down) run on `BuffSlots`
-/// directly — they are NOT recorded here.
+/// directly тАФ they are NOT recorded here.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct OrbEffects {
-    /// `beetleBuff = true` (`:10374`/`:10441`) — the set-gated flag; reset
+    /// `beetleBuff = true` (`:10374`/`:10441`) тАФ the set-gated flag; reset
     /// every frame (`:18502`).
     pub beetle_buff: bool,
     /// 98-100 `meleeDamage += 0.1f * beetleOrbs` (`:10431`) + 179-181
@@ -133,11 +133,11 @@ pub struct OrbEffects {
 }
 
 /// The result of one arm: either the id is outside the orb block (the
-/// caller's `else if` chain continues) or the caller's NEXT slot index —
+/// caller's `else if` chain continues) or the caller's NEXT slot index тАФ
 /// the C# `j` after the arm plus the `for` loop's `j++` (`Player.cs:9865`).
 /// A plain keep is `j + 1`; a `DelBuff(j); j--` rescan is `j`; the
 /// double-delete quirk can be `j - 1`. The caller clamps to `>= 0` (the
-/// -1 case is the guarded crash path — the C# `DelBuff(-1)` throws before
+/// -1 case is the guarded crash path тАФ the C# `DelBuff(-1)` throws before
 /// the loop ever advances).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OrbArmResult {
@@ -169,7 +169,7 @@ fn nebula_buffs(slots: &mut BuffSlots, level: &mut i32, base_buff_id: i32, b: us
 /// deletes every slot whose tier is `base..=base + num - 1` (the lower
 /// tiers, INCLUDING this slot) with the `m--` rescan. The walk reads
 /// `buffType` only (no `buffTime` gate). Returns the adjusted `j` (the
-/// downgrade's `j--`; the upgrade leaves `j` alone — the outer loop's
+/// downgrade's `j--`; the upgrade leaves `j` alone тАФ the outer loop's
 /// `j++` then SKIPS the buff compacted into slot `j`, the C# quirk).
 fn orb_tier_sweep(slots: &mut BuffSlots, j: usize, orbs: i32, num: i32, base: i32) -> i32 {
     let mut jj = j as i32;
@@ -178,14 +178,14 @@ fn orb_tier_sweep(slots: &mut BuffSlots, j: usize, orbs: i32, num: i32, base: i3
             slots.del_buff(jj as usize); // `:10350`/`:10385`/`:10415`
             jj -= 1; // `:10351`/`:10386`/`:10416`
         } else {
-            // `:10355-10362` / `:10390-10397` / `:10420-10427` — the
-            // `for m … DelBuff(m); m--` rescan over the INCLUSIVE band.
+            // `:10355-10362` / `:10390-10397` / `:10420-10427` тАФ the
+            // `for m тАж DelBuff(m); m--` rescan over the INCLUSIVE band.
             let mut m = 0usize;
             while m < MAX_BUFFS {
                 let bt = slots.buff_type[m];
                 if bt >= base && bt <= base + num - 1 {
                     slots.del_buff(m);
-                    // m-- then the loop's m++ → stay on the shifted-in slot.
+                    // m-- then the loop's m++ тЖТ stay on the shifted-in slot.
                 } else {
                     m += 1;
                 }
@@ -197,11 +197,11 @@ fn orb_tier_sweep(slots: &mut BuffSlots, j: usize, orbs: i32, num: i32, base: i3
 
 /// The `!setFlag` tail shared by the three orb families
 /// (`Player.cs:10366-10371` / `:10401-10406` / `:10433-10438`): zero the
-/// orbs and `DelBuff(j); j--` — using the ALREADY-adjusted `j` from the
+/// orbs and `DelBuff(j); j--` тАФ using the ALREADY-adjusted `j` from the
 /// sweep. C# quirk preserved: after a downgrade delete `j` was decremented,
 /// so this second delete hits the slot BEFORE the original. When that `j`
 /// is negative the C# `DelBuff(-1)` throws `IndexOutOfRangeException`; the
-/// port guards the delete (a documented deviation for that crash path —
+/// port guards the delete (a documented deviation for that crash path тАФ
 /// unreachable in retail play: the counters reset to 0 every frame, so a
 /// downgrade needs an earlier KEPT slot whose own set flag was on).
 fn orb_unset_tail(slots: &mut BuffSlots, orbs: &mut i32, jj: i32) -> i32 {
@@ -209,7 +209,7 @@ fn orb_unset_tail(slots: &mut BuffSlots, orbs: &mut i32, jj: i32) -> i32 {
     if jj >= 0 {
         slots.del_buff(jj as usize); // `:10369`/`:10404`/`:10436`
     }
-    // The arm's `j--` cancels the loop's `j++` → the next index is `jj`.
+    // The arm's `j--` cancels the loop's `j++` тЖТ the next index is `jj`.
     jj
 }
 
@@ -224,7 +224,7 @@ fn beetle_endurance_arm(
     j: usize,
 ) -> i32 {
     slots.buff_time[j] = ORB_BUFF_TIME; // `:10344`
-    let num = 1 + slots.buff_type[j] - 95; // `:10345` num8 `(byte)(1 + …)`
+    let num = 1 + slots.buff_type[j] - 95; // `:10345` num8 `(byte)(1 + тАж)`
     let jj = orb_tier_sweep(slots, j, s.beetle_orbs, num, 95);
     s.beetle_orbs = num; // `:10365`
     if !ctx.beetle_defense {
@@ -237,7 +237,7 @@ fn beetle_endurance_arm(
 
 /// Solar Shield, buffs 170-172 (`Player.cs:10377-10407`): the same shape
 /// on `solarShields`/`setSolar`; NO `beetleBuff` flag (the C# arm has no
-/// `else`), no stat adds — the shield count IS the state.
+/// `else`), no stat adds тАФ the shield count IS the state.
 fn solar_shield_arm(
     s: &mut OrbScanState,
     slots: &mut BuffSlots,
@@ -257,7 +257,7 @@ fn solar_shield_arm(
 
 /// Beetle Might, buffs 98-100 (`Player.cs:10408-10443`): NO time pin
 /// (unlike Endurance); the tier sweep on the shared `beetleOrbs`, then
-/// `meleeDamage`/`meleeSpeed += 0.1 * orbs` — read AFTER the assignment,
+/// `meleeDamage`/`meleeSpeed += 0.1 * orbs` тАФ read AFTER the assignment,
 /// BEFORE the `beetleOffense` gate (the stats land even on the delete
 /// tick), then the gate (`beetleBuff = true` when set).
 fn beetle_might_arm(
@@ -298,19 +298,19 @@ pub fn apply_orb_arm(
         170..=172 => solar_shield_arm(s, slots, ctx, j), // `:10377`
         98..=100 => beetle_might_arm(e, s, slots, ctx, j), // `:10408`
         176..=178 => {
-            // `:10444-10447` — Nebula Mana: the level only (the mana-regen
+            // `:10444-10447` тАФ Nebula Mana: the level only (the mana-regen
             // consumer reads `nebulaLevelMana` in its own lane).
             nebula_buffs(slots, &mut s.nebula_level_mana, 176, j);
             j as i32 + 1
         }
         173..=175 => {
-            // `:10448-10452` — Nebula Life: level + regen ×6 per level.
+            // `:10448-10452` тАФ Nebula Life: level + regen ├Ч6 per level.
             let level = nebula_buffs(slots, &mut s.nebula_level_life, 173, j);
             e.life_regen += 6 * level; // `:10451`
             j as i32 + 1
         }
         179..=181 => {
-            // `:10453-10461` — Nebula Damage: one num12 = 0.15 × level,
+            // `:10453-10461` тАФ Nebula Damage: one num12 = 0.15 ├Ч level,
             // added to all four classes.
             let level = nebula_buffs(slots, &mut s.nebula_level_damage, 179, j);
             let num12 = 0.15f32 * level as f32; // `:10456`
@@ -325,7 +325,7 @@ pub fn apply_orb_arm(
     OrbArmResult::NextSlot(next)
 }
 
-/// The per-slot request view of one arm — the c16/d74 accumulator shape,
+/// The per-slot request view of one arm тАФ the c16/d74 accumulator shape,
 /// derived from the SAME arm core (no second implementation): run the arm
 /// on a one-slot scratch bar and diff the before/after. For mergers that
 /// keep the request-drain wiring instead of the direct driver.
@@ -335,13 +335,13 @@ pub fn apply_orb_arm(
 ///   the outer `j` is NOT decremented (the shifted-in buff skips its arm).
 /// - `delete_buff` uses the arm's ADJUSTED index: after a downgrade sweep
 ///   the gate-failure delete hits `j - 1` (the slot before the original);
-///   `next_index` already encodes the rescan — prefer `next_index` over
+///   `next_index` already encodes the rescan тАФ prefer `next_index` over
 ///   replaying `delete_buff` at the original `j`.
 /// - `buff_time_set`/`buff_type_decrement` are the nebula step-down's
 ///   in-place writes (no delete, advance normally).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct OrbArmRequests {
-    /// `buffTime[j] = …` — the 5-pin (`:10344`/`:10379`) or the nebula
+    /// `buffTime[j] = тАж` тАФ the 5-pin (`:10344`/`:10379`) or the nebula
     /// step's 480 (`:12077`).
     pub buff_time_set: Option<i32>,
     /// The nebula step's `buffType[b]--` (`:12076`).
@@ -357,7 +357,7 @@ pub struct OrbArmRequests {
 /// Derive the request view for slot `j` WITHOUT touching the caller's bar:
 /// the arm runs on a scratch copy holding only that slot, seeded with the
 /// same state/context. `s`/`e` receive the same writes the direct arm
-/// would make. (The scratch diff cannot see cross-slot sweep deletes —
+/// would make. (The scratch diff cannot see cross-slot sweep deletes тАФ
 /// those are the `purge_band` request's job; the direct driver is the
 /// faithful path for the live bar.)
 pub fn orb_arm_requests(
@@ -379,7 +379,7 @@ pub fn orb_arm_requests(
     };
     let mut req = OrbArmRequests {
         // The scratch slot sits at 0; the arm's next index is an offset
-        // from it (keep +1, rescan 0, double-delete -1) — rebase onto j.
+        // from it (keep +1, rescan 0, double-delete -1) тАФ rebase onto j.
         next_index: next + j as i32,
         ..Default::default()
     };
@@ -409,7 +409,7 @@ pub fn orb_arm_requests(
     }
     if scratch.buff_type[0] == 0 && req.purge_band.is_none() {
         // The scratch slot died via the arm's OWN DelBuff (the downgrade
-        // self-delete or the gate tail) — not via the purge band (whose
+        // self-delete or the gate tail) тАФ not via the purge band (whose
         // self-inclusion is the band's quirk, recorded separately).
         req.delete_buff = true;
     }
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn w4_g27_reset_effects_zeroes_the_counters_every_frame() {
         // The c17 correction over d73: `Player.cs:18501`/`:18505`/`:18755`
-        // — ResetEffects zeroes beetleOrbs/solarShields/the nebula trio.
+        // тАФ ResetEffects zeroes beetleOrbs/solarShields/the nebula trio.
         let mut s = OrbScanState {
             beetle_orbs: 3,
             solar_shields: 2,
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn w4_g27_95_double_delete_quirk_hits_the_previous_slot() {
-        // The d73 quirk (c17 collapses it to one rescan — WRONG): downgrade
+        // The d73 quirk (c17 collapses it to one rescan тАФ WRONG): downgrade
         // at j=1 (j-- -> 0) THEN !beetleDefense deletes the ALREADY-
         // decremented j (slot 0). Both slots die.
         let mut sl = slots(&[(2, 100), (95, 5), (3, 100)]);
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn w4_g27_95_double_delete_at_slot_zero_guards_the_negative_index() {
-        // Same quirk at j=0: the second delete's index is -1 — the C#
+        // Same quirk at j=0: the second delete's index is -1 тАФ the C#
         // throws; the port guards (documented deviation). No panic.
         let mut sl = slots(&[(95, 5), (2, 100)]);
         let mut st = OrbScanState { beetle_orbs: 2, ..Default::default() };
@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn w4_g27_98_might_offense_off_still_adds_the_stats_then_deletes() {
-        // `:10431-10432` run BEFORE the `:10433` gate — the stats land on
+        // `:10431-10432` run BEFORE the `:10433` gate тАФ the stats land on
         // the delete tick too (c16/d73/d74 agree; pinned here).
         let mut sl = slots(&[(100, 3)]);
         let mut st = OrbScanState::default();
@@ -770,7 +770,7 @@ mod tests {
     #[test]
     fn w4_g27_out_of_block_ids_pass_through() {
         // 396/192/321/62/94 belong to the other wave modules; 2/144 are
-        // other waves entirely — the chain continues, the slot untouched.
+        // other waves entirely тАФ the chain continues, the slot untouched.
         for bt in [396, 192, 321, 62, 94, 2, 144] {
             let mut sl = slots(&[(bt, 100)]);
             let (_, r) = run(

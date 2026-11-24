@@ -490,6 +490,29 @@ mod tests {
         assert!(!is_transform_locked(12, false));
     }
 
+    /// W4-g89g — the Rod of Discord 1326 shimmers to the Rod of Harmony
+    /// 5335 (`ItemID.cs:353`'s `ShimmerTransformToItem` pair, extracted at
+    /// `shimmer_tables.rs:14`), and the transform is LOCKED until the Moon
+    /// Lord is downed (`ItemID.cs:356`'s post-Moonlord set — 1326 is in
+    /// it). This is a TRANSFORM, not a decraft: 1326 has no recipe, so the
+    /// `GetShimmered` chain takes the `transform_to_item` arm
+    /// (`tr-app/src/shimmer.rs:104`), never `GetDecraftingRecipeIndex`.
+    /// The 5335 target is NOT in the transform table (the harmony rod does
+    /// not shimmer back) and NOT in the lock set.
+    #[test]
+    fn w4_g89g_the_rod_shimmers_to_harmony_after_the_moon_lord() {
+        // The pair resolves through the set-first arm (no createTile/moon
+        // fallback needed — the rod places nothing).
+        assert_eq!(transform_to_item(1326, -1, 0, 0), 5335);
+        // The lock: pre-Moonlord the chain refuses (`is_transform_locked`
+        // gates `tr-app/src/shimmer.rs:96`), post-Moonlord it opens.
+        assert!(is_transform_locked(1326, false), "locked before the Moon Lord");
+        assert!(!is_transform_locked(1326, true), "open after the Moon Lord");
+        // The harmony rod is the terminal form — no transform back, no lock.
+        assert_eq!(transform_to_item(5335, -1, 0, 0), 0);
+        assert!(!is_transform_locked(5335, false));
+    }
+
     #[test]
     fn find_spot_scans_left_right_then_rows_and_offsets_by_the_box() {
         // A free grid: only the (startX - 1, startY) candidate is accepted, and

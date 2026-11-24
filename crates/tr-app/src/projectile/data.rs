@@ -705,7 +705,7 @@ pub const SLIME_WHIP: u16 = 1104;
 /// `ProjectileID.JimsDrone` (1020) — the Item62 blast (`:70865`).
 pub const JIMS_DRONE: u16 = 1020;
 /// `ProjectileID.BirdDroppings` (1080) — the Item177 splat (`:70936`).
-pub const BIRD_DROPPINGS: u16 = 1080;
+// (BIRD_DROPPINGS const deduped into the W4-c10 definition above — same id 1080.)
 /// `ProjectileID.TorchGodHelper` (1084) — the Item10 pop (`:70958`).
 pub const TORCH_GOD_HELPER: u16 = 1084;
 /// `ProjectileID.PrettyMirror` (1085) — the Item106 shatter (`:70904`).
@@ -717,6 +717,22 @@ pub const BETSY_BREATH: u16 = 687;
 /// `ProjectileID.DD2BetsyFireball` (686) — Betsy's fireball
 /// (`AI_110`'s phase-4 volley: `NewProjectile(..., 686, 35, ...)`).
 pub const BETSY_FIREBALL: u16 = 686;
+/// `ProjectileID.DD2PhoenixBowShot` (706) — the Phantom Phoenix's shot
+/// (`Projectile.cs:7461-7473`: 66x66, aiStyle 1, the tracked
+/// `DD2_PhantomPhoenixShot` loop, W4-d80).
+pub const PHANTOM_PHOENIX: u16 = 706;
+/// `ProjectileID.MonkStaffT3_AltShot` (709) — the Sky Dragon's Fury shot
+/// (`Projectile.cs:7508-7520`: 12x12, aiStyle 1, the tracked
+/// `DD2_SkyDragonsFuryShot` one-shot, W4-d80).
+pub const SKY_DRAGONS_FURY_SHOT: u16 = 709;
+/// `ProjectileID.RemoteControlCar` (1105) — the RC car, aiStyle 205
+/// (`Projectile.cs:10294-10302`, `AI_205_RemoteControlCar` `:38076-38461`;
+/// the `SoundID.RCCar` engine loop, W4-d80).
+// (const deduped into the d76 REMOTE_CONTROL_CAR definition above — same id 1105.)
+/// `ProjectileID.JimsDrone` (1020) — Jim's RC drone, aiStyle 195
+/// (`Projectile.cs:9659-9666`, `AI_195_JimsDrone` `:40923-41067`; the
+/// `SoundID.JimsDrone` engine loop, W4-d80).
+// (const deduped into the d76 JIMS_DRONE definition above — same id 1020.)
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -2484,6 +2500,12 @@ pub const UPBEAT_STAR: u16 = 764;
 /// `ProjectileID.AxeFairyPet` (1050) — the Axe Fairy pet, aiStyle 144
 /// (`Projectile.cs:9953-9966`).
 pub const AXE_FAIRY_PET: u16 = 1050;
+/// `ProjectileID.VoidLens` (734) — aiStyle 154, 30x24, tileCollide false,
+/// `timeLeft = 10800`, `alpha = 255`, drawLayer 3 (`Projectile.cs:7726-7735`).
+/// The Void Bag 4131 / Closed Void Bag 5325's shoot (`Item.cs:35875-35888`);
+/// `IsInteractable` (`Projectile.cs:78828-78846`) and
+/// `TryGetContainerIndex` → chest −5 (`:78820-78824`). W4-g56.
+pub const VOID_LENS: u16 = 734;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -2572,6 +2594,11 @@ pub struct ProjData {
     /// fireworks (`:2568`, S1-P-i16) and the 286 Exploding Bullet (`:3754`,
     /// S1-P-i18).
     pub applies_immunity_time_on_single_hits: bool,
+    /// `Projectile.glowMask` (`:332`, reset −1 `:780`) — the
+    /// `TextureAssets.GlowMask` sheet the draw pass overlays
+    /// (`Main.cs:34855-34942`); −1 = none. W4-g35: the `SetDefaults` slice
+    /// [`set_defaults_glow_mask`] rides the data-carrying spawn.
+    pub glow_mask: i16,
 }
 
 /// The `(uses_local_immunity, local_hit_cooldown, uses_id_static_immunity,
@@ -2965,6 +2992,34 @@ pub(crate) fn set_defaults_no_enchantment_visuals(kind: u16) -> bool {
         181 | 228 | 229 | 344 | 399 | 401 | 504 | 566 | 611 | 669 | 697 | 698 | 709
             | 732 | 933 | 954 | 979 | 1100 | 1108 | 1128 | 1129
     )
+/// The `SetDefaults` `this.glowMask` slice (W4-g35): the
+/// `TextureAssets.GlowMask` sheet index the projectile draw pass overlays
+/// (`Main.cs:34855-34942` — the `proj.glowMask != -1` gate). The C# has
+/// exactly 10 assignment sites (`Projectile.cs:4055`, `:4988-5035`,
+/// `:9432`, `:10019`/`:10035`); the stock is −1 (`:780`). The 986 plain
+/// bobber keeps −1 (the `:9430` gate starts at 987).
+pub(crate) fn set_defaults_glow_mask(kind: u16) -> i16 {
+    match kind {
+        312 => 257, // JackOLantern `:4055`
+        CHAINSAW_VORTEX => 2,      // `:4988`
+        DRILL_VORTEX => 3,         // `:4995`
+        CHAINSAW_NEBULA => 7,      // `:5002`
+        DRILL_NEBULA => 8,         // `:5009`
+        CHAINSAW_STARDUST => 179,  // `:5028`
+        DRILL_STARDUST => 180,     // `:5035`
+        // The glow bobbers `:9430-9434`: 318 + (type − 987).
+        987 => 318,
+        988 => 319,
+        989 => 320,
+        990 => 321,
+        991 => 322,
+        992 => 323,
+        993 => 324,
+        // The phaseblade/phasersaber boomerangs (`:10017-10020`/`:10033-36`).
+        1101 => 372,
+        1102 => 373,
+        _ => -1, // the `:780` reset stock
+    }
 }
 
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
@@ -4879,6 +4934,44 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // W4-d80 — the Phantom Phoenix shot (706, `Projectile.cs:7461-
+            // 7473`): 66x66, aiStyle 1, friendly, alpha 255, timeLeft 300,
+            // ranged, penetrate -1, usesLocalNPCImmunity + cooldown 10.
+            PHANTOM_PHOENIX => (
+                66.0,
+                66.0,
+                1,
+                -1,
+                300,
+                0,
+                true,
+                false,
+                false,
+                (true, 10, false, -1, 255, 1.0),
+            ),
+            // W4-d80 — the Sky Dragon's Fury shot (709, `Projectile.cs:7508-
+            // 7520`): 12x12, aiStyle 1, friendly, melee, alpha 255,
+            // ignoreWater, extraUpdates 1, scale 0.6.
+            SKY_DRAGONS_FURY_SHOT => (
+                12.0,
+                12.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                1,
+                true,
+                false,
+                true,
+                (false, -2, false, -1, 255, 0.6),
+            ),
+            // W4-d80 — the RC car (1105, `Projectile.cs:10294-10302`): 26x26,
+            // aiStyle 205, friendly, tileCollide true (the slope-collision
+            // move). The stock penetrate 1.
+            REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d80 — Jim's drone (1020, `Projectile.cs:9659-9666`): 12x12,
+            // aiStyle 195, friendly, penetrate -1, stock tileCollide true
+            // (the speed-gated bounce `:18057-18067`).
+            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // --- The magic (caster) families (M4-PROJ-6, in `ProjectileID`
             // order) --- the aiStyle declaration is what Phases 3-4 need; the
             // AI arms land beside the arrow/boomerang/bomb arms in those
@@ -6104,6 +6197,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 14x22, aiStyle 206, penetrate -1, `timeLeft *= 5`, a full slot,
             // the LOCAL pair (30), tileCollide false, ignoreWater.
             1119 => (14.0, 22.0, 206, -1, 18000, 0, false, false, false, (true, 30, false, -1, 0, 1.0)),
+            // W4-a9 — `Projectile.cs:10479-10490` (1120, the Forbidden sign's
+            // shot): 10x10, aiStyle 29 (the gem-bolt family's ActuallyGemStaffs
+            // tail, `:37836-37846` — dust id 170, ONE unconditional dust, the
+            // Item72 cue), alpha 255, friendly, the LOCAL pair (60),
+            // `timeLeft = 75`, `extraUpdates = 1`. The 206 arm's fire spawns it
+            // with the FastThenSlow feature bit (`:37588-37592`).
+            1120 => (10.0, 10.0, 29, 1, 75, 1, true, false, false, (true, 60, false, -1, 255, 1.0)),
             // `Projectile.cs:6729-6753` (625-628, the Stardust Dragon chain):
             // 24x24, aiStyle 121, penetrate -1, `timeLeft *= 5`, tileCollide
             // false, ignoreWater, alpha 255, the LOCAL pair (7); the 626/627
@@ -7289,9 +7389,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // cue map can spawn them; the AI machines for the four unarmed
             // styles (195/200/202/205) are the documented census follow-ups
             // (UNARMED_ROWED, the i25 precedent) — the cue lands on death.
-            // `:9659-9666` — Jim's Drone (1020): 12x12, aiStyle 195,
-            // friendly, penetrate -1 (the stock tileCollide true / 3600 life).
-            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // (d76's JIMS_DRONE row deduped into the W4-d80 arm above —
+            // term-identical; the Kill()-tail cue map still spawns 1020.)
             // `:10078-10086` — Bird Droppings (1080): 10x10, aiStyle 200,
             // alpha 255, penetrate -1, ignoreWater (the overlay below); the
             // stock friendly false / tileCollide true / 3600 life.
@@ -7502,6 +7601,67 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             k if crate::projectile_ai_kites::KITE_KINDS.contains(&k) => {
                 (4.0, 4.0, 160, -1, TIME_LEFT_DEFAULT, 60, true, false, false, RESET_STATE)
             }
+            // (d76's REMOTE_CONTROL_CAR row deduped into the W4-d80 arm
+            // above — term-identical.)
+            // W4-g82 — the four rope coils (`Projectile.cs:2570-2578` for
+            // 171/505/506, `:5496-5504` for 475 — the two arms are
+            // term-identical): 14x14, aiStyle 35, `penetrate = -1`,
+            // `tileCollide = false`, `timeLeft = 400`. The stock
+            // extraUpdates 0 / alpha 0 / scale 1 stand (`:779`/`:785`);
+            // the aiStyle-35 machine + the chain preview live in
+            // `projectile_rope_coil.rs` (the kind constants there).
+            171 | 505 | 506 => (14.0, 14.0, 35, -1, 400, 0, false, false, false, RESET_STATE),
+            475 => (14.0, 14.0, 35, -1, 400, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:9446-9457` — the Junimo: 240x104, aiStyle 192
+            // (the AI_192 fall/opacity animation), friendly, penetrate -1,
+            // tileCollide false, ignoreWater, `timeLeft *= 5` (3600 → 18000).
+            // The AI_192 arm is unported (the dispatch no-ops until it lands);
+            // the row carries the box/flight so the spawn is faithful.
+            995 => {
+                (240.0, 104.0, 192, -1, TIME_LEFT_DEFAULT * 5, 0, false, false, false, RESET_STATE)
+            }
+            // W4-f30 — the gravestone family (aiStyle 17, the falling
+            // tombstone): 24x24, knockBack 12, penetrate -1, the stock
+            // tileCollide/timeLeft (`Projectile.cs:1258-1270` the plain 43,
+            // `:2872-2937` the grave markers 201-205, `:5971-5983` the rich
+            // gravestones 527-531 — every row identical bar the type). The
+            // FTW `friendly && hostile` pair is a spawn-time gate
+            // (`DropTombstone`), not a SetDefaults row.
+            43 | 201..=205 | 527..=531 => {
+                (24.0, 24.0, 17, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-f42 — the Djinn's curse (`Projectile.cs:6450-6460`):
+            // 8×8, aiStyle 107, hostile, `alpha = 255`, `ignoreWater`,
+            // `timeLeft = 180`, `tileCollide = false`. The stock penetrate 1
+            // (`:774`) stands — the curse is a single-hit area burst (the
+            // `timeLeft < 4` resize + `Damage()` arm, `:33631-33651`).
+            DESERT_DJINN_CURSE => {
+                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-f42 — the Antlion's sand ball (`Projectile.cs:1131-1140`):
+            // 10×10, aiStyle 10, `penetrate = -1`, friendly + hostile (the
+            // Antlion's call site sets friendly false). The stock 3600 life
+            // (the call site overrides to 300, `NPC.cs:24464`); knockBack 6
+            // is overridden by the call's `KnockBack: 0f`.
+            SAND_BALL_FALLING => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-g56 — `Projectile.cs:7726-7735`: the Void Lens (734):
+            // 30x24, aiStyle 154, tileCollide false, `timeLeft = 10800`,
+            // `alpha = 255` (Opacity 0 — AI_154 fades it in at 0.03/tick,
+            // `:52187-52194`). The stock penetrate 1 / friendly false stand
+            // (the type arm writes neither); drawLayer 3 is a draw-order
+            // flag with no port field (the projectile pass draws it).
+            VOID_LENS => (
+                30.0,
+                24.0,
+                154,
+                1,
+                10800,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -7647,6 +7807,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // the frame feed multiplies (`proj_lights.rs`); the unlisted kinds
         // keep the stock 0f and stay dark.
         light: set_defaults_light(kind),
+        // The `SetDefaults` `glowMask` slice (W4-g35): the glow-sheet id the
+        // draw pass overlays (`Main.cs:34855-34942`); −1 = none (`:780`).
+        glow_mask: set_defaults_glow_mask(kind),
         // The summon identification (M4-PROJ-8 Phase 1): the
         // `minion`/`minionSlots` slice; every summon arm sets `netImportant`
         // and `ignoreWater` (but the Storm Tigers keep the stock false).
@@ -8086,6 +8249,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:6290`); the 578/579 rows predated the flag
             // list, the 813 joins them.
             || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS),
+            // W4-d80 — the Sky Dragon's Fury shot (709, `:7516`).
+            || kind == SKY_DRAGONS_FURY_SHOT,
+            // S1-E-21h d76 DOC-SWEEP — `Projectile.cs:10085`: the Bird
+            // Droppings (1080) sets `ignoreWater = true`.
+            || kind == BIRD_DROPPINGS,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -8241,6 +8409,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d21 — the thrown melee weapons (1082/1083,
                     // `:10102`/`:10112`) + the blade slam (1129, `:10593`).
                     | ANTLION_CLAW | STYLIST_SCISSORS | CHLOROPHYTE_CLAYMORE_BLADE_SLAM
+                    // W4-d80 — the Sky Dragon's Fury shot (709, `:7514`).
+                    | SKY_DRAGONS_FURY_SHOT
             ),
         ranged: matches!(
             kind,
@@ -8292,6 +8462,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d10 — the Nail Gun's nail (514, `:5849`) and the Toxic
             // Flask's bubble (523, `:5935`).
                 | NAIL_FRIENDLY | TOXIC_BUBBLE
+            // W4-d80 — the Phantom Phoenix shot (706, `:7469`).
+                | PHANTOM_PHOENIX
         ),
         magic: matches!(
             kind,
@@ -8848,6 +9020,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // the 1026's 4-tick cycle at 4 (`:26575`).
         967 => 8,
         1026 => 4,
+        // W4-g56 — the Void Lens's 8-frame sheet (`Main.cs:8504`) —
+        // AI_154's 5-tick frame machine wraps at it (`Projectile.cs:52179-
+        // 52186`), `VoidLensHelper.DrawToDrawData` slices `Frame(1, 8, ..)`.
+        VOID_LENS => 8,
         837 => 3,
         1130 => 6,
         // W4-d15 — the DD2 pets' sheets (`Main.cs:8626-8628`): the gato 8
@@ -8888,6 +9064,24 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The baby bird's 5-frame sheet (`Main.cs:8506`) — `AI_158`'s
         // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
         BABY_BIRD => 5,
+        // W4-a9 — the Sanguine bat's 5-frame sheet (`Main.cs:8505`) —
+        // `AI_156_BatOfLight`'s 6-tick flap wraps at projFrames − 1
+        // (`Projectile.cs:51535-51542`). The 946 blade keeps the stock 1
+        // (no override; its arm runs no frame machine).
+        755 => 5,
+        // W4-a9 — the Storm Tiger gem / Abigail counter's 6-frame sheets
+        // (`Main.cs:8648-8649`) — `AI_164_StormTigerGem`'s 4-tick pulse
+        // wraps at the literal 6 (`Projectile.cs:46607-46614`/
+        // `:46631-46638`).
+        831 | 970 => 6,
+        // W4-a9 — the Smolstar's 2-frame sheet (`Main.cs:8665`) — the
+        // aiStyle-169 arm runs no frame machine (the stock frame 0 reads
+        // the top row); the row lands for the draw slice.
+        864 => 2,
+        // W4-a9 — the Forbidden Minion's 9-frame sheet (`Main.cs:8561`) —
+        // `AI_206_ForbiddenMinion`'s idle machine steps frames 0-4 and the
+        // attack machine 5-8 (`Projectile.cs:37605-37640`).
+        1119 => 9,
         // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
         // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
         // (`Projectile.cs:60192`) and the walk steps frames 0-5
@@ -9193,6 +9387,15 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Main.cs:8694-8695`) — `AI_183_ZoologistStrike`'s per-tick
         // frame advance clamps at 7 (`Projectile.cs:43104-43108`).
         ZOOLOGIST_STRIKE_GREEN | ZOOLOGIST_STRIKE_RED => 8,
+        // W4-d80 — the Phantom Phoenix's 8-frame sheet (`Main.cs:8456`) —
+        // `frame = frameCounter / 5` (`Projectile.cs:55841`); the Sky
+        // Dragon's Fury shot's 3-frame sheet (`Main.cs:8554`) — the 3-tick
+        // frame machine (`:54704-54712`) wraps at 3.
+        PHANTOM_PHOENIX => 8,
+        SKY_DRAGONS_FURY_SHOT => 3,
+        // W4-d80 — the RC car's 7-frame drive/fly sheet (`Main.cs:8725`) —
+        // the aiStyle-205 frame machines wrap at 4 (ground) / 7 (fly).
+        REMOTE_CONTROL_CAR => 7,
         _ => 1,
     }
 }
@@ -9401,6 +9604,54 @@ mod tests {
         }
         assert!(!proj_pet(12), "type 12 is flag3 by its own arm, not projPet");
         assert!(!proj_pet(72) && !proj_pet(18) && !proj_pet(500) && !proj_pet(650));
+    }
+
+    #[test]
+    fn w4_g35_the_glow_mask_slice_matches_the_set_defaults_census() {
+        // The 10 C# assignment sites (Projectile.cs:4055, :4988-5035,
+        // :9432, :10019/:10035) + the −1 reset stock (:780).
+        assert_eq!(set_defaults_glow_mask(312), 257); // JackOLantern
+        assert_eq!(set_defaults_glow_mask(CHAINSAW_VORTEX), 2);
+        assert_eq!(set_defaults_glow_mask(DRILL_VORTEX), 3);
+        assert_eq!(set_defaults_glow_mask(CHAINSAW_NEBULA), 7);
+        assert_eq!(set_defaults_glow_mask(DRILL_NEBULA), 8);
+        assert_eq!(set_defaults_glow_mask(CHAINSAW_STARDUST), 179);
+        assert_eq!(set_defaults_glow_mask(DRILL_STARDUST), 180);
+        // The solar pair sets NO glowMask (:5011-5022) — stock −1.
+        assert_eq!(set_defaults_glow_mask(CHAINSAW_SOLAR), -1);
+        assert_eq!(set_defaults_glow_mask(DRILL_SOLAR), -1);
+        // The bobber ladder 318+(type−987); the 986 plain keeps −1.
+        assert_eq!(set_defaults_glow_mask(986), -1);
+        assert_eq!(set_defaults_glow_mask(987), 318);
+        assert_eq!(set_defaults_glow_mask(988), 319);
+        assert_eq!(set_defaults_glow_mask(989), 320);
+        assert_eq!(set_defaults_glow_mask(990), 321);
+        assert_eq!(set_defaults_glow_mask(991), 322);
+        assert_eq!(set_defaults_glow_mask(992), 323);
+        assert_eq!(set_defaults_glow_mask(993), 324);
+        // The Rainbow phaseblade/phasersaber (the :10006/:10022 shared
+        // boomerang arms' inner type gates).
+        assert_eq!(set_defaults_glow_mask(1101), 372);
+        assert_eq!(set_defaults_glow_mask(1102), 373);
+        // Their non-glowing arm-mates keep −1.
+        assert_eq!(set_defaults_glow_mask(1059), -1);
+        assert_eq!(set_defaults_glow_mask(1065), -1);
+        // The unlisted kinds stay dark.
+        assert_eq!(set_defaults_glow_mask(WOODEN_ARROW), -1);
+        assert_eq!(set_defaults_glow_mask(GLOWSTICK), -1);
+    }
+
+    #[test]
+    fn w4_g35_the_spawn_copies_the_glow_mask() {
+        // The data-carrying spawn writes the slice onto the slot, like the
+        // light slice (test_s1_e_5_the_spawn_copies_the_set_defaults_light).
+        for k in [CHAINSAW_VORTEX, DRILL_VORTEX, CHAINSAW_NEBULA, DRILL_NEBULA,
+                  CHAINSAW_STARDUST, DRILL_STARDUST] {
+            let d = proj_data(k).expect("the drill/chainsaw rows exist");
+            assert_eq!(d.glow_mask, set_defaults_glow_mask(k), "kind {k}");
+        }
+        // A row-less kind keeps the −1 stock through Default.
+        assert_eq!(crate::projectile::Projectile::default().glow_mask, -1);
     }
 
     #[test]

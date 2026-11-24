@@ -2387,6 +2387,13 @@ pub(crate) struct MountState {
     /// the latches, the basiliskCharge ramp) run inline in `update_frame`;
     /// only the emitter bodies defer.
     pending_mount_dust: Vec<MountDustRequest>,
+    /// W4-f6 wiring — the Pirate Ship (44) / Spooky Wood (45) dash-start
+    /// latch: the bool half of `_mountSpecificData` (`Mount.cs:3922-3934`
+    /// / `:3983-3994`). The rising edge fires the 20-dust ring; cleared
+    /// by [`MountState::reset`] (`Dismount` nulls the payload, `:6151`).
+    /// The `SetMount` swap branch (`:6212`) nulls it too.
+    dash_latch: bool,
+
     #[cfg(test)]
     test_can_use_wings: Option<bool>,
     #[cfg(test)]
@@ -2429,6 +2436,7 @@ impl Default for MountState {
             drill: DrillMountData::default(),
             dash_ring_latch: false,
             pending_mount_dust: Vec::new(),
+            dash_latch: false,
             #[cfg(test)]
             test_can_use_wings: None,
             #[cfg(test)]
@@ -2492,6 +2500,153 @@ impl MountState {
         // the mount (a dismount drops the tick's unspawned requests).
         self.dash_ring_latch = false;
         self.pending_mount_dust.clear();
+        // `Dismount`/`SetMount` null `_mountSpecificData` (`:6151`/`:6212`)
+        // — the 44/45 dash latch dies with it (W4-f6 wiring).
+        self.dash_latch = false;
+    }
+
+    /// W4-f6 wiring — `Mount._frameExtra` read for the dash-ring emitters
+    /// (the POST-increment value, `Mount.cs:3860` runs before the ring).
+    pub(crate) fn frame_extra(&self) -> i32 {
+        self.frame_extra
+    }
+
+    /// W4-f6 wiring — `Mount.UpdateFrame`'s per-type extras head
+    /// (`Mount.cs:3637-4142`), the dust-bearing subset: the case-10/47
+    /// dash-window `state = 5` re-route + `_frameExtra` latch (`:3849-3865`),
+    /// the case-44 forced-run + `_mountSpecificData` bool latch
+    /// (`:3920-3933`), the case-45 latch (`:3982-3994`) and the case-14
+    /// Basilisk charge fold. `snap` is the player read at the C# call
+    /// moment; the emitters queue onto `dust_out` (the
+    /// `pending_mount_dust` channel — the drain draws on `UpdatePlayers`).
+    /// Returns the possibly re-routed state for the frame-table switch.
+    /// The non-dust extras (drill rotation :3505-3533, bee wings, the
+    /// case-47 WoF-Goat particle request :3903-3915 — e4's orch lane) stay
+    /// with their machines. The `cMount == 0` FloorVisuals hop
+    /// (`:4110-4115`) is the documented drop (module doc, mount_dust.rs).
+    pub(crate) fn frame_extras(
+        &mut self,
+        state: i32,
+        vx: f32,
+        vy: f32,
+        snap: &crate::mount_dust::MountFrameSnap,
+        dust_out: &mut Vec<crate::mount_dust::MountDustRequest>,
+    ) -> i32 {
+        use crate::mount_dust::MountDustRequest as Req;
+        let vel = glam::Vec2::new(vx, vy);
+        let center = glam::Vec2::new(snap.center_x, snap.center_y);
+        let pos = glam::Vec2::new(snap.pos_x, snap.pos_y);
+        let bottom_left = glam::Vec2::new(snap.pos_x, snap.pos_y + snap.height);
+        match self.kind {
+            // `:3843-3916` — the Unicorn/horses/Goat dash window.
+            10 | 40 | 41 | 42 | 47 => {
+                let flag7 = vx.abs() > self.dash_speed() - self.run_speed() / 2.0;
+                let mut state = state;
+                if state == FRAME_RUNNING {
+                    // `:3852-3865` — the dash-start window + the latch.
+                    let mut flag8 = false;
+                    if flag7 {
+                        state = FRAME_DASHING;
+                        if self.frame_extra < 6 {
+                            flag8 = true;
+                        }
+                        self.frame_extra += 1;
+                    } else {
+                        self.frame_extra = 0;
+                    }
+                    // `:3866-3892` — the ring (the POST-increment extra).
+                    if (self.kind == 10 || self.kind == 47) && flag8 {
+                        let anchor =
+                            center + glam::Vec2::new(snap.width * snap.facing as f32, 0.0);
+                        dust_out.push(Req::UnicornGoatRing {
+                            kind: self.kind,
+                            anchor,
+                            frame_extra: self.frame_extra,
+                            run_speed: self.run_speed(),
+                            vx,
+                        });
+                    }
+                }
+                // `:3894-3902` — the Unicorn body (ANY state, flag7).
+                if self.kind == 10 && flag7 {
+                    dust_out.push(Req::UnicornBody {
+                        pos,
+                        width: snap.width as i32,
+                        height: snap.height as i32,
+                    });
+                }
+                state
+            }
+            // `:3918-3978` — the Pirate Ship: forced run + the bool latch.
+            44 => {
+                let flag3 = vx.abs() > self.dash_speed() - self.run_speed() / 4.0;
+                if self.dash_latch && !flag3 {
+                    self.dash_latch = false; // `:3927-3930`
+                } else if !self.dash_latch && flag3 {
+                    self.dash_latch = true; // `:3931-3933`
+                    let anchor =
+                        center + glam::Vec2::new(snap.width * snap.facing as f32, 0.0);
+                    dust_out.push(Req::DashRing20 {
+                        dust_type: 228,
+                        anchor,
+                        run_speed: self.run_speed(),
+                        vel,
+                    });
+                }
+                // `:3958-3977` — the run puff gate draws EVERY tick.
+                dust_out.push(Req::PirateRunPuff {
+                    bottom: glam::Vec2::new(
+                        snap.pos_x + snap.width * 0.5,
+                        snap.pos_y + snap.height,
+                    ),
+                    width: snap.width as i32,
+                    run_speed: self.run_speed(),
+                    vx,
+                });
+                FRAME_RUNNING // `:3920` — `state = 1`
+            }
+            // `:3980-4042` — the Spooky Wood: latch ring + dash body.
+            45 => {
+                let flag5 = vx.abs() > self.dash_speed() * 0.9;
+                if self.dash_latch && !flag5 {
+                    self.dash_latch = false; // `:3988-3991`
+                } else if !self.dash_latch && flag5 {
+                    self.dash_latch = true; // `:3992-3994`
+                    let anchor =
+                        center + glam::Vec2::new(snap.width * snap.facing as f32, 0.0);
+                    dust_out.push(Req::DashRing20 {
+                        dust_type: 6,
+                        anchor,
+                        run_speed: self.run_speed(),
+                        vel,
+                    });
+                }
+                if flag5 {
+                    // `:4019-4041` — the body (SelectRandom(6,6,31)).
+                    dust_out.push(Req::SpookyBody { center, vel });
+                }
+                state
+            }
+            // `:4081-4140` — the Basilisk charge fold + run/charge dusts.
+            // `Player.basiliskCharge` (`Player.cs:842`) is PLAYER state
+            // (survives the dismount); the caller owns it — the fold runs
+            // player-side (`update_frame_visuals`) and arrives via snap.
+            14 => {
+                dust_out.push(Req::Basilisk {
+                    charge: snap.basilisk_charge,
+                    center,
+                    bottom_left,
+                    width: snap.width as i32,
+                    facing: snap.facing,
+                    vel,
+                    vx,
+                    vy,
+                    run_speed: self.run_speed(),
+                });
+                state
+            }
+            _ => state,
+        }
     }
 
     pub(crate) fn is_active(&self) -> bool {
@@ -2764,6 +2919,21 @@ impl MountState {
                     {
                         self.frame = row.dashing.start + row.dashing.count - 1;
                     }
+            _ => {
+                // `:4476-4505` — the dashing loop (W4-f6: the case-10/47
+                // extras re-route the running state to 5). The Scutlix (9)
+                // flipDraw reversal has no producer in this table (the
+                // ability machine is M2-MOUNT-4), so `num25 >= 0` holds.
+                let num25 = vx.abs();
+                self.frame_counter += num25;
+                if self.frame_counter > row.dashing.delay as f32 {
+                    self.frame_counter -= row.dashing.delay as f32;
+                    self.frame += 1;
+                }
+                if self.frame < row.dashing.start
+                    || self.frame >= row.dashing.start + row.dashing.count
+                {
+                    self.frame = row.dashing.start;
                 }
             }
             _ => {}

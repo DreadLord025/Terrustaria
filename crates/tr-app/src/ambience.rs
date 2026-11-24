@@ -2021,6 +2021,7 @@ mod tests {
             atmo: 1.0,
             bg_alpha_front: bg,
             background_enabled: backgrounds,
+            world_surface: 400.0,
         }
     }
 
@@ -2268,9 +2269,12 @@ pub(crate) struct SkyDrawCtx<'a> {
     pub atmo: f32,
     /// `Main.bgAlphaFrontLayer`.
     pub bg_alpha_front: &'a [f32; 16],
-    /// `Main.BackgroundEnabled` — the hellbat visibility gate
+    /// `Main.BackgroundEnabled` - the hellbat visibility gate
     /// (`AmbientSky.cs:888-895`).
     pub background_enabled: bool,
+    /// W4-f40: `Main.worldSurface` (tiles) — the `LanternSky` underground
+    /// gate (`LanternSky.cs:165`).
+    pub world_surface: f64,
 }
 
 impl SkyEntity {

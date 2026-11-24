@@ -1866,6 +1866,8 @@ mod tests {
         world.combat_book_volume_two_was_used = true;
         world.peddlers_satchel_was_used = true;
         // W4-a6: the three bought-pet bytes (WorldFile.cs:1392-1394, v217).
+        // W4-g87: the three town-pet license flags (WorldFile.cs:1392-1394,
+        // v217) ride the round-trip at non-default values.
         world.bought_cat = true;
         world.bought_dog = true;
         world.bought_bunny = true;
@@ -1966,6 +1968,11 @@ mod tests {
         world.unlocked_slime_purple_spawn = true;
         world.unlocked_slime_yellow_spawn = true;
         world.unlocked_slime_copper_spawn = true;
+        // W4-g89e: the vol-two book flag (WorldFile.cs:1407, v259) rides
+        // the round-trip at a non-default value too.
+        world.combat_book_volume_two_was_used = true;
+        // W4-g90 lane 7: the satchel flag rides the round-trip too.
+        world.peddlers_satchel_was_used = true;
         world
     }
 
@@ -2257,6 +2264,10 @@ mod tests {
             "{context}: combatBookWasUsed"
         );
         assert_eq!(
+            got.combat_book_volume_two_was_used, want.combat_book_volume_two_was_used,
+            "{context}: combatBookVolumeTwoWasUsed"
+        );
+        assert_eq!(
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
@@ -2271,6 +2282,7 @@ mod tests {
             "{context}: peddlersSatchelWasUsed"
         );
         // W4-a6: the three bought-pet bytes.
+        // W4-g87: the three town-pet license flags (WorldFile.cs:1392-1394).
         assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
         assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
         assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
@@ -2387,6 +2399,7 @@ mod tests {
             got.combat_book_volume_two_was_used, want.combat_book_volume_two_was_used,
             "{context}: combatBookVolumeTwoWasUsed"
         );
+        // W4-g90 lane 7: the satchel flag byte.
         assert_eq!(
             got.peddlers_satchel_was_used, want.peddlers_satchel_was_used,
             "{context}: peddlersSatchelWasUsed"
@@ -2670,6 +2683,10 @@ mod tests {
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
         tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
+        // combatBookVolumeTwoWasUsed (`:1407`): princess + 1 (W4-g89e).
+        tail[2036] = u8::from(world.combat_book_volume_two_was_used);
+        // W4-g90 lane 7: satchel at 2037 (`WorldFile.cs:1408`, v260).
+        tail[2037] = u8::from(world.peddlers_satchel_was_used);
         tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // W4-f43b: the blue slime byte (WorldFile.cs:1398) sits between the
         // deerclops and the merchant-unlock run.
@@ -4698,11 +4715,24 @@ mod tests {
         // 260, the slime run 261).
         let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
         assert!(!w.combat_book_volume_two_was_used, "below 259: book2 stays false");
+        data[tail_at + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed
+        let w = parse(&data).expect("v260 loads");
+        assert!(!w.unlocked_slime_red_spawn, "below 261: red slime stays false");
+        // W4-g90 lane 7: the satchel byte now LANDS (v260, `:2405`); the
+        // book-two byte ahead of it stays 0.
+        assert!(w.peddlers_satchel_was_used, "peddlersSatchelWasUsed reads from 260");
+        assert!(!w.combat_book_volume_two_was_used, "the book-two byte stays 0");
+        // v258: the book-two byte does not exist yet (the princess byte is
+        // last) — below 259 the flag stays false.
+        let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
+        assert!(!w.combat_book_volume_two_was_used, "below 259: book two stays false");
+        // v259: it lands — the LAST byte of the v259 tail.
         let mut data = synthetic_file(259, &[2, 144], 160, 11);
         let tail_at = tail_offset_in_synthetic(&data, 259);
         data[tail_at + flags_tail(259).len() - 1] = 1; // combatBookVolumeTwoWasUsed
         let w = parse(&data).expect("v259 loads");
         assert!(w.combat_book_volume_two_was_used, "combatBookVolumeTwoWasUsed reads from 259");
+        assert!(!w.peddlers_satchel_was_used, "below 260: the satchel stays false");
         // v261: green/old/purple(3) rainbow(1) red(1) yellow/copper(2) — the
         // red byte sits 3 from the tail end (2 skip + 1 red).
         let mut data = synthetic_file(261, &[2, 144], 160, 11);
@@ -5637,6 +5667,41 @@ mod tests {
         assert!(w.raining, "the secret seed keeps its endless rain");
         assert_eq!(w.rain_time, 5_184_000);
         assert_eq!(w.max_raining, 0.5);
+        // W4-g90 lane 7: the book-two/satchel bytes at their pinned offsets
+        // (2036/2037 — between the princess 2035 and the slime run 2038).
+        assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036");
+        assert_eq!(buf[tail_at + 2037], 1, "peddlersSatchelWasUsed at tail 2037");
+    }
+
+    /// W4-g89e — `combatBookVolumeTwoWasUsed` follows its v259 gate
+    /// (`WorldFile.cs:2416-2423`): below 259 the byte does not exist and the
+    /// field keeps false; at 259 it is the LAST byte of the tail (the
+    /// satchel needs 260). The writer pins it at tail 2036 (princess@2035+1,
+    /// `:1407`).
+    #[test]
+    fn w4_g89e_the_combat_book_vol_two_flag_follows_its_version_gate() {
+        // v258: the vol-two byte does not exist yet.
+        let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
+        assert!(
+            !w.combat_book_volume_two_was_used,
+            "below 259: combatBookVolumeTwoWasUsed stays false"
+        );
+        // v259: it lands — the last byte of the v259 tail.
+        let mut data = synthetic_file(259, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 259);
+        let book_at = flags_tail(259).len() - 1;
+        data[tail_at + book_at] = 1;
+        let w = parse(&data).expect("v259 loads");
+        assert!(
+            w.combat_book_volume_two_was_used,
+            "combatBookVolumeTwoWasUsed reads from 259"
+        );
+        // v326: the writer's pinned offset (the owned-world fixture sets it).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let tail_at = ptr1 - flags_tail(VER).len();
+        assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

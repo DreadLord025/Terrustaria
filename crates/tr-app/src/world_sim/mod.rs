@@ -9,6 +9,9 @@
 
 pub(crate) mod camera;
 pub(crate) mod bg_animation;
+// W4-g86: the cursorItemIcon overlay feed — the self-contained hover-icon
+// decode arms (research/244 the system seed + owner contract).
+pub(crate) mod cursor_item_icon;
 pub(crate) mod gfx_quality;
 pub(crate) mod clock;
 pub(crate) mod editing;
@@ -23,6 +26,9 @@ pub(crate) mod player;
 pub(crate) mod projectiles;
 pub(crate) mod scene_scan;
 pub(crate) mod smart_cursor;
+// W4-g86: the smart-interact tile-targeting lookup (Player.SmartInteractLookup,
+// Player.cs:17374-17398) — the SmartInteractTileCoords feed of the outline pass.
+pub(crate) mod smart_interact;
 pub(crate) mod tile_entities;
 pub(crate) mod step;
 pub(crate) mod weather;

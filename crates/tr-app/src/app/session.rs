@@ -133,6 +133,29 @@ impl App {
         }
     }
 
+    /// W4-g66 gap-fill — the appearance producer: the session draft's
+    /// colours land on the live player at world entry
+    /// (`Main.ActivePlayerFileData.Player` carries the loaded/created
+    /// character; the port's `CharPlay` is routing-only, spec §9.4, so the
+    /// draft is the active player — the `active_player_difficulty`
+    /// precedent). `eyeColor`/`underShirtColor` feed the wings-33/38
+    /// `WingFrame` arms (`Player.cs:30324`/`:30425`) — the two fields the
+    /// live struct models; the draft's other five colours stay card-side
+    /// (the draw palette constants, `render/player_layers.rs`). No draft =
+    /// the `new Player()` initializers already on the struct. The
+    /// `.plr`-backed load rides the f44 save lane
+    /// (`PlayerFile.eye_color` etc.).
+    pub(crate) fn apply_session_appearance(&mut self) {
+        let Some(d) = self.session_draft.as_ref() else {
+            return;
+        };
+        let (eye, under) = (d.eye_color, d.undershirt_color);
+        if let Some(p) = self.player.as_mut() {
+            p.eye_color = eye;
+            p.under_shirt_color = under;
+        }
+    }
+
     /// `Main.ErasePlayer` (`Main.cs:4772-4791`): a disk-backed card deletes
     /// its `.plr` (the `.bak` and the folder side ride along in
     /// `save_list::erase_player`); a disk-less entry (the session stand-in or
@@ -235,6 +258,15 @@ impl App {
     /// `QueuedAbort = true` once (the `!QueuedAbort` gate) + sound 11. The
     /// key path calls this on the Inventory press edge; the flag reaches
     /// the worker through the job's atomic (`WorldGenerator.cs:433-437`).
+    /// `UIWorldGenDebug.Open()`/`Close()` (`UIWorldLoad.cs:50-53`'s F5 arm →
+    /// `UIWorldGenDebug.cs:854-879`): the debug pass-list overlay toggles over
+    /// the loading screen. The port lands the driver as an overlay (W4-f23
+    /// closeout item 1), so the toggle flips `App.worldgen_debug_open`; the
+    /// `DebugOptions.enableDebugCommands` gate is the caller's (`TR_DEBUG`).
+    pub(crate) fn worldgen_debug_toggle(&mut self) {
+        self.worldgen_debug_open = !self.worldgen_debug_open;
+    }
+
     pub(crate) fn world_load_queue_abort(&mut self) {
         let Some(job) = self.world_gen_job.as_ref() else {
             return;
@@ -332,6 +364,14 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         life_max: 100, // `:1924`
         mana: 20,      // `Player.cs:56075`
         mana_max: 20,  // `:56075`
+        ate_artisan_bread: false, // the ctor default (`Player.cs:56077`)
+        // The five shimmer unlocks — fresh-character false (W4-g90 lane 7,
+        // ctor `:56078-56083`).
+        used_aegis_crystal: false,
+        used_arcane_crystal: false,
+        used_galaxy_pearl: false,
+        used_gummy_worm: false,
+        used_ambrosia: false,
         hair_color: rgb(draft.hair_color),
         skin_color: rgb(draft.skin_color),
         eye_color: rgb(draft.eye_color),
@@ -358,6 +398,18 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // The per-player tail (loadouts / void vault / research): a fresh
         // character carries the vanilla defaults (`PlayerFileWrite::default`).
         ..Default::default()
+        // A fresh character has used no permanent upgrade (`Player.cs:56079`).
+        used_aegis_fruit: false,
+        used_gummy_worm: false, // `Player.cs:56082`
+        used_ambrosia: false,   // `Player.cs:56083`
+        used_aegis_crystal: false, // `Player.cs:56078`
+        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — `Serialize`
+        // stamps the save-time clock on every write, `CreateAndSave`
+        // included (`PlayerFileData.cs:58` → `SavePlayer`). W4-c43.
+        last_saved_binary: tr_core::clock::utc_now_binary(),
+        // `CreateAndSave`'s fresh `FromCurrentSettings` metadata
+        // (`PlayerFileData.cs:53`): revision 0.
+        revision: 0,
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

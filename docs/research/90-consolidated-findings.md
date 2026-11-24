@@ -79,7 +79,8 @@ Overall verdict is derived from the file's own status table (the `Status` column
 | 41 | Render pipeline vs the C# graphics layer | **PARTIAL** | One blend state for the whole frame; the atlas merges textures vanilla keeps separate | 15 | 9 | 278 / 27 583 |
 | 42 | Save/load (IO) + Stage-2 compression hooks | **PARTIAL** | The `.wld` tile section drops the four wire bits — data loss on a `.wld` round trip | 8 | 12 | 281 / 25 256 |
 
-**Totals:** 39 modules reviewed · 483 deviation/risks rows · 371 task seeds.
+**Totals:** 39 modules reviewed · 483 deviation/risks rows · 372 task seeds
+(+R-24-11, the W4-g85 retire-phase day-ladder seed).
 
 ---
 
@@ -265,12 +266,14 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-36-6 | The per-kind/per-tier kill worth — port `GetMonsterPointsWorth` (`DD2Event.cs:546-554` → `:1106`, `:1199`, `:1509`) and drop the constant `KILL_WORTH_T1` | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:186 |
 | R-36-7 | The D1 wave-6 win transition — the `waveNumber`/`currentKillCount` write-back + the victory-scene call (`DD2Event.cs:998-1005`) | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:190 |
 | R-36-9 | The wave-break skip — `IsStandActive` + `RequestToSkipWaitTime` + `AttemptToSkipWaitTime` (`DD2Event.cs:1765-1801`) | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:193 |
-| R-36-10 | `DropMedals` (`DD2Event.cs:802-813`, called at `:405-420`) → the Defender Medal item 3817 | 36 | S | behavioural (loot) | — | 36-cinematics-film.md:196 |
+| R-36-10 | `DropMedals` (`DD2Event.cs:802-813`, called at `:405-420`) → the Defender Medal item 3817 — **DONE** (S1-E-12b/c decisions+wiring; W4-f36 drop-side: rect-truncation fix + 5 witnesses) | 36 | S | behavioural (loot) | — | 36-cinematics-film.md:196 |
 | R-36-13 | The zone metric — `Player.SceneMetrics.CloseEnoughToDD2LanePortal` → `Player.ZoneOldOneArmy` + `NPC.ZoneOldOneArmy` + the `NPC.cs:799` despawn gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:204 |
 | R-36-14 | The OOA's invasion id — set `invasion_type = 3` (`DD2Event.cs:47`) and route the progress through `invasion_progress_icon = 3` | 36 | S | behavioural (UI) | — | 36-cinematics-film.md:207 |
 | R-36-15 | Replace the `DD2Event.Ongoing` stub (`dd2.rs:17-19`) with the world's real flag and re-enable the sentry-persistence gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:210 |
+| R-26-13 | The projectile-loot seam — a `TileKill` drain for the projectile pool: all 7 pool `kill_tile` sites discard the record (ai_ice_block :7598, ai_dungeon_debris :12786, debris_death_crack :20393, celeb2_death :20472, explode_bomb :22064/:22109, explode_rocket :22256, the coil dispatch :17632) — the cleared plants/herbs/pots vanish (the mining path resolves via `break_drop_events`, the pool has no drain); queue + drain under the `UpdateProjectiles` rng stream, the per-site C# stream audit + the frame-roll resolution cited | 26 | M | behavioural (loot) | — | 26e-f-rope-union-final.md (W4-g82 final census) |
 
 ### (d) missing subsystems — 52 seeds
+### (d) missing subsystems - 52 seeds
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -331,6 +334,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-346-1 | The torch-god death dust (S1-P-i58): port the `TorchID.Dust` 24-entry table (`TorchID.cs:179-184`) + feed `App.disco` into the death-dust drain seam, then the 1084/949 Kill arms (`Projectile.cs:70956-70995`: 40×/20× table/ai0-typed dust, Next(3) noGravity gate, vel×2.5/×0.8, the type-66 disco colour) | 06 | S | behavioural (medium — 2 deferred Kill dust sites) | W4-g65's drain (landed `b0842907c`) | 346-g65-kill-death-dust-family-final.md §4 |
 | R-346-2 | The globe death dust (S1-P-i59): the 868/869/996 Kill arms (`Projectile.cs:73705-73728`) ride the WorldGen-randomizer lane — the 15× dust-13 prefix ports WITH `RandomizeTreeStyleBasedOnWorldPosition`/`RandomizeBackgroundBasedOnPlayer`/`RandomizeMoonState` (the after-dust state-bearing `Main.rand` draws + `SendData(7)`) | 12 | M | behavioural/determinism (medium — 1 shared deferred site, 3 kinds) | the g70/g71/g72-adjacent worldgen-randomizer ports | 346-g65-kill-death-dust-family-final.md §4 |
 | R-346-3 | The BeeHive death arm (S1-P-i60): the 655 Kill arm (`Projectile.cs:75080-75124`) — the 30× dust-147 prefix + the per-iteration `velocity *= 1.9` corpse ladder + the wet-item 1124 drop / the 2+3×Next(3) NPC-count bee-spawn burst (cross-seam spawn draws; the compounding velocity write is observable by later hooks) | 06 | M | behavioural (medium — 1 deferred site, spawn-seam dependency) | the NPC-spawn/item-drop seam owner | 346-g65-kill-death-dust-family-final.md §4 |
+| R-24-11 | Port the day-surface spawn ladder (`NPC.cs:4202-4501`, 16 draw-bearing rungs — the W4-g85 §7.2 draw table VERBATIM is the contract) into `spawner.rs:1155-1160`'s day fallthrough, incl. the Goblin Scout rung 11 (`:4478`: static gate → `Next(15)` always → conditional `Next(7)` only while `!downedGoblins && shadowOrbSmashed` → 73); UNCLAIMED re-verified across all 356 W4 tips (g61c-done/f42b-active carry no scout content) | 24 | M | behavioural (high — a scout-only insert desyncs the ladder stream) | W4-d35 (the 73 kind), the W4-g85 merge (the case-31-gated flag) | W4-g85-orb-draw.md §7.2 + §9.3 |
 
 ### (e) data / coverage gaps (includes doc-truth and verification work) — 63 seeds
 

@@ -98,6 +98,14 @@ impl App {
     /// `(dt, anim_time)`: the frame step (the `TR_SHOT` pin) and the animation
     /// clock snapshot the draw passes key on.
     fn frame_head(&mut self, now: Instant) -> (f32, f32) {
+        // W4-g86 research/244 phase 1 — the `DoUpdate` head's ONCE-per-frame
+        // `Main.LocalPlayer.cursorItemIconReversed = false` (`Main.cs:16842`,
+        // after the showSplash return :16832-16840, before the capture gate
+        // :16886). NOT part of `MouseOversClear` (:46503-46513) — the two
+        // clears ride different clocks (§3.2): Reversed resets every frame
+        // including menus/pauses, the ID/Text/Push quad only on the in-world
+        // update tick (`frame()`'s world branch).
+        self.cursor_item_icon_reversed = false;
         // `Lang.InitGlobalSubstitutions` (S1-L-12b): refresh live `{Name}` values
         // before any UI/text resolves them this frame (`Lang.cs:100-167`).
         crate::lang::refresh_global_substitutions(self);
@@ -161,6 +169,11 @@ impl App {
         if self.team_cooldown > 0 {
             self.team_cooldown -= 1;
         }
+        // W4-g56 — `ItemSlot.UpdateInterface()` (`Main.cs:17046`): the slot
+        // glow decay runs once per game update beside the team cooldown (the
+        // same pre-`gameMenu`-return region, menus included). The chest pair
+        // also honours `forceClearGlowsOnChest` (`Player.ChestChangeEvents`).
+        self.slot_glow.update_interface();
         // `Main.DrawInventory`'s reforge head (`Main.cs:41557-41578`): the
         // button's hover-scale animation, the unhovered cooldown clear and
         // the force-close gate. Runs every frame the menu is open (the C#
@@ -296,6 +309,11 @@ impl App {
             && self.front.is_none()
             && !crate::env::no_hud()
             && (!self.map.as_ref().is_some_and(|m| m.open) || self.settings.map_enabled);
+            // `Main.hideUI` hides the game cursor (layer 36 is after the
+            // layer-8 check) — the OS pointer stays hidden while focused
+            // (`FocusHelper.cs:160-163`), so the screenshot has no cursor.
+            && !self.hide_ui
+            && !(self.settings.map_enabled && self.map.as_ref().is_some_and(|m| m.open));
         if self.os_cursor_hidden != Some(vanilla_cursor) {
             if let Some(w) = &self.window {
                 w.set_cursor_visible(!vanilla_cursor);
@@ -542,6 +560,20 @@ impl App {
             // working set on the first open frame; the click-open already
             // ran `on_open`. Closing re-arms the latch.
             self.bestiary_open_latch(screen);
+            // W4-g86 research/244 phase 1 — `Main.MouseOversClear`
+            // (`Main.cs:17035` → `:46503-46513`), the FULL cursor-icon quad:
+            // `enabled = false; ID = 0; Text = ""; Push = 0` (:46507-46510),
+            // ahead of the player pass that re-arms them in reach. The
+            // `_mouseTextCache` pair (:46505-46506) has no port cache; the
+            // `signHover = -1`/`signBubble = false` pair (:46511-46512) rides
+            // the unported sign-hover lane (f22's neighbour, research/244
+            // §4.4). `cursorItemIconReversed` is NOT cleared here — it resets
+            // once per frame at the `DoUpdate` head (:16842, `frame_head`).
+            // S1-W4-g81 carried the enabled-only clear; the quad completes it.
+            self.cursor_item_icon_enabled = false;
+            self.cursor_item_icon_id = 0;
+            self.cursor_item_icon_text.clear();
+            self.cursor_item_icon_push = 0;
             // S1-E-17: `DoUpdate`'s capture gate (`Main.cs:16886-16890`):
             // `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
             // return; }` — while a capture renders the ENTIRE game update
@@ -564,6 +596,12 @@ impl App {
         // the update branch queued this frame become popups + the chat line
         // + the cue. S1-E-26 wave A.
         self.drain_achievement_completions();
+        // W4-g23 — the `Main.NewText`/`NewTextMultiline` cue tails
+        // (`Main.cs:64635`/`:64641`), centralized in `ChatMonitor::new_text`:
+        // every chat append this frame (deaths, rolls, server messages, the
+        // bed/spawn notices) plays its 12, in append order. The achievement
+        // subscriber drained its own lines already; this covers the rest.
+        self.chat.drain_new_text_cues(&self.audio);
         // S1-B-8 — the draw-half pre-snapshot spine (see `frame/world.rs`);
         // the pure field snapshots below stay inline: the draw region's
         // borrow scaffolding, consumed by the destructure.
@@ -1274,6 +1312,93 @@ mod tests {
         );
     }
 
+    /// W4-f40 DOC-SWEEP — the lantern quad SURVIVES `enter_loaded_world`:
+    /// the C# `LoadWorld` runs `WorldGen.clearWorld()` (which calls
+    /// `LanternNight.WorldClear`, `WorldGen.cs:6996`) at
+    /// `WorldFile.cs:1977`, BEFORE `LoadWorldFlags` reads the lantern temps
+    /// and `SetOngoingToTemps` (`:173-176`) restores them. The port's
+    /// restore rides `App::new` (the f45 `from_wld` block), so the clear
+    /// lives in `swap_world` ahead of the rebuild — this tail must not
+    /// clear, or a saved lantern night dies on every load.
+    #[test]
+    fn w4_f40_entering_a_loaded_world_keeps_the_restored_lantern_quad() {
+        let mut app = in_world_app();
+        app.world_events.genuine_lanterns = true;
+        app.world_events.manual_lanterns = true;
+        app.world_events.next_night_is_lantern_night = true;
+        app.world_events.lantern_nights_on_cooldown = 5;
+        app.enter_loaded_world();
+        let ev = &app.world_events;
+        assert!(ev.genuine_lanterns && ev.manual_lanterns, "the up flags ride");
+        assert!(ev.next_night_is_lantern_night, "the armed next night rides");
+        assert_eq!(ev.lantern_nights_on_cooldown, 5, "the cooldown rides");
+        // The source-order pin: `swap_world` clears BEFORE the `App::new`
+        // rebuild (the restore), and the shared tail carries no clear.
+        let src = include_str!("mod.rs");
+        let swap_at = src.find("fn swap_world(").expect("swap_world");
+        let swap_body = &src[swap_at..];
+        let clear_at = swap_body.find("world_clear(").expect("the swap clear");
+        let rebuild_at = swap_body.find("*self = App::new(").expect("the rebuild");
+        assert!(clear_at < rebuild_at, "clear-then-restore (WorldFile.cs:1977)");
+        let enter_at = src.find("fn enter_loaded_world(").expect("the tail");
+        let enter_body = &src[enter_at..enter_at + 2600];
+        assert!(
+            !enter_body.contains("world_clear("),
+            "the post-restore tail must not clear the quad"
+        );
+    }
+
+    /// W4-f40 FINAL item 4 — the f45 compose-contract for the lantern quad.
+    /// f45 (`task/W4-f45-wld-header-2`, tip `6352d384`) owns the .wld halves:
+    /// - save: `saveglue.rs:132-136` snapshots `world_events`' quad into
+    ///   `World.lantern_night_{cooldown,genuine,manual,next_night_is_genuine}`
+    ///   (`SetTempToOngoing`, `WorldFile.cs:1060-1063`);
+    /// - the flags block writes them at tail 1940..1946
+    ///   (`flags.rs:211-214`, `WorldFile.cs:1381-1384`) and reads them back
+    ///   at version >= 207 (`flags.rs:670-673`, `:2326-2329`);
+    /// - restore: `App::new`'s `from_wld` block (`mod.rs:4123-4127`,
+    ///   `SetOngoingToTemps` `:173-176`) copies the four World fields into
+    ///   `world_events.{lantern_nights_on_cooldown: i32, genuine_lanterns:
+    ///   bool, manual_lanterns: bool, next_night_is_lantern_night: bool}`.
+    /// THIS witness pins the f40 half of that contract: the exact field
+    /// names + types the f45 assignments read/write (a rename or retype on
+    /// this branch breaks the compile here, before the merge silently
+    /// breaks the restore), and the net-install clear-then-install order.
+    #[test]
+    fn w4_f40_the_lantern_quad_matches_the_f45_restore_shape() {
+        // The typed mirror of f45's `from_wld` assignments (mod.rs:4123-4127):
+        // the World-side types (i32 + three bools, flags.rs:670-673's reader)
+        // flow into the WorldEvents fields with NO conversion. If this
+        // branch renames/retypes any of the four, this stops compiling.
+        let (cooldown, genuine, manual, next): (i32, bool, bool, bool) = (7, true, false, true);
+        let mut app = in_world_app();
+        app.world_events.lantern_nights_on_cooldown = cooldown;
+        app.world_events.genuine_lanterns = genuine;
+        app.world_events.manual_lanterns = manual;
+        app.world_events.next_night_is_lantern_night = next;
+        // The restore-onto-live path ends at the shared tail — it must keep
+        // all four (the clear ran BEFORE, at the install sites).
+        app.enter_loaded_world();
+        assert_eq!(app.world_events.lantern_nights_on_cooldown, 7);
+        assert!(app.world_events.genuine_lanterns);
+        assert!(!app.world_events.manual_lanterns);
+        assert!(app.world_events.next_night_is_lantern_night);
+        // The net-install order pin: `client_install_world` clears the quad
+        // + resets the sky BEFORE `self.world = world` (the tile install)
+        // and before the `enter_loaded_world` tail (`Netplay.cs:500`'s
+        // state-4 `WorldGen.clearWorld` precedes the section apply).
+        let src = include_str!("netglue.rs");
+        let at = src.find("fn client_install_world(").expect("the install");
+        let body = &src[at..];
+        let clear_at = body.find("world_clear(").expect("the install clear");
+        let sky_at = body.find("lantern_sky.reset()").expect("the sky reset");
+        let install_at = body.find("self.world = world;").expect("the install");
+        let tail_at = body.find("self.enter_loaded_world()").expect("the tail");
+        assert!(clear_at < install_at, "clear before the tile install");
+        assert!(sky_at < install_at, "the sky reset rides the same site");
+        assert!(install_at < tail_at, "the tail runs after the install");
+    }
+
     /// The Phase-2 stepper tests' fixture: the in-world app with a slime on a
     /// ground world — the DW-1.2 shape, minus the water/rain instruments the
     /// pacing doesn't read. The liquid sim is rebuilt for the swapped world's
@@ -1802,6 +1927,57 @@ mod tests {
         );
     }
 
+    /// W4-g86 research/244 phase 1 — the four cursorItemIcon fields start
+    /// at the C# defaults (`Player.cs:1852-1858`: Reversed false, ID 0,
+    /// Push 0, Text "") beside g81's enabled latch. WRITTEN NOT RUN
+    /// (code-only lane).
+    #[test]
+    fn w4_g86_the_cursor_item_icon_fields_default_to_the_csharp_values() {
+        let app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        assert!(!app.cursor_item_icon_enabled, "Player.cs:1850 bool default");
+        assert_eq!(app.cursor_item_icon_id, 0, "Player.cs:1854 int default");
+        assert_eq!(app.cursor_item_icon_text, "", "Player.cs:1858 = \"\"");
+        assert_eq!(app.cursor_item_icon_push, 0, "Player.cs:1856 int default");
+        assert!(!app.cursor_item_icon_reversed, "Player.cs:1852 bool default");
+    }
+
+    /// W4-g86 research/244 phase 1 — the two clears ride DIFFERENT clocks
+    /// (§3.2): `frame_head` resets Reversed ONCE per frame (`Main.cs:16842`,
+    /// every frame — menus included), while the `MouseOversClear` quad
+    /// (enabled/ID/Text/Push, `:46503-46513` via `:17035`) runs only on the
+    /// in-world update tick, BEFORE the player pass re-arms it. A front-end
+    /// frame clears Reversed but leaves the quad's stale values standing;
+    /// an in-world frame clears all five. WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_clear_quad_and_the_reversed_once_per_frame_order() {
+        let mut app = in_world_app();
+        // Arm every field like a hover pass did last tick.
+        app.cursor_item_icon_enabled = true;
+        app.cursor_item_icon_id = 6135;
+        app.cursor_item_icon_text = "Chest".into();
+        app.cursor_item_icon_push = 6;
+        app.cursor_item_icon_reversed = true;
+        // A front-end frame: the head's :16842 clear fires, the world
+        // branch's MouseOversClear does NOT (Main.cs:17166 returns first).
+        app.front = Some(FrontScreen::CharSelect);
+        app.frame();
+        assert!(!app.cursor_item_icon_reversed, ":16842 clears every frame");
+        assert!(app.cursor_item_icon_enabled, "the quad waits for the world tick");
+        assert_eq!(app.cursor_item_icon_id, 6135, "ID survives a menu frame");
+        assert_eq!(app.cursor_item_icon_text, "Chest", "Text survives a menu frame");
+        assert_eq!(app.cursor_item_icon_push, 6, "Push survives a menu frame");
+        // Back in-world: the full quad clears ahead of the player pass
+        // (nothing re-arms it in this fixture — no tool, no hovered altar).
+        app.front = None;
+        app.cursor_item_icon_reversed = true;
+        app.frame();
+        assert!(!app.cursor_item_icon_enabled, ":46507");
+        assert_eq!(app.cursor_item_icon_id, 0, ":46508");
+        assert_eq!(app.cursor_item_icon_text, "", ":46509");
+        assert_eq!(app.cursor_item_icon_push, 0, ":46510");
+        assert!(!app.cursor_item_icon_reversed, ":16842 again this frame");
+    }
+
     /// S1-B-8 DW-1.3 — the setup's inline 1600x900 fallback (not
     /// `App::screen_size()`'s 1280x720) is what the whole frame draws into,
     /// and `m_h` comes from that fallback: with a live minimap the setup
@@ -2193,6 +2369,12 @@ mod tests {
     /// `rngs.global()` stream.
     #[test]
     fn the_cage_tick_rides_the_animate_tiles_tail() {
+    /// W4-f14 tick-order witness: `Main.AnimateTiles_CritterCages()` rides
+    /// `AnimateTiles`'s TAIL (`Main.cs:19303`, after the tile-493 counter)
+    /// — the cage tick runs AFTER `animate_tiles` inside the SAME
+    /// `tile_anim_step` closure on the SAME `rngs.global()` stream.
+    #[test]
+    fn w4_f14_the_cage_tick_rides_the_animate_tiles_tail() {
         let world = include_str!("frame/world.rs");
         let body = world
             .split("fn animate_tiles_phase")
@@ -2204,6 +2386,7 @@ mod tests {
         let tiles = body.find("animator.animate_tiles(wind, rng, false)").expect("the tile tick");
         let cages = body
             .find("cage_anim.animate(critter_cage, rng)")
+            .find("cages.animate_critter_cages(rng)")
             .expect("the cage tick");
         let tick = body.find("step.tick(dt, |_|").expect("the shared stepper");
         assert!(tick < tiles && tiles < cages, "the cage call is the AnimateTiles tail");
@@ -2227,6 +2410,18 @@ mod tests {
             .split("tile_anim: {")
             .nth(1)
             .expect("the tile_anim key arm")
+    /// W4-f14 key-gate witness: the G6 `cage_anim` input is the animator's
+    /// `anim_key()` gated on an active cage kind in the view rect (the
+    /// `tile_anim` key's convention) — cage-free views keep the pre-wiring
+    /// cache behaviour, and the draw receives the animator by `&mut` (the
+    /// flag clear/set side effects).
+    #[test]
+    fn w4_f14_the_cage_key_is_view_gated_and_the_draw_takes_the_animator() {
+        let draw = include_str!("frame/draw.rs").replace("\r\n", "\n");
+        let key_block = draw
+            .split("cage_anim: {")
+            .nth(1)
+            .expect("the cage key arm")
             .split("net_key: {")
             .next()
             .expect("the net key follows");
@@ -2237,6 +2432,11 @@ mod tests {
         assert!(key_block.contains("t.active()"), "inactive cells stay out");
         assert!(key_block.contains("self.cage_anim.anim_key()"));
         assert_eq!(key_block.matches("anim_key()").count(), 2, "tile + cage keys");
+            key_block.contains("tr_core::drawdata_furniture::is_cage_kind(t.kind)"),
+            "the gate probes the cage kinds"
+        );
+        assert!(key_block.contains("t.active()"), "inactive cells stay out");
+        assert!(key_block.contains("self.cage_anim.anim_key()"));
         let gated = key_block
             .split("if any_cage {")
             .nth(1)
@@ -2245,6 +2445,66 @@ mod tests {
         // The draw call feeds the animator + the proximity flag.
         assert!(draw.contains("&self.cage_anim,"));
         assert!(draw.contains("&mut self.critter_cage,"));
+        assert!(gated.contains("} else {"), "a cage-free view keeps 0");
+        assert_eq!(key_block.matches("anim_key()").count(), 1);
+        // The draw call feeds the animator mutably (the flag rides it).
+        assert!(draw.contains("&mut self.cage_anim,"));
+    }
+
+    // ---- W4-g86 research/244 phase 1: the cursorItemIcon clears ------------
+    // WRITTEN NOT RUN (code-only lane): the two clears ride DIFFERENT clocks
+    // (`Main.MouseOversClear` on the in-world update tick, `Reversed` at the
+    // `DoUpdate` head) — these witnesses pin both halves + the order.
+
+    /// `Main.MouseOversClear` (`Main.cs:46503-46513`, called at `:17035`
+    /// ahead of the `gameMenu` return `:17166`): the FULL quad — enabled
+    /// false, ID 0, Text "", Push 0 — clears on the in-world update, while
+    /// `Reversed` (NOT part of the quad, `:16842`) survives it. The
+    /// `_mouseTextCache` pair (`:46505-46506`) and the sign pair
+    /// (`:46511-46512`) have no port fields yet (research/244 §3.2).
+    #[test]
+    fn w4_g86_the_mouse_overs_clear_quad_runs_on_the_world_update() {
+        let mut app = in_world_app();
+        // Arm every field the quad clears + Reversed, which it must NOT.
+        app.cursor_item_icon_enabled = true;
+        app.cursor_item_icon_id = 6135;
+        app.cursor_item_icon_text = "Chest".into();
+        app.cursor_item_icon_push = 6;
+        app.cursor_item_icon_reversed = true;
+        app.frame();
+        assert!(!app.cursor_item_icon_enabled, "enabled clears (:46507)");
+        assert_eq!(app.cursor_item_icon_id, 0, "ID clears (:46508)");
+        assert!(app.cursor_item_icon_text.is_empty(), "Text clears (:46509)");
+        assert_eq!(app.cursor_item_icon_push, 0, "Push clears (:46510)");
+        // `frame_head` runs FIRST (:16842 clears Reversed every frame), so
+        // after a whole frame Reversed is false too — but through its OWN
+        // clear, not the quad's. The next witness pins the split.
+        assert!(!app.cursor_item_icon_reversed, "the frame head cleared it");
+    }
+
+    /// The clock split (`Main.cs:16842` vs `:46503-46513`): while a
+    /// front-end screen owns the frame the world branch is gated
+    /// (`frame()`'s `menu.is_none() && front.is_none()`), so the quad does
+    /// NOT run — but the `DoUpdate` head's `Reversed` clear runs every
+    /// frame including menus (it sits before the `gameMenu` return at
+    /// `:17166`). Deviation (research/244 §4.1): the C# `MouseOversClear`
+    /// call itself (`:17035`) precedes the menu return, so vanilla clears
+    /// the quad under menus too; the port keeps g81's world-branch
+    /// placement — no tile-hover writer runs behind a menu, so no stale
+    /// icon can reach a draw (the layer-40 draw is world-gated as well).
+    #[test]
+    fn w4_g86_reversed_clears_every_frame_the_quad_only_in_world() {
+        let mut app = in_world_app();
+        app.menu = Some(crate::menu::Menu::new(app.settings.clone(), "flow".into()));
+        app.cursor_item_icon_id = 1293;
+        app.cursor_item_icon_text = "kept".into();
+        app.cursor_item_icon_push = 10;
+        app.cursor_item_icon_reversed = true;
+        app.frame();
+        assert!(!app.cursor_item_icon_reversed, ":16842 runs under menus");
+        assert_eq!(app.cursor_item_icon_id, 1293, "the quad is world-gated");
+        assert_eq!(app.cursor_item_icon_text, "kept");
+        assert_eq!(app.cursor_item_icon_push, 10);
     }
 }
 

@@ -502,7 +502,10 @@ pub(crate) fn get_crafting_filter_for_tile(kind: u16) -> Option<CraftingFilter> 
 /// `Recipe.TileUsedInRecipes` + `UpdateInheritedTilesUsedInRecipes`
 /// (`Recipe.cs:577-600`, the fill at `:16732`): the recipes' own
 /// `requiredTile` set, inherited through the `TileCountsAs` chains.
-fn tile_used_in_recipes(kind: u16) -> bool {
+/// W4-g86: `pub(crate)` — the smart-interact target scan
+/// (`world_sim/smart_interact.rs`, `TileSmartInteractCandidateProvider.cs:375`)
+/// reads the same set.
+pub(crate) fn tile_used_in_recipes(kind: u16) -> bool {
     RECIPES.iter().any(|r| r.stations.contains(&kind))
         || TILE_COUNTS_AS
             .iter()
@@ -987,6 +990,36 @@ pub(crate) fn available_with_gates(
         .collect()
 }
 
+/// `Recipe.TryRefocusingRecipe` (`Recipe.cs:477-495`): after the available
+/// list is rebuilt, the focus follows the RECIPE it pointed at, not the
+/// position. `oldRecipe` is `Main.availableRecipe[Main.focusRecipe]` captured
+/// BEFORE `ClearAvailableRecipes` (`UpdateRecipeList` `:232-233`); the walk
+/// finds its new position (`:479-486`), and the two clamps (`:487-494`) pin
+/// a stale focus to the last row, or to 0 when the list emptied. The C#
+/// array is zero-filled past `numAvailableRecipes` (`ClearAvailableRecipes`
+/// `:468-475`), so an out-of-range old focus reads recipe 0 — which never
+/// enters the available list (`:248-251` breaks on `createItem.type == 0`)
+/// and falls through to the clamps; the caller passes 0 for that case.
+pub(crate) fn try_refocusing_recipe(available: &[usize], old_recipe: usize, focus: i32) -> i32 {
+    let mut focus = focus;
+    // `:479-486` — the first position whose recipe IS the old one.
+    for (i, &r) in available.iter().enumerate() {
+        if old_recipe == r {
+            focus = i as i32;
+            break;
+        }
+    }
+    // `:487-490` — a focus past the new end rides the last row.
+    if focus >= available.len() as i32 {
+        focus = available.len() as i32 - 1;
+    }
+    // `:491-494` — an empty list pins 0.
+    if focus < 0 {
+        focus = 0;
+    }
+    focus
+}
+
 /// `Recipe.CollectGuideRecipes` (`Recipe.cs:262-284`): every recipe with a
 /// requirement matching the guide item — the groups match their members
 /// (`RequiredItemEntry.Matches`).
@@ -1277,6 +1310,39 @@ mod tests {
     use super::*;
     use crate::item::slot_for_pickup;
 
+    /// W4-f23 doc-sweep: `TryRefocusingRecipe` (`Recipe.cs:477-495`) — the
+    /// focus follows the RECIPE across the rebuild, and the two clamps pin
+    /// a vanished recipe to the last row / 0.
+    #[test]
+    fn refocus_follows_the_recipe_not_the_position() {
+        // The old recipe 30 sat at position 2; after the rebuild it sits
+        // at position 0 — the focus moves with it (`:479-486`).
+        assert_eq!(try_refocusing_recipe(&[30, 7, 9], 30, 2), 0);
+        // A recipe still in the list keeps following itself even when the
+        // incoming focus is stale.
+        assert_eq!(try_refocusing_recipe(&[7, 30, 9], 30, 99), 1);
+    }
+
+    #[test]
+    fn refocus_clamps_a_vanished_recipe_to_the_last_row() {
+        // `:487-490`: the old recipe left the list (the last craft consumed
+        // its ingredients) and the focus was past the new end — pin to the
+        // last row.
+        assert_eq!(try_refocusing_recipe(&[7, 9], 30, 2), 1);
+        // A focus INSIDE the new range survives the first clamp even
+        // though its recipe changed (`:487` only fires past the end).
+        assert_eq!(try_refocusing_recipe(&[7, 9, 11], 30, 1), 1);
+    }
+
+    #[test]
+    fn refocus_pins_zero_when_the_list_empties() {
+        // `:487-494`: len 0 drives focus to -1, then the second clamp
+        // pins 0 — the C#'s empty-list arm.
+        assert_eq!(try_refocusing_recipe(&[], 30, 5), 0);
+        // A negative incoming focus (the port's -1 sentinel) also pins 0.
+        assert_eq!(try_refocusing_recipe(&[7], 30, -1), 0);
+    }
+
     #[test]
     fn the_craft_rolls_come_from_the_unified_random_stream() {
         // S1-L-11e / D6: `GetIngredientCraftingDiscount` rolls
@@ -1330,6 +1396,70 @@ mod tests {
             .iter()
             .find(|r| r.create.0 == create && !r.not_decraftable)
             .unwrap()
+    }
+
+    /// W4-f40 FINAL — the lantern CRAFT census (`Recipe.cs` whole-file grep:
+    /// zero hits for 4702/4682/ReleaseLantern/ReleaseDoves; the only Lantern
+    /// rows are the furniture-set helper's `lantern` parameter `:16597-16600`
+    /// and `AddFallenStarFurniture` `:16415-16418`):
+    /// - **4702 Release Lantern has NO recipe** — it is shop-only, the Party
+    ///   Girl's lantern-night wish row (`Chest.cs:2309-2312`, the f40
+    ///   `StockWhen::LanternNight` arm). The doves 4682 likewise (`:2307`).
+    ///   No workbench row exists in the C#, so none is ported — the generator
+    ///   cannot invent one (`gen_recipes.py` splices only the C# bodies).
+    /// - **5613 FallenStarLantern IS craftable** — 6 Fallen Star (5622) +
+    ///   1 Torch (8) at the WORK BENCH (tile 18, `SetCraftingStation(18)`
+    ///   `Recipe.cs:16417` — the C# station 18 is the Work Bench,
+    ///   `TileID.cs`), NOT by hand. `recipes_gen.rs` row 1548 carries it
+    ///   (the `AddFallenStarFurniture` body is spliced literal, no
+    ///   parametric expansion needed).
+    #[test]
+    fn w4_f40_the_release_lantern_has_no_recipe_the_star_lantern_crafts_at_the_bench() {
+        // The release pair: no authored row anywhere in the generated table.
+        for kind in [4702u16, 4682] {
+            assert!(
+                RECIPES.iter().all(|r| r.create.0 != kind),
+                "{kind}: shop-only (Chest.cs:2307/:2311), no Recipe.cs row"
+            );
+        }
+        // The star lantern's row: exact ingredients + station.
+        let r = recipe_by_create(5613);
+        assert_eq!(r.create, (5613, 1));
+        assert_eq!(r.required.len(), 2);
+        assert_eq!((r.required[0].item, r.required[0].stack), (5622, 6));
+        assert_eq!((r.required[1].item, r.required[1].stack), (8, 1));
+        assert_eq!(r.stations, &[18], "the work bench (Recipe.cs:16417)");
+        assert!(!r.need_water && !r.need_honey && !r.need_lava && !r.need_graveyard);
+        // The craft runs at the bench and refuses without it.
+        let zones = Zones::default();
+        let mut chests = Vec::new();
+        let mut inv = inv_with(&[(5622, 6), (8, 1)]);
+        let mut rng = UnifiedRandom::new(1);
+        let mut prefix_rng = UnifiedRandom::new(2);
+        assert!(
+            try_craft(
+                &mut inv, &mut empty_equip(), &mut chests, &[], r,
+                &dry_adj(), &zones, &Gates::default(), &mut rng, &mut prefix_rng
+            )
+            .is_none(),
+            "no station adjacent: refused"
+        );
+        let bench = Adjacent {
+            tiles: vec![18],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        assert_eq!(
+            try_craft(
+                &mut inv, &mut empty_equip(), &mut chests, &[], r,
+                &bench, &zones, &Gates::default(), &mut rng, &mut prefix_rng
+            ),
+            Some(CreatedItem { kind: 5613, count: 1, prefix: 0 })
+        );
+        assert_eq!(count_kind(&inv, 5622), 0, "the 6 stars drain");
+        assert_eq!(count_kind(&inv, 8), 0, "the torch drains");
     }
 
     fn dry_adj() -> Adjacent {

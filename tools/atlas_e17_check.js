@@ -23,6 +23,7 @@ m._compile(src, simPath);
 const sim = m.exports;
 
 const extra = ['MapDeath', 'Extra_173', 'Extra_175', 'Extra_176', 'Coin_0', 'Coin_1', 'Coin_2', 'Coin_3'];
+const extra = ['MapDeath', 'Extra_173', 'Extra_175', 'Extra_176'];
 for (let i = 0; i < 40; i++) if (i !== 7) extra.push('NPC_Head_Boss_' + i);
 
 function measure(label, sheets) {

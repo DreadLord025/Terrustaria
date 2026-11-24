@@ -30,6 +30,29 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     // reads them live inside MakeRain/NewRain/Update — constant per frame).
     let inputs = crate::rain::RainInputs {
         camera: app.camera,
+    let shimmer_alpha = app.scene_state.shimmer_alpha;
+    let atmo = crate::render::sky::atmosphere_factor(
+        app.camera.y,
+        app.world.world_surface,
+        app.world.width,
+    );
+    let snow_tile_count = app.scene_metrics.snow_tile_count;
+    let zone_rain = app.scene_metrics.zone_rain;
+    // W4-g11: the snow spawn no longer rides Rain — `Main.snowing()`
+    // (`main_dust.rs`) reads `App.gfx_quality.quality` at its own
+    // `Main.cs:17238` slot (`scene_scan::update_scene`), so the retired
+    // `rain.gfx_quality` copy is gone.
+    // `Rain.NewRain` reads the STORED `Main.waterStyle` (`Rain.cs:205`) —
+    // latch the frame's `CalculateWaterStyle` value (the fountain head arm
+    // `Main.cs:57390-57393` included), the same seam convention.
+    app.rain.water_style = crate::biome::calculate_water_style_with_fountain(
+        &app.world,
+        app.camera,
+        app.scene_metrics.active_fountain_color,
+    ) as u32;
+    app.rain.update(
+        &app.world,
+        app.camera,
         screen,
         zoom: app.zoom,
         day_rate,
@@ -399,6 +422,11 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             .map(crate::world_events::can_npc_party)
             .collect();
         let party_edge = crate::world_events::update_time_party(
+        crate::world_events::update_time_party(&mut app.world_events);
+        // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
+        // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`).
+        let lantern_can_persist = !world.day_time;
+        let lantern_edge = crate::world_events::update_time_lanterns(
             &mut app.world_events,
             &partyable,
             &mut app.chat,
@@ -439,9 +467,28 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             } else {
                 app.event_skies.deactivate_party();
             }
+        // W4-f40: `LanternNight.UpdateTime`'s sky edges (`LanternNight.cs:
+        // 133-150`): the up-edge activates the `LanternSky`, the down-edge
+        // deactivates it (the leaving latch). The C# calls
+        // `SkyManager.Activate/Deactivate("Lantern")`; the port drives the
+        // sky's own activate/deactivate. The activate reads the live view
+        // band (`Main.screenPosition.Y`/`screenHeight`, `LanternSky.cs:93`).
+        let (_sw, sh) = app.screen_size();
+        match lantern_edge {
+            Some(true) => app.lantern_sky.activate(
+                world.width,
+                world.height,
+                app.camera.y - sh * 0.5,
+                sh,
+                world.world_surface,
+            ),
+            Some(false) => app.lantern_sky.deactivate(),
+            None => {}
         }
         if scene_state.forced_severity.is_none() {
-            sandstorm.update_time(day_rate, wind.speed_current);
+            // W4-c40: the hardMode start-delay denominator
+            // (`Sandstorm.cs:58-59`) reads the live world flag.
+            sandstorm.update_time(day_rate, wind.speed_current, world.hard_mode);
         }
         night_raining = rain.is_raining();
         // (5) The Slime Rain morning roll (`Main.cs:64925-64949`). W4-f39
@@ -628,22 +675,19 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // crossing (the `Next(50)` after the boss-2 downing), the resolution
     // lands the ore at the 16200 morning boundary (the fn self-gates on
     // the tick's time).
+    // W4-g85 final — the bookend gate census is in `meteor_night_bookend`
+    // (the raise half; the crossing arm is the recorded dead-arm — the
+    // clock advances in `time_phase`, not this tick, ANALYSIS S1-A-10's
+    // follow-up row; the helper keeps the gate faithful + witnessable).
     if !app.world.spawn_meteor {
         let dusk = dusk_pre && app.world.time >= 32400.0;
         if dusk {
-            // `UpdateTime_StartNight`'s roll (`Main.cs:65230`) — the
-            // `UpdateTime` stream (the arm rides the port's weather phase;
-            // the within-stream order deviation is the ANALYSIS note).
-            if tr_core::worldgen::meteor::night_roll(
-                app.rngs.stream(crate::app::RngKey::UpdateTime),
-                app.world.downed_eow,
-            ) {
-                app.world.spawn_meteor = true;
-            }
+            meteor_night_bookend(app);
         }
     } else {
         // `HandleMeteorFall` runs inside `Main.UpdateTime` (`Main.cs:65141`)
-        // — the resolution draws `UpdateTime`.
+        // — the resolution draws `UpdateTime`. LIVE: the boss-death flag
+        // (npcs.rs's orb-boss arm) resolves here on the next morning.
         let now = app.world.time;
         tr_core::worldgen::meteor::resolve(
             &mut app.world,
@@ -660,6 +704,35 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
 /// this documented-false, the d130 compose activates it), x1.5 hardmode
 /// after (the ELSE-if, `:64936-64939`), x5 without a fight-ready player
 /// (`:64941-64944`); the classic requires ready (`(flag3 || expertMode)`
+/// `Main.UpdateTime_StartNight`'s meteor bookend (`Main.cs:65230-65237`),
+/// W4-g85 final — the full gate:
+/// * `:65230`: `Main.rand.Next(50) == 0 && netMode != 1 && downedBoss2` —
+///   the DRAW runs unconditionally (leftmost operand; the boss flag and
+///   the client check only gate the raise). The boss-2 flag is armed by
+///   the orb-boss DEATHS (`NPC.cs:79457`'s shared `downedBoss2`, npcs.rs)
+///   — a 3-orb smash alone never meteors; the summoned EoW/Brain must
+///   die first (its death raises the flag directly, the guaranteed
+///   first) or a later night rolls 1/50.
+/// * `:65234-65237`: `!isThereAWorldSurface` (`Main.cs:2788`:
+///   `worldSurface <= 50.0` — the remix/FTW inversion) CANCELS the raise
+///   immediately after the roll. Boundary-only: a mid-day boss-death
+///   flag survives to the next morning's `HandleMeteorFall`.
+pub(crate) fn meteor_night_bookend(app: &mut App) {
+    let rolled = tr_core::worldgen::meteor::night_roll(
+        app.rngs.stream(crate::app::RngKey::UpdateTime),
+        app.world.downed_eow,
+    );
+    if rolled && !app.is_client() {
+        app.world.spawn_meteor = true;
+    }
+    if app.world.world_surface <= 50.0 {
+        app.world.spawn_meteor = false;
+    }
+}
+
+/// `Main.cs:64932-64947`'s roll shape: `num3 = (int)(450000.00000000006 /
+/// dayRate)` — halved before the first King, x1.5 hardmode after, x5 without
+/// a fight-ready player; the classic requires ready (`(flag3 || expertMode)`
 /// folds to `ready`), and the roll is `Main.rand.Next(num3) == 0` — one
 /// `Next(num3)` draw, consumed only when the gates pass (`&&` order).
 pub(crate) fn slime_rain_roll(
@@ -820,10 +893,13 @@ pub(crate) fn spawn_travel_npc(
     player: Option<&crate::player::Player>,
     chat: &mut crate::chat::ChatMonitor,
 ) {
-    // `:5253-5256`'s gates: the eclipse (not ported), the daylight, and an
-    // invasion that has actually started (`invasionDelay == 0 &&
-    // invasionSize > 0`).
-    if !world.day_time
+    // `:5253-5256`'s gates: the eclipse, the daylight, and an invasion that
+    // has actually started (`invasionDelay == 0 && invasionSize > 0`).
+    // W4-d122 fifth round: `Main.eclipse` IS ported (`World.eclipse`, the
+    // Steampunker/Cyborg shop gates read it) — the spawn refuses under it
+    // like the C# (was a constants-off gap).
+    if world.eclipse
+        || !world.day_time
         || (world.invasion_type > 0 && world.invasion_delay == 0 && world.invasion_size > 0)
     {
         return;
@@ -978,14 +1054,20 @@ pub(crate) fn spawn_travel_npc(
     );
     m.hp = m.max_hp;
     m.home = Some((best_x, best_y));
+    // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt` (`NPC.cs:80769`):
+    // the merchant names himself from `TravelingMerchantNames` — a legacy
+    // profile (`TownNPCProfiles.cs:133-136`), variation 0, so the name draws
+    // ride `WorldGen.genRand` (`World::frame_rng`) and `rng` (the UpdateTime
+    // stream standing in for the SpawnNPC wrapper) is never drawn.
+    crate::npc_names::give_town_unique_data(&mut m, rng, &mut world.frame_rng);
     npcs.push(m);
-    // `:5406`: the `Announcement.HasArrived` broadcast (the literal stands in
-    // for the localization key).
-    crate::chat::broadcast_death_text(
-        chat,
-        "The Travelling Merchant has arrived!",
-        crate::chat::COLOR_COMMAND,
+    // `:5406`: `Announcement.HasArrived` ("{0} has arrived!") with
+    // `GetFullNetName` in `ChatColors.NPCTravel` (`ChatColors.cs:25`).
+    let announcement = crate::lang::text_args(
+        "Announcement.HasArrived",
+        &[crate::npc_names::full_name(npcs.last().unwrap())],
     );
+    crate::chat::broadcast_death_text(chat, &announcement, crate::chat::COLOR_NPC_TRAVEL);
 }
 
 /// `WorldGen.UnspawnTravelNPC` (`WorldGen.cs:5000-5034`): the merchant leaves
@@ -1023,13 +1105,15 @@ pub(crate) fn unspawn_travel_npc(
     if player_near {
         return;
     }
-    npcs.remove(idx);
-    // `:5029`'s `Lang.misc[35]` "has left" broadcast.
-    crate::chat::broadcast_death_text(
-        chat,
-        "The Travelling Merchant has left!",
-        crate::chat::COLOR_COMMAND,
+    // `:5029`: `Lang.misc[35]` ("{0} has departed!", `Lang.cs:487-489` →
+    // `LegacyMisc.35`) with `GetFullNetName`, in `ChatColors.NPCTravel` —
+    // the broadcast runs BEFORE the deactivation (`:5030-5031`).
+    let announcement = crate::lang::text_args(
+        &crate::lang::misc(35),
+        &[crate::npc_names::full_name(&npcs[idx])],
     );
+    npcs.remove(idx);
+    crate::chat::broadcast_death_text(chat, &announcement, crate::chat::COLOR_NPC_TRAVEL);
 }
 
 
@@ -1185,6 +1269,10 @@ mod tests {
     /// call is a no-op and the all-day gate holds.
     #[test]
     fn the_travelling_merchant_spawns_with_his_stock() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = flow_app(None, vec![], vec![]);
         let mut first = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 64.0, 64.0, 1, 0.0);
         first.home = Some((4, 4));
@@ -1212,12 +1300,25 @@ mod tests {
         for (i, id) in stock.iter().enumerate() {
             assert!(!stock[i + 1..].contains(id), "no duplicate {id}");
         }
-        // The arrival announcement.
+        // The arrival announcement — `Announcement.HasArrived` with the
+        // merchant's FULL name ("X the Travelling Merchant", `Game.NPCTitle`)
+        // in `ChatColors.NPCTravel` (`WorldGen.cs:5406`).
+        let merchant = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == crate::npc::NpcKind::TravellingMerchant)
+            .unwrap();
+        assert!(!merchant.given_name.is_empty(), "the arrival names himself");
+        let expected = crate::lang::text_args(
+            "Announcement.HasArrived",
+            &[crate::npc_names::full_name(merchant)],
+        );
+        assert!(expected.ends_with(" the Traveling Merchant has arrived!"));
         assert!(
             app.chat
                 .messages
                 .iter()
-                .any(|m| m.text.contains("Travelling Merchant has arrived")),
+                .any(|m| m.text == expected && m.color == crate::chat::COLOR_NPC_TRAVEL),
             "the Announcement.HasArrived broadcast"
         );
         // A second call is the vanilla's 368-alive early return.
@@ -1232,12 +1333,67 @@ mod tests {
         assert_eq!(app.npcs.len(), count, "no second merchant");
     }
 
+    /// W4-d122 fifth round — `WorldGen.SpawnTravelNPC`'s eclipse gate
+    /// (`WorldGen.cs:5253`'s `Main.eclipse` disjunct): the merchant never
+    /// arrives under a solar eclipse, even with the daylight + the housed
+    /// anchors + the invasion clear. `World.eclipse` is ported (the
+    /// Steampunker/Cyborg shop gates read it), so the spawn refuses it.
+    /// Written, not run (code-only).
+    #[test]
+    fn the_travelling_merchant_refuses_the_eclipse() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut first = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 64.0, 64.0, 1, 0.0);
+        first.home = Some((4, 4));
+        let mut second = crate::npc::Npc::new(crate::npc::NpcKind::Merchant, 80.0, 64.0, 1, 0.0);
+        second.home = Some((5, 4));
+        app.npcs.push(first);
+        app.npcs.push(second);
+        app.world.day_time = true;
+        app.world.eclipse = true;
+        let stock_before = app.world.travel_shop;
+        let mut rng = UnifiedRandom::new(12345);
+        super::spawn_travel_npc(
+            &mut app.world,
+            &mut app.npcs,
+            &mut rng,
+            app.player.as_ref(),
+            &mut app.chat,
+        );
+        assert!(
+            !app.npcs
+                .iter()
+                .any(|n| n.kind == crate::npc::NpcKind::TravellingMerchant),
+            "the eclipse refuses the arrival (`:5253`)"
+        );
+        assert_eq!(app.world.travel_shop, stock_before, "no stock roll under the eclipse");
+        // The same fixture with the eclipse clear: he arrives (the gate is
+        // the ONLY thing that changed).
+        app.world.eclipse = false;
+        super::spawn_travel_npc(
+            &mut app.world,
+            &mut app.npcs,
+            &mut rng,
+            app.player.as_ref(),
+            &mut app.chat,
+        );
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == crate::npc::NpcKind::TravellingMerchant),
+            "the clear-day arrival stands"
+        );
+    }
+
     /// `WorldGen.cs:5253`'s daylight gate and `Main.cs:65012`'s departure:
     /// the night/late-day call arms `UnspawnTravelNPC` (`WorldGen.cs:5000`),
     /// which keeps the merchant while a player stands in his safe-range rect
     /// and drops him once they walk away.
     #[test]
     fn the_travelling_merchant_leaves_at_night_when_clear() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = flow_app(None, vec![], vec![]);
         let mut m = crate::npc::Npc::new(
             crate::npc::NpcKind::TravellingMerchant,
@@ -1247,6 +1403,7 @@ mod tests {
             0.0,
         );
         m.home = Some((4, 4));
+        m.given_name = "Wilbur".into();
         app.npcs.push(m);
         // A player standing on the merchant: the safe-range rect (62 x 39
         // tiles around his centre tile) keeps him.
@@ -1260,11 +1417,14 @@ mod tests {
         }
         super::unspawn_travel_npc(&mut app.npcs, app.player.as_ref(), &mut app.chat);
         assert!(app.npcs.is_empty(), "the merchant left");
+        // `Lang.misc[35]` = "{0} has departed!" (`LegacyMisc.35`) with the
+        // full name, in `ChatColors.NPCTravel` (`WorldGen.cs:5029`).
         assert!(
             app.chat
                 .messages
                 .iter()
-                .any(|m| m.text.contains("Travelling Merchant has left")),
+                .any(|m| m.text == "Wilbur the Traveling Merchant has departed!"
+                    && m.color == crate::chat::COLOR_NPC_TRAVEL),
             "the Lang.misc[35] broadcast"
         );
         // The whole per-tick arm: the night + the far player drops him
@@ -2031,6 +2191,65 @@ mod tests {
                 key.name()
             );
         }
+    }
+
+    /// W4-g85 final: the dusk bookend's full meteor gate (`Main.cs:65230`
+    /// + `:65234-65237`, `meteor_night_bookend`): the smash flag alone
+    /// never meteors — the roll reads `downedBoss2` (armed by the
+    /// orb-boss DEATH, `NPC.cs:79457`), the `Next(50)` draws even when
+    /// the flag is down, and a no-surface world (`worldSurface <= 50`,
+    /// `Main.cs:2788`) cancels the raise. The crossing arm itself is the
+    /// recorded dead arm (ANALYSIS S1-A-10's follow-up row — the clock
+    /// advances in `time_phase` before this tick); the helper keeps the
+    /// gate faithful and directly witnessable.
+    #[test]
+    fn w4_g85_the_meteor_bookend_gates_on_boss_death_and_surface() {
+        // Find the seed whose FIRST UpdateTime draw hits Next(50) == 0.
+        let hit_seed = (0i32..5000)
+            .find(|&s| UnifiedRandom::new(s).next_max(50) == 0)
+            .expect("a first-draw hit seed exists");
+        // (a) The smash flag UP but no boss death: the draw runs, no raise.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.rngs = crate::app::rng::NamedRngs::new(hit_seed);
+        app.world.shadow_orb_smashed = true;
+        app.world.downed_eow = false;
+        let before = app.rngs.stream(crate::app::RngKey::UpdateTime).clone();
+        meteor_night_bookend(&mut app);
+        assert!(
+            !app.world.spawn_meteor,
+            "the smash flag alone never raises spawnMeteor — downedBoss2 gates"
+        );
+        assert_ne!(
+            *app.rngs.stream(crate::app::RngKey::UpdateTime),
+            before,
+            "the Next(50) drew even with the boss flag down (leftmost operand)"
+        );
+        // (b) The boss death armed: the same seed's hit raises the flag.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.rngs = crate::app::rng::NamedRngs::new(hit_seed);
+        app2.world.downed_eow = true;
+        meteor_night_bookend(&mut app2);
+        assert!(app2.world.spawn_meteor, "the 1/50 hit + downedBoss2 raises");
+        // (c) The no-surface cancel (`:65234-65237`): worldSurface <= 50
+        // clears even a hit raise.
+        let mut app3 = flow_app(None, vec![], vec![]);
+        app3.rngs = crate::app::rng::NamedRngs::new(hit_seed);
+        app3.world.downed_eow = true;
+        app3.world.world_surface = 50.0;
+        meteor_night_bookend(&mut app3);
+        assert!(
+            !app3.world.spawn_meteor,
+            "!isThereAWorldSurface cancels the bookend raise"
+        );
+        // (d) The live resolution half: a boss-death flag mid-morning
+        // resolves on the tick (`HandleMeteorFall`, time > 16200) — the
+        // DW-2.2 test pins the stream; here just the flag lifecycle.
+        let mut app4 = flow_app(None, vec![], vec![]);
+        app4.world.day_time = false;
+        app4.world.time = 17000.0;
+        app4.world.spawn_meteor = true;
+        update_world_tick(&mut app4, STEP);
+        assert!(!app4.world.spawn_meteor, "the morning tick resolved the flag");
     }
 
     /// DW-2.3: two same-seed runs of `update_world_tick` produce identical

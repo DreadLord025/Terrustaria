@@ -77,6 +77,62 @@ pub(crate) fn hold_style(kind: u16) -> u8 {
     registry::get(kind).map_or(0, |d| d.hold_style)
 }
 
+/// `Item.noUseGraphic` (`Item.cs:263`, the field; `ResetStats` defaults it
+/// false `:48991`): the held-item DRAW suppression — the use animation still
+/// runs (the arm swings, the shot fires) but no item sprite is drawn in the
+/// hand. `DrawPlayer_27_HeldItem` returns on it (`PlayerDrawLayers.cs:3089`)
+/// and `DrawPlayer_30_BladedGlove` skips on it (`:3760`). The release
+/// lanterns/doves (4682/4702), the boomerangs, the spears, the whips, the
+/// kites, the golf balls, the bombs and the captured critters all carry it —
+/// the projectile IS the visual. W4-f40 DOC-SWEEP: the census is the
+/// `SetDefaults1-5` case groups whose body sets `noUseGraphic = true`
+/// directly OR calls one of the six helpers that set it
+/// (`DefaultToGolfBall` `:35454`, `DefaultToBomb` `:47781`, `DefaultToWhip`
+/// `:47822`, `DefaultToKite` `:47835`, `DefaultToCapturedCritter` `:48010`,
+/// `DefaultToSpear` `:48035`); the range-expression helper calls
+/// (`type - 4367 + 766` etc.) expand to their case-group ids. 391 kinds.
+pub(crate) fn no_use_graphic(kind: u16) -> bool {
+    NO_USE_GRAPHIC.contains(&kind)
+}
+
+/// The `noUseGraphic` census (see [`no_use_graphic`]); sorted, extracted from
+/// `Item.cs`'s `SetDefaults` case groups + the six helper call-sites.
+const NO_USE_GRAPHIC: [u16; 391] = [
+    6, 42, 55, 84, 119, 154, 161, 162, 163, 166, 167, 168,
+    185, 191, 215, 220, 235, 261, 274, 277, 279, 280, 284, 287,
+    383, 384, 385, 386, 387, 388, 389, 390, 406, 422, 423, 437,
+    486, 517, 537, 550, 561, 579, 670, 756, 801, 802, 859, 939,
+    949, 985, 1122, 1130, 1168, 1186, 1189, 1190, 1193, 1196, 1197, 1200,
+    1203, 1204, 1227, 1228, 1231, 1232, 1236, 1237, 1238, 1239, 1240, 1241,
+    1259, 1262, 1273, 1324, 1325, 1338, 1513, 1569, 1571, 1800, 1809, 1825,
+    1829, 1913, 1915, 1916, 1918, 1947, 1992, 1994, 1995, 1996, 1997, 1998,
+    1999, 2000, 2001, 2002, 2003, 2004, 2006, 2007, 2015, 2016, 2017, 2018,
+    2019, 2121, 2122, 2123, 2156, 2157, 2205, 2331, 2332, 2342, 2352, 2353,
+    2360, 2424, 2436, 2437, 2438, 2585, 2586, 2590, 2611, 2673, 2740, 2773,
+    2774, 2795, 2798, 2800, 2882, 2889, 2890, 2891, 2892, 2893, 2894, 2895,
+    2896, 3005, 3012, 3020, 3021, 3022, 3023, 3030, 3053, 3054, 3079, 3080,
+    3094, 3098, 3105, 3115, 3116, 3191, 3192, 3193, 3194, 3196, 3197, 3262,
+    3269, 3278, 3279, 3280, 3281, 3282, 3283, 3284, 3285, 3286, 3287, 3288,
+    3289, 3290, 3291, 3292, 3368, 3378, 3379, 3384, 3389, 3473, 3475, 3477,
+    3540, 3541, 3542, 3543, 3547, 3548, 3563, 3564, 3572, 3623, 3821, 3835,
+    3836, 3854, 3858, 3930, 3989, 4061, 4068, 4069, 4070, 4144, 4242, 4243,
+    4244, 4245, 4246, 4247, 4248, 4249, 4250, 4251, 4252, 4253, 4254, 4255,
+    4257, 4272, 4274, 4334, 4335, 4336, 4337, 4338, 4339, 4340, 4359, 4361,
+    4362, 4363, 4367, 4368, 4369, 4370, 4371, 4373, 4374, 4375, 4379, 4395,
+    4400, 4418, 4419, 4423, 4463, 4464, 4465, 4480, 4482, 4610, 4611, 4612,
+    4613, 4648, 4649, 4650, 4651, 4669, 4670, 4671, 4672, 4674, 4675, 4676,
+    4677, 4678, 4679, 4680, 4681, 4682, 4683, 4684, 4702, 4722, 4743, 4759,
+    4760, 4764, 4765, 4766, 4788, 4789, 4790, 4791, 4792, 4793, 4794, 4795,
+    4796, 4818, 4824, 4825, 4826, 4827, 4828, 4831, 4832, 4833, 4834, 4835,
+    4836, 4837, 4838, 4839, 4840, 4841, 4842, 4843, 4844, 4845, 4847, 4849,
+    4908, 4909, 4911, 4912, 4913, 4914, 4923, 4956, 4961, 4980, 4981, 4986,
+    5011, 5012, 5074, 5130, 5132, 5212, 5285, 5294, 5298, 5300, 5311, 5312,
+    5313, 5350, 5451, 5461, 5473, 5474, 5475, 5476, 5477, 5478, 5479, 5480,
+    5510, 5511, 5519, 5525, 5526, 5542, 5572, 5577, 5594, 5595, 5597, 5600,
+    5640, 5641, 5642, 5662, 5663, 5664, 5665, 5666, 5667, 5669, 5687, 5688,
+    5738, 6148, 6149, 6150, 6151, 6173, 6174,
+];
+
 // S1-P-i43's not_ammo/fits_ammo_slot/can_fill_empty_ammo_slot copies were
 // deduped at gate V4 — the S1-P-i47 canonical block below (the pickup
 // predicates section) carries the same Item.cs:1369-1385 seam.
@@ -141,6 +197,45 @@ impl ItemSlot {
         if self.count > max {
             self.count = max;
         }
+    }
+
+    /// `Item.TryAddStack(itemType, ref amountLeftToAdd)` (`Item.cs:49543-49570`,
+    /// W4-e24): merge `amount` of `kind` into this slot. An air slot takes the
+    /// kind (`SetDefaults`) and absorbs up to `maxStack`; a matching kind
+    /// absorbs up to its remaining room; a mismatched kind or a full stack
+    /// refuses. Returns whether ANY was added and decrements `amount` by the
+    /// absorbed count (the C#'s `ref` out param). The caller drops the
+    /// remainder (`HandleBannerClaimResponse`'s `QuickSpawnItem` overflow).
+    pub(crate) fn try_add_stack(&mut self, kind: u16, amount: &mut u32) -> bool {
+        if *amount == 0 {
+            return false;
+        }
+        let max = registry::max_stack(kind);
+        if self.kind == 0 || self.count == 0 {
+            // `IsAir` → `SetDefaults(itemType)`; the fresh slot's stack is the
+            // min of the request and the kind's cap.
+            *self = ItemSlot {
+                kind,
+                name: registry::name(kind),
+                count: (*amount).min(max),
+                prefix: 0,
+            };
+            *amount -= self.count;
+            return true;
+        }
+        if self.kind != kind {
+            return false;
+        }
+        if self.count >= max {
+            return false;
+        }
+        let room = (max - self.count).min(*amount);
+        if room == 0 {
+            return false;
+        }
+        self.count += room;
+        *amount -= room;
+        true
     }
 }
 
@@ -449,7 +544,9 @@ fn can_item_slot_accept_pickup(
 /// arm (`CanGoIntoAmmoOnPickup`, `:39237-39244`), the ungated same-kind ammo
 /// merge scan (`:39185-39191`), and the Cofveve void-vault scan
 /// (`ItemSpaceForCofveve`, `:39199-39218`). `vault` is `Some` only when
-/// `IsVoidVaultEnabled`.
+/// `IsVoidVaultEnabled`; `vault_favorite` reads the vault slot's own
+/// `favorited` flag for the Cofveve accept probe (W4-g56 — the vault slots
+/// CAN favorite, `canFavoriteAt[32]`; the other callers pass `|_| false`).
 pub(crate) fn item_space(
     inventory: &[ItemSlot; INV],
     ammo: &[ItemSlot; crate::inv::AMMO],
@@ -457,6 +554,7 @@ pub(crate) fn item_space(
     prefix: u16,
     favorite: impl Fn(usize) -> bool,
     vault: Option<&crate::bank::BankStore>,
+    vault_favorite: impl Fn(usize) -> bool,
 ) -> ItemSpaceStatus {
     if is_a_pickup(kind) {
         return ItemSpaceStatus { can_take: true, to_void_vault: false };
@@ -492,11 +590,13 @@ pub(crate) fn item_space(
             return ItemSpaceStatus { can_take: true, to_void_vault: false };
         }
     }
-    // `ItemSpaceForCofveve` (`:39199-39218`).
+    // `ItemSpaceForCofveve` (`:39199-39218`). The accept probe reads the
+    // vault slot's OWN favorited flag (`CanItemSlotAcceptPickup(item[i],
+    // newItem)`, `:39212` — W4-g56: the vault slots CAN favorite).
     if let Some(vault) = vault {
         if crate::bank::can_void_vault_accept(kind) {
-            for slot in vault.iter() {
-                if can_item_slot_accept_pickup(slot, kind, prefix, false) {
+            for (i, slot) in vault.iter().enumerate() {
+                if can_item_slot_accept_pickup(slot, kind, prefix, vault_favorite(i)) {
                     return ItemSpaceStatus { can_take: true, to_void_vault: true };
                 }
             }
@@ -2593,6 +2693,39 @@ mod tests {
         // No paint in the inventory: the arm returns false (`:45135`).
         inv[0] = EMPTY_SLOT;
         assert_eq!(paint_tool_preview(1071, &inv, &equip), None);
+    /// W4-e24 — `Item.TryAddStack` (`Item.cs:49543-49570`): the air slot takes
+    /// the kind up to its cap, a matching kind absorbs its remaining room, a
+    /// mismatched kind or a full stack refuses; the `ref` amount decrements by
+    /// the absorbed count (the banner-claim delivery's cursor merge).
+    #[test]
+    fn w4_e24_try_add_stack_merges_up_to_the_cap() {
+        // The Slime Banner 1683 stacks to 9999 (`itemdata.rs`).
+        let mut air = EMPTY_SLOT;
+        let mut amount = 5u32;
+        assert!(air.try_add_stack(1683, &mut amount));
+        assert_eq!((air.kind, air.count, amount), (1683, 5, 0));
+        // A matching kind absorbs more.
+        amount = 3;
+        assert!(air.try_add_stack(1683, &mut amount));
+        assert_eq!((air.count, amount), (8, 0));
+        // A mismatched kind refuses (the amount is untouched).
+        amount = 2;
+        assert!(!air.try_add_stack(1684, &mut amount));
+        assert_eq!((air.kind, air.count, amount), (1683, 8, 2));
+        // A full stack refuses.
+        air.count = registry::max_stack(1683);
+        amount = 1;
+        assert!(!air.try_add_stack(1683, &mut amount));
+        assert_eq!(amount, 1);
+        // The air slot caps at maxStack (the request overflow stays).
+        let mut big = EMPTY_SLOT;
+        amount = registry::max_stack(1683) + 10;
+        assert!(big.try_add_stack(1683, &mut amount));
+        assert_eq!(big.count, registry::max_stack(1683));
+        assert_eq!(amount, 10);
+        // A zero request is a no-op.
+        amount = 0;
+        assert!(!big.try_add_stack(1683, &mut amount));
     }
 
     /// S1-E-21 wave A — the per-site cue selection: `Item.UseSound` rows
@@ -3491,32 +3624,32 @@ mod s1_p_i47_tests {
     fn item_space_scans_grid_ammo_and_vault() {
         let no_fav = |_: usize| false;
         // An empty grid accepts.
-        let s = item_space(&empty_inv(), &[EMPTY_SLOT; 4], 3, 0, no_fav, None);
+        let s = item_space(&empty_inv(), &[EMPTY_SLOT; 4], 3, 0, no_fav, None, no_fav);
         assert!(s.can_take && !s.to_void_vault);
         // A full grid refuses…
         let full: [ItemSlot; INV] = std::array::from_fn(|_| slot(2, 9999));
-        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, None);
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, None, no_fav);
         assert!(!s.can_take);
         // …but a partial same-kind AMMO stack answers the ungated scan
         // (`:39185-39191`).
         let mut ammo = [EMPTY_SLOT; 4];
         ammo[2] = slot(3, 10);
-        let s = item_space(&full, &ammo, 3, 0, no_fav, None);
+        let s = item_space(&full, &ammo, 3, 0, no_fav, None, no_fav);
         assert!(s.can_take);
         // An empty ammo slot takes an arrow (`CanFillEmptyAmmoSlot`,
         // `Item.cs:1378-1385` — the wooden arrow 40 is not on the refusal
         // list), but not the gel 23 (`:1380`'s explicit id).
-        let s = item_space(&full, &[EMPTY_SLOT; 4], 40, 0, no_fav, None);
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 40, 0, no_fav, None, no_fav);
         assert!(s.can_take, "the arrow claims an empty ammo row");
-        let s = item_space(&full, &[EMPTY_SLOT; 4], 23, 0, no_fav, None);
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 23, 0, no_fav, None, no_fav);
         assert!(!s.can_take, "the gel never claims an empty ammo row");
         // The vault answers with the to-vault flag (`:39192-39195`).
         let vault: crate::bank::BankStore = [EMPTY_SLOT; 40];
-        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, Some(&vault));
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, Some(&vault), no_fav);
         assert!(s.can_take && s.to_void_vault);
         // `IsAPickup` always fits (`:39155-39158`), even with everything full.
         let full_vault: crate::bank::BankStore = std::array::from_fn(|_| slot(2, 9999));
-        let s = item_space(&full, &[slot(2, 9999); 4], 58, 0, no_fav, Some(&full_vault));
+        let s = item_space(&full, &[slot(2, 9999); 4], 58, 0, no_fav, Some(&full_vault), no_fav);
         assert!(s.can_take && !s.to_void_vault);
         // The favorited one-per-inventory guard (`CanItemSlotAcceptPickup`
         // `:39226-39229`): the large gem 1522 is an override-true kind
@@ -3526,16 +3659,41 @@ mod s1_p_i47_tests {
         let mut inv = full;
         inv[0] = slot(1522, 1);
         let fav0 = |i: usize| i == 0;
-        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, fav0, None);
+        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, fav0, None, no_fav);
         assert!(!s.can_take, "the favorited gem stack refuses");
-        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, no_fav, None);
+        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, no_fav, None, no_fav);
         assert!(s.can_take, "unfavorited it merges");
         // A consumable favorite still merges (`OnlyNeedOneInInventory`
         // false for the dirt 2, `Item.cs:1183-1191`).
         let mut inv2 = full;
         inv2[0] = slot(2, 10);
-        let s = item_space(&inv2, &[EMPTY_SLOT; 4], 2, 0, fav0, None);
+        let s = item_space(&inv2, &[EMPTY_SLOT; 4], 2, 0, fav0, None, no_fav);
         assert!(s.can_take, "a consumable favorite still merges");
+    }
+
+    /// W4-g56 — `ItemSpaceForCofveve`'s accept probe reads the vault slot's
+    /// OWN favorited flag (`Player.cs:39212` → `CanItemSlotAcceptPickup`
+    /// `:39226-39229`): a PARTIAL favorited one-per-inventory vault stack
+    /// refuses the merge (the large gem 1522 is an override-true kind),
+    /// the same stack unfavorited accepts it. An EMPTY vault slot always
+    /// accepts regardless of the flag.
+    #[test]
+    fn w4_g56_the_cofveve_probe_reads_the_vault_favorite() {
+        let no_fav = |_: usize| false;
+        let full: [ItemSlot; INV] = std::array::from_fn(|_| slot(2, 9999));
+        let mut vault: crate::bank::BankStore = std::array::from_fn(|_| slot(2, 9999));
+        vault[0] = slot(1522, 1); // a partial favorited gem stack
+        let fav0 = |i: usize| i == 0;
+        let s = item_space(&full, &[slot(2, 9999); 4], 1522, 0, no_fav, Some(&vault), fav0);
+        assert!(!s.can_take, "the favorited vault gem refuses the merge");
+        let s = item_space(&full, &[slot(2, 9999); 4], 1522, 0, no_fav, Some(&vault), no_fav);
+        assert!(s.can_take && s.to_void_vault, "unfavorited it merges");
+        // An empty vault slot accepts even with the flag set (`:39222-39225`).
+        let mut vault2: crate::bank::BankStore = std::array::from_fn(|_| slot(2, 9999));
+        vault2[5] = EMPTY_SLOT;
+        let fav5 = |i: usize| i == 5;
+        let s = item_space(&full, &[slot(2, 9999); 4], 3, 0, no_fav, Some(&vault2), fav5);
+        assert!(s.can_take && s.to_void_vault, "the empty slot takes it");
     }
 
     /// `Item.FitsAmmoSlot`/`CanFillEmptyAmmoSlot` (`Item.cs:1369-1385`):

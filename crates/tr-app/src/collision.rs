@@ -2757,6 +2757,128 @@ pub fn tile_dust_amount(kind: u16, fail: bool, frame_x: i16) -> i32 {
     }
 }
 
+/// `Collision.AnyWallOfTypeOnLine` (`Collision.cs:973-1135`, W4-g89f): the
+/// Bresenham-style two-axis substep walk from (x1,y1) to (x2,y2) testing
+/// `HitSpecificWallSubstep` (`:1137-1144` — `tile.wall == wallId`) at every
+/// visited cell. The endpoint clamps are the C#'s verbatim (`x` into
+/// `[1, maxTilesX-1]`, `y` into `[1, maxTilesY-40]` — NO small-world escape,
+/// unlike `scan_bottom`); the `try/catch`'s out-of-bounds `false` folds to
+/// the `world.tile` Option (a null tile returns false, `:1118-1121`).
+/// The rod-of-discord/harmony use arm reads it for the temple wall 350
+/// (`Player.cs:45498`).
+pub fn any_wall_of_type_on_line(
+    world: &World,
+    x1: i32,
+    y1: i32,
+    x2: i32,
+    y2: i32,
+    wall_id: u16,
+) -> bool {
+    // `:975-1010` — the endpoint clamps.
+    let mut num = x1.clamp(1, world.width - 1);
+    let mut num2 = y1.clamp(1, world.height - 40);
+    let num3 = x2.clamp(1, world.width - 1);
+    let num4 = y2.clamp(1, world.height - 40);
+    // `:1011-1016` — the axis spans; a zero-length line never hits.
+    let num5 = (num - num3).abs() as f32;
+    let num6 = (num2 - num4).abs() as f32;
+    if num5 == 0.0 && num6 == 0.0 {
+        return false;
+    }
+    // `:1017-1037` — the per-axis step accumulators.
+    let (mut num7, mut num8) = (1.0f32, 1.0f32);
+    if num5 == 0.0 || num6 == 0.0 {
+        if num5 == 0.0 {
+            num7 = 0.0;
+        }
+        if num6 == 0.0 {
+            num8 = 0.0;
+        }
+    } else if num5 > num6 {
+        num7 = num5 / num6;
+    } else {
+        num8 = num6 / num5;
+    }
+    let mut num9 = 0.0f32;
+    let mut num10 = 0.0f32;
+    // `:1040-1044` — the starting axis: 2 (x-substeps) when y1 < y2, else 1.
+    let mut num11 = if num2 < num4 { 2 } else { 1 };
+    let mut num12 = num5 as i32;
+    let mut num13 = num6 as i32;
+    let num14 = (num3 - num).signum();
+    let num15 = (num4 - num2).signum();
+    let mut flag = false;
+    let mut flag2 = false;
+    // `:1051-1134` — the do/while walk (the catch → false is the tile Option).
+    loop {
+        match num11 {
+            2 => {
+                // `:1057-1086` — the x-substep batch.
+                num9 += num7;
+                let num17 = num9 as i32;
+                num9 -= num17 as f32;
+                for _ in 0..num17 {
+                    let Some(t) = world.tile(num, num2) else {
+                        return false;
+                    };
+                    if t.wall == wall_id {
+                        return true;
+                    }
+                    if num12 == 0 && num13 == 0 {
+                        flag = true;
+                        break;
+                    }
+                    num += num14;
+                    num12 -= 1;
+                    if num12 == 0 && num13 == 0 && num17 == 1 {
+                        flag2 = true;
+                    }
+                }
+                if num13 != 0 {
+                    num11 = 1;
+                }
+            }
+            1 => {
+                // `:1087-1116` — the y-substep batch.
+                num10 += num8;
+                let num16 = num10 as i32;
+                num10 -= num16 as f32;
+                for _ in 0..num16 {
+                    let Some(t) = world.tile(num, num2) else {
+                        return false;
+                    };
+                    if t.wall == wall_id {
+                        return true;
+                    }
+                    if num12 == 0 && num13 == 0 {
+                        flag = true;
+                        break;
+                    }
+                    num2 += num15;
+                    num13 -= 1;
+                    if num12 == 0 && num13 == 0 && num16 == 1 {
+                        flag2 = true;
+                    }
+                }
+                if num12 != 0 {
+                    num11 = 2;
+                }
+            }
+            _ => {}
+        }
+        // `:1118-1126` — the post-batch cell test.
+        let Some(t) = world.tile(num, num2) else {
+            return false;
+        };
+        if t.wall == wall_id {
+            return true;
+        }
+        if flag | flag2 {
+            return false;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2773,6 +2895,33 @@ mod tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// W4-g89f — `AnyWallOfTypeOnLine` (`Collision.cs:973-1135`): a wall
+    /// on the walked line hits, a wall off it does not; the zero-length
+    /// line never hits (`:1013-1016`); the endpoint clamps keep the walk
+    /// in bounds (the y clamp is `maxTilesY - 40`, no small-world escape).
+    #[test]
+    fn w4_g89f_the_wall_line_walk_hits_only_walls_on_the_line() {
+        let mut w = world(); // 64x64 — the y clamp is [1, 24]
+        // A horizontal line y=10 from x=5 to x=20; wall 350 at (12, 10).
+        let i = w.index(12, 10);
+        w.tiles[i].wall = 350;
+        assert!(any_wall_of_type_on_line(&w, 5, 10, 20, 10, 350), "the wall on the line hits");
+        assert!(!any_wall_of_type_on_line(&w, 5, 11, 20, 11, 350), "a parallel line misses");
+        assert!(!any_wall_of_type_on_line(&w, 5, 10, 20, 10, 87), "a different wall id misses");
+        // The zero-length line never hits even ON the wall cell.
+        assert!(!any_wall_of_type_on_line(&w, 12, 10, 12, 10, 350), "zero-length (`:1013`)");
+        // A diagonal line (5,5)→(20,20) passes (12,12), not (12,10).
+        assert!(!any_wall_of_type_on_line(&w, 5, 5, 20, 20, 350), "the diagonal misses");
+        let i = w.index(12, 12);
+        w.tiles[i].wall = 350;
+        assert!(any_wall_of_type_on_line(&w, 5, 5, 20, 20, 350), "the diagonal hits its own cell");
+        // The y clamp: an endpoint past maxTilesY-40 clamps to 24 — a wall
+        // at (10, 24) is found from (10, 5) aimed at (10, 60).
+        let i = w.index(10, 24);
+        w.tiles[i].wall = 350;
+        assert!(any_wall_of_type_on_line(&w, 10, 5, 10, 60, 350), "the clamped endpoint walks");
     }
 
     /// The head probe's geometry (`Collision.cs:1385-1400`): the 10x12 box

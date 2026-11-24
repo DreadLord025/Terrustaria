@@ -447,18 +447,19 @@ pub(crate) fn step(
         p.wants_sound = Some((2, 17, cx, cy, 0.0, 1.0));
     }
     // `:56504-56555` — Betsy's fireball (686): the localAI[0] one-shot —
-    // when `ai[1] != 2f` the Item20 cue plays (`:56540`, S1-E-21h d76; the
-    // DD2_BetsyFireballShot trackable at `:56541` is the D3 deferred family),
-    // then the alpha fade 25 from ai[0] >= 2 (BEFORE this tick's gravity —
-    // the counter already rode above), the two dust rolls
-    // (`Main.rand.Next(4)` / `Next(3)` + the oldPos[9] gate, `:56519-56531`,
-    // SKIPPED).
+    // when `ai[1] != 2f` the Item20 cue plays (`:56540`, S1-E-21h d76) and
+    // the `DD2_BetsyFireballShot` tracked one-shot rides `wants_tracked`
+    // (`:56541`, W4-d80), then the alpha fade 25 from ai[0] >= 2 (BEFORE
+    // this tick's gravity — the counter already rode above), the two dust
+    // rolls (`Main.rand.Next(4)` / `Next(3)` + the oldPos[9] gate,
+    // `:56519-56531`, SKIPPED).
     if p.kind == BETSY_FIREBALL {
         if p.local_ai[0] == 0.0 {
             p.local_ai[0] = 1.0;
             if p.ai[1] != 2.0 {
                 p.wants_sound = Some((2, 20, p.pos.x, p.pos.y, 0.0, 1.0)); // :56540
             }
+            p.wants_tracked = Some(crate::projectile::ProjTrackedCue::OneShot("DD2_BetsyFireballShot"));
         }
         if p.ai[0] >= 2.0 {
             p.alpha -= 25;

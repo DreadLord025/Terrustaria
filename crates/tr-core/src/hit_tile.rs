@@ -27,7 +27,8 @@ pub struct HitTileObject {
     pub kind: i32,
     pub time_to_live: i32,
     /// `HitTileObject.crackStyle` — rolled by the render layer on Clear
-    /// (the port's `mine_crack_style`); the book keeps the slot free of it.
+    /// (the port's `render::tile_cracks::CrackStyles`, W4-g77); the book
+    /// keeps the slot free of it.
     pub crack_style: i32,
 }
 

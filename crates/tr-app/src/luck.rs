@@ -14,6 +14,12 @@
 //! ladybug kill/nearby/town-death setters ride the fishing-bait, NPC and
 //! death passes. The formula applies them in the original order — the
 //! M2-BUFF-2 pattern.
+//! [`LuckState`]: `usedGalaxyPearl` (no player-file writer), the garden-gnome
+//! flag (tile 567, M4 content) and the equipment bonus (M3-EQUIP). The formula
+//! already applies them in the original order, so those tasks only fill the
+//! inputs — the M2-BUFF-2 pattern. The lantern-night flag IS driven now
+//! (W4-f40): `world_sim/player.rs` snapshots `LanternNight.LanternsUp` beside
+//! the auras/zones each tick (`Player.cs:29146-29149`).
 //!
 //! The value is **never clamped** — the −0.7/1.0 caps are UI-only
 //! (`NormalizedLuck`, `Player.cs:4107-4122`); only `torchLuck` floors at 0
@@ -90,6 +96,13 @@ pub struct LuckState {
     pub used_galaxy_pearl: bool,
     /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — copied per
     /// tick from the S1-F-14 scheduler (`world_sim/player.rs`, W4-e26).
+    /// (`RecalculateLuck` `:29142-29145`). W4-g90 lane 7: the persistence
+    /// owner is `Player.used_galaxy_pearl` (the 5340 use path); the player's
+    /// `update_luck` mirrors it here before every recalculation.
+    pub used_galaxy_pearl: bool,
+    /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — W4-f40 wires it:
+    /// `world_sim/player.rs` snapshots the event flag each tick beside the
+    /// auras/zones (`Player.cs:29146-29149`'s live read).
     pub lantern_night: bool,
     /// `Player.HasGardenGnomeNearby` (`Player.cs:2076`) — copied from the
     /// SceneMetrics tile-567 count (`SceneMetrics.cs:591`,

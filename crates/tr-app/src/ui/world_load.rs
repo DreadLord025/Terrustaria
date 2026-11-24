@@ -343,7 +343,7 @@ pub(crate) fn draw(
     // VAlign 0 (`UIWorldLoad.cs:27-28`), Top = bar_top. The parent is the
     // screen rect (`UIState`'s full-screen root).
     let bar_rect = uistate::resolve(
-        [0.0, 0.0, screen.x, screen.y],
+        super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]), // `UIState.cs:9-11`
         Style::px(0.0),
         Style::px(state.bar_top),
         Style::px(612.0),
@@ -365,7 +365,7 @@ pub(crate) fn draw(
         None => r.text_width(&text, 1.0),
     };
     let header_rect = uistate::resolve(
-        [0.0, 0.0, screen.x, screen.y],
+        super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]), // `UIState.cs:9-11`
         Style::px(0.0),
         Style::px(state.message_top),
         Style::px(header_w),

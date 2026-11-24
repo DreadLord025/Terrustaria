@@ -660,6 +660,9 @@ pub fn layout(screen: Vec2, show_gamepad_hints: bool, context: Context) -> Layou
     // `num3` (`:176`) — -5000 for the sign context, 0 otherwise.
     let sign_offset = if context.editing_sign() { -5000.0 } else { 0.0 };
     let root = [0.0, 0.0, screen.x, screen.y];
+/// and the `+50` shift (`:716-725`).
+pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
+    let root = super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]); // `UIState.cs:9-11`
     // `outerLayer1` == `outerLayer2` — the identical initializer (`:180-195`).
     let layer = uistate::resolve(
         root,

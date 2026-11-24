@@ -271,11 +271,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::GoblinArcher => &[],
         NpcKind::BoundGoblin => &[],
         NpcKind::GoblinTinkerer => &[],
-        // W4-g4 P9 (the W4-d22 reconcile fold) — the skeleton family's
-        // rows (`NPCID.cs:6207-6212`/`:6357-6362`): Skeleton 21 and
-        // UndeadMiner 44 are [20] (the derived 30/375 ride `for_kind`);
-        // the cave bat 49 has no row. The old "no immunity data rows"
-        // fold was wrong.
+        // W4-g4 P9 — the skeleton family's rows (`NPCID.cs:6207-6212`/
+        // `:6357-6362`): Skeleton 21 and UndeadMiner 44 are [20] (the
+        // derived 30/375 ride `for_kind`); the cave bat 49 has no row.
+        // The old "no immunity data rows" fold was wrong.
         NpcKind::Skeleton | NpcKind::UndeadMiner => &[20],
         NpcKind::CaveBat => &[],
         NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],
@@ -378,14 +377,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BrainScrambler => &[31],
         NpcKind::MartianDrone | NpcKind::MartianProbe | NpcKind::MartianTurret => &[20, 31],
         NpcKind::MartianWalker => &[20, 24, 31, 323],
-        // W4-g4 P9 (the W4-d22 reconcile fold) — the DD2 rows
-        // (`NPCID.cs:9183-9390`), per kind: the crystal 548 / bartender
-        // 550 / goblins 552-554 / bombers 555-557 / wyverns 558-560 /
-        // javelineers 561-563 / dark mages 564+565 / wither beasts
-        // 568+569 / drakins 570-571 / kobolds 572-575 / ogres 576-577
-        // are ALL [31] (Confused-immune); Betsy 551 is [24, 31, 323]
-        // (`:9205-9210`); the skeletons 566/567 are [20, 31]
-        // (`:9310-9322`). The lane portal 549 is the
+        // W4-g4 P9 — the DD2 rows (`NPCID.cs:9183-9390`), per kind:
+        // the crystal 548 / bartender 550 / goblins 552-554 / bombers
+        // 555-557 / wyverns 558-560 / javelineers 561-563 / dark mages
+        // 564+565 / wither beasts 568+569 / drakins 570-571 / kobolds
+        // 572-575 / ogres 576-577 are ALL [31] (Confused-immune); Betsy
+        // 551 is [24, 31, 323] (`:9205-9210`); the skeletons 566/567 are
+        // [20, 31] (`:9310-9322`). The lane portal 549 is the
         // `ImmuneToAllBuffsThatAreNotWhips + ImmuneToWhips` mask
         // (`:9190-9196`) — the mask loop is unmodelled, `&[]` stands in
         // (the documented gap) and `ImmuneToWhips` rides `whip_immune`.
@@ -905,6 +903,33 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // { 20, 31 }` (`NPCID.cs:10066-10072`) - Poisoned + On Fire!;
         // the 34/289 rows are d34/d38's above (E8 keep-both).
         NpcKind::WaterBoltMimic => &[20, 31],
+        // W4-c10 — none of 362-365/602/603/608/609 has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+`'s dictionary carries
+        // no waterfowl keys) — the null-row else-branch, no immunity.
+        NpcKind::Duck
+        | NpcKind::Duck2
+        | NpcKind::DuckWhite
+        | NpcKind::DuckWhite2
+        | NpcKind::Seagull
+        | NpcKind::Seagull2
+        | NpcKind::Grebe
+        | NpcKind::Grebe2 => &[],
+        // W4-c10 roster tail — all twelve critters carry the
+        // `SpecificallyImmuneTo = { 31 }` Confused row
+        // (`NPCID.cs:8170-8176` (357), `:8611-8660` (442-448),
+        // `:8857-8885` (484-487)).
+        NpcKind::Worm
+        | NpcKind::GoldBird
+        | NpcKind::GoldBunny
+        | NpcKind::GoldButterfly
+        | NpcKind::GoldFrog
+        | NpcKind::GoldGrasshopper
+        | NpcKind::GoldMouse
+        | NpcKind::GoldWorm
+        | NpcKind::EnchantedNightcrawler
+        | NpcKind::Grubby
+        | NpcKind::Sluggy
+        | NpcKind::Buggy => &[31],
         // W4-c4 (the style-44 swimmers): none of 224/509/581/587 has a
         // `DebuffImmunitySets` row (`NPCID.cs:6075+`'s dictionary carries
         // no such keys) — the null-row else-branch, no immunity.
@@ -1207,16 +1232,23 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Butterfly
         | NpcKind::Worm
         | NpcKind::LightningBug
+        | NpcKind::Snail => &[31],
         // W4-f18 batch 2 — the critters' `SpecificallyImmuneTo` rows:
         // 360-364 each immune to the Confused debuff (31)
         // (`NPCID.cs:8191-8232`).
         NpcKind::GlowingSnail
         | NpcKind::Frog
         | NpcKind::Duck
+        | NpcKind::Duck2
+        | NpcKind::DuckWhite => &[31],
         // W4-f18 batch 3 — the critters' `SpecificallyImmuneTo` rows:
         // 365-367/374/375 each immune to the Confused debuff (31)
         // (`NPCID.cs:8233-8246` / the 374/375 rows).
         NpcKind::DuckWhite2
+        | NpcKind::ScorpionBlack
+        | NpcKind::Scorpion
+        | NpcKind::TruffleWorm
+        | NpcKind::TruffleWormDigger => &[31],
         // W4-f18 batch 4 — 377-380 each immune to the Confused debuff (31)
         // (`NPCID.cs`'s 377/378/379/380 rows); the ArmedZombie 430 has NO
         // `DebuffImmunitySets` row (the null-row else-branch, no immunity).
@@ -1325,6 +1357,21 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Truffle
         | NpcKind::Steampunker
         | NpcKind::Cyborg
+        | NpcKind::CultistArcherBlue
+        | NpcKind::CultistArcherWhite => &[31],
+        NpcKind::ArmedZombie => &[],
+        // W4-f42 — the sandstorm debris + desert family: none has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+`) — the no-immunity
+        // else-branch.
+        NpcKind::Tumbleweed
+        | NpcKind::Vulture
+        | NpcKind::Antlion
+        | NpcKind::Mummy
+        | NpcKind::DarkMummy
+        | NpcKind::BloodMummy
+        | NpcKind::LightMummy
+        | NpcKind::WalkingAntlion
+        | NpcKind::FlyingAntlion => &[],
     }
 }
 
@@ -2150,14 +2197,13 @@ mod tests {
         assert!(!eye.buff_immune[20] && !wandering.buff_immune[20]);
     }
 
-    /// W4-g4 P9 (the W4-d22 reconcile fold) — the fighter-roster
-    /// immunity census fix (`NPCID.Sets.DebuffImmunitySets`,
-    /// `NPCID.cs:6075+`): the old table folded whole families to `&[]`
-    /// where the C# carries rows. The Confused (31) half is the fighter
-    /// lane's: every kind below that is [31]-carrying REJECTS the
-    /// buff-31 add, so the P3/P6 confused arms never fire for it — the
-    /// null-row kinds keep the flip. The [20] rows derive 30/375
-    /// (`NPC.cs:17828-17833`). WRITTEN NOT RUN (code-only mode).
+    /// W4-g4 P9 — the fighter-roster immunity census fix
+    /// (`NPCID.Sets.DebuffImmunitySets`, `NPCID.cs:6075+`): the old
+    /// table folded whole families to `&[]` where the C# carries rows.
+    /// The Confused (31) half is the fighter lane's: every kind below
+    /// that is [31]-carrying REJECTS the buff-31 add, so the P3/P6
+    /// confused arms never fire for it — the null-row kinds keep the
+    /// flip. The [20] rows derive 30/375 (`NPC.cs:17828-17833`).
     #[test]
     fn w4_g4_the_fighter_roster_immunity_rows_match_the_csharp_sets() {
         // The Confused-immune fighters: the add is rejected outright.

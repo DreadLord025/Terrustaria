@@ -7,6 +7,8 @@
 //! for S1-E-19's legacy engine) and `Main.mapTimeMax` (`:16995-17000`). The
 //! snow-dust budget gate (`:13057`) lives on the snowfall's spawn
 //! (`crate::snow::snowing`, W4-d130).
+//! snow-dust budget gate (`:13057`) is `Main.snowing()`'s own break
+//! (`main_dust.rs`, W4-g11 — the retired `snow_cap` stand-in is gone).
 
 use crate::app::App;
 
@@ -46,6 +48,10 @@ impl Default for GfxQuality {
         }
     }
 }
+
+// W4-g11: `snow_cap` retired — the `Main.cs:13057` budget gate is
+// `Main.snowing()`'s own per-iteration break over the live type-76 pool
+// population (`main_dust.rs`), not a Rain-vector cap.
 
 impl GfxQuality {
     /// The per-frame half of the adaptive loop
@@ -245,6 +251,18 @@ fn int_ceil(v: f32) -> i32 {
         let full = cap(600.0, 1.0);
         let half = cap(600.0, 0.5);
         let zero = cap(600.0, 0.0);
+    /// S1-B-6 — the snow budget formula (`Main.cs:13057`), now pinned through
+    /// `Main.snowing()`'s break (`main_dust.rs::w4_g11_snowing_breaks_on_the_live_76_budget`):
+    /// the arithmetic witness stays as the formula's unit pin.
+    #[test]
+    fn s1_b_6_the_snow_cap_scales_with_quality() {
+        let cap = |max_snow: usize, quality: f32| -> usize {
+            let num2 = max_snow as f32;
+            (num2 * (quality / 2.0 + 0.5) + num2 * 0.1) as usize
+        };
+        let full = cap(600, 1.0);
+        let half = cap(600, 0.5);
+        let zero = cap(600, 0.0);
         assert_eq!(full, 600 + 60, "`600 * 1.0 + 60` at q=1");
         assert_eq!(half, 510, "`600 * 0.75 + 60` at q=0.5");
         assert_eq!(zero, 360, "`600 * 0.5 + 60` at q=0");

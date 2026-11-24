@@ -1,7 +1,9 @@
 //! S1-D-3 (B-6a) — the Lunar Pillar machine, `NPC.AI()`'s
 //! `else if (this.aiStyle == 94)` block (`NPC.cs:38968-39383`), ported as
-//! pure fns + a Ctx/Effects seam. Code-only mode: no compiler/tests were
-//! run on this branch; the witness tests below are WRITTEN, NOT RUN.
+//! pure fns + a Ctx/Effects seam. WIRED by W4-c2 (`npc.rs::ai_094_pillar_family`
+//! on the style axis + the `world_sim/npcs.rs` death-pass intercept); the
+//! original B-6a landing was code-only (the witness tests WRITTEN, NOT RUN),
+//! the wiring wave is code-only too.
 //!
 //! # Identity census (verified against the C#, not the audit's guesses)
 //!
@@ -41,10 +43,9 @@
 //! (`world.tower_shield_*` — pillars killable from tick 1), fires the 579
 //! ritual at the player centre EVERY tick (no ai[1] cooldown, no count
 //! gates, no tile scan, no 578 branch) and discards `rng` (`:12605`).
-//! This module is the faithful replacement, landed UNWIRED (the
-//! `npc_ai_style53.rs` precedent): the live stand-in stays byte-identical;
-//! the wiring wave swaps the dispatch arm and adds the death-pass
-//! intercept.
+//! This module is the faithful replacement; W4-c2 retired the stand-in:
+//! the style axis claims 94 (`npc.rs::ai_094_pillar_family`) and the sim's
+//! death sweep runs `check_dead_pillar_intercept` before the retain.
 //!
 //! # Coverage (this module) vs deferral
 //!
@@ -138,7 +139,7 @@
 //!   active() && tileSolid[type]` — platforms COUNT, actuated tiles are
 //!   NOT excluded (unlike `WorldGen.SolidTile`).
 
-#![allow(dead_code)] // UNWIRED — the dispatch swap + death-pass intercept are the wiring wave (B-6a → R72).
+#![allow(dead_code)] // the machine is WIRED (W4-c2); the 629 seams (`bolt_host_pillar`/`bolt_shield_spend`) stay R72's — the live B-6b loop owns the sites.
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{session_candidate, target_closest};
@@ -184,7 +185,8 @@ pub fn pillar_shield(world: &World, kind: NpcKind) -> i32 {
 ///
 /// The sim's death sweep (`world_sim/npcs.rs:3352+`) calls this BEFORE
 /// the retain, the same shape as the crystal's intercept already landed
-/// at `npcs.rs:2094-2106` (`NPC.cs:78087-78095`). UNWIRED here.
+/// at `npcs.rs:2094-2106` (`NPC.cs:78087-78095`). WIRED by W4-c2 at the
+/// death sweep's head (`world_sim/npcs.rs`, before the `hp > 0` retain).
 pub fn check_dead_pillar_intercept(npc: &mut Npc) -> bool {
     if pillar_vanilla_id(npc.kind).is_none() || npc.ai[2] == 1.0 {
         return false;
@@ -277,6 +279,7 @@ impl PillarCtx {
 /// (`NPC.cs:80750`'s `Start` parameter), NOT ai0; the goop spawns with
 /// ai[0..3] = 0, target 255, and `Bottom = ((int)v198.X, (int)v198.Y)`
 /// (`NPC.cs:80770`). The resolver sets the velocity + netUpdate.
+#[derive(Clone, Copy, Debug)]
 pub struct SolarGoopSpawn {
     /// The bottom anchor, already `(int)`-cast as `NewNPC` receives it.
     pub bottom_x: i32,

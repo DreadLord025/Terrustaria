@@ -1558,6 +1558,13 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
     // torch at rest — `happyFunTorchTime && createTile == 4 &&
     // itemAnimation == 0`. The swing (`itemAnimation > 0`) keeps the sprite.
     if s.happy_fun_torch_time && s.held_create_tile == 4 && resting {
+    // W4-f40 DOC-SWEEP — `heldItem.noUseGraphic` (`PlayerDrawLayers.cs:3089`):
+    // the release lanterns/doves, boomerangs, spears, whips, kites, golf
+    // balls, bombs and captured critters draw NO held sprite — the use
+    // animation still runs (the arm swings, the shot fires), the projectile
+    // is the visual. The gate reads the held kind (`s.item_type`, the C#
+    // `heldItem.type`), not the swing phase.
+    if crate::item::no_use_graphic(s.item_type as u16) {
         return Vec::new();
     }
     let dir = if s.facing < 0.0 { -1.0 } else { 1.0 };
@@ -3172,6 +3179,43 @@ mod tests {
         sf.facing = -1.0;
         let torso = &body_layers(&sf, &a)[0];
         assert!(torso.uv[0] > torso.uv[2], "mirrored quad {:?}", torso.uv);
+    }
+
+    /// W4-f40 DOC-SWEEP — `Item.noUseGraphic` (`PlayerDrawLayers.cs:3089`):
+    /// the held-item draw suppresses for the census kinds even mid-swing
+    /// (the use animation runs, the projectile is the visual). The Release
+    /// Lantern 4702 / Release Doves 4682, a boomerang (284), a spear (3094),
+    /// a whip (4680) and a captured critter (2001) all draw nothing; a plain
+    /// sword (24, not in the census) still draws. The gate reads the held
+    /// kind, not the swing phase — a resting `holdStyle != 0` noUseGraphic
+    /// item is suppressed too.
+    #[test]
+    fn w4_f40_no_use_graphic_suppresses_the_held_sprite() {
+        let swinging = |kind: i32| {
+            let mut s = state();
+            s.swing = 1.0;
+            s.swing_anim_ticks = 20.0;
+            s.swing_max_ticks = 20.0;
+            s.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
+            s.item_type = kind;
+            s
+        };
+        for kind in [4702, 4682, 284, 3094, 4680, 2001] {
+            assert!(
+                held_item_layers(&swinging(kind)).is_empty(),
+                "kind {kind} is noUseGraphic — no held sprite mid-swing"
+            );
+        }
+        // The contrast: a plain broadsword (24) draws.
+        assert_eq!(held_item_layers(&swinging(24)).len(), 1, "a drawn sword");
+        // The rest-hold gate: a noUseGraphic item with holdStyle != 0 is
+        // suppressed at rest too (the C# `flag2` hold arm still hits `:3089`).
+        let mut rest = state();
+        rest.swing = 0.0;
+        rest.hold_style = 1;
+        rest.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
+        rest.item_type = 4702;
+        assert!(held_item_layers(&rest).is_empty(), "rest hold suppressed too");
     }
 
     #[test]

@@ -44,10 +44,9 @@
 //! the C# constants verbatim.
 //!
 //! Documented deviations (recorded in docs/ANALYSIS.md "S1-F-9d cases A"):
-//! - The glow TEXTURE binding itself (GlowMask sheet indices) belongs to the
-//!   renderer's glow pass (TILE-DRAW-2); this module ports the glow SOURCE
-//!   RECTS + colours + row gates so that pass has the exact data. Until it
-//!   lands, the rects ride unused (no pixel change).
+//! - The glow TEXTURE binding is WIRED (TILE-DRAW-2, W4-f15): the renderer's
+//!   `render/tile_glow.rs` consumes the record at the C# `DrawSingleTile`
+//!   glow-bind site (`TileDrawing.cs:1343-1403`).
 //! - `case 637`'s `glowTexture = GetTileDrawTexture(...)` (the per-tile
 //!   painted sheet) and `case 184` column 220's `Main.DiscoR/G/B` colour are
 //!   engine state the port does not route here; their rects still port.
@@ -60,6 +59,19 @@
 //!   port passes 255 (the steady full-bright value) until the pulse rides in.
 //! - `Main.martianLight` is 0 outside the Martian Madness event (not
 //!   ported) — [`martian_glow`] takes the value so the event can feed it.
+//!   painted sheet) binds the RAW `Tiles_637` sheet (no paint system on
+//!   glow — recorded deviation); `case 184` column 220's `Main.DiscoR/G/B`
+//!   colour rides the `disco` parameter (`LightParams.disco`).
+//! - `case 564`'s unconditional `addFrY = 0` (`:6112`) is ALREADY applied by
+//!   `drawdata.rs`'s 564 arm — this pass must not apply it twice. The glow
+//!   RECT reads the PRE-clear row (`tileFrame * 36`, C# :6109 reads addFrY
+//!   before :6112 clears it) via the `tile_frame` parameter.
+//! - `Main.mouseTextColor` (cases 656/701/564) rides the `mouse_text_color`
+//!   parameter (`LightParams.mouse_text_color`).
+//! - `Main.martianLight` is the LIVE ±0.015 bounce (W4-g12 doc-sweep:
+//!   `DoUpdate_AnimateTileGlows` ticks it unconditionally,
+//!   `Main.cs:17145`/`:18251-18261` — the old "0 outside the event"
+//!   reading was wrong); [`martian_glow`] takes the live value.
 
 use tr_core::drawdata::TileDrawData;
 use tr_core::tile::Tile;
@@ -70,7 +82,11 @@ use tr_core::world::World;
 /// them null/empty/transparent): the glow-mask sheet index into
 /// `TextureAssets.GlowMask`, the source rectangle on that sheet and the
 /// draw colour as XNA bytes (alpha included — the glow colours use alpha 0
-/// deliberately, XNA's blend ignores it for these additive masks).
+/// deliberately, XNA's premultiplied blend adds them in full).
+/// `mask == 0` is the TILE-SHEET sentinel: the glow texture is the tile's
+/// own sheet, not a GlowMask strip — case 637's `GetTileDrawTexture`
+/// (`:6076`, painted-sheet deviation: the port binds the raw sheet) and
+/// case 711's `TextureAssets.Tile[711]` (`:4937`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GlowData {
     pub mask: u16,
@@ -110,8 +126,8 @@ impl DrawDataCasesA {
 
 /// `TileDrawing._martianGlow` (`TileDrawing.cs:498-499`):
 /// `b = (byte)(100f + 150f * Main.martianLight)`, `Color(b, b, b, 0)`.
-/// The byte cast truncates the float product. `martian_light` is 0 outside
-/// the event (the port's current state).
+/// The byte cast truncates the float product. `martian_light` is the live
+/// per-frame bounce (`Main.cs:18251-18261`, W4-g12 doc-sweep).
 pub fn martian_glow(martian_light: f32) -> [u8; 4] {
     let b = (100.0 + 150.0 * martian_light) as u8;
     [b, b, b, 0]
@@ -283,12 +299,18 @@ pub fn sea_oats_add_fr_y(world: &World, x: i32, y: i32, fy: i32, beach_distance:
 /// switch's final `addFrX/addFrY` (`add_fr_x`/`add_fr_y`, the C# reads the
 /// post-switch locals), the final `width`/`height`/`half_brick_height` and
 /// the shaded cell colour (`color`, cases 637/638 lerp against it).
-/// `mouse_text_color` is `Main.mouseTextColor` (255 steady) and
-/// `martian_light` is `Main.martianLight` (0 outside the event).
+/// `mouse_text_color` is `Main.mouseTextColor` (`LightParams`),
+/// `martian_light` is `Main.martianLight` (the live bounce, W4-g12) and
+/// `disco` is `Main.DiscoR/G/B` (case 184 column 220, `:6149`).
 ///
 /// `case 564`'s `addFrY = 0` (`:6112`) rides the returned `add_fr_y_delta`
 /// (W4-g34): the rect reads the pre-clear `add_fr_y` the first switch left
 /// (`tileFrame * 36`), then the delta zeroes it — the C# order.
+/// `case 564`'s `addFrY = 0` (`:6112`) is intentionally NOT returned — the
+/// first switch's port already folds it (`drawdata.rs` case 564). Its glow
+/// RECT reads the PRE-clear animation row: `pre_clear_add_fr_y` is
+/// `Main.tileFrame[564] * 36` (the shared 217/218 arm value the C# still
+/// holds at `:6109` before `:6112` zeroes it).
 #[allow(clippy::too_many_arguments)]
 pub fn glow_switch(
     kind: u16,
@@ -302,6 +324,8 @@ pub fn glow_switch(
     color: [u8; 4],
     mouse_text_color: u8,
     martian_light: f32,
+    disco: [u8; 3],
+    pre_clear_add_fr_y: i32,
 ) -> DrawDataCasesA {
     let mut out = DrawDataCasesA::default();
     let martian = martian_glow(martian_light);
@@ -354,10 +378,14 @@ pub fn glow_switch(
         // AFTER the rect is built — W4-g34 deviation fix (d63 batch 4 /
         // d64 R15): the old port folded the clear into the first switch and
         // the rect lost the animation row.
+        // (200, 200, 200, 0) * text pulse; the rect Y reads the PRE-clear
+        // addFrY (`tileFrame * 36`) — :6109 runs before :6112's reset, and
+        // the reset itself is already applied by drawdata.rs's 564 arm.
         564 => {
             if fx < 36 {
                 let v = (200.0 * pulse) as u8;
-                out.glow = Some(GlowData { mask: 267, src: rect_anim_y(fx, height), color: [v, v, v, 0] });
+                let src = [fx as i16, (fy + pre_clear_add_fr_y) as i16, width as i16, height as i16];
+                out.glow = Some(GlowData { mask: 267, src, color: [v, v, v, 0] });
             }
             // :6112 — unconditional `addFrY = 0`; the delta zeroes whatever
             // the first switch left (the C# assigns, it does not subtract a
@@ -366,7 +394,8 @@ pub fn glow_switch(
         }
         // `case 184` (:6114-6151): LongMoss columns pick the moss glow,
         // rect uses the RAW frame (no addFr*). Column 220 is the disco
-        // moss — Main.DiscoR/G/B not routed here (deviation), rect ports.
+        // moss — `new Color(Main.DiscoR, Main.DiscoG, Main.DiscoB)`
+        // (:6149), alpha 255 from the byte ctor.
         184 => {
             let src = rect_plain(fx, fy, height);
             let col = match fx {
@@ -375,7 +404,7 @@ pub fn glow_switch(
                 154 => Some(XENON_MOSS_GLOW),
                 176 => Some(ARGON_MOSS_GLOW),
                 198 => Some(VIOLET_MOSS_GLOW),
-                220 => Some([0, 0, 0, 255]),
+                220 => Some([disco[0], disco[1], disco[2], 255]),
                 _ => None,
             };
             if let Some(col) = col {
@@ -648,12 +677,13 @@ pub fn glow_switch(
 
 /// The delegated dispatch arm the renderer calls after `draw_data` +
 /// `apply_world_corrections` (`render/tiles.rs`): case 518's float, the
-/// oasis/sea-oats biome rows and the glow switch. `color` is the cell
-/// light (`Lighting.GetColor`, `TileDrawing.cs:4539`) as XNA bytes — the
-/// 637/638 lerps use it. Returns the glow record for the (future) glow
-/// pass; the frame/top deltas are folded into `data` in place. The glow
-/// switch reads no `Main.tileFrame` rows (all animation rides the first
-/// switch), so no animation-row input is needed here.
+/// oasis/sea-oats biome rows, the FIRST-switch 711 glow and the second
+/// (glow) switch. `color` is the cell light (`Lighting.GetColor`,
+/// `TileDrawing.cs:4539`) as XNA bytes — the 637/638 lerps use it.
+/// `tile_frame` is `Main.tileFrame[kind]` (`:4533`) — case 564's glow rect
+/// reads its PRE-clear `* 36` row. Returns the glow record for the glow
+/// bind (`render/tile_glow.rs`, `TileDrawing.cs:1343-1403`); the frame/top
+/// deltas are folded into `data` in place.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_cases_a(
     data: &mut TileDrawData,
@@ -664,10 +694,31 @@ pub fn apply_cases_a(
     color: [u8; 4],
     mouse_text_color: u8,
     martian_light: f32,
+    disco: [u8; 3],
+    tile_frame: i32,
 ) -> Option<GlowData> {
     let kind = tile.kind;
     let fx = tile.frame_x as i32;
     let fy = tile.frame_y as i32;
+    // `case 711` — RainbowBoulder's FIRST-switch glow
+    // (`TileDrawing.cs:4931-4939`): `glowTexture = Tile[711]`, framed rect,
+    // colour left at the init `Color.Transparent` (`:4538`). Mask 0 is the
+    // tile-sheet sentinel. The transparent tint draws nothing, but the
+    // record keeps the cell out of the black merge (`flag`, `:971`).
+    let first_switch_glow = if kind == 711 {
+        Some(GlowData {
+            mask: 0,
+            src: [
+                (fx + data.add_fr_x as i32) as i16,
+                (fy + data.add_fr_y as i32) as i16,
+                data.width as i16,
+                data.height as i16,
+            ],
+            color: [0, 0, 0, 0],
+        })
+    } else {
+        None
+    };
     match kind {
         518 => {
             data.top = data
@@ -701,9 +752,13 @@ pub fn apply_cases_a(
         color,
         mouse_text_color,
         martian_light,
+        disco,
+        // The shared 217/218 arm value (`TileDrawing.cs:5523-5528`) the
+        // C# still holds when case 564's glow rect reads it (`:6109`).
+        tile_frame * 36,
     );
     pass.apply(data);
-    pass.glow
+    pass.glow.or(first_switch_glow)
 }
 
 #[cfg(test)]
@@ -734,7 +789,7 @@ mod tests {
         let w = World::new("t".into(), 64, 64);
         let t = tile_of(kind, fx, fy);
         let mut d = draw_data(kind, x, y, fx, fy, 0, false);
-        let g = apply_cases_a(&mut d, &w, &t, x, y, [255, 255, 255, 255], 255, 0.0);
+        let g = apply_cases_a(&mut d, &w, &t, x, y, [255, 255, 255, 255], 255, 0.0, [255, 0, 0], 0);
         (d, g)
     }
 
@@ -878,12 +933,12 @@ mod tests {
         let w = World::new("t".into(), 1024, 64);
         let t = tile_of(529, 0, 0);
         let mut d = draw_data(529, 500, 10, 0, 0, 0, false);
-        let g = apply_cases_a(&mut d, &w, &t, 500, 10, [255; 4], 255, 0.0);
+        let g = apply_cases_a(&mut d, &w, &t, 500, 10, [255; 4], 255, 0.0, [255, 0, 0], 0);
         assert_eq!((d.width, d.height, d.top, d.add_fr_y), (16, 32, -14, 0));
         assert_eq!(g, None);
         // A beach cell (x 100) picks row 1: addFrY += 34.
         let mut d = draw_data(529, 100, 10, 0, 0, 0, false);
-        apply_cases_a(&mut d, &w, &t, 100, 10, [255; 4], 255, 0.0);
+        apply_cases_a(&mut d, &w, &t, 100, 10, [255; 4], 255, 0.0, [255, 0, 0], 0);
         assert_eq!(d.add_fr_y, 34);
     }
 
@@ -928,7 +983,7 @@ mod tests {
         let t = tile_of(656, 0, 0);
         let w = World::new("t".into(), 64, 64);
         let mut d = draw_data(656, 0, 0, 0, 0, 0, false);
-        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 128, 0.0).unwrap();
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 128, 0.0, [255, 0, 0], 0).unwrap();
         assert_eq!(g.color, [128, 128, 128, 0]);
         // 564: (200,200,200,0) * pulse below column 36; none at/above 36.
         // W4-g34: the first switch keeps tileFrame*36, the glow rect reads it
@@ -950,7 +1005,7 @@ mod tests {
         t.flags |= FLAG_HALF_BRICK;
         let w = World::new("t".into(), 64, 64);
         let mut d = draw_data(638, 0, 0, 0, 0, 0, false);
-        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [0, 0, 0, 255], 255, 0.0).unwrap();
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [0, 0, 0, 255], 255, 0.0, [255, 0, 0], 0).unwrap();
         // lerp(255, 0, .75) = 63.75 → 63 (byte truncation).
         assert_eq!(g.color, [63, 63, 63, 255]);
         assert_eq!(g.src[3], 16 - 8);
@@ -959,7 +1014,7 @@ mod tests {
         // 20 px tall.
         let t = tile_of(637, 0, 0);
         let mut d = draw_data(637, 0, 0, 0, 0, 0, false);
-        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [0, 0, 0, 255], 255, 0.0).unwrap();
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [0, 0, 0, 255], 255, 0.0, [255, 0, 0], 0).unwrap();
         assert_eq!(g.color, [63, 63, 63, 255]);
         assert_eq!(g.src, [0, 0, 16, 20]);
         assert_eq!(g.mask, 0);
@@ -1149,8 +1204,44 @@ mod tests {
         }
         // Non-moss columns: no glow.
         assert!(dd(184, 0, 0, 88, 0).1.is_none());
-        // The disco column 220 keeps its rect (colour parked).
-        assert_eq!(dd(184, 0, 0, 220, 0).1.unwrap().mask, 127);
+        // The disco column 220 takes Main.DiscoR/G/B (alpha 255).
+        let w = World::new("t".into(), 64, 64);
+        let t = tile_of(184, 220, 0);
+        let mut d = draw_data(184, 0, 0, 220, 0, 0, false);
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0, [12, 34, 56], 0)
+            .unwrap();
+        assert_eq!((g.mask, g.color), (127, [12, 34, 56, 255]));
+    }
+
+    /// TILE-DRAW-2 (W4-f15): 564's glow rect reads the PRE-clear animation
+    /// row — C# :6109 reads `addFrY = tileFrame*36` before :6112 zeroes it.
+    #[test]
+    fn test_TD2_glow_564_rect_reads_pre_clear_row() {
+        let w = World::new("t".into(), 64, 64);
+        let t = tile_of(564, 18, 0);
+        let mut d = draw_data(564, 0, 0, 18, 0, 3, false);
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0, [255, 0, 0], 3)
+            .unwrap();
+        // Sprite: addFrY stays cleared; glow rect Y carries 3 * 36 = 108.
+        assert_eq!(d.add_fr_y, 0);
+        assert_eq!(g.src, [18, 108, 16, 16]);
+        assert_eq!(g.mask, 267);
+    }
+
+    /// TILE-DRAW-2 (W4-f15): 711's FIRST-switch glow record
+    /// (`TileDrawing.cs:4931-4939`): tile-sheet sentinel (mask 0), framed
+    /// rect on the post-first-switch metrics (18 wide on later columns,
+    /// 20 tall), colour stays the init `Color.Transparent` (`:4538`).
+    #[test]
+    fn test_TD2_glow_711_first_switch_record() {
+        let (d, g) = dd(711, 0, 0, 0, 0);
+        assert_eq!(d.width, 16);
+        let g = g.unwrap();
+        assert_eq!((g.mask, g.color), (0, [0, 0, 0, 0]));
+        assert_eq!(g.src, [0, 0, 16, 20]);
+        let (_, g) = dd(711, 0, 0, 18, 36);
+        let g = g.unwrap();
+        assert_eq!(g.src, [18, 36, 18, 20]);
     }
 
     #[test]
@@ -1185,7 +1276,7 @@ mod tests {
             let t = tile_of(kind, 18, 36);
             let base = draw_data(kind, 3, 7, 18, 36, 0, false);
             let mut d = base;
-            let g = apply_cases_a(&mut d, &w, &t, 3, 7, [255; 4], 255, 0.0);
+            let g = apply_cases_a(&mut d, &w, &t, 3, 7, [255; 4], 255, 0.0, [255, 0, 0], 0);
             assert_eq!(d, base, "kind {kind}");
             assert_eq!(g, None, "kind {kind}");
         }

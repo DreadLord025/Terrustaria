@@ -647,6 +647,10 @@ pub(crate) fn draw_npc_map_icons_minimap(
 /// WIRED at the re-folded style-2 branch's `:55645` call (research/84
 /// §10.3 step 2 / research/140 §11.1 — the D18 draw arm landed via the
 /// compose-step-0 re-fold, this overlay pick inserts the icon block).
+/// UNWIRED: the port's `mapStyle == 2` branch draws nothing (the P4 plan's
+/// Uncertainty 7, `app/frame/draw.rs`); the fn rides the same helpers so
+/// the overlay branch can call it when it lands.
+#[allow(dead_code)]
 pub(crate) fn draw_npc_map_icons_overlay(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,

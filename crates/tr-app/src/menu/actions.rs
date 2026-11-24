@@ -27,6 +27,10 @@ pub enum Action {
     /// `Main.MenuUI.SetState(Main.AchievementsMenu)` — the port opens the
     /// `UIAchievementsMenu` overlay over the live menu (M6-ACH-2).
     Achievements,
+    /// menuMode 11 row 4's no-Steam branch (`Main.cs:48949-48957`):
+    /// `UI.ResourcePacks` → `Main.OpenResourcePacksMenu(null)` — the port
+    /// opens `FrontScreen::ResourcePackSelection` (W4-d84 row 5).
+    ResourcePacks,
     /// The in-world keybinds screen's Back/Escape (`IngameFancyUI.Close`,
     /// `IngameFancyUI.cs:162-188`): the menu closes and gameplay resumes —
     /// only reachable on the menu the options window's Keybinds row opened
@@ -196,37 +200,51 @@ impl Menu {
                 //  * the Settings→Volume row plays 11 (`:49741`, the C#
                 //    quirk — a forward open with the close cue);
                 //  * the input screens' Accept rows play NOTHING
-                //    (`OnSubmitServerIP`'s 12 at `:52059` is g23's site and
-                //    rides the submit seam, not the nav; `OnSubmitServerPort`
-                //    `:52047-52054` and the password submits `:51944-51948`/
-                //    `HostAndPlay` `:51972-52018` have no `PlaySound`);
+                //    (`OnSubmitServerPort` `:52047-52054` and the password
+                //    submits `:51944-51948`/`HostAndPlay` `:51972-52018`
+                //    have no `PlaySound`) — EXCEPT the IP Accept, below;
                 //  * the input screens' Back rows play 11 in vanilla
                 //    (`:50862`/`:50957`, `CanceledGivingServerPassword`
                 //    `:51952`, `ExitServerPasswordMenu` `:52020-52031` is
                 //    SILENT) — the port's Back targets are documented
                 //    deviations but the cue follows the vanilla row.
+                // W4-g23 union — the IP Accept row (`:50865-50868`,
+                // `selectedMenu == 9`) calls `OnSubmitServerIP`, whose
+                // `PlaySound(12)` (`:52059`) is g23's tail site. g22 left
+                // this arm cue-less for g23's seam; the union lands it on
+                // THIS queue (one activation drain), the Enter twin queues
+                // the same id in `submit_join_ip`.
+                let ip_submit = self.page == Page::JoinIp && *page == Page::JoinPort;
                 let back = Self::parent(self.page) == Some(*page);
-                let accept = matches!(
-                    (self.page, *page),
-                    (Page::JoinIp, Page::JoinPort) | (Page::JoinPort, Page::JoinPassword)
-                );
+                let accept = self.page == Page::JoinPort && *page == Page::JoinPassword;
+                // W4-g23 union fix — the JoinPassword Back row targets
+                // `Page::JoinIp` (`pages.rs`, the documented plan deviation;
+                // g22's tuple named `JoinPort`, which no row produces). The
+                // cue is `CanceledGivingServerPassword`'s 11 (`:51952`,
+                // `:48592-48596`) either way.
                 let password_back = matches!(
                     (self.page, *page),
                     (Page::JoinIp, Page::Multiplayer)
                         | (Page::JoinPort, Page::JoinIp)
-                        | (Page::JoinPassword, Page::JoinPort)
+                        | (Page::JoinPassword, Page::JoinIp)
                 );
                 // The host-password Back (`ExitServerPasswordMenu`,
                 // `:52020-52031`) plays NOTHING; the port's Back row targets
                 // the multiplayer page (deviation) and stays silent.
                 let host_password_back =
                     self.page == Page::HostPassword && *page == Page::Multiplayer;
-                self.pending_cue = if accept || host_password_back {
+                // W4-g23 union — the two Video-page forward opens that play
+                // the CLOSE cue in vanilla: Parallax (`:50002`) and Effects
+                // (`:50075`), the `:49741` Volume quirk's twins the g22
+                // census diff surfaced (the 75-site replay).
+                let close_quirk = (self.page == Page::Settings && *page == Page::Volume)
+                    || (self.page == Page::Video
+                        && matches!(*page, Page::Parallax | Page::Effects));
+                self.pending_cue = if ip_submit {
+                    Some("Menu_Tick") // sound 12, `:52059`
+                } else if accept || host_password_back {
                     None
-                } else if back
-                    || password_back
-                    || (self.page == Page::Settings && *page == Page::Volume)
-                {
+                } else if back || password_back || close_quirk {
                     Some("Menu_Close") // sound 11
                 } else {
                     Some("Menu_Open") // sound 10
@@ -287,6 +305,9 @@ impl Menu {
                     self.pending_cue = Some("Menu_Open");
                     Action::Achievements
                 }
+                // menuMode 11 row 4 (`Main.cs:48949-48957`): the App opens
+                // the pack-selection screen (W4-d84).
+                Action::ResourcePacks => Action::ResourcePacks,
                 // No row carries it — only the in-game keybinds' Back/Escape
                 // arms produce it. W4-g22 — `IngameFancyUI.Close`'s loud arm
                 // plays 11 (`IngameFancyUI.cs:167`).
@@ -339,6 +360,10 @@ impl Menu {
             // `setKey = -1` (`Main.cs:50559-50564`), or the map twin restoring
             // the `:67190-67195` seeds inline (`:50449-50459`).
             Act::ResetKeys { map } => {
+                // W4-g23 union — BOTH Reset rows play 11 (`:50458` map /
+                // `:50563` gameplay — the 75-site census rows g22's window
+                // ended before); the restore itself draws nothing.
+                self.pending_cue = Some("Menu_Close");
                 if *map {
                     self.map_binds = default_map_binds();
                 } else {
@@ -348,6 +373,30 @@ impl Menu {
                 Action::None
             }
             Act::Hint(message) => {
+                // W4-g23 union — the not-ported rows keep their vanilla
+                // activation cue (the C# plays BEFORE the unported body;
+                // the cue follows the vanilla row even where the port's
+                // action deviates — g22's Back-target principle):
+                //  * Resolution cycle `:50181` and Borderless `:50201` play
+                //    12; Apply `:50225` plays 11 (its `menuMode = 1111` hop
+                //    stays unported with the SetResolution body — the row
+                //    keeps the notice, the cue is the C#'s);
+                //  * ManageControls `:50686` and Steam join `:50726` play 10.
+                // The Fullscreen row (`:50206-50210`) delegates to
+                // `ToggleFullScreen` → `SetDisplayMode` (`:66253-66432`),
+                // which has NO `PlaySound` — it stays cue-less.
+                match (self.page, message.contains("Resolution switching")) {
+                    (Page::Resolution, true) => {
+                        self.pending_cue = Some("Menu_Close"); // `:50225`
+                    }
+                    (Page::Resolution, false) if !message.contains("Fullscreen") => {
+                        self.pending_cue = Some("Menu_Tick"); // `:50181`/`:50201`
+                    }
+                    (Page::Controls | Page::Multiplayer, _) => {
+                        self.pending_cue = Some("Menu_Open"); // `:50686`/`:50726`
+                    }
+                    _ => {}
+                }
                 self.hint = Some((*message).to_string());
                 Action::None
             }
@@ -657,7 +706,12 @@ impl Menu {
     /// `Main.OnSubmitServerIP` (`Main.cs:52056-52062`): store the text, then
     /// `menuMode = 131` and `clrInput()` (the key-state reset, `:20001-20004`).
     /// No validation — the vanilla quirk above lets a blank IP through.
+    /// W4-g23 union: the `PlaySound(12)` (`:52059`) rides g22's `pending_cue`
+    /// (ONE activation drain) — the Enter path (`:50865-50868`) queues here;
+    /// the Accept row queues the same id in `activate`'s `Act::Nav` arm.
     fn submit_join_ip(&mut self) {
+        // `main_sounds_batch3::on_submit_server_ip_cue()` pins the id (12).
+        self.pending_cue = Some("Menu_Tick"); // `:52059`
         self.nav_to(Page::JoinPort);
     }
 

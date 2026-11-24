@@ -12,6 +12,7 @@ use tr_core::{UnifiedRandom, World};
 /// The world state the stock gates read — `SetupShop`'s if-gates collapse
 /// into one struct the caller fills (the port's flags exist for all of
 /// these; the custom-seed gates sit constants-off).
+/// these; the halloween rows sit constants-off — no season system).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShopFlags {
     pub hard_mode: bool,
@@ -22,8 +23,22 @@ pub struct ShopFlags {
     pub downed_moon_lord: bool,
     pub night: bool,
     pub blood_moon: bool,
+    /// W4-f40: `LanternNight.LanternsUp` (`Chest.cs:2309`) — the Party
+    /// Girl's Release-Lantern (4702) row appears only while the lanterns
+    /// are up. Fed from `App.world_events` at the shop-open seam (the
+    /// `from_world` view leaves it false: the flag lives on the event
+    /// state, not the `World`, like the other event gates).
+    pub lanterns_up: bool,
     pub zone_snow: bool,
     pub zone_jungle: bool,
+    /// `Main.player[Main.myPlayer].ZoneGraveyard` — W4-d123's second-half
+    /// shops read it (the Dye Trader's 4662 `Chest.cs:2269`, the Party
+    /// Girl's 4682 `:2305`, the Cyborg's 4409/4392 `:2411-2420`, the
+    /// Painter's 4668/5344 `:2471-2480`, the Pirate's 5926 `:2684`).
+    pub zone_graveyard: bool,
+    /// W4-d123: `Main.player[Main.myPlayer].ZoneBeach` — the Pirate's 1180
+    /// row (`Chest.cs:2688`).
+    pub zone_beach: bool,
     pub downed_boss2: bool,
     pub downed_boss3: bool,
     /// The Stylist shop's gates (`Chest.cs:2704-2783`): the player's life
@@ -45,6 +60,31 @@ pub struct ShopFlags {
     pub downed_mech_2: bool,
     pub downed_mech_3: bool,
     pub downed_martians: bool,
+    /// `NPC.downedPlantBoss` (`Chest.cs:2122`) — the Truffle's Autohammer.
+    pub downed_plant_boss: bool,
+    /// The secret-seed trio the `!Main.remixWorld || (Main.tenthAnniversaryWorld
+    /// && !Main.getGoodWorld)` gates read (`Chest.cs:2130`/`:2137`/`:2207`,
+    /// set by `WorldGen.cs:11118-11121` from the seed options). The port's
+    /// `World.seeds` bits feed them (`SeedFlags::REMIX`/`TENTH_ANNIVERSARY`/
+    /// `FOR_THE_WORTHY`).
+    pub remix_world: bool,
+    pub anniversary_world: bool,
+    pub get_good_world: bool,
+    /// `Main.eclipse` (`Chest.cs:2209`/`:2368-2377`) — the Steampunker's
+    /// solution split and the Cyborg's rocket tiers.
+    pub eclipse: bool,
+    /// `NPC.downedBoss1` (`Chest.cs:2174`) — the Steampunk Boiler's
+    /// all-three-pre-hardmode-bosses gate (the port's `downed_eoc`).
+    pub downed_boss1: bool,
+    /// `NPC.downedGolemBoss` (`Chest.cs:2151`/`:2195`) — the Steampunk
+    /// Wings and the jungle Lihzahrd Furnace.
+    pub downed_golem: bool,
+    /// `Main.player[Main.myPlayer].ZoneGraveyard` (`Chest.cs:2186`).
+    pub zone_graveyard: bool,
+    /// `Main.player[Main.myPlayer].ZoneSkyHeight` (`Chest.cs:2203`).
+    pub zone_sky_height: bool,
+    /// `Main.player[Main.myPlayer].ZoneHallow` (`Chest.cs:2220`).
+    pub zone_hallow: bool,
     /// `Main.LocalPlayer.golferScoreAccumulated` (`Chest.cs:3158`): the
     /// Golfer shop's score gates — the port has no golf system yet, so it
     /// reads 0 until one lands (the gated rows stay hidden).
@@ -55,6 +95,73 @@ pub struct ShopFlags {
     /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
     /// that opens the Princess's arrival without the full roster.
     pub unlocked_princess: bool,
+    /// W4-d123: `NPC.AnyNPCs(229)` (`Chest.cs:2318`) — the Party Girl's
+    /// 3369 row. The port has no town Pirate kind yet (constants-off).
+    pub pirate_present: bool,
+    /// W4-d123: `NPC.downedGolemBoss` (`Chest.cs:2322`) — the Party Girl's
+    /// 3546 row.
+    pub downed_golem: bool,
+    /// W4-d123: `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`) — the
+    /// Party Girl's party block (`Chest.cs:2345-2358`).
+    pub party_is_up: bool,
+    /// W4-d123: `Main.eclipse` — the Cyborg shop's event gates
+    /// (`Chest.cs:2368-2381`).
+    pub eclipse: bool,
+    /// W4-d123: `NPC.downedPlantBoss` — the Witch Doctor's and Painter's
+    /// Plantera gates (`Chest.cs:2630`/`:2475`).
+    pub downed_plant_boss: bool,
+    /// W4-d123: `NPC.AnyNPCs(124)` — the Mechanic's presence (the Painter's
+    /// 5344 row, `Chest.cs:2475`).
+    pub mechanic_present: bool,
+    /// W4-d123: `NPC.AnyNPCs(108)` — the Wizard's presence (the Witch
+    /// Doctor's 2999 row, `Chest.cs:2618`).
+    pub wizard_present: bool,
+    /// W4-d123: `Main.remixWorld` (`World.seeds`' REMIX bit) — the Skeleton
+    /// Merchant's phase-2 split (`Chest.cs:2822-2831`) and the pylon tail's
+    /// remix arms (`:3476-3533`).
+    pub remix_world: bool,
+    /// W4-d123: `Main.time` — the Skeleton Merchant's 3004/8 clock row
+    /// (`Chest.cs:2887`'s `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0`).
+    pub world_time: f64,
+    /// W4-d123: `Main.player[Main.myPlayer].ateArtisanBread`
+    /// (`Player.cs:2048`) — the Skeleton Merchant's 5326 row
+    /// (`Chest.cs:2958`).
+    pub ate_artisan_bread: bool,
+    /// W4-d123: the Decor shop's / pylon tail's zone gates
+    /// (`Chest.cs:2509-2612`/`:3472-3536`) — the player's biome zones the
+    /// second-half shops read (`ZoneCrimson`/`ZoneCorrupt`/`ZoneHallow`/
+    /// `ZoneDesert`/`ZoneDungeon`/`ZoneSkyHeight`/`ZoneGlowshroom`/
+    /// `ZoneUnderworldHeight`).
+    pub zone_crimson: bool,
+    pub zone_corrupt: bool,
+    pub zone_hallow: bool,
+    pub zone_desert: bool,
+    pub zone_dungeon: bool,
+    pub zone_sky_height: bool,
+    pub zone_glowshroom: bool,
+    pub zone_underworld_height: bool,
+    /// W4-d123: `Main.IsItStorming` (`Chest.cs:2589`'s Decor 5251 row).
+    pub storming: bool,
+    /// W4-d123: `Player.ShoppingZone_BelowSurface` (`Player.cs:3835` —
+    /// `Center.ToTileCoordinates().Y > Main.worldSurface`).
+    pub shopping_below_surface: bool,
+    /// W4-d123: `TeleportPylonsSystem.DoesPositionHaveEnoughNPCs(2, …)`
+    /// (`Chest.cs:3472`, `TeleportPylonsSystem.cs:221-238`) — two housed
+    /// town NPCs in the zone-scan rect near the player.
+    pub pylon_enough_npcs: bool,
+    /// W4-d123: the remix purity-pylon depth window (`Chest.cs:3478` —
+    /// `rockLayer < Center.Y/16 < maxTilesY - 350`).
+    pub pylon_remix_depth: bool,
+    /// W4-d123: the remix ocean-pylon depth window (`Chest.cs:3518-3519`
+    /// — the SAME bounds over `position.Y/16`, NOT the center).
+    pub pylon_remix_ocean_depth: bool,
+    /// W4-d123: the remix ocean-pylon edge (`Chest.cs:3517-3519` —
+    /// `position.X/16 < maxTilesX*0.43 || > maxTilesX*0.57`, AND the
+    /// position depth window).
+    pub pylon_remix_edge: bool,
+    /// W4-d123: `position.Y < Main.worldSurface * 16.0` (`Chest.cs:3514`'s
+    /// ocean-pylon surface conjunct).
+    pub beach_above_surface: bool,
     /// M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
     /// `SecretSeed.vampirism.Enabled` write) — the Dryad's and the Bestiary
     /// Girl's vampirism rows (`Chest.cs:1733`/`:3403`).
@@ -88,6 +195,72 @@ pub struct ShopFlags {
     /// `NPC.downedPirates` — the anniversary block's pirate-gated moon-phase
     /// rows (`Chest.cs:3449`).
     pub downed_pirates: bool,
+    /// `Main.player[Main.myPlayer].ateArtisanBread` (`Chest.cs:2958`):
+    /// the Skeleton Merchant's Artisan Loaf row (5326) hides once the
+    /// local player ate one — the permanent unlock (W4-g90).
+    pub ate_artisan_bread: bool,
+    /// `Main.remixWorld` (`Chest.cs:2822-2831`): the Skeleton Merchant's
+    /// phase-2 row swaps the Glowstick (3069) for the Magic Mirror (517).
+    pub remix_world: bool,
+    /// `Main.time` (`Chest.cs:2887`): the Skeleton Merchant's early-hours
+    /// gate — `((time % 60.0) * 60.0) * 6.0 <= 10800.0` (verbatim; the
+    /// first 30 ticks of every minute) sells the Ale (3004) over the Torch.
+    pub time: f64,
+    /// W4-d122 shop 1: `Main.notTheBeesWorld` (`WorldGen.cs:11116`, the
+    /// `SecretSeed.notTheBees` option) — the Merchant's Honey Dispenser
+    /// block 4388 (`Chest.cs:1387`) and the jungle-row anniversary arm
+    /// (`:1417`). Fed from `World.seeds`' `NOT_THE_BEES` bit.
+    pub not_the_bees: bool,
+    /// W4-d122 shop 1: `Main.IsItAHappyWindyDay` (`Main.cs:2903`, the
+    /// sticky windy-day flag the port's `Wind.happy_windy_day` carries) —
+    /// the Pin Wheel 4074 (`Chest.cs:1422`'s `dayTime &&` conjunct).
+    pub happy_windy_day: bool,
+    /// W4-d122 shop 1: `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`)
+    /// — the Party Bundle 5643 (`Chest.cs:1435`).
+    pub party_is_up: bool,
+    /// W4-d122 shop 2: `WorldGen.SavedOreTiers.Silver` (`WorldGen.cs:3289`)
+    /// — the world's rolled silver-tier ore id (9 = Silver, 168 = Tungsten;
+    /// `WorldGen.cs:11290`); the Arms Dealer's bullet split compares it to
+    /// 168 (`Chest.cs:1489`). Fed from `World.ore_tiers.silver`.
+    pub silver_ore_tier: i32,
+    /// W4-d122 shop 3: `Main.player[Main.myPlayer].ZoneGlowshroom`
+    /// (`Chest.cs:1651`) — the Mushroom set 194 under the else-if.
+    pub zone_glowshroom: bool,
+    /// W4-d122 shop 4: `NPC.downedPirates` (`Chest.cs:1766`) — the
+    /// Demolitionist's Holy Hand Grenade 937 triple conjunct. Fed from
+    /// `World.downed_pirates`.
+    pub downed_pirates: bool,
+    /// W4-d122 shop 5: `NPC.downedClown` (`Chest.cs:1849`) — the port
+    /// persists no clown latch, so the caller fills it (false until the
+    /// hardmode blood-moon clown kill lands a bit).
+    pub downed_clown: bool,
+    /// W4-d122 shop 5: `NPC.downedAncientCultist` (`Chest.cs:1868`) —
+    /// fed from `World.downed_ancient_cultist`.
+    pub downed_cultist: bool,
+    /// W4-d122 shop 5: `NPC.downedFrost` (`Chest.cs:1953`) — fed from
+    /// `World.downed_frost`.
+    pub downed_frost: bool,
+    /// W4-d122 shop 5: `NPC.AnyNPCs(441)` (`Chest.cs:1881`) — the Tax
+    /// Collector's presence (the live roster scan, like the Stylist's
+    /// Party Girl gate).
+    pub tax_collector_present: bool,
+    /// W4-d122 shop 8: `NPC.AnyNPCs(369)` (`Chest.cs:2085`) — the Angler's
+    /// presence gates the Mechanic's Rod with the odd moon phase.
+    pub angler_present: bool,
+    /// W4-d122 remainder census, shop 23: `Chest.BestiaryGirl_IsFairyTorchAvailable`
+    /// (`Chest.cs:3544-3559`) — all three Fairy Critter entries (583/584/585)
+    /// discovered (`UnlockState > NotKnownAtAll_0`; the critter provider
+    /// reads the SIGHTS tracker, `CritterUICollectionInfoProvider.cs:15-21`).
+    /// The Fairy Glowstick 4776 head row (`:3266-3269`).
+    pub fairy_torch_available: bool,
+    /// W4-d122 remainder census, shop 23: `NPC.downedTowerSolar`
+    /// (`Chest.cs:3304`) — the Solar Monolith 4677. Fed from
+    /// `World.downed_tower_solar`.
+    pub downed_tower_solar: bool,
+    /// W4-d122 remainder census, shop 24: `Main.player[Main.myPlayer].ZoneDesert`
+    /// (`Chest.cs:3441`) — the anniversary block's Magic Carpet 857. The
+    /// scene metrics feed it at the open seam.
+    pub zone_desert: bool,
 }
 
 impl Default for ShopFlags {
@@ -99,8 +272,11 @@ impl Default for ShopFlags {
             downed_moon_lord: false,
             night: false,
             blood_moon: false,
+            lanterns_up: false,
             zone_snow: false,
             zone_jungle: false,
+            zone_graveyard: false,
+            zone_beach: false,
             downed_boss2: false,
             downed_boss3: false,
             life_max_400: false,
@@ -114,9 +290,44 @@ impl Default for ShopFlags {
             downed_mech_2: false,
             downed_mech_3: false,
             downed_martians: false,
+            downed_plant_boss: false,
+            remix_world: false,
+            anniversary_world: false,
+            get_good_world: false,
+            eclipse: false,
+            downed_boss1: false,
+            downed_golem: false,
+            zone_graveyard: false,
+            zone_sky_height: false,
+            zone_hallow: false,
             golfer_score: 0,
             bestiary_completion: 0.0,
             unlocked_princess: false,
+            pirate_present: false,
+            downed_golem: false,
+            party_is_up: false,
+            eclipse: false,
+            downed_plant_boss: false,
+            mechanic_present: false,
+            wizard_present: false,
+            remix_world: false,
+            world_time: 0.0,
+            ate_artisan_bread: false,
+            zone_crimson: false,
+            zone_corrupt: false,
+            zone_hallow: false,
+            zone_desert: false,
+            zone_dungeon: false,
+            zone_sky_height: false,
+            zone_glowshroom: false,
+            zone_underworld_height: false,
+            storming: false,
+            shopping_below_surface: false,
+            pylon_enough_npcs: false,
+            pylon_remix_depth: false,
+            pylon_remix_ocean_depth: false,
+            pylon_remix_edge: false,
+            beach_above_surface: false,
             vampirism: false,
             infected_seed: false,
             crimson_world: false,
@@ -126,6 +337,24 @@ impl Default for ShopFlags {
             anniversary_not_ftw: false,
             zone_desert: false,
             downed_pirates: false,
+            ate_artisan_bread: false,
+            remix_world: false,
+            time: 0.0,
+            not_the_bees: false,
+            happy_windy_day: false,
+            party_is_up: false,
+            // `SavedOreTiers::new`'s static default (`WorldGen.cs:3303`).
+            silver_ore_tier: 9,
+            zone_glowshroom: false,
+            downed_pirates: false,
+            downed_clown: false,
+            downed_cultist: false,
+            downed_frost: false,
+            tax_collector_present: false,
+            angler_present: false,
+            fairy_torch_available: false,
+            downed_tower_solar: false,
+            zone_desert: false,
         }
     }
 }
@@ -151,6 +380,18 @@ impl ShopFlags {
             night: !world.day_time,
             blood_moon: world.blood_moon,
             crimson_world: world.crimson,
+            // W4-d123: the second-half shops' world-side gates — the
+            // Cyborg's eclipse (`Chest.cs:2368-2381`), the Party Girl's
+            // Golem row (`:2322`) and the Witch Doctor's / Painter's
+            // Plantera gates (`:2630`/`:2475`).
+            eclipse: world.eclipse,
+            downed_golem: world.downed_golem,
+            downed_plant_boss: world.downed_plant_boss,
+            // W4-d123: the Skeleton Merchant's world-side gates — the
+            // remix phase-2 split (`Chest.cs:2822-2831`) and the clock row
+            // (`:2887`).
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            world_time: world.time,
             vampirism: world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
@@ -163,6 +404,35 @@ impl ShopFlags {
             anniversary_not_ftw: world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
                 && !world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
             downed_pirates: world.downed_pirates,
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            time: world.time,
+            downed_plant_boss: world.downed_plant_boss,
+            // `WorldGen.cs:11118-11121`: the three statics ride the seed
+            // options — the port's persisted `World.seeds` bits.
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            anniversary_world: world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            get_good_world: world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            eclipse: world.eclipse,
+            downed_boss1: world.downed_eoc,
+            downed_golem: world.downed_golem,
+            // W4-d122 shop 1: `Main.notTheBeesWorld` rides the seed options
+            // (`WorldGen.cs:11116`) — the port's persisted `World.seeds` bit.
+            not_the_bees: world.seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
+            // W4-d122 shop 2: the rolled silver tier (`WorldGen.cs:11268`/
+            // `:11290`) — the port's persisted `ore_tiers`.
+            silver_ore_tier: world.ore_tiers.silver,
+            // W4-d122 shop 4: `NPC.downedPirates` — the world's latch.
+            downed_pirates: world.downed_pirates,
+            // W4-d122 shop 5: the Clothier's cultist/frost latches.
+            downed_cultist: world.downed_ancient_cultist,
+            downed_frost: world.downed_frost,
+            // W4-d122 remainder census, shop 23: the Solar Pillar latch
+            // (`Chest.cs:3304`) — the world's own bit.
+            downed_tower_solar: world.downed_tower_solar,
             ..Self::default()
         }
     }
@@ -179,6 +449,14 @@ pub struct ShopEntry {
     /// it on the Tavernkeep's rows (`Chest.cs:2972-3149`); it wins over the
     /// instance value in `Item.GetStoreValue` (`Item.cs:49901-49908`).
     pub shop_custom_price: Option<i32>,
+    /// `Item.shopSpecialCurrency` (`CustomCurrencyID.cs:5-11`) — -1 = the
+    /// plain coin purse; the Tavernkeep's rows stamp the Defender Medals
+    /// currency (`Chest.cs:2987`+, registered as currency 0 over the item
+    /// 3817, `CustomCurrencyManager.cs:17`). A non-(-1) row prices RAW —
+    /// `GetItemExpectedPrice`'s early return
+    /// (`Player.cs:35361-35365` → `CustomCurrencySystem.cs:265-270`):
+    /// no discount, no mood, no buyOnce divide.
+    pub shop_special_currency: i32,
     /// `Item.buyOnce` — the vanilla stamps it on rows the player sold into
     /// the shop (`Chest.AddItemToShop`, `Chest.cs:701`); a buyOnce row buys
     /// at the store value ÷ the adjustment ÷ 5 (`Player.cs:35381-35395`).
@@ -214,6 +492,9 @@ pub enum StockWhen {
     /// Machine half of the day/night pair.
     Day,
     BloodMoon,
+    /// W4-f40: `LanternNight.LanternsUp` (`Chest.cs:2309-2312`) — the Party
+    /// Girl's Release Lantern (4702) row.
+    LanternNight,
     DownedBoss3,
     DownedBoss2Or3OrHard,
     ZoneSnow,
@@ -245,15 +526,34 @@ pub enum StockWhen {
     CorruptionWorld,
     /// `ZoneUnderworldHeight` (`:1710`) — constants-off until the scene
     /// metrics' underworld flag reaches the shop call.
+    /// `ZoneUnderworldHeight` (`:1710`) — W4-d123 wired it from the scene
+    /// metrics (`zone_underworld_height`).
     ZoneUnderworld,
-    /// `ZoneGlowshroom` (`:1713`) — constants-off like the underworld.
+    /// `ZoneGlowshroom` (`:1713`) — W4-d123 wired it like the underworld.
     ZoneGlowshroom,
-    /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
-    /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
+    /// The moon-phase pairs (`Chest.cs:1685-1732`'s `moonPhase / 2`
+    /// switches): the row appears when `moon_phase / 2 == n`; pair 3 is
+    /// the C#'s `default:` arm (phases 6/7).
     MoonPhasePair(u8),
+    /// W4-d123: `Main.moonPhase == n` EXACTLY (`Chest.cs:2260`'s Dye Trader
+    /// pair) — unlike [`StockWhen::MoonPhasePair`], phase 1 does not match 0.
+    MoonPhaseIs(u8),
+    /// W4-d123: `Main.player[Main.myPlayer].ZoneGraveyard` (`Chest.cs:2269`
+    /// and the second-half shops' graveyard tails).
+    ZoneGraveyard,
+    /// W4-d123: `Main.player[Main.myPlayer].ZoneBeach` (`Chest.cs:2688`'s
+    /// Pirate 1180 row).
+    ZoneBeach,
+    /// W4-d123: `Main.hardMode && NPC.downedMechBossAny && NPC.AnyNPCs(208)`
+    /// (`Chest.cs:2692`'s Pirate 1337 row) — the three conjuncts.
+    HardModeMechAnyPartyGirl,
     /// The ODD moon phases only (`Chest.cs:2085`'s
-    /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
+    /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row (the
+    /// `AnyNPCs(369)` conjunct rides the `All` combinator on the row).
     MoonPhaseOdd,
+    /// W4-d122 shop 8: `NPC.AnyNPCs(369)` (`Chest.cs:2085`'s first
+    /// conjunct) — the Angler's presence (the live roster scan).
+    AnglerPresent,
     /// `statLifeMax >= 400` (`:2704`) — the Life Hair Dye row.
     LifeMax400,
     /// `statManaMax >= 200` (`:2709`) — the Mana Hair Dye row.
@@ -274,9 +574,135 @@ pub enum StockWhen {
     /// `LanternNight.LanternsUp` (`Chest.cs:2309-2312`) — the Party Girl's
     /// Release Lantern 4702 row.
     LanternsUp,
+    /// W4-d123: `Main.dayTime` (`Chest.cs:2285`'s Party Girl 1449 row) —
+    /// the port's `night` is `!Main.dayTime`, so Day is its negation.
+    Day,
+    /// W4-d123: `NPC.AnyNPCs(229)` (`Chest.cs:2318`'s Party Girl 3369 row)
+    /// — the Pirate's presence; the port has no town Pirate kind yet, so
+    /// the flag stays false (constants-off, recorded in ANALYSIS).
+    PiratePresent,
+    /// W4-d123: `NPC.downedGolemBoss` (`Chest.cs:2322`'s Party Girl 3546
+    /// row) — the world's `downed_golem` latch.
+    DownedGolem,
+    /// W4-d123: `BirthdayParty.PartyIsUp` (`Chest.cs:2345`'s Party Girl
+    /// party block) — the world-events scheduler's genuine/manual party.
+    PartyIsUp,
+    /// W4-d123: `Main.eclipse` (`Chest.cs:2373`'s Cyborg 774 row).
+    Eclipse,
+    /// W4-d123: `Main.hardMode && NPC.downedPlantBoss` (`Chest.cs:2630`'s
+    /// Witch Doctor 1159/1160/1161/1339 block).
+    HardModePlantBoss,
+    /// W4-d123: `Main.hardMode && NPC.downedPlantBoss && ZoneJungle`
+    /// (`Chest.cs:2635`'s Witch Doctor 1167 row — the jungle conjunct
+    /// INSIDE the hardmode+Plantera block).
+    HardModePlantBossJungle,
+    /// W4-d123: `Main.hardMode && ZoneJungle` (`Chest.cs:2641`'s Witch
+    /// Doctor 1171 row).
+    HardModeJungle,
+    /// W4-d123: `Main.hardMode && ZoneJungle && !Main.dayTime &&
+    /// NPC.downedPlantBoss` (`Chest.cs:2644`'s Witch Doctor 1162 row).
+    HardModeJungleNightPlantBoss,
+    /// W4-d123: `ZoneGraveyard && (NPC.downedPlantBoss || NPC.AnyNPCs(124))`
+    /// (`Chest.cs:2471-2480`'s Painter 5344 row — the graveyard conjunct
+    /// folds the `:2475` disjunction; no row reads the disjunction alone).
+    GraveyardPlantBossOrMechanic,
+    /// W4-d123: `NPC.AnyNPCs(108)` (`Chest.cs:2618`'s Witch Doctor 2999
+    /// row) — the Wizard's presence.
+    WizardPresent,
+    /// W4-d123: `Main.moonPhase == 2 && !Main.remixWorld` (`Chest.cs:2822`'s
+    /// Skeleton Merchant 3069 row).
+    MoonPhase2NotRemix,
+    /// W4-d123: `Main.moonPhase == 2 && Main.remixWorld` (`Chest.cs:2827`'s
+    /// Skeleton Merchant 517 row).
+    MoonPhase2Remix,
+    /// W4-d123: `Main.moonPhase % 2 == 0` (`Chest.cs:2857`'s Skeleton
+    /// Merchant 3001 row).
+    MoonPhaseEven,
+    /// W4-d123: `Main.moonPhase % 2 != 0 && Main.hardMode`
+    /// (`Chest.cs:2867`'s Skeleton Merchant 188 row).
+    MoonPhaseOddHardMode,
+    /// W4-d123: `!Main.dayTime || Main.moonPhase == 0` (`Chest.cs:2872`'s
+    /// Skeleton Merchant 3002 arm — the 5377 restock rides the same gate
+    /// PLUS the carried Flower Boots).
+    NightOrMoonPhase0,
+    /// W4-d123: the `:2872` arm PLUS `HasItem(930)` (`Chest.cs:2876`'s
+    /// Skeleton Merchant 5377 restock — the Flower Boots scan).
+    NightOrMoonPhase0HasBoots,
+    /// W4-d123: `Main.dayTime && Main.moonPhase != 0` (`Chest.cs:2882`'s
+    /// Skeleton Merchant 282 else-arm — the exact complement of
+    /// [`StockWhen::NightOrMoonPhase0`]).
+    DayNotMoonPhase0,
+    /// W4-d123: `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0`
+    /// (`Chest.cs:2887`'s Skeleton Merchant 3004 arm; the else stamps 8).
+    TimeEarly,
+    /// W4-d123: the `:2887` else — the SAME row slot stamps the Torch 8.
+    TimeLate,
+    /// W4-d123: `Main.moonPhase == 0 || 1 || 4 || 5` (`Chest.cs:2896`'s
+    /// Skeleton Merchant 3003 arm; the else stamps 40).
+    MoonPhase0145,
+    /// W4-d123: the `:2896` else — the SAME row slot stamps the Rope 40.
+    MoonPhaseNot0145,
+    /// W4-d123: `Main.moonPhase % 4 == n` (`Chest.cs:2905-2920`'s Skeleton
+    /// Merchant 3310/3313/3312/3311 ladder — exactly one of four).
+    MoonPhaseMod4(u8),
+    /// W4-d123: `Main.moonPhase == 1 || Main.moonPhase == 2`
+    /// (`Chest.cs:2921`'s Skeleton Merchant 5640 row).
+    MoonPhase1Or2,
+    /// W4-d123: `Main.moonPhase == 3 || Main.moonPhase == 5`
+    /// (`Chest.cs:2925`'s Skeleton Merchant 5641 row).
+    MoonPhase3Or5,
+    /// W4-d123: `Main.moonPhase == 6 || Main.moonPhase == 7`
+    /// (`Chest.cs:2929`'s Skeleton Merchant 5642 row).
+    MoonPhase6Or7,
+    /// W4-d123: `Main.hardMode && NPC.downedGolemBoss` (`Chest.cs:2966`'s
+    /// Tavernkeep tier-3 gate — the num7 flag).
+    HardModeGolem,
+    /// W4-d123: `Main.hardMode && Main.bloodMoon` (`Chest.cs:2947`'s
+    /// Skeleton Merchant 3258 row — inside the hardmode block).
+    HardModeBloodMoon,
+    /// W4-d123: `!ateArtisanBread && Main.moonPhase >= 3 && Main.moonPhase
+    /// <= 5` (`Chest.cs:2958`'s Skeleton Merchant 5326 row).
+    ArtisanBreadPhases345,
+    /// W4-d123: `!ZoneGraveyard` (`Chest.cs:2509`'s Decor 1490 + moon
+    /// ladder block and `:2576`'s sky block).
+    NotGraveyard,
+    /// W4-d123: `Main.moonPhase <= 1` (`Chest.cs:2513`'s Decor 1481 row —
+    /// INSIDE the !ZoneGraveyard block).
+    NotGraveyardMoon01,
+    /// W4-d123: `Main.moonPhase <= 3` else-arm (`:2518`'s 1482 — phases
+    /// 2..3 inside the block).
+    NotGraveyardMoon23,
+    /// W4-d123: `Main.moonPhase <= 5` else-arm (`:2523`'s 1483 — phases
+    /// 4..5 inside the block).
+    NotGraveyardMoon45,
+    /// W4-d123: the `:2528` else (`:2530`'s 1484 — phases 6..7 inside
+    /// the block).
+    NotGraveyardMoon67,
+    /// W4-d123: `Player.ShoppingZone_Forest` (`Chest.cs:2534`'s Decor
+    /// 5245 row — `!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`,
+    /// `Player.cs:3823-3847`).
+    ShoppingForest,
+    /// W4-d123: `ZoneCrimson` (`Chest.cs:2539`'s Decor 1492 row).
+    ZoneCrimson,
+    /// W4-d123: `ZoneCorrupt` (`Chest.cs:2544`'s Decor 1488 row).
+    ZoneCorrupt,
+    /// W4-d123: `ZoneHallow` (`Chest.cs:2549`'s Decor 1489 row).
+    ZoneHallow,
+    /// W4-d123: `ZoneDesert` (`Chest.cs:2566`'s Decor 1491 row).
+    ZoneDesert,
+    /// W4-d123: `Main.IsItStorming` (`Chest.cs:2589`'s Decor 5251 row).
+    Storming,
+    /// W4-d123: `!ZoneGraveyard && ZoneSkyHeight` (`Chest.cs:2578`'s
+    /// Decor 1485 row).
+    NotGraveyardSky,
+    /// W4-d123: `!ZoneGraveyard && ZoneSkyHeight && Main.hardMode`
+    /// (`Chest.cs:2583`'s Decor 1494 row).
+    NotGraveyardSkyHardMode,
     /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
     DownedMechAll,
-    /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
+    /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`; also the Skeleton
+    /// Merchant's 5540 `Chest.cs:2942` and the Tavernkeep's tier gates
+    /// `:2965`).
     DownedMechAny,
     /// `Main.hardMode && NPC.downedMartians` (`:2777`) — the two rows.
     DownedMartians,
@@ -316,16 +742,160 @@ pub enum StockWhen {
     /// The anniversary block's `hardMode && downedPirates && moonPhase pair`
     /// rows (`Chest.cs:3449-3466`) — the pair index is `moonPhase / 2`.
     AnniversaryPiratePair(u8),
+    /// Exactly one moon phase (`Chest.cs:2812-2856`'s Skeleton Merchant
+    /// per-phase rows).
+    MoonPhaseEq(u8),
+    /// One moon phase in a NON-remix world (`Chest.cs:2822-2826`).
+    MoonPhaseEqNotRemix(u8),
+    /// One moon phase in a remix world (`Chest.cs:2827-2831`).
+    MoonPhaseEqRemix(u8),
+    /// `(!dayTime || moonPhase == 0) && HasItem(930)` (`Chest.cs:2872-2880`).
+    NightOrMoon0HasBoots,
+    /// The odd phases in hardmode (`Chest.cs:2867`).
+    MoonPhaseOddHard,
+    /// `!Main.dayTime || Main.moonPhase == 0` (`Chest.cs:2872`).
+    NightOrMoon0,
+    /// `Main.dayTime && Main.moonPhase != 0` (`Chest.cs:2882`).
+    DayNotMoon0,
+    /// `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0` (`Chest.cs:2887`) —
+    /// verbatim `((time % 60) * 60) * 6`: the first 30 ticks of every
+    /// minute sell the Ale 3004, the rest the Torch 8.
+    EarlyHours,
+    /// The inverse of [`StockWhen::EarlyHours`] (`Chest.cs:2891-2894`).
+    LateHours,
+    /// The inverse of [`StockWhen::MoonPhase0145`] (`Chest.cs:2900-2903`).
+    MoonPhase2367,
+    /// `moonPhase == 1 || 2` / `3 || 5` / `6 || 7` (`Chest.cs:2921-2932`'s
+    /// 5640/5641/5642 trio — the parameter names the row: 0/1/2).
+    MoonPhaseTrio(u8),
+    /// `!ateArtisanBread && moonPhase >= 3 && moonPhase <= 5`
+    /// (`Chest.cs:2958`, W4-g90) — the Artisan Loaf 5326 hides once eaten.
+    ArtisanLoafWindow,
+    /// `NPC.downedMechBossAny` ALONE (`Chest.cs:2113` — the Truffle's
+    /// Mushroom Spear/Hammush pair; no hardmode conjunct in the C#).
+    DownedMechAnyBare,
+    /// `NPC.downedPlantBoss` (`Chest.cs:2122`) — the Autohammer 1551.
+    DownedPlantBoss,
+    /// `!Main.remixWorld || (Main.tenthAnniversaryWorld &&
+    /// !Main.getGoodWorld)` (`Chest.cs:2130`/`:2137`/`:2207`) — the
+    /// Dark Blue Solution 783, the Clentaminator 779 and the whole
+    /// solution/moonlord tail block.
+    NotRemixOrAnniversary,
+    /// `Main.hardMode || !Main.getGoodWorld` (`Chest.cs:2170`) — the
+    /// Blend-O-Matic 995.
+    HardModeOrNotGood,
+    /// `NPC.downedBoss1 && NPC.downedBoss2 && NPC.downedBoss3`
+    /// (`Chest.cs:2174`) — the Steampunk Boiler 2203.
+    DownedAllPreHardBosses,
+    /// `WorldGen.crimson` (`Chest.cs:2178`) — the Flesh Cloning Vaat 2193
+    /// over the Lesion Station 4142 split.
+    CrimsonWorld,
+    /// `Main.player[Main.myPlayer].ZoneSkyHeight` (`Chest.cs:2203`).
+    ZoneSkyHeight,
+    /// `NPC.downedMoonlord` (`Chest.cs:2228`) — the bare Moon Lord flag
+    /// (the solution trio 5392/5393/5394; NOT the hardmode conjunct).
+    DownedMoonlord,
+    /// `NPC.downedMartians` ALONE (`Chest.cs:2378`/`:2430` — the Cyborg's
+    /// cluster rockets and the HiTek/NightVision pair; no hardmode
+    /// conjunct in the C#, unlike the Stylist's `DownedMartians`).
+    DownedMartiansBare,
+    /// `Main.halloween` (`Chest.cs:2240`) — constants-off: the port has no
+    /// season system yet (the Steampunk Goggles 1742 stay hidden).
+    Halloween,
+    /// `Main.moonPhase >= 4` (`Chest.cs:2141`'s first conjunct) — the
+    /// Steampunker's Jetpack-vs-outfit split reads it with HardMode.
+    MoonPhaseAtLeast(u32),
+    /// The conjunction of the child gates — the C#'s `&&` chains
+    /// (`Chest.cs:2141`'s `moonPhase >= 4 && hardMode`, `:2195`'s
+    /// `zoneJungle && downedGolemBoss`). The children evaluate in order.
+    All(&'static [StockWhen]),
+    /// The disjunction of the child gates — the C#'s `||` chains
+    /// (`Chest.cs:2209`'s `eclipse || bloodMoon`).
+    Any(&'static [StockWhen]),
+    /// The negation — the C#'s `else` arms (`Chest.cs:2145-2150`'s outfit
+    /// trio is the NOT of the Jetpack gate; `:2224-2227`'s Green Solution
+    /// is the NOT of both prior branches).
+    Not(&'static StockWhen),
+    /// W4-d122 shop 1: `Main.notTheBeesWorld && !Main.remixWorld`
+    /// (`Chest.cs:1387`) — the Honey Dispenser block 4388.
+    NotTheBeesNotRemix,
+    /// W4-d122 shop 1: `Main.player[Main.myPlayer].ZoneJungle ||
+    /// (Main.tenthAnniversaryWorld && Main.notTheBeesWorld &&
+    /// !Main.remixWorld)` (`Chest.cs:1417`) — the Jungle Rose 33.
+    JungleOrBeesAnniversary,
+    /// W4-d122 shop 1: `Main.dayTime && Main.IsItAHappyWindyDay`
+    /// (`Chest.cs:1422`) — the Pin Wheel 4074.
+    DayHappyWindyDay,
+    /// W4-d122 shop 2: `WorldGen.SavedOreTiers.Silver == 168`
+    /// (`Chest.cs:1489`) — the Tungsten Bullet 4915 over the Silver
+    /// Bullet 278 split inside the blood-moon/hardmode gate.
+    SilverIsTungsten,
+    /// W4-d122 shop 2: `NPC.downedBoss2` ALONE (`Chest.cs:1500`'s first
+    /// conjunct — the Minishark gate reads it with `!dayTime`).
+    DownedBoss2,
+    /// W4-d122 shop 3: `!Main.remixWorld || Main.infectedSeed ||
+    /// (Main.tenthAnniversaryWorld && !Main.getGoodWorld)`
+    /// (`Chest.cs:1598`) — the Purification Powder 66 inside the
+    /// NOT-blood-moon else branch (the infected-seed disjunct is the
+    /// difference from [`StockWhen::NotRemixOrAnniversary`]).
+    NotRemixOrInfectedOrAnniversary,
+    /// W4-d122 shop 4: `(NPC.downedBoss1 || NPC.downedSlimeKing) &&
+    /// !Main.dayTime` (`Chest.cs:1752`) — the Land Mine 5542 BETWEEN the
+    /// Bomb 166 and the Dynamite 167 rows.
+    Boss1OrSlimeKingNight,
+    /// W4-d122 shop 4: `NPC.downedPirates` (`Chest.cs:1766`'s third
+    /// conjunct — the Holy Hand Grenade gate reads it with hardmode +
+    /// Plantera). The port's `World.downed_pirates` feeds it; no other
+    /// shop case reads the flag alone yet.
+    DownedPirates,
+    /// W4-d122 shop 5: `NPC.downedClown` (`Chest.cs:1849`) — the clown
+    /// outfit trio. The port persists no `downedClown` latch (the world
+    /// file has no bit for it), so the flag rides the caller like
+    /// `crimson_world` and stays false until one lands.
+    DownedClown,
+    /// W4-d122 shop 5: `NPC.downedAncientCultist` (`Chest.cs:1868`) —
+    /// the cultist robe day/night split.
+    DownedCultist,
+    /// W4-d122 shop 5: `NPC.downedFrost` (`Chest.cs:1953`) — the Eskimo
+    /// hood day/night split.
+    DownedFrost,
+    /// W4-d122 shop 5: `NPC.AnyNPCs(441)` (`Chest.cs:1881`) — the Tax
+    /// Collector's presence opens the tam-o'-shanter trio.
+    TaxCollectorPresent,
+    /// W4-d122 shop 5: the EXACT moon phase (`Chest.cs:1824`/`:1836`/
+    /// `:1910-1951`'s `moonPhase == n` — NOT the `/2` pairs).
+    MoonPhaseExact(u32),
+    /// W4-d122 shop 5: the `num < N` guard (`Chest.cs:1979`/`:1984`) —
+    /// the row lands only while FEWER than N rows have resolved so far.
+    /// The resolve loop counts the accepted rows and checks this BEFORE
+    /// the child gate (the C# evaluates `num < 38` first).
+    NumBelow(u32, &'static StockWhen),
+    /// W4-d122 remainder census, shop 23: `Chest.BestiaryGirl_IsFairyTorchAvailable`
+    /// (`Chest.cs:3266`/:3544-3559`) — the Fairy Glowstick 4776 HEAD row
+    /// (all three fairy-critter sightings).
+    FairyTorchAvailable,
+    /// W4-d122 remainder census, shop 23: `NPC.downedTowerSolar`
+    /// (`Chest.cs:3304`) — the Solar Monolith 4677.
+    DownedTowerSolar,
+    /// W4-d122 remainder census, shop 24: `Main.tenthAnniversaryWorld`
+    /// ALONE (`Chest.cs:3436`) — the anniversary block's outer gate (the
+    /// 1309/1859/1358 heads; the inner rows AND their own gates onto it).
+    AnniversaryWorld,
 }
 
-/// `Chest.SetupShop`'s stock list for one shop index. The port carries the
-/// Merchant's shop (index 1, `Chest.cs:1371-1483`); the other indexes land
-/// with their NPCs (M4-TOWN umbrella). The order is the vanilla's `num`
-/// order (the UI fills the slots left to right).
+/// `Chest.SetupShop`'s stock list for one shop index. The first half
+/// (cases 1-11/14, `Chest.cs:1371-2442`) is complete with verbatim gates
+/// (W4-d122); the second-half indexes ride their lanes (d123 owns
+/// 12/13/15/16/17, the OOA/medal co-lanes 20/21). The order is the
+/// vanilla's `num` order (the UI fills the slots left to right). The
+/// shared tail — the pylon rows (`:3472-3537`) and the `isAShopItem`
+/// stamp (`:3538-3541`) — rides [`setup_shop_tail`].
 pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> Vec<ShopEntry> {
     let _ = inventory_ids;
-    match shop_index {
-        // The Merchant (`Chest.cs:1371-1483`).
+    let mut rows: Vec<ShopEntry> = match shop_index {
+        // The Merchant (`Chest.cs:1371-1483`, the registry
+        // `NPCInteractions.Shop(17, 1)`, `NPCInteractions.cs:488`): every
+        // row in the C#'s num order, every gate verbatim.
         1 => vec![
             row(88, StockWhen::Always),
             row(87, StockWhen::Always),
@@ -334,12 +904,12 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3509, StockWhen::Always),
             row(3506, StockWhen::Always),
             row(8, StockWhen::Always),
-            // `:1379-1382`'s notTheBees row sits constants-off (the custom
-            // seeds).
+            // `:1387-1391`: `Main.notTheBeesWorld && !Main.remixWorld`.
+            row(4388, StockWhen::NotTheBeesNotRemix),
             row(28, StockWhen::Always),
-            row(188, StockWhen::HardMode),
+            row(188, StockWhen::HardMode), // `:1394-1398`
             row(110, StockWhen::Always),
-            row(189, StockWhen::HardMode),
+            row(189, StockWhen::HardMode), // `:1401-1405`
             row(40, StockWhen::Always),
             row(42, StockWhen::Always),
             row(965, StockWhen::Always),
@@ -354,25 +924,53 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(5643, StockWhen::PartyUp),
             row(346, StockWhen::DownedBoss3),
             row(488, StockWhen::HardMode),
-            row(1786, StockWhen::Always),
-            row(1348, StockWhen::HardMode),
-            row(3198, StockWhen::HardMode),
-            row(4063, StockWhen::DownedBoss2Or3OrHard),
-            row(4673, StockWhen::DownedBoss2Or3OrHard),
+            row(967, StockWhen::ZoneSnow), // `:1412-1416`
+            // `:1417-1421`: `ZoneJungle || (tenthAnniversaryWorld &&
+            // notTheBeesWorld && !remixWorld)`.
+            row(33, StockWhen::JungleOrBeesAnniversary),
+            // `:1422-1425`: `Main.dayTime && Main.IsItAHappyWindyDay`.
+            row(4074, StockWhen::DayHappyWindyDay),
+            row(279, StockWhen::BloodMoon), // `:1426-1430`
+            row(282, StockWhen::Night),     // `:1431-1434`
+            // `:1435-1438`: `BirthdayParty.PartyIsUp`.
+            row(5643, StockWhen::PartyIsUp),
+            row(346, StockWhen::DownedBoss3), // `:1439-1443`
+            row(488, StockWhen::HardMode),    // `:1444-1448`
+            // `:1449-1459`: the 58-slot scan for the Flower Boots 930 →
+            // the 931/1614 pair (BEFORE the 1786 row in the num order).
             row(931, StockWhen::PlayerHasItem(930)),
             row(1614, StockWhen::PlayerHasItem(930)),
-            // `:1480-1482`'s HasItem(3107) → 3108 row lands with the
-            // inventory-scan pass.
+            row(1786, StockWhen::Always),
+            row(1348, StockWhen::HardMode), // `:1462-1466`
+            row(3198, StockWhen::HardMode), // `:1467-1471`
+            // `:1472-1476`: `downedBoss2 || downedBoss3 || hardMode`.
+            row(4063, StockWhen::DownedBoss2Or3OrHard),
+            row(4673, StockWhen::DownedBoss2Or3OrHard),
+            // `:1477-1481`: `HasItem(3107)` — the Combat Wrench 3108.
+            row(3108, StockWhen::PlayerHasItem(3107)),
         ],
-        // The Arms Dealer (`Chest.cs:1484-1567`): the Musket Balls 97, the
-        // Flintlock 95?/98 rows always; the PlayerHasItem rows; the
-        // silver-tier flip (4915/278), the downedBoss2/night Minishark-ish
-        // 47, the night 324, the hardmode 534/1432/2177 and the graveyard
-        // 4703 sit constants-off.
+        // The Arms Dealer (`Chest.cs:1484-1567`, the registry
+        // `NPCInteractions.Shop(19, 2)`, `NPCInteractions.cs:489` —
+        // `NPCID.ArmsDealer = 19`): the silver/tungsten bullet split, the
+        // Minishark night-or-hardmode gate, the graveyard Quad-Barrel and
+        // the hardmode shotgun trio — every gate verbatim.
         2 => vec![
             row(97, StockWhen::Always),
+            // `:1487-1499`: `bloodMoon || hardMode` → `Silver == 168` ?
+            // the Tungsten Bullet 4915 : the Silver Bullet 278.
+            row(4915, ARMS_BULLET_TUNGSTEN),
+            row(278, ARMS_BULLET_SILVER),
+            // `:1500-1504`: `(downedBoss2 && !dayTime) || hardMode`.
+            row(47, ARMS_MINISHARK),
             row(95, StockWhen::Always),
             row(98, StockWhen::Always),
+            // `:1509-1512`: `ZoneGraveyard && NPC.downedBoss3`.
+            row(4703, ARMS_GRAVEYARD_QUAD),
+            row(324, StockWhen::Night),     // `:1513-1517` the Handgun
+            row(534, StockWhen::HardMode),  // `:1518-1522` the Shotgun
+            row(1432, StockWhen::HardMode), // `:1523-1527` the Clockwork Assault Rifle
+            row(2177, StockWhen::HardMode), // `:1528-1532` the Illegal Gun Parts
+            // `:1533-1557`: the five HasItem rows in the C#'s num order.
             row(1261, StockWhen::PlayerHasItem(1258)),
             row(1836, StockWhen::PlayerHasItem(1835)),
             row(3108, StockWhen::PlayerHasItem(3107)),
@@ -380,13 +978,14 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(1785, StockWhen::PlayerHasItem(1784)),
             // W4-f39: `:1558-1566`'s halloween masks (the Guy Fawkes /
             // Dye Trader / Steampunk goggles set — 1736/1737/1738).
+            // `:1558-1566`: `Main.halloween` — the undertaker outfit
+            // (constants-off, no season system).
             row(1736, StockWhen::Halloween),
             row(1737, StockWhen::Halloween),
             row(1738, StockWhen::Halloween),
         ],
-        // The Painter (`Chest.cs:2443-2483`): the paint rollers and the
-        // paintings (1071/1072/1100/1097/1099/1098/1966); the moon-phase
-        // painting row (num6) rides the moon-pair pass.
+            // (W4-d123 Cyborg shop deduped into the W4-d122 superset below —
+            // same rows/order plus the Halloween trio and the CYBORG_* combinators.)
         // The Goblin Tinkerer (`Chest.cs:1989-2003`): the 7 rows, no
         // gating — the Rocket Boots 128, the Ruler 486, the Tinkerer's
         // Workshop 398, the Grappling Hook 84, the Toolbelt 407, the
@@ -400,23 +999,101 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(161, StockWhen::Always),
             row(5324, StockWhen::Always),
         ],
-        15 => vec![
-            row(1071, StockWhen::Always),
-            row(1072, StockWhen::Always),
-            row(1100, StockWhen::Always),
-            row(1097, StockWhen::Always),
-            row(1099, StockWhen::Always),
-            row(1098, StockWhen::Always),
-            row(1966, StockWhen::Always),
-        ],
-        // The Demolitionist (`Chest.cs:1746-1814`): the Grenade 168/the
-        // Bomb 166/the Dynamite 167 always; the Land Mine 5542 rides the
-        // downedBoss1/slimeKing night gate (constants-off); the hardmode
-        // 265/5481/5464/1347 and the holy-arrow 937 rows constants-off.
+        // The Painter's shop (index 15, `Chest.cs:2443-2481`, W4-d123): the
+        // rollers, the 1073-1084 paint loop (`:2451-2455`), the three
+        // paintings + 1966, the hardmode pair 1967/1968 (`:2464-2470`) and
+        // the graveyard arm — 4668 always inside it, 5344 behind
+        // `downedPlantBoss || AnyNPCs(124)` (`:2471-2480`).
+        15 => {
+            let mut rows = vec![
+                row(1071, StockWhen::Always),
+                row(1072, StockWhen::Always),
+                row(1100, StockWhen::Always),
+            ];
+            // `:2451-2455` — `for (num6 = 1073; num6 <= 1084; num6++)`.
+            for id in 1073..=1084u16 {
+                rows.push(row(id, StockWhen::Always));
+            }
+            rows.push(row(1097, StockWhen::Always));
+            rows.push(row(1099, StockWhen::Always));
+            rows.push(row(1098, StockWhen::Always));
+            rows.push(row(1966, StockWhen::Always));
+            // `:2464-2470` — the hardmode pair.
+            rows.push(row(1967, StockWhen::HardMode));
+            rows.push(row(1968, StockWhen::HardMode));
+            // `:2471-2480` — the graveyard arm.
+            rows.push(row(4668, StockWhen::ZoneGraveyard));
+            rows.push(row(5344, StockWhen::GraveyardPlantBossOrMechanic));
+            rows
+        }
+        // The Demolitionist (`Chest.cs:1746-1813`, the registry
+        // `NPCInteractions.Shop(38, 4)`, `NPCInteractions.cs:491` —
+        // `NPCID.Demolitionist = 38`): the night-gated Freeze Bomb BETWEEN
+        // the Bomb and the Dynamite, the always-on Portable Kiln/Mitey
+        // Titey pair, the hardmode rows and the four 58-slot bomb scans.
         4 => vec![
-            row(168, StockWhen::Always),
-            row(166, StockWhen::Always),
-            row(167, StockWhen::Always),
+            row(168, StockWhen::Always), // `:1748` the Grenade
+            row(166, StockWhen::Always), // `:1750` the Bomb
+            // `:1752-1756`: `(downedBoss1 || downedSlimeKing) && !dayTime`
+            // — the Freeze Bomb 5542 (`ItemID.cs:12767`).
+            row(5542, StockWhen::Boss1OrSlimeKingNight),
+            row(167, StockWhen::Always),   // `:1757` the Dynamite
+            row(265, StockWhen::HardMode), // `:1759-1763` the Hellfire Arrow
+            row(5481, StockWhen::Always),  // `:1764` the Portable Kiln
+            row(5464, StockWhen::Always),  // `:1765` the Mitey Titey
+            // `:1766-1770`: `hardMode && downedPlantBoss && downedPirates`
+            // — the Land Mine 937 (`ItemID.cs:3557`).
+            row(937, DEMO_LAND_MINE),
+            row(1347, StockWhen::HardMode), // `:1771-1775` the Explosive Powder
+            // `:1776-1811`: the four 58-slot scans, in the C#'s order —
+            // the Dry 4827, Wet 4824, Lava 4825 and Honey 4826 bombs.
+            row(4827, StockWhen::PlayerHasItem(4827)),
+            row(4824, StockWhen::PlayerHasItem(4824)),
+            row(4825, StockWhen::PlayerHasItem(4825)),
+            row(4826, StockWhen::PlayerHasItem(4826)),
+        ],
+        // The Witch Doctor's shop (index 16, `Chest.cs:2615-2671`,
+        // W4-d123): the Blowgun/Flask head, the Wizard-presence 2999, the
+        // jungle 6147, the night 1158, the hardmode+Plantera imbuing block
+        // (1159/1160/1161 + the jungle 1167 + 1339), the hardmode+jungle
+        // 1171 (+ the night+Plantera 1162), the ten always summon/flask
+        // rows, the two carried-item restocks and the halloween 1791
+        // (constants-off — no season).
+        16 => vec![
+            row(1430, StockWhen::Always),
+            row(986, StockWhen::Always),
+            // `:2618-2621` — `NPC.AnyNPCs(108)` (the Wizard).
+            row(2999, StockWhen::WizardPresent),
+            // `:2622-2625` — `ZoneJungle`.
+            row(6147, StockWhen::ZoneJungle),
+            // `:2626-2629` — `!Main.dayTime`.
+            row(1158, StockWhen::Night),
+            // `:2630-2640` — `Main.hardMode && NPC.downedPlantBoss`.
+            row(1159, StockWhen::HardModePlantBoss),
+            row(1160, StockWhen::HardModePlantBoss),
+            row(1161, StockWhen::HardModePlantBoss),
+            // `:2635-2638` — the jungle conjunct INSIDE that block.
+            row(1167, StockWhen::HardModePlantBossJungle),
+            row(1339, StockWhen::HardModePlantBoss),
+            // `:2641-2648` — `Main.hardMode && ZoneJungle`.
+            row(1171, StockWhen::HardModeJungle),
+            // `:2644-2647` — `!Main.dayTime && NPC.downedPlantBoss` inside it.
+            row(1162, StockWhen::HardModeJungleNightPlantBoss),
+            // `:2649-2658` — the ten always rows.
+            row(909, StockWhen::Always),
+            row(910, StockWhen::Always),
+            row(940, StockWhen::Always),
+            row(941, StockWhen::Always),
+            row(942, StockWhen::Always),
+            row(943, StockWhen::Always),
+            row(944, StockWhen::Always),
+            row(945, StockWhen::Always),
+            row(4922, StockWhen::Always),
+            row(4417, StockWhen::Always),
+            // `:2659-2666` — the carried-item restocks (the C#'s order:
+            // 1835 first, then 1258).
+            row(1836, StockWhen::PlayerHasItem(1835)),
+            row(1261, StockWhen::PlayerHasItem(1258)),
         ],
         // The Witch Doctor (`Chest.cs:2615-2672`): the Blowgun 1430 and the
         // Flask 986 always; the conditionals (the Queen Bee 2999, the
@@ -433,10 +1110,28 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         // 242; the moon-phase hats; the full set in the tail — the v1
         // carries the always-on rows (the moon-phase and the clown rows
         // land with their flags).
+        // The Clothier (`Chest.cs:1814-1988`, the registry
+        // `NPCInteractions.Shop(54, 5)`, `NPCInteractions.cs:492` —
+        // `NPCID.Clothier = 54`): the day/night + moon-phase hats, the
+        // clown/cultist/frost splits, the Tax Collector trio, the
+        // graveyard set, the hardmode moon-phase costumes, the party
+        // block and the two `num < 38` tail guards — every gate verbatim.
         5 => vec![
-            row(254, StockWhen::Always),
-            row(981, StockWhen::Always),
-            row(269, StockWhen::Always),
+            row(254, StockWhen::Always), // `:1815`
+            row(981, StockWhen::Always), // `:1817`
+            // `:1819-1823`: `Main.dayTime` — the Plumber's Hat 242.
+            row(242, StockWhen::Not(&StockWhen::Night)),
+            // `:1824-1835`: `moonPhase == 0` — the Familiar set 245/246,
+            // plus the night-only Wig pair 1288/1289.
+            row(245, StockWhen::MoonPhaseExact(0)),
+            row(246, StockWhen::MoonPhaseExact(0)),
+            row(1288, CLOTHIER_PHASE0_NIGHT),
+            row(1289, CLOTHIER_PHASE0_NIGHT),
+            // `:1836-1842`'s else-if: `moonPhase == 1` — the The Doctor's
+            // set 325/326 (the exact phases make the arms exclusive).
+            row(325, StockWhen::MoonPhaseExact(1)),
+            row(326, StockWhen::MoonPhaseExact(1)),
+            row(269, StockWhen::Always), // `:1843-1848`
             row(270, StockWhen::Always),
             row(271, StockWhen::Always),
             // W4-f39: `:1903-1907`'s halloween mask (1740) and
@@ -466,13 +1161,114 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(63, StockWhen::Always),
             row(745, StockWhen::Always),
             row(27, StockWhen::Always),
+            // `:1849-1857`: `NPC.downedClown` — the clown outfit trio.
+            row(503, StockWhen::DownedClown),
+            row(504, StockWhen::DownedClown),
+            row(505, StockWhen::DownedClown),
+            // `:1858-1867`: `bloodMoon` — the Mime Mask 322, plus the
+            // night-only Gem robe pair 3362/3363.
+            row(322, StockWhen::BloodMoon),
+            row(3362, CLOTHIER_BM_NIGHT),
+            row(3363, CLOTHIER_BM_NIGHT),
+            // `:1868-1880`: `NPC.downedAncientCultist` — the day
+            // (2856/2858) / night (2857/2859) robe split.
+            row(2856, CLOTHIER_CULTIST_DAY),
+            row(2858, CLOTHIER_CULTIST_DAY),
+            row(2857, CLOTHIER_CULTIST_NIGHT),
+            row(2859, CLOTHIER_CULTIST_NIGHT),
+            // `:1881-1886`: `NPC.AnyNPCs(441)` — the Tax Collector's
+            // tam-o'-shanter trio 3242/3243/3244.
+            row(3242, StockWhen::TaxCollectorPresent),
+            row(3243, StockWhen::TaxCollectorPresent),
+            row(3244, StockWhen::TaxCollectorPresent),
+            // `:1887-1897`: the graveyard — the eight funeral rows.
+            row(4685, StockWhen::ZoneGraveyard),
+            row(4686, StockWhen::ZoneGraveyard),
+            row(4704, StockWhen::ZoneGraveyard),
+            row(4705, StockWhen::ZoneGraveyard),
+            row(4706, StockWhen::ZoneGraveyard),
+            row(4707, StockWhen::ZoneGraveyard),
+            row(4708, StockWhen::ZoneGraveyard),
+            row(4709, StockWhen::ZoneGraveyard),
+            // `:1898-1902`: the snow biome — the Eskimo set 1429.
+            row(1429, StockWhen::ZoneSnow),
+            // `:1903-1907`: `Main.halloween` — the Bride of Frankenstein
+            // mask 1740 (constants-off, no season system).
+            row(1740, StockWhen::Halloween),
+            // `:1908-1952`: hardmode — the EXACT-phase costume sets
+            // (2 → 869, 3 → 4994/4997, 4 → 864/865, 5 → 4995/4998,
+            // 6 → 873/874/875, 7 → 4996/4999).
+            row(869, CLOTHIER_HM_PHASE2),
+            row(4994, CLOTHIER_HM_PHASE3),
+            row(4997, CLOTHIER_HM_PHASE3),
+            row(864, CLOTHIER_HM_PHASE4),
+            row(865, CLOTHIER_HM_PHASE4),
+            row(4995, CLOTHIER_HM_PHASE5),
+            row(4998, CLOTHIER_HM_PHASE5),
+            row(873, CLOTHIER_HM_PHASE6),
+            row(874, CLOTHIER_HM_PHASE6),
+            row(875, CLOTHIER_HM_PHASE6),
+            row(4996, CLOTHIER_HM_PHASE7),
+            row(4999, CLOTHIER_HM_PHASE7),
+            // `:1953-1965`: `NPC.downedFrost` — the day (1275) / night
+            // (1276) hood split.
+            row(1275, CLOTHIER_FROST_DAY),
+            row(1276, CLOTHIER_FROST_NIGHT),
+            // `:1966-1970`: `Main.halloween` — the Cat Ears/Bunny Hood
+            // pair (constants-off).
+            row(3246, StockWhen::Halloween),
+            row(3247, StockWhen::Halloween),
+            // `:1971-1978`: `BirthdayParty.PartyIsUp` — the party set.
+            row(3730, StockWhen::PartyIsUp),
+            row(3731, StockWhen::PartyIsUp),
+            row(3733, StockWhen::PartyIsUp),
+            row(3734, StockWhen::PartyIsUp),
+            row(3735, StockWhen::PartyIsUp),
+            // `:1979-1982`: `num < 38 && golferScoreAccumulated >= 2000`
+            // — the Golf Ball painting 4744.
+            row(4744, StockWhen::NumBelow(38, &CLOTHIER_GOLF_TAIL)),
+            row(5308, StockWhen::Always), // `:1983`
+            // `:1984-1987`: `num < 38` — the Pretty Mirror 5630.
+            row(5630, StockWhen::NumBelow(38, &StockWhen::Always)),
+        ],
+        // The Dryad (`Chest.cs:1568-1745`, the registry
+        // `NPCInteractions.Shop(20, 3)`, `NPCInteractions.cs:490` —
+        // `NPCID.Dryad = 20`): the blood-moon evil-seed split, the
+        // NOT-blood-moon powder else branch, the graveyard hardmode seed,
+        // the underworld/glowshroom else-if, the crimson planter split and
+        // the hardmode flower-seed TRIPLETS — every gate verbatim.
+        3 => vec![
+            // `:1569-1595`: `bloodMoon` → the crimson/corruption split;
+            // the powder row (2886/67) rides the remix gate on top, the
+            // seed + mushroom rows (2171/4508 vs 59/4504) are bare.
+            row(2886, DRYAD_BM_CRIMSON_POWDER),
+            row(2171, DRYAD_BM_CRIMSON),
+            row(4508, DRYAD_BM_CRIMSON),
+            row(67, DRYAD_BM_CORRUPT_POWDER),
+            row(59, DRYAD_BM_CORRUPT),
+            row(4504, DRYAD_BM_CORRUPT),
+            // `:1596-1609`'s else branch: the Purification Powder 66 under
+            // `!remix || infectedSeed || (anniversary && !getGood)`, then
+            // the three bare rows.
+            row(66, DRYAD_POWDER_ELSE),
+            row(62, StockWhen::Not(&StockWhen::BloodMoon)),
+            row(63, StockWhen::Not(&StockWhen::BloodMoon)),
+            row(745, StockWhen::Not(&StockWhen::BloodMoon)),
+            // `:1610-1621`: `hardMode && ZoneGraveyard` — the crimson world
+            // sells the Corrupt Seeds 59, the corruption world the Crimson
+            // Seeds 2171 (the C#'s flipped split is verbatim).
+            row(59, DRYAD_GRAVE_CRIMSON),
+            row(2171, DRYAD_GRAVE_CORRUPT),
+            row(27, StockWhen::Always), // `:1622`
             row(5309, StockWhen::Always),
             row(114, StockWhen::Always),
             row(1828, StockWhen::Always),
             row(747, StockWhen::Always),
-            row(746, StockWhen::HardMode),
-            row(369, StockWhen::HardMode),
-            row(4505, StockWhen::HardMode),
+            row(746, StockWhen::HardMode),  // `:1632-1636`
+            row(369, StockWhen::HardMode),  // `:1637-1641`
+            row(4505, StockWhen::HardMode), // `:1642-1646`
+            // `:1647-1654`: the underworld/glowshroom else-if — the
+            // Hellcake 5214 wins over the Mushroom set 194.
             row(5214, StockWhen::ZoneUnderworld),
             row(194, StockWhen::ZoneGlowshroom),
             // W4-f39: `:1655-1661`'s halloween pumpkins (1853/1854), ahead
@@ -486,6 +1282,17 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // flag (W4-g69 doc-sweep).
             row(3217, StockWhen::CorruptionWorld),
             row(3218, StockWhen::CrimsonWorld),
+            row(194, DRYAD_GLOWSHROOM_ELSE),
+            // `:1655-1661`: `Main.halloween` — the Goodie Bag pair
+            // (constants-off, no season system).
+            row(1853, StockWhen::Halloween),
+            row(1854, StockWhen::Halloween),
+            row(3215, StockWhen::Always), // `:1662-1675`'s planter block
+            row(3216, StockWhen::Always),
+            row(3219, StockWhen::Always),
+            // `:1665-1672`: `WorldGen.crimson` → 3218, else 3217.
+            row(3218, StockWhen::CrimsonWorld),
+            row(3217, StockWhen::Not(&StockWhen::CrimsonWorld)),
             row(3220, StockWhen::Always),
             row(3221, StockWhen::Always),
             row(3222, StockWhen::Always),
@@ -498,14 +1305,21 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4041, StockWhen::Always),
             row(4241, StockWhen::Always),
             row(4048, StockWhen::Always),
-            row(4430, StockWhen::MoonPhasePair(0)),
-            row(4431, StockWhen::MoonPhasePair(0)),
-            row(4433, StockWhen::MoonPhasePair(1)),
-            row(4434, StockWhen::MoonPhasePair(1)),
-            row(4436, StockWhen::MoonPhasePair(2)),
-            row(4437, StockWhen::MoonPhasePair(2)),
-            row(4439, StockWhen::MoonPhasePair(3)),
-            row(4440, StockWhen::MoonPhasePair(3)),
+            // `:1685-1710`: hardmode — the flower-seed TRIPLETS by
+            // `moonPhase / 2` (the third row is the hardmode-only one).
+            row(4430, DRYAD_FLOWER_PAIR0),
+            row(4431, DRYAD_FLOWER_PAIR0),
+            row(4432, DRYAD_FLOWER_TRIPLE0),
+            row(4433, DRYAD_FLOWER_PAIR1),
+            row(4434, DRYAD_FLOWER_PAIR1),
+            row(4435, DRYAD_FLOWER_TRIPLE1),
+            row(4436, DRYAD_FLOWER_PAIR2),
+            row(4437, DRYAD_FLOWER_PAIR2),
+            row(4438, DRYAD_FLOWER_TRIPLE2),
+            // The `default:` arm — phases 6/7 (pair 3).
+            row(4439, DRYAD_FLOWER_PAIR3),
+            row(4440, DRYAD_FLOWER_PAIR3),
+            row(4441, DRYAD_FLOWER_TRIPLE3),
             // M5-SEED-2: `:1733-1742`'s vampirism tail — the case's LAST rows,
             // after the `moonPhase / 2` flower-seed pairs: `!Main.hardMode &&
             // Main.vampireSeed && Main.infectedSeed` adds the Torch (8) and
@@ -514,11 +1328,27 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4386, StockWhen::VampirismInfectedCrimson),
             row(4385, StockWhen::VampirismInfectedCorrupt),
         ],
+        // The Pirate's shop (index 17, `Chest.cs:2672-2697`, W4-d123): the
+        // six always rows (the vanity set + the Bunny Cannon 2434), the
+        // graveyard 5926 (`:2684`), the beach 1180 (`:2688`) and the
+        // hardmode+mech+Party-Girl 1337 (`:2692`).
+        17 => vec![
+            row(928, StockWhen::Always),
+            row(929, StockWhen::Always),
+            row(876, StockWhen::Always),
+            row(877, StockWhen::Always),
+            row(878, StockWhen::Always),
+            row(2434, StockWhen::Always),
+            row(5926, StockWhen::ZoneGraveyard),
+            row(1180, StockWhen::ZoneBeach),
+            row(1337, StockWhen::HardModeMechAnyPartyGirl),
+        ],
         // The Stylist's shop (index 18, `Chest.cs:2698-2790`): the
         // hair-dye family — the two always-on rows, the life/mana/money
         // gates, the moon-phase parity, the hardmode + Party Girl +
-        // mech/martian rows; the multiplayer team dye (1982) and the
-        // graveyard mirror (5577) sit constants-off.
+        // mech/martian rows, the always 5104 tail and the graveyard
+        // mirror 5577 (`:2785-2788`); only the multiplayer team dye
+        // (1982, `:2752`'s `team != 0 && netMode == 1`) sits constants-off.
         18 => vec![
             row(1990, StockWhen::Always),
             row(1979, StockWhen::Always),
@@ -533,11 +1363,17 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(2863, StockWhen::DownedMartians),
             row(3259, StockWhen::DownedMartians),
             row(5104, StockWhen::Always),
+            // `:2785-2788` — `ZoneGraveyard` adds the mirror AFTER 5104.
+            row(5577, StockWhen::ZoneGraveyard),
         ],
         // The Wizard's shop (index 7, `Chest.cs:2004-2032`): the nine
         // magic rows always; the hardmode blood-moon deck (5461) stays
         // constants-off, the halloween hat (1739) rides the season flag
         // (W4-f39, `:2027-2031`).
+        // The Wizard's shop (index 7, `Chest.cs:2004-2032`, the registry
+        // `NPCInteractions.Shop(108, 7)`, `NPCInteractions.cs:494` —
+        // `NPCID.Wizard = 108`): the nine magic rows always, the
+        // hardmode-blood-moon Crystal Ball deck and the halloween hat.
         7 => vec![
             row(487, StockWhen::Always),
             row(496, StockWhen::Always),
@@ -548,12 +1384,17 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(149, StockWhen::Always),
             row(576, StockWhen::Always),
             row(3186, StockWhen::Always),
+            // `:2023-2026`: `Main.hardMode && Main.bloodMoon` — the
+            // Spell Tome 5461.
+            row(5461, StockWhen::All(&[StockWhen::HardMode, StockWhen::BloodMoon])),
+            // `:2027-2031`: `Main.halloween` — the hat 1739 (constants-off,
+            // no season system).
             row(1739, StockWhen::Halloween),
         ],
-        // The Mechanic's shop (index 8, `Chest.cs:2033-2090`): the wire
-        // family's rows; the graveyard goggles (4409) constants-off and
-        // the Mechanic's Rod (2295) rides the Angler-present moon-phase
-        // pair (1/3/5/7).
+        // The Mechanic's shop (index 8, `Chest.cs:2033-2090`, the registry
+        // `NPCInteractions.Shop(124, 8)`, `NPCInteractions.cs:495` —
+        // `NPCID.Mechanic = 124`): the 30 wire-family rows, the graveyard
+        // goggles and the Angler-present odd-moon-phase Rod.
         8 => vec![
             row(509, StockWhen::Always),
             row(850, StockWhen::Always),
@@ -585,14 +1426,173 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(583, StockWhen::Always),
             row(4484, StockWhen::Always),
             row(4485, StockWhen::Always),
-            // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
-            // port's town count reads the Angler's presence.
-            row(2295, StockWhen::MoonPhaseOdd),
+            // `:2080-2084`: `Main.player[Main.myPlayer].ZoneGraveyard` —
+            // the Spectre Goggles 4409.
+            row(4409, StockWhen::ZoneGraveyard),
+            // `:2085-2089`: `NPC.AnyNPCs(369) && (moonPhase == 1 || 3 ||
+            // 5 || 7)` — the Mechanic's Rod 2295 (the odd-phase
+            // disjunction collapses to `% 2 == 1` over the 0..7 range).
+            row(2295, MECHANIC_ROD),
         ],
-        // The Dye Trader's shop (index 12, `Chest.cs:case 12`): the two
-        // always rows, the halloween rows (constants-off), the day/night
-        // moon-phase 0 pair, the blood-moon-night row and the graveyard
-        /// goggles (constants-off); the multiplayer-only row is off.
+        // Santa Claus's shop (index 9, `Chest.cs:2091-2111`, the registry
+        // `NPCInteractions.Shop(142, 9)`, `NPCInteractions.cs:496` —
+        // `NPCID.SantaClaus = 142`, `NPCID.cs:10961`): the six always rows
+        // — the Santa set 588/589/590 + the coloured lights 597/598/596
+        // (`ItemID.cs:2859-2879`) — then the `for (int m = 1873;
+        // m < 1906; m++)` walk (`:2105-2109`): the 33 Christmas-decoration
+        // rows 1873..=1905 (`ItemID.cs:5429-5493`), no gates at all.
+        9 => {
+            let mut rows = vec![
+                row(588, StockWhen::Always),
+                row(589, StockWhen::Always),
+                row(590, StockWhen::Always),
+                row(597, StockWhen::Always),
+                row(598, StockWhen::Always),
+                row(596, StockWhen::Always),
+            ];
+            // `:2105-2109`: `m < 1906` — the last decoration is 1905.
+            for m in 1873u16..1906 {
+                rows.push(row(m, StockWhen::Always));
+            }
+            rows
+        }
+        // The Truffle's shop (index 10, `Chest.cs:2112-2134`, the registry
+        // `NPCInteractions.Shop(160, 10)`, `NPCInteractions.cs:497` —
+        // `NPCID.Truffle = 160`, `NPCID.cs:10997`): the mech-any pair, the
+        // Mushroom Cap, the Plantera Autohammer, the Strange Glowing
+        // Mushroom, My Son and the remix-gated Dark Blue Solution.
+        10 => vec![
+            // `:2113-2119`: `if (NPC.downedMechBossAny)` — the Mushroom
+            // Spear 756 + the Hammush 787 (NO hardmode conjunct).
+            row(756, StockWhen::DownedMechAnyBare),
+            row(787, StockWhen::DownedMechAnyBare),
+            row(868, StockWhen::Always), // `:2120` the Mushroom Cap
+            // `:2122-2126`: `if (NPC.downedPlantBoss)` — the Autohammer.
+            row(1551, StockWhen::DownedPlantBoss),
+            row(1181, StockWhen::Always), // `:2127` Strange Glowing Mushroom
+            row(5231, StockWhen::Always), // `:2129` My Son
+            // `:2130-2133`: `!Main.remixWorld || (Main.tenthAnniversaryWorld
+            // && !Main.getGoodWorld)` — the Dark Blue Solution 783.
+            row(783, StockWhen::NotRemixOrAnniversary),
+        ],
+        // The Steampunker's shop (index 11, `Chest.cs:2135-2245`, the
+        // registry `NPCInteractions.Shop(178, 11)`, `NPCInteractions.cs:498`
+        // — `NPCID.Steampunker = 178`, `NPCID.cs:11033`): the Clentaminator,
+        // the Jetpack/outfit split, the logic gates, the crafting-station
+        // biome rows and the solution if/else chain — every gate verbatim.
+        11 => vec![
+            // `:2137-2140`: the remix gate — the Clentaminator 779.
+            row(779, StockWhen::NotRemixOrAnniversary),
+            // `:2141-2150`: `moonPhase >= 4 && hardMode` → the Jetpack 748,
+            // ELSE the steampunk outfit 839/840/841 (the NOT arm).
+            row(748, STEAM_JETPACK),
+            row(839, StockWhen::Not(&STEAM_JETPACK)),
+            row(840, StockWhen::Not(&STEAM_JETPACK)),
+            row(841, StockWhen::Not(&STEAM_JETPACK)),
+            // `:2151-2154`: `NPC.downedGolemBoss` — the Steampunk Wings 948.
+            row(948, StockWhen::DownedGolem),
+            // `:2155-2158`: hardmode — the Static Hook 3623.
+            row(3623, StockWhen::HardMode),
+            // `:2159-2169`: the always rows in the C#'s num order — the
+            // logic gates AND/OR/XOR/NAND/NOR/NXOR, the On lamp, the Off
+            // lamp, the Faulty lamp, the two conveyor belts.
+            row(3603, StockWhen::Always),
+            row(3604, StockWhen::Always),
+            row(3607, StockWhen::Always),
+            row(3605, StockWhen::Always),
+            row(3606, StockWhen::Always),
+            row(3608, StockWhen::Always),
+            row(3618, StockWhen::Always),
+            row(3602, StockWhen::Always),
+            row(3663, StockWhen::Always),
+            row(3609, StockWhen::Always),
+            row(3610, StockWhen::Always),
+            // `:2170-2173`: `hardMode || !getGoodWorld` — Blend-O-Matic 995.
+            row(995, StockWhen::HardModeOrNotGood),
+            // `:2174-2177`: all three pre-hardmode bosses — the Steampunk
+            // Boiler 2203.
+            row(2203, StockWhen::DownedAllPreHardBosses),
+            // `:2178-2185`: `WorldGen.crimson` → the Flesh Cloning Vaat
+            // 2193, ELSE the Lesion Station 4142.
+            row(2193, StockWhen::CrimsonWorld),
+            row(4142, StockWhen::Not(&StockWhen::CrimsonWorld)),
+            // `:2186-2189`: the graveyard — the Bone Welder 2192.
+            row(2192, StockWhen::ZoneGraveyard),
+            // `:2190-2194`: the jungle — the Honey Dispenser 2204.
+            row(2204, StockWhen::ZoneJungle),
+            // `:2195-2198`: `zoneJungle && downedGolemBoss` — the Lihzahrd
+            // Furnace 2195.
+            row(2195, STEAM_JUNGLE_GOLEM),
+            // `:2199-2202`: the snow biome — the Ice Machine 2198.
+            row(2198, StockWhen::ZoneSnow),
+            // `:2203-2206`: the sky height — the Sky Mill 2197.
+            row(2197, StockWhen::ZoneSkyHeight),
+            // `:2207-2234`: the whole solution block rides the remix gate.
+            // The if/else chain: `eclipse || bloodMoon` → the evil split
+            // (crimson 784 / corrupt 782), ELSE `ZoneHallow` → 781, ELSE
+            // the Green Solution 780.
+            row(784, STEAM_SOLUTION_RED),
+            row(782, STEAM_SOLUTION_PURPLE),
+            row(781, STEAM_SOLUTION_BLUE),
+            row(780, STEAM_SOLUTION_GREEN),
+            // `:2228-2233`: `NPC.downedMoonlord` inside the same remix
+            // block — the Sand/Snow/Dirt solutions 5392/5393/5394.
+            row(5392, STEAM_MOONLORD_SOLUTIONS),
+            row(5393, STEAM_MOONLORD_SOLUTIONS),
+            row(5394, STEAM_MOONLORD_SOLUTIONS),
+            // `:2235-2239`: hardmode — the Cog 1344 + the Steampunk
+            // Minecart 4472.
+            row(1344, StockWhen::HardMode),
+            row(4472, StockWhen::HardMode),
+            // `:2240-2243`: `Main.halloween` — the Steampunk Goggles 1742
+            // (constants-off, no season system).
+            row(1742, StockWhen::Halloween),
+        ],
+        // The Cyborg's shop (index 14, `Chest.cs:2360-2442`, the registry
+        // `NPCInteractions.Shop(209, 14)`, `NPCInteractions.cs:501` —
+        // `NPCID.Cyborg = 209`, `NPCID.cs:11095`): the rocket tiers, the
+        // martian rows, the hardmode set, the graveyard pair, the halloween
+        // outfit and the Portal-Gun-station inventory scan.
+        14 => vec![
+            row(771, StockWhen::Always),    // `:2361` Rocket I
+            row(772, StockWhen::BloodMoon), // `:2363-2367` Rocket II
+            // `:2368-2372`: `!Main.dayTime || Main.eclipse` — Rocket III.
+            row(773, CYBORG_ROCKET_III),
+            row(774, StockWhen::Eclipse), // `:2373-2377` Rocket IV
+            // `:2378-2385`: `NPC.downedMartians` (bare) — the Cluster
+            // Rocket I, and the II under `bloodMoon || eclipse` on top.
+            row(4445, StockWhen::DownedMartiansBare),
+            row(4446, CYBORG_CLUSTER_II),
+            row(4459, StockWhen::HardMode), // `:2386-2390` Dry Rocket
+            row(760, StockWhen::HardMode),  // `:2391-2395` Proximity Mine Launcher
+            row(1346, StockWhen::HardMode), // `:2396-2400` Nanites
+            // `:2401-2406`: hardmode — Jim's Drone Visor/Drone + the RC Car.
+            row(5452, StockWhen::HardMode),
+            row(5451, StockWhen::HardMode),
+            row(5738, StockWhen::HardMode),
+            row(5598, StockWhen::Always), // `:2407` CRT Monolith
+            row(5599, StockWhen::Always), // `:2409` Retro Monolith
+            // `:2411-2420`: the graveyard — Spectre Goggles + Echo Block.
+            row(4409, StockWhen::ZoneGraveyard),
+            row(4392, StockWhen::ZoneGraveyard),
+            // `:2421-2429`: halloween — the cyborg outfit (constants-off).
+            row(1743, StockWhen::Halloween),
+            row(1744, StockWhen::Halloween),
+            row(1745, StockWhen::Halloween),
+            // `:2430-2434`: `NPC.downedMartians` again — the HiTek
+            // Sunglasses + the Night Vision Helmet.
+            row(2862, StockWhen::DownedMartiansBare),
+            row(3109, StockWhen::DownedMartiansBare),
+            // `:2435-2439`: `HasItem(3384) || HasItem(3664)` — the Portal
+            // Gun Station 3664 (the inventory-scan gate).
+            row(3664, CYBORG_PORTAL_STATION),
+            row(5928, StockWhen::Always), // `:2440` Toy Breaker Block
+        ],
+        // The Dye Trader's shop (index 12, `Chest.cs:2246-2273`, W4-d123):
+        // the four always rows, the EXACT moon-phase-0 pair (`:2260`), the
+        // blood-moon-night row (`:2265`) and the graveyard goggles (`:2269`).
+        // The halloween pair (3248/1741, `:2249-2253`) and the netMode==1
+        // row (1969, `:2256-2259`) sit constants-off (no season / no MP).
         12 => vec![
             row(1120, StockWhen::Always),
             row(5920, StockWhen::Always),
@@ -602,9 +1602,12 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(1741, StockWhen::Halloween),
             row(1037, StockWhen::Always),
             row(2874, StockWhen::Always),
-            row(2871, StockWhen::MoonPhasePair(0)),
-            row(2872, StockWhen::MoonPhasePair(0)),
+            // `:2260` — `Main.moonPhase == 0`, NOT the /2 pair.
+            row(2871, StockWhen::MoonPhaseIs(0)),
+            row(2872, StockWhen::MoonPhaseIs(0)),
             row(4663, StockWhen::BloodMoonNight),
+            // `:2269-2272` — the graveyard goggles.
+            row(4662, StockWhen::ZoneGraveyard),
         ],
         // The Party Girl's shop (index 13, `Chest.cs:2274-2359`): the
         /// always rows (the food/party set), the day/night Bubble Machine
@@ -614,13 +1617,22 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         /// graveyard goggles (4682), the HasItem(3548) row, the Pirate's
         /// presence row (3369), the Golem's row (3546) and the hardmode
         /// dye set (3214/2868/970-973) sit constants-off (unported gates).
+        // The Party Girl's shop (index 13, `Chest.cs:2274-2358`, W4-d123):
+        // the party set in the vanilla's `num` order — the golfer-score row
+        // after 859, the day/night 1449/4552 split, the graveyard/lantern/
+        // HasItem(3548)/Golem rows, the hardmode dye set and the
+        // BirthdayParty block. The Pirate's presence row (3369, `:2318`)
+        // rides `pirate_present` (constants-off — no town Pirate kind).
         13 => vec![
             row(859, StockWhen::Always),
+            // `:2277-2280` — `golferScoreAccumulated >= 500`.
+            row(4743, StockWhen::GolfScore(500, true)),
             row(1000, StockWhen::Always),
             row(1168, StockWhen::Always),
             // `:2285-2294` — the day/night pair: `Main.dayTime` stocks the
             // Bubble Machine, else the Fog Machine (the same gate shape as
             // the Merchant's night row, inverted).
+            // `:2285-2294` — the day/night split.
             row(1449, StockWhen::Day),
             row(4552, StockWhen::Night),
             row(1345, StockWhen::Always),
@@ -634,6 +1646,23 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // `:2309-2312` — `LanternNight.LanternsUp` adds the Release
             // Lantern (4702) ahead of the always tail.
             row(4702, StockWhen::LanternsUp),
+            // `:2305-2308` — the graveyard goggles.
+            row(4682, StockWhen::ZoneGraveyard),
+            // `:2309-2312` — `LanternNight.LanternsUp`.
+            row(4702, StockWhen::LanternNight),
+            // `:2313-2317` — `HasItem(3548)` restocks the carried item.
+            row(3548, StockWhen::PlayerHasItem(3548)),
+            // `:2318-2321` — `NPC.AnyNPCs(229)` (the Pirate).
+            row(3369, StockWhen::PiratePresent),
+            // `:2322-2325` — `NPC.downedGolemBoss`.
+            row(3546, StockWhen::DownedGolem),
+            // `:2326-2340` — the hardmode dye set.
+            row(3214, StockWhen::HardMode),
+            row(2868, StockWhen::HardMode),
+            row(970, StockWhen::HardMode),
+            row(971, StockWhen::HardMode),
+            row(972, StockWhen::HardMode),
+            row(973, StockWhen::HardMode),
             row(4791, StockWhen::Always),
             row(3747, StockWhen::Always),
             row(3732, StockWhen::Always),
@@ -654,32 +1683,85 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3745, StockWhen::PartyUp),
             row(3744, StockWhen::PartyUp),
             row(3743, StockWhen::PartyUp),
+            // `:2345-2358` — the BirthdayParty block (eleven rows, the
+            // C#'s own order).
+            row(3749, StockWhen::PartyIsUp),
+            row(3746, StockWhen::PartyIsUp),
+            row(3739, StockWhen::PartyIsUp),
+            row(3740, StockWhen::PartyIsUp),
+            row(3741, StockWhen::PartyIsUp),
+            row(3737, StockWhen::PartyIsUp),
+            row(3738, StockWhen::PartyIsUp),
+            row(3736, StockWhen::PartyIsUp),
+            row(3745, StockWhen::PartyIsUp),
+            row(3744, StockWhen::PartyIsUp),
+            row(3743, StockWhen::PartyIsUp),
         ],
-        // The Zoologist's shop (index 23, `Chest.cs:3263-3340`): the
-        // bestiary tools — the progress-gated rows ride
-        /// `BestiaryUnlockProgressReport.CompletionPercent`
-        /// (`:3265`), the lumen/solar rows the flags they name. The case's
-        // vampirism tail (`Main.vampireSeed && !Main.infectedSeed` → one
-        /// Torch 8, `Chest.cs:3403-3406`) closes the list — the M5-SEED-2
-        /// arm, folded into this one arm so the match keeps one entry.
+        // The Zoologist's shop (index 23, `Chest.cs:3263-3407`, the registry
+        // `NPCInteractions.Shop(633, 23)`, `NPCInteractions.cs:510`): every
+        // row in the C#'s num order — the fairy-torch head, the bestiary
+        // completion tiers (the C# compares floats directly), the Solar
+        // Monolith, the hardmode blood-moon/Plantera rows, the party
+        // critter, the four moon-phase license pairs and the vampirism
+        // tail (`Main.vampireSeed && !Main.infectedSeed` → one Torch 8,
+        // `Chest.cs:3403-3406` — the M5-SEED-2 arm, folded into this one
+        // arm so the match keeps one entry). W4-d122 remainder census:
+        // the full case replaces the M4-TOWN-19 classic subset.
         23 => vec![
-            row(4767, StockWhen::Always),
-            row(5253, StockWhen::MoonPhaseNight0),
-            row(5635, StockWhen::BestiaryCompletion(0.45)),
-            row(4759, StockWhen::BestiaryCompletion(0.10)),
-            row(4672, StockWhen::BestiaryCompletion(0.03)),
-            row(4829, StockWhen::Always),
-            row(4830, StockWhen::BestiaryCompletion(0.25)),
-            row(4910, StockWhen::BestiaryCompletion(0.45)),
-            row(4871, StockWhen::BestiaryCompletion(0.30)),
-            row(4907, StockWhen::BestiaryCompletion(0.30)),
-            row(4676, StockWhen::BestiaryCompletion(0.10)),
+            row(4776, StockWhen::FairyTorchAvailable), // `:3266-3269` HEAD
+            row(4767, StockWhen::Always),              // `:3270`
+            row(5253, StockWhen::MoonPhaseNight0),     // `:3271-3274`
+            row(5635, StockWhen::BestiaryCompletion(0.45)), // `:3275`
+            row(4759, StockWhen::BestiaryCompletion(0.10)), // `:3279`
+            row(4672, StockWhen::BestiaryCompletion(0.03)), // `:3283`
+            row(4829, StockWhen::Always),              // `:3287`
+            row(4830, StockWhen::BestiaryCompletion(0.25)), // `:3288`
+            row(4910, StockWhen::BestiaryCompletion(0.45)), // `:3292`
+            row(4871, StockWhen::BestiaryCompletion(0.30)), // `:3296`
+            row(4907, StockWhen::BestiaryCompletion(0.30)), // `:3300`
+            row(4677, StockWhen::DownedTowerSolar),    // `:3304-3307`
+            row(4676, StockWhen::BestiaryCompletion(0.10)), // `:3308`
+            row(4762, StockWhen::BestiaryCompletion(0.30)), // `:3312`
+            row(4716, StockWhen::BestiaryCompletion(0.25)), // `:3316`
+            row(4785, StockWhen::BestiaryCompletion(0.30)), // `:3320`
+            row(4786, StockWhen::BestiaryCompletion(0.30)), // `:3324`
+            row(4787, StockWhen::BestiaryCompletion(0.30)), // `:3328`
+            row(4788, ZOO_HARD_BESTIARY_30),           // `:3332-3335`
+            row(4763, StockWhen::BestiaryCompletion(0.25)), // `:3336`
+            row(4955, StockWhen::BestiaryCompletion(0.40)), // `:3340`
+            row(4736, ZOO_HARD_BLOOD),                 // `:3344-3347`
+            row(4701, StockWhen::DownedPlantBoss),     // `:3348-3351`
+            row(4765, StockWhen::BestiaryCompletion(0.50)), // `:3352`
+            row(4766, StockWhen::BestiaryCompletion(0.50)), // `:3356`
+            row(5285, StockWhen::BestiaryCompletion(0.50)), // `:3360`
+            row(4777, StockWhen::BestiaryCompletion(0.50)), // `:3364`
+            row(4735, StockWhen::BestiaryCompletion(0.70)), // `:3368`
+            row(4951, StockWhen::BestiaryCompletion(1.0)), // `:3372`
+            row(5466, StockWhen::PartyIsUp),           // `:3376-3379`
+            // `:3380-3402`'s moon-phase license pairs — one pair per
+            // `moonPhase / 2`, the 6/7 arm carrying the 4560 head.
+            row(4768, StockWhen::MoonPhasePair(0)),
+            row(4769, StockWhen::MoonPhasePair(0)),
+            row(4770, StockWhen::MoonPhasePair(1)),
+            row(4771, StockWhen::MoonPhasePair(1)),
+            row(4772, StockWhen::MoonPhasePair(2)),
+            row(4773, StockWhen::MoonPhasePair(2)),
+            row(4560, StockWhen::MoonPhasePair(3)),
+            row(4775, StockWhen::MoonPhasePair(3)),
             // The vampirism tail (`Chest.cs:3403-3406`).
             row(8, StockWhen::VampirismNotInfected),
         ],
         // The Princess's shop (index 24, `Chest.cs:3409-3471`): the
         /// 17 vanity dresses + the two slime-kings row + the Moon Lord's
         /// hat + the tenth-anniversary block (W4-f39, `:3436-3468`).
+        // The Princess's shop (index 24, `Chest.cs:3409-3470`, the registry
+        // `NPCInteractions.Shop(663, 24)`, `NPCInteractions.cs:511`): the
+        // 18 always vanity rows, the two-slime-king 5266, the Moon Lord's
+        // hat 5044, then the TENTH-ANNIVERSARY block (`:3436-3468` — the
+        // 1309/1859/1358 heads, the desert Magic Carpet 857, the blood-moon
+        // 4144 and the hardmode+pirate moon-pair pets) BEFORE the always
+        // 5088 tail. W4-d122 remainder census: the block replaces the
+        // M4-TOWN-19 constants-off deviation.
         24 => vec![
             row(5071, StockWhen::Always),
             row(5072, StockWhen::Always),
@@ -716,6 +1798,21 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(855, StockWhen::AnniversaryPiratePair(2)),
             row(905, StockWhen::AnniversaryPiratePair(3)),
             row(5088, StockWhen::Always),
+            row(5266, StockWhen::DownedBothSlimes),  // `:3428-3431`
+            row(5044, StockWhen::HardModeMoonlord),  // `:3432-3435`
+            // The anniversary block (`:3436-3468`).
+            row(1309, StockWhen::AnniversaryWorld),  // `:3438`
+            row(1859, StockWhen::AnniversaryWorld),  // `:3439`
+            row(1358, StockWhen::AnniversaryWorld),  // `:3440`
+            row(857, PRINCESS_ANN_DESERT),           // `:3441-3444`
+            row(4144, PRINCESS_ANN_BLOOD),           // `:3445-3448`
+            // `:3449-3467`: hardmode + downedPirates, then one pet per
+            // moon pair — 2584/854/855/905.
+            row(2584, PRINCESS_ANN_PET_PAIR0),
+            row(854, PRINCESS_ANN_PET_PAIR1),
+            row(855, PRINCESS_ANN_PET_PAIR2),
+            row(905, PRINCESS_ANN_PET_PAIR3),
+            row(5088, StockWhen::Always),            // `:3469` the tail
         ],
         // The Golfer's shop (index 22, `Chest.cs:3156-3262`): the golf
         // gear — the clubs, the cup flags, the tees/balls, the signs, the
@@ -759,7 +1856,12 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4598, StockWhen::GolfScore(2000, false)),
             row(4597, StockWhen::GolfScore(2000, false)),
             row(4596, StockWhen::GolfScore(2000, false)),
-            row(4264, StockWhen::DownedBoss3),
+            // `:3217-3221`: the Golf Cart 4264 sits INSIDE the
+            // `golferScoreAccumulated > 2000` block — the `downedBoss3`
+            // conjunct alone is not enough (W4-d122 remainder census:
+            // the old bare `DownedBoss3` gate leaked the cart at any
+            // score once Skeletron fell).
+            row(4264, GOLFER_CART),
             row(4599, StockWhen::GolfScore(500, false)),
             row(4600, StockWhen::GolfScore(1000, true)),
             row(4601, StockWhen::GolfScore(2000, true)),
@@ -768,6 +1870,115 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4660, StockWhen::GolfPainting(2)),
             row(4661, StockWhen::GolfPainting(3)),
         ],
+        // The Skeleton Merchant (`Chest.cs:2811-2962`, shop index 20 —
+        // `NPCInteractions.cs:507`'s `Shop(453, 20)`): the per-moon-phase
+        // rows, the time-of-day pair and the progression tail, in the
+        // C#'s `num` order. The remix phase-2 swap and the artisan-loaf
+        // gate ride the ShopFlags (W4-g90).
+        20 => {
+            let mut rows = vec![
+                row(284, StockWhen::MoonPhaseEq(0)), // `:2812-2816`
+                row(946, StockWhen::MoonPhaseEq(1)), // `:2817-2821`
+                row(3069, StockWhen::MoonPhaseEqNotRemix(2)), // `:2822-2826`
+                row(517, StockWhen::MoonPhaseEqRemix(2)), // `:2827-2831`
+                row(4341, StockWhen::MoonPhaseEq(3)), // `:2832-2836`
+                row(285, StockWhen::MoonPhaseEq(4)), // `:2837-2841`
+                row(953, StockWhen::MoonPhaseEq(5)), // `:2842-2846`
+                row(3068, StockWhen::MoonPhaseEq(6)), // `:2847-2851`
+                row(3084, StockWhen::MoonPhaseEq(7)), // `:2852-2856`
+                row(3001, StockWhen::MoonPhaseEven), // `:2857-2861`
+                row(28, StockWhen::MoonPhaseOdd),    // `:2862-2866`
+                row(188, StockWhen::MoonPhaseOddHard), // `:2867-2871`
+                row(3002, StockWhen::NightOrMoon0),  // `:2872-2875`
+            ];
+            // `:2876-2880` — the Flower Boots carrier row, INSIDE the
+            // night-or-moon-0 block (`HasItem(930)`).
+            rows.push(row(5377, StockWhen::NightOrMoon0HasBoots));
+            rows.extend([
+                row(282, StockWhen::DayNotMoon0), // `:2882-2886`
+                row(3004, StockWhen::EarlyHours), // `:2887-2890`
+                row(8, StockWhen::LateHours),     // `:2891-2895`
+                row(3003, StockWhen::MoonPhase0145), // `:2896-2899`
+                row(40, StockWhen::MoonPhase2367), // `:2900-2904`
+                row(3310, StockWhen::MoonPhaseMod4(0)), // `:2905-2908`
+                row(3313, StockWhen::MoonPhaseMod4(1)), // `:2909-2912`
+                row(3312, StockWhen::MoonPhaseMod4(2)), // `:2913-2916`
+                row(3311, StockWhen::MoonPhaseMod4(3)), // `:2917-2920`
+                row(5640, StockWhen::MoonPhaseTrio(0)), // `:2921-2924`
+                row(5641, StockWhen::MoonPhaseTrio(1)), // `:2925-2928`
+                row(5642, StockWhen::MoonPhaseTrio(2)), // `:2929-2932`
+                row(166, StockWhen::Always),      // `:2933-2934`
+                row(965, StockWhen::Always),      // `:2935-2936`
+                row(3316, StockWhen::HardMode),   // `:2937-2939`
+                row(3334, StockWhen::HardMode),   // `:2940-2941`
+                row(5540, StockWhen::DownedMechAny), // `:2942-2946`
+                row(3258, StockWhen::HardModeBloodMoon), // `:2947-2951`
+                row(3043, StockWhen::MoonPhaseNight0), // `:2953-2957`
+                // `:2958-2961` — the Artisan Loaf: the permanent unlock's
+                // only stock consumer (`!ateArtisanBread && 3 <= phase <= 5`).
+                row(5326, StockWhen::ArtisanLoafWindow),
+            ]);
+            rows
+        }
+        // The Tavernkeep's medal shop (index 21, `Chest.cs:2963-3154`, the
+        // registry `NPCInteractions.Shop(550, 21)`, `NPCInteractions.cs:508`
+        // — `NPCID.DD2Bartender = 550`): the two-tier gates — flag =
+        // `hardMode && downedMechBossAny` (`:2965`), num7 = `hardMode &&
+        // downedGolemBoss` (`:2966`). The Ale 353 and the mug 3828 (its
+        // price ladder 4g/1g/25s, `:2970-2981`), the Worn Paddle 3816, the
+        // medal-priced Defenders Forge 3813 (50), the four 5-medal tier-1
+        // sentries (`:2990-3004`), the tier-2 15-medal sentries at flag
+        // (`:3005-3023`), the tier-3 60-medal sentries at num7
+        // (`:3024-3042`), the 15-medal armor pieces at flag (`:3043-3097`)
+        // and the 50-medal tier-3 armor at num7 (`:3098-3152`). The C#
+        // jumps `num` to the fixed slots 10/20/30/4/14/24/34/7/17/27/37 —
+        // the port's dense Vec keeps the WRITE order (the grid fills left
+        // to right). Every medal row rides `shopSpecialCurrency = 0` (the
+        // Defender Medals wallet, `custom_currency.rs`).
+        21 => {
+            let mut rows = vec![
+                row(353, StockWhen::Always), // `:2967` the Ale
+                // `:2969-2982` — the mug's price ladder: 4 gold at the
+                // Golem tier, 1 gold at the mech tier, 25 silver else
+                // (`Item.buyPrice`, `Item.cs:49417-49420`).
+                ShopEntry {
+                    shop_custom_price: Some(if flags.hard_mode && flags.downed_golem {
+                        40000
+                    } else if flags.hard_mode && flags.downed_mech_any {
+                        10000
+                    } else {
+                        2500
+                    }),
+                    ..row(3828, StockWhen::Always)
+                },
+                row(3816, StockWhen::Always), // `:2983` the Worn Paddle
+                medal_row(3813, StockWhen::Always, 50), // `:2985-2987`
+            ];
+            // `:2990-3004` — the tier-1 sentry quartet (5 medals each).
+            for id in [3818, 3824, 3832, 3829] {
+                rows.push(medal_row(id, StockWhen::Always, 5));
+            }
+            // `:3005-3023` — the tier-2 sentries (15 medals, flag).
+            for id in [3819, 3825, 3833, 3830] {
+                rows.push(medal_row(id, StockWhen::DownedMechAny, 15));
+            }
+            // `:3024-3042` — the tier-3 sentries (60 medals, num7).
+            for id in [3820, 3826, 3834, 3831] {
+                rows.push(medal_row(id, TAVERNKEEP_TIER3, 60));
+            }
+            // `:3043-3097` — the tier-2 armor: 3800/3801/3802, then
+            // 3797/3798/3799, then 3803/3804/3805, then 3806/3807/3808
+            // (15 medals each, all at flag).
+            for id in [3800, 3801, 3802, 3797, 3798, 3799, 3803, 3804, 3805, 3806, 3807, 3808] {
+                rows.push(medal_row(id, StockWhen::DownedMechAny, 15));
+            }
+            // `:3098-3152` — the tier-3 armor: 3871..3882 (50 medals
+            // each, all at num7).
+            for id in 3871..=3882u16 {
+                rows.push(medal_row(id, TAVERNKEEP_TIER3, 50));
+            }
+            rows
+        }
         // The Travelling Merchant (`Chest.cs:2791-2810`): the stock is
         // NOT a fixed row list — it rides the 40 `Main.travelShop` slots
         // the visit roll generated (`Chest.SetupTravelShop`).
@@ -792,13 +2003,524 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             }
             rows
         }
+        // The Skeleton Merchant's shop (index 20, `Chest.cs:2811-2962`,
+        // W4-d123): the eight exact-phase head rows (the phase-2 pair
+        // splits on remixWorld, `:2822-2831`), the even/odd pair 3001/28
+        // (+ the odd+hardmode 188), the night-or-phase-0 arm (3002 + the
+        // carried-Flower-Boots 5377 restock) vs the day 282 else, the two
+        // clock/phase else-pairs (3004|8 `:2887`, 3003|40 `:2896`), the
+        // mod-4 ladder 3310/3313/3312/3311 (`:2905-2920`), the 5640/5641/
+        // 5642 phase pairs, the always 166/965, the hardmode block
+        // (3316/3334 + mech-any 5540 + blood-moon 3258), the phase-0 night
+        // 3043 and the artisan-bread 5326 tail.
+        20 => vec![
+            row(284, StockWhen::MoonPhaseIs(0)),
+            row(946, StockWhen::MoonPhaseIs(1)),
+            // `:2822-2831` — the phase-2 remix split.
+            row(3069, StockWhen::MoonPhase2NotRemix),
+            row(517, StockWhen::MoonPhase2Remix),
+            row(4341, StockWhen::MoonPhaseIs(3)),
+            row(285, StockWhen::MoonPhaseIs(4)),
+            row(953, StockWhen::MoonPhaseIs(5)),
+            row(3068, StockWhen::MoonPhaseIs(6)),
+            row(3084, StockWhen::MoonPhaseIs(7)),
+            // `:2857-2871` — the parity pair + the odd+hardmode row.
+            row(3001, StockWhen::MoonPhaseEven),
+            row(28, StockWhen::MoonPhaseOdd),
+            row(188, StockWhen::MoonPhaseOddHardMode),
+            // `:2872-2886` — the night-or-phase-0 arm (3002 + the 930
+            // restock 5377) vs the day 282 else.
+            row(3002, StockWhen::NightOrMoonPhase0),
+            row(5377, StockWhen::NightOrMoonPhase0HasBoots),
+            row(282, StockWhen::DayNotMoonPhase0),
+            // `:2887-2895` — the clock else-pair (ONE row slot).
+            row(3004, StockWhen::TimeEarly),
+            row(8, StockWhen::TimeLate),
+            // `:2896-2904` — the phase else-pair (ONE row slot).
+            row(3003, StockWhen::MoonPhase0145),
+            row(40, StockWhen::MoonPhaseNot0145),
+            // `:2905-2920` — the mod-4 ladder (ONE row slot).
+            row(3310, StockWhen::MoonPhaseMod4(0)),
+            row(3313, StockWhen::MoonPhaseMod4(1)),
+            row(3312, StockWhen::MoonPhaseMod4(2)),
+            row(3311, StockWhen::MoonPhaseMod4(3)),
+            // `:2921-2932` — the phase-pair trio (at most one row).
+            row(5640, StockWhen::MoonPhase1Or2),
+            row(5641, StockWhen::MoonPhase3Or5),
+            row(5642, StockWhen::MoonPhase6Or7),
+            // `:2933-2936` — the always pair.
+            row(166, StockWhen::Always),
+            row(965, StockWhen::Always),
+            // `:2937-2952` — the hardmode block.
+            row(3316, StockWhen::HardMode),
+            row(3334, StockWhen::HardMode),
+            row(5540, StockWhen::DownedMechAny),
+            row(3258, StockWhen::HardModeBloodMoon),
+            // `:2953-2957` — the phase-0 night row.
+            row(3043, StockWhen::MoonPhaseNight0),
+            // `:2958-2961` — the artisan-bread tail.
+            row(5326, StockWhen::ArtisanBreadPhases345),
+        ],
+        // The Tavernkeep's shop (index 21, `Chest.cs:2963-3154`, W4-d123):
+        // the two-tier gates — flag = hardMode && downedMechBossAny,
+        // num7 = hardMode && downedGolemBoss (`:2965-2966`). The Ale 353
+        // and the mug 3828 (its price ladder 4g/1g/25s, `:2970-2981`),
+        // the Worn Paddle 3816, the medal-priced Defender Medal 3813
+        // (50), the four 5-medal tier-1 sentries (`:2990-3004`), the
+        // tier-2 15-medal sentries at flag (`:3005-3023`), the tier-3
+        // 60-medal sentries at num7 (`:3024-3042`), the 15-medal armor
+        // pieces at flag (`:3043-3097`) and the 50-medal tier-3 armor at
+        // num7 (`:3098-3152`). The C# jumps `num` to the fixed slots
+        // 10/20/30/4/14/24/34/7/17/27/37 — the port's dense Vec keeps
+        // the WRITE order (the grid fills left to right).
+        21 => {
+            let mut rows = vec![
+                row(353, StockWhen::Always),
+                // `:2969-2982` — the mug's price ladder: 4 gold at the
+                // Golem tier, 1 gold at the mech tier, 25 silver else
+                // (`Item.buyPrice`, `Item.cs:49417-49420`).
+                ShopEntry {
+                    shop_custom_price: Some(if flags.hard_mode && flags.downed_golem {
+                        40000
+                    } else if flags.hard_mode && flags.downed_mech_any {
+                        10000
+                    } else {
+                        2500
+                    }),
+                    ..row(3828, StockWhen::Always)
+                },
+                row(3816, StockWhen::Always),
+                medal_row(3813, StockWhen::Always, 50),
+            ];
+            // `:2990-3004` — the tier-1 sentry quartet (5 medals each).
+            for id in [3818, 3824, 3832, 3829] {
+                rows.push(medal_row(id, StockWhen::Always, 5));
+            }
+            // `:3005-3023` — the tier-2 sentries (15 medals, flag).
+            for id in [3819, 3825, 3833, 3830] {
+                rows.push(medal_row(id, StockWhen::DownedMechAny, 15));
+            }
+            // `:3024-3042` — the tier-3 sentries (60 medals, num7).
+            for id in [3820, 3826, 3834, 3831] {
+                rows.push(medal_row(id, StockWhen::HardModeGolem, 60));
+            }
+            // `:3043-3097` — the tier-2 armor: 3800/3801/3802, then
+            // 3797/3798/3799, then 3803/3804/3805, then 3806/3807/3808
+            // (15 medals each, all at flag).
+            for id in [3800, 3801, 3802, 3797, 3798, 3799, 3803, 3804, 3805, 3806, 3807, 3808] {
+                rows.push(medal_row(id, StockWhen::DownedMechAny, 15));
+            }
+            // `:3098-3152` — the tier-3 armor: 3871..3882 (50 medals
+            // each, all at num7).
+            for id in 3871..=3882u16 {
+                rows.push(medal_row(id, StockWhen::HardModeGolem, 50));
+            }
+            rows
+        }
+        // The Painter's Decor shop (index 25, `Chest.cs:2483-2614`,
+        // W4-d123 — `Shop(227, 25, "GameUI.PainterDecor")`,
+        // `NPCInteractions.cs:512`): the Christmas walk 1948..1957 sits
+        // constants-off (no season, `:2485-2494`); the 2158..2160 and
+        // 2008..2014 walks are unconditioned (`:2495-2508`), then the
+        // !graveyard block (1490 + the <=1/<=3/<=5/else moon ladder
+        // 1481/1482/1483/1484, `:2509-2533`), the forest 5245, the biome
+        // rows (crimson 1492, corrupt 1488, hallow 1489, jungle 1486,
+        // snow 5491+1487, desert 1491), the blood-moon 1493, the
+        // !graveyard sky block (1485 + hardmode 1494), the storm 5251
+        // and the graveyard octet 4723..4729+5257 (`:2594-2612`).
+        25 => {
+            let mut rows = Vec::new();
+            // `:2495-2501` — `while (num9 <= 2160 && num < 39)`.
+            for id in 2158..=2160u16 {
+                rows.push(row(id, StockWhen::Always));
+            }
+            // `:2502-2508` — `while (num10 <= 2014 && num < 39)`.
+            for id in 2008..=2014u16 {
+                rows.push(row(id, StockWhen::Always));
+            }
+            // `:2509-2533` — the !graveyard block: 1490 then EXACTLY ONE
+            // of the four moon-ladder rows.
+            rows.push(row(1490, StockWhen::NotGraveyard));
+            rows.push(row(1481, StockWhen::NotGraveyardMoon01));
+            rows.push(row(1482, StockWhen::NotGraveyardMoon23));
+            rows.push(row(1483, StockWhen::NotGraveyardMoon45));
+            rows.push(row(1484, StockWhen::NotGraveyardMoon67));
+            // `:2534-2570` — the forest + biome rows.
+            rows.push(row(5245, StockWhen::ShoppingForest));
+            rows.push(row(1492, StockWhen::ZoneCrimson));
+            rows.push(row(1488, StockWhen::ZoneCorrupt));
+            rows.push(row(1489, StockWhen::ZoneHallow));
+            rows.push(row(1486, StockWhen::ZoneJungle));
+            rows.push(row(5491, StockWhen::ZoneSnow));
+            rows.push(row(1487, StockWhen::ZoneSnow));
+            rows.push(row(1491, StockWhen::ZoneDesert));
+            // `:2571-2575` — the blood-moon row.
+            rows.push(row(1493, StockWhen::BloodMoon));
+            // `:2576-2588` — the !graveyard sky block.
+            rows.push(row(1485, StockWhen::NotGraveyardSky));
+            rows.push(row(1494, StockWhen::NotGraveyardSkyHardMode));
+            // `:2589-2593` — the storm row.
+            rows.push(row(5251, StockWhen::Storming));
+            // `:2594-2612` — the graveyard octet (5257 sits BETWEEN
+            // 4727 and 4728).
+            for id in [4723, 4724, 4725, 4726, 4727, 5257, 4728, 4729] {
+                rows.push(row(id, StockWhen::ZoneGraveyard));
+            }
+            rows
+        }
         _ => Vec::new(),
+    };
+    setup_shop_tail(shop_index, flags, &mut rows);
+    rows
+}
+
+/// `Chest.SetupShop`'s shared tail (`Chest.cs:3472-3541`) — runs AFTER the
+/// switch for EVERY shop index: the pylon rows (gated on the two-housed-
+/// NPC scan + the !corrupt/!crimson zones, skipped for indexes 19/20/21)
+/// and the `isAShopItem = true` stamp on every row the switch wrote.
+/// The port's dense Vec carries only the WRITTEN rows (the C# walks
+/// `num13 < num` over the stamped slots; the air gaps never stamp).
+fn setup_shop_tail(shop_index: u32, flags: &ShopFlags, rows: &mut Vec<ShopEntry>) {
+    // `:3472` — `(type != 19 && type != 20 && type != 21) &&
+    // DoesPositionHaveEnoughNPCs(2, …) && !ZoneCorrupt && !ZoneCrimson`.
+    if shop_index != 19
+        && shop_index != 20
+        && shop_index != 21
+        && flags.pylon_enough_npcs
+        && !flags.zone_corrupt
+        && !flags.zone_crimson
+    {
+        // `:3474-3487` — the purity pylon 4876: no biome zone, then the
+        // remix depth window OR the classic !below-surface arm.
+        let no_biome = !flags.zone_snow
+            && !flags.zone_desert
+            && !flags.zone_beach
+            && !flags.zone_jungle
+            && !flags.zone_hallow
+            && !flags.zone_glowshroom;
+        if no_biome {
+            if flags.remix_world {
+                if flags.pylon_remix_depth && rows.len() < 39 {
+                    rows.push(row(4876, StockWhen::Always));
+                }
+            } else if !flags.shopping_below_surface && rows.len() < 39 {
+                rows.push(row(4876, StockWhen::Always));
+            }
+        }
+        // `:3488-3495` — the snow/desert pylons.
+        if flags.zone_snow && rows.len() < 39 {
+            rows.push(row(4920, StockWhen::Always));
+        }
+        if flags.zone_desert && rows.len() < 39 {
+            rows.push(row(4919, StockWhen::Always));
+        }
+        // `:3496-3513` — the underworld pylon 5652, else the cavern
+        // pylon 4917 (the remix arm drops the glowshroom exclusion).
+        if flags.zone_underworld_height {
+            if rows.len() < 39 {
+                rows.push(row(5652, StockWhen::Always));
+            }
+        } else {
+            let cavern_ok = !flags.zone_snow
+                && !flags.zone_desert
+                && !flags.zone_beach
+                && !flags.zone_jungle
+                && !flags.zone_hallow
+                && flags.shopping_below_surface
+                && (flags.remix_world || !flags.zone_glowshroom);
+            if cavern_ok && rows.len() < 39 {
+                rows.push(row(4917, StockWhen::Always));
+            }
+        }
+        // `:3514-3524` — the ocean pylon 4918: beach + above-surface, OR
+        // (remix) the edge-x + depth window.
+        let mut ocean = flags.zone_beach && flags.beach_above_surface;
+        if flags.remix_world {
+            ocean |= flags.pylon_remix_edge && flags.pylon_remix_ocean_depth;
+        }
+        if ocean && rows.len() < 39 {
+            rows.push(row(4918, StockWhen::Always));
+        }
+        // `:3525-3536` — the jungle/hallow/mushroom pylons.
+        if flags.zone_jungle && rows.len() < 39 {
+            rows.push(row(4875, StockWhen::Always));
+        }
+        if flags.zone_hallow && rows.len() < 39 {
+            rows.push(row(4916, StockWhen::Always));
+        }
+        if flags.zone_glowshroom
+            && (!flags.remix_world || !flags.zone_underworld_height)
+            && rows.len() < 39
+        {
+            rows.push(row(4921, StockWhen::Always));
+        }
+    }
+    // `:3538-3541` — every written row is a shop item.
+    for e in rows.iter_mut() {
+        e.is_a_shop_item = true;
     }
 }
 
 /// `Chest.cs:2794`'s gate list — the Palworld-collab items that put the
 /// Pal Metal armor (5735/5736) into the merchant's stock.
 const TRAVEL_ARMOR_GATES: [u16; 10] = [5667, 5663, 5664, 5665, 5666, 6174, 6148, 6149, 6150, 6151];
+
+/// `Chest.cs:2966`'s num7 — `Main.hardMode && NPC.downedGolemBoss`: the
+/// Tavernkeep's tier-3 gate (the 60-medal sentries + the 50-medal armor).
+const TAVERNKEEP_TIER3: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::DownedGolem]);
+
+// — W4-d122: the Steampunker's compound gates (`Chest.cs:2135-2245`),
+// named once so the if/else arms share ONE condition object (the `Not`
+// arms negate the exact same expression the C# `else` negates). —
+
+/// `Chest.cs:2141`: `Main.moonPhase >= 4 && Main.hardMode` — the Jetpack.
+const STEAM_JETPACK: StockWhen =
+    StockWhen::All(&[StockWhen::MoonPhaseAtLeast(4), StockWhen::HardMode]);
+/// `Chest.cs:2195`: `zoneJungle && NPC.downedGolemBoss` — Lihzahrd Furnace.
+const STEAM_JUNGLE_GOLEM: StockWhen =
+    StockWhen::All(&[StockWhen::ZoneJungle, StockWhen::DownedGolem]);
+/// `Chest.cs:2207-2209`: the remix gate AND `(eclipse || bloodMoon)`.
+const STEAM_SOLUTION_EVIL: StockWhen = StockWhen::All(&[
+    StockWhen::NotRemixOrAnniversary,
+    StockWhen::Any(&[StockWhen::Eclipse, StockWhen::BloodMoon]),
+]);
+/// `:2211-2218`'s crimson half — the Red Solution 784.
+const STEAM_SOLUTION_RED: StockWhen =
+    StockWhen::All(&[STEAM_SOLUTION_EVIL, StockWhen::CrimsonWorld]);
+/// `:2215-2218`'s corruption half — the Purple Solution 782.
+const STEAM_SOLUTION_PURPLE: StockWhen = StockWhen::All(&[
+    STEAM_SOLUTION_EVIL,
+    StockWhen::Not(&StockWhen::CrimsonWorld),
+]);
+/// `:2220-2223`: the remix gate AND NOT the evil branch AND `ZoneHallow`
+/// — the Blue Solution 781.
+const STEAM_SOLUTION_BLUE: StockWhen = StockWhen::All(&[
+    StockWhen::NotRemixOrAnniversary,
+    StockWhen::Not(&StockWhen::Any(&[StockWhen::Eclipse, StockWhen::BloodMoon])),
+    StockWhen::ZoneHallow,
+]);
+/// `:2224-2227`: the final else — neither the evil branch nor the hallow
+/// one — the Green Solution 780.
+const STEAM_SOLUTION_GREEN: StockWhen = StockWhen::All(&[
+    StockWhen::NotRemixOrAnniversary,
+    StockWhen::Not(&StockWhen::Any(&[StockWhen::Eclipse, StockWhen::BloodMoon])),
+    StockWhen::Not(&StockWhen::ZoneHallow),
+]);
+/// `:2228-2233`: the remix gate AND `NPC.downedMoonlord` — the solution trio.
+const STEAM_MOONLORD_SOLUTIONS: StockWhen =
+    StockWhen::All(&[StockWhen::NotRemixOrAnniversary, StockWhen::DownedMoonlord]);
+
+// — W4-d122: the Cyborg's compound gates (`Chest.cs:2360-2442`). —
+
+/// `Chest.cs:2368`: `!Main.dayTime || Main.eclipse` — the Rocket III 773
+/// (`Night` is `!dayTime` on the flags).
+const CYBORG_ROCKET_III: StockWhen = StockWhen::Any(&[StockWhen::Night, StockWhen::Eclipse]);
+/// `Chest.cs:2378-2384`: `downedMartians && (bloodMoon || eclipse)` — the
+/// Cluster Rocket II 4446.
+const CYBORG_CLUSTER_II: StockWhen = StockWhen::All(&[
+    StockWhen::DownedMartiansBare,
+    StockWhen::Any(&[StockWhen::BloodMoon, StockWhen::Eclipse]),
+]);
+/// `Chest.cs:2435`: `HasItem(3384) || HasItem(3664)` — the Portal Gun
+/// Station 3664 row.
+const CYBORG_PORTAL_STATION: StockWhen = StockWhen::Any(&[
+    StockWhen::PlayerHasItem(3384),
+    StockWhen::PlayerHasItem(3664),
+]);
+
+// — W4-d122: the Arms Dealer's compound gates (`Chest.cs:1484-1567`). —
+
+/// `Chest.cs:1487-1493`: `(bloodMoon || hardMode) && Silver == 168` —
+/// the Tungsten Bullet 4915.
+const ARMS_BULLET_TUNGSTEN: StockWhen = StockWhen::All(&[
+    StockWhen::Any(&[StockWhen::BloodMoon, StockWhen::HardMode]),
+    StockWhen::SilverIsTungsten,
+]);
+/// `:1494-1498`'s else arm — the Silver Bullet 278 (the SAME event gate,
+/// the NOT of the ore comparison).
+const ARMS_BULLET_SILVER: StockWhen = StockWhen::All(&[
+    StockWhen::Any(&[StockWhen::BloodMoon, StockWhen::HardMode]),
+    StockWhen::Not(&StockWhen::SilverIsTungsten),
+]);
+/// `Chest.cs:1500`: `(NPC.downedBoss2 && !Main.dayTime) || Main.hardMode`
+/// — the Minishark 47.
+const ARMS_MINISHARK: StockWhen = StockWhen::Any(&[
+    StockWhen::All(&[StockWhen::DownedBoss2, StockWhen::Night]),
+    StockWhen::HardMode,
+]);
+/// `Chest.cs:1509`: `ZoneGraveyard && NPC.downedBoss3` — the Quad-Barrel
+/// Shotgun 4703.
+const ARMS_GRAVEYARD_QUAD: StockWhen =
+    StockWhen::All(&[StockWhen::ZoneGraveyard, StockWhen::DownedBoss3]);
+
+// — W4-d122: the Dryad's compound gates (`Chest.cs:1568-1745`), named once
+// so the if/else arms share ONE condition object. —
+
+/// `Chest.cs:1571-1577`: `bloodMoon && crimson` + the remix gate — the
+/// Crimson Powder 2886 (the corruption twin's gate is the NOT-crimson).
+const DRYAD_BM_CRIMSON_POWDER: StockWhen = StockWhen::All(&[
+    StockWhen::BloodMoon,
+    StockWhen::CrimsonWorld,
+    StockWhen::NotRemixOrAnniversary,
+]);
+/// `:1578-1581`: `bloodMoon && crimson` — the Crimson Seeds 2171 + the
+/// Crimson Mushroom Grass Seeds 4508 (no remix conjunct).
+const DRYAD_BM_CRIMSON: StockWhen =
+    StockWhen::All(&[StockWhen::BloodMoon, StockWhen::CrimsonWorld]);
+/// `:1585-1589`: the corruption half's powder — the Vile Powder 67.
+const DRYAD_BM_CORRUPT_POWDER: StockWhen = StockWhen::All(&[
+    StockWhen::BloodMoon,
+    StockWhen::Not(&StockWhen::CrimsonWorld),
+    StockWhen::NotRemixOrAnniversary,
+]);
+/// `:1590-1593`: the Corrupt Seeds 59 + the Corrupt Mushroom Grass
+/// Seeds 4504.
+const DRYAD_BM_CORRUPT: StockWhen = StockWhen::All(&[
+    StockWhen::BloodMoon,
+    StockWhen::Not(&StockWhen::CrimsonWorld),
+]);
+/// `:1596-1602`: the else branch's powder gate — `!bloodMoon &&
+/// (!remix || infectedSeed || (anniversary && !getGood))`.
+const DRYAD_POWDER_ELSE: StockWhen = StockWhen::All(&[
+    StockWhen::Not(&StockWhen::BloodMoon),
+    StockWhen::NotRemixOrInfectedOrAnniversary,
+]);
+/// `:1610-1615`: `hardMode && ZoneGraveyard && crimson` — the Corrupt
+/// Seeds 59 (the C#'s flipped split is verbatim).
+const DRYAD_GRAVE_CRIMSON: StockWhen = StockWhen::All(&[
+    StockWhen::HardMode,
+    StockWhen::ZoneGraveyard,
+    StockWhen::CrimsonWorld,
+]);
+/// `:1616-1619`'s else arm — the Crimson Seeds 2171 in a corruption world.
+const DRYAD_GRAVE_CORRUPT: StockWhen = StockWhen::All(&[
+    StockWhen::HardMode,
+    StockWhen::ZoneGraveyard,
+    StockWhen::Not(&StockWhen::CrimsonWorld),
+]);
+/// `:1651-1654`: the glowshroom ELSE-IF — `!ZoneUnderworldHeight &&
+/// ZoneGlowshroom` (the Mushroom set 194).
+const DRYAD_GLOWSHROOM_ELSE: StockWhen = StockWhen::All(&[
+    StockWhen::Not(&StockWhen::ZoneUnderworld),
+    StockWhen::ZoneGlowshroom,
+]);
+/// `:1685-1732`: the flower-seed pairs — BOTH hardmode/non-hardmode
+/// switches carry the same first two rows per `moonPhase / 2` pair, so
+/// the pair rows are the moon gate alone; the THIRD row is hardmode-only.
+const DRYAD_FLOWER_PAIR0: StockWhen = StockWhen::MoonPhasePair(0);
+const DRYAD_FLOWER_PAIR1: StockWhen = StockWhen::MoonPhasePair(1);
+const DRYAD_FLOWER_PAIR2: StockWhen = StockWhen::MoonPhasePair(2);
+const DRYAD_FLOWER_PAIR3: StockWhen = StockWhen::MoonPhasePair(3);
+const DRYAD_FLOWER_TRIPLE0: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(0)]);
+const DRYAD_FLOWER_TRIPLE1: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(1)]);
+const DRYAD_FLOWER_TRIPLE2: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(2)]);
+const DRYAD_FLOWER_TRIPLE3: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(3)]);
+
+// — W4-d122: the Demolitionist's compound gate (`Chest.cs:1766`). —
+
+/// `Chest.cs:1766`: `Main.hardMode && NPC.downedPlantBoss &&
+/// NPC.downedPirates` — the Land Mine 937.
+const DEMO_LAND_MINE: StockWhen = StockWhen::All(&[
+    StockWhen::HardMode,
+    StockWhen::DownedPlantBoss,
+    StockWhen::DownedPirates,
+]);
+
+// — W4-d122: the Clothier's compound gates (`Chest.cs:1814-1988`). —
+
+/// `Chest.cs:1824-1834`: `moonPhase == 0 && !dayTime` — the Wig pair.
+const CLOTHIER_PHASE0_NIGHT: StockWhen =
+    StockWhen::All(&[StockWhen::MoonPhaseExact(0), StockWhen::Night]);
+/// `Chest.cs:1858-1866`: `bloodMoon && !dayTime` — the Gem robe pair.
+const CLOTHIER_BM_NIGHT: StockWhen =
+    StockWhen::All(&[StockWhen::BloodMoon, StockWhen::Night]);
+/// `Chest.cs:1868-1874`: `downedAncientCultist && dayTime` — the day robes.
+const CLOTHIER_CULTIST_DAY: StockWhen = StockWhen::All(&[
+    StockWhen::DownedCultist,
+    StockWhen::Not(&StockWhen::Night),
+]);
+/// `:1875-1879`'s else arm — the night robes.
+const CLOTHIER_CULTIST_NIGHT: StockWhen =
+    StockWhen::All(&[StockWhen::DownedCultist, StockWhen::Night]);
+/// `Chest.cs:1908-1951`: `hardMode && moonPhase == n` — the costume sets.
+const CLOTHIER_HM_PHASE2: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(2)]);
+const CLOTHIER_HM_PHASE3: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(3)]);
+const CLOTHIER_HM_PHASE4: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(4)]);
+const CLOTHIER_HM_PHASE5: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(5)]);
+const CLOTHIER_HM_PHASE6: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(6)]);
+const CLOTHIER_HM_PHASE7: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(7)]);
+/// `Chest.cs:1953-1959`: `downedFrost && dayTime` — the day hood 1275.
+const CLOTHIER_FROST_DAY: StockWhen =
+    StockWhen::All(&[StockWhen::DownedFrost, StockWhen::Not(&StockWhen::Night)]);
+/// `:1960-1964`'s else arm — the night hood 1276.
+const CLOTHIER_FROST_NIGHT: StockWhen =
+    StockWhen::All(&[StockWhen::DownedFrost, StockWhen::Night]);
+/// `Chest.cs:1979`: `Main.LocalPlayer.golferScoreAccumulated >= 2000`
+/// (the `num < 38` half rides the `NumBelow` wrapper).
+const CLOTHIER_GOLF_TAIL: StockWhen = StockWhen::GolfScore(2000, true);
+
+// — W4-d122: the Mechanic's compound gate (`Chest.cs:2085`). —
+
+/// `Chest.cs:2085`: `NPC.AnyNPCs(369) && (moonPhase == 1 || 3 || 5 || 7)`
+/// — the Mechanic's Rod 2295.
+const MECHANIC_ROD: StockWhen =
+    StockWhen::All(&[StockWhen::AnglerPresent, StockWhen::MoonPhaseOdd]);
+
+// — W4-d122 (remainder census): the Golfer's cart conjunct
+// (`Chest.cs:3207-3222`). —
+
+/// `Chest.cs:3217`: `golferScoreAccumulated > 2000 && NPC.downedBoss3` —
+/// the Golf Cart 4264 INSIDE the `> 2000` trophy block (the score gate is
+/// the outer `if`, the Skeletron latch the inner one).
+const GOLFER_CART: StockWhen =
+    StockWhen::All(&[StockWhen::GolfScore(2000, false), StockWhen::DownedBoss3]);
+
+// — W4-d122 (remainder census): the Zoologist's compound gates
+// (`Chest.cs:3332`/`:3344`). —
+
+/// `Chest.cs:3332`: `CompletionPercent >= 0.3f && Main.hardMode` — the
+/// 4788 row (the only completion tier with the hardmode conjunct).
+const ZOO_HARD_BESTIARY_30: StockWhen =
+    StockWhen::All(&[StockWhen::BestiaryCompletion(0.30), StockWhen::HardMode]);
+/// `Chest.cs:3344`: `Main.hardMode && Main.bloodMoon` — the 4736 row.
+const ZOO_HARD_BLOOD: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::BloodMoon]);
+
+// — W4-d122 (remainder census): the Princess's anniversary block
+// (`Chest.cs:3436-3468`) — every row ANDs onto `tenthAnniversaryWorld`. —
+
+/// `Chest.cs:3441`: anniversary + `ZoneDesert` — the Magic Carpet 857.
+const PRINCESS_ANN_DESERT: StockWhen =
+    StockWhen::All(&[StockWhen::AnniversaryWorld, StockWhen::ZoneDesert]);
+/// `Chest.cs:3445`: anniversary + `bloodMoon` — the 4144 row.
+const PRINCESS_ANN_BLOOD: StockWhen =
+    StockWhen::All(&[StockWhen::AnniversaryWorld, StockWhen::BloodMoon]);
+/// `Chest.cs:3449-3451`: anniversary + hardmode + `downedPirates` — the
+/// pet block's outer conjunct (the moon pair ANDs onto it per row).
+const PRINCESS_ANN_PET: StockWhen = StockWhen::All(&[
+    StockWhen::AnniversaryWorld,
+    StockWhen::HardMode,
+    StockWhen::DownedPirates,
+]);
+const PRINCESS_ANN_PET_PAIR0: StockWhen =
+    StockWhen::All(&[PRINCESS_ANN_PET, StockWhen::MoonPhasePair(0)]);
+const PRINCESS_ANN_PET_PAIR1: StockWhen =
+    StockWhen::All(&[PRINCESS_ANN_PET, StockWhen::MoonPhasePair(1)]);
+const PRINCESS_ANN_PET_PAIR2: StockWhen =
+    StockWhen::All(&[PRINCESS_ANN_PET, StockWhen::MoonPhasePair(2)]);
+const PRINCESS_ANN_PET_PAIR3: StockWhen =
+    StockWhen::All(&[PRINCESS_ANN_PET, StockWhen::MoonPhasePair(3)]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -840,6 +2562,8 @@ pub fn setup_travel_shop(world: &World, luck: f32, rng: &mut UnifiedRandom) -> [
     let mut num = rng.next_range(4, 7);
     // `:1283-1298`: the four `RollLuck` rows (the expert-mode `RollLuck(2)`
     // at `:1299` and the tenth-anniversary rows sit constants-off).
+    // at `:1299` and the tenth-anniversary rows sit constants-off; the
+    // satchel's +1 at `:1303-1306` is world-flag-gated, W4-g90 lane 7).
     if roll_luck(luck, 4, rng) == 0 {
         num += 1;
     }
@@ -855,6 +2579,10 @@ pub fn setup_travel_shop(world: &World, luck: f32, rng: &mut UnifiedRandom) -> [
     // `:1303-1306` — the Peddler's Satchel's permanent extra slot (W4-a6:
     // the 5343 use raises the flag, `powerups::use_peddlers_satchel`). No
     // draw — a straight `num++`.
+    // `:1299-1302`: the expert-mode `RollLuck(2)` row stays constants-off
+    // (the port is single-difficulty — no expert worlds). `:1303-1306`:
+    // the Peddler's Satchel's +1 slot — a plain increment, NO RNG draw
+    // (W4-g90 lane 7; the 5343 use raises the world flag).
     if world.peddlers_satchel_was_used {
         num += 1;
     }
@@ -1369,11 +3097,25 @@ fn row(item: u16, when: StockWhen) -> ShopEntry {
         item,
         when,
         shop_custom_price: None,
+        shop_special_currency: -1, // `Item.cs:289`'s field default
         buy_once: false,
         is_a_shop_item: false,
         prefix: 0,
         stack: 1, // `Item.SetDefaults`'s default stack (`Item.cs:49022`)
         value: None,
+    }
+}
+
+/// One Tavernkeep row (`Chest.cs:2963-3154`): the `shopCustomPrice` is a
+/// MEDAL count and `shopSpecialCurrency` is the Defender Medals id (0 —
+/// `CustomCurrencyManager.cs:17` registers it first). The price math
+/// early-returns on it (`Player.cs:35361-35365`) and the buy spends the
+/// wallet (`custom_currency.rs`).
+fn medal_row(item: u16, when: StockWhen, medals: i32) -> ShopEntry {
+    ShopEntry {
+        shop_custom_price: Some(medals),
+        shop_special_currency: crate::custom_currency::DEFENDER_MEDALS,
+        ..row(item, when)
     }
 }
 
@@ -1421,14 +3163,51 @@ pub fn resolve_stock_entries_moon(
     inventory_ids: &[u16],
     moon_phase: u32,
 ) -> Vec<ShopEntry> {
-    setup_shop(shop_index, inventory_ids, flags)
-        .into_iter()
-        .filter(|e| match e.when {
+    // The C#'s `num` — the count of the rows that RESOLVED so far; the
+    // `num < 38` guards (`Chest.cs:1979`/`:1984`) read it live as the
+    // case walks, so the port counts the accepted rows the same way.
+    let mut num = 0u32;
+    let mut out = Vec::new();
+    for e in setup_shop(shop_index, inventory_ids, flags) {
+        if stock_gate(&e.when, flags, inventory_ids, moon_phase, num) {
+            num += 1;
+            out.push(e);
+        }
+    }
+    out
+}
+
+/// One `StockWhen` gate against the live state — the `SetupShop` if-arms'
+/// conditions, verbatim. The combinators (`All`/`Any`/`Not`) evaluate their
+/// children recursively so the C#'s compound `&&`/`||`/`else` chains keep
+/// their exact shape (W4-d122). `num` is the resolved-row count so far —
+/// only the `NumBelow` guards read it.
+fn stock_gate(
+    when: &StockWhen,
+    flags: &ShopFlags,
+    inventory_ids: &[u16],
+    moon_phase: u32,
+    num: u32,
+) -> bool {
+    match when {
+        StockWhen::All(children) => children
+            .iter()
+            .all(|c| stock_gate(c, flags, inventory_ids, moon_phase, num)),
+        StockWhen::Any(children) => children
+            .iter()
+            .any(|c| stock_gate(c, flags, inventory_ids, moon_phase, num)),
+        StockWhen::Not(child) => !stock_gate(child, flags, inventory_ids, moon_phase, num),
+        // `Chest.cs:1979`'s short-circuit order: `num < 38` FIRST.
+        StockWhen::NumBelow(n, child) => {
+            num < *n && stock_gate(child, flags, inventory_ids, moon_phase, num)
+        }
+        _ => match *when {
             StockWhen::Always => true,
             StockWhen::HardMode => flags.hard_mode,
             StockWhen::Night => flags.night,
             StockWhen::Day => !flags.night,
             StockWhen::BloodMoon => flags.blood_moon,
+            StockWhen::LanternNight => flags.lanterns_up,
             StockWhen::DownedBoss3 => flags.downed_boss3,
             StockWhen::DownedBoss2Or3OrHard => {
                 flags.downed_boss2 || flags.downed_boss3 || flags.hard_mode
@@ -1450,8 +3229,18 @@ pub fn resolve_stock_entries_moon(
             StockWhen::VampirismInfectedCorrupt => {
                 !flags.hard_mode && flags.vampirism && flags.infected_seed && !flags.crimson_world
             }
-            StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
+            // W4-d123: the scene metrics now feed both zones (the Decor
+            // shop's pylon tail reads the same pair).
+            StockWhen::ZoneUnderworld => flags.zone_underworld_height,
+            StockWhen::ZoneGlowshroom => flags.zone_glowshroom,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
+            // W4-d123: `Chest.cs:2260`'s exact-phase compare.
+            StockWhen::MoonPhaseIs(n) => moon_phase == n as u32,
+            StockWhen::ZoneGraveyard => flags.zone_graveyard,
+            StockWhen::ZoneBeach => flags.zone_beach,
+            StockWhen::HardModeMechAnyPartyGirl => {
+                flags.hard_mode && flags.downed_mech_any && flags.party_girl_present
+            }
             StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
             StockWhen::LifeMax400 => flags.life_max_400,
             StockWhen::ManaMax200 => flags.mana_max_200,
@@ -1460,6 +3249,91 @@ pub fn resolve_stock_entries_moon(
             StockWhen::PartyGirlPresent => flags.party_girl_present,
             StockWhen::PartyUp => flags.party_up,
             StockWhen::LanternsUp => flags.lanterns_up,
+            // W4-d123: the Party Girl's second-half gates (`Chest.cs:2285-2358`).
+            StockWhen::Day => !flags.night,
+            StockWhen::PiratePresent => flags.pirate_present,
+            StockWhen::DownedGolem => flags.downed_golem,
+            StockWhen::PartyIsUp => flags.party_is_up,
+            // W4-d123: the Cyborg's event/martians gates (`Chest.cs:2363-2435`).
+            StockWhen::Eclipse => flags.eclipse,
+            // (d123 NightOrEclipse arm deduped — the d122 Cyborg shop uses CYBORG_ROCKET_III.)
+            // (d123 MartiansAndEvent arm deduped — the d122 Cyborg shop uses
+            // the CYBORG_CLUSTER_II combinator instead.)
+            // (d123 DownedMartiansPlain arm deduped into DownedMartiansBare below — same bare flag.)
+            // (d123 PlayerHasEither arm deduped — the d122 Cyborg shop uses
+            // the CYBORG_PORTAL_STATION combinator instead.)
+            // W4-d123: the Witch Doctor's / Painter's Plantera gates
+            // (`Chest.cs:2630-2648` / `:2475`).
+            StockWhen::HardModePlantBoss => flags.hard_mode && flags.downed_plant_boss,
+            StockWhen::HardModePlantBossJungle => {
+                flags.hard_mode && flags.downed_plant_boss && flags.zone_jungle
+            }
+            StockWhen::HardModeJungle => flags.hard_mode && flags.zone_jungle,
+            StockWhen::HardModeJungleNightPlantBoss => {
+                flags.hard_mode && flags.zone_jungle && flags.night && flags.downed_plant_boss
+            }
+            StockWhen::GraveyardPlantBossOrMechanic => {
+                flags.zone_graveyard && (flags.downed_plant_boss || flags.mechanic_present)
+            }
+            StockWhen::WizardPresent => flags.wizard_present,
+            // W4-d123: the Skeleton Merchant's gates (`Chest.cs:2811-2962`).
+            StockWhen::MoonPhase2NotRemix => moon_phase == 2 && !flags.remix_world,
+            StockWhen::MoonPhase2Remix => moon_phase == 2 && flags.remix_world,
+            StockWhen::MoonPhaseEven => moon_phase % 2 == 0,
+            StockWhen::MoonPhaseOddHardMode => moon_phase % 2 != 0 && flags.hard_mode,
+            StockWhen::NightOrMoonPhase0 => flags.night || moon_phase == 0,
+            StockWhen::NightOrMoonPhase0HasBoots => {
+                (flags.night || moon_phase == 0) && inventory_ids.contains(&930)
+            }
+            StockWhen::DayNotMoonPhase0 => !flags.night && moon_phase != 0,
+            // `:2887` — `(Main.time % 60.0) * 60.0 * 6.0 <= 10800.0` (the
+            // mod binds tighter than the multiplies; f64 like `Main.time`).
+            StockWhen::TimeEarly => (flags.world_time % 60.0) * 60.0 * 6.0 <= 10800.0,
+            StockWhen::TimeLate => (flags.world_time % 60.0) * 60.0 * 6.0 > 10800.0,
+            StockWhen::MoonPhase0145 => matches!(moon_phase, 0 | 1 | 4 | 5),
+            StockWhen::MoonPhaseNot0145 => !matches!(moon_phase, 0 | 1 | 4 | 5),
+            StockWhen::MoonPhaseMod4(n) => moon_phase % 4 == n as u32,
+            StockWhen::MoonPhase1Or2 => matches!(moon_phase, 1 | 2),
+            StockWhen::MoonPhase3Or5 => matches!(moon_phase, 3 | 5),
+            StockWhen::MoonPhase6Or7 => matches!(moon_phase, 6 | 7),
+            StockWhen::HardModeGolem => flags.hard_mode && flags.downed_golem,
+            StockWhen::HardModeBloodMoon => flags.hard_mode && flags.blood_moon,
+            StockWhen::ArtisanBreadPhases345 => {
+                !flags.ate_artisan_bread && (3..=5).contains(&moon_phase)
+            }
+            // W4-d123: the Decor shop's gates (`Chest.cs:2483-2614`).
+            StockWhen::NotGraveyard => !flags.zone_graveyard,
+            StockWhen::NotGraveyardMoon01 => !flags.zone_graveyard && moon_phase <= 1,
+            StockWhen::NotGraveyardMoon23 => {
+                !flags.zone_graveyard && moon_phase > 1 && moon_phase <= 3
+            }
+            StockWhen::NotGraveyardMoon45 => {
+                !flags.zone_graveyard && moon_phase > 3 && moon_phase <= 5
+            }
+            StockWhen::NotGraveyardMoon67 => !flags.zone_graveyard && moon_phase > 5,
+            // `Player.cs:3823-3847` — the forest = no biome zone (the
+            // nine-zone AnyBiome list) AND above the surface.
+            StockWhen::ShoppingForest => {
+                !flags.zone_dungeon
+                    && !flags.zone_corrupt
+                    && !flags.zone_crimson
+                    && !flags.zone_glowshroom
+                    && !flags.zone_hallow
+                    && !flags.zone_jungle
+                    && !flags.zone_snow
+                    && !flags.zone_beach
+                    && !flags.zone_desert
+                    && !flags.shopping_below_surface
+            }
+            StockWhen::ZoneCrimson => flags.zone_crimson,
+            StockWhen::ZoneCorrupt => flags.zone_corrupt,
+            StockWhen::ZoneHallow => flags.zone_hallow,
+            StockWhen::ZoneDesert => flags.zone_desert,
+            StockWhen::Storming => flags.storming,
+            StockWhen::NotGraveyardSky => !flags.zone_graveyard && flags.zone_sky_height,
+            StockWhen::NotGraveyardSkyHardMode => {
+                !flags.zone_graveyard && flags.zone_sky_height && flags.hard_mode
+            }
             StockWhen::DownedMechAll => {
                 flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
             }
@@ -1496,6 +3370,94 @@ pub fn resolve_stock_entries_moon(
             }
         })
         .collect()
+            // The Skeleton Merchant's gates (`Chest.cs:2811-2962`, W4-g90).
+            StockWhen::MoonPhaseEq(n) => moon_phase == n as u32,
+            StockWhen::MoonPhaseEqNotRemix(n) => moon_phase == n as u32 && !flags.remix_world,
+            StockWhen::MoonPhaseEqRemix(n) => moon_phase == n as u32 && flags.remix_world,
+            StockWhen::MoonPhaseOddHard => moon_phase % 2 == 1 && flags.hard_mode,
+            StockWhen::NightOrMoon0 => flags.night || moon_phase == 0,
+            StockWhen::NightOrMoon0HasBoots => {
+                (flags.night || moon_phase == 0) && inventory_ids.contains(&930)
+            }
+            StockWhen::DayNotMoon0 => !flags.night && moon_phase != 0,
+            // `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0` (`:2887`) —
+            // VERBATIM: `%` binds tighter than `*`, so the expression is
+            // `((time % 60.0) * 60.0) * 6.0`, NOT `time % 21600`. The
+            // first 30 ticks of every minute sell the Ale, the rest the
+            // Torch — the odd vanilla cadence is kept as written.
+            StockWhen::EarlyHours => (flags.time % 60.0) * 60.0 * 6.0 <= 10800.0,
+            StockWhen::LateHours => !((flags.time % 60.0) * 60.0 * 6.0 <= 10800.0),
+            StockWhen::MoonPhase2367 => !matches!(moon_phase, 0 | 1 | 4 | 5),
+            StockWhen::MoonPhaseTrio(n) => match n {
+                0 => matches!(moon_phase, 1 | 2),
+                1 => matches!(moon_phase, 3 | 5),
+                _ => matches!(moon_phase, 6 | 7),
+            },
+            StockWhen::ArtisanLoafWindow => {
+                !flags.ate_artisan_bread && (3..=5).contains(&moon_phase)
+            }
+            // `Chest.cs:2113`: no hardmode conjunct — the bare flag.
+            StockWhen::DownedMechAnyBare => flags.downed_mech_any,
+            StockWhen::DownedPlantBoss => flags.downed_plant_boss,
+            // `Chest.cs:2130` verbatim.
+            StockWhen::NotRemixOrAnniversary => {
+                !flags.remix_world || (flags.anniversary_world && !flags.get_good_world)
+            }
+            // `Chest.cs:2170` verbatim.
+            StockWhen::HardModeOrNotGood => flags.hard_mode || !flags.get_good_world,
+            // `Chest.cs:2174` verbatim.
+            StockWhen::DownedAllPreHardBosses => {
+                flags.downed_boss1 && flags.downed_boss2 && flags.downed_boss3
+            }
+            StockWhen::CrimsonWorld => flags.crimson_world,
+            StockWhen::ZoneSkyHeight => flags.zone_sky_height,
+            StockWhen::DownedMoonlord => flags.downed_moon_lord,
+            StockWhen::DownedMartiansBare => flags.downed_martians,
+            // The season system is unported — the halloween rows stay
+            // constants-off (the recorded deviation).
+            StockWhen::Halloween => false,
+            StockWhen::MoonPhaseAtLeast(n) => moon_phase >= n,
+            // W4-d122 shop 1 (`Chest.cs:1387` verbatim).
+            StockWhen::NotTheBeesNotRemix => flags.not_the_bees && !flags.remix_world,
+            // `Chest.cs:1417` verbatim.
+            StockWhen::JungleOrBeesAnniversary => {
+                flags.zone_jungle
+                    || (flags.anniversary_world && flags.not_the_bees && !flags.remix_world)
+            }
+            // `Chest.cs:1422` verbatim (`Night` is `!dayTime` on the flags).
+            StockWhen::DayHappyWindyDay => !flags.night && flags.happy_windy_day,
+            // `Chest.cs:1489` verbatim — the rolled ore id comparison.
+            StockWhen::SilverIsTungsten => flags.silver_ore_tier == 168,
+            StockWhen::DownedBoss2 => flags.downed_boss2,
+            // `Chest.cs:1598` verbatim — the infected-seed disjunct.
+            StockWhen::NotRemixOrInfectedOrAnniversary => {
+                !flags.remix_world
+                    || flags.infected_seed
+                    || (flags.anniversary_world && !flags.get_good_world)
+            }
+            // `Chest.cs:1752` verbatim.
+            StockWhen::Boss1OrSlimeKingNight => {
+                (flags.downed_boss1 || flags.downed_slime_king) && flags.night
+            }
+            StockWhen::DownedPirates => flags.downed_pirates,
+            StockWhen::DownedClown => flags.downed_clown,
+            StockWhen::DownedCultist => flags.downed_cultist,
+            StockWhen::DownedFrost => flags.downed_frost,
+            StockWhen::TaxCollectorPresent => flags.tax_collector_present,
+            StockWhen::AnglerPresent => flags.angler_present,
+            StockWhen::MoonPhaseExact(n) => moon_phase == n,
+            // W4-d122 remainder census, shop 23 (`Chest.cs:3266`/:3304).
+            StockWhen::FairyTorchAvailable => flags.fairy_torch_available,
+            StockWhen::DownedTowerSolar => flags.downed_tower_solar,
+            // W4-d122 remainder census, shop 24 (`Chest.cs:3436`/:3441).
+            StockWhen::AnniversaryWorld => flags.anniversary_world,
+            // The combinators + the num guard are handled above — unreachable.
+            StockWhen::All(_)
+            | StockWhen::Any(_)
+            | StockWhen::Not(_)
+            | StockWhen::NumBelow(_, _) => unreachable!(),
+        },
+    }
 }
 
 /// `Item.GetStoreValue` (`Item.cs:49901-49908`): the per-row
@@ -1508,12 +3470,11 @@ pub fn get_store_value(instance_value: i32, shop_custom_price: Option<i32>) -> i
 
 /// `Player.GetItemExpectedPrice` (`Player.cs:35359-35396`) — the
 /// `(calc_for_selling, calc_for_buying)` pair. The `shopSpecialCurrency
-/// != -1` early return (`:35361-35365`, the Tavernkeep's defender-medal
-/// rows) needs the `CustomCurrencyManager` — not ported (no custom
-/// currencies), so those rows must not reach this helper yet. The
-/// arithmetic rides the C#'s f32 casts: the discount multiply truncates
-/// (the `(int)` cast — no rounding), the adjustment multiply/divide round
-/// as `Math.Round` does (the banker's rounding).
+/// != -1` early return (`:35361-35365`) lives in [`row_prices`] (the
+/// entry carries the currency id; this helper prices the plain-currency
+/// half). The arithmetic rides the C#'s f32 casts: the discount multiply
+/// truncates (the `(int)` cast — no rounding), the adjustment
+/// multiply/divide round as `Math.Round` does (the banker's rounding).
 pub fn get_item_expected_price(
     store_value: i32,
     buy_once: bool,
@@ -1552,12 +3513,19 @@ pub fn get_item_expected_price(
 /// The stock row's `(selling, buying)` pair: the row prices its store
 /// value — `GetStoreValue` over the `shopCustomPrice` override and the
 /// kind default (`SetupShop` rows are fresh `SetDefaults` instances,
-/// prefix 0).
+/// prefix 0). A special-currency row (the Tavernkeep's medals) takes the
+/// `:35361-35365` early return: `CustomCurrencySystem.GetItemExpectedPrice`
+/// (`CustomCurrencySystem.cs:265-270`) stamps BOTH halves with the raw
+/// store value — no discount, no mood, no buyOnce divide.
 fn row_prices(entry: &ShopEntry, discount_available: bool, price_adjustment: f32) -> (i64, i64) {
     // The instance value the `104` override sets wins over the kind default
     // (`Item.value`); `shopCustomPrice` still wins over both.
     let instance_value = entry.value.unwrap_or(ITEMS[entry.item as usize].value);
     let store = get_store_value(instance_value, entry.shop_custom_price);
+    let store = get_store_value(ITEMS[entry.item as usize].value, entry.shop_custom_price);
+    if entry.shop_special_currency != crate::custom_currency::CURRENCY_NONE {
+        return (store as i64, store as i64);
+    }
     get_item_expected_price(
         store,
         entry.buy_once,
@@ -1900,6 +3868,7 @@ fn coin_tier_color(num2: i64, num3: i64, num4: i64) -> [f32; 4] {
 /// The C# `Math.Round`'s default = the banker's rounding (the damage.rs
 /// convention). `pub(crate)` since W4-f37: the happiness cents round
 /// (`ShopHelper.cs:179`) rides the same helper.
+/// convention).
 pub(crate) fn round_half_to_even(v: f32) -> i32 {
     let r = v.round();
     if (v - v.trunc()).abs() == 0.5 && r % 2.0 != 0.0 {
@@ -2043,6 +4012,7 @@ pub fn add_item_to_shop(
         item: item.kind,
         when: StockWhen::Always,
         shop_custom_price: None,
+        shop_special_currency: -1,
         buy_once: true,
         is_a_shop_item: false,
         prefix: item.prefix,
@@ -2284,6 +4254,77 @@ mod tests {
         assert_eq!(value(3736), 100);
         assert_eq!(value(3743), 1000);
         assert_eq!(value(3747), 200000, "the monolith, 20 gold (:33186)");
+    /// W4-g90 — the Skeleton Merchant's Artisan Loaf row (`Chest.cs:2958-
+    /// 2961`): the 5326 appears only in moon phases 3..=5 while the local
+    /// player has NOT eaten one; the permanent flag hides it forever after.
+    #[test]
+    fn w4_g90_the_skeleton_merchant_loaf_gates_on_phase_and_the_flag() {
+        for phase in 0..8u32 {
+            let stock = resolve_stock_moon(20, &ShopFlags::default(), &[], phase);
+            let in_window = (3..=5).contains(&phase);
+            assert_eq!(
+                stock.contains(&5326),
+                in_window,
+                "phase {phase}: the loaf window is 3..=5"
+            );
+            // Once eaten, no phase sells it again.
+            let eaten = ShopFlags {
+                ate_artisan_bread: true,
+                ..Default::default()
+            };
+            let stock = resolve_stock_moon(20, &eaten, &[], phase);
+            assert!(!stock.contains(&5326), "phase {phase}: eaten hides the loaf");
+        }
+    }
+
+    /// W4-g90 — the Skeleton Merchant's phase rows (`Chest.cs:2811-2962`):
+    /// the per-phase head row, the remix phase-2 swap, the parity pair, the
+    /// hardmode tail and the always-on 166/965, in the C#'s order.
+    #[test]
+    fn w4_g90_the_skeleton_merchant_phase_rows() {
+        // Phase 4 (day, classic): the Aglet 285 head, the even-parity
+        // Spelunker Glowstick 3001, the day-not-moon-0 Water Walking Boots
+        // 282, the mod-4 Cloud 3310, no trio row, 166/965 always.
+        let stock = resolve_stock_moon(20, &ShopFlags::default(), &[], 4);
+        assert_eq!(stock[0], 285, "the phase-4 head (`:2837-2841`)");
+        assert!(stock.contains(&3001) && !stock.contains(&28));
+        assert!(stock.contains(&282) && !stock.contains(&3002));
+        assert!(stock.contains(&3310) && !stock.contains(&3311));
+        assert!(!stock.contains(&5640) && !stock.contains(&5641) && !stock.contains(&5642));
+        assert!(stock.contains(&166) && stock.contains(&965));
+        assert!(!stock.contains(&3316), "the hardmode tail stays out");
+        // Phase 2 remix swaps the Glowstick 3069 for the Magic Mirror 517
+        // (`:2822-2831`); classic keeps 3069.
+        let classic = resolve_stock_moon(20, &ShopFlags::default(), &[], 2);
+        assert!(classic.contains(&3069) && !classic.contains(&517));
+        let remix = ShopFlags { remix_world: true, ..Default::default() };
+        let swapped = resolve_stock_moon(20, &remix, &[], 2);
+        assert!(swapped.contains(&517) && !swapped.contains(&3069));
+        // Phase 3 night hardmode + a mech down + blood moon: the 4341 head,
+        // the odd-parity 28 + the 188, the 3002 (+5377 with the boots), the
+        // 5641 trio, the 3316/3334/5540/3258 tail — and the loaf window.
+        let hm = ShopFlags {
+            hard_mode: true,
+            night: true,
+            blood_moon: true,
+            downed_mech_any: true,
+            ..Default::default()
+        };
+        let stock = resolve_stock_moon(20, &hm, &[930], 3);
+        for id in [4341, 28, 188, 3002, 5377, 5641, 3316, 3334, 5540, 3258, 5326] {
+            assert!(stock.contains(&id), "the phase-3 hardmode row {id} missing");
+        }
+        // The Flower Boots row needs the carrier (`:2876-2880`).
+        let without = resolve_stock_moon(20, &hm, &[], 3);
+        assert!(without.contains(&3002) && !without.contains(&5377));
+        // The early-hours pair (`:2887-2895`): time 0 sells the Ale 3004,
+        // time 31 the Torch 8 — `((time % 60) * 60) * 6 <= 10800` verbatim.
+        let early = ShopFlags { time: 0.0, ..Default::default() };
+        let late = ShopFlags { time: 31.0, ..Default::default() };
+        let e = resolve_stock_moon(20, &early, &[], 4);
+        let l = resolve_stock_moon(20, &late, &[], 4);
+        assert!(e.contains(&3004) && !e.contains(&8));
+        assert!(l.contains(&8) && !l.contains(&3004));
     }
 
     #[test]
@@ -2368,6 +4409,612 @@ mod tests {
     /// luck rolls, the main loop, the painting tail) and the output proves
     /// the bundle rows travel with their heads (`_AddToShop`'s tails) and the
     /// duplicate suppression holds across all 40 slots.
+    /// W4-d122 shop 1 — the Merchant (`Chest.cs:1371-1483`, the registry
+    /// `NPCInteractions.Shop(17, 1)`, `NPCInteractions.cs:488`): the FULL
+    /// num order, every gate verbatim — the notTheBees block, the
+    /// jungle-or-anniversary-bees arm, the happy-windy-day Pin Wheel, the
+    /// party bundle, the Flower-Boots scan BEFORE the 1786 row and the
+    /// HasItem(3107) tail. Written, not run (code-only).
+    #[test]
+    fn the_merchant_full_stock_pins_the_num_order_and_every_gate() {
+        // Classic day, phase 0, no carried items: the always rows only.
+        let base = resolve_stock(1, &ShopFlags::default(), &[]);
+        assert_eq!(
+            base,
+            vec![88, 87, 35, 1991, 3509, 3506, 8, 28, 110, 40, 42, 965, 1786]
+        );
+        // `:1387`: notTheBees && !remix → 4388 right after the Torch 8.
+        let bees = ShopFlags {
+            not_the_bees: true,
+            ..Default::default()
+        };
+        let b = resolve_stock(1, &bees, &[]);
+        assert_eq!(&b[..9], &[88, 87, 35, 1991, 3509, 3506, 8, 4388, 28]);
+        // remix ON kills the block again (`:1387`'s second conjunct).
+        let bees_remix = ShopFlags {
+            remix_world: true,
+            ..bees
+        };
+        assert!(!resolve_stock(1, &bees_remix, &[]).contains(&4388));
+        // `:1417`: the jungle alone opens 33; so does the anniversary +
+        // bees + !remix trio WITHOUT the jungle.
+        let jungle = ShopFlags {
+            zone_jungle: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock(1, &jungle, &[]).contains(&33));
+        let anni_bees = ShopFlags {
+            anniversary_world: true,
+            not_the_bees: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock(1, &anni_bees, &[]).contains(&33));
+        let anni_bees_remix = ShopFlags {
+            remix_world: true,
+            ..anni_bees
+        };
+        assert!(!resolve_stock(1, &anni_bees_remix, &[]).contains(&33));
+        // `:1422`: DAY + happy-windy-day → the Pin Wheel 4074; night kills it.
+        let windy = ShopFlags {
+            happy_windy_day: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock(1, &windy, &[]).contains(&4074));
+        let windy_night = ShopFlags {
+            night: true,
+            ..windy
+        };
+        assert!(!resolve_stock(1, &windy_night, &[]).contains(&4074));
+        // `:1435`: the party bundle sits between the Glowstick 282 and the
+        // Skeletron row 346 in the num order.
+        let party = ShopFlags {
+            party_is_up: true,
+            night: true,
+            downed_boss3: true,
+            ..Default::default()
+        };
+        let p = resolve_stock(1, &party, &[]);
+        let i282 = p.iter().position(|v| *v == 282).unwrap();
+        assert_eq!(p[i282 + 1], 5643, "the party row follows the Glowstick");
+        assert_eq!(p[i282 + 2], 346);
+        // The Flower-Boots scan rows sit BEFORE 1786 (`:1449-1461`).
+        let boots = resolve_stock(1, &ShopFlags::default(), &[930]);
+        let i931 = boots.iter().position(|v| *v == 931).unwrap();
+        assert_eq!(boots[i931 + 1], 1614);
+        assert_eq!(boots[i931 + 2], 1786, "the pair precedes the 1786 row");
+        // The FULL pin: hardmode + night + blood moon + snow + jungle +
+        // boss2/3 + windy + party + bees + both scan items.
+        let full = ShopFlags {
+            hard_mode: true,
+            night: true,
+            blood_moon: true,
+            zone_snow: true,
+            zone_jungle: true,
+            downed_boss2: true,
+            downed_boss3: true,
+            not_the_bees: true,
+            happy_windy_day: true,
+            party_is_up: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(1, &full, &[930, 3107]),
+            vec![
+                88, 87, 35, 1991, 3509, 3506, 8, 4388, 28, 188, 110, 189, 40, 42, 965, 967, 33,
+                279, 282, 5643, 346, 488, 931, 1614, 1786, 1348, 3198, 4063, 4673, 3108
+            ],
+            "the exact num order (`:1373-1481`; the day-gated 4074 stays out at night)"
+        );
+        // The luck rows: the same seed at luck 0.3 — the four luck rolls
+        // all miss on seed 7's prefix, so the stock stays at the plain
+        // band's 7 (the widening mechanic itself is pinned directly on
+        // `roll_luck` below).
+        let lucky = setup_travel_shop(&w, 0.3, &mut UnifiedRandom::new(7));
+        let lucky_rows = lucky.iter().filter(|v| **v != 0).count();
+        assert_eq!(lucky_rows, 7, "seed 7's luck rolls all miss");
+    }
+
+    /// W4-a6 — `Chest.cs:1303-1306`: the Peddler's Satchel's permanent
+    /// extra stock slot. The flag adds NO draw (a straight `num++`), so the
+    /// same seed's prefix rows stay identical and the stock grows by one
+    /// generated row ahead of the painting tail (the painting roll itself
+    /// shifts with the extra iteration's draws — only the count is pinned).
+    #[test]
+    fn the_peddlers_satchel_adds_one_stock_slot() {
+        let mut w = World::new("t".into(), 200, 200);
+        w.peddlers_satchel_was_used = true;
+        let stock = setup_travel_shop(&w, 0.0, &mut UnifiedRandom::new(7));
+        // The plain band's first 6 generated rows keep their ids and order
+        // (the satchel draws nothing before the main loop, and the loop's
+        // per-iteration draws are identical up to the extra 7th add).
+        assert_eq!(
+            &stock[..6],
+            &[2274, 4420, 2281, 2266, 3118, 3099],
+            "the prefix rows are draw-identical"
+        );
+        // One MORE generated row + the painting tail = 8 live slots.
+        assert_eq!(stock[..8].iter().filter(|v| **v != 0).count(), 8);
+        assert!(stock[8..].iter().all(|v| *v == 0), "the tail is empty");
+        let seen: Vec<u16> = stock.iter().copied().filter(|v| *v != 0).collect();
+        for (i, id) in seen.iter().enumerate() {
+            assert!(!seen[i + 1..].contains(id), "the duplicate {id}");
+        }
+    }
+
+    /// `Luck.RollLuck`'s two-draw hit path (`Luck.cs:5-16`), pinned directly:
+    /// with a strong positive luck the seed-42 prefix hits on the first call
+    /// — `NextFloat() < luck` (draw 1), the narrowed `Next(range/2, range)`
+    /// (draw 2) and the outer `Next(...)` (draw 3), the hit being the outer
+    /// 0. Exactly three draws (twin equality), and the pre-P2 shape (one
+    /// draw returning the narrowed range) could never land this hit.
+    #[test]
+    fn the_roll_luck_hit_is_the_outer_zero_of_two_draws() {
+        let mut rng = UnifiedRandom::new(42);
+        assert_eq!(roll_luck(0.9, 4, &mut rng), 0, "the luck hit lands");
+        let mut twin = UnifiedRandom::new(42);
+        assert!(twin.next_float() < 0.9, "draw 1: the NextFloat gate");
+        let outer_range = twin.next_range(4 / 2, 4);
+        assert_eq!(outer_range, 2, "draw 2: the narrowed range");
+        assert_eq!(twin.next_max(outer_range), 0, "draw 3: the outer hit");
+        // ...and the base path (luck 0) is one plain `Next(range)` draw.
+        let mut base = UnifiedRandom::new(42);
+        let hit = roll_luck(0.0, 4, &mut base);
+        let mut twin2 = UnifiedRandom::new(42);
+        assert_eq!(hit, twin2.next_max(4), "the base roll is one Next(range)");
+        assert_eq!(base, twin2, "exactly one draw on the base path");
+        // The day twin: the Pin Wheel enters at its num slot (`:1422`).
+        let day = ShopFlags {
+            night: false,
+            ..full
+        };
+        let d = resolve_stock(1, &day, &[930, 3107]);
+        let i33 = d.iter().position(|v| *v == 33).unwrap();
+        assert_eq!(d[i33 + 1], 4074);
+    }
+
+    /// W4-d122 shop 2 — the Arms Dealer (`Chest.cs:1484-1567`, the registry
+    /// `NPCInteractions.Shop(19, 2)`, `NPCInteractions.cs:489`): the
+    /// silver/tungsten bullet split under the event gate, the Minishark's
+    /// `(downedBoss2 && night) || hardMode` disjunction, the graveyard
+    /// Quad-Barrel conjunct and the hardmode trio — verbatim. Written,
+    /// not run (code-only).
+    #[test]
+    fn the_arms_dealer_stock_splits_the_bullets_and_the_minishark() {
+        // Classic day: the three always rows only.
+        let base = resolve_stock(2, &ShopFlags::default(), &[]);
+        assert_eq!(base, vec![97, 95, 98]);
+        // `:1487`: the blood moon opens the Silver Bullet 278 (tier 9).
+        let bm = ShopFlags {
+            blood_moon: true,
+            ..Default::default()
+        };
+        assert_eq!(resolve_stock(2, &bm, &[]), vec![97, 278, 95, 98]);
+        // The tungsten tier flips the split to 4915 (`:1489`).
+        let tungsten = ShopFlags {
+            silver_ore_tier: 168,
+            ..bm
+        };
+        assert_eq!(resolve_stock(2, &tungsten, &[]), vec![97, 4915, 95, 98]);
+        // Hardmode alone opens the same split PLUS the Minishark, the
+        // Handgun stays night-gated, the shotgun trio enters (`:1518-1532`).
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(2, &hm, &[]),
+            vec![97, 278, 47, 95, 98, 534, 1432, 2177]
+        );
+        // `:1500`: boss2 + NIGHT opens the Minishark without hardmode;
+        // boss2 by DAY does not.
+        let b2n = ShopFlags {
+            downed_boss2: true,
+            night: true,
+            ..Default::default()
+        };
+        let n = resolve_stock(2, &b2n, &[]);
+        assert_eq!(n, vec![97, 47, 95, 98, 324], "the night Handgun rides along");
+        let b2d = ShopFlags {
+            downed_boss2: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock(2, &b2d, &[]).contains(&47));
+        // `:1509`: the graveyard AND boss3 — neither alone opens 4703.
+        let grave_only = ShopFlags {
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock(2, &grave_only, &[]).contains(&4703));
+        let boss3_only = ShopFlags {
+            downed_boss3: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock(2, &boss3_only, &[]).contains(&4703));
+        let quad = ShopFlags {
+            downed_boss3: true,
+            ..grave_only
+        };
+        let q = resolve_stock(2, &quad, &[]);
+        assert_eq!(q, vec![97, 95, 98, 4703], "the Quad-Barrel after the 98 row");
+        // The FULL pin: hardmode + night + blood moon + graveyard + boss3 +
+        // tungsten + every carried scan item.
+        let full = ShopFlags {
+            hard_mode: true,
+            night: true,
+            blood_moon: true,
+            zone_graveyard: true,
+            downed_boss3: true,
+            silver_ore_tier: 168,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(2, &full, &[1258, 1835, 3107, 1782, 1784]),
+            vec![
+                97, 4915, 47, 95, 98, 4703, 324, 534, 1432, 2177, 1261, 1836, 3108, 1783, 1785
+            ],
+            "the exact num order (`:1485-1557`; the halloween trio stays off)"
+        );
+    }
+
+    /// W4-d122 shop 3 — the Dryad (`Chest.cs:1568-1745`, the registry
+    /// `NPCInteractions.Shop(20, 3)`, `NPCInteractions.cs:490`): the
+    /// blood-moon evil split with the remix-gated powder heads, the
+    /// NOT-blood-moon else branch, the flipped graveyard seed split, the
+    /// underworld/glowshroom else-if, the crimson planter split and the
+    /// hardmode flower TRIPLETS — verbatim. Written, not run (code-only).
+    #[test]
+    fn the_dryad_full_stock_pins_the_evil_splits_and_the_flower_triplets() {
+        // Classic day, phase 0, corruption world: the else branch + the
+        // base rows + the 3217 planter + the pair-0 rows.
+        let base = resolve_stock_moon(3, &ShopFlags::default(), &[], 0);
+        assert_eq!(
+            base,
+            vec![
+                66, 62, 63, 745, 27, 5309, 114, 1828, 747, 3215, 3216, 3219, 3217, 3220, 3221,
+                3222, 4047, 4045, 4044, 4043, 4042, 4046, 4041, 4241, 4048, 4430, 4431
+            ],
+            "the exact num order (`:1598-1731`, no hardmode)"
+        );
+        // `:1569`: the blood moon REPLACES the else branch with the
+        // corruption seeds (the powder rides the remix gate).
+        let bm = ShopFlags {
+            blood_moon: true,
+            ..Default::default()
+        };
+        let b = resolve_stock_moon(3, &bm, &[], 0);
+        assert_eq!(&b[..3], &[67, 59, 4504], "the corruption head rows");
+        assert!(!b.contains(&66) && !b.contains(&62), "the else rows are gone");
+        // The crimson world flips the split (`:1571-1581`).
+        let crimson = ShopFlags {
+            crimson_world: true,
+            ..bm
+        };
+        let c = resolve_stock_moon(3, &crimson, &[], 0);
+        assert_eq!(&c[..3], &[2886, 2171, 4508]);
+        // `:1573`/`:1585`: remix ON kills ONLY the powder head.
+        let remix = ShopFlags {
+            remix_world: true,
+            ..bm
+        };
+        let r = resolve_stock_moon(3, &remix, &[], 0);
+        assert_eq!(&r[..2], &[59, 4504], "the seeds survive the remix gate");
+        // `:1598`: remix ON also kills the else-branch powder — but the
+        // infected seed brings it back (the middle disjunct).
+        let remix_day = ShopFlags {
+            remix_world: true,
+            ..Default::default()
+        };
+        let rd = resolve_stock_moon(3, &remix_day, &[], 0);
+        assert!(!rd.contains(&66) && rd.contains(&62), "the bare else rows stay");
+        let infected = ShopFlags {
+            infected_seed: true,
+            ..remix_day
+        };
+        assert!(resolve_stock_moon(3, &infected, &[], 0).contains(&66));
+        // `:1610`: hardmode + graveyard — the FLIPPED split (crimson world
+        // sells 59, corruption world 2171).
+        let grave = ShopFlags {
+            hard_mode: true,
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let g = resolve_stock_moon(3, &grave, &[], 0);
+        let i747 = g.iter().position(|v| *v == 747).unwrap();
+        assert_eq!(g[i747 - 1], 2171, "the corruption world's grave seed");
+        let grave_c = ShopFlags {
+            crimson_world: true,
+            ..grave
+        };
+        let gc = resolve_stock_moon(3, &grave_c, &[], 0);
+        let i747c = gc.iter().position(|v| *v == 747).unwrap();
+        assert_eq!(gc[i747c - 1], 59, "the crimson world's grave seed");
+        // `:1647-1654`: the underworld wins over the glowshroom else-if.
+        let under = ShopFlags {
+            zone_underworld_height: true,
+            zone_glowshroom: true,
+            ..Default::default()
+        };
+        let u = resolve_stock_moon(3, &under, &[], 0);
+        assert!(u.contains(&5214) && !u.contains(&194), "the else-if precedence");
+        let glow = ShopFlags {
+            zone_glowshroom: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock_moon(3, &glow, &[], 0).contains(&194));
+        // `:1665`: the crimson planter split.
+        let planter = ShopFlags {
+            crimson_world: true,
+            ..Default::default()
+        };
+        let pl = resolve_stock_moon(3, &planter, &[], 0);
+        assert!(pl.contains(&3218) && !pl.contains(&3217));
+        // `:1685-1710`: hardmode adds the THIRD flower row per pair; the
+        // pairs themselves are hardmode-independent.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let h0 = resolve_stock_moon(3, &hm, &[], 0);
+        assert_eq!(&h0[h0.len() - 3..], &[4430, 4431, 4432]);
+        let h6 = resolve_stock_moon(3, &hm, &[], 6);
+        assert_eq!(&h6[h6.len() - 3..], &[4439, 4440, 4441], "the default arm");
+        let p6 = resolve_stock_moon(3, &ShopFlags::default(), &[], 6);
+        assert_eq!(&p6[p6.len() - 2..], &[4439, 4440], "the non-hardmode pair");
+        // The FULL pin: hardmode + blood moon + crimson + graveyard +
+        // underworld + remix + anniversary (the powder survives via the
+        // anniversary disjunct), phase 5 (pair 2).
+        let full = ShopFlags {
+            hard_mode: true,
+            blood_moon: true,
+            crimson_world: true,
+            zone_graveyard: true,
+            zone_underworld_height: true,
+            remix_world: true,
+            anniversary_world: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock_moon(3, &full, &[], 5),
+            vec![
+                2886, 2171, 4508, 59, 27, 5309, 114, 1828, 747, 746, 369, 4505, 5214, 3215,
+                3216, 3219, 3218, 3220, 3221, 3222, 4047, 4045, 4044, 4043, 4042, 4046, 4041,
+                4241, 4048, 4436, 4437, 4438
+            ],
+            "the exact num order (`:1569-1731`; the halloween pair stays off)"
+        );
+    }
+
+    /// W4-d122 shop 4 — the Demolitionist (`Chest.cs:1746-1813`, the
+    /// registry `NPCInteractions.Shop(38, 4)`, `NPCInteractions.cs:491`):
+    /// the Freeze Bomb's boss-or-slime-king night gate BETWEEN 166/167,
+    /// the always-on Kiln/Mitey Titey pair, the Land Mine triple conjunct
+    /// and the four bomb scans — verbatim. Written, not run (code-only).
+    #[test]
+    fn the_demolitionist_stock_gates_the_freeze_bomb_and_the_land_mine() {
+        // Classic day: the five always rows.
+        let base = resolve_stock(4, &ShopFlags::default(), &[]);
+        assert_eq!(base, vec![168, 166, 167, 5481, 5464]);
+        // `:1752`: boss1 + NIGHT opens the Freeze Bomb between 166 and 167;
+        // the slime king is the other disjunct; day kills both.
+        let b1n = ShopFlags {
+            downed_boss1: true,
+            night: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(4, &b1n, &[]),
+            vec![168, 166, 5542, 167, 5481, 5464]
+        );
+        let skn = ShopFlags {
+            downed_slime_king: true,
+            night: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock(4, &skn, &[]).contains(&5542));
+        let b1d = ShopFlags {
+            downed_boss1: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock(4, &b1d, &[]).contains(&5542));
+        // `:1766`: the Land Mine needs ALL THREE — hardmode alone or
+        // hardmode+Plantera do not open it.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let h = resolve_stock(4, &hm, &[]);
+        assert_eq!(h, vec![168, 166, 167, 265, 5481, 5464, 1347]);
+        let hmp = ShopFlags {
+            downed_plant_boss: true,
+            ..hm
+        };
+        assert!(!resolve_stock(4, &hmp, &[]).contains(&937));
+        let full = ShopFlags {
+            downed_pirates: true,
+            ..hmp
+        };
+        let f = resolve_stock(4, &full, &[]);
+        let i5464 = f.iter().position(|v| *v == 5464).unwrap();
+        assert_eq!(f[i5464 + 1], 937, "the Land Mine follows the Mitey Titey");
+        // The four scans ride the carried bombs in the C#'s order
+        // (`:1776-1811`: 4827 first, then 4824/4825/4826).
+        let scans = resolve_stock(4, &ShopFlags::default(), &[4826, 4824, 4827, 4825]);
+        assert_eq!(
+            &scans[scans.len() - 4..],
+            &[4827, 4824, 4825, 4826],
+            "the scan order is the C#'s, not the inventory's"
+        );
+        // The FULL pin: hardmode + plant + pirates + night + boss1 + every
+        // carried bomb.
+        let loud = ShopFlags {
+            night: true,
+            downed_boss1: true,
+            ..full
+        };
+        assert_eq!(
+            resolve_stock(4, &loud, &[4827, 4824, 4825, 4826]),
+            vec![168, 166, 5542, 167, 265, 5481, 5464, 937, 1347, 4827, 4824, 4825, 4826],
+            "the exact num order (`:1748-1811`)"
+        );
+    }
+
+    /// W4-d122 shop 5 — the Clothier (`Chest.cs:1814-1988`, the registry
+    /// `NPCInteractions.Shop(54, 5)`, `NPCInteractions.cs:492`): the
+    /// day/night + exact-moon-phase hats, the cultist/frost day-night
+    /// splits, the Tax Collector trio, the hardmode costume sets, the
+    /// party block and the two `num < 38` tail guards — verbatim.
+    /// Written, not run (code-only).
+    #[test]
+    fn the_clothier_full_stock_pins_the_splits_and_the_num_guards() {
+        // Classic DAY, phase 0: the day hat + the Familiar set + the base
+        // trio + the two tail rows (num stays well under 38).
+        let base = resolve_stock_moon(5, &ShopFlags::default(), &[], 0);
+        assert_eq!(
+            base,
+            vec![254, 981, 242, 245, 246, 269, 270, 271, 5308, 5630],
+            "the exact num order (`:1815-1987`, day phase 0)"
+        );
+        // NIGHT phase 0: no day hat, the Wig pair enters.
+        let night = ShopFlags {
+            night: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock_moon(5, &night, &[], 0),
+            vec![254, 981, 245, 246, 1288, 1289, 269, 270, 271, 5308, 5630]
+        );
+        // Phase 1: the Doctor's set REPLACES the Familiar set (`:1836`).
+        let p1 = resolve_stock_moon(5, &ShopFlags::default(), &[], 1);
+        assert_eq!(
+            p1,
+            vec![254, 981, 242, 325, 326, 269, 270, 271, 5308, 5630]
+        );
+        // `:1849`: the clown latch opens the outfit trio after the 271 row.
+        let clown = ShopFlags {
+            downed_clown: true,
+            ..Default::default()
+        };
+        let c = resolve_stock_moon(5, &clown, &[], 2);
+        let i271 = c.iter().position(|v| *v == 271).unwrap();
+        assert_eq!(&c[i271 + 1..i271 + 4], &[503, 504, 505]);
+        // `:1858`: the blood moon opens the Mime Mask; night adds the pair.
+        let bm = ShopFlags {
+            blood_moon: true,
+            night: true,
+            ..Default::default()
+        };
+        let b = resolve_stock_moon(5, &bm, &[], 2);
+        let i322 = b.iter().position(|v| *v == 322).unwrap();
+        assert_eq!(&b[i322 + 1..i322 + 3], &[3362, 3363]);
+        // `:1868`: the cultist day/night split.
+        let cult_day = ShopFlags {
+            downed_cultist: true,
+            ..Default::default()
+        };
+        let cd = resolve_stock_moon(5, &cult_day, &[], 2);
+        assert!(cd.contains(&2856) && cd.contains(&2858) && !cd.contains(&2857));
+        let cult_night = ShopFlags {
+            night: true,
+            ..cult_day
+        };
+        let cn = resolve_stock_moon(5, &cult_night, &[], 2);
+        assert!(cn.contains(&2857) && cn.contains(&2859) && !cn.contains(&2856));
+        // `:1881`: the Tax Collector trio.
+        let tax = ShopFlags {
+            tax_collector_present: true,
+            ..Default::default()
+        };
+        let t = resolve_stock_moon(5, &tax, &[], 2);
+        assert!(t.contains(&3242) && t.contains(&3243) && t.contains(&3244));
+        // `:1887`: the graveyard octet; `:1898`: the snow set.
+        let grave = ShopFlags {
+            zone_graveyard: true,
+            zone_snow: true,
+            ..Default::default()
+        };
+        let g = resolve_stock_moon(5, &grave, &[], 2);
+        for id in [4685, 4686, 4704, 4705, 4706, 4707, 4708, 4709, 1429] {
+            assert!(g.contains(&id), "the grave/snow row {id}");
+        }
+        // `:1908-1951`: the hardmode EXACT-phase costumes — phase 6 carries
+        // the trio, phase 4 the pair, and the non-hardmode twins stay out.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let h6 = resolve_stock_moon(5, &hm, &[], 6);
+        assert!(h6.contains(&873) && h6.contains(&874) && h6.contains(&875));
+        assert!(!h6.contains(&864), "phase 4's set stays out");
+        let p6 = resolve_stock_moon(5, &ShopFlags::default(), &[], 6);
+        assert!(!p6.contains(&873), "no costume without hardmode");
+        // `:1953`: the frost day/night split.
+        let frost = ShopFlags {
+            downed_frost: true,
+            ..Default::default()
+        };
+        let fd = resolve_stock_moon(5, &frost, &[], 2);
+        assert!(fd.contains(&1275) && !fd.contains(&1276));
+        let fn_ = ShopFlags {
+            night: true,
+            ..frost
+        };
+        let fnn = resolve_stock_moon(5, &fn_, &[], 2);
+        assert!(fnn.contains(&1276) && !fnn.contains(&1275));
+        // The `num < 38` guards (`:1979`/`:1984`): the LOUD world at
+        // NIGHT + phase 0 resolves the MAXIMUM 35 rows before the golf
+        // tail (the halloween trio that would push the vanilla to 38 is
+        // constants-off), so 4744 lands (36), 5308 (37) and 5630's
+        // `num < 38` still passes (37 < 38) — the full 38-row list.
+        let loud = ShopFlags {
+            night: true,
+            blood_moon: true,
+            hard_mode: true,
+            downed_clown: true,
+            downed_cultist: true,
+            downed_frost: true,
+            tax_collector_present: true,
+            zone_graveyard: true,
+            zone_snow: true,
+            party_is_up: true,
+            golfer_score: 2500,
+            ..Default::default()
+        };
+        let l = resolve_stock_moon(5, &loud, &[], 0);
+        assert_eq!(l.len(), 38, "the max list with the halloween rows off");
+        assert_eq!(&l[l.len() - 3..], &[4744, 5308, 5630]);
+        // Phase 7 resolves one costume PAIR instead of the four phase-0
+        // rows (33 pre-tail) — both guarded rows land with room to spare.
+        let p7 = resolve_stock_moon(5, &loud, &[], 7);
+        assert_eq!(p7.len(), 36);
+        assert_eq!(&p7[p7.len() - 3..], &[4744, 5308, 5630]);
+        // The golf gate itself: under 2000 the 4744 row stays out even
+        // with room, and the mirror still lands.
+        let poor = ShopFlags {
+            golfer_score: 1999,
+            ..loud
+        };
+        let pr = resolve_stock_moon(5, &poor, &[], 7);
+        assert!(!pr.contains(&4744) && pr.contains(&5630));
+        // The guard MECHANISM pinned directly (the row list cannot reach
+        // num == 38 pre-tail while the halloween rows are off): the
+        // boundary is `num < 38`, and the child gate still applies.
+        let f = ShopFlags::default();
+        assert!(stock_gate(&StockWhen::NumBelow(38, &StockWhen::Always), &f, &[], 0, 37));
+        assert!(!stock_gate(&StockWhen::NumBelow(38, &StockWhen::Always), &f, &[], 0, 38));
+        assert!(!stock_gate(
+            &StockWhen::NumBelow(38, &CLOTHIER_GOLF_TAIL),
+            &f,
+            &[],
+            0,
+            0
+        ), "the golf child gate still gates at num 0");
+    }
+
+    /// `Chest.SetupTravelShop` (`Chest.cs:1275-1358`): the visit's stock —
+    /// the seed-7 roll pins the whole ladder (the `Next(4, 7)` count, the
+    /// luck rolls, the main loop, the painting tail) and the output proves
+    /// the bundle rows travel with their heads (`_AddToShop`'s tails) and the
+    /// duplicate suppression holds across all 40 slots.
     #[test]
     fn the_travel_stock_rolls_its_bundles_dup_free() {
         let w = World::new("t".into(), 200, 200);
@@ -2418,33 +5065,6 @@ mod tests {
         let lucky = setup_travel_shop(&w, 0.3, &mut UnifiedRandom::new(7));
         let lucky_rows = lucky.iter().filter(|v| **v != 0).count();
         assert_eq!(lucky_rows, 7, "seed 7's luck rolls all miss");
-    }
-
-    /// W4-a6 — `Chest.cs:1303-1306`: the Peddler's Satchel's permanent
-    /// extra stock slot. The flag adds NO draw (a straight `num++`), so the
-    /// same seed's prefix rows stay identical and the stock grows by one
-    /// generated row ahead of the painting tail (the painting roll itself
-    /// shifts with the extra iteration's draws — only the count is pinned).
-    #[test]
-    fn the_peddlers_satchel_adds_one_stock_slot() {
-        let mut w = World::new("t".into(), 200, 200);
-        w.peddlers_satchel_was_used = true;
-        let stock = setup_travel_shop(&w, 0.0, &mut UnifiedRandom::new(7));
-        // The plain band's first 6 generated rows keep their ids and order
-        // (the satchel draws nothing before the main loop, and the loop's
-        // per-iteration draws are identical up to the extra 7th add).
-        assert_eq!(
-            &stock[..6],
-            &[2274, 4420, 2281, 2266, 3118, 3099],
-            "the prefix rows are draw-identical"
-        );
-        // One MORE generated row + the painting tail = 8 live slots.
-        assert_eq!(stock[..8].iter().filter(|v| **v != 0).count(), 8);
-        assert!(stock[8..].iter().all(|v| *v == 0), "the tail is empty");
-        let seen: Vec<u16> = stock.iter().copied().filter(|v| *v != 0).collect();
-        for (i, id) in seen.iter().enumerate() {
-            assert!(!seen[i + 1..].contains(id), "the duplicate {id}");
-        }
     }
 
     /// `Luck.RollLuck`'s two-draw hit path (`Luck.cs:5-16`), pinned directly:
@@ -2595,6 +5215,7 @@ mod tests {
             item: 88,
             when: StockWhen::Always,
             shop_custom_price: Some(50),
+            shop_special_currency: -1,
             buy_once: false,
             is_a_shop_item: false,
             prefix: 0,
@@ -2619,17 +5240,182 @@ mod tests {
         assert_eq!(display_price_row(&once, false, 0.75), 10666);
     }
 
+    /// The Tavernkeep's shop (`case 21`, W4-d123, `Chest.cs:2963-3154`):
+    /// the two-tier gates, the mug's price ladder and the medal rows'
+    /// raw pricing (`Player.cs:35361-35365`'s early return).
+    #[test]
+    fn the_tavernkeep_shop_gates_the_sentry_tiers() {
+        // Pre-hardmode: the four head rows + the tier-1 sentry quartet.
+        let base = resolve_stock_entries(21, &ShopFlags::default(), &[]);
+        assert_eq!(
+            base.iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![353, 3828, 3816, 3813, 3818, 3824, 3832, 3829],
+            "the tier-1 stock"
+        );
+        // The mug's ladder (`:2970-2981`): 25 silver base, 1 gold at
+        // hardmode+mech-any, 4 gold at hardmode+Golem (the Golem tier
+        // wins even when both flags hold).
+        assert_eq!(base[1].shop_custom_price, Some(2500));
+        let mech = ShopFlags { hard_mode: true, downed_mech_any: true, ..Default::default() };
+        let m = resolve_stock_entries(21, &mech, &[]);
+        assert_eq!(m[1].shop_custom_price, Some(10000));
+        let golem = ShopFlags { hard_mode: true, downed_golem: true, ..Default::default() };
+        let g = resolve_stock_entries(21, &golem, &[]);
+        assert_eq!(g[1].shop_custom_price, Some(40000));
+        let both = ShopFlags { downed_mech_any: true, ..golem };
+        assert_eq!(resolve_stock_entries(21, &both, &[])[1].shop_custom_price, Some(40000));
+        // The mech tier adds the 15-medal sentries + the 12 armor pieces
+        // (`:3005-3023`/`:3043-3097`); the Golem tier adds the 60-medal
+        // sentries + the 3871..3882 armor (`:3024-3042`/`:3098-3152`).
+        let mi: Vec<u16> = m.iter().map(|e| e.item).collect();
+        for id in [3819, 3825, 3833, 3830, 3800, 3797, 3803, 3806, 3808] {
+            assert!(mi.contains(&id), "the mech-tier row {id}");
+        }
+        assert!(!mi.contains(&3820) && !mi.contains(&3871), "no Golem tier");
+        assert_eq!(m.len(), 8 + 4 + 12, "the mech-tier row count");
+        let gi: Vec<u16> = g.iter().map(|e| e.item).collect();
+        for id in [3820, 3826, 3834, 3831, 3871, 3882] {
+            assert!(gi.contains(&id), "the Golem-tier row {id}");
+        }
+        assert!(!gi.contains(&3819), "the Golem tier alone skips the mech rows");
+        assert_eq!(g.len(), 8 + 4 + 12, "the Golem-tier row count");
+        // The medal rows price RAW: the 5-medal sentry stays 5 under the
+        // discount + a 0.75 mood (`CustomCurrencySystem.cs:265-270`).
+        let sentry = base.iter().find(|e| e.item == 3818).unwrap();
+        assert_eq!(sentry.shop_special_currency, 0);
+        assert_eq!(buy_price_row(sentry, true, 0.75), 5);
+        assert_eq!(display_price_row(sentry, true, 0.75), 5);
+        // The coin rows keep the normal math: the mug at 25 silver, mood
+        // 0.75 → round(2500×0.75) = 1875.
+        assert_eq!(buy_price_row(&base[1], false, 0.75), 1875);
+    }
+
+    /// The Decor shop (`case 25`, W4-d123, `Chest.cs:2483-2614`): the
+    /// unconditioned walks, the !graveyard moon ladder, the biome rows,
+    /// the sky block, the storm row and the graveyard octet.
+    #[test]
+    fn the_decor_shop_walks_the_zones_and_phases() {
+        // Phase 0, no zones, above surface: the two walks + 1490 + 1481
+        // (phase <= 1) + the forest 5245. The Christmas walk stays out.
+        let base = resolve_stock_moon(25, &ShopFlags::default(), &[], 0);
+        assert_eq!(
+            base,
+            vec![2158, 2159, 2160, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 1490, 1481, 5245],
+            "the phase-0 surface stock"
+        );
+        // The moon ladder: exactly one of 1481/1482/1483/1484 per phase.
+        for (phase, want) in [(0u32, 1481u16), (1, 1481), (2, 1482), (3, 1482), (4, 1483), (5, 1483), (6, 1484), (7, 1484)] {
+            let s = resolve_stock_moon(25, &ShopFlags::default(), &[], phase);
+            for id in [1481, 1482, 1483, 1484] {
+                assert_eq!(s.contains(&id), id == want, "phase {phase} ladder {id}");
+            }
+        }
+        // The graveyard flips BOTH blocks: the 1490+ladder and the sky
+        // rows vanish, the octet appears (5257 between 4727 and 4728).
+        let grave = ShopFlags { zone_graveyard: true, zone_sky_height: true, hard_mode: true, ..Default::default() };
+        let g = resolve_stock_moon(25, &grave, &[], 0);
+        assert!(!g.contains(&1490) && !g.contains(&1481) && !g.contains(&1485) && !g.contains(&1494));
+        let tail: Vec<u16> = g[g.len() - 8..].to_vec();
+        assert_eq!(tail, vec![4723, 4724, 4725, 4726, 4727, 5257, 4728, 4729]);
+        // The sky block needs !graveyard + sky (+ hardmode for 1494).
+        let sky = ShopFlags { zone_sky_height: true, ..Default::default() };
+        let s = resolve_stock_moon(25, &sky, &[], 0);
+        assert!(s.contains(&1485) && !s.contains(&1494));
+        let skyh = ShopFlags { hard_mode: true, ..sky };
+        assert!(resolve_stock_moon(25, &skyh, &[], 0).contains(&1494));
+        // The biome rows + the snow pair + the storm + the blood moon.
+        let zones = ShopFlags {
+            zone_crimson: true, zone_corrupt: true, zone_hallow: true,
+            zone_jungle: true, zone_snow: true, zone_desert: true,
+            storming: true, blood_moon: true, ..Default::default()
+        };
+        let z = resolve_stock_moon(25, &zones, &[], 0);
+        for id in [1492, 1488, 1489, 1486, 5491, 1487, 1491, 1493, 5251] {
+            assert!(z.contains(&id), "the zone row {id}");
+        }
+        assert!(!z.contains(&5245), "no forest row in a biome");
+        // Below the surface the forest row vanishes too.
+        let below = ShopFlags { shopping_below_surface: true, ..Default::default() };
+        assert!(!resolve_stock_moon(25, &below, &[], 0).contains(&5245));
+    }
+
+    /// The shared pylon tail (`Chest.cs:3472-3537`, W4-d123): the
+    /// two-NPC gate, the zone exclusions, the purity/cavern/ocean/
+    /// underworld arms and the 19/20/21 skip.
+    #[test]
+    fn the_pylon_tail_rides_the_shared_setup() {
+        let npc2 = ShopFlags { pylon_enough_npcs: true, ..Default::default() };
+        // Surface purity: 4876 after the Merchant's rows.
+        let m = resolve_stock(1, &npc2, &[]);
+        assert_eq!(m.last(), Some(&4876), "the purity pylon: {m:?}");
+        // No NPCs / corrupt / crimson: no pylon rows anywhere.
+        assert!(!resolve_stock(1, &ShopFlags::default(), &[]).contains(&4876));
+        let corrupt = ShopFlags { zone_corrupt: true, ..npc2 };
+        assert!(!resolve_stock(1, &corrupt, &[]).contains(&4876));
+        let crimson = ShopFlags { zone_crimson: true, ..npc2 };
+        assert!(!resolve_stock(1, &crimson, &[]).contains(&4876));
+        // The 19/20/21 skip (`:3472`'s type gate).
+        assert!(!resolve_stock(20, &npc2, &[]).contains(&4876));
+        let tav = ShopFlags { travel_stock: [8; 40], ..npc2 };
+        assert!(!resolve_stock(19, &tav, &[]).contains(&4876));
+        assert!(!resolve_stock(21, &npc2, &[]).contains(&4876));
+        // Below surface (classic): the cavern pylon 4917 replaces 4876.
+        let below = ShopFlags { shopping_below_surface: true, ..npc2 };
+        let b = resolve_stock(1, &below, &[]);
+        assert!(b.contains(&4917) && !b.contains(&4876));
+        // Snow/desert/jungle/hallow/mushroom pylons.
+        let snow = ShopFlags { zone_snow: true, ..npc2 };
+        assert!(resolve_stock(1, &snow, &[]).contains(&4920));
+        let desert = ShopFlags { zone_desert: true, ..npc2 };
+        assert!(resolve_stock(1, &desert, &[]).contains(&4919));
+        let jungle = ShopFlags { zone_jungle: true, ..npc2 };
+        assert!(resolve_stock(1, &jungle, &[]).contains(&4875));
+        let hallow = ShopFlags { zone_hallow: true, ..npc2 };
+        assert!(resolve_stock(1, &hallow, &[]).contains(&4916));
+        let shroom = ShopFlags { zone_glowshroom: true, ..npc2 };
+        assert!(resolve_stock(1, &shroom, &[]).contains(&4921));
+        // The underworld pylon 5652 wins over the cavern arm; the remix
+        // underworld also kills the mushroom pylon (`:3533`).
+        let hell = ShopFlags { zone_underworld_height: true, zone_glowshroom: true, ..npc2 };
+        let h = resolve_stock(1, &hell, &[]);
+        assert!(h.contains(&5652) && h.contains(&4921) && !h.contains(&4917));
+        let hellr = ShopFlags { remix_world: true, ..hell };
+        let hr = resolve_stock(1, &hellr, &[]);
+        assert!(hr.contains(&5652) && !hr.contains(&4921));
+        // The ocean pylon: beach + above surface, or the remix edge+depth.
+        let beach = ShopFlags { zone_beach: true, beach_above_surface: true, ..npc2 };
+        assert!(resolve_stock(1, &beach, &[]).contains(&4918));
+        let beach_low = ShopFlags { zone_beach: true, ..npc2 };
+        assert!(!resolve_stock(1, &beach_low, &[]).contains(&4918));
+        let remix_ocean = ShopFlags {
+            remix_world: true, pylon_remix_edge: true, pylon_remix_ocean_depth: true,
+            shopping_below_surface: true, ..npc2
+        };
+        let ro = resolve_stock(1, &remix_ocean, &[]);
+        assert!(ro.contains(&4918) && ro.contains(&4917), "the remix ocean+cavern");
+        // The remix purity arm needs the depth window (`:3478`).
+        let remix_surf = ShopFlags { remix_world: true, ..npc2 };
+        assert!(!resolve_stock(1, &remix_surf, &[]).contains(&4876));
+        let remix_depth = ShopFlags { pylon_remix_depth: true, ..remix_surf };
+        assert!(resolve_stock(1, &remix_depth, &[]).contains(&4876));
+        // Every written row carries the isAShopItem stamp (`:3538-3541`).
+        let entries = resolve_stock_entries(1, &npc2, &[]);
+        assert!(entries.iter().all(|e| e.is_a_shop_item));
+    }
+
     #[test]
     fn the_entry_stock_matches_the_id_stock() {
         // The ids wrapper stays the tests' surface; the entries carry the
-        // row's price fields (all unset on the ported shops).
+        // row's price fields. The shared tail (`Chest.cs:3538-3541`)
+        // stamps isAShopItem on EVERY written row (W4-d123); the price
+        // override + buyOnce stay unset on the ported switch rows.
         let ids = resolve_stock(1, &ShopFlags::default(), &[]);
         let entries = resolve_stock_entries(1, &ShopFlags::default(), &[]);
         assert_eq!(ids, entries.iter().map(|e| e.item).collect::<Vec<_>>());
         assert!(
             entries
                 .iter()
-                .all(|e| e.shop_custom_price.is_none() && !e.buy_once && !e.is_a_shop_item)
+                .all(|e| e.shop_custom_price.is_none() && !e.buy_once && e.is_a_shop_item)
         );
     }
 
@@ -2809,8 +5595,340 @@ mod town5_tests {
         assert!(!plain_c.contains(&2886), "no blood moon, no crimson seeds");
         // The hardmode rows stay out (the constants-off gates).
         assert!(!base.contains(&746));
+        // W4-d123: the underworld/glowshroom rows ride the wired zones
+        // (`Chest.cs:1710-1715`) — off by default, on under the flag.
+        assert!(!base.contains(&5214) && !base.contains(&194));
+        let hell = ShopFlags { zone_underworld_height: true, ..ShopFlags::default() };
+        assert!(resolve_stock_moon(3, &hell, &[], 0).contains(&5214));
+        let shroom = ShopFlags { zone_glowshroom: true, ..ShopFlags::default() };
+        assert!(resolve_stock_moon(3, &shroom, &[], 0).contains(&194));
         // The unknown index stays empty.
         assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
+    /// W4-d122 shop 9 — Santa Claus (`Chest.cs:2091-2111`, the registry
+    /// `NPCInteractions.Shop(142, 9)`, `NPCInteractions.cs:496`): the six
+    /// head rows then the 1873..=1905 decoration walk, EVERY row
+    /// unconditioned — the flags cannot change the stock. Written, not
+    /// run (code-only).
+    #[test]
+    fn the_santa_stock_is_the_santa_heads_plus_the_decoration_walk() {
+        let stock = resolve_stock(9, &ShopFlags::default(), &[]);
+        let mut expect: Vec<u16> = vec![588, 589, 590, 597, 598, 596];
+        expect.extend(1873u16..1906); // `:2105`'s `m < 1906` — 33 rows
+        assert_eq!(stock, expect, "the exact num order (`:2093-2109`)");
+        assert_eq!(stock.len(), 39);
+        // The gates are all Always — hardmode/night/blood-moon change nothing.
+        let loud = ShopFlags {
+            hard_mode: true,
+            night: true,
+            blood_moon: true,
+            ..Default::default()
+        };
+        assert_eq!(resolve_stock(9, &loud, &[]), expect);
+    }
+
+    /// W4-d122 shop 10 — the Truffle (`Chest.cs:2112-2134`,
+    /// `NPCInteractions.Shop(160, 10)`): the verbatim gates — the bare
+    /// `downedMechBossAny` pair (`:2113`, NO hardmode conjunct), the
+    /// `downedPlantBoss` Autohammer (`:2122`) and the remix/anniversary/
+    /// getGoodWorld solution gate (`:2130`). Written, not run (code-only).
+    #[test]
+    fn the_truffle_stock_gates_on_mech_plantera_and_the_remix_trio() {
+        // Classic world: 868/1181/5231/783 — the pair and the hammer stay out.
+        let base = resolve_stock(10, &ShopFlags::default(), &[]);
+        assert_eq!(base, vec![868, 1181, 5231, 783]);
+        // The bare mech flag alone opens the pair (no hardmode needed —
+        // the C# `:2113` reads `NPC.downedMechBossAny` directly).
+        let mech = ShopFlags {
+            downed_mech_any: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(10, &mech, &[]),
+            vec![756, 787, 868, 1181, 5231, 783]
+        );
+        // Plantera adds the Autohammer in its num slot (after 868).
+        let plant = ShopFlags {
+            downed_plant_boss: true,
+            ..mech
+        };
+        assert_eq!(
+            resolve_stock(10, &plant, &[]),
+            vec![756, 787, 868, 1551, 1181, 5231, 783]
+        );
+        // `:2130`: remix ON kills 783; anniversary+remix (not getGood)
+        // brings it back; getGood on top kills it again.
+        let remix = ShopFlags {
+            remix_world: true,
+            ..plant
+        };
+        assert!(!resolve_stock(10, &remix, &[]).contains(&783));
+        let anni = ShopFlags {
+            anniversary_world: true,
+            ..remix
+        };
+        assert!(resolve_stock(10, &anni, &[]).contains(&783));
+        let good = ShopFlags {
+            get_good_world: true,
+            ..anni
+        };
+        assert!(!resolve_stock(10, &good, &[]).contains(&783));
+    }
+
+    /// W4-d122 shop 11 — the Steampunker (`Chest.cs:2135-2245`,
+    /// `NPCInteractions.Shop(178, 11)`): the Jetpack/outfit moon-phase
+    /// split, the solution if/else chain and the crafting-station biome
+    /// rows, verbatim. Written, not run (code-only).
+    #[test]
+    fn the_steampunker_stock_splits_the_jetpack_and_the_solutions() {
+        // Classic day, phase 0: the outfit trio (the NOT-Jetpack arm), the
+        // logic-gate block, the Blend-O-Matic (not-getGood), the Lesion
+        // Station (not-crimson) and the Green Solution (the final else).
+        let base = resolve_stock_moon(11, &ShopFlags::default(), &[], 0);
+        let mut expect = vec![779u16, 839, 840, 841];
+        expect.extend([
+            3603, 3604, 3607, 3605, 3606, 3608, 3618, 3602, 3663, 3609, 3610, 995, 4142, 780,
+        ]);
+        assert_eq!(base, expect, "the exact num order");
+        // Phase 4 + hardmode: the Jetpack REPLACES the outfit trio in its
+        // num slot; hardmode adds the Static Hook + the Cog + the minecart.
+        let jet = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let p4 = resolve_stock_moon(11, &jet, &[], 4);
+        assert_eq!(&p4[..2], &[779, 748], "the Jetpack takes the slot");
+        assert!(!p4.contains(&839) && !p4.contains(&840) && !p4.contains(&841));
+        assert!(p4.contains(&3623) && p4.contains(&1344) && p4.contains(&4472));
+        // The same hardmode at phase 3 keeps the outfit (`moonPhase >= 4`).
+        let p3 = resolve_stock_moon(11, &jet, &[], 3);
+        assert!(p3.contains(&839) && !p3.contains(&748));
+        // The evil branch: blood moon + corruption → 782 (not 780/781);
+        // crimson flips it to 784 (and the Vaat replaces the Lesion Station).
+        let bm = ShopFlags {
+            blood_moon: true,
+            ..Default::default()
+        };
+        let evil = resolve_stock_moon(11, &bm, &[], 0);
+        assert!(evil.contains(&782) && !evil.contains(&780) && !evil.contains(&781));
+        let crimson = ShopFlags {
+            crimson_world: true,
+            ..bm
+        };
+        let red = resolve_stock_moon(11, &crimson, &[], 0);
+        assert!(red.contains(&784) && red.contains(&2193) && !red.contains(&4142));
+        // The eclipse alone opens the same evil branch (`:2209`'s ||).
+        let ecl = ShopFlags {
+            eclipse: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock_moon(11, &ecl, &[], 0).contains(&782));
+        // The hallow else-if: no evil event → the Blue Solution 781.
+        let hallow = ShopFlags {
+            zone_hallow: true,
+            ..Default::default()
+        };
+        let blue = resolve_stock_moon(11, &hallow, &[], 0);
+        assert!(blue.contains(&781) && !blue.contains(&780));
+        // The evil event WINS over the hallow (the if precedes the else-if).
+        let both = ShopFlags {
+            blood_moon: true,
+            ..hallow
+        };
+        let won = resolve_stock_moon(11, &both, &[], 0);
+        assert!(won.contains(&782) && !won.contains(&781));
+        // The Moon Lord trio rides the remix gate + the bare downed flag.
+        let ml = ShopFlags {
+            downed_moon_lord: true,
+            ..Default::default()
+        };
+        let trio = resolve_stock_moon(11, &ml, &[], 0);
+        for id in [5392u16, 5393, 5394] {
+            assert!(trio.contains(&id), "the moonlord solution {id}");
+        }
+        let remix = ShopFlags {
+            remix_world: true,
+            ..ml
+        };
+        let cut = resolve_stock_moon(11, &remix, &[], 0);
+        assert!(!cut.contains(&779) && !cut.contains(&780) && !cut.contains(&5392));
+        // The station rows: all-three-bosses Boiler, jungle Dispenser,
+        // jungle+Golem Furnace, snow Ice Machine, sky Mill, graveyard Welder.
+        let stations = ShopFlags {
+            downed_boss1: true,
+            downed_boss2: true,
+            downed_boss3: true,
+            downed_golem: true,
+            zone_jungle: true,
+            zone_snow: true,
+            zone_sky_height: true,
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let st = resolve_stock_moon(11, &stations, &[], 0);
+        for id in [2203u16, 2204, 2195, 2198, 2197, 2192, 948] {
+            assert!(st.contains(&id), "the station row {id}");
+        }
+        // The Golem alone (no jungle) gives the Wings but NOT the Furnace.
+        let golem_only = ShopFlags {
+            downed_golem: true,
+            ..Default::default()
+        };
+        let go = resolve_stock_moon(11, &golem_only, &[], 0);
+        assert!(go.contains(&948) && !go.contains(&2195));
+        // getGoodWorld (pre-hardmode) cuts the Blend-O-Matic (`:2170`).
+        let ftw = ShopFlags {
+            get_good_world: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock_moon(11, &ftw, &[], 0).contains(&995));
+    }
+
+    /// W4-d122 shop 14 — the Cyborg (`Chest.cs:2360-2442`,
+    /// `NPCInteractions.Shop(209, 14)`): the rocket-tier ladder, the bare
+    /// martian gates, the graveyard pair and the Portal-Gun-station scan
+    /// (`Player.HasItem` — the port's inventory-ids view, the same seam
+    /// the Merchant's Flower Boots rows use). Written, not run (code-only).
+    #[test]
+    fn the_cyborg_stock_ladders_the_rockets_and_the_martian_rows() {
+        // Classic day: Rocket I + the two monoliths + the Toy Breaker Block.
+        let base = resolve_stock(14, &ShopFlags::default(), &[]);
+        assert_eq!(base, vec![771, 5598, 5599, 5928]);
+        // Night opens Rocket III (`!dayTime || eclipse`); the blood moon
+        // opens II (and III through the night half).
+        let night = ShopFlags {
+            night: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(14, &night, &[]),
+            vec![771, 773, 5598, 5599, 5928]
+        );
+        let bm = ShopFlags {
+            blood_moon: true,
+            night: true,
+            ..Default::default()
+        };
+        let bmstock = resolve_stock(14, &bm, &[]);
+        assert!(bmstock.contains(&772) && bmstock.contains(&773));
+        // The DAYTIME eclipse still opens III and IV (`:2368`'s || arm).
+        let ecl = ShopFlags {
+            eclipse: true,
+            ..Default::default()
+        };
+        let est = resolve_stock(14, &ecl, &[]);
+        assert!(est.contains(&773) && est.contains(&774) && !est.contains(&772));
+        // Bare martians (NO hardmode): Cluster I + the HiTek/NightVision
+        // pair; the Cluster II needs the blood-moon/eclipse conjunct.
+        let mart = ShopFlags {
+            downed_martians: true,
+            ..Default::default()
+        };
+        let m = resolve_stock(14, &mart, &[]);
+        assert!(m.contains(&4445) && m.contains(&2862) && m.contains(&3109));
+        assert!(!m.contains(&4446), "the Cluster II needs the event");
+        let mart_bm = ShopFlags {
+            blood_moon: true,
+            ..mart
+        };
+        assert!(resolve_stock(14, &mart_bm, &[]).contains(&4446));
+        // Hardmode adds the Dry Rocket / launcher / Nanites / Jim's set /
+        // the RC car in their num order.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let h = resolve_stock(14, &hm, &[]);
+        assert_eq!(
+            h,
+            vec![771, 4459, 760, 1346, 5452, 5451, 5738, 5598, 5599, 5928]
+        );
+        // The graveyard pair; the Portal Gun Station needs either carried
+        // item (3384 or 3664).
+        let grave = ShopFlags {
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let g = resolve_stock(14, &grave, &[3384]);
+        assert!(g.contains(&4409) && g.contains(&4392) && g.contains(&3664));
+        let g2 = resolve_stock(14, &grave, &[3664]);
+        assert!(g2.contains(&3664), "either scan id opens the station");
+        assert!(!resolve_stock(14, &grave, &[]).contains(&3664));
+        // The full-order pin: hardmode + martians + blood moon + night +
+        // graveyard + the portal gun carried.
+        let full = ShopFlags {
+            hard_mode: true,
+            downed_martians: true,
+            blood_moon: true,
+            night: true,
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(14, &full, &[3384]),
+            vec![
+                771, 772, 773, 4445, 4446, 4459, 760, 1346, 5452, 5451, 5738, 5598, 5599, 4409,
+                4392, 2862, 3109, 3664, 5928
+            ],
+            "the exact num order (`:2361-2441`; the halloween trio stays off)"
+        );
+    }
+
+    /// W4-d122 fifth round — the Stylist (case 18, `Chest.cs:2698-2790`):
+    /// the Coins gate's row + the graveyard tail. The Money Hair Dye 1980
+    /// rides `num2 >= 1000000` (`:2743`, the 54-slot copper scan's total),
+    /// and the Pretty Mirror 5577 is the case's LAST row under
+    /// `ZoneGraveyard` (`:2785-2788`), after the always-on 5104. Written,
+    /// not run (code-only).
+    #[test]
+    fn the_stylist_coins_row_and_graveyard_tail() {
+        // Classic day phase 0: the two heads + the parity row + 5104.
+        let base = resolve_stock_moon(18, &ShopFlags::default(), &[], 0);
+        assert_eq!(base, vec![1990, 1979, 1981, 5104]);
+        assert!(!base.contains(&1980), "no Money Hair Dye below 1g");
+        assert!(!base.contains(&5577), "no Pretty Mirror outside the graveyard");
+        // The Coins gate opens the 1980 row BETWEEN the mana row and the
+        // parity row (`:2743-2746`'s num slot).
+        let rich = ShopFlags {
+            coins_over_gold: true,
+            life_max_400: true,
+            mana_max_200: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock_moon(18, &rich, &[], 0),
+            vec![1990, 1979, 1977, 1978, 1980, 1981, 5104]
+        );
+        // The graveyard tail: 5577 lands AFTER the always-on 5104.
+        let grave = ShopFlags {
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let g = resolve_stock_moon(18, &grave, &[], 0);
+        assert_eq!(g, vec![1990, 1979, 1981, 5104, 5577]);
+        assert_eq!(g.last(), Some(&5577), "the mirror is the case's last row");
+        // The full pin: every gate on, day phase 0 (the parity row stays).
+        let full = ShopFlags {
+            life_max_400: true,
+            mana_max_200: true,
+            coins_over_gold: true,
+            party_girl_present: true,
+            hard_mode: true,
+            downed_mech_1: true,
+            downed_mech_2: true,
+            downed_mech_3: true,
+            downed_mech_any: true,
+            downed_martians: true,
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock_moon(18, &full, &[], 0),
+            vec![
+                1990, 1979, 1977, 1978, 1980, 1981, 1983, 1984, 1985, 1986, 2863, 3259, 5104,
+                5577
+            ],
+            "the exact num order (`:2700-2788`; the team dye 1982 stays off)"
+        );
     }
 }
 
@@ -2958,6 +6076,7 @@ mod s1_p_i44_tests {
                 item: 0,
                 when: StockWhen::Always,
                 shop_custom_price: None,
+                shop_special_currency: -1,
                 buy_once: false,
                 is_a_shop_item: false,
                 prefix: 0,
@@ -3112,5 +6231,419 @@ mod s1_p_i44_tests {
             row.text,
             format!("{} 15 {} ", crate::lang::tip(49), crate::lang::inter(17))
         );
+    }
+}
+
+#[cfg(test)]
+mod w4_d122_golfer_tests {
+    use super::*;
+
+    /// W4-d122 remainder census — shop 22 (`Chest.cs:3156-3262`): the Golf
+    /// Cart 4264 sits INSIDE the `golferScoreAccumulated > 2000` trophy
+    /// block (`:3207-3222`) — the old bare `DownedBoss3` gate leaked it at
+    /// any score once Skeletron fell. This witness pins the cart conjunct
+    /// and its num slot. Written, not run (code-only).
+    #[test]
+    fn the_golf_cart_needs_both_the_score_and_skeletron() {
+        // Skeletron down but score 0: the cart stays OUT (the C#'s outer
+        // `> 2000` if never opens) — the old gate failed exactly here.
+        let boss_only = ShopFlags {
+            downed_boss3: true,
+            ..Default::default()
+        };
+        let s = resolve_stock(22, &boss_only, &[]);
+        assert!(!s.contains(&4264), "no cart without the score: {s:?}");
+        // The `> 2000` boundary: exactly 2000 opens the paintings
+        // (`>= 2000`, `:3238`) but NOT the trophy block (`> 2000`, `:3207`)
+        // — so no cart even with Skeletron down.
+        let edge = ShopFlags {
+            golfer_score: 2000,
+            downed_boss3: true,
+            ..Default::default()
+        };
+        let e = resolve_stock_moon(22, &edge, &[], 0);
+        assert!(!e.contains(&4264) && !e.contains(&4595), "the > 2000 edge");
+        assert!(e.contains(&4658) && e.contains(&4601), "the >= 2000 rows");
+        // 2001 + Skeletron: the cart lands BETWEEN the 4596 trophy tail and
+        // the 4599 restock (`:3216-3225`'s num order).
+        let over = ShopFlags {
+            golfer_score: 2001,
+            ..edge
+        };
+        let o = resolve_stock_moon(22, &over, &[], 0);
+        let cart = o.iter().position(|v| *v == 4264).expect("the cart lands");
+        assert_eq!(o[cart - 1], 4596);
+        assert_eq!(o[cart + 1], 4599);
+        // 2001 WITHOUT Skeletron: the trophies land, the cart does not.
+        let no_boss = ShopFlags {
+            downed_boss3: false,
+            ..over
+        };
+        let n = resolve_stock_moon(22, &no_boss, &[], 0);
+        assert!(n.contains(&4595) && !n.contains(&4264));
+    }
+
+    /// The tier ladder (`Chest.cs:3169`/`:3186`/`:3202`/`:3223`/`:3228`):
+    /// `>= 500` opens the 4039 club set, `> 500` the 4265/4599 pair,
+    /// `> 1000` the 4591 set, `>= 1000` the 4600 flag — the C# mixes the
+    /// operators per row. Written, not run (code-only).
+    #[test]
+    fn the_golf_tier_boundaries_mix_ge_and_gt_verbatim() {
+        let at = |score: i32| {
+            resolve_stock_moon(
+                22,
+                &ShopFlags {
+                    golfer_score: score,
+                    downed_boss3: true,
+                    ..Default::default()
+                },
+                &[],
+                0,
+            )
+        };
+        let s499 = at(499);
+        assert!(!s499.contains(&4039) && !s499.contains(&4265));
+        let s500 = at(500);
+        assert!(s500.contains(&4039) && s500.contains(&4092), ">= 500");
+        assert!(!s500.contains(&4265) && !s500.contains(&4599), "> 500");
+        let s501 = at(501);
+        assert!(s501.contains(&4265) && s501.contains(&4599), "> 500");
+        let s1000 = at(1000);
+        assert!(s1000.contains(&4600), ">= 1000");
+        assert!(!s1000.contains(&4591), "> 1000");
+        let s1001 = at(1001);
+        assert!(s1001.contains(&4591) && s1001.contains(&4592), "> 1000");
+        // The painting pair rides the moon: phase 5 -> the 4660 pair-2 row
+        // closes the list (`:3250-3253`).
+        let p5 = resolve_stock_moon(
+            22,
+            &ShopFlags {
+                golfer_score: 2500,
+                ..Default::default()
+            },
+            &[],
+            5,
+        );
+        assert!(p5.contains(&4660) && !p5.contains(&4658));
+        assert_eq!(*p5.last().unwrap(), 4660, "the painting closes the list");
+    }
+}
+
+#[cfg(test)]
+mod w4_d122_zoologist_tests {
+    use super::*;
+
+    /// W4-d122 remainder census — shop 23 (`Chest.cs:3263-3407`): the full
+    /// case replaces the M4-TOWN-19 classic subset. The classic world at
+    /// phase 0/day resolves the four unconditioned/tier-0 rows plus the
+    /// pair-0 licenses — nothing else. Written, not run (code-only).
+    #[test]
+    fn the_zoologist_classic_stock_is_the_head_plus_the_pair0_tail() {
+        let s = resolve_stock_moon(23, &ShopFlags::default(), &[], 0);
+        assert_eq!(s, vec![4767, 4829, 4768, 4769], "the classic num order");
+        // Night + phase 0 inserts the 5253 BETWEEN the head and the tiers.
+        let n = resolve_stock_moon(
+            23,
+            &ShopFlags {
+                night: true,
+                ..Default::default()
+            },
+            &[],
+            0,
+        );
+        assert_eq!(n, vec![4767, 5253, 4829, 4768, 4769]);
+        // The fairy-torch head lands FIRST when all three sightings sit.
+        let f = resolve_stock_moon(
+            23,
+            &ShopFlags {
+                fairy_torch_available: true,
+                ..Default::default()
+            },
+            &[],
+            0,
+        );
+        assert_eq!(f, vec![4776, 4767, 4829, 4768, 4769]);
+    }
+
+    /// The completion ladder (`Chest.cs:3275-3374`): 0.03 → 4672, 0.10 →
+    /// 4759/4676, 0.25 → 4830/4716/4763, 0.30 → 4871/4907/4762/4785/4786/
+    /// 4787 (+4788 hardmode-only), 0.40 → 4955, 0.45 → 5635/4910, 0.50 →
+    /// 4765/4766/5285/4777, 0.70 → 4735, 1.0 → 4951. Written, not run.
+    #[test]
+    fn the_zoologist_completion_tiers_open_in_the_c_order() {
+        let at = |c: f32, hard: bool| {
+            resolve_stock_moon(
+                23,
+                &ShopFlags {
+                    bestiary_completion: c,
+                    hard_mode: hard,
+                    ..Default::default()
+                },
+                &[],
+                0,
+            )
+        };
+        let t03 = at(0.03, false);
+        assert!(t03.contains(&4672) && !t03.contains(&4759));
+        let t10 = at(0.10, false);
+        assert!(t10.contains(&4759) && t10.contains(&4676));
+        let t30 = at(0.30, false);
+        for id in [4871, 4907, 4762, 4785, 4786, 4787] {
+            assert!(t30.contains(&id), "the 0.30 row {id}");
+        }
+        assert!(!t30.contains(&4788), "4788 needs hardmode too (`:3332`)");
+        assert!(at(0.30, true).contains(&4788));
+        // The 0.30 block's num order: 4871/4907 before the solar slot,
+        // 4762..4787 after it (`:3296-3335`).
+        let i4871 = t30.iter().position(|v| *v == 4871).unwrap();
+        let i4762 = t30.iter().position(|v| *v == 4762).unwrap();
+        assert!(i4871 < i4762);
+        let full = at(1.0, true);
+        for id in [4955, 5635, 4910, 4765, 4766, 5285, 4777, 4735, 4951] {
+            assert!(full.contains(&id), "the full row {id}");
+        }
+        // 4951 (`>= 1f`) is the LAST tier row before the licenses.
+        let i4951 = full.iter().position(|v| *v == 4951).unwrap();
+        assert_eq!(full[i4951 + 1], 4768, "the pair-0 licenses follow");
+    }
+
+    /// The event/progression rows: the Solar Monolith 4677 between 4907
+    /// and 4676 (`:3304`), the hardmode blood-moon 4736 (`:3344`), the
+    /// Plantera 4701 (`:3348`), the party 5466 (`:3376`) — and the four
+    /// moon-pair license tails incl. the 6/7 arm's 4560 head. Written,
+    /// not run (code-only).
+    #[test]
+    fn the_zoologist_latches_and_the_license_pairs() {
+        let f = ShopFlags {
+            downed_tower_solar: true,
+            downed_plant_boss: true,
+            hard_mode: true,
+            blood_moon: true,
+            party_is_up: true,
+            bestiary_completion: 0.30,
+            ..Default::default()
+        };
+        let s = resolve_stock_moon(23, &f, &[], 2);
+        let i4907 = s.iter().position(|v| *v == 4907).unwrap();
+        assert_eq!(s[i4907 + 1], 4677, "the monolith rides after 4907");
+        assert_eq!(s[i4907 + 2], 4676);
+        assert!(s.contains(&4736) && s.contains(&4701) && s.contains(&5466));
+        // Phase 2/3 licenses: 4770/4771, and the party row precedes them.
+        let i5466 = s.iter().position(|v| *v == 5466).unwrap();
+        assert_eq!(&s[i5466 + 1..], &[4770, 4771]);
+        // Phase 6: the 4560 head + 4775 (`:3397-3400`), NOT the 4774 id.
+        let p6 = resolve_stock_moon(23, &ShopFlags::default(), &[], 6);
+        assert_eq!(&p6[p6.len() - 2..], &[4560, 4775]);
+        // Hardmode alone (no blood moon) keeps 4736 out.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock_moon(23, &hm, &[], 0).contains(&4736));
+    }
+}
+
+#[cfg(test)]
+mod w4_d122_princess_tests {
+    use super::*;
+
+    /// W4-d122 remainder census — shop 24 (`Chest.cs:3409-3470`): the
+    /// tenth-anniversary block lands BETWEEN the 5044 hat slot and the
+    /// always 5088 tail. A classic world keeps the 21-row M4 list; the
+    /// anniversary heads ride the seed flag alone. Written, not run.
+    #[test]
+    fn the_princess_anniversary_heads_ride_the_seed_flag() {
+        // Classic: the block is fully off, the 5088 tail closes the list.
+        let classic = resolve_stock(24, &ShopFlags::default(), &[]);
+        assert_eq!(classic.len(), 19, "18 always + the 5088 tail");
+        assert_eq!(*classic.last().unwrap(), 5088);
+        for id in [1309, 1859, 1358, 857, 4144, 2584, 854, 855, 905] {
+            assert!(!classic.contains(&id), "the anniversary row {id} leaked");
+        }
+        // Anniversary alone: the three heads land before the tail.
+        let ann = ShopFlags {
+            anniversary_world: true,
+            ..Default::default()
+        };
+        let a = resolve_stock_moon(24, &ann, &[], 0);
+        assert_eq!(&a[a.len() - 4..], &[1309, 1859, 1358, 5088]);
+        // The desert/blood-moon inner gates stay off.
+        assert!(!a.contains(&857) && !a.contains(&4144));
+    }
+
+    /// The inner gates (`Chest.cs:3441-3467`): the desert carpet needs
+    /// ZoneDesert, the 4144 the blood moon, the pets the hardmode+pirate
+    /// conjunct AND one exact moon pair. Written, not run (code-only).
+    #[test]
+    fn the_princess_anniversary_inner_gates_and_pet_pairs() {
+        let base = ShopFlags {
+            anniversary_world: true,
+            zone_desert: true,
+            blood_moon: true,
+            hard_mode: true,
+            downed_pirates: true,
+            ..Default::default()
+        };
+        // Phase 0: the 2584 pet only, in the block's num order.
+        let p0 = resolve_stock_moon(24, &base, &[], 0);
+        let i1358 = p0.iter().position(|v| *v == 1358).unwrap();
+        assert_eq!(&p0[i1358 + 1..], &[857, 4144, 2584, 5088]);
+        // One pet per pair: phase 3 -> 854, phase 5 -> 855, phase 7 -> 905.
+        for (phase, pet) in [(3u32, 854u16), (5, 855), (7, 905)] {
+            let s = resolve_stock_moon(24, &base, &[], phase);
+            assert!(s.contains(&pet), "the phase-{phase} pet {pet}");
+            assert!(!s.contains(&2584), "the pair-0 pet stays out");
+            assert_eq!(*s.last().unwrap(), 5088);
+        }
+        // The pirates latch is required: without it no pet at any phase.
+        let no_pirates = ShopFlags {
+            downed_pirates: false,
+            ..base
+        };
+        let n = resolve_stock_moon(24, &no_pirates, &[], 0);
+        assert!(!n.contains(&2584) && n.contains(&857) && n.contains(&4144));
+        // Hardmode alone (no anniversary) opens NOTHING of the block.
+        let hm = ShopFlags {
+            hard_mode: true,
+            downed_pirates: true,
+            blood_moon: true,
+            zone_desert: true,
+            ..Default::default()
+        };
+        let h = resolve_stock_moon(24, &hm, &[], 0);
+        for id in [1309, 857, 4144, 2584] {
+            assert!(!h.contains(&id), "no block without the seed: {id}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod w4_d122_tavernkeep_tests {
+    use super::*;
+
+    /// W4-d122 shop currency — the Tavernkeep's case 21 (`Chest.cs:2963-
+    /// 3154`, `NPCInteractions.Shop(550, 21)`): pre-hardmode the stock is
+    /// the four head rows + the tier-1 sentry quartet, and every medal row
+    /// carries currency 0 with its RAW medal price. Written, not run
+    /// (code-only).
+    #[test]
+    fn the_tavernkeep_classic_stock_is_the_heads_plus_tier1() {
+        let base = resolve_stock_entries(21, &ShopFlags::default(), &[]);
+        assert_eq!(
+            base.iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![353, 3828, 3816, 3813, 3818, 3824, 3832, 3829],
+            "the tier-1 stock (`:2967-3004`)"
+        );
+        // The Ale/mug/Paddle are plain-currency rows; the mug's base price
+        // is 25 silver (`Item.buyPrice(0, 0, 25)`, `:2980`).
+        assert_eq!(base[0].shop_special_currency, -1);
+        assert_eq!(base[1].shop_custom_price, Some(2500));
+        assert_eq!(base[2].shop_special_currency, -1);
+        // The Defenders Forge 3813 costs 50 MEDALS (`:2985-2987`).
+        assert_eq!(base[3].shop_special_currency, 0);
+        assert_eq!(base[3].shop_custom_price, Some(50));
+        // The tier-1 sentries: 5 medals each, currency 0.
+        for e in &base[4..] {
+            assert_eq!(e.shop_special_currency, 0);
+            assert_eq!(e.shop_custom_price, Some(5));
+        }
+    }
+
+    /// The tier gates (`:2965-2966`): flag = hardMode && mechAny opens the
+    /// 15-medal sentries + the 12 armor pieces; num7 = hardMode && Golem
+    /// opens the 60-medal sentries + the 3871..3882 armor. The mech flag
+    /// ALONE (no hardmode) opens nothing. Written, not run (code-only).
+    #[test]
+    fn the_tavernkeep_tiers_gate_on_hardmode_conjuncts() {
+        // mechAny without hardmode: still the classic 8 rows.
+        let mech_only = ShopFlags { downed_mech_any: true, ..Default::default() };
+        assert_eq!(resolve_stock(21, &mech_only, &[]).len(), 8);
+        // hardmode + mechAny: +4 tier-2 sentries +12 armor = 24 rows.
+        let t2 = ShopFlags { hard_mode: true, downed_mech_any: true, ..Default::default() };
+        let s2 = resolve_stock_entries(21, &t2, &[]);
+        assert_eq!(s2.len(), 24);
+        assert_eq!(
+            s2[8..12].iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![3819, 3825, 3833, 3830],
+            "the tier-2 sentry quartet (`:3008-3022`)"
+        );
+        for e in &s2[12..] {
+            assert_eq!(e.shop_custom_price, Some(15), "the tier-2 armor price");
+        }
+        assert_eq!(
+            s2[12..].iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![3800, 3801, 3802, 3797, 3798, 3799, 3803, 3804, 3805, 3806, 3807, 3808],
+            "the armor write order (`:3046-3095`)"
+        );
+        // hardmode + Golem (no mech): the tier-3 rows open WITHOUT tier 2.
+        let t3only = ShopFlags { hard_mode: true, downed_golem: true, ..Default::default() };
+        let s3 = resolve_stock_entries(21, &t3only, &[]);
+        assert_eq!(s3.len(), 8 + 4 + 12, "tier 1 + tier-3 sentries + tier-3 armor");
+        assert_eq!(
+            s3[8..12].iter().map(|e| e.item).collect::<Vec<_>>(),
+            vec![3820, 3826, 3834, 3831]
+        );
+        for e in &s3[8..12] {
+            assert_eq!(e.shop_custom_price, Some(60));
+        }
+        for e in &s3[12..] {
+            assert_eq!(e.shop_custom_price, Some(50));
+        }
+        assert_eq!(
+            s3[12..].iter().map(|e| e.item).collect::<Vec<_>>(),
+            (3871u16..=3882).collect::<Vec<_>>()
+        );
+        // Golem WITHOUT hardmode opens nothing (`:2966`'s conjunct).
+        let golem_only = ShopFlags { downed_golem: true, ..Default::default() };
+        assert_eq!(resolve_stock(21, &golem_only, &[]).len(), 8);
+        // Both tiers: 8 + 4 + 4 + 12 + 12 = 40 rows, tier-2 BEFORE tier-3
+        // sentries, the armor blocks after (the C# write order).
+        let both = ShopFlags {
+            hard_mode: true,
+            downed_mech_any: true,
+            downed_golem: true,
+            ..Default::default()
+        };
+        let sb = resolve_stock_entries(21, &both, &[]);
+        assert_eq!(sb.len(), 40);
+        assert_eq!(sb[8].item, 3819, "tier-2 sentries first");
+        assert_eq!(sb[12].item, 3820, "then tier-3 sentries");
+        assert_eq!(sb[16].item, 3800, "then the tier-2 armor");
+        assert_eq!(sb[28].item, 3871, "then the tier-3 armor");
+    }
+
+    /// The mug's price ladder (`:2970-2981`): 4 gold at num7, 1 gold at
+    /// flag, 25 silver else — the Golem tier WINS over the mech tier (the
+    /// C# if/else-if order). Written, not run (code-only).
+    #[test]
+    fn the_tavernkeep_mug_price_ladder_follows_the_tiers() {
+        let mug = |f: &ShopFlags| {
+            resolve_stock_entries(21, f, &[])[1].shop_custom_price.unwrap()
+        };
+        assert_eq!(mug(&ShopFlags::default()), 2500);
+        let t2 = ShopFlags { hard_mode: true, downed_mech_any: true, ..Default::default() };
+        assert_eq!(mug(&t2), 10000);
+        let t3 = ShopFlags { hard_mode: true, downed_golem: true, ..Default::default() };
+        assert_eq!(mug(&t3), 40000);
+        let both = ShopFlags { downed_mech_any: true, ..t3 };
+        assert_eq!(mug(&both), 40000, "num7 wins over flag");
+    }
+
+    /// The raw-price early return (`Player.cs:35361-35365` →
+    /// `CustomCurrencySystem.cs:265-270`): a medal row's buy AND sell
+    /// halves are the raw store value — the mood and the Discount Card
+    /// never touch it. Written, not run (code-only).
+    #[test]
+    fn the_medal_rows_price_raw_under_mood_and_discount() {
+        let t2 = ShopFlags { hard_mode: true, downed_mech_any: true, ..Default::default() };
+        let entries = resolve_stock_entries(21, &t2, &[]);
+        let sentry = &entries[8]; // the 15-medal tier-2 Flameburst
+        assert_eq!(sentry.shop_special_currency, 0);
+        assert_eq!(buy_price_row(sentry, false, 1.0), 15);
+        assert_eq!(buy_price_row(sentry, true, 0.75), 15, "no discount/mood");
+        assert_eq!(display_price_row(sentry, true, 0.75), 15);
+        // The plain mug row still rides the mood (the 10000 override).
+        let mug = &entries[1];
+        assert_eq!(buy_price_row(mug, false, 0.75), 7500);
     }
 }

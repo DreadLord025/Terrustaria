@@ -8,6 +8,43 @@
 //! coin; `UpdateDrawState` feeds each cell's draw (`ItemSlot.cs:2349`) and
 //! `UpdateSlotAnims` steps the clocks per frame (`Main.cs:44936`).
 
+use tr_render::SpriteRenderer;
+
+use crate::assets;
+
+/// `CoinSlot.DrawItemCoin` (`CoinSlot.cs:240-254`): one spin frame of the
+/// coin strip centred on `center`, the longest side clamped to `size_limit`
+/// before the scale (`:247-250`), tinted by `GetAlpha(itemColor)` (coins
+/// 71-74 hit the default arm with `alpha = 0` — the tint passes through,
+/// `Item.cs:49324-49340`) × `itemFade`. Shared by the savings draw
+/// (`ui/savings.rs`) and the slot draw's coin arm (`ui/slot.rs`,
+/// `ItemSlot.cs:2515`).
+pub(crate) fn draw_item_coin(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    center: (f32, f32),
+    coin_kind: usize,
+    frame: i32,
+    scale: f32,
+    size_limit: f32,
+    tint: [f32; 4],
+    item_fade: f32,
+) {
+    let Some((uv, w, h)) = lookups.coin_anim_uv(coin_kind, frame) else {
+        return;
+    };
+    // `:247-250`: the clamp picks the LONGER side's ratio.
+    let num = if w > size_limit || h > size_limit {
+        if w <= h { size_limit / h } else { size_limit / w }
+    } else {
+        1.0
+    };
+    let s = scale * num;
+    let (dw, dh) = (w * s, h * s);
+    let c = [tint[0] * item_fade, tint[1] * item_fade, tint[2] * item_fade, tint[3] * item_fade];
+    r.push_ui_sprite([center.0 - dw * 0.5, center.1 - dh * 0.5], [dw, dh], uv, c);
+}
+
 /// `ItemID.Sets.CommonCoin` (`ItemID.cs:1318`) — the copper..platinum coins.
 fn is_common_coin(kind: u16) -> bool {
     (71..=74).contains(&kind)
@@ -201,19 +238,30 @@ impl CoinEntry {
 /// (W4-g58 D5, `ItemSlot.DrawSavings` → `DrawMoney` → `UpdateSavings`);
 /// `UpdateCustom` has no port consumer (the custom-currency displays are
 /// unported), so the `Custom` array stays out.
+/// owned by the App. W4-d122: the `Savings[4]` array lands with the shop
+/// savings draw (`ItemSlot.DrawMoney`'s `fromSavings` arm); the `Custom`
+/// dictionary (`:344`) lands with the medal-savings arm
+/// (`CustomCurrencySingleCoin.DrawSavingsMoney` → `CoinSlot.UpdateCustom`,
+/// `CoinSlot.cs:230-238` — keyed by the currency's ITEM id, 3817).
 #[derive(Clone, Debug, Default)]
 pub struct CoinSlotState {
+    savings_entries: Vec<CoinEntry>,
     chest_entries: Vec<CoinEntry>,
     inventory_entries: Vec<CoinEntry>,
     /// `CoinSlot.Savings` (`CoinSlot.cs:341`, `new CoinEntry[4]`): the shop
     /// savings pile's four coin cells (copper..platinum).
     savings_entries: Vec<CoinEntry>,
+    savings_entries: Vec<CoinEntry>,
+    /// `CoinSlot.Custom` (`CoinSlot.cs:344`, `Dictionary<int, CoinEntryRef>`):
+    /// one entry per custom-currency item id, created on first draw.
+    custom_entries: std::collections::HashMap<u16, CoinEntry>,
 }
 
 impl CoinSlotState {
     /// The static constructor's array sizes (`CoinSlot.cs:341-343`).
     pub fn new() -> Self {
         Self {
+            savings_entries: vec![CoinEntry::default(); 4],
             chest_entries: vec![CoinEntry::default(); 200],
             inventory_entries: vec![CoinEntry::default(); 59],
             savings_entries: vec![CoinEntry::default(); 4],
@@ -223,6 +271,14 @@ impl CoinSlotState {
     /// `CoinSlot.UpdateSlotAnims` (`CoinSlot.cs:358-372`) — the vanilla runs
     /// it per frame after the interface layers draw (`Main.cs:44936`). The
     /// Savings array steps first (`:359-361`).
+            custom_entries: std::collections::HashMap::new(),
+        }
+    }
+
+    /// `CoinSlot.UpdateSlotAnims` (`CoinSlot.cs:256-274`) — the vanilla runs
+    /// it per frame after the interface layers draw (`Main.cs:44936`); the
+    /// savings array steps FIRST (`:258-261`), the Custom dictionary LAST
+    /// (`:270-273`).
     pub fn update_slot_anims(&mut self) {
         for e in &mut self.savings_entries {
             e.update_anim();
@@ -233,6 +289,38 @@ impl CoinSlotState {
         for e in &mut self.inventory_entries {
             e.update_anim();
         }
+        for e in self.custom_entries.values_mut() {
+            e.update_anim();
+        }
+    }
+
+    /// `CoinSlot.UpdateSavings` (`CoinSlot.cs:225-228`): the savings cell's
+    /// draw parameters — the entry's type is `71 + slot` (copper..platinum),
+    /// the jump scale is `SavingsCoinJumpScale` (10).
+    // [merge-P] duplicate fn update_savings removed (same-scope duplicate; longest implementation kept)
+
+    /// `CoinSlot.UpdateCustom` (`CoinSlot.cs:230-238`): the custom-currency
+    /// cell's draw parameters — the dictionary is keyed by the currency's
+    /// ITEM id (`DrawSavingsMoney` passes `_valuePerUnit.Keys.ElementAt(0)`
+    /// = 3817), a missing key inserts a fresh `CoinEntryRef`, and the
+    /// entry's type IS that id (the 3817 pulse arm, `CoinEntry.UpdateState`
+    /// `CoinSlot.cs:75`); the jump scale is `SavingsCoinJumpScale` (10).
+    pub fn update_custom(&mut self, currency_item: u16, count: u32) -> CoinDrawState {
+        self.custom_entries
+            .entry(currency_item)
+            .or_default()
+            .update_state(currency_item, count, SAVINGS_COIN_JUMP_SCALE)
+    }
+
+    /// `CoinSlot.UpdateSavings` (`CoinSlot.cs:225-228`): the savings row's
+    /// draw state — type `71 + slot`, the `SavingsCoinJumpScale` (10, the
+    /// same value as the item-slot scale but a distinct static).
+    pub fn update_savings(&mut self, slot: usize, count: u32) -> CoinDrawState {
+        self.savings_entries[slot].update_state(
+            (71 + slot) as u16,
+            count,
+            SAVINGS_COIN_JUMP_SCALE,
+        )
     }
 
     /// `CoinSlot.UpdateSavings` (`CoinSlot.cs:225-228`):
@@ -397,6 +485,30 @@ mod tests {
     }
 
     #[test]
+    fn the_custom_cell_pulses_on_3817_and_keeps_its_own_rank() {
+        // `CoinSlot.UpdateCustom` (`CoinSlot.cs:230-238`): the dictionary is
+        // keyed by the ITEM id (3817), the entry's type IS that id so the
+        // `Type == 3817` pulse arm (`:75`) fires; the Savings array is a
+        // separate rank space.
+        let mut st = CoinSlotState::new();
+        // A fresh cell absorbs its stack (DrawActive == 0) — no pulse.
+        let d = st.update_custom(3817, 5);
+        assert_eq!(d.stack_text_scale, 1.0);
+        assert_eq!(d.coin_anim_frame, 0);
+        // A count change arms the text pulse at the tail key; it grows as
+        // UpdateSlotAnims drains the frame (the Custom dictionary steps
+        // LAST, `:270-273`).
+        let d = st.update_custom(3817, 6);
+        assert_eq!(d.stack_text_scale, 1.0, "the pulse starts at the tail key");
+        st.update_slot_anims();
+        let d2 = st.update_custom(3817, 6);
+        assert!(d2.stack_text_scale > 1.0, "the 3817 pulse grows after the step");
+        // The savings cells never saw the medal count.
+        let s = st.update_savings(0, 5);
+        assert_eq!(s.stack_text_scale, 1.0, "the Savings rank is untouched");
+    }
+
+    #[test]
     fn the_chest_array_is_its_own_rank_space() {
         // `CoinSlot.cs:342-343`: `ChestEntries[200]` vs `InventoryEntries[59]`
         // — the same slot number in the chest row does not touch the
@@ -410,5 +522,45 @@ mod tests {
             inv.stack_text_draw_fade_overload, -1.0,
             "the grid entry stays neutral"
         );
+    }
+
+    /// The S1-H-9 follow-up: `draw_slot` now consumes `UpdateDrawState`
+    /// (`ItemSlot.cs:2349`). A coin-row cell (context 1, vanilla index 50)
+    /// that gains stack arms the text pulse and the jump, and a vacated coin
+    /// keeps a `fade_item` so the slot still draws the fading strip
+    /// (`ItemSlot.cs:2500`'s `flag4`).
+    #[test]
+    fn the_coin_row_draw_state_feeds_the_slot_consumption() {
+        let mut st = CoinSlotState::new();
+        let slot = crate::inv::coin_slot_index(0) as i32; // 50
+        // The first draw absorbs the stack (DrawActive == 0) — neutral.
+        let d = st.update_draw_state(slot, 1, 71, 5);
+        assert_eq!(d.stack_text_scale, 1.0);
+        assert_eq!(d.coin_y_offset, 0.0);
+        assert_eq!(d.fade_item, 0);
+        // A pickup raises the stack: the pulse arms at the tail key, then
+        // grows as UpdateSlotAnims drains the frame (the per-frame step the
+        // draw pass runs after the interface layers, `Main.cs:44936`).
+        let _ = st.update_draw_state(slot, 1, 71, 9);
+        st.update_slot_anims();
+        let d = st.update_draw_state(slot, 1, 71, 9);
+        assert!(d.stack_text_scale > 1.0, "the stack-count pulse grows");
+        // The jump fires once the text frame walks the 9..13 trigger window
+        // (`CoinSlot.cs:85-92`); stepping the clocks reaches it.
+        let mut jumped = false;
+        for _ in 0..16 {
+            st.update_slot_anims();
+            let d = st.update_draw_state(slot, 1, 71, 9);
+            if d.coin_y_offset > 0.0 {
+                jumped = true;
+                break;
+            }
+        }
+        assert!(jumped, "the coin jumps within the text-pulse window");
+        // Vacating the coin to air keeps the fade rank (the slot draws the
+        // fading strip even though the item is air).
+        let d = st.update_draw_state(slot, 1, 0, 0);
+        assert_eq!(d.fade_item, 71, "the copper fades out, not snaps");
+        assert!(d.fade_scale <= 1.0);
     }
 }

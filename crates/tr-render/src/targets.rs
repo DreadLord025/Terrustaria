@@ -12,11 +12,19 @@
 //! gate), `Main.cs:61751-61766` (the `drawToScreen`/`targetSet` transition),
 //! `Graphics/WorldSceneLayerTarget.cs:7-70`.
 //!
-//! This module is the seam the capture mode (S1-E-17) waits on: the target
-//! plumbing + layout math + scheduling are ported and tested here; the
-//! draw passes that CONSUME the layers (and `Main.DrawCapture`'s chunk
-//! render through them) are a follow-up — the frame path is unchanged
-//! (ANALYSIS "The render-target family (S1-G-13)").
+//! This module is the seam the capture mode (S1-E-17) waits on. The target
+//! plumbing + layout math + scheduling are ported and tested here, AND the
+//! consumer half now lives here too: [`render_to_targets`] EXECUTES the
+//! `RenderToTargets` plan against a live family (driving
+//! [`WorldSceneLayerTarget::update_content`] per layer with the App's
+//! per-layer render callbacks), [`ScreenTarget::clear_transparent`] is the
+//! skyTarget bind's clear (`Main.cs:62025-62026`), and
+//! [`layer_composite_position`] is the six composite sites' destination math
+//! (`Main.cs:62196`/`:62213`/`:62308`/`:63333`/`:63367`/`:63447`). The App
+//! wires the callbacks + the skyTarget gate + `Main.DrawCapture`'s chunk
+//! render (S1-G-13 consumers); the default frame path is unchanged — the
+//! consumers ride an env gate until the draw-pass-order A/B lands (ANALYSIS
+//! "The render-target family (S1-G-13)").
 
 use crate::gpu::offscreen_target_on;
 
@@ -263,6 +271,37 @@ impl ScreenTarget {
     pub fn view(&self) -> &wgpu::TextureView {
         &self.view
     }
+
+    /// The skyTarget bind's clear half — `GraphicsDevice.SetRenderTarget(skyTarget)`
+    /// + `Clear(Color.Transparent)` (`Main.cs:62025-62026`, and the capture
+    /// `BeginDrawCapture` bind, `CaptureCamera.cs:223-224`). wgpu has no global
+    /// "current render target": binding is per-pass, so the port's bind is the
+    /// caller passing [`view`](Self::view) to its sky pass; this records the
+    /// transparent clear the C# does immediately after the bind.
+    pub fn clear_transparent(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("sky-target-clear"),
+        });
+        {
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("sky-target-clear-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+        queue.submit(Some(encoder.finish()));
+    }
 }
 
 /// The seven world-space layers, in `Main.cs:765-777` declaration order.
@@ -348,6 +387,133 @@ pub fn render_to_targets_plan(
         plan.push(LayerUpdate::Render(SceneLayer::Water));
     }
     plan
+}
+
+/// `Main.RenderToTargets` (`Main.cs:57277-57327`), EXECUTED against a live
+/// family — the consumer half of [`render_to_targets_plan`]. The C# drives
+/// each arm with `layerTarget.UpdateContent(this.RenderX)`; the port hands
+/// the same per-layer callbacks to [`WorldSceneLayerTarget::update_content`]
+/// in the same order. `render_layer(layer, view, camera)` is the App's
+/// `RenderTiles`/`RenderTiles2`/`RenderWater`/`RenderBackgroundWater`/
+/// `RenderWallsAndBlacks`/`RenderBackground` dispatch (`Main.cs:57329-57348`,
+/// `:57350-57369`, `:57371-57386`, `:55183-55198`, `:58056-58067`,
+/// `:55200-55218`).
+///
+/// Two C# side effects live inside the callbacks and are reproduced here so
+/// the executor stays the single ordering authority:
+/// - the phase-2 arm marks the freshly rendered background swap pending
+///   AFTER `backgroundTargetSwap.UpdateContent` returns (`Main.cs:57291`);
+/// - `RenderWallsAndBlacks` applies the pending background swap FIRST
+///   (`Main.cs:58058`) — every wall render (phase arm or offscreen re-render)
+///   runs the apply. The C# applies it INSIDE the callback (after the wall
+///   target's clear + position record); the port applies it just before
+///   `update_content` — provably equivalent: the swap only exchanges the two
+///   background targets, which the wall's clear/position/callback never read.
+///
+/// `camera_center` is `Main.Camera.Center` and `camera_scaled_size` is
+/// `Camera.ScaledSize` (`Camera.cs:14`); the offscreen checks re-answer
+/// `IsPartiallyOffscreen` against the CURRENT target each time (the
+/// background re-check after the swap, `:57314`, included).
+pub fn render_to_targets(
+    family: &mut RenderTargetFamily,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    render: bool,
+    render_now: bool,
+    render_count: i32,
+    camera_center: [f32; 2],
+    camera_scaled_size: [f32; 2],
+    mut render_layer: impl FnMut(SceneLayer, &wgpu::TextureView, LayerCamera),
+) {
+    // Main.cs:57279-57282
+    if !render {
+        return;
+    }
+    let osr = family.layout.offscreen_range;
+    let offscreen = |f: &RenderTargetFamily, layer: SceneLayer| {
+        f.layer(layer)
+            .is_partially_offscreen(camera_center, camera_scaled_size)
+    };
+    // One `layerTarget.UpdateContent(callback)` — clear + position record +
+    // the render callback against the layer view.
+    let update = |f: &mut RenderTargetFamily, layer: SceneLayer| {
+        f.layer_mut(layer)
+            .update_content(device, queue, camera_center, osr, |view, cam| {
+                render_layer(layer, view, cam);
+            });
+    };
+    // Main.cs:57283-57298 — the else-if chain, verbatim (the `renderNow`
+    // re-tests are unreachable when the first arm ran; kept like the C#).
+    if render_now || render_count == 1 {
+        update(family, SceneLayer::Water);
+    } else if render_now || render_count == 2 {
+        update(family, SceneLayer::BackWater);
+        update(family, SceneLayer::BackgroundSwap);
+        // Main.cs:57291 — backgroundTargetSwapPending = true.
+        family.mark_background_swap_pending();
+    } else if render_now || render_count == 3 {
+        // Main.cs:58058 — RenderWallsAndBlacks applies the pending swap first.
+        family.apply_pending_background_target_swap();
+        update(family, SceneLayer::Wall);
+        update(family, SceneLayer::Tile);
+        update(family, SceneLayer::Tile2);
+    }
+    // Main.cs:57299-57326 — the partial-offscreen re-render order.
+    if offscreen(family, SceneLayer::Tile) {
+        update(family, SceneLayer::Tile);
+    }
+    if offscreen(family, SceneLayer::Tile2) {
+        update(family, SceneLayer::Tile2);
+    }
+    if offscreen(family, SceneLayer::BackWater) {
+        update(family, SceneLayer::BackWater);
+    }
+    if offscreen(family, SceneLayer::Background) {
+        // Main.cs:57313 — ApplyPendingBackgroundTargetSwap, then RE-CHECK.
+        family.apply_pending_background_target_swap();
+        if offscreen(family, SceneLayer::Background) {
+            update(family, SceneLayer::Background);
+        }
+    }
+    if offscreen(family, SceneLayer::Wall) {
+        // Main.cs:58058 again — the callback's own apply-before-render.
+        family.apply_pending_background_target_swap();
+        update(family, SceneLayer::Wall);
+    }
+    if offscreen(family, SceneLayer::Water) {
+        update(family, SceneLayer::Water);
+    }
+}
+
+/// The layer composite destination math — the six `Main.DoDraw` sites that
+/// draw a cached layer onto the screen: `backWaterTarget` (`Main.cs:62196`),
+/// `backgroundTarget` (`:62213-62214`, the cave-parallax X shift), `waterTarget`
+/// (`:62308`), `tileTarget` (`:63333`), `tile2Target` (`:63367`) and
+/// `wallTarget` (`:63447`). Every site is
+/// `spriteBatch.Draw(target.Texture, target.Position - Main.screenPosition
+/// [+ parallax], Color.White)`; the background alone adds
+/// `(Position + Texture.Size()/2 - Camera.Center) * (caveParallax - 1, 0)`
+/// (`:62213`). Returns the world-px top-left the full-size layer texture is
+/// drawn at (the caller subtracts nothing — `screen_position` is already
+/// `Main.screenPosition`).
+pub fn layer_composite_position(
+    layer: SceneLayer,
+    position: [f32; 2],
+    layer_size: (u32, u32),
+    screen_position: [f32; 2],
+    camera_center: [f32; 2],
+    cave_parallax: f32,
+) -> [f32; 2] {
+    let mut p = [
+        position[0] - screen_position[0],
+        position[1] - screen_position[1],
+    ];
+    if layer == SceneLayer::Background {
+        // Main.cs:62213 — the X-only parallax shift about the target centre.
+        p[0] +=
+            (position[0] + layer_size.0 as f32 / 2.0 - camera_center[0]) * (cave_parallax - 1.0);
+    }
+    p
 }
 
 /// The skyTarget capture gate (`Main.cs:62021-62027`): vanilla binds and
@@ -742,6 +908,65 @@ mod tests {
         assert_eq!(target_transition(false, true), TargetTransition::Keep);
     }
 
+    // ---- The layer composite math (Main.cs:62196/62213/62308/63333/63367/63447) ----
+
+    #[test]
+    fn composite_position_is_position_minus_screen_position() {
+        // Main.cs:62196/62308/63333/63367/63447: every non-background layer
+        // draws at `Position - screenPosition`, no parallax term.
+        for layer in [
+            SceneLayer::Water,
+            SceneLayer::BackWater,
+            SceneLayer::Tile,
+            SceneLayer::Tile2,
+            SceneLayer::Wall,
+        ] {
+            assert_eq!(
+                layer_composite_position(
+                    layer,
+                    [100.0, 200.0],
+                    (2304, 1464),
+                    [40.0, 60.0],
+                    [1000.0, 800.0],
+                    0.5,
+                ),
+                [60.0, 140.0],
+                "{layer:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn background_composite_adds_the_cave_parallax_x_shift() {
+        // Main.cs:62213: vector2 = (Position + Size/2 - Camera.Center) *
+        // (caveParallax - 1, 0). Position (100,200), size 2304x1464 → centre
+        // (1252,932); camera centre (1000,800) → delta (252,132); parallax
+        // 0.5 → shift (252 * -0.5, 0) = (-126, 0). Base (60,140) → (-66,140).
+        assert_eq!(
+            layer_composite_position(
+                SceneLayer::Background,
+                [100.0, 200.0],
+                (2304, 1464),
+                [40.0, 60.0],
+                [1000.0, 800.0],
+                0.5,
+            ),
+            [-66.0, 140.0]
+        );
+        // caveParallax == 1 → the shift vanishes (the surface case).
+        assert_eq!(
+            layer_composite_position(
+                SceneLayer::Background,
+                [100.0, 200.0],
+                (2304, 1464),
+                [40.0, 60.0],
+                [1000.0, 800.0],
+                1.0,
+            ),
+            [60.0, 140.0]
+        );
+    }
+
     // ---- GPU layout tests (headless; skip without an adapter) ----
 
     #[test]
@@ -897,5 +1122,204 @@ mod tests {
         assert_eq!(f.water.position(), [0.0, 0.0]);
         assert_eq!(f.layout.screen_size, (1600, 900));
         assert_eq!(f.layout.layer_size, (1984, 1284));
+    }
+
+    // ---- The RenderToTargets executor (Main.cs:57277-57327), GPU ----
+
+    /// A family whose every layer sits far from the camera (all partially
+    /// offscreen), so the offscreen arms all fire.
+    fn offscreen_family(device: &wgpu::Device, queue: &wgpu::Queue) -> RenderTargetFamily {
+        let mut f = RenderTargetFamily::init(
+            device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            (1280, 720),
+            true,
+            false,
+            RENDER_TARGET_MAX_HIDEF,
+        );
+        // Park every layer at a position far from the test camera centre so
+        // IsPartiallyOffscreen is true for all seven.
+        for layer in [
+            SceneLayer::Water,
+            SceneLayer::BackWater,
+            SceneLayer::Tile,
+            SceneLayer::Tile2,
+            SceneLayer::Wall,
+            SceneLayer::Background,
+            SceneLayer::BackgroundSwap,
+        ] {
+            f.layer_mut(layer)
+                .update_content(device, queue, [100000.0, 100000.0], 192, |_, _| {});
+        }
+        f
+    }
+
+    #[test]
+    fn gpu_executor_phase_arms_render_the_right_layers() {
+        let Some((device, queue)) = crate::test_gpu::headless() else {
+            return;
+        };
+        // Phase 1 → water only; the camera sits ON the parked layers so no
+        // offscreen arm fires (centre 100000,100000 matches their position).
+        let mut f = offscreen_family(&device, &queue);
+        let mut seen = Vec::new();
+        render_to_targets(
+            &mut f,
+            &device,
+            &queue,
+            true,
+            false,
+            1,
+            [100000.0, 100000.0],
+            [1280.0, 720.0],
+            |layer, _view, _cam| seen.push(layer),
+        );
+        assert_eq!(seen, vec![SceneLayer::Water]);
+        // Phase 2 → backWater + backgroundSwap, and the pending flag arms.
+        let mut f = offscreen_family(&device, &queue);
+        let mut seen = Vec::new();
+        render_to_targets(
+            &mut f,
+            &device,
+            &queue,
+            true,
+            false,
+            2,
+            [100000.0, 100000.0],
+            [1280.0, 720.0],
+            |layer, _view, _cam| seen.push(layer),
+        );
+        assert_eq!(
+            seen,
+            vec![SceneLayer::BackWater, SceneLayer::BackgroundSwap]
+        );
+        assert!(f.background_swap_pending());
+        // Phase 3 → wall + tile + tile2.
+        let mut f = offscreen_family(&device, &queue);
+        let mut seen = Vec::new();
+        render_to_targets(
+            &mut f,
+            &device,
+            &queue,
+            true,
+            false,
+            3,
+            [100000.0, 100000.0],
+            [1280.0, 720.0],
+            |layer, _view, _cam| seen.push(layer),
+        );
+        assert_eq!(
+            seen,
+            vec![SceneLayer::Wall, SceneLayer::Tile, SceneLayer::Tile2]
+        );
+    }
+
+    #[test]
+    fn gpu_executor_render_false_is_a_noop() {
+        let Some((device, queue)) = crate::test_gpu::headless() else {
+            return;
+        };
+        let mut f = offscreen_family(&device, &queue);
+        let before = f.water.position();
+        let mut seen = Vec::new();
+        render_to_targets(
+            &mut f,
+            &device,
+            &queue,
+            false,
+            true,
+            1,
+            [0.0, 0.0],
+            [1280.0, 720.0],
+            |layer, _view, _cam| seen.push(layer),
+        );
+        assert!(seen.is_empty());
+        assert_eq!(f.water.position(), before);
+    }
+
+    #[test]
+    fn gpu_executor_offscreen_order_and_background_swap_recheck() {
+        let Some((device, queue)) = crate::test_gpu::headless() else {
+            return;
+        };
+        // All layers offscreen, renderCount 99 (no phase arm). The order is
+        // tile, tile2, backWater, background(swap+recheck), wall, water.
+        let mut f = offscreen_family(&device, &queue);
+        // Arm a pending swap so the background arm's apply exchanges targets.
+        f.mark_background_swap_pending();
+        let bg_before = f.background.position();
+        let swap_before = f.background_swap.position();
+        let mut seen = Vec::new();
+        render_to_targets(
+            &mut f,
+            &device,
+            &queue,
+            true,
+            false,
+            99,
+            [0.0, 0.0],
+            [1280.0, 720.0],
+            |layer, _view, _cam| seen.push(layer),
+        );
+        assert_eq!(
+            seen,
+            vec![
+                SceneLayer::Tile,
+                SceneLayer::Tile2,
+                SceneLayer::BackWater,
+                SceneLayer::Background,
+                SceneLayer::Wall,
+                SceneLayer::Water,
+            ]
+        );
+        // The pending swap applied: background now holds the old swap target.
+        assert_eq!(f.background.position(), swap_before);
+        assert!(!f.background_swap_pending());
+        // (bg_before is now in background_swap.)
+        assert_eq!(f.background_swap.position(), bg_before);
+    }
+
+    #[test]
+    fn gpu_executor_wall_render_applies_the_pending_swap() {
+        let Some((device, queue)) = crate::test_gpu::headless() else {
+            return;
+        };
+        // RenderWallsAndBlacks applies the pending swap FIRST (Main.cs:58058).
+        // Phase 3 with a pending swap: the wall render exchanges the targets.
+        let mut f = offscreen_family(&device, &queue);
+        f.mark_background_swap_pending();
+        let bg_before = f.background.position();
+        let swap_before = f.background_swap.position();
+        render_to_targets(
+            &mut f,
+            &device,
+            &queue,
+            true,
+            false,
+            3,
+            [100000.0, 100000.0],
+            [1280.0, 720.0],
+            |_layer, _view, _cam| {},
+        );
+        assert_eq!(f.background.position(), swap_before);
+        assert_eq!(f.background_swap.position(), bg_before);
+        assert!(!f.background_swap_pending());
+    }
+
+    #[test]
+    fn gpu_sky_target_clear_reads_back_transparent() {
+        let Some((device, queue)) = crate::test_gpu::headless() else {
+            return;
+        };
+        let sky = ScreenTarget::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            64,
+            64,
+            "sky-test",
+        );
+        sky.clear_transparent(&device, &queue);
+        let px = crate::test_gpu::read_texture(&device, &queue, sky.texture(), (1, 1), 4);
+        assert_eq!(px, vec![0, 0, 0, 0]);
     }
 }

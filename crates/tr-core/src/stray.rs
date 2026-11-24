@@ -24,7 +24,7 @@ const MAX_WALKER_DISTANCE: i32 = 1920 / 16;
 /// `edit::solid_tile` is the strict `SolidTile`, NOT this one).
 /// `InWorld(i, j, 1)` (`:9688-9695`) refuses the 1-tile border; the null
 /// tile arm maps to the port's out-of-bounds `None`.
-fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
+pub fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
     if x < 1 || x >= world.width - 1 || y < 1 || y >= world.height - 1 {
         return false;
     }
@@ -170,6 +170,56 @@ pub fn check_arena_score(world: &World, arena_center: (f32, f32)) -> ((i32, i32)
     let (_, right) = send_walker(world, (px, py), 10, 1, MAX_WALKER_DISTANCE);
     // `:97-98`: the ends step one tile back toward the centre.
     ((left.0 + 1, left.1), (right.0 - 1, right.1))
+}
+
+/// `StrayMethods.CanSpawnSandstormHostile` (`StrayMethods.cs:47-63`) — the
+/// Sand Elemental's sandnado spawn-column gate (`NPC.cs:40249`): the three
+/// columns `point.X + i` for `i` in −1..=1 each expand vertically
+/// (`expand_up`/`expand_down`), the inclusive ends shrink by ++/−−, and the
+/// free span must reach `bottomY - topY >= 20`. `position` is world px;
+/// `ToTileCoordinates` truncates toward zero then >>4 (the
+/// `check_arena_score` convention). W4-c40.
+pub fn can_spawn_sandstorm_hostile(
+    world: &World,
+    position: (f32, f32),
+    expand_up: i32,
+    expand_down: i32,
+) -> bool {
+    can_spawn_sandstorm_span(world, position, expand_up, expand_down, 20)
+}
+
+/// `StrayMethods.CanSpawnSandstormFriendly` (`StrayMethods.cs:65-81`) —
+/// the same walk with the 10-tile span (the friendly-minion rest gate,
+/// `Player.cs:56814`). W4-c40.
+pub fn can_spawn_sandstorm_friendly(
+    world: &World,
+    position: (f32, f32),
+    expand_up: i32,
+    expand_down: i32,
+) -> bool {
+    can_spawn_sandstorm_span(world, position, expand_up, expand_down, 10)
+}
+
+/// The shared three-column walk (`StrayMethods.cs:51-61`/`:69-79`): the
+/// ONLY difference between the two gates is the span threshold.
+fn can_spawn_sandstorm_span(
+    world: &World,
+    position: (f32, f32),
+    expand_up: i32,
+    expand_down: i32,
+    required_span: i32,
+) -> bool {
+    let px = (position.0 as i32) >> 4;
+    let py = (position.1 as i32) >> 4;
+    for i in -1..=1 {
+        let (top_y, bottom_y) = expand_vertically(world, px + i, py, expand_up, expand_down);
+        let top_y = top_y + 1;
+        let bottom_y = bottom_y - 1;
+        if bottom_y - top_y < required_span {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -318,5 +368,51 @@ mod tests {
         let mut rng = crate::UnifiedRandom::new(1234);
         let _ = check_arena_score(&w, (2408.0, 1920.0));
         assert_eq!(rng.next(), before, "the walk consumed no draws");
+    }
+
+    /// W4-c40 — `CanSpawnSandstormHostile` on open air above the flat
+    /// floor: the 15/15 expansion from a point 30 rows up finds the floor
+    /// only within the down budget; the free span (≥20) passes on all
+    /// three columns.
+    #[test]
+    fn w4_c40_sandstorm_hostile_needs_a_20_tile_span() {
+        let w = flat_world();
+        // Point at row 90 (30 above the floor): expand 15 up (rows 75-89
+        // free), 15 down (rows 90-104 free, no floor within 15) — the
+        // bottom end runs to 105 (the budget exhausts), top 75.
+        // span = (105-1) - (75+1) = 28 >= 20: passes.
+        let pos = (150.0 * 16.0, 90.0 * 16.0);
+        assert!(can_spawn_sandstorm_hostile(&w, pos, 15, 15));
+        assert!(can_spawn_sandstorm_friendly(&w, pos, 30, 30));
+        // A ceiling 8 rows above the point caps the span below 20.
+        let mut w2 = flat_world();
+        for x in 148..153 {
+            for y in 82..84 {
+                let i = w2.index(x, y);
+                w2.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w2.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // expand 15 up stops at the ceiling row 83 (inclusive), top 84;
+        // expand 15 down runs to 105, bottom 104: span 20 — exactly the
+        // boundary, passes (`< 20` refuses).
+        assert!(can_spawn_sandstorm_hostile(&w2, pos, 15, 15));
+        // One more ceiling row: span 19 — refuses.
+        let i = w2.index(149, 84);
+        w2.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w2.tiles[i].flags |= FLAG_ACTIVE;
+        // The centre column now stops at 84 → top 85, span 19: false.
+        assert!(!can_spawn_sandstorm_hostile(&w2, pos, 15, 15));
+        // The friendly gate (10) still passes on the same geometry.
+        assert!(can_spawn_sandstorm_friendly(&w2, pos, 15, 15));
+    }
+
+    /// W4-c40 — the border refusal: `ExpandVertically`'s InWorld(10) gate
+    /// leaves both ends at the start, span −2 < 20 → false.
+    #[test]
+    fn w4_c40_sandstorm_hostile_refuses_the_border() {
+        let w = flat_world();
+        let pos = (5.0 * 16.0, 90.0 * 16.0);
+        assert!(!can_spawn_sandstorm_hostile(&w, pos, 15, 15));
     }
 }

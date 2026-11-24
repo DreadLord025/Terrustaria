@@ -38,7 +38,10 @@
 //! | `UsesCustomCanPlace` / `UsesGlobalLiquidChecks` :144/:157 | `uses_custom_can_place` / `uses_global_liquid_checks` |
 //! | `GetStyleOverride` :728 | `get_style_override` + [`resolve_tile_def`] (the frameY consumer, W4-d112) |
 //! | `GetStyleOverride` :728 | `get_style_override` (tag) + [`get_tile_data_for_tile`] resolution |
+//! | `GetStyleOverride` :728 | `get_style_override` (tag) + [`get_tile_data_for_tile`] resolution (W4-e11; [`resolve_tile_def`] is the d112 alias) |
 //! | `HookCheckIfCanPlace` / `HookPlaceOverride` / `HookPostPlaceMyPlayer` | `hook_check_if_can_place` / `hook_place_override` / `hook_post_place_my_player` |
+//! | `CallPostPlacementPlayerHook` :5269 / `OriginToTopLeft` :5285 | [`call_post_placement_player_hook`] / [`origin_to_top_left`] (W4-d114 hook wiring) |
+//! | `CheckWaterDeath(type, style)` :5073 / `CheckLavaDeath(type, style)` :5097 | [`check_water_death_for_style`] / [`check_lava_death_for_style`] (W4-d114, the `ApplyNaturalObjectRules` consumers) |
 //! | `CoordinateHeights` :1417 | `coordinate_heights` |
 //! | `CoordinateWidth` :1503 / `CoordinatePadding` :1537 | `coordinate_width` / `coordinate_padding` |
 //! | `CoordinatePaddingFix` | `coordinate_padding_fix` |
@@ -70,6 +73,11 @@
 //!   kill-cascade anchor lookup keep their base-def frame math (their C#
 //!   counterparts are the `WorldGen.Check*` loops, not this overload); the
 //!   framing/liquid-death consumers wire in with their own tasks.
+//!   W4-d114 ports the after-placement INVOCATION seam
+//!   ([`call_post_placement_player_hook`], `Player.cs:40144`/:45816 wiring)
+//!   and its `OriginToTopLeft` helper ([`origin_to_top_left`]) — with every
+//!   generated body still `hook: None` the seam is a behaviour-frozen no-op
+//!   until the chest/TE tasks install bodies.
 //! - **~~`GetStyleOverride` resolution~~ — DONE (W4-e11):** the frameY-based
 //!   `GetTileData(Tile)` overload :5196-5261 is [`get_tile_data_for_tile`],
 //!   with the `GetStyle_Detritus/SmallPiles/Stalactite` arms (:5294-5327),
@@ -121,6 +129,9 @@ pub use registry::{BY_KIND, FRAME_IMPORTANT, KILL_TILE_NO_CELL_DROP, TABLE};
 /// (W4-d112, S1-F-7 wave B); the tag itself is generated data.
 /// `GetTileData(Tile)` overload (:5196-5261) — ported as
 /// [`get_tile_data_for_tile`] (W4-e11).
+/// `GetTileData(Tile)` overload (:5196-5261) — ported as
+/// [`get_tile_data_for_tile`] (W4-e11); [`resolve_tile_def`] (W4-d112) is
+/// the delegating alias.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum GetStyleOverride {
     #[default]
@@ -636,8 +647,207 @@ pub fn try_get_tile_bounds(
     }
     // :5191-5193 — the bounds are the object's tile extents.
     Some((bx, by, def.width, def.height))
+/// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
+/// frame-based resolution consumer (W4-d112, S1-F-7 wave B): decodes the
+/// stored `frameX`/`frameY` into a style/alternate pair and walks the def's
+/// sub-tiles and alternates. The `GetStyleOverride` hook (:5222-5226) wins
+/// over the whole decode when present ([`apply_style_override`], the three
+/// `GetStyle_*` bodies :5294-5327).
+///
+/// C# deviations (documented): a null `Tile` is the caller's `world.tile()`
+/// `None`; the out-of-range-type throw (:5203-5206) degrades to `None` like
+/// [`def_for_tile`] (the port never indexes past `BY_KIND`). Integer division
+/// truncates toward zero in both languages (negative frames degrade the same
+/// way). The sub-tile null-padding (`addSubTile` :2085-2091) is the port's
+/// (style, def) pair lookup — a null slot keeps the current def, 1:1.
+pub fn resolve_tile_def(tile: &Tile) -> Option<&'static TileObjectDef> {
+    // W4-d112's port of the same overload; the merge keeps ONE body —
+    // e11's `get_tile_data_for_tile` (the split `resolve_from_frames`
+    // shape the synthetic-def witnesses pin). The name stays for the
+    // d112 witness set + the framing consumers.
+    get_tile_data_for_tile(tile)
+}
 
 }
+
+/// The three `GetStyleOverride` bodies (`TileObjectData.cs:5294-5327`), called
+/// from [`resolve_tile_def`] at :5222-5226. Each indexes `current.SubTiles`
+/// POSITIONALLY (C# list index, not style): the generated sub-tile pairs of
+/// the three override kinds are dense from 0 (`addSubTile(0)` :4973/:4984,
+/// `addSubTile(0/1/2)` :4999/:5005/:5011), so the pair slice index is the C#
+/// list index. A missing slot degrades to `None` (C# throws).
+fn apply_style_override(
+    tag: GetStyleOverride,
+    tile: &Tile,
+    current: &'static TileObjectDef,
+) -> Option<&'static TileObjectDef> {
+    let sub = |i: usize| current.subtiles.get(i).map(|(_, def)| *def);
+    match tag {
+        GetStyleOverride::None => Some(current),
+        // GetStyle_Detritus (:5294-5301).
+        GetStyleOverride::Detritus => {
+            if tile.frame_y >= 36 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+        // GetStyle_SmallPiles (:5303-5310).
+        GetStyleOverride::SmallPiles => {
+            if tile.frame_y >= 18 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+        // GetStyle_Stalactite (:5312-5327) — descending thresholds.
+        GetStyleOverride::Stalactite => {
+            if tile.frame_y >= 90 {
+                sub(2)
+            } else if tile.frame_y >= 72 {
+                sub(1)
+            } else if tile.frame_y >= 36 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+    }
+}
+
+
+/// `TileObjectData.CallPostPlacementPlayerHook` (`TileObjectData.cs:5269-5283`)
+/// — the after-placement hook INVOCATION consumer (W4-d114): resolves
+/// `GetTileData(type, style, data.alternate)`, subtracts the def's `Origin`
+/// when the hook wants processed coordinates, and calls the hook. Returns
+/// `hookResult == badReturn` — the C# quirk verbatim: for the chest
+/// (`badReturn = -1`, `Chest.AfterPlacement_Hook` returns -1 on FAILURE,
+/// `Chest.cs:559-567`) this answers `true` when the hook FAILED. Both C#
+/// call sites (`Player.cs:40144`, `:45816`) ignore the return value.
+///
+/// The `alternate` parameter is part of the C# signature but the body reads
+/// only `data.alternate` (:5271/:5276/:5282) — kept 1:1. Wave A keeps every
+/// generated hook body as a documented callback (`hook: None`, see
+/// [`PlacementHook::callback`]), so this answers `false` for every registry
+/// def today; the invocation seam is what the chest/TE tasks wire into.
+/// A negative style throws in C# (:5132-5135); the port degrades to `false`
+/// (the [`check_liquid_placement`] precedent).
+#[allow(unused_variables)]
+pub fn call_post_placement_player_hook(
+    world: &World,
+    tile_x: i32,
+    tile_y: i32,
+    kind: u16,
+    style: i32,
+    dir: i32,
+    alternate: i32,
+    data: &TileObjectInstance,
+) -> bool {
+    if style < 0 {
+        return false;
+    }
+    // :5271 — `GetTileData(type, style, data.alternate)`.
+    let Some(def) = def_for_tile(kind) else {
+        return false;
+    };
+    let Some(tile_data) = get_tile_data(def, style, data.alternate) else {
+        return false;
+    };
+    call_post_placement_player_hook_with_def(
+        world, tile_x, tile_y, kind, style, dir, tile_data, data,
+    )
+}
+
+/// The body of [`call_post_placement_player_hook`] after the :5271
+/// resolution — split out like [`place`]/[`place_with_def`] so witnesses can
+/// inject a hook body outside the generated registry.
+#[allow(unused_variables)]
+pub fn call_post_placement_player_hook_with_def(
+    world: &World,
+    tile_x: i32,
+    tile_y: i32,
+    kind: u16,
+    style: i32,
+    dir: i32,
+    tile_data: &TileObjectDef,
+    data: &TileObjectInstance,
+) -> bool {
+    // :5272-5275 — the `_placementHooks == null` / `hook == null` gates (the
+    // port folds both into `hook: None`).
+    let Some(hook_fn) = tile_data.hook_post_place_my_player.hook else {
+        return false;
+    };
+    let hook = tile_data.hook_post_place_my_player;
+    let (mut x, mut y) = (tile_x, tile_y);
+    // :5277-5281 — processed coordinates arrive origin-relative.
+    if hook.processed_coordinates {
+        x -= tile_data.origin.x;
+        y -= tile_data.origin.y;
+    }
+    // :5282 — `== badReturn`, NOT `!=` (see the doc quirk).
+    hook_fn(world, x, y, kind, style, dir, data.alternate) == hook.bad_return
+}
+
+/// `TileObjectData.OriginToTopLeft` (`TileObjectData.cs:5285-5292`) — the
+/// coordinate helper `Chest.AfterPlacement_Hook` opens with (`Chest.cs:562`):
+/// a resolved def shifts the anchor point back by its `Origin`; an
+/// unregistered kind (or a negative style — the C# throw, degraded like
+/// [`call_post_placement_player_hook`]) leaves the point unchanged. The C#
+/// `ref Point16` becomes a returned value.
+pub fn origin_to_top_left(kind: u16, style: i32, base_coords: Point16) -> Point16 {
+    if style < 0 {
+        return base_coords;
+    }
+    if let Some(def) = def_for_tile(kind) {
+        if let Some(tile_data) = get_tile_data(def, style, 0) {
+            return Point16::new(
+                base_coords.x - tile_data.origin.x,
+                base_coords.y - tile_data.origin.y,
+            );
+        }
+    }
+    base_coords
+}
+
+/// `TileObjectData.CheckWaterDeath(int type, int style)`
+/// (`TileObjectData.cs:5073-5081`) — the style-indexed liquid-death consumer
+/// of `ApplyNaturalObjectRules` (:1847-1851 sets `UsesGlobalLiquidChecks`;
+/// W4-d114 takes the (type, style) overloads, the Tile overloads :5083-5119
+/// are W4-e11's). A def that opted out of the global checks answers its own
+/// `WaterDeath`; a natural-object def (or an unregistered kind) answers the
+/// global `Main.tileWaterDeath` table ([`TILE_WATER_DEATH`]). Negative style:
+/// the C# throw degrades to the global table (the
+/// [`check_liquid_placement`] precedent).
+pub fn check_water_death_for_style(kind: u16, style: i32) -> bool {
+    if style >= 0 {
+        if let Some(def) = def_for_tile(kind) {
+            if let Some(td) = get_tile_data(def, style, 0) {
+                if !td.uses_global_liquid_checks {
+                    return td.water_death;
+                }
+            }
+        }
+    }
+    TILE_WATER_DEATH.contains(&kind)
+}
+
+/// `TileObjectData.CheckLavaDeath(int type, int style)`
+/// (`TileObjectData.cs:5097-5105`) — the lava twin of
+/// [`check_water_death_for_style`]; the global table is the generated
+/// `TILE_LAVA_DEATH` bitset (`Main.tileLavaDeath`, `Main.cs:7233-8218`).
+pub fn check_lava_death_for_style(kind: u16, style: i32) -> bool {
+    if style >= 0 {
+        if let Some(def) = def_for_tile(kind) {
+            if let Some(td) = get_tile_data(def, style, 0) {
+                if !td.uses_global_liquid_checks {
+                    return td.lava_death;
+                }
+            }
+        }
+    }
+    crate::tiledata::TILE_LAVA_DEATH.has(kind)
+}
+
 /// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
 /// frameY/frameX-based style RESOLUTION consumer of the registry (the tile
 /// counterpart of the index-based [`get_tile_data`]). The frame pair decodes
@@ -3328,12 +3538,6 @@ mod tests {
     /// has the BASE geometry (270's platform alternate D_270_A1 is
     /// field-identical in width/heights/width/padding), so this slice is
     /// exact for them even under the full resolver.
-    fn walk_resolve(t: &Tile) -> Option<&'static TileObjectDef> {
-        if !t.active() {
-            return None;
-        }
-        def_for_tile(t.kind)
-    }
 
     /// Places an active tile with the given frames (the walk reads only
     /// kind/active/frameX/frameY).
@@ -3351,28 +3555,28 @@ mod tests {
         // Top-left cell: frames (0,0) → no steps.
         set_framed(&mut w, 12, 12, 283, 0, 0);
         assert_eq!(
-            try_get_tile_bounds(&w, 12, 12, walk_resolve),
+            try_get_tile_bounds(&w, 12, 12),
             Some((12, 12, 3, 3))
         );
         // Bottom-right cell: frames (36,36) → :5177-5181 two column steps
         // (36→20→4), :5183-5190 two row steps (36→20→4).
         set_framed(&mut w, 12, 12, 283, 36, 36);
         assert_eq!(
-            try_get_tile_bounds(&w, 12, 12, walk_resolve),
+            try_get_tile_bounds(&w, 12, 12),
             Some((10, 10, 3, 3))
         );
         // Padding column/row (frame 18 = 16+2): the C# while/for still step
         // once — the remainder 18 >= 16 (:5177/:5185), padding is NOT skipped.
         set_framed(&mut w, 12, 12, 283, 18, 18);
         assert_eq!(
-            try_get_tile_bounds(&w, 12, 12, walk_resolve),
+            try_get_tile_bounds(&w, 12, 12),
             Some((11, 11, 3, 3))
         );
         // A second style column (frameX 54 = one CFW): the remainder resets,
         // the walk is style-independent (:5172-5175 divides first).
         set_framed(&mut w, 12, 12, 283, 54, 0);
         assert_eq!(
-            try_get_tile_bounds(&w, 12, 12, walk_resolve),
+            try_get_tile_bounds(&w, 12, 12),
             Some((12, 12, 3, 3))
         );
     }
@@ -3386,7 +3590,7 @@ mod tests {
         // (:5177-5181), 36 → two row steps → top-left (15,10).
         set_framed(&mut w, 20, 12, 275, 90, 36);
         assert_eq!(
-            try_get_tile_bounds(&w, 20, 12, walk_resolve),
+            try_get_tile_bounds(&w, 20, 12),
             Some((15, 10, 6, 3))
         );
     }
@@ -3401,7 +3605,7 @@ mod tests {
         // (row 0), remainder 4 < 18 (row 1) → one row step.
         set_framed(&mut w, 11, 11, 21, 18, 20);
         assert_eq!(
-            try_get_tile_bounds(&w, 11, 11, walk_resolve),
+            try_get_tile_bounds(&w, 11, 11),
             Some((10, 10, 2, 2))
         );
         // C# quirk pinned: frameY 36 is row 1's PADDING (row 1 spans 18..36);
@@ -3409,7 +3613,7 @@ mod tests {
         // one tile above the true top. Faithful, not "fixed" (:5183-5190).
         set_framed(&mut w, 11, 11, 21, 18, 36);
         assert_eq!(
-            try_get_tile_bounds(&w, 11, 11, walk_resolve),
+            try_get_tile_bounds(&w, 11, 11),
             Some((10, 9, 2, 2))
         );
     }
@@ -3421,23 +3625,23 @@ mod tests {
         let mut w = world();
         set_framed(&mut w, 10, 11, 270, 0, 18);
         assert_eq!(
-            try_get_tile_bounds(&w, 10, 11, walk_resolve),
+            try_get_tile_bounds(&w, 10, 11),
             Some((10, 10, 1, 2))
         );
         // Inactive tile: the seam's :5198-5201 gate → None.
         set_framed(&mut w, 10, 11, 270, 0, 18);
         w.tiles[w.index(10, 11)].flags &= !FLAG_ACTIVE;
-        assert_eq!(try_get_tile_bounds(&w, 10, 11, walk_resolve), None);
+        assert_eq!(try_get_tile_bounds(&w, 10, 11), None);
         // Unregistered kind (stone 1): `_data[type]` null (:5208-5211).
         set_framed(&mut w, 10, 11, 1, 0, 0);
-        assert_eq!(try_get_tile_bounds(&w, 10, 11, walk_resolve), None);
+        assert_eq!(try_get_tile_bounds(&w, 10, 11), None);
         // Out of bounds: the port's world.tile None (C# throws; documented).
-        assert_eq!(try_get_tile_bounds(&w, -1, 0, walk_resolve), None);
+        assert_eq!(try_get_tile_bounds(&w, -1, 0), None);
         // Negative frames: C# int division truncates toward zero — num 0,
         // remainder -1 < 16 → no steps (:5172-5175, both languages agree).
         set_framed(&mut w, 10, 11, 270, -1, -1);
         assert_eq!(
-            try_get_tile_bounds(&w, 10, 11, walk_resolve),
+            try_get_tile_bounds(&w, 10, 11),
             Some((10, 11, 1, 2))
         );
     }

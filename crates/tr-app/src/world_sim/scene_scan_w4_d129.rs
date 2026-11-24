@@ -3,6 +3,9 @@
 // banner decode convention and the RNG-free property. Written-not-run
 // (code-only lane). The scan draws no randomness anywhere in the C#
 // (`SceneMetrics.cs:326-448` has no `rand` call) — the witnesses pin that.
+// The banner convention pin was RECONCILED by W4-f31 (the decode now
+// returns the C# `num3` / `NPCtoBanner` index); the file rides the f31
+// branch ahead of d129's own merge — d129 keeps the identical updated pin.
 
 use super::*;
 use tr_core::tile::FLAG_ACTIVE;
@@ -115,7 +118,7 @@ fn w4_d129_the_aura_frame_gate_edges_match_scan_tiles() {
 
 #[test]
 fn w4_d129_the_banner_decode_convention_pin() {
-    // CENSUS FINDING (verify-only, machine unchanged): the C# tile-91 arm
+    // RECONCILED (W4-f31, the d129 escalation fix): the C# tile-91 arm
     // (`SceneMetrics.cs:410-443`) computes TWO indices — `num` (frameX/18 +
     // 111/row) gates the blank cells, then `num3 = frameX/18 - 21` (+111/row,
     // -1 per crossed 311/312) indexes `NPCBannerBuff[num3]`. The C# placement
@@ -123,38 +126,40 @@ fn w4_d129_the_banner_decode_convention_pin() {
     // `BannerToItem` base band `1615 + banner - 1`, `BannerSystem.cs:400`),
     // so the -21 recovers the `NPCtoBanner` index (Blue Slime: item 1683 →
     // style 90 → frameX 1620 → num3 = 69 = `NPCtoBanner(1)`).
-    // The port's `banner_num_from_frame` (`bestiary.rs:1100-1118`) returns
-    // the `num` family WITHOUT the -21 shift, and the scan indexes
-    // `npc_banner_buff[decode]` (`scene_scan.rs:195-204`) — so the port's
-    // array lives in the PLACE-STYLE space (index = banner + 21), offset +21
-    // from the C# `NPCBannerBuff` index. The port's own placement
-    // (`dungeon_features.rs:1209-1216`, frameX = style*18) and item table
-    // (`itemdata.rs` Slime Banner 1683 place_style 90) share that space, but
-    // the buff reader `banner_buff_for` (`banners.rs:74-88`) and the hover
-    // list (`resources.rs:477-489`) look up `npc_to_banner` indices — a +21
-    // mismatch. This witness pins the port's convention AS-IS; the C#-index
-    // reconciliation is a follow-up (machine changes are out of this
-    // census lane's scope).
-    // Slime banner: style 90 → frameX 1620, frameY 0 → decode 90.
+    // The census found the port's `banner_num_from_frame` returning the
+    // `num` family WITHOUT the -21 shift — the array lived in place-style
+    // space, +21 off the buff reader `banner_buff_for` (`banners.rs`) and
+    // the hover list (`resources.rs::banner_hover_names`), which read
+    // `npc_to_banner` indices. W4-f31 ported the C# `num3` expression
+    // verbatim (`bestiary.rs::banner_num_from_frame`): the decode now
+    // returns the `NPCtoBanner` index and the scan, the buff reader and the
+    // hover list all share the C# convention. This pin now witnesses the
+    // RECONCILED space (the as-is place-style pin is retired).
+    // Slime banner: style 90 → frameX 1620, frameY 0 → decode 69.
     assert_eq!(
         tr_core::bestiary::banner_num_from_frame(1620, 0),
-        Some(90)
+        Some(69)
+    );
+    assert_eq!(
+        tr_core::bestiary::banner_num_from_frame(1620, 0),
+        Some(tr_core::bestiary::npc_to_banner(1))
     );
     // The blank cells refuse: frameX < 396 && frameY < 54.
     assert_eq!(tr_core::bestiary::banner_num_from_frame(378, 0), None);
     assert_eq!(tr_core::bestiary::banner_num_from_frame(0, 0), None);
-    // Row wrap: +111 per full frameY row of 54.
+    // Row wrap: +111 per full frameY row of 54 — frameX 0, frameY 54 is
+    // num 111, num3 = 111 - 21 = 90 (the C# expression, no hole crossed).
     assert_eq!(
         tr_core::bestiary::banner_num_from_frame(0, 54),
-        Some(111)
+        Some(90)
     );
-    // The scan arm raises the buff at the decoded index.
+    // The scan arm raises the buff at the NPCtoBanner index.
     let mut world = fixture_world();
     set_tile(&mut world, 500, 195, 91, 1620, 0);
     let m = scan_scene_at(&world, [500.0 * 16.0, 200.0 * 16.0], false, false, false);
     assert!(m.has_banner);
-    assert!(m.npc_banner_buff[90]);
-    assert!(!m.npc_banner_buff[69], "the port indexes the unshifted decode");
+    assert!(m.npc_banner_buff[69], "the C# num3 index");
+    assert!(!m.npc_banner_buff[90], "the place-style index stays cold");
 }
 
 #[test]

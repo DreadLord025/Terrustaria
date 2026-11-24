@@ -33,8 +33,11 @@ use crate::itemdata::ITEMS;
 /// `value = sellPrice(0, 6)` = 30000 (`sellPrice` = `(copper + silver*100
 /// + gold*10000 + platinum*1000000) * 5`). `UseSound = SoundID.Item23` —
 /// SOUND_STYLES index 148 (the generated Cobalt Chainsaw 383 row's
-/// mapping).
-const fn lunar_chainsaw(id: u16, name: &'static str, projectile: u16) -> ItemDef {
+/// mapping). W4-g35 adds the `glowMask` overrides: 2773 → 20 (`:26504`),
+/// 2778 → 22 (`:26574`), 2783/3463 keep −1 (`:26601` — the deprecated
+/// solar chainsaw's explicit reset; 3463 → 175 at `:31064` is the
+/// stardust row).
+const fn lunar_chainsaw(id: u16, name: &'static str, projectile: u16, glow_mask: i16) -> ItemDef {
     ItemDef {
         id,
         name,
@@ -98,6 +101,7 @@ const fn lunar_chainsaw(id: u16, name: &'static str, projectile: u16) -> ItemDef
         mount_type: -1,
         paint: 0,
         paint_coating: 0,
+        glow_mask,
         use_sound: Some(148),
         use_sound_pitch: 0.0,
         expert: false,
@@ -122,10 +126,10 @@ pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 /// chainsaws (2773/2778/2783/3463 — the generator left them zero rows, so
 /// they could never chop; [`lunar_chainsaw`] transcribes the C# rows).
 static ITEM_CORRECTIONS: [ItemDef; 5] = [
-    lunar_chainsaw(2773, "Vortex Chainsaw", 427),
-    lunar_chainsaw(2778, "Nebula Chainsaw", 429),
-    lunar_chainsaw(2783, "Solar Flare Chainsaw", 431),
-    lunar_chainsaw(3463, "Stardust Chainsaw", 610),
+    lunar_chainsaw(2773, "Vortex Chainsaw", 427, 20),
+    lunar_chainsaw(2778, "Nebula Chainsaw", 429, 22),
+    lunar_chainsaw(2783, "Solar Flare Chainsaw", 431, -1),
+    lunar_chainsaw(3463, "Stardust Chainsaw", 610, 175),
     ItemDef {
         id: 6171,
             name: "Bejeweled Staff",
@@ -189,6 +193,9 @@ static ITEM_CORRECTIONS: [ItemDef; 5] = [
             mount_type: -1,
             paint: 0,
             paint_coating: 0,
+            // The Bejeweled Staff's case (`Item.cs:47550-47555`) sets no
+            // glowMask — the ResetStats −1 stock stands (`:49006`).
+            glow_mask: -1,
             // `DefaultToStaff` (`Item.cs:48015-48022`): `UseSound = SoundID.Item43`
             // — SOUND_STYLES index 168 (`SoundID.cs:1426`, ctor order).
             use_sound: Some(168),
@@ -454,6 +461,51 @@ pub fn migrate_kind(old: u16) -> u16 {
 mod tests {
     #![allow(non_snake_case)] // DW-IDs are part of the test names (traceability)
     use super::*;
+
+    /// W4-g35 — the item glowMask census (`Item.cs` SetDefaults writes +
+    /// the `ResetStats` −1 stock `:49006`). The generated table carries the
+    /// 59 non-stock rows; the registry corrections carry the four lunar
+    /// chainsaws the generator leaves as Deprecated zero rows.
+    #[test]
+    fn w4_g35_the_item_glow_mask_census() {
+        let g = |id: u16| item(id).expect("the item exists").glow_mask;
+        // The stock: an ordinary item keeps −1.
+        assert_eq!(g(1), -1); // Iron Pickaxe
+        assert_eq!(g(2), -1); // Dirt Block
+        // The first record: the Starfury's case 46 (`Item.cs:1942`).
+        assert_eq!(g(46), 328);
+        // The lunar armor set (`:26337-26381`).
+        assert_eq!(g(2757), 26);
+        assert_eq!(g(2758), 27);
+        assert_eq!(g(2760), 28);
+        assert_eq!(g(2761), 29);
+        assert_eq!(g(2762), 30);
+        // The lunar tools + their clone rows (the sdcall fix, `:26483-26617`,
+        // `:31058-31080`).
+        assert_eq!(g(2772), -1); // Deprecated → air
+        assert_eq!(g(2774), 21); // Vortex Drill
+        assert_eq!(g(2776), 5); // Vortex Pickaxe
+        assert_eq!(g(2779), 23); // Nebula Drill (post-call override)
+        assert_eq!(g(2781), 10); // Nebula Pickaxe
+        assert_eq!(g(2784), -1); // Solar Flare Drill (explicit −1)
+        assert_eq!(g(2786), -1); // Solar Flare Pickaxe
+        assert_eq!(g(3464), 176); // Stardust Drill
+        assert_eq!(g(3466), 178); // Stardust Pickaxe
+        // The four registry-correction chainsaws.
+        assert_eq!(g(2773), 20); // Vortex Chainsaw
+        assert_eq!(g(2778), 22); // Nebula Chainsaw
+        assert_eq!(g(2783), -1); // Solar Flare Chainsaw
+        assert_eq!(g(3463), 175); // Stardust Chainsaw
+        // The hamaxes (`:31254-31260`), the pal accessories (`:41845-41863`).
+        assert_eq!(g(3523), 196);
+        assert_eq!(g(3524), 197);
+        assert_eq!(g(3525), 198);
+        assert_eq!(g(3522), -1); // the plain hamaxe keeps the stock
+        assert_eq!(g(5140), 318);
+        assert_eq!(g(5146), 324);
+        // The Bejeweled Staff correction keeps the stock.
+        assert_eq!(g(6171), -1);
+    }
 
     /// S1-P-i34 — the pressure plates drop the item of their frame row
     /// (`KillTile_GetItemDrops`, `WorldGen.cs:65569-65599` for 135,

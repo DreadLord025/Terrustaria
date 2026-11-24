@@ -81,6 +81,7 @@ impl MapOverlayContext<'_> {
     /// the pylon line's endpoints. The rect ctor TRUNCATES the top-left AND
     /// the size to int (`:64` `new Rectangle((int)vector2.X, …)`), so the
     /// `Center` read is integer halves — W4-f29 fix F1 (research/140 §3).
+    /// the pylon line's endpoints.
     pub fn unclamped_center(
         &self,
         size: [f32; 2],
@@ -97,6 +98,16 @@ impl MapOverlayContext<'_> {
             self.draw_scale * scale,
             alignment,
         )
+        let pos = [
+            (position[0] - self.map_position[0]) * self.map_scale + self.map_offset[0],
+            (position[1] - self.map_position[1]) * self.map_scale + self.map_offset[1],
+        ];
+        let origin = [size[0] * alignment[0], size[1] * alignment[1]];
+        let num = self.draw_scale * scale;
+        [
+            pos[0] - origin[0] * num + size[0] * num * 0.5,
+            pos[1] - origin[1] * num + size[1] * num * 0.5,
+        ]
     }
 
     /// `Draw`'s scaled form (`MapOverlayDrawContext.cs:218-242`): the pylon
@@ -141,6 +152,11 @@ impl MapOverlayContext<'_> {
             (size[0] * num) as i32,
             (size[1] * num) as i32,
         );
+        let (hw, hh) = (size[0] * num, size[1] * num);
+        let hover = self.mouse.x >= top_left[0]
+            && self.mouse.x <= top_left[0] + hw
+            && self.mouse.y >= top_left[1]
+            && self.mouse.y <= top_left[1] + hh;
         let scale = if hover {
             self.draw_scale * scale_if_selected
         } else {
@@ -204,6 +220,11 @@ impl MapOverlayContext<'_> {
         let mx = self.mouse.x as i32;
         let my = self.mouse.y as i32;
         let hover = rect_contains_int(mx, my, rx, ry, rw, rh);
+        // `:185`: the hover test is the CLAMPED rect vs the mouse.
+        let hover = self.mouse.x >= rx as f32
+            && self.mouse.x <= (rx + rw) as f32
+            && self.mouse.y >= ry as f32
+            && self.mouse.y <= (ry + rh) as f32;
         // `:186-198`: the draw scale.
         let mut num23 = num;
         if !on_screen {

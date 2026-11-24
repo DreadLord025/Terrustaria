@@ -13,6 +13,15 @@
 //! module is only the rope-specific behind-the-cell draw plus its
 //! `WorldGen.IsRope`/`GetRopeEnds` probes.
 //!
+//! W4-g82 WIRED (2026-11-21): the framing arm below is now LIVE through its
+//! tr-core twin `tr_core::framing_rope::rope_frame_arm`, called from
+//! `framing::frame_of_variant`'s merge-chain tail (the append-safe zone —
+//! d109/d110 own the head/wall halves). This render-side copy stays as the
+//! witness-pinned reference incl. the pure reframe-request output (the d56
+//! inlined-table convention, the coil module's IsRope twin precedent); the
+//! production framing runs the core copy, whose square-reframe callers
+//! subsume the :81923-81930 neighbour requests.
+//!
 //! WIRED (S1-G-1f, 2026-11-19): `render/tiles.rs::draw_tiles` calls
 //! [`wants_back_rope`] + [`draw_back_rope`] after the visibility gates and
 //! before the cell's own sprite — the `DrawBasicTile` dispatch site
@@ -195,6 +204,112 @@ pub(crate) fn draw_back_rope(
         draw.paint,
     );
     1
+}
+
+// ---------------------------------------------------------------- W4-g82
+// The rope variant draw residual: `WorldGen.TileFrameCosmetic`'s rope arm
+// (`WorldGen.cs:81894-81931`) — the neighbour merges that pick which rope
+// sprite a cell draws. The port's generic framing (`tr-core/framing.rs`)
+// carries only the `!tileRope` blend-all gate (`:81731`, framing.rs:928);
+// the rope arm itself was never ported, so every rope cell framed through
+// the generic RULES as if it were a plain block. This is the DRAW-side
+// decision maths, verbatim; WIRED W4-g82 (2026-11-21) via the tr-core twin
+// `tr_core::framing_rope::rope_frame_arm` — this copy stays the
+// witness-pinned reference (the module doc's wiring note).
+//
+// Call site (LIVE in the core twin): `frame_of_variant` (tr-core/framing.rs), as an
+// `else if td::TILE_ROPE.has(me)` arm AFTER the dirt branch (`:81743`) and
+// BEFORE the generic per-type switch (`:81934`), replacing the four side
+// slots of `n` before the mask build (framing.rs:1009). The two recursive
+// `WorldGen.TileFrame(i, j±1)` calls (`:81923-81930`) are returned as
+// [`RopeFrameResult::reframes`] requests — the pure probe never mutates the
+// world; the caller runs `reframe_area`/`frame_of` on them (the C# runs
+// them BEFORE the mask is read, so the caller must re-probe after).
+
+/// The rope arm's decision output (`WorldGen.cs:81894-81931`): the four
+/// side slots after the merges, plus the two neighbour re-frame requests
+/// (`:81923-81930`, only when the matching side ended `-1`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RopeFrameResult {
+    pub up: i32,
+    pub down: i32,
+    pub left: i32,
+    pub right: i32,
+    /// `(x, y-1)` when `up == -1` (`:81923-81926`).
+    pub reframe_up: bool,
+    /// `(x, y+1)` when `down == -1` (`:81927-81930`).
+    pub reframe_down: bool,
+}
+
+/// `WorldGen.IsRope(i, j)` — the 2-arg overload (`WorldGen.cs:70074-70079`)
+/// the rope arm calls: a rope cell answers true, a platform/track/planter
+/// answers true only with rope on BOTH ends (`:70099-70103`).
+#[inline]
+fn is_rope_cell(world: &World, x: i32, y: i32) -> bool {
+    is_rope(world, x, y).0
+}
+
+/// `TileFrameCosmetic`'s rope arm (`WorldGen.cs:81894-81931`), verbatim.
+/// `num` is the (framing-normalised) rope kind; `up/down/left/right` are
+/// the four side slots AFTER the slope adjustments (the C# reads them at
+/// `:81488-81507`). Order of the seven writes:
+/// 1. `num != 504 && up != num && IsRope(i, j-1)` → `up = num` (`:81896`)
+///    — the mystic snake rope 504 never merges upward through a rope.
+/// 2. `down != num && (IsRope(i, j+1) || down == 698)` → `down = num`
+///    (`:81900`) — the Dead Cells display jar 698 anchors a rope below it.
+/// 3. `num != 504 && up > -1 && tileSolid[up] && !tileSolidTop[up]` →
+///    `up = num` (`:81904`) — a full block above anchors the top.
+/// 4. `down > -1 && tileSolid[down]` → `down = num` (`:81908`) — ANY solid
+///    below anchors the bottom (solid-top platforms included).
+/// 5. `num != 504 && up != num` → the left/right slots merge into `num`
+///    when their neighbour is solid (`:81912-81922`) — a rope hanging from
+///    a ceiling draws the side-attached sprites.
+/// 6/7. the `-1` re-frame requests (`:81923-81930`).
+pub(crate) fn rope_frame_arm(
+    world: &World,
+    x: i32,
+    y: i32,
+    num: i32,
+    up: i32,
+    down: i32,
+    left: i32,
+    right: i32,
+) -> RopeFrameResult {
+    let (mut up, mut down, mut left, mut right) = (up, down, left, right);
+    // WorldGen.cs:81896-81899
+    if num != 504 && up != num && is_rope_cell(world, x, y - 1) {
+        up = num;
+    }
+    // WorldGen.cs:81900-81903
+    if down != num && (is_rope_cell(world, x, y + 1) || down == 698) {
+        down = num;
+    }
+    // WorldGen.cs:81904-81907
+    if num != 504 && up > -1 && td::TILE_SOLID.has(up as u16) && !td::TILE_SOLID_TOP.has(up as u16) {
+        up = num;
+    }
+    // WorldGen.cs:81908-81911
+    if down > -1 && td::TILE_SOLID.has(down as u16) {
+        down = num;
+    }
+    // WorldGen.cs:81912-81922
+    if num != 504 && up != num {
+        if left > -1 && td::TILE_SOLID.has(left as u16) {
+            left = num;
+        }
+        if right > -1 && td::TILE_SOLID.has(right as u16) {
+            right = num;
+        }
+    }
+    RopeFrameResult {
+        up,
+        down,
+        left,
+        right,
+        // WorldGen.cs:81923-81930
+        reframe_up: up == -1,
+        reframe_down: down == -1,
+    }
 }
 
 #[cfg(test)]
@@ -402,6 +517,122 @@ mod tests {
         assert!(back_rope_cell(&w, 5, 38).is_some());
         let w = world_with(&[(5, 37, 213), (5, 38, 213), (5, 39, 19)]);
         assert_eq!(back_rope_cell(&w, 5, 39), None);
+    }
+
+    // ------------------------------------------------------------ W4-g82
+    // The rope framing arm witnesses (`WorldGen.cs:81894-81931`).
+    // WRITTEN NOT RUN (code-only mode, no compiler invoked on this branch).
+
+    /// A rope column merges both vertical neighbours into `num` and leaves
+    /// the sides open — the mask `UP|DOWN` picks the (90, 0/18/36) vertical
+    /// segment row (the same column the back-rope draw reads at X 90).
+    #[test]
+    fn w4_g82_a_rope_column_merges_up_and_down() {
+        let w = world_with(&[(10, 9, 213), (10, 10, 213), (10, 11, 213)]);
+        // Slots as the generic pass sees them: same-kind neighbours already
+        // merged to `num` by the same-type fold — the arm's `!= num` guards
+        // make those writes no-ops, exactly like the C#.
+        let r = rope_frame_arm(&w, 10, 10, 213, 213, 213, -1, -1);
+        assert_eq!((r.up, r.down, r.left, r.right), (213, 213, -1, -1));
+        assert!(!r.reframe_up && !r.reframe_down);
+        // A rope over a DIFFERENT rope kind (silk over vine): the IsRope
+        // probes (`:81896`/`:81900`) still merge — the column is contiguous.
+        let w = world_with(&[(10, 9, 365), (10, 10, 213), (10, 11, 353)]);
+        let r = rope_frame_arm(&w, 10, 10, 213, 365, 353, -1, -1);
+        assert_eq!((r.up, r.down), (213, 213));
+    }
+
+    /// The mystic snake rope 504 skips the upward IsRope merge, the
+    /// solid-above merge AND the side merges (`num != 504` on `:81896`,
+    /// `:81904`, `:81912`) — but keeps the downward merge (`:81900` has no
+    /// 504 guard).
+    #[test]
+    fn w4_g82_the_mystic_snake_rope_never_merges_up_or_sideways() {
+        let w = world_with(&[
+            (10, 9, 504),
+            (10, 10, 504),
+            (10, 11, 504),
+            (9, 10, 1),
+            (11, 10, 1),
+        ]);
+        let r = rope_frame_arm(&w, 10, 10, 504, 504, 504, 1, 1);
+        assert_eq!((r.up, r.down, r.left, r.right), (504, 504, 1, 1));
+        // With a rope above but slots NOT pre-merged, up stays unmerged.
+        let r = rope_frame_arm(&w, 10, 10, 504, 213, 213, 1, 1);
+        assert_eq!(r.up, 213, "the :81896 504 guard");
+        assert_eq!(r.down, 504, "the :81900 merge has no 504 guard");
+        assert_eq!((r.left, r.right), (1, 1), "the :81912 504 guard");
+    }
+
+    /// The Dead Cells display jar 698 anchors a rope's bottom end even
+    /// though it is not a rope and not solid (`down == 698`, `:81900`).
+    #[test]
+    fn w4_g82_the_display_jar_anchors_the_bottom() {
+        let w = world_with(&[(10, 10, 213), (10, 11, 698)]);
+        let r = rope_frame_arm(&w, 10, 10, 213, -1, 698, -1, -1);
+        assert_eq!(r.down, 213);
+        assert!(!r.reframe_down);
+        // Any other non-rope non-solid neighbour does NOT anchor.
+        let w = world_with(&[(10, 10, 213), (10, 11, 4)]);
+        let r = rope_frame_arm(&w, 10, 10, 213, -1, 4, -1, -1);
+        assert_eq!(r.down, 4);
+    }
+
+    /// A full block above anchors the top (`tileSolid && !tileSolidTop`,
+    /// `:81904`); a platform above does NOT (solid-top excluded) — but ANY
+    /// solid below anchors the bottom (`:81908`, solid-top included).
+    #[test]
+    fn w4_g82_solid_anchors_top_full_bottom_any() {
+        let w = world_with(&[(10, 9, 1), (10, 10, 213), (10, 11, 19)]);
+        assert!(td::TILE_SOLID.has(1) && !td::TILE_SOLID_TOP.has(1));
+        assert!(td::TILE_SOLID.has(19) && td::TILE_SOLID_TOP.has(19));
+        let r = rope_frame_arm(&w, 10, 10, 213, 1, 19, -1, -1);
+        assert_eq!((r.up, r.down), (213, 213));
+        // The platform ABOVE stays unmerged (the !solidTop guard).
+        let w = world_with(&[(10, 9, 19), (10, 10, 213)]);
+        let r = rope_frame_arm(&w, 10, 10, 213, 19, -1, -1, -1);
+        assert_eq!(r.up, 19);
+        assert!(r.reframe_down, "down ended -1 (:81927)");
+    }
+
+    /// The side merges fire only when the top did NOT merge (`up != num`,
+    /// `:81912`): a rope hanging beside a wall with open air above draws
+    /// the side-attached sprite; a rope in a column never does.
+    #[test]
+    fn w4_g82_sides_merge_only_when_the_top_is_open() {
+        let w = world_with(&[(10, 10, 213), (9, 10, 1), (11, 10, 1)]);
+        let r = rope_frame_arm(&w, 10, 10, 213, -1, -1, 1, 1);
+        assert_eq!((r.left, r.right), (213, 213));
+        assert!(r.reframe_up && r.reframe_down);
+        // With the top merged the sides stay as they were.
+        let w = world_with(&[(10, 9, 1), (10, 10, 213), (9, 10, 1), (11, 10, 1)]);
+        let r = rope_frame_arm(&w, 10, 10, 213, 1, -1, 1, 1);
+        assert_eq!(r.up, 213);
+        assert_eq!((r.left, r.right), (1, 1), "the :81912 up != num gate");
+    }
+
+    /// The IsRope probes see through platforms: a platform with rope on
+    /// both ends is a rope end (`WorldGen.cs:70094-70103`), so the column
+    /// merge continues through it.
+    #[test]
+    fn w4_g82_the_probes_see_through_anchored_platforms() {
+        let w = world_with(&[
+            (10, 8, 213),
+            (10, 9, 19),
+            (10, 10, 213),
+            (10, 11, 19),
+            (10, 12, 213),
+        ]);
+        // The platform at y-1 has rope above (y-2) and below (y) — IsRope
+        // true; the arm merges up through it.
+        let r = rope_frame_arm(&w, 10, 10, 213, 19, 19, -1, -1);
+        assert_eq!((r.up, r.down), (213, 213));
+        // A platform with NO rope below is not a rope end — but it is
+        // solid, so the bottom still anchors via :81908.
+        let w = world_with(&[(10, 8, 213), (10, 9, 19), (10, 10, 213), (10, 11, 19)]);
+        let r = rope_frame_arm(&w, 10, 10, 213, 19, 19, -1, -1);
+        assert_eq!(r.up, 213, "the platform above is a rope end");
+        assert_eq!(r.down, 213, "the solid-bottom anchor, not IsRope");
     }
 
     #[test]

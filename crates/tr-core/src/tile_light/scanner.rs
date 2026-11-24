@@ -1711,6 +1711,92 @@ mod tests {
         assert_eq!(c, [0.0; 3]);
 
     }
+
+    /// W4-g84: the Plantera bulb's pink glow floor
+    /// (`TileLightScanner.cs:1000-1009`): case 238 writes the ACCUMULATED
+    /// colour directly — R and B are floored at 0.5, G is untouched (the
+    /// magenta cast). A dark cell gains the floor; an already-brighter
+    /// channel keeps its value; the green channel never moves.
+    #[test]
+    fn w4_g84_plantera_bulb_pink_glow_floor() {
+        let p = LightParams::default();
+        let w = World::new("t".into(), 64, 64);
+        let mut rng = FastRandom::new(p.rng_seed).with_modifier(5, 5);
+        // Dark accumulator: R/B lift to 0.5, G stays 0.
+        let mut c = [0.0f32; 3];
+        apply_tile_light(&w, &tile(238, 0, 0), 5, 5, &mut rng, &p, &mut c);
+        close(c, [0.5, 0.0, 0.5]);
+        // Brighter R keeps its value; dim B lifts; G untouched.
+        let mut c = [0.8f32, 0.2, 0.1];
+        apply_tile_light(&w, &tile(238, 18, 18), 5, 5, &mut rng, &p, &mut c);
+        close(c, [0.8, 0.2, 0.5]);
+        // The floor is per-cell and frame-independent (no fx/fy gate).
+        let mut c = [0.49f32, 0.9, 0.49];
+        apply_tile_light(&w, &tile(238, 0, 18), 5, 5, &mut rng, &p, &mut c);
+        close(c, [0.5, 0.9, 0.5]);
+    }
+
+    /// W4-g85 glow-pulse witnesses (WRITTEN NOT RUN, code-only): the orb
+    /// family's `26 | 31 | 695 | 696` arm (`TileLightScanner.cs:2965-2983`)
+    /// — the shared break-stage bit `frameX >= 36` (orb/replica) flips the
+    /// purple orb glow to the orange crimson-heart glow, each with ONE
+    /// `Next(-5, 6) * 0.0025f` per-tile jitter draw. The stage/dust
+    /// counterparts live in `tr-app render/orb_draw.rs` (the census doc
+    /// `docs/research/W4-g85-orb-draw.md`).
+    #[test]
+    fn w4_g85_orb_glow_stage_flip_matches_the_jitter_recipe() {
+        let p = LightParams::default();
+        // The exact per-tile stream the scanner builds (lit()'s shape).
+        let jitter = |x: i32, y: i32| {
+            let mut r = FastRandom::new(p.rng_seed).with_modifier(x, y);
+            r.next_range(-5, 6) as f32 * 0.0025
+        };
+        // Orb stage (fx < 36): purple (0.31+n, 0.1, 0.44+2n), :2978-2981.
+        for &(kind, fx) in &[(31u16, 0i16), (31, 18), (696, 0), (696, 18)] {
+            let n = jitter(5, 5);
+            close(lit(&tile(kind, fx, 0), 5, 5, &p), [0.31 + n, 0.1, 0.44 + n * 2.0]);
+        }
+        // Heart stage (fx >= 36): orange (0.5+2n, 0.2+n, 0.1), :2971-2974.
+        for &(kind, fx) in &[(31u16, 36i16), (31, 54), (696, 36), (696, 54)] {
+            let n = jitter(5, 5);
+            close(lit(&tile(kind, fx, 0), 5, 5, &p), [0.5 + n * 2.0, 0.2 + n, 0.1]);
+        }
+    }
+
+    /// W4-g85: the jitter is PER-TILE (the `WithModifier(x, y)` re-seed) —
+    /// each orb cell's glow equals the recipe at ITS OWN seed, and the
+    /// band is exactly ±5·0.0025 around the base (one draw, `:2971/:2978`).
+    #[test]
+    fn w4_g85_orb_glow_jitter_is_per_tile_and_bounded() {
+        let p = LightParams::default();
+        let recipe = |x: i32, y: i32| {
+            let mut r = FastRandom::new(p.rng_seed).with_modifier(x, y);
+            let n = r.next_range(-5, 6) as f32 * 0.0025;
+            (n, [0.31 + n, 0.1, 0.44 + n * 2.0])
+        };
+        let a = lit(&tile(31, 0, 0), 5, 5, &p);
+        let b = lit(&tile(31, 0, 0), 9, 12, &p);
+        let (na, want_a) = recipe(5, 5);
+        let (nb, want_b) = recipe(9, 12);
+        close(a, want_a);
+        close(b, want_b);
+        // The WithModifier re-seed makes the pulse per-tile: distinct
+        // jitter draws give distinct glows (an 11-value draw can collide
+        // by chance, so the inequality is asserted only when it must hold).
+        if na != nb {
+            assert_ne!(a, b, "distinct jitter draws must give distinct glows");
+        }
+        for c in [a, b] {
+            // n ∈ [-0.0125, 0.0125] → R ∈ [0.2975, 0.3225], B ∈ [0.415, 0.465].
+            assert!((0.2975..=0.3225).contains(&c[0]), "R band {c:?}");
+            assert_eq!(c[1], 0.1, "G is constant on the orb stage");
+            assert!((0.415..=0.465).contains(&c[2]), "B band {c:?}");
+        }
+        // The heart stage's constant channel is B = 0.1 (:2974).
+        let h = lit(&tile(31, 36, 0), 5, 5, &p);
+        assert_eq!(h[2], 0.1);
+        assert!((0.475..=0.525).contains(&h[0]), "heart R band {h:?}");
+    }
     /// W4-g84: the Plantera bulb's pink glow floor
     /// (`TileLightScanner.cs:1000-1009`): case 238 writes the ACCUMULATED
     /// colour directly — R and B are floored at 0.5, G is untouched (the

@@ -553,6 +553,15 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             // counterpart, the sign editor is unported). The pylon-view
             // fit below then overrides the recentre.
             app.try_open_fullscreen_map();
+            // recentre; `set_open(true)` already does the scale/recentre/
+            // pylon-tile clear. `SetTalkNPC(-1)` + `npcChatCornerItem = 0`
+            // close the chatter; `CloseSign(quiet)` has no port counterpart
+            // (the sign editor is unported).
+            app.inventory_open = false;
+            app.talk_npc = None;
+            app.npc_chat_text = String::new();
+            app.close_shop();
+            app.audio.play("Menu_Open"); // `SoundEngine.PlaySound(10)`
             let team_seed = app
                 .world
                 .micro_seeds
@@ -572,6 +581,7 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             let (sw, sh) = app.screen_size();
             let screen = glam::Vec2::new(sw, sh);
             if let Some(m) = app.map.as_mut() {
+                m.set_open(true);
                 m.pylon_tile = anchor;
                 let (pos, scale) =
                     crate::map::pylon_view_fit(anchor, &revealed, screen, m.scale);
@@ -579,6 +589,7 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                 m.scale = scale;
                 // The fit overrides the helper's recentre arm: disarm it
                 // and keep the pan clear (`recentre` already cleared it).
+                m.pan_target = false;
                 m.reset_pos = false;
             }
         }
