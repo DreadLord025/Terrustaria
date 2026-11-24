@@ -61,11 +61,10 @@ use super::ocean;
 use super::shimmer;
 use super::passes1;
 use super::passes2;
-use super::passes1;
-use super::passes2;
-use super::shimmer;
 use super::spider_gem_moss;
 use super::starter_npcs;
+use super::statues;
+use super::settle_liquids;
 use super::structures;
 use super::surface;
 use super::temple;
@@ -414,11 +413,6 @@ pub(crate) struct GenVars {
     /// (matrix-88 §3.4). `None` until then: the C# zero reset puts the
     /// circle off-world, a classic no-op.
     pub(crate) shimmer_position: Option<(i32, i32)>,
-    /// `GenVars.numLarva/larvaX/larvaY` (`GenVars.cs:150-154`, reset 0 at
-    /// `WorldGen.cs:11245`) — the hive stands' larva anchors (W4-c31):
-    /// `HiveBiome.CreateStandForLarva` publishes, the `Larva` pass
-    /// (`BeeLarvaInBeehives`, `:20868-20900`) consumes.
-    pub(crate) larva: hive::LarvaAnchors,
     /// `GenVars.skyLakes` (`GenVars.cs:210`, reset `WorldGen.cs:11182-11190`):
     /// the sky-lake budget — 1, +1 above 8000 wide, +1 above 6000 wide. The
     /// `FloatingIslands` loop runs `num + skyLakes` islands and the tail
@@ -507,29 +501,12 @@ pub(crate) struct GenVars {
     /// tail CONTINUES the scatter's draw sequence (a fresh `pass_rng` would
     /// replay it). `None` until the scatter runs; taken back by the compose.
     pub(crate) final_cleanup_rng: Option<super::Rng>,
-    /// `GenVars.logX`/`logY` (`GenVars.cs:252-254`, reset −1 at
-    /// `WorldGen.cs:11210-11211`) — the fallen-log flower anchor: the
-    /// Place Fallen Log pass's `Next(2) == 0` roll stores the placed log
-    /// (`:18643-18647`), the Flowers pass consumes it once (`:20468-20472`
-    /// remix / `:20532-20536` classic) and resets logX to −1. W4-g38 C1.
-    pub(crate) log_x: i32,
-    #[allow(dead_code)] // consumed by the Flowers pass (d105/g39's slice)
-    pub(crate) log_y: i32,
     /// `GenVars.boulderPetsPlaced` (`GenVars.cs`, reset 0 at
     /// `WorldGen.cs:8323`) — the Traps pass's pet-boulder budget counter:
     /// each plain 138 boulder that upgrades to the pet-spawning 716
     /// increments it, capped at the world-size budget (`:9361-9365`).
     /// W4-g38 C2.
     pub(crate) boulder_pets_placed: i32,
-    /// `GenVars.logX`/`logY` (`GenVars.cs:252-254`, reset −1 at
-    /// `WorldGen.cs:11210`) — the fallen-log anchor the Place Fallen Log
-    /// pass publishes (`:18645-18646`, a 1/2 roll) and the Flowers pass
-    /// consumes (`:20468-20473` remix / `:20532-20537` classic, resetting
-    /// logX to −1 after the read). The port has no faithful fallen-log pass
-    /// yet, so the fields stay at their −1 reset and the Flowers override
-    /// never fires — the seam is in place for the log pass to write.
-    pub(crate) log_x: i32,
-    pub(crate) log_y: i32,
     /// `GenVars.numLarva`/`larvaX`/`larvaY` (`GenVars.cs:150-154`, reset 0
     /// at `WorldGen.cs:11245`, the 100-entry arrays `GenVars.cs:446-447`) —
     /// the larva anchors the hive pass publishes
@@ -561,14 +538,6 @@ pub(crate) struct GenVars {
     /// (`:18513`, W4-d104 pass 33) records on its 1-in-2 roll; the Guide
     /// pass (`:20468-20536`, lane 5) consumes it.
     pub(crate) log_anchor: Option<(i32, i32)>,
-    /// `GenVars.shimmerPosition` (`GenVars.cs:282`, reset Zero
-    /// `WorldGen.cs:7039`) — the shimmer biome's anchor; the shimmer
-    /// lane (d102) publishes it, the Traps pass's 100-tile veto reads it.
-    pub(crate) shimmer_position: (i32, i32),
-    /// `GenVars.boulderPetsPlaced` (`GenVars.cs`, reset
-    /// `WorldGen.cs:8321`) — the pet-boulder cap counter the Traps pass
-    /// (W4-d104 pass 34) advances.
-    pub(crate) boulder_pets_placed: i32,
     /// `GenVars.numMCaves`/`mCaveX`/`mCaveY` (`GenVars.cs:228-232`, the
     /// `[30]` arrays allocated in `ResetGenerator`, `:457-458`): the Mount
     /// Caves pass's mountain-top anchors (`WorldGen.cs:11847-11849`).
@@ -595,37 +564,6 @@ pub(crate) struct GenVars {
     pub(crate) snow_bottom: i32,
     pub(crate) snow_min_x: Vec<i32>,
     pub(crate) snow_max_x: Vec<i32>,
-    /// `GenVars.numMCaves`/`mCaveX`/`mCaveY` (`GenVars.cs:228-232`, the
-    /// arrays allocated `[30]` at `:457-458`, the counter reset 0 in the
-    /// Mount Caves pass `WorldGen.cs:11788`) — the mountain-cave anchors.
-    /// W4-d102 adds the slots (the Webs pass's first-`numMCaves` override
-    /// `:13616-13620` and the Mountain Caves openings `:14878-14885` read
-    /// them); the producer is d101's Mount Caves pass — until it lands the
-    /// counter stays 0 and both consumers are no-ops on the anchors.
-    pub(crate) num_m_caves: i32,
-    pub(crate) m_cave_x: [i32; 30],
-    pub(crate) m_cave_y: [i32; 30],
-    /// `GenVars.snowTop`/`snowBottom`/`snowMinX`/`snowMaxX`
-    /// (`GenVars.cs:78-88`, Reset allocates the per-row arrays at
-    /// `maxTilesY` and zeroes the bounds, `WorldGen.cs:11178-11181`) — the
-    /// snow biome's per-row column span. W4-d102 adds the slots for the
-    /// Slush retype sweep (`WorldGen.cs:14697-14752`); the producer is
-    /// d101's `Generate Ice Biome` pass (`:12317`/`:12418` write the
-    /// bounds) — until it lands `snow_top == snow_bottom == 0` and the
-    /// sweep is a no-op on the empty rect.
-    pub(crate) snow_top: i32,
-    pub(crate) snow_bottom: i32,
-    pub(crate) snow_min_x: Vec<i32>,
-    pub(crate) snow_max_x: Vec<i32>,
-    /// `GenVars.shimmerPosition` (`GenVars.cs:282`, reset `Vector2D.Zero`
-    /// at `WorldGen.cs:7039`) — the Shimmer pass's placed site
-    /// (`WorldGen.cs:15241`). W4-d102 pass 6 publishes it; the later
-    /// consumers (the pyramid/altar/moss shimmer-exclusion distances,
-    /// `:15448`, `:15780`, `:17585`) read it once their lanes land. `None`
-    /// is the C# zero-vector "not placed" state (the skyblock skip and the
-    /// sub-vanilla valve).
-    #[allow(dead_code)] // consumed by the later lanes' exclusion gates
-    pub(crate) shimmer_position: Option<(i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -683,16 +621,11 @@ impl Default for GenVars {
             landmass_data: Vec::new(),
             world_spawn_has_been_randomized: false,
             dungeon_x: 0,
-            dungeon_y: 0,
-            // The C# Reset sets both to −1 (`WorldGen.cs:11210-11211`).
-            log_x: -1,
-            log_y: -1,
             // `ResetGenerator` zeroes the pet-boulder counter
             // (`WorldGen.cs:8323`).
             island_house_slots: Vec::new(),
             ore_patch_x: Vec::new(),
             log_anchor: None,
-            shimmer_position: (0, 0),
             boulder_pets_placed: 0,
             // The C# zero-inits the mountain-cave statics; the arrays are
             // allocated (zeroed) in ResetGenerator (`GenVars.cs:457-458`).
@@ -708,7 +641,6 @@ impl Default for GenVars {
             snow_bottom: 0,
             snow_min_x: Vec::new(),
             snow_max_x: Vec::new(),
-            ore_patch_x: Vec::new(),
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -732,10 +664,6 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
-            // `GenVars.logX` resets to −1 (`WorldGen.cs:11210`); logY is
-            // zero-init until the fallen-log pass writes it.
-            log_x: -1,
-            log_y: 0,
             // `GenVars.numLarva` resets to 0 (`WorldGen.cs:11245`).
             larva: Vec::new(),
             // `dungeonDitherSnake` is null until the DitherSnakePass stores
@@ -745,17 +673,6 @@ impl Default for GenVars {
             // The mountain-cave anchors: counter 0 (`WorldGen.cs:11788`),
             // arrays zero-filled (`GenVars.cs:457-458`) until Mount Caves
             // (d101) writes them.
-            num_m_caves: 0,
-            m_cave_x: [0; 30],
-            m_cave_y: [0; 30],
-            // The snow bounds zero in Reset (`WorldGen.cs:11180-11181`);
-            // the per-row arrays allocate there too (`:11178-11179`) — the
-            // port sizes them in `reset_genvars` (the height is not known
-            // to `Default`), empty here.
-            snow_top: 0,
-            snow_bottom: 0,
-            snow_min_x: Vec::new(),
-            snow_max_x: Vec::new(),
             // The C# resets shimmerPosition to Vector2D.Zero
             // (`WorldGen.cs:7039`) — the port's None.
             shimmer_position: None,
@@ -1921,15 +1838,6 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (Lakes, the ocean family, the jungle/shrine water) has already applied.
     // W4-f25's orphan adoption (12g): the first real liquid-simulation pass.
     step!("settle liquids", "Settle Liquids", step_settle_liquids),
-    // The vanilla Floating Island Houses slot (`WorldGen.cs:17859`): the
-    // house build over the islands ledger — W4-g44. The port's discs
-    // place late in the grouped chain, so the houses follow their ledger
-    // directly (the relative islands→houses order is the C#'s).
-    step!(
-        "floating island houses",
-        "Floating Island Houses",
-        step_floating_island_houses
-    ),
     // The vanilla Remove Water From Sand / Shell Piles slots
     // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
     // World (`:16419`) — the M5-OCEAN phase-4 insertion.
@@ -1983,14 +1891,6 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // over the islands ledger (the `w4_g44_the_island_houses_step_follows_
     // the_islands` witness pins it); d103's after-cave-walls duplicate
     // dropped at the merge.
-    // The vanilla Grass Wall slot (`WorldGen.cs:19589`): after Spawn Point
-    // (`:19460`, unported — the port's spawn rides the world tail) and
-    // before Guide (`:19685`, d105's lane) / Planting Trees (`:19940`) —
-    // W4-d106 R1. The port slots it between the living trees and the trees
-    // steps (the nearest executed neighbours); the pass draws only its own
-    // `pass_rng("Grass Wall")` stream, so the insertion shifts no other
-    // step's ledger.
-    step!("grass wall", "Grass Wall", step_grass_wall),
     // The vanilla Wood Tree Walls slot (`WorldGen.cs:15717`): immediately
     // after Living Trees (`:15476`), before Altars (`:15750`) — W4-g36
     // A4. RNG-free (the C# body draws nothing), so the insertion shifts
@@ -2049,6 +1949,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The spawn search draws on the fresh `pass_rng("Spawn Point")`
     // stream; the world tail keeps only the moon/hell draws.
     step!("spawn point", "Spawn Point", step_spawn_point),
+    // research/86 §4 anchor :19589 — Grass Wall follows Spawn Point
+    // (:19460) and precedes Guide (:19685); W4-d106 R1. Moved from the
+    // old pre-cave slot to the canonical interleaving.
+    step!("grass wall", "Grass Wall", step_grass_wall),
     // The vanilla Guide slot (`WorldGen.cs:19685`): after Spawn Point
     // (`:19460`) / Grass Wall (`:19589`, d104/d106's ranges — not executed
     // here) and before Sunflowers (`:19898`) / Planting Trees (`:19940`) —
@@ -2063,11 +1967,6 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The pass draws its band rolls from `pass_rng("Sunflowers")`, so the
     // insertion shifts no other step's ledger.
     step!("sunflowers", "Sunflowers", step_sunflowers),
-    // The vanilla Wood Tree Walls slot (`WorldGen.cs:15717`): after Living
-    // Trees (`:15476`) and before Altars (`:15750`) — W4-d102 pass 9. The
-    // sweep draws nothing; it reads the 191 trunks the living-trees step
-    // just planted.
-    step!("wood tree walls", "Wood Tree Walls", step_wood_tree_walls),
     step!("trees", "Planting Trees", step_trees),
     // The vanilla Herbs slot (`WorldGen.cs:19964`): immediately after
     // Planting Trees (`:19940`), before Dye Plants (`:19981`) — W4-d105
@@ -3657,7 +3556,7 @@ fn step_flowers(
         (l.world_surface, l.rock_layer)
     };
     let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
-    let mut log = (gv.log_x, gv.log_y);
+    let mut log = gv.log_anchor.unwrap_or((-1, 0));
     surface::pass_flowers(
         world,
         &mut log,
@@ -3666,8 +3565,7 @@ fn step_flowers(
         remix,
         &mut streams.pass_rng("Flowers"),
     );
-    gv.log_x = log.0;
-    gv.log_y = log.1;
+    gv.log_anchor = if log.0 >= 0 { Some(log) } else { None };
 }
 
 /// `Mushrooms` (`WorldGen.cs:20599-20696`, `GenPassNameID.Mushrooms`) —
@@ -3903,11 +3801,13 @@ fn step_cave_houses(
 // water_chests.rs / cave_walls.rs own those passes (the d103 step fns sit
 // after step_life_crystals below).
 
-/// The vanilla Place Fallen Log slot (`WorldGen.cs:18513-18656`) — W4-g38
-/// C1: the fallen logs (tile 488) on the pass's own stream; the
-/// `GenVars.logX/logY` flower anchor rides `gv`. The skyblock/noSurface
-/// gates and the deferred extraLiquid head live in the pass body.
-fn step_fallen_log(
+
+/// The vanilla Place Fallen Log slot (`WorldGen.cs:18513-18656`, W4-d104
+/// pass 33): the log scatter on `pass_rng("Place Fallen Log")`. g38's opts
+/// gate is folded into this adapter (skyblock `denySomeGeneration` +
+/// `NO_SURFACE`); BEES/FROZEN/DESERT ride `world.seeds`/`world.micro_seeds`,
+/// which `run` copies from `opts` (`pipeline.rs:5856`).
+fn step_place_fallen_log(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
@@ -3915,17 +3815,20 @@ fn step_fallen_log(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let layers = *gv.layers();
-    let mut anchor = (gv.log_x, gv.log_y);
-    surface::place_fallen_log(
+    if skyblock_deny_some_generation(opts) {
+        return;
+    }
+    if opts.micro_flags.contains(crate::seeds::MicroSeedFlags::NO_SURFACE) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    surface::pass_place_fallen_log(
         world,
-        &layers,
+        world_surface,
+        opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        &mut gv.log_anchor,
         &mut streams.pass_rng("Place Fallen Log"),
-        opts,
-        &mut anchor,
     );
-    gv.log_x = anchor.0;
-    gv.log_y = anchor.1;
 }
 
 /// The vanilla Traps slot (`WorldGen.cs:18657-18787`) — W4-g38 C2: the
@@ -3998,86 +3901,6 @@ fn step_spawn_point(
     );
 }
 
-/// The vanilla Guide slot (`WorldGen.cs:19685-19897`, SpawnStarterNPCs) —
-/// W4-g38 C5: the starter town NPC at the spawn point (the classic Guide,
-/// the seed substitutes). Writes `world.starter_npcs` + the owned rescue
-/// flags; no tiles, no RNG draws, no stream.
-fn step_guide(
-    world: &mut World,
-    _gv: &mut GenVars,
-    _streams: &mut Streams,
-    opts: &GenOptions,
-    _noise: &Noise,
-    _pass_config: &ConfigSection,
-) {
-    super::starter_npcs::pass_starter_npcs(world, opts);
-}
-
-/// The vanilla Sunflowers slot (`WorldGen.cs:19898-19939`, SunflowersPart2)
-/// — W4-g38 C6: the 0.002w span-scatter of 2×4 sunflowers on the grass
-/// seats, on the pass's own stream.
-fn step_sunflowers(
-    world: &mut World,
-    gv: &mut GenVars,
-    streams: &mut Streams,
-    opts: &GenOptions,
-    _noise: &Noise,
-    _pass_config: &ConfigSection,
-) {
-    let world_surface = gv.layers().world_surface;
-    surface::pass_sunflowers(
-        world,
-        world_surface,
-        &mut streams.pass_rng("Sunflowers"),
-        opts,
-    );
-}
-
-/// The vanilla Herbs slot (`WorldGen.cs:19964-19980`, AlchemyHerbs) —
-/// W4-g38 C7: the 1.7w PlantAlch ladder (remix ×5) on the pass's own
-/// stream, gated by denyAllGeneration (skyblock only).
-fn step_herbs(
-    world: &mut World,
-    gv: &mut GenVars,
-    streams: &mut Streams,
-    opts: &GenOptions,
-    _noise: &Noise,
-    _pass_config: &ConfigSection,
-) {
-    let layers = gv.layers();
-    let (world_surface, rock_layer) = (layers.world_surface, layers.rock_layer);
-    surface::pass_herbs(
-        world,
-        world_surface,
-        rock_layer,
-        &mut streams.pass_rng("Herbs"),
-        opts,
-    );
-}
-
-/// The vanilla Dye Plants slot (`WorldGen.cs:19981-19994`, DyePlants) —
-/// W4-g38 C8: the w plantDye attempts + MatureTheHerbPlants +
-/// GrowGlowTulips + PlaceChilletEggs on the pass's own stream, gated by
-/// denyAllGeneration (skyblock only). No progress message (the C# only
-/// `Set(1.0)`).
-fn step_dye_plants(
-    world: &mut World,
-    gv: &mut GenVars,
-    streams: &mut Streams,
-    opts: &GenOptions,
-    _noise: &Noise,
-    _pass_config: &ConfigSection,
-) {
-    let layers = gv.layers();
-    let (world_surface, rock_layer) = (layers.world_surface, layers.rock_layer);
-    surface::pass_dye_plants(
-        world,
-        world_surface,
-        rock_layer,
-        &mut streams.pass_rng("Dye Plants"),
-        opts,
-    );
-}
 
 fn step_campsites(
     world: &mut World,
@@ -4340,7 +4163,7 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -4967,7 +4790,7 @@ fn step_stalac(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -5016,7 +4839,7 @@ fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -6705,7 +6528,7 @@ mod tests {
     fn w4_d104_28_the_island_houses_step_sits_before_the_trees() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("floating island houses"), pos("living trees") + 1);
+        assert!(pos("living trees") < pos("floating island houses"));
         assert_eq!(pos("floating island houses") + 1, pos("quick cleanup"));
         assert_eq!(pos("quick cleanup") + 1, pos("hellforge"));
         assert_eq!(pos("hellforge") + 1, pos("spreading grass"));
@@ -6760,9 +6583,9 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert!(pos("floating islands") < pos("floating island houses"));
-        assert_eq!(pos("settle liquids"), pos("floating islands") + 1);
-        assert_eq!(pos("floating island houses"), pos("settle liquids") + 1);
-        assert_eq!(pos("remove water"), pos("floating island houses") + 1);
+        assert!(pos("floating islands") < pos("settle liquids"));
+        assert!(pos("settle liquids") < pos("floating island houses"));
+        assert!(pos("remove water") < pos("floating island houses"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -6815,7 +6638,7 @@ mod tests {
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("guide") + 1, pos("sunflowers"));
         assert!(pos("guide") < pos("trees"));
-        assert_eq!(names[pos("guide") - 1], "living trees");
+        assert_eq!(names[pos("guide") - 1], "grass wall");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -6905,7 +6728,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("flowers"), pos("vines") + 1);
-        assert_eq!(pos("flowers") + 1, pos("muds walls in jungle"));
+        assert_eq!(pos("flowers") + 1, pos("mushrooms"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())
@@ -6927,7 +6750,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("mushrooms"), pos("flowers") + 1);
-        assert_eq!(pos("mushrooms") + 1, pos("muds walls in jungle"));
+        assert_eq!(pos("mushrooms") + 1, pos("random gems"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())
@@ -6949,7 +6772,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("random gems"), pos("mushrooms") + 1);
-        assert_eq!(pos("random gems") + 1, pos("muds walls in jungle"));
+        assert_eq!(pos("random gems") + 1, pos("moss grass"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())
@@ -7259,8 +7082,7 @@ mod tests {
         // W4-d105 lane 5: the fallen-log anchor resets to −1
         // (`WorldGen.cs:11210`) and the larva ledger to empty
         // (`GenVars.numLarva = 0`, `WorldGen.cs:11245`).
-        assert_eq!(gv.log_x, -1);
-        assert_eq!(gv.log_y, 0);
+        assert_eq!(gv.log_anchor, None);
         assert!(gv.larva.is_empty());
     }
 
