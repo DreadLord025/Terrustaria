@@ -135,19 +135,35 @@ fn spawn_pet_if_needed(p: &mut Player, pool: &mut ProjectilePool, j: usize, proj
         }
     }
     // `Projectile.NewProjectile(source, center.X, center.Y, 0f, 0f, proj,
-    // 0, 0f, whoAmI)` — damage 0, knockback 0, no ai payload. The port's
-    // data-row table has no pet rows yet (`proj_data` returns None), so the
-    // plain spawn carries the slot; the pet AI/box lands with the pet-AI
-    // task (recorded in ANALYSIS). The buff pin + flag are the ported half.
-    pool.spawn(
-        proj,
-        0,
-        glam::Vec2::new(cx, cy),
-        glam::Vec2::ZERO,
-        0,
-        0.0,
-        false,
-    );
+    // 0, 0f, whoAmI)` — damage 0, knockback 0, no ai payload. W4-d13: the
+    // rowed kinds (the aiStyle-124 pets among them) now spawn through the
+    // SetDefaults-carrying seam (box/life/flags); the rowless pets keep the
+    // plain spawn until their pet-AI task lands (recorded in ANALYSIS).
+    // The C# centres the box on the spawn point (`:10876-10877`).
+    if let Some(d) = crate::projectile::proj_data(proj) {
+        pool.spawn_with_data_ai_owned(
+            proj,
+            0,
+            cx - d.w * 0.5,
+            cy - d.h * 0.5,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+        );
+    } else {
+        pool.spawn(
+            proj,
+            0,
+            glam::Vec2::new(cx, cy),
+            glam::Vec2::ZERO,
+            0,
+            0.0,
+            false,
+        );
+    }
 }
 
 /// The wave-C dispatch: one slot-ordered pass over the buff bar with the C#

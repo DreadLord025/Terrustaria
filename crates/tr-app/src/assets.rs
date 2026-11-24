@@ -658,6 +658,28 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_49",
         "Extra_98",
         "FlameRing",
+        // W4-d13: the 650 Suspicious Looking Tentacle's spelunker-pointer
+        // sprite (`TextureAssets.Extra[66]`, `Main.cs:34025`) — the draw
+        // arm behind the pet's generic sprite (`:34026`).
+        "Extra_66",
+        // W4-d16 — the kite tail sheets (`Main.DrawKite`, `Main.cs:37137`/
+        // `:37164-37329`): the stock `Extra[103]` plus the per-kind arms
+        // (104 wyvern, 132/133/135-140/144-148).
+        "Extra_103",
+        "Extra_104",
+        "Extra_132",
+        "Extra_133",
+        "Extra_135",
+        "Extra_136",
+        "Extra_137",
+        "Extra_138",
+        "Extra_139",
+        "Extra_140",
+        "Extra_144",
+        "Extra_145",
+        "Extra_146",
+        "Extra_147",
+        "Extra_148",
         // S1-G-1 wave D: the pylon crystal (`TextureAssets.Extra[181]`,
         // `TileDrawing.cs:8656`), the master-trophy relic (`Extra[198]`,
         // `:8612`) and the void lens's selection mask (`Extra[93]`,
@@ -1835,6 +1857,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_485",
         "NPC_486",
         "NPC_487",
+        // W4-d11 DOC-SWEEP — the BloodSquid's own sheet
+        // (`render/entities.rs`'s SMALL_KIND_SHEETS 619 row).
+        "NPC_619",
 ];
 
 
@@ -2434,7 +2459,8 @@ pub struct AmbienceTex {
 // c7/d40's slots above own them) = 320.
 // + W4-c10's 8 waterfowl sheets (362-365/602/603/608/609; the
 // 12-critter tail dropped - d40/c8's slots above own them) = 328.
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
+/// 328 inherited slots + W4-d11's BloodSquid 619 (appended last).
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 329] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2533,6 +2559,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
         // `bestiary_npc_sheets`'s exact order (the vec grew 181 → 189).
         362, 363, 364, 365, 602, 603, 608, 609,
         // E8 merge: the c10 12-critter slot tail dropped (d40/c8's slots above).
+        // W4-d11 DOC-SWEEP — the BloodSquid, appended last for the same
+        // reason.
+        619,
     ];
 
 
@@ -2653,6 +2682,13 @@ pub struct Lookups {
     /// (`Main.cs:57248`) — loaded for S1-E-16, the draw is gated on
     /// `Player.hasPaladinShield` (unported).
     pub extra_98: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[66]`: the 650 tentacle pet's spelunker-pointer
+    /// sprite (`Main.cs:34025`) — W4-d13's draw arm consumes it.
+    pub extra_66: Option<tr_render::SheetRect>,
+    /// W4-d16 — the kite tail sheets (`TextureAssets.Extra[id]`,
+    /// `Main.DrawKite` `Main.cs:37137`/`:37164-37329`), keyed by the Extra
+    /// id (103/104/132/133/135-140/144-148).
+    pub kite_tails: HashMap<u16, tr_render::SheetRect>,
     /// `TextureAssets.FlameRing`: the inferno halo (`Main.cs:64321`), 400×1200
     /// (3 rings of 400×400) — the draw is gated on `Player.inferno`.
     pub flame_ring: Option<tr_render::SheetRect>,
@@ -3085,6 +3121,11 @@ impl Lookups {
             extra_305: atlas.sheet("Extra_305").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
+            extra_66: atlas.sheet("Extra_66").copied(),
+            kite_tails: [103u16, 104, 132, 133, 135, 136, 137, 138, 139, 140, 144, 145, 146, 147, 148]
+                .iter()
+                .filter_map(|&id| atlas.sheet(&format!("Extra_{id}")).map(|r| (id, *r)))
+                .collect(),
             flame_ring: atlas.sheet("FlameRing").copied(),
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
@@ -3515,6 +3556,8 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_603").copied(),
                 atlas.sheet("NPC_608").copied(),
                 atlas.sheet("NPC_609").copied(),
+                // W4-d11 DOC-SWEEP — the BloodSquid's 6-frame NPC_619 strip.
+                atlas.sheet("NPC_619").copied(),
             ],
 
 

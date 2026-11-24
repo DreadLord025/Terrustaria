@@ -609,6 +609,17 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Drippler",
     },
+    // W4-d11 DOC-SWEEP — the BloodSquid's entry (`NPCID.cs:11915`,
+    // the en-US NPCs.json name; the bestiary draw modifiers
+    // `NPCID.cs:5371-5379` ride the portrait arm).
+    BestiaryEntryDef {
+        credit_id: "BloodSquid",
+        net_id: 619,
+        kind: NpcKind::BloodSquid,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Squid",
+    },
     // S1-D-3ff wave A — `BestiaryEntry.Enemy(225)` (the automated
     // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
     // name rides `Lang.GetNPCName` (en-US NPCs.json).

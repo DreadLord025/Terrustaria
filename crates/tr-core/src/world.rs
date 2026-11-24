@@ -389,6 +389,17 @@ pub struct World {
     /// (`WorldGen.cs:71781-71821`) drains it per coin. The coin projectiles are
     /// unported, so the value round-trips + the rain arms set it (W4-f45).
     pub coin_rain: i32,
+    /// `Star.starfallBoost` (`Star.cs:35`): the night's natural-starfall
+    /// rate multiplier. `Star.NightSetup` (`Star.cs:41-60`, called from
+    /// `UpdateTime_StartNight` `Main.cs:65223`) re-rolls it every dusk:
+    /// 1-in-10 (1-in-5 tenth) → `Next(300,501) * 0.01` (3.0-5.0), else
+    /// 1-in-3 (1-in-2 tenth) → `Next(100,151) * 0.01` (1.0-1.5), else 1.
+    /// The static ctor pins 1 (`Star.cs:322`). Readers: the starfall
+    /// gate (`WorldGen.cs:71834`, `world_sim/growth.rs`) and the
+    /// boosted-night critter spawn (`NPC.cs:2406`, `> 3f` — unported
+    /// kind 484). Runtime-only, not saved (a C# static, no .wld byte).
+    /// W4-d15 final phase.
+    pub starfall_boost: f32,
     /// The body's `life / lifeMax` (`Main.npc[NPC.golemBoss].life` reads
     /// of the fists' chase/dash tiers, `:19274`/`:19370`, and the free
     /// head's power tiers, `:31524-31548`) — the WoF write-through shape.
@@ -912,6 +923,7 @@ impl World {
             spawn_meteor: false,
             meteor_shower_count: 0,
             coin_rain: 0,
+            starfall_boost: 1.0,
             golem_x: 0.0,
             skeletron_x: 0.0,
             prime_present: false,
@@ -1301,6 +1313,30 @@ impl World {
         {
             self.invasion_delay = 0;
             self.invasion_arm_pending = true;
+        }
+    }
+
+    /// `Star.NightSetup` (`Star.cs:41-60`, called from
+    /// `UpdateTime_StartNight` `Main.cs:65223`): the per-dusk starfall
+    /// boost roll. `Next(10)` (5 on the tenth-anniversary world) == 0 →
+    /// `Next(300,501) * 0.01f` (3.0..5.0); ELSE `Next(3)` (2 tenth) == 0
+    /// → `Next(100,151) * 0.01f` (1.0..1.5); else the stock 1. The
+    /// draws ride the caller's stream in C# order (the second gate
+    /// draw runs ONLY when the first missed). `starFallCount = 0`
+    /// (`:59`) is the background-star census — no port state (the
+    /// `Star.StarFall` layer skip, `projectile_ai_dd2`). The C#
+    /// `(float)Next(...) * 0.01f` multiplies in f32 — kept exact.
+    pub fn roll_starfall_night_setup(
+        &mut self,
+        tenth_anniversary: bool,
+        rng: &mut crate::UnifiedRandom,
+    ) {
+        self.starfall_boost = 1.0;
+        let (max_value, max_value2) = if tenth_anniversary { (5, 2) } else { (10, 3) };
+        if rng.next_max(max_value) == 0 {
+            self.starfall_boost = rng.next_range(300, 501) as f32 * 0.01;
+        } else if rng.next_max(max_value2) == 0 {
+            self.starfall_boost = rng.next_range(100, 151) as f32 * 0.01;
         }
     }
 
@@ -2498,5 +2534,109 @@ mod boss_tests {
         assert!(!w.downed_eow);
         assert!(!w.downed_skeletron);
         assert!(!w.downed_queen_bee);
+    }
+}
+
+/// W4-d15 final phase — `Star.NightSetup` (`Star.cs:41-60`) witnesses.
+/// WRITTEN NOT RUN (code-only round).
+#[cfg(test)]
+mod w4_d15_starfall_boost_tests {
+    use super::*;
+    use crate::UnifiedRandom;
+
+    /// A fresh world pins the stock boost (`Star.cs:322`'s static ctor).
+    #[test]
+    fn the_stock_boost_is_one() {
+        let w = World::new("t".into(), 8, 8);
+        assert_eq!(w.starfall_boost, 1.0);
+    }
+
+    /// The three arms + the draw census, mirrored by hand on a twin
+    /// stream: `Next(10)` hit → `Next(300,501)`; miss + `Next(3)` hit →
+    /// `Next(100,151)`; both miss → 1 with exactly TWO draws. The twin
+    /// equality proves the order and the count per arm.
+    #[test]
+    fn the_night_setup_arms_and_draw_counts() {
+        // Scan seeds for each outcome (the first Next(10) / the second
+        // Next(3) decide the arm).
+        let mut big_hit = None;
+        let mut small_hit = None;
+        let mut miss = None;
+        for seed in 0..100_000i32 {
+            let mut r = UnifiedRandom::new(seed);
+            let first = r.next_max(10);
+            if first == 0 && big_hit.is_none() {
+                big_hit = Some(seed);
+            } else if first != 0 {
+                let second = r.next_max(3);
+                if second == 0 && small_hit.is_none() {
+                    small_hit = Some(seed);
+                } else if second != 0 && miss.is_none() {
+                    miss = Some(seed);
+                }
+            }
+            if big_hit.is_some() && small_hit.is_some() && miss.is_some() {
+                break;
+            }
+        }
+        for (seed, arm) in [
+            (big_hit.expect("a Next(10) hit seed"), 0),
+            (small_hit.expect("a Next(3) hit seed"), 1),
+            (miss.expect("a both-miss seed"), 2),
+        ] {
+            let mut w = World::new("t".into(), 8, 8);
+            let mut rng = UnifiedRandom::new(seed);
+            w.roll_starfall_night_setup(false, &mut rng);
+            let mut twin = UnifiedRandom::new(seed);
+            let want = if twin.next_max(10) == 0 {
+                assert_eq!(arm, 0);
+                twin.next_range(300, 501) as f32 * 0.01
+            } else if twin.next_max(3) == 0 {
+                assert_eq!(arm, 1);
+                twin.next_range(100, 151) as f32 * 0.01
+            } else {
+                assert_eq!(arm, 2);
+                1.0
+            };
+            assert_eq!(w.starfall_boost, want, "seed {seed} arm {arm}");
+            assert_eq!(rng, twin, "seed {seed}: the draw count + order");
+            match arm {
+                0 => assert!((3.0..=5.0).contains(&w.starfall_boost)),
+                1 => assert!((1.0..=1.5).contains(&w.starfall_boost)),
+                _ => assert_eq!(w.starfall_boost, 1.0),
+            }
+        }
+    }
+
+    /// The tenth-anniversary gates: `Next(5)` / `Next(3→2)` (`Star.cs:
+    /// 46-50`). A seed whose first `Next(5)` hits but `Next(10)` misses
+    /// proves the widened gate; the twin mirrors the (5, 2) pair.
+    #[test]
+    fn the_tenth_anniversary_widens_both_gates() {
+        let seed = (0..100_000i32)
+            .find(|&s| {
+                let mut r = UnifiedRandom::new(s);
+                r.next_max(5) == 0 && UnifiedRandom::new(s).next_max(10) != 0
+            })
+            .expect("a tenth-only hit seed");
+        let mut w = World::new("t".into(), 8, 8);
+        let mut rng = UnifiedRandom::new(seed);
+        w.roll_starfall_night_setup(true, &mut rng);
+        let mut twin = UnifiedRandom::new(seed);
+        assert_eq!(twin.next_max(5), 0);
+        let want = twin.next_range(300, 501) as f32 * 0.01;
+        assert_eq!(w.starfall_boost, want);
+        assert_eq!(rng, twin, "the (5, 2) gate pair's draw order");
+        // The classic gate on the SAME seed misses both arms (the
+        // Next(10) miss above + a Next(3) draw) and lands 1.
+        let mut w = World::new("t".into(), 8, 8);
+        let mut rng = UnifiedRandom::new(seed);
+        w.roll_starfall_night_setup(false, &mut rng);
+        let mut twin = UnifiedRandom::new(seed);
+        assert_ne!(twin.next_max(10), 0);
+        let small = twin.next_max(3) == 0;
+        let want = if small { twin.next_range(100, 151) as f32 * 0.01 } else { 1.0 };
+        assert_eq!(w.starfall_boost, want);
+        assert_eq!(rng, twin);
     }
 }

@@ -274,6 +274,18 @@ pub(crate) struct App {
     /// held left button until its release (`OnSelectionChanged`,
     /// `Player.cs:563`; the release clears it, `TriggersSet.cs:846`).
     pub(crate) block_mouse: bool,
+    /// W4-d13 — the Wire Kite's release-death `Wiring.MassWireOperation`
+    /// requests (`Projectile.cs:72051-72067`): `(owner, ps_x, ps_y, pe_x,
+    /// pe_y)` drained from the projectile pool's kill hook — TILE coords
+    /// (`(int)X >> 4`). UNCONSUMED on this branch: f11's apply
+    /// (`wiring_devices::mass_wire_operation(app, ps, pe, mode, drop_rng)`)
+    /// landed on ITS branch (`24fa39f1` + the `84ed6342b` stream close,
+    /// retire tip `14ca0a8d`), unmerged; the drain-site activation
+    /// contract lives at `world_sim/projectiles.rs`'s `take_mass_wire_ops`
+    /// seam (the raw ToolMode, no Actuator strip, no cooldown gate, the
+    /// `RngKey::UpdateProjectiles` stream param — the note CLOSED on f11,
+    /// research/235 §2).
+    pub(crate) pending_mass_wire_ops: Vec<(u8, i32, i32, i32, i32)>,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
@@ -317,6 +329,16 @@ pub(crate) struct App {
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
+    /// W4-d15 — `Player.altFunctionUse` (`Player.cs:1822`): the right-click
+    /// feature latch. `ItemCheck_ManageRightClickFeatures` (`:31646-31650`)
+    /// arms 1 on the right-button press for the repeated-right-click items
+    /// (`ItemID.Sets.ItemsThatAllowRepeatedRightClick`, `ItemID.cs:342` —
+    /// the port's member is the Monk Staff T3 3858); the use-start gate
+    /// converts 1 → 2 (`:42735-42738`), the animation-zero head clears 2
+    /// (`:42673-42676`) and a released left button clears 1 (`:31691-31694`).
+    /// The 3858's `ItemCheck_Shoot` arm (`:48736-48747`) reads 2 to fire the
+    /// 708 alt swing (the aiStyle-142 709 volley) instead of the 707.
+    pub(crate) alt_function_use: i32,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1, the full
     /// 137-row initializer table with M6-ACH-2).
     pub(crate) achievements: achievements::AchievementManager,
@@ -668,6 +690,20 @@ pub(crate) struct App {
     /// hover sites are unported, so nothing arms it today — the field keeps
     /// the check's shape.
     pub(crate) no_throw: i32,
+    /// `Player.cursorItemIconID` (`Player.cs:1851`, W4-d21 fold 2) — the
+    /// right-click-interaction cursor icon the hover arms set (the petting
+    /// `TryPetting` `Main.cs:37958`, the money-trough/void-lens arms). 0 =
+    /// no icon (`cursorItemIconEnabled = false`). The icon DRAW is the
+    /// render layer's follow-up; the field carries the sim state.
+    pub(crate) cursor_item_icon_id: u16,
+    /// `Player.BlockInteractionWithProjectiles` (`Player.cs:3024`, W4-d21
+    /// fold 2) — the static interaction cooldown: the static ctor arms 3
+    /// (`:57125`), the gamepad inventory-close re-arms 3 (`:5050`), and
+    /// `Main.DoUpdate` decrements it while the right button is released
+    /// (`Main.cs:16849-16852`). The pet/money-trough/void-lens right-click
+    /// arms gate on `== 0` (`:37964`). The port is keyboard+mouse (no
+    /// gamepad re-arm); the decrement rides the editing pass head.
+    pub(crate) block_interaction_with_projectiles: i32,
     /// `Main.mouseRightRelease` as the vanilla recomputes it at the END of
     /// every interface draw (`Main.cs:62458-62465`: `!Main.mouseRight`) —
     /// the buff bar's cancel reads `mouseRight && mouseRightRelease`
@@ -2043,11 +2079,23 @@ impl App {
     /// `StartDayImmediately`/`StartNightImmediately`/`SetNoon`/`SetMidnight`
     /// (`CreativePowers.cs:769-860`): the clock jumps to the target — the
     /// (dayTime, time) pair from `button_target`. The boundary events (the
-    /// moon-phase roll, the event rolls) land with their tasks.
+    /// moon-phase roll, the event rolls) land with their tasks — EXCEPT
+    /// `Star.NightSetup`: the C# `SkipToTime` (`Main.cs`) loops
+    /// `UpdateTime_StartNight` on a day→night flip, so the starfall-boost
+    /// roll fires here too (W4-d15 final — the boost's writers are
+    /// NightSetup-only, `Star.cs:41-60`).
     pub(crate) fn set_time_of_day(&mut self, id: crate::creative::PowerId) -> bool {
         let Some((day, time)) = self.creative_powers.button_target(id) else {
             return false;
         };
+        if self.world.day_time && !day {
+            let tenth = self
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+            let rng = self.rngs.stream(crate::app::RngKey::UpdateTime);
+            self.world.roll_starfall_night_setup(tenth, rng);
+        }
         self.world.day_time = day;
         self.world.time = time;
         true
@@ -3956,6 +4004,7 @@ impl App {
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
+            pending_mass_wire_ops: Vec::new(),
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
                 s[0] = 1.0;
@@ -4029,6 +4078,7 @@ impl App {
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
+            alt_function_use: 0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern). An open chest closes it
@@ -4146,6 +4196,8 @@ impl App {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
+            cursor_item_icon_id: 0,
+            block_interaction_with_projectiles: 3,
             ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],

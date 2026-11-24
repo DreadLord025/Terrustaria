@@ -793,7 +793,12 @@ pub fn is_vine(kind: u16) -> bool {
     IS_VINE.contains(&kind)
 }
 
-pub(crate) fn not_really_solid(kind: u16) -> bool {
+/// Membership in [`NOT_REALLY_SOLID`] (`TileID.Sets.NotReallySolid`,
+/// `TileID.cs:592`) — the "solid" kinds that are not really solid (the
+/// platform 10 + the actuated-block pair 387/388). `pub`: the placement
+/// side-support rule (`edit/place.rs:257`) and the Portal gun's support
+/// probe (`PortalHelper.cs:578`, W4-d12) read it.
+pub fn not_really_solid(kind: u16) -> bool {
     NOT_REALLY_SOLID.contains(&kind)
 }
 

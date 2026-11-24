@@ -4026,6 +4026,12 @@ fn npc_seed(
         => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // W4-d42 - the roster's flyers seed in the open air (the net
         // state overwrites the position below).
+        // W4-d11 DOC-SWEEP — the BloodSquid (619, noGravity aiStyle 5): the
+        // hover ctor's open-air seed (the Drippler precedent); the 813 tear's
+        // spawn intent resolves through `Npc::new` in the world-sim drain,
+        // this arm serves the net join. The d42 grouped arm below already
+        // supplies the identical `spawn_hover` seed, so d11's arm de-dupes
+        // onto it (no second, unreachable BloodSquid arm).
         crate::npc::NpcKind::BloodNautilus
         | crate::npc::NpcKind::BloodSquid
         => {

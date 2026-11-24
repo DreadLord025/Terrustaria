@@ -46,6 +46,9 @@ mod inv;
 mod luck;
 mod wiring_stub;
 mod yoyo_string;
+// W4-d16 — the kite string + tail geometry (`Main.DrawKite`,
+// `Main.cs:37134-37569`): the pure-math half of the aiStyle-160 draw.
+mod kite_string;
 mod item;
 mod itemdata;
 mod item_sorting;
@@ -90,6 +93,7 @@ mod npc_ai_dungeon_shooter;
 // danger states deferred (see the module doc).
 mod npc_ai_critter;
 mod npc_ai_ghost;
+mod npc_ai_blood_squid;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
 mod npc_ai_unicorn;
@@ -216,10 +220,70 @@ mod special_arrows;
 mod projectile_frost_shots;
 mod projectile_ai001_c;
 mod projectile_ai067_b;
+// W4-d13 — the aiStyle-124 pet family (650/882/888/895/896/898/957): the
+// keep-alive pins, the home-spot ladder, the flight/idle frame machines,
+// the 957 ground bounce and the 650 ore scan + steering tail
+// (`Projectile.cs:34970-35696`). Code-only — witnesses written not run.
+mod projectile_ai_pets124;
+// W4-d13 — the aiStyle-125 Wire Kite (651): the channel mouse-follow, the
+// three kill gates and the owner tail (`Projectile.cs:35697-35833`).
+// Code-only — witnesses written not run.
+mod projectile_ai_wire_kite;
+// W4-d13 — the aiStyle-126 column family (654 geyser / 670 ogre stomp): the
+// anchor scan, the column-height growth, the stomp's tick-12 child split and
+// the dust RNG census (`Projectile.cs:35834-35997`). Code-only — witnesses
+// written not run.
+mod projectile_ai_geyser;
+// W4-d13 — the aiStyle-127 sandnado column (656 friendly / 657 hostile): the
+// life cap, the 656 fade + owner sight test, the vertical-expand box and the
+// tail dust census (`Projectile.cs:35998-36085`). Code-only — witnesses
+// written not run.
+mod projectile_ai_sandnado;
+// W4-d13 — the aiStyle-128 sandnado mark (658): the spin/fade/scale machine,
+// the tick-60 hostile-sandnado spawn and the dust census + Kill burst
+// (`Projectile.cs:36086-36197`, `:72374-72393`). Code-only — witnesses
+// written not run.
+mod projectile_ai_sandnado_mark;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-d11 — the aiStyle 101-110 census slice (the tower orbs, the spore
+// sac/gas, the nebula sphere / djinn curse, the ritual markers' 813 arm,
+// the mechanic wrench and the nurse syringe). Code-only round — the
+// witness tests are WRITTEN NOT RUN.
+mod projectile_ai_101_110;
+// W4-d12: the aiStyle-117 explosion family (612/624/953/1044 + the 608
+// Solar Counter's Kill-path burst). The shared arm's scale/age/frame
+// machine + the tick-1 resized-box Damage + the three dust censuses; the
+// dispatch claim + the 608 death-hook drain are wired in projectile.rs.
+// Code-only mode — witness tests written not run.
+mod projectile_ai_explosions;
+mod projectile_ai_dd2;
+// W4-d19 — the aiStyles 182-186/190 census slice: the Zenith illusions
+// (182), the Zoologist strikes (183), the Torch God's fireball (184), the
+// Soul Drain's mana latch (185), the Resonance Scepter's blast (186) and
+// the seven big-sword slashes (190). The rows land in projectile/data.rs;
+// the dispatch arms are wired in projectile.rs::update. Code-only mode —
+// witness tests written not run.
+mod projectile_ai_sword_styles;
+// W4-d19 follow-up — the aiStyle-92 cloud family (the 511-513 toxic
+// clouds, the 1007 gas trap, the 1128 Chlorophyte Claymore spore child)
+// + the 1126 spore machine's 1128/1129 child drain. The rows land in
+// projectile/data.rs; the dispatch arm + the drain are wired in
+// projectile.rs::update. The 1129 row/arm are W4-d21's claim (the
+// documented cross-branch contract). Code-only — witnesses written not run.
+mod projectile_ai_clouds;
+// W4-d21 — the projectile aiStyles 201-210 missing machines (201/202/203/
+// 204/205/208/209; 206 landed a9 8c4fded8 verify-only, 207 empty/no kinds,
+// 210 already ai_yoyo_shot). The rows land in projectile/data.rs; the
+// dispatch arms are wired in projectile.rs::update. Code-only mode —
+// witness tests written not run.
+mod projectile_ai_201_210;
+// W4-d21 folds 3+4 — the MultiPointHitbox + LightningGenerator port (the
+// 203 storm-lightning bolt paths: tile truncation + the multi-segment
+// damage hitbox; the census proved the generator is NOT render-only).
+mod lightning_generator;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in
@@ -261,6 +325,9 @@ mod projectile_bobber;
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+// W4-d16 — the kite family (aiStyle 160, `AI_160_Kites` + `KiteLogic`):
+// the 24 DefaultToKite kinds' wind hover + anchor reel + frame machine.
+mod projectile_ai_kites;
 mod rain;
 // W4-g70 lane 8: the live star field (Star.cs) — spawn/update/NightSetup/
 // StarFall, replacing the static BG-11/16 stand-in.

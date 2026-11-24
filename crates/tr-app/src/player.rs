@@ -53,6 +53,21 @@ const CART_MOUNT_HEIGHT: f32 = 52.0;
 pub const BREATH_MAX: i32 = 200;
 /// `Player.breathCDMax`: ticks between breath decrements.
 const BREATH_CD: i32 = 7;
+/// `Player.AFKTimeNeededForNoLuckyStars` (`Player.cs:990`, set 10800 at
+/// `:57103`): the lucky-star / storm-lightning gates' afk ceiling
+/// (`WorldGen.cs:71842`/`:71905`). W4-d15 final phase.
+pub const AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS: i32 = 10800;
+/// `Player.AFKTimeNeededForNoWormSpawns` (`Player.cs:57102`, 300): the
+/// `NPC.cs:411` `noGroundWorms` threshold — the spawn-info lane's
+/// consumer, recorded here for the cross-note.
+pub const AFK_TIME_NEEDED_FOR_NO_WORM_SPAWNS: i32 = 300;
+/// `ItemID.Sets.IsAKite` (`ItemID.cs:411`): the 24 kite kinds — a held
+/// kite keeps the afk counter climbing through the swing animation
+/// (`Player.cs:25497`'s `itemAnimation == 0 || IsAKite[HeldItem.type]`).
+const IS_A_KITE: [u16; 24] = [
+    4367, 4368, 4369, 4370, 4371, 4379, 4610, 4611, 4612, 4613, 4648, 4649,
+    4650, 4651, 4669, 4670, 4671, 4674, 4675, 4676, 4677, 4681, 4683, 4684,
+];
 
 /// The extra-jump options (`Player.hasJumpOption_*` / `canJumpAgain_*` /
 /// `isPerformingJump_*`, `Player.cs:2664-2716`). The mount jumps
@@ -584,6 +599,76 @@ pub(crate) struct StickyDust {
     pub(crate) post_arms: bool,
 }
 
+// BATCH-D MERGE-PENDING (research/340 S6 / ANALYSIS "Fold-2 keep-one
+// adjudication"): g10's canonical pets host (`player_petting.rs`, tip
+// 7414ba339) is NOT in this batch. d21's player-machine core is its
+// semantic subset - the 13 DROP hunks (PettingInfo/Default, the petting
+// field/init, the sleep_down strip, stop_petting_animal,
+// stop_vanity_actions, pet_animal, update_petting_animal, the :26124
+// call, the back-arm pose, the 5 machine witnesses, the 4952 gate, the
+// petting_blocks_hold refusals) execute at g10's merge with the S1-S5
+// splices (from_projectile relocates, pet_animal gains the proj-bottom
+// input + change_dir, update gains the TryGetTarget arm, try_petting
+// drains PetAnimalOutcome, math_sign replaces signum). THIS interim
+// keeps d21's halves so the UNIQUE-KEEP groups (the proj TryGetTarget
+// feed, the sit_down stop, change_dir, the TryPetting seam, the
+// BlockInteraction decrement, the 204 state-5 joy) stay LIVE.
+/// `PlayerPettingInfo` (`GameContent/PlayerPettingInfo.cs:5-77`) — the
+/// pet-interaction target record (W4-d21 fold 2). The C# struct carries
+/// three ctors (NPC / Projectile / mount); the port's projectile lane is
+/// the live one — the NPC lane (`NPCInteractions.cs:167`) and the mount
+/// lane (`PetMount`, `Player.cs:33339-33356`) ride their own systems'
+/// follow-ups. `npc`/`mount` stay for the record's shape; `TryGetTarget`
+/// resolves through the caller's pool snapshot (the struct cannot hold
+/// the `Main.projectile` reference).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PettingInfo {
+    /// `isPetting` — armed by `PetAnimal`, cleared by `StopPettingAnimal`.
+    pub is_petting: bool,
+    /// `npc` — the NPC whoAmI, -1 for the projectile/mount lanes.
+    pub npc: i32,
+    /// `proj` — the projectile whoAmI, -1 for the NPC/mount lanes.
+    pub proj: i32,
+    /// `type` — the target's NPC type / projectile type / mount id.
+    pub kind: i32,
+    /// `mount` — the mount lane flag.
+    pub mount: bool,
+    /// `offsetFromPet` — the player-bottom offset from the pet's bottom.
+    pub offset_from_pet: (f32, f32),
+    /// `isPetSmall` — the small-pet arm pose flag (`:50264`).
+    pub is_pet_small: bool,
+}
+
+impl Default for PettingInfo {
+    fn default() -> Self {
+        Self {
+            is_petting: false,
+            npc: -1,
+            proj: -1,
+            kind: 0,
+            mount: false,
+            offset_from_pet: (0.0, 0.0),
+            is_pet_small: false,
+        }
+    }
+}
+
+impl PettingInfo {
+    /// The projectile ctor (`:32-41`): `isPetting = false`, `npc = -1`,
+    /// `proj = whoAmI`, `type = proj.type`, the offset + small flag ride.
+    pub fn from_projectile(who_am_i: i32, kind: u16, offset_from_pet: (f32, f32), is_pet_small: bool) -> Self {
+        Self {
+            is_petting: false,
+            npc: -1,
+            proj: who_am_i,
+            kind: kind as i32,
+            mount: false,
+            offset_from_pet,
+            is_pet_small,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -650,6 +735,38 @@ pub struct Player {
     /// the Stardust armor set bonus flag; the down-hold rest-target clear
     /// gate (`KeyHoldDown` `:56903-56906`).
     pub set_stardust: bool,
+    /// `Player.setNebula` (`Player.cs:2820`) — the Nebula armor set bonus
+    /// flag (`ArmorSetBonuses.Nebula`, `ArmorSetBonuses.cs:47-54`); the
+    /// magic on-hit pickup proc gate (`Projectile.cs:13826`).
+    /// `ResetEffects` clears it (`:18743`); the set pass re-derives it.
+    pub set_nebula: bool,
+    /// `Player.nebulaCD` (`Player.cs:2822`) — the Nebula proc's 30-tick
+    /// cooldown: the on-hit proc sets it (`Projectile.cs:13828`), the
+    /// set-bonus Effect decrements it per tick while the set is worn
+    /// (`ArmorSetBonuses.cs:49-52`). NOT reset by ResetEffects (no C#
+    /// reset site — the cooldown survives an armor swap).
+    pub nebula_cd: i32,
+    /// `Player.nebulaLevelLife` / `nebulaLevelMana` / `nebulaLevelDamage`
+    /// (`Player.cs:924-930`) — the three pickup-buff tiers (0..3).
+    /// `NebulaLevelup` (`:57030-57059`) raises them on a pickup;
+    /// `UpdateBuffs_NebulaBuffs` (`:12070-12079`) re-derives them from the
+    /// live buff slot each tick and steps the tier down when the buff
+    /// timer hits 2. `ResetEffects` zeroes all three (`:18755`).
+    pub nebula_level_life: i32,
+    pub nebula_level_mana: i32,
+    pub nebula_level_damage: i32,
+    /// `Player.nebulaManaCounter` (`Player.cs:928`) — the mana-tier's
+    /// 6-count accumulator (`ApplyNebulaBuffMana`, `:19565-19585`):
+    /// +level per tick, one mana per 6. NOT reset by ResetEffects (no
+    /// C# reset site); the zero-level arm zeroes it.
+    pub nebula_mana_counter: i32,
+    /// `Player.setSolar` (`Player.cs:2816`, `ApplySetBonus_Solar`
+    /// `:16369`) — the Solar armor set bonus flag; the aiStyle-116
+    /// SolarFlareRay's `timeLeft = 2` keep-alive gate
+    /// (`Projectile.cs:34446-34449`). W4-d12 lands the flag-only wiring
+    /// (the `set_stardust` precedent); the endurance +0.12 / solarCounter
+    /// / solarShields halves are the shield lane's (deferred, ANALYSIS).
+    pub set_solar: bool,
     /// `Player.ownedProjectileCounts[ProjectileID.Count]` (`Player.cs:2992`)
     /// — recounted every tick from the live pool (`:25565`); the summon
     /// buff-arms and the keep-alive checks read exactly this.
@@ -723,6 +840,13 @@ pub struct Player {
     /// `Player.DeadlySphereMinion` (`Player.cs:1288`) — buff 161's flag, the
     /// chain's last arm (`:10957-10972`).
     pub deadly_sphere_minion: bool,
+    /// `Player.sporeSac` (`Player.cs:1990`) — the Spore Sac accessory's
+    /// equipped flag (`ApplyEquipFunctional`'s item-3336 arm, `:14776-
+    /// 14780`); `ResetEffects` clears it (`:18453`). `AI_105_SporeSac`'s
+    /// distance penalty reads it (`Projectile.cs:40149-40152`): an
+    /// unequipped sac's traps age +100/tick. The grant side (the
+    /// accessory pass) is unported — the flag stays false until it lands.
+    pub spore_sac: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -810,6 +934,12 @@ pub struct Player {
     /// (`Projectile.cs:13918`/`:13929`) — the buff 312/365 arms re-affirm them.
     pub cool_whip_buff: bool,
     pub cob_whip_buff: bool,
+    /// `Player.chlorophyteBladeCounter` (`Player.cs:894`): the Chlorophyte
+    /// Claymore's empowered-swing cooldown. The launch arm
+    /// (`Player.cs:48900-48910`) reads `<= 0` for the ×1.5 damage / ×1.25
+    /// knockback / vertical-velocity swing, then adds `itemAnimation * 3`;
+    /// the per-tick drain (`:42830-42833`) decrements it while positive.
+    pub chlorophyte_blade_counter: i32,
     /// `Player.accSnakeBand` / `accWickedArmlet` / `accMobiusStrip` /
     /// `accSilverBracer` (`Player.cs:1208`/`:1214`/`:1210`/`:1212`, reset
     /// `:18519-18522`): the whip accessory flags. The Snake Band repeats the
@@ -935,6 +1065,25 @@ pub struct Player {
     /// exemption (`ItemCheck_CheckCanUse_Inner` `:52140-52148`) and
     /// `Dismount`'s restore (`Mount.cs:6152-6155`) read it.
     pub no_items: bool,
+    /// `Player.afkCounter` / `afkCounterForKiting` (`Player.cs:991-992`,
+    /// W4-d16 residual 8): the standing-still counters the `Player.Update`
+    /// tail bumps (`:25497-25506` — `IsConsideredStandingStill &&
+    /// (itemAnimation == 0 || IsAKite[HeldItem]) && !controlUp/Down/Left/
+    /// Right/Jump/Torch`). The kiting counter feeds the afk auto-kite
+    /// override (`PickItemSelectionOverride` `:17421-17428`, the
+    /// `AFKTimeNeededForAutoKiting` = 3600 cap `:57104`); the plain
+    /// counter's worm-spawn consumer (`AFKTimeNeededForNoWormSpawns` =
+    /// 300, `:57102`) is unported but the field rides for the resets
+    /// (`Select` `:515-516`, the fully-reeled kite kill
+    /// `Projectile.cs:48597-48598`).
+    pub afk_counter: i32,
+    pub afk_counter_for_kiting: i32,
+    /// `Player.selectedKite` (`Player.cs:1464`): the FIRST inventory slot
+    /// holding a kite item, refreshed by `UpdateEquips`'
+    /// `RefreshAutoKitingFromItemTypeAndSlot` (`:12843-12849` — the held
+    /// item first `:12898`, then the 0..57 scan `:12905`); `ResetEffects`
+    /// clears to −1 (`:18432`). The afk auto-kite override selects it.
+    pub selected_kite: i32,
     /// `Player.cursed` (`Player.cs:2334`): the Cursed (23) flag pair
     /// (`:11734`); `ResetEffects` clears (`:18688`).
     pub cursed: bool,
@@ -1131,6 +1280,17 @@ pub struct Player {
     /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
     /// chair-sit state; the player's bottom is snapped to the seat.
     pub sitting: bool,
+    /// `Player.petting` (`Player.cs:2904`, W4-d21 fold 2) — the pet-
+    /// interaction state: `PetAnimal` snaps the player beside the pet and
+    /// arms it, `UpdatePettingAnimal` (`Player.cs:33470-33490`) drops it
+    /// on movement/target-loss, the digtoise's state-5 joy reads it
+    /// (`Projectile.cs:38508`).
+    pub petting: PettingInfo,
+    /// W4-d21 fold 2 — the per-tick `TryGetTarget` resolution the world-sim
+    /// feeds before the player tick (the `frame_inputs` convention): the
+    /// live pet's bottom, `None` when the target slot died / changed type
+    /// / no petting is armed. `UpdatePettingAnimal` reads it.
+    pub petting_target_bottom: Option<(f32, f32)>,
     /// `PlayerSleepingHelper.isSleeping` (`PlayerSleepingHelper.cs:13`) — the
     /// bed-sleep state; the bottom is snapped to the bed anchor and the pose
     /// rotates through `full_rotation`.
@@ -2011,6 +2171,21 @@ pub struct Player {
     /// `Projectile.cs:52490`/`:52535`). The port's draw/pose consumers land
     /// with the held-item layers; the field keeps the C#'s write exact.
     pub held_proj: i32,
+    /// `Player.controlTorch` (`Main.cTorch`, the LeftShift auto-select
+    /// key): this tick's held state. The afk counter's idle gate reads
+    /// it (`Player.cs:25497`). W4-d15 final phase.
+    pub control_torch: bool,
+    /// `Player.afkCounter` (`Player.cs:986`): the standing-still tick
+    /// counter — `Player.Update` (`:25497-25506`) increments while
+    /// `IsConsideredStandingStill` (`:3323-3332`, |v| < 0.05 both axes)
+    /// AND idle (`itemAnimation == 0` or a kite held) AND no movement/
+    /// torch control; any activity zeroes it. `Select` (`:515`) zeroes
+    /// it on every hotbar selection. Readers: the lucky-star gate
+    /// (`WorldGen.cs:71842`, `< AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS`),
+    /// the storm-lightning gate (`:71905`, unported arm) and the
+    /// worm-spawn suppression (`NPC.cs:411`, `>= 300` — the spawn-info
+    /// lane's fold). W4-d15 final phase (the starfall afk fold).
+    pub afk_counter: i32,
     // ------------------------------- the ammo mastery layer (M3-ITEM-6)
     // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
     // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
@@ -2039,6 +2214,31 @@ pub struct Player {
     /// `Player.meleeEnchant` (`Player.cs:1068`, arms `:12013-12044`): the
     /// weapon-imbuement id 1..8 (0 = none).
     pub melee_enchant: u8,
+    /// `Player._spawnTentacleSpikes` (`Player.cs:2896`): the Tentacle Spike
+    /// (item 5094) melee on-hit proc latch — armed on the use start
+    /// (`ItemCheck_OwnerOnlyCode` `:43468-43471`, `ItemAnimationJustStarted`),
+    /// consumed by the first landed melee hit (`TentacleSpike_TrySpiking`
+    /// `:44160-44172`). W4-d12 DOC-SWEEP item 3.
+    pub spawn_tentacle_spikes: bool,
+    /// `Player._spawnBloodButcherer` (`Player.cs:2898`): the Blood Butcherer
+    /// (item 795) melee on-hit proc latch — armed on the use start
+    /// (`:43472-43475`), consumed by `BloodButcherer_TryButchering`
+    /// (`:44174-44186`). W4-d12 DOC-SWEEP item 4.
+    pub spawn_blood_butcherer: bool,
+    /// `Player._spawnVolcanoExplosion` (`Player.cs:2900`): the Fiery
+    /// Greatsword / Volcano (item 121) melee on-hit proc latch — armed on
+    /// the use start (`ItemCheck_OwnerOnlyCode` `:43476-43479`), consumed
+    /// by `Volcano_TrySpawningVolcano` (`:44150-44158`) at
+    /// `ApplyNPCOnHitEffects` `:44485-44488` (damage ×0.75). The gate is
+    /// `HittableForOnHitRewards` — NO liveness term, so a killing blow
+    /// still fires the explosion. W4-d12 FINAL item 1.
+    pub spawn_volcano_explosion: bool,
+    /// `Player.killingCardFireType` (`Player.cs:3188`): the Dead Cells Killing
+    /// Deck (item 5461) card-draw cycle 0..3 — the four fire modes
+    /// (`ItemCheck_Shoot`'s 5461 arm `:49190-49261`): 0 single, 1 forward+back,
+    /// 2 six-card fan, 3 recall-all. Advances after every use, wraps >3 → 0;
+    /// `UpdateDead` zeroes it (`:16992`). W4-d12 DOC-SWEEP item 5.
+    pub killing_card_fire_type: i32,
     /// The `petFlag*`/light-pet bools (`Player.cs:18413-18600`'s clears),
     /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
     /// sets the 881 and 934 flags shared with buffs 284/317).
@@ -2506,6 +2706,7 @@ impl Player {
         };
         Self {
             dead: false,
+            spore_sac: false,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -2530,6 +2731,13 @@ impl Player {
             minion_rest_target_point: Vec2::ZERO,
             set_forbidden: false,
             set_stardust: false,
+            set_nebula: false,
+            nebula_cd: 0,
+            nebula_level_life: 0,
+            nebula_level_mana: 0,
+            nebula_level_damage: 0,
+            nebula_mana_counter: 0,
+            set_solar: false,
             tag_effects: crate::tag_effects::TagEffectStack::default(),
             whip_range_multiplier: 1.0,
             whip_use_time_multiplier: 1.0,
@@ -2541,6 +2749,7 @@ impl Player {
             summoner_weapon_speed_bonus: 0.0,
             cool_whip_buff: false,
             cob_whip_buff: false,
+            chlorophyte_blade_counter: 0,
             acc_snake_band: false,
             acc_wicked_armlet: false,
             acc_mobius_strip: false,
@@ -2669,6 +2878,8 @@ impl Player {
             liquid_step: 1.0,
             in_water: false,
             sitting: false,
+            petting: PettingInfo::default(),
+            petting_target_bottom: None,
             sleeping: false,
             sleep_time: 0,
             sleeping_style: 0,
@@ -2721,6 +2932,7 @@ impl Player {
             control_jump: false,
             control_down: false,
             control_up: false,
+            control_torch: false,
             jump: 0,
             jump_held: false,
             spawn_x: sx,
@@ -2910,6 +3122,7 @@ impl Player {
             channel_index_expected: 0,
             // `Player.heldProj = -1` (`Player.cs:1516`'s stock).
             held_proj: -1,
+            afk_counter: 0,
             magic_quiver: false,
             minion_kb: 0.0,
             kb_glove: false,
@@ -2919,6 +3132,14 @@ impl Player {
             sunflower: false,
             rabid: false,
             melee_enchant: 0,
+            // W4-d12 DOC-SWEEP items 3/4 — the melee on-hit proc latches
+            // (`Player.cs:2896`/`:2898`'s bool field defaults).
+            spawn_tentacle_spikes: false,
+            spawn_blood_butcherer: false,
+            spawn_volcano_explosion: false,
+            // W4-d12 DOC-SWEEP item 5 — the card-draw cycle opens at 0
+            // (`Player.cs:3188`'s int field default).
+            killing_card_fire_type: 0,
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
@@ -2976,6 +3197,9 @@ impl Player {
             silence: false,
             dazed: false,
             no_items: false,
+            afk_counter: 0,
+            afk_counter_for_kiting: 0,
+            selected_kite: -1,
             cursed: false,
             empress_brooch: false,
             ignore_water: false,
@@ -3093,6 +3317,9 @@ impl Player {
             self.sit_up();
             return;
         }
+        // `PlayerSittingHelper.SitDown`'s `StopVanityActions` (`:124`,
+        // W4-d21 fold 2): the petting stop joins the sit/sleep strip.
+        self.stop_petting_animal();
         self.grappling_active = false;
         self.x = seat_x - self.width * 0.5;
         self.y = seat_y - self.height;
@@ -3140,10 +3367,9 @@ impl Player {
             self.stop_sleeping();
             return;
         }
-        // `player.StopVanityActions()` (`:172`): SitUp + StopSleeping (+ the
-        // petting stop — not ported).
-        self.sit_up();
-        self.stop_sleeping();
+        // `player.StopVanityActions()` (`:172`): SitUp + StopSleeping +
+        // the petting stop (W4-d21 fold 2 — the shared strip).
+        self.stop_vanity_actions();
         self.grappling_active = false;
         // `RemoveAllFishingBobbers` (`PlayerSleepingHelper.cs:174`) runs at
         // the interaction caller (`world_sim/editing/doors.rs`'s BedSleep arm,
@@ -3172,6 +3398,155 @@ impl Player {
             self.full_rotation_origin = (0.0, 0.0);
             self.sleep_time = 0;
         }
+    }
+
+    /// `Player.StopPettingAnimal` (`Player.cs:33465-33468`, W4-d21 fold 2).
+    pub fn stop_petting_animal(&mut self) {
+        self.petting.is_petting = false;
+    }
+
+    /// `Player.StopVanityActions` (`Player.cs:33458-33463`): the petting
+    /// stop + SitUp + StopSleeping. The `multiplayerBroadcast` argument is
+    /// the MP sync (no port layer).
+    pub fn stop_vanity_actions(&mut self) {
+        self.stop_petting_animal();
+        self.sit_up();
+        self.stop_sleeping();
+    }
+
+    /// `Player.PetAnimal` (`Player.cs:33358-33399`, W4-d21 fold 2) — the
+    /// right-click pet interaction's snap. `target_bottom` is the
+    /// resolved pet's bottom (`TryGetTarget` ran at the caller — the
+    /// projectile lane reads the pool slot; `None` = the mount lane, no
+    /// target entity). Returns whether the petting armed (the caller
+    /// plays the joy cue / re-arms the achievement on success).
+    ///
+    /// The grapple teardown (`RemoveAllGrapplingHooks`, `:33379`) needs
+    /// the pool — the caller runs it BEFORE this call when the snap is
+    /// going to land (the `sleep_down` bobber-teardown precedent: the
+    /// pure player method cannot reach the pool). The mount dismount
+    /// (`:33380-33383`) rides `try_dismount` here.
+    pub fn pet_animal(
+        &mut self,
+        world: &World,
+        info: PettingInfo,
+        target_bottom: Option<(f32, f32)>,
+    ) -> bool {
+        // `:33364-33372` — the snap target: `(target.Bottom +
+        // offsetFromPet).Floor()`; the snap box + the floor tile gate.
+        let mut vector = self.bottom();
+        if let Some((tx, ty)) = target_bottom {
+            vector = (
+                (tx + info.offset_from_pet.0).floor(),
+                (ty + info.offset_from_pet.1).floor(),
+            );
+            let (bx, by) = self.bottom();
+            if !self.can_snap_to(world, vector.0 - bx, vector.1 - by)
+                || !crate::projectile_ai026_c::solid_tile_allow_bottom_slope(
+                    world,
+                    vector.0 as i32 / 16,
+                    vector.1 as i32 / 16,
+                )
+            {
+                return false;
+            }
+        }
+        // `:33373-33377` — a repeat click at the same spot stops.
+        if self.petting.is_petting && self.bottom() == vector {
+            self.stop_petting_animal();
+            return false;
+        }
+        // `:33378-33383` — the vanity strip + the mount dismount. The
+        // grapple teardown ran at the caller (the pool borrow).
+        self.stop_vanity_actions();
+        if !info.mount && self.mount.is_active() {
+            self.try_dismount(world);
+        }
+        // `:33384-33394` — the bottom snap, the facing (the offset's sign,
+        // 0 → keep), the velocity zero, gravDir = 1 (the port is upright-
+        // only), the state arm.
+        self.x = vector.0 - self.width * 0.5;
+        self.y = vector.1 - self.height;
+        let mut num = (0.0f32 - info.offset_from_pet.0).signum() as i32;
+        if num == 0 {
+            num = self.facing;
+        }
+        self.change_dir(world, num);
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.petting = info;
+        self.petting.is_petting = true;
+        // `:33395-33398` — the achievement (HandleSpecialEvent 21) has no
+        // port layer; the caller's cue seam covers the local feedback.
+        true
+    }
+
+    /// `Player.UpdatePettingAnimal` (`Player.cs:33470-33490`, W4-d21
+    /// fold 2) — the per-tick drop: the target lost (`TryGetTarget` false
+    /// at the caller — the slot died / changed type), the player drifted
+    /// > 2 px from the snap spot, or any movement control / pulley /
+    /// mount / facing flip. `target_bottom` is the live pet's bottom
+    /// (`None` = the target is gone → drop). The NPC-lane `talkNPC` gate
+    /// (`:33476`) is the NPC system's follow-up (the projectile lane
+    /// never carries an NPC target).
+    pub fn update_petting_animal(&mut self, target_bottom: Option<(f32, f32)>) {
+        if !self.petting.is_petting {
+            return;
+        }
+        // `:33476-33480` — the target-loss / drift gate.
+        let Some((tx, ty)) = target_bottom else {
+            self.stop_petting_animal();
+            return;
+        };
+        let (bx, by) = self.bottom();
+        let spot = (tx + self.petting.offset_from_pet.0, ty + self.petting.offset_from_pet.1);
+        if ((bx - spot.0).powi(2) + (by - spot.1).powi(2)).sqrt() > 2.0 {
+            self.stop_petting_animal();
+            return;
+        }
+        // `:33481-33489` — the facing the offset demands (the mount lane
+        // keeps the current facing), then the control drop.
+        let mut num = (0.0f32 - self.petting.offset_from_pet.0).signum() as i32;
+        if self.petting.mount {
+            num = self.facing;
+        }
+        if self.control_left
+            || self.control_right
+            || self.control_up
+            || self.control_down
+            || self.control_jump
+            || self.pulley
+            || (self.mount.is_active() && !self.petting.mount)
+            || num != self.facing
+        {
+            self.stop_petting_animal();
+        }
+    }
+
+    /// `Player.ChangeDir` (`Player.cs:42091-42116`, W4-d21 fold 2) — the
+    /// facing flip with the pulley-2 reposition (`:42097-42110`: the
+    /// tile-centred X snap, refused when the snap box is solid; the
+    /// camera shift is the caller's — the port's camera follows the
+    /// player each frame anyway). The composite-arm / itemRotation /
+    /// itemLocation mirrors (`:42112-42115`) ride the ported fields;
+    /// `itemLocation` is unported (the thrust-hitbox seam derives it).
+    pub fn change_dir(&mut self, world: &World, dir: i32) {
+        if dir == self.facing {
+            return;
+        }
+        if self.pulley && self.pulley_dir == 2 {
+            let num = ((self.x + self.width * 0.5) as i32 / 16 * 16 + 8) as f32
+                - self.width * 0.5;
+            if Player::solid_collision(world, num, self.y, self.width, self.height) {
+                return;
+            }
+            self.pulley_dir = 1;
+            self.x = num;
+        }
+        self.facing = dir;
+        self.composite_back.rotation *= -1.0;
+        self.composite_front.rotation *= -1.0;
+        self.item_rotation *= -1.0;
     }
 
     /// `PlayerSleepingHelper.UpdateState` (`PlayerSleepingHelper.cs:85-138`).
@@ -3826,6 +4201,9 @@ impl Player {
         // flag read (M4-PROJ-8 phase 4) despawns the minions.
         self.num_minions = 0;
         self.slots_minions = 0.0;
+        // W4-d12 DOC-SWEEP item 5 — `Player.cs:16992`: the dead tick zeroes
+        // the Killing Deck card-draw cycle.
+        self.killing_card_fire_type = 0;
         // `Player.cs:17020` — `this.chest = -1`: the dead tick force-closes
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
@@ -4167,6 +4545,105 @@ impl Player {
     fn clear_summon_flags(&mut self) {
         for arm in &SUMMON_BUFF_ARMS {
             *(arm.flag)(self) = false;
+        }
+    }
+
+    /// W4-d11 DOC-SWEEP — `Player.NebulaLevelup` (`Player.cs:57030-57059`):
+    /// a nebula pickup (3453 damage / 3454 life / 3455 mana, `Item.cs:31008-
+    /// 31016`'s buffType rows) clears every buff of the same family
+    /// (`type..type+3`), raises the tier (clamp 0..3) and grants
+    /// `type + level - 1` for 480 ticks. `base.whoAmI == Main.myPlayer`
+    /// always holds in the single-player port.
+    pub fn nebula_levelup(&mut self, buff_type: i32) {
+        let time = 480;
+        // `:57037-57043` — the family clear with the `i--` rescan (the
+        // DelBuff compaction shifts the later buffs left).
+        let mut i = 0usize;
+        while i < crate::buffs::MAX_BUFFS {
+            let t = self.buffs.buff_type[i];
+            if t >= buff_type && t < buff_type + 3 {
+                self.buffs.del_buff(i);
+            } else {
+                i += 1;
+            }
+        }
+        // `:57044-57058` — the tier raise + the grant.
+        match buff_type {
+            173 => {
+                self.nebula_level_life = (self.nebula_level_life + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_life - 1, time);
+            }
+            176 => {
+                self.nebula_level_mana = (self.nebula_level_mana + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_mana - 1, time);
+            }
+            179 => {
+                self.nebula_level_damage = (self.nebula_level_damage + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_damage - 1, time);
+            }
+            _ => {}
+        }
+    }
+
+    /// W4-d11 DOC-SWEEP — `Player.UpdateBuffs_NebulaBuffs`
+    /// (`Player.cs:12070-12079`): re-derive the tier from the live buff
+    /// slot (`1 + buffType[b] - baseBuffId`); when the timer hits 2 and
+    /// the tier is above 1, step down (the buff id decrements, the timer
+    /// re-arms to 480). Returns the derived tier.
+    fn update_buffs_nebula(&mut self, base_buff_id: i32, b: usize) -> i32 {
+        let mut level = 1 + self.buffs.buff_type[b] - base_buff_id;
+        if self.buffs.buff_time[b] == 2 && level > 1 {
+            level -= 1;
+            self.buffs.buff_type[b] -= 1;
+            self.buffs.buff_time[b] = 480;
+        }
+        level
+    }
+
+    /// W4-d11 DOC-SWEEP — the three nebula buff arms of `UpdateBuffs`
+    /// (`Player.cs:10444-10461`): the mana family (176-178) re-derives
+    /// `nebulaLevelMana`; the life family (173-175) re-derives
+    /// `nebulaLevelLife` and adds `lifeRegen += 6 * level`; the damage
+    /// family (179-181) re-derives `nebulaLevelDamage` and adds
+    /// `0.15 * level` to all four damage classes. Called per active slot
+    /// in the buff scan (the `active_types` loop's nebula arms).
+    pub fn apply_nebula_buff_arm(&mut self, buff_type: i32) {
+        let Some(b) = self.buffs.buff_type.iter().position(|&t| t == buff_type) else {
+            return;
+        };
+        if (176..=178).contains(&buff_type) {
+            self.nebula_level_mana = self.update_buffs_nebula(176, b);
+        } else if (173..=175).contains(&buff_type) {
+            self.nebula_level_life = self.update_buffs_nebula(173, b);
+            // `:10451` — the lifeRegen add rides the regen input fold
+            // (`update_survival`'s `extra_regen` sum reads the tier).
+        } else if (179..=181).contains(&buff_type) {
+            self.nebula_level_damage = self.update_buffs_nebula(179, b);
+            let num12 = 0.15 * self.nebula_level_damage as f32;
+            self.melee_damage += num12;
+            self.ranged_damage += num12;
+            self.magic_damage += num12;
+            self.minion_damage += num12;
+        }
+    }
+
+    /// W4-d11 DOC-SWEEP — `Player.ApplyNebulaBuffMana`
+    /// (`Player.cs:19565-19585`): the mana tier's 6-count accumulator —
+    /// +level per tick, one mana per 6 (capped at max); the zero-level
+    /// arm zeroes the counter. Called from `update_survival`'s mana-regen
+    /// head (the C# `UpdateManaRegen` calls it first, `:19421`).
+    pub fn apply_nebula_buff_mana(&mut self) {
+        if self.nebula_level_mana > 0 {
+            self.nebula_mana_counter += self.nebula_level_mana;
+            if self.nebula_mana_counter >= 6 {
+                self.nebula_mana_counter -= 6;
+                self.mana += 1;
+                if self.mana >= self.mana_max {
+                    self.mana = self.mana_max;
+                }
+            }
+        } else {
+            self.nebula_mana_counter = 0;
         }
     }
 
@@ -5818,6 +6295,49 @@ impl Player {
             self.control_up = self.control_right;
             self.control_down = flag3;
         }
+        // `Player.cs:25497-25506` — the afk counter (W4-d15 final phase):
+        // standing still (`IsConsideredStandingStill` `:3323-3332`) AND
+        // idle (`itemAnimation == 0` or a kite held, `ItemID.cs:411`) AND
+        // no movement/torch control → +1; anything else zeroes. The C#
+        // block sits after ResetEffects/UpdateDyes and before the
+        // movement pass — the port's controls-landed site reads the same
+        // pre-movement velocity. `item_in_use` rides the input struct
+        // (`PlayerInput.item_in_use` — the world-sim fills it from
+        // `app.swing`, the plain harness from the caller).
+        // `afkCounterForKiting` (`:25500`) stays
+        // unported (the kite machine has no port state — `selectedKite`
+        // folds −1); the `Select` reset (`:515`) rides the hotbar click
+        // seam (`app/clicks.rs`).
+        // W4-d15 RETIRE keep-one (research/249 §4): d16 (`41080e159`)
+        // ports the SAME block as `kites::afk_counter_tick` at a
+        // POST-movement call site — the merge keeps ONE tick HERE (the
+        // C# `:25497` reads the PRE-movement velocity, long before
+        // `HorizontalMovement` `:26688`), folding their kiting-counter
+        // tail (`:25500`/`:25507-25514`) into this site; their
+        // `KITE_ITEMS` literal is byte-identical to `IS_A_KITE`.
+        let afk_still = self.vx.abs() < 0.05 && self.vy.abs() < 0.05;
+        let afk_idle = !input.item_in_use || IS_A_KITE.contains(&self.held_item_kind);
+        if afk_still
+            && afk_idle
+            && !self.control_up
+            && !self.control_down
+            && !self.control_left
+            && !self.control_right
+            && !self.control_jump
+            && !self.control_torch
+        {
+            self.afk_counter += 1;
+        } else {
+            self.afk_counter = 0;
+        }
+        // `Player.UpdatePettingAnimal` (`Player.cs:26124`, W4-d21 fold 2):
+        // the petting drop runs BEFORE the sit/sleep updates. The target
+        // resolution (`TryGetTarget`) needs the pool — the world-sim
+        // caller feeds the resolved bottom through `petting_target_bottom`
+        // (the `frame_inputs` convention); the bare `update` harness keeps
+        // the previous tick's resolution (None drops the petting, the
+        // C#'s dead-slot verdict).
+        self.update_petting_animal(self.petting_target_bottom);
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
         // gates run after the controls land, before the movement applies.
@@ -5911,6 +6431,14 @@ impl Player {
         // writes the statics `Player.jumpHeight = 15` / `jumpSpeed = 5.01f`).
         self.jump_height = 15;
         self.jump_speed = 5.01;
+        // W4-d15 seam — `Player.cs:24376`: `this.heldProj = -1` runs EVERY
+        // player tick in the movement-defaults block, BEFORE ItemCheck
+        // (`:28285`) and the projectile pass (`Main.cs:17775`). The 142
+        // swing arm re-claims it (`Projectile.cs:69822`) through the DD2
+        // write drain each tick it lives; a tick with no live claimant
+        // leaves the stock −1 (the golf helper's `:52490` claim rides the
+        // same reset).
+        self.held_proj = -1;
         // `Player.cs:24380-24437`: the wet/shimmer statics rebase — the C#
         // runs it right after the defaults and BEFORE `UpdateJumpHeight`'s
         // max-lift (`:25656`), so a wet assignment (30/6.01 water) survives
@@ -5967,6 +6495,10 @@ impl Player {
         self.cursed = false;
         // `Player.cs:18455`: `empressBrooch = false`.
         self.empress_brooch = false;
+        // `Player.cs:18432`: `selectedKite = -1` — the UpdateEquips scan
+        // (`RefreshAutoKitingFromItemTypeAndSlot`, `:12843-12849`) re-pins
+        // it per tick (the world-sim's afk worker, W4-d16 residual 8).
+        self.selected_kite = -1;
         self.spiked_boots = 0;
         self.ignore_water = false;
         self.lava_vision = false;
@@ -6102,6 +6634,9 @@ impl Player {
         // re-arm them per tick (S1-P-i52).
         self.mana_magnet = false;
         self.life_magnet = false;
+        // `ResetEffects`' `sporeSac = false` (`Player.cs:18453`, W4-d11):
+        // the Spore Sac accessory row re-arms it per tick (`:14779`).
+        self.spore_sac = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
@@ -6205,6 +6740,21 @@ impl Player {
         // re-derives both per tick.
         self.set_stardust = false;
         self.set_forbidden = false;
+        // W4-d11 DOC-SWEEP — `:18743`'s `setNebula = false` and `:18755`'s
+        // `nebulaLevelDamage = nebulaLevelLife = nebulaLevelMana = 0`: the
+        // set pass re-derives the flag, the buff scan re-derives the tiers.
+        // `nebulaCD`/`nebulaManaCounter` have NO C# reset site — they persist.
+        self.set_nebula = false;
+        self.nebula_level_life = 0;
+        self.nebula_level_mana = 0;
+        self.nebula_level_damage = 0;
+        // W4-d12 — the per-tick `setSolar = false` clear (`Player.cs:25620`,
+        // the `Player.Update` body ahead of `UpdateEquips` — the same
+        // pre-equip position as the C#): the Solar triple's armor-set arm
+        // below re-derives it per tick (the `set_stardust` flag-only
+        // precedent). The `ApplySetBonus_Solar` endurance +0.12 /
+        // solarCounter halves are the shield lane's (deferred, ANALYSIS).
+        self.set_solar = false;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -6445,6 +6995,26 @@ impl Player {
             // are the guardian's own lane (deferred, ANALYSIS).
             (3381, 3382, 3383) => {
                 self.set_stardust = true;
+            }
+            // W4-d11 DOC-SWEEP — the Nebula triple (`ArmorSetBonuses.cs:481`,
+            // `Benefits.Nebula` `:47-54`): the 30-tick proc cooldown
+            // decrements per tick while the set is worn, then `setNebula`
+            // arms the magic on-hit pickup proc (`Projectile.cs:13826`).
+            (2760, 2761, 2762) => {
+                if self.nebula_cd > 0 {
+                    self.nebula_cd -= 1;
+                }
+                self.set_nebula = true;
+            }
+            // W4-d12 — the Solar triple (`ArmorSetBonuses.cs:479`,
+            // `Benefits.Solar` `:37-40` → `ApplySetBonus_Solar`
+            // `Player.cs:16366-16369`): `setSolar` gates the aiStyle-116
+            // SolarFlareRay's keep-alive (`Projectile.cs:34446-34449`).
+            // The flag-only landing (the Stardust precedent); the
+            // endurance +0.12 / solarCounter++ / solarShields halves are
+            // the shield lane's (deferred, ANALYSIS).
+            (2763, 2764, 2765) => {
+                self.set_solar = true;
             }
             _ => {}
         }
@@ -6781,6 +7351,12 @@ impl Player {
                     self.lava_vision = true;
                     self.fire_walk = true;
                 }
+                // W4-d11 DOC-SWEEP — the nebula pickup-buff families
+                // (`Player.cs:10444-10461`): the tier re-derivation + the
+                // life-regen / four-class damage adds. The mana family's
+                // restore rides `apply_nebula_buff_mana` in the mana-regen
+                // head (the C# `UpdateManaRegen` call, `:19421`).
+                173..=181 => self.apply_nebula_buff_arm(bt),
                 _ => {}
             }
         }
@@ -8078,6 +8654,32 @@ impl Player {
         // `ItemTimeIsZero` (no swing); the use arms when `itemAnimation > 0`.
         self.composite_front = CompositeArmState::DISABLED;
         self.composite_back = CompositeArmState::DISABLED;
+        // W4-d21 fold 2 — `ItemCheck_ApplyHoldStyle`'s petting arm
+        // (`Player.cs:50243-50270`): the back arm reaches toward the pet —
+        // ThreeQuarters/Full on the 14-tick miscCounter cadence, rotation
+        // `-2PI * 0.3 * dir` (0.2 for the small pets). The Chillemt-mount
+        // arm (`:50245-50254`, 0.36) is the mount lane's follow-up. The
+        // C# runs it inside ApplyHoldStyle — the NO-SWING branch only
+        // (`AnimatePlayerAndGetItemFrame` `:43378-43385`), BEFORE the
+        // CanVisuallyHoldItem gate (`:50271`): the petting pose lands even
+        // when the held item hides.
+        if self.petting.is_petting && !held.swing_active {
+            let num2 = self.misc_counter % 14 / 7;
+            let stretch2 = if num2 == 1 {
+                CompositeStretch::Full
+            } else {
+                CompositeStretch::ThreeQuarters
+            };
+            let mut num3 = 0.3f32;
+            if self.petting.is_pet_small {
+                num3 = 0.2;
+            }
+            self.composite_back = CompositeArmState {
+                enabled: true,
+                stretch: stretch2,
+                rotation: std::f32::consts::PI * -2.0 * num3 * self.facing as f32,
+            };
+        }
         if held.swing_active {
             self.apply_item_composite_arms(&held);
         } else {
@@ -11205,6 +11807,10 @@ impl Player {
         // defaults until those systems land (`regen.rs`); the hp gate stands in
         // for the original's dead-player check (M2-DEATH).
         if self.hp > 0 {
+            // W4-d11 DOC-SWEEP — `Player.UpdateManaRegen`'s head calls
+            // `ApplyNebulaBuffMana` first (`Player.cs:19421`): the mana
+            // tier's 6-count restore runs before the regen machine.
+            self.apply_nebula_buff_mana();
             let in_ = RegenInputs {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
@@ -11221,7 +11827,10 @@ impl Player {
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting || self.sleeping,
-                extra_regen: self.accessory_life_regen,
+                // W4-d11 DOC-SWEEP — the nebula life tier's `lifeRegen +=
+                // 6 * level` (`Player.cs:10451`) rides the same input slot
+                // as the accessory regen adds.
+                extra_regen: self.accessory_life_regen + 6 * self.nebula_level_life,
                 // S1-C-12 wave D — the Crimson set's regen halves
                 // (`ArmorSetBonuses.cs:248-251` grants the flag):
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
@@ -11969,6 +12578,105 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 
 mod tests {
+    /// W4-d15 final phase — the afk counter (`Player.cs:25497-25506`).
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d15_the_afk_counter_climbs_idle_and_zeroes_on_activity() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Settle on the ground first (the fall keeps |vy| >= 0.05).
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground);
+        p.afk_counter = 0;
+        // Idle + still + no controls: +1 per tick.
+        for i in 1..=3 {
+            p.update(&w, PlayerInput::default());
+            assert_eq!(p.afk_counter, i, "tick {i}");
+        }
+        // A run key zeroes (`:25504`).
+        let mut input = PlayerInput::default();
+        input.right = true;
+        p.update(&w, input);
+        assert_eq!(p.afk_counter, 0, "controlRight zeroes");
+        // The torch key zeroes too (`controlTorch`, `:25497`) — the
+        // run tick's velocity is cleared first so the torch term is
+        // the ONLY zeroing cause.
+        p.vx = 0.0;
+        p.afk_counter = 5;
+        p.control_torch = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.afk_counter, 0, "controlTorch zeroes");
+        p.control_torch = false;
+        // Movement zeroes even with no keys (`IsConsideredStandingStill`).
+        p.afk_counter = 5;
+        p.vx = 1.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.afk_counter, 0, "|vx| >= 0.05 zeroes");
+        p.vx = 0.0;
+        // A swing zeroes (`itemAnimation != 0`) — unless a kite is held.
+        p.afk_counter = 5;
+        let mut swing = PlayerInput::default();
+        swing.item_in_use = true;
+        p.update(&w, swing);
+        assert_eq!(p.afk_counter, 0, "the swing zeroes");
+        p.held_item_kind = 4367; // a kite (`ItemID.cs:411`)
+        p.afk_counter = 5;
+        p.update(&w, swing);
+        assert_eq!(p.afk_counter, 6, "the kite keeps the climb");
+    }
+
+    /// W4-d15 RETIRE — the d16 afk keep-one pins (research/249 §4). Both
+    /// lanes ported `Player.cs:25497-25506`; the merge keeps ONE tick
+    /// site at the C# position (PRE-movement — `:25497` runs long before
+    /// `HorizontalMovement` `:26688`). This witness pins OUR side of the
+    /// keep-one table: the pre-movement read (a run key's first tick
+    /// still climbs on the zero pre-move velocity — a post-movement site
+    /// would zero it), the 24-id kite set's identity with d16's
+    /// `KITE_ITEMS` literal, and the two lanes' disjoint constants.
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d15_the_d16_afk_keep_one_pins() {
+        // The pre-movement position: settle, then push vx with NO keys.
+        // 0.04 is under the still-gate — the climb happens. The
+        // discriminating vector is the 0.05 BOUNDARY: the C# gate reads
+        // the PRE-move velocity, and `0.05 < 0.05` is false → ZERO; a
+        // post-movement site would read the friction-decayed value
+        // (< 0.05) and wrongly climb. (A run key zeroes at both sites —
+        // the control term — so the keyless push is the position probe.)
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground);
+        p.afk_counter = 0;
+        p.vx = 0.04; // under the 0.05 still-gate, PRE-movement
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.afk_counter, 1, "0.04 pre-move climbs");
+        p.vx = 0.05; // exactly ON the strict gate — pre-move ZEROES
+        p.update(&w, PlayerInput::default());
+        assert_eq!(
+            p.afk_counter, 0,
+            "the gate reads the PRE-movement velocity (0.05 is NOT < 0.05)"
+        );
+        // The 24-id kite set — byte-identical to d16's KITE_ITEMS
+        // (`kites.rs:44`, verified against their tip 41080e159).
+        assert_eq!(
+            IS_A_KITE,
+            [
+                4367, 4368, 4369, 4370, 4371, 4379, 4610, 4611, 4612, 4613, 4648, 4649,
+                4650, 4651, 4669, 4670, 4671, 4674, 4675, 4676, 4677, 4681, 4683, 4684,
+            ],
+            "the keep-one set: one definition at the merge"
+        );
+        // The constants are DISJOINT across the lanes (all three kept).
+        assert_eq!(AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS, 10800, ":57103");
+        assert_eq!(AFK_TIME_NEEDED_FOR_NO_WORM_SPAWNS, 300, ":57102");
+        // d16's AFK_TIME_NEEDED_FOR_AUTO_KITING is 3600 (:57104) — theirs.
+    }
+
     #[test]
     fn dye_cache_mirrors_update_dyes() {
         let mut p = Player::spawn(&World::new("t".into(), 64, 800));
@@ -21745,5 +22453,136 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    /// W4-d12 — the Solar triple's flag grant + the per-tick reset
+    /// (`ArmorSetBonuses.cs:479`, `ApplySetBonus_Solar` `Player.cs:16369`,
+    /// the `Player.Update` clear `:25620`): the 2763/2764/2765 triple arms
+    /// `setSolar`; taking the armor off clears it on the next tick (the
+    /// `set_stardust` flag-only precedent).
+    #[test]
+    fn w4_d12_the_solar_flag_grants_and_resets() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2763;
+        p.equipped[1] = 2764;
+        p.equipped[2] = 2765;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_solar, "the Solar triple (ArmorSetBonuses.cs:479)");
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_solar, "the per-tick clear (:25620)");
+    }
+
+    // ---- W4-d21 fold 2: the petting machine (WRITTEN NOT RUN) -------------
+
+    /// `Player.PetAnimal` (`Player.cs:33358-33399`): the snap lands the
+    /// player's bottom at `(pet.Bottom + offset).Floor()`, faces the pet
+    /// (the offset's sign inverted), zeroes the velocity and arms the
+    /// record. The digtoise (1098) offset is −48 when the pet is right of
+    /// the player (`GetPettingInfo` `Projectile.cs:38846-38849`).
+    #[test]
+    fn w4_d21_pet_animal_snaps_and_faces_the_pet() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Stand on the surface (top row 60 → bottom 960).
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        p.facing = -1;
+        p.vx = 3.0;
+        p.vy = 1.0;
+        // The pet's bottom at (400, 960): right of the player → num = 1,
+        // offset (−48, 0), snap bottom (352, 960).
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        assert!(p.petting.is_petting);
+        assert_eq!(p.petting.proj, 7);
+        assert_eq!(p.petting.kind, 1098);
+        assert!(p.petting.is_pet_small);
+        assert_eq!(p.bottom(), (352.0, 960.0), "the floor snap (:33367)");
+        assert_eq!(p.facing, 1, "Math.Sign(0 - (-48)) = +1 (:33385)");
+        assert_eq!((p.vx, p.vy), (0.0, 0.0), "(:33391)");
+    }
+
+    /// `Player.PetAnimal`'s repeat-click toggle (`Player.cs:33373-33377`):
+    /// petting the same spot again stops; a DIFFERENT spot re-snaps.
+    #[test]
+    fn w4_d21_pet_animal_repeat_click_toggles() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        // The same bottom → the toggle-off (returns false, petting clears).
+        assert!(!p.pet_animal(&w, info, Some((400.0, 960.0))));
+        assert!(!p.petting.is_petting);
+        // A new spot re-arms.
+        assert!(p.pet_animal(&w, info, Some((500.0, 960.0))));
+        assert!(p.petting.is_petting);
+        assert_eq!(p.bottom(), (452.0, 960.0));
+    }
+
+    /// `Player.PetAnimal`'s refusal (`Player.cs:33368-33371`): a snap spot
+    /// whose floor tile is not solid refuses (the `SolidTileAllowBottomSlope`
+    /// gate) — the player does not move.
+    #[test]
+    fn w4_d21_pet_animal_refuses_a_non_solid_floor() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let before = p.bottom();
+        // The pet floats mid-air: the snap floor (row 30) is empty.
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(!p.pet_animal(&w, info, Some((400.0, 480.0))));
+        assert!(!p.petting.is_petting);
+        assert_eq!(p.bottom(), before, "the refusal leaves the player put");
+    }
+
+    /// `Player.UpdatePettingAnimal` (`Player.cs:33470-33490`): the target
+    /// loss (None) and the >2 px drift both drop the petting; a control
+    /// press drops it too.
+    #[test]
+    fn w4_d21_update_petting_animal_drops_on_loss_drift_and_controls() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        // The live target at the snap spot keeps it.
+        p.update_petting_animal(Some((400.0, 960.0)));
+        assert!(p.petting.is_petting);
+        // A 3 px drift (> 2) drops it (:33476).
+        p.update_petting_animal(Some((403.0, 960.0)));
+        assert!(!p.petting.is_petting);
+        // Re-arm, then the target loss drops it.
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        p.update_petting_animal(None);
+        assert!(!p.petting.is_petting);
+        // Re-arm, then a movement control drops it (:33486).
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        p.control_right = true;
+        p.update_petting_animal(Some((400.0, 960.0)));
+        assert!(!p.petting.is_petting);
+    }
+
+    /// `Player.UpdatePettingAnimal`'s facing gate (`Player.cs:33481-33489`):
+    /// the offset demands facing +1 (the pet is right); a flip to −1 drops.
+    #[test]
+    fn w4_d21_update_petting_animal_drops_on_facing_flip() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        assert_eq!(p.facing, 1);
+        p.facing = -1;
+        p.update_petting_animal(Some((400.0, 960.0)));
+        assert!(!p.petting.is_petting, "num != direction drops (:33486)");
     }
 }

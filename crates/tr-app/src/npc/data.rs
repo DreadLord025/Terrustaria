@@ -3514,6 +3514,9 @@ impl NpcKind {
             | NpcKind::ServantOfCthulhu
             | NpcKind::Bee
             | NpcKind::BeeSmall => true,
+            // W4-d11 DOC-SWEEP — the BloodSquid's noGravity row
+            // (`NPC.cs:16945`).
+            NpcKind::BloodSquid => true,
             // The Creeper (267, `NPC.cs:12466`), the Probe (139, `:10731`),
             // the Martian Drone (388, `:13948`), the Drippler (490,
             // `:14620`), the Poltergeist (330, `:13190`), the Dungeon
@@ -3791,6 +3794,9 @@ impl NpcKind {
             // The Queen Bee's volley bees — `NPC.cs:11700`/`:11713`
             // (the type-210/211 branch of AI_005, `:50384-50413`).
             NpcKind::Bee | NpcKind::BeeSmall => 5,
+            // The BloodSquid — `NPC.cs:16939` (W4-d11 DOC-SWEEP; AI_005's
+            // 619 branches, `:50254-50292`/`:50323-50327`/`:50485-50488`).
+            NpcKind::BloodSquid => 5,
             // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :10441 (the leech tail, W-A2-3), :15010, :15269, :15287, :15305
             NpcKind::SolarCrawltipedeHead | NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail |
             NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |

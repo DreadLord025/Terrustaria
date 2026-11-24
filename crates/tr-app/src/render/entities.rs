@@ -1762,6 +1762,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     39, 40, 41, 47, 48, // phase 2
     56, 57, 61, 62, 63, // phase 3
     67, 68, // phase 4 (merge-side: 64/69/70 dropped, g8-owned — 367 §1)
+    619, // the Blood Squid (W4-d11 DOC-SWEEP)
 ];
 
 /// W4-d37 — the NPCID 211-280 band's own sheets (the vanilla's
@@ -4592,6 +4593,13 @@ pub(crate) fn draw_npcs(
             }
             // E8 merge: the c10 12-critter draw tail dropped - d40's group arm
             // above owns them (the identical texture_net_id shape).
+            // W4-d11 DOC-SWEEP — the BloodSquid draws its own sheet
+            // (`SMALL_KIND_SHEETS`' 619 row) at the 6-frame strip
+            // (`Main.npcFrameCount[619]` = 6) with the generic centred
+            // anchor — the small-kinds shape.
+            NpcKind::BloodSquid => {
+                pumpkin_moon_draw(assets.npc_sheet(619), npc_rows(619), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
