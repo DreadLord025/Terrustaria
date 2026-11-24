@@ -534,6 +534,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_55",
         "NPC_58",
         "NPC_65",
+        // W4-e21 — the bunny statue's pair: the 7-row NPC_46/NPC_540 strips
+        // (`Main.npcFrameCount[46/540]` = 7, `Main.cs:67088`/`:67138`).
+        "NPC_46",
+        "NPC_540",
         "NPC_7",
         "NPC_17",
         "NPC_20",
@@ -2576,6 +2580,7 @@ pub const pub const BESTIARY_NPC_SHEET_IDS: [u16; 342] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 216] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 186] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2637,6 +2642,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 186] = [
         // Appended last for the same reason. d42 batch-2/3's rows,
         // constants-copy (keep-one d37c-E3).
         583, 584, 585,
+        // W4-e21 — the bunny statue's pair (46/540), appended last so the
+        // earlier slots keep their indexes.
+        46, 540,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -3654,6 +3662,10 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_583").copied(),
                 atlas.sheet("NPC_584").copied(),
                 atlas.sheet("NPC_585").copied(),
+                // W4-e21 — the bunny statue's pair: the 7-row NPC_46/NPC_540
+                // strips (the bestiary portraits' own sheets).
+                atlas.sheet("NPC_46").copied(),
+                atlas.sheet("NPC_540").copied(),
             ],
 
 

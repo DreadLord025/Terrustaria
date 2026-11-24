@@ -289,6 +289,12 @@ pub struct Wiring {
     /// `HitWireSingle`'s case-455 party-toggle requests
     /// (`BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:202-217`).
     party_toggles: u32,
+    /// `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`) mirrored in by
+    /// the app layer before the wiring step — the statue style-9 arm reads
+    /// it at the `HitWireSingle` site (`Wiring.cs:2304-2307`: the party
+    /// bunny 540 replaces the plain bunny 46 while the party is up). The
+    /// `WorldEvents` book stays app-side; this is the read-only snapshot.
+    party_is_up: bool,
     /// The switch-click positions from `HitSwitch`'s seven
     /// `SoundEngine.PlaySound(28, ...)` sites (`Wiring.cs:267`/`:272`/
     /// `:285`/`:310`/`:323`/`:339`/`:375`, S1-E-21i) in world pixels, queued
@@ -807,6 +813,14 @@ impl Wiring {
         std::mem::take(&mut self.party_toggles)
     }
 
+    /// Mirrors `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`) in for
+    /// the next flood — the app layer owns the `WorldEvents` book and feeds
+    /// the snapshot before the wiring step; the statue style-9 arm reads it
+    /// at the C#'s `HitWireSingle` site (`Wiring.cs:2304-2307`).
+    pub fn set_party_is_up(&mut self, up: bool) {
+        self.party_is_up = up;
+    }
+
     /// The trap family (`HitWireSingle`'s case 137, `Wiring.cs:1760-1993`):
     /// `frameY / 18` selects the trap — 0 dart trap (98 PoisonDart, 20 dmg,
     /// speed 12), 1 super dart trap (184 PoisonDartTrap, 40, 12), 2 flame
@@ -1102,10 +1116,14 @@ impl Wiring {
             8 => {
                 self.statue_spawn_npc(num137, num136, anchor_x, anchor_y - 12, 55, NO_CAPS);
             }
-            // `:2303-2307`: 540 while `BirthdayParty.PartyIsUp` — the port has no
-            // party state, so the plain bunny always drops (ANALYSIS note).
+            // `:2301-2313`: `int type3 = 46; if (BirthdayParty.PartyIsUp)
+            // type3 = 540;` — the pick happens BEFORE `CheckMech`/`MechSpawn`
+            // (`:2308`), so the party bunny's cap rides the request id (the
+            // bunny group {46, 540, 303, 337}, `NPC.cs:7443-7449`). The
+            // party state is the app's mirror (`set_party_is_up`).
             9 => {
-                self.statue_spawn_npc(num137, num136, anchor_x, anchor_y - 12, 46, NO_CAPS);
+                let type3 = if self.party_is_up { 540 } else { 46 };
+                self.statue_spawn_npc(num137, num136, anchor_x, anchor_y - 12, type3, NO_CAPS);
             }
             10 => {
                 self.statue_spawn_npc(num137, num136, anchor_x, anchor_y, 21, NO_CAPS);
@@ -1844,10 +1862,12 @@ impl Wiring {
     /// `SquareTileFrame` wake).
     fn xfer_water(&mut self, world: &mut World) {
         for &(inx, iny) in &self.in_pumps {
-            if !world.tile_active(inx, iny) {
-                continue;
-            }
-            if world.tile(inx, iny).is_some_and(|t| t.liquid == 0) {
+            // `:481-485`: the C# reads the in tile's liquid directly — no
+            // `active()` gate. The 142/143 arm registers all four body
+            // corners (`:2053-2089`), so a liquid-bearing corner that is not
+            // active still pushes its liquid (the port used to skip
+            // inactive cells here).
+            if world.tile(inx, iny).is_none_or(|t| t.liquid == 0) {
                 continue;
             }
             let in_type = world
@@ -2551,15 +2571,18 @@ impl Wiring {
             // `BirthdayParty.cs:202-217`): the flag flip rides the request —
             // the app layer owns the `WorldEvents` book.
             455 => self.party_toggles = self.party_toggles.saturating_add(1),
-            // The water fountain's stone block pair (546/557, `:2546-2552`):
-            // the type swap + the wake.
+            // The grate pair (546 open / 557 closed, `:2541-2550`): the type
+            // swap + the `SquareTileFrame` wake — the wake's object-cascade
+            // drops queue like the actuation cascade's (`Wiring.cs:2543`/`:2548`).
             546 => {
                 world.swap_tile_kind(i, j, 557);
-                let _ = crate::edit::square_tile_frame_default(world, i, j);
+                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                self.actuation_drops.extend(drops);
             }
             557 => {
                 world.swap_tile_kind(i, j, 546);
-                let _ = crate::edit::square_tile_frame_default(world, i, j);
+                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                self.actuation_drops.extend(drops);
             }
             // The weighted pressure-plate's big frame shift (506, `:2503-
             // 2531`): the 2×3 anchor from `frameY / 18 % 3`, the active+same-
@@ -2871,20 +2894,25 @@ impl Wiring {
                 if !t.active() {
                     continue;
                 }
-                let step: i32 = match t.kind {
-                    410 => 56,
-                    _ => 54,
-                };
+                // The C# flips ONLY the nine monolith kinds (`:51037-51134`):
+                // 410 ±56, the 480/509/657/720/721/725/733 row ±54, 658's
+                // +54-wrap-162. A non-monolith cell inside the rect is left
+                // untouched (there is no final `else` in the C# chain).
                 let f = world.tile_frame_y(x, y);
-                if t.kind == 658 {
-                    // `frameY += 54; if (frameY >= 162) frameY -= 162;`
-                    // (`:51073-51080`).
-                    let f = f + 54;
-                    world.set_tile_frame_y(x, y, if f >= 162 { f - 162 } else { f });
-                } else if f < step {
-                    world.set_tile_frame_y(x, y, f + step);
-                } else {
-                    world.set_tile_frame_y(x, y, f - step);
+                match t.kind {
+                    410 => {
+                        world.set_tile_frame_y(x, y, if f < 56 { f + 56 } else { f - 56 });
+                    }
+                    480 | 509 | 657 | 720 | 721 | 725 | 733 => {
+                        world.set_tile_frame_y(x, y, if f < 54 { f + 54 } else { f - 54 });
+                    }
+                    658 => {
+                        // `frameY += 54; if (frameY >= 162) frameY -= 162;`
+                        // (`:51081-51090`).
+                        let f = f + 54;
+                        world.set_tile_frame_y(x, y, if f >= 162 { f - 162 } else { f });
+                    }
+                    _ => {}
                 }
             }
         }
@@ -3912,6 +3940,32 @@ mod teleport_tests {
         assert_eq!(w.tile(10, 10).unwrap().liquid, 0, "the in tile emptied");
     }
 
+    #[test]
+    fn the_pump_moves_liquid_from_an_inactive_body_corner() {
+        // `Wiring.XferWater` (`Wiring.cs:477-522`): the in-tile loop reads
+        // `Main.tile[num, num2].liquid` directly (`:481`) — there is NO
+        // `active()` gate. The 142 arm registers all four body corners
+        // (`:2053-2089`), so a corner that carries liquid but is not active
+        // still pushes it (the port used to skip inactive cells here). The
+        // hit cell (10,10) is active with no liquid; the top-right body
+        // corner (10,9) holds 150 water and is inactive — it must transfer.
+        let mut w = world();
+        put_pump(&mut w, 10, 10, 142, 0, false);
+        put_pump(&mut w, 20, 10, 143, 0, false);
+        let corner = w.index(10, 9);
+        w.tiles[corner].liquid = 150;
+        w.tiles[corner].flags &= !FLAG_ACTIVE; // a liquid-bearing inactive corner
+        put_device(&mut w, 9, 10, 135, 0, 0);
+        w.wires.set(9, 10, WireColor::Red, true);
+        for x in 10..=20 {
+            w.wires.set(x, 10, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 10, 1, 1);
+        assert_eq!(w.tile(19, 10).unwrap().liquid, 150, "the inactive corner moved its water");
+        assert_eq!(w.tile(10, 9).unwrap().liquid, 0, "the corner emptied");
+    }
+
     fn the_pump_registration_caps_at_19() {
         let mut w = world();
         // 24 pump tiles on one wire line: the queues cap at 19 per pass.
@@ -4083,6 +4137,62 @@ mod statue_tests {
                 npc_id: 2,
                 cap_ids: &[],
             }]
+        );
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_statue_picks_540_while_the_party_is_up() {
+        // The Bunny statue = style 9 (the second table's `case 9`,
+        // `Wiring.cs:2301-2313`): `int type3 = 46; if (BirthdayParty.PartyIsUp)
+        // type3 = 540;` — the pick happens BEFORE `CheckMech(30)`/`MechSpawn`,
+        // so the request id (and therefore the bunny-group cap) follows the
+        // party state at the `HitWireSingle` site. The app mirrors
+        // `PartyIsUp` in through `set_party_is_up` before the step.
+        let mut w = world_with_statue(9, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert_eq!(
+            wiring.take_statue_spawns(),
+            vec![StatueSpawn::Npc {
+                x: ANCHOR_X,
+                y: ANCHOR_Y - 12,
+                npc_id: 46,
+                cap_ids: &[],
+            }],
+            "no party → the plain bunny 46"
+        );
+        // The party comes up: the next trip (past the 30-tick cooldown) picks
+        // 540 at the same verbatim anchor.
+        wiring.set_party_is_up(true);
+        for _ in 0..30 {
+            wiring.update(&mut w);
+        }
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert_eq!(
+            wiring.take_statue_spawns(),
+            vec![StatueSpawn::Npc {
+                x: ANCHOR_X,
+                y: ANCHOR_Y - 12,
+                npc_id: 540,
+                cap_ids: &[],
+            }],
+            "party up → the party bunny 540"
+        );
+        // The party goes down: the pick returns to 46.
+        wiring.set_party_is_up(false);
+        for _ in 0..30 {
+            wiring.update(&mut w);
+        }
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert_eq!(
+            wiring.take_statue_spawns(),
+            vec![StatueSpawn::Npc {
+                x: ANCHOR_X,
+                y: ANCHOR_Y - 12,
+                npc_id: 46,
+                cap_ids: &[],
+            }],
+            "party down → the plain bunny 46 again"
         );
     }
 
@@ -5915,6 +6025,89 @@ mod s1_l6_tests {
         assert_eq!(w.tile_frame_y(10, 20), 54);
         wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert_eq!(w.tile_frame_y(10, 20), 0);
+    }
+
+    #[test]
+    fn the_monolith_leaves_non_monolith_cells_untouched() {
+        // `WorldGen.SwitchMonolith` (`WorldGen.cs:51037-51134`): the frameY
+        // flip runs ONLY for the nine monolith kinds — the C# if/else-if
+        // chain has no final `else`, so any other active tile inside the
+        // sprite rect keeps its frame (the port used to flip every cell).
+        let mut w = wired_device(10, 20, 480, 0, 0);
+        // The 2×3 body: the anchor column stays 480; a stone block (1) sits
+        // in the body's right column — it must NOT flip.
+        for row in 0..3i32 {
+            put(&mut w, 10, 20 + row, 480, 0, (row * 18) as i16);
+            put(&mut w, 11, 20 + row, 1, 0, 7);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        for row in 0..3i32 {
+            // Each body cell flips by its own frame: row offset + 54.
+            assert_eq!(w.tile_frame_y(10, 20 + row), 54 + row * 18, "the monolith flipped");
+            assert_eq!(w.tile_frame_y(11, 20 + row), 7, "the stone kept its frame");
+        }
+    }
+
+    #[test]
+    fn the_monolith_variants_flip_by_their_own_steps() {
+        // `WorldGen.SwitchMonolith`: 410 flips ±56 (`:51037-51047`), the
+        // 658 wraps +54 mod 162 (`:51081-51090`), the rest ±54. The 733
+        // Moon-Lord monolith is 3×3 (`:51008-51011`).
+        // 410: 0 → 56 → 0.
+        let mut w = wired_device(10, 20, 410, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_y(10, 20), 56, "the 410 step is 56");
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_y(10, 20), 0);
+        // 658: 0 → 54 → 108 → 0 (the third trip wraps 162 → 0).
+        let mut w = wired_device(10, 20, 658, 0, 0);
+        let mut wiring = Wiring::new();
+        for expected in [54, 108, 0] {
+            wiring.trip_wire(&mut w, 8, 20, 1, 1);
+            assert_eq!(w.tile_frame_y(10, 20), expected, "the 658 wrap");
+        }
+        // 733: the 3-wide body flips all three columns ±54.
+        let mut w = wired_device(10, 20, 733, 0, 0);
+        for col in 0..3i32 {
+            for row in 0..3i32 {
+                put(&mut w, 10 + col, 20 + row, 733, (col * 18) as i16, (row * 18) as i16);
+            }
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        for col in 0..3i32 {
+            for row in 0..3i32 {
+                assert_eq!(
+                    w.tile_frame_y(10 + col, 20 + row),
+                    54 + row * 18,
+                    "the 733 3×3 flip"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_grate_pair_swaps_types_and_queues_the_wake_drops() {
+        // `Wiring.cs:2541-2550`: 546 (Grate) ↔ 557 (GrateClosed) swap types
+        // and run `SquareTileFrame` — the wake's object-cascade drops queue
+        // like the actuation cascade's (the port used to discard them).
+        let mut w = wired_device(10, 20, 546, 0, 0);
+        // A work bench (18) at (10,19)/(11,19): its left support (10,20) is
+        // the solid grate, but the right support (11,20) is empty — the
+        // bench is already unsupported, so the wake's `Check2x1` kills it
+        // and its drop must queue (not be discarded).
+        put(&mut w, 10, 19, 18, 0, 0);
+        put(&mut w, 11, 19, 18, 18, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 557, "the grate closed");
+        let drops = wiring.take_actuation_drops();
+        assert!(drops.iter().any(|d| d.tile_kind == 18), "the unsupported bench drop queued");
+        // The reverse trip reopens the grate.
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 546, "the grate reopened");
     }
 
     #[test]

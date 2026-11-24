@@ -2042,6 +2042,9 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     39, 40, 41, 47, 48, // phase 2
     56, 57, 61, 62, 63, // phase 3
     67, 68, // phase 4 (merge-side: 64/69/70 dropped, g8-owned — 367 §1)
+    // W4-e21 — the bunny statue's pair: the 7-row NPC_46/NPC_540 strips.
+    46,  // the Bunny
+    540, // the Party Bunny
 ];
 
 /// W4-d37 — the NPCID 211-280 band's own sheets (the vanilla's
@@ -5265,6 +5268,14 @@ pub(crate) fn draw_npcs(
                 // `position5 = Top - screenPos`, origin (fw/2, 0): the
                 // quad's top-left sits at (Top.X - fw/2, Top.Y).
                 (tex, fh, [fw, fh], [n.x + w * 0.5 - fw * 0.5, n.y])
+            }
+            // W4-e21 — the bunny pair draws its own sheet (the
+            // `SMALL_KIND_SHEETS` rows 46/540) at `SetFrameSize`'s row height
+            // over `Main.npcFrameCount[46/540]` = 7 with the generic centred
+            // anchor — the small-kinds' shape.
+            NpcKind::Bunny | NpcKind::PartyBunny => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
         };
         let Some(tex) = tex else {

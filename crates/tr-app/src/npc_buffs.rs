@@ -975,6 +975,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::FairyCritterGreen
         | NpcKind::FairyCritterBlue => &[],
         NpcKind::WindyBalloon => &[31],
+        // W4-e21 — the bunny pair (46/540) has NO `DebuffImmunitySets` row
+        // (`NPCID.cs:6075+`'s dictionary carries no 46/540 keys) — the C#
+        // else-branch's no-immunity (`NPC.cs:17826-17832`).
+        NpcKind::Bunny | NpcKind::PartyBunny => &[],
     }
 }
 
