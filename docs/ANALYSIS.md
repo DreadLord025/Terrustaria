@@ -34251,12 +34251,14 @@ P-split and the ai001 slice A/B landings); per-fix verdicts:
    bouncing (M4-PROJ follow-up). (b) The row shape carries neither
    `friendly` nor `hostile`; the trap spawn sites set the flags (the
    wiring drain spawns via `spawn_device_kind`), same convention as the
-   dart rows. The spear trap's spear (186) is really 10x14 **aiStyle 37**
-   (`:2728-2740`, tileCollide false, ignoreWater, timeLeft 300); aiStyle
-   37 (`AI()` `:27472`) has no ported dispatch arm, so the 186 row keeps
-   the old shared stand-in values (14x14/14/900) — correcting it to 37
-   would park the spear in `_ => {}` forever. The aiStyle-37 port is the
-   follow-up; the stand-in is pinned by the family test.
+   dart rows. **The spear trap's spear (186) stand-in is RETIRED (W4-d4,
+   the f19 F3 fix, commit `0f92565b`):** the faithful 10x14 **aiStyle 37**
+   row (`:2728-2740`, tileCollide false, ignoreWater, timeLeft 300) landed
+   WITH the `ai_trap_spear` arm (`:27472-27499`) — arm+row together, exactly
+   as this note's follow-up prescribed (correcting the row before the arm
+   existed would have parked the spear in `_ => {}`). The stale "boulder
+   186" comments at `projectile.rs:301-306` are fixed (the boulder is kind
+   99 / aiStyle 25, d3's family). The family test now pins the 37 row.
 2. **The duplicate unreachable `MUSKET_BALL` arm — VERIFIED DEAD,
    REMOVED.** The real row (`:950-961`: 4x4, aiStyle 1, penetrate 1,
    light 0.5, alpha 255, scale 1.2, timeLeft 600, extraUpdates 1) sits at
@@ -46973,3 +46975,258 @@ witnesses appended to `projectile.rs`'s tests tail (the band-arm scan,
 the landed-roster pin, the 261-unrowed activation pin) — WRITTEN NOT
 RUN, no cargo/tests/rustfmt/graphify invoked.
 
+## The projectile aiStyles 31-40 port (W4-d4, 2026-11-21, code-only mode)
+
+Branch `task/W4-d4-proj-ai-31-40` (worktree TR-W4-d4). **CODE-ONLY mode**:
+file reads/writes + git only — no cargo/rustc/rustfmt/tests/graphify invoked.
+The census (`docs/research/26d-projectile-ai-31-40-census.md`) found 5 of the
+10 styles armed (31/33/34/36/40) and 5 MISSING (32/35/37/38/39); this task
+ported all five verbatim, one style per commit. The f19 F3 finding (the
+style-37 row was the recorded 185 stand-in) is resolved: the arm AND the row
+landed together.
+
+| style | kind(s) | C# arm | Rust arm | commit |
+| --- | --- | --- | --- | --- |
+| 32 | 155 BeachBall | `Projectile.cs:26887-27048` | `projectile.rs::beach_ball_step` (pool-side) | `d9324e5f` |
+| 35 | 171/475/505/506 rope coils | `:27189-27291` | `projectile.rs::ai_rope_coil` | `548a9190` |
+| 37 | 186 SpearTrap | `:27472-27499` | `projectile.rs::ai_trap_spear` | `0f92565b` |
+| 38 | 187 FlamethrowerTrap | `:27500-27512` | `projectile.rs::ai_flame_jet` | `a336f4aa` |
+| 39 | 190 MechanicalPiranha | `:27513-27779` | `projectile.rs::piranha_step` (pool-side) | `5771c1f0` |
+
+**Deliberate deviations / skips (the standing conventions):**
+
+- **Dust/gore bodies, `Lighting.AddLight`, `NetMessage.SendData`** — skipped
+  whole (no draw/MP layer in the slot arms); the `netUpdate` flag IS set where
+  the C# sets it (the net task's relay reads it). The beach-ball chat's
+  `NetworkText` localization folds to `lang::text_args("Game.BallBounceResult")`.
+- **Beach ball (32)** — a POOL-side step (the `dragon_step` shape): the
+  ai[0]>=20 bounce machine scans the player, the NPC vec AND the 1000-slot
+  array. The single-player stand-in maps the 255-player scan to the one local
+  player (the C# gate is `active`, not `!dead`). The projectile scan snapshots
+  the other slots' (direction, velocity, box) before the mutable slot borrow
+  (the `whoAmI` skip makes the snapshot byte-identical — the golf club-helper
+  precedent). The >10-bounce `Game.BallBounceResult` chat rides
+  `pending_ball_chats`, drained to the chat monitor at the pass tail. The wet
+  flags ride the bobber's faithful `probe_wet` (widened `pub(crate)`) at the
+  tick head — the one-tick-lag convention (ANALYSIS "Fishing rod (S1-P-i35)").
+  The movement is `HandleMovement`'s type-155 arm (`:18603-18618`, the x-0.6
+  axis bounces) + SlopeCollision + the wet-exit Y halve (`:16920-16923`).
+- **Rope coils (35)** — the placement walk writes tiles, so the arm reborrows
+  `world` mutably (the `ai_ice_block` carve-out). `WorldGen.IsRope` folds to
+  `render::ropes::is_rope` (the verbatim `WorldGen.cs:70081-70104` port);
+  `PlaceTile`/`KillTile` ride `tr_core::edit`. The 314/platform toggle, the
+  tileCut/165 clear and the 10-cell budget are verbatim. The `direction` spin
+  reads the velocity-sign stand-in (`AutomaticallyChangesDirection` true for 35).
+- **Spear trap (37)** — the f19 F3 fix: the faithful 10x14/37/300 row +
+  `ignoreWater` overlay landed WITH the arm; the 185 stand-in and the stale
+  "boulder 186" comments are retired (the S1-D-5 note above is updated). The
+  arm owns its integration (tileCollide false, `:2734`); `SolidCollision`
+  folds to the port's `solid_collision` helper.
+- **Flame jet (38)** — the row is NEITHER friendly nor hostile in the C#
+  (`:2741-2751`); the spawn site holds friendly false and the damage walks
+  refuse the kind (the dungeon-debris precedent — `damage_pve`'s per-kind
+  gate + the `damage_player` exemption). The 6-tick cycle's Item34 cue rides
+  `wants_sound`, the owner-gated 188 child rides `wants_dart_spawns` (the
+  spawn site subtracts the 6x6 half-box — `NewProjectile` centres, `:10876`).
+  aiStyle 38 is on `UpdatePosition`'s skip list (`:20435`) — NO integrate.
+  The wiring drain's old 187 drop is lifted; `spawn_device_kind` now returns
+  the slot so the site can flip the jet's friendly flag.
+- **Mechanical Piranha (39)** — a POOL-side step: the 190 sibling separation
+  push (`:27626-27647`) scans the slot array (snapshot before the borrow).
+  The player writes split by field ownership: `ChangeDir` (`Player.cs
+  :42091-42116`, the new `Player::change_dir` — facing + the two composite-arm
+  rotations + itemRotation negate; the pulley snap and the itemLocation mirror
+  are documented skips, no pulley state / no itemLocation field) and the
+  `AI_AdjustPlayerItemRotationToFaceProjectile` item-rotation face
+  (`:22518-22543`, gated on `HeldItem.shoot == 190` via the flail-inputs
+  `selected_shoot` seam) go straight through the arm's `&mut Player`;
+  `SetDummyItemTime(5)` writes the App-level item timers, so it rides
+  `pending_piranha_dummy`, drained to one `swing/item_time = 5/60` at the pass
+  tail (the golf `PlayerWrites` precedent). The C#'s double facing-write in
+  the return state (`:27730-27749`) is a source quirk — the first block is
+  dead (overwritten); the port keeps the single effective write. The piranha's
+  death never cancels the channel (`DontCancelChannelOnKill = {190}`,
+  `ProjectileID.cs:524` — the port's `try_cancel_channel` already exempts it).
+
+**Verification.** Code-only: every arm re-read against the cited C# lines;
+the witness tests (the beach-ball flight/bounce/zero-kill, the rope-coil
+rows/fall/placement/owner-gate, the spear reverse/anchor-kill/straight-flight,
+the flame-jet cycle/owner-gate, the piranha row/fade/owner-kill/release) are
+WRITTEN, NOT RUN — **no compiler invoked**. The stand-in-era spear witnesses
+(`the_spear_dies_on_the_tile_scan`, `the_spear_gains_gravity_after_5_ticks`,
+the 900/14x14 row pins) are re-derived to the 37 semantics. Follow-ups
+recorded: the beach-ball chat's MP broadcast (single-player prints locally),
+the piranha's itemLocation mirror (no field), the rope-coil placement's
+`NetMessage.SendData(17)` pairs (MP relay).
+
+### DOC-SWEEP round (2026-11-21, same branch, code-only)
+
+The proj 31-40 residuals sweep (Lane 27), five items:
+
+1. **Rope-coil dup vs W4-g82 (`de797f45`)** — the arm-by-arm keep-one
+   comparison + union recommendation: `docs/research/26e-rope-coil-keep-one.md`.
+   d4's wired `ai_rope_coil` keeps the machine; g82's chain preview / Kill
+   refund ladder / usability walk / framing arm are the keep-extras. The one
+   behavioural gap: the coil `Kill()` refund (`Projectile.cs:77572-77615`)
+   is unported here — g82's `coil_death_drop` is the ladder to wire.
+2. **BeachBall item use** — item **859** (`ItemID.cs:3401`; 3060 is Bone
+   Rattle), shoot 155, no channel, no per-item `ItemCheck_Shoot` arm — the
+   generic non-ammo throw tail already serves it (witness added).
+3. **Piranha Gun item use** — item **1156** (`ItemID.cs:3995`; 3061 is
+   Architect Gizmo Pack), channel/shoot 190. PORTED: the `ItemCheck_Shoot`
+   trio arm (`Player.cs:48365-48381`, `3−num` recount + `Next(-40,41)*0.05`
+   spread) in `fire_non_ammo_shot`, and the channel-refill `flag4` override
+   (`:43545-43558`, `num<3` forces the shot independent of the
+   animation/ItemTimeIsZero gate — the `SetDummyItemTime(5)` hold keeps the
+   generic volley shut) as a dedicated block in `update_editing`.
+4. **188 flame child** — the row EXISTS and is faithful; PORTED the missing
+   `Damage_CanDealDamage` term (`type==188 && localAI[0]<5`, `:12448`) into
+   `damage_pve`/`damage_pve_boxed`/`damage_player` — the launch ramp the
+   `ai_eye_fire` counter feeds now refuses damage.
+5. **ChangeDir folds** — both stand (census in `26d`): the pulley snap's only
+   C# writers are the unported rope-climb machine (`:19690-19746`), so the
+   arm is unreachable (dead code if ported now); `itemLocation` is
+   draw-recomputed from `facing`, so the mirror folds into the flip. The
+   `change_dir` doc cites the census; a witness pins the flip + negates.
+
+All new witnesses WRITTEN, NOT RUN (code-only). The item-use ports (3) and
+the flame damage gate (4) are the behavioural changes; 1/2/5 are census/doc.
+
+### The rope-coil lane extras (W4-d4 union, 2026-11-21, code-only)
+
+The g82-extras union per `docs/research/26e-rope-coil-keep-one.md` — d4's
+`ai_rope_coil` + rows + wind-list stay the single aiStyle-35 machine; the
+g82 pieces d4 never claimed land in `crates/tr-app/src/projectile_rope_coil.rs`
+(ported from g82's `67c9a740`, minus the four duplicate fns).
+
+**The refund ladder — WIRED (the one behavioural gap 26e found).**
+`coil_death_drop` (`Projectile.cs:77572-77615`): ai[1]==0 → one coil item
+(985/3005/3079/3080); 0<ai[1]<10 → `10−ai[1]` rope items (965/2996/3077/3078);
+ai[1]>=10 → nothing. The pool's once-per-death hook (`projectile.rs`, beside
+the bobber arm) queues `(item, stack, base.Center)` into the new
+`pending_death_drops`; `world_sim/projectiles.rs` drains it at the pass tail
+as an `Item.NewItem` WORLD drop (NOT a `drain_catches` inventory hand-off —
+the C# `RequestNewItem` spawns a world item, the player picks it up through
+the ordinary magnet). The beach ball's return (`:77620-77623`, 859×1) rides
+the same queue — but its call passes `Vector2.Zero` (`:77622`), so the
+`velocity.HasValue` arm (`Item.cs:49738-49741`) sets (0,0) and draws
+NOTHING; only the coil ladder (no velocity argument) draws the scatter
+pair. The queue carries the flag (`zero_velocity`, the SEAL-VERIFY fix —
+the earlier drain drew the pair for the ball too, a misread of `:77622`;
+the 861 arm `:77626` shows the same explicit-Zero pattern). Both arms sit
+behind `!died_out_of_world`: the C#
+out-of-world guard (`:16696`) deactivates WITHOUT `Kill()`, so those deaths
+never refund. **RETIRE fix (`954824d0`, 26e FINAL-FINAL):** the ladder AND
+the ball return sit INSIDE `Kill_ExplodeTiles`, behind its `:77267` owner
+refusal (`owner != Main.myPlayer` returns BEFORE any type arm) AND the
+`:77367` `!noDropItem` head — a foreign coil/ball death or a noDropItem
+death refunds NOTHING. The earlier "NO owner gate" reading confused the
+`ReserveForLocalPlayer` grab reservation with a spawn gate; the g82
+`coil_kill` shape is confirmed against the source re-read. The ai[1]==0
+Dig cue (`:74617-74620`/`:74681-74684`) is WIRED at the same hook, UNGATED
+by owner/noDropItem (it sits in `Kill()`'s dust chain ahead of
+`active=false`): the int overload's LEGACY id 0 = Dig (NOT Item1 — the g82
+`3258189cb` correction), queued `(0,0,trunc pos)` into `pending_proj_sounds`
+and drained through the existing `play_place_sound` id-0 facade ahead of
+the refund (the C# cue-before-refund order).
+
+Deviations (recorded):
+* **Stream**: the C# draws the COIL `Item.NewItem` velocity pair inline
+  mid-`Kill()` under the `UpdateProjectiles` swap (`Item.cs:49749-49750`:
+  X = `Next(-30,31)*0.1`, Y = `Next(-40,-15)*0.1`; `prefix: 0` draws nothing;
+  none of the kinds is `ItemNoGravity`, `ItemID.cs:1320`; the ball's
+  explicit `Vector2.Zero` draws nothing at all — see above); the port defers
+  the spawn to the pass tail's `UpdateItems` stream — the bobber overflow's
+  recorded stream deviation, extended to world drops.
+* **Ownership**: `ReserveForLocalPlayer` in netMode 0 sets only
+  `enemyGrabDelayTime` (`Item.cs:49757-49760`, `WorldItem.cs:295-305`) — the
+  port's enemy-grab clock is unported, so the refund is player-grabbable
+  immediately (the lucky-coin precedent, `world_sim/editing.rs`).
+* **Drop box**: the port's universal 14×14 `ItemDrop` centred on the death
+  centre stands in for the per-texture `WorldItem` box (the bug-net catch
+  deviation).
+* **Death-centre timing**: the pool's death hook reads the slot AFTER the
+  sub-step's dead-tick integrate (the C# `Kill()` captures `base.Center`
+  mid-AI, before `UpdatePosition`); the refund centre therefore carries the
+  dead tick's move (the beach ball's +0.1 dry-gravity Y, witness-pinned) —
+  the pool-wide hook timing deviation, same seam as every other Kill arm.
+
+**The chain placement preview — geometry landed, EMIT deferred (g82b).**
+`is_coil`/`coil_chain_sheets`/`coil_chain_segments`/`draw_coil_chain`
+(`Main.cs:28499-28669`, the three per-kind bodies term-identical bar the
+sheet pick): the 17-tick count ramp `(int)(30*min(ai[0]/17,1))`, the 30-tick
+sag ramp `0.4*min(ai[0]/30,1)` accumulating per link, the 5.6-px normalize
+with the manhattan-<1 shrink quirk (`num52 *= |dx|+|dy|/1f`) incl. the kept
+0/0 NaN pin (when −velocity cancels the sag the C# divides 0/0 and every
+later link is NaN — the port keeps it, witness-pinned), `atan2(dy,dx)−1.57`
+rotation, REVERSE draw order (far end first), the sheet alternation counting
+the DRAW index (Chain16 / Chain38+39 / Chains_4+5 / Chains_6+7). The coil
+items have NO `createTile` (`Item.cs:12697-12711`/`:27730-27743`/
+`:28530-28558`), so this chain IS the placement preview.
+
+**The g82b wiring contract** (the emit half is `#[allow(dead_code)]` until
+then): `projectile.rs::draw_with_hand` must call `draw_coil_chain` gated on
+`is_coil(kind)` INSTEAD of the generic sprite light tint — each link carries
+its own `Lighting.GetColor((int)x/16, (int)(y/16f))` at the LINK's position,
+scale 0.8, origin half-sheet, `snap_to_screen_pub` for the pixel snap; the
+`Chain16`/`Chain38`/`Chain39`/`Chains_4..7` sheets join the `assets.rs`
+static list (the `FishingLine` precedent, `assets.rs:709`) and `sheet_uv`
+resolves them by name. The dust walks sharing the geometry
+(`Projectile.cs:74615-74731`) skip with the dust layer; the `ai[1]==0` sound
+cue (`:74617-74620`/`:74681-74684`, the legacy id 0 = Dig) is WIRED at the
+death hook (the retire fix `954824d0`, above) — NOT Item1, NOT deferred to
+the draw wiring.
+
+Witnesses WRITTEN NOT RUN: the ladder (11 rows + the is_coil gate), the
+reverse-order walk + ramps, the draw-index sheet parity, the NaN pin
+(module); the placement-kill/expiry/full-budget queue arms + the ball return
+(`projectile.rs`); the retire gates/cue witness
+(`w4_d4_retire_the_refund_gates_and_the_dig_cue`: local cue+refund, foreign
+cue-without-refund, noDropItem silence, foreign ball no-return); the drain's
+world-drop shape + the two-draw `UpdateItems` contract with every other
+stream pristine (the coil) and the ball's zero-velocity draw-free drain
+with EVERY stream pristine (`world_sim/projectiles.rs`).
+
+**The usability walk — WIRED (union item 2).** `check_rope_usability`
+(`world_sim/editing.rs`, ported verbatim from g82's `67c9a740`): the
+rope-on-rope down-column walk — through ropes / track 314 / platforms /
+planters 380, at most 5 consecutive non-rope cells (reset by every rope),
+the chain 214's lava exemption, the header-bit lava test on the cell BELOW
+(`Tile.lava()` = `(bTileHeader & 0x60) == 32`, NO liquid-amount term — a
+lava-flagged liquid-0 cell still gates, witness-pinned), the target moves
+only onto a free/cut/breakable landing cell. Wired at the `use_tile_item`
+head (`Player.cs:39726` — the C# runs it BEFORE the `:39727` tile re-read
+and the `:39743` lava gate, so the port's retarget precedes both).
+Deviation: `WorldGen.IsTileLoaded` (`:41530-41537`) is always true in the
+port's single-player world — the SendData(159) request arm and its
+`return false` skip with it, so `can_use` passes through unchanged.
+Witnesses: the column descent + the non-rope gates, the 6-platform cap +
+both lava arms + the bit-only pin, the 965 Rope item-use extension through
+the app route (one item consumed, the clicked column stands).
+
+**Item-row verifies (union items 4/5, census — no code change needed).**
+* **859 Beach Ball / 1156 Piranha Gun** (`itemdata.rs:1025`/`:1322` vs
+  `Item.cs:11439-11450`/`:14213-14230`): both rows EXIST and are faithful —
+  859 shoot 155 / shootSpeed 6 / useStyle 1 / 20-20 / consumable / value 20
+  / 44×44 / UseSound Item1 (SOUND_STYLES index 126); 1156 shoot 190 /
+  shootSpeed 14 / channel / useStyle 5 / 30-30 / damage 40 / kb 1 / scale
+  1.1 / rare 8 / sellPrice(0,20) = 1 000 000 / 30×10 / UseSound Item10
+  (index 135). The generator check ran green
+  (`python tools/GenItemData/gen.py --check` → `check ok (6196 rows,
+  5977098 bytes)`), so no regen/port was needed; a row-pin witness landed
+  (`w4_d4_verify_the_beach_ball_and_piranha_gun_item_rows`).
+  `noUseGraphic`/`noMelee` are the generator's documented not-provisioned
+  flags (`gen.py:410`) — observationally inert for shoot-carrying
+  useStyle-1/5 items (the port's melee lane never swings them).
+* **190 Mechanical Piranha projectile row** (`projectile/data.rs:621` +
+  `:2352-2363` vs `Projectile.cs:2779-2790`): EXISTS on this branch
+  (landed with the aiStyle-39 machine, `5771c1f0`) and is faithful —
+  22×22 / aiStyle 39 / penetrate −1 / stock timeLeft 3600 / stock
+  tileCollide true / the local-immunity pair (true, 14) / alpha 255 /
+  scale 1; `friendly = true` rides the slot default (`Projectile.cs:2784`
+  sets it, the port's spawn default carries it); `ranged` rides the
+  overlay (`data.rs:4377-4379`, `:2787`); `proj_frames(190) = 4`
+  (`Main.cs:8592`). The dispatch `39 => piranha_step` is live
+  (`projectile.rs`), and the existing witness
+  `the_piranha_row_and_alpha_fade` already pins every field + the −50
+  fade — no new witness needed.
