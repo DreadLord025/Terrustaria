@@ -1273,8 +1273,8 @@ fn replace_tile_apply(
                         // The genRand stand-in: one global throw seeds the
                         // FastRandom (the break_drop_events convention).
                         let seed = app.rngs.global().next() as u64;
-                        let mut gen = tr_core::tile_light::FastRandom::new(seed);
-                        if gen.next(max) == 0 {
+                        let mut fossil_rng = tr_core::tile_light::FastRandom::new(seed);
+                        if fossil_rng.next(max) == 0 {
                             crate::world_sim::editing::replicated_break(app, k, l, true, true);
                             if let Some(server) = server {
                                 // `SendData(17, -1, -1, null, 0, k, l)`
