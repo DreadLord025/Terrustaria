@@ -817,6 +817,8 @@ mod tests {
         let (_, a) = wf.update(4.0, 1.24);
         let (_, b) = wf.update(4.0, -1.24);
         assert_eq!((a, b), (2, 4), "0.5 frames/s regardless of wind");
+    }
+
     /// W4-f6 WIRING — the bubble-cell pass: `build_with_bubbles` returns the
     /// SAME draw records as `build` (the extra pass only reads the cache),
     /// and collects the visible-lava cells of the FULL padded rectangle.

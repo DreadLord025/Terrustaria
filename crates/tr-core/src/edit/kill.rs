@@ -1,5 +1,3 @@
-{{(
-// balance-open (union shared delimiter)
 //! The KillTile destruction cascade (S1-K-4 round 3): `WorldGen.KillTile` /
 //! `SquareTileFrame` and the per-object `Check*` routines, the `CanKillTile`
 //! break refusals and the `KillTile_PlaySounds` cue table. Moved verbatim from
@@ -50,6 +48,8 @@ pub struct ObjectDrop {
 pub struct BulbSummonEvent {
     pub x: i32,
     pub y: i32,
+}
+
 impl ObjectDrop {
     /// The `Item.NewItem` spawn CENTRE in pixels — the rect top-left
     /// `(x*16, y*16)` plus half the rect (`Item.cs:49649-49651`). The rect is
@@ -1841,6 +1841,7 @@ fn check_bowl(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     }
     if !broken {
         return None;
+    }
     let item = match style {
         1 => 2235,
         2 => 2242,
@@ -1860,6 +1861,9 @@ fn check_bowl(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        bulb_summon: None,
+        sound: None,
+        cues: Vec::new(),
     })
 }
 
@@ -3578,9 +3582,7 @@ fn check_jungle_plant(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Ch
         pile_event: None,
         ring: None,
         bulb_summon: None,
-
-        })
-        }        sound: None,
+        sound: None,
         cues: Vec::new(),
     })
 }
@@ -4381,6 +4383,7 @@ mod tests {
             let d = ObjectDrop { tile_kind: kind, x: 10, y: 18, item: None };
             assert_eq!(d.spawn_center_px(), (168.0, 296.0), "kind {kind}");
         }
+    }
     // W4-g83: the cascade signatures now thread the ACTIVE genRand stream
     // (`square_tile_frame`'s `CheckUnderwaterPlant` tip re-rolls). The cascade
     // witnesses below pin drops/frames, not streams — each drives a fresh
@@ -6823,9 +6826,50 @@ mod tests {
     fn w4_c14_the_check_tail_sounds_ride_the_kill_record() {
         use crate::worldgen::evil::add_shadow_orb;
         let orb_world = |crimson: bool| {
-
-        }
-        }    /// W4-g24 — `Check2x1`'s piggy Shatter tail (`WorldGen.cs:47235`): the
+            let mut w = World::new("t".into(), 200, 200);
+            for x in 0..200 {
+                for y in 0..200 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = crate::tile::Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+                }
+            }
+            w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+            w.frame_important[31] = true;
+            w.frame_important[12] = true;
+            w.frame_important[639] = true;
+            add_shadow_orb(&mut w, 100, 100, crimson);
+            w
+        };
+        // The Shadow Orb: Shatter 13 at the checked cell - the cascade's
+        // 3x3 walk around the hit (99,99) frames the orb's (100,100) cell.
+        let mut w = orb_world(false);
+        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
+        assert_eq!(kill.check_sounds, vec![(13, 1, 100, 100)]);
+        // The Crimson Heart: the killed sound 4 style 1.
+        let mut w = orb_world(true);
+        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
+        assert_eq!(kill.check_sounds, vec![(4, 1, 100, 100)]);
+        // The piggy bank: the hit on the right cell (11,20) frames the
+        // left (10,20) first - the check's tail plays Shatter 13 there
+        // (`:47235` - the C# `i`, not the pair anchor `num`).
+        let mut w = soil_world(2);
+        set_object_cell(&mut w, 10, 21, 14, 0, 0);
+        set_object_cell(&mut w, 11, 21, 14, 18, 0);
+        set_object_cell(&mut w, 12, 21, 14, 36, 0);
+        set_object_cell(&mut w, 10, 20, 29, 0, 0);
+        set_object_cell(&mut w, 11, 20, 29, 18, 0);
+        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        assert!(
+            kill.check_sounds.contains(&(13, 1, 10, 20)),
+            "the piggy's own Shatter tail: {:?}",
+            kill.check_sounds
+        );
+    }
+    /// W4-g24 — `Check2x1`'s piggy Shatter tail (`WorldGen.cs:47235`): the
     /// cue rides the check record at the cell whose `TileFrame` ran the
     /// check — the SURVIVING pair cell (the C# clears the hit cell to
     /// type 0 before `SquareTileFrame`, so the check fires on the
@@ -6877,6 +6921,7 @@ mod tests {
             .filter(|d| d.tile_kind == 29)
             .count();
         assert_eq!(piggy_drops, 2, "one drop per pair");
+    }
     /// W4-g24 — `Check2x1`'s case-103 bowl arm (`WorldGen.cs:47011-47023`,
     /// the drop `:47239-47255`): the pair survives on a table (the plain
     /// `Main.tileTable` test OR the Table anchor — platforms pass, unlike
@@ -6916,6 +6961,8 @@ mod tests {
         assert!(
             w.tile(10, 20).unwrap().active(),
             "the platform's Table anchor carries the bowls"
+        );
+    }
     /// W4-g24 — `CheckOrb`'s tail (`WorldGen.cs:54335-54342`): the crimson
     /// heart plays the killed cue 4 (style 1), the shadow orb the Shatter
     /// 13 — both at the TRIGGER cell, outside the netMode/generatingWorld
@@ -7023,8 +7070,6 @@ mod tests {
         assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
     }
 
-// balance-close (union shared delimiter)
-}}})
     // ---- W4-g34: the Check6x3 cage break-drop cascade (research/204 §2) ----
 
     /// A placed 6x3 cage over the stone floor: origin (8, 17), cells
@@ -7555,6 +7600,7 @@ mod tests {
         // 48x32: +24/+16.
         assert_eq!(at(391, 10, 18), (184.0, 304.0), "the worm cage");
         assert_eq!(at(705, 10, 18), (184.0, 304.0), "the oasis echo");
+    }
     // ---- W4-g83 wire phase 2: the vine/seaweed checks ride the dispatch ----
 
     /// W4-g83 wiring witness (contract §2): `square_tile_frame`'s dispatch
@@ -7627,6 +7673,7 @@ mod tests {
         assert_eq!(w.tile(60, 59).unwrap().frame_x, above_fx, "the above cell's tip");
         assert_eq!(w.tile(60, 60).unwrap().frame_x, centre_fx, "the centre's tip");
         assert_eq!(rng, twin, "the dispatch consumed EXACTLY the caller stream's prefix");
+    }
     /// W4-g85 — the drop-switch census fix (`WorldGen.cs:54226-54333`):
     /// tile 12 is the Heart/Life Crystal object (drops 29, NO roll, NO
     /// flags), 639 the Mana Crystal (109), 696 the replica (5469 orb /

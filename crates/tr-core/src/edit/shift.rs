@@ -31,10 +31,6 @@ use super::{ensure_frame_important, kill_tile, touch, validate_tile_square, Obje
 /// one copy; no current caller passes inc 0, the guard keeps a future one
 /// from dividing by zero).
 pub(crate) fn top_left_and_styles(
-/// `WorldGen.GetTopLeftAndStyles` (`WorldGen.cs:51777-51790`): the sprite's
-/// style pair plus the in-place anchor adjustment. `GetTileSafely` reads a
-/// default tile out of bounds (frames 0).
-fn get_top_left_and_styles(
     world: &World,
     x: &mut i32,
     y: &mut i32,
@@ -46,7 +42,6 @@ fn get_top_left_and_styles(
     let t = world.tile(*x, *y).copied().unwrap_or_default();
     let (fx, fy) = (i32::from(t.frame_x), i32::from(t.frame_y));
     let result = (fx / (w * frame_x_inc.max(1)), fy / (h * frame_y_inc.max(1)));
-    let result = (fx / (w * frame_x_inc), fy / (h * frame_y_inc));
     if frame_x_inc != 0 {
         *x -= fx / frame_x_inc % w;
     }
@@ -108,7 +103,6 @@ pub fn shift_trapdoor(
     if start_kind == 386 && only_close_or_open != 1 {
         // :51450 — the open branch gates on `onlyCloseOrOpen != 1`.
         let (style_x, style_y) = top_left_and_styles(world, &mut x, &mut y, 2, 2, 18, 18);
-        let (style_x, style_y) = get_top_left_and_styles(world, &mut x, &mut y, 2, 2, 18, 18);
         if style_x == 0 {
             // :51453-51494 — the top-row variant opens DOWNWARD.
             if !validate_tile_square(world, x, y, 2, 2, 386, drops) {
@@ -185,7 +179,6 @@ pub fn shift_trapdoor(
     if start_kind == 387 && only_close_or_open != 0 {
         // :51534 — the close branch gates on `onlyCloseOrOpen != 0`.
         let _ = top_left_and_styles(world, &mut x, &mut y, 2, 1, 18, 18);
-        let _ = get_top_left_and_styles(world, &mut x, &mut y, 2, 1, 18, 18);
         // :51537-51542 — either open cell the kill rules refuse blocks the
         // close. The caller injects `WorldGen.CanKillTile` — the wiring
         // arms pass the flood's anchored-tile slice (`Wiring::can_kill_tile`,

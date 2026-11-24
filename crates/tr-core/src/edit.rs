@@ -9,9 +9,10 @@ use crate::unified_random::UnifiedRandom;
 use crate::world::World;
 
 mod place;
-pub use place::{place_alch, place_item_tile, place_tile, place_tile_forced, place_torch};
-pub use place::{place_alch, place_chest, place_item_tile, place_tile, place_torch};
-pub use place::{place_alch, place_chest, place_item_tile, place_object, place_tile, place_torch};
+pub use place::{
+    place_alch, place_chest, place_item_tile, place_object, place_tile, place_tile_forced,
+    place_torch,
+};
 mod wall;
 // S1-P-i33 — the wall-edit table (drop conversions, the FULL Main.wallHouse,
 // the smash gate, the unsafe→safe replacement). `can_player_smash_wall` lives
@@ -31,38 +32,29 @@ pub use hammer::{
 mod paint;
 pub use paint::{paint_coat_tile, paint_coat_wall, paint_tile, paint_wall};
 mod replace;
+// W4-g48 — the net-17 kind-21 `WorldGen.ReplaceTile` family
+// (`WorldGen.cs:62558-62780`), the smart-cursor block swap. Two API shapes
+// coexist: the split prepare/commit pair (net-17 relay) and land-P's
+// one-call `replace_tile_write` (block_swap.rs).
 pub use replace::{
-    is_tile_replaceable, move_replace_anchor, replace_tile_write, would_tile_replacement_work,
-    Replaced,
+    is_tile_replaceable, move_replace_anchor, replace_tile, replace_tile_commit,
+    replace_tile_prepare, replace_tile_write, would_tile_replacement_work, Replaced,
+    ReplaceOutcome,
 };
 mod kill;
 pub use kill::{
-    actuation_square_frame, can_kill_tile, kill_tile, kill_tile_sound, pot_break_sound,
-    square_tile_frame_default, BulbSummonEvent, HerbEvent, KillSounds, ObjectDrop,
+    actuation_square_frame, can_kill_tile, check_alch, check_lily_pad, kill_tile,
+    kill_tile_sound, pot_break_sound, solid_tile, square_tile_frame_default,
+    square_tile_frame_record, BulbSummonEvent, HerbEvent, KillSounds, ObjectDrop,
     PileLootEvent, PotEvent, SoundCue, TileKill, TreeDropEvent,
-    actuation_square_frame, can_kill_tile, check_alch, check_lily_pad, kill_tile, kill_tile_sound,
-    pot_break_sound, square_tile_frame_default, square_tile_frame_record, HerbEvent, KillSounds,
-    ObjectDrop, PileLootEvent, PotEvent, SoundCue, TileKill, TreeDropEvent,
 };
 mod shift;
 // W4-c42 batch 2 — the wired trapdoor/tall-gate shifts (`WorldGen.cs:51447-
 // 51596`/`:51723-51775`), the `HitWireSingle` arms `Wiring.cs:1440-1460` call.
 pub use shift::{shift_tall_gate, shift_trapdoor};
 pub(crate) use kill::{
-    remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope,
-    solid_tile_allow_left_slope, solid_tile_allow_right_slope, solid_tile_allow_top_slope,
-    square_tile_frame_gen,
-};
-mod replace;
-// W4-g48 — the net-17 kind-21 `WorldGen.ReplaceTile` family
-// (`WorldGen.cs:62558-62775`), the smart-cursor block swap.
-pub use replace::{
-    is_tile_replaceable, replace_tile, replace_tile_commit, replace_tile_prepare,
-    would_tile_replacement_work, ReplaceOutcome,
-};
-pub use kill::solid_tile;
-pub(crate) use kill::{
-    remove_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,
+    remove_tile, solid_tile2, solid_tile_allow_bottom_slope, solid_tile_allow_left_slope,
+    solid_tile_allow_right_slope, solid_tile_allow_top_slope, square_tile_frame_gen,
 };
 
 /// `WallID.UnbreakableBlockWall` / `WallID.Count - 1` region used by the dungeon

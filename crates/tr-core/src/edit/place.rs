@@ -1461,6 +1461,8 @@ mod tests {
         w.seeds.insert(SeedFlags::TENTH_ANNIVERSARY);
         assert!(place_tile_forced(&mut w, 10, 19, 59));
         assert_eq!(w.tile(10, 19).unwrap().paint(), 0);
+    }
+
     /// W4-g78 DOC-SWEEP lane 4 — the Echo Monolith (tile 657, item 5345)
     /// placement route. `Item.cs:42406-42414` `DefaultToPlaceableTile(657, 0)`
     /// + `TileObjectData.addTile(657)` (`TileObjectData.cs:2907-2912`,

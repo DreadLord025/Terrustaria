@@ -1,31 +1,18 @@
-//! W4-g48 (net-17 kind 21) — `WorldGen.ReplaceTile` and its helper family
-//! (`WorldGen.cs:62558-62775`): the smart-cursor block swap the
-//! `17 TileManipulation` reader's kind 21 runs (`MessageBuffer.cs:1264`).
-//! The former cited skip (`liquid.rs:709`) is closed.
+//! The block-swap tile replacement — `WorldGen.ReplaceTile`
+//! (`WorldGen.cs:62558-62780`) and its helper family. Two public API shapes
+//! coexist: the split `replace_tile_prepare`/`replace_tile_commit` (net-17
+//! relay, `net_apply::replace_tile_apply`) and the one-call
+//! `replace_tile_write` (`world_sim/editing/block_swap.rs`).
 //!
-//! Seams left open (documented at the sites): the dust burst
-//! (`KillTile_GetTileDustAmount`/`MakeTileDust`) is the app's visual lane;
-//! `KillTile_PlaySounds` rides `kill_tile_sound` app-side; the
-//! `KillTile_DropItems(includeLargeObjectDrops: true)` resolution and the
-//! `AttemptFossilShattering` genRand chain + its 17 relays ride the caller
-//! (`net_apply::replace_tile_apply`); the rigged-chest `HitSwitch` +
-//! `SendData(59)` are app-side (`netglue::is_rigged` + `wiring.hit_switch`).
+//! The kill-effects (dust/sound/drops/fossil shatter) are app-side; the core
+//! records the anchor + the old cell so the caller runs them in C# order.
 
 use crate::framing;
-//! The block-swap tile replacement — `WorldGen.ReplaceTile`
-//! (`WorldGen.cs:62558-62580`) + its validity helpers
-//! (`IsTileReplaceable` :62328-62375, `WouldTileReplacementWork`
-//! :62705-62737, `MoveReplaceTileAnchor` :62686-62703) + the replacement
-//! writes (`ReplaceTile_DoActualReplacement` :62582-62684). The
-//! kill-effects (dust/sound/drops/fossil shatter) are app-side
-//! (`world_sim/editing/block_swap.rs`); the core records the anchor + the
-//! old cell so the caller can run them in the C# order.
-
 use crate::tile::Tile;
 use crate::tiledata as td;
 use crate::world::World;
 
-use super::{can_pound_tile, ensure_frame_important, kill_tile, touch, ObjectDrop, WALL_UNBREAKABLE};
+use super::{can_pound_tile, ensure_frame_important, kill_tile, touch, ObjectDrop, TileKill, WALL_UNBREAKABLE};
 
 /// `WorldGen.ReplaceTile(x, y, targetType, targetStyle)`
 /// (`WorldGen.cs:62558-62580`): the two gates, the anchor move, then the
@@ -34,26 +21,26 @@ use super::{can_pound_tile, ensure_frame_important, kill_tile, touch, ObjectDrop
 /// is the app's `collision::tile_dust_amount`); `sounds_kind`/`frame_x`
 /// carry the ORIGINAL cell for `KillTile_PlaySounds`; `drops` collects the
 /// `EliminateNaturalExtras` kills' cascade records (the C# `KillTile`s
-/// there drop through `Item.NewItem` — the app resolves them); `fossil`
+/// there drop through `Item.NewItem` тАФ the app resolves them); `fossil`
 /// latches the 404 pre-clear cell so the caller can run
 /// `AttemptFossilShattering` BEFORE the replacement (the C# order,
 /// `:62577`). The rigged-chest probe (`:62586-62590`) rides the returned
-/// anchor — the app checks `IsChestRigged` and fires the wiring + 59.
+/// anchor тАФ the app checks `IsChestRigged` and fires the wiring + 59.
 /// Returns `None` when a gate refused.
 pub struct ReplaceOutcome {
     /// The moved top-left anchor (`MoveReplaceTileAnchor`).
     pub x: i32,
     pub y: i32,
-    /// The ORIGINAL cell (the C# `tileSafely` reference — kind/frames for
+    /// The ORIGINAL cell (the C# `tileSafely` reference тАФ kind/frames for
     /// the dust/sound/drop tails and the campfire frameY offset).
     pub old: Tile,
-    /// The `EliminateNaturalExtras` kills' object-drop records — always
+    /// The `EliminateNaturalExtras` kills' object-drop records тАФ always
     /// empty on the live path (the C# `_Single` discards them, `:62655`/
     /// `:62659`); kept for the caller's uniform resolution shape.
     pub drops: Vec<ObjectDrop>,
 }
 
-/// `Chest.IsLocked(Tile)` (`Chest.cs:301-316`): the locked chest frames —
+/// `Chest.IsLocked(Tile)` (`Chest.cs:301-316`): the locked chest frames тАФ
 /// 21's six frameX bands, 467's `frameX / 36 == 13`. A null tile is locked
 /// (the port's `Option` reads as locked at the call site).
 fn chest_is_locked(t: &Tile) -> bool {
@@ -73,52 +60,10 @@ fn chest_is_locked(t: &Tile) -> bool {
 }
 
 /// `WorldGen.ReplaceTile_IsValidSolid` (`WorldGen.cs:62739-62750`): a
-/// solid, non-solidTop tile — ropes pass, everything else must NOT be
-/// frame-important (`Main.tileFrameImportant` — the port's boot-truth
+/// solid, non-solidTop tile тАФ ropes pass, everything else must NOT be
+/// frame-important (`Main.tileFrameImportant` тАФ the port's boot-truth
 /// static table, `tileobject::frame_important`).
 fn is_valid_solid(kind: u16) -> bool {
-use super::{can_pound_tile, kill_tile, TileKill};
-
-/// `WorldGen.IsTileReplaceable` (`WorldGen.cs:62328-62375`): the cell above
-/// may forbid the replacement — the cactus 80 / fallen log 488 always, the
-/// `PreventsTileReplaceIfOnTopOfIt` set when the kinds differ, with the
-/// tree-trunk frame windows and the palm 323's two forbidden columns.
-pub fn is_tile_replaceable(world: &World, x: i32, y: i32) -> bool {
-    if y < 1 {
-        // `:62331` — the `y >= 1` guard SKIPS the above-cell checks and
-        // falls through to the trailing `return true` (:62374).
-        return true;
-    }
-    let (Some(tile), Some(above)) = (world.tile(x, y), world.tile(x, y - 1)) else {
-        return false;
-    };
-    if tile.wall == 350 {
-        return false;
-    }
-    if above.active() {
-        if above.kind == 80 || above.kind == 488 {
-            return false;
-        }
-        if td::SET_PREVENTS_TILE_REPLACE_IF_ON_TOP_OF_IT.has(above.kind)
-            && tile.kind != above.kind
-        {
-            if td::SET_IS_A_TREE_TRUNK.has(above.kind) {
-                let (fx, fy) = (above.frame_x, above.frame_y);
-                return (fx == 66 && (0..=44).contains(&fy))
-                    || (fx == 88 && (66..=110).contains(&fy))
-                    || fy >= 198;
-            }
-            if above.kind == 323 {
-                return above.frame_x != 66 && above.frame_x != 220;
-            }
-            return false;
-        }
-    }
-    true
-}
-
-/// `WorldGen.ReplaceTile_IsValidSolid` (`WorldGen.cs:62739-62750`).
-fn valid_solid(kind: u16) -> bool {
     if td::TILE_SOLID.has(kind) && !td::TILE_SOLID_TOP.has(kind) {
         if !td::TILE_ROPE.has(kind) {
             return !crate::tileobject::frame_important(kind);
@@ -130,40 +75,23 @@ fn valid_solid(kind: u16) -> bool {
 
 /// `WorldGen.WouldTileReplacementWork(attemptingToReplaceWith, x, y)`
 /// (`WorldGen.cs:62705-62737`): the target-kind gates, the rope-neighbour
-/// exceptions, then the five validity families' AND chain — kept verbatim
+/// exceptions, then the five validity families' AND chain тАФ kept verbatim
 /// incl. the C#'s bitwise `&` on bools (all operands side-effect free).
 pub fn would_tile_replacement_work(world: &World, target: u16, x: i32, y: i32) -> bool {
     let Some(tile) = world.tile(x, y).copied() else {
         return false; // the C# null tile would throw; the reader gates InWorld
     };
-    // `:62708-62711` — TileID.Count = 754 (`TileID.cs:2143`).
+    // `:62708-62711` тАФ TileID.Count = 754 (`TileID.cs:2143`).
     if usize::from(target) >= td::TILE_COUNT {
         return false;
     }
-    // `:62712-62715` — Conversion.Grass (2/23/199/109/477/492,
+    // `:62712-62715` тАФ Conversion.Grass (2/23/199/109/477/492,
     // `TileID.cs:86`) + the ash grass 633.
     if matches!(target, 2 | 23 | 199 | 109 | 477 | 492 | 633) {
         return false;
     }
-    // `:62716-62732` — the rope exceptions: a track/platform/planter target
+    // `:62716-62732` тАФ the rope exceptions: a track/platform/planter target
     // beside a matching neighbour converts a rope.
-/// `WorldGen.WouldTileReplacementWork` (`WorldGen.cs:62705-62737`). The
-/// chest-lock term reads `Chest.IsLocked(tile)` — the locked-frame decode
-/// (`Chest.cs:301-316`), inlined here (the core has no chest store; the
-/// decode is pure tile state).
-pub fn would_tile_replacement_work(world: &World, target: u16, x: i32, y: i32) -> bool {
-    let Some(tile) = world.tile(x, y) else {
-        return false;
-    };
-    if target as usize >= td::TILE_COUNT {
-        return false;
-    }
-    // `:62712-62715` — the grass family + the ash grass 633 never replace.
-    if td::SET_GRASS.has(target) || target == 633 {
-        return false;
-    }
-    // `:62716-62732` — the rope exceptions: a track/platform/planter-box
-    // replaces a rope when a same-kind neighbour already holds.
     if td::TILE_ROPE.has(tile.kind)
         && x >= 2
         && x < world.width - 2
@@ -186,7 +114,7 @@ pub fn would_tile_replacement_work(world: &World, target: u16, x: i32, y: i32) -
             return true;
         }
     }
-    // `:62733-62736` — the validity chain.
+    // `:62733-62736` тАФ the validity chain.
     let flag = !is_valid_solid(target) || !is_valid_solid(tile.kind);
     let flag2 = !td::SET_TORCHES.has(target) || !td::SET_TORCHES.has(tile.kind);
     let flag3 = !td::SET_CAMPFIRES.has(target) || !td::SET_CAMPFIRES.has(tile.kind);
@@ -222,14 +150,14 @@ pub fn is_tile_replaceable(world: &World, x: i32, y: i32) -> bool {
             if td::SET_PREVENTS_TILE_REPLACE_IF_ON_TOP_OF_IT.has(above.kind)
                 && tile.kind != above.kind
             {
-                // `:62354-62361` — the tree-trunk branch frames.
+                // `:62354-62361` тАФ the tree-trunk branch frames.
                 if td::SET_IS_A_TREE_TRUNK.has(above.kind) {
                     let (fx, fy) = (i32::from(above.frame_x), i32::from(above.frame_y));
                     return (fx == 66 && (0..=44).contains(&fy))
                         || (fx == 88 && (66..=110).contains(&fy))
                         || fy >= 198;
                 }
-                // `:62362-62369` — the palm's two refusal columns.
+                // `:62362-62369` тАФ the palm's two refusal columns.
                 if above.kind == 323 {
                     return !(above.frame_x == 66 || above.frame_x == 220);
                 }
@@ -243,7 +171,7 @@ pub fn is_tile_replaceable(world: &World, x: i32, y: i32) -> bool {
 /// `WorldGen.MoveReplaceTileAnchor(ref x, ref y, targetType, t)`
 /// (`WorldGen.cs:62686-62703`): the CURRENT cell's object family moves the
 /// anchor to its top-left (the `targetType` parameter is unread in the C#
-/// body — kept 1:1).
+/// body тАФ kept 1:1).
 #[allow(unused_variables)]
 fn move_replace_tile_anchor(x: &mut i32, y: &mut i32, target_type: u16, t: &Tile) {
     let (fx, fy) = (i32::from(t.frame_x), i32::from(t.frame_y));
@@ -274,7 +202,7 @@ fn clear_block_paint_and_coating(world: &mut World, x: i32, y: i32) {
 /// `WorldGen.ReplaceTile_EliminateNaturalExtras(x, y)`
 /// (`WorldGen.cs:62649-62662`): the ReplaceTileBreakUp/Down sets (plus the
 /// cobweb 165's frame rows) above/below the anchor die with a full
-/// `KillTile` — the cascade records collect into `drops`.
+/// `KillTile` тАФ the cascade records collect into `drops`.
 fn eliminate_natural_extras(world: &mut World, x: i32, y: i32, drops: &mut Vec<ObjectDrop>) {
     if !(x >= 2 && x < world.width - 2 && y >= 2 && y < world.height - 2) {
         return; // InWorld(x, y, 2)
@@ -330,7 +258,7 @@ fn do_actual_replacement_area(
     ensure_frame_important(world, target);
     for k in 0..w {
         for l in 0..h {
-            // `SquareTileFrame(x, y)` — the port's radius-1 reset superset
+            // `SquareTileFrame(x, y)` тАФ the port's radius-1 reset superset
             // (the documented reframe deviation, the wiring precedent).
             framing::reframe_area(world, x + k, y + l, 1, true);
         }
@@ -343,8 +271,8 @@ fn rainbow_paint_id(x: i32, y: i32, wiggly: bool) -> u8 {
     let mut num = x;
     let mut num2 = y;
     if wiggly {
-        // The C# `(int)(Math.Sin(...) * 10.0) - 5` — the cast truncates the
-        // product BEFORE the −5; kept verbatim.
+        // The C# `(int)(Math.Sin(...) * 10.0) - 5` тАФ the cast truncates the
+        // product BEFORE the тИТ5; kept verbatim.
         num = x + (((y % 50) as f32 / 50.0 * std::f32::consts::TAU).sin() * 10.0) as i32 - 5;
         num2 = 0;
     }
@@ -354,7 +282,7 @@ fn rainbow_paint_id(x: i32, y: i32, wiggly: bool) -> u8 {
 /// `WorldGen.ReplaceTile_DoActualReplacement_Single`
 /// (`WorldGen.cs:62607-62647`): the extras clear, the kind swap, the
 /// platform/planter/torch style rows, the paint clear, the slope/half
-/// flatten (`CanPoundTile` gate + the platform→platform exemption), the
+/// flatten (`CanPoundTile` gate + the platformтЖТplatform exemption), the
 /// sand seed paints and the truncates-walls / tile reframes.
 fn do_actual_replacement_single(
     world: &mut World,
@@ -366,7 +294,7 @@ fn do_actual_replacement_single(
     rainbow_sand: bool,
     tenth_anniversary_plain: bool,
 ) {
-    // `:62609` — `EliminateNaturalExtras` runs in `replace_tile_commit`
+    // `:62609` тАФ `EliminateNaturalExtras` runs in `replace_tile_commit`
     // ahead of this call (the records collect into the plan there).
     let Some(old) = world.tile(x, y).copied() else {
         return;
@@ -374,7 +302,7 @@ fn do_actual_replacement_single(
     let old_kind = old.kind;
     if let Some(t) = world.tile_mut(x, y) {
         t.kind = target;
-        // `:62612-62619` — the style rows.
+        // `:62612-62619` тАФ the style rows.
         if td::SET_PLATFORMS.has(target) || target == 380 {
             t.frame_y = (style * 18) as i16;
         }
@@ -383,276 +311,20 @@ fn do_actual_replacement_single(
         }
     }
     clear_block_paint_and_coating(world, x, y);
-    // `:62621-62630` — the flatten gate.
+    // `:62621-62630` тАФ the flatten gate.
     let mut flag = !can_pound_tile(world, x, y, false, chest_holds_items);
     if td::SET_PLATFORMS.has(old_kind) && td::SET_PLATFORMS.has(target) {
         flag = false;
     }
     if flag {
         if let Some(t) = world.tile_mut(x, y) {
-        let left = world.tile(x - 1, y);
-        let right = world.tile(x + 1, y);
-        if let (Some(l), Some(r)) = (left, right) {
-            if target == 314
-                && ((l.active() && l.kind == 314) || (r.active() && r.kind == 314))
-            {
-                return true;
-            }
-            if td::SET_PLATFORMS.has(target)
-                && ((l.active() && td::SET_PLATFORMS.has(l.kind))
-                    || (r.active() && td::SET_PLATFORMS.has(r.kind)))
-            {
-                return true;
-            }
-            if target == 380
-                && ((l.active() && l.kind == 380) || (r.active() && r.kind == 380))
-            {
-                return true;
-            }
-        }
-    }
-    // `:62733-62736` — the validity matrix. The C#'s `&` on bools is the
-    // non-short-circuit AND (every operand evaluates; all are side-effect
-    // free, so `&` on the computed bools is the faithful shape).
-    let solid_bad = !valid_solid(target) || !valid_solid(tile.kind);
-    let torch_bad = !td::SET_TORCHES.has(target) || !td::SET_TORCHES.has(tile.kind);
-    let campfire_bad = !td::SET_CAMPFIRES.has(target) || !td::SET_CAMPFIRES.has(tile.kind);
-    let platform_bad = !td::SET_PLATFORMS.has(target) || !td::SET_PLATFORMS.has(tile.kind);
-    let chest_bad = !td::SET_BASIC_CHEST.has(target)
-        || !td::SET_BASIC_CHEST.has(tile.kind)
-        || chest_is_locked(tile);
-    let dresser_bad =
-        !td::SET_BASIC_DRESSER.has(target) || !td::SET_BASIC_DRESSER.has(tile.kind);
-    let solid_pair_bad = (!valid_solid(target) && !td::SET_PLATFORMS.has(target))
-        || (!valid_solid(tile.kind) && !td::SET_PLATFORMS.has(tile.kind));
-    !(platform_bad & torch_bad & campfire_bad & solid_bad & solid_pair_bad & chest_bad
-        & dresser_bad)
-}
-
-/// `Chest.IsLocked(Tile)` (`Chest.cs:301-316`) — the locked-frame decode,
-/// the app `chest::is_locked`'s twin (the core cannot reach the app crate).
-fn chest_is_locked(t: &Tile) -> bool {
-    let fx = t.frame_x;
-    if t.kind == 21 {
-        return (72..=106).contains(&fx)
-            || (144..=178).contains(&fx)
-            || (828..=1006).contains(&fx)
-            || (1296..=1330).contains(&fx)
-            || (1368..=1402).contains(&fx)
-            || (1440..=1474).contains(&fx);
-    }
-    if t.kind == 467 {
-        return fx / 36 == 13;
-    }
-    false
-}
-
-/// `WorldGen.MoveReplaceTileAnchor` (`WorldGen.cs:62686-62703`): the
-/// chest/dresser/campfire anchor walk-back from the clicked cell.
-pub fn move_replace_anchor(world: &World, x: i32, y: i32) -> (i32, i32) {
-    let (mut x, mut y) = (x, y);
-    if let Some(t) = world.tile(x, y) {
-        if td::SET_BASIC_CHEST.has(t.kind) {
-            x -= i32::from(t.frame_x) % 36 / 18;
-            y -= i32::from(t.frame_y) % 36 / 18;
-        }
-        if td::SET_BASIC_DRESSER.has(t.kind) {
-            x -= i32::from(t.frame_x) % 54 / 18;
-            y -= i32::from(t.frame_y) % 36 / 18;
-        }
-        if td::SET_CAMPFIRES.has(t.kind) {
-            x -= i32::from(t.frame_x) % 54 / 18;
-            y -= i32::from(t.frame_y) % 36 / 18;
-        }
-    }
-    (x, y)
-}
-
-/// The result of a successful `ReplaceTile`: the anchor the write landed
-/// on, the OLD cell (the dust/drops read it — the C# `tileSafely` is a
-/// LIVE reference, so its dust/drops see the pre-replacement state; the
-/// port snapshots), and the natural-extras kills the replacement caused.
-pub struct Replaced {
-    pub anchor_x: i32,
-    pub anchor_y: i32,
-    pub old: Tile,
-    /// `ReplaceTile_EliminateNaturalExtras`' `KillTile` results (the
-    /// above/below vine-adjacent cells) — the app resolves their drops.
-    pub extras_kills: Vec<(i32, i32, TileKill)>,
-}
-
-/// `WorldGen.ReplaceTile` (`WorldGen.cs:62558-62580`) minus the
-/// kill-effects: the two validity gates, the anchor move, then the
-/// replacement write. The caller runs the dust (`KillTile_GetTileDustAmount`
-/// + `KillTile_MakeTileDust`), the sounds (`KillTile_PlaySounds`), the drops
-/// (`KillTile_DropItems(includeLargeObjectDrops: true)`) and the fossil
-/// shatter BETWEEN the gates and the write — the C# order (`:62570-62578`);
-/// the port splits the write out so the app can keep that order with its
-/// item/dust pools. `chest_holds` feeds `CanPoundTile`'s refusal.
-pub fn replace_tile_write(
-    world: &mut World,
-    x: i32,
-    y: i32,
-    target: u16,
-    style: i32,
-    chest_holds: impl Fn(i32, i32) -> bool + Copy,
-) -> Option<Replaced> {
-    let old = world.tile(x, y).copied()?;
-    if !would_tile_replacement_work(world, target, x, y) {
-        return None;
-    }
-    if !is_tile_replaceable(world, x, y) {
-        return None;
-    }
-    let (ax, ay) = move_replace_anchor(world, x, y);
-    if td::SET_BASIC_CHEST.has(target) {
-        // `:62586-62590` — the rigged-chest trip is app-side (the wiring
-        // pool lives there); the caller checks `is_rigged` BEFORE this
-        // write (the C# trips on the OLD tile).
-        replace_area(world, target, style, ax, ay, 2, 2, 0, 0);
-    } else if td::SET_BASIC_DRESSER.has(target) {
-        replace_area(world, target, style, ax, ay, 3, 2, 0, 0);
-    } else if td::SET_CAMPFIRES.has(target) {
-        let off_y = if old.frame_y >= 36 { 36 } else { 0 };
-        replace_area(world, target, style, ax, ay, 3, 2, 0, off_y);
-    } else {
-        // `ReplaceTile_EliminateNaturalExtras` runs at the HEAD of the
-        // single arm (`WorldGen.cs:62609`), BEFORE the kind write — the
-        // kills' cascades see the OLD cell still standing. The chest/
-        // dresser/campfire area writes never call it.
-        let extras_kills = eliminate_natural_extras(world, ax, ay);
-        replace_single(world, target, style, ax, ay, &old, chest_holds);
-        return Some(Replaced {
-            anchor_x: ax,
-            anchor_y: ay,
-            old,
-            extras_kills,
-        });
-    }
-    Some(Replaced {
-        anchor_x: ax,
-        anchor_y: ay,
-        old,
-        extras_kills: Vec::new(),
-    })
-}
-
-/// `WorldGen.ReplaceTile_EliminateNaturalExtras`
-/// (`WorldGen.cs:62649-62662`): the vine-adjacent cells above/below die
-/// when the replacement lands (the `ReplaceTileBreakUp`/`BreakDown` sets +
-/// the stalactite/stalagmite 165 frame rows). The kills are plain
-/// `KillTile(x, y±1)` — the full cascade + sounds + drops, app-resolved
-/// through `Replaced::extras_kills`.
-fn eliminate_natural_extras(world: &mut World, x: i32, y: i32) -> Vec<(i32, i32, TileKill)> {
-    let mut kills = Vec::new();
-    if x < 2 || x >= world.width - 2 || y < 2 || y >= world.height - 2 {
-        return kills;
-    }
-    if let Some(up) = world.tile(x, y - 1) {
-        if up.active()
-            && (td::SET_REPLACE_TILE_BREAK_UP.has(up.kind)
-                || (up.kind == 165 && matches!(up.frame_y, 36 | 54 | 90)))
-        {
-            if let Some(k) = kill_tile(world, x, y - 1, false) {
-                kills.push((x, y - 1, k));
-            }
-        }
-    }
-    if let Some(down) = world.tile(x, y + 1) {
-        if down.active()
-            && (td::SET_REPLACE_TILE_BREAK_DOWN.has(down.kind)
-                || (down.kind == 165 && matches!(down.frame_y, 0 | 18 | 72)))
-        {
-            if let Some(k) = kill_tile(world, x, y + 1, false) {
-                kills.push((x, y + 1, k));
-            }
-        }
-    }
-    kills
-}
-
-/// `WorldGen.ReplaceTile_DoActualReplacement_Area`
-/// (`WorldGen.cs:62664-62684`): the multi-cell write, then the per-cell
-/// `SquareTileFrame` walk (the port's `square_tile_frame_default` — the
-/// object drops the support checks produce are discarded like the wiring
-/// callers'; a replacement's own cells were just written, so the checks
-/// find them intact).
-fn replace_area(
-    world: &mut World,
-    target: u16,
-    style: i32,
-    ax: i32,
-    ay: i32,
-    w: i32,
-    h: i32,
-    off_x: i32,
-    off_y: i32,
-) {
-    for i in 0..w {
-        for j in 0..h {
-            if let Some(t) = world.tile_mut(ax + i, ay + j) {
-                t.kind = target;
-                t.frame_x = (style * (w * 18) + i * 18 + off_x) as i16;
-                t.frame_y = (j * 18 + off_y) as i16;
-                clear_block_paint_and_coating(world, ax + i, ay + j);
-            }
-        }
-    }
-    for i in 0..w {
-        for j in 0..h {
-            let _ = super::square_tile_frame_default(world, ax + i, ay + j);
-        }
-    }
-}
-
-/// `Tile.ClearBlockPaintAndCoating` (`Tile.cs:904-909`).
-fn clear_block_paint_and_coating(world: &mut World, x: i32, y: i32) {
-    if let Some(t) = world.tile_mut(x, y) {
-        t.set_paint(0);
-        t.flags &= !crate::tile::FLAG_FULLBRIGHT;
-    }
-    world.set_invisible_block(x, y, false);
-}
-
-/// `WorldGen.ReplaceTile_DoActualReplacement_Single`
-/// (`WorldGen.cs:62607-62647`).
-fn replace_single(
-    world: &mut World,
-    target: u16,
-    style: i32,
-    ax: i32,
-    ay: i32,
-    old: &Tile,
-    chest_holds: impl Fn(i32, i32) -> bool,
-) {
-    let old_kind = old.kind;
-    let Some(t) = world.tile_mut(ax, ay) else {
-        return;
-    };
-    t.kind = target;
-    // `:62612-62619` — the platform/planter-box and torch style frames.
-    if td::SET_PLATFORMS.has(t.kind) || t.kind == 380 {
-        t.frame_y = (style * 18) as i16;
-    }
-    if td::SET_TORCHES.has(t.kind) {
-        t.frame_y = (style * 22) as i16;
-    }
-    clear_block_paint_and_coating(world, ax, ay);
-    // `:62621-62630` — the slope/half-brick flatten, the platform-pair
-    // exception (`CanPoundTile` on the NEW cell).
-    let mut flatten = !can_pound_tile(world, ax, ay, false, chest_holds);
-    if td::SET_PLATFORMS.has(old_kind) && td::SET_PLATFORMS.has(target) {
-        flatten = false;
-    }
-    if flatten {
-        if let Some(t) = world.tile_mut(ax, ay) {
             t.set_slope(0);
             t.flags &= !crate::tile::FLAG_HALF_BRICK;
         }
     }
-    // `:62631-62641` — the sand paints. `RainbowSandAndBlackSandWalls` =
+    // `:62631-62641` тАФ the sand paints. `RainbowSandAndBlackSandWalls` =
     // `Main.onlyShimmerOceanWorlds` (`SpecialSeedFeatures.cs:93`, the
-    // drunk+tenth !remix !zenith !bees combo — `Main.cs:2674-2684`) and
+    // drunk+tenth !remix !zenith !bees combo тАФ `Main.cs:2674-2684`) and
     // `tenthAnniversaryWorld && !remix && !notTheBees && !dontStarve` ride
     // the caller's precomputed flags (the world's seed tables).
     if matches!(target, 53 | 396 | 397) {
@@ -663,40 +335,28 @@ fn replace_single(
             }
         } else if tenth_anniversary_plain {
             if let Some(t) = world.tile_mut(x, y) {
-    // `:62631-62641` — the sand paint arms. The rainbow-sand seed
-    // (`SpecialSeedFeatures.RainbowSandAndBlackSandWalls` =
-    // `Main.onlyShimmerOceanWorlds`) has no port seed flag — skipped, the
-    // M5-SEED stand-in convention; the anniversary arm reads the seed.
-    if matches!(target, 53 | 396 | 397) {
-        let seeds = world.seeds;
-        if seeds.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY)
-            && !seeds.contains(crate::seeds::SeedFlags::REMIX)
-            && !seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES)
-            && !seeds.contains(crate::seeds::SeedFlags::DONT_STARVE)
-        {
-            if let Some(t) = world.tile_mut(ax, ay) {
                 t.set_paint(7);
             }
         }
     }
     touch(world, x, y);
-    // `:62642-62645` — the truncates-walls membership change re-frames the
+    // `:62642-62645` тАФ the truncates-walls membership change re-frames the
     // wall square; the port's `reframe_area` covers walls too (the
-    // documented superset — the wall-only pass is inside it).
+    // documented superset тАФ the wall-only pass is inside it).
     if td::SET_TRUNCATES_WALLS.has(target) != td::SET_TRUNCATES_WALLS.has(old_kind) {
         framing::reframe_area(world, x, y, 1, true);
     }
-    // `:62646` — `SquareTileFrame(x, y)`.
+    // `:62646` тАФ `SquareTileFrame(x, y)`.
     framing::reframe_area(world, x, y, 1, true);
 }
 
 /// `WorldGen.ReplaceTile(x, y, targetType, targetStyle)`
-/// (`WorldGen.cs:62558-62580`) — the world-state half, split into the
+/// (`WorldGen.cs:62558-62580`) тАФ the world-state half, split into the
 /// gate/anchor phase ([`replace_tile_prepare`]) and the write phase
-/// ([`replace_tile_commit`]) so the caller can run the C# tails (dust →
-/// sound → drops → fossil → rigged-switch) between them in the source
+/// ([`replace_tile_commit`]) so the caller can run the C# tails (dust тЖТ
+/// sound тЖТ drops тЖТ fossil тЖТ rigged-switch) between them in the source
 /// order; the tails all read the pre-swap `tileSafely` the plan carries.
-/// The one-call form runs both phases back-to-back (no tails — the
+/// The one-call form runs both phases back-to-back (no tails тАФ the
 /// worldgen/liquid callers' shape).
 ///
 /// `chest_holds_items` is the `CanPoundTile` chest scan (the app injects
@@ -721,13 +381,13 @@ pub fn replace_tile_prepare(
     Some(ReplaceOutcome { x: ax, y: ay, old, drops: Vec::new() })
 }
 
-/// The write phase — `ReplaceTile_DoActualReplacement`
+/// The write phase тАФ `ReplaceTile_DoActualReplacement`
 /// (`WorldGen.cs:62582-62605`) over a prepared plan. The rigged-chest
 /// `HitSwitch` + `SendData(59)` (`:62586-62590`) is app-side: the caller
 /// probes `IsChestRigged(plan.x, plan.y)` BEFORE this call (the frame
 /// check reads the OLD tiles). The `EliminateNaturalExtras` kills'
 /// drops are DISCARDED (the C# `_Single` calls plain `KillTile` with no
-/// collection — `:62655`/`:62659`); `plan.drops` stays empty, kept on the
+/// collection тАФ `:62655`/`:62659`); `plan.drops` stays empty, kept on the
 /// struct for the caller's uniform resolution shape.
 pub fn replace_tile_commit(
     world: &mut World,
@@ -747,10 +407,10 @@ pub fn replace_tile_commit(
         let offset_y = if plan.old.frame_y >= 36 { 36 } else { 0 };
         do_actual_replacement_area(world, target, style, ax, ay, 3, 2, 0, offset_y);
     } else {
-        // The extras clear runs FIRST inside `_Single` (`:62609`) — the
-        // C# `KillTile(x, y±1)` there discards its drops (no collection at
+        // The extras clear runs FIRST inside `_Single` (`:62609`) тАФ the
+        // C# `KillTile(x, y┬▒1)` there discards its drops (no collection at
         // the call site, `:62655`/`:62659`); the port mirrors that (the
-        // records drop on the floor — the plan's `drops` stays empty).
+        // records drop on the floor тАФ the plan's `drops` stays empty).
         let mut discarded = Vec::new();
         eliminate_natural_extras(world, ax, ay, &mut discarded);
         do_actual_replacement_single(
@@ -789,12 +449,224 @@ pub fn replace_tile(
         tenth_anniversary_plain,
     );
     Some(plan)
-    // `:62642-62645` — the wall-truncation change re-frames the wall
-    // (`SquareWallFrame` — the port's radius-1 reset-false superset).
+}
+
+/// The result of a successful `ReplaceTile`: the anchor the write landed
+/// on, the OLD cell (the dust/drops read it тАФ the C# `tileSafely` is a
+/// LIVE reference, so its dust/drops see the pre-replacement state; the
+/// port snapshots), and the natural-extras kills the replacement caused.
+pub struct Replaced {
+    pub anchor_x: i32,
+    pub anchor_y: i32,
+    pub old: Tile,
+    /// `ReplaceTile_EliminateNaturalExtras`' `KillTile` results (the
+    /// above/below vine-adjacent cells) тАФ the app resolves their drops.
+    pub extras_kills: Vec<(i32, i32, TileKill)>,
+}
+
+/// `WorldGen.MoveReplaceTileAnchor` (`WorldGen.cs:62686-62703`): the
+/// chest/dresser/campfire anchor walk-back from the clicked cell.
+pub fn move_replace_anchor(world: &World, x: i32, y: i32) -> (i32, i32) {
+    let (mut x, mut y) = (x, y);
+    if let Some(t) = world.tile(x, y) {
+        if td::SET_BASIC_CHEST.has(t.kind) {
+            x -= i32::from(t.frame_x) % 36 / 18;
+            y -= i32::from(t.frame_y) % 36 / 18;
+        }
+        if td::SET_BASIC_DRESSER.has(t.kind) {
+            x -= i32::from(t.frame_x) % 54 / 18;
+            y -= i32::from(t.frame_y) % 36 / 18;
+        }
+        if td::SET_CAMPFIRES.has(t.kind) {
+            x -= i32::from(t.frame_x) % 54 / 18;
+            y -= i32::from(t.frame_y) % 36 / 18;
+        }
+    }
+    (x, y)
+}
+
+/// `WorldGen.ReplaceTile` (`WorldGen.cs:62558-62580`) minus the
+/// kill-effects: the two validity gates, the anchor move, then the
+/// replacement write. The caller runs the dust (`KillTile_GetTileDustAmount`
+/// + `KillTile_MakeTileDust`), the sounds (`KillTile_PlaySounds`), the drops
+/// (`KillTile_DropItems(includeLargeObjectDrops: true)`) and the fossil
+/// shatter BETWEEN the gates and the write тАФ the C# order (`:62570-62578`);
+/// the port splits the write out so the app can keep that order with its
+/// item/dust pools. `chest_holds` feeds `CanPoundTile`'s refusal.
+pub fn replace_tile_write(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    target: u16,
+    style: i32,
+    chest_holds: impl Fn(i32, i32) -> bool + Copy,
+) -> Option<Replaced> {
+    let old = world.tile(x, y).copied()?;
+    if !would_tile_replacement_work(world, target, x, y) {
+        return None;
+    }
+    if !is_tile_replaceable(world, x, y) {
+        return None;
+    }
+    let (ax, ay) = move_replace_anchor(world, x, y);
+    if td::SET_BASIC_CHEST.has(target) {
+        // `:62586-62590` тАФ the rigged-chest trip is app-side (the wiring
+        // pool lives there); the caller checks `is_rigged` BEFORE this
+        // write (the C# trips on the OLD tile).
+        replace_area(world, target, style, ax, ay, 2, 2, 0, 0);
+    } else if td::SET_BASIC_DRESSER.has(target) {
+        replace_area(world, target, style, ax, ay, 3, 2, 0, 0);
+    } else if td::SET_CAMPFIRES.has(target) {
+        let off_y = if old.frame_y >= 36 { 36 } else { 0 };
+        replace_area(world, target, style, ax, ay, 3, 2, 0, off_y);
+    } else {
+        // `ReplaceTile_EliminateNaturalExtras` runs at the HEAD of the
+        // single arm (`WorldGen.cs:62609`), BEFORE the kind write тАФ the
+        // kills' cascades see the OLD cell still standing. The chest/
+        // dresser/campfire area writes never call it.
+        let extras_kills = eliminate_natural_extras_kills(world, ax, ay);
+        replace_single(world, target, style, ax, ay, &old, chest_holds);
+        return Some(Replaced {
+            anchor_x: ax,
+            anchor_y: ay,
+            old,
+            extras_kills,
+        });
+    }
+    Some(Replaced {
+        anchor_x: ax,
+        anchor_y: ay,
+        old,
+        extras_kills: Vec::new(),
+    })
+}
+
+/// `WorldGen.ReplaceTile_EliminateNaturalExtras`
+/// (`WorldGen.cs:62649-62662`): the vine-adjacent cells above/below die
+/// when the replacement lands (the `ReplaceTileBreakUp`/`BreakDown` sets +
+/// the stalactite/stalagmite 165 frame rows). The kills are plain
+/// `KillTile(x, y┬▒1)` тАФ the full cascade + sounds + drops, app-resolved
+/// through `Replaced::extras_kills`.
+fn eliminate_natural_extras_kills(world: &mut World, x: i32, y: i32) -> Vec<(i32, i32, TileKill)> {
+    let mut kills = Vec::new();
+    if x < 2 || x >= world.width - 2 || y < 2 || y >= world.height - 2 {
+        return kills;
+    }
+    if let Some(up) = world.tile(x, y - 1) {
+        if up.active()
+            && (td::SET_REPLACE_TILE_BREAK_UP.has(up.kind)
+                || (up.kind == 165 && matches!(up.frame_y, 36 | 54 | 90)))
+        {
+            if let Some(k) = kill_tile(world, x, y - 1, false) {
+                kills.push((x, y - 1, k));
+            }
+        }
+    }
+    if let Some(down) = world.tile(x, y + 1) {
+        if down.active()
+            && (td::SET_REPLACE_TILE_BREAK_DOWN.has(down.kind)
+                || (down.kind == 165 && matches!(down.frame_y, 0 | 18 | 72)))
+        {
+            if let Some(k) = kill_tile(world, x, y + 1, false) {
+                kills.push((x, y + 1, k));
+            }
+        }
+    }
+    kills
+}
+
+/// `WorldGen.ReplaceTile_DoActualReplacement_Area`
+/// (`WorldGen.cs:62664-62684`): the multi-cell write, then the per-cell
+/// `SquareTileFrame` walk (the port's `square_tile_frame_default` тАФ the
+/// object drops the support checks produce are discarded like the wiring
+/// callers'; a replacement's own cells were just written, so the checks
+/// find them intact).
+fn replace_area(
+    world: &mut World,
+    target: u16,
+    style: i32,
+    ax: i32,
+    ay: i32,
+    w: i32,
+    h: i32,
+    off_x: i32,
+    off_y: i32,
+) {
+    for i in 0..w {
+        for j in 0..h {
+            if let Some(t) = world.tile_mut(ax + i, ay + j) {
+                t.kind = target;
+                t.frame_x = (style * (w * 18) + i * 18 + off_x) as i16;
+                t.frame_y = (j * 18 + off_y) as i16;
+                clear_block_paint_and_coating(world, ax + i, ay + j);
+            }
+        }
+    }
+    for i in 0..w {
+        for j in 0..h {
+            let _ = super::square_tile_frame_default(world, ax + i, ay + j);
+        }
+    }
+}
+
+/// `WorldGen.ReplaceTile_DoActualReplacement_Single`
+/// (`WorldGen.cs:62607-62647`).
+fn replace_single(
+    world: &mut World,
+    target: u16,
+    style: i32,
+    ax: i32,
+    ay: i32,
+    old: &Tile,
+    chest_holds: impl Fn(i32, i32) -> bool,
+) {
+    let old_kind = old.kind;
+    let Some(t) = world.tile_mut(ax, ay) else {
+        return;
+    };
+    t.kind = target;
+    // `:62612-62619` тАФ the platform/planter-box and torch style frames.
+    if td::SET_PLATFORMS.has(t.kind) || t.kind == 380 {
+        t.frame_y = (style * 18) as i16;
+    }
+    if td::SET_TORCHES.has(t.kind) {
+        t.frame_y = (style * 22) as i16;
+    }
+    clear_block_paint_and_coating(world, ax, ay);
+    // `:62621-62630` тАФ the slope/half-brick flatten, the platform-pair
+    // exception (`CanPoundTile` on the NEW cell).
+    let mut flatten = !can_pound_tile(world, ax, ay, false, chest_holds);
+    if td::SET_PLATFORMS.has(old_kind) && td::SET_PLATFORMS.has(target) {
+        flatten = false;
+    }
+    if flatten {
+        if let Some(t) = world.tile_mut(ax, ay) {
+            t.set_slope(0);
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        }
+    }
+    // `:62631-62641` тАФ the sand paint arms. The rainbow-sand seed
+    // (`SpecialSeedFeatures.RainbowSandAndBlackSandWalls` =
+    // `Main.onlyShimmerOceanWorlds`) has no port seed flag тАФ skipped, the
+    // M5-SEED stand-in convention; the anniversary arm reads the seed.
+    if matches!(target, 53 | 396 | 397) {
+        let seeds = world.seeds;
+        if seeds.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            && !seeds.contains(crate::seeds::SeedFlags::REMIX)
+            && !seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES)
+            && !seeds.contains(crate::seeds::SeedFlags::DONT_STARVE)
+        {
+            if let Some(t) = world.tile_mut(ax, ay) {
+                t.set_paint(7);
+            }
+        }
+    }
+    // `:62642-62645` тАФ the wall-truncation change re-frames the wall
+    // (`SquareWallFrame` тАФ the port's radius-1 reset-false superset).
     if td::SET_TRUNCATES_WALLS.has(target) != td::SET_TRUNCATES_WALLS.has(old_kind) {
         crate::framing::reframe_area(world, ax, ay, 1, false);
     }
-    // `:62646` — `SquareTileFrame(topLeftX, topLeftY)`.
+    // `:62646` тАФ `SquareTileFrame(topLeftX, topLeftY)`.
     let _ = super::square_tile_frame_default(world, ax, ay);
 }
 
@@ -817,7 +689,7 @@ mod tests {
         w
     }
 
-    /// A stone→dirt swap lands: the kind writes, the paint clears, the
+    /// A stoneтЖТdirt swap lands: the kind writes, the paint clears, the
     /// anchor stays (`WorldGen.cs:62607-62646`).
     #[test]
     fn w4_g80_the_single_replacement_writes_the_kind_and_clears_paint() {
@@ -849,7 +721,7 @@ mod tests {
     }
 
     /// The chest anchor walk-back (`WorldGen.cs:62688-62692`): the clicked
-    /// bottom-right cell of a 2×2 chest moves to the top-left.
+    /// bottom-right cell of a 2├Ч2 chest moves to the top-left.
     #[test]
     fn w4_g80_the_chest_anchor_walks_back() {
         let mut w = world();
@@ -865,7 +737,7 @@ mod tests {
     }
 
     /// The locked chest refuses the swap (`WorldGen.cs:62736`'s
-    /// `Chest.IsLocked` term — the gold chest frameX 72..106).
+    /// `Chest.IsLocked` term тАФ the gold chest frameX 72..106).
     #[test]
     fn w4_g80_the_locked_chest_refuses() {
         let mut w = world();
@@ -905,7 +777,7 @@ mod tests {
     }
 
     /// The top row skips the above-cell checks and passes
-    /// (`WorldGen.cs:62331`/`:62374` — the guard falls through to true).
+    /// (`WorldGen.cs:62331`/`:62374` тАФ the guard falls through to true).
     #[test]
     fn w4_g80_the_top_row_replacement_is_replaceable() {
         let w = world();
@@ -913,8 +785,8 @@ mod tests {
     }
 
     /// The platform-pair keeps its slope (`WorldGen.cs:62622-62625`); a
-    /// solid→platform swap flattens (CanPoundTile refuses the mechanism
-    /// kinds only — a plain platform pounds).
+    /// solidтЖТplatform swap flattens (CanPoundTile refuses the mechanism
+    /// kinds only тАФ a plain platform pounds).
     #[test]
     fn w4_g80_the_platform_pair_keeps_the_slope() {
         let mut w = world();
