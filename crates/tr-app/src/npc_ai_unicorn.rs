@@ -11,6 +11,13 @@
 //! (`:62565-62580`), the wind-driven walk cap (`:62703-62716`), the
 //! step-up `spriteDirection` inversion (`:62864-62868`) and the
 //! rotation tail (`:62919-62923`).
+//! slice A. The C# machine also serves the Wolf (155 — W4-d36 E4 landed
+//! its hop-over/turnaround arms), the lunar
+//! pillar mobs (410's kamikaze, 423's NebulaBeast charge) and the Sand
+//! Elemental (546). 410/546 are not in the port's roster and 423
+//! rides its own ported machine (`npc.rs::update_nebula_beast`,
+//! M4-EVENT-9), so only the 315/329/155 arms are ported here — the shared
+//! core is verbatim, the other types' branches are cited and skipped.
 //!
 //! RNG (`Main.rand` rides the `UpdateNPCs` stream —
 //! `Main.cs:17767-17769`'s `SwapRandom("UpdateNPCs")` around
@@ -406,6 +413,9 @@ pub(crate) fn unicorn_step(
         // `:62583` despawn gate never fires for it — it always retargets.
         if !world.pumpkin_moon && !tumbleweed {
         if !tumbler && !world.pumpkin_moon {
+        // `:62583-62586` — the despawn gate lists 329/315 ONLY; the Wolf
+        // (155, W4-d36 E4) takes the else-branch's `TargetClosest()`.
+        if !world.pumpkin_moon && npc.kind != NpcKind::Wolf {
             npc.encourage_despawn(10);
         } else {
             target_closest(npc, world, &[cand_of(player)], true, 26, 0);
@@ -503,6 +513,17 @@ pub(crate) fn unicorn_step(
             }
             num10 = 4.0 + num12 * npc.facing as f32 * 3.0;
             num11 = 0.05;
+        } else if npc.kind == NpcKind::Wolf {
+            // `:62621-62631` — the 155 arm (W4-d36 E4): the 0.95
+            // turnaround damping ONLY — no ±3 band nudge (the 329 arm's
+            // rows below are not the Wolf's); the shared block still
+            // accelerates to the 6 cap.
+            if npc.vx > 0.0 && npc.facing < 0 {
+                npc.vx *= 0.95;
+            }
+            if npc.vx < 0.0 && npc.facing > 0 {
+                npc.vx *= 0.95;
+            }
         } else {
             // `:62632-62650` — the 329 arm: the 0.9 turnaround damping
             // and the ±3 soft band's ±0.1 nudge (the shared block below
@@ -714,6 +735,7 @@ pub(crate) fn unicorn_step(
     // `base.oldPosition = base.position` (`NPC.cs:92605`, the movement
     // tail's latch — the stuck block above reads it next tick).
     npc.unicorn_stuck_x = npc.x;
+}
 }
 }
 

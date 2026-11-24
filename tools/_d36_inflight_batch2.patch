@@ -1,0 +1,497 @@
+diff --git a/crates/tr-app/src/app/netglue.rs b/crates/tr-app/src/app/netglue.rs
+index 03963eb9b..0d745add3 100644
+--- a/crates/tr-app/src/app/netglue.rs
++++ b/crates/tr-app/src/app/netglue.rs
+@@ -3574,7 +3574,13 @@ fn npc_seed(
+         | crate::npc::NpcKind::IceTortoise
+         // W4-d36 E4 — the Wolf (aiStyle 26) plants its feet like the
+         // Horseman/Hellhound seeds above.
+-        | crate::npc::NpcKind::Wolf => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
++        | crate::npc::NpcKind::Wolf
++        // W4-d36 E4 batch 2 — the aiStyle-3 fighters plant their feet on
++        // the column surface (the net state overwrites the position below).
++        | crate::npc::NpcKind::Frankenstein
++        | crate::npc::NpcKind::BlackRecluse
++        | crate::npc::NpcKind::SwampThing
++        | crate::npc::NpcKind::UndeadViking => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+         crate::npc::NpcKind::Penguin
+         | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
+         // W4-d36 hover batch — the aiStyle-5 trio rides the hover
+diff --git a/crates/tr-app/src/npc.rs b/crates/tr-app/src/npc.rs
+index 89eab0f05..be8c42c53 100644
+--- a/crates/tr-app/src/npc.rs
++++ b/crates/tr-app/src/npc.rs
+@@ -1117,6 +1117,41 @@ pub enum NpcKind {
+     /// The hit/death dust arm (`NPC.cs:87717-87737`) is the gore/dust
+     /// wave's remainder.
+     Wolf,
++    // ---- W4-d36 E4 batch 2 (the eclipse/underground fighters at R7-band
++    // slots 773-776; 159 Vampire is g8-claimed — their pushed tip's
++    // `Vampire => 388`, machine round 3 — skipped).
++    /// `NPCID.Frankenstein` (162) — W4-d36 E4 (`NPC.cs` SetDefaults case
++    /// 162, `:15424-15436`): 18x40, aiStyle 3, dmg 65, def 18, 350 HP,
++    /// kb 0.3, value 600, NPCHit1/NPCDeath2. WIRED: the walker family
++    /// (the cap-2 group `:57554`); FindFrame's humanoid-group case list
++    /// (`:68571`) over the 15-row strip. The ambient moans are the
++    /// `:57340` 1000-roll + the own `:57356` 500-roll (case 29 style 6).
++    Frankenstein,
++    /// `NPCID.BlackRecluse` (163) — W4-d36 E4 (`NPC.cs` SetDefaults case
++    /// 163, `:11030-11043`): 50x20, aiStyle 3, dmg 90, def 40, 350 HP,
++    /// kb 0.25, value 500, npcSlots 0.5, NPCHit29/NPCDeath32. WIRED: the
++    /// walker family (the cap-2 group `:57554`); FindFrame case 163
++    /// (`:73227-73267`) over the 8-row strip. The bestiary credit folds
++    /// onto 238 BlackRecluseWall (`ContentSamples.cs:1036`, Hide=true —
++    /// d37's kind; the fold row carries the wall crawler's credit).
++    /// The expert web volley (`:29849`/`:58855`) is the documented
++    /// remainder (expert difficulty + the hostile-shot seam).
++    BlackRecluse,
++    /// `NPCID.SwampThing` (166) — W4-d36 E4 (`NPC.cs` SetDefaults case
++    /// 166, `:15437-15449`): 18x40, aiStyle 3, dmg 70, def 26, 450 HP,
++    /// kb 0.2, value 1000, NPCHit1/NPCDeath2. WIRED: the walker family
++    /// (the cap-3 group `:57520`) + the `:55938-55971` dwell arm (the
++    /// 240-roll `ai[2]` window, the CanHit/justHit break, the ×0.9
++    /// standstill); FindFrame case 166 (`:75618-75664`) over the 13-row
++    /// strip (the idle 0..5 band, the walk 7..12 band, the air row 6).
++    SwampThing,
++    /// `NPCID.UndeadViking` (167) — W4-d36 E4 (`NPC.cs` SetDefaults case
++    /// 167, `:11088-11100`): 18x40, aiStyle 3, dmg 24, def 10, 70 HP,
++    /// kb 0.5, value 200, NPCHit2/NPCDeath2. WIRED: the walker family
++    /// (the num83 group base 1.5 `:57606`); FindFrame's humanoid-group
++    /// case list (`:68572`) over the 15-row strip, the air row 0
++    /// (`:69647` lists 167). The ambient moan is the `:57340` 1000-roll.
++    UndeadViking,
+     // ---- W4-d36 hover batch (the in-flight stash's presets COMPLETED:
+     // R7-band slots 781/782/793, ascending vanilla order).
+     /// `NPCID.Crimera` (173) — W4-d36 (`NPC.cs` SetDefaults case 173,
+@@ -3590,6 +3625,11 @@ impl Npc {
+             | NpcKind::IceTortoise => 0.3,
+             // W4-d36 E4 (`NPC.cs:10971`).
+             NpcKind::Wolf => 0.3,
++            // W4-d36 E4 batch 2 (`NPC.cs:15434`/`:11040`/`:15447`/`:11098`).
++            NpcKind::Frankenstein => 0.3,
++            NpcKind::BlackRecluse => 0.25,
++            NpcKind::SwampThing => 0.2,
++            NpcKind::UndeadViking => 0.5,
+             // W4-d36 hover batch (`NPC.cs:11180`/`:11232`/`:11634`):
+             // Crimera/MossHornet 0.5, Moth 0.4.
+             NpcKind::Crimera
+@@ -3984,6 +4024,11 @@ impl Npc {
+             NpcKind::IceTortoise => 28,
+             // W4-d36 E4 (`NPC.cs:10967`).
+             NpcKind::Wolf => 30,
++            // W4-d36 E4 batch 2 (`NPC.cs:15430`/`:11036`/`:15443`/`:11094`).
++            NpcKind::Frankenstein => 18,
++            NpcKind::BlackRecluse => 40,
++            NpcKind::SwampThing => 26,
++            NpcKind::UndeadViking => 10,
+             // W4-d36 hover batch (`NPC.cs:11175`/`:11229`/`:11631`).
+             NpcKind::Crimera => 8,
+             NpcKind::MossHornet => 22,
+@@ -4369,6 +4414,11 @@ impl Npc {
+             NpcKind::IceTortoise => 450.0,
+             // W4-d36 E4 (`NPC.cs:10972`).
+             NpcKind::Wolf => 1000.0,
++            // W4-d36 E4 batch 2 (`NPC.cs:15435`/`:11041`/`:15448`/`:11099`).
++            NpcKind::Frankenstein => 600.0,
++            NpcKind::BlackRecluse => 500.0,
++            NpcKind::SwampThing => 1000.0,
++            NpcKind::UndeadViking => 200.0,
+             // W4-d36 hover batch (`NPC.cs:11181`/`:11234`/`:11636`).
+             NpcKind::Crimera => 90.0,
+             NpcKind::MossHornet => 600.0,
+@@ -6295,6 +6345,17 @@ impl Npc {
+             NpcKind::HeadlessHorseman | NpcKind::Hellhound | NpcKind::Wolf => {
+                 crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+             }
++            // W4-d36 E4 batch 2 — the fighters ride the aiStyle-3 walker
++            // family on the ladder's per-type rows (`npc_ai3_speeds`:
++            // 162/163 the cap-2 group `NPC.cs:57554`, 166 the cap-3 group
++            // `:57520`, 167 the num83 base `:57606`). The Swamp Thing
++            // carries its own dwell pre-arm (`:55938-55971`) — the
++            // 240-roll window, the CanHit/justHit break, the ×0.9
++            // standstill — before the shared walker.
++            NpcKind::Frankenstein | NpcKind::BlackRecluse | NpcKind::UndeadViking => {
++                self.update_skeleton(world, player, dt)
++            }
++            NpcKind::SwampThing => self.update_swamp_thing(world, player, dt, rng),
+             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
+             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
+             // slice C. In 1.4.5.8 the 330 path carries no shot; its offence
+@@ -6873,6 +6934,76 @@ impl Npc {
+                     self.frame_counter = 0.0;
+                 }
+             }
++            // ---- W4-d36 E4 batch 2 FindFrame arms.
++            NpcKind::BlackRecluse => {
++                // `case 163` (`NPC.cs:73227-73267`): airborne pins the
++                // counter to -12 and the row to 5 (rising) / 6 (falling);
++                // grounded, spriteDirection = direction and the |vx|*1.1
++                // accumulator walks the -6/0/6/12/18 bands over rows
++                // 6/7/1/2/3; the >= 18 else resets the counter WITHOUT a
++                // row write (the C#'s last-band frame stands).
++                if self.vy != 0.0 {
++                    self.frame_counter = -12.0;
++                    self.frame = if self.vy < 0.0 { 5 } else { 6 };
++                } else {
++                    self.sprite_dir = self.facing;
++                    self.frame_counter += self.vx.abs() * 1.1;
++                    if self.frame_counter < -6.0 {
++                        self.frame = 6;
++                    } else if self.frame_counter < 0.0 {
++                        self.frame = 7;
++                    } else if self.frame_counter < 6.0 {
++                        self.frame = 1;
++                    } else if self.frame_counter < 12.0 {
++                        self.frame = 2;
++                    } else if self.frame_counter < 18.0 {
++                        self.frame = 3;
++                    } else {
++                        self.frame_counter = 0.0;
++                    }
++                }
++            }
++            NpcKind::SwampThing => {
++                // `case 166` (`NPC.cs:75618-75664`): grounded + standing,
++                // the +2 clock steps rows 0..5 every > 7 (wrap to 0);
++                // grounded + walking, the |vx| + 1 clock steps every > 9
++                // and the row clamps to the 7..12 band; airborne rests
++                // row 6 with the counter zeroed.
++                if self.vy == 0.0 {
++                    if self.facing == 1 {
++                        self.sprite_dir = 1;
++                    }
++                    if self.facing == -1 {
++                        self.sprite_dir = -1;
++                    }
++                    if self.vx == 0.0 {
++                        self.frame_counter += 2.0;
++                        if self.frame_counter > 7.0 {
++                            self.frame += 1;
++                            self.frame_counter = 0.0;
++                        }
++                        if self.frame > 5 {
++                            self.frame = 0;
++                        }
++                    } else {
++                        self.frame_counter += self.vx.abs();
++                        self.frame_counter += 1.0;
++                        if self.frame_counter > 9.0 {
++                            self.frame += 1;
++                            self.frame_counter = 0.0;
++                        }
++                        if self.frame > 12 {
++                            self.frame = 7;
++                        }
++                        if self.frame < 7 {
++                            self.frame = 7;
++                        }
++                    }
++                } else {
++                    self.frame_counter = 0.0;
++                    self.frame = 6;
++                }
++            }
+             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
+             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
+             // own — the shared town body's rows stand.
+@@ -8185,6 +8316,21 @@ impl Npc {
+                 // town machine — 15 rows).
+                 self.humanoid_town_frame();
+             }
++            // W4-d36 E4 batch 2 — Frankenstein (162) / Undead Viking (167)
++            // ride `FindFrame`'s humanoid-group case list (`NPC.cs:68571`/
++            // `:68572`): the shared town walk grounded (idle row 0, the
++            // walk rows 2..count-1 on the |vx|*2+1 > 6 clock — 15-row
++            // strips, `Main.npcFrameCount[162/167]`); airborne the group
++            // rests row 1 (`:69642-69646`) with the `:69647` type-list
++            // override to row 0 (167 IS listed, 162 is not).
++            NpcKind::Frankenstein | NpcKind::UndeadViking => {
++                if self.vy == 0.0 {
++                    self.humanoid_town_frame();
++                } else {
++                    self.frame_counter = 0.0;
++                    self.frame = if self.kind == NpcKind::UndeadViking { 0 } else { 1 };
++                }
++            }
+             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
+             // 5-frame strip (`Main.npcFrameCount[49] = 5`, `Main.cs:67082`).
+             // The hovers: the plain flap cycles (`Main.npcFrameCount[6] = 2`,
+@@ -10366,6 +10512,63 @@ impl Npc {
+         }
+     }
+ 
++    /// W4-d36 E4 batch 2 — the Swamp Thing (166): `AI_003_Fighters`'s
++    /// type-166 pre-arm (`NPC.cs:55938-55971`) ahead of the shared walker.
++    /// The 240-roll `ai[2]` dwell window (`Main.rand.Next(-480, -60)`),
++    /// the TargetClosest + justHit/CanHit break, the ×0.9 standstill with
++    /// the ±0.1 deadband and the `direction * 0.1` wake nudge; the dwell
++    /// ticks RETURN before the walk core (the C#'s `return` at `:55969`).
++    /// The frame is FindFrame case 166 (`:75618-75664`) — the draw seam,
++    /// not this machine's.
++    fn update_swamp_thing(
++        &mut self,
++        world: &World,
++        player: &mut Player,
++        dt: f32,
++        rng: &mut UnifiedRandom,
++    ) {
++        // `:55940-55944` — the dwell roll (netMode != 1: the port is the
++        // host). `Next(-480, -60)` is the exclusive-upper range draw.
++        if rng.next_max(240) == 0 {
++            self.ai[2] = rng.next_range(-480, -60) as f32;
++            self.net_update = true;
++        }
++        // `:55945-55956` — while dwelling: retarget, then the justHit /
++        // CanHit breaks (the port's hurt_cd stand-in, the 1×1 centres).
++        if self.ai[2] < 0.0 {
++            let cand = crate::npc_target::session_candidate_for(player, self.kind);
++            crate::npc_target::target_closest(self, world, &[cand], true, 3, 0);
++            if self.hurt_cd > 0.0 {
++                self.ai[2] = 0.0;
++            }
++            let (w, h) = self.size();
++            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
++            let (pcx, pcy) = player.center();
++            if crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0) {
++                self.ai[2] = 0.0;
++            }
++        }
++        // `:55957-55970` — the standstill: ×0.9 decay, the ±0.1 deadband,
++        // the tick-up and the wake nudge; the dwell RETURNs before the
++        // walk core.
++        if self.ai[2] < 0.0 {
++            self.vx *= 0.9;
++            if (self.vx as f64) > -0.1 && (self.vx as f64) < 0.1 {
++                self.vx = 0.0;
++            }
++            self.ai[2] += 1.0;
++            if self.ai[2] == 0.0 {
++                self.vx = self.facing as f32 * 0.1;
++            }
++            return;
++        }
++        // The shared walker (the cap-3 group's ladder rows) + the
++        // skeleton-family frame accumulator over the 13-row strip is
++        // FindFrame case 166's own (the draw seam); the walker's frame
++        // write here keeps the solo `update_rng` callers animating.
++        self.update_skeleton(world, player, dt);
++    }
++
+     /// `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) — the Frost
+     /// Legion trio. The constant hop cycle (`velocity.Y = -6f` per beat,
+     /// the every-third `ai[0] > 2f` beat → `-8.2f` + `ai[1]++`), the
+@@ -18903,8 +19106,13 @@ impl Npc {
+             NpcKind::Crimera => 555,
+             NpcKind::MossHornet => 556,
+             NpcKind::Moth => 557,
+-            // W4-d36 E4 — the next fresh hash slot (injective).
++            // W4-d36 E4 - the next fresh hash slot (injective).
+             NpcKind::Wolf => 558,
++            // W4-d36 E4 batch 2 — the next fresh hash slots (injective).
++            NpcKind::Frankenstein => 559,
++            NpcKind::BlackRecluse => 560,
++            NpcKind::SwampThing => 561,
++            NpcKind::UndeadViking => 562,
+         } << 5;
+         if self.kind == NpcKind::Slime {
+             h ^= (self.slime as u32) << 9;
+@@ -23973,7 +24181,7 @@ mod tests {
+     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
+     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
+     /// the new arm), then this array's length.
+-    pub(super) const ALL_KINDS: [NpcKind; 279] = [
++    pub(super) const ALL_KINDS: [NpcKind; 283] = [
+         NpcKind::Slime,
+         NpcKind::DemonEye,
+         NpcKind::WanderingEye,
+@@ -24260,6 +24468,11 @@ mod tests {
+         NpcKind::IceTortoise,
+         // W4-d36 E4.
+         NpcKind::Wolf,
++        // W4-d36 E4 batch 2.
++        NpcKind::Frankenstein,
++        NpcKind::BlackRecluse,
++        NpcKind::SwampThing,
++        NpcKind::UndeadViking,
+         // W4-d36 hover batch.
+         NpcKind::Crimera,
+         NpcKind::MossHornet,
+@@ -28047,8 +28260,8 @@ mod s1_f_3_tests {
+         );
+         assert_eq!(
+             covered + sentinel,
+-            279,
+-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf, L-B gate)"
++            283,
++            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4 batch 2's four fighters, L-B gate)"
+         );
+         assert!(
+             covered > 43,
+diff --git a/crates/tr-app/src/npc/data.rs b/crates/tr-app/src/npc/data.rs
+index 64b1eef27..799ae73b0 100644
+--- a/crates/tr-app/src/npc/data.rs
++++ b/crates/tr-app/src/npc/data.rs
+@@ -598,6 +598,13 @@ impl NpcKind {
+             NpcKind::IceTortoise => 771,
+             // W4-d36 E4 — the Wolf (155) at the next R7-band slot.
+             NpcKind::Wolf => 772,
++            // W4-d36 E4 batch 2 — the eclipse/underground fighters at the
++            // next R7-band slots (159 Vampire is g8-claimed — their pushed
++            // tip's `Vampire => 388`, machine round 3 — skipped).
++            NpcKind::Frankenstein => 773,
++            NpcKind::BlackRecluse => 774,
++            NpcKind::SwampThing => 775,
++            NpcKind::UndeadViking => 776,
+             // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
+             // R7-band slots (ascending vanilla order, the b0 convention).
+             NpcKind::Crimera => 781,
+@@ -943,6 +950,11 @@ impl NpcKind {
+             771 => NpcKind::IceTortoise,
+             // W4-d36 E4 — the Wolf's decode arm.
+             772 => NpcKind::Wolf,
++            // W4-d36 E4 batch 2 — the fighters' decode arms.
++            773 => NpcKind::Frankenstein,
++            774 => NpcKind::BlackRecluse,
++            775 => NpcKind::SwampThing,
++            776 => NpcKind::UndeadViking,
+             // W4-d36 census batch 1 — the hover trio's decode arms.
+             781 => NpcKind::Crimera,
+             782 => NpcKind::MossHornet,
+@@ -1834,7 +1846,17 @@ impl NpcKind {
+             | NpcKind::Penguin
+             | NpcKind::PenguinBlack
+             // W4-d36 E4: the Wolf's NPCHit1 (`NPC.cs:10969`).
+-            | NpcKind::Wolf => "NPC_Hit_1",
++            | NpcKind::Wolf
++            // W4-d36 E4 batch 2: Frankenstein/SwampThing NPCHit1
++            // (`NPC.cs:15432`/`:15445`).
++            | NpcKind::Frankenstein
++            | NpcKind::SwampThing => "NPC_Hit_1",
++            // W4-d36 E4 batch 2: the Undead Viking's NPCHit2
++            // (`NPC.cs:11096`) — the skeleton-family hit cue.
++            NpcKind::UndeadViking => "NPC_Hit_2",
++            // W4-d36 E4 batch 2: the Black Recluse's NPCHit29
++            // (`NPC.cs:11038`) — the spider cue (the Wall Creeper's).
++            NpcKind::BlackRecluse => "NPC_Hit_29",
+             NpcKind::GiantTortoise
+             | NpcKind::IceTortoise => "NPC_Hit_24",
+             // W4-d36 census batch 1: the hover trio's NPCHit1
+@@ -2153,6 +2175,14 @@ impl NpcKind {
+             | NpcKind::PenguinBlack
+             // W4-d36 E4: the Wolf's NPCDeath1 (`NPC.cs:10970`).
+             | NpcKind::Wolf => "NPC_Killed_1",
++            // W4-d36 E4 batch 2: the three fighters' NPCDeath2
++            // (`NPC.cs:15433`/`:15446`/`:11097`) — the zombie death cue.
++            NpcKind::Frankenstein
++            | NpcKind::SwampThing
++            | NpcKind::UndeadViking => "NPC_Killed_2",
++            // W4-d36 E4 batch 2: the Black Recluse's NPCDeath32
++            // (`NPC.cs:11039`) — the spider death cue.
++            NpcKind::BlackRecluse => "NPC_Killed_32",
+             NpcKind::GiantTortoise
+             | NpcKind::IceTortoise => "NPC_Killed_27",
+             // W4-d36 census batch 1: the hover trio's NPCDeath1
+@@ -2528,6 +2558,13 @@ impl NpcKind {
+             // W4-d36 E4: the Wolf (155) aiStyle 26 (`NPC.cs:10965`) —
+             // `AI_026_Unicorns`, the Horseman/Hellhound machine's own arm.
+             NpcKind::Wolf => 26,
++            // W4-d36 E4 batch 2: 162/163/166/167 aiStyle 3
++            // (`NPC.cs:15428`/`:11034`/`:15441`/`:11092`) — the walker
++            // family on the `npc_ai3_speeds` ladder's per-type rows.
++            NpcKind::Frankenstein
++            | NpcKind::BlackRecluse
++            | NpcKind::SwampThing
++            | NpcKind::UndeadViking => 3,
+             // W4-d36 census batch 1: 173/176/205 aiStyle 5
+             // (`NPC.cs:11173`/`:11227`/`:11629`) — the style axis claims
+             // them (`ai_005_hover_family`).
+@@ -2593,6 +2630,12 @@ impl NpcKind {
+             // W4-d36 E4 — the Wolf (155) rides the same aiStyle-26 chase
+             // ceiling (`num10 = 6f`, `NPC.cs:62617`).
+             NpcKind::Wolf => 6.0,
++            // W4-d36 E4 batch 2 — the fighters' caps, the ladder's groups:
++            // 162/163 the cap-2 group (`NPC.cs:57554`), 166 the cap-3
++            // group (`:57520`), 167 the num83 group base 1.5 (`:57606`).
++            NpcKind::Frankenstein | NpcKind::BlackRecluse => 2.0,
++            NpcKind::SwampThing => 3.0,
++            NpcKind::UndeadViking => 1.5,
+             // S1-D-3ff wave A — the `num107` group's per-type rows
+             // (`AI_003_Fighters`, `NPC.cs:58324-58376`): the default 1f
+             // (52/53/161 carry no override), 132 0.95f (`:58345-58348`),
+@@ -3076,6 +3119,11 @@ impl NpcKind {
+             | NpcKind::IceTortoise => (46.0, 32.0),
+             // W4-d36 E4 (`NPC.cs:10963-10964`): the Wolf 46x30.
+             NpcKind::Wolf => (46.0, 30.0),
++            // W4-d36 E4 batch 2 (`NPC.cs:15426-15427`/`:11032-11033`/
++            // `:15439-15440`/`:11090-11091`): the three fighters 18x40,
++            // the Black Recluse 50x20 (the wall-crawler body).
++            NpcKind::Frankenstein | NpcKind::SwampThing | NpcKind::UndeadViking => (18.0, 40.0),
++            NpcKind::BlackRecluse => (50.0, 20.0),
+             // W4-d36 census batch 1 (`NPC.cs:11171-11172`/`:11225-11226`/
+             // `:11627-11628`): Crimera 30x30, Moss Hornet 34x32, Moth 40x40.
+             NpcKind::Crimera => (30.0, 30.0),
+@@ -3191,6 +3239,11 @@ impl NpcKind {
+             NpcKind::IceTortoise => 154,
+             // W4-d36 E4 (`NPCID.cs:2293`).
+             NpcKind::Wolf => 155,
++            // W4-d36 E4 batch 2 (`NPCID.cs:11001`/`:11003`/`:11009`/`:11011`).
++            NpcKind::Frankenstein => 162,
++            NpcKind::BlackRecluse => 163,
++            NpcKind::SwampThing => 166,
++            NpcKind::UndeadViking => 167,
+             // W4-d36 census batch 1 (`NPCID.cs:11023`/`:11029`/`:11087`).
+             NpcKind::Crimera => 173,
+             NpcKind::MossHornet => 176,
+@@ -3243,6 +3296,11 @@ impl NpcKind {
+             NpcKind::GoblinArcher => 21,
+             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
+             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
++            // W4-d36 E4 batch 2 — Frankenstein/Undead Viking ride
++            // `FindFrame`'s humanoid-group case list (`NPC.cs:68571`/
++            // `:68572`) on their 15-frame strips
++            // (`Main.npcFrameCount[162/167]`, `Main.cs:67082`).
++            NpcKind::Frankenstein | NpcKind::UndeadViking => 15,
+             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
+             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
+             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
+@@ -3747,6 +3805,11 @@ impl NpcKind {
+             NpcKind::IceTortoise => 400,
+             // W4-d36 E4 (`NPC.cs:10968`).
+             NpcKind::Wolf => 300,
++            // W4-d36 E4 batch 2 (`NPC.cs:15431`/`:11037`/`:15444`/`:11095`).
++            NpcKind::Frankenstein => 350,
++            NpcKind::BlackRecluse => 350,
++            NpcKind::SwampThing => 450,
++            NpcKind::UndeadViking => 70,
+             // W4-d36 census batch 1 (`NPC.cs:11176`/`:11230`/`:11632`).
+             NpcKind::Crimera => 40,
+             NpcKind::MossHornet => 220,
+@@ -4124,6 +4187,11 @@ impl NpcKind {
+             NpcKind::IceTortoise => 55,
+             // W4-d36 E4 (`NPC.cs:10966`).
+             NpcKind::Wolf => 65,
++            // W4-d36 E4 batch 2 (`NPC.cs:15429`/`:11035`/`:15442`/`:11093`).
++            NpcKind::Frankenstein => 65,
++            NpcKind::BlackRecluse => 90,
++            NpcKind::SwampThing => 70,
++            NpcKind::UndeadViking => 24,
+             // W4-d36 census batch 1 (`NPC.cs:11174`/`:11228`/`:11630`).
+             NpcKind::Crimera => 22,
+             NpcKind::MossHornet => 70,
+diff --git a/crates/tr-app/src/npc_buffs.rs b/crates/tr-app/src/npc_buffs.rs
+index 49810a93e..ad9e62e8d 100644
+--- a/crates/tr-app/src/npc_buffs.rs
++++ b/crates/tr-app/src/npc_buffs.rs
+@@ -493,6 +493,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
+         NpcKind::IceTortoise => &[44, 324],
+         // W4-d36 E4 (`NPCID.cs:7041`): 155 null-row (no immunity).
+         NpcKind::Wolf => &[],
++        // W4-d36 E4 batch 2 (`NPCID.cs:7072`/`:7074`/`:7095`/`:7102`):
++        // 162 null-row, 163/166 {20}, 167 {20,44,324}.
++        NpcKind::Frankenstein => &[],
++        NpcKind::BlackRecluse
++        | NpcKind::SwampThing => &[20],
++        NpcKind::UndeadViking => &[20, 44, 324],
+         // W4-d36 hover batch (`NPCID.cs:7125`/`:7146`/`:7277`): 173 {31},
+         // 176/205 {20,31}.
+         NpcKind::Crimera => &[31],

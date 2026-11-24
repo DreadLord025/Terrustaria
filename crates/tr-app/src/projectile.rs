@@ -5788,6 +5788,26 @@ impl Projectile {
     /// generic flight instead of duplicating it) — the delegation is
     /// behaviour-identical, pinned by the arrow tests below.
     fn ai_arrow(&mut self, world: &World) {
+        // W4-d36 E4 batch 5 — the JungleSpike 176 (the Spiked Jungle
+        // Slime's spike, `Projectile.cs:55109-55128`): the `alpha -= 50`
+        // fade (the 255 start, `:2623`) and the first-tick `ai[1] = 1f`
+        // latch BEFORE the flight (the C#'s AI_001 per-type block sits
+        // above the gravity/flight tail). The dust 22 at alpha 0
+        // (`:55113-55117`) is SKIPPED (no dust layer); the
+        // `SoundID.Item17` cue (`:55127`) rides the wants_sound seam (the
+        // aiStyle-28 first-tick convention). 176 is NOT on the `flag3 =
+        // false` list (`:55947-56032`), so the flight keeps its counting
+        // counter (the gravity arm) — the generic arrow shape.
+        if self.kind == JUNGLE_SPIKE {
+            if self.alpha > 0 {
+                self.alpha -= 50;
+            }
+            self.alpha = self.alpha.max(0);
+            if self.ai[1] == 0.0 {
+                self.ai[1] = 1.0;
+                self.wants_sound = Some((2, 17, self.pos.x, self.pos.y, 0.0));
+            }
+        }
         self.ai_style1_flight(world, true);
     }
 
@@ -15749,6 +15769,7 @@ fn trail_segments(
 /// hook (the C# carries none — the `:54002-55945` head has no 38 arm),
 /// but `case 38` sits on the `flag3 = false` list (`:55953`), so the
 /// rider's resting flight (no counter, no gravity) is its whole AI.
+/// (`Projectile.cs:55962`).
 const AI_STYLE_1_RIDERS: [u16; 6] = [
     GREEN_LASER,
     PURPLE_LASER,
@@ -15756,6 +15777,12 @@ const AI_STYLE_1_RIDERS: [u16; 6] = [
     SKY_FRACTURE,
     BULLET_SNOWMAN,
     HARPY_FEATHER,
+    // W4-d36 E4 item 4 — the Hornet family's Stinger (55): the `flag3 =
+    // false` skip list (`Projectile.cs:55954`) — the resting counter, the
+    // straight flight (no per-type hook; the dust `:55490-55494` is the
+    // pool-wide visual skip). The aiStyle-5 volley spawns it
+    // (`npc_ai_style5.rs`, `NPC.cs:50796`).
+    STINGER,
 ];
 
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
@@ -15776,6 +15803,7 @@ fn uses_wind_physics(ai_style: u8) -> bool {
 /// in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
     matches!(ai_style, 2 | 8 | 24 | 28 | 29 | 72)
+}
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
@@ -17334,6 +17362,7 @@ impl ProjectilePool {
     pub fn set_infected_seed(&mut self, infected_seed: bool) {
         self.infected_seed = infected_seed;
     }
+    }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
     /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
@@ -17367,6 +17396,7 @@ impl ProjectilePool {
     /// live light map before the pass (the `set_disco` precedent).
     pub fn set_cube_light(&mut self, light: Option<(f32, f32)>) {
         self.cube_light = light;
+    }
     }
 
     /// W4-d7 F3 — the Storm Tigers' gem-count setter: the 831 gem count the
@@ -17409,6 +17439,7 @@ impl ProjectilePool {
     pub fn drain_death_drops(&mut self) -> Vec<(u16, i32, f32, f32, bool)> {
         std::mem::take(&mut self.pending_death_drops)
     }
+    }
 
     /// W4-d4 — the beach ball's bounce-result chat drain
     /// (`Projectile.cs:18605-18608`): the world sim prints each line on the
@@ -17430,6 +17461,7 @@ impl ProjectilePool {
     /// (the actuation-drops precedent, `world_sim/wiring.rs`).
     pub fn drain_light_drops(&mut self) -> Vec<tr_core::edit::ObjectDrop> {
         std::mem::take(&mut self.pending_light_drops)
+    }
     }
 
     /// W4-d6 residual — the `ghostHeal` SpiritHeal spawn drain
@@ -18589,6 +18621,7 @@ impl ProjectilePool {
             self.pending_channel_tracks.push((kind, slot as u16));
         }
         Some(slot)
+    }
     }
 
     /// `Projectile.Update` (`:16668-17208`): the AI sub-steps, the PVE damage
@@ -23550,6 +23583,7 @@ impl ProjectilePool {
                     }
                 }
             }
+            }
             // W4-d1 RETIRE — the frozen tail's post-loop landing is gone
             // (the `death_place` hook above owns the placement now — the
             // blocked-move kill runs `Kill()` → `Kill_ExplodeTiles`, the
@@ -24068,6 +24102,8 @@ impl ProjectilePool {
                 );
             }
         }
+        }
+    }
     }
 
     /// S1-P-i16 — the dart/electrosphere/fireworks `Kill()` arms, in the
@@ -27637,6 +27673,7 @@ impl ProjectilePool {
             if p.kind == MOON_BOULDER && !p.friendly {
                 continue;
             }
+            }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
             let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
             if !single_hit && n.immune[owner_idx] != 0 {
@@ -28407,6 +28444,8 @@ impl ProjectilePool {
                 }
             }
         }
+        }
+    }
     }
 
     /// The box walk `Projectile.Damage()` (`:14087-14119`) actually runs:
@@ -28563,6 +28602,7 @@ impl ProjectilePool {
                 }
             }
         }
+    }
     }
 
     /// The hostile shot's player contact: the box overlap with the
@@ -28857,6 +28897,7 @@ impl ProjectilePool {
         // `:72483-72501` — the three dust loops' explicit draws.
         crate::projectile_ai_djinn::curse_kill_draws(rng);
     }
+}
 }
 }
 

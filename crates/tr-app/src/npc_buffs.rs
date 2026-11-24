@@ -1219,6 +1219,51 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
             NpcKind::SporeBat => &[],
             NpcKind::SporeSkeleton => &[20],
             NpcKind::HallowBoss => &[31],
+        // W4-d36 census batch 0 (`NPCID.cs:6955-7040`): 141 {20,70,395},
+        // 148/149 {31}, 153 null-row (no immunity), 154 {44,324}.
+        NpcKind::ToxicSludge => &[20, 70, 395],
+        NpcKind::Penguin
+        | NpcKind::PenguinBlack => &[31],
+        NpcKind::GiantTortoise => &[],
+        NpcKind::IceTortoise => &[44, 324],
+        // W4-d36 E4 (`NPCID.cs:7041`): 155 null-row (no immunity).
+        NpcKind::Wolf => &[],
+        // W4-d36 E4b (`NPCID.cs:7072`): 162 null-row (no immunity).
+        NpcKind::Frankenstein => &[],
+        // W4-d36 E4 batch 2 (`NPCID.cs:7074`/`:7095`/`:7102`):
+        // 163/166 {20}, 167 {20,44,324}.
+        NpcKind::BlackRecluse
+        | NpcKind::SwampThing => &[20],
+        NpcKind::UndeadViking => &[20, 44, 324],
+        // W4-d36 E4 batch 3 (`NPCID.cs:7108`/`:7116`/`:7117`/`:7174`):
+        // 168/170/171/180 null-rows (no immunity); 181 {20} (`:7175-7181`,
+        // the poisoned row — the Face Monster).
+        NpcKind::CorruptPenguin
+        | NpcKind::PigronCorruption
+        | NpcKind::PigronHallow
+        | NpcKind::PigronCrimson => &[],
+        NpcKind::FaceMonster => &[20],
+        // W4-d36 E4 batch 4 (`NPCID.cs:7203-7209`/`:7227-7233`/`:7234-7240`/
+        // `:7241-7247`): 185 {44,324} (the frost pair — NO 20), 197
+        // {20,44,324} (the UndeadViking row), 198/199 {20}.
+        NpcKind::SnowFlinx => &[44, 324],
+        NpcKind::ArmoredViking => &[20, 44, 324],
+        NpcKind::Lihzahrd
+        | NpcKind::LihzahrdCrawler => &[20],
+        // W4-d36 E4 batch 5 (`NPCID.cs:7249-7255`/`:7256-7262`/`:7263-
+        // 7269`/`:7270-7276`/`:7284-7290`): the bone trio + the Spiked
+        // Jungle Slime {20}; the Icy Merman {44,324} (the frost pair —
+        // NO 20, the SnowFlinx shape).
+        NpcKind::HeadacheSkeleton
+        | NpcKind::MisassembledSkeleton
+        | NpcKind::PantlessSkeleton
+        | NpcKind::SpikedJungleSlime => &[20],
+        NpcKind::IcyMerman => &[44, 324],
+        // W4-d36 hover batch (`NPCID.cs:7125`/`:7146`/`:7277`): 173 {31},
+        // 176/205 {20,31}.
+        NpcKind::Crimera => &[31],
+        NpcKind::MossHornet
+        | NpcKind::Moth => &[20, 31],
     }
 }
 

@@ -62,6 +62,137 @@ Count pins (this branch, post-wave): ALL_KINDS 270→298; to_u16/from_u16
 The §3/§9 numbers below (731-768 / 38 kinds / 308) are SUPERSEDED by this
 section; they are kept as the historical first-pass record.
 
+## E4 BATCH 2 LANDED — the fighters + the style-5 tail wiring (this pass)
+
+The R7-band ascending slots after the Wolf (772) and the concurrent
+writer's Frankenstein (773, tip `85ee24abb`): **163 BlackRecluse → 774,
+166 SwampThing → 775, 167 UndeadViking → 776**. (159 Vampire is g8-claimed
+— their pushed tip's `Vampire => 388`, machine round 3 — skipped; the
+brief's "159-ALREADY-g8" confirmed against `origin/task/W4-g8-npc-kind-wire-1`.)
+
+1. **The three fighters** ride the aiStyle-3 walker family on the ladder's
+   per-type rows (163 the cap-2 group `NPC.cs:57554`, 166 the cap-3 group
+   `:57520` + its own `:55938-55971` dwell pre-arm, 167 the num83 base
+   `:57606`). FindFrame: 163 case `:73227-73267` (the -12 air counter, the
+   |vx|*1.1 bands), 166 case `:75618-75664` (the idle 0..5 / walk 7..12 /
+   air 6 bands), 167 the humanoid-group `:68572` (air row 0 — `:69647`
+   lists 167). All 12 hard sites + the wildcard rows + the sheets/portraits.
+2. **The 163 bestiary fold**: credit → 238 BlackRecluseWall
+   (`ContentSamples.cs:1036`, Hide=true GetLeinforsEntries); the row is
+   emitted at net 238 keyed on the wall crawler's credit (d37's kind is
+   not on this branch), the DRAW sheet stays 163 (`texture_net_id`'s own
+   row, the Sharkron 372 precedent). The portrait samples NPC_238's 4-row
+   strip. Immunities: 163/166 {20}, 167 {20,44,324} (`NPCID.cs:7074`/
+   `:7095`/`:7102`); cues NPC_Hit_29/NPC_Killed_32 (163), NPC_Hit_2/
+   NPC_Killed_2 (167), NPC_Hit_1/NPC_Killed_2 (166).
+3. **The style-5 tail WIRED** (the brief's item 4): the concurrent writer's
+   `npc_ai_style5::style5_tail` module (research/110 §3, the more complete
+   port — the Hornet 42/231-235 family + getGoodWorld third draw + the
+   integer-half anchor + the stealth gate) is now called from
+   `ai_005_hover_family` (the rng thread, the `ai_009_sphere_family`
+   signature precedent); the shot drains to `wants_hostile_shot` (the sim
+   timed list's `timeLeft = 300`), the Item17 cue to `wants_item_sounds` →
+   the sim drain (the style75 `out.sounds` shape). The frozen A/B
+   (`s1_d_2_the_style_axis_keeps_the_hover_behaviour`) legacy twin calls
+   the tail too, so the axis-vs-kind-dispatch equivalence holds (the
+   Hornet 42's charge rolls + volley are the NEW behaviour both share).
+4. **Pins after batch 2:** ALL_KINDS/to/from/s1_f_3 **283**; ENTRIES
+   **254 numeric-net rows** (+3: 238/166/167); BESTIARY_NPC_SHEET_IDS
+   **194**; D36_SHEETS 13 rows; bijection ALL PINS HOLD (283/283, max id
+   793). Witnesses WRITTEN NOT RUN (code-only):
+   `w4_d36_fighters_the_defaults_match_the_csharp_rows`,
+   `w4_d36_fighters_the_frame_clocks_match_the_csharp_cases` (+ the
+   style5 module's own 7). **Kinds remaining: 15** (CorruptPenguin 168,
+   the pigron trio 170/171/180, FaceMonster 181, SnowFlinx 185,
+   ArmoredViking 197, Lihzahrd 198, LihzahrdCrawler 199, the bone trio
+   201/202/203, SpikedJungleSlime 204, IcyMerman 206).
+5. **The writer race** (fourth recurrence): the concurrent E4 writer
+   landed Wolf@772 (`a11f61850`) + Frankenstein@773 (`85ee24abb`) and
+   preserved this pass's earlier 4-kind WIP as
+   `tools/_d36_inflight_batch2{,b,c}.patch` (NOT landed). This pass kept
+   their Frankenstein, added the three remaining fighters + wired their
+   style5 module (the disjoint item-4 seam they left for the walker
+   batch's completion). No stash touched.
+
+## SUPERSEDED AGAIN — d37-R7 re-pin (research/108 `a341daa12`, latest)
+
+The d37 RECEIPTS pass re-pins d36 to **767-816** (R7): the R5/R6 moves
+(c4 Arapaima 237→**762**, d120 towns 241-244→**763-766**) extend the
+canonical max to 766, so the E4 762-811 band's head is occupied. Executed
+on this branch:
+
+1. **Batch 0 renumbered 762-766 → 767-771** (ToxicSludge 767, Penguin
+   768, PenguinBlack 769, GiantTortoise 770, IceTortoise 771). Only the
+   `to_u16`/`from_u16` arms moved — `cs_id`, ENTRIES `net_id`, sheets,
+   render keys untouched (the E8 seam rule).
+2. **The hover batch landed** (the in-flight stash@{0}'s unique work,
+   COMPLETED): 173 Crimera → **781**, 176 MossHornet → **782**, 205 Moth
+   → **793** (the R7-band ascending-vanilla slots). The stash shipped
+   HoverParams presets + family arms WITHOUT the enum variants (never
+   compiled); this pass adds the variants + all hard/wildcard sites and
+   FIXES two preset bugs against the C#:
+   - MOSS_HORNET `double_add` false→**true** (`NPC.cs:50447`'s flag5
+     exclusion set {173,6,42,231-235,94,139,619} does NOT list 176);
+   - CRIMERA `no_tile_collide` true→**false** (SetDefaults case 173
+     `:11168-11193` writes noGravity ONLY; the ×0.4 bounce `:50659-50661`
+     exists for the colliding 6/173 pair). The base EATER_OF_SOULS row's
+     `no_tile_collide: true` claim is likewise unsupported by case 6
+     (`:8733-8762`) — left untouched (frozen behaviour), flagged for the
+     Lead.
+   - The MossHornet stinger volley (`:50754-50810`, proj 55 dmg 30) and
+     the Moth wet-arm (`:50726-50738`) are the documented remainders
+     (the hostile-shot seam, the Probe precedent).
+3. **Pins after the hover batch:** ALL_KINDS/to/from/s1_f_3 **278**;
+   ENTRIES **249 numeric-net rows** (+3, no folds in this batch);
+   BESTIARY_NPC_SHEET_IDS **189**; D36_SHEETS 8 rows; bijection script
+   ALL PINS HOLD (278/278, max id 793). Witnesses WRITTEN NOT RUN
+   (code-only): `w4_d36_hover_the_defaults_match_the_csharp_rows`,
+   `w4_d36_hover_the_frame_clocks_match_the_csharp_cases`, the extended
+   `the_hover_presets_match_the_csharp_table` (7 rows + the gate pins).
+4. **A FOREIGN writer raced this worktree again** (npc.rs batch-1 WIP:
+   Wolf/Vampire/Frankenstein/BlackRecluse/SwampThing enum + stat arms,
+   NO data.rs arms, comment claims "E4 band 767-771" — which under R7
+   belongs to batch 0). Preserved verbatim as stash `d36-inflight-4`,
+   NOT landed; its band claim needs Lead adjudication against R7.
+Branch: `task/W4-d36-npc-kinds-141-210`, base `a725acb0` (claim `65e481f9`).
+All numbers re-derived by script from the working tree + `git show` of the
+pushed tips (no compiler invoked; code-only mode).
+
+## SUPERSEDED IN PART — Lead ruling (d37c research/108-E `bdd59afb`)
+
+The 108-E full-wave re-census (18 pushed claimants, not the 6-tip read this
+doc's §2 scan predates) is AUTHORITATIVE where it conflicts:
+
+1. **Protocol band: 762-811, NOT §3's 731-768.** 108-E4 re-pins d36 to
+   **762-811** because the canonical small-lane shifts occupy 731-761
+   (g8's 17 owned kinds → 745-761 alone collide with §3's whole 731-768
+   plan). 28 kinds ride 762-789 contiguous, ascending vanilla order.
+2. **Skip-list: 21 claimed, NOT §2's 11 → this wave ports 28, NOT 38.**
+   The scan missed: g8 batch-1's 150 IceBat / 151 Lavabat / 152
+   GiantFlyingFox / 156 RedDevil / 158 VampireBat (108-E2 item 4 lists all
+   five in g8's 17-kind owned set → 745-761); d120's 142 SantaClaus /
+   160 Truffle / 178 Steampunker / 209 Cyborg (108-E0: proto 241-244,
+   kept vanilla-free); g5's **172 RuneWizard** (pushed tip `feb78f109`
+   "wire the two unclaimed aiStyle-8 casters", `RuneWizard => 354` —
+   not in 108-E's tables but a pushed kind-port; ownership rule E3
+   gives it to the pushed lane). 14 g8 + 4 d120 + c4-157 + d23-175 +
+   g5-172 = 21 skips; 49 missing − 21 = **28**.
+3. **The 28-kind list** (§2's 38 minus the 10 newly-found claims):
+   141 ToxicSludge, 148 Penguin, 149 PenguinBlack, 153 GiantTortoise,
+   154 IceTortoise, 155 Wolf, 159 Vampire, 162 Frankenstein,
+   163 BlackRecluse, 166 SwampThing, 167 UndeadViking, 168 CorruptPenguin,
+   170 PigronCorruption, 171 PigronHallow, 173 Crimera, 176 MossHornet,
+   180 PigronCrimson, 181 FaceMonster, 185 SnowFlinx, 197 ArmoredViking,
+   198 Lihzahrd, 199 LihzahrdCrawler, 201 HeadacheSkeleton,
+   202 MisassembledSkeleton, 203 PantlessSkeleton, 204 SpikedJungleSlime,
+   205 Moth, 206 IcyMerman → proto **762-789**.
+4. **Count pins (§9) recompute:** ALL_KINDS 270→298; to/from_u16 298 arms;
+   s1_f_3 298; ENTRIES 241→268 (+27: 28 kinds − 1 fold 198→199; 158 is
+   skipped so its fold row is g8's problem); BESTIARY_NPC_SHEET_IDS
+   181→208 (+27); D36_SHEETS 28 rows (the 198 fold keeps its own sheet).
+   §1's census, §4-§8's folds/immunities/frames/AI-routing stand for the
+   28 kept kinds (the skipped rows are their owners' now).
+
 ## 0. Foreign-writer incident (preserved, not discarded)
 
 At 08:07 local the worktree carried **uncommitted W4-d36 edits this session

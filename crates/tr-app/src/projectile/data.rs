@@ -1200,6 +1200,13 @@ pub const DEMON_SICKLE: u16 = 44;
 /// 14x14, hostile, penetrate −1, tileCollide; the arm writes aiStyle 0
 /// then 1 — the final 1 stands). W4-g8 machine round.
 pub const HARPY_FEATHER: u16 = 38;
+/// `ProjectileID.Stinger` (55, `ProjectileID.cs:664`) — the Hornet family's
+/// hostile shot (`NPC.cs:50796`, the aiStyle-5 tail's volley): 10x10,
+/// aiStyle 1 on the `flag3 = false` skip list (`Projectile.cs:55954` — the
+/// resting counter, straight flight), `penetrate = -1`, tileCollide; the
+/// stock 3600 life the volley overrides to 300 post-spawn (`NPC.cs:50797`,
+/// the sim's timed-shot list). W4-d36 E4 item 4 (`npc_ai_style5.rs`).
+pub const STINGER: u16 = 55;
 /// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
 pub const DEMON_SCYTHE: u16 = 45;
 /// `ProjectileID.RainbowRodBullet` (79) — the Rainbow Rod's channeled shot.
@@ -1263,6 +1270,17 @@ pub const RUNE_BLAST: u16 = 129;
 /// book shot (W4-g5, `Projectile.cs:10186-10194`: 16x16, aiStyle 18,
 /// hostile, penetrate -1, timeLeft 420).
 pub const LIBRARIAN_BOOK: u16 = 1092;
+/// `ProjectileID.JungleSpike` (176, `ProjectileID.cs:906`) — the Spiked
+/// Jungle Slime's hostile spike (`NPC.cs:61415`/`:61435`, the AI_001
+/// shooter block): 6x6, aiStyle 1, hostile, `penetrate = -1`, alpha 255
+/// (`Projectile.cs:2621-2629`). W4-d36 E4 batch 5.
+pub const JUNGLE_SPIKE: u16 = 176;
+/// `ProjectileID.IcewaterSpit` (177, `ProjectileID.cs:908`) — the Icy
+/// Merman's hostile spit (`NPC.cs:59592`, the aiStyle-3 shooter block):
+/// 10x10, aiStyle 28, hostile, `penetrate = -1`, alpha 255, coldDamage
+/// (no port slot field — the module doc), `Projectile.cs:2630-2640`.
+/// W4-d36 E4 batch 5.
+pub const ICEWATER_SPIT: u16 = 177;
 /// The fishing bobbers (S1-P-i35): the plain pole family 360-366
 /// (`ProjectileID.BobberWooden`..`BobberSittingDuck`), the Fleshcatcher /
 /// Hotline 381/382, the Blood rod 760 and the Scarab 775
@@ -3750,6 +3768,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight arm is `ai_librarian_book` (the 45-tick hover, the
             // aim turn, the 9-speed home, the page-gore trail).
             LIBRARIAN_BOOK => (16.0, 16.0, 18, -1, 420, 0, true, false, false, RESET_STATE),
+            // W4-d36 E4 batch 5 — `Projectile.cs:2621-2629`: the Spiked
+            // Jungle Slime's spike (176): 6x6, aiStyle 1, hostile,
+            // `penetrate = -1`, alpha 255, the stock tileCollide true /
+            // 3600 life. The `:55109-55128` alpha −50 fade + the Item17
+            // first-tick cue ride the aiStyle-1 rider hook below.
+            JUNGLE_SPIKE => (6.0, 6.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d36 E4 batch 5 — `Projectile.cs:2630-2640`: the Icy
+            // Merman's spit (177): 10x10, aiStyle 28 (the frost-bolt
+            // flight), hostile, `penetrate = -1`, alpha 255, coldDamage
+            // (no slot field yet — the module doc), the stock 3600 life.
+            ICEWATER_SPIT => (10.0, 10.0, 28, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:6461-6470` + `ApplyGemStaffStats` (`:10683-10689`) — the
             // Amber Staff's bolt, the gem-bolt family's seventh kind.
             GEM_BOLT_AMBER => (10.0, 10.0, 29, 1, 300, 0, true, false, false, (true, 60, false, -1, 255, 1.0)),
@@ -4922,6 +4951,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `flag3 = false` flight-counter list (`:55954`), so it flies
             // dead straight (no gravity) — the `ai_hornet_stinger` arm.
             HORNET_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:1375-1383` — the Hornet family's Stinger (55):
+            // 10x10, hostile, `penetrate = -1`, aiStyle 1, `tileCollide =
+            // true`; the stock 3600 life (the aiStyle-5 volley overrides to
+            // 300 post-spawn, `NPC.cs:50797` — the sim's timed-shot list).
+            // The `flag3 = false` skip-list membership (`:55954`) rides
+            // `AI_STYLE_1_RIDERS` — the resting counter, straight flight
+            // (W4-d36 E4 item 4, `npc_ai_style5.rs`).
+            STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // S1-D-3 W-9 fishron wiring — `Projectile.cs:4676-4685`: the
             // Sharknado bolt (385): 30x30, aiStyle 65, penetrate -1,
             // alpha 255, timeLeft 300 (the stock tileCollide true).
@@ -6622,4 +6659,5 @@ mod tests {
             assert_eq!(d.time_left, 3600, "kind {k}");
         }
     }
+}
 }

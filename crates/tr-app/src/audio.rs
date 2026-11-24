@@ -248,6 +248,21 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_37", 3),
     // W4-d41 — the sand poachers' NPCHit13 (`NPC.cs:14941`).
     ("NPC_Hit_13", 3),
+    // W4-d36 census batch 0 - the tortoises' NPCHit24 (`NPC.cs:10939`/
+    // `:10954`); the `Sounds/NPC_Hit_24.xnb` asset ships with the content.
+    ("NPC_Hit_24", 3),
+    // W4-d36 E4 batch 2 — the Black Recluse's NPCHit29 (`NPC.cs:11038`,
+    // the spider cue); the `Sounds/NPC_Hit_29.xnb` asset ships with the
+    // content.
+    ("NPC_Hit_29", 3),
+    // W4-d36 E4 batch 3 — the pigron trio's NPCHit27 (`NPC.cs:11136`/
+    // `:11149`/`:11287`, the pig cue); the `Sounds/NPC_Hit_27.xnb` asset
+    // ships with the content.
+    ("NPC_Hit_27", 3),
+    // W4-d36 E4 batch 4 — the Lihzahrd pair's NPCHit26 (`NPC.cs:11541`/
+    // `:11554`, the lizard cue); the `Sounds/NPC_Hit_26.xnb` asset ships
+    // with the content.
+    ("NPC_Hit_26", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -284,6 +299,21 @@ const SFX_CUES: &[(&str, u32)] = &[
 
     // W4-d23 — the Flying Snake's death cue (`NPC.cs:11922`'s NPCDeath26).
     ("NPC_Killed_26", 4),
+    // W4-d36 census batch 0 - the tortoises' NPCDeath27 (`NPC.cs:10941`/
+    // `:10956`); the `Sounds/NPC_Killed_27.xnb` asset ships with the content.
+    ("NPC_Killed_27", 4),
+    // W4-d36 E4 batch 2 — the Black Recluse's NPCDeath32 (`NPC.cs:11039`,
+    // the spider death cue); the `Sounds/NPC_Killed_32.xnb` asset ships
+    // with the content.
+    ("NPC_Killed_32", 4),
+    // W4-d36 E4 batch 3 — the pigron trio's NPCDeath30 (`NPC.cs:11137`/
+    // `:11150`/`:11288`, the pig death cue); the `Sounds/NPC_Killed_30.xnb`
+    // asset ships with the content.
+    ("NPC_Killed_30", 4),
+    // W4-d36 E4 batch 4 — the Lihzahrd pair's NPCDeath29 (`NPC.cs:11542`/
+    // `:11555`, the lizard death cue); the `Sounds/NPC_Killed_29.xnb`
+    // asset ships with the content.
+    ("NPC_Killed_29", 4),
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
     // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
     // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the

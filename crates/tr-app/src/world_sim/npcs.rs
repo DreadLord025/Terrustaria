@@ -1381,6 +1381,12 @@ pub(crate) fn style74_death_feed(app: &mut App, npc: &Npc) {
             app.gore.new_gore(rng, &app.world, c, v9, 843, 1.0);
         }
         _ => {}
+        NpcSoundCue::FighterMoan(style) => {
+            // The case-29 moan family (`play_fighter_moan`): the
+            // attenuation gate first, the playing guard + pitch draws on
+            // the caller's stream (the S1-E-21e contract).
+            audio.play_fighter_moan(29, style, req.x, req.y, rng);
+        }
     }
 }
 
@@ -7579,6 +7585,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // requester's netOffset (`NPC.cs:61148` adds it to the rolled position
     // at the spawn).
     let mut shimmer_slime_dust = Vec::new();
+    let mut item_sounds = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
         // `FindBannerToAssociateTo` (`Projectile.cs:11104-11117`): the
         // hostile shot spawned from an NPC (`EntitySource_Parent`) carries
@@ -7598,6 +7605,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         for d in n.wants_shimmer_slime_dust.drain(..) {
             shimmer_slime_dust.push((d, n.net_offset));
+        // W4-d36 E4 batch 2 — the queued item cues (the Moss Hornet's
+        // stinger-cooldown Item17, `NPC.cs:50756`): the style-75 solo
+        // seam's queue, drained here on the UpdateNPCs stream (the
+        // gallop-dust convention — the post-tick draw placement is the
+        // recorded deviation, ANALYSIS "W-10 unicorn tails").
+        for s in n.wants_item_sounds.drain(..) {
+            item_sounds.push(s);
+        }
+    }
+    // The item cues play at the C# call's legacy id (the `SoundID.Item17`
+    // = sound id 2, style 17 — the style-75 drain's lookup shape).
+    if !item_sounds.is_empty() {
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        for (style, sx, sy) in item_sounds {
+            if let Some(idx) = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.sound_id == 2 && s.style == style)
+            {
+                app.audio.play_use_sound(idx as u16, sx, sy, 0.0, rng);
+            }
         }
     }
     for (owner_slot, banner, (kind, sx, sy, svx, svy, dmg)) in shots {
@@ -7641,6 +7668,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // W4-g5 — the Rune Wizard's RuneBlast (`NPC.cs:21272`'s
             // `Main.projectile[num108].timeLeft = 300`).
             || kind == crate::projectile::RUNE_BLAST
+            // W4-d36 E4 item 4 — the Hornet family's Stinger volley: the
+            // C#'s post-spawn `Main.projectile[num24].timeLeft = 300`
+            // (`NPC.cs:50797`). WITHOUT this row the wired shot
+            // (`npc.rs::ai_005_hover_family` → `npc_ai_style5::style5_tail`)
+            // lives the stock 3600 — a 12× lifetime deviation.
+            || kind == crate::projectile::STINGER
         {
             300
         } else {
@@ -8177,6 +8210,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // carrier-gone fallbacks (`NPC.cs:36056-36063`: 390 → 382 RayGunner,
     // 416 → 518 SolarSpearman) and the W4-g8 VampireBat 158 ↔ Vampire 159
     // eclipse pair (`NPC.cs:23353` / `:58850`).
+    // 390 → 382 RayGunner, 416 → 518 SolarSpearman) + the Lihzahrd's
+    // wounded form switch (`NPC.cs:57027-57030`: 198 → 199 at 55% life,
+    // W4-d36 E4 batch 4): `NPC.Transform` (`:81084-81114`) in place — the
+    // bottom-anchored reposition, the SetDefaults swap, TargetClosest and
+    // the integer life rescale.
     {
         let player_ref = app.player.as_ref();
         let world_ref = &app.world;
@@ -8216,6 +8254,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // (adopted with the Shimmerfly rowing — inert on
                         // this base: the snail trio stays c9's, nothing
                         // queues 677 here yet; the merge dedupes).
+                        199 => NpcKind::LihzahrdCrawler,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);
@@ -8867,6 +8906,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.npcs.push(n);
     }
     app.npc_timer = 1.0 / 60.0;
+}
 }
 }
 }

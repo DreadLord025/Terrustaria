@@ -3252,6 +3252,9 @@ fn npc_seed(
         | crate::npc::NpcKind::IceSlime
         | crate::npc::NpcKind::Crimslime
         | crate::npc::NpcKind::SpikedIceSlime
+        // W4-d36 E4 batch 5 — the Spiked Jungle Slime (aiStyle 1) plants
+        // its feet on the column surface like the wave-A slimes.
+        | crate::npc::NpcKind::SpikedJungleSlime
         | crate::npc::NpcKind::UmbrellaSlime
         | crate::npc::NpcKind::DoctorBones
         | crate::npc::NpcKind::TheGroom
@@ -4666,6 +4669,58 @@ fn npc_seed(
         | crate::npc::NpcKind::MaggotZombie
         | crate::npc::NpcKind::SporeSkeleton => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d36 census batch 0 net seeds — the ground walkers ride the
+        // cave-walker ctor, the critters the guide ctor (the net state
+        // overwrites the position below).
+        crate::npc::NpcKind::ToxicSludge
+        | crate::npc::NpcKind::GiantTortoise
+        | crate::npc::NpcKind::IceTortoise
+        // W4-d36 E4 — the Wolf (aiStyle 26) plants its feet like the
+        // Horseman/Hellhound seeds above.
+        // W4-d36 E4b - Frankenstein (aiStyle 3) plants its feet like the
+        // wave-A zombie walkers above.
+        | crate::npc::NpcKind::Frankenstein
+        // W4-d36 E4 batch 2 — the remaining aiStyle-3 fighters plant their
+        // feet on the column surface (the net state overwrites below).
+        | crate::npc::NpcKind::BlackRecluse
+        | crate::npc::NpcKind::SwampThing
+        | crate::npc::NpcKind::UndeadViking
+        // W4-d36 E4 batch 3 — the Corrupt Penguin / Face Monster
+        // (aiStyle 3) plant their feet like the fighters above.
+        | crate::npc::NpcKind::CorruptPenguin
+        | crate::npc::NpcKind::FaceMonster
+        // W4-d36 E4 batch 4 — the Snow Flinx / Armored Viking / Lihzahrd /
+        // Lihzahrd Crawler (aiStyle 3) plant their feet like the fighters
+        // above (the net state overwrites below).
+        | crate::npc::NpcKind::SnowFlinx
+        | crate::npc::NpcKind::ArmoredViking
+        | crate::npc::NpcKind::Lihzahrd
+        | crate::npc::NpcKind::LihzahrdCrawler
+        // W4-d36 E4 batch 5 — the bone trio / Icy Merman (aiStyle 3)
+        // plant their feet like the fighters above (the net state
+        // overwrites below).
+        | crate::npc::NpcKind::HeadacheSkeleton
+        | crate::npc::NpcKind::MisassembledSkeleton
+        | crate::npc::NpcKind::PantlessSkeleton
+        | crate::npc::NpcKind::IcyMerman => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::Penguin
+        | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
+        // W4-d36 E4 batch 3 — the pigron trio (aiStyle 2, the phase flyer)
+        // rides the hover placement (the net state overwrites below).
+        crate::npc::NpcKind::PigronCorruption
+        | crate::npc::NpcKind::PigronHallow
+        | crate::npc::NpcKind::PigronCrimson => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d36 hover batch — the aiStyle-5 trio rides the hover
+        // placement (the net state overwrites the position below).
+        crate::npc::NpcKind::Crimera
+        | crate::npc::NpcKind::MossHornet
+        | crate::npc::NpcKind::Moth => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
     })
 }

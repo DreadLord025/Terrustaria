@@ -4264,6 +4264,51 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Queen Slime Minion",
+    // W4-d36 census batch 0.
+    BestiaryEntryDef {
+        credit_id: "ToxicSludge",
+        net_id: 141,
+        kind: NpcKind::ToxicSludge,
+        variant: None,
+        quick_unlock: false,
+        name: "Toxic Sludge",
+    },
+    BestiaryEntryDef {
+        credit_id: "Penguin",
+        net_id: 148,
+        kind: NpcKind::Penguin,
+        variant: None,
+        quick_unlock: false,
+        name: "Penguin",
+    },
+    BestiaryEntryDef {
+        credit_id: "PenguinBlack",
+        net_id: 149,
+        kind: NpcKind::PenguinBlack,
+        variant: None,
+        quick_unlock: false,
+        name: "Penguin",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantTortoise",
+        net_id: 153,
+        kind: NpcKind::GiantTortoise,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Tortoise",
+    },
+    BestiaryEntryDef {
+        credit_id: "IceTortoise",
+        net_id: 154,
+        kind: NpcKind::IceTortoise,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Tortoise",
+    },
+    // W4-d36 E4 — own entry (the populator adds the Night/Snow info at
+    // `BestiaryDatabaseNPCsPopulator.cs:1513-1517`; the name rides
+    // `Lang.GetNPCNameValue`).
+    BestiaryEntryDef {
         credit_id: "Wolf",
         net_id: 155,
         kind: NpcKind::Wolf,
@@ -4932,6 +4977,204 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Spore Skeleton",
+    // W4-d36 E4b — own entry (the populator adds the Eclipse info at
+    // `BestiaryDatabaseNPCsPopulator.cs:1466`; the name rides
+    // `Lang.GetNPCNameValue`).
+    BestiaryEntryDef {
+        credit_id: "Frankenstein",
+        net_id: 162,
+        kind: NpcKind::Frankenstein,
+        variant: None,
+        quick_unlock: false,
+        name: "Frankenstein",
+    },
+    // W4-d36 hover batch — own entries (no Hide folds; the populator adds
+    // the Crimson/Jungle info at `BestiaryDatabaseNPCsPopulator.cs:611`/
+    // `:1339`/`:1570`; the names ride `Lang.GetNPCNameValue`).
+    BestiaryEntryDef {
+        credit_id: "Crimera",
+        net_id: 173,
+        kind: NpcKind::Crimera,
+        variant: None,
+        quick_unlock: false,
+        name: "Crimera",
+    },
+    BestiaryEntryDef {
+        credit_id: "MossHornet",
+        net_id: 176,
+        kind: NpcKind::MossHornet,
+        variant: None,
+        quick_unlock: false,
+        name: "Moss Hornet",
+    },
+    BestiaryEntryDef {
+        credit_id: "Moth",
+        net_id: 205,
+        kind: NpcKind::Moth,
+        variant: None,
+        quick_unlock: false,
+        name: "Moth",
+    },
+    // W4-d36 E4 batch 2 — the remaining fighters' entries (appended last,
+    // the small-lane convention). The populator adds the Eclipse info to
+    // 166 (`BestiaryDatabaseNPCsPopulator.cs:1394`) and the UndergroundSnow
+    // info to 167 (`:1551`); the names ride `Lang.GetNPCNameValue`.
+    // 163 BlackRecluse is `Hide = true` (GetLeinforsEntries) and its
+    // credit folds onto 238 BlackRecluseWall (`ContentSamples.cs:1036`:
+    // `creditIds[163] = creditIds[238]`). d37's 238 kind is not on this
+    // branch, so the row is emitted at net 238 keyed on the wall
+    // crawler's credit (doc-109 §4's fold note; the populator attaches
+    // the SpiderNest info to 238, `:1555`). The DRAW sheet stays 163
+    // through `texture_net_id`'s own row (the Sharkron 372 precedent).
+BestiaryEntryDef {
+        credit_id: "SwampThing",
+        net_id: 166,
+        kind: NpcKind::SwampThing,
+        variant: None,
+        quick_unlock: false,
+        name: "Swamp Thing",
+    },
+    BestiaryEntryDef {
+        credit_id: "UndeadViking",
+        net_id: 167,
+        kind: NpcKind::UndeadViking,
+        variant: None,
+        quick_unlock: false,
+        name: "Undead Viking",
+    },
+    // W4-d36 E4 batch 3 — own entries (none of the five carries a
+    // `Hide = true` draw-modifier row — `NPCID.cs:2384-2477`'s offsets;
+    // the credit ids are the `NPCID.Search.GetName` names,
+    // `ContentSamples.cs:868-870`). The populator adds the BloodMoon
+    // event to 168 (`BestiaryDatabaseNPCsPopulator.cs:1280`), the
+    // CorruptIce/HallowIce/CrimsonIce biomes to 170/171/180
+    // (`:1565`/`:1566`/`:1568`) and TheCrimson + UndergroundCrimson to
+    // 181 (`:612`/`:1569`/`:1792`). All three pigrons display "Pigron"
+    // (the en-US `NPCs.Pigron*.DisplayName` rows).
+    BestiaryEntryDef {
+        credit_id: "CorruptPenguin",
+        net_id: 168,
+        kind: NpcKind::CorruptPenguin,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Penguin",
+    },
+    BestiaryEntryDef {
+        credit_id: "PigronCorruption",
+        net_id: 170,
+        kind: NpcKind::PigronCorruption,
+        variant: None,
+        quick_unlock: false,
+        name: "Pigron",
+    },
+    BestiaryEntryDef {
+        credit_id: "PigronHallow",
+        net_id: 171,
+        kind: NpcKind::PigronHallow,
+        variant: None,
+        quick_unlock: false,
+        name: "Pigron",
+    },
+    BestiaryEntryDef {
+        credit_id: "PigronCrimson",
+        net_id: 180,
+        kind: NpcKind::PigronCrimson,
+        variant: None,
+        quick_unlock: false,
+        name: "Pigron",
+    },
+    BestiaryEntryDef {
+        credit_id: "FaceMonster",
+        net_id: 181,
+        kind: NpcKind::FaceMonster,
+        variant: None,
+        quick_unlock: false,
+        name: "Face Monster",
+    },
+    // W4-d36 E4 batch 4 — the Snow Flinx / Armored Viking own entries (no
+    // Hide row — `NPCID.cs:2481-2487`/`:2563-2569` carry Velocity=1f only;
+    // the credit ids are the `NPCID.Search.GetName` names,
+    // `ContentSamples.cs:868-870`). The populator adds the UndergroundSnow
+    // biome to 185 (`BestiaryDatabaseNPCsPopulator.cs:1182`) and 197
+    // (`:1552`). The Lihzahrd pair shares ONE credit: 199 is `Hide = true`
+    // (`NPCID.cs:2577-2582`) and 198's credit folds onto 199's name
+    // (`ContentSamples.cs:1052`: `creditIds[198] = creditIds[199]`), so the
+    // entry emits at net 198 keyed on "LihzahrdCrawler" (the BlackRecluse
+    // 238 precedent — the hidden form's credit, the visible form's net).
+    // Both display "Lihzahrd" (the en-US `NPCs.Lihzahrd*.DisplayName` rows);
+    // the populator attaches TheTemple to 198 (`:1468`) and 199 (`:1395`).
+    BestiaryEntryDef {
+        credit_id: "SnowFlinx",
+        net_id: 185,
+        kind: NpcKind::SnowFlinx,
+        variant: None,
+        quick_unlock: false,
+        name: "Snow Flinx",
+    },
+    BestiaryEntryDef {
+        credit_id: "ArmoredViking",
+        net_id: 197,
+        kind: NpcKind::ArmoredViking,
+        variant: None,
+        quick_unlock: false,
+        name: "Armored Viking",
+    },
+    BestiaryEntryDef {
+        credit_id: "LihzahrdCrawler",
+        net_id: 198,
+        kind: NpcKind::Lihzahrd,
+        variant: None,
+        quick_unlock: false,
+        name: "Lihzahrd",
+    },
+    // W4-d36 E4 batch 5 — the SEAL batch's five own entries (no Hide row
+    // — `NPCID.cs:2592-2618` carries Velocity=1f only for 201/202/203/206,
+    // and 204 has NO draw-modifier row at all; the credit ids are the
+    // `NPCID.Search.GetName` names, `ContentSamples.cs:868-870` — none of
+    // the five folds). The bone trio all display "Skeleton" (the en-US
+    // `NPCs.HeadacheSkeleton/MisassembledSkeleton/PantlessSkeleton.
+    // DisplayName` rows); the populator adds Caverns to 201/202/203
+    // (`BestiaryDatabaseNPCsPopulator.cs:1469-1471`), UndergroundJungle to
+    // 204 (`:1132`) and UndergroundSnow to 206 (`:1529`).
+    BestiaryEntryDef {
+        credit_id: "HeadacheSkeleton",
+        net_id: 201,
+        kind: NpcKind::HeadacheSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "MisassembledSkeleton",
+        net_id: 202,
+        kind: NpcKind::MisassembledSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "PantlessSkeleton",
+        net_id: 203,
+        kind: NpcKind::PantlessSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "SpikedJungleSlime",
+        net_id: 204,
+        kind: NpcKind::SpikedJungleSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Spiked Jungle Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "IcyMerman",
+        net_id: 206,
+        kind: NpcKind::IcyMerman,
+        variant: None,
+        quick_unlock: false,
+        name: "Icy Merman",
     },
 ];
 
@@ -4947,6 +5190,8 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
         entry.quick_unlock,
         full,
     )
+    }
+    }
     }
     }
     }
@@ -5423,6 +5668,11 @@ pub fn try_entry_for_npc(
         NpcKind::DuckWhite2 => NpcKind::DuckWhite,
         // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
         // CultistArcherBlue 379 (Hide=true, `NPCID.cs:3734-3739`).
+        // W4-d36 E4 batch 4 — the Lihzahrd Crawler (199) is Hide=true
+        // (`NPCID.cs:2577-2582`); its credit folds onto the 198 entry
+        // (`ContentSamples.cs:1052`: `creditIds[198] = creditIds[199]`),
+        // keyed on the crawler's name (the BlackRecluse 238 precedent).
+        NpcKind::LihzahrdCrawler => NpcKind::Lihzahrd,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -5645,6 +5895,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // unfolded so the s1_f_3 cs_id==net invariant holds. The Owl 611
         // kind rides d42's band — the fold resolves at the merge.
         NpcKind::OwlMimic => NpcKind::Owl,
+        // W4-d36 E4 batch 4 — the Lihzahrd Crawler folds onto the 198 entry
+        // (the `try_entry_for_npc` twin above; `ContentSamples.cs:1052`).
+        NpcKind::LihzahrdCrawler => NpcKind::Lihzahrd,
         other => other,
     };
     ENTRIES

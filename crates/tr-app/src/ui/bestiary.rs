@@ -3395,6 +3395,172 @@ fn portrait_data(
                 .unwrap_or(100.0);
             (sheet_i, h, 100.0, h, white)
         }
+        // W4-d36 census batch 0 portraits — the sheet's frame height
+        // (the vanilla strip / npcFrameCount) with the padded box width.
+        (NpcKind::ToxicSludge, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::Penguin, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::PenguinBlack, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::GiantTortoise, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        (NpcKind::IceTortoise, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        // W4-d36 E4 portrait — the Wolf's sheet frame height (the vanilla
+        // strip: 155 = 13 rows, `Main.cs:67082`) with the padded box width
+        // (the b0 convention).
+        (NpcKind::Wolf, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        // W4-d36 E4b portrait — Frankenstein's sheet frame height (the
+        // vanilla strip: 162 = 15 rows, `Main.cs:67082`) with the padded
+        // box width (the b0 convention).
+        (NpcKind::Frankenstein, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        // W4-d36 hover batch portraits — the sheet's frame height (the
+        // vanilla strips: 173 = 2 rows, 176 = 2, 205 = 3, `Main.cs:67082`)
+        // with the padded box width (the b0 convention).
+        (NpcKind::Crimera, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::MossHornet, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::Moth, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        // W4-d36 E4 batch 2 portraits — the sheet's frame height (the
+        // vanilla strips: the 238 fold credit = 4 rows, 166 = 13,
+        // 167 = 15, `Main.cs:67082`) with the padded box width (the b0
+        // convention). The Black Recluse's entry carries the 238 net id,
+        // so its portrait samples the wall crawler's 4-row strip.
+        (NpcKind::BlackRecluse, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::SwampThing, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::UndeadViking, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        // W4-d36 E4 batch 3 portraits — the sheet's frame height (the
+        // vanilla strips: 168 = 12, 170/171/180 = 14, 181 = 16,
+        // `Main.cs:67082`) with the padded box width (the b0 convention).
+        (NpcKind::CorruptPenguin, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::PigronCorruption | NpcKind::PigronHallow | NpcKind::PigronCrimson, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        (NpcKind::FaceMonster, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        // W4-d36 E4 batch 4 portraits — the sheet's frame height (the
+        // vanilla strips: 185 = 12, 197 = 15, 198 = 16, `Main.cs:67082`)
+        // with the padded box width (the b0 convention). The Lihzahrd
+        // entry carries the 198 net id (the 199 folded credit), so its
+        // portrait samples the visible form's 16-row strip; the crawler
+        // kind folds onto that entry (`entry_for_npc`).
+        (NpcKind::SnowFlinx, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::ArmoredViking, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::Lihzahrd | NpcKind::LihzahrdCrawler, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        // W4-d36 E4 batch 5 portraits — the sheet's frame height (the
+        // vanilla strips: 201/202 = 15, 203 = 16, 204 = 2, 206 = 20,
+        // `Main.cs:67104`) with the padded box width (the b0 convention).
+        (NpcKind::HeadacheSkeleton | NpcKind::MisassembledSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::PantlessSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::SpikedJungleSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::IcyMerman, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
 
 /// `UIBestiaryEntryInfoPage`'s content for the selected entry: the
 /// `Portrait_Front` backdrop, the big portrait, the name (tier >= 1), the

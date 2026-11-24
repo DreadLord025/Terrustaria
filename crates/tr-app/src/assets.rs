@@ -1830,6 +1830,51 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_634",
         "NPC_635",
         "NPC_636",
+        // W4-d36 census batch 0 (the repack wave packs the union —
+        // research/108 §5's 8192 overflow note).
+        "NPC_141",
+        "NPC_148",
+        "NPC_149",
+        "NPC_153",
+        "NPC_154",
+        // W4-d36 E4 — the Wolf's own strip.
+        "NPC_155",
+        // W4-d36 E4b - Frankenstein's own strip.
+        "NPC_162",
+        // W4-d36 E4 batch 2 — the remaining fighters' own strips (163 is
+        // the draw sheet; the bestiary fold row samples NPC_238, the wall
+        // crawler's credit art — `ContentSamples.cs:1036`).
+        "NPC_163",
+        "NPC_166",
+        "NPC_167",
+        "NPC_238",
+        // W4-d36 hover batch.
+        "NPC_173",
+        "NPC_176",
+        "NPC_205",
+        // W4-d36 E4 batch 3 — the five kinds' own strips (168 the Corrupt
+        // Penguin, 170/171/180 the pigron trio, 181 the Face Monster).
+        "NPC_168",
+        "NPC_170",
+        "NPC_171",
+        "NPC_180",
+        "NPC_181",
+        // W4-d36 E4 batch 4 — the four kinds' own strips (185 the Snow
+        // Flinx, 197 the Armored Viking, 198 the Lihzahrd, 199 the Lihzahrd
+        // Crawler — the 199 draw sheet stays its own under the 198 credit
+        // fold, the BlackRecluse 163 precedent).
+        "NPC_185",
+        "NPC_197",
+        "NPC_198",
+        "NPC_199",
+        // W4-d36 E4 batch 5 — the SEAL batch's five own strips (201/202/
+        // 203 the bone trio, 204 the Spiked Jungle Slime, 206 the Icy
+        // Merman — all own credits, no folds).
+        "NPC_201",
+        "NPC_202",
+        "NPC_203",
+        "NPC_204",
+        "NPC_206",
 ];
 
 
@@ -3218,6 +3263,64 @@ pub pub pub const BESTIARY_NPC_SHEET_IDS: [u16; 439] = [
     695,
     696,
 ];;;
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 207] = [
+        1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
+        60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
+        25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
+        11, 12, 13, 14, 15, 20, 18, 19, 38, 227,
+        228, 54, 4, 222, 35, 5, 113, 115, 143, 144,
+        145, 383, 520, 212, 216, 117, 118, 134, 127, 125,
+        126, 262, 266, 267, 26, 27, 28, 111, 471, 105,
+        107, 245, 246, 247, 249, 668, 36, 114, 128, 129,
+        130, 131, 399, 388, 381, 382, 390, 391, 392, 393,
+        394, 395, 491, 492, 552, 553, 554, 555, 556, 557,
+        561, 562, 563, 566, 567, 564, 551, 568, 550, 548,
+        422, 493, 507, 517, 406, 407, 423, 425, 429, 426,
+        427, 420, 421, 409, 410, 411, 415, 416, 417, 418,
+        412, 413, 414, 402, 518, 419, 424, 428, 405, 396,
+        397, 398, 400, 401, 368, 369, 376, 108, 106, 124, 123,
+        353, 354, 441, 588, 589, 633, 663, 207, 208,
+        // The Old One's Army's lane gate (M4-EVENT-18) — appended last so
+        // the earlier slots keep their indexes.
+        549,
+        // The Old One's Army's tier-2/3 families (M4-EVENT-19), appended
+        // after the lane gate so the earlier slots keep their indexes.
+        558, 559, 560, 565, 569, 570, 571,
+        572, 573, 574, 575, 576, 577,
+        // The Desert Djinn (S1-E-5) — appended last so the earlier slots
+        // keep their indexes.
+        533,
+        // The Queen Bee's volley minions (S1-D-3 W-3) — appended last so
+        // the earlier slots keep their indexes.
+        210, 211,
+        // The Tesla Turret (S1-F-13d) — appended last for the same reason.
+        387,
+        // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
+        // last so the earlier slots keep their indexes.
+        72, 250, 288,
+        // W4-d36 census batch 0 — ENTRIES order (141/148/149/153/154).
+        141, 148, 149, 153, 154,
+        // W4-d36 E4 — ENTRIES order (the Wolf rides after the tortoises).
+        155,
+        // W4-d36 E4b — ENTRIES order (Frankenstein rides after the Wolf).
+        162,
+        // W4-d36 hover batch — ENTRIES order (173/176/205).
+        173, 176, 205,
+        // W4-d36 E4 batch 2 — ENTRIES order (238/166/167; the Black
+        // Recluse's row carries the 238 fold credit, `ContentSamples.cs:1036`).
+        238, 166, 167,
+        // W4-d36 E4 batch 3 — ENTRIES order (168/170/171/180/181; own
+        // entries, no folds — the five carry no Hide=true row).
+        168, 170, 171, 180, 181,
+        // W4-d36 E4 batch 4 — ENTRIES order (185/197/198; the Lihzahrd
+        // entry carries the 198 net under the 199 folded credit,
+        // `ContentSamples.cs:1052` — the crawler's 199 sheet is DRAW-only
+        // via D36_SHEETS, the BlackRecluse 163 precedent).
+        185, 197, 198,
+        // W4-d36 E4 batch 5 — ENTRIES order (201/202/203/204/206; own
+        // entries, no folds — the five carry no Hide=true row).
+        201, 202, 203, 204, 206,
+    ];
 
 /// Precomputed texture information for every type present in the world.
 #[derive(Default)]
@@ -4371,6 +4474,53 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_694").copied(),
                 atlas.sheet("NPC_695").copied(),
                 atlas.sheet("NPC_696").copied(),
+                // W4-d36 census batch 0 — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (141/148/149/153/154).
+                atlas.sheet("NPC_141").copied(),
+                atlas.sheet("NPC_148").copied(),
+                atlas.sheet("NPC_149").copied(),
+                atlas.sheet("NPC_153").copied(),
+                atlas.sheet("NPC_154").copied(),
+                // W4-d36 E4 — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (the Wolf after 154).
+                atlas.sheet("NPC_155").copied(),
+                // W4-d36 E4b — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (Frankenstein after 155).
+                atlas.sheet("NPC_162").copied(),
+                // W4-d36 hover batch - the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (173/176/205).
+                atlas.sheet("NPC_173").copied(),
+                atlas.sheet("NPC_176").copied(),
+                atlas.sheet("NPC_205").copied(),
+                // W4-d36 E4 batch 2 — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (238/166/167; the Black
+                // Recluse's portrait samples the 238 fold credit's art,
+                // the wall crawler — `ContentSamples.cs:1036`).
+                atlas.sheet("NPC_238").copied(),
+                atlas.sheet("NPC_166").copied(),
+                atlas.sheet("NPC_167").copied(),
+                // W4-d36 E4 batch 3 — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (168/170/171/180/181).
+                atlas.sheet("NPC_168").copied(),
+                atlas.sheet("NPC_170").copied(),
+                atlas.sheet("NPC_171").copied(),
+                atlas.sheet("NPC_180").copied(),
+                atlas.sheet("NPC_181").copied(),
+                // W4-d36 E4 batch 4 — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (185/197/198; the Lihzahrd
+                // entry's portrait samples the 198 strip, the visible
+                // form — `ContentSamples.cs:1052`).
+                atlas.sheet("NPC_185").copied(),
+                atlas.sheet("NPC_197").copied(),
+                atlas.sheet("NPC_198").copied(),
+                // W4-d36 E4 batch 5 — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (201/202/203/204/206; own
+                // entries, no folds).
+                atlas.sheet("NPC_201").copied(),
+                atlas.sheet("NPC_202").copied(),
+                atlas.sheet("NPC_203").copied(),
+                atlas.sheet("NPC_204").copied(),
+                atlas.sheet("NPC_206").copied(),
             ],
 
 

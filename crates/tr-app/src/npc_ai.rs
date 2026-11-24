@@ -698,6 +698,52 @@ impl HoverParams {
         }),
         dawn_exempt: false,
     };
+    /// W4-d36 — the Crimera (173, `NPC.cs:50304-50307` shares the Eater of
+    /// Souls' num 4 / num2 0.02): flag5 false (`:50447` lists 173), the
+    /// ×0.4 bounce (`:50659-50661`), the aim-tilt rotation (`:50643`).
+    /// FIX vs the in-flight stash: `SetDefaults` case 173 (`:11168-11193`)
+    /// writes `noGravity` ONLY — no `noTileCollide` row (the head default
+    /// false, `:8522`) — so the Crimera COLLIDES; the ×0.4 restitution
+    /// arm exists precisely for the colliding 6/173 pair. (The base
+    /// EATER_OF_SOULS row's `no_tile_collide: true` claim predates this
+    /// audit — left untouched, recorded for the Lead.)
+    pub const CRIMERA: Self = Self {
+        max_speed: 4.0,
+        accel: 0.02,
+        surface_damped: false,
+        double_add: false,
+        no_tile_collide: false,
+        bounce: 0.4,
+        rotation: HoverRotation::Aim,
+    };
+    /// W4-d36 — the Moss Hornet (176, `NPC.cs:50369-50372`: num 4 / num2
+    /// 0.017): flag5 TRUE — FIX vs the in-flight stash, which carried
+    /// false: the `:50447` exclusion list is {173, 6, 42, 231-235, 94,
+    /// 139, 619} and 176 is NOT in it. It collides (`SetDefaults` case
+    /// 176 sets `noGravity` only, `:11235`), the ×0.7 family bounce
+    /// (`:50658`), the velocity-X rotation (`:50647-50650`).
+    pub const MOSS_HORNET: Self = Self {
+        max_speed: 4.0,
+        accel: 0.017,
+        surface_damped: false,
+        double_add: true,
+        no_tile_collide: false,
+        bounce: 0.7,
+        rotation: HoverRotation::VelocityX,
+    };
+    /// W4-d36 — the Moth (205, `NPC.cs:50364-50367`: num 3.25 / num2
+    /// 0.018): flag5 true (outside the `:50447` exclusion set), the ×0.7
+    /// bounce (`SetDefaults` case 205 sets `noGravity` only, `:11637`),
+    /// the velocity-X rotation (`:50647-50650`).
+    pub const MOTH: Self = Self {
+        max_speed: 3.25,
+        accel: 0.018,
+        surface_damped: false,
+        double_add: true,
+        no_tile_collide: false,
+        bounce: 0.7,
+        rotation: HoverRotation::VelocityX,
+    };
     /// The Meteor Head (type 23; `NPC.cs:50374-50377`: num 1, num2 0.03).
     /// `flag5` is true for it, it flies through the tiles (`SetDefaults`
     /// case 23) and its rotation is the sprite-aim arm (`:50580-50592`).
@@ -1689,13 +1735,36 @@ mod tests {
         // The pre-audit bug shipped type 205's pair under the Hornet, so pin
         // every row against its own C# branch (`surface_damped` = the
         // type-42/231-235 arm at `NPC.cs:50341-50362`).
-        let table: [(HoverParams, f32, f32, bool, &str); 4] = [
+        let table: [(HoverParams, f32, f32, bool, &str); 7] = [
             (
                 HoverParams::EATER_OF_SOULS,
                 4.0,
                 0.02,
                 false,
                 "NPC.cs:50304-50307 (type 6)",
+            ),
+            // W4-d36 hover batch — the census trio's pairs (the in-flight
+            // stash's presets, pinned).
+            (
+                HoverParams::CRIMERA,
+                4.0,
+                0.02,
+                false,
+                "NPC.cs:50304-50307 (type 173 shares the 6 arm)",
+            ),
+            (
+                HoverParams::MOSS_HORNET,
+                4.0,
+                0.017,
+                false,
+                "NPC.cs:50369-50372 (type 176)",
+            ),
+            (
+                HoverParams::MOTH,
+                3.25,
+                0.018,
+                false,
+                "NPC.cs:50364-50367 (type 205)",
             ),
             (
                 HoverParams::HORNET,
@@ -1731,6 +1800,22 @@ mod tests {
             (3.25, 0.018),
             "the Hornet must not ship type 205's constants"
         );
+        // W4-d36 hover batch — the flag5/bounce/collision gates the
+        // in-flight stash got wrong twice, pinned against the C#:
+        // `:50447` excludes {173, 6, 42, 231-235, 94, 139, 619} — 176/205
+        // are OUTSIDE it (double add TRUE); case 173 writes noGravity
+        // only (`:11168-11193`), so the Crimera collides and takes the
+        // 6/173 ×0.4 restitution (`:50659-50661`).
+        assert!(HoverParams::MOSS_HORNET.double_add, "176 is outside the :50447 exclusion set");
+        assert!(HoverParams::MOTH.double_add, "205 is outside the :50447 exclusion set");
+        assert!(!HoverParams::CRIMERA.double_add, "173 is IN the :50447 exclusion set");
+        assert!(!HoverParams::CRIMERA.no_tile_collide, "case 173 has no noTileCollide row (:11168-11193)");
+        assert_eq!(HoverParams::CRIMERA.bounce, 0.4, "the 6/173 restitution (:50659-50661)");
+        assert_eq!(HoverParams::MOSS_HORNET.bounce, 0.7, "the family restitution (:50658)");
+        assert_eq!(HoverParams::MOTH.bounce, 0.7, "the family restitution (:50658)");
+        assert!(matches!(HoverParams::CRIMERA.rotation, HoverRotation::Aim), "the :50643 arm lists 173");
+        assert!(matches!(HoverParams::MOSS_HORNET.rotation, HoverRotation::VelocityX), "the :50647 arm lists 176");
+        assert!(matches!(HoverParams::MOTH.rotation, HoverRotation::VelocityX), "the :50647 arm lists 205");
     }
 
     /// W4-d42 rotation census (research/238 §7) — the BloodSquid's (619)

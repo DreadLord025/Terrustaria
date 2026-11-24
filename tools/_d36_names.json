@@ -1,0 +1,192 @@
+{
+"141": {
+"name": "ToxicSludge",
+"npcid_line": 10959,
+"display": "Toxic Sludge"
+},
+"142": {
+"name": "SantaClaus",
+"npcid_line": 10961,
+"display": "Santa Claus"
+},
+"148": {
+"name": "Penguin",
+"npcid_line": 10973,
+"display": "Penguin"
+},
+"149": {
+"name": "PenguinBlack",
+"npcid_line": 10975,
+"display": "Penguin"
+},
+"150": {
+"name": "IceBat",
+"npcid_line": 10977,
+"display": "Ice Bat"
+},
+"151": {
+"name": "Lavabat",
+"npcid_line": 10979,
+"display": "Lava Bat"
+},
+"152": {
+"name": "GiantFlyingFox",
+"npcid_line": 10981,
+"display": "Giant Flying Fox"
+},
+"153": {
+"name": "GiantTortoise",
+"npcid_line": 10983,
+"display": "Giant Tortoise"
+},
+"154": {
+"name": "IceTortoise",
+"npcid_line": 10985,
+"display": "Ice Tortoise"
+},
+"155": {
+"name": "Wolf",
+"npcid_line": 10987,
+"display": "Wolf"
+},
+"156": {
+"name": "RedDevil",
+"npcid_line": 10989,
+"display": "Red Devil"
+},
+"158": {
+"name": "VampireBat",
+"npcid_line": 10993,
+"display": "Vampire"
+},
+"159": {
+"name": "Vampire",
+"npcid_line": 10995,
+"display": "Vampire"
+},
+"160": {
+"name": "Truffle",
+"npcid_line": 10997,
+"display": "Truffle"
+},
+"162": {
+"name": "Frankenstein",
+"npcid_line": 11001,
+"display": "Frankenstein"
+},
+"163": {
+"name": "BlackRecluse",
+"npcid_line": 11003,
+"display": "Black Recluse"
+},
+"166": {
+"name": "SwampThing",
+"npcid_line": 11009,
+"display": "Swamp Thing"
+},
+"167": {
+"name": "UndeadViking",
+"npcid_line": 11011,
+"display": "Undead Viking"
+},
+"168": {
+"name": "CorruptPenguin",
+"npcid_line": 11013,
+"display": "Corrupt Penguin"
+},
+"170": {
+"name": "PigronCorruption",
+"npcid_line": 11017,
+"display": "Pigron"
+},
+"171": {
+"name": "PigronHallow",
+"npcid_line": 11019,
+"display": "Pigron"
+},
+"172": {
+"name": "RuneWizard",
+"npcid_line": 11021,
+"display": "Rune Wizard"
+},
+"173": {
+"name": "Crimera",
+"npcid_line": 11023,
+"display": "Crimera"
+},
+"176": {
+"name": "MossHornet",
+"npcid_line": 11029,
+"display": "Moss Hornet"
+},
+"178": {
+"name": "Steampunker",
+"npcid_line": 11033,
+"display": "Steampunker"
+},
+"180": {
+"name": "PigronCrimson",
+"npcid_line": 11037,
+"display": "Pigron"
+},
+"181": {
+"name": "FaceMonster",
+"npcid_line": 11039,
+"display": "Face Monster"
+},
+"185": {
+"name": "SnowFlinx",
+"npcid_line": 11047,
+"display": "Snow Flinx"
+},
+"197": {
+"name": "ArmoredViking",
+"npcid_line": 11071,
+"display": "Armored Viking"
+},
+"198": {
+"name": "Lihzahrd",
+"npcid_line": 11073,
+"display": "Lihzahrd"
+},
+"199": {
+"name": "LihzahrdCrawler",
+"npcid_line": 11075,
+"display": "Lihzahrd"
+},
+"201": {
+"name": "HeadacheSkeleton",
+"npcid_line": 11079,
+"display": "Skeleton"
+},
+"202": {
+"name": "MisassembledSkeleton",
+"npcid_line": 11081,
+"display": "Skeleton"
+},
+"203": {
+"name": "PantlessSkeleton",
+"npcid_line": 11083,
+"display": "Skeleton"
+},
+"204": {
+"name": "SpikedJungleSlime",
+"npcid_line": 11085,
+"display": "Spiked Jungle Slime"
+},
+"205": {
+"name": "Moth",
+"npcid_line": 11087,
+"display": "Moth"
+},
+"206": {
+"name": "IcyMerman",
+"npcid_line": 11089,
+"display": "Icy Merman"
+},
+"209": {
+"name": "Cyborg",
+"npcid_line": 11095,
+"display": "Cyborg"
+}
+}

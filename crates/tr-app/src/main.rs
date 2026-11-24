@@ -232,6 +232,12 @@ mod npc_ai_style9;
 // NPC.cs:22615-22847) - the six kinds + the axis claim are the wiring
 // step (the npc_ai_style17/20 precedent).
 mod npc_ai_style13;
+// W4-d36 E4 item 4: UNWIRED aiStyle-5 tail arms (the Moth wet buoyancy
+// NPC.cs:50726-50738 + the Hornet family's stinger volley :50739-50812) -
+// the wiring point (ai_005_hover_family's rng thread) is the follow-up
+// edit; the projectile-side infrastructure (STINGER 55 row + rider +
+// timed-shot list) IS live (see the module doc + docs/research/110).
+mod npc_ai_style5;
 mod npc_ai_style30;
 mod npc_ai_style31;
 mod npc_ai_style32;

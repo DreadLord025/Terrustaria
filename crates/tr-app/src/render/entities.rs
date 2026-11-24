@@ -890,6 +890,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(CRITTER_SHEETS)
             .chain(SNAIL_SHEETS)
             .chain(W4_D43_SHEETS)
+            .chain(D36_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1279,6 +1280,12 @@ fn npc_add_height(n: &Npc) -> f32 {
         // the Crawltipede — no port kind).
         // `:22031` 6/173 (the Eater of Souls / the Meteor Head).
         EaterOfSouls | MeteorHead => 26.0,
+        // W4-d36 hover batch: `:22029-22031` the 6||173 arm — the Crimera
+        // rides the Eater's 26 (the pre-existing comment misnamed 173 as
+        // the Meteor Head; 23 has NO row here). `:22013-22015` 205 → 8.
+        // The Moss Hornet (176) has no NPCAddHeight row (the default 0).
+        Crimera => 26.0,
+        Moth => 8.0,
         // `:22035` 94 (the Goblin Archer).
         GoblinArcher => 14.0,
         // `:22037-22039` 7/8/9 (the Devourer's segments — `NPCID.cs:10691-10695`;
@@ -2004,6 +2011,16 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // credit's, not the texture's — the fishron-hazard precedent).
         // W4-f18 batch 4 — the folded CultistArcherWhite 380 keeps its OWN
         // draw sheet (the bestiary fold is the credit's, not the texture's).
+        // W4-d36 E4 batch 2: the Black Recluse's bestiary credit folds
+        // onto 238 BlackRecluseWall (`ContentSamples.cs:1036`, Hide=true),
+        // but its DRAW sheet is its own NPC_163 (the ground crawler's art)
+        // — the fishron-hazard precedent. The 238 wall form is d37's kind.
+        NpcKind::BlackRecluse => 163,
+        // W4-d36 E4 batch 4: the Lihzahrd Crawler's bestiary credit folds
+        // onto the 198 entry (`ContentSamples.cs:1052`, Hide=true
+        // `NPCID.cs:2577-2582`), but its DRAW sheet is its own NPC_199
+        // (the crawler form's art) — the BlackRecluse precedent.
+        NpcKind::LihzahrdCrawler => 199,
         _ => kind.net_id() as u16,
     }
 }
@@ -2709,6 +2726,17 @@ pub(crate) const W4_D43_SHEETS: &[u32] = &[
     676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686, 687, 688, 689,
     690, 691, 692, 693, 694, 695, 696,
 ];
+
+/// W4-d36 — the census kinds' own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets`. The physical
+/// atlas packing is the repack wave's (research/108 §5: the union
+/// overflows 8192); the draw arms reference the sheets, absent ones
+/// render nothing. Batch 0: 141/148/149/153/154; hover batch:
+/// 173/176/205; E4: 155; E4b: 162; E4 batch 2: 163/166/167 (163 is the
+/// DRAW sheet — the bestiary credit folds onto 238, `texture_net_id`);
+/// E4 batch 3: 168/170/171/180/181; E4 batch 4: 185/197/198/199;
+/// E4 batch 5 (the SEAL): 201/202/203/204/206.
+pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167, 168, 170, 171, 180, 181, 185, 197, 198, 199, 201, 202, 203, 204, 206];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -6053,6 +6081,68 @@ pub(crate) fn draw_npcs(
             // (the atlas headroom - the wyvern deferral precedent), so
             // `npc_sheet` returns None and the arm no-draws.
                 generic_anchor(assets.npc_sheet(620), npc_rows(620), n, w, h)
+            // W4-d36 census batch 0 draw — own sheets at npc_rows, the
+            // generic anchor (the repack wave packs the strips).
+            NpcKind::ToxicSludge
+            | NpcKind::Penguin
+            | NpcKind::PenguinBlack
+            | NpcKind::GiantTortoise
+            | NpcKind::IceTortoise
+            // W4-d36 E4 — the Wolf's own 13-row strip (`Main.cs:67082`).
+            | NpcKind::Wolf
+            // W4-d36 E4b — Frankenstein's own 15-row strip (`Main.cs:67082`).
+            | NpcKind::Frankenstein
+            // W4-d36 E4 batch 2 — the remaining fighters' own strips
+            // (163 = 8, 166 = 13, 167 = 15, `Main.cs:67082`). The Black
+            // Recluse's `texture_net_id` row keeps the 163 draw sheet
+            // under the 238 credit fold.
+            | NpcKind::BlackRecluse
+            | NpcKind::SwampThing
+            | NpcKind::UndeadViking
+            // W4-d36 E4 batch 3 — the five kinds' own strips (168 = 12,
+            // 170/171/180 = 14, 181 = 16, `Main.cs:67082`).
+            | NpcKind::CorruptPenguin
+            | NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson
+            | NpcKind::FaceMonster
+            // W4-d36 E4 batch 4 — the four kinds' own strips (185 = 12,
+            // 197 = 15, 198 = 16, 199 = 8, `Main.cs:67082`). The Lihzahrd
+            // Crawler's `texture_net_id` row keeps the 199 draw sheet
+            // under the 198 credit fold.
+            | NpcKind::SnowFlinx
+            | NpcKind::ArmoredViking
+            | NpcKind::Lihzahrd
+            | NpcKind::LihzahrdCrawler => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d36 E4 batch 5 — the SEAL batch's five own strips
+            // (201/202 = 15, 203 = 16, 204 = 2, 206 = 20,
+            // `Main.cs:67104`). The Spiked Jungle Slime's `scale = 1.15`
+            // row (`NPC.cs:11619`) rides `scaled_anchor` (the
+            // BlazingWheel convention); the four 1f-scale kinds keep the
+            // generic anchor.
+            NpcKind::SpikedJungleSlime => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton
+            | NpcKind::IcyMerman => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d36 hover batch draw — own sheets at npc_rows (173 = 2,
+            // 176 = 2, 205 = 3, `Main.cs:67082`), the generic anchor (the
+            // b0 convention; the repack wave packs the strips).
+            NpcKind::Crimera
+            | NpcKind::MossHornet
+            | NpcKind::Moth => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         let Some(tex) = tex else {
             continue;
         };
@@ -6410,6 +6500,25 @@ pub(crate) fn draw_npcs(
                     // W4-c9 — the Shimmerfly's `rotation = vx * 0.3` tilt
                     // (`NPC.cs:34234-34237`). The snail trio's quadrant
                     // rotation rows stay c9's (the merge dedupes).
+                    // W4-d36 hover batch: the Crimera's aim tilt
+                    // (`NPC.cs:50643-50645`) and the Moss Hornet / Moth
+                    // velocity-X roll (`:50647-50650`) — the generic draw
+                    // rotates by npc.rotation (`Main.cs:26632`).
+                    | NpcKind::Crimera
+                    | NpcKind::MossHornet
+                    | NpcKind::Moth
+                    // W4-d36 E4 batch 3: the pigron trio's velocity tilt
+                    // (`NPC.cs:52358`, `rotation = vy * 0.1 * direction`)
+                    // — the generic draw rotates by npc.rotation
+                    // (`Main.cs:26632`).
+                    | NpcKind::PigronCorruption
+                    | NpcKind::PigronHallow
+                    | NpcKind::PigronCrimson
+                    // W4-d36 E4 batch 4: the Snow Flinx's air roll
+                    // (`NPC.cs:58829`, `rotation += vx * 0.05` behind the
+                    // localAI[0] hit latch) — the generic draw rotates by
+                    // npc.rotation (`Main.cs:26632`).
+                    | NpcKind::SnowFlinx
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

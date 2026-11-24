@@ -740,6 +740,51 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             // W4-d41 — the antlion charger rides the same counter-only
             // walker (the `:57072` flag8 list names 508).
             | GiantWalkingAntlion
+            // W4-d36 E4b - Frankenstein rides the same plain
+            // `update_skeleton` walker; 162 IS in the `:57340` 1000-roll
+            // moan list (+ its own `:57356` 500-roll - the ambient wave's
+            // remainder keeps that arm out until the moan port lands).
+            | Frankenstein
+            // W4-d36 E4 batch 2 — the remaining fighters ride the same
+            // plain walker (the Swamp Thing's dwell pre-arm returns before
+            // it, but the counter still ticks), so their `ai[3]` is free
+            // for the idle counter. The moan arms: 167 is in the `:57340`
+            // 1000-roll list; 163/166 are in NEITHER moan list — the gate
+            // keeps their draw shape exact (the rolls never fire).
+            | BlackRecluse
+            | SwampThing
+            | UndeadViking
+            // W4-d36 E4 batch 3 — the Corrupt Penguin / Face Monster ride
+            // the same plain `update_skeleton` walker, so their `ai[3]` is
+            // free for the idle counter. The moan arms: 168 is in NEITHER
+            // moan list (its `:57340` absence keeps the draw shape exact);
+            // 181 carries its OWN `:57360` 500-roll, case 29 style 8 —
+            // LIVE in `fighter_ambient_moans` below.
+            | CorruptPenguin
+            | FaceMonster
+            // W4-d36 E4 batch 4 — the four ride the same plain
+            // `update_skeleton` walker (the Lihzahrd's transform request
+            // returns nothing before it), so their `ai[3]` is free for
+            // the idle counter. The moan arms: 197 IS in the `:57340`
+            // 1000-roll list (LIVE below); 185 is in NEITHER AI_003 moan
+            // list; 198/199 carry their OWN `IdleSounds` 1000-roll
+            // (`NPC.cs:90103-90106`, style Next(36,38)) — the unported
+            // IdleSounds wave's remainder, so the gate keeps their
+            // AI_003 draw shape exact (the rolls never fire).
+            | SnowFlinx
+            | ArmoredViking
+            | Lihzahrd
+            | LihzahrdCrawler
+            // W4-d36 E4 batch 5 — the bone trio ride the same plain
+            // `update_skeleton` walker, so their `ai[3]` is free for the
+            // idle counter; all three ARE in the `:57340` 1000-roll moan
+            // list (LIVE in `fighter_ambient_moans`). The Icy Merman
+            // rides the shooter machine (the pirate/martian precedent —
+            // the shooters stay OUT of this gate) and is in NEITHER moan
+            // list, so it keeps no arm here.
+            | HeadacheSkeleton
+            | MisassembledSkeleton
+            | PantlessSkeleton
     )
 }
 
