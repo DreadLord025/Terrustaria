@@ -919,8 +919,19 @@ pub const SWORDFISH_BONE_2: u16 = 1108;
 pub const SWORDFISH_BONE_3: u16 = 1109;
 /// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
 pub const CANNON_BOMB: u16 = 178;
-/// The explosive cannonball (601, `Projectile.cs:6499-6512`) — aiStyle 1 with
-/// `extraUpdates = 30`.
+/// The Portal Gun's bolt (601 = C# `ProjectileID.PortalGunBolt`,
+/// `ProjectileID.cs:1756`; `Projectile.cs:6502-6510` — aiStyle 1, 10×10,
+/// alpha 255, friendly, `extraUpdates = 30`, the STOCK penetrate 1).
+/// NAME DEVIATION (recorded, W4-d6 retire — the d18 finding): the constant
+/// was ported as "the explosive cannonball" citing `:6499-6512` under the
+/// M7-WIRE-2 cannon-ammo block; `:6499-6501` is the TAIL of the previous
+/// type arm, the true 601 block is `:6502-6510` and 601 is NOT cannon ammo.
+/// The value 601, the aiStyle-1 slice-B arm (`projectile_ai001_b.rs`, the
+/// portal fade/frame machine `:54066-54120`) and the trailing-mode-0 row
+/// (`ProjectileID.cs:521` lists 601 → 0) are all correct for the bolt; the
+/// rename is deferred (the `POISON_DART`/645 precedent below). The
+/// teleport AI (`PortalHelper.TryPlacingPortal`, `Projectile.cs:18099`)
+/// stays unported — a recorded remainder.
 pub const CANNON_EXPLOSIVE: u16 = 601;
 /// The bunny cannon's projectile (281, `Projectile.cs:3676-3687` — aiStyle 49,
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
@@ -1466,6 +1477,30 @@ pub const LOST_SOUL: u16 = 297;
 /// `ProjectileID.SpectreWrath` (356) — the set-bonus's ghost shot (aiStyle
 /// 59, `tileCollide = false`, `extraUpdates = 3`).
 pub const SPECTRE_WRATH: u16 = 356;
+/// `ProjectileID.SpiritHeal` (298, `ProjectileID.cs:1150`) — the Spectre
+/// set bonus's heal orb (aiStyle 52, W4-d6).
+pub const SPIRIT_HEAL: u16 = 298;
+/// `ProjectileID.VampireKnife` (304, `ProjectileID.cs:1162`) — the Vampire
+/// Knives' thrown knife (aiStyle 2, W4-d6 residual 5).
+pub const VAMPIRE_KNIFE: u16 = 304;
+/// `ProjectileID.VampireHeal` (305, `ProjectileID.cs:1164`) — the Vampire
+/// Knives' heal orb (aiStyle 52, W4-d6).
+pub const VAMPIRE_HEAL: u16 = 305;
+/// `ProjectileID.FlamingJack` (321, `ProjectileID.cs:1196`) — the
+/// Pumpking's homing jack head (aiStyle 55, W4-d6).
+pub const FLAMING_JACK: u16 = 321;
+/// `ProjectileID.FlamingScythe` (329, `ProjectileID.cs:1212`) — the
+/// Pumpking blade's spinning scythe (aiStyle 56, W4-d6).
+pub const FLAMING_SCYTHE: u16 = 329;
+/// `ProjectileID.WaterGun` (358, `ProjectileID.cs:1270`) — the Water Gun's
+/// stream blob (aiStyle 60, W4-d6).
+pub const WATER_GUN: u16 = 358;
+/// `ProjectileID.SlimeGun` (406, `ProjectileID.cs:1366`) — the Slime Gun's
+/// stream blob (aiStyle 60, W4-d6).
+pub const SLIME_GUN: u16 = 406;
+/// `ProjectileID.ShimmerGunStream` (1042, `ProjectileID.cs:2638`) — the
+/// Shimmer Gun's stream blob (aiStyle 60, W4-d6).
+pub const SHIMMER_GUN_STREAM: u16 = 1042;
 /// `ProjectileID.Typhoon` (409) — the Razorblade Typhoon's vortex (aiStyle
 /// 71, 30x30, `penetrate = -1`, `timeLeft = 300`).
 pub const TYPHOON: u16 = 409;
@@ -1985,6 +2020,8 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         GOLEM_EYE_BEAM => 0.3,                 // `:3436`
         FLAMING_SCYTHE => 0.25,                // `:4219` (W4-c6 style-59)
         CHRISTMAS_HOOK => 0.5,                 // `:4256`
+        FLAMING_SCYTHE => 0.25,                // `:4219` (W4-d6)
+        VAMPIRE_KNIFE => 0.2,                  // `:3961` (W4-d6 residual 5)
         MINI_RETINA_LASER => 0.75,             // `:4736`
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
         ILLUMINANT_HOOK => 0.3,                // `:5631`
@@ -2974,8 +3011,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
             // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
             // (`:2524-2535` — aiStyle 16, 128×128, `timeLeft` 2, trap-less),
-            // and the cannon ammo 178/601 (`:2641-2649` — aiStyle 1, 10×10,
-            // `timeLeft` 2 / `extraUpdates` 30).
+            // and the cannon ammo 178 (`:2641-2649` — aiStyle 1, 10×10,
+            // `timeLeft` 2, penetrate −1).
             EXPLOSIVES_BLAST => (260.0, 260.0, 16, -1, 2, 0, false, false, true, RESET_STATE),
             LANDMINE_BLAST => (128.0, 128.0, 16, -1, 2, 0, false, false, false, RESET_STATE),
             CANNON_BOMB => (10.0, 10.0, 1, -1, 2, 0, true, false, false, RESET_STATE),
@@ -2988,17 +3025,28 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // AI (`PortalHelper.TryPlacingPortal` `:18099`) is unported. The
             // row-shape fix + teleport port are the d6 wiring lane's — see
             // ANALYSIS "W4-d18 Damage_CanDealDamage" (the 601 finding).
+            // W4-d6 retire (the d18 `dd7b1b0a` finding, fixed here): 601 is
+            // C# `PortalGunBolt` (`ProjectileID.cs:1756`), aiStyle 1
+            // (`Projectile.cs:6506`) — NOT cannon ammo. The M7-WIRE-2 row
+            // (blame 85e1d416e) carried penetrate −1 / alpha 0 where the
+            // true C# 601 keeps the stock penetrate 1 (`:774`) + alpha 255
+            // (`:6507`); `friendly = true` (`:6508`) rides the spawn seam's
+            // owner argument like every aiStyle-1 row. The stock 3600
+            // `timeLeft` (`:787`) + `tileCollide` (`:775`) + extraUpdates 30
+            // (`:6509`) stay. The d18 damage gate refuses 601 faithfully
+            // (`:12448`); the teleport AI (`PortalHelper.TryPlacingPortal`
+            // `:18099`) is unported (the const doc's remainder).
             CANNON_EXPLOSIVE => (
                 10.0,
                 10.0,
                 1,
-                -1,
+                1,
                 TIME_LEFT_DEFAULT,
                 30,
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `:864-873` / `:1345-1353` / `:2012-2022`: the boomerangs —
             // 22×22, aiStyle 3, `penetrate = -1`, melee.
@@ -3582,6 +3630,46 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // stock `penetrate = 1` and the 3600 reset (the ghostHurt spawn
             // is Phase 3's documented skip).
             SPECTRE_WRATH => (6.0, 6.0, 59, 1, TIME_LEFT_DEFAULT, 3, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:3883-3892` SpiritHeal (298): 6x6, aiStyle 52,
+            // alpha 255, magic, `tileCollide = false`, `extraUpdates = 3`.
+            // `friendly` stays the reset false (`:788` — the heal orb hits
+            // nothing); the stock penetrate 1 / timeLeft 3600 stand.
+            SPIRIT_HEAL => (6.0, 6.0, 52, 1, TIME_LEFT_DEFAULT, 3, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 residual 5 — `:3952-3964` VampireKnife (304): 30x30,
+            // aiStyle 2, friendly, melee, `penetrate = 1`, alpha 255,
+            // light 0.2 (`set_defaults_light` below), `ignoreWater` (the
+            // overlay below), `extraUpdates = 0`. The stock tileCollide
+            // true / timeLeft 3600 stand. The aiStyle-2 arm's spawn latch
+            // (`:23240-23244`) + 30-tick decay (`:23632-23649`) were already
+            // ported kind-gated; this row arms them.
+            VAMPIRE_KNIFE => (30.0, 30.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:3965-3973` VampireHeal (305): 6x6, aiStyle 52,
+            // alpha 255, `tileCollide = false`, `extraUpdates = 10`. NO
+            // magic flag (the C# arm sets none — the heal is classless).
+            VAMPIRE_HEAL => (6.0, 6.0, 52, 1, TIME_LEFT_DEFAULT, 10, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:4139-4148` FlamingJack (321): 30x30, aiStyle 55,
+            // friendly, melee, `tileCollide = false`, `ignoreWater` (the
+            // overlay below). The stock penetrate 1 / timeLeft 3600 stand.
+            FLAMING_JACK => (30.0, 30.0, 55, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // W4-d6 — `:4215-4225` FlamingScythe (329): 80x80, aiStyle 56,
+            // hostile (the spawn_hostile seam), `penetrate = -1`,
+            // `tileCollide = false`, `timeLeft = 420`, `light = 0.25f`
+            // (`set_defaults_light` below). ai0/ai1 carry the blade's
+            // rotation/spriteDirection (`NPC.cs:33230`'s trailing args).
+            FLAMING_SCYTHE => (80.0, 80.0, 56, -1, 420, 0, false, false, false, RESET_STATE),
+            // W4-d6 — `:4487-4496` WaterGun (358): 18x18, aiStyle 60,
+            // alpha 255, `penetrate = -1`, `extraUpdates = 2`, `ignoreWater`
+            // (the overlay below); the stock tileCollide true — the 1x1
+            // collision probe (`GetCollisionParams`, `:19872-19876`) rides
+            // the arm's movement stand-in.
+            WATER_GUN => (18.0, 18.0, 60, -1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:4868-4877` SlimeGun (406): 14x14, aiStyle 60,
+            // alpha 255, `penetrate = -1`, `extraUpdates = 2`, ignoreWater.
+            SLIME_GUN => (14.0, 14.0, 60, -1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:9848-9857` ShimmerGunStream (1042): 18x18, aiStyle
+            // 60, alpha 255, `penetrate = -1`, `extraUpdates = 2`,
+            // ignoreWater.
+            SHIMMER_GUN_STREAM => (18.0, 18.0, 60, -1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:4903-4915` Typhoon — 30x30, aiStyle 71, `penetrate = -1`,
             // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
             // dropped.
@@ -5415,6 +5503,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d4 — `Projectile.cs:2748`: the flame jet (187) sets
             // `ignoreWater = true` (the row landed with the 38 arm).
             || kind == FLAMETHROWER_TRAP,
+            // W4-d6 — `Projectile.cs:4147`: the FlamingJack (321) ignores water.
+            || kind == FLAMING_JACK
+            // W4-d6 residual 5 — `Projectile.cs:3962`: the VampireKnife.
+            || kind == VAMPIRE_KNIFE
+            // W4-d6 — `Projectile.cs:4495`/`:4876`/`:9856`: the three gun
+            // streams ignore water.
+            || matches!(kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -5464,6 +5559,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d2 — the aiStyle-13 melee chains (`Projectile.cs:
                     // 3471`/`:3575`/`:3596`/`:5569`).
                     | GOLEM_FIST | BOXING_GLOVE | CHAIN_KNIFE | CHAIN_GUILLOTINE
+                    // W4-d6 — the FlamingJack's `melee = true` (`:4145`).
+                    | FLAMING_JACK
+                    // W4-d6 residual 5 — the VampireKnife's `melee = true`
+                    // (`Projectile.cs:3960`).
+                    | VAMPIRE_KNIFE
             ),
         ranged: matches!(
             kind,
@@ -5534,6 +5634,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | UNHOLY_TRIDENT | UNHOLY_TRIDENT_HOSTILE
                 | BALL_OF_FROST | MAGNET_SPHERE_BALL | MAGNET_SPHERE_BOLT
                 | INFERNO_FORK_BOLT | INFERNO_BLAST | LOST_SOUL | SPECTRE_WRATH
+                // W4-d6 — the SpiritHeal's `magic = true` (`:3889`); the
+                // VampireHeal 305 sets none (classless, `:3965-3973`).
+                | SPIRIT_HEAL
                 | VENOM_FANG | FROST_BOLT | TYPHOON | LEAF
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
@@ -6157,6 +6260,34 @@ mod tests {
         for k in (146..=149u16).chain(1015..=1017) {
             assert!(spawnable.contains(&k), "kind {k} packs");
         }
+    }
+
+    #[test]
+    fn w4_d6_retire_the_601_row_is_the_portal_bolt_not_cannon_ammo() {
+        // The d18 finding (dd7b1b0a, the PROJ-171 retire phase-3 census) fixed
+        // here: 601 = `ProjectileID.PortalGunBolt` (`ProjectileID.cs:1756`).
+        // The C# block `Projectile.cs:6502-6510`: 10x10, aiStyle 1, alpha
+        // 255, friendly, extraUpdates 30 — penetrate stays the stock 1
+        // (`:774`), timeLeft the stock 3600 (`:787`), tileCollide the stock
+        // true (`:775`). The old M7-WIRE-2 row carried -1/alpha 0 under the
+        // 178-cannonball comment; the 178 row is untouched.
+        let bolt = proj_data(CANNON_EXPLOSIVE).expect("the 601 row");
+        assert_eq!(CANNON_EXPLOSIVE, 601);
+        assert_eq!((bolt.w, bolt.h), (10.0, 10.0), ":6504-6505");
+        assert_eq!(bolt.ai_style, 1, ":6506");
+        assert_eq!(bolt.alpha, 255, ":6507");
+        assert_eq!(bolt.penetrate, 1, "the stock :774 — NOT the 178's -1");
+        assert_eq!(bolt.extra_updates, 30, ":6509");
+        assert_eq!(bolt.time_left, TIME_LEFT_DEFAULT, "the stock :787");
+        assert!(bolt.tile_collide, "the stock :775");
+        assert!(!bolt.arrow && !bolt.trap);
+        let bomb = proj_data(CANNON_BOMB).expect("the 178 row");
+        assert_eq!(bomb.penetrate, -1, ":2647");
+        assert_eq!(bomb.time_left, 2, ":2648");
+        // The aiStyle-1 slice-B fade consumes the 255 spawn: 255 - 17*15 = 0
+        // clamps on tick 18 (`:54096-54100`); the trailing-mode row keeps 0
+        // (`ProjectileID.cs:521` lists 601 -> 0).
+        assert_eq!(crate::projectile::trailing_mode(CANNON_EXPLOSIVE), 0);
     }
 
     #[test]

@@ -3998,6 +3998,44 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 1569 {
+        // W4-d6 residual 5 — `Player.cs:48157-48188`: the Vampire Knives'
+        // volley. The count: 4 base, +1 on `Next(2) == 0`, +1 on
+        // `Next(4) == 0`, +1 on `Next(8) == 0`, +1 on `Next(16) == 0` —
+        // the four count rolls run FIRST, in that order. Each knife: the
+        // aim velocity spread by `Next(-35, 36) * 0.05 * index` per axis
+        // (index 0 spreads nothing but still draws both), renormalised to
+        // `speed`, spawned at the shared point with the item's
+        // damage/knockback. The C# `return`s here — the generic tail never
+        // runs for the knives.
+        let mut count = 4;
+        if loot_rng.next_range(0, 2) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 4) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 8) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 16) == 0 {
+            count += 1;
+        }
+        for n in 0..count {
+            let spread = 0.05 * n as f32;
+            let mut vx = shot.x + loot_rng.next_range(-35, 36) as f32 * spread;
+            let mut vy = shot.y + loot_rng.next_range(-35, 36) as f32 * spread;
+            let k = fx_spd / (vx * vx + vy * vy).sqrt();
+            vx *= k;
+            vy *= k;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if held.kind == 1930 {
         // S1-P-i21 — `Player.cs:47647-47662` — the Razorpine's volley:
         // `2 + Next(3)` needles, each spread by `Next(-35, 36)
@@ -4285,6 +4323,25 @@ fn fire_non_ammo_shot(
             // 31005`); without the seed the wave would skip the fade and
             // start mid-pulse. No RNG draw.
             (-1.0, 0.0)
+        } else if proj == crate::projectile::WATER_GUN {
+            // W4-d6 residual — `NewProjectile`'s local-owner switch
+            // (`Projectile.cs:10914-10916`): `case 358: ai[1] =
+            // Main.rand.Next(10, 31) * 0.1f` — the aiStyle-60 accumulator's
+            // per-spawn step (1.0..3.0). The C# draw sits INSIDE
+            // NewProjectile on the same `UpdatePlayers` stream; the guns'
+            // generic tail carries no other draw (no spread/leaf/aqua
+            // seed), so the payload block is the exact stream position.
+            (0.0, loot_rng.next_range(10, 31) as f32 * 0.1)
+        } else if proj == crate::projectile::SLIME_GUN {
+            // `Projectile.cs:10917-10919`: `case 406: ai[1] =
+            // Main.rand.Next(10, 21) * 0.1f` (1.0..2.0).
+            (0.0, loot_rng.next_range(10, 21) as f32 * 0.1)
+        } else if held.kind == 5495 {
+            // `Player.cs:49124-49127` — the Shimmer Gun's per-item use arm
+            // passes `ai0: 0f, ai1: 1f` (the accumulator steps 1 per armed
+            // sub-tick); `NewProjectile`'s default arm assigns them
+            // verbatim (`:10920-10924` — 1042 has no spawn-roll case).
+            (0.0, 1.0)
         } else {
             (0.0, 0.0)
         };
@@ -7865,7 +7922,10 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 /// (`:40248`) rides `Zones.temple`; the remix desert arm (`:40284-40287`)
 /// reads the world's REMIX seed flag. The underworld arm reads
 /// `Main.UnderworldLayer * 16` = `(height - 200) * 16` (`Main.cs:2790`).
-fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
+/// `pub(crate)`: the aiStyle-60 Shimmer stream's torch conversion calls it
+/// with `useWithoutTorchGodsFavor: true` (`Projectile.cs:29142`) — the same
+/// unconditional body (W4-d6).
+pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
     let z = p.zones;
     // `:40244-40247` — the dungeon arm comes before the underworld one.
     if z.dungeon {
@@ -15700,6 +15760,165 @@ mod tests {
         assert_eq!(a_seed, b_seed, "the seed is seed-stable");
         assert_eq!(a_stream, draws_after(seed, 1), "the LCG seed only (crit is per-hit)");
         assert_eq!(a_stream, b_stream, "the stream is seed-stable");
+    }
+
+    /// W4-d6 residual — the Water Gun (item 2272, `Item.cs:22876-22889`:
+    /// useStyle 5, useTime/useAnimation 20, damage 0, shoot 358, shootSpeed
+    /// 11, autoReuse, UseSound Item181) fires through the generic tail, and
+    /// `NewProjectile`'s local-owner switch rolls the accumulator step
+    /// `ai[1] = Next(10, 31) * 0.1f` (`Projectile.cs:10914-10916`). The roll
+    /// is the stream's FIRST and ONLY draw of the shot (no spread, no leaf
+    /// jitter, no aqua seed for the guns). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_water_gun_fires_with_the_newprojectile_ai1_roll() {
+        let mut app = staff_app(2272, "Water Gun");
+        let seed = 0x2A71;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1, "one stream per use");
+        assert_eq!(blobs[0].kind, crate::projectile::WATER_GUN, "Item.shoot 358");
+        assert!(
+            (blobs[0].vel.length() - 11.0).abs() < 0.05,
+            "shootSpeed 11 (|v|={})",
+            blobs[0].vel.length()
+        );
+        assert_eq!(blobs[0].damage, 0, "the :22882 damage 0");
+        // The roll: one Next(10, 31) draw, ai[1] = draw * 0.1 in [1.0, 3.0].
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let draw = probe.next_range(10, 31);
+        assert_eq!(blobs[0].ai[1], draw as f32 * 0.1, "the :10915 roll");
+        assert_eq!(blobs[0].ai[0], 0.0, "the case assigns no ai0");
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 1),
+            "exactly the one NewProjectile roll"
+        );
+    }
+
+    /// W4-d6 residual — the Slime Gun (item 2610, `Item.cs:25504-25517`:
+    /// useTime/useAnimation 12, damage 0, shoot 406, shootSpeed 8) rolls
+    /// `ai[1] = Next(10, 21) * 0.1f` (`Projectile.cs:10917-10919`).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_slime_gun_rolls_its_own_ai1_range() {
+        let mut app = staff_app(2610, "Slime Gun");
+        let seed = 0x51E7;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(blobs[0].kind, crate::projectile::SLIME_GUN, "Item.shoot 406");
+        assert!(
+            (blobs[0].vel.length() - 8.0).abs() < 0.05,
+            "shootSpeed 8 (|v|={})",
+            blobs[0].vel.length()
+        );
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let draw = probe.next_range(10, 21);
+        assert_eq!(blobs[0].ai[1], draw as f32 * 0.1, "the :10918 roll");
+        assert_eq!(stream_of(&mut app), draws_after(seed, 1));
+    }
+
+    /// W4-d6 residual — the Shimmer Gun (item 5495, `Item.cs:43313-43325`:
+    /// useTime/useAnimation 20, damage 0, shoot 1042, shootSpeed 10) has a
+    /// per-item use arm passing `ai0: 0f, ai1: 1f` (`Player.cs:49124-49127`);
+    /// 1042 has NO NewProjectile spawn-roll case, so the payload lands
+    /// verbatim and the shot spends NO draw. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_shimmer_gun_passes_ai1_one_and_spends_no_draw() {
+        let mut app = staff_app(5495, "Shimmer Gun");
+        let seed = 0x9D3;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(
+            blobs[0].kind,
+            crate::projectile::SHIMMER_GUN_STREAM,
+            "Item.shoot 1042"
+        );
+        assert!(
+            (blobs[0].vel.length() - 10.0).abs() < 0.05,
+            "shootSpeed 10 (|v|={})",
+            blobs[0].vel.length()
+        );
+        assert_eq!(blobs[0].ai[0], 0.0, "the :49126 ai0 0f");
+        assert_eq!(blobs[0].ai[1], 1.0, "the :49126 ai1 1f");
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 0),
+            "no spawn roll for 1042"
+        );
+    }
+
+    /// W4-d6 residual 5 — the Vampire Knives (item 1569, `Item.cs:15773`:
+    /// melee, damage 29, shoot 304, shootSpeed 15, kb 2.75) fire the
+    /// `Player.cs:48157-48188` volley: 4 base knives + one per taken
+    /// `Next(2)/Next(4)/Next(8)/Next(16)` gate (the four count rolls run
+    /// FIRST), then per knife two `Next(-35, 36)` spread draws scaled
+    /// `0.05 * index` and renormalised to speed. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_vampire_knives_volley_rolls_the_count_then_the_spreads() {
+        let mut app = staff_app(1569, "Vampire Knives");
+        let seed = 0x6B1D;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        // The twin stream: the four count gates, then 2 draws per knife.
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let mut count = 4;
+        for max in [2, 4, 8, 16] {
+            if probe.next_range(0, max) == 0 {
+                count += 1;
+            }
+        }
+        let knives: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(knives.len(), count as usize, "the :48159-48175 count");
+        // The base aim: +x at speed 15 (the cursor 80 px right, same row;
+        // meleeSpeed 1 leaves the speed alone).
+        let (shot_x, shot_y) = (15.0f32, 0.0f32);
+        for (n, k) in knives.iter().enumerate() {
+            assert_eq!(k.kind, crate::projectile::VAMPIRE_KNIFE, "Item.shoot 304");
+            assert_eq!(k.damage, 29, "the item damage through the melee x1");
+            // The spread pair per knife (index 0 draws but spreads 0),
+            // then the :48183-48184 renormalise.
+            let spread = 0.05 * n as f32;
+            let mut vx = shot_x + probe.next_range(-35, 36) as f32 * spread;
+            let mut vy = shot_y + probe.next_range(-35, 36) as f32 * spread;
+            let norm = 15.0 / (vx * vx + vy * vy).sqrt();
+            vx *= norm;
+            vy *= norm;
+            assert!(
+                (k.vel.x - vx).abs() < 1e-3 && (k.vel.y - vy).abs() < 1e-3,
+                "knife {n}: the spread + renormalise ({:?} vs {vx},{vy})",
+                k.vel
+            );
+        }
+        assert_eq!(
+            stream_of(&mut app),
+            probe,
+            "exactly 4 count draws + 2 per knife on UpdatePlayers"
+        );
     }
 
     /// The Bee Gun (item 1121) fires 1-5 bees (`Player.cs:48309-48332`):

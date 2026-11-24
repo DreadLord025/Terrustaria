@@ -778,6 +778,103 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.items.remove(0);
         }
     }
+    // W4-d6 — the aiStyle-60 slime walk's campfire-validate mismatch kills
+    // (`Wiring.ToggleCampFire` → `ValidateTileSquareIsActiveAndOfType`,
+    // `Wiring.cs:3012` → `WorldGen.cs:37891-37914`): the object drops spawn
+    // on the `UpdateProjectiles` stream (the walk ran inside the pool's
+    // update — the actuation-drops precedent, `world_sim/wiring.rs`).
+    for drop in app.projectiles.drain_light_drops() {
+        if let Some(id) = drop
+            .item
+            .map(|i| i as u16)
+            .or_else(|| crate::registry::tile_drop(drop.tile_kind, 0))
+        {
+            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, drop.x, drop.y);
+        }
+    }
+    // W4-d6 residual — the Spectre-heal orb spawns (`Projectile.ghostHeal`,
+    // `Projectile.cs:12095`): the damage walk queued `(owner, x, y, ai0,
+    // ai1)` per qualifying hit; the pass spawns each 298 CENTRED on the
+    // victim point (`NewProjectile`'s half-extent subtract,
+    // `Projectile.cs:10876-10877` — the c6 BladeShot precedent), zero
+    // velocity, damage 0, knockback 0. Draw-free (the 298 NewProjectile
+    // path rolls nothing — no spawn-roll case, no crit at spawn).
+    for (owner, x, y, ai0, ai1) in app.projectiles.drain_heal_orbs() {
+        let d = crate::projectile::proj_data(crate::projectile::SPIRIT_HEAL);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::SPIRIT_HEAL,
+            owner,
+            x - hw,
+            y - hh,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            ai0,
+            ai1,
+        );
+    }
+    // W4-d6 residual 5 — the Spectre-Mask damage-share spawns
+    // (`Projectile.ghostHurt`, `Projectile.cs:12060`): the damage walk
+    // queued `(owner, x, y, vx, vy, damage, ai0 target)` per qualifying hit
+    // (the direction rolls ran at the hit); the pass spawns each 356
+    // CENTRED on the victim point (the `NewProjectile` half-extent
+    // subtract), zero knockback, ai0 = the RAW npc index the style-59
+    // machine reads. Draw-free spawn (no 356 case in the switch).
+    for (owner, x, y, vx, vy, damage, ai0) in app.projectiles.drain_wraths() {
+        let d = crate::projectile::proj_data(crate::projectile::SPECTRE_WRATH);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::SPECTRE_WRATH,
+            owner,
+            x - hw,
+            y - hh,
+            vx,
+            vy,
+            damage,
+            0.0,
+            ai0,
+            0.0,
+        );
+    }
+    // W4-d6 residual 5 — the Vampire Knives' heal-orb spawns
+    // (`Projectile.vampireHeal`, `Projectile.cs:12104`): `(owner, x, y,
+    // ai0 owner, ai1 float share)` per qualifying 304 hit; the pass spawns
+    // each 305 centred on the victim, zero velocity, damage 0. Draw-free.
+    for (owner, x, y, ai0, ai1) in app.projectiles.drain_vampire_orbs() {
+        let d = crate::projectile::proj_data(crate::projectile::VAMPIRE_HEAL);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::VAMPIRE_HEAL,
+            owner,
+            x - hw,
+            y - hh,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            ai0,
+            ai1,
+        );
+    }
+    // W4-d6 residual 8 — the gun streams' Kill-splash dust
+    // (`Projectile.cs:74029-74147`): the death hook snapshotted the dying
+    // 358/406/1042 corpses (the velocity base already written); the drain
+    // emits the 50/40/50 dusts on the LIVE DustPool, the explicit gates +
+    // the `new_dust` internals on the `UpdateProjectiles` stream in C#
+    // order (the g65 gallop-dust pass-tail convention).
+    let gun_splashes = app.projectiles.drain_gun_splashes();
+    if !gun_splashes.is_empty() {
+        let ctx = app.spawn_ctx();
+        crate::projectile_gun_splash::drain(
+            gun_splashes,
+            &mut app.dust,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            &ctx,
+            &app.world,
+        );
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's
@@ -1083,6 +1180,83 @@ mod w4_d4_death_drop_tests {
                 key.name()
             );
         }
+    }
+}
+
+/// W4-d6 residual 7 — the 298-orb chain end-to-end (written, NOT run —
+/// code-only mode): the Spectre-Hood hit queues the intent, the pass-tail
+/// drain spawns the orb centred, and the armed style-52 dispatch flies it
+/// into the player for the contact heal (`Projectile.cs:28504-28532`).
+#[cfg(test)]
+mod w4_d6_heal_orb_chain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::{LOST_SOUL, SPIRIT_HEAL};
+
+    #[test]
+    fn w4_d6_the_hit_intent_drains_into_a_flying_orb_that_heals_on_contact() {
+        // The 8x8 fixture world, the player parked mid-world; a high-life
+        // zombie overlapping a Lost Soul shot. The hood flag + the missing
+        // health arm the ghostHeal spawn; the drained 298 homes at speed 4
+        // through the (v*15+d)/16 blend and heals on the <50f contact.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.local_id = 0;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        player.hp = 50;
+        player.max_hp = 100;
+        player.ghost_heal = true;
+        player.life_steal = 80.0;
+        app.player = Some(player);
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 56.0, 40.0, 1, 0.0);
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        app.npcs.push(npc);
+        // The magic shot overlapping the victim (the 12x12 soul box),
+        // flying right at 8 px/tick — it exits the 8x8 world (the
+        // out-of-world guard, no Kill) before the id-static 10-tick window
+        // expires, so exactly ONE hit lands and ONE orb spawns.
+        app.projectiles
+            .spawn_with_data_ai_owned(LOST_SOUL, 0, 58.0, 44.0, 8.0, 0.0, 100, 0.0, 0.0, 0.0);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The drain spawned the orb: centred on the POST-strike victim
+        // centre (the 6x6 half-extent subtract), ai0 = the local player
+        // (the missing-health scan), ai1 = the 0.2 float share.
+        let orb = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == SPIRIT_HEAL)
+            .expect("the drained 298 lives");
+        let n = &app.npcs[0];
+        let (nw, nh) = n.size();
+        assert_eq!(orb.ai[0], 0.0, "the target scan picked the local player");
+        let strike = 10_000 - n.hp;
+        assert!(strike > 0, "the hit landed");
+        // The drain runs at the pass TAIL, so the orb's first AI tick is
+        // the NEXT pass — this tick it holds the spawn velocity 0.
+        assert!(orb.vel.length() < 1e-6, "the drain spawns at rest");
+        let heal = orb.ai[1];
+        assert!((heal - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
+        // The next ticks: the armed 52 dispatch blends toward the player
+        // (the victim centre is ~15f from the player centre — inside the
+        // 50f contact radius, so the box overlap decides; the orb closes
+        // the last few px within a tick or two). Fly it home.
+        for _ in 0..40 {
+            update_projectiles(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            !app.projectiles
+                .slots()
+                .iter()
+                .any(|p| p.active && p.kind == SPIRIT_HEAL),
+            "the contact killed the orb (:28526)"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert!(p.hp > 50, "the contact healed");
+        assert!(p.hp <= 100, "the statLifeMax2 cap");
     }
 }
 

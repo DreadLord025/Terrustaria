@@ -47281,3 +47281,517 @@ Deliberate deviations / compose decisions (research/361):
 Code-only: 31 witnesses WRITTEN NOT RUN (no cargo/rustc/tests/rustfmt/
 graphify invoked); C# re-read in ≤100-line windows, streams hand-derived
 on cloned `UnifiedRandom`. research/361 SEALED.
+## W4-d6 residual — the light-toggle family keep-one (d6 5d81f2de vs e20 ee6df0f2 vs c42 6b68736a)
+
+Three branches touch the `Wiring.Toggle*` statics (`Wiring.cs:2800-3072`).
+Arm-by-arm census (C# re-read whole: `Wiring.cs:2800-3072` +
+`WorldGen.TryToggleLight` `WorldGen.cs:72970-73024`):
+
+| C# static | d6 free fn (`tr-core/src/wiring.rs`) | base `Wiring` method (pre-existing; e20 ee6df0f2 witnesses pin it) | c42 wire-lane arm |
+| --- | --- | --- | --- |
+| `ToggleHolidayLight` :2800-2815 | `toggle_holiday_light` :3318 — ±54, `forced==off` gate | :2609 — same flip, no forced param | — |
+| `ToggleHangingLantern` :2817-2841 | `toggle_hanging_lantern` :3302 — mod-2 anchor, ±18 ×2 cells | :2620 — same + `SkipWire` ×2 | — |
+| `Toggle2x2Light` :2843-2877 | `toggle_2x2_light` :3262 — single-`if` col wrap, ANCHOR `frameX>0`, ±36 ×4 | :2642 — same + `SkipWire` ×4 | — |
+| `ToggleLampPost` :2879-2901 | `toggle_lamp_post` :3285 — `j−frameY/18`, early-return gate, ±18 ×6 | :2669 — same + `SkipWire` ×6 | — |
+| `ToggleTorch` :2903-2918 | `toggle_torch` :3132 — ±66, `frameX>=66` OFF flag | ABSENT in base | case-4 inline ±66 (null forced ⇒ the gate always passes) |
+| `ToggleCandle` :2920-2933 | `toggle_candle` :3144 — ±18 ONE cell | :2688 — same | — |
+| `ToggleLamp` :2935-2961 | `toggle_lamp` :3158 — mod-3 anchor, clicked-cell flag, ±18 ×3 | :2695 — same + `SkipWire` ×3 | — |
+| `ToggleChandelier` :2963-2998 | `toggle_chandelier` :3175 — `%108` col wrap, ANCHOR `%108>0`, early-return gate, ±54 ×9 | :2711 — same + `SkipWire` ×9 | — |
+| `ToggleCampFire` :3000-3042 | `toggle_campfire` :3204 — `kind==215` gate, validate-kill (drops out-param), ANCHOR `frameY>=36`, ±36 frameY on active same-kind cells | ABSENT in base | `toggle_camp_fire` — `SET_CAMPFIRES.has` gate ({215}, `TileID.cs:616` — equivalent), validate → `actuation_drops`, `SkipWire` ×6 |
+| `ToggleFirePlace` :3044-3072 | `toggle_fireplace` :3240 — `%54/18`/`%36/18` anchor, ANCHOR `frameX>=54`, early-return gate, ±54 frameX ×6 | `toggle_fire_place` :2744 — same + `SkipWire` ×6 | — |
+| `TryToggleLight` dispatch `WorldGen.cs:72970-73024` | `try_toggle_light` :3338 — active gate, torch set {4} (`TileID.cs:615`), campfire set {215} (:616), the 10-arm switch, returns true even when the forced gate suppresses the flip | ABSENT | ABSENT |
+
+Every d6 free function was re-verified line-by-line against its C# static:
+the two gate forms (`!forced.HasValue || !forced.Value != flag` ≡
+`forced.is_none() || forced == Some(off)`; the early-return
+`forced.HasValue && !forced.Value == flag` ≡
+`forced.is_some() && forced != Some(off)`) are logically identical, the
+anchor decodes match (the single-`if` wraps in `Toggle2x2Light`/
+`ToggleChandelier` are the C#'s own, not `while` loops), and the OFF flags
+key on the same cell (clicked vs anchor) as the C#.
+
+**Keep-one recommendation: the d6 free-function family is the canonical
+superset — KEEP IT.** It is the only port of the `TryToggleLight` dispatch
+and of `ToggleTorch`/`ToggleCampFire` as forced-state statics; the base
+`Wiring` methods cover only 8 of the 10 statics and hard-code the wire
+lane's null-forced/`doSkipWires=true` call shape. The two lanes are NOT
+duplicates to delete blindly:
+
+* The base methods (e20's witnesses pin them, incl. the 2322af90 lantern
+  fixture fix — both cells share the lit state, the return trip keys on
+  the hit cell's `frameX`) carry the `SkipWire` flood bookkeeping the free
+  functions deliberately skip (every gun-stream caller passes
+  `skipWires: false`, `Projectile.cs:29080`/`:29110`). KEEP the methods +
+  the e20 witnesses for the `HitWireSingle` lane.
+* c42's case-4 torch arm and `toggle_camp_fire` duplicate the d6 statics'
+  maths for the wire lane. At merge, dedupe them onto the d6 free
+  functions with a skip-set parameter (the campfire drops ride
+  `actuation_drops` there, the free fn's `drops` out-param here — the
+  same `ObjectDrop` shape); until that refactor the two copies are
+  behaviour-identical under null forced state (verified above).
+* The d6 `toggle_campfire`'s literal `kind != 215` gate vs c42's
+  `SET_CAMPFIRES.has`: the set is exactly {215} (`TileID.cs:616`), so they
+  are equivalent today; prefer the set read at the dedupe.
+
+No behaviour change lands with this note — it is the merge-time keep-one
+record for the three branches (read from the pushed tips: e20 at 2322af90,
+c42 at 6b68736a, this branch at 5ae2978c).
+
+## W4-d6 residual — the gun items use-path census (358/406/1042 shooters)
+
+**Item-id census (exact).** The three aiStyle-60 streams are shot by
+exactly three items — item **3059 is NOT a gun** (`ItemID.cs:7801`:
+`PaintingTheSeason`):
+
+| Item | C# row | shoot | speed | useTime/Anim | sound |
+| --- | --- | --- | --- | --- | --- |
+| WaterGun **2272** (`ItemID.cs:6227`) | `Item.cs:22876-22889` | 358 | 11 | 20/20 | Item181 |
+| SlimeGun **2610** (`ItemID.cs:6903`) | `Item.cs:25504-25517` | 406 | 8 | 12/12 | Item181 |
+| ShimmerGun **5495** (`ItemID.cs:12673`) | `Item.cs:43313-43325` | 1042 | 10 | 20/20 | Item181 |
+
+All three: useStyle 5, damage 0, autoReuse, no `channel` flag, no ammo,
+no mana. The port's generated `itemdata.rs` rows match field-for-field
+(2272 :2438, 2610 :2776, 5495 :5661; `use_sound: Some(307)` =
+`SOUND_STYLES[307]` = Item181, `SoundID.cs:1565`; the 5495 `value: 15000`
+is `SetShopValues(Pink5, sellPrice(0,0,30))` — 30 silver ×5 = 15000,
+`Item.cs:49422-49425`; `gen.py --check` passes: "check ok (6196 rows)").
+
+**Use mechanics (i20/i23 precedent).** The guns are NOT channel items —
+they ride the generic non-ammo `fire_non_ammo_shot` tail (the i20 seam)
+once per use start, autoReuse re-arming at `useTime` cadence; the i23
+channel latch never arms for them (`def_is_channel` false). No per-item
+`ItemCheck_Shoot` arm exists for 2272/2610; the ShimmerGun 5495 has one
+(`Player.cs:49124-49127`) that only passes `ai0: 0f, ai1: 1f` — the same
+spawn point/velocity as the generic tail, so the port folds it into the
+generic ai-payload block.
+
+**The residual gap (fixed in this slice).** `NewProjectile`'s local-owner
+switch (`Projectile.cs:10903-10926`) rolls the accumulator step per
+spawn: `case 358: ai[1] = Next(10, 31) * 0.1f` (`:10915`, 1.0..3.0),
+`case 406: ai[1] = Next(10, 21) * 0.1f` (`:10918`, 1.0..2.0); 1042 has no
+case (the default arm assigns the use-path payload). The d6 AI port
+(5d81f2de) reads `ai[1]` in the `ai[0] += ai[1]` accumulator
+(`:29153`) but no spawner ever wrote it — the streams would never
+gravitate past the >30 gate. The rolls now ride the generic tail's
+ai-payload block on the `UpdatePlayers` stream (the exact C# position
+for these kinds: no spread/leaf/aqua draws precede them), and the 5495
+arm passes `(0, 1)`. Three witnesses pin the rolls + the stream spend
+(WRITTEN NOT RUN, code-only).
+
+## W4-d6 residual — the 52 heal-orb spawn sources (Spectre set bonus ported)
+
+**Spawn-source census (C# re-read whole).** The aiStyle-52 orbs have
+exactly two spawn sites:
+
+* **SpiritHeal 298** — `Projectile.ghostHeal` (`Projectile.cs:12064-12096`),
+  called from `Damage_PVE_Inner` at `:13816-13821` (inside `if (flag10)`
+  `:13810`, gate `targetNPC.canGhostHeal | flag9` then the owner's
+  `ghostHeal && !moonLeech`) and from the PVP walk at `:14673-14676`
+  (single-player folds out). `flag9` is the debug target-dummy option
+  (`DebugOptions.LetProjectilesAimAtTargetDummies`, `:12818-12822`) —
+  constants-off, folds false.
+* **VampireHeal 305** — `Projectile.vampireHeal` (`:12098-12106`), called
+  only for the Vampire Knives' type-304 hits (`:13812-13815` /
+  `:14677-14680`, owner `!moonLeech` gated). The 304 knife kind is
+  unported in the pool (no `proj_data` row) — that spawn source stays
+  deferred with the knives' use path; the census records it.
+
+**The `ghostHeal` flag source.** `ArmorSetBonuses.Benefits.SpectreHealing`
+(`ArmorSetBonuses.cs:253-257`): `ghostHeal = true; magicDamage -= 0.4f`,
+registered `Add(..., PartType.Head, 1503, 1504, 1505)` (`:439` — the
+Spectre Hood 1503 + Robe 1504 + Pants 1505). The mask variant
+`SpectreDamage` (`:259-262`, `:440` — head 2189) grants `ghostHurt`
+instead. Neither set was ported: the wave-D `SETS` table stopped at the
+low tiers. This slice lands both rows (the hood's −40% magic damage in
+tr-core `SET_STATS`; the flags in the app seam's `SetFlag::SpectreHeal/
+SpectreHurt`), the `Player.ghost_heal/ghost_hurt` fields +
+`ResetEffects` clears (`Player.cs:18723-18724`), and the per-tick grant
+through the existing `apply_armor_set_bonuses` seam.
+
+**The spawn mechanics ported** (`ghost_heal_on_hit`, the PVE walk hook):
+the share `0.2 − numHits·0.05` (`:12066`, refuses at ≤ 0 — the 5th hit),
+`(int)(dmg·share) > 0 && lifeSteal > 0` (`:12072`), the budget drains by
+the FLOAT share BEFORE the `magic` gate (`:12076-12080` — a non-magic
+shot spends budget without spawning), the 255-slot lowest-health target
+scan folds to the single local player (missing health > 0 wins, else the
+owner keeps the target — the strict `>` from 0), and the draw-free 298
+spawn (`:12095`) rides `pending_heal_orbs` out to the world-sim pass
+(the `drain_light_drops` intent pattern), centred via the
+`NewProjectile` half-extent subtract (`:10876-10877`).
+`Projectile.numHits` lands as a slot field (`:308`, reset `:704`, bump
+`:14199` after the heal arm). `NPC.canGhostHeal` lands as a slot field
+(stock true `:6263`; the false writers are 384/387/388 —
+`:13893`/`:13933`/`:13950` — and the unported AncientDoom 523 `:15811`).
+
+**The lifeSteal budget** (`Player.cs:1006`, stock 99999f):
+`Player.Update` regens +0.6/tick capped 80 classic, +0.5 capped 70
+expert (`:24468-24489` — the two independent `if`s verbatim). The stock
+clamps to the cap on the first tick. NOT a ResetEffects flag.
+
+Deliberate folds: the PVP call site (`:14673`, no PvP in the port), the
+team/hostile/3000px terms of the target scan (single-player), the
+`GetProjectileSource_OnHit` entity-source bookkeeping (no port seam),
+`flag9`'s debug option. The vampireHeal 305 source stays deferred with
+the unported 304 knives (recorded above). The ghostHurt flag lands but
+its 356 spawn consumer keeps the documented M3-EQUIP skip
+(`ai_spectre_wrath` module note).
+
+Witnesses (WRITTEN NOT RUN, code-only): the armor seam's two-set grant +
+damage cut (`w4_d6_the_spectre_sets_grant_their_ghost_flags_and_the_hood_
+damage_cut`), the PVE-walk spawn + share decay + numHits bump
+(`w4_d6_the_spectre_heal_spawns_the_orb_and_the_share_decays_per_hit`),
+the flag/leech/budget/magic/canGhostHeal gates
+(`w4_d6_the_ghost_heal_gates_flag_leech_budget_magic_and_the_npc_flag`),
+the budget regen/caps (`w4_d6_the_life_steal_budget_regens_and_caps_per_
+difficulty`).
+
+## W4-d6 residual — the aiStyle-56 duplicate keep-one (d6 b53ee70a vs c6 040b33b5)
+
+Both branches port the FlamingScythe (329) aiStyle-56 arm
+(`Projectile.cs:28845-28866`, re-read whole). Arm-by-arm:
+
+| Piece | d6 b53ee70a | c6 040b33b5 | Verdict |
+| --- | --- | --- | --- |
+| `FLAMING_SCYTHE: u16 = 329` const | data.rs :1057 | data.rs :473 | identical value — keep ONE |
+| `set_defaults_light` 0.25 (`:4219`) | :1579 | :1561 | identical — keep ONE |
+| `proj_data` row `(80, 80, 56, -1, 420, 0, false×3, RESET_STATE)` (`:4215-4225`) | :2852 | :2086 | identical tuple — keep ONE |
+| the one-shot latch (`:28847-28852`): localAI0 0→1, rot=ai0, spriteDirection=−ai1 | same | same | identical |
+| the sub-16 Manhattan ×1.05 (`:28853-28856`, STRICT <) | same | same | identical |
+| direction sign (vx<0 → −1 else +1, `:28857-28864`) | same | same | identical |
+| spin `(|vx|+|vy|)·0.025·dir` on the POST-spin-up velocity (`:28865`) | same | same | identical |
+| hostile hold | `self.friendly = false` EVERY tick (the pool slot defaults true — the `ai_heal_orb`/`ai_dungeon_debris` precedent) | none — relies on `spawn_hostile_ai`'s one-time `friendly = false` | behaviour-identical for every real spawn path (the only spawner is c6's drain); d6's hold is the defensive sibling-arm convention |
+| integration | `self.pos += self.vel` inline (no world param) | `self.kill_step(world)` — `tileCollide = false` (`:4223`) takes the free-move branch `pos += vel; return` | identical result; c6's shape is the shared HandleMovement seam (the 55-arm precedent) |
+| dispatch arm | `56 => ai_flaming_scythe()` after the 55 arm | `56 => ai_flaming_scythe(world)` after the 18 arm | same match, different insertion points — merge conflict, keep ONE |
+| witnesses | 3 AI-level (latch+spin, the 16-Manhattan boundary, the row verbatim) | 2 sim-level (the blade-pair drain, the centred volley) — no AI-arm unit test | complementary — keep BOTH sets |
+| the spawner | none (the arm alone) | the whole style-59 chain: the 328 kind row (93365c72), the carrier pre-pass + pair drain + BladeShot centred spawn (040b33b5), the chain draw (5de68021) | c6 ONLY — without it the 329 never spawns in game |
+
+**Keep-one recommendation:** keep ONE arm — c6's `(world)` + `kill_step`
+signature (the house HandleMovement seam), with d6's per-tick
+`friendly = false` hold line folded in (the sibling-arm convention; the
+C# row's `hostile = true` `:4221` must survive any spawn seam, incl. the
+net relay). Re-point d6's 3 AI-level witnesses at the kept signature
+(add the `world` arg; the expectations are unchanged — the maths is
+identical). Keep c6's NPC-side chain whole (it is the spawn source, not
+a duplicate). Dedupe ALL FIVE shared sites at merge (const, light row,
+proj_data row, the arm, the dispatch arm) — not just the arm. The d6
+anchors row (`fn ai_flaming_scythe`) survives either shape; c6 added no
+arm anchor. No behaviour change lands with this note.
+
+## W4-d6 residual 5 — the Mask-side ghostHurt + the 304 knives (ported)
+
+**The ghostHurt spawn mechanics** (`Projectile.cs:12012-12062`, the PVE
+walk's `:13822-13825` arm — INSIDE `flag10` AND `canGhostHeal`, but with NO
+MoonLeech gate, unlike the hood's heal arm): the magic + stored-damage +
+dealt>1 gates (`:12014-12022` — `dmg` is the strike's dealt damage,
+`this.damage` the stored value the 356 inherits), the LOCAL player's
+`ghostDmg` budget refusing above 1500 (`:12024`, strict `>`) and growing
+by the stored damage BEFORE the target scan (`:12028` — a fruitless scan
+still spends). The 200-slot scan keeps chaseable NPCs inside the
+Manhattan-800 box: a `CanHit(pos, 1, 1, npc)` LOS pair beyond 50 enters
+the PREFERRED list, else the FALLBACK list only while the preferred one
+is empty (`:12042-12051` — the `num4 == 0` arm; early near/blocked NPCs
+survive as fallbacks until the first preferred pick seals the list). The
+pick is uniform over preferred-when-non-empty else fallback (`:12056`),
+the velocity a `Next(-100,101)` pair normalised to speed 4 (`:12057-12059`),
+the 356 at the victim centre with the stored damage, kb 0, ai0 = the RAW
+npc index (`:12060`). The spawn rides `pending_wraths` out to the pass
+tail (the `drain_heal_orbs` intent pattern); the direction rolls run at
+the hit on the pass's stream, the spawn itself is draw-free (no 356 case
+in `NewProjectile`'s switch).
+
+**The `:12039` quirk kept verbatim.** The C#'s Manhattan expression
+mis-parenthesises the projectile half: `npc.X + npc.width/2 −
+base.position.X + base.width/2` — the projectile's half-extent rides
+ADDITIVE instead of subtracting from a parenthesised centre. The port
+reproduces the shipped expression (`- p.pos.x + p.w * 0.5`), so the scan
+box matches the game, quirk included. The `(0,0)` direction pair divides
+by zero in the C# (NaN velocity) — the port propagates the same NaN (the
+out-of-world guard's `is_nan` arm then deactivates it, `:16694`).
+
+**The ghostDmg budget** (`Player.cs:1008`, stock 0): `Player.Update`
+decays −6.6666665/tick while positive, then the independent < 0 floor
+(`:24460-24467`, directly above the lifeSteal regen the residual-3 slice
+landed). NOT a ResetEffects flag.
+
+**The vampireHeal 305 source, now ported** (`Projectile.cs:12098-12106`,
+the walk's `:13812-13815` arm — OUTSIDE the `canGhostHeal` gate, owner
+`!moonLeech` gated): the 7.5% share, the truncated-non-zero + budget
+gates, the FLOAT drain, the draw-free 305 at the victim centre with
+ai0 = the OWNER (no target scan — the owner keeps the orb). The 305 row
++ the style-52 machine already landed (W4-d6 main); this slice adds the
+spawn source the residual-3 census deferred.
+
+**The 304 knife row** (`Projectile.cs:3952-3964`): 30×30, aiStyle 2,
+friendly, melee, penetrate 1, alpha 255, light 0.2, ignoreWater,
+extraUpdates 0. The aiStyle-2 arm's spawn latch (`:23240-23244`) and
+30-tick decay (`:23632-23649`) were ALREADY ported kind-gated (the
+s1_d_4b_8 witness drives them through a hand-built slot) — the row arms
+them for real spawns. `GetCollisionParams`' 4×4 probe (`:20007-20011`)
+lands in `kill_step` (the box anchors at `Center − (colW,colH)·0.5`,
+`:17589`; every other kind's full-box anchor collapses to pos, so the
+generalisation is behaviour-neutral for them).
+
+**The knives' use arm** (`Player.cs:48157-48188`, item 1569): 4 base
+knives + one per taken `Next(2)/Next(4)/Next(8)/Next(16)` gate (the four
+count rolls FIRST), then per knife two `Next(-35,36)` spread draws
+scaled `0.05·index` per axis, renormalised to speed — index 0 draws both
+but spreads nothing. The C# `return`s before the generic tail.
+
+Deliberate folds: the PVP call sites (`:14673-14680`, no PvP),
+`GetProjectileSource_OnHit` bookkeeping (no port seam), the 255-slot
+player terms (single local player). The knife's Kill-dust arm
+(`:74404-74413`, 3× dust 182) is CLAIMED by the g65 death-dust lane
+(batch 7) — not ported here. The `AI_002` display-doll pose (`:22677`)
+and the `:79501`/`:16264` liquid-velocity arms are draw/liquid-lane
+territory (the wet machine is d53's).
+
+Witnesses (WRITTEN NOT RUN, code-only): the 304 row + AI latch
+(`w4_d6_the_vampire_knife_row_is_verbatim_and_the_ai_runs`), the ghostHurt
+gates/budget/pick (`w4_d6_the_ghost_hurt_spends_the_budget_and_spawns_the_
+wrath`), the walk's gate nesting (`w4_d6_the_pve_walk_routes_the_knife_
+heal_outside_the_ghost_gate`), the vampireHeal truncation/drain
+(`w4_d6_the_vampire_heal_share_truncates_and_drains_the_float`), the
+ghostDmg decay (`w4_d6_the_ghost_dmg_budget_decays_and_floors`), the
+knives volley's draw order (`w4_d6_the_vampire_knives_volley_rolls_the_
+count_then_the_spreads`).
+
+## W4-d6 residual 6 — the Spectre hood/mask head vanity (visual swap)
+
+**The census.** The hood-vs-mask visual difference is entirely the head
+sheet: `PlayerDrawLayers.DrawPlayer_21_Head`'s normal-hat branch draws
+`TextureAssets.ArmorHead[drawPlayer.head]` (`PlayerDrawLayers.cs:2267`)
+with the `bodyFrame.Height -= 4` crop (`:2254-2264`). The two heads are
+`ArmorIDs.Head.SpectreHood = 101` (item 1503) and `SpectreMask = 156`
+(item 2189) (`ArmorIDs.cs:249/:359`); the generated `itemdata.rs` rows
+already carry `head_slot: 101`/`156` (the registry resolution in
+`draw_player` reads them). Neither id sits in `GetHairSettings`'
+fullHair/hatHair lists (`Player.cs:16791-16904`) — both are plain normal
+hats, hair suppressed — nor in `HidesHead`/`UseSkinColor`/
+`DrawFaceMaskUnderHeadLayer` (`ArmorIDs.cs:36-42`), and neither has a
+`headGlowMask` row (`PlayerDrawSet.cs:461-601`) or an `Extra` overlay
+(the 292/109 arms, `:2282-2293`). `FrontToBackID` lists neither (`:35`)
+— no back-helmet layer. The ONLY missing piece was the sheets: the
+port's `armor_head` array packed slots 1..4 only, so both heads drew
+nothing.
+
+**What lands.** `Armor_Head_101`/`Armor_Head_156` join the static sheet
+list (`assets.rs`, both `.xnb` present); `PlayerAssets` gains the two
+`Option<BgTex>` fields; the helmet push resolves slot 101 → hood, 156 →
+mask, everything else through the packed array unchanged. The 52-px
+crop, the ARMOR_WHITE tint, the cHead dye and the hair suppression are
+the shared normal-hat path — no per-kind draw code.
+
+Co-lane note: d70b (screenfx) touches `render/entities.rs`'s NPC/pass
+regions and `player.rs` flags — disjoint from the `PlayerAssets` struct
++ helmet push here; no shared site.
+
+Witness (WRITTEN NOT RUN, code-only):
+`w4_d6_the_spectre_hood_and_mask_swap_the_helmet_sheet` — the registry
+slots, the per-slot sheet resolution (distinct UVs), the hair
+suppression under both, the unported-slot and missing-sheet skips.
+
+## W4-d6 residual 7 — the 298-orb homing AI: machine-armed verification
+
+**The census confirms the machine is ARMED end-to-end** (no new AI code
+needed): the style-52 dispatch (`projectile.rs`, the `52 =>` arm) calls
+`ai_heal_orb` — the verbatim `Projectile.cs:28504-28532` port (the
+ai0-target speed-4 `(v·15+d)/16` blend, the <50f box-overlap contact,
+the owner-gated MoonLeech-refused heal through `Player.heal`'s
+HealEffect-RAW-then-cap order, the Kill-with-no-return). The 298 row
+(`:3883-3892`: 6×6, alpha 255, magic, tileCollide false, extraUpdates 3
+— four blend sub-steps per tick) and the 305 row (`:3965-3973`,
+extraUpdates 10 — eleven) landed with the W4-d6 main slice; the
+residual-3 slice added the ghostHeal spawn source and the pass-tail
+drain; residual 5 added the vampireHeal source. The orb's flight-to-
+target AI reads `Main.player[ai[0]]` — the port folds the 255-slot array
+to the single local player (a foreign index steers nothing, the
+`ai_spectre_shot` precedent).
+
+**The new witness closes the chain at the PASS level** (the earlier
+witnesses drove the pool directly): a hood-flagged player + a Lost Soul
+hit on a high-life zombie → the intent drains into a centred 298 at
+rest → the next pass's armed dispatch blends it toward the player → the
+contact heals and kills. The soul flies out of the fixture world so
+exactly one hit lands (the id-static 10-tick window would otherwise
+re-hit). WRITTEN NOT RUN (code-only):
+`w4_d6_the_hit_intent_drains_into_a_flying_orb_that_heals_on_contact`.
+
+## W4-d6 residual 8 — the gun-splash Kill dust (358/406/1042, ported)
+
+**The claim read (co-lanes).** The g65 death-dust lane
+(`task/W4-g65-proj-death-dust`, tip 7f0dc8649) ports UNCLAIMED `Kill()`
+arms in 10-kind batches; its batch-6 line range (`:73952-74333`) spans
+these three sites but its kind list skips 358/406/1042 (they were d6's
+census — the `gun_stream_death_draws` draw-count stub). The d53 wet-block
+lane (fa7b331d3) owns the Update wet machine's entry/exit splashes
+(`:16851-16987`); the g64 trail lane (77616a7d6) owns the per-tick AI
+dust (`:29158-29303`, the draws stay in `projectile_ai_guns.rs`). All
+three ranges are disjoint from `:74029-74147` — the Kill bodies were
+unclaimed, and this slice ports them.
+
+**The port** (`projectile_gun_splash.rs`, the g65 queue→drain seam): the
+death hook (inside the `!died_out_of_world` gate, at the census body
+position above `special_arrow_kill`) writes the velocity base
+(`velocity = oldVelocity·0.2`; the scale death reads the ×5-kicked
+velocity through the `scale <= 0` marker — only the style-60 arm decays
+the scale) and snapshots the corpse into `pending_gun_splashes`. The
+pass-tail drain emits onto the real `DustPool::new_dust` on the live
+`UpdateProjectiles` stream: the 358's 50× dust 211 (alpha 75, scale 1.2),
+the 406's 40× dust 4 (alpha 175, scale 1.6, colour (0,80,255,100)), the
+1042's 50× dust 324 (alpha 75, scale 1.25, the ×0.8 velocity add + the
+`Next(6)` palette LAST). Per dust: the internals (6 draws on the
+empty-pool path), 3× `Next(2)` alpha +25 gates, the `Next(2)`
+scale-0.6/0.8-vs-noGravity pick, `Next(-100,101)` the ×(1+0.01·roll)
+velocity scale, 2× `Next(-50,51)` the ±0.015 kicks, the position
+overwrite to the centre; the 1042 adds the colour pick (0 →
+(255,255,220), 1 → (230,255,255), 2 → (255,210,255), default →
+(225,210,255)). The old draw-count stub + its witness are REPLACED (the
+real mirrors pin the same counts plus the bodies).
+
+Recorded deviation: the pass-tail draw placement (the g65/gallop
+convention — the C# rolls mid-Kill, the port defers to the tail;
+stream-neutral per consumer, the total draw count unchanged).
+
+Witnesses (WRITTEN NOT RUN, code-only): the 358 full-stream twin mirror
+(`w4_d6_the_water_gun_kill_burst_mirrors_the_csharp_draws`), the 406
+colour + the 1042 palette/×0.8/draw-count
+(`w4_d6_the_slime_and_shimmer_bursts_carry_their_colours`), the
+scale-death kicked base (`w4_d6_the_scale_death_burst_reads_the_kicked_
+base`), the unclaimed-kind inertness (`w4_d6_other_kinds_stay_inert`).
+
+## W4-d6 residual 9 — the ShimmerGun 5495 shimmer-source chain (census + the immunity seam)
+
+**The question the census answers: does the 1042 projectile apply
+`shimmerWet` to NPCs? NO.** The full chain, every link cited:
+
+1. **The use arm** (`Player.cs:49124-49127`, item 5495): fires 1042 with
+   `ai0: 0f, ai1: 1f` — landed in residual 2 (the editing.rs payload
+   block, the no-draw witness).
+2. **The contact** (`Projectile.cs:29018-29043`, the style-60 arm): the
+   1042's switch row sets buff 353 / duration 100 / flag25 = false
+   (`:29018-29022`); every intersecting NPC (`active && !dontTakeDamage
+   && lifeMax > 1`) takes `AddBuff(353, 100)` through the immune guard,
+   then the blob Kills (`:29041` — OUTSIDE the flag26 gate, so an immune
+   NPC still kills it). flag24 is false for all three guns, so the
+   `ShimmerTownTransform` gate (`:29033`) is dead. flag25 = false skips
+   the player-buff loop entirely (`:29044`). The arm NEVER writes
+   `NPC.shimmerWet` — the projectile-side `shimmerWet` field is the
+   slot's OWN liquid state (`:10891` at spawn, the wet machine
+   `:16808`), not an NPC write.
+3. **The immune guard** (`NPC.cs:89928`): `buffImmune[353]`, set at
+   `SetDefaults` from `NPCID.Sets.ShimmerImmunity` (`NPC.cs:17838`,
+   the 131-id set `NPCID.cs:10467`). THIS was the missing port link —
+   `NpcBuffs::for_kind` now applies it (the verbatim set keyed on
+   `cs_id`); the four null-immunity witnesses exclude index 353 (their
+   "null DebuffImmunitySets row" claim is about the OTHER ids — the
+   shimmer flag is its own set, exactly like the C#).
+4. **The buff → flag → transform tail** (the f47 co-lane, UNMERGED):
+   buff 353 → the `shimmering` flag (`NPC.cs:92133-92143`, the immune
+   branch DelBuff-mid-scan), the transparency ramp (`:91514-91544`),
+   `GetShimmered` (`:91548-91592`). The NPC's OWN `shimmerWet` writer is
+   its liquid contact (`NPC.cs:93070`, `Collision_WaterCollision`) —
+   f47's `shimmer_wet_contact_pass`, not the gun's. The e19 co-lane
+   owns the item-side shimmer (quicksell/decraft); neither touches the
+   gun's buff path.
+
+**What lands here:** the `SHIMMER_IMMUNITY` verbatim set + the
+`for_kind` application (the one missing link on this branch), the
+null-row witness adjustments, and two witnesses: the set's gate
+(`w4_d6_the_shimmer_immunity_set_gates_buff_353` — the listed kinds
+refuse AddBuff, the unlisted accept, the 422/550 gaps stay false, the
+131-length pin) and the gun's contact
+(`w4_d6_the_shimmer_stream_buffs_353_through_the_immunity_gate` — the
+zombie takes 353/100, the immune ForceBubble refuses but still kills
+the blob, the 1042 has no player loop). WRITTEN NOT RUN (code-only).
+
+## W4-d6 RETIRE — the band-51-60 seal (research/330, chain 247→330)
+
+The retire round closes the band: **10/10 styles armed, 16/16 kinds
+rowed** (+ the 344 aiStyle-1 spawn rider), boundaries closed both ends
+(the 50 tail `Projectile.cs:28401` / the 61 head `:29310`). The full
+census table, the spawn-source ledger and the witness register live in
+`docs/research/330-projectile-ai-51-60-band-bible.md` (registry-150 §8
+FINAL assignment: the seal's 247 self-pick lost to d10's executed
+reservation `72431e61f` 16:05:28; the §8 FINAL re-order d16→327/g68→328/
+c3→329/**d6→330** — the rename executed this round, all refs updated).
+The adjudications:
+
+1. **The 601 row-shape fix** (`388530671`, the d18 `dd7b1b0a` finding
+   executed): 601 is `PortalGunBolt` (`ProjectileID.cs:1756`), the
+   `Projectile.cs:6502-6510` block — aiStyle 1, alpha 255, the STOCK
+   penetrate 1 (`:774`); the M7-WIRE-2 row's −1/0 mislabel is gone, the
+   178 ConfettiGun row untouched, `CANNON_EXPLOSIVE` leaves the
+   `BASELINE_ROWS` reset sweep (39→38). The name deviation is recorded
+   at the const (the `POISON_DART`/645 precedent). The d18 gate-refusal
+   witness's two row-shape asserts (`penetrate == -1`, `alpha == 0`)
+   must be re-pointed at merge — the gate refusal itself (`:12448`) is
+   row-shape-independent. The teleport AI
+   (`PortalHelper.TryPlacingPortal`, `Projectile.cs:18099` →
+   `GameContent/PortalHelper.cs:216`) is a ~600-line SUBSYSTEM (the
+   placement line-scans, the per-owner 2-portal statics, the traversal
+   teleport physics, the 600/602 rows + arms, the MP messages) —
+   **TASK-SEEDed** (research/330 §6), not ported here.
+2. **The gun-splash keep-one: KEEP d6, DROP the g65 late dup.** The
+   residual-8 claim read above ("unclaimed by the g65 batch-6 kind
+   list") was correct at its census tip `7f0dc8649` but is SUPERSEDED:
+   g65 batch 18 (`1bbeec5b5`, 10:22:59 — 44 min AFTER d6's `1b54dcbbd`
+   09:38:32) re-claimed 358/406/1042 as `smoke_puff` arms (tip
+   `f6e07bb90`). The d6 module wins first-claim AND fidelity: the g65
+   copy's `DeathSnapshot::of` sets `old_vel: p.vel` (its own documented
+   stand-in), so its burst base misses the C#'s post-kick
+   `oldVelocity` latch (`:28999-29000`) — a ×5 velocity error on every
+   scale death — while the d6 hook reads the kicked value through the
+   `scale <= 0` marker. The exact g65 drop-hunks (D1 `:2786-2794` arms,
+   D2 `:4834-4885` fn, D3 `:6616-6634` witness, at `f6e07bb90`) are
+   published in research/330 §4 for the g65 lane/merger; the merger
+   MUST execute the drop (a double 50-dust burst is a visible + stream
+   regression). The `projectile_gun_splash.rs` module doc carries the
+   adjudication. RE-PINNED at the moved g65 tip `37ec2f3aa` (research/330
+   §4a): the three hunks are byte-identical, and the g65 lane's own FINAL
+   (346 §2b) ADOPTED the verdict — the keep-one is now MUTUAL.
+3. **ShimmerImmunity × f47: COMPOSE, no dup — PLUS the c9 third-writer
+   KEEP-ONE (this round's find).** The f47 tip (re-verified at the moved
+   `057f44a68`) READS `buff_immune[353]` (npc_buffs.rs:694-705 the scan's
+   immune branch, npc.rs:5078-5083 the ramp) but never WRITES it from the
+   kind — zero `ShimmerImmunity` hits in its tree. The d6 residual-9
+   `for_kind` write feeds it; the two halves are different functions of
+   the same file, a clean union (research/330 §5). HOWEVER **W4-c9
+   (`2042d77f1`, 07:13:30 — 3 h before d6's `e2561efe1`) ports the SAME
+   `NPC.cs:17838` write** (`shimmer_immune(cs_id)`, its npc_buffs.rs:505
+   + the for_kind line :586, the range-compressed verbatim 131-id set).
+   Two for_kind 353-writes conflict in the same function tail; the sets
+   are semantically identical (hand-checked, zero drift). **KEEP c9
+   (first-claim), DROP d6's const + write at merge** — the exact S1-S3
+   drop/fold hunks in research/330 §5a (the d6 set-gate witness folds
+   onto c9's fn; the gun-contact witness is writer-agnostic and stays;
+   the anchors row re-points to `fn shimmer_immune`).
+4. **The two residual keep-one notes stand** (the light-toggle family:
+   d6 free-fn canonical superset, the base methods + e20 witnesses stay
+   for the wire lane, c42 dedupes at merge; the style-56 dup: the c6
+   kill_step signature + the d6 friendly-hold composition, all five
+   shared sites listed above).
+5. **The d53-wet / g64-trail disjointness PINNED to exact line ranges**
+   (research/330 §8): the d6 ghostHurt/vampireHeal/ghostHeal fns
+   (`projectile.rs:16753-16913`) + the PVE-walk call block
+   (`:23759-23808`) + the three intent queues vs d53's `wet_block`
+   (`projectile_wet.rs:131-246`, the dispatch `:20184-20230` at its tip
+   `c0dc7d37f`) vs g64's `trail_406` (`proj_trail_dust.rs:134-205` at
+   `3e581c8ce`) — three disjoint C# regions (`:12012-13825` damage /
+   `:16786-17007` wet / `:29197-29233` AI dust), zero shared lines, zero
+   cross-lane symbol hits (git grep at both tips). The pool-struct
+   inserts are append-adjacent, mechanically resolvable.
+6. **The dust-lane trail ACTIVATION contract** (research/330 §9): the
+   g63 heal-orb trails (`vampire_heal_trail`/`spirit_heal_trail`) + the
+   g63/g64/e3 gun trails (358/406/1042) are UNWIRED at their tips (the
+   rows are d6's); the d6 draw-count census stubs
+   (`projectile_ai_guns.rs:225-251`, `ai_heal_orb`'s `:4709` skip) are
+   the exact drop-in replacement targets. The explicit-gate order is
+   identical; the emitter wiring RESTORES the NewDust internals (the
+   documented skip), and the d6 recording-rng index pins fold into the
+   co-lane mirror witnesses at the wiring. No d6 code change owed.
+
+Witnesses: 1 new row-shape pin
+(`w4_d6_retire_the_601_row_is_the_portal_bolt_not_cannon_ammo`,
+`projectile/data.rs`) WRITTEN NOT RUN; the band's ~40 witnesses stay
+written-not-run — the merge gate owns the run. Code-only: no
+cargo/tests/rustfmt/graphify invoked.

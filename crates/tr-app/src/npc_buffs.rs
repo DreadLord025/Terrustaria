@@ -16,7 +16,9 @@
 //! - `UpdateNPC_BuffApplyDOTs` + `DOTTally`: `NPC.cs:91594-91774`, `NPC.cs:59-141`
 //! - `NPC.GetHurtByDebuff`: `NPC.cs:91864-91888`
 //! - debuff immunities: `NPC.cs:17823-17833`, `DataStructures/NPCDebuffImmunityData.cs`,
-//!   `NPCID.Sets.DebuffImmunitySets` (`NPCID.cs:6075+`)
+//!   `NPCID.Sets.DebuffImmunitySets` (`NPCID.cs:6075+`); the shimmer-353
+//!   flag: `NPC.cs:17838` + `NPCID.Sets.ShimmerImmunity` (`NPCID.cs:10467`,
+//!   W4-d6 residual 9)
 //!
 //! The Player-side chains live in `buffs.rs` (`Player.AddBuff` family); the C#
 //! keeps the two chains separate (no fed/pet/melee stages, no
@@ -147,6 +149,28 @@ impl Default for NpcBuffs {
         }
     }
 }
+
+/// `NPCID.Sets.ShimmerImmunity` (`NPCID.cs:10467`) — the verbatim id list
+/// (`CreateBoolSet` default-false, the listed ids TRUE). The buff-353
+/// immune flag (`NPC.cs:17838`) reads it; the ShimmerGun's NPC contact
+/// (`Projectile.cs:29039`) and the shimmer wet contact
+/// (`NPC.cs:93073`) both ride `AddBuff`'s immune guard.
+/// RETIRE KEEP-ONE (research/330 §5a): W4-c9's `shimmer_immune(cs_id)`
+/// (`2042d77f1`, 3 h earlier) ports the SAME :17838 write with the
+/// set-exact range-compressed predicate — c9 WINS first-claim; this
+/// const + the `for_kind` write below DROP at merge (the S1–S3 hunks),
+/// the set-gate witness folds onto c9's fn. f47's flag READS compose
+/// with either writer unchanged.
+const SHIMMER_IMMUNITY: &[u16] = &[
+    637, 638, 656, 670, 684, 678, 679, 680, 681, 682, 683, 356, 669, 676, 244, 677, 594, 667,
+    662, 5, 115, 116, 139, 245, 247, 248, 246, 249, 344, 325, 50, 535, 657, 658, 659, 660, 668,
+    25, 30, 33, 70, 72, 665, 666, 112, 516, 517, 518, 519, 520, 521, 522, 523, 381, 382, 383,
+    384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401,
+    402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419,
+    420, 421, 423, 424, 425, 426, 427, 428, 429, 548, 549, 551, 552, 553, 554, 555, 556, 557,
+    558, 559, 560, 561, 562, 563, 564, 565, 566, 567, 568, 569, 570, 571, 572, 573, 574, 575,
+    576, 577, 578,
+];
 
 /// The roster's slice of `NPCID.Sets.DebuffImmunitySets` (`NPCID.cs:6075+`):
 /// the `SpecificallyImmuneTo` data of each ported kind. DemonEye (2,
@@ -1262,6 +1286,11 @@ impl NpcBuffs {
         // trio (non-members) stays susceptible — the aiStyle-67 probe
         // owns their transform (`NPC.cs:34350-34360`).
         buffs.buff_immune[353] = shimmer_immune(kind.cs_id());
+        // [type]` (W4-d6 residual 9: the ShimmerGun's buff-353 contact
+        // reads it through `AddBuff`'s immune guard). The verbatim set
+        // (`NPCID.cs:10467`, `CreateBoolSet` default-false + the listed
+        // ids true), keyed on the C# type via `cs_id`.
+        buffs.buff_immune[353] = SHIMMER_IMMUNITY.contains(&kind.cs_id());
         buffs
     }
 
@@ -1878,6 +1907,41 @@ mod tests {
         // the same filter a melee kill satisfies, so coins/gel drop once.
         let dead: Vec<&crate::npc::Npc> = std::iter::once(&npc).filter(|n| n.hp <= 0).collect();
         assert_eq!(dead.len(), 1);
+    }
+
+    /// W4-d6 residual 9 — `NPC.cs:17838`: `buffImmune[353] =
+    /// NPCID.Sets.ShimmerImmunity[type]` (`NPCID.cs:10467`). The ShimmerGun's
+    /// NPC contact (`Projectile.cs:29039` AddBuff(353, 100)) rides the
+    /// immune guard: King Slime (50) and the whole martian family refuse,
+    /// the plain slime/zombie accept. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_shimmer_immunity_set_gates_buff_353() {
+        // The listed ids: King Slime 50, the ForceBubble 384, the walker
+        // 520, the Hungry 115 — all in the :10467 set.
+        for kind in [
+            NpcKind::KingSlime,
+            NpcKind::ForceBubble,
+            NpcKind::MartianWalker,
+            NpcKind::Hungry,
+        ] {
+            let mut b = NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[353], "{kind:?} in the ShimmerImmunity set");
+            b.add_buff(353, 100);
+            assert_eq!(b.find_buff_index(353), None, "{kind:?} AddBuff refuses");
+        }
+        // The unlisted ids: the plain slime (1) and the zombie (3).
+        for kind in [NpcKind::Slime, NpcKind::Zombie] {
+            let mut b = NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune[353], "{kind:?} outside the set");
+            b.add_buff(353, 100);
+            assert!(b.has_buff(353), "{kind:?} AddBuff lands");
+        }
+        // The set is EXACTLY the :10467 list — the 422 gap stays false
+        // (the list jumps 421 → 423) and 550 is absent (549 → 551).
+        assert!(!SHIMMER_IMMUNITY.contains(&422));
+        assert!(!SHIMMER_IMMUNITY.contains(&550));
+        assert!(SHIMMER_IMMUNITY.contains(&421) && SHIMMER_IMMUNITY.contains(&423));
+        assert_eq!(SHIMMER_IMMUNITY.len(), 131, "the :10467 list length");
     }
 
     #[test]
