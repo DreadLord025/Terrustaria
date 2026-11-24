@@ -57,7 +57,8 @@ use tr_core::World;
 use crate::projectile::{
     BALLISTA_SHOT, BETSY_FIREBALL, BLOWUP_SMOKE_MOONLORD, BRAIN_SCRAMBLER, CANNON_EXPLOSIVE,
     DEERCLOPS_ICE_CHUNK, FLAMING_WOOD, GOLEM_EYE_BEAM, MINI_RETINA_LASER, PHANTASMAL_BOLT,
-    Projectile, RAY_GUNNER, SAUCER_LASER, SKULL, TRAP_VENOM_DART, VORTEX_DART, proj_frames,
+    Projectile, RAY_GUNNER, SAUCER_LASER, SCUTLIX_LASER, SKULL, TRAP_VENOM_DART, VORTEX_DART,
+    proj_frames,
 };
 
 /// The slice-B kind set — the higher-id rowed kinds this module owns.
@@ -68,11 +69,12 @@ use crate::projectile::{
 /// tests still exercise them directly) but the dispatch never routes
 /// those kinds here. The M4-PROJ-6 riders (20/88/355/660), the Book of
 /// Skulls (837) and every unrowed kind keep their existing arms untouched.
-pub(crate) const SLICE_B_KINDS: [u16; 9] = [
+pub(crate) const SLICE_B_KINDS: [u16; 10] = [
     SAUCER_LASER,          // 449
     PHANTASMAL_BOLT,       // 462
     VORTEX_DART,           // 581
     CANNON_EXPLOSIVE,      // 601
+    SCUTLIX_LASER,         // 606 (W4-d8 DOC-SWEEP (3): the mount's fired beam)
     BLOWUP_SMOKE_MOONLORD, // 622
     BALLISTA_SHOT,         // 680
     BETSY_FIREBALL,        // 686
@@ -105,6 +107,8 @@ fn counts_flight(kind: u16) -> bool {
             | SAUCER_LASER
             | PHANTASMAL_BOLT
             | CANNON_EXPLOSIVE
+            // W4-d8 DOC-SWEEP (3): the 606 is on the flag3 list (`:56014`).
+            | SCUTLIX_LASER
             | TRAP_VENOM_DART
     )
 }
@@ -119,14 +123,32 @@ fn counts_flight(kind: u16) -> bool {
 fn finish_flight(p: &mut Projectile, world: &World) {
     p.vel.y = p.vel.y.clamp(-16.0, 16.0);
     p.rot = p.vel.y.atan2(p.vel.x) + 1.57;
+    // W4-d8 DOC-SWEEP (3) — `HandleMovement`'s Martian-laser arm
+    // (`:18278-18286`): on the FIRST blocked move the 440/449/606 latch
+    // `ai[1] = 1`, take one last full-velocity step and restore the
+    // pre-collision velocity (the beam sticks in the tile and the ramp
+    // counts down). While `ai[1] == 1` the `:17590` gate skips
+    // TileCollision and `UpdatePosition`'s `:20435` skip holds the
+    // position — the beam never moves again (the moonlord-trail stick
+    // precedent, projectile_ai_moonlord.rs:226-250).
+    if (p.kind == SAUCER_LASER || p.kind == SCUTLIX_LASER) && p.ai[1] == 1.0 {
+        return;
+    }
     if p.tile_collide {
         let nx = p.pos.x + p.vel.x;
         let ny = p.pos.y + p.vel.y;
         let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
         let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
         if hit_x || hit_y {
-            p.active = false;
-            p.time_left = 0;
+            if p.kind == SAUCER_LASER || p.kind == SCUTLIX_LASER {
+                // `:18280-18284` — the latch + the last step + the restore.
+                p.ai[1] = 1.0;
+                p.pos += p.vel;
+                // velocity = lastVelocity: unchanged (the probe never wrote).
+            } else {
+                p.active = false;
+                p.time_left = 0;
+            }
         } else {
             p.pos.x = nx;
             p.pos.y = ny;
@@ -194,20 +216,35 @@ pub(crate) fn step(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>)
     // localAI[0] flight-time ramp — +3/tick while ai[1] == 0 (the cap 100,
     // `num54`/`num55` at `:54794-54795`), −3/tick once ai[1] != 0 with the
     // `Kill(); return` at ≤ 0 (`:54822-54826`).
-    if p.kind == SAUCER_LASER {
+    // W4-d8 DOC-SWEEP (3): the 606 Scutlix beam joins the group — the same
+    // fade 25, its light (`:54792`, skipped), the ramp at `num54 = 150` /
+    // `num55 = 5` (`:54796-54800`), and the one-shot `localAI[0] == 5`
+    // four-dust-182 burst (`:54804-54813`, the dust BODIES + NewDust
+    // internals skip — zero explicit draws, the slice-B RNG note).
+    if p.kind == SAUCER_LASER || p.kind == SCUTLIX_LASER {
         if p.alpha > 0 {
             p.alpha -= 25;
         }
         if p.alpha < 0 {
             p.alpha = 0;
         }
+        let (cap, step) = if p.kind == SCUTLIX_LASER {
+            (150.0f32, 5.0f32) // `:54798-54799`
+        } else {
+            (100.0, 3.0) // `:54794-54795`
+        };
         if p.ai[1] == 0.0 {
-            p.local_ai[0] += 3.0;
-            if p.local_ai[0] > 100.0 {
-                p.local_ai[0] = 100.0;
+            p.local_ai[0] += step;
+            // `:54804-54813` — the 606's first-ramp-tick dust burst (the
+            // bodies skip; no explicit Main.rand draw gates it).
+            if p.local_ai[0] == step && p.kind == SCUTLIX_LASER {
+                // four dust-182 at Center - velocity/2 (skipped bodies)
+            }
+            if p.local_ai[0] > cap {
+                p.local_ai[0] = cap;
             }
         } else {
-            p.local_ai[0] -= 3.0;
+            p.local_ai[0] -= step;
             if p.local_ai[0] <= 0.0 {
                 p.active = false;
                 p.time_left = 0;
@@ -456,7 +493,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>)
         // angle + π/2.
         p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
     }
-    // 259/389/438/449/462/581/622/962/980 keep the default rotation
+    // 259/389/438/449/462/581/606/622/962/980 keep the default rotation
     // (`:57750`) the shared tail already wrote.
 }
 
@@ -665,6 +702,74 @@ mod tests {
         step(&mut p, &w, None); // 1 − 3 = −2 ≤ 0 → Kill
         assert!(!p.active);
         assert_eq!(p.time_left, 0);
+    }
+
+    /// W4-d8 DOC-SWEEP (3) — 606 (`:54772-54828` + `:6530-6541`): the
+    /// Scutlix beam's +5 ramp caps at 150 (tick 30: 5×30 = 150), the fade
+    /// 25, the resting counter (`:56014`), and the ai[1] != 0 countdown
+    /// kills at ≤ 0 (tick 30 of the countdown: 150 − 30×5 = 0).
+    #[test]
+    fn the_scutlix_beam_ramps_five_to_150_and_counts_down() {
+        let w = air();
+        let mut p = shot(SCUTLIX_LASER);
+        assert_eq!(p.extra_updates, 2, "the row (`:6537`)");
+        assert_eq!(p.time_left, 600, "the row (`:6539`)");
+        p.alpha = 255;
+        for _ in 0..30 {
+            step(&mut p, &w, None);
+        }
+        assert_eq!(p.local_ai[0], 150.0, "5×30 = 150, the cap (`:54798`)");
+        assert_eq!(p.ai[0], 0.0, "the resting counter (`:56014`)");
+        assert_eq!(p.alpha, 0); // 255 − 30×25 clamps
+        // The countdown: ai[1] = 1 (the blocked-move latch), −5/tick.
+        p.ai[1] = 1.0;
+        for _ in 0..29 {
+            step(&mut p, &w, None);
+            assert!(p.active);
+        }
+        assert_eq!(p.local_ai[0], 5.0); // 150 − 29×5
+        step(&mut p, &w, None); // 5 − 5 = 0 ≤ 0 → Kill
+        assert!(!p.active);
+        assert_eq!(p.time_left, 0);
+    }
+
+    /// W4-d8 DOC-SWEEP (3) — the 606's blocked-move stick
+    /// (`:18278-18286` + the `:17590`/`:20435` skips): a beam flying into
+    /// a tile latches ai[1] = 1, takes ONE last full-velocity step and
+    /// keeps its velocity; every later tick holds the position (the ramp
+    /// counts down in place). The 449 shares the arm.
+    #[test]
+    fn the_scutlix_beam_sticks_in_the_tile_and_holds() {
+        let mut w = air();
+        // A solid tile at (102, 50): the beam at (1600, 800) = tile
+        // (100, 50) flying right at 10 reaches it on the 4th step
+        // (1600 + 4×10 = 1640 = tile 102.5's left edge 1632... the probe
+        // hits when the box crosses 1632: step 4 lands x = 1640).
+        let i = w.index(103, 50);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = shot(SCUTLIX_LASER);
+        p.alpha = 255;
+        // Step until the latch fires (the probe hits tile 103 at x ≥ 1643).
+        let mut stuck_at = None;
+        for t in 1..=10 {
+            step(&mut p, &w, None);
+            if p.ai[1] == 1.0 {
+                stuck_at = Some(t);
+                break;
+            }
+        }
+        let t = stuck_at.expect("the beam hits the tile");
+        assert!(p.active, "the stick does NOT kill (`:18280-18284`)");
+        assert_eq!(p.vel, Vec2::new(10.0, 0.0), "velocity = lastVelocity");
+        let stuck_pos = p.pos;
+        // The next ticks hold the position (the `:20435` skip) while the
+        // ramp counts down.
+        let ramp_at_stick = p.local_ai[0];
+        step(&mut p, &w, None);
+        assert_eq!(p.pos, stuck_pos, "the stuck beam never moves");
+        assert_eq!(p.local_ai[0], ramp_at_stick - 5.0, "the countdown runs");
+        assert!(t <= 5, "the tile is 3 tiles out");
     }
 
     /// 622 (`:56165-56183`): the kill at ai[1] > 23 × MaxUpdates — the

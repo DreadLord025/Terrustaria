@@ -22,7 +22,8 @@ pub use wall::{
 mod hammer;
 pub use hammer::{
     can_pound_tile, forbids_sloping, is_a_hammer_target, is_tile_poundable, pound_damage,
-    pound_tile, slope_tile, try_finding_wall_to_hammer, try_pound_tile, PoundOutcome,
+    pound_tile, slope_tile, smooth_slope, smooth_slope_one, try_finding_wall_to_hammer,
+    try_pound_tile, PoundOutcome,
 };
 mod kill;
 pub use kill::{

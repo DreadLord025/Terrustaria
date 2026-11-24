@@ -4938,14 +4938,18 @@ impl Player {
         }
     }
 
-    /// `Player.MountedCenter` (`Player.cs:3335-3343`):
-    /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
-    /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount
-    /// offsets (no mounts yet), so both fold to 0 and the vector equals
-    /// `center()` — kept as its own accessor so the flail chain anchor cites
-    /// the C# point and survives the mount port.
-    pub fn mounted_center(&self) -> (f32, f32) {
-        self.center()
+    /// The mount HeightOffset family (`Player.cs:3237-3335`, W4-d8 retire
+    /// (1)): `HeightOffsetVisual` = `Mount.PlayerOffset`,
+    /// `HeightOffsetHitboxCenter` = `Mount.PlayerOffsetHitbox`
+    /// (`-PlayerOffset + heightBoost`), `HeightOffsetBoost` =
+    /// `Mount.HeightBoost`, `HeightMapOffset` = `Mount.PlayerHeadOffset`,
+    /// `MountXOffset` = `Mount.PlayerXOFfset` — each 0 while unmounted. The
+    /// `portableStoolInfo.IsInUse` arms fold to 0 (the stool is unported —
+    /// the f3 PLAYER-MOVE-FAMILY 65-seam deferral). `BaseHeight`
+    /// (`:3335`) = `height - HeightOffsetBoost`.
+    #[allow(dead_code)] // the mount draw layer's read seam (PlayerDrawSet.cs:428)
+    pub fn height_offset_visual(&self) -> f32 {
+        self.mount.player_offset() as f32 // :3241-3244
     }
 
     /// `Player.ChangeDir(dir)` (`Player.cs:42091-42116`): the facing flip
@@ -4978,13 +4982,62 @@ impl Player {
     }
 
     /// `Player.MountedTop` (`Player.cs:3349-3360`):
+    pub fn height_offset_hitbox_center(&self) -> f32 {
+        self.mount.player_offset_hitbox() as f32 // :3257-3260
+    }
+
+    pub fn height_offset_boost(&self) -> i32 {
+        if self.mount.is_active() {
+            self.mount.data().map_or(0, |d| d.height_boost) // :3285-3288, :447
+        } else {
+            0
+        }
+    }
+
+    /// `Player.HeightMapOffset` (`:3297-3311`) — the head-draw lift
+    /// (`PlayerDrawHeadSet.cs:155`, the head layer's consumer).
+    #[allow(dead_code)] // the mount draw layer's read seam (PlayerDrawHeadSet.cs:155)
+    pub fn height_map_offset(&self) -> i32 {
+        if self.mount.is_active() {
+            self.mount.data().map_or(0, |d| d.player_head_offset) // :435-445
+        } else {
+            0
+        }
+    }
+
+    /// `Player.MountXOffset` (`:3269-3279`) — every 1.4.5.8 row's
+    /// `playerXOffset` is 0 (no `Mount.cs` assignment); the accessor keeps
+    /// the citation for the draw-set consumer (`PlayerDrawSet.cs:342`).
+    #[allow(dead_code)] // the mount draw layer's read seam (PlayerDrawSet.cs:342)
+    pub fn mount_x_offset(&self) -> f32 {
+        self.mount.data().map_or(0, |d| d.player_x_offset) as f32
+    }
+
+    pub fn base_height(&self) -> f32 {
+        self.height - self.height_offset_boost() as f32 // :3335
+    }
+
+    /// `Player.MountedCenter` (`Player.cs:3337-3347`):
+    /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`.
+    /// W4-d8 retire (1): the offsets are LIVE (the M2-MOUNT-1 growth already
+    /// writes `height = 42 + heightBoost`), so the mounted centre rides the
+    /// saddle anchor, not the grown box's centre. Unmounted it equals
+    /// `center()`. The setter (`:3343-3346`) has no C# caller in 1.4.5.8 —
+    /// not ported.
+    pub fn mounted_center(&self) -> (f32, f32) {
+        (
+            self.x + self.width * 0.5,
+            self.y + self.base_height() * 0.5 + self.height_offset_hitbox_center(),
+        )
+    }
+
+    /// `Player.MountedTop` (`Player.cs:3349-3371`):
     /// `(position.X + width/2, position.Y + HeightOffsetHitboxCenter)`, or
     /// `Bottom.Y - HeightOffsetHitboxCenter` under reversed gravity. The port
-    /// keeps `gravDir = 1` and `HeightOffsetHitboxCenter = 0` (no mount height
-    /// offsets), so both fold to the body's top-centre — kept as its own
-    /// accessor so the sentry-backpack reposition cites the C# point.
+    /// keeps `gravDir = 1` (no gravity potion), so only the positive branch
+    /// lands. The setter (`:3361-3370`) has no C# caller — not ported.
     pub fn mounted_top(&self) -> (f32, f32) {
-        (self.x + self.width * 0.5, self.y)
+        (self.x + self.width * 0.5, self.y + self.height_offset_hitbox_center())
     }
 
     /// `Player.GetBannerBuffEffect(NPC, out effect)` (`Player.cs:20478-20492`)
@@ -10215,11 +10268,26 @@ impl Player {
             self.run_acceleration /= 2.0;
             self.max_run_speed /= 2.0;
         }
+        // `Mount.UpdateEffects`'s Drill (8) case (`Mount.cs:5010-5015`,
+        // W4-d8 FINAL-PHASE (1)): no live 453 crosshair → the mining flag
+        // drops. The owned-count is this tick's recount (the
+        // `update_projectile_caches` seam ran ahead, `Player.cs:25565`).
+        if self.mount.kind() == 8 {
+            let crosshairs = self.owned_projectile_counts[crate::projectile::DRILL_MOUNT_CROSSHAIR as usize];
+            self.mount.drill_update_effects_gate(crosshairs);
+        }
         // `:26660-26663` (the roller skates), `:26665-26682` (the cart/OnTrack
-        // block — M2-MOUNT-3) and `:26683-26686` (`UpdateDrill` —
-        // M2-MOUNT-4) have no rows in this table yet; the ability counters
-        // still tick (`:26663`).
+        // block — M2-MOUNT-3) have no rows in this table yet; the ability
+        // counters still tick (`:26663`).
         self.mount.ability_recovery();
+        // `Player.cs:26683-26686` — the Drill's (8) `UpdateDrill` per-tick
+        // maintenance (W4-d8 FINAL-PHASE (1): the beam cooldowns + the diode
+        // lerp + the shared gate). The C# passes controlUp/controlDown,
+        // which the body never reads (the mining write's reach is
+        // cursor-driven) — the port's no-arg call is signature-equivalent.
+        if self.mount.kind() == 8 {
+            self.mount.update_drill();
+        }
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
@@ -22634,5 +22702,93 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+}
+
+/// W4-d8 retire (1) — the mount HeightOffset family
+/// (`Player.cs:3237-3371`): the five accessors + `BaseHeight` +
+/// `MountedCenter`/`MountedTop`, LIVE over the M2-MOUNT-1 grown hitbox.
+/// WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d8_height_offset_tests {
+    use super::tests::ground_world;
+    use super::*;
+
+    /// The unmounted fold: every offset is 0, `BaseHeight` is the body
+    /// height, `MountedCenter == center`, `MountedTop` is the top-centre
+    /// (`:3249`/`:3265`/`:3277`/`:3293`/`:3309` — the no-mount returns).
+    #[test]
+    fn w4_d8_the_unmounted_offsets_fold_to_zero() {
+        let w = ground_world();
+        let p = Player::spawn(&w);
+        assert_eq!(p.height_offset_visual(), 0.0);
+        assert_eq!(p.height_offset_hitbox_center(), 0.0);
+        assert_eq!(p.height_offset_boost(), 0);
+        assert_eq!(p.height_map_offset(), 0);
+        assert_eq!(p.mount_x_offset(), 0.0);
+        assert_eq!(p.base_height(), p.height);
+        assert_eq!(p.mounted_center(), p.center());
+        assert_eq!(p.mounted_top(), (p.x + p.width * 0.5, p.y));
+    }
+
+    /// The Unicorn (10) at frame 0: `playerYOffsets[0] = 28`, heightBoost
+    /// 34 (`mount.rs` UNICORN row, `Mount.cs:1426`). The grown box is 76
+    /// tall; `BaseHeight = 76 − 34 = 42` (`:3335`),
+    /// `HeightOffsetHitboxCenter = −28 + 34 = 6` (`Mount.cs:431`), so
+    /// `MountedCenter.Y = y + 21 + 6 = y + 27` — NOT the grown box's
+    /// centre `y + 38`. `MountedTop.Y = y + 6`. `HeightMapOffset` is the
+    /// row's playerHeadOffset 34 (`Mount.cs:443`), `MountXOffset` 0 (no
+    /// row assigns playerXOffset).
+    #[test]
+    fn w4_d8_the_unicorn_offsets_ride_the_frame_and_boost() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        let top = p.y;
+        assert!(p.set_mount(10, false));
+        // The M2-MOUNT-1 growth: 42 + 34 = 76, bottom-anchored.
+        assert_eq!(p.height, 76.0);
+        assert_eq!(p.y, top - 34.0);
+        p.mount.test_set_frame(0);
+        assert_eq!(p.height_offset_visual(), 28.0, "playerYOffsets[0] (:419)");
+        assert_eq!(p.height_offset_hitbox_center(), 6.0, "−28 + 34 (:431)");
+        assert_eq!(p.height_offset_boost(), 34, "HeightBoost (:447)");
+        assert_eq!(p.height_map_offset(), 34, "playerHeadOffset (:443)");
+        assert_eq!(p.mount_x_offset(), 0.0);
+        assert_eq!(p.base_height(), 42.0, "76 − 34 (:3335)");
+        assert_eq!(p.mounted_center(), (p.x + 10.0, p.y + 27.0));
+        assert_eq!(p.mounted_top(), (p.x + 10.0, p.y + 6.0));
+        // Frame 3 lifts the saddle: playerYOffsets[3] = 30 → hitbox 4.
+        p.mount.test_set_frame(3);
+        assert_eq!(p.height_offset_visual(), 30.0);
+        assert_eq!(p.height_offset_hitbox_center(), 4.0);
+        assert_eq!(p.mounted_center().1, p.y + 25.0);
+        // A frame past totalFrames folds PlayerOffset to 0 (`:415-418`)
+        // but PlayerOffsetHitbox keeps the boost (`:431` reads it raw).
+        p.mount.test_set_frame(16);
+        assert_eq!(p.height_offset_visual(), 0.0);
+        assert_eq!(p.height_offset_hitbox_center(), 34.0);
+        // The dismount restores every fold.
+        assert!(p.dismount(&w, true));
+        assert_eq!(p.height_offset_boost(), 0);
+        assert_eq!(p.mounted_center(), p.center());
+    }
+
+    /// The Scutlix (9): flat `playerYOffsets = [16; 12]`, heightBoost 16
+    /// → `HeightOffsetHitboxCenter` is 0 on EVERY in-range frame — the
+    /// mounted centre rides `y + 21` (the C# saddle anchor sits exactly
+    /// where the unmounted centre did). The drill (8) heightBoost 20 with
+    /// `playerYOffsets[0] = 20` behaves the same.
+    #[test]
+    fn w4_d8_the_scutlix_flat_offsets_cancel_the_boost() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(9, false));
+        p.mount.test_set_frame(5);
+        assert_eq!(p.height_offset_visual(), 16.0);
+        assert_eq!(p.height_offset_hitbox_center(), 0.0, "−16 + 16");
+        assert_eq!(p.base_height(), 42.0);
+        assert_eq!(p.mounted_center(), (p.x + 10.0, p.y + 21.0));
+        assert_eq!(p.mounted_top(), (p.x + 10.0, p.y));
+        assert_eq!(p.height_map_offset(), 18, "the Scutlix head offset");
     }
 }
