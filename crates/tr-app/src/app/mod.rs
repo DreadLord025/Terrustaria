@@ -2937,6 +2937,12 @@ impl App {
                         p.y = saved.y;
                     }
                     p.hp = saved.hp.clamp(1, p.max_hp);
+                    // W4-g87 — the Demon Heart / Super Cart permanent unlocks
+                    // ride the sidecar's v7 `dh` line (the `.plr` halves are
+                    // f44's lane). The slot-8 gate (`player.rs:4880`) and the
+                    // Super Cart ride (`player.rs:9500`) consume the flags.
+                    p.extra_accessory = saved.extra_accessory;
+                    p.unlocked_super_cart = saved.unlocked_super_cart;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;

@@ -631,6 +631,9 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.7,
         rotation: HoverRotation::VelocityX,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
     };
     /// W4-d37 — the HornetHoney/Leafy/Spikey/Stingy (types 232-235;
     /// `NPC.cs:50341-50344`: the family base num 3.5, num2 0.021 — no
@@ -643,6 +646,9 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.7,
         rotation: HoverRotation::VelocityX,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
     };
     /// W4-d37 — the Parrot (type 252; `NPC.cs:50328-50339`): num 6 /
     /// num2 0.1 when the target is hittable, else num 2 / num2 0.01. The
@@ -659,6 +665,9 @@ impl HoverParams {
         no_tile_collide: false,
         bounce: 0.7,
         rotation: HoverRotation::Velocity,
+        bob_drift: false,
+        close_boost: false,
+        hover_rise: false,
     };
 }
 

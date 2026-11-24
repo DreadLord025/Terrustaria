@@ -147,6 +147,45 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- S1-I-1 wave E: the event/misc tail (W4-d99) ----
+    // The census after the d89-d98 lanes' named regions: the weather-adjacent
+    // 51 MiscDataSync (sundial/moondial; the slime rain itself rides 61's
+    // -19), the invasion/event ids 61/78/112/113/114/116/143, the moon/lunar
+    // 103, the teleport family 65/73/96 (+ module 8's pylon body in
+    // `netmodules.rs`), and the misc leftovers 75/77/127/141.
+    // Bodies + codecs only; the apply/relay arms and send fan-out stay
+    // S1-I-4. Coordination corrections to the first census draft: 95
+    // MurderSomeoneElsesPortal rides d93 (`112e3c99`); 100/101/106 (NPC
+    // portal teleport / tower shields / smoke poof) ride d94 (`68f4713d`,
+    // `de1d2b82`) — their constants and bodies land there, not here. 96's
+    // player twin is claimed by NO in-flight player lane (d96/d97's
+    // research/17 census leaves 84-96 NOT-FOUND; full remote-branch sweep
+    // 2026-11-20 found no other claim), so the event lane takes it beside
+    // the rest of the portal family. Not taken (other d-lanes' regions):
+    // 17/19/63/64/79/86/87/89/105/108/109/110/121-125/133/149/156 tile
+    // edit+entities+wiring (d95), 18/57/136/158/159 clock+world sync (d90),
+    // 34/35/39/41/52/85/88/90/104/130/131/146/160 items+containers+shops
+    // (d98), 36/43/55/62/66/84/99/102/115/117/118/120/134/150 player
+    // (d96/97), 56/92/137/153 NPC (d91/92), 81/91/107/119 combat text+emote
+    // bubbles+chat (UI lanes), 68/139/161/162 join/lobby (d89), 94 dev
+    // commands, 128 golf, 132 sounds (c-lanes), 157 team tail (d96/97).
+    pub const MISC_DATA_SYNC: u8 = 51; // MessageID.cs:115 / NetMessage.cs:1010-1013 / MessageBuffer.cs:2482-2530
+    pub const SPAWN_BOSS_EVENT: u8 = 61; // MessageID.cs:135 / NetMessage.cs:1073-1076 / MessageBuffer.cs:2740-2878
+    pub const TELEPORT_ENTITY: u8 = 65; // MessageID.cs:143 / NetMessage.cs:1088-1109 / MessageBuffer.cs:2949-3035
+    pub const REQUEST_TELEPORT: u8 = 73; // MessageID.cs:159 / NetMessage.cs:1142-1144 / MessageBuffer.cs:3127-3146
+    pub const ANGLER_QUEST_FINISHED: u8 = 75; // MessageID.cs:163 — no body either side (MessageBuffer.cs:3154-3163)
+    pub const TEMPORARY_ANIMATION: u8 = 77; // MessageID.cs:167 / NetMessage.cs:1154-1159 / MessageBuffer.cs:3183-3185
+    pub const INVASION_PROGRESS: u8 = 78; // MessageID.cs:169 / NetMessage.cs:1160-1165 / MessageBuffer.cs:3186-3191
+    pub const TELEPORT_PLAYER_PORTAL: u8 = 96; // MessageID.cs:206 / NetMessage.cs:1337-1346 / MessageBuffer.cs:3538-3557
+    pub const MOONLORD_COUNTDOWN: u8 = 103; // MessageID.cs:220 / NetMessage.cs:1383-1386 / MessageBuffer.cs:3708-3714
+    pub const SPECIAL_FX: u8 = 112; // MessageID.cs:238 / NetMessage.cs:1424-1431 / MessageBuffer.cs:3815-3840
+    pub const CRYSTAL_INVASION_START: u8 = 113; // MessageID.cs:240 / NetMessage.cs:1432-1435 / MessageBuffer.cs:3841-3854
+    pub const CRYSTAL_INVASION_WIPE: u8 = 114; // MessageID.cs:242 — no body (DD2Event.cs:636, MessageBuffer.cs:3855-3860)
+    pub const CRYSTAL_INVASION_WAIT: u8 = 116; // MessageID.cs:246 / NetMessage.cs:1436-1438 / MessageBuffer.cs:3861-3866
+    pub const REMOVE_REVENGE_MARKER: u8 = 127; // MessageID.cs:268 / NetMessage.cs:1518-1520 / MessageBuffer.cs:4049-4057
+    pub const LUCY_POPUP: u8 = 141; // MessageID.cs:296 / NetMessage.cs:1595-1602 / MessageBuffer.cs:4265-4281
+    pub const CRYSTAL_INVASION_SKIP: u8 = 143; // MessageID.cs:300 — no body (MessageBuffer.cs:4298-4303)
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1537,6 +1576,217 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+// ---- S1-I-1 wave E: the event/misc tail bodies (W4-d99) ----
+
+/// `msg 51 MiscDataSync`'s body (`NetMessage.cs:1010-1013`): the subject byte
+/// then the kind byte. Subjects are a player slot for kinds 1/2/3/6 (the
+/// Skeletron summon `Player.cs:6411`-adjacent rod use, the rod's sound relay,
+/// the sundial `Main.cs:6175`, the moondial `:6190`) and an NPC slot for
+/// kind 4 (the big mimic's spawn smoke, `NPC.cs:77498`); kind 5 registers the
+/// bestiary kill (`MessageBuffer.cs:2514-2520`). The host forces the subject
+/// to the sender for player kinds (`:2485-2488`) and only kind 2 relays
+/// (`:2498`) — the apply/relay arms are parked for S1-I-4. Both directions
+/// (the client asks, the host echoes kind 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MiscDataSync {
+    pub subject: u8,
+    pub kind: u8,
+}
+
+/// `msg 61 SpawnBossInvader`'s body (`NetMessage.cs:1073-1076`): two shorts —
+/// the player to spawn on and the event selector. Positive selectors are
+/// `NPCID` boss types gated by `NPCID.Sets.MPAllowedEnemies`
+/// (`MessageBuffer.cs:2748-2753`); negatives are the event ladder: -1/-2/-3
+/// invasions, -4 pumpkin moon, -5 frost moon, -6 eclipse, -7 martians, -8
+/// impending doom, -10 blood moon, -11/-17 combat books, -12..-15 pet
+/// licenses, -16 Mechdusa (`NPC.cs:19794`), -18 peddler's satchel, -19 slime
+/// rain (`Main.cs:64752`), other negatives fall through to
+/// `StartInvasion(-selector)` (`:2862-2875`). Client→server only — every
+/// send site is a `netMode == 1` arm; the host answers with `7`/`78` pushes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpawnBossEvent {
+    pub player: i16,
+    pub event: i16,
+}
+
+/// `msg 65 TeleportEntity`'s body (`NetMessage.cs:1088-1109`): a BitsByte
+/// (bit 0/1 = the kind's low two bits, bit 2 = "take the position from the
+/// player", bit 3 = the extraInfo int follows), `(short)` entity slot, the
+/// destination floats, `(byte)` teleport style, then the optional
+/// `(int)` extraInfo (the portal color for style 4). Kinds: 0 player
+/// teleport (`Player.cs:45513` rod-of-discord etc.), 1 NPC teleport
+/// (`NPC.cs:81056`, host, style != 4), 2 player-to-player (`Player.cs:42363`),
+/// 3 the client's ack decrementing `unacknowledgedTeleports`
+/// (`MessageBuffer.cs:2991-2994`, `:3029-3032`). The host forces the entity
+/// to the sender (`:2953-2956`), overrides the position from the live player
+/// when bit 2 is set (`:2979-2982`) and counts unacknowledged teleports on
+/// send (`NetMessage.cs:1104-1107`) — all S1-I-4. Both directions. Note the
+/// C# writes bit 3 only when `number7 != 0`: senders pass `None` for 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TeleportEntity {
+    pub entity: i16,
+    pub x: f32,
+    pub y: f32,
+    pub style: u8,
+    /// 0 player, 1 NPC, 2 player-to-player, 3 ack.
+    pub kind: u8,
+    pub get_pos_from_player: bool,
+    pub extra_info: Option<i32>,
+}
+
+impl TeleportEntity {
+    fn flags(&self) -> BitsByte {
+        let mut b = BitsByte::new();
+        b.set(0, self.kind & 1 == 1);
+        b.set(1, self.kind & 2 == 2);
+        b.set(2, self.get_pos_from_player);
+        b.set(3, self.extra_info.is_some());
+        b
+    }
+}
+
+/// `msg 73 RequestTeleport`'s body (`NetMessage.cs:1142-1144`): one byte —
+/// the teleport item kind: 0 teleportation potion, 1 magic conch
+/// (`Player.cs:43029`), 2 demon conch (`:43062`), 3 shellphone home
+/// (`:43103`), 4 no-space fallback (`:6069`). The host runs the matching
+/// `Player` method on the sender (`MessageBuffer.cs:3127-3146`), which
+/// answers with a `65`. Client→server only — every send site is a
+/// `netMode == 1` arm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RequestTeleport {
+    pub kind: u8,
+}
+
+/// `msg 77 SyncTilePicking`'s body (`NetMessage.cs:1154-1159`):
+/// `(short)` animationType, `(ushort)` tileType, `(short)` x, `(short)` y —
+/// `Animation.NewTemporaryAnimation`'s four args verbatim
+/// (`MessageBuffer.cs:3183-3185`). Sent only by the host's
+/// `SendTemporaryAnimation` (`NetMessage.cs:2590-2596`, `netMode == 2`) to
+/// one client; server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TemporaryAnimation {
+    pub animation_type: i16,
+    pub tile_type: u16,
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 78 ReportInvasionProgress`'s body (`NetMessage.cs:1160-1165`):
+/// `(int)` progress, `(int)` progressMax, `(sbyte)` icon, `(sbyte)` wave —
+/// `Main.ReportInvasionProgress`'s four args verbatim
+/// (`MessageBuffer.cs:3186-3191`, client-only read). The classic invasion
+/// sends icon `invasionType + 3` (`Main.cs:47683`), the moons send 1/2
+/// (`NPC.cs:78583`/`:78717`), DD2 sends 3 + the wave
+/// (`DD2Event.cs:191` et al.). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvasionProgress {
+    pub progress: i32,
+    pub progress_max: i32,
+    pub icon: i8,
+    pub wave: i8,
+}
+
+/// `msg 96 TeleportPlayerThroughPortal`'s body (`NetMessage.cs:1337-1346`):
+/// `(byte)` player, `(short)` number4 (the portal color index
+/// `owner * 2 + ai[1]`, `PortalHelper.cs:181`), the destination floats, then
+/// `WriteVector2(player.velocity)` — the player's *current* velocity read
+/// from the live entity at send time, NOT the destination echoed back.
+/// The portal-gun's owner client sends it after teleporting itself
+/// (`PortalHelper.cs:188-192`, followed by a `13` push); the host relays
+/// (`MessageBuffer.cs:3552-3555`), the client flips the color parity
+/// (`num184 + (num184 % 2 == 0 ? 1 : -1)`), teleports style 4 and overwrites
+/// the velocity (`:3549-3551`, parked for S1-I-4). Both directions — the
+/// NPC twin (100) rides d94.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlayerPortalTeleport {
+    pub player: u8,
+    pub color_index: i16,
+    pub x: f32,
+    pub y: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+}
+
+/// `msg 103 WorldFightMode`'s body (`NetMessage.cs:1383-1386`): the two
+/// `NPC` statics as raw ints — `MaxMoonLordCountdown` then `MoonLordCountdown`
+/// (`NPC.cs:6031-6033`). Sent by the apocalypse start (`WorldGen.cs:86755`)
+/// and the join push (`MessageBuffer.cs:868`); the client stores both
+/// (`:3708-3714`). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MoonlordCountdown {
+    pub max: i32,
+    pub countdown: i32,
+}
+
+/// `msg 112 SpecialFX`'s body (`NetMessage.cs:1424-1431`): `(byte)` effect
+/// kind, `(int)` x, `(int)` y, `(byte)` number4, `(short)` number5,
+/// `(byte)` number6. Kind 1 = tree-grow FX (number4 = treeHeight,
+/// number5 = passStyle, number6 = the shake flag — `WorldGen.cs:29375`,
+/// the shake variant `:63412`); kind 2 = fairy critter effects (number5 =
+/// `type - 583`, `NPC.cs:48584`). The reader tests number6 `== 1`
+/// (`MessageBuffer.cs:3822`) and relays kind 1 verbatim (`:3832`).
+/// Server→client only — every send site is a `netMode == 2` arm; the
+/// reader's relay branch covers a host receiving one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpecialFx {
+    pub effect: u8,
+    pub x: i32,
+    pub y: i32,
+    pub b4: u8,
+    pub s5: i16,
+    pub b6: u8,
+}
+
+/// `msg 113 DD2EventSummonCrystal`'s body (`NetMessage.cs:1432-1435`):
+/// `(short)` x, `(short)` y — the crystal's tile coords. The client sends
+/// it when placing the eternia crystal (`DD2Event.SummonCrystal`,
+/// `DD2Event.cs:574-577`); the host checks `WouldFailSpawningHere` and
+/// summons on the sender (`MessageBuffer.cs:3841-3854`, gated on
+/// `!snowMoon && !pumpkinMoon`). Client→server only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrystalInvasionStart {
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 116 DD2EventTimeLeftUntilWaveStart`'s body (`NetMessage.cs:1436-1438`):
+/// one raw `(int)` — `DD2Event._timeLeftUntilSpawningBegins`
+/// (`DD2Event.SetEnemySpawningOnHold`, `DD2Event.cs:947-950`, host-only
+/// send). The client stores `TimeLeftBetweenWaves`
+/// (`MessageBuffer.cs:3861-3866`). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrystalInvasionWait {
+    pub time_left: i32,
+}
+
+/// `msg 127 RemoveRevengeMarker`'s body (`NetMessage.cs:1518-1520`): one raw
+/// `(int)` — the marker's `UniqueID`. The dedicated server sends it when a
+/// marker spawns its enemy or expires/goes invalid
+/// (`CoinLossRevengeSystem.cs:451`/`:473`/`:477`, all `Main.dedServ` gates);
+/// the client destroys the marker (`MessageBuffer.cs:4049-4057`). The `126`
+/// marker's twin (wave A). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RemoveRevengeMarker {
+    pub unique_id: i32,
+}
+
+/// `msg 141 LucyTheAxeMessage`'s body (`NetMessage.cs:1595-1602`):
+/// `(byte)` message source, `(byte)` variation, the velocity floats, then
+/// `(int)` x, `(int)` y — the position ints come AFTER the velocity on the
+/// wire (`LucyAxeMessage.cs:133`'s send order). The client creates the
+/// popup via `CreateFromNet(source, variation, new Vector2(x, y), velocity)`
+/// (`MessageBuffer.cs:4278`); the host relays verbatim (`:4274`). Both
+/// directions.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LucyPopup {
+    pub source: u8,
+    pub variation: u8,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+    pub x: i32,
+    pub y: i32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1648,6 +1898,34 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `51 MiscDataSync` - a client's sundial/moondial/rod/mimic ask
+    /// (`MessageBuffer.cs:2482-2530`; kind 2 echoes back).
+    MiscDataSync(MiscDataSync),
+    /// `61 SpawnBossInvader` - a client used a boss/event summon item
+    /// (`MessageBuffer.cs:2740-2878`'s selector ladder).
+    SpawnBossEvent(SpawnBossEvent),
+    /// `65 TeleportEntity` - a client teleported (kind 0/2) or acks the
+    /// host's teleport (kind 3, `MessageBuffer.cs:2949-3035`).
+    TeleportEntity(TeleportEntity),
+    /// `73 RequestTeleport` - a client used a conch/potion/shellphone
+    /// (`MessageBuffer.cs:3127-3146` runs it on the sender).
+    RequestTeleport(RequestTeleport),
+    /// `75 AnglerQuestFinished` - a client finished today's angler quest,
+    /// no body (`MessageBuffer.cs:3154-3163` adds the sender's name;
+    /// `Main.cs:40254`).
+    AnglerQuestFinished,
+    /// `96 TeleportPlayerThroughPortal` - the portal-gun owner teleported
+    /// itself (`PortalHelper.cs:190`; the host relays, `:3552-3555`).
+    PlayerPortalTeleport(PlayerPortalTeleport),
+    /// `113 DD2EventSummonCrystal` - a client placed the eternia crystal
+    /// (`DD2Event.cs:576`; the host summons, `MessageBuffer.cs:3841-3854`).
+    CrystalInvasionStart(CrystalInvasionStart),
+    /// `141 LucyTheAxeMessage` - a talking-axe popup
+    /// (`LucyAxeMessage.cs:133`; the host relays, `:4274`).
+    LucyPopup(LucyPopup),
+    /// `143 DD2EventSkipWaitTime` - a client asked to skip the DD2 wait,
+    /// no body (`DD2Event.cs:1790`, `MessageBuffer.cs:4298-4303`).
+    CrystalInvasionSkip,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1771,6 +2049,39 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `51 MiscDataSync` - the host's kind-2 rod-sound echo
+    /// (`MessageBuffer.cs:2498`).
+    MiscDataSync(MiscDataSync),
+    /// `65 TeleportEntity` - the host's player/NPC teleport broadcast
+    /// (`MessageBuffer.cs:2989`/`:3008`, `NPC.cs:81056`).
+    TeleportEntity(TeleportEntity),
+    /// `77 SyncTilePicking` - a temporary tile animation for one client
+    /// (`NetMessage.SendTemporaryAnimation`, `MessageBuffer.cs:3183-3185`).
+    TemporaryAnimation(TemporaryAnimation),
+    /// `78 ReportInvasionProgress` - the invasion/moon/DD2 progress bar
+    /// (`Main.cs:47683`, `DD2Event.cs:191`; `MessageBuffer.cs:3186-3191`).
+    InvasionProgress(InvasionProgress),
+    /// `96 TeleportPlayerThroughPortal` - the host's relay of a player's
+    /// portal teleport (`MessageBuffer.cs:3554`; style 4 + parity flip).
+    PlayerPortalTeleport(PlayerPortalTeleport),
+    /// `103 WorldFightMode` - the Moon Lord countdown statics
+    /// (`WorldGen.cs:86755`, join push `MessageBuffer.cs:868`).
+    MoonlordCountdown(MoonlordCountdown),
+    /// `112 SpecialFX` - tree-grow / fairy effects
+    /// (`WorldGen.cs:29375`, `NPC.cs:48584`; `MessageBuffer.cs:3815-3840`).
+    SpecialFx(SpecialFx),
+    /// `114 DD2EventWipeEntities` - the host wiped the Old One's Army,
+    /// no body (`DD2Event.cs:636`, `MessageBuffer.cs:3855-3860`).
+    CrystalInvasionWipe,
+    /// `116 DD2EventTimeLeftUntilWaveStart` - the between-waves countdown
+    /// (`DD2Event.cs:949`, `MessageBuffer.cs:3861-3866`).
+    CrystalInvasionWait(CrystalInvasionWait),
+    /// `127 RemoveRevengeMarker` - a coin-loss revenge marker is gone
+    /// (`CoinLossRevengeSystem.cs:451`, `MessageBuffer.cs:4049-4057`).
+    RemoveRevengeMarker(RemoveRevengeMarker),
+    /// `141 LucyTheAxeMessage` - the host's relay of a talking-axe popup
+    /// (`MessageBuffer.cs:4274`; the client CreateFromNet, `:4278`).
+    LucyPopup(LucyPopup),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1859,6 +2170,15 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::SpawnBossEvent(_) => id::SPAWN_BOSS_EVENT,
+            Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
+            Self::RequestTeleport(_) => id::REQUEST_TELEPORT,
+            Self::AnglerQuestFinished => id::ANGLER_QUEST_FINISHED,
+            Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
+            Self::CrystalInvasionStart(_) => id::CRYSTAL_INVASION_START,
+            Self::LucyPopup(_) => id::LUCY_POPUP,
+            Self::CrystalInvasionSkip => id::CRYSTAL_INVASION_SKIP,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1927,6 +2247,50 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1010-1013`: (byte)subject + (byte)kind.
+            Self::MiscDataSync(m) => w.u8(m.subject).u8(m.kind),
+            // `NetMessage.cs:1073-1076`: (short)player + (short)event.
+            Self::SpawnBossEvent(e) => w.i16(e.player).i16(e.event),
+            // `NetMessage.cs:1088-1103`: BitsByte + (short)entity + the
+            // destination floats + (byte)style + the gated (int)extraInfo.
+            Self::TeleportEntity(t) => {
+                let w = w
+                    .bitsbyte(t.flags())
+                    .i16(t.entity)
+                    .f32(t.x)
+                    .f32(t.y)
+                    .u8(t.style);
+                match t.extra_info {
+                    Some(v) => w.i32(v),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1142-1144`: (byte)kind.
+            Self::RequestTeleport(q) => w.u8(q.kind),
+            // No writer arm — bodyless (`MessageBuffer.cs:3154-3163`).
+            Self::AnglerQuestFinished => w,
+            // `NetMessage.cs:1337-1345`: (byte)player + (short)color + the
+            // destination floats + WriteVector2(the player's live velocity).
+            Self::PlayerPortalTeleport(p) => w
+                .u8(p.player)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
+            // `NetMessage.cs:1432-1435`: (short)x + (short)y.
+            Self::CrystalInvasionStart(c) => w.i16(c.x).i16(c.y),
+            // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
+            // the velocity floats + (int)x + (int)y.
+            Self::LucyPopup(l) => w
+                .u8(l.source)
+                .u8(l.variation)
+                .f32(l.velocity_x)
+                .f32(l.velocity_y)
+                .i32(l.x)
+                .i32(l.y),
+            // No writer arm — bodyless (`DD2Event.cs:1790` SendData(143)).
+            Self::CrystalInvasionSkip => w,
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2049,6 +2413,38 @@ impl C2s {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                subject: r.u8()?,
+                kind: r.u8()?,
+            }),
+            id::SPAWN_BOSS_EVENT => Self::SpawnBossEvent(SpawnBossEvent {
+                player: r.i16()?,
+                event: r.i16()?,
+            }),
+            id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
+            id::REQUEST_TELEPORT => Self::RequestTeleport(RequestTeleport { kind: r.u8()? }),
+            id::ANGLER_QUEST_FINISHED => Self::AnglerQuestFinished,
+            id::TELEPORT_PLAYER_PORTAL => Self::PlayerPortalTeleport(PlayerPortalTeleport {
+                player: r.u8()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+            }),
+            id::CRYSTAL_INVASION_START => Self::CrystalInvasionStart(CrystalInvasionStart {
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
+            id::LUCY_POPUP => Self::LucyPopup(LucyPopup {
+                source: r.u8()?,
+                variation: r.u8()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+                x: r.i32()?,
+                y: r.i32()?,
+            }),
+            id::CRYSTAL_INVASION_SKIP => Self::CrystalInvasionSkip,
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2158,6 +2554,35 @@ fn read_player_chest(r: &mut NetReader) -> Option<PlayerChest> {
     })
 }
 
+/// `65 TeleportEntity` (`MessageBuffer.cs:2949-2978`): the BitsByte first,
+/// `(short)` entity, the destination Vector2, `(byte)` style, then the
+/// `(int)` extraInfo only when bit 3 is set; kind is reassembled from bits
+/// 0/1 (`num82++` / `num82 += 2`).
+fn read_teleport_entity(r: &mut NetReader) -> Option<TeleportEntity> {
+    let flags = r.bitsbyte()?;
+    let entity = r.i16()?;
+    let x = r.f32()?;
+    let y = r.f32()?;
+    let style = r.u8()?;
+    let mut kind = 0u8;
+    if flags.get(0) {
+        kind += 1;
+    }
+    if flags.get(1) {
+        kind += 2;
+    }
+    let extra_info = if flags.get(3) { Some(r.i32()?) } else { None };
+    Some(TeleportEntity {
+        entity,
+        x,
+        y,
+        style,
+        kind,
+        get_pos_from_player: flags.get(2),
+        extra_info,
+    })
+}
+
 impl S2c {
     pub fn msg_id(&self) -> u8 {
         match self {
@@ -2209,6 +2634,17 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
+            Self::TemporaryAnimation(_) => id::TEMPORARY_ANIMATION,
+            Self::InvasionProgress(_) => id::INVASION_PROGRESS,
+            Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
+            Self::MoonlordCountdown(_) => id::MOONLORD_COUNTDOWN,
+            Self::SpecialFx(_) => id::SPECIAL_FX,
+            Self::CrystalInvasionWipe => id::CRYSTAL_INVASION_WIPE,
+            Self::CrystalInvasionWait(_) => id::CRYSTAL_INVASION_WAIT,
+            Self::RemoveRevengeMarker(_) => id::REMOVE_REVENGE_MARKER,
+            Self::LucyPopup(_) => id::LUCY_POPUP,
         }
     }
 
@@ -2351,6 +2787,73 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1010-1013`: (byte)subject + (byte)kind — the
+            // host's kind-2 echo (`MessageBuffer.cs:2498`).
+            Self::MiscDataSync(m) => w.u8(m.subject).u8(m.kind),
+            // `NetMessage.cs:1088-1103`: BitsByte + (short)entity + the
+            // destination floats + (byte)style + the gated (int)extraInfo.
+            Self::TeleportEntity(t) => {
+                let w = w
+                    .bitsbyte(t.flags())
+                    .i16(t.entity)
+                    .f32(t.x)
+                    .f32(t.y)
+                    .u8(t.style);
+                match t.extra_info {
+                    Some(v) => w.i32(v),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1154-1159`: (short)animationType +
+            // (ushort)tileType + (short)x + (short)y.
+            Self::TemporaryAnimation(a) => w
+                .i16(a.animation_type)
+                .u16(a.tile_type)
+                .i16(a.x)
+                .i16(a.y),
+            // `NetMessage.cs:1160-1165`: (int)progress + (int)max +
+            // (sbyte)icon + (sbyte)wave.
+            Self::InvasionProgress(p) => w
+                .i32(p.progress)
+                .i32(p.progress_max)
+                .i8(p.icon)
+                .i8(p.wave),
+            // `NetMessage.cs:1337-1345`: (byte)player + (short)color + the
+            // destination floats + WriteVector2(the player's live velocity).
+            Self::PlayerPortalTeleport(p) => w
+                .u8(p.player)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
+            // `NetMessage.cs:1383-1386`: the two NPC statics as raw ints,
+            // MaxMoonLordCountdown first.
+            Self::MoonlordCountdown(m) => w.i32(m.max).i32(m.countdown),
+            // `NetMessage.cs:1424-1431`: (byte)effect + (int)x + (int)y +
+            // (byte)number4 + (short)number5 + (byte)number6.
+            Self::SpecialFx(f) => w
+                .u8(f.effect)
+                .i32(f.x)
+                .i32(f.y)
+                .u8(f.b4)
+                .i16(f.s5)
+                .u8(f.b6),
+            // No writer arm — bodyless (`DD2Event.cs:636` SendData(114)).
+            Self::CrystalInvasionWipe => w,
+            // `NetMessage.cs:1436-1438`: the raw (int) countdown.
+            Self::CrystalInvasionWait(t) => w.i32(t.time_left),
+            // `NetMessage.cs:1518-1520`: the raw (int) marker UniqueID.
+            Self::RemoveRevengeMarker(m) => w.i32(m.unique_id),
+            // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
+            // the velocity floats + (int)x + (int)y.
+            Self::LucyPopup(l) => w
+                .u8(l.source)
+                .u8(l.variation)
+                .f32(l.velocity_x)
+                .f32(l.velocity_y)
+                .i32(l.x)
+                .i32(l.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2552,6 +3055,58 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                subject: r.u8()?,
+                kind: r.u8()?,
+            }),
+            id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
+            id::TEMPORARY_ANIMATION => Self::TemporaryAnimation(TemporaryAnimation {
+                animation_type: r.i16()?,
+                tile_type: r.u16()?,
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
+            id::INVASION_PROGRESS => Self::InvasionProgress(InvasionProgress {
+                progress: r.i32()?,
+                progress_max: r.i32()?,
+                icon: r.i8()?,
+                wave: r.i8()?,
+            }),
+            id::TELEPORT_PLAYER_PORTAL => Self::PlayerPortalTeleport(PlayerPortalTeleport {
+                player: r.u8()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+            }),
+            id::MOONLORD_COUNTDOWN => Self::MoonlordCountdown(MoonlordCountdown {
+                max: r.i32()?,
+                countdown: r.i32()?,
+            }),
+            id::SPECIAL_FX => Self::SpecialFx(SpecialFx {
+                effect: r.u8()?,
+                x: r.i32()?,
+                y: r.i32()?,
+                b4: r.u8()?,
+                s5: r.i16()?,
+                b6: r.u8()?,
+            }),
+            id::CRYSTAL_INVASION_WIPE => Self::CrystalInvasionWipe,
+            id::CRYSTAL_INVASION_WAIT => Self::CrystalInvasionWait(CrystalInvasionWait {
+                time_left: r.i32()?,
+            }),
+            id::REMOVE_REVENGE_MARKER => Self::RemoveRevengeMarker(RemoveRevengeMarker {
+                unique_id: r.i32()?,
+            }),
+            id::LUCY_POPUP => Self::LucyPopup(LucyPopup {
+                source: r.u8()?,
+                variation: r.u8()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+                x: r.i32()?,
+                y: r.i32()?,
             }),
             _ => return None,
         })
@@ -4709,5 +5264,445 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    #[test]
+    fn w4_d99_misc_data_sync_round_trips() {
+        // `NetMessage.cs:1010-1013` (case 51), verbatim: (byte)number
+        // (subject) then (byte)number2 (kind). Kind 3 = the sundial ask
+        // (`Main.cs:6175`, subject Main.myPlayer); the host forces the
+        // subject to the sender (`MessageBuffer.cs:2485-2488`) and only
+        // kind 2 echoes (`:2498`) — both directions carry the same layout.
+        let m = MiscDataSync { subject: 2, kind: 3 };
+        let f = C2s::MiscDataSync(m).encode();
+        assert_eq!(f[2], 51);
+        assert_eq!(&f[3..], &[2u8, 3]);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::MiscDataSync(d) => assert_eq!(d, m),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+        // The host's kind-2 rod-sound echo (`MessageBuffer.cs:2498`).
+        let echo = MiscDataSync { subject: 2, kind: 2 };
+        let s = S2c::MiscDataSync(echo).encode();
+        assert_eq!(s[2], 51);
+        assert_eq!(&s[3..], &[2u8, 2]);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::MiscDataSync(d) => assert_eq!(d, echo),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+        // Kind 4's subject is an NPC slot (the big mimic smoke,
+        // `NPC.cs:77498`) — the byte rides verbatim either way.
+        let mimic = MiscDataSync { subject: 199, kind: 4 };
+        let f = S2c::MiscDataSync(mimic).encode();
+        assert_eq!(&f[3..], &[199u8, 4]);
+    }
+
+    #[test]
+    fn w4_d99_spawn_boss_event_round_trips() {
+        // `NetMessage.cs:1073-1076` (case 61), verbatim: (short)number (the
+        // player to spawn on) + (short)number2 (the selector). Positive =
+        // an NPCID boss (Eye of Cthulhu 4, `Player.cs:43782`); negative =
+        // the event ladder — pin -19 (slime rain, `Main.cs:64752`) so the
+        // sign bit survives the i16 round trip. Client→server only.
+        for (player, event) in [(1i16, 4i16), (0, -19), (2, -16)] {
+            let e = SpawnBossEvent { player, event };
+            let f = C2s::SpawnBossEvent(e).encode();
+            assert_eq!(f[2], 61);
+            let mut body = Vec::new();
+            body.extend_from_slice(&player.to_le_bytes());
+            body.extend_from_slice(&event.to_le_bytes());
+            assert_eq!(&f[3..], &body);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::SpawnBossEvent(d) => assert_eq!(d, e),
+                other => panic!("expected 61, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d99_teleport_entity_round_trips() {
+        // `NetMessage.cs:1088-1103` (case 65), verbatim: BitsByte27 (bit0/1
+        // = kind low bits, bit2 = getPosFromPlayer, bit3 = extraInfo gate),
+        // (short)entity, float x, float y, (byte)style, gated (int)extra.
+        // Kind 0 with extraInfo 0 writes NO tail (`number7 != 0` gate) —
+        // the rod-of-discord send (`Player.cs:45513`, style 1).
+        let rod = TeleportEntity {
+            entity: 3,
+            x: 3200.5,
+            y: -64.25,
+            style: 1,
+            kind: 0,
+            get_pos_from_player: false,
+            extra_info: None,
+        };
+        let f = C2s::TeleportEntity(rod).encode();
+        assert_eq!(f[2], 65);
+        let mut body = vec![0u8]; // flags: kind 0, no bit2, no bit3
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&3200.5f32.to_le_bytes());
+        body.extend_from_slice(&(-64.25f32).to_le_bytes());
+        body.push(1);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::TeleportEntity(d) => assert_eq!(d, rod),
+            other => panic!("expected 65, got {:?}", other.msg_id()),
+        }
+        // Kind 2 (player-to-player, `Player.cs:42363`) → bit1 only; the
+        // host broadcast (`MessageBuffer.cs:3008`) with a portal color.
+        let p2p = TeleportEntity {
+            entity: 1,
+            x: 100.0,
+            y: 200.0,
+            style: 4,
+            kind: 2,
+            get_pos_from_player: true,
+            extra_info: Some(5),
+        };
+        let s = S2c::TeleportEntity(p2p).encode();
+        assert_eq!(s[2], 65);
+        let mut body = vec![0b1110u8]; // bit1 kind, bit2 getpos, bit3 extra
+        body.extend_from_slice(&1i16.to_le_bytes());
+        body.extend_from_slice(&100.0f32.to_le_bytes());
+        body.extend_from_slice(&200.0f32.to_le_bytes());
+        body.push(4);
+        body.extend_from_slice(&5i32.to_le_bytes());
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::TeleportEntity(d) => assert_eq!(d, p2p),
+            other => panic!("expected 65, got {:?}", other.msg_id()),
+        }
+        // Kind 1 (NPC teleport, `NPC.cs:81056`) → bit0; kind 3 (the client
+        // ack, `MessageBuffer.cs:2993`) → bits 0+1.
+        for (kind, flags) in [(1u8, 0b0001u8), (3, 0b0011)] {
+            let t = TeleportEntity {
+                entity: 7,
+                x: 0.0,
+                y: 0.0,
+                style: 2,
+                kind,
+                get_pos_from_player: false,
+                extra_info: None,
+            };
+            let f = C2s::TeleportEntity(t).encode();
+            assert_eq!(f[3], flags);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::TeleportEntity(d) => assert_eq!(d, t),
+                other => panic!("expected 65, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d99_request_teleport_round_trips() {
+        // `NetMessage.cs:1142-1144` (case 73), verbatim: one (byte)kind —
+        // the reader's ladder 0..4 (`MessageBuffer.cs:3128-3145`:
+        // potion/magic conch/demon conch/shellphone/no-space).
+        for kind in 0u8..=4 {
+            let q = RequestTeleport { kind };
+            let f = C2s::RequestTeleport(q).encode();
+            assert_eq!(f[2], 73);
+            assert_eq!(&f[3..], &[kind]);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::RequestTeleport(d) => assert_eq!(d, q),
+                other => panic!("expected 73, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d99_angler_quest_finished_is_bodyless() {
+        // No `case 75` writer arm in NetMessage.cs and the reader consumes
+        // nothing (`MessageBuffer.cs:3154-3163` — it only adds the sender's
+        // name on the host): the frame is exactly [len=3][75].
+        let f = C2s::AnglerQuestFinished.encode();
+        assert_eq!(f, vec![3, 0, 75]);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::AnglerQuestFinished => {}
+            other => panic!("expected 75, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_d99_temporary_animation_round_trips() {
+        // `NetMessage.cs:1154-1159` (case 77), verbatim: (short)number
+        // (animationType), (ushort)number2 (tileType), (short)number3 (x),
+        // (short)number4 (y) — `SendTemporaryAnimation`'s argument order
+        // (`:2594`); the reader feeds Animation.NewTemporaryAnimation
+        // (`MessageBuffer.cs:3184`). Server→client, one addressee.
+        let a = TemporaryAnimation {
+            animation_type: 3,
+            tile_type: 593, // the campfire toggle (`Wiring.cs:1704`)
+            x: 1234,
+            y: -56,
+        };
+        let f = S2c::TemporaryAnimation(a).encode();
+        assert_eq!(f[2], 77);
+        let mut body = Vec::new();
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&593u16.to_le_bytes());
+        body.extend_from_slice(&1234i16.to_le_bytes());
+        body.extend_from_slice(&(-56i16).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TemporaryAnimation(d) => assert_eq!(d, a),
+            other => panic!("expected 77, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_invasion_progress_round_trips() {
+        // `NetMessage.cs:1160-1165` (case 78), verbatim: (int)number
+        // (progress), (int)number2 (max), (sbyte)number3 (icon),
+        // (sbyte)number4 (wave). Pin the DD2 shape (icon 3, wave 5,
+        // `DD2Event.cs:191`) and a negative sbyte so the sign survives.
+        for p in [
+            InvasionProgress {
+                progress: 120,
+                progress_max: 200,
+                icon: 3,
+                wave: 5,
+            },
+            InvasionProgress {
+                progress: 0,
+                progress_max: 1,
+                icon: -1,
+                wave: -2,
+            },
+        ] {
+            let f = S2c::InvasionProgress(p).encode();
+            assert_eq!(f[2], 78);
+            let mut body = Vec::new();
+            body.extend_from_slice(&p.progress.to_le_bytes());
+            body.extend_from_slice(&p.progress_max.to_le_bytes());
+            body.push(p.icon as u8);
+            body.push(p.wave as u8);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::InvasionProgress(d) => assert_eq!(d, p),
+                other => panic!("expected 78, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d99_player_portal_teleport_round_trips() {
+        // `NetMessage.cs:1337-1345` (case 96), verbatim field order:
+        // (byte)number (player), (short)number4 (color index), number2 (x),
+        // number3 (y), WriteVector2(player.velocity) — the velocity is the
+        // player's live one, deliberately different from the destination
+        // so a swapped pair cannot pass. Both directions
+        // (`PortalHelper.cs:190` client send, `MessageBuffer.cs:3554` relay).
+        let p = PlayerPortalTeleport {
+            player: 1,
+            color_index: 4, // owner 2 * 2 + ai[1] 0 (`PortalHelper.cs:181`)
+            x: 2048.5,
+            y: -256.25,
+            velocity_x: -2.5,
+            velocity_y: -0.1, // the `ent.velocity.Y = -num * 0.1f` floor
+        };
+        let mut body = vec![1u8];
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.extend_from_slice(&2048.5f32.to_le_bytes());
+        body.extend_from_slice(&(-256.25f32).to_le_bytes());
+        body.extend_from_slice(&(-2.5f32).to_le_bytes());
+        body.extend_from_slice(&(-0.1f32).to_le_bytes());
+        let f = C2s::PlayerPortalTeleport(p).encode();
+        assert_eq!(f[2], 96);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 96, got {:?}", other.msg_id()),
+        }
+        let s = S2c::PlayerPortalTeleport(p).encode();
+        assert_eq!(s[2], 96);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::PlayerPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 96, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_moonlord_countdown_round_trips() {
+        // `NetMessage.cs:1383-1386` (case 103), verbatim: the raw
+        // NPC.MaxMoonLordCountdown int THEN NPC.MoonLordCountdown —
+        // deliberately different values so a swapped pair cannot pass;
+        // the client stores them in that order (`MessageBuffer.cs:3711-3712`).
+        let m = MoonlordCountdown {
+            max: 600,
+            countdown: 360,
+        };
+        let f = S2c::MoonlordCountdown(m).encode();
+        assert_eq!(f[2], 103);
+        let mut body = Vec::new();
+        body.extend_from_slice(&600i32.to_le_bytes());
+        body.extend_from_slice(&360i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MoonlordCountdown(d) => assert_eq!(d, m),
+            other => panic!("expected 103, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_special_fx_round_trips() {
+        // `NetMessage.cs:1424-1431` (case 112), verbatim: (byte)number
+        // (effect), (int)number2 (x), (int)number3 (y), (byte)number4,
+        // (short)number5, (byte)number6. Kind 1 = the shaken-tree send
+        // (`WorldGen.cs:63412`: height 1, passStyle, shake flag 1); kind 2
+        // = fairy (`NPC.cs:48584`: number5 = type - 583). The reader tests
+        // number6 == 1 (`MessageBuffer.cs:3822`).
+        for f in [
+            SpecialFx {
+                effect: 1,
+                x: 1200,
+                y: 340,
+                b4: 1,
+                s5: 7,
+                b6: 1,
+            },
+            SpecialFx {
+                effect: 2,
+                x: -64,
+                y: 800,
+                b4: 0,
+                s5: 3, // fairyCritter type 586 - 583
+                b6: 0,
+            },
+        ] {
+            let frame = S2c::SpecialFx(f).encode();
+            assert_eq!(frame[2], 112);
+            let mut body = vec![f.effect];
+            body.extend_from_slice(&f.x.to_le_bytes());
+            body.extend_from_slice(&f.y.to_le_bytes());
+            body.push(f.b4);
+            body.extend_from_slice(&f.s5.to_le_bytes());
+            body.push(f.b6);
+            assert_eq!(&frame[3..], &body);
+            match S2c::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode") {
+                S2c::SpecialFx(d) => assert_eq!(d, f),
+                other => panic!("expected 112, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d99_crystal_invasion_start_round_trips() {
+        // `NetMessage.cs:1432-1435` (case 113), verbatim: (short)number (x)
+        // + (short)number2 (y) — the SummonCrystal tile coords
+        // (`DD2Event.cs:576`). Negative coords pin the sign.
+        let c = CrystalInvasionStart { x: -120, y: 450 };
+        let f = C2s::CrystalInvasionStart(c).encode();
+        assert_eq!(f[2], 113);
+        let mut body = Vec::new();
+        body.extend_from_slice(&(-120i16).to_le_bytes());
+        body.extend_from_slice(&450i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::CrystalInvasionStart(d) => assert_eq!(d, c),
+            other => panic!("expected 113, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_crystal_invasion_wipe_is_bodyless() {
+        // No `case 114` writer arm and the reader consumes nothing
+        // (`MessageBuffer.cs:3855-3860` DD2Event.WipeEntities; the send is
+        // `SendData(114)` with no args, `DD2Event.cs:636`): [len=3][114].
+        let f = S2c::CrystalInvasionWipe.encode();
+        assert_eq!(f, vec![3, 0, 114]);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::CrystalInvasionWipe => {}
+            other => panic!("expected 114, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_d99_crystal_invasion_wait_round_trips() {
+        // `NetMessage.cs:1436-1438` (case 116), verbatim: the raw
+        // (int)number — `_timeLeftUntilSpawningBegins`
+        // (`DD2Event.cs:949`); the client stores TimeLeftBetweenWaves
+        // (`MessageBuffer.cs:3864`).
+        let t = CrystalInvasionWait { time_left: 1800 };
+        let f = S2c::CrystalInvasionWait(t).encode();
+        assert_eq!(f[2], 116);
+        assert_eq!(&f[3..], &1800i32.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CrystalInvasionWait(d) => assert_eq!(d, t),
+            other => panic!("expected 116, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_remove_revenge_marker_round_trips() {
+        // `NetMessage.cs:1518-1520` (case 127), verbatim: the raw
+        // (int)number — the marker UniqueID (`CoinLossRevengeSystem.cs:451`);
+        // the client destroys it (`MessageBuffer.cs:4051-4054`). Matches
+        // the 126 marker body's leading unique_id field.
+        let m = RemoveRevengeMarker { unique_id: 42 };
+        let f = S2c::RemoveRevengeMarker(m).encode();
+        assert_eq!(f[2], 127);
+        assert_eq!(&f[3..], &42i32.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::RemoveRevengeMarker(d) => assert_eq!(d, m),
+            other => panic!("expected 127, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_lucy_popup_round_trips() {
+        // `NetMessage.cs:1595-1602` (case 141), verbatim: (byte)number
+        // (source), (byte)number2 (variation), number3/number4 (the
+        // velocity floats) THEN number5/number6 (the position ints) —
+        // deliberately different magnitudes so a swapped pair cannot
+        // pass. Both directions (`LucyAxeMessage.cs:133` client send,
+        // `MessageBuffer.cs:4274` relay).
+        let l = LucyPopup {
+            source: 2,
+            variation: 7,
+            velocity_x: 1.5,
+            velocity_y: -3.25,
+            x: 51200,
+            y: -1024,
+        };
+        let mut body = vec![2u8, 7];
+        body.extend_from_slice(&1.5f32.to_le_bytes());
+        body.extend_from_slice(&(-3.25f32).to_le_bytes());
+        body.extend_from_slice(&51200i32.to_le_bytes());
+        body.extend_from_slice(&(-1024i32).to_le_bytes());
+        let f = C2s::LucyPopup(l).encode();
+        assert_eq!(f[2], 141);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+        let s = S2c::LucyPopup(l).encode();
+        assert_eq!(s[2], 141);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_crystal_invasion_skip_is_bodyless() {
+        // No `case 143` writer arm and the reader consumes nothing
+        // (`MessageBuffer.cs:4298-4303` AttemptToSkipWaitTime on the host;
+        // the send is `SendData(143)` with no args, `DD2Event.cs:1790`):
+        // [len=3][143].
+        let f = C2s::CrystalInvasionSkip.encode();
+        assert_eq!(f, vec![3, 0, 143]);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::CrystalInvasionSkip => {}
+            other => panic!("expected 143, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
     }
 }

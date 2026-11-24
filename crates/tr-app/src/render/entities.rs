@@ -5725,8 +5725,8 @@ mod anchor_tests {
         // 289 Giant Cursed Skull: `NPC.cs:93609-93611` returns the literal
         // (250, 250, 250, 50) EARLY (no fade).
         let tint289 = [250.0 / 255.0, 250.0 / 255.0, 250.0 / 255.0, 50.0 / 255.0];
-        assert!((tint289[0] - 0.98039216).abs() < 1e-6);
-        assert!((tint289[3] - 0.19607843).abs() < 1e-6);
+        assert!((tint289[0] as f32 - 0.98039216f32).abs() < 1e-6);
+        assert!((tint289[3] as f32 - 0.19607843f32).abs() < 1e-6);
         // The 289's tint is NOT the light colour (self-illumination).
         assert!(tint289[0] > c[0], "the 289 is brighter than the dark light");
         // 694 Water Bolt Mimic: `NPC.cs:93417-93427`.

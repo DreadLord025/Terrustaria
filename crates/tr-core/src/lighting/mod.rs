@@ -487,6 +487,16 @@ fn seed_row_range(
     let mut lit = 0u32;
     for lx in 0..wu {
         let x = rx0 + lx as i32;
+        // `TileLightScanner.IsTileNullOrTouchingNull` (`TileLightScanner.cs:
+        // 43-54`, the ExportTo gate `:26-30`): the dense tile array never
+        // holds null, so the check reduces to `WorldGen.InWorld(x, y, 1)`
+        // (`WorldGen.cs:9688-9695`) — the 1-tile world border seeds zero with
+        // the None mask (W4-d66; the legacy engine already kept this gate).
+        if x < 1 || x >= world.width - 1 || y < 1 || y >= world.height - 1 {
+            mask_row[lx] = Mask::Air;
+            colors_row[lx] = [0.0; 3];
+            continue;
+        }
         let tile = &world.tiles[row + x as usize];
         mask_row[lx] = mask_of(tile, x, y, params.draw_invisible_walls, world);
         let c = seed(world, tile, x, y, params, cutoffs[lx]);
@@ -558,7 +568,9 @@ fn liquid_light(tile: &Tile, c: &mut [f32; 3], p: &LightParams) {
         }
         LiquidKind::Shimmer => {
             let n2 = 0.7 + delta;
-            let n3 = 0.7 + delta * (900.0 / 125.0);
+            // `TileLightScanner.cs:135`: a second `(270 - mouseTextColor) / 125f`
+            // division — NOT `delta * (900/125)` (W4-d66: distinct f32 rounding).
+            let n3 = 0.7 + (270.0 - p.mouse_text_color as f32) / 125.0;
             if c[0] < n2 {
                 c[0] = n2 * 0.6;
             }
@@ -624,6 +636,23 @@ mod tests {
         let far = lm.get(22, 42);
         assert!(near[0] > 0.5, "near torch {near:?}");
         assert!(near[0] > far[0], "torch should fade with distance");
+    }
+
+    /// W4-d66 witness: `ExportTo`'s `IsTileNullOrTouchingNull` gate
+    /// (`TileLightScanner.cs:26-30/43-54`) seeds the 1-tile world border zero
+    /// with the None mask — the modern path had dropped it (only the legacy
+    /// engine kept it). The border torch must not glow; its interior twin does.
+    #[test]
+    fn world_border_seeds_zero_like_the_null_gate() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 0.0;
+        // Torch on the left border column and one just inside it.
+        set(&mut w, 0, 32, 4);
+        set(&mut w, 1, 32, 4);
+        let lm = LightMap::compute(&w, 0, 28, 8, 36, &LightParams::default());
+        assert_eq!(lm.get(0, 32), [0.0; 3], "border tile must seed zero");
+        // Row 0 is border too: even the sky above the interior torch is nil.
+        assert_eq!(lm.get(3, 0), [0.0; 3], "border row must seed zero");
     }
 
     #[test]
@@ -699,6 +728,27 @@ mod tests {
         assert_eq!(
             blur::mask_of(&w.tiles[j], 5, 4, false, &w),
             blur::Mask::Solid
+        );
+    }
+
+    /// W4-d66 witness: `GetTileMask` (`TileLightScanner.cs:68`) includes
+    /// `!tile.inActive()` — an actuated block is air to the modern blur mask
+    /// too, not just the legacy swipes. The old `mask_of` dropped the term.
+    #[test]
+    fn actuated_block_is_air_to_the_modern_mask() {
+        let mut w = World::new("t".into(), 8, 8);
+        let i = w.index(4, 4);
+        w.tiles[i].kind = 1; // stone: TILE_BLOCK_LIGHT
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert_eq!(
+            blur::mask_of(&w.tiles[i], 4, 4, false, &w),
+            blur::Mask::Solid
+        );
+        w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+        assert_ne!(
+            blur::mask_of(&w.tiles[i], 4, 4, false, &w),
+            blur::Mask::Solid,
+            "actuated block must not form the Solid mask"
         );
     }
 
@@ -913,5 +963,48 @@ mod tests {
         let mut expected = FastRandom::new(0);
         expected.next_seed_in_place();
         assert_eq!(once, expected.seed, "Blur must advance the seed exactly once");
+    }
+
+    /// W4-d66 re-census witness: `ApplyLiquidLight`'s shimmer arm keeps the
+    /// SECOND `(270 - mouseTextColor) / 125f` division
+    /// (`TileLightScanner.cs:135`) — folding it into `delta * (900/125)` is
+    /// one f32 ULP off at mouseTextColor 192 (Y: 0.33100000 vs 0.33099997).
+    /// The lava arm's compare-against-base / store-scaled quirk (`:116-128`)
+    /// is pinned alongside.
+    #[test]
+    fn liquid_seeds_keep_the_second_division_and_scaled_stores() {
+        let mut p = LightParams::default();
+        p.mouse_text_color = 192;
+        let mut t = Tile::default();
+        t.liquid = 255;
+        t.set_liquid_kind(LiquidKind::Shimmer);
+        let mut c = [0.0f32; 3];
+        liquid_light(&t, &mut c, &p);
+        let n2 = 0.7f32 + (270.0 - 192.0) / 900.0;
+        let n3 = 0.7f32 + (270.0 - 192.0) / 125.0;
+        assert_eq!(c[0].to_bits(), (n2 * 0.6).to_bits());
+        assert_eq!(c[1].to_bits(), (n3 * 0.25).to_bits());
+        assert_eq!(c[2].to_bits(), (n2 * 0.9).to_bits());
+        // The folded form is a distinct f32 — this is the discriminating pin.
+        let delta = (270.0f32 - 192.0) / 900.0;
+        let folded = (0.7f32 + delta * (900.0f32 / 125.0)) * 0.25;
+        assert_ne!(c[1].to_bits(), folded.to_bits());
+        // Lava: every channel compares against the UNSCALED base n, then
+        // stores the scaled value (`:117-127`).
+        t.set_liquid_kind(LiquidKind::Lava);
+        let mut c = [0.0f32; 3];
+        liquid_light(&t, &mut c, &p);
+        let n = 0.55f32 + (270.0 - 192.0) / 900.0;
+        assert_eq!(c, [n, n * 0.6, n * 0.2]);
+        // The quirk cuts both ways: a green BETWEEN n*0.6 and n still passes
+        // the `< num` test and is LOWERED to n*0.6 (`:121-123` compares the
+        // unscaled base, stores the scaled value).
+        let mut c = [0.0f32, n * 0.8, 0.0];
+        liquid_light(&t, &mut c, &p);
+        assert_eq!(c[1].to_bits(), (n * 0.6).to_bits(), "green below n is lowered");
+        // Only a green already at/above the unscaled base survives.
+        let mut c = [0.0f32, n, 0.0];
+        liquid_light(&t, &mut c, &p);
+        assert_eq!(c[1], n, "green at the base must survive");
     }
 }

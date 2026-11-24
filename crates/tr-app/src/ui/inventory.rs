@@ -85,20 +85,73 @@ pub(crate) fn reforge_button_hit(mouse: Vec2) -> bool {
 }
 
 /// `Main.cs:41381-41382`: `CanDemonHeartAccessoryBeShown()` and
-/// `CanMasterModeAccessoryBeShown()`. The port models neither, so accessory
-/// slots 8/9 and vanity slots 18/19 stay hidden (`Main.cs:41398,41471,41504`).
-const DEMON_HEART_SLOT: bool = false;
-const MASTER_SLOT: bool = false;
+/// `CanMasterModeAccessoryBeShown()` — now LIVE per-player reads
+/// (`Player.cs:4276-4292`, W4-g87): the Demon Heart's `extraAccessory` +
+/// expert unlock, or a stored item in `armor[8]`/`armor[18]`/`dye[8]`, shows
+/// the row; master mode is unported so slot 9 shows only while occupied.
+/// The pair rides every column loop (`Main.cs:41398,41471,41504`) and the
+/// row count (`num19`, `:41145`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ExtraAccessoryShow {
+    /// `flag4` — the Demon Heart row (armor 8 / vanity 18 / dye 8).
+    pub demon_heart: bool,
+    /// `flag5` — the master-mode row (armor 9 / vanity 19 / dye 9).
+    pub master: bool,
+    /// `flag6`/`flag7`/`flag8` — `IsItemSlotUnlockedAndUsable(8)`/`(9)`
+    /// (`Main.cs:41403`/`:41474`/`:41507`): a shown-but-locked row draws the
+    /// dim background and refuses the interact (`:41450`'s `flag6 ||
+    /// Main.mouseItem.IsAir`). Both bits are the same per-slot value across
+    /// the three columns (the C# re-reads the same fn per loop).
+    pub slot8_unlocked: bool,
+    pub slot9_unlocked: bool,
+}
+
+impl ExtraAccessoryShow {
+    /// The per-frame snapshot off the local player (`Main.LocalPlayer`,
+    /// `Main.cs:41381-41382` + the per-loop `flag6/7/8` reads). No player
+    /// (the front end) shows neither and keeps the plain background.
+    pub fn of(player: Option<&crate::player::Player>) -> Self {
+        match player {
+            Some(p) => Self {
+                demon_heart: p.can_demon_heart_accessory_be_shown(),
+                master: p.can_master_mode_accessory_be_shown(),
+                slot8_unlocked: p.is_item_slot_unlocked_and_usable(8),
+                slot9_unlocked: p.is_item_slot_unlocked_and_usable(9),
+            },
+            None => Self {
+                slot8_unlocked: true,
+                slot9_unlocked: true,
+                ..Self::default()
+            },
+        }
+    }
+
+    /// `Player.GetAmountOfExtraAccessorySlotsToShow` (`Player.cs:4294-4306`).
+    pub fn count(self) -> i32 {
+        i32::from(self.demon_heart) + i32::from(self.master)
+    }
+
+    /// The column loops' skip test (`Main.cs:41398`/`:41471`/`:41504`):
+    /// `idx` is the loop variable in each column's own index space
+    /// (armor 0..9, vanity 10..19, dye 0..9).
+    fn hides(self, idx: usize) -> bool {
+        (matches!(idx, 8 | 18) && !self.demon_heart) || (matches!(idx, 9 | 19) && !self.master)
+    }
+
+    /// `IsItemSlotUnlockedAndUsable(idx)` for the drawn row (`Main.cs:41403`
+    /// `flag6` / `:41474` `flag7` / `:41507` `flag8`); every other row is
+    /// unlocked (the port's slot-9 master lock folds into `slot9_unlocked`).
+    pub fn slot_unlocked(self, idx: usize) -> bool {
+        match idx {
+            8 | 18 => self.slot8_unlocked,
+            9 | 19 => self.slot9_unlocked,
+            _ => true,
+        }
+    }
+}
+
 /// `Main.cs:41145`: `num19 = 8 + GetAmountOfExtraAccessorySlotsToShow()`.
 const BASE_ACCESSORY_SLOTS: i32 = 8;
-const EXTRA_ACCESSORY_SLOTS: i32 = 0;
-
-/// `Player.GetAmountOfExtraAccessorySlotsToShow()` (`Player.cs:43950-43972`) as
-/// the layout sees it — read by `Main.RefreshSettingsButtonStatus` (`:45508`)
-/// and by the equipment column's own row count.
-pub fn extra_accessory_slots() -> i32 {
-    EXTRA_ACCESSORY_SLOTS
-}
 
 /// `Main.EquipPage == 2`: the misc-equip / misc-dye page.
 pub const EQUIP_PAGE_MISC: i32 = 2;
@@ -288,11 +341,12 @@ fn in_tick(mouse: Vec2, rect: [f32; 4]) -> bool {
 
 /// `Main.cs:41145`: the equipment columns' origin, `174 + Main.mH` shifted up
 /// while the screen is too short for the full column (`equip_base_y`).
-pub fn equip_page_base_y(screen_h: f32, m_h: f32) -> f32 {
+/// `extra` is the LIVE `GetAmountOfExtraAccessorySlotsToShow()` pair.
+pub fn equip_page_base_y(screen_h: f32, m_h: f32, extra: ExtraAccessoryShow) -> f32 {
     equip_base_y(
         screen_h,
         m_h,
-        BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+        BASE_ACCESSORY_SLOTS + extra.count(),
         INVENTORY_SCALE,
     )
 }
@@ -304,11 +358,12 @@ pub fn accessory_tick_rects(
     screen: Vec2,
     base_y: f32,
     tick: (f32, f32),
+    extra: ExtraAccessoryShow,
 ) -> Vec<(usize, [f32; 4])> {
     let mut out = Vec::new();
     let mut row = 0usize;
     for idx in 0..10usize {
-        if (idx == 8 && !DEMON_HEART_SLOT) || (idx == 9 && !MASTER_SLOT) {
+        if extra.hides(idx) {
             continue;
         }
         if idx > 2 {
@@ -330,11 +385,12 @@ pub fn accessory_tick_click(
     mouse: Vec2,
     tick: (f32, f32),
     mouse_air: bool,
+    extra: ExtraAccessoryShow,
 ) -> Option<usize> {
     if !mouse_air {
         return None;
     }
-    accessory_tick_rects(screen, base_y, tick)
+    accessory_tick_rects(screen, base_y, tick, extra)
         .into_iter()
         .find(|(_, r)| in_tick(mouse, *r))
         .map(|(i, _)| i)
@@ -364,11 +420,12 @@ pub(crate) fn equip_cell_at(
     m_h: f32,
     equip_page: i32,
     cell: f32,
+    extra: ExtraAccessoryShow,
 ) -> Option<(i32, usize)> {
     let base_y = equip_base_y(
         screen.y,
         m_h,
-        BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+        BASE_ACCESSORY_SLOTS + extra.count(),
         INVENTORY_SCALE,
     );
     if equip_page == EQUIP_PAGE_MISC {
@@ -397,7 +454,7 @@ pub(crate) fn equip_cell_at(
     // `Main.cs:41396-41463`: `Player.armor[0..9]` (context 8, 10 below row 2).
     let mut row = 0usize;
     for idx in 0..10usize {
-        if (idx == 8 && !DEMON_HEART_SLOT) || (idx == 9 && !MASTER_SLOT) {
+        if extra.hides(idx) {
             continue;
         }
         let y = equip_row_y(base_y, row, idx > 2, INVENTORY_SCALE);
@@ -409,7 +466,7 @@ pub(crate) fn equip_cell_at(
     // `Main.cs:41469-41496`: `Player.armor[10..19]` (context 9, 11 below row 2).
     row = 0;
     for idx in 10..20usize {
-        if (idx == 18 && !DEMON_HEART_SLOT) || (idx == 19 && !MASTER_SLOT) {
+        if extra.hides(idx) {
             continue;
         }
         let y = equip_row_y(base_y, row, idx > 12, INVENTORY_SCALE);
@@ -421,7 +478,7 @@ pub(crate) fn equip_cell_at(
     // `Main.cs:41502-41523`: `Player.dye[0..9]` (context 12).
     row = 0;
     for idx in 0..crate::inv::DYE {
-        if (idx == 8 && !DEMON_HEART_SLOT) || (idx == 9 && !MASTER_SLOT) {
+        if extra.hides(idx) {
             continue;
         }
         let y = equip_row_y(base_y, row, idx > 2, INVENTORY_SCALE);
@@ -500,6 +557,10 @@ pub fn draw(
     // `Main.mouseItem.IsAir`: every tick draw and hit is gated on it
     // (`Main.cs:41430`, `:41453`).
     mouse_air: bool,
+    // `Main.cs:41381-41382`: the LIVE CanDemonHeart/CanMaster accessory-show
+    // pair (`Player.cs:4276-4292`) — the slot-8 row joins the columns once
+    // the Demon Heart unlock (or a stored item) shows it.
+    extra: ExtraAccessoryShow,
 ) -> InventoryHit {
     // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
     // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
@@ -622,7 +683,7 @@ pub fn draw(
         let base_y = equip_base_y(
             screen.y,
             m_h,
-            BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+            BASE_ACCESSORY_SLOTS + extra.count(),
             INVENTORY_SCALE,
         );
         let misc_x = screen.x - 92.0; // `Main.cs:41177`
@@ -678,7 +739,7 @@ pub fn draw(
         let base_y = equip_base_y(
             screen.y,
             m_h,
-            BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+            BASE_ACCESSORY_SLOTS + extra.count(),
             INVENTORY_SCALE,
         );
         let cells = housing::layout(
@@ -699,7 +760,7 @@ pub fn draw(
         let base_y = equip_base_y(
             screen.y,
             m_h,
-            BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+            BASE_ACCESSORY_SLOTS + extra.count(),
             INVENTORY_SCALE,
         );
         let armor_x = equip_column_x(EquipColumn::Armor, screen.x);
@@ -709,12 +770,20 @@ pub fn draw(
         // `Main.cs:41396-41463`: `Player.armor[0..9]` (context 8 / 10).
         let mut row = 0usize;
         for idx in 0..10usize {
-            if (idx == 8 && !DEMON_HEART_SLOT) || (idx == 9 && !MASTER_SLOT) {
+            if extra.hides(idx) {
                 continue;
             }
             let lower = idx > 2;
             let context = if lower { 10 } else { 8 };
             let y = equip_row_y(base_y, row, lower, INVENTORY_SCALE);
+            // `Main.cs:41403`/`:41452`: `flag6 = IsItemSlotUnlockedAndUsable`
+            // — a SHOWN-but-locked row (a stored item, no unlock) draws the
+            // dim `(80,80,80,80)` background instead of `Main.inventoryBack`.
+            let back = if extra.slot_unlocked(idx) {
+                INVENTORY_BACK
+            } else {
+                [80.0 / 255.0; 4] // `Main.cs:41393` color2 (80,80,80,80)
+            };
             slot::draw_slot(
                 r,
                 lookups,
@@ -725,7 +794,7 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(context, INVENTORY_BACK),
+                equip_tint(context, back),
             );
             if hit.hovered.is_none() && hit_test(mouse, armor_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
@@ -760,12 +829,18 @@ pub fn draw(
         // `Main.cs:41469-41496`: `Player.armor[10..19]` (context 9 / 11).
         row = 0;
         for idx in 10..20usize {
-            if (idx == 18 && !DEMON_HEART_SLOT) || (idx == 19 && !MASTER_SLOT) {
+            if extra.hides(idx) {
                 continue;
             }
             let lower = idx > 12;
             let context = if lower { 11 } else { 9 };
             let y = equip_row_y(base_y, row, lower, INVENTORY_SCALE);
+            // `Main.cs:41474`/`:41493`: `flag7` — the vanity twin of flag6.
+            let back = if extra.slot_unlocked(idx) {
+                INVENTORY_BACK
+            } else {
+                [80.0 / 255.0; 4]
+            };
             slot::draw_slot(
                 r,
                 lookups,
@@ -776,7 +851,7 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(context, INVENTORY_BACK),
+                equip_tint(context, back),
             );
             if hit.hovered.is_none() && hit_test(mouse, vanity_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
@@ -787,11 +862,17 @@ pub fn draw(
         // `Main.cs:41502-41523`: `Player.dye[0..9]` (context 12).
         row = 0;
         for idx in 0..crate::inv::DYE {
-            if (idx == 8 && !DEMON_HEART_SLOT) || (idx == 9 && !MASTER_SLOT) {
+            if extra.hides(idx) {
                 continue;
             }
             let lower = idx > 2;
             let y = equip_row_y(base_y, row, lower, INVENTORY_SCALE);
+            // `Main.cs:41507`/`:41520`: `flag8` — the dye twin of flag6.
+            let back = if extra.slot_unlocked(idx) {
+                INVENTORY_BACK
+            } else {
+                [80.0 / 255.0; 4]
+            };
             slot::draw_slot(
                 r,
                 lookups,
@@ -802,7 +883,7 @@ pub fn draw(
                 idx as i32,
                 false,
                 INVENTORY_SCALE,
-                equip_tint(12, INVENTORY_BACK),
+                equip_tint(12, back),
             );
             if hit.hovered.is_none() && hit_test(mouse, dye_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Dye(idx));
@@ -813,8 +894,9 @@ pub fn draw(
         // `Main.cs:41421-41424`: `DrawDefenseCounter(num39, num40)` is called while
         // the loop is at the last accessory row (`num37 == num35 == num19 - 1`);
         // `num39 = screenWidth - 92`, `num40` = that row's `y` (with the `+4` shift,
-        // since row 7 > 2).
-        let last_row = (BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS - 1) as usize;
+        // since every accessory row > 2). With the Demon Heart row shown the
+        // anchor drops to row 8 (`num19 = 9`).
+        let last_row = (BASE_ACCESSORY_SLOTS + extra.count() - 1) as usize;
         hit.defense_anchor = Some((armor_x, equip_row_y(base_y, last_row, true, INVENTORY_SCALE)));
     }
 
@@ -1021,6 +1103,20 @@ mod tests {
     const SCALE: f32 = INVENTORY_SCALE; // 0.85
     const SCREEN_W: f32 = 1600.0;
     const SCREEN_H: f32 = 900.0;
+    /// The classic no-unlock snapshot (`Main.cs:41381-41382` both false).
+    const NO_EXTRA: ExtraAccessoryShow = ExtraAccessoryShow {
+        demon_heart: false,
+        master: false,
+        slot8_unlocked: false,
+        slot9_unlocked: false,
+    };
+    /// The Demon-Heart-used expert snapshot (W4-g87's live grant).
+    const DH_EXTRA: ExtraAccessoryShow = ExtraAccessoryShow {
+        demon_heart: true,
+        master: false,
+        slot8_unlocked: true,
+        slot9_unlocked: false,
+    };
 
     fn slot_ij(slot: usize) -> (usize, usize) {
         (slot % GRID_COLS, slot / GRID_COLS)
@@ -1178,13 +1274,18 @@ mod tests {
     /// (int)((num20 - 2) + num37*56*scale)`, `+num33` (4) on the accessory rows.
     #[test]
     fn the_accessory_ticks_sit_at_the_vanillas_x_and_row() {
-        let base_y = equip_page_base_y(SCREEN_H, 0.0);
+        let base_y = equip_page_base_y(SCREEN_H, 0.0, NO_EXTRA);
         assert_eq!(base_y, 174.0, "`num20 = 174 + Main.mH` at 900 px");
         // Row 0 is the helmet (no tick); the first accessory is row 3, so its
         // tick is row 3's y minus 2, shifted by the 4 px lower block.
         let tick = tick_pos(SCREEN_W, base_y, 0, false);
         assert_eq!(tick, Vec2::new(1542.0, 172.0));
-        let rects = accessory_tick_rects(Vec2::new(SCREEN_W, SCREEN_H), base_y, (16.0, 16.0));
+        let rects = accessory_tick_rects(
+            Vec2::new(SCREEN_W, SCREEN_H),
+            base_y,
+            (16.0, 16.0),
+            NO_EXTRA,
+        );
         // `EQUIP_PAGE_MISC`'s sibling: with neither the Demon Heart nor master
         // mode, `Player.armor[8]`/`[9]` are not drawn, so the column ends at
         // index 7 — five accessories, five ticks (armour 0..2 carry none).
@@ -1203,25 +1304,31 @@ mod tests {
     #[test]
     fn the_tick_hit_is_half_open_and_needs_an_air_cursor() {
         let screen = Vec2::new(SCREEN_W, SCREEN_H);
-        let base_y = equip_page_base_y(SCREEN_H, 0.0);
-        let r = accessory_tick_rects(screen, base_y, (16.0, 16.0))[0].1;
+        let base_y = equip_page_base_y(SCREEN_H, 0.0, NO_EXTRA);
+        let r = accessory_tick_rects(screen, base_y, (16.0, 16.0), NO_EXTRA)[0].1;
         let inside = Vec2::new(r[0] + 1.0, r[1] + 1.0);
         assert_eq!(
-            accessory_tick_click(screen, base_y, inside, (16.0, 16.0), true),
+            accessory_tick_click(screen, base_y, inside, (16.0, 16.0), true, NO_EXTRA),
             Some(3)
         );
         // The right and bottom edges are outside the rectangle.
         let edge = Vec2::new(r[0] + r[2], r[1] + 1.0);
-        assert_eq!(accessory_tick_click(screen, base_y, edge, (16.0, 16.0), true), None);
+        assert_eq!(
+            accessory_tick_click(screen, base_y, edge, (16.0, 16.0), true, NO_EXTRA),
+            None
+        );
         let edge = Vec2::new(r[0] + 1.0, r[1] + r[3]);
-        assert_eq!(accessory_tick_click(screen, base_y, edge, (16.0, 16.0), true), None);
+        assert_eq!(
+            accessory_tick_click(screen, base_y, edge, (16.0, 16.0), true, NO_EXTRA),
+            None
+        );
         // `Main.mouseItem.IsAir` (`:41430`): a held stack disables every tick.
         assert_eq!(
-            accessory_tick_click(screen, base_y, inside, (16.0, 16.0), false),
+            accessory_tick_click(screen, base_y, inside, (16.0, 16.0), false, NO_EXTRA),
             None
         );
         // The armour slots 0..2 have no tick at all.
-        for (idx, _) in accessory_tick_rects(screen, base_y, (16.0, 16.0)) {
+        for (idx, _) in accessory_tick_rects(screen, base_y, (16.0, 16.0), NO_EXTRA) {
             assert!(idx > 2, "slot {idx} must not carry a tick");
         }
     }
@@ -1230,9 +1337,13 @@ mod tests {
     /// slots: row 3 of the column is the first accessory.
     #[test]
     fn the_tick_row_follows_the_slot_row() {
-        let base_y = equip_page_base_y(SCREEN_H, 0.0);
-        for (idx, rect) in accessory_tick_rects(Vec2::new(SCREEN_W, SCREEN_H), base_y, (16.0, 16.0))
-        {
+        let base_y = equip_page_base_y(SCREEN_H, 0.0, NO_EXTRA);
+        for (idx, rect) in accessory_tick_rects(
+            Vec2::new(SCREEN_W, SCREEN_H),
+            base_y,
+            (16.0, 16.0),
+            NO_EXTRA,
+        ) {
             // The armour column draws rows 0..=7 in `Player.armor` order, so the
             // armour index **is** the drawn row (`num37`).
             let slot_y = equip_row_y(base_y, idx, true, SCALE);
@@ -1250,7 +1361,7 @@ mod tests {
     #[test]
     fn equip_cell_at_matches_the_drawn_columns() {
         let screen = Vec2::new(SCREEN_W, SCREEN_H);
-        let base_y = equip_page_base_y(SCREEN_H, 0.0);
+        let base_y = equip_page_base_y(SCREEN_H, 0.0, NO_EXTRA);
         let (armor_x, vanity_x, dye_x) = (
             equip_column_x(EquipColumn::Armor, SCREEN_W),
             equip_column_x(EquipColumn::Vanity, SCREEN_W),
@@ -1260,35 +1371,167 @@ mod tests {
         let at = |x: f32, row: usize, lower: bool| {
             Vec2::new(x + 10.0, equip_row_y(base_y, row, lower, SCALE) + 10.0)
         };
-        assert_eq!(equip_cell_at(at(armor_x, 0, false), screen, 0.0, 0, 52.0), Some((8, 0)));
-        assert_eq!(equip_cell_at(at(armor_x, 2, false), screen, 0.0, 0, 52.0), Some((8, 2)));
+        assert_eq!(
+            equip_cell_at(at(armor_x, 0, false), screen, 0.0, 0, 52.0, NO_EXTRA),
+            Some((8, 0))
+        );
+        assert_eq!(
+            equip_cell_at(at(armor_x, 2, false), screen, 0.0, 0, 52.0, NO_EXTRA),
+            Some((8, 2))
+        );
         // `num38 > 2` switches to context 10 and the 4 px lower block.
-        assert_eq!(equip_cell_at(at(armor_x, 3, true), screen, 0.0, 0, 52.0), Some((10, 3)));
-        assert_eq!(equip_cell_at(at(armor_x, 7, true), screen, 0.0, 0, 52.0), Some((10, 7)));
+        assert_eq!(
+            equip_cell_at(at(armor_x, 3, true), screen, 0.0, 0, 52.0, NO_EXTRA),
+            Some((10, 3))
+        );
+        assert_eq!(
+            equip_cell_at(at(armor_x, 7, true), screen, 0.0, 0, 52.0, NO_EXTRA),
+            Some((10, 7))
+        );
         // Vanity `Player.armor[10..19]`.
-        assert_eq!(equip_cell_at(at(vanity_x, 0, false), screen, 0.0, 0, 52.0), Some((9, 10)));
-        assert_eq!(equip_cell_at(at(vanity_x, 3, true), screen, 0.0, 0, 52.0), Some((11, 13)));
+        assert_eq!(
+            equip_cell_at(at(vanity_x, 0, false), screen, 0.0, 0, 52.0, NO_EXTRA),
+            Some((9, 10))
+        );
+        assert_eq!(
+            equip_cell_at(at(vanity_x, 3, true), screen, 0.0, 0, 52.0, NO_EXTRA),
+            Some((11, 13))
+        );
         // Dyes.
-        assert_eq!(equip_cell_at(at(dye_x, 0, false), screen, 0.0, 0, 52.0), Some((12, 0)));
-        assert_eq!(equip_cell_at(at(dye_x, 3, true), screen, 0.0, 0, 52.0), Some((12, 3)));
+        assert_eq!(
+            equip_cell_at(at(dye_x, 0, false), screen, 0.0, 0, 52.0, NO_EXTRA),
+            Some((12, 0))
+        );
+        assert_eq!(
+            equip_cell_at(at(dye_x, 3, true), screen, 0.0, 0, 52.0, NO_EXTRA),
+            Some((12, 3))
+        );
         // Misc page: `miscEquips` at screenWidth-92, `miscDyes` one 47 left.
         let misc_x = SCREEN_W - 92.0;
         let misc = |x: f32, row: usize| Vec2::new(x + 10.0, misc_row_y(base_y, row) + 10.0);
         assert_eq!(
-            equip_cell_at(misc(misc_x, 0), screen, 0.0, EQUIP_PAGE_MISC, 52.0),
+            equip_cell_at(
+                misc(misc_x, 0),
+                screen,
+                0.0,
+                EQUIP_PAGE_MISC,
+                52.0,
+                NO_EXTRA
+            ),
             Some((19, 0))
         );
         assert_eq!(
-            equip_cell_at(misc(misc_x, 4), screen, 0.0, EQUIP_PAGE_MISC, 52.0),
+            equip_cell_at(
+                misc(misc_x, 4),
+                screen,
+                0.0,
+                EQUIP_PAGE_MISC,
+                52.0,
+                NO_EXTRA
+            ),
             Some((16, 4))
         );
         assert_eq!(
-            equip_cell_at(misc(misc_x - MISC_PITCH, 2), screen, 0.0, EQUIP_PAGE_MISC, 52.0),
+            equip_cell_at(
+                misc(misc_x - MISC_PITCH, 2),
+                screen,
+                0.0,
+                EQUIP_PAGE_MISC,
+                52.0,
+                NO_EXTRA
+            ),
             Some((33, 2))
         );
         // The housing page answers `None` (its own cells own the pointer).
-        assert_eq!(equip_cell_at(at(armor_x, 0, false), screen, 0.0, EQUIP_PAGE_HOUSING, 52.0), None);
+        assert_eq!(
+            equip_cell_at(
+                at(armor_x, 0, false),
+                screen,
+                0.0,
+                EQUIP_PAGE_HOUSING,
+                52.0,
+                NO_EXTRA
+            ),
+            None
+        );
         // Nothing outside the columns.
-        assert_eq!(equip_cell_at(Vec2::new(10.0, 10.0), screen, 0.0, 0, 52.0), None);
+        assert_eq!(
+            equip_cell_at(Vec2::new(10.0, 10.0), screen, 0.0, 0, 52.0, NO_EXTRA),
+            None
+        );
+    }
+
+    /// W4-g87 — the Demon Heart's slot-8 row JOINS the columns once the
+    /// unlock shows it (`Main.cs:41381`/`:41398` flag4): the armour column
+    /// gains a 9th drawn row (index 8, drawn row 8), the tick column a 6th
+    /// tick, and the defense anchor drops one row (`num35 = num19 - 1 = 8`).
+    #[test]
+    fn w4_g87_the_demon_heart_row_joins_the_columns() {
+        let screen = Vec2::new(SCREEN_W, SCREEN_H);
+        let base_y = equip_page_base_y(SCREEN_H, 0.0, DH_EXTRA);
+        assert_eq!(base_y, 174.0, "9 rows < 10: no collapse at 900 px");
+        let rects = accessory_tick_rects(screen, base_y, (16.0, 16.0), DH_EXTRA);
+        assert_eq!(rects.len(), 6, "armour 3..=8 carry the ticks");
+        assert_eq!(rects[5].0, 8, "the Demon Heart row is `Player.armor[8]`");
+        // Row 8: `(int)(172 + 8*47.6) + 4` = 552 + 4.
+        assert_eq!(rects[5].1[1], 556.0);
+        // The cell hit resolves row 8 in all three columns.
+        let armor_x = equip_column_x(EquipColumn::Armor, SCREEN_W);
+        let vanity_x = equip_column_x(EquipColumn::Vanity, SCREEN_W);
+        let dye_x = equip_column_x(EquipColumn::Dye, SCREEN_W);
+        let at =
+            |x: f32, row: usize| Vec2::new(x + 10.0, equip_row_y(base_y, row, true, SCALE) + 10.0);
+        assert_eq!(
+            equip_cell_at(at(armor_x, 8), screen, 0.0, 0, 52.0, DH_EXTRA),
+            Some((10, 8))
+        );
+        assert_eq!(
+            equip_cell_at(at(vanity_x, 8), screen, 0.0, 0, 52.0, DH_EXTRA),
+            Some((11, 18))
+        );
+        assert_eq!(
+            equip_cell_at(at(dye_x, 8), screen, 0.0, 0, 52.0, DH_EXTRA),
+            Some((12, 8))
+        );
+        // Slot 9 stays hidden (no master mode).
+        assert_eq!(
+            equip_cell_at(at(armor_x, 9), screen, 0.0, 0, 52.0, DH_EXTRA),
+            None
+        );
+        // The tick click flips index 8's hide flag target.
+        let r = rects[5].1;
+        assert_eq!(
+            accessory_tick_click(
+                screen,
+                base_y,
+                Vec2::new(r[0] + 1.0, r[1] + 1.0),
+                (16.0, 16.0),
+                true,
+                DH_EXTRA
+            ),
+            Some(8)
+        );
+    }
+
+    /// W4-g87 — a SHOWN-but-LOCKED row (a stored item, no unlock: the
+    /// `CanDemonHeartAccessoryBeShown` item legs) keeps the dim background
+    /// (`Main.cs:41452` flag6 false → color2) while an unlocked row keeps
+    /// `Main.inventoryBack`; the classic rows are always unlocked.
+    #[test]
+    fn w4_g87_a_shown_locked_row_dims() {
+        let stored = ExtraAccessoryShow {
+            demon_heart: true, // shown by the stored item
+            master: false,
+            slot8_unlocked: false, // but NOT unlocked (classic world)
+            slot9_unlocked: false,
+        };
+        assert!(!stored.hides(8), "the stored row shows");
+        assert!(!stored.slot_unlocked(8), "but it is locked → dim");
+        assert!(stored.slot_unlocked(3), "the classic rows stay unlocked");
+        assert!(DH_EXTRA.slot_unlocked(8), "the used-heart row is unlocked");
+        assert!(
+            !DH_EXTRA.slot_unlocked(9),
+            "slot 9 stays locked (no master)"
+        );
     }
 }

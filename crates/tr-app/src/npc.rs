@@ -2342,6 +2342,13 @@ pub struct Npc {
     /// per NPC update (`NPC.cs:90516`). NOT the ~11-tick `hurt_cd`
     /// cooldown (the retired `update_creeper` stand-in's W95 defect).
     pub just_hit: bool,
+    /// The last accepted strike's `hitDirection` (`NPC.StrikeNPC`'s
+    /// argument, `NPC.cs:81189`): the C# passes it straight to
+    /// `HitEffect(hitDirection, num)` (`:81488`); the port batches deaths
+    /// into the NPC pass (S1-E-21c), so the W4-c12 death feed reads the
+    /// recorded side. 0 = no strike / the aiStyle-74 fuse's argument-less
+    /// `HitEffect()` (`NPC.cs:35497`, the default `hitDirection = 0`).
+    pub last_hit_dir: i32,
     /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
@@ -2987,21 +2994,6 @@ pub struct Npc {
     /// slot turn (the `item_lights::rand_light` fixed-step precedent);
     /// the solo `update_rng` wrapper queues it for the caller. W4-c7.
     pub wants_ai_light: Vec<(i32, i32, [f32; 3])>,
-    /// The aiStyle-66 EnchantedNightcrawler flicker's
-    /// `Lighting.AddLight(i, j, r, g, b)` request (`NPC.cs:34258`) —
-    /// `(tile_x, tile_y, [r, g, b])`, the colour already scaled by the
-    /// `Next(90,111)` roll and `Main.essScale`, the tile coords the
-    /// quotient-truncated centre (`(int)((X + width/2) / 16f)`). The sim
-    /// drains it into the shared `EntityLights` pair at the NPC's slot
-    /// turn (the `item_lights::rand_light` fixed-step precedent); the
-    /// solo `update_rng` wrapper queues it for the caller. W4-c8.
-    pub wants_ai_light: Vec<(i32, i32, [f32; 3])>,
-    /// `Main.essScale` as of the last draw pass (`App::ess_scale`,
-    /// `item_lights::update_ess_scale`) — the sim stamps it before the
-    /// tick for the aiStyle-66 flicker (`NPC.cs:34257`), the
-    /// `wind_speed_current` pre-stamp convention. The solo wrapper reads
-    /// the 1.0 stock (the `App::new` init). W4-c8.
-    pub ess_scale: f32,
     /// `NPC.alpha`: the spawn fade (`SetDefaults` 245/246/247/248's
     /// `alpha = 255`, `NPC.cs:12176/12190/12201`); the Golem family's
     /// machines decrement it by 10 per tick and the draw reads it as
@@ -3062,9 +3054,12 @@ pub struct Npc {
     /// The Brain Suckler's attached obstruct request (`AI()`'s aiStyle-85
     /// phase 5, `NPC.cs:37159`'s `AddBuff(163, 59)`): the sim applies the
     /// Obstructed buff to the player.
-    /// The SolarCorite's implosion request (`AI()`'s aiStyle-74 arm,
-    /// `NPC.cs:35496-35500`): the 192-box blast the sim resolves (80
-    /// damage scaled by difficulty).
+    /// The DD2 glider/grenadier impact's blast request (the 192-box the
+    /// sim resolves). W4-c12: the SolarCorite's aiStyle-74 implosion NO
+    /// LONGER sets this — the C# arm (`NPC.cs:35455-35499`) has no blast
+    /// projectile; the faithful `npc_ai_style74` machine owns the
+    /// 192-box contact damage + self-death instead (the retired
+    /// stand-in's flag was an invention, ANALYSIS).
     pub wants_blast: bool,
     /// `AI`'s aiStyle-106 arm (`NPC.cs:40999`'s `SpawnMonsterFromGate`)
     /// request: the lane gate asks for its wave's pick — the sim
@@ -4150,6 +4145,7 @@ impl Npc {
             // `SetDefaults`' field reset (`NPC.cs:8506`) — also the
             // Hungry's strike-tick read (S1-D-3 W-1/W-2 shared field).
             just_hit: false,
+            last_hit_dir: 0,
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
@@ -4418,9 +4414,6 @@ impl Npc {
             snail_no_gravity: true,
             wants_item_sounds: Vec::new(),
             wants_ai_light: Vec::new(),
-            // `Main.essScale`'s stock 1.0 (the `App::new` init) — the sim
-            // pre-stamps the live value each tick (W4-c8).
-            ess_scale: 1.0,
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
             // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
@@ -5232,11 +5225,11 @@ impl Npc {
             // (`NPC.cs:13613-13636`/`:13637-13660`/`:16739-16762`/
             // `:16809-16832`), so the class default 1f stands (`:8533`) —
             // the stock `_ => 0.4` below never sees them.
+            // E8 merge: Seagull/Grebe's kb rows are d42's above.
             NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
-            // E8 merge: Seagull/Grebe's kb rows are d42's above.
-            NpcKind::Duck
+            | NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 1.0,
@@ -5922,11 +5915,11 @@ impl Npc {
             // W4-c10 — the waterfowl family's `defense = 0` rows
             // (`NPC.cs:13619`/`:13631`/`:13643`/`:13655`/`:16745`/
             // `:16757`/`:16815`/`:16827`).
+            // E8 merge: Seagull/Grebe's defense rows are d42's above.
             NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
-            // E8 merge: Seagull/Grebe's defense rows are d42's above.
-            NpcKind::Duck
+            | NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0,
@@ -6614,11 +6607,11 @@ impl Npc {
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0.0,
             // W4-c10 — the waterfowl family writes no value row (the
             // head's `value = 0f`, `NPC.cs:8544`).
+            // E8 merge: Seagull/Grebe's value rows are d42's above.
             NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
-            // E8 merge: Seagull/Grebe's value rows are d42's above.
-            NpcKind::Duck
+            | NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0.0,
@@ -6730,6 +6723,8 @@ impl Npc {
         self.just_hit = true;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        // W4-c12: the strike side for the death feed's HitEffect draws.
+        self.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             self.knock_back_resist(),
@@ -6783,6 +6778,8 @@ impl Npc {
         self.just_hit = true;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        // W4-c12: the strike side for the death feed's HitEffect draws.
+        self.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             self.knock_back_resist(),
@@ -6894,6 +6891,8 @@ impl Npc {
         n.just_hit = true;
         let (w, _) = n.size();
         let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
+        // W4-c12: the strike side for the death feed's HitEffect draws.
+        n.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             n.knock_back_resist(),
@@ -7480,6 +7479,13 @@ impl Npc {
             // returns, and the snail's `UpdateCollision` tail (the
             // `Collision_MoveSnailOnSlopes` replacement, `:92568-92571`).
             67 => self.ai_067_snail(world, player, rng),
+            // `else if (this.aiStyle == 74)` (`NPC.cs:35218-35500`) — the
+            // MartianDrone 388 / SolarCorite 418 pair, the style's only two
+            // census kinds. W4-c12: the faithful `npc_ai_style74::
+            // style74_step` claims the axis (the live dust pool rides
+            // `update_rng_dust`); the `update_martian_drone`/
+            // `update_solar_corite` stand-ins are retired.
+            74 => self.ai_074_hover_charge(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 75)` (`NPC.cs:35501-36070`) — the
             // mount/rider family (390/392/393/394/492/416). S1-D-3-wire-saucer:
             // the SOLO path (a test's bare `update_rng`) runs the faithful
@@ -7498,17 +7504,11 @@ impl Npc {
             // The arm is pure velocity — the integration tail is the
             // shared `ai_064_integrate` (the `UpdateCollision`/raw split).
             64 => self.update_rng_style64_solo(world, player, rng),
-            // `else if (this.aiStyle == 66)` (`NPC.cs:34253-34347`) — the
-            // crawling critters (357/374/448/484-487/606). W4-c8: the
-            // faithful `npc_ai_style66::ai_style66` arm claims the style
-            // (the S1-D-3 code-only port wired). The arm needs no sibling
-            // pool (the dig proximity scan reads the PLAYERS only), so the
-            // solo path is the live route — the sim's tick closure runs
-            // `update_rng_dust` and drains the light/Transform requests at
-            // the slot turn. The integration tail is the family arm's own
-            // (the depth-scaled gravity + the ground UpdateCollision
-            // stand-in).
-            66 => self.ai_066_crawler_family(world, player, rng),
+            // E8 merge: the c8 `66 => self.ai_066_crawler_family(...)` arm is
+            // the SAME style key as the c10 arm above — the FIRST arm wins,
+            // so the duplicate never ran (the S1-D-4c dead-arm purge). The
+            // `ai_066_crawler_family` body stays (it is the c8 record; the
+            // c10 `ai_066_crawler` superset is the live route).
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -8991,6 +8991,78 @@ impl Npc {
         }
     }
 
+    /// W4-c12 — the aiStyle-74 adapter: the MartianDrone/SolarCorite pair's
+    /// faithful arm (`npc_ai_style74::style74_step`, `NPC.cs:35218-35500`).
+    /// RNG census (the module's, preserved): the 388 trail `NewDust` 226
+    /// internals, the 418's two `Next(3)` ember gates EVERY tick, the
+    /// release jitter pair (the 418's `Next(0,1)` still draws Sample), the
+    /// 388 state-1 `Next(4)` sparkle, and the state-3 implosion's
+    /// 10×(internals+2 NextDouble) + 40×(internals+2 NextDouble+Next(2)
+    /// [+internals+2]+Next(4)[+internals+2]) ladder — all on the caller's
+    /// `UpdateNPCs` stream, dust internals inside `DustPool::new_dust`.
+    fn ai_074_hover_charge(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let mut env = crate::npc_ai_style74::Style74Env {
+            world,
+            players: &[cand],
+            // The `EverLastingTicker` stand-in (the zombie convention): 0
+            // until the caller migration.
+            ticker: 0,
+            dust,
+            dust_ctx,
+            rng,
+            // The port is single-difficulty classic until the difficulty
+            // system lands (`GameDifficultyLevel.cs:18`, the module's seam).
+            difficulty: 1.0,
+        };
+        let out = crate::npc_ai_style74::style74_step(self, &mut env);
+        // `:35310`/`:35358`/`:35394` — the difficulty-scaled kb write rides
+        // the style-39 override seam (`knock_back_resist()` prefers it).
+        if let Some(kb) = out.knock_back_resist {
+            self.kb_resist_override = Some(kb);
+        }
+        // `:35462` — the implosion's AddLight is the draw-side feed's (the
+        // style-72 pop precedent, `npc_lights::npc_light`).
+        let _ = out.light;
+        if out.sound_item14 {
+            // `:35495` — PlaySound(SoundID.Item14, base.position): the
+            // queued-cue seam (the Golem fist's dash-launch precedent);
+            // the sim drains it on the UpdateNPCs stream after this tick.
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::Item14,
+                x: self.x,
+                y: self.y,
+            });
+        }
+        // `:35496-35498` — life = 0 (the arm wrote it) + HitEffect +
+        // active = false. The death feed (`world_sim/npcs.rs`'s death
+        // retain) owns the HitEffect dust/gore draws; the damage zero
+        // mirrors the mid-update deactivation (no contact on the death
+        // tick — the style-70 detonation precedent).
+        if out.died {
+            self.damage_override = Some(0);
+            // `:35497` — the fuse calls `HitEffect()` with NO arguments:
+            // the C# defaults `hitDirection = 0` (`NPC.cs:81654`), so the
+            // death feed's dust SpeedX reads 0, not the last strike's side.
+            self.last_hit_dir = 0;
+            return;
+        }
+        // `NPC.UpdateNPC`'s noTileCollide/noGravity integration
+        // (`NPC.cs:90490-90498`): both kinds' SetDefaults rows carry both
+        // flags (`:13935-13951`/`:15368-15381`), so the raw position add
+        // runs after AI() — including the state-3 ticks (velocity is 0
+        // there, a cited no-op).
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -8999,6 +9071,9 @@ impl Npc {
     // dead arm silently no-ops (the DD2Bartender town-group duplicate and the
     // saucer trio duplicate were purged here). One live arm per kind: a
     // duplicate is a hard error, the `to_u16` guard's precedent (S1-F-1).
+    // E8 merge: the c8 `ai_066_crawler_family` arm and this dispatch's own
+    // style-66 arm were the same machine twice — the c10 `ai_066_crawler`
+    // superset above is the live route, so this body is the c8 record only.
     #[deny(unreachable_patterns)]
     fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
         match self.kind {
@@ -9221,9 +9296,11 @@ impl Npc {
             // The probe: aiStyle 80's hover/detect/escape machine (`AI()`'s
             // aiStyle-80 block, `NPC.cs:36532-36624`).
             NpcKind::MartianProbe => self.update_martian_probe(world, player),
-            // The drone: aiStyle 74's approach/charge/dash machine (`AI()`'s
-            // aiStyle-74 block, `NPC.cs:35218-35500`).
-            NpcKind::MartianDrone => self.update_martian_drone(world, player, rng),
+            // The drone: aiStyle 74 rides the style axis (W4-c12) — this
+            // arm is unreachable.
+            NpcKind::MartianDrone => {
+                unreachable!("aiStyle 74 rides the style axis (W4-c12)")
+            }
             // The shooters: aiStyle 3's walker with the stop-and-fire
             // cycle (`AI_003_Fighters`'s shooter block, `NPC.cs:59069-59623`).
             NpcKind::BrainScrambler | NpcKind::RayGunner => {
@@ -9360,7 +9437,11 @@ impl Npc {
                 unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
             }
             NpcKind::SolarSroller => self.update_solar_sroller(world, player, rng),
-            NpcKind::SolarCorite => self.update_solar_corite(world, player, rng),
+            // The corite: aiStyle 74 rides the style axis (W4-c12) — this
+            // arm is unreachable.
+            NpcKind::SolarCorite => {
+                unreachable!("aiStyle 74 rides the style axis (W4-c12)")
+            }
             NpcKind::SolarSelenian => self.update_solar_selenian(world, player),
             // The nebula trio: the floater's aiStyle-97 teleport cycle, the
             // suckler's aiStyle-85 hover + attachment, the predictor's
@@ -10240,8 +10321,11 @@ impl Npc {
             // (`ai_066_crawler_family`), so these arms are unreachable
             // through `update_rng`.
             // E8 merge: the 5 d40-owned dups ride d40's unreachable arms
-            // above (the same axis-66 claim - keep-one).
+            // above (the same axis-66 claim - keep-one). GoldWorm (448,
+            // aiStyle 66) belongs on this axis too - the c8 arm that used
+            // to claim it was the duplicate purged at the style dispatch.
             NpcKind::Worm
+            | NpcKind::GoldWorm
             | NpcKind::TruffleWorm
             | NpcKind::Maggot => {
                 unreachable!("aiStyle 66 rides the style axis (W4-c8)")
@@ -11045,7 +11129,7 @@ impl Npc {
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly => {
                 self.sprite_dir = self.facing;
                 self.frame_counter += 1.0;
-                let row = if self.frame_counter < 4.0 {
+                let mut row = if self.frame_counter < 4.0 {
                     0
                 } else {
                     if self.frame_counter >= 7.0 {
@@ -11351,15 +11435,16 @@ impl Npc {
                     (self.frame_counter + 0.25) % 4.0 + if self.ai[0] != 0.0 { 4.0 } else { 0.0 };
                 self.frame = self.frame_counter as u32;
             }
-            // The drone: `case 388` (`NPC.cs:71731-71740`) — the 2-row strip
+            // The drone: `case 388` (`NPC.cs:71731-71742`) — the 2-row strip
             // advances one row every 6 ticks (unconditional: the drone is
-            // always airborne).
+            // always airborne). W4-c12: the module twin.
             NpcKind::MartianDrone => {
-                self.frame_counter += 1.0;
-                if self.frame_counter >= 6.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 2;
-                }
+                let (row, counter) = crate::npc_ai_style74::drone_find_frame(
+                    self.frame,
+                    self.frame_counter,
+                );
+                self.frame = row;
+                self.frame_counter = counter;
             }
             // The Tesla Turret: `case 387` (`NPC.cs:71663-71696`) — the
             // firing machine (`ai[0] > 0`) accelerates the accumulator
@@ -11796,38 +11881,20 @@ impl Npc {
                     self.frame = 14.min(self.rows() - 1);
                 }
             }
-            // 418 (the solar corite, `NPC.cs:70757-70803`): the idle/hover
-            // states (`ai[0]` 0, +/-1) walk rows 0..4 at 6 ticks, the
-            // `ai[0] == 2` dive splits `ai[1]` into rows 5/6/7, and the
-            // `ai[0] == -2` death spin walks 5..7 at 12 ticks.
+            // 418 (the solar corite, `NPC.cs:70758-70800`): the idle/hover
+            // states (`ai[0]` 0, +/-1) walk rows 0..4 at the STRICT > 6
+            // counter, the `ai[0] == 2` dive splits `ai[1]` into rows
+            // 5/6/7, the `ai[0] == -2` death spin walks 5..7 at > 12;
+            // states 3/4 hold the frame. W4-c12: the module twin.
             NpcKind::SolarCorite => {
-                if self.ai[0] == 0.0 || self.ai[0] == 1.0 || self.ai[0] == -1.0 {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter > 6.0 {
-                        self.frame_counter = 0.0;
-                        self.frame += 1;
-                    }
-                    if self.frame > 4 {
-                        self.frame = 0;
-                    }
-                } else if self.ai[0] == 2.0 {
-                    self.frame = if self.ai[1] < 10.0 {
-                        5
-                    } else if self.ai[1] < 20.0 {
-                        6
-                    } else {
-                        7
-                    };
-                } else if self.ai[0] == -2.0 {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter > 12.0 {
-                        self.frame_counter = 0.0;
-                        self.frame += 1;
-                    }
-                    if self.frame > 7 {
-                        self.frame = 5;
-                    }
-                }
+                let (row, counter) = crate::npc_ai_style74::corite_find_frame(
+                    self.frame,
+                    self.frame_counter,
+                    self.ai[0],
+                    self.ai[1],
+                );
+                self.frame = row;
+                self.frame_counter = counter;
             }
             // 419 (the solar selenian, `NPC.cs:70266-70330`): the `ai[2] < 0`
             // charge band rides rows 2..4 off the 6-tick counter and then
@@ -15530,6 +15597,469 @@ impl Npc {
             // case-445 arm above owns it.
             // E8 merge: the c10 GoldGrasshopper/GoldMouse find_frame dups
             // dropped - c9's case-446/447 arms above own them.
+            // W4-d42 - `FindFrame` case 611/689 (`NPC.cs:73681-73746`):
+            // the mirrored sprite + vx*0.1 tilt; the idle head-turn
+            // table (:73687-73731) draws Main.rand.Next(80)/Next(3) -
+            // find_frame has no RNG seam, so the idle HOLDS row 0
+            // (the documented stand-in; the blink cycle rides the
+            // frame-machine wiring wave). The flight rows 8..12 step
+            // every 5 ticks verbatim.
+            NpcKind::Owl => {
+                self.sprite_dir = -self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 13 || self.frame < 8 {
+                        self.frame = 8;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 612/613 (`NPC.cs:69773-69834`):
+            // the row-0 idle gate draws Main.rand.Next(180) - the
+            // RNG-free stand-in keeps the counter running (the
+            // documented fold; the 1/180 blink rides the wiring
+            // wave). The ai[1]/velocity row-4 pins, the 2/10/60
+            // strides and the 5-row wrap are verbatim.
+            NpcKind::WaterStrider | NpcKind::GoldWaterStrider => {
+                self.frame_counter += 1.0;
+                if self.vx != 0.0 {
+                    self.sprite_dir = if self.vx > 0.0 { 1 } else { -1 };
+                }
+                let mut num286 = 10.0;
+                let flag14 = self.vx.abs() > 1.0;
+                if self.ai[1] == 1.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
+                if self.vy.abs() > 0.1 || flag14 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else if self.frame == 0 {
+                    num286 = 2.0;
+                }
+                if self.frame == 4 {
+                    num286 = if flag14 { 60.0 } else { 2.0 };
+                }
+                if self.frame_counter >= num286 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 5 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 614 (`NPC.cs:76858-76904`, the
+            // bunny group): the ground walk on the |vx|+1 accumulator
+            // (>6, wrap over 7 rows), the rise row 4, the fall row 6.
+            NpcKind::ExplosiveBunny => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 7 {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            // W4-d42 - `FindFrame` case 616/617 (`NPC.cs:76686-76731`):
+            // the wet paddle rows 8..13 (>5, >10 idle), the dry walk
+            // rows 0..7 (>8), the stand pin and the air row 8.
+            NpcKind::Turtle | NpcKind::TurtleJungle => {
+                let num193 = if self.vx == 0.0 { 10.0 } else { 5.0 };
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num193 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 13 {
+                            self.frame = 8;
+                        }
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 7 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    }
+                    if self.vy != 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 8;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 618 (`NPC.cs:67000-67010`): the 5-tick counter over
+            // the 4-frame strip.
+            NpcKind::BloodNautilus => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 619 (`NPC.cs:67011-67021`): the 6-tick counter over
+            // the 6-frame strip.
+            NpcKind::BloodSquid => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 6 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 620 (`NPC.cs:68423-68542`): the
+            // attack rows 14..20 (the ai[0]/ai[1] gate, the 16/17
+            // 3-tick pair, the 18->16 loop), the wet swim rows 8..13
+            // with the atan2 turn, the dry walk rows 2..7 (|vx|+1 at
+            // >9), the air row 1.
+            NpcKind::GoblinShark => {
+                if self.ai[1] > 0.0 && self.ai[0] > 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.frame < 14 || self.frame > 20 || self.ai[1] == 59.0 {
+                        self.frame = 14;
+                        self.frame_counter = 0.0;
+                    }
+                    let num42 = if self.frame == 17 || self.frame == 16 { 3.0 } else { 5.0 };
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= num42 && self.frame < 20 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.ai[1] > 0.0 && self.frame == 18 {
+                            self.frame = 16;
+                        }
+                    }
+                } else if self.wet {
+                    if self.vx < 0.0 {
+                        self.facing = -1;
+                    }
+                    if self.vx > 0.0 {
+                        self.facing = 1;
+                    }
+                    if self.sprite_dir != self.facing {
+                        self.rotation *= -1.0;
+                        self.sprite_dir = self.facing;
+                    }
+                    let num43 = (self.vy * self.facing as f32)
+                        .atan2(self.vx * self.facing as f32);
+                    if (self.rotation - num43).abs() >= std::f32::consts::PI {
+                        if num43 < self.rotation {
+                            self.rotation -= std::f32::consts::PI * 2.0;
+                        } else {
+                            self.rotation += std::f32::consts::PI * 2.0;
+                        }
+                    }
+                    self.rotation = (self.rotation * 4.0 + num43) / 5.0;
+                    self.frame_counter += (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 13 {
+                        self.frame = 8;
+                    } else if self.frame < 8 {
+                        self.frame = 13;
+                    }
+                } else {
+                    if (self.rotation as f64) > 3.14 {
+                        self.rotation -= 6.28;
+                    }
+                    if (self.rotation as f64) > -0.01 && (self.rotation as f64) < 0.01 {
+                        self.rotation = 0.0;
+                    } else {
+                        self.rotation *= 0.9;
+                    }
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                        if self.vx == 0.0 {
+                            self.frame = 0;
+                            self.frame_counter = 0.0;
+                        } else {
+                            if self.frame < 2 {
+                                self.frame = 2;
+                            }
+                            self.frame_counter += self.vx.abs();
+                            self.frame_counter += 1.0;
+                            if self.frame_counter > 9.0 {
+                                self.frame += 1;
+                                self.frame_counter = 0.0;
+                            }
+                            if self.frame > 7 {
+                                self.frame = 2;
+                            }
+                        }
+                    } else {
+                        self.frame_counter = 0.0;
+                        self.frame = 1;
+                    }
+                }
+            }
+            // W4-d42 - no per-kind animation: 621 `NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984)`, 622 `NPC.cs:16988-17006`, 623 `NPC.cs:17007-17025` - row 0 holds
+            // (the ForceBubble/wyvern-segment precedent).
+            NpcKind::BloodEelHead | NpcKind::BloodEelBody | NpcKind::BloodEelTail => {
+                self.frame = 0;
+            }
+            // W4-d42 - `FindFrame` case 624 (`NPC.cs:77067-77102`): the
+            // stand row 0, the rise row 9, the fall row 10, the walk
+            // rows 1..8 on the |vx| accumulator (>8, subtractive).
+            NpcKind::Gnome => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 9;
+                } else if self.vy > 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 10;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter > 8.0 {
+                        self.frame_counter -= 8.0;
+                        self.frame += 1;
+                        if self.frame > 8 {
+                            self.frame = 1;
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 625 (`NPC.cs:76732-76779`): the
+            // wet paddle rows 6..11 (>4, >8 idle), the dry walk rows
+            // 0..5 (>7) with the stand pin.
+            NpcKind::SeaTurtle => {
+                let num185 = if self.vx == 0.0 { 8.0 } else { 4.0 };
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    if self.frame < 6 {
+                        self.frame = 6;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num185 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 11 {
+                            self.frame = 6;
+                        }
+                    }
+                } else {
+                    if self.frame > 5 {
+                        self.frame = 0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 7.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 626/627 (`NPC.cs:76780-76819`):
+            // the velocity-sign sprite flip; dry row 0, the wet drift
+            // rows 3/2/1/0 by |velocity| > 0.15/0.05/0.025.
+            NpcKind::Seahorse | NpcKind::GoldSeahorse => {
+                if self.vx != 0.0 {
+                    self.sprite_dir = if self.vx > 0.0 { 1 } else { -1 };
+                }
+                if !self.wet {
+                    self.frame = 0;
+                } else {
+                    let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame = if speed > 0.15 {
+                        3
+                    } else if speed > 0.05 {
+                        2
+                    } else if speed > 0.025 {
+                        1
+                    } else {
+                        0
+                    };
+                }
+            }
+            // W4-d42 - `FindFrame` case 628 (`NPC.cs:77103-77201`): the
+            // wind-facing sprite pin and the wind-speed accumulator
+            // read `Main.WindForVisuals` (unported - the 0 stand-in,
+            // the documented fold); the ai[0]==0 sway rows 0..6 and
+            // the localAI[0]==0 attack rows 6..10 are verbatim. The
+            // localAI[0]==1 lerp arm (:77182-77199) rides the
+            // aiStyle-119 wiring wave.
+            NpcKind::Dandelion => {
+                // `Main.WindForVisuals` is unported - 0f (the sprite
+                // pins +1, the accumulator rides the plain 1f).
+                let wind = 0.0f32;
+                self.sprite_dir = if wind > 0.0 { -1 } else { 1 };
+                if self.ai[0] == 0.0 {
+                    if self.frame == 6 {
+                        self.frame_counter += 1.0 + 0.5 * wind.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame_counter -= 8.0;
+                            self.frame = 0;
+                        }
+                    } else if self.frame > 5 {
+                        self.frame_counter = 0.0;
+                        self.frame = 6;
+                    } else {
+                        self.frame_counter += 1.0 + 0.5 * wind.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame_counter -= 8.0;
+                            self.frame += 1;
+                            if self.frame > 5 {
+                                self.frame = 0;
+                            }
+                        }
+                    }
+                } else if self.local_ai[0] == 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        if self.frame == 6 {
+                            self.frame = 7;
+                        } else if self.frame < 7 {
+                            self.frame = 6;
+                        } else {
+                            self.frame += 1;
+                            if self.frame > 10 {
+                                self.frame = 7;
+                            }
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 85/341/629 (`NPC.cs:73445-73515`,
+            // the chest group): the closed row 0, the open/close
+            // counter (-1 grounded / +1 airborne, clamped 0..12), the
+            // 3-tick phase rows 1..5 and the ai[3] hop offsets.
+            NpcKind::IceMimic => {
+                if self.ai[0] == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    if self.vy == 0.0 {
+                        self.frame_counter -= 1.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                    }
+                    if self.frame_counter < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame_counter > 12.0 {
+                        self.frame_counter = 12.0;
+                    }
+                    self.frame = if self.frame_counter < 3.0 {
+                        1
+                    } else if self.frame_counter < 6.0 {
+                        2
+                    } else if self.frame_counter < 9.0 {
+                        3
+                    } else if self.frame_counter < 12.0 {
+                        4
+                    } else {
+                        // The clamp caps the counter at 12, so the
+                        // `<15` arm (`:73486-73489`) is the live one:
+                        // row 5. The `<21`/else arms (`:73490-73504`)
+                        // are unreachable under the clamp.
+                        5
+                    };
+                }
+                if self.ai[3] == 2.0 {
+                    self.frame += 6;
+                } else if self.ai[3] == 3.0 {
+                    self.frame += 12;
+                }
+            }
+            // W4-d42 - `FindFrame`'s humanoid-group case list (630 `NPC.cs:17107-17119`);
+            // the 16-row strip rides `humanoid_frame_count`.
+            NpcKind::BloodMummy => {
+                self.humanoid_town_frame();
+            }
+            // W4-d35 (A): the 73/74/75/77/78 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::GoblinScout
+            | NpcKind::Bird
+            | NpcKind::Pixie
+            | NpcKind::ArmoredSkeleton
+            | NpcKind::Mummy => {}
+            // W4-d35 (B): the 79/80/82/83/84 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::DarkMummy
+            | NpcKind::LightMummy
+            | NpcKind::Wraith
+            | NpcKind::CursedHammer
+            | NpcKind::EnchantedSword => {}
+            // W4-d35 (C): the 85/86/93/94/95 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Mimic
+            | NpcKind::Unicorn
+            | NpcKind::GiantBat
+            | NpcKind::Corruptor
+            | NpcKind::DiggerHead => {}
+            // W4-d35 (D): the 96/97/98/99/100 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::DiggerBody
+            | NpcKind::DiggerTail
+            | NpcKind::SeekerHead
+            | NpcKind::SeekerBody
+            | NpcKind::SeekerTail => {}
+            // W4-d35 (E): the 101/102/103/104/109 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Clinger
+            | NpcKind::AnglerFish
+            | NpcKind::GreenJellyfish
+            | NpcKind::Werewolf
+            | NpcKind::Clown => {}
+            // W4-d35 (F): the 110/112/116/120/121 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::SkeletonArcher
+            | NpcKind::VileSpit
+            | NpcKind::TheHungryII
+            | NpcKind::ChaosElemental
+            | NpcKind::Slimer => {}
+            // W4-d35 (G): the 122/137/140 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Gastropod
+            | NpcKind::IlluminantBat
+            | NpcKind::PossessedArmor => {}
         }
     }
 
@@ -18164,185 +18694,6 @@ impl Npc {
             self.y = ny;
         } else {
             self.vy = 0.0;
-        }
-    }
-
-    /// `AI()`'s aiStyle-74 block (`NPC.cs:35218-35500`) — the Martian
-    /// Drone's approach/charge/dash machine, the 388 parameter set (the
-    /// 418/Martian Walker Skull arm's different constants fold out).
-    /// `ai[0]` 0 = the hover approach (the 200-px-above-the-player
-    /// approach vector at speed 10 over a 30-tick damp; the line-of-sight
-    /// gate with the ±π/8 angle band; the 120-tick argue timer), 1 = the
-    /// 30-tick charge (the ×0.95 damp, then the jittered vector ×14), 2 =
-    /// the dash (the 20-lerp toward the player; the off-angle/time exit
-    /// at velocity < 7), 3 = the contact explosion (the 192×192 box,
-    /// the 80 damage, the 3-tick fuse → the death).
-    ///
-    /// Deviations (documented): the dust/light spawns are unmodelled (no
-    /// NPC light/dust systems); the phase-3 box resize (the vanilla's
-    /// `width = height = 192`) is a per-NPC hitbox the kind-fixed `size`
-    /// cannot follow — the explosion rides `damage_override` = 80 instead;
-    /// the `GetKnockbackMultiplier_ScaledByDifficulty`/`GetAttackDamage_
-    /// ScaledByDifficulty` difficulty arms run as the classic constants
-    /// (no difficulty flags).
-    fn update_martian_drone(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // The vanilla's 388 param set.
-        let speed = 10.0;
-        let hover_height = 200.0;
-        let far_dist = 750.0;
-        let damp = 30.0;
-        let charge_ticks = 30.0;
-        let charge_decay = 0.95;
-        let jitter = 50.0;
-        let dash_speed = 14.0;
-        let dash_ticks = 30.0;
-        let turn_dist = 100.0;
-        let lerp = 20.0;
-        let speed_floor = 7.0;
-        // `num1038` (the 418-only 4/15 × 60 homing term) is 0 for the drone.
-        let home_term = 0.0;
-
-        // The head (`AI()`'s aiStyle-74 block, `NPC.cs:35220-35233`): the
-        // sheet rides the velocity's rotation, folded back into ±π/2, and
-        // `spriteDirection = -Math.Sign(velocity.X)` — the ONLY aiStyle-74
-        // kind whose art inverts against its motion (the 418 stands).
-        self.rotation = self.vy.atan2(self.vx);
-        if self.rotation < -std::f32::consts::PI / 2.0 {
-            self.rotation += std::f32::consts::PI;
-        }
-        if self.rotation > std::f32::consts::PI / 2.0 {
-            self.rotation -= std::f32::consts::PI;
-        }
-        let sign = self.vx.signum() as i32;
-        if sign != 0 {
-            self.sprite_dir = -sign;
-        }
-
-        let (w, h) = self.size();
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        let (pcx, pcy) = player.center();
-        if self.ai[0] == 0.0 {
-            // The approach vectors: `vector128` to the player, `vector129`
-            // 200 px above it (the xShift is 0 for the drone).
-            let (vx, vy) = (pcx - cx, pcy - cy);
-            let raw_dist = (vx * vx + vy * vy).sqrt();
-            let norm = if raw_dist > 0.0 { 1.0 / raw_dist } else { 0.0 };
-            // vector129 = normalize(raw - UnitY * 200) * speed.
-            let vy2 = vy - hover_height;
-            let d2 = (vx * vx + vy2 * vy2).sqrt();
-            let n2 = if d2 > 0.0 { speed / d2 } else { 0.0 };
-            // `vector128.ToRotation()`'s ±π/8 gate: the y-down rotation of
-            // the toward-player direction — the cone's 0..π half (the
-            // player below).
-            let angle = (vy * norm).atan2(vx * norm);
-            // `:35319`: `flag76 = CanHit(base.Center, 1, 1, player.Center, 1, 1)`.
-            let mut can_hit =
-                crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
-            // The ai[3] >= 120 argue-override: the drone stops dodging.
-            if self.ai[3] >= 120.0 {
-                can_hit = true;
-            }
-            // `:35325`: the cone gate applies after the override.
-            let can_hit = can_hit
-                && angle > std::f32::consts::PI / 8.0
-                && angle < std::f32::consts::PI - std::f32::consts::PI / 8.0;
-            let too_far = raw_dist > far_dist;
-            if too_far || !can_hit {
-                // The 30-tick damp toward the above-the-player vector.
-                self.vx = (self.vx * (damp - 1.0) + vx * n2) / damp;
-                self.vy = (self.vy * (damp - 1.0) + vy2 * n2) / damp;
-                if !can_hit {
-                    if !too_far {
-                        self.ai[3] += 1.0;
-                    }
-                } else {
-                    self.ai[3] = 0.0;
-                }
-            } else {
-                self.ai[0] = 1.0;
-                self.ai[2] = vx * norm;
-                self.ai[3] = vy * norm;
-            }
-        } else if self.ai[0] == 1.0 {
-            // The charge (`:35290-35300`).
-            self.vx *= charge_decay;
-            self.vy *= charge_decay;
-            self.ai[1] += 1.0;
-            if self.ai[1] >= charge_ticks {
-                self.ai[0] = 2.0;
-                self.ai[1] = 0.0;
-                // The ai[2]/ai[3] vector + the ±50 × 0.04 jitter, normalized ×14.
-                // `Main.rand.Next(-num1033, num1033 + 1) * 0.04f` (`NPC.cs:35378`).
-                let jx = rng.next_range(-50, 51) as f32 * jitter * 0.04;
-                let jy = rng.next_range(-50, 51) as f32 * jitter * 0.04;
-                let (dx, dy) = (self.ai[2] + jx, self.ai[3] + jy);
-                let len = (dx * dx + dy * dy).sqrt();
-                let inv = if len > 0.0 { dash_speed / len } else { 0.0 };
-                self.vx = dx * inv;
-                self.vy = dy * inv;
-            }
-        } else if self.ai[0] == 2.0 {
-            // The dash (`:35303-35327`).
-            self.ai[1] += 1.0;
-            let dist = (pcx - cx).hypot(pcy - cy);
-            let past = dist > turn_dist && cy > pcy;
-            let slow = (self.vx * self.vx + self.vy * self.vy).sqrt() < speed_floor;
-            if (self.ai[1] >= dash_ticks && past) || slow {
-                self.ai[0] = 0.0;
-                self.ai[1] = 0.0;
-                self.ai[2] = 0.0;
-                self.ai[3] = 0.0;
-                self.vx /= 2.0;
-                self.vy /= 2.0;
-            } else {
-                let (dx, dy) = (pcx - cx, pcy - cy);
-                let len = (dx * dx + dy * dy).sqrt();
-                let (nx, ny) = if len > 0.0 {
-                    (dx / len, dy / len)
-                } else {
-                    (self.facing as f32, 0.0)
-                };
-                let vlen = (self.vx * self.vx + self.vy * self.vy).sqrt();
-                self.vx = (self.vx * (lerp - 1.0) + nx * (vlen + home_term)) / lerp;
-                self.vy = (self.vy * (lerp - 1.0) + ny * (vlen + home_term)) / lerp;
-            }
-            // The solid-wall fold to the explosion (`:35329-35334`).
-            if crate::player::collides_rect(world, self.x, self.y, w, h) {
-                self.ai[0] = 3.0;
-                self.ai[1] = 0.0;
-                self.ai[2] = 0.0;
-                self.ai[3] = 0.0;
-            }
-        }
-        // The contact-too-close explosion (`:35336-35343`).
-        if self.ai[0] != 3.0 && player.hp > 0 {
-            let dist = (pcx - cx).hypot(pcy - cy);
-            if dist < 64.0 {
-                self.ai[0] = 3.0;
-                self.ai[1] = 0.0;
-                self.ai[2] = 0.0;
-                self.ai[3] = 0.0;
-            }
-        }
-        if self.ai[0] != 3.0 {
-            // The flying integration: noTileCollide + noGravity (`SetDefaults`).
-            self.x += self.vx;
-            self.y += self.vy;
-            return;
-        }
-        // The explosion (`:35345-35396`): the position centres, the box
-        // swells (the port keeps the kind size — `damage_override` carries
-        // the 80), the alpha darkens, the 3-tick fuse. The lights/dust are
-        // unmodelled.
-        self.damage_override = Some(80);
-        self.vx = 0.0;
-        self.vy = 0.0;
-        self.ai[1] += 1.0;
-        if self.ai[1] >= 3.0 {
-            // `SoundEngine.PlaySound(Item14)` + `life = 0` + `HitEffect`:
-            // the death pass picks the zero HP up (the loot db registers no
-            // 388 rules — nothing drops).
-            self.hp = 0;
         }
     }
 
@@ -21756,89 +22107,6 @@ impl Npc {
                 }
             }
         }
-    }
-
-    /// `AI()`'s aiStyle-74 block's SolarCorite arm (`NPC.cs:35238-35276`'s
-    /// parameter set + the four `ai[0]` states + `:35447-35497`'s
-    /// implosion) — the corite approaches (8/175/175/600/80/60/20), the
-    /// charge releases into the dash (9 px), the dash exits into the
-    /// cooldown, and the 64-px contact (or the state-3 arm) triggers the
-    /// 192-box implosion (80 damage scaled) that kills it.
-    ///
-    /// Deviations: the dust/lighting arms and the sound cue are
-    /// unmodelled; the implosion's 3-tick delay rides the port's own.
-    fn update_solar_corite(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
-        let (w, h) = self.size();
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        let (pcx, pcy) = player.center();
-        let dist = (pcx - cx).hypot(pcy - cy);
-        match self.ai[0] as i32 {
-            3 => {
-                // `:35447-35497`'s implosion: the 192-box, the zeroed
-                // velocity and the 3-tick delay before the death.
-                self.vx = 0.0;
-                self.vy = 0.0;
-                self.damage_override = Some(80);
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 3.0 {
-                    self.wants_blast = true;
-                    self.hp = 0;
-                }
-            }
-            2 => {
-                // `:35393-35405`'s dash exit.
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 150.0 && dist > 60.0 {
-                    self.ai[0] = 4.0;
-                    self.ai[1] = 45.0;
-                }
-                if self.vx * self.vx + self.vy * self.vy < 0.49 {
-                    self.ai[0] = 4.0;
-                    self.ai[1] = 45.0;
-                }
-            }
-            4 => {
-                // `:35427-35436`'s cooldown.
-                self.ai[1] -= 3.0;
-                self.vx *= 0.95;
-                self.vy *= 0.95;
-                if self.ai[1] <= 0.0 {
-                    self.ai[0] = 0.0;
-                }
-                self.x += self.vx;
-                self.y += self.vy;
-            }
-            1 => {
-                // `:35358-35390`'s charge: at the 20th tick the dash fires
-                // at the 9-px speed.
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 20.0 {
-                    self.ai[0] = 2.0;
-                    self.ai[1] = 0.0;
-                    let (dx, dy) = (pcx - cx, pcy - cy);
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    self.vx = dx / d * 9.0;
-                    self.vy = dy / d * 9.0;
-                }
-            }
-            _ => {
-                // The approach (`:35320-35350`'s 8-px fly at the 175/175
-                // bands).
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 20.0 && dist < 80.0 {
-                    self.ai[0] = 1.0;
-                    self.ai[1] = 0.0;
-                }
-                let (dx, dy) = (pcx - cx, pcy - cy);
-                let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                self.vx += (dx / d * 8.0 - self.vx) * 0.075;
-                self.vy += (dy / d * 8.0 - self.vy) * 0.075;
-                self.x += self.vx;
-                self.y += self.vy;
-            }
-        }
-        self.rotation = self.vy.atan2(self.vx) + std::f32::consts::PI * 0.5;
-        let _ = (world, h);
     }
 
     /// `AI_003_Fighters`'s SolarSelenian arm (`NPC.cs:58220-58224`'s
@@ -42857,6 +43125,9 @@ mod b1_skeletron_tests {
 #[cfg(test)]
 mod s1_f_13d_tests {
     use super::*;
+    // The witnesses below reuse the main tests module's scratch helpers
+    // (the restored-c10 scope fix).
+    use super::tests::{bare, ground};
 
     /// The two kinds' verbatim `SetDefaults` rows: the bubble
     /// (`NPC.cs:13882-13894`) and the turret (`:13922-13934`). The bubble

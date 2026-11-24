@@ -62,6 +62,7 @@ mod minecart;
 mod mount;
 mod net;
 mod npc;
+mod npc_scaling;
 mod npc_chat;
 mod npc_spatial;
 mod revenge;
@@ -81,6 +82,9 @@ mod npc_ai3_speeds;
 mod npc_ai_fighter_scan;
 mod npc_ai_drippler;
 mod npc_ai_dungeon_shooter;
+// W4-c9: the gold town-critters' AI_007 wander/hop subset (GoldBunny 443 /
+// GoldFrog 445 / GoldMouse 447) - the TownCritter walk core, the housing/
+// danger states deferred (see the module doc).
 mod npc_ai_critter;
 mod npc_ai_ghost;
 mod npc_ai_poltergeist;
@@ -140,7 +144,6 @@ mod npc_ai_style66;
 // GoldButterfly 444 wiring) + the d38 TownCritter wander/hop subset
 // (the GoldBunny/GoldFrog/GoldMouse 443/445/447).
 mod npc_ai_style65;
-mod npc_ai_critter;
 mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
@@ -158,10 +161,6 @@ mod npc_ai_bat;
 mod npc_ai_eye;
 mod npc_ai_golem;
 mod npc_ai_slime;
-// W4-c9: the gold town-critters' AI_007 wander/hop subset (GoldBunny 443 /
-// GoldFrog 445 / GoldMouse 447) - the TownCritter walk core, the housing/
-// danger states deferred (see the module doc).
-mod npc_ai_critter;
 // S1-D-3 cultist: UNWIRED Lunatic Cultist machine (AI_084, 439/440) -
 // the live npc.rs::update_lunatic_cultist stub stays byte-identical
 // until the wiring round (the npc_ai_fishron precedent; states 4/7/8
@@ -177,10 +176,17 @@ mod npc_target;
 // transform-visuals draw census + the Item8 cue intent; the eight
 // waterfowl pairs are VISUALLY SILENT (the census verdict, witnessed).
 mod npc_transform_visuals;
+// W4-d55 (gore table wave A): UNWIRED NPC.HitEffect per-NPC gore table —
+// the first 30 death sites (NPC.cs:81660-81941); the StrikeNPC_Inner
+// dispatch claim is the wiring wave (the npc_ai_style39 precedent).
+mod npc_hit_effect_a;
 mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
+mod npc_findframe_mid2;
+mod npc_findframe_c;
+mod npc_findframe_high2;
 mod persist;
 mod grapple;
 mod gore_seam;
@@ -274,6 +280,12 @@ mod craft_filter;
 mod registry;
 mod variants;
 mod render;
+// W4-d60: UNWIRED tile-draw particle layer (TileDrawing.DrawTiles_EmitParticles,
+// TileDrawing.cs:6688-7547) - grass-sway leaf shed / petals / lava bubbles /
+// herb sparkles / ore shine; the DrawSingleTile call-site gate + the inline
+// 192-leaf reconciliation are the wiring wave (see the module doc +
+// docs/ANALYSIS.md "The tile-draw particle layer (W4-d60)").
+mod tile_draw_particles;
 mod spawner;
 mod tag_effects;
 mod settings;
